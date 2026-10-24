@@ -157,3 +157,49 @@ To use it, the app should:
 7. Load history over `GET /api/sessions?view=summary&limit=50` with `cursor` paging and `history=1`.
 
 Older daemons without the capability keep working on the existing frames. Nothing is renamed. The full acceptance criteria and the merge rules are in `docs/plans/2026-10-24-datawatch-app-ws-session-window-note.md` in the daemon repository. Android and iOS are both needed; the PWA is already done.
+
+## Validation results
+
+Final gate run on 2026-10-24 against the branch head, plus one harness fix made during the gate (see "Defects found").
+
+### Measured numbers
+
+Seeded fixture daemon (the `TestSeededLocalServerServe` helper, 3,000 sessions). The default view holds 1,000 of them (500 running, 500 waiting_input); the other 2,000 are finished and older than the window.
+
+| Measurement | Result |
+| --- | --- |
+| Connect, legacy client (no `hello`) | one `sessions` frame, 1,189,655 bytes, 1,000 rows, `more` true, `total` 3000 |
+| Connect, window client, total | 1,513,712 bytes: a provisional legacy `sessions` frame of 1,189,656 bytes, then `hello_ack` (272 bytes), then the rows frame |
+| Window rows frame (after `hello_ack`) | 323,784 bytes, 1,000 summary rows, `window_minutes` 5 |
+| Per-change frame, seeded fixture | not measurable: the fixture is read-only and exposes no mutating route |
+| Per-change frame, 4,000-session byte-budget test | one state change: window `session_state` 588 bytes; legacy `session_state` 9,034 bytes; legacy `sessions` frame 44,844 bytes; 20 changes 11,741 bytes in total |
+| Connect frame, 4,000-session byte-budget test | no `hello` 44,844 bytes; window rows frame 20,204 bytes |
+| Idle bytes per minute (window client, one connection, 60 s, no changes) | 0 bytes per minute, 0 frames |
+
+Against the targets: the window rows frame is 323,784 bytes, above the 300 KB target and the 307,200-byte frame budget by about 5%. The total connect cost of a window client on the seeded fixture is about 1.5 MB, because of the provisional legacy frame (see "Open findings").
+
+### Defects found during the gate
+
+1. **Fixed.** The seeded-fixture helper (`internal/server/perf_serve_test.go`) set the hub without calling `wireHubSessionStream()`, so the websocket served no sessions: the first probe reported 0 rows and a total of 0. The helper now calls `wireHubSessionStream()`, which is the same wiring the daemon uses. After the fix the hub serves the default view.
+2. **Open: connect-time frame ordering.** The spec says a window client gets exactly one `sessions` frame on connect. The code sends the bounded legacy frame first, because a client can only say `hello` after the socket opens (documented in `internal/server/ws_session_stream.go`, the connect-ordering comment). On the seeded fixture that frame is 1.19 MB. Options for the operator: hold the connect frame for a short grace period so a `hello` can replace it, or send the connect frame only to clients that have not announced a form.
+3. **Open: window rows frame size.** At 323,784 bytes on 1,000 rows (about 324 bytes per row), the frame is above the 300 KB target. Trimming the summary-row fields or the text cut (`server.session_summary_text_chars`) would bring it under.
+4. **Not run: wire group in the browser.** `bash scripts/e2e-pwa.sh wire` is not a valid argument; the group is `group:wire`, which runs one story. It skipped (exit 2): `countSessions` in `scripts/test-stories/pwa/perf-lib.mjs` reads only the first page of the summary list, which holds 500 rows, so the story reports the daemon has 500 sessions and needs 3,000. This is an existing harness problem in code this branch did not change. It is reported, not fixed, so the browser numbers above are from the Go-side tests and the probe, not from the story.
+5. **Pre-existing, not fixed.** `scripts/check-no-internal-refs.sh` fails on `README.md` line 60, which holds an older release history with internal IDs. `README.md` is not in this branch's diff.
+
+### Commands run
+
+| Command | Result |
+| --- | --- |
+| `go build -o <project temp dir>/datawatch ./cmd/datawatch/` (binary deleted afterwards) | pass |
+| `go vet ./internal/server/` | pass |
+| `go test ./internal/server/ -count=1 -race -run 'WSSession\|WSBroadcastDelta\|WSByteBudget\|GH153\|PerfBudget\|HandleInfo'` | pass, 71 tests |
+| `go test ./internal/server/ ./internal/session/ ./internal/config/ -count=1` (before the helper fix) | pass, 2,346 tests |
+| same full run after the helper fix | pass, 2,346 tests |
+| `go test ./internal/server/ -count=1 -v -run WSByteBudget` | pass; numbers above |
+| `node --check internal/server/web/app.js` | pass |
+| `node --test` on `app-ws-session-window.test.js` (15) and `app-ws-backoff`, `app-ws-state`, `app-ws-watchdog` (6, 5, 6) | pass |
+| `bash scripts/check-no-internal-refs.sh` | fail: `README.md` line 60 (open finding 5) |
+| `bash scripts/check-no-unscoped-tmux.sh` | pass |
+| `sh scripts/check-docs-sync.sh` | pass |
+| `bash scripts/e2e-pwa.sh group:wire` against the seeded daemon | skipped (exit 2), reason in open finding 4 |
+| Seeded daemon, `TestSeededLocalServerServe` | served; stopped by process id after measurement |
