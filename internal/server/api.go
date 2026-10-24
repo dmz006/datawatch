@@ -2211,13 +2211,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	// Send initial session list — unless the configured default is the
 	// delta stream, whose clients fetch the list over REST instead (see
-	// ws_session_stream.go).
+	// ws_session_stream.go). The frame is bounded to the default-view
+	// sessions; a client that then announces the window form gets its rows
+	// frame from handleHello.
 	if s.wsSessionListDefault() != sessionListDelta {
-		sessions := s.manager.ListSessions()
-		raw, _ := json.Marshal(SessionsData{Sessions: sessions})
-		msg := WSMessage{Type: MsgSessions, Data: raw, Timestamp: time.Now()}
-		payload, _ := json.Marshal(msg)
-		c.safeSend(payload)
+		c.safeSend(s.hub.boundedSessionsFrame())
 	}
 
 	go c.writePump()
@@ -6760,7 +6758,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "server.ws_session_list_default":
 			// Only "full" or "delta"; anything else is ignored.
-			if m := normalizeSessionListMode(strings.TrimSpace(strings.ToLower(toString(v)))); m != "" {
+			if m := normalizeSessionListDefault(strings.TrimSpace(strings.ToLower(toString(v)))); m != "" {
 				cfg.Server.WSSessionListDefault = m
 			}
 		case "server.ws_output_scope_default":

@@ -17,6 +17,44 @@
 //     list. A delta client must fetch the initial list itself over REST
 //     (GET /api/sessions?view=summary) right after hello_ack, then apply
 //     the stream on top. Frames received before hello_ack can be ignored.
+//   - "window" — the bounded form (capability ws.session_list_window).
+//     After hello_ack the server sends exactly one "sessions" frame whose
+//     data.sessions are summary rows (the GET /api/sessions?view=summary
+//     row shape, scheduled_count included) for the default-view sessions
+//     only, plus data.version, data.window_minutes (the window below),
+//     data.total (sessions the daemon holds) and data.more (true when the
+//     frame omits some). After that there is no "sessions" frame at all:
+//     every change is one "session_state" {session:<summary row>} for the
+//     changed session. "session_removed" is sent only when a session is
+//     deleted, never because it aged out of the window.
+//
+// Default view and the window: a session is in the default view when it is
+// not finished, or when it is finished (complete, failed or killed, the
+// PWA's DONE_STATES) and was updated within the last
+// server.recent_session_minutes minutes (a value <= 0 means 5; the PWA
+// reads the same setting). Finished sessions older than the window are
+// never sent over the websocket, to any client mode; a client fetches them
+// with GET /api/sessions?view=summary&limit=50, paged by cursor (and
+// history=1 for the archive). The setting is read live (see
+// ws_session_window.go), so PUT /api/config changes the window without a
+// restart.
+//
+// Connect ordering (for client authors): a client can only say hello after
+// the socket is open, so the connect-time frame is always the bounded
+// legacy "sessions" frame described below — a window client receives it
+// first and should treat it as provisional. The client's hello is answered
+// with hello_ack, immediately followed by the one summary-row "sessions"
+// frame; that frame is the window client's initial list and replaces
+// whatever the connect-time frame held. A hello that selects window again
+// is answered the same way (a fresh list). A hello that does not select
+// window sends no rows frame.
+//
+// A client that does not announce window (no hello, or session_list "full")
+// keeps the legacy "sessions" frame and the legacy full session_state, but
+// the frame is bounded: only default-view sessions, long text fields cut by
+// summarizeSession at server.session_summary_text_chars (so
+// truncated_fields is set, as for the summary view), plus data.more,
+// data.total and data.window_minutes.
 //
 // session_view:
 //   - "full"    — session_state carries the full session record.
@@ -59,8 +97,9 @@ import (
 
 // Negotiable hello modes.
 const (
-	sessionListFull  = "full"
-	sessionListDelta = "delta"
+	sessionListFull   = "full"
+	sessionListDelta  = "delta"
+	sessionListWindow = "window"
 
 	sessionViewFull    = "full"
 	sessionViewSummary = "summary"
@@ -96,10 +135,20 @@ type sessionSummaryStateData struct {
 // normalizeSessionListMode returns the mode, or "" if it is not one.
 func normalizeSessionListMode(v string) string {
 	switch v {
-	case sessionListFull, sessionListDelta:
+	case sessionListFull, sessionListDelta, sessionListWindow:
 		return v
 	}
 	return ""
+}
+
+// normalizeSessionListDefault is normalizeSessionListMode for the
+// server.ws_session_list_default setting: a client that never said hello
+// cannot be a window client, so window is not a valid default.
+func normalizeSessionListDefault(v string) string {
+	if v == sessionListWindow {
+		return ""
+	}
+	return normalizeSessionListMode(v)
 }
 
 // normalizeSessionViewMode returns the view, or "" if it is not one.
@@ -121,7 +170,7 @@ func (h *Hub) setSessionStreamConfig(listDefault func() string, textChars func()
 // defaultSessionList is the mode for clients that never chose one.
 func (h *Hub) defaultSessionList() string {
 	if h.sessionListDefaultFn != nil {
-		if v := normalizeSessionListMode(h.sessionListDefaultFn()); v != "" {
+		if v := normalizeSessionListDefault(h.sessionListDefaultFn()); v != "" {
 			return v
 		}
 	}
@@ -274,9 +323,11 @@ func (h *Hub) handleHello(c *client, raw json.RawMessage) {
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &d) // malformed data → no change, still ack
 	}
+	wantWindow := false
 	c.mu.Lock()
 	if v := normalizeSessionListMode(d.SessionList); v != "" {
 		c.sessionList = v
+		wantWindow = v == sessionListWindow
 	}
 	if v := normalizeSessionViewMode(d.SessionView); v != "" {
 		c.sessionView = v
@@ -288,13 +339,16 @@ func (h *Hub) handleHello(c *client, raw json.RawMessage) {
 	list, view := h.sessionModes(c)
 	ackRaw, _ := json.Marshal(HelloAckData{SessionList: list, SessionView: view, Output: h.outputScope(c), Capabilities: wsCapabilities()})
 	c.safeSend(mustMarshal(WSMessage{Type: MsgHelloAck, Data: ackRaw, Timestamp: time.Now()}))
+	if wantWindow {
+		c.safeSend(h.windowSessionsFrame())
+	}
 }
 
 // wsSessionListDefault reads server.ws_session_list_default from the live
 // config; anything unset or invalid means "full".
 func (s *Server) wsSessionListDefault() string {
 	if s.cfg != nil {
-		if v := normalizeSessionListMode(s.cfg.Server.WSSessionListDefault); v != "" {
+		if v := normalizeSessionListDefault(s.cfg.Server.WSSessionListDefault); v != "" {
 			return v
 		}
 	}
@@ -312,6 +366,12 @@ func (s *Server) wsSummaryTextChars() int {
 func (s *Server) wireHubSessionStream() {
 	if s.hub != nil {
 		s.hub.setSessionStreamConfig(s.wsSessionListDefault, s.wsSummaryTextChars)
+		s.hub.setSessionWindowConfig(s.recentSessionWindow, s.sessionSummaryRow, func() []*session.Session {
+			if s.manager == nil {
+				return nil
+			}
+			return s.manager.ListSessions()
+		})
 		s.hub.outputScopeDefaultFn = s.wsOutputScopeDefault
 	}
 }

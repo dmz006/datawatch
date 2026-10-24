@@ -60,6 +60,13 @@ type WSMessage struct {
 type SessionsData struct {
 	Sessions []*session.Session `json:"sessions"`
 	Version  string             `json:"version,omitempty"`
+	// WindowMinutes, Total and More describe the default-view window (see
+	// ws_session_window.go): the window length, how many sessions the daemon
+	// holds, and whether the frame omits some of them. Zero when the frame
+	// is not window-bounded.
+	WindowMinutes int  `json:"window_minutes,omitempty"`
+	Total         int  `json:"total,omitempty"`
+	More          bool `json:"more,omitempty"`
 }
 
 // SessionStateData carries a single updated session for the lighter-weight
@@ -176,6 +183,12 @@ type Hub struct {
 	sessionListDefaultFn func() string
 	summaryTextCharsFn   func() int
 	outputScopeDefaultFn func() string
+
+	// Default-view window hooks (ws_session_window.go); same nil-means-
+	// built-in-defaults rule.
+	recentWindowFn func() time.Duration
+	sessionRowFn   func(*session.Session, int) sessionSummaryRow
+	listSessionsFn func() []*session.Session
 }
 
 var upgrader = websocket.Upgrader{
