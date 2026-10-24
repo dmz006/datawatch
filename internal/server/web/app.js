@@ -12683,37 +12683,186 @@ window.reloadSubsystem = reloadSubsystem;
 state._prdBackends = null;
 state._prdEfforts = ['', 'low', 'medium', 'high', 'max', 'quick', 'normal', 'thorough'];
 
+// The panel pages the summary list (GET /api/autonomous/prds?view=summary&limit=N
+// [&cursor=C]): a row carries counts, not stories. Opening a row fetches the
+// full PRD once (GET /api/autonomous/prds/{id}) and its children once (the
+// children route); both are kept in _prdPanelState.detail and refetched only
+// when the row's revision moves. A refresh refetches the first page plus as
+// many rows as are already loaded (capped), always as a summary.
+const PRD_PANEL_PAGE = 50;
+const PRD_PANEL_RELOAD_MAX = 500;
+const PRD_PANEL_POLL_MS = 30000;
+const _prdPanelState = {
+  open: new Set(),   // ids of rows the operator has open
+  detail: {},        // id → { loading, error, prd, children, forRev, forUpdated, promise }
+  loaded: 0,         // rows held now; sizes the next refresh
+  filterKey: '',     // the server-side filter the held rows were fetched with
+  loadingMore: false, moreError: '',
+};
+function _prdPanelFilters() {
+  return {
+    status: (document.getElementById('prdFilterStatus') || {}).value || '',
+    includeTpl: !!(document.getElementById('prdIncludeTemplates') || {}).checked,
+  };
+}
+function _prdPanelQuery(cursor, limit) {
+  const f = _prdPanelFilters();
+  const q = ['view=summary', 'limit=' + limit];
+  if (cursor) q.push('cursor=' + encodeURIComponent(cursor));
+  if (f.status) q.push('status=' + encodeURIComponent(f.status));
+  return '/api/autonomous/prds?' + q.join('&');
+}
+function _prdPanelFetch(url, o) {
+  const key = _prdPanelFilters().status;
+  if (key !== _prdPanelState.filterKey) { _prdPanelState.filterKey = key; _prdPanelState.loaded = 0; }
+  const limit = Math.min(Math.max(_prdPanelState.loaded, PRD_PANEL_PAGE), PRD_PANEL_RELOAD_MAX);
+  return Promise.all([
+    apiFetch(_prdPanelQuery('', limit), o),
+    apiFetch('/api/llms', o).catch(() => null),
+  ]).then(([data, llms]) => {
+    if (llms) state._prdBackends = (llms.llms || []).filter(l => !l.disabled);
+    const prds = (data && data.prds) || [];
+    _prdPanelState.loaded = prds.length;
+    return { prds, total: (data && data.total) || prds.length, next: (data && data.next_cursor) || '' };
+  });
+}
+function _prdPanelActive() {
+  return !!document.getElementById('prdPanel');
+}
+// The status filter is applied by the server; it is applied again here so
+// rows cached under another filter never show. The server has no templates
+// filter, so the include-templates checkbox filters the loaded pages only.
+function _prdPanelVisible(d) {
+  const f = _prdPanelFilters();
+  return ((d && d.prds) || []).filter(p => (f.includeTpl || !p.is_template) && (!f.status || p.status === f.status));
+}
+function _prdPanelRow(id) {
+  const ctl = window._listLoaders && window._listLoaders.prdpanel;
+  const d = ctl && ctl.state.data;
+  return d ? d.prds.find(p => p.id === id) : null;
+}
+// The summary row, with the full PRD's fields behind it once it is loaded.
+// The row wins where both hold a field, so status and revision stay current.
+function _prdPanelMerged(row) {
+  const e = _prdPanelState.detail[row.id];
+  return (e && e.prd) ? Object.assign({}, e.prd, row) : row;
+}
+function _prdPanelBodyHtml(prd, storiesHtml) {
+  const id = prd.id;
+  const e = _prdPanelState.detail[id];
+  const failed = (msg) => `<div class="list-state-failed" role="alert"><span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(msg)}</span>` +
+    `<button type="button" class="btn-secondary list-state-retry" onclick="${escHtml('prdPanelLoadDetail(' + JSON.stringify(id) + ',true)')}">${escHtml(t('retry'))}</button></div>`;
+  if (e && e.prd) {
+    const kids = e.children ? `<details style="margin-top:6px;" open><summary style="cursor:pointer;font-size:11px;color:var(--accent2);">Children</summary><div id="prd-children-${escHtml(id)}" style="font-size:10px;color:var(--text2);padding:2px 0;">${e.children}</div></details>` : `<div id="prd-children-${escHtml(id)}"></div>`;
+    return (e.error ? failed(e.error) : '') + storiesHtml() + kids;
+  }
+  if (e && e.error) return failed(e.error);
+  if (e && e.loading) return `<div class="list-state-skeleton" role="status"><span class="list-state-loading-label">${escHtml(t('loading'))}</span></div>`;
+  return `<span style="color:var(--text2);font-size:12px;">${escHtml(t('automata_open_to_load') || 'Open to load stories and tasks')}</span>`;
+}
+function _prdPanelRepaint() {
+  const ctl = window._listLoaders && window._listLoaders.prdpanel;
+  if (ctl) ctl.paint();
+}
+// Fetch the full PRD for one row and then its children, each once per
+// revision of the row. force re-runs both.
+function _prdPanelLoadDetail(id, force) {
+  const st = _prdPanelState;
+  const row = _prdPanelRow(id);
+  const cur = st.detail[id];
+  if (cur && cur.loading) return cur.promise;
+  const rev = row ? row.rev : undefined;
+  const upd = row ? row.updated_at : undefined;
+  if (!force && cur && (cur.prd || cur.error) && cur.forRev === rev && cur.forUpdated === upd) return Promise.resolve(cur.prd);
+  const e = { loading: true, error: '', prd: cur && cur.prd, children: cur && cur.children, forRev: rev, forUpdated: upd };
+  st.detail[id] = e;
+  _prdPanelRepaint();
+  e.promise = apiFetch('/api/autonomous/prds/' + encodeURIComponent(id)).then(prd => {
+    e.prd = prd; e.children = '';
+  }).catch(err => {
+    e.error = (err && err.message) || String(err);
+  }).then(() => {
+    e.loading = false;
+    _prdPanelRepaint();
+    if (e.error || !st.open.has(id) || typeof window.loadPRDChildren !== 'function') return e.prd;
+    return Promise.resolve(window.loadPRDChildren(id)).then(html => { e.children = html || ''; return e.prd; });
+  });
+  return e.promise;
+}
+window.prdPanelLoadDetail = _prdPanelLoadDetail;
+window.prdPanelToggle = function(id, det) {
+  const st = _prdPanelState;
+  if (det && det.open) {
+    st.open.add(id);
+    _prdPanelLoadDetail(id);
+  } else {
+    st.open.delete(id);
+  }
+};
+// Edit, LLM and Permission prefill from fields a summary row does not carry.
+window.prdPanelOpenFull = function(id, which) {
+  const row = _prdPanelRow(id);
+  const e = _prdPanelState.detail[id];
+  const have = (e && e.prd) ? Promise.resolve(e.prd) : apiFetch('/api/autonomous/prds/' + encodeURIComponent(id));
+  have.then(prd => {
+    if (!(e && e.prd)) _prdPanelState.detail[id] = { prd, children: '', forRev: row && row.rev, forUpdated: row && row.updated_at };
+    if (which === 'llm') openPRDSetLLMModal(id, _prdLLMCurrent(prd));
+    else if (which === 'permission') openPRDSetPermissionModeModal(id, prd.permission_mode || '');
+    else openPRDEditModal(id, prd.title || '', prd.spec || '');
+  }).catch(err => showToast(String((err && err.message) || err), 'error', 4000));
+};
+function _prdPanelLoadMoreHtml(d) {
+  const st = _prdPanelState;
+  if (!d.next) return '';
+  const shown = d.prds.length;
+  const label = (d.total > shown) ? `${t('load_more') || 'Load more'} (${shown}/${d.total})` : (t('load_more') || 'Load more');
+  return `<div class="list-load-more" style="text-align:center;padding:8px;"><button type="button" class="btn-secondary" id="prdPanelLoadMore" ${st.loadingMore ? 'disabled' : ''} onclick="prdPanelLoadMore()">${escHtml(st.loadingMore ? t('loading') : label)}</button>` +
+    (st.moreError ? ` <span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(st.moreError)}</span>` : '') + '</div>';
+}
+function _prdPanelRender(d) {
+  const rows = _prdPanelVisible(d);
+  const more = _prdPanelLoadMoreHtml(d);
+  if (rows.length === 0) return `<em style="color:var(--text2);">${t('prd_list_empty')||'No Automata match.'}</em>` + more;
+  return rows.map(p => renderPRDRow(_prdPanelMerged(p), { panel: true })).join('') + more;
+}
+// Rows that are open need their detail; a moved revision refetches it.
+function _prdPanelAfterPaint(el, keep, d) {
+  for (const id of _prdPanelState.open) {
+    if (_prdPanelRow(id)) _prdPanelLoadDetail(id);
+  }
+}
+function _prdPanelLoader() {
+  const cur = window._listLoaders && window._listLoaders.prdpanel;
+  if (cur) return cur;
+  return listLoader({
+    key: 'prdpanel', el: 'prdPanel', pollMs: PRD_PANEL_POLL_MS,
+    fetch: _prdPanelFetch,
+    active: _prdPanelActive,
+    render: _prdPanelRender,
+    afterPaint: _prdPanelAfterPaint,
+  });
+}
+window.prdPanelLoadMore = function() {
+  const st = _prdPanelState;
+  const ctl = window._listLoaders && window._listLoaders.prdpanel;
+  const d = ctl && ctl.state.data;
+  if (!d || !d.next || st.loadingMore) return;
+  st.loadingMore = true; st.moreError = '';
+  ctl.paint();
+  apiFetch(_prdPanelQuery(d.next, PRD_PANEL_PAGE)).then(data => {
+    const seen = new Set(d.prds.map(p => p.id));
+    ((data && data.prds) || []).forEach(p => { if (!seen.has(p.id)) d.prds.push(p); });
+    d.next = (data && data.next_cursor) || '';
+    d.total = (data && data.total) || d.total;
+    st.loaded = d.prds.length;
+  }).catch(err => {
+    st.moreError = (err && err.message) || String(err);
+  }).then(() => { st.loadingMore = false; ctl.paint(); });
+};
+
 function loadPRDPanel() {
-  const panel = document.getElementById('prdPanel');
-  if (!panel) return;
-  Promise.all([
-    apiFetch('/api/autonomous/prds?full=1').catch(() => ({ prds: [] })),
-    fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-  ]).then(([data, backendsResp]) => {
-    state._prdBackends = (backendsResp && backendsResp.llms || []).filter(l => !l.disabled);
-    const allPrds = (data && data.prds) || [];
-    // v5.26.12 — operator-reported: children should load with
-    // everything else, not lazy. Build a parent_id → [children] index
-    // from the flat list so each row can render its children inline.
-    // This is O(N) and avoids the N+1 GET /children fan-out the
-    // lazy-load path used.
-    const childIdx = {};
-    for (const p of allPrds) {
-      const pid = p.parent_prd_id || '';
-      if (!pid) continue;
-      (childIdx[pid] = childIdx[pid] || []).push(p);
-    }
-    state._prdChildIndex = childIdx;
-    const filterStatus = (document.getElementById('prdFilterStatus') || {}).value || '';
-    const includeTpl = (document.getElementById('prdIncludeTemplates') || {}).checked;
-    let prds = allPrds.filter(p => includeTpl || !p.is_template);
-    if (filterStatus) prds = prds.filter(p => p.status === filterStatus);
-    if (prds.length === 0) {
-      panel.innerHTML = `<em style="color:var(--text2);">${t('prd_list_empty')||'No Automata match.'}</em>`;
-      return;
-    }
-    panel.innerHTML = prds.map(renderPRDRow).join('');
-  }).catch(err => { panel.innerHTML = '<span style="color:var(--error);">load failed: ' + escHtml(String(err)) + '</span>'; });
+  if (!document.getElementById('prdPanel')) return Promise.resolve();
+  return _prdPanelLoader().load();
 }
 window.loadPRDPanel = loadPRDPanel;
 
@@ -12895,7 +13044,8 @@ window.prdrPlanReviewReRun = function(id, btn) {
   });
 };
 
-function renderPRDRow(prd) {
+function renderPRDRow(prd, opts) {
+  const panel = !!(opts && opts.panel);
   const id = prd.id || '';
   const stories = prd.stories || [];
   // Phase 4 follow-up (v5.26.67) — file-conflict detection. Build a
@@ -12917,6 +13067,11 @@ function renderPRDRow(prd) {
     }
   }
   const taskCount = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
+  // A summary row carries counts only; use them when present so a collapsed
+  // row needs no stories array.
+  const nStories = typeof prd.story_count === 'number' ? prd.story_count : stories.length;
+  const nTasks = typeof prd.task_count === 'number' ? prd.task_count : taskCount;
+  const nDecisions = typeof prd.decision_count === 'number' ? prd.decision_count : (prd.decisions ? prd.decisions.length : 0);
   const tplBadge = prd.is_template ? '<span style="background:#7c3aed;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-left:4px;">template</span>' : '';
   const tplOf = prd.template_of ? `<span style="font-size:10px;color:var(--text2);margin-left:4px;">from ${escHtml(prd.template_of)}</span>` : '';
   const llmBadge = (prd.backend || prd.effort || prd.model)
@@ -12949,23 +13104,13 @@ function renderPRDRow(prd) {
   const serverBadge = (prd.server && prd.server !== 'local')
     ? `<span class="server-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);font-weight:600;margin-left:4px;" title="Server: ${escHtml(prd.server)}">${escHtml(prd.server)}</span>`
     : '';
-  return `<div class="prd-row prd-card ${statusClass}">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}
-        <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
-        <div style="font-size:10px;color:var(--text2);">${stories.length} stories &middot; ${taskCount} tasks &middot; ${prd.decisions ? prd.decisions.length : 0} decisions</div>
-        ${renderPRDDecomposeFailure(prd)}
-        ${renderPRDPlanReview(prd)}
-      </div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">${dashExpandBtn}${actions}</div>
-    </div>
-    <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'}</summary>
-      <div style="margin-top:6px;">${stories.map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
-      ${prd.decisions && prd.decisions.length ? '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Decisions log (' + prd.decisions.length + ')</summary>' + prd.decisions.map(d => '<div style="font-size:10px;color:var(--text2);padding:2px 0;border-top:1px solid var(--border);"><code>' + escHtml(d.kind) + '</code> ' + escHtml(d.actor || '') + ' ' + escHtml((d.note || '')) + '</div>').join('') + '</details>' : ''}
+  const storiesHtml = () => `<div style="margin-top:6px;">${stories.map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
+      ${prd.decisions && prd.decisions.length ? '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Decisions log (' + prd.decisions.length + ')</summary>' + prd.decisions.map(d => '<div style="font-size:10px;color:var(--text2);padding:2px 0;border-top:1px solid var(--border);"><code>' + escHtml(d.kind) + '</code> ' + escHtml(d.actor || '') + ' ' + escHtml((d.note || '')) + '</div>').join('') + '</details>' : ''}`;
+  const legacyBody = () => storiesHtml() + `
       ${(() => {
-        // v5.26.12 — children load with the rest of the panel from the
-        // flat-list parent index built in loadPRDPanel. No lazy fetch.
+        // Callers that hold the whole forest fill state._prdChildIndex
+        // (parent_prd_id → children of the loaded rows). The paged panel does
+        // not; it fetches the children route when a row is opened.
         const kids = (state._prdChildIndex || {})[id] || [];
         if (kids.length === 0) return '';
         const rows = kids.map(c => {
@@ -12984,7 +13129,20 @@ function renderPRDRow(prd) {
           return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this automaton's row">${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
         }).join('');
         return `<details style="margin-top:6px;" open><summary style="cursor:pointer;font-size:11px;color:var(--accent2);">Children (${kids.length})</summary><div style="font-size:10px;color:var(--text2);padding:2px 0;">${rows}</div></details>`;
-      })()}
+      })()}`;
+  return `<div class="prd-row prd-card ${statusClass}">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:0;">
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}
+        <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
+        <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
+        ${renderPRDDecomposeFailure(prd)}
+        ${renderPRDPlanReview(prd)}
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">${dashExpandBtn}${actions}</div>
+    </div>
+    <details style="margin-top:6px;"${panel ? ` data-prd-id="${escHtml(id)}" ${_prdPanelState.open.has(id) ? 'open' : ''} ontoggle="${escHtml('prdPanelToggle(' + JSON.stringify(id) + ',this)')}"` : ''}><summary style="cursor:pointer;font-size:11px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'}</summary>
+      ${panel ? _prdPanelBodyHtml(prd, storiesHtml) : legacyBody()}
     </details>
   </div>`;
 }
@@ -13001,11 +13159,13 @@ window.loadPRDChildren = function(prdID) {
   const target = document.getElementById('prd-children-' + prdID);
   if (!target) return;
   target.innerHTML = loadingEyeBlock();
-  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/children').then(data => {
+  // Resolves to the markup it painted ('' when the fetch failed), so a caller
+  // can keep it across repaints.
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/children').then(data => {
     const kids = (data && data.children) || [];
     if (kids.length === 0) {
       target.innerHTML = '<em style="opacity:0.7;">no children — none of this automaton\'s tasks spawned a child automaton yet</em>';
-      return;
+      return target.innerHTML;
     }
     target.innerHTML = kids.map(c => {
       const stories = (c.stories || []);
@@ -13022,8 +13182,10 @@ window.loadPRDChildren = function(prdID) {
       const idClick = `scrollToPRD(${JSON.stringify(c.id)})`;
       return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this automaton's row">${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
     }).join('');
+    return target.innerHTML;
   }).catch(err => {
     target.innerHTML = '<span style="color:var(--error,#ef4444);">load failed: ' + escHtml(String((err && err.message) || err)) + '</span>';
+    return '';
   });
 };
 
@@ -13766,6 +13928,14 @@ window.toggleVerdictDrilldown = function(groupId, idx) {
 // └─────────────────┴──────────────────────────────────────────────────────┘
 // LLM absent on running+completed (can't change LLM mid-run or post-run).
 // Edit absent on running (spec change during execution is unsafe).
+// The LLM-editor prefill for one PRD.
+function _prdLLMCurrent(prd) {
+  return { backend: prd.backend || '', effort: String(prd.effort || ''), model: prd.model || '', decomposition_profile: prd.decomposition_profile || '', decomposition_model: prd.decomposition_model || '', verification_backend: prd.verification_backend || '', verification_model: prd.verification_model || '', verification_effort: String(prd.verification_effort || '') };
+}
+// A row of GET /api/autonomous/prds?view=summary: counts, no stories array.
+function _prdIsSummaryOnly(prd) {
+  return !!prd && typeof prd.story_count === 'number' && !Array.isArray(prd.stories);
+}
 function renderPRDActions(prd) {
   const id = prd.id || '';
   const idJ = JSON.stringify(id);
@@ -13784,11 +13954,13 @@ function renderPRDActions(prd) {
   const btns = [];
   if (status === 'draft' || status === 'revisions_asked') btns.push(a('Plan', `prdAction(${idJ},'decompose','POST')`));
   // BL203 — Set LLM button is available pre-Run so the operator can pin a backend before approval.
+  // A summary row from the paged list lacks the fields these three editors
+  // prefill from, so their buttons fetch the full PRD first (prdPanelOpenFull).
+  const summaryOnly = _prdIsSummaryOnly(prd);
   if (status !== 'running' && status !== 'completed') {
-    const cur = JSON.stringify({ backend: prd.backend || '', effort: String(prd.effort || ''), model: prd.model || '', decomposition_profile: prd.decomposition_profile || '', decomposition_model: prd.decomposition_model || '', verification_backend: prd.verification_backend || '', verification_model: prd.verification_model || '', verification_effort: String(prd.verification_effort || '') });
-    btns.push(a('LLM', `openPRDSetLLMModal(${idJ},${cur})`, ''));
+    btns.push(a('LLM', summaryOnly ? `prdPanelOpenFull(${idJ},'llm')` : `openPRDSetLLMModal(${idJ},${JSON.stringify(_prdLLMCurrent(prd))})`, ''));
     // GH#172 D75 — edit PRD permission_mode.
-    btns.push(a(t('prd_action_permission')||'Permission', `openPRDSetPermissionModeModal(${idJ},${JSON.stringify(prd.permission_mode||'')})`, ''));
+    btns.push(a(t('prd_action_permission')||'Permission', summaryOnly ? `prdPanelOpenFull(${idJ},'permission')` : `openPRDSetPermissionModeModal(${idJ},${JSON.stringify(prd.permission_mode||'')})`, ''));
   }
   if (status === 'needs_review' || status === 'revisions_asked') {
     btns.push(a('Approve', `prdActionPrompt(${idJ},'approve','note','Approval note (optional)')`, '#10b981'));
@@ -13801,12 +13973,12 @@ function renderPRDActions(prd) {
   // status; Delete (hard remove + descendants) on every status. Both
   // confirm before firing because they're destructive.
   if (status !== 'running') {
-    btns.push(a('Edit', `openPRDEditModal(${idJ},${JSON.stringify(prd.title || '')},${JSON.stringify(prd.spec || '')})`, ''));
+    btns.push(a('Edit', summaryOnly ? `prdPanelOpenFull(${idJ},'edit')` : `openPRDEditModal(${idJ},${JSON.stringify(prd.title || '')},${JSON.stringify(prd.spec || '')})`, ''));
   }
   // GH#172 D76 — "repair depends_on" button (Android already has this).
   // One-time repair for stories whose depends_on predates the v8.36.5
   // title->ID fix; harmless to re-run on an already-correct PRD.
-  if (status !== 'running' && (prd.stories || []).length > 0) {
+  if (status !== 'running' && (typeof prd.story_count === 'number' ? prd.story_count : (prd.stories || []).length) > 0) {
     btns.push(a(t('prd_action_repair_deps') || 'Repair deps', `prdAction(${idJ},'repair_depends_on','POST',{actor:'operator'})`, ''));
   }
   btns.push(a('Delete', `confirmPRDDelete(${idJ})`, '#7c2d12'));
