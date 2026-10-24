@@ -11,6 +11,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/inference"
 )
@@ -87,32 +88,45 @@ func (s *HTTPServer) InferenceRegistry() *inference.Registry {
 	return s.api.inferenceReg
 }
 
-// NodeGPUStats returns the busiest GPU's utilisation (percent) reported for a
-// compute node, and whether any GPU data was available.
-func (s *HTTPServer) NodeGPUStats(name string) (maxUtilPct float64, ok bool) {
+// NodeObservation returns the observer figures a compute node's slot count
+// reads, from the node detail the observer serves: each GPU's memory, the VRAM
+// of every model the node has loaded (the "ollama_model:" envelopes), and the
+// busiest GPU's utilisation. ok is false when the detail could not be read; a
+// node whose detail has no GPUs returns ok with an empty GPU list.
+func (s *HTTPServer) NodeObservation(name string) (obs compute.NodeObservation, ok bool) {
 	if s.api == nil || s.api.computeReg == nil {
-		return 0, false
+		return obs, false
 	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/compute/nodes/"+name+"/detail", nil)
 	s.api.handleComputeNodeDetail(rec, req, name)
 	if rec.Code != http.StatusOK {
-		return 0, false
+		return obs, false
 	}
 	var d struct {
 		GPU []struct {
-			UtilPct float64 `json:"util_pct"`
+			UtilPct       float64 `json:"util_pct"`
+			MemUsedBytes  uint64  `json:"mem_used_bytes"`
+			MemTotalBytes uint64  `json:"mem_total_bytes"`
 		} `json:"gpu"`
+		Envelopes []struct {
+			ID          string `json:"id"`
+			GPUMemBytes uint64 `json:"gpu_mem_bytes"`
+		} `json:"envelopes"`
 	}
-	if json.Unmarshal(rec.Body.Bytes(), &d) != nil || len(d.GPU) == 0 {
-		return 0, false
+	if json.Unmarshal(rec.Body.Bytes(), &d) != nil {
+		return obs, false
 	}
 	for _, g := range d.GPU {
-		if g.UtilPct > maxUtilPct {
-			maxUtilPct = g.UtilPct
+		obs.GPUs = append(obs.GPUs, compute.GPUMemory{TotalBytes: g.MemTotalBytes, UsedBytes: g.MemUsedBytes})
+		obs.MaxUtilPct = max(obs.MaxUtilPct, g.UtilPct)
+	}
+	for _, e := range d.Envelopes {
+		if strings.HasPrefix(e.ID, "ollama_model:") && e.GPUMemBytes > 0 {
+			obs.LoadedModelBytes = append(obs.LoadedModelBytes, e.GPUMemBytes)
 		}
 	}
-	return maxUtilPct, true
+	return obs, true
 }
 
 // resolvePoolsForBackend mirrors capacity_wiring.go's keys() closure (which

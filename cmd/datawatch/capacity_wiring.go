@@ -89,16 +89,6 @@ func engineEntries(reg *inference.Registry) map[string]inference.LLM {
 	return entries
 }
 
-// engineNodes maps each inference LLM kind to every compute node of the LLM
-// entry engineEntries picks for it, in the entry's list order.
-func engineNodes(reg *inference.Registry) map[string][]string {
-	nodes := map[string][]string{}
-	for kind, l := range engineEntries(reg) {
-		nodes[kind] = append([]string(nil), l.ComputeNodes...)
-	}
-	return nodes
-}
-
 // defaultNodePriority is the scheduling priority of a compute node whose
 // record leaves it unset (the compute registry applies the same default).
 const defaultNodePriority = 50
@@ -812,35 +802,38 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		} else {
 			led.SetLimit("host", 0)
 		}
-		// A compute node that hosts local engines takes its pool limit from
-		// autonomous.max_engines_per_node. The node's own
-		// max_concurrent_sessions stays a ceiling when it is set and smaller.
+		// Each node's pool limit is its slot count (compute.NodeSlots): the
+		// operator's session_slots, else one slot per GPU limited by free GPU
+		// memory, else autonomous.max_engines_per_node. The node's
+		// max_concurrent_sessions stays a ceiling. The observer figures are read
+		// in parallel so one slow monitoring endpoint does not hold up the rest.
 		engines := cfg.Autonomous.MaxEnginesPerNode
 		if engines < 1 {
 			engines = 1
 		}
-		hosting := map[string]bool{}
-		for _, entryNodes := range engineNodes(httpServer.InferenceRegistry()) {
-			for _, node := range entryNodes {
-				hosting[node] = true
-			}
-		}
 		if reg := httpServer.ComputeRegistry(); reg != nil {
-			for _, n := range reg.List() {
-				limit := n.MaxConcurrentSessions
-				if hosting[n.Name] {
-					limit = engines
-					if n.MaxConcurrentSessions > 0 && n.MaxConcurrentSessions < limit {
-						limit = n.MaxConcurrentSessions
-					}
-				}
-				led.SetLimit("node:"+n.Name, limit)
-				if cfg.Autonomous.CapacityGPUUtilPct > 0 {
-					if u, ok := httpServer.NodeGPUStats(n.Name); ok {
-						gpuMu.Lock()
-						gpuUtil[n.Name] = u
-						gpuMu.Unlock()
-					}
+			nodes := reg.List()
+			held := map[string]int{}
+			for _, p := range led.Snapshot().Pools {
+				held[p.Name] = p.Held
+			}
+			observed := make([]compute.NodeObservation, len(nodes))
+			var wg sync.WaitGroup
+			for i, n := range nodes {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					observed[i], _ = httpServer.NodeObservation(n.Name)
+				}()
+			}
+			wg.Wait()
+			for i, n := range nodes {
+				obs := observed[i]
+				led.SetLimit("node:"+n.Name, compute.NodeSlots(n.SessionSlots, n.MaxConcurrentSessions, engines, held["node:"+n.Name], obs))
+				if cfg.Autonomous.CapacityGPUUtilPct > 0 && len(obs.GPUs) > 0 {
+					gpuMu.Lock()
+					gpuUtil[n.Name] = obs.MaxUtilPct
+					gpuMu.Unlock()
 				}
 			}
 		}

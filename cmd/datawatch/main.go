@@ -3401,6 +3401,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					},
 					NodePinnedModel: c.NodePinnedModel,
 					AllowModelSwap:  c.AllowModelSwap,
+					SessionSlots:    c.SessionSlots,
 				}
 				seed = append(seed, n)
 			}
