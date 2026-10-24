@@ -9,6 +9,24 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Failure escalation — REST, config and views (Unreleased)
+
+Failure escalation has a REST, MCP, CLI and comm surface for the Automaton and task overrides, the daemon default in `GET`/`PUT /api/config`, and the held-task fields in the Automaton summary, task listing and Automation status.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `GET /api/config` `autonomous.failure_escalation` (defaults enabled, 3, empty steps; steps is never null) | **Yes** (`internal/server/failure_escalation_config_surfaces_test.go`) | No | `go test` (real manager, temp dir) | **LIVE pending:** curl `GET /api/config` on a running daemon |
+| `PUT /api/config` keys `autonomous.failure_escalation.enabled, max_failures, steps` (compact text and JSON array forms; round trip to config.yaml and the live manager; bad value is a 400 naming the key and changes nothing) | **Yes** (`internal/server/failure_escalation_config_surfaces_test.go`) | No | `go test` (real manager, temp dir) | **LIVE pending:** PUT then GET, then a bad value to confirm the 400 |
+| `/api/autonomous/config` config-set validation of `failure_escalation` | **Yes** (`internal/autonomous/failure_escalation_views_test.go`) | No | `go test` | Refused writes leave the live config unchanged |
+| REST `POST /api/autonomous/prds/{id}/set_failure_escalation` (Automaton and task override, clear with `policy: null`, 400, 404, federation capability refusal, audit entry) | **Yes** (`internal/server/failure_escalation_rest_test.go`) | No | `go test` (real manager seeded on disk) | **LIVE pending:** set and clear an override on a held Automaton |
+| REST `POST /api/autonomous/prds/{id}/resolve_task_review` (retry with note, cancel, 409 when not held, 400, 404, capability refusal, audit entry) | **Yes** (`internal/server/failure_escalation_rest_test.go`) | No | `go test` (real manager seeded on disk) | **LIVE pending:** retry and cancel a task held by a real failing worker |
+| MCP `autonomous_prd_set_failure_escalation` / `autonomous_prd_resolve_task_review` (proxy, body shape, refusals, 409 pass-through) | **Yes** (`internal/mcp/failure_escalation_tools_test.go`) | No | `go test` (loopback server) | **LIVE pending:** MCP-client call from a host session |
+| CLI `datawatch autonomous failure-escalation set, clear, global` and `resolve-review` (flag parsing, refusals before any request) | **Yes** (`cmd/datawatch/failure_escalation_cli_test.go`) | No | `go test` | **LIVE pending:** run each subcommand against a daemon |
+| Comm verbs `autonomous set-failure-escalation` and `autonomous review-task` (word parsing, multi-word note, refusals, loopback request) | **Yes** (`internal/router/failure_escalation_comm_test.go`) | No | `go test` (loopback server) | **LIVE pending:** send each verb from a chat channel |
+| Held-task fields: Automaton summary `review_needed` (omitted when nothing is held), task listing `escalation_failures` / `attempt_count` / `review_summary`, Automation status `review_needed_count` / `review_needed_task_ids` | **Yes** (`internal/autonomous/failure_escalation_views_test.go`) | No | `go test` | **LIVE pending:** hold a task on a real run and read the three views |
+
+---
+
 ## LLM workload roles and session priority
 
 Roles tag an LLM registry entry with the workloads it serves; priority orders a session in the capacity wait queue.

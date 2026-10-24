@@ -13,6 +13,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A ladder step's backend and model are checked before the Automaton starts, so a step that cannot run refuses the start and names the task and the step.
 - A task that uses up its failed attempts under an enabled failure escalation policy is held for operator review instead of marked failed. It shows as `review_needed` with a report of every attempt, and one error alert is raised. Independent tasks keep running, dependent tasks wait, and the Automaton is blocked until the operator acts.
 - With failure escalation disabled, an exhausted task is marked failed as before.
+- Failure escalation can be set on an Automaton or on one task: `POST /api/autonomous/prds/{id}/set_failure_escalation` (a null policy clears it), MCP `autonomous_prd_set_failure_escalation`, CLI `datawatch autonomous failure-escalation set|clear`, and the comm verb `set-failure-escalation`. Each field resolves task, then Automaton, then the daemon default.
+- A task held for review is resolved with `POST /api/autonomous/prds/{id}/resolve_task_review` (retry with an optional spec, worker and narrowed file list, or cancel), MCP `autonomous_prd_resolve_task_review`, CLI `datawatch autonomous resolve-review`, and the comm verb `review-task`. A task that is not held answers 409.
+- The daemon-wide failure escalation default is in `GET /api/config` as `autonomous.failure_escalation` and is set with `PUT /api/config` keys `autonomous.failure_escalation.enabled`, `.max_failures` and `.steps` (a JSON array or the text `backend:model[@attempts],...`). A bad value refuses the whole write with a 400 that names the key, and an accepted value takes effect without a restart.
+- Held tasks are listed with their failure count, last worker and hold time in the Automaton summary, the task listing (with the attempt count and report text) and the Automation status (`review_needed_count` and `review_needed_task_ids` for the current member Automaton).
 
 ## v9.5.125 — Restart keeps a finished worker and re-verifies only
 

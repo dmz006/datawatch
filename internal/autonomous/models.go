@@ -1322,6 +1322,12 @@ type AutomationStatusSummary struct {
 	// the Automation waits on a join.
 	ActiveCursors []ActiveCursorSummary `json:"active_cursors"`
 	JoinWait      *JoinWaitSummary      `json:"join_wait,omitempty"`
+
+	// ReviewNeededCount and ReviewNeededTaskIDs report the tasks of the current
+	// member Automaton held for operator review. Both are omitted when none is
+	// held.
+	ReviewNeededCount   int      `json:"review_needed_count,omitempty"`
+	ReviewNeededTaskIDs []string `json:"review_needed_task_ids,omitempty"`
 }
 
 // ActiveCursorSummary is one live cursor of an Automation in LoopStatus. PRDID

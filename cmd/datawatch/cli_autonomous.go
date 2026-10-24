@@ -43,6 +43,8 @@ Subcommands:
   prd-decompose <id>              Run the LLM planning phase for a PRD (alias: prd-plan)
   prd-run <id>                    Kick the executor for a PRD
   prd-cancel <id>                 Cancel + archive a PRD
+  failure-escalation set|clear|global  Set or clear the failure escalation policy (per Automaton, per task, or the daemon default)
+  resolve-review <id> --task T --action retry|cancel  Retry or cancel a task held for operator review
   prd-delete <id>                 Hard-delete a PRD + descendants
   prd-edit <id>                   Edit PRD title + spec
   prd-approve <id>                Approve planned PRD
@@ -113,6 +115,8 @@ Subcommands:
 		newAutonomousPRDSetLLMCmd(),
 		newAutonomousPRDSetStoryLLMCmd(),
 		newAutonomousPRDSetTaskLLMCmd(),
+		newAutonomousFailureEscalationCmd(),
+		newAutonomousResolveReviewCmd(),
 		newAutonomousPRDSetTaskProjectDirCmd(),
 		newAutonomousPRDSetTaskVerificationLLMCmd(),
 		newAutonomousPRDSetStoryVerificationLLMCmd(),

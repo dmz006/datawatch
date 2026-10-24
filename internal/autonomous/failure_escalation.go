@@ -262,6 +262,13 @@ func validateFailureEscalationPolicy(p *FailureEscalationPolicy) error {
 	return nil
 }
 
+// ValidateFailureEscalationPolicy is the exported form of
+// validateFailureEscalationPolicy, for the config write paths in the server
+// package. A nil policy is valid.
+func ValidateFailureEscalationPolicy(p *FailureEscalationPolicy) error {
+	return validateFailureEscalationPolicy(p)
+}
+
 // ParseFailureEscalationSteps parses the compact text form of a step ladder:
 //
 //	backend:model[@attempts],backend:model[@attempts],...

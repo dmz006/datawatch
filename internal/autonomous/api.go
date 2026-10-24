@@ -364,6 +364,17 @@ func (a *API) SetConfig(v any) error {
 			}
 		}
 	}
+	// failure_escalation is checked the same way as the per-Automaton and
+	// per-task overrides: an out-of-range value or a malformed step is refused
+	// before anything is merged. An omitted key leaves the current policy.
+	var escProbe struct {
+		FailureEscalation *FailureEscalationPolicy `json:"failure_escalation"`
+	}
+	if err := json.Unmarshal(raw, &escProbe); err == nil && escProbe.FailureEscalation != nil {
+		if verr := validateFailureEscalationPolicy(escProbe.FailureEscalation); verr != nil {
+			return verr
+		}
+	}
 	cfg := a.M.Config()
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("config: %w", err)
