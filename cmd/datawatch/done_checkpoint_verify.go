@@ -8,6 +8,7 @@ import (
 	"time"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // doneCheckpointFile is the worker's scratch checkpoint, read from the
@@ -51,7 +52,7 @@ func doneCheckpointVerify(killer attemptKiller, sessionID, checkpointText, scrip
 		return autonomouspkg.VerificationResult{}, out, false
 	}
 	if killer != nil {
-		_ = killer.Kill(sessionID)
+		_ = killer.EndSession(sessionID, session.EndReason{Caller: endCallerDoneCheckpoint, Reason: doneCheckpointEndReason()})
 	}
 	if commit != nil {
 		if cerr := commit(); cerr != nil {

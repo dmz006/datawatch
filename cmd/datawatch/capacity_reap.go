@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -68,18 +69,36 @@ func (r *verifierRegistry) sessionOf(holder string) string {
 // (worker) session or lease age says. Any other lease is live while its bound
 // session is running, or for spawnGrace when it has none.
 func leaseHolderLive(ls capacity.Lease, reg *verifierRegistry, sessionAlive func(id string) bool, now time.Time) bool {
+	live, _ := leaseLiveVerdict(ls, reg, sessionAlive, now)
+	return live
+}
+
+// leaseLiveVerdict is leaseHolderLive with the reason. When the lease is not
+// live, why names the evidence the reaper judged it by: the verifier session or
+// bound session that is not running, or the spawn grace that has run out.
+func leaseLiveVerdict(ls capacity.Lease, reg *verifierRegistry, sessionAlive func(id string) bool, now time.Time) (live bool, why string) {
 	if strings.HasPrefix(ls.Holder, autonomous.VerifyHolder("")) && reg != nil {
 		if sid := reg.sessionOf(ls.Holder); sid != "" {
-			return sessionAlive(sid)
+			if sessionAlive(sid) {
+				return true, ""
+			}
+			return false, fmt.Sprintf("verifier session %s is not running", sid)
 		}
 		if reg.isActive(ls.Holder) {
-			return true
+			return true, ""
 		}
 	}
 	if ls.SessionID == "" {
-		return now.Sub(ls.Acquired) < spawnGrace
+		age := now.Sub(ls.Acquired)
+		if age < spawnGrace {
+			return true, ""
+		}
+		return false, fmt.Sprintf("no bound session and acquired %s ago, past the %s spawn grace", endSecs(age), endSecs(spawnGrace))
 	}
-	return sessionAlive(ls.SessionID)
+	if sessionAlive(ls.SessionID) {
+		return true, ""
+	}
+	return false, fmt.Sprintf("bound session %s is not running", ls.SessionID)
 }
 
 // sessionRunning reports whether id names a session that has not finished.

@@ -54,9 +54,10 @@ func liveSessionsOfTask(prd *PRD, t *Task, sessions []SessionInfo, keep string) 
 
 // endLiveSessionsOfTask ends every live session of task t through the session
 // killer, then waits (bounded) for each to leave the live state. It returns the
-// ids it ended. keep is a session id that must never be ended. A no-op without
-// both a lister and a killer wired.
-func (m *Manager) endLiveSessionsOfTask(prd *PRD, t *Task, keep string) []string {
+// ids it ended. keep is a session id that must never be ended. caller and why
+// are passed to the killer for each session. A no-op without both a lister and
+// a killer wired.
+func (m *Manager) endLiveSessionsOfTask(prd *PRD, t *Task, keep, caller, why string) []string {
 	m.mu.Lock()
 	listFn, killFn := m.sessionListerFn, m.sessionKillerFn
 	m.mu.Unlock()
@@ -65,7 +66,7 @@ func (m *Manager) endLiveSessionsOfTask(prd *PRD, t *Task, keep string) []string
 	}
 	var ended []string
 	for _, s := range liveSessionsOfTask(prd, t, listFn(), keep) {
-		if err := killFn(s.ID); err != nil {
+		if err := killFn(s.ID, caller, why); err != nil {
 			log.Printf("[autonomous] end live session %s of task %s: %v", s.ID, t.ID, err)
 			continue
 		}
@@ -95,6 +96,12 @@ func (m *Manager) endLiveSessionsOfTask(prd *PRD, t *Task, keep string) []string
 		time.Sleep(endSessionsPoll)
 	}
 	return ended
+}
+
+// taskResetEndReason is the end reason for the live sessions of a task that a
+// reset replaces. It names the reset, the PRD and the task.
+func taskResetEndReason(prdID, taskID string) string {
+	return fmt.Sprintf("PRD %s task %s reset on daemon restart: every other live session of the task or its worktree ends before the replacement", prdID, taskID)
 }
 
 // recordEndedSessions notes the ended session ids on the PRD (Decision) and on

@@ -75,7 +75,7 @@ func TestBL382_CancelStory_PendingStory_MarkedCancelled(t *testing.T) {
 func TestBL382_CancelStory_InProgressStory_SessionKilled(t *testing.T) {
 	m, prd := bl382RunningPRD(t)
 	killed := []string{}
-	m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+	m.SetSessionKillerFn(func(id, _, _ string) error { killed = append(killed, id); return nil })
 
 	_, err := m.CancelStory(prd.ID, "story-1", "operator", "")
 	if err != nil {
@@ -132,7 +132,7 @@ func TestBL382_CancelTask_PendingTask_MarkedCancelled(t *testing.T) {
 func TestBL382_CancelTask_InProgressTask_SessionKilled(t *testing.T) {
 	m, prd := bl382RunningPRD(t)
 	killed := []string{}
-	m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+	m.SetSessionKillerFn(func(id, _, _ string) error { killed = append(killed, id); return nil })
 
 	_, err := m.CancelTask(prd.ID, "task-1a", "operator", "")
 	if err != nil {

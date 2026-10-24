@@ -129,8 +129,17 @@ func (t *Tracker) RecordInputSent(input, source string) error {
 	return t.commitAll("session: input sent")
 }
 
-// RecordComplete marks the session done, makes final commit.
+// RecordComplete marks the session done, makes final commit. The timeline line
+// carries no attribution; use RecordCompleteWithReason where the end is known.
 func (t *Tracker) RecordComplete(finalState State) error {
+	return t.RecordCompleteWithReason(finalState, EndReason{})
+}
+
+// RecordCompleteWithReason is RecordComplete, plus the `by=<caller> | reason=<text>`
+// fields on the timeline line when why is set. Existing timeline readers split on
+// " | " and treat everything after the event as detail, so the extra fields are
+// safe to append.
+func (t *Tracker) RecordCompleteWithReason(finalState State, why EndReason) error {
 	t.session.State = finalState
 	t.session.UpdatedAt = time.Now()
 	if err := t.updateReadme(); err != nil {
@@ -139,10 +148,20 @@ func (t *Tracker) RecordComplete(finalState State) error {
 	if err := t.writeSessionJSON(); err != nil {
 		return err
 	}
-	if err := t.appendTimeline(fmt.Sprintf("%s | %s | session ended", timestamp(), finalState)); err != nil {
+	line := fmt.Sprintf("%s | %s | session ended", timestamp(), finalState)
+	if why != (EndReason{}) {
+		line += fmt.Sprintf(" | by=%s | reason=%s", timelineField(why.Caller), timelineField(why.Reason))
+	}
+	if err := t.appendTimeline(line); err != nil {
 		return err
 	}
 	return t.commitAll(fmt.Sprintf("session: %s", finalState))
+}
+
+// timelineField keeps one timeline value on one line: a newline in a reason
+// would start a new timeline entry.
+func timelineField(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // RecordRateLimit records that the session is paused due to API rate limiting.

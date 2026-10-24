@@ -726,11 +726,24 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			syncLLMLimits(cfg, reg, led)
 			syncLLMRates(cfg, reg, led)
 		}
+		// The reaper runs live once per lease, in order, on this goroutine, so the
+		// verdicts map needs no lock. Each released lease gets one journal line.
+		sessionOf := map[string]string{}
+		whys := map[string]string{}
 		live := func(ls capacity.Lease) bool {
-			return leaseHolderLive(ls, verifiers, func(id string) bool { return sessionRunning(mgr, id) }, time.Now())
+			ok, why := leaseLiveVerdict(ls, verifiers, func(id string) bool { return sessionRunning(mgr, id) }, time.Now())
+			if !ok {
+				sid := ls.SessionID
+				if verifiers != nil && verifiers.sessionOf(ls.Holder) != "" {
+					sid = verifiers.sessionOf(ls.Holder)
+				}
+				sessionOf[ls.Holder] = sid
+				whys[ls.Holder] = why
+			}
+			return ok
 		}
 		for _, h := range led.Reap(live) {
-			fmt.Printf("[capacity] reaped leaked lease holder=%s\n", h)
+			fmt.Printf("[capacity] reaped leaked lease holder=%s session=%s: %s\n", h, sessionOf[h], whys[h])
 			metrics.CapacityLeasesReaped.Inc()
 		}
 		st := led.Snapshot()

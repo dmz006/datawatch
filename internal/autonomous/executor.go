@@ -1098,7 +1098,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				killerFn := m.sessionKillerFn
 				m.mu.Unlock()
 				if killerFn != nil {
-					if err := killerFn(t.SessionID); err != nil {
+					why := fmt.Sprintf("task %s relaunch: the session of its previous attempt is replaced (task was %s)", t.ID, oldStatus)
+					if err := killerFn(t.SessionID, "autonomous.executor.respawn", why); err != nil {
 						log.Printf("[autonomous] executeOne: kill stale session %s for task %s before respawn: %v", t.SessionID, t.ID, err)
 					} else {
 						log.Printf("[autonomous] executeOne: killed stale session %s for task %s before respawn", t.SessionID, t.ID)
@@ -1108,7 +1109,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 			// End every other live session of this task or its worktree so the
 			// replacement is the only one.
-			if ended := m.endLiveSessionsOfTask(prd, t, ""); len(ended) > 0 {
+			if ended := m.endLiveSessionsOfTask(prd, t, "", "autonomous.executor.respawn", fmt.Sprintf("task %s relaunch: other live sessions of the task or its worktree end so the replacement is the only one", t.ID)); len(ended) > 0 {
 				m.store.WithLock(func() { recordEndedSessions(prd, t, ended, "replacement session launching") })
 				_ = m.store.SavePRD(prd)
 			}

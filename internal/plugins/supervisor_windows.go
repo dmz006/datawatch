@@ -15,5 +15,6 @@ func signalServiceProcessGroup(cmd *exec.Cmd, force bool) error {
 	if !force || cmd == nil || cmd.Process == nil {
 		return nil
 	}
+	// end-reason-ok: kills a plugin service's OS process, not a datawatch session
 	return cmd.Process.Kill()
 }

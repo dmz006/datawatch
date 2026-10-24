@@ -619,7 +619,7 @@ func TestCapacity_StalledWorkerLeaseReleasedBeforeRetry(t *testing.T) {
 	_ = m.Store().SavePRD(p)
 
 	var heldAtKill []bool
-	m.SetSessionKillerFn(func(string) error {
+	m.SetSessionKillerFn(func(string, string, string) error {
 		heldAtKill = append(heldAtKill, len(led.Snapshot().Leases) > 0)
 		return nil
 	})

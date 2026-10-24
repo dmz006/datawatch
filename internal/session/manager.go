@@ -482,6 +482,10 @@ type Manager struct {
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
 
+	// journal receives the session end and pane-close lines (see end_reason.go).
+	// nil writes them to stdout; tests set it to capture them.
+	journal io.Writer
+
 	// onChatMessage is called when a chat-mode backend emits a structured message.
 	onChatMessage func(sessionID, role, content string, streaming bool)
 
@@ -2184,13 +2188,13 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		encLogPath := logFile + ".enc"
 		fifo, err := secfile.NewEncryptingFIFO(logFile+".pipe", encLogPath, m.encKey)
 		if err != nil {
-			_ = m.tmux.KillSession(tmuxSession)
+			m.killPane(sess.FullID, tmuxSession, "spawn aborted: encrypted output FIFO setup failed")
 			return nil, fmt.Errorf("create encrypting FIFO: %w", err)
 		}
 		// tmux pipes to the FIFO; encrypted output goes to .enc file
 		if err := m.tmux.PipeOutput(tmuxSession, fifo.FIFOPath()); err != nil {
 			_ = fifo.Close()
-			_ = m.tmux.KillSession(tmuxSession)
+			m.killPane(sess.FullID, tmuxSession, "spawn aborted: encrypted output pipe failed")
 			return nil, fmt.Errorf("pipe tmux output (encrypted): %w", err)
 		}
 		// Store FIFO reference for cleanup on session end
@@ -2203,7 +2207,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		m.debugf("tmux session %q piped to encrypted FIFO → %s", tmuxSession, encLogPath)
 	} else {
 		if err := m.tmux.PipeOutput(tmuxSession, logFile); err != nil {
-			_ = m.tmux.KillSession(tmuxSession)
+			m.killPane(sess.FullID, tmuxSession, "spawn aborted: output pipe failed")
 			return nil, fmt.Errorf("pipe tmux output: %w", err)
 		}
 		m.debugf("tmux session %q piped to %s", tmuxSession, logFile)
@@ -2395,7 +2399,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			launchErr = launchFn(ctx, launchTask, tmuxSession, projectDir, logFile)
 		}
 		if launchErr != nil {
-			_ = m.tmux.KillSession(tmuxSession)
+			m.killPane(sess.FullID, tmuxSession, "spawn aborted: LLM backend launch failed")
 			return nil, fmt.Errorf("launch LLM backend: %w", launchErr)
 		}
 		m.debugf("backend %q launched in tmux session %q", backendName, tmuxSession)
@@ -2405,7 +2409,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		// Fallback: run LLM binary directly (legacy path, no configured backend)
 		llmCmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s %q", projectDir, m.llmBin, projectDir, launchTask)
 		if err := m.tmux.SendKeys(tmuxSession, llmCmd); err != nil {
-			_ = m.tmux.KillSession(tmuxSession)
+			m.killPane(sess.FullID, tmuxSession, "spawn aborted: sending the LLM command failed")
 			return nil, fmt.Errorf("send LLM command: %w", err)
 		}
 		// Right after the paste: confirm the prompt was actually submitted.
@@ -2445,7 +2449,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 
 	// Persist the session
 	if err := m.store.Save(sess); err != nil {
-		_ = m.tmux.KillSession(tmuxSession)
+		m.killPane(sess.FullID, tmuxSession, "spawn aborted: session save failed")
 		return nil, fmt.Errorf("save session: %w", err)
 	}
 
@@ -3019,11 +3023,17 @@ func (m *Manager) WaitBackground() {
 
 // KillTmuxSession terminates the tmux session for a datawatch session (e.g. after completion).
 func (m *Manager) KillTmuxSession(fullID string) {
+	m.killTmuxSessionFor(fullID, "KillTmuxSession called from "+callerAt(1))
+}
+
+// killTmuxSessionFor closes the pane of a session that is still in the store,
+// giving the reason to the journal.
+func (m *Manager) killTmuxSessionFor(fullID, why string) {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
 		return
 	}
-	_ = m.tmux.KillSession(sess.TmuxSession)
+	m.killPane(fullID, sess.TmuxSession, why)
 }
 
 // sessionSendQueue serializes channel sends for one session.
@@ -3881,109 +3891,6 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	return nil
 }
 
-// Kill terminates a session by full ID.
-func (m *Manager) Kill(fullID string) error {
-	sess, ok := m.store.Get(fullID)
-	if !ok {
-		// Accept short 4-char hex IDs (e.g. from Task.SessionID).
-		if sess, ok = m.store.GetByShortID(fullID); ok {
-			fullID = sess.FullID
-		} else {
-			return fmt.Errorf("session %s not found", fullID)
-		}
-	}
-
-	// Cancel the monitor goroutine and clean up encrypting FIFO
-	m.mu.Lock()
-	if cancel, ok := m.monitors[fullID]; ok {
-		cancel()
-		delete(m.monitors, fullID)
-	}
-	if fifo, ok := m.encFIFOs[fullID]; ok {
-		_ = fifo.Close()
-		delete(m.encFIFOs, fullID)
-	}
-	if sp, ok := m.streamPipes[fullID]; ok {
-		sp.Close()
-		delete(m.streamPipes, fullID)
-	}
-	tracker := m.trackers[fullID]
-	m.mu.Unlock()
-
-	// Cancel any pending scheduled commands (e.g. rate-limit auto-resume)
-	if m.schedStore != nil {
-		if n := m.schedStore.CancelBySession(fullID); n > 0 {
-			fmt.Printf("[session] cancelled %d scheduled command(s) for killed session %s\n", n, sess.ID)
-		}
-	}
-
-	// Kill the tmux session — but ONLY if there is one. Virtual
-	// sessions (council-virtual, etc.) have no tmux pane; calling
-	// `tmux kill-session -t ""` without a target munches arbitrary
-	// tmux sessions, which is how stopping one virtual council
-	// persona killed a bunch of operator-attached real sessions
-	// (operator-flagged 2026-05-09 as "stopped 4169ux and it killed
-	// all sessions"). Skip the tmux call entirely when there's no
-	// pane to kill.
-	if tmuxName := m.store.Snapshot(sess).TmuxSession; strings.TrimSpace(tmuxName) != "" {
-		_ = m.tmux.KillSession(tmuxName)
-	}
-
-	m.releaseCommitGuard(fullID, m.store.Snapshot(sess).ProjectDir)
-
-	var oldState State
-	m.store.Mutate(func() {
-		oldState = sess.State
-		sess.State = StateKilled
-		sess.UpdatedAt = time.Now()
-	})
-	if err := m.store.Save(sess); err != nil {
-		return fmt.Errorf("save session: %w", err)
-	}
-
-	// Record in tracker
-	if tracker != nil {
-		if err := tracker.RecordComplete(StateKilled); err != nil {
-			fmt.Printf("[warn] tracker.RecordComplete(killed): %v\n", err)
-		}
-	}
-
-	if m.onStateChange != nil {
-		m.onStateChange(sess, oldState)
-	}
-	if m.onSessionEnd != nil {
-		m.onSessionEnd(sess)
-	}
-	m.triggerSummarize(sess.FullID, 200)
-
-	// BL351 — deep recursive cascade: kill all descendants regardless of their own settings.
-	if sess.KillChildrenRecursive {
-		var killAll func(parentID string)
-		killAll = func(parentID string) {
-			for _, child := range m.GetChildren(parentID) {
-				killAll(child.FullID)
-				if child.State == StateRunning || child.State == StateWaitingInput || child.State == StateRateLimited {
-					if err := m.Kill(child.FullID); err != nil {
-						fmt.Printf("[warn] recursive kill %s: %v\n", child.ID, err)
-					}
-				}
-			}
-		}
-		killAll(sess.FullID)
-	} else if sess.KillChildren {
-		// BL347 — shallow cascade: direct children only.
-		for _, child := range m.GetChildren(sess.FullID) {
-			if child.State == StateRunning || child.State == StateWaitingInput || child.State == StateRateLimited {
-				if err := m.Kill(child.FullID); err != nil {
-					fmt.Printf("[warn] cascade kill child %s: %v\n", child.ID, err)
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
 // GetChildren returns all sessions whose ParentID equals parentFullID.
 // Order is by CreatedAt ascending (oldest first). BL347.
 func (m *Manager) GetChildren(parentFullID string) []*Session {
@@ -4046,7 +3953,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	m.mu.Unlock()
 
 	// Kill any leftover tmux session
-	_ = m.tmux.KillSession(sess.TmuxSession)
+	m.killPane(sess.FullID, sess.TmuxSession, "restart: clearing leftover pane before relaunch")
 
 	// Resolve backend
 	backendName := sess.BackendFamily
@@ -4103,12 +4010,12 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		encLogPath := logFile + ".enc"
 		fifo, err := secfile.NewEncryptingFIFO(logFile+".pipe", encLogPath, m.encKey)
 		if err != nil {
-			_ = m.tmux.KillSession(sess.TmuxSession)
+			m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: encrypted output FIFO setup failed")
 			return nil, fmt.Errorf("create encrypting FIFO: %w", err)
 		}
 		if err := m.tmux.PipeOutput(sess.TmuxSession, fifo.FIFOPath()); err != nil {
 			_ = fifo.Close()
-			_ = m.tmux.KillSession(sess.TmuxSession)
+			m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: encrypted output pipe failed")
 			return nil, fmt.Errorf("pipe tmux output (encrypted): %w", err)
 		}
 		m.mu.Lock()
@@ -4119,7 +4026,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		m.mu.Unlock()
 	} else {
 		if err := m.tmux.PipeOutput(sess.TmuxSession, logFile); err != nil {
-			_ = m.tmux.KillSession(sess.TmuxSession)
+			m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: output pipe failed")
 			return nil, fmt.Errorf("pipe tmux output: %w", err)
 		}
 	}
@@ -4212,13 +4119,13 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		launchErr = launchFn(ctx, sess.Task, sess.TmuxSession, sess.ProjectDir, logFile)
 	}
 	if launchErr != nil {
-		_ = m.tmux.KillSession(sess.TmuxSession)
+		m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: relaunch LLM backend failed")
 		return nil, fmt.Errorf("relaunch LLM backend: %w", launchErr)
 	}
 
 	// Save updated session
 	if err := m.store.Save(sess); err != nil {
-		_ = m.tmux.KillSession(sess.TmuxSession)
+		m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: session save failed")
 		return nil, fmt.Errorf("save session: %w", err)
 	}
 
@@ -4286,7 +4193,7 @@ func (m *Manager) RestartSession(ctx context.Context, fullID string, task string
 		}
 		m.mu.Unlock()
 		if strings.TrimSpace(sess.TmuxSession) != "" {
-			_ = m.tmux.KillSession(sess.TmuxSession)
+			m.killPane(sess.FullID, sess.TmuxSession, "restart requested: stopping live pane before relaunch")
 		}
 	}
 
@@ -4307,10 +4214,13 @@ func (m *Manager) RestartSession(ctx context.Context, fullID string, task string
 	// Delegate to the existing Restart logic (which handles terminal states).
 	// Temporarily set state to a terminal state so Restart's guard passes, then
 	// let Restart do the full relaunch sequence.
+	from := sess.State
 	sess.State = StateKilled
 	if err := m.store.Save(sess); err != nil {
 		return nil, fmt.Errorf("save before restart: %w", err)
 	}
+	m.recordEnd(sess, m.getTracker(sess.FullID), from, StateKilled,
+		EndReason{Caller: callerAt(0), Reason: "restart requested: state set to killed before relaunch"})
 
 	return m.Restart(ctx, sess.FullID)
 }
@@ -4329,7 +4239,7 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 
 	// Kill if still active
 	if sess.State == StateRunning || sess.State == StateWaitingInput || sess.State == StateRateLimited {
-		if err := m.Kill(fullID); err != nil {
+		if err := m.EndSession(fullID, EndReason{Caller: callerAt(0), Reason: "session deleted while still active"}); err != nil {
 			return fmt.Errorf("kill before delete: %w", err)
 		}
 	}
@@ -5132,7 +5042,7 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 		// Ending the session lets the executor's worker wait loop observe a
 		// terminal state, so the task takes its normal retry path with a fresh
 		// session. This is the same session end path the stall handler uses.
-		if err := m.Kill(fullID); err != nil {
+		if err := m.EndSession(fullID, EndReason{Caller: callerAt(0), Reason: reason}); err != nil {
 			m.debugf("DeliverOneShotTask: session end path for %s: %v", fullID, err)
 		}
 	}
@@ -5508,7 +5418,14 @@ func (m *Manager) Close() error {
 	return m.store.Close()
 }
 
+// KillAll ends every live session on this host with the stop-all reason.
 func (m *Manager) KillAll() error {
+	return m.EndAllSessions(EndReason{Caller: callerAt(0), Reason: "stop all sessions requested"})
+}
+
+// EndAllSessions ends every live session on this host, recording why for each.
+// Only running, waiting-input and rate-limited sessions are ended.
+func (m *Manager) EndAllSessions(why EndReason) error {
 	var errs []string
 	for _, sess := range m.store.List() {
 		if sess.Hostname != m.hostname {
@@ -5517,7 +5434,7 @@ func (m *Manager) KillAll() error {
 		if sess.State != StateRunning && sess.State != StateWaitingInput && sess.State != StateRateLimited {
 			continue
 		}
-		if err := m.Kill(sess.FullID); err != nil {
+		if err := m.EndSession(sess.FullID, why); err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", sess.ID, err))
 		}
 	}
@@ -6521,7 +6438,7 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 			if sess.OneShot {
 				go func(s *Session) {
 					time.Sleep(500 * time.Millisecond)
-					_ = m.tmux.KillSession(s.TmuxSession)
+					m.killPane(s.FullID, s.TmuxSession, "one-shot completed session still had a live pane")
 				}(sess)
 				continue
 			}

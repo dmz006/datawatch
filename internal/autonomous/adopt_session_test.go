@@ -31,7 +31,7 @@ func TestResetInProgressAdoptsSurvivingSession(t *testing.T) {
 				{Title: "story", Tasks: []Task{{Title: "task", Status: TaskInProgress, SessionID: tc.sessionID}}},
 			})
 			var killed []string
-			m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+			m.SetSessionKillerFn(func(id, _, _ string) error { killed = append(killed, id); return nil })
 			m.SetSessionAliveFn(func(string) bool { return tc.alive })
 			m.SetSessionOutputFn(func(string) (string, bool) { return tc.output, tc.outputOK })
 			m.resetInProgressTasksForResume(prd)

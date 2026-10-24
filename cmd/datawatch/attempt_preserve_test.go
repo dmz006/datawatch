@@ -9,17 +9,23 @@ import (
 	"testing"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
-// fakeStallSessions records Kill calls into a shared event log.
+// fakeStallSessions records EndSession calls into a shared event log.
 type fakeStallSessions struct {
 	events *[]string
+	whys   []session.EndReason
 }
 
-func (f *fakeStallSessions) Kill(fullID string) error {
+func (f *fakeStallSessions) EndSession(fullID string, why session.EndReason) error {
 	*f.events = append(*f.events, "kill:"+fullID)
+	f.whys = append(f.whys, why)
 	return nil
 }
+
+// testStallEnd is the end a stall kill records in these tests.
+var testStallEnd = session.EndReason{Caller: "test.stall", Reason: "test stall reason"}
 
 // fakeStallStore records RecordTaskAttemptSnapshot calls into the same log.
 type fakeStallStore struct {
@@ -71,7 +77,7 @@ func TestAttemptSnapshotRecordedBeforeStallKill(t *testing.T) {
 		store := &fakeStallStore{events: &events}
 		task := &autonomouspkg.Task{ID: "task-1", PRDID: "prd-1"}
 
-		killStalledWorker(context.Background(), sessions, store, true, stallTestRepo(t), task, "sess-1")
+		killStalledWorker(context.Background(), sessions, store, true, stallTestRepo(t), task, "sess-1", testStallEnd)
 
 		if len(store.refs) != 1 {
 			t.Fatalf("want one recorded snapshot, got %v", store.refs)
@@ -90,7 +96,7 @@ func TestAttemptSnapshotRecordedBeforeStallKill(t *testing.T) {
 		store := &fakeStallStore{events: &events}
 		task := &autonomouspkg.Task{ID: "task-1", PRDID: "prd-1"}
 
-		killStalledWorker(context.Background(), sessions, store, false, stallTestRepo(t), task, "sess-1")
+		killStalledWorker(context.Background(), sessions, store, false, stallTestRepo(t), task, "sess-1", testStallEnd)
 
 		if len(events) != 1 || events[0] != "kill:sess-1" {
 			t.Fatalf("event order = %v, want kill only", events)
@@ -103,7 +109,7 @@ func TestAttemptSnapshotRecordedBeforeStallKill(t *testing.T) {
 		store := &fakeStallStore{events: &events}
 		task := &autonomouspkg.Task{ID: "task-1", PRDID: "prd-1"}
 
-		killStalledWorker(context.Background(), sessions, store, true, t.TempDir(), task, "sess-1")
+		killStalledWorker(context.Background(), sessions, store, true, t.TempDir(), task, "sess-1", testStallEnd)
 
 		if len(events) != 1 || events[0] != "kill:sess-1" {
 			t.Fatalf("event order = %v, want kill only after failed snapshot", events)

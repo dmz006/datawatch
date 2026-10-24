@@ -34,6 +34,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/memory"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // handleAutonomousConfig — GET / PUT.
@@ -575,6 +576,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			sessionIDs := s.autonomousMgr.SessionIDsForPRD(id)
 			killedIDs := []string{}
 			killErrs := map[string]string{}
+			killWhy := session.EndReason{
+				Caller: endCallerAutonomousPRDStop,
+				Reason: fmt.Sprintf("REST DELETE /api/autonomous/prds/%s requested by %s: the PRD's task sessions end", id, s.auditActor(r.Context())),
+			}
 			killSessions := func() {
 				if s.manager == nil {
 					return
@@ -584,7 +589,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 					killedIDs = append(killedIDs, sid)
-					if err := s.manager.Kill(sid); err != nil { // best-effort
+					if err := s.manager.EndSession(sid, killWhy); err != nil { // best-effort
 						killErrs[sid] = err.Error()
 					}
 				}

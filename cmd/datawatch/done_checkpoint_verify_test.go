@@ -5,16 +5,20 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/session"
 )
 
-// fakeDoneKiller records Kill calls in place of the session manager, so
+// fakeDoneKiller records EndSession calls in place of the session manager, so
 // these tests never touch a real tmux server.
 type fakeDoneKiller struct {
 	killed []string
+	whys   []session.EndReason
 }
 
-func (f *fakeDoneKiller) Kill(fullID string) error {
+func (f *fakeDoneKiller) EndSession(fullID string, why session.EndReason) error {
 	f.killed = append(f.killed, fullID)
+	f.whys = append(f.whys, why)
 	return nil
 }
 

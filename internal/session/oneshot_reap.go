@@ -94,10 +94,12 @@ func (m *Manager) ReapFinishedOneShots() []string {
 		sess.UpdatedAt = time.Now()
 		_ = m.store.Save(sess)
 		m.releaseCommitGuard(sess.FullID, sess.ProjectDir)
+		reason := "one-shot completion marker found in the pane"
+		m.recordEnd(sess, m.getTracker(sess.FullID), oldState, StateComplete, EndReason{Caller: callerAt(0), Reason: reason})
 		if m.onStateChange != nil {
 			m.onStateChange(sess, oldState)
 		}
-		m.KillTmuxSession(sess.FullID)
+		m.killTmuxSessionFor(sess.FullID, reason)
 		removeOneShotScratch(sess.TmuxSession)
 		reaped = append(reaped, sess.FullID)
 	}

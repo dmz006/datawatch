@@ -118,12 +118,11 @@ func (m *Manager) sweepOrphanSessions() {
 		if age <= grace {
 			continue
 		}
-		if err := killFn(s.ID); err != nil {
+		note := orphanEndNote(s, age, grace)
+		if err := killFn(s.ID, orphanSweepCaller, note); err != nil {
 			log.Printf("[autonomous] orphan-sweep: end session %s: %v", s.ID, err)
 			continue
 		}
-		note := fmt.Sprintf("ended orphan worker session %s (task %s) after %s unbound (grace %s)",
-			s.ID, s.TaskID, age.Round(time.Second), grace)
 		log.Printf("[autonomous] orphan-sweep: %s", note)
 		m.recordOrphanDecision(prdByID[s.PRDID], "orphan_session_ended", note)
 		if auditFn != nil {
@@ -136,6 +135,16 @@ func (m *Manager) sweepOrphanSessions() {
 		delete(m.orphanSeen, s.ID)
 		m.mu.Unlock()
 	}
+}
+
+// orphanSweepCaller names the orphan sweep as the caller of an end.
+const orphanSweepCaller = "autonomous.orphan-sweep"
+
+// orphanEndNote is the sweep's own note for ending an unbound worker session.
+// It is both the log line and the reason the session records as its end.
+func orphanEndNote(s SessionInfo, age, grace time.Duration) string {
+	return fmt.Sprintf("ended orphan worker session %s (task %s) after %s unbound (grace %s)",
+		s.ID, s.TaskID, age.Round(time.Second), grace)
 }
 
 // recordOrphanDecision appends a Decision to the session's PRD when it is known.
