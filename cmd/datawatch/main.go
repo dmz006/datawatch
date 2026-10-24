@@ -5955,6 +5955,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// written to the daemon log once; the status endpoint keeps them.
 			amgr.ReportPairingWarnings()
 			amgr.SetGuardrail(autonomousGuardrail)
+			// Daily and milestone progress snapshots, stored with the other
+			// autonomous data; the runner starts with amgr.Start below.
+			if _, err := amgr.EnableProgressSnapshots(func() autonomouspkg.ProgressSnapshotSettings {
+				return progressSnapshotSettings(cfg)
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "[warn] progress snapshots: %v\n", err)
+			}
 			// Foreign-file drift (and future autonomous audit events) →
 			// operator audit log, so they land in JSON-lines + CEF mirror.
 			if wiredAuditLog != nil {

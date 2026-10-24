@@ -887,6 +887,13 @@ type Manager struct {
 	// is not additionally guarded by mu.
 	memoryReportWG sync.WaitGroup
 
+	// progressSnaps records the daily and milestone progress snapshots; nil
+	// until EnableProgressSnapshots. progressSnapWG tracks in-flight milestone
+	// goroutines so tests can wait for them. progressSnaps is guarded by mu,
+	// the WaitGroup is self-synchronizing.
+	progressSnaps  *ProgressSnapshotRunner
+	progressSnapWG sync.WaitGroup
+
 	// loop state
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -4423,6 +4430,9 @@ func (m *Manager) Start(parent context.Context) {
 	}
 	m.ctx, m.cancel = context.WithCancel(parent)
 	go m.run()
+	if r := m.progressSnaps; r != nil {
+		go r.Run(m.ctx)
+	}
 }
 
 // Stop signals the loop to exit (does not block).
