@@ -175,3 +175,85 @@ committed report files.
 
 Acceptance: after the fix, re-run the same matrix on the fixed tree; every group in
 this table must go to zero findings (or an explicit, documented exemption).
+
+---
+
+## Other tabs worklist
+
+Sandbox daemon run (fresh build of this tree, quick profile, default state, dark
+theme, viewports 320×568 / 360×740 / 390×844 / 768×1024 / 740×360 + 360×740 light
++ 360×740 @z200), report-only final pass:
+`MOBILE_FIT_PROFILE=quick MOBILE_FIT_REPORT_ONLY=1` with
+`MOBILE_FIT_VIEW=sessions,autonomous,automation,settings,alerts`.
+Output: `docs/testing/runs/observer-mobile-fit/other-tabs-report.json` and
+`other-tabs-report.txt` (19 groups, 185 findings across the 5 tabs). Several
+groups are shared header controls, so they recur per tab below; one global fix
+covers them everywhere.
+
+### Sessions
+
+| Group | Check | Selector | Widths | Remedy |
+|---|---|---|---|---|
+| G-6502e162 | clipped-text | `#headerTitle` | 320×568 | `overflow:hidden; text-overflow:ellipsis; white-space:nowrap` + `title` on the header title (shared observer fix) |
+| G-3f4cac4d | tap-target | `#headerHelpLink` | all 7 cells | raise 27×29 hit area to ≥40px (padding or `min-height`) |
+| G-6e692494 | tap-target | `#headerSearchBtn` | all 7 cells | raise 35×26 hit area to ≥40px |
+| G-f4f80146 | tap-target | `…toast.toast-error > .toast-error-row > button.toast-error-close` | 320×568 | raise 28×28 toast close button to ≥40px hit area |
+| G-25a994a0 | tap-target | `#headerAlertPill` | all 7 cells | raise 50×21 pill (height 21 < 40) to ≥40px |
+| G-104e495e | tap-target | `#headerFullscreenBtn` | 768×1024, 740×360 | raise 24×28 hit area to ≥40px |
+| G-4874945e | edge-cross | `#headerRefreshSpinner` | 360×740 @z200 | right of header cluster overflows 180px CSS viewport — let the header wrap or shrink paddings at <200px |
+| G-5b00d250 | edge-cross | `#statusDot` | 360×740 @z200 | keep the status dot inside the viewport (right margin / wrap) |
+
+### Automata
+
+| Group | Check | Selector | Widths | Remedy |
+|---|---|---|---|---|
+| G-6502e162 | clipped-text | `#headerTitle` | 320×568, 360×740 (+light) | ellipsis + `title` on the header title (shared) |
+| G-3f4cac4d | tap-target | `#headerHelpLink` | all 7 cells | ≥40px hit area (shared) |
+| G-bd9b90a2 | tap-target | `#headerIdentityBtn` | all 7 cells | raise 38×30 hit area to ≥40px |
+| G-6e692494 | tap-target | `#headerSearchBtn` | all 7 cells | ≥40px hit area (shared) |
+| G-12200f65 | tap-target | `.automata-tabs-bar > button.output-tab.active` | all 7 cells | raise 89×29 tab height to ≥40px (shared `.output-tab` floor) |
+| G-d4c8a4fd | tap-target | `.automata-tabs-bar > button.output-tab` | all 7 cells | raise 92×27 tab height to ≥40px |
+| G-44afec82 | tap-target | `#automataSelectBtn` | all 7 cells | raise 32×28 hit area to ≥40px |
+| G-245b9237 | tap-target | `#automataFilterBtn` | all 7 cells | raise 32×28 hit area to ≥40px |
+| G-ef2dc788 | tap-target | `#automataHistoryBtn` | all 7 cells | raise 32×28 hit area to ≥40px |
+| G-ea8f5fbd | tap-target | `#automataWatchFilterBtn` | all 7 cells | raise 32×28 hit area to ≥40px |
+| G-f4f80146 | tap-target | `…toast-error-close` | 320×568 | ≥40px toast close button (shared) |
+| G-25a994a0 | tap-target | `#headerAlertPill` | all 7 cells | ≥40px pill (shared) |
+| G-104e495e | tap-target | `#headerFullscreenBtn` | 768×1024, 740×360 | ≥40px hit area (shared) |
+| G-ef8b66d8 | edge-cross | `#headerAlertPill` | 360×740 @z200 | header cluster overflows 180px CSS viewport at z200 — wrap/shrink |
+| G-4874945e | edge-cross | `#headerRefreshSpinner` | 360×740 @z200 | keep inside viewport at z200 (shared) |
+| G-5b00d250 | edge-cross | `#statusDot` | 360×740 @z200 | keep inside viewport at z200 (shared) |
+
+### Automation
+
+| Group | Check | Selector | Widths | Remedy |
+|---|---|---|---|---|
+| G-a4359a64 | open-failed | `[data-view="automation"]` | not measured | the tab was not measured: the harness `VIEWS` whitelist (scripts/test-stories/pwa/mobile-fit.mjs) rejects `automation` as an unknown view (exit 2), although the app defines the view. Add it to `VIEWS` (+ provider if needed) and re-run |
+
+### Settings
+
+| Group | Check | Selector | Widths | Remedy |
+|---|---|---|---|---|
+| G-3f4cac4d | tap-target | `#headerHelpLink` | all 7 cells | ≥40px hit area (shared) |
+| G-65d7a747 | tap-target | `.settings-tabs-bar > button.settings-tab-btn.output-tab` | all 7 cells | 42 findings — raise settings tab height (79×27) to ≥40px via the shared `.output-tab` floor |
+| G-f4f80146 | tap-target | `…toast-error-close` | 320×568 | ≥40px toast close button (shared) |
+| G-25a994a0 | tap-target | `#headerAlertPill` | all 7 cells | ≥40px pill (shared) |
+| G-104e495e | tap-target | `#headerFullscreenBtn` | 768×1024, 740×360 | ≥40px hit area (shared) |
+| G-6502e162 | clipped-text | `#headerTitle` | 360×740 @z200 | ellipsis + `title` on the header title (shared) |
+
+### Alerts
+
+| Group | Check | Selector | Widths | Remedy |
+|---|---|---|---|---|
+| G-d206c048 | tap-target | `#view > .view-content > div > a` | all 7 cells | 16×16 alert-row link below 40px — enlarge hit area or make the row the tap target |
+| G-f4f80146 | tap-target | `…toast-error-close` | 320×568 | ≥40px toast close button (shared) |
+| G-25a994a0 | tap-target | `#headerAlertPill` | all 7 cells | ≥40px pill (shared) |
+| G-104e495e | tap-target | `#headerFullscreenBtn` | 768×1024, 740×360 | ≥40px hit area (shared) |
+| G-6502e162 | clipped-text | `#headerTitle` | 360×740 @z200 | ellipsis + `title` on the header title (shared) |
+
+Data note: the sandbox daemon starts from a minimal seed (no pre-populated
+session/PRD/alert rows in most views), so this pass measures the empty/default
+state: per-row findings, detail panes and populated lists are not represented
+here. The header-control and tab-bar groups above are state-independent and are
+the solid ground truth; after the shared fixes, re-run with seeded data (see
+`mobile-fit-seeds.mjs` for provider seeding) to catch the row-level cases.
