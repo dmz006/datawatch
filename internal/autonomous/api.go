@@ -1332,6 +1332,11 @@ func (a *API) SetPRDLanePreference(prdID, pref string) (any, error) {
 	return prd, nil
 }
 
+// LaneFillStatus returns the lane fill status with up to limit decisions.
+func (a *API) LaneFillStatus(limit int) LaneFillStatus {
+	return a.M.LaneFillStatus(limit)
+}
+
 // SetPRDDirs sets per-PRD read-only/writable directory scope.
 func (a *API) SetPRDDirs(prdID string, readDirs, writeDirs []string) (any, error) {
 	if err := a.M.SetPRDDirs(prdID, readDirs, writeDirs); err != nil {

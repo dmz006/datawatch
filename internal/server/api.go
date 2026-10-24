@@ -831,6 +831,11 @@ type AutonomousAPI interface {
 	SetPRDPriority(prdID string, n int) (any, error)
 	SetPRDKind(prdID, kind string) (any, error)
 
+	// Per-Automaton lane preference: gpu, claude or any (empty clears it).
+	SetPRDLanePreference(prdID, pref string) (any, error)
+	// Lane fill status: mode, lanes, evidence, decisions and alerts.
+	LaneFillStatus(limit int) autonomous.LaneFillStatus
+
 	// BL367 — per-PRD quality gate config.
 	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (any, error)
 
@@ -5998,6 +6003,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"idle_alert_minutes":  s.cfg.Autonomous.Automation.IdleAlertMinutes,
 				"agent_insert_policy": s.cfg.Autonomous.Automation.EffectiveAgentInsertPolicy(),
 			},
+			"lane_fill": laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
 			"progress": map[string]interface{}{
 				"lanes":                   s.cfg.Autonomous.Progress.Lanes,
 				"inactive_gap_hours":      s.cfg.Autonomous.Progress.InactiveGapHours,
@@ -6221,6 +6227,16 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		if verr := validateAgentInsertPolicy(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
+		}
+	}
+	// Lane fill: every autonomous.lane_fill.* value is checked before
+	// anything is applied, so one bad value rejects the whole PUT.
+	for k, v := range patch {
+		if field, ok := strings.CutPrefix(k, laneFillKeyPrefix); ok {
+			if verr := validateLaneFillValue(field, v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 	}
 	// Progress engine parameters: every autonomous.progress.* value is checked
@@ -7561,6 +7577,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if validateAgentInsertPolicy(v) == nil {
 				cfg.Autonomous.Automation.AgentInsertPolicy = toString(v)
 			}
+		case laneFillKeyPrefix + "mode", laneFillKeyPrefix + "gpu_lanes", laneFillKeyPrefix + "claude_lanes",
+			laneFillKeyPrefix + "idle_alert_minutes", laneFillKeyPrefix + "decompose_ahead_min",
+			laneFillKeyPrefix + "poll_seconds", laneFillKeyPrefix + "gpu_backend",
+			laneFillKeyPrefix + "gpu_model", laneFillKeyPrefix + "claude_backend":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applyLaneFillValue(&cfg.Autonomous.LaneFill, strings.TrimPrefix(k, laneFillKeyPrefix), v)
 		case "autonomous.progress.lanes":
 			// Validated in handlePutConfig; 0 = the default of 5.
 			if n, err := parseProgressWhole("autonomous.progress.lanes", v); err == nil {

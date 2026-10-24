@@ -147,6 +147,20 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					}
 				}
 			}
+			// lane_fill: every field is checked, so one bad value rejects the PUT.
+			if rawLane, ok := top["lane_fill"]; ok {
+				var lane map[string]any
+				if json.Unmarshal(rawLane, &lane) != nil {
+					http.Error(w, "autonomous.lane_fill: must be an object", http.StatusBadRequest)
+					return
+				}
+				for field, v := range lane {
+					if verr := validateLaneFillValue(field, v); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+			}
 			if rawRatio, ok := top["plan_coverage_min_ratio"]; ok {
 				var ratio float64
 				if json.Unmarshal(rawRatio, &ratio) != nil {
@@ -352,10 +366,11 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				Backend        string   `json:"backend,omitempty"`
 				Model          string   `json:"model,omitempty"`
 				Effort         string   `json:"effort,omitempty"`
-				Type           string   `json:"type,omitempty"`        // BL221 Phase 4 — automaton type
-				GuidedMode     bool     `json:"guided_mode,omitempty"` // BL221 Phase 4 — step-by-step operator checkpoints
-				Skills         []string `json:"skills,omitempty"`      // BL221 Phase 4 — skill IDs passed to task sessions
-				Kind           string   `json:"kind,omitempty"`        // feature | bug | other; empty = derive
+				Type           string   `json:"type,omitempty"`            // BL221 Phase 4 — automaton type
+				GuidedMode     bool     `json:"guided_mode,omitempty"`     // BL221 Phase 4 — step-by-step operator checkpoints
+				Skills         []string `json:"skills,omitempty"`          // BL221 Phase 4 — skill IDs passed to task sessions
+				Kind           string   `json:"kind,omitempty"`            // feature | bug | other; empty = derive
+				LanePreference string   `json:"lane_preference,omitempty"` // gpu | claude | any; empty = any
 				// BL367 — per-PRD quality gate config (optional; nil = use manager default).
 				QualityGates *struct {
 					Enabled           bool   `json:"enabled"`
@@ -397,6 +412,11 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 					http.Error(w, "project_dir or project_profile required (or configure autonomous.worktree_base_repo for automatic git-worktree isolation)", http.StatusBadRequest)
 					return
 				}
+			}
+			// Refuse an unknown lane preference before anything is created.
+			if _, ok := autonomous.NormalizeLanePreference(req.LanePreference); !ok {
+				http.Error(w, unknownLanePreferenceMsg(req.LanePreference), http.StatusBadRequest)
+				return
 			}
 			// Refuse an unknown kind before anything is created.
 			if _, ok := autonomous.NormalizePRDKind(req.Kind); !ok {
@@ -451,6 +471,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 					if _, err := s.autonomousMgr.SetPRDKind(prdID, req.Kind); err != nil {
 						_ = s.autonomousMgr.DeletePRD(prdID)
 						http.Error(w, "kind-set: "+err.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if strings.TrimSpace(req.LanePreference) != "" {
+					if _, err := s.autonomousMgr.SetPRDLanePreference(prdID, req.LanePreference); err != nil {
+						_ = s.autonomousMgr.DeletePRD(prdID)
+						http.Error(w, "lane-preference-set: "+err.Error(), http.StatusBadRequest)
 						return
 					}
 				}
@@ -2083,6 +2110,38 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_kind", "automaton", id, map[string]any{"kind": req.Kind})
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+
+	// Per-Automaton lane preference: gpu, claude or any (empty clears it).
+	case "set_lane_preference":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			LanePreference string `json:"lane_preference"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if _, ok := autonomous.NormalizeLanePreference(req.LanePreference); !ok {
+			http.Error(w, unknownLanePreferenceMsg(req.LanePreference), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDLanePreference(id, req.LanePreference)
+		if err != nil {
+			if _, exists := s.autonomousMgr.GetPRD(id); !exists {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "set_lane_preference", "automaton", id, map[string]any{"lane_preference": req.LanePreference})
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// Per-PRD directory scope: read-only and writable dirs.

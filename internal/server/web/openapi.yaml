@@ -720,7 +720,19 @@ paths:
         default 0 = 90); a bad progress value is rejected with 400 and nothing is written,
         `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
         `autonomous.plan_review_mode` (off | warn | block),
-        `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`.
+        `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`,
+        `autonomous.lane_fill.mode` (off | shadow | on; empty means shadow; any other
+        value is rejected with 400), `autonomous.lane_fill.gpu_lanes` (whole number
+        >= 0, default 2), `autonomous.lane_fill.claude_lanes` (whole number >= 0,
+        default 3; 0 means no Claude lane), `autonomous.lane_fill.idle_alert_minutes`
+        (whole number >= 0, default 30; 0 = off), `autonomous.lane_fill.decompose_ahead_min`
+        (whole number >= 0, default 2), `autonomous.lane_fill.poll_seconds` (whole number
+        >= 0, default 60; values below 5 are raised to 5), `autonomous.lane_fill.gpu_backend`
+        (default pi-prompt), `autonomous.lane_fill.gpu_model` (string; empty = the
+        backend's own model), `autonomous.lane_fill.claude_backend` (default
+        claude-code). A bad lane fill value rejects the whole PUT with 400 and nothing
+        is written. GET returns the values in effect and the running planner picks up
+        changes without a restart.
       operationId: updateConfig
       tags: [System]
       requestBody:
@@ -1069,6 +1081,34 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/autonomous/lane-fill:
+    get:
+      summary: Lane fill status
+      description: |
+        The lane fill status: the mode (off, shadow or on), each GPU and Claude lane
+        with what it runs or why it is idle, the queued Automata that could start on
+        each lane type, the evidence from the last poll (active GPU sessions and loaded
+        models), the newest planner decisions and the idle alerts. `limit` caps the
+        decision history, newest first. Needs the autonomous read capability when
+        called by a federated peer.
+      operationId: autonomousLaneFillStatus
+      tags: [Autonomous]
+      parameters:
+        - {name: limit, in: query, required: false, description: "Decisions to return, newest first; a whole number from 1 to 1000, default 50", schema: {type: integer, minimum: 1, maximum: 1000, default: 50}}
+      responses:
+        "200":
+          description: Lane fill status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LaneFillStatus"
+        "400": {description: limit is not a whole number from 1 to 1000}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/progress:
     get:
       summary: Progress metrics
@@ -1275,6 +1315,34 @@ paths:
       responses:
         "200": {description: Updated Automaton}
         "400": {description: Unknown kind}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Unknown Automaton id}
+        "405": {description: Method not allowed}
+
+  /api/autonomous/prds/{id}/set_lane_preference:
+    post:
+      summary: Set the lane preference of an Automaton
+      description: |
+        Sets which kind of lane the Automaton should run on: `gpu`, `claude` or `any`.
+        An empty value clears the preference, which means any lane. The change is
+        recorded on the decision timeline. Needs the autonomous write capability when
+        called by a federated peer.
+      operationId: autonomousPRDSetLanePreference
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lane_preference]
+              properties:
+                lane_preference: {type: string, enum: [gpu, claude, any, ""]}
+      responses:
+        "200": {description: Updated Automaton, which carries lane_preference when one is set}
+        "400": {description: Unknown lane preference; the message names gpu, claude and any}
         "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: Unknown Automaton id}
         "405": {description: Method not allowed}
@@ -1540,6 +1608,7 @@ paths:
                 backend: {type: string}
                 effort: {type: string}
                 kind: {type: string, enum: [feature, bug, other], description: "Optional Automaton kind; omit to derive it from the title and spec"}
+                lane_preference: {type: string, enum: [gpu, claude, any, ""], description: "Optional lane preference: gpu, claude or any. Omit or leave empty for any lane. An unknown value is refused before anything is created"}
       responses: {"200": {description: OK}}
   /api/autonomous/prds/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
@@ -4153,6 +4222,82 @@ components:
             example: "unauthorized"
 
   schemas:
+    LaneFillStatus:
+      type: object
+      description: The lane fill status, as GET /api/autonomous/lane-fill returns it.
+      properties:
+        mode: {type: string, enum: [off, shadow, on], description: "shadow records decisions and starts nothing"}
+        last_poll_at: {type: string, format: date-time}
+        lanes:
+          type: array
+          items: {$ref: "#/components/schemas/LaneFillLane"}
+        queued_eligible:
+          type: object
+          description: Queued Automata that could start on each lane type
+          properties:
+            gpu: {type: integer}
+            claude: {type: integer}
+        evidence:
+          type: object
+          properties:
+            checked_at: {type: string, format: date-time}
+            gpu_active_sessions: {type: integer}
+            loaded_models:
+              type: array
+              items:
+                type: object
+                properties:
+                  host: {type: string}
+                  model: {type: string}
+            error: {type: string, description: "Why the last poll could not read the pool; empty when it could"}
+        decisions:
+          type: array
+          description: Planner decisions, newest first
+          items: {$ref: "#/components/schemas/LaneFillDecision"}
+        alerts:
+          type: array
+          items: {$ref: "#/components/schemas/LaneFillAlert"}
+    LaneFillLane:
+      type: object
+      properties:
+        id: {type: string}
+        type: {type: string, enum: [gpu, claude]}
+        state: {type: string, enum: [occupied, idle]}
+        occupant:
+          nullable: true
+          description: The Automaton the lane is running; null when the lane is idle
+          type: object
+          properties:
+            prd_id: {type: string}
+            title: {type: string}
+            backend: {type: string}
+        blocker: {type: string, description: Why an idle lane is not being filled}
+        eligible_waiting: {type: integer, description: Queued Automata this lane could take}
+    LaneFillDecision:
+      type: object
+      properties:
+        at: {type: string, format: date-time}
+        mode: {type: string, enum: [off, shadow, on]}
+        lane_id: {type: string}
+        lane_type: {type: string, enum: [gpu, claude]}
+        action:
+          type: string
+          enum: [start_prd, report_merge, decompose, decompose_ahead, blocked, idle]
+        prd_id: {type: string}
+        title: {type: string}
+        reason: {type: string}
+        blocker: {type: string}
+        executed: {type: boolean, description: "False in shadow mode, where the decision is recorded and nothing starts"}
+        error: {type: string}
+        repeat_count: {type: integer, description: How many polls chose the same action again}
+        last_seen_at: {type: string, format: date-time}
+    LaneFillAlert:
+      type: object
+      description: An idle lane that sat with eligible work queued past the idle alert threshold
+      properties:
+        at: {type: string, format: date-time}
+        lane_id: {type: string}
+        work: {type: string, description: Title of the work waiting for the lane}
     PendingEventsPage:
       type: object
       required: [events, next_cursor, dropped]
