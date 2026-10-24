@@ -257,6 +257,8 @@ function makeFakePage() {
       calls.unroutes.push(pattern);
       return Promise.resolve();
     },
+    evaluate: async () => false, // no service-worker controller in the fake page
+    reload: async () => {},
   };
 }
 
@@ -290,7 +292,7 @@ test('clearSeed unroutes the seed pattern', async () => {
 function makeFakeRoute(url) {
   const out = { fulfilled: null, fellBack: false };
   const route = {
-    request: () => ({ url }),
+    request: () => ({ url: () => url }), // Playwright exposes request.url() as a method
     fallback: async () => { out.fellBack = true; },
     fulfill: async (opts) => {
       out.fulfilled = {

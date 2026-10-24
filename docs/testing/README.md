@@ -88,6 +88,57 @@ A docker-compose convenience service (`playwright` in
 expect native Chrome (`/usr/bin/google-chrome`) and a Node host, so prefer
 the local route above.
 
+## Mobile-fit — `make test-e2e-mobile-fit`
+
+Story IDs:
+- TS-802 (`scripts/test-stories/pwa/TS-802.mjs`) — Observer mobile-fit regression guard
+- TS-803 (`scripts/test-stories/pwa/TS-803.mjs`) — desktop/tablet layout baseline guard
+
+Runs the datawatch mobile-fit suite against an isolated daemon — **no Docker required**:
+
+```bash
+make test-e2e-mobile-fit              # isolated local daemon, fresh 127.0.0.1 ports
+bash scripts/e2e-pwa.sh TS-802        # one story only
+TEST_HTTP=https://host:8443 TEST_TLS=1 TEST_TOKEN=... bash scripts/e2e-pwa.sh TS-802   # external daemon
+```
+
+What the target does (`scripts/e2e-pwa.sh`):
+
+1. Same daemon lifecycle as `make test-e2e-pwa` (isolated 127.0.0.1 daemon,
+   or the external daemon named by `TEST_HTTP`/`TEST_TLS`/`TEST_TOKEN`).
+2. `npm ci` in `scripts/test-stories/pwa` and runs `node TS-802.mjs` then
+   `node TS-803.mjs`. Exit code: **0 pass, 1 fail, 2 skip** — a finding
+   makes the target exit non-zero.
+
+What the stories check (full suite mechanics in docs/howto/testing-against-a-running-daemon.md,
+section **Mobile-fit suite**):
+
+- TS-802 — re-runs the recorded pre-fix Observer mobile-fit run (reproduction
+  report: `docs/testing/runs/observer-mobile-fit/repro-report.json` — 29,968
+  findings in 68 groups over 199 scenario runs, 2026-10-23) with the API
+  state fully seeded. Passes when **none** of the 68 recorded groups produces
+  a finding (e.g. `G-20442ed3`, clipped text); fails listing the group IDs
+  that still reproduce. Official Observer replay: `MOBILE_FIT_SCOPE=#view
+  bash scripts/e2e-pwa.sh TS-802` — the shared header/navigation chrome is
+  owned by a separate pass, and without the scope those groups count too.
+  `make test-e2e-mobile-fit` runs the unscoped story (it currently fails the
+  still-pending shared-chrome groups) and then TS-803.
+- TS-803 — re-captures the Observer view at 1280×800 / 1920×1080 /
+  768×1024 (dark, 100% zoom, `three-peers` seed) and passes when every
+  tracked selector is within `max(2px, 1%)` of
+  `scripts/test-stories/pwa/mobile-fit-desktop-baseline.json`; a tracked
+  selector that is gone is always a failure.
+
+Evidence: per story `$EVIDENCE_DIR/TS-802/mobile-fit-report.json` (+ `.txt`,
+`screenshots/*.png`); archived post-fix run
+  `docs/testing/runs/observer-mobile-fit/post-fix-report.txt` (2026-10-24:
+  0 findings in 284 scenario runs, observer/full). Detector evidence lives
+  next to the suite: `node mobile-fit-selftest.mjs` (known-good/known-bad
+  fixture pages) and `node --test mobile-fit-report.test.mjs
+  mobile-fit-seeds.test.mjs` from `scripts/test-stories/pwa/`; layout ratchets
+  for the shipped Observer markup in `internal/server/web/` (`node --test
+  app-observer-compact-units.test.js app-observer-layout.test.js`).
+
 ## Adding a New Version's Tests
 
 1. Create `docs/testing/vX.Y.Z/plan.md` — what's new, story index
