@@ -113,6 +113,21 @@ func prdHasGit(prd *PRD) bool {
 	return prd.Git != (GitWorkflow{}) || prd.ProjectProfile != ""
 }
 
+// prdAutoCommits reports whether the PRD should give its task sessions git
+// activity (StartOptions.Git), which auto-commits the run's work. Rule: a PRD
+// gets a session auto-commit only when it has git settings AND either runs in
+// worktree mode (its commit scope is the worktree itself) or declares the
+// write dirs a commit may cover. A direct-mode PRD (no worktree) with no
+// declared write dirs must NOT auto-commit: with no declared scope the commit
+// would widen to the whole project directory and stage everything changed
+// there, committing work the PRD never claimed ownership of.
+func prdAutoCommits(prd *PRD) bool {
+	if !prdHasGit(prd) {
+		return false
+	}
+	return prd.Git.Branch != "" || len(prd.WriteDirs) > 0
+}
+
 // SpawnResult is what SpawnFn returns. SessionID is the datawatch
 // session ID; Err is fatal (non-fatal failures should be encoded in
 // VerifyResult.OK=false from VerifyFn instead).
@@ -1190,11 +1205,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				Model:            model,
 				PermissionMode:   permMode,
 				RetryHint:        hint,
-				ProjectProfile:   prd.ProjectProfile, // v5.26.19
-				ClusterProfile:   prd.ClusterProfile, // v5.26.19
-				Branch:           prd.Git.Branch,     // BL407 Phase 4
-				Git:              prdHasGit(prd),     // PRD has git settings → session git activity
-				ContextPrepend:   contextPrepend,     // BL244
+				ProjectProfile:   prd.ProjectProfile,  // v5.26.19
+				ClusterProfile:   prd.ClusterProfile,  // v5.26.19
+				Branch:           prd.Git.Branch,      // BL407 Phase 4
+				Git:              prdAutoCommits(prd), // git activity/auto-commit only in worktree mode or with declared write dirs
+				ContextPrepend:   contextPrepend,      // BL244
 				LSPLanguage:      lspLang,
 				MemorySeed:       prd.MemorySeed,                 // BL386 Phase 1
 				SkipDirtyCapture: prd.Git.Branch != "",           // worktree mode: nothing pre-dirty to protect
