@@ -3865,12 +3865,20 @@ func (m *Manager) SetMemoryHarvest(prdID string, cfg MemoryHarvestConfig, actor 
 	return updated, nil
 }
 
+// prdLLMOverrideAllowed reports whether the worker backend and model of an
+// Automaton in the given status may still be changed: the overrides only apply
+// before a run, so a running or completed Automaton is locked. SetPRDLLM
+// enforces it and lane fill reads it to know whether a backend can move.
+func prdLLMOverrideAllowed(status PRDStatus) bool {
+	return status != PRDRunning && status != PRDCompleted
+}
+
 func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionProfile, decompositionModel *string, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status == PRDRunning || prd.Status == PRDCompleted {
+	if !prdLLMOverrideAllowed(prd.Status) {
 		return nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)
 	}
 	// The decomposition model is not checked: its backend is the planning

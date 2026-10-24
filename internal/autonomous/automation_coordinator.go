@@ -70,6 +70,12 @@ type Coordinator struct {
 	idleStop chan struct{}
 	alerted  map[string]time.Time
 
+	// Lane fill (see lane_fill_coordinator.go). laneFillTick, when positive,
+	// replaces the poll_seconds interval of the lane fill loop (tests).
+	lf           laneFillState
+	laneFillStop chan struct{}
+	laneFillTick time.Duration
+
 	// preApply is a test seam: when set, advance calls it after the step is
 	// computed and before the compare-and-set write, so a test can move the
 	// Automation underneath the step. Nil in production.
@@ -83,7 +89,7 @@ func NewCoordinator(m *Manager, starter AutomationStarter) *Coordinator {
 	if m == nil || starter == nil {
 		return nil
 	}
-	return &Coordinator{m: m, starter: starter, deferred: map[string]struct{}{}, starting: map[string]int{}, now: time.Now, idleTick: defaultIdleTick, alerted: map[string]time.Time{}}
+	return &Coordinator{m: m, starter: starter, deferred: map[string]struct{}{}, starting: map[string]int{}, now: time.Now, idleTick: defaultIdleTick, alerted: map[string]time.Time{}, lf: newLaneFillState()}
 }
 
 // coordinatorKinds is the set of PRD kinds the coordinator listens to: the
@@ -125,6 +131,9 @@ func (c *Coordinator) Start() {
 	}
 	c.idleStop = make(chan struct{})
 	go c.idleLoop(c.idleStop, c.idleTick)
+	c.openLaneFill()
+	c.laneFillStop = make(chan struct{})
+	go c.laneFillLoop(c.laneFillStop)
 	c.mu.Unlock()
 
 	c.m.mu.Lock()
@@ -143,6 +152,10 @@ func (c *Coordinator) Stop() {
 	if c.idleStop != nil {
 		close(c.idleStop)
 		c.idleStop = nil
+	}
+	if c.laneFillStop != nil {
+		close(c.laneFillStop)
+		c.laneFillStop = nil
 	}
 	c.mu.Unlock()
 	if cancel != nil {
