@@ -10,7 +10,7 @@
 #   waiting-external      a worker parks on an external condition; its re-admission waits behind
 #                         another task that holds the one-slot pool
 #   final-gate            a final-gate task's verification script is running (start marker written)
-#   git-operation         the daemon's commit of a worker's output is inside a slow pre-commit hook
+#   git-operation         the daemon's task-start snapshot commit is inside a slow pre-commit hook
 #   automation-branches   an Automation runs an entry PRD, forks into two active PRD branches and joins them
 #   scheduled-due         a scheduled spawn comes due while the daemon is down
 #   websocket-clients     two WebSocket clients ride out the restart (scripts/restart-matrix/ws-client.py)
@@ -291,11 +291,14 @@ state_final_gate() {
 state_git_operation() {
   local name=git-operation status_after lock head_before results dirty
   SC_PRD=""
-  rm_state_begin "$name" "the daemon's commit of a worker's output is inside a slow pre-commit hook in the project repo"
+  rm_state_begin "$name" "the daemon's task-start snapshot commit is inside a slow pre-commit hook in the project repo"
   ot_boot "$name"
   echo 1 >"$RM_CTRL/planner_delay"
   echo 2 >"$RM_CTRL/worker_ticks"
   # The hook sleeps only once git-slow exists, so commits made while planning stay fast.
+  # Limit: the commit that takes a worker's output did not run this hook in a trial that
+  # armed it after the worker started, so the commit this state interrupts is the
+  # task-start snapshot commit, before any worker runs.
   cat >"$RM_PROJECT/.git/hooks/pre-commit" <<EOF
 #!/usr/bin/env bash
 if [[ -e "$RM_CTRL/git-slow" ]]; then
@@ -342,7 +345,7 @@ EOF
   dirty="$(ot_git -C "$RM_PROJECT" status --porcelain -- . ':!.mcp.json' ':!.datawatch' ':!.gitignore')"
   rm_check "repo_clean_after_settle" "$([[ -z "$dirty" ]] && echo 0 || echo 1)" "uncommitted worker output after settle: $(printf '%s' "$dirty" | grep -c . | tr -d ' ') path(s) (daemon bookkeeping excluded)"
   rm_check "task_completes" "$(sc_task_status_in "$SC_PRD" completed && echo 0 || echo 1)" "task status: $(rm_task_field "$SC_PRD" status) (after restart: $status_after)"
-  rm_state_end "$SC_BEFORE" "$SC_FINAL" "commit blocked in a 20s pre-commit hook when the daemon was restarted"
+  rm_state_end "$SC_BEFORE" "$SC_FINAL" "task-start snapshot commit blocked in a 20s pre-commit hook when the daemon was restarted; the commit of a worker output was not interrupted"
 }
 
 state_automation_branches() {

@@ -228,6 +228,9 @@ case "\$role" in
     done
     echo "work for this task" >"\$dir/worker-result.txt"
     echo "\$(date +%s) done" >>"\$ctrl/worker.done"
+    # a real worker ends on the completion marker; the daemon's resume path reads it
+    # from the recorded output to tell a finished worker from an unfinished one
+    echo "DATAWATCH_COMPLETE: matrix worker finished"
     ;;
 esac
 EOF
@@ -278,18 +281,14 @@ EOF
   # gated: records that it launched, waits for the gate file, then records the
   # start marker, sleeps, and finishes. The gate lets a scenario pick whether
   # the restart lands before the script's real work begins or in the middle.
-  # A service manager ends a daemon's child processes when it restarts the
-  # daemon; this harness signals only the daemon pid, so the script ends itself
-  # when the daemon that launched it is gone, which has the same effect.
+  # The script does nothing about its parent going away: whether it survives a
+  # restart is decided by the restart kill mode (RM_KILL_MODE), as in a unit.
   cat >"$RM_PROJECT/verify/gated.sh" <<EOF
 #!/usr/bin/env bash
-parent=\$PPID
-alive() { kill -0 "\$parent" 2>/dev/null; }
 echo "\$(date +%s) pid=\$\$" >>"$RM_CTRL/script.launched"
-while [[ ! -e "$RM_CTRL/script.gate" ]]; do alive || exit 143; sleep 0.5; done
+while [[ ! -e "$RM_CTRL/script.gate" ]]; do sleep 0.5; done
 echo "\$(date +%s) pid=\$\$" >>"$RM_CTRL/script.starts"
-end=\$((SECONDS + \$(cat "$RM_CTRL/script_sleep" 2>/dev/null || echo 4)))
-while ((SECONDS < end)); do alive || exit 143; sleep 0.5; done
+sleep "\$(cat "$RM_CTRL/script_sleep" 2>/dev/null || echo 4)"
 echo "\$(date +%s) done" >>"$RM_CTRL/script.finished"
 test -s worker-result.txt
 EOF
@@ -369,14 +368,48 @@ rm_daemon_start() {
   rm_log "sandbox daemon up: pid $RM_DAEMON_PID, $RM_BASE"
 }
 
-# rm_daemon_restart — TERM to the recorded pid only, wait for it to exit, then
-# relaunch from the same config. Sets RM_RESTART_* for the record.
+# rm_direct_children PID — pids whose parent is PID, one per line.
+rm_direct_children() {
+  local d stat ppid
+  for d in /proc/[0-9]*; do
+    stat="$(cat "$d/stat" 2>/dev/null)" || continue
+    # field 4 is the parent pid; the command name (field 2) may hold spaces, so
+    # cut at the closing parenthesis first
+    ppid="$(sed -E 's/^[0-9]+ \(.*\) [A-Za-z] ([0-9]+) .*/\1/' <<<"$stat")"
+    [[ "$ppid" == "$1" ]] && printf '%s\n' "${d#/proc/}"
+  done
+}
+
+# RM_KILL_MODE chooses what a restart ends, mirroring the unit's KillMode:
+#   control-group (default)  TERM the daemon pid and, by pid, each of its direct
+#                            children, as a service manager with KillMode
+#                            control-group does for every process in the unit
+#   process                  TERM the daemon pid only, as KillMode process does
+# Limitation: this is a simulation by pid. Only direct children are ended, not
+# grandchildren, and a multiplexer server the daemon started is not in the daemon's
+# process tree (it detaches), so it is never ended here; under a real control group
+# it would be, unless it runs in its own unit as the production setup does.
+RM_KILL_MODE="${RM_KILL_MODE:-control-group}"
+
+# rm_daemon_restart — TERM to the recorded pid (plus its direct children in
+# control-group mode), wait for the daemon to exit, then relaunch from the same
+# config. Sets RM_RESTART_* for the record.
 rm_daemon_restart() {
-  local pid="$RM_DAEMON_PID" t0=$SECONDS
+  local pid="$RM_DAEMON_PID" t0=$SECONDS child kids=()
   rm_verify_sandbox_pid "$pid" || rm_die "recorded pid '$pid' is not this sandbox's live daemon; refusing to signal it"
   RM_RESTART_OLD_PID="$pid"
   RM_RESTART_UPTIME_BEFORE="$(rm_uptime)"
+  case "$RM_KILL_MODE" in
+    control-group)
+      while IFS= read -r child; do [[ -n "$child" ]] && kids+=("$child"); done < <(rm_direct_children "$pid")
+      ;;
+    process) ;;
+    *) rm_die "RM_KILL_MODE must be control-group or process (got '$RM_KILL_MODE')" ;;
+  esac
+  RM_RESTART_CHILDREN="${kids[*]:-}"
   kill -TERM "$pid"
+  # the pids were read as this daemon's direct children an instant ago
+  for child in "${kids[@]}"; do kill -TERM "$child" 2>/dev/null || true; done
   RM_RESTART_TERM_CLEAN=true
   if ! rm_wait_until 90 bash -c "! kill -0 $pid 2>/dev/null"; then
     # Still alive after a long grace: this pid is the sandbox daemon recorded
@@ -670,12 +703,13 @@ rm_state_end() {
     --slurpfile criteria "$RM_CRITERIA_FILE" \
     --arg old_pid "${RM_RESTART_OLD_PID:-}" --arg new_pid "${RM_RESTART_NEW_PID:-}" \
     --arg term_clean "${RM_RESTART_TERM_CLEAN:-}" --arg down "${RM_RESTART_DOWN_SECONDS:-}" \
+    --arg kill_mode "$RM_KILL_MODE" --arg children "${RM_RESTART_CHILDREN:-}" \
     --argjson pass "$RM_STATE_PASS" --argjson fail "$RM_STATE_FAIL" \
     --arg lost "${RM_DERIVED_LOST_BYTES:-0}" --arg dup "${RM_DERIVED_DUPLICATES:-0}" \
     --arg redone "${RM_DERIVED_REDONE:-false}" \
     '{
       state: $state, description: $desc, result: $result, note: $note,
-      restart: {old_pid: $old_pid, new_pid: $new_pid, term_clean: ($term_clean == "true"), down_seconds: ($down | tonumber? // null)},
+      restart: {old_pid: $old_pid, new_pid: $new_pid, term_clean: ($term_clean == "true"), down_seconds: ($down | tonumber? // null), kill_mode: $kill_mode, children_terminated: ($children | split(" ") | map(select(. != "")))},
       derived: {
         task_status_before: ($before.task.status // null), task_status_after: ($after.task.status // null),
         session_ids_before: ($before.session_ids // []), session_ids_after: ($after.session_ids // []),
@@ -690,7 +724,7 @@ rm_state_end() {
     }' >"$RM_REC/$RM_STATE.json"
   printf '  -> %s (%d pass, %d fail), record: %s\n' "$result" "$RM_STATE_PASS" "$RM_STATE_FAIL" "$RM_REC/$RM_STATE.json"
   unset RM_DERIVED_LOST_BYTES RM_DERIVED_DUPLICATES RM_DERIVED_REDONE
-  RM_RESTART_OLD_PID="" RM_RESTART_NEW_PID="" RM_RESTART_TERM_CLEAN="" RM_RESTART_DOWN_SECONDS=""
+  RM_RESTART_OLD_PID="" RM_RESTART_NEW_PID="" RM_RESTART_TERM_CLEAN="" RM_RESTART_DOWN_SECONDS="" RM_RESTART_CHILDREN=""
 }
 
 # rm_write_summary — combined summary of every state record under the work

@@ -20,6 +20,9 @@
 #                   'go build -o datawatch ./cmd/datawatch/')
 #   RM_TMP_BASE     parent of the throwaway work root (default: $TMPDIR or /tmp);
 #                   keep it short, the multiplexer socket path has a length limit
+#   RM_KILL_MODE    what a restart ends, mirroring the unit's KillMode:
+#                   control-group (default) TERMs the daemon pid and, by pid, its
+#                   direct children; process TERMs the daemon pid only
 #
 # Output: PASS or FAIL per criterion on stdout, one JSON record per state and a
 # combined summary.json under <work root>/records. Exit status: 0 measured (or

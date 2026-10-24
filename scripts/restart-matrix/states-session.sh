@@ -165,7 +165,7 @@ sc_redone_flag() {
   for role in "$@"; do
     cb="$(sc_json_get "$before" ".counts.${role}_starts")"
     ca="$(sc_json_get "$final" ".counts.${role}_starts")"
-    ((ca > cb)) && redone=true
+    ((cb > 0 && ca > cb)) && redone=true # a role that had not started before the restart is not a redo
   done
   RM_DERIVED_REDONE="$redone"
 }
