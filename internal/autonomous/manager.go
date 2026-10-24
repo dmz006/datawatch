@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous/scan"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/git"
@@ -4884,6 +4885,44 @@ func (m *Manager) SetPRDContinueOnStoryFailure(prdID string, continueOnFailure b
 	return prd, m.store.SavePRD(prd)
 }
 
+// SetPRDNotifyEvents sets the per-Automaton notify_events list — the
+// lifecycle event kinds that produce notifications for this Automaton.
+// A nil or empty list clears the field (inherit from the next tier:
+// the assigned guardrail profile, then the global default set).
+// An invalid entry returns ValidateNotifyEvents' error unchanged so
+// callers can show the operator the valid kinds. A stored value that
+// actually changed writes one autonomous_notify_events_changed audit
+// entry (the single record for this setting); a no-change write writes
+// none.
+func (m *Manager) SetPRDNotifyEvents(prdID string, kinds []string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if err := ValidateNotifyEvents(kinds); err != nil {
+		return nil, err
+	}
+	oldList := prd.NotifyEvents
+	next := NormalizeNotifyEvents(kinds)
+	changed := strings.Join(oldList, ",") != strings.Join(next, ",")
+	prd.NotifyEvents = next
+	prd.UpdatedAt = time.Now()
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	if changed && m.auditFn != nil {
+		sourceAfter := m.ResolveNotifyEvents(prd).Source
+		m.auditFn(audit.ActionNotifyEventsChanged, map[string]any{
+			"scope":        "automaton",
+			"prd_id":       prd.ID,
+			"old":          strings.Join(oldList, ","),
+			"new":          strings.Join(next, ","),
+			"source_after": sourceAfter,
+		})
+	}
+	return prd, nil
+}
+
 // SetPRDGit (BL407 Phase 5) sets the per-PRD Git.AutoPR/BaseBranch
 // overrides. Both fields are set unconditionally on every call (same
 // shape as SetPRDGuardrails' multi-field replace) — a caller wanting
@@ -4990,9 +5029,15 @@ func (m *Manager) SetPRDGuardrails(prdID, profile string, perTask, perStory, per
 }
 
 // CreateGuardrailProfile (BL303 S2 T05) creates a new guardrail profile.
-func (m *Manager) CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool) (*GuardrailProfile, error) {
+// notifyEvents is validated (an invalid list returns the validation error
+// and creates nothing) and normalized; a nil or empty list clears the
+// field (inherit from the global default set).
+func (m *Manager) CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool, notifyEvents []string) (*GuardrailProfile, error) {
 	if name == "" {
 		return nil, fmt.Errorf("profile name is required")
+	}
+	if err := ValidateNotifyEvents(notifyEvents); err != nil {
+		return nil, err
 	}
 	p := &GuardrailProfile{
 		ID:               newProfileID(),
@@ -5000,6 +5045,7 @@ func (m *Manager) CreateGuardrailProfile(name, description string, guardrails []
 		Description:      description,
 		Guardrails:       guardrails,
 		BlockOnFileDrift: blockOnFileDrift,
+		NotifyEvents:     NormalizeNotifyEvents(notifyEvents),
 		CreatedAt:        time.Now(),
 		UpdatedAt:        time.Now(),
 	}
@@ -5008,10 +5054,26 @@ func (m *Manager) CreateGuardrailProfile(name, description string, guardrails []
 
 // UpdateGuardrailProfile (BL303 S2 T05) updates an existing profile.
 // A nil blockOnFileDrift leaves the profile's current value unchanged.
-func (m *Manager) UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool) (*GuardrailProfile, error) {
+// notifyEvents nil means "leave unchanged"; any non-nil slice (even
+// empty) replaces the stored list, where empty clears it to inherit.
+// An invalid list returns the validation error and changes nothing.
+// A change to the stored list writes one autonomous_notify_events_changed
+// audit entry with scope "profile"; a no-change write writes none.
+func (m *Manager) UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool, notifyEvents []string) (*GuardrailProfile, error) {
 	p, ok := m.store.GetGuardrailProfile(id)
 	if !ok {
 		return nil, fmt.Errorf("guardrail profile %q not found", id)
+	}
+	eventsChanged := false
+	oldEvents := p.NotifyEvents
+	newEvents := p.NotifyEvents
+	if notifyEvents != nil {
+		if err := ValidateNotifyEvents(notifyEvents); err != nil {
+			return nil, err
+		}
+		newEvents = NormalizeNotifyEvents(notifyEvents)
+		eventsChanged = strings.Join(oldEvents, ",") != strings.Join(newEvents, ",")
+		p.NotifyEvents = newEvents
 	}
 	if name != "" {
 		p.Name = name
@@ -5022,7 +5084,18 @@ func (m *Manager) UpdateGuardrailProfile(id, name, description string, guardrail
 		p.BlockOnFileDrift = blockOnFileDrift
 	}
 	p.UpdatedAt = time.Now()
-	return p, m.store.SaveGuardrailProfile(p)
+	if err := m.store.SaveGuardrailProfile(p); err != nil {
+		return nil, err
+	}
+	if eventsChanged && m.auditFn != nil {
+		m.auditFn(audit.ActionNotifyEventsChanged, map[string]any{
+			"scope":      "profile",
+			"profile_id": id,
+			"old":        strings.Join(oldEvents, ","),
+			"new":        strings.Join(newEvents, ","),
+		})
+	}
+	return p, nil
 }
 
 // DeleteGuardrailProfile (BL303 S2 T05) removes a profile.

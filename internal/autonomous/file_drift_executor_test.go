@@ -216,7 +216,7 @@ func TestCheckForeignFileDrift_WarnModePreExistingDoesNotBlock(t *testing.T) {
 
 func TestCheckForeignFileDrift_ProfileExplicitFalseOptOutDoesNotBlock(t *testing.T) {
 	m, prd, task, dir, rec := driftCheckFixture(t, nil)
-	p, err := m.CreateGuardrailProfile("lenient", "", nil, boolPtr(false))
+	p, err := m.CreateGuardrailProfile("lenient", "", nil, boolPtr(false), nil)
 	if err != nil {
 		t.Fatalf("CreateGuardrailProfile: %v", err)
 	}

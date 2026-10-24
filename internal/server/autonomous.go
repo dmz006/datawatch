@@ -2849,7 +2849,7 @@ func (s *Server) handleAutonomousGuardrailProfiles(w http.ResponseWriter, r *htt
 				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 				return
 			}
-			p, err := s.autonomousMgr.CreateGuardrailProfile(req.Name, req.Description, req.Guardrails, req.BlockOnFileDrift)
+			p, err := s.autonomousMgr.CreateGuardrailProfile(req.Name, req.Description, req.Guardrails, req.BlockOnFileDrift, nil)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -2883,7 +2883,7 @@ func (s *Server) handleAutonomousGuardrailProfiles(w http.ResponseWriter, r *htt
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		p, err := s.autonomousMgr.UpdateGuardrailProfile(id, req.Name, req.Description, req.Guardrails, req.BlockOnFileDrift)
+		p, err := s.autonomousMgr.UpdateGuardrailProfile(id, req.Name, req.Description, req.Guardrails, req.BlockOnFileDrift, nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

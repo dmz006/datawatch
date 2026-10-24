@@ -1364,6 +1364,20 @@ func (a *API) SetPRDContinueOnStoryFailure(prdID string, continueOnFailure bool)
 	return prd, nil
 }
 
+// SetPRDNotifyEvents sets the per-Automaton notify_events list (the
+// lifecycle event kinds that produce notifications for this Automaton).
+// A nil or empty list clears the field (inherit from the next tier).
+// An invalid entry returns the validation error unchanged so the caller
+// can show the operator the valid kinds.
+func (a *API) SetPRDNotifyEvents(prdID string, kinds []string) (any, error) {
+	prd, err := a.M.SetPRDNotifyEvents(prdID, kinds)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	return prd, nil
+}
+
 // SetPRDGit (BL407 Phase 5) sets the per-PRD Git.AutoPR/BaseBranch overrides.
 func (a *API) SetPRDGit(prdID string, autoPR bool, baseBranch string) (any, error) {
 	prd, err := a.M.SetPRDGit(prdID, autoPR, baseBranch)
@@ -1385,12 +1399,12 @@ func (a *API) GuardrailLibrary() []any {
 	return out
 }
 
-func (a *API) CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool) (any, error) {
-	return a.M.CreateGuardrailProfile(name, description, guardrails, blockOnFileDrift)
+func (a *API) CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool, notifyEvents []string) (any, error) {
+	return a.M.CreateGuardrailProfile(name, description, guardrails, blockOnFileDrift, notifyEvents)
 }
 
-func (a *API) UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool) (any, error) {
-	return a.M.UpdateGuardrailProfile(id, name, description, guardrails, blockOnFileDrift)
+func (a *API) UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool, notifyEvents []string) (any, error) {
+	return a.M.UpdateGuardrailProfile(id, name, description, guardrails, blockOnFileDrift, notifyEvents)
 }
 
 func (a *API) DeleteGuardrailProfile(id string) error {

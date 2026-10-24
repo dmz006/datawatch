@@ -65,4 +65,14 @@ const (
 	// new Automation. A dry run is not audited. Subject: the Automation.
 	// Details: graph_id, automation_id, member_count.
 	ActionAutomationImportGraph = "automation_import_graph"
+
+	// ActionNotifyEventsChanged — the per-Automaton or per-profile
+	// notify_events list changed (the lifecycle event kinds that produce
+	// notifications for that Automaton or profile). Details: scope
+	// ("automaton" | "profile"), prd_id or profile_id, old and new (the
+	// comma-separated kind lists before and after the change, "" =
+	// inherit from the next tier) — plus, on the Automaton entry only,
+	// source_after, the tier after the change (automaton, profile, or
+	// global).
+	ActionNotifyEventsChanged = "autonomous_notify_events_changed"
 )
