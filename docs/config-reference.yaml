@@ -1068,6 +1068,47 @@ autonomous:
     #   reset_weekday: monday..sunday. Week windows only; unset = Monday.
     #   reset_day:     1..28. Month windows only; unset = the 1st.
 
+  # Lane fill: keeps every execution lane busy. On each poll the planner looks
+  # at the queue and the lanes and decides what each idle lane should start.
+  # In shadow mode (the default) it computes and records every decision and
+  # starts nothing. Every key is settable at runtime, with no restart, on:
+  #   PUT /api/config {"autonomous.lane_fill.gpu_lanes": 2} (GET /api/config
+  #   shows it under autonomous.lane_fill), MCP autonomous_config_set, CLI
+  #   `datawatch config set autonomous.lane_fill.gpu_lanes 2`, comm
+  #   `configure autonomous.lane_fill.gpu_lanes=2`, and Settings -> General ->
+  #   Autonomous in the web app.
+  # A bad value is rejected (400 on PUT /api/config, an error on config load)
+  # and nothing is written. None of the keys is omitted from a saved file, so
+  # an explicit 0 survives a round trip.
+  #
+  # mode: off | shadow | on (case-insensitive). Empty means shadow. off does
+  #   nothing. shadow computes and records every decision and starts nothing.
+  #   on starts the work it decides on.
+  # gpu_lanes: whole number >= 0. How many GPU lanes exist. Default 2.
+  # claude_lanes: whole number >= 0. How many Claude lanes exist. Default 3;
+  #   0 means no Claude lane.
+  # idle_alert_minutes: whole number >= 0. How long a lane may sit idle with
+  #   eligible work queued before one alert is raised for that idle episode.
+  #   Default 30; 0 turns the alert off.
+  # decompose_ahead_min: whole number >= 0. The minimum number of decomposed
+  #   Automata kept ready per lane. Default 2.
+  # poll_seconds: whole number >= 0. Seconds between planner polls. Default 60;
+  #   0 means 60 and any value below 5 is raised to 5.
+  # gpu_backend: the backend the GPU lanes run. Default pi-prompt.
+  # gpu_model: the model the GPU lanes run. Empty (the default) means the
+  #   backend's own default model.
+  # claude_backend: the backend the Claude lanes run. Default claude-code.
+  lane_fill:
+    mode: shadow
+    gpu_lanes: 2
+    claude_lanes: 3
+    idle_alert_minutes: 30
+    decompose_ahead_min: 2
+    poll_seconds: 60
+    gpu_backend: pi-prompt
+    gpu_model: ""
+    claude_backend: claude-code
+
   # Progress metrics engine. Every parameter of the engine is a key here; none
   # is fixed in code. Each is also settable at runtime, with no restart, on
   # every configuration channel (shown for lanes; the others use the same form):

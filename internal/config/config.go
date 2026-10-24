@@ -2535,6 +2535,11 @@ type AutonomousConfig struct {
 	// coordination. See AutonomousAutomationConfig.
 	Automation AutonomousAutomationConfig `yaml:"automation" json:"automation"`
 
+	// LaneFill — knobs for automatic lane filling (mode, lane counts,
+	// idle alert, decompose-ahead, poll interval, lane backends). See
+	// AutonomousLaneFillConfig.
+	LaneFill AutonomousLaneFillConfig `yaml:"lane_fill" json:"lane_fill"`
+
 	// Progress — parameters of the progress metrics engine (lane count,
 	// inactive-window gap, backlog file, start date, snapshot retention).
 	// See AutonomousProgressConfig.
@@ -2607,6 +2612,165 @@ func ValidateUndeclaredEditMode(mode string) error {
 type AutonomousAutomationConfig struct {
 	IdleAlertMinutes  int    `yaml:"idle_alert_minutes" json:"idle_alert_minutes"`
 	AgentInsertPolicy string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
+}
+
+// autonomous.lane_fill.mode values and defaults.
+const (
+	LaneFillModeOff    = "off"
+	LaneFillModeShadow = "shadow"
+	LaneFillModeOn     = "on"
+
+	DefaultLaneFillGPULanes          = 2
+	DefaultLaneFillClaudeLanes       = 3
+	DefaultLaneFillIdleAlertMinutes  = 30
+	DefaultLaneFillDecomposeAheadMin = 2
+	DefaultLaneFillPollSeconds       = 60
+	MinLaneFillPollSeconds           = 5
+	DefaultLaneFillGPUBackend        = "pi-prompt"
+	DefaultLaneFillClaudeBackend     = "claude-code"
+)
+
+// AutonomousLaneFillConfig — autonomous.lane_fill sub-config: automatic lane
+// filling. Mode is "off", "shadow" or "on"; empty means shadow, which computes
+// and records every decision and starts nothing. GPULanes and ClaudeLanes are
+// the lane counts (ClaudeLanes 0 means no Claude lane). IdleAlertMinutes is
+// how long a lane may sit idle with eligible work queued before one alert is
+// raised (0 = off). DecomposeAheadMin is the minimum number of decomposed
+// Automata kept ready per lane. PollSeconds is the planner poll interval
+// (minimum 5). GPUBackend, GPUModel and ClaudeBackend choose the backends the
+// lanes run. None are omitempty, so an explicit zero survives a round trip.
+type AutonomousLaneFillConfig struct {
+	Mode              string `yaml:"mode" json:"mode"`
+	GPULanes          int    `yaml:"gpu_lanes" json:"gpu_lanes"`
+	ClaudeLanes       int    `yaml:"claude_lanes" json:"claude_lanes"`
+	IdleAlertMinutes  int    `yaml:"idle_alert_minutes" json:"idle_alert_minutes"`
+	DecomposeAheadMin int    `yaml:"decompose_ahead_min" json:"decompose_ahead_min"`
+	PollSeconds       int    `yaml:"poll_seconds" json:"poll_seconds"`
+	GPUBackend        string `yaml:"gpu_backend" json:"gpu_backend"`
+	GPUModel          string `yaml:"gpu_model" json:"gpu_model"`
+	ClaudeBackend     string `yaml:"claude_backend" json:"claude_backend"`
+}
+
+// DefaultAutonomousLaneFill returns the shipped lane fill settings: shadow
+// mode, 2 GPU lanes, 3 Claude lanes, the pi-prompt and claude-code backends.
+func DefaultAutonomousLaneFill() AutonomousLaneFillConfig {
+	return AutonomousLaneFillConfig{
+		Mode:              LaneFillModeShadow,
+		GPULanes:          DefaultLaneFillGPULanes,
+		ClaudeLanes:       DefaultLaneFillClaudeLanes,
+		IdleAlertMinutes:  DefaultLaneFillIdleAlertMinutes,
+		DecomposeAheadMin: DefaultLaneFillDecomposeAheadMin,
+		PollSeconds:       DefaultLaneFillPollSeconds,
+		GPUBackend:        DefaultLaneFillGPUBackend,
+		ClaudeBackend:     DefaultLaneFillClaudeBackend,
+	}
+}
+
+// ValidateLaneFillMode accepts the legal autonomous.lane_fill.mode values,
+// "", "off", "shadow" and "on" (case-insensitive, trimmed), and rejects every
+// other value.
+func ValidateLaneFillMode(mode string) error {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", LaneFillModeOff, LaneFillModeShadow, LaneFillModeOn:
+		return nil
+	default:
+		return fmt.Errorf("autonomous.lane_fill.mode: %q is not a valid value (must be \"off\", \"shadow\" or \"on\")", mode)
+	}
+}
+
+// EffectiveMode returns the mode in effect, normalized: an empty value means
+// shadow.
+func (c AutonomousLaneFillConfig) EffectiveMode() string {
+	m := strings.ToLower(strings.TrimSpace(c.Mode))
+	if m == "" {
+		return LaneFillModeShadow
+	}
+	return m
+}
+
+// EffectiveGPULanes returns the GPU lane count in effect: a negative value
+// means 2 (an explicit 0 is kept).
+func (c AutonomousLaneFillConfig) EffectiveGPULanes() int {
+	if c.GPULanes < 0 {
+		return DefaultLaneFillGPULanes
+	}
+	return c.GPULanes
+}
+
+// EffectiveClaudeLanes returns the Claude lane count in effect: a negative
+// value means 3 (an explicit 0 means no Claude lane).
+func (c AutonomousLaneFillConfig) EffectiveClaudeLanes() int {
+	if c.ClaudeLanes < 0 {
+		return DefaultLaneFillClaudeLanes
+	}
+	return c.ClaudeLanes
+}
+
+// EffectivePollSeconds returns the poll interval in effect: 0 (or less) means
+// 60 and any value below 5 is raised to 5.
+func (c AutonomousLaneFillConfig) EffectivePollSeconds() int {
+	switch {
+	case c.PollSeconds <= 0:
+		return DefaultLaneFillPollSeconds
+	case c.PollSeconds < MinLaneFillPollSeconds:
+		return MinLaneFillPollSeconds
+	}
+	return c.PollSeconds
+}
+
+// EffectiveDecomposeAheadMin returns the decompose-ahead minimum in effect: a
+// negative value means 2 (an explicit 0 is kept).
+func (c AutonomousLaneFillConfig) EffectiveDecomposeAheadMin() int {
+	if c.DecomposeAheadMin < 0 {
+		return DefaultLaneFillDecomposeAheadMin
+	}
+	return c.DecomposeAheadMin
+}
+
+// EffectiveIdleAlertMinutes returns the idle alert threshold in effect: a
+// negative value means 30 (an explicit 0 turns the alert off).
+func (c AutonomousLaneFillConfig) EffectiveIdleAlertMinutes() int {
+	if c.IdleAlertMinutes < 0 {
+		return DefaultLaneFillIdleAlertMinutes
+	}
+	return c.IdleAlertMinutes
+}
+
+// EffectiveGPUBackend returns the GPU lane backend in effect: empty means
+// pi-prompt.
+func (c AutonomousLaneFillConfig) EffectiveGPUBackend() string {
+	if strings.TrimSpace(c.GPUBackend) == "" {
+		return DefaultLaneFillGPUBackend
+	}
+	return c.GPUBackend
+}
+
+// EffectiveClaudeBackend returns the Claude lane backend in effect: empty
+// means claude-code.
+func (c AutonomousLaneFillConfig) EffectiveClaudeBackend() string {
+	if strings.TrimSpace(c.ClaudeBackend) == "" {
+		return DefaultLaneFillClaudeBackend
+	}
+	return c.ClaudeBackend
+}
+
+// validate rejects negative numbers and an unknown mode.
+func (c AutonomousLaneFillConfig) validate() error {
+	if err := ValidateLaneFillMode(c.Mode); err != nil {
+		return err
+	}
+	for k, v := range map[string]int{
+		"gpu_lanes":           c.GPULanes,
+		"claude_lanes":        c.ClaudeLanes,
+		"idle_alert_minutes":  c.IdleAlertMinutes,
+		"decompose_ahead_min": c.DecomposeAheadMin,
+		"poll_seconds":        c.PollSeconds,
+	} {
+		if v < 0 {
+			return fmt.Errorf("autonomous.lane_fill.%s: %d must be >= 0", k, v)
+		}
+	}
+	return nil
 }
 
 // autonomous.progress defaults. A zero numeric value means "use the default".
@@ -3309,6 +3473,7 @@ func DefaultConfig() *Config {
 			DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
 			UndeclaredEditMode:      "warn",
 			Automation:              AutonomousAutomationConfig{AgentInsertPolicy: AgentInsertPolicyAllow},
+			LaneFill:                DefaultAutonomousLaneFill(),
 			Progress:                AutonomousProgressConfig{BacklogPath: DefaultProgressBacklogPath},
 			// Notify is left as the zero value on purpose: an empty
 			// DefaultEvents list means the built-in lifecycle sinks
@@ -3781,6 +3946,9 @@ func validateLoaded(cfg *Config) error {
 			autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel)
 	}
 	if err := ValidateAgentInsertPolicy(cfg.Autonomous.Automation.AgentInsertPolicy); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.LaneFill.validate(); err != nil {
 		return err
 	}
 	if err := cfg.Autonomous.Progress.validate(); err != nil {

@@ -4320,6 +4320,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			DefaultAutoPR: acfgIn.DefaultAutoPR,
 			// Automation idle-alert threshold (autonomous.automation.*).
 			Automation: autonomouspkg.AutomationConfig{IdleAlertMinutes: acfgIn.Automation.IdleAlertMinutes},
+			// Lane fill (autonomous.lane_fill.*).
+			LaneFill: autonomouspkg.LaneFillConfigFromYAML(acfgIn.LaneFill),
 		}
 		// BL191 Q4 defaults — preserve the autonomouspkg defaults when
 		// the operator hasn't explicitly configured these.

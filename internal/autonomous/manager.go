@@ -462,6 +462,9 @@ type Config struct {
 
 	// Automation holds the autonomous.automation.* knobs.
 	Automation AutomationConfig `json:"automation"`
+
+	// LaneFill holds the autonomous.lane_fill.* knobs.
+	LaneFill LaneFillConfig `json:"lane_fill"`
 }
 
 // AutomationConfig carries the Automation coordination knobs
@@ -511,6 +514,7 @@ func DefaultConfig() Config {
 		// here, not at the zero value — mirrors the config-load default
 		// (internal/config resume_max_age) that main.go's bridge picks up.
 		ResumeMaxAgeSeconds: bootResumeDefaultMaxAgeSeconds,
+		LaneFill:            DefaultLaneFillConfig(),
 	}
 }
 
@@ -4275,6 +4279,7 @@ func (m *Manager) InstantiateTemplate(templateID string, vars map[string]string,
 	}
 	newPRD.Title = subst(tmpl.Title)
 	newPRD.TemplateOf = tmpl.ID
+	newPRD.LanePreference = tmpl.LanePreference
 	newPRD.VerificationBackend = tmpl.VerificationBackend
 	newPRD.VerificationModel = tmpl.VerificationModel
 	newPRD.VerificationEffort = tmpl.VerificationEffort

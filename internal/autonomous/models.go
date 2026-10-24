@@ -314,6 +314,9 @@ type PRD struct {
 	// derive at read time (old records keep working). See EffectiveKind.
 	Kind   string   `json:"kind,omitempty"`
 	Skills []string `json:"skills,omitempty"`
+	// LanePreference says which kind of lane suits this Automaton: "gpu" or
+	// "claude". Empty means any lane. See NormalizeLanePreference.
+	LanePreference string `json:"lane_preference,omitempty"`
 	// TagIDs lists the managed Tag IDs assigned to this automaton.
 	TagIDs []string `json:"tag_ids,omitempty"`
 

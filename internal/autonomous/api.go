@@ -1321,6 +1321,17 @@ func (a *API) SetPRDKind(prdID, kind string) (any, error) {
 	return prd, nil
 }
 
+// SetPRDLanePreference sets which kind of lane suits the Automaton: gpu,
+// claude or any.
+func (a *API) SetPRDLanePreference(prdID, pref string) (any, error) {
+	if err := a.M.SetPRDLanePreference(prdID, pref); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
+}
+
 // SetPRDDirs sets per-PRD read-only/writable directory scope.
 func (a *API) SetPRDDirs(prdID string, readDirs, writeDirs []string) (any, error) {
 	if err := a.M.SetPRDDirs(prdID, readDirs, writeDirs); err != nil {
