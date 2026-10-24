@@ -346,6 +346,11 @@ type PRD struct {
 	// rules review). Same explicit > profile > global Config precedence
 	// as the task/story lists above.
 	PerPRDGuardrails []string `json:"per_prd_guardrails,omitempty"`
+	// NotifyEvents lists the lifecycle event kinds (see
+	// ValidNotifyEventKinds) that produce notifications for this
+	// Automaton. Empty = inherit from the next tier (profile, then
+	// global default set).
+	NotifyEvents []string `json:"notify_events,omitempty"`
 
 	// BL410 Phase 1 — per-Automaton retry-policy overrides. Priority:
 	// explicit RetryPolicy > named RetryProfile > global Config,
@@ -1158,9 +1163,14 @@ type GuardrailProfile struct {
 	// BlockOnFileDrift uses a pointer so a profile can explicitly
 	// express "disabled" rather than merely "not set" (nil = fall
 	// through to global Config.BlockOnFileDrift).
-	BlockOnFileDrift *bool     `json:"block_on_file_drift,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	BlockOnFileDrift *bool `json:"block_on_file_drift,omitempty"`
+	// NotifyEvents lists the lifecycle event kinds (see
+	// ValidNotifyEventKinds) that produce notifications for Automata on
+	// this profile. Empty = inherit from the next tier (global default
+	// set).
+	NotifyEvents []string  `json:"notify_events,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // RetryProfile (BL410 Phase 1) is a named, reusable retry policy — the
