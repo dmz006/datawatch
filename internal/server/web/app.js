@@ -21618,10 +21618,8 @@ function loadAutomataPanel() {
   if (!panel) return Promise.resolve();
   // Same loader for first load, filter changes, polling and WebSocket
   // refreshes: after the first response the spinner never returns and open
-  // cards stay open. The progress card rides the same refresh path (it
-  // throttles itself, so filter typing does not refetch it every keystroke).
+  // cards stay open.
   const loading = _automataLoader().load();
-  if (typeof window.loadProgressCard === 'function') window.loadProgressCard();
   return loading;
 }
 window.loadAutomataPanel = loadAutomataPanel;
@@ -22027,7 +22025,8 @@ function switchAutomataTab(tab) {
     renderAutonomousView();
     return;
   }
-  if (typeof window.paintProgressCard === 'function') window.paintProgressCard();
+  // Entering the list sub-tabs drops any Automaton detail capacity timer.
+  if (window._prdCapacityInterval) { clearInterval(window._prdCapacityInterval); window._prdCapacityInterval = null; }
   if (tab === 'templates') loadAutomataTemplatesPanel();
   else _automataShowList();
 }
@@ -23193,7 +23192,7 @@ window.capacityCardHtml = function(cap, opts) {
 };
 
 // Polled every 5s; the interval lives on window so re-renders never stack
-// timers. With no prdId the card is the machine-wide view (Automata list).
+// timers. The card is the Automaton detail card (scoped to prdId when given).
 window._loadPRDCapacityCard = function(prdId) {
   const slot = document.getElementById('prdCapacityCard');
   if (!slot) return;
@@ -25222,8 +25221,6 @@ function renderAutonomousView() {
           <input type="checkbox" id="automataSelectAll" onchange="toggleAutomataSelectAll(this.checked)"> All
         </label>
       </div>
-      <div id="prdCapacityCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
-      <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automataPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>`}
@@ -25237,8 +25234,9 @@ function renderAutonomousView() {
     if (st.tab === 'templates') loadAutomataTemplatesPanel();
     else if (reuse) _automataShowList();
     else loadAutomataPanel();
-    window._loadPRDCapacityCard();
-    if (typeof window.paintProgressCard === 'function') window.paintProgressCard();
+    // The list body has no status card; drop any Automaton detail capacity
+    // timer left over from a previous detail view.
+    if (window._prdCapacityInterval) { clearInterval(window._prdCapacityInterval); window._prdCapacityInterval = null; }
   }
   _automataReuseList = false;
   _injectServerPickerBar(view, renderAutonomousView); // BL312 S3
