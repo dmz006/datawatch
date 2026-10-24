@@ -4457,6 +4457,7 @@ func (m *Manager) reconcileStuckTasks() {
 	aliveFn := m.sessionAliveFn
 	killerFn := m.sessionKillerFn
 	listFn := m.sessionListerFn
+	outputFn := m.sessionOutputFn
 	m.mu.Unlock()
 
 	prds := m.store.ListPRDs()
@@ -4476,10 +4477,19 @@ func (m *Manager) reconcileStuckTasks() {
 				}
 				completing := false
 				if t.Status == TaskVerifying || t.Status == TaskRunningTests {
-					switch ResolveVerifyingTask(aliveFn, t) {
-					case TaskVerifying:
+					switch ResolveVerifyingResume(aliveFn, outputFn, t) {
+					case VerifyingResumeKeepLive:
 						continue // session still live; leave it
-					case TaskCompleted:
+					case VerifyingResumeReverify:
+						// The worker finished and no verdict is recorded: keep the
+						// task verifying with its session, result and SHAs
+						// untouched, so executeOne verifies it once instead of
+						// running the worker again. No kill, no retry counted.
+						m.adoptCapacity(prd, t)
+						log.Printf("[autonomous] boot-reconcile: prd=%s task=%s kept verifying (worker finished, no verdict recorded, session %s)",
+							prd.ID, t.ID, t.SessionID)
+						continue
+					case VerifyingResumeComplete:
 						// A recorded ok verification verdict stands: complete the
 						// task instead of blindly re-running it. Verification is
 						// kept untouched.
