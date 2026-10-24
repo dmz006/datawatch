@@ -58,8 +58,10 @@ test('reconnect issues one sessions request and one subscribe, no fan-out, keeps
   assert.equal(fetched.length, 1, `no config/health refetch: ${fetched}`);
   assert.equal(sent.filter(m => m.type === 'subscribe').length, 1);
   // Only the open session's coalesced schedule load may appear; never one per session.
-  assert.ok(apiCalls.length <= 1, `no per-session fan-out: ${apiCalls}`);
-  assert.ok(apiCalls.every(p => p.includes('session_id=host-s3')), `unexpected: ${apiCalls}`);
+  // The bounded session list may not hold the open session (it can be older than
+  // the recent window), so one fetch of that session by id is allowed as well.
+  assert.ok(apiCalls.length <= 2, `no per-session fan-out: ${apiCalls}`);
+  assert.ok(apiCalls.every(p => p.includes('session_id=host-s3') || p === '/api/sessions/host-s3'), `unexpected: ${apiCalls}`);
   assert.equal(vm.runInContext('state._termHasContent', sandbox), true);
 });
 
