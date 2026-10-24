@@ -49,7 +49,7 @@ func NormalizePRDStatus(s PRDStatus) PRDStatus {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -875,8 +875,9 @@ type Task struct {
 	// in TaskReviewNeeded.
 	ReviewSummary *ReviewSummary `json:"review_summary,omitempty"`
 	// ExecutorSource is the level that supplied the execution backend for
-	// the most recent run attempt: "task", "story", "prd", "automation" or
-	// "global" (no level set one, so the fallback backend was used). Set by
+	// the most recent run attempt: "task", "story", "prd", "automation",
+	// "global" (no level set one, so the fallback backend was used) or
+	// "escalation" (a failure escalation step chose the worker). Set by
 	// the dispatch loop before the session spawns and overwritten by each
 	// later attempt.
 	ExecutorSource string `json:"executor_source,omitempty"`

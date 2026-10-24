@@ -37,8 +37,9 @@ var retryVerdictFakeSpawn = func(_ context.Context, _ SpawnRequest) (SpawnResult
 func newRetryVerdictPRD(t *testing.T) (*Manager, string) {
 	t.Helper()
 	cfg := DefaultConfig()
-	cfg.AutoFixRetries = 0            // single attempt: no auto-fix retries
-	cfg.ContentAutoFixEnabled = false // single attempt, no auto-fix retry noise
+	cfg.AutoFixRetries = 0                                                        // single attempt: no auto-fix retries
+	cfg.FailureEscalation = FailureEscalationPolicy{Enabled: escalationOn(false)} // legacy bound applies
+	cfg.ContentAutoFixEnabled = false                                             // single attempt, no auto-fix retry noise
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "do"}}}})

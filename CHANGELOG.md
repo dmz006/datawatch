@@ -8,6 +8,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Every failed attempt of a task is recorded: the worker it ran on, its duration, how it ended, the verifier's summary and issues, and the files it changed. Records are kept across operator actions.
 - The next attempt's prompt carries the earlier reports, oldest first. When the reports would exceed the prompt limit, the oldest attempts are shortened to one line each, then left out, and the prompt says so.
 - With failure escalation disabled, the retry hint is unchanged from before.
+- A failed attempt moves the next attempt to the next worker on the Automaton's or task's escalation ladder. Each step covers its own number of failed attempts, and the last step covers the rest. A worker change is written to the Automaton's decision log.
+- With failure escalation on, a task gets `max_failures` failed attempts (default 3) instead of one attempt plus `auto_fix_retries`. Escalation is on by default, so an Automaton without explicit settings now gets three attempts. Set `autonomous.failure_escalation.enabled: false` to keep the previous bound.
+- A ladder step's backend and model are checked before the Automaton starts, so a step that cannot run refuses the start and names the task and the step.
 
 ## v9.5.125 — Restart keeps a finished worker and re-verifies only
 

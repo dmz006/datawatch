@@ -2687,6 +2687,9 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 				emitReset = func(dec *Decision) { m.emitPendingTaskEvents(prd, []pendingTaskEvent{resetEv}, dec) }
 				t.Verification = nil
 				t.RetryCount = 0
+				// A human reset starts a new count of failed attempts for the
+				// failure escalation policy, so the ladder restarts at step 1.
+				t.EscalationFailures = 0
 				// v9.2.1 — a manual (operator) reset is the strongest "this is a
 				// retry" signal: to reach this block the task already reached a
 				// terminal-ish status (failed/blocked, or completed/cancelled

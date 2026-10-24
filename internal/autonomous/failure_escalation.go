@@ -181,6 +181,16 @@ type escalationLevel struct {
 // global default (Config.FailureEscalation). Sources records which level
 // supplied each field. Either argument may be nil.
 func (m *Manager) resolveFailureEscalation(prd *PRD, t *Task) EffectiveFailureEscalation {
+	m.mu.Lock()
+	global := m.cfg.FailureEscalation
+	m.mu.Unlock()
+	return resolveFailureEscalationFrom(global, prd, t)
+}
+
+// resolveFailureEscalationFrom is resolveFailureEscalation with the global
+// default passed in. Callers that already hold m.mu (the Run preflight) use
+// it so they do not re-acquire the lock.
+func resolveFailureEscalationFrom(global FailureEscalationPolicy, prd *PRD, t *Task) EffectiveFailureEscalation {
 	var levels []escalationLevel
 	if t != nil && t.FailureEscalation != nil {
 		levels = append(levels, escalationLevel{t.FailureEscalation, escalationSourceTask})
@@ -206,9 +216,7 @@ func (m *Manager) resolveFailureEscalation(prd *PRD, t *Task) EffectiveFailureEs
 		return eff
 	}
 
-	m.mu.Lock()
-	g := normalizeFailureEscalationPolicy(m.cfg.FailureEscalation)
-	m.mu.Unlock()
+	g := normalizeFailureEscalationPolicy(global)
 	if !haveEnabled {
 		eff.Enabled, eff.Sources.Enabled = *g.Enabled, escalationSourceGlobal
 	}

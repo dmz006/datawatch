@@ -1002,8 +1002,16 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		return nil
 	}
 	spawn = m.capacityRetrySpawn(t, spawn)
+	// Attempt budget. With failure escalation on, the task gets MaxFailures
+	// failed attempts counted from the last operator action. With it off, the
+	// legacy bound applies: one attempt plus auto_fix_retries.
+	esc := m.resolveFailureEscalation(prd, t)
+	budget := retries + 1
+	if esc.Enabled {
+		budget = esc.MaxFailures - m.escalationFailureCount(t)
+	}
 	var run attemptRun
-	for attempt := 0; attempt <= retries; attempt++ {
+	for attempt := 0; attempt < budget; attempt++ {
 		var err error
 		run = attemptRun{RefsBefore: len(t.AttemptRefs)}
 
@@ -1121,6 +1129,24 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			story := findStory(prd, t.StoryID)
 			auto := m.AutomationForPRD(prd)
 			backend, model, execSource := resolveTaskExecutionLLM(t, story, prd, auto, m.cfg.ExecutionBackend)
+			effort := resolveTaskEffort(t, story, prd, auto)
+			// Failure escalation: the ladder step that the failed attempts so
+			// far select replaces the worker for this attempt only. Backend,
+			// model and effort come from the same step (a model never cascades
+			// from another level), and t.Backend/t.Model are not written.
+			escalated, stepIdx := false, -1
+			if esc.Enabled {
+				if step, idx, ok := selectEscalationStep(esc, m.escalationFailureCount(t)); ok {
+					backend, model, execSource = step.Backend, step.Model, ExecutorSourceEscalation
+					if step.Effort != "" {
+						effort = step.Effort
+					}
+					escalated, stepIdx = true, idx
+				}
+				if note := m.escalationWorkerChangeNote(t, backend, model, stepIdx); note != "" {
+					m.recordFailureEscalationDecision(prd.ID, t.ID, note, backend, model)
+				}
+			}
 			// Backstop for the Run preflight: never spawn an invalid pair.
 			if merr := validateModelForBackend(backend, model); merr != nil {
 				mismatch := fmt.Errorf("task %s not spawned: %w", t.ID, merr)
@@ -1140,8 +1166,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// overwrites it.
 			m.store.WithLock(func() { t.ExecutorSource = execSource })
 			_ = m.store.SaveTask(t)
-			effort := resolveTaskEffort(t, story, prd, auto)
 			run.Backend, run.Model, run.Effort, run.StartedAt = backend, model, effort, now
+			run.Escalated = escalated
 			// v5.27.5 — most-specific permission-mode wins: per-task →
 			// per-PRD → SpawnFn falls through to session default.
 			permMode := t.PermissionMode
@@ -1321,7 +1347,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					log.Printf("[autonomous] task %s start failure %d/%d — re-queueing without consuming the normal retry budget",
 						t.ID, t.StartFailures, SessionStartRetryBudget)
 					t.Error = err.Error()
-					m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: err.Error()})
+					m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: err.Error(), Requeue: true})
 					_ = m.store.SaveTask(t)
 					attempt-- // offset the loop's post-iteration attempt++
 					continue
@@ -2266,6 +2292,9 @@ const (
 	ExecutorSourcePRD        = "prd"
 	ExecutorSourceAutomation = "automation"
 	ExecutorSourceGlobal     = "global"
+	// ExecutorSourceEscalation marks an attempt whose worker was chosen by a
+	// failure escalation step rather than by the levels above.
+	ExecutorSourceEscalation = "escalation"
 )
 
 // resolveTaskBackendModel resolves a task's effective backend and model.

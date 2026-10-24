@@ -36,6 +36,8 @@ type attemptRun struct {
 	Effort     Effort
 	StartedAt  time.Time
 	RefsBefore int
+	// Escalated is true when an escalation step chose this attempt's worker.
+	Escalated bool
 }
 
 // attemptFailure is how an attempt ended when it did not succeed.
@@ -51,6 +53,10 @@ type attemptFailure struct {
 	// Verification is the verifier's result. Zero when the attempt ended
 	// before verification ran (a stall, a start failure).
 	Verification VerificationResult
+	// Requeue is true when the same attempt runs again (a session-start
+	// retry). Such a failure is recorded but does not count toward the
+	// failure escalation policy's max_failures.
+	Requeue bool
 }
 
 // recordFailedAttempt appends a TaskAttempt for the attempt that just failed
@@ -96,10 +102,14 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		VerifierIssues:  append([]string(nil), f.Verification.Issues...),
 		ChangedFiles:    attemptChangedFiles(ctx, m.resolveTaskProjectDir(prd, t), ref),
 		SnapshotRef:     ref,
+		Escalated:       run.Escalated,
 	}
 	m.store.WithLock(func() {
 		rec.Number = len(t.Attempts) + 1
 		t.Attempts = append(t.Attempts, rec)
+		if !f.Requeue {
+			t.EscalationFailures++
+		}
 	})
 	if err := m.store.SaveTask(t); err != nil {
 		log.Printf("[autonomous] prd=%s task=%s: record failed attempt %d: %v", prd.ID, t.ID, rec.Number, err)
