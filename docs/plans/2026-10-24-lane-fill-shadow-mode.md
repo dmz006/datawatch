@@ -246,6 +246,8 @@ If any criterion fails, stay in shadow, fix the cause, and run another day.
 | Android | Excluded in this work | This work does not change the apps. The supervisor files the datawatch-app issue at merge, using the draft text below. |
 | iPhone | Excluded in this work | This work does not change the apps. The supervisor files the datawatch-app issue at merge, using the draft text below. No gh command is run by the implementing session. |
 
+**Mobile-Parity.** Mobile clients may parse two REST surfaces and nothing else from this work. `GET /api/autonomous/lane-fill?limit=N` returns `mode` (`off`, `shadow` or `on`), `last_poll_at`, `lanes[]` (each with `id`, `type` (`gpu` or `claude`), `state` (`occupied` or `idle`), `occupant` (`prd_id`, `title`, `backend`, or null), `blocker` and `eligible_waiting`), `queued_eligible` (`gpu` and `claude` counts), `evidence` (`checked_at`, `gpu_active_sessions`, `loaded_models[]` with `host` and `model`, and `error`), `decisions[]` newest first (`at`, `mode`, `lane_id`, `action`, `prd_id`, `title`, `reason`, `blocker`, `executed`, `error`) and `alerts[]` (`at`, `lane_id`, `work`). A decision with `executed` false is a would-start in shadow mode, and a client must not show it as started. The lane preference is set by `POST /api/autonomous/prds/{id}/set_lane_preference` with a JSON body `{"lane_preference": "gpu" | "claude" | "any"}`, and the same `lane_preference` field appears on each Automaton record, where an absent value means `any`. The `autonomous.lane_fill.*` keys travel through the existing config get and put, so no new mobile route is needed.
+
 ### Draft issue text for the companion app repository
 
 Title: `feat(automation): lane fill status view and Automaton lane preference`
