@@ -88,6 +88,12 @@ When documenting a test, use this table format:
   defines the target, so lightweight temporary repositories without a Makefile are unaffected.
   Because the helper can only check main, each incoming branch must have passed `make lint`
   before it is handed to the helper.
+- Its regression test is `tests/ci/internal_refs_check_test.go`, run via
+  `go test ./tests/ci/` (and therefore also by `go test ./...`): it copies the check
+  script into a throwaway fixture tree under a temp directory and verifies that a clean
+  tree passes, that a leaked ID in each audited surface makes the check fail with the
+  affected file named, and that exempt locations (Go code comments, `docs/plans/`)
+  still pass.
 
 ## Historical Feature Tests
 
