@@ -206,3 +206,21 @@ func TestAutonomousSessionBodyCarriesTaskTitle(t *testing.T) {
 		t.Errorf("task_title should be absent when Title is empty, got %v", body["task_title"])
 	}
 }
+
+func TestBuildAutonomousSessionBodyCarriesWriteScope(t *testing.T) {
+	req := autonomouspkg.SpawnRequest{WriteScope: []string{"/a", "/b"}}
+	body := buildAutonomousSessionBody(req, "spec", "")
+	got, ok := body["write_scope"].([]string)
+	if !ok {
+		t.Fatalf("write_scope = %T, want []string", body["write_scope"])
+	}
+	if len(got) != 2 || got[0] != "/a" || got[1] != "/b" {
+		t.Errorf("write_scope = %v, want [/a /b] in order", got)
+	}
+
+	reqEmpty := autonomouspkg.SpawnRequest{}
+	bodyEmpty := buildAutonomousSessionBody(reqEmpty, "spec", "")
+	if _, ok := bodyEmpty["write_scope"]; ok {
+		t.Errorf("write_scope should be absent when WriteScope is empty, got %v", bodyEmpty["write_scope"])
+	}
+}

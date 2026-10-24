@@ -1,8 +1,9 @@
-// prdHasGit — PRD task sessions get git activity (StartOptions.Git) when
-// the PRD has git settings. These tests capture the SpawnRequest the
-// executor hands to SpawnFn and assert Git is true exactly when the PRD
-// has git settings (prd.Git populated or a project profile), and false
-// otherwise. Existing no-git PRD flows keep Git=false, unchanged.
+// prdHasGit / prdAutoCommits — PRD task sessions get git activity
+// (StartOptions.Git) when the PRD has git settings and may auto-commit:
+// worktree mode, or declared write dirs that bind the commit scope. These
+// tests capture the SpawnRequest the executor hands to SpawnFn and assert
+// Git accordingly (see prdAutoCommits in executor.go). Existing no-git PRD
+// flows keep Git=false, unchanged.
 
 package autonomous
 
@@ -107,8 +108,11 @@ func TestSpawnRequest_GitTrue_WhenPRDHasProjectProfile(t *testing.T) {
 	})
 	prd, _ = m.Store().GetPRD(prd.ID)
 	// Project profile = development against a project repo (git-remote work).
+	// Direct mode (no worktree branch): git activity requires declared write
+	// dirs, which bound the auto-commit's staging scope.
 	prd.Git = GitWorkflow{}
 	prd.ProjectProfile = "my-project"
+	prd.WriteDirs = []string{dir + "/scoped"}
 	prd.Status = PRDRunning
 	_ = m.Store().SavePRD(prd)
 	prd, _ = m.Store().GetPRD(prd.ID)
@@ -119,7 +123,7 @@ func TestSpawnRequest_GitTrue_WhenPRDHasProjectProfile(t *testing.T) {
 		t.Fatal("spawn was not called")
 	}
 	if !req.Git {
-		t.Errorf("SpawnRequest.Git = false, want true: PRD has a project profile (project repo); the task session should run git activity")
+		t.Errorf("SpawnRequest.Git = false, want true: PRD has a project profile (project repo) with declared write dirs; the task session should run git activity within that scope")
 	}
 }
 
