@@ -1988,14 +1988,17 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cmd := router.Parse(req.Text)
-	result := s.executeCommand(cmd, req.Text)
+	origin := fmt.Sprintf("REST POST /api/command requested by %s", s.auditActor(r.Context()))
+	result := s.executeCommand(cmd, req.Text, origin)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"result": result}) //nolint:errcheck
 }
 
-// executeCommand runs a parsed command and returns a response string
-func (s *Server) executeCommand(cmd router.Command, raw string) string {
+// executeCommand runs a parsed command and returns a response string. origin
+// names the surface and actor that sent the command; a kill records it as the
+// session's end reason.
+func (s *Server) executeCommand(cmd router.Command, raw, origin string) string {
 	// Handle tmux-copy-mode command: enters tmux copy-mode directly (more reliable than C-b [).
 	if strings.HasPrefix(raw, "tmux-copy-mode ") {
 		sessID := strings.TrimSpace(raw[15:])
@@ -2108,7 +2111,7 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 		return fmt.Sprintf("[%s] Input sent.", cmd.SessionID)
 
 	case router.CmdKill:
-		err := s.manager.Kill(cmd.SessionID)
+		err := s.manager.EndSession(cmd.SessionID, session.EndReason{Caller: endCallerCommandKill, Reason: origin})
 		if err != nil {
 			return fmt.Sprintf("Error: %v", err)
 		}
@@ -2146,6 +2149,9 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// BL316 — capture federated peer at upgrade time for per-message cap checks.
 	wsPeer := peerFromContext(r.Context())
+	// The actor names who opened the socket; a command sent over it records
+	// that actor as the end reason of any session it kills.
+	wsOrigin := fmt.Sprintf("WebSocket command requested by %s", s.auditActor(r.Context()))
 	var wsGranted []string
 	if wsPeer != nil {
 		var custom map[string]*federation.CapabilityGroup
@@ -2277,7 +2283,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			var d CommandData
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
 			cmd := router.Parse(d.Text)
-			result := s.executeCommand(cmd, d.Text)
+			result := s.executeCommand(cmd, d.Text, wsOrigin)
 			// Send result back to this client
 			respRaw, _ := json.Marshal(NotificationData{Message: result})
 			resp := WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}
@@ -2334,7 +2340,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				}
 			} else {
 				cmd := router.Command{Type: router.CmdSend, SessionID: d.SessionID, Text: d.Text}
-				result := s.executeCommand(cmd, "")
+				result := s.executeCommand(cmd, "", wsOrigin)
 				respRaw, _ := json.Marshal(NotificationData{Message: result})
 				resp := WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}
 				respPayload, _ := json.Marshal(resp)
@@ -4461,7 +4467,11 @@ func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
 		}
 		targetID = sess.FullID
 	}
-	if err := s.manager.Kill(targetID); err != nil {
+	why := session.EndReason{
+		Caller: endCallerRESTSessionKill,
+		Reason: fmt.Sprintf("REST POST /api/sessions/kill requested by %s", s.auditActor(r.Context())),
+	}
+	if err := s.manager.EndSession(targetID, why); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}

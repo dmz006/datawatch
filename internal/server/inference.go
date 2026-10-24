@@ -25,6 +25,7 @@ import (
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/inference"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // SetInference wires the runtime registry + dispatcher into the server.
@@ -733,7 +734,10 @@ func (s *Server) handleLLMForceDelete(w http.ResponseWriter, r *http.Request, na
 			if sess.LLMRef != name {
 				continue
 			}
-			_ = s.manager.Kill(sess.FullID)
+			_ = s.manager.EndSession(sess.FullID, session.EndReason{
+				Caller: endCallerLLMForceDelete,
+				Reason: fmt.Sprintf("REST POST /api/llms/%s/force_delete requested by %s: the LLM is deleted with its sessions", name, s.auditActor(r.Context())),
+			})
 			cancelled = append(cancelled, map[string]any{
 				"kind": "session", "id": sess.FullID,
 			})

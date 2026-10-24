@@ -432,6 +432,9 @@ func (s *Server) handleSessionHookEvent(w http.ResponseWriter, r *http.Request) 
 		Payload:   body.Payload,
 	}
 	globalHookStore.record(sid, ev)
+	// The board is the only thing a Stop or SubagentStop changes; the journal
+	// line says so. Debug-gated inside NoteHookBoardEvent.
+	s.manager.NoteHookBoardEvent(sid, body.Event)
 	// BL303 S3 T12 — broadcast live hook update so PWA Status tab refreshes without polling.
 	if s.hub != nil {
 		go s.hub.BroadcastHookUpdate(sid, globalHookStore.board(sid))

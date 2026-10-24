@@ -8225,6 +8225,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				"prev_state": string(old),
 				"task":       sess.Task,
 			})
+			mgr.NoteHookBoardEvent(sess.FullID, canonical)
 		}
 		// Local web server: notify immediately
 		if httpServer != nil {

@@ -1996,7 +1996,8 @@ func (r *Router) handleKill(cmd Command) {
 		return
 	}
 
-	if err := r.manager.Kill(sess.FullID); err != nil {
+	why := session.EndReason{Caller: endCallerCommChannelKill, Reason: "comm channel kill from " + r.commChannelName()}
+	if err := r.manager.EndSession(sess.FullID, why); err != nil {
 		r.send(fmt.Sprintf("[%s][%s] Failed to kill: %v", r.hostname, sess.ID, err))
 		return
 	}

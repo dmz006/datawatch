@@ -4527,7 +4527,7 @@ func (m *Manager) reconcileStuckTasks() {
 				}
 				// Every other live session of this task or its worktree must end
 				// before the replacement launches.
-				recordEndedSessions(prd, t, m.endLiveSessionsOfTask(prd, t, "", "autonomous.boot-reconcile.reset", "task reset on daemon restart: every other live session of the task or its worktree ends before the replacement"), "task reset on daemon restart")
+				recordEndedSessions(prd, t, m.endLiveSessionsOfTask(prd, t, "", "autonomous.boot-reconcile.reset", taskResetEndReason(prd.ID, t.ID)), "task reset on daemon restart")
 				now := time.Now()
 				if completing {
 					log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskCompleted (recorded ok verification, dead session)",

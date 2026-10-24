@@ -98,6 +98,12 @@ func (m *Manager) endLiveSessionsOfTask(prd *PRD, t *Task, keep, caller, why str
 	return ended
 }
 
+// taskResetEndReason is the end reason for the live sessions of a task that a
+// reset replaces. It names the reset, the PRD and the task.
+func taskResetEndReason(prdID, taskID string) string {
+	return fmt.Sprintf("PRD %s task %s reset on daemon restart: every other live session of the task or its worktree ends before the replacement", prdID, taskID)
+}
+
 // recordEndedSessions notes the ended session ids on the PRD (Decision) and on
 // the task (History). The caller saves.
 func recordEndedSessions(prd *PRD, t *Task, ended []string, reason string) {

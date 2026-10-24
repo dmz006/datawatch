@@ -2592,7 +2592,8 @@ func (s *Server) handleKillSession(ctx context.Context, req mcpsdk.CallToolReque
 		return toolErrorf("kill_session", "session %q not found", id), nil
 	}
 
-	if err := s.manager.Kill(sess.FullID); err != nil {
+	why := session.EndReason{Caller: endCallerMCPKillSession, Reason: fmt.Sprintf("MCP kill_session requested by %s", s.endActor(ctx))}
+	if err := s.manager.EndSession(sess.FullID, why); err != nil {
 		return toolError("kill_session", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Session %s killed.", sess.ID)), nil
@@ -2706,6 +2707,7 @@ func (s *Server) handleStopAllSessions(ctx context.Context, _ mcpsdk.CallToolReq
 		return deny, nil
 	}
 	sessions := s.manager.ListSessions()
+	why := session.EndReason{Caller: endCallerMCPStopAll, Reason: fmt.Sprintf("MCP stop_all_sessions requested by %s", s.endActor(ctx))}
 	var killed, skipped int
 	for _, sess := range sessions {
 		if sess.Hostname != s.hostname {
@@ -2717,7 +2719,7 @@ func (s *Server) handleStopAllSessions(ctx context.Context, _ mcpsdk.CallToolReq
 			continue
 		}
 		if sess.State == session.StateRunning || sess.State == session.StateWaitingInput {
-			if err := s.manager.Kill(sess.FullID); err == nil {
+			if err := s.manager.EndSession(sess.FullID, why); err == nil {
 				killed++
 			} else {
 				skipped++
