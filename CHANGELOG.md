@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.10.1 — Restart matrix for in-flight work
+
+The restart matrix runs the daemon restart scenarios from the BL590 plan (adoption of live sessions, launch windows, in-flight tasks, verifier sessions) in a sandbox and records each result; the matrix is wired into the release smoke, with strict mode for the final gate. Restart behaviour fixes found by the matrix are included. Documented in the operator docs and the testing tracker.
+
 ## v9.10.0 — Plugin widget data gated on plugin:read and plugin:write
 
 Plugin widget data endpoints now gate on the new `plugin:read` and `plugin:write` federation capabilities instead of `config:read` and `config:write`. Federation peers must be granted them explicitly; full-control, the operator token (PWA, mobile, CLI) and session-scoped credentials are unaffected. Tests cover the capability checks for every widget route. This finished work from the plugin widgets series sat unmerged on its branch and was found by the content-based branch audit.
