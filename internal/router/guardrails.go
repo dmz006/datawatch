@@ -4,9 +4,10 @@
 //
 //	"guardrail library"                                → list library
 //	"guardrail profile list"                           → list profiles
-//	"guardrail profile create <name> [guardrail,...]"  → create profile
+//	"guardrail profile create <name> [guardrail,...] [notify_events=k1,k2]"  → create profile
 //	"guardrail profile get <id>"                       → get profile
 //	"guardrail profile delete <id>"                    → delete profile
+//	"guardrail profile notify-events <id> [k1,k2|inherit]"  → set profile notify_events
 //	"guardrail automaton set <id> [...]"               → per-Automaton override
 //	"guardrail session run <session-id> <name>"        → run guardrail on session (S3 T15)
 
@@ -92,20 +93,27 @@ func (r *Router) guardrailProfile(args []string) {
 
 	case "create":
 		if len(args) < 2 {
-			r.send("usage: guardrail profile create <name> [guardrail1,guardrail2,...]")
+			r.send("usage: guardrail profile create <name> [guardrail1,guardrail2,...] [notify_events=a,b]")
 			return
 		}
 		name := args[1]
-		var guardrails []string
-		if len(args) > 2 {
-			for _, g := range strings.Split(args[2], ",") {
-				if g = strings.TrimSpace(g); g != "" {
-					guardrails = append(guardrails, g)
-				}
+		var guardrails, notifyEvents []string
+		for _, a := range args[2:] {
+			switch {
+			case strings.HasPrefix(a, "notify_events="):
+				notifyEvents = splitCSV(strings.TrimPrefix(a, "notify_events="))
+			case strings.HasPrefix(a, "notify-events="):
+				notifyEvents = splitCSV(strings.TrimPrefix(a, "notify-events="))
+			default:
+				guardrails = append(guardrails, splitCSV(a)...)
 			}
 		}
-		payload, _ := json.Marshal(map[string]any{"name": name, "guardrails": guardrails})
-		body, err := r.commJSON(http.MethodPost, "/api/autonomous/guardrail_profiles", string(payload))
+		payload := map[string]any{"name": name, "guardrails": guardrails}
+		if notifyEvents != nil {
+			payload["notify_events"] = notifyEvents
+		}
+		raw, _ := json.Marshal(payload)
+		body, err := r.commJSON(http.MethodPost, "/api/autonomous/guardrail_profiles", string(raw))
 		if err != nil {
 			r.send("guardrail profile create error: " + err.Error())
 			return
@@ -124,8 +132,45 @@ func (r *Router) guardrailProfile(args []string) {
 		}
 		r.send("deleted")
 
+	case "notify-events", "notify_events":
+		if len(args) < 3 {
+			r.send("usage: guardrail profile notify-events <id> <kind,kind,...|inherit>")
+			return
+		}
+		// A profile PUT overwrites description and guardrails with whatever
+		// the body carries, so a notify_events-only update must resend the
+		// values the profile currently holds. Fetch first, merge, then PUT.
+		current, err := r.commGet("/api/autonomous/guardrail_profiles/"+args[1], nil)
+		if err != nil {
+			r.send("guardrail profile notify-events error: " + err.Error())
+			return
+		}
+		var cur struct {
+			Description string   `json:"description"`
+			Guardrails  []string `json:"guardrails"`
+		}
+		if err := json.Unmarshal([]byte(current), &cur); err != nil {
+			r.send("guardrail profile notify-events error: " + err.Error())
+			return
+		}
+		kinds := []string{}
+		if v := strings.TrimSpace(args[2]); !strings.EqualFold(v, "inherit") {
+			kinds = splitCSV(v)
+		}
+		body, _ := json.Marshal(map[string]any{
+			"description":   cur.Description,
+			"guardrails":    cur.Guardrails,
+			"notify_events": kinds,
+		})
+		out, err := r.commJSON(http.MethodPut, "/api/autonomous/guardrail_profiles/"+args[1], string(body))
+		if err != nil {
+			r.send("guardrail profile notify-events error: " + err.Error())
+			return
+		}
+		r.send(out)
+
 	default:
-		r.send(fmt.Sprintf("guardrail profile: unknown subcommand %q. Try: list | get | create | delete", sub))
+		r.send(fmt.Sprintf("guardrail profile: unknown subcommand %q. Try: list | get | create | delete | notify-events", sub))
 	}
 }
 

@@ -416,7 +416,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|get <id>|decompose <id>|approve <id>|plan-review <id> [note]|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|verifier-policy|verifier-policy-set key=value [k2=v2 ...]|set-verifier-policy <prd> [mode=X] [backends=a,b]|set-task-verifier-policy <prd> <task> [mode=X] [backends=a,b]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|reset-to-draft <id>|resume <id> [note]|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|tags|tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]|tag-rename <id> <new-name>|tag-move <id> <parent-id|root>|tag-color <id> <color>|tag-delete <id>|set-tags <prd-id> [tag-id1,tag-id2]|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]|events [queue=<name>] [since=<cursor>]|subscribe <kinds|short-names> [prd=<id>] [task=<id>]|unsubscribe <id>|subscription-update <id> key=value...|subscription-test <id>|subscriptions}"
+	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|get <id>|decompose <id>|approve <id>|plan-review <id> [note]|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-notify-events <prd> <kinds|inherit>|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|verifier-policy|verifier-policy-set key=value [k2=v2 ...]|set-verifier-policy <prd> [mode=X] [backends=a,b]|set-task-verifier-policy <prd> <task> [mode=X] [backends=a,b]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|reset-to-draft <id>|resume <id> [note]|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|tags|tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]|tag-rename <id> <new-name>|tag-move <id> <parent-id|root>|tag-color <id> <color>|tag-delete <id>|set-tags <prd-id> [tag-id1,tag-id2]|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]|events [queue=<name>] [since=<cursor>]|subscribe <kinds|short-names> [prd=<id>] [task=<id>]|unsubscribe <id>|subscription-update <id> key=value...|subscription-test <id>|subscriptions}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -734,6 +734,32 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous set-llm", prettyJSON(out))
+	case "set-notify-events", "set_notify_events":
+		// Per-Automaton notify_events list: which lifecycle event kinds
+		// produce notifications. inherit (empty list) falls back to the
+		// guardrail profile, then the global default set.
+		if len(args) < 3 {
+			usage := "usage: autonomous set-notify-events <prd-id> <kind,kind,...|inherit>"
+			usage += "\nvalid kinds: prd.active prd.approved prd.archived prd.blocked prd.cancelled prd.completed prd.draft prd.failed prd.needs_review prd.paused prd.planning prd.rejected prd.revisions_asked prd.running task.awaiting_approval task.blocked task.cancelled task.completed task.failed task.in_progress task.pending task.queued task.running_tests task.session_cleared task.session_started task.verifying task.waiting_capacity"
+			usage += "\ndefault set (used when the Automaton and its guardrail profile both inherit): prd.needs_review, prd.blocked, prd.failed, prd.completed, prd.cancelled"
+			r.reply("autonomous set-notify-events failed", usage)
+			return
+		}
+		events := []string{}
+		if v := strings.TrimSpace(args[2]); v != "" && !strings.EqualFold(v, "inherit") {
+			for _, k := range strings.Split(v, ",") {
+				if k = strings.TrimSpace(k); k != "" {
+					events = append(events, k)
+				}
+			}
+		}
+		raw, _ := json.Marshal(map[string]any{"notify_events": events, "actor": "operator"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/set_notify_events", string(raw))
+		if err != nil {
+			r.reply("autonomous set-notify-events failed", err.Error())
+			return
+		}
+		r.reply("autonomous set-notify-events", prettyJSON(out))
 	case "set-story-llm", "set_story_llm":
 		if len(args) < 4 {
 			r.reply("autonomous set-story-llm failed", "usage: autonomous set-story-llm <prd-id> <story-id> <backend> [effort] [model]")
