@@ -89,7 +89,8 @@ Other channels:
 
 - **PWA:** Settings > Compute > node edit > *Max concurrent sessions*;
   LLM edit > *Max in flight*; Settings > General > Automata > capacity
-  fields; Automata > Capacity card shows pools and the queue.
+  fields; the Capacity card on the Automata tab's Automation sub-tab shows the
+  machine-wide pools and the queue.
 - **MCP:** `compute_node_update` (`max_concurrent_sessions`),
   `llm_update` (`max_inflight`), `config_set` for
   `autonomous.capacity_*` and `session.reserved_interactive`,
@@ -667,7 +668,7 @@ so nothing is hidden and nothing is lost. What you see:
 ## Capacity and budget card
 
 The PWA shows one Capacity card, built from `GET /api/capacity` and refreshed
-every five seconds. On the Automata list it is the machine-wide view; inside
+every five seconds. On the Automation sub-tab it is the machine-wide view; inside
 an Automaton it is scoped to that Automaton's own backends (the `host` pool is
 always included). The card is left out when there is nothing to show.
 

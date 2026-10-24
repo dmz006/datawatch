@@ -267,6 +267,30 @@ test('the loader adds no timer of its own', () => {
   assert.ok(!/setInterval|setTimeout/.test(block), 'progress card code must not create timers');
 });
 
+test('paintProgressCard draws into the slot only while the Automation sub-tab shows', () => {
+  const sandbox = loadApp();
+  // A slot stand-in the app code can read state from and write into.
+  const slot = { style: { display: 'block' }, innerHTML: 'stale markup' };
+  sandbox.document.getElementById = id => (id === 'progressCard' ? slot : null);
+  // The state machine has nothing loaded yet; either way paint has markup to draw.
+  vm.runInContext("window._progressCardState.status = 'ok'; window._progressCardState.data = null;", sandbox);
+  const paint = tab => vm.runInContext(`_automataState.tab = '${tab}'; window.paintProgressCard();`, sandbox);
+
+  paint('automation');
+  assert.equal(slot.style.display, 'block', 'the slot is visible on the Automation sub-tab');
+  assert.match(slot.innerHTML, /progress-card/, 'the slot is drawn on the Automation sub-tab');
+
+  slot.style.display = 'block'; slot.innerHTML = 'stale markup';
+  paint('automata');
+  assert.equal(slot.style.display, 'none', 'off the Automation sub-tab the slot is hidden');
+  assert.equal(slot.innerHTML, 'stale markup', 'and never written when hidden');
+
+  slot.style.display = 'block'; slot.innerHTML = 'stale markup';
+  paint('templates');
+  assert.equal(slot.style.display, 'none', 'hidden on the Templates sub-tab too');
+  assert.equal(slot.innerHTML, 'stale markup', 'and not written either');
+});
+
 // ── locale coverage ──
 function appKeys() {
   const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');

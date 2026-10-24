@@ -1,6 +1,8 @@
-// TS-815 — PWA Automata tab: the Progress card renders its table and completion range,
-// shows the failed state with a Retry button when the fetch fails, and no text in the
-// card looks like a tracker ID or uses the internal three-letter term.
+// TS-815 — PWA Automation sub-tab: the Progress card renders its table and completion
+// range, shows the failed state with a Retry button when the fetch fails, no text in
+// the card looks like a tracker ID or uses the internal three-letter term, the
+// sub-tab carries exactly one capacity card, and the Automata and Templates
+// sub-tabs carry no card slots in the DOM at all.
 //
 // Runs against the sandbox daemon (TEST_HTTP / TEST_TLS from run_pwa_story), never the
 // production daemon. It reads whatever Automata the sandbox holds; the card must render
@@ -48,6 +50,13 @@ async function assertNoInternalText(page, label) {
 await runStory(async (page) => {
   await connectToPWA(page);
   await navigateTo(page, 'autonomous');
+
+  // --- the card lives on the Automation sub-tab ------------------------------
+  await page.evaluate(({ subtab }) => switchAutomataTab(subtab), { subtab: 'automation' });
+  await page.waitForFunction((subtab) => {
+    const b = document.querySelector(`.automata-tabs-bar .output-tab[data-tab="${subtab}"]`);
+    return !!b && b.classList.contains('active');
+  }, 'automation', { timeout: 10000 });
 
   // --- dashboard card -------------------------------------------------------
   await page.waitForSelector(`${CARD}[data-progress-status]`, { state: 'visible', timeout: 20000 });
@@ -114,5 +123,36 @@ await runStory(async (page) => {
   await page.waitForSelector(`${CARD}[data-progress-status="ok"] .progress-card-table`, { state: 'visible', timeout: 15000 });
   await screenshot(page, '03-card-recovered');
 
-  await saveLog('result', `card ok (${okTexts} text items), failed state with Retry (${failedTexts} text items), recovered; table rows: ${table.rows.join(', ')}`);
+  // --- exactly one capacity card on the Automation sub-tab ------------------
+  const cap = await page.evaluate(() => {
+    const slot = document.getElementById('automationCapacityCard');
+    return {
+      slot: !!slot,
+      cards: slot ? slot.querySelectorAll('.prd-capacity-card').length : 0,
+      skeleton: !!slot && !!slot.querySelector('.list-state-skeleton'),
+      prdSlot: !!document.getElementById('prdCapacityCard'),
+    };
+  });
+  if (!cap.slot) throw new Error('no capacity card slot on the Automation sub-tab');
+  if (!(cap.cards === 1 || cap.skeleton)) {
+    throw new Error(`the capacity slot holds ${cap.cards} card(s)${cap.skeleton ? ' and a skeleton' : ''}, expected exactly one card or its skeleton`);
+  }
+  if (cap.prdSlot) throw new Error('a second capacity card slot is still mounted on the Automation sub-tab');
+
+  // --- the Automata and Templates sub-tabs carry no card slots ---------------
+  for (const other of ['automata', 'templates']) {
+    await page.evaluate(({ subtab }) => switchAutomataTab(subtab), { subtab: other });
+    await page.waitForFunction((subtab) => {
+      const b = document.querySelector(`.automata-tabs-bar .output-tab[data-tab="${subtab}"]`);
+      return !!b && b.classList.contains('active');
+    }, other, { timeout: 10000 });
+    const present = await page.evaluate(() =>
+      ['progressCard', 'prdCapacityCard', 'automationCapacityCard']
+        .filter((id) => document.getElementById(id) !== null));
+    if (present.length) {
+      throw new Error(`card slots remain in the DOM on the ${other} sub-tab: ${present.join(', ')}`);
+    }
+  }
+
+  await saveLog('result', `card ok (${okTexts} text items), failed state with Retry (${failedTexts} text items), recovered; exactly one capacity card; no card slots on the automata and templates sub-tabs; table rows: ${table.rows.join(', ')}`);
 });

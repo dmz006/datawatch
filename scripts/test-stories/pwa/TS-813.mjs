@@ -8,7 +8,9 @@
  * turn: the bar stays inside the viewport and does not scroll or clip its own
  * content, every tab and visible action button is at least 40 px tall and wide
  * enough to tap, and the page does not scroll horizontally
- * (document.documentElement.scrollWidth <= the viewport width).
+ * (document.documentElement.scrollWidth <= the viewport width). On the
+ * Automation sub-tab the same overflow check runs again once the progress card
+ * has settled, and the card must stay inside the viewport.
  */
 import { screenshot } from './lib.mjs';
 import {
@@ -73,6 +75,21 @@ await runPerfStory(async (page) => {
         // No sideways page scroll: documentElement.scrollWidth stays within the viewport.
         const o = await noHorizontalOverflow(p);
         check(o.scrollWidth <= o.innerWidth, `${label}: page scrolls sideways (scrollWidth ${o.scrollWidth} > ${o.innerWidth})`);
+
+        // The progress card paints late on the Automation sub-tab and can grow
+        // the page: once it reaches a settled state, re-run the overflow check
+        // and the card must stay inside the viewport.
+        if (sub === 'automation') {
+          await p.waitForSelector('#progressCard .progress-card[data-progress-status]', { state: 'attached', timeout: 30000 });
+          const o2 = await noHorizontalOverflow(p);
+          check(o2.scrollWidth <= o2.innerWidth, `${label}: page scrolls sideways once the progress card settled (scrollWidth ${o2.scrollWidth} > ${o2.innerWidth})`);
+          const cardRight = await p.evaluate(() => {
+            const el = document.querySelector('#progressCard .progress-card');
+            return el ? el.getBoundingClientRect().right : null;
+          });
+          check(cardRight !== null && cardRight <= W + 1,
+            `${label}: progress card extends past the viewport (right ${cardRight} > ${W})`);
+        }
         await screenshot(p, `${W}-${sub}`).catch(() => {});
       } catch (e) {
         failures.push(e.message);

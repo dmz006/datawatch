@@ -605,7 +605,7 @@ An **Automation** is a named chain of Automata: it decides which Automaton runs 
 
 ### Automation list
 
-One card per Automation, ordered by status and then name. Each card shows the status, progress as completed members out of work members, the member (or members) running now, how long an active Automation has been idle, the reason a blocked one is blocked, and the budget ceiling with its window (marked estimated when the ceiling is a share of an allocation). Status badges, a search box and a history toggle for cancelled Automations narrow the list, and **＋ New Automation** opens the create and edit form: members, edges, fork and join, nested Automations, default models and a budget policy.
+One card per Automation, ordered by status and then name. Each card shows the status, progress as completed members out of work members, the member (or members) running now, how long an active Automation has been idle, the reason a blocked one is blocked, and the budget ceiling with its window (marked estimated when the ceiling is a share of an allocation). Status badges, a search box and a history toggle for cancelled Automations narrow the list, and **＋ New Automation** opens the create and edit form: members, edges, fork and join, nested Automations, default models and a budget policy. Above this list the Automation sub-tab shows the *Progress* card and the *Capacity* card; the Automata and Templates sub-tabs show neither.
 
 ### Automation detail and pipeline strip
 

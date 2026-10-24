@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# TS-815 — PWA Automata tab: the Progress card renders, shows the failed state with Retry, and carries no tracker IDs
+# TS-815 — PWA Automation sub-tab: the Progress card renders, shows the failed state with Retry, exactly one capacity card is present, the other sub-tabs carry no cards, and no text is a tracker ID
 # tags: surface:pwa feature:autonomous-progress conflict:pwa
 # pwa-script: pwa/TS-815.mjs
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

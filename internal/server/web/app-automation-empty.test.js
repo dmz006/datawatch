@@ -4,8 +4,8 @@
 // (heading, Create Automation button, Automation-versus-Automaton line) shows
 // only after a successful load with zero Automations, never while loading and
 // never after a failed load; the capacity and queue card loads in parallel with
-// its own loading and failed states and appears on both the Automation and the
-// Automata tab.
+// its own loading and failed states on the Automation tab; the Automata and
+// Templates sub-tab bodies carry no status card.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -18,7 +18,7 @@ const { vm, buildSandbox, loadScript, makeStubElement, flushAsync } = require('.
 function load(routes) {
   const els = {};
   const out = {};
-  for (const id of ['view', 'automationPanel', 'automationCapacityCard', 'prdCapacityCard']) {
+  for (const id of ['view', 'automationPanel', 'automationCapacityCard']) {
     out[id] = '';
     els[id] = makeStubElement(h => { out[id] = h; });
   }
@@ -120,16 +120,22 @@ test('the capacity card has its own loading and failed handling', async () => {
   assert.match(bad.out.automationPanel, /No Automations yet/, 'a failed card does not blank the list');
 });
 
-test('the capacity card is present on both the Automation and the Automata tab', async () => {
+test('the capacity card is present on the Automation sub-tab only', async () => {
   const { sb, out } = load({ '/api/automations': { status: 200, body: [] }, '/api/capacity': { status: 200, body: CAP } });
   sb.renderAutomationView();
-  assert.match(out.view, /id="automationCapacityCard"/);
-  sb.switchAutomataTab('automata');
-  assert.match(out.view, /id="prdCapacityCard"/);
-  const automata = vm.runInContext('window._loadPRDCapacityCard.toString()', sb);
-  assert.match(automata, /capacityCardHtml/, 'the Automata tab builds its card with the same component');
+  assert.equal((out.view.match(/id="automationCapacityCard"/g) || []).length, 1, 'exactly one capacity slot on the view');
+  assert.equal((out.view.match(/id="progressCard"/g) || []).length, 1, 'exactly one progress slot on the view');
+  assert.doesNotMatch(out.view, /id="prdCapacityCard"/, 'no machine-wide capacity slot on the Automata list');
   await flushAsync(30);
-  assert.match(out.prdCapacityCard, /prd-capacity-card/);
+  assert.match(out.automationCapacityCard, /prd-capacity-card/);
+  sb.switchAutomataTab('automata');
+  assert.doesNotMatch(out.view, /id="automationCapacityCard"/, 'no capacity slot on the Automata body');
+  assert.doesNotMatch(out.view, /id="progressCard"/, 'no progress slot on the Automata body');
+  assert.doesNotMatch(out.view, /id="prdCapacityCard"/, 'no capacity slot anywhere on the Automata body');
+  sb.switchAutomataTab('templates');
+  assert.doesNotMatch(out.view, /id="automationCapacityCard"/, 'no capacity slot on the Templates body');
+  assert.doesNotMatch(out.view, /id="progressCard"/, 'no progress slot on the Templates body');
+  assert.doesNotMatch(out.view, /id="prdCapacityCard"/, 'no capacity slot anywhere on the Templates body');
 });
 
 test('every locale bundle has the new keys and keeps the Automata wording', () => {

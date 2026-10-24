@@ -1,9 +1,9 @@
 // Automation sub-tab loading and phone fit.
 //
-// The Automation sub-tab loads its list and capacity card only while it is the
-// selected sub-tab; switching sub-tabs reuses the Automata list state it
-// already holds instead of requesting it again; leaving the Automation
-// sub-tab ends its polling. The phone-fit test reads the stylesheet.
+// The Automation sub-tab loads its list, capacity card and progress card only
+// while it is the selected sub-tab; switching sub-tabs reuses the Automata
+// list state it already holds instead of requesting it again; leaving the
+// Automation sub-tab ends its polling. The phone-fit test reads the stylesheet.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,7 +16,7 @@ const { vm, buildSandbox, loadScript, makeStubElement, flushAsync } = require('.
 function load() {
   const calls = [];
   const els = {};
-  for (const id of ['view', 'automationPanel', 'automationCapacityCard', 'automataPanel', 'prdCapacityCard']) {
+  for (const id of ['view', 'automationPanel', 'automationCapacityCard', 'progressCard', 'automataPanel', 'prdCapacityCard']) {
     els[id] = makeStubElement();
   }
   const sandbox = buildSandbox({ byId: els });
@@ -31,12 +31,14 @@ function load() {
   // The server list is already known, so the picker does not re-render the
   // view when its own request answers; the tests count only sub-tab loads.
   vm.runInContext('state.servers = []', sandbox);
-  return { sb: sandbox, calls };
+  return { sb: sandbox, calls, els };
 }
 const run = (sb, code) => vm.runInContext(code, sb);
 const count = (calls, re) => calls.filter(u => re.test(u)).length;
 const AUTOMATION = /^\/api\/automations(\?|$)/;
 const AUTOMATA_LIST = /^\/api\/autonomous\/prds\?limit=/;
+const CAPACITY = /^\/api\/capacity(\?|$)/;
+const PROGRESS = /^\/api\/autonomous\/progress(\?|$)/;
 
 test('the Automation endpoint is not fetched until the sub-tab is selected', async () => {
   const { sb, calls } = load();
@@ -45,11 +47,13 @@ test('the Automation endpoint is not fetched until the sub-tab is selected', asy
   await flushAsync(30);
   assert.equal(count(calls, AUTOMATA_LIST), 1, 'the Automata list loads for the visible sub-tab');
   assert.equal(count(calls, AUTOMATION), 0, 'no Automation request while another sub-tab shows');
+  assert.equal(count(calls, PROGRESS), 0, 'no progress card load while another sub-tab shows');
   assert.equal(run(sb, '!!(window._listLoaders.automation || window._listLoaders.automation_capacity)'), false, 'no Automation loader exists yet');
 
   sb.switchAutomataTab('automation');
   await flushAsync(30);
   assert.equal(count(calls, AUTOMATION), 1, 'selecting the sub-tab loads the Automations');
+  assert.ok(count(calls, PROGRESS) >= 1, 'the progress card loads with the Automation sub-tab');
   assert.ok(run(sb, 'window._listLoaders.automation_capacity') && run(sb, 'window._listLoaders.automation'), 'both Automation loaders start with the sub-tab');
 });
 
@@ -133,6 +137,71 @@ test('a refresh while another sub-tab shows does not touch the Automation endpoi
   run(sb, "if (_automationTabActive()) refreshAutomationView(); _refreshOverdueLoaders();");
   await flushAsync(30);
   assert.equal(count(calls, AUTOMATION), 0);
+});
+
+// The Automata and Templates sub-tabs never request the progress endpoint.
+// (The Automata list fetch does carry a best-effort /api/capacity call: it is
+// the budget and admission data for the list cards, not the capacity card,
+// which lives on the Automation sub-tab only. The progress card has no such
+// second consumer and must therefore load with the Automation sub-tab alone.)
+test('the progress card loads with the Automation sub-tab only', async () => {
+  const { sb, calls } = load();
+  run(sb, "_automataState.tab = 'automata'");
+  sb.renderAutonomousView();
+  await flushAsync(30);
+  assert.equal(count(calls, PROGRESS), 0, 'the Automata sub-tab requests no progress');
+  sb.switchAutomataTab('templates');
+  await flushAsync(30);
+  assert.equal(count(calls, PROGRESS), 0, 'the Templates sub-tab requests no progress');
+  sb.switchAutomataTab('automation');
+  await flushAsync(30);
+  assert.equal(count(calls, PROGRESS), 1, 'selecting the Automation sub-tab requests the progress once');
+  assert.ok(count(calls, CAPACITY) >= 1, 'the capacity card loads with the Automation sub-tab');
+});
+
+test('leaving the Automation sub-tab clears every interval it started', async () => {
+  const { sb, els } = load();
+  const started = [];
+  const cleared = [];
+  sb.setInterval = (fn, ms) => { const id = started.length + 1; started.push(id); return id; };
+  sb.clearInterval = id => { cleared.push(id); };
+  sb.renderAutonomousView(); // the default sub-tab is Automation
+  await flushAsync(30);
+  const fromMount = started.slice();
+  assert.ok(fromMount.length >= 1, 'the Automation sub-tab runs its own intervals');
+  sb.switchAutomataTab('automata');
+  await flushAsync(30);
+  sb.switchAutomataTab('templates');
+  await flushAsync(30);
+  for (const id of fromMount) {
+    assert.ok(cleared.includes(id), 'an interval started by the Automation sub-tab (id ' + id + ') is still running');
+  }
+  assert.doesNotMatch(els.view.innerHTML, /id="progressCard"/, 'no progress slot off the Automation sub-tab');
+  assert.doesNotMatch(els.view.innerHTML, /id="automationCapacityCard"/, 'no capacity slot off the Automation sub-tab');
+});
+
+test('a progress fetch that lands after the operator left the Automation sub-tab paints nothing', async () => {
+  const { sb, els } = load();
+  let resolveProgress;
+  const pending = new Promise(res => { resolveProgress = res; });
+  const done = () => Promise.resolve({ ok: true, status: 200, statusText: '', json: () => Promise.resolve([]), text: () => Promise.resolve('[]') });
+  sb.fetch = url => {
+    const u = String(url);
+    if (u.startsWith('/api/autonomous/progress') && !u.includes('trend')) return pending;
+    return done();
+  };
+  sb.renderAutonomousView(); // default sub-tab is Automation, so the fetch starts
+  await flushAsync(30);
+  const paintedAtStart = els.progressCard.innerHTML;
+  assert.notEqual(paintedAtStart, '', 'the slot showed a state on the Automation sub-tab');
+  sb.switchAutomataTab('automata');
+  await flushAsync(30);
+  // The late answer carries a body the loader rejects (not an object); the point
+  // is what happens to the slot after, not which state the machine lands in.
+  resolveProgress({ ok: true, status: 200, statusText: '', json: () => Promise.resolve(null), text: () => Promise.resolve('null') });
+  await flushAsync(30);
+  assert.equal(els.progressCard.innerHTML, paintedAtStart, 'the late fetch must not write into the slot');
+  assert.equal(els.progressCard.style.display, 'none', 'the slot is hidden off the Automation sub-tab');
 });
 
 test('phone fit: the tab bar wraps and shrinks, with 40 px tap targets and no page scroll', () => {
