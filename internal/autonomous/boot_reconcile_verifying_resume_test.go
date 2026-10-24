@@ -37,7 +37,7 @@ func TestReconcileStuckKeepsFinishedWorkerVerifying(t *testing.T) {
 		m.SetSessionAliveFn(func(string) bool { return false })
 		m.SetSessionOutputFn(func(string) (string, bool) { return "done\nDATAWATCH_COMPLETE: all good\n", true })
 		killed := 0
-		m.SetSessionKillerFn(func(string) error { killed++; return nil })
+		m.SetSessionKillerFn(func(string, string, string) error { killed++; return nil })
 		m.reconcileStuckTasks()
 
 		got, _ := m.Store().GetPRD(prd.ID)
