@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.9.1 — Orphan sweep no longer ends live workers
+
+Fixes the orphan sweep that ended every live Claude worker about five minutes after its task was delivered, which had been failing long tasks with "no new changes" since the sweep went live.
+
+- The sweep compared the full session id from the session lister (`host-8b57`) with the short id tasks store (`8b57`), so no live worker ever counted as bound to its task, and each was ended once the five-minute grace passed. A single id helper now returns one normalised form, used by the sweep, the boot adoption path and the reset path.
+- Regression tests use production-shaped ids (full on one side, short on the other): a live worker is never ended, a true orphan still is, and a table test covers short, full, empty and mixed-host ids.
+- The sweep logs once when it sees a live worker whose id form matches no task id form, so a future mismatch is visible.
+
 ## v9.9.0 — Bounded websocket session list with per-session updates
 
 Stops the daemon from pushing the whole session list to every client over the websocket, which made the PWA slow, laggy and unstable and could stall a session view on a phone link.
