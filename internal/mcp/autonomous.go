@@ -71,6 +71,11 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("plan_coverage_check", mcpsdk.Description("Plan requirement-coverage gate mode: off (no gate), warn (failing coverage is reported on the PRD but approval proceeds), block (the default: approving a PRD with a failing plan-coverage report is blocked until the operator acknowledges that exact failing surface with autonomous_prd_plan_coverage_acknowledge)")),
 		mcpsdk.WithNumber("automation_idle_alert_minutes", mcpsdk.Description("Minutes an active Automation may sit idle (a member finished and no next member started) before one idle alert is raised. Whole number >= 0; 0 turns the alert off.")),
 		mcpsdk.WithString("automation_agent_insert_policy", mcpsdk.Description("What happens when an agent session inserts a member into an Automation: allow (the default) lets a draft insert land at once, require_operator holds every agent insert until an operator approves it.")),
+		mcpsdk.WithNumber("progress_lanes", mcpsdk.Description("Number of parallel lanes the progress figures assume (autonomous.progress.lanes). Whole number >= 0; 0 = 5.")),
+		mcpsdk.WithNumber("progress_inactive_gap_hours", mcpsdk.Description("Hours without activity that count as an inactive window in the progress figures (autonomous.progress.inactive_gap_hours). Number >= 0; 0 = 3.")),
+		mcpsdk.WithString("progress_backlog_path", mcpsdk.Description("Backlog file the progress figures read (autonomous.progress.backlog_path). A relative path resolves against the Automata base repository when set, else the daemon working directory. Empty = docs/plans/README.md.")),
+		mcpsdk.WithString("progress_since", mcpsdk.Description("First day the progress figures count, as YYYY-MM-DD (autonomous.progress.since). Empty = the first record's creation date.")),
+		mcpsdk.WithNumber("progress_snapshot_retention_days", mcpsdk.Description("Days saved progress snapshots are kept (autonomous.progress.snapshot_retention_days). Whole number >= 0; 0 = 90.")),
 		mcpsdk.WithString("usage_backoff", mcpsdk.Description("Per-backend usage back-off mode: pause_backend (the default) holds autonomous dispatch to a backend while one of its sessions is rate-limited, until the parsed reset time or the maximum back-off; off disables only that automatic path (manual usage_backoff_set still works). Interactive session starts are never blocked.")),
 		mcpsdk.WithNumber("backoff_max_wait_minutes", mcpsdk.Description("Maximum usage back-off in whole minutes (>= 1, default 60), applied when a rate-limit message carries no reset time.")),
 		mcpsdk.WithNumber("plan_coverage_min_ratio", mcpsdk.Description("Minimum covered/total requirement ratio for a plan to pass the coverage gate; a number in (0,1] (e.g. 0.9 = 90%). Zero/negative and values above 1 both clamp to 1.0 (require full coverage — the safe default). The gate also fails on any structural finding regardless of ratio.")),
@@ -250,6 +255,21 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 			return toolError("autonomous_config_set", err), nil
 		}
 		allocation = entries
+	}
+	// The progress parameters (autonomous.progress.*) also live in the daemon
+	// config. They are presence-aware so an explicit 0 or empty string is sent,
+	// and ride in the same all-or-nothing config PUT as the allocation table.
+	if args := req.GetArguments(); args != nil {
+		for _, k := range []string{"lanes", "inactive_gap_hours", "backlog_path", "since", "snapshot_retention_days"} {
+			raw, ok := args["progress_"+k]
+			if !ok {
+				continue
+			}
+			if allocation == nil {
+				allocation = map[string]any{}
+			}
+			allocation["autonomous.progress."+k] = raw
+		}
 	}
 	// BL367 — default quality gates nested under default_quality_gates.
 	qg := map[string]any{}

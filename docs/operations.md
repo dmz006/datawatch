@@ -606,7 +606,7 @@ Autonomous Automata state lives as plain JSONL files under the autonomous data d
 | `autonomous.progress.since` | empty | First day counted, `YYYY-MM-DD`; empty = the first record's creation date. |
 | `autonomous.progress.snapshot_retention_days` | `0` (= 90) | Days saved progress snapshots are kept. Whole number >= 0. |
 
-Each key is reachable through all five configuration methods (MCP agents use `config_set` with the same keys):
+Each key is reachable through all five configuration methods (MCP agents use `config_set` with the same keys, or the `progress_lanes`, `progress_inactive_gap_hours`, `progress_backlog_path`, `progress_since` and `progress_snapshot_retention_days` arguments of `autonomous_config_set`):
 
 | Key | YAML (`autonomous.progress:` block) | CLI | Web UI (Settings → General → Autonomous) | REST | Chat |
 |---|---|---|---|---|---|
