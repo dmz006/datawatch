@@ -478,7 +478,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/alerts/create", api.handleAlertCreate)          // GH#201 Phase 5
 	apiMux.HandleFunc("/api/alerts/count", api.handleAlertsCount)           // BL432 / GH#242
 	apiMux.HandleFunc("/api/alerts", api.handleAlerts)
-	apiMux.HandleFunc("/api/capacity", api.handleCapacity) // admission ledger: pools, holders, wait queue
+	apiMux.HandleFunc("/api/capacity", api.handleCapacity)                    // admission ledger: pools, holders, wait queue
 	apiMux.HandleFunc("/api/capacity/admission", api.handleCapacityAdmission) // read-only admission query
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)
@@ -1267,7 +1267,7 @@ func (s *HTTPServer) NotifyAlert(a *alerts.Alert) {
 }
 
 // NotifyStateChange broadcasts a session state change to all WS clients.
-// v8.37.0 (GH#162) — emits the lighter-weight single-session session_state
+// Emits the lighter-weight single-session session_state
 // message; only a legacy full client also gets the (bounded, default-view)
 // sessions frame. Window and delta clients cost one session copy, never a
 // walk of the session list. See Hub.BroadcastSessionState's doc comment.
