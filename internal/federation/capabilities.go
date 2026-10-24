@@ -77,6 +77,17 @@ const (
 	CapConfigRead  = "config:read"
 	CapConfigWrite = "config:write"
 
+	// plugins (widget data surface)
+	// CapPluginRead gates reading plugin widget data
+	// (GET /api/plugins/{name}/widgets[/{widget_id}]); CapPluginWrite
+	// gates minting or rotating a plugin's widget push token
+	// (POST /api/plugins/{name}/widgets/token). Both are deliberately
+	// left out of every built-in group below except the full-control
+	// allCaps list, so an operator must grant them explicitly to a
+	// federation peer via a custom group.
+	CapPluginRead  = "plugin:read"
+	CapPluginWrite = "plugin:write"
+
 	// secrets
 	CapSecretsList  = "secrets:list"
 	CapSecretsRead  = "secrets:read"
@@ -173,6 +184,7 @@ var allCaps = []string{
 	CapAnalyticsRead, CapAnalyticsWrite,
 	CapHealthRead,
 	CapConfigRead, CapConfigWrite,
+	CapPluginRead, CapPluginWrite,
 	CapSecretsList, CapSecretsRead, CapSecretsWrite,
 	CapPipelinesList, CapPipelinesRead, CapPipelinesStart, CapPipelinesCancel,
 	CapAutonomousList, CapAutonomousRead, CapAutonomousWrite, CapAutonomousRun,
