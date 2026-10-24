@@ -1,6 +1,7 @@
-// TS-815 — PWA Automata tab: the Progress card renders its table and completion range,
-// shows the failed state with a Retry button when the fetch fails, and no text in the
-// card looks like a tracker ID or uses the internal three-letter term.
+// TS-815 — PWA Automation sub-tab: the Progress card renders its table and completion
+// range, shows the failed state with a Retry button when the fetch fails, no text in
+// the card looks like a tracker ID or uses the internal three-letter term, and the
+// Automata and Templates sub-tabs carry no card.
 //
 // Runs against the sandbox daemon (TEST_HTTP / TEST_TLS from run_pwa_story), never the
 // production daemon. It reads whatever Automata the sandbox holds; the card must render
@@ -48,6 +49,9 @@ async function assertNoInternalText(page, label) {
 await runStory(async (page) => {
   await connectToPWA(page);
   await navigateTo(page, 'autonomous');
+
+  // --- the card lives on the Automation sub-tab ------------------------------
+  await page.evaluate(({ subtab }) => switchAutomataTab(subtab), { subtab: 'automation' });
 
   // --- dashboard card -------------------------------------------------------
   await page.waitForSelector(`${CARD}[data-progress-status]`, { state: 'visible', timeout: 20000 });
@@ -113,6 +117,17 @@ await runStory(async (page) => {
   await page.click(`${CARD}[data-progress-status="failed"] .progress-card-retry`);
   await page.waitForSelector(`${CARD}[data-progress-status="ok"] .progress-card-table`, { state: 'visible', timeout: 15000 });
   await screenshot(page, '03-card-recovered');
+
+  // --- the Automata and Templates sub-tabs carry no card ---------------------
+  for (const other of ['automata', 'templates']) {
+    await page.evaluate((subtab) => switchAutomataTab(subtab), other);
+    const visible = await page.evaluate(() => {
+      const el = document.getElementById('progressCard');
+      return !!el && el.style.display !== 'none';
+    });
+    if (visible) throw new Error(`the Progress card must not show on the ${other} sub-tab`);
+  }
+  await page.evaluate(({ subtab }) => switchAutomataTab(subtab), { subtab: 'automation' });
 
   await saveLog('result', `card ok (${okTexts} text items), failed state with Retry (${failedTexts} text items), recovered; table rows: ${table.rows.join(', ')}`);
 });

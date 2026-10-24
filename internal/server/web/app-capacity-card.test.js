@@ -131,12 +131,12 @@ test('the poller keeps its 5 second interval on window and hides an empty card',
   assert.equal(slot.innerHTML, '');
 });
 
-test('the Automata list view mounts the card above the list', () => {
+test('the Automata list body no longer mounts the capacity card over the list', () => {
   const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
-  const i = src.indexOf('<div id="prdCapacityCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;">');
-  const j = src.indexOf('<div id="automataPanel"');
-  assert.ok(i > 0 && i < j, 'list view must mount prdCapacityCard before automataPanel');
-  assert.ok(src.includes('window._loadPRDCapacityCard();'), 'list view must start the poller');
+  const body = src.slice(src.indexOf('id="automataFilterBar"'), src.indexOf('<div id="automataPanel"'));
+  assert.ok(!body.includes('id="prdCapacityCard"'), 'the list body must not mount a capacity card slot');
+  assert.ok(!body.includes('id="progressCard"'), 'the list body must not mount a progress card slot');
+  assert.ok(!src.includes('window._loadPRDCapacityCard();'), 'the list view must not start the machine-wide poller');
 });
 
 test('every new capacity_card_ key exists in all five locale bundles with a real value', () => {

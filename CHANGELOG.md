@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- The Automata and Templates sub-tab body no longer carries the two status panels: the capacity card and the progress card now live on the Automation sub-tab body, while the capacity card on an individual Automaton's detail page stays in place.
+
 ## v9.9.1 — Orphan sweep no longer ends live workers
 
 Fixes the orphan sweep that ended every live Claude worker about five minutes after its task was delivered, which had been failing long tasks with "no new changes" since the sweep went live.

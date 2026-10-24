@@ -667,7 +667,7 @@ so nothing is hidden and nothing is lost. What you see:
 ## Capacity and budget card
 
 The PWA shows one Capacity card, built from `GET /api/capacity` and refreshed
-every five seconds. On the Automata list it is the machine-wide view; inside
+every five seconds. On the Automation sub-tab it is the machine-wide view; inside
 an Automaton it is scoped to that Automaton's own backends (the `host` pool is
 always included). The card is left out when there is nothing to show.
 

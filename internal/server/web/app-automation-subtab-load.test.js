@@ -1,9 +1,9 @@
 // Automation sub-tab loading and phone fit.
 //
-// The Automation sub-tab loads its list and capacity card only while it is the
-// selected sub-tab; switching sub-tabs reuses the Automata list state it
-// already holds instead of requesting it again; leaving the Automation
-// sub-tab ends its polling. The phone-fit test reads the stylesheet.
+// The Automation sub-tab loads its list, capacity card and progress card only
+// while it is the selected sub-tab; switching sub-tabs reuses the Automata
+// list state it already holds instead of requesting it again; leaving the
+// Automation sub-tab ends its polling. The phone-fit test reads the stylesheet.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,7 +16,7 @@ const { vm, buildSandbox, loadScript, makeStubElement, flushAsync } = require('.
 function load() {
   const calls = [];
   const els = {};
-  for (const id of ['view', 'automationPanel', 'automationCapacityCard', 'automataPanel', 'prdCapacityCard']) {
+  for (const id of ['view', 'automationPanel', 'automationCapacityCard', 'progressCard', 'automataPanel', 'prdCapacityCard']) {
     els[id] = makeStubElement();
   }
   const sandbox = buildSandbox({ byId: els });
@@ -37,6 +37,7 @@ const run = (sb, code) => vm.runInContext(code, sb);
 const count = (calls, re) => calls.filter(u => re.test(u)).length;
 const AUTOMATION = /^\/api\/automations(\?|$)/;
 const AUTOMATA_LIST = /^\/api\/autonomous\/prds\?limit=/;
+const PROGRESS = /^\/api\/autonomous\/progress(\?|$)/;
 
 test('the Automation endpoint is not fetched until the sub-tab is selected', async () => {
   const { sb, calls } = load();
@@ -45,11 +46,13 @@ test('the Automation endpoint is not fetched until the sub-tab is selected', asy
   await flushAsync(30);
   assert.equal(count(calls, AUTOMATA_LIST), 1, 'the Automata list loads for the visible sub-tab');
   assert.equal(count(calls, AUTOMATION), 0, 'no Automation request while another sub-tab shows');
+  assert.equal(count(calls, PROGRESS), 0, 'no progress card load while another sub-tab shows');
   assert.equal(run(sb, '!!(window._listLoaders.automation || window._listLoaders.automation_capacity)'), false, 'no Automation loader exists yet');
 
   sb.switchAutomataTab('automation');
   await flushAsync(30);
   assert.equal(count(calls, AUTOMATION), 1, 'selecting the sub-tab loads the Automations');
+  assert.ok(count(calls, PROGRESS) >= 1, 'the progress card loads with the Automation sub-tab');
   assert.ok(run(sb, 'window._listLoaders.automation_capacity') && run(sb, 'window._listLoaders.automation'), 'both Automation loaders start with the sub-tab');
 });
 

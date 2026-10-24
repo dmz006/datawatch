@@ -4,8 +4,8 @@
 // (heading, Create Automation button, Automation-versus-Automaton line) shows
 // only after a successful load with zero Automations, never while loading and
 // never after a failed load; the capacity and queue card loads in parallel with
-// its own loading and failed states and appears on both the Automation and the
-// Automata tab.
+// its own loading and failed states on the Automation tab; the Automata and
+// Templates sub-tab bodies carry no status card.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -120,16 +120,16 @@ test('the capacity card has its own loading and failed handling', async () => {
   assert.match(bad.out.automationPanel, /No Automations yet/, 'a failed card does not blank the list');
 });
 
-test('the capacity card is present on both the Automation and the Automata tab', async () => {
+test('the Automation tab keeps its capacity card and the Automata tab body has no card slot', async () => {
   const { sb, out } = load({ '/api/automations': { status: 200, body: [] }, '/api/capacity': { status: 200, body: CAP } });
   sb.renderAutomationView();
   assert.match(out.view, /id="automationCapacityCard"/);
-  sb.switchAutomataTab('automata');
-  assert.match(out.view, /id="prdCapacityCard"/);
-  const automata = vm.runInContext('window._loadPRDCapacityCard.toString()', sb);
-  assert.match(automata, /capacityCardHtml/, 'the Automata tab builds its card with the same component');
   await flushAsync(30);
-  assert.match(out.prdCapacityCard, /prd-capacity-card/);
+  assert.match(out.automationCapacityCard, /prd-capacity-card/);
+  sb.switchAutomataTab('automata');
+  assert.doesNotMatch(out.view, /id="prdCapacityCard"/, 'no capacity card slot in the Automata list body');
+  assert.doesNotMatch(out.view, /id="progressCard"/, 'no progress card slot in the Automata list body');
+  assert.match(out.view, /id="automataPanel"/);
 });
 
 test('every locale bundle has the new keys and keeps the Automata wording', () => {

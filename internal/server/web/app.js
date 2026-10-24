@@ -22013,8 +22013,9 @@ function switchAutomataTab(tab) {
   _automataSyncFab(tab);
   _automataSyncActions(tab);
   // The Automation body differs from the Automata and Templates body (own
-  // filter bar, capacity card and panel), so entering or leaving it redraws
-  // the view; Automata and Templates swap the panel content in place.
+  // filter bar, capacity and progress cards and panel), so entering or
+  // leaving it redraws the view; Automata and Templates swap the panel
+  // content in place.
   if (tab === 'automation' || prev === 'automation') {
     _automataDetailId = null;
     _automationState.detailId = null;
@@ -23409,12 +23410,12 @@ window.progressCardHtml = function(state, opts) {
 
 window._progressCardState = window._progressCardState || { status: 'loading', data: null, error: '', fetchedAt: 0, trend: null, attemptedAt: 0, inflight: null };
 
-// paintProgressCard draws the current state into the slot on the Automata
-// tab and hides the slot on any other tab.
+// paintProgressCard draws the current state into the slot on the Automation
+// sub-tab and hides the slot on any other sub-tab.
 window.paintProgressCard = function() {
   const slot = document.getElementById('progressCard');
   if (!slot) return;
-  const onTab = !_automataState || _automataState.tab === 'automata';
+  const onTab = _automataState && _automataState.tab === 'automation';
   slot.style.display = onTab ? 'block' : 'none';
   if (onTab) slot.innerHTML = window.progressCardHtml(window._progressCardState);
 };
@@ -23422,8 +23423,8 @@ window.paintProgressCard = function() {
 // loadProgressCard fetches the metrics (and, best effort, the trend) through
 // apiFetch. A failed refresh keeps the last good data and marks it stale; the
 // failed state shows only when nothing was ever loaded. It runs from the
-// Automata panel's own refresh path (loadAutomataPanel), so it needs no timer
-// of its own. force skips the short refetch guard (the retry button).
+// Automation sub-tab's own mount (_automationMount), so it needs no timer of
+// its own. force skips the short refetch guard (the retry button).
 window.loadProgressCard = function(force) {
   const S = window._progressCardState;
   if (S.inflight) return S.inflight;
@@ -25306,8 +25307,8 @@ function _automationActionButtonsHTML(visible) {
         <button id="automationNewBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${hide}" onclick="if (typeof openAutomationForm === 'function') openAutomationForm()">＋ ${escHtml(t('automation_new'))}</button>`;
 }
 
-// The Automation sub-tab's body: the filter bar, the capacity card and the
-// list panel.
+// The Automation sub-tab's body: the filter bar, the capacity and progress
+// cards and the list panel.
 function _automationBodyHTML() {
   const st = _automationState;
   const statusBadges = _AUTOMATION_STATUSES.map(s => {
@@ -25320,6 +25321,7 @@ function _automationBodyHTML() {
         <div class="automata-badge-group">${statusBadges}</div>
       </div>
       <div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>`;
@@ -25333,6 +25335,9 @@ function _automationMount() {
   // The capacity card and the list load in parallel; each loader owns its
   // own loading and failed states, so one failing never blanks the other.
   listLoaderAll([_automationCapacityLoader(), _automationLoader()]);
+  // The progress card runs on its own state-machine path; it renders when the
+  // data lands and its failed state never touches the list or capacity card.
+  if (typeof window.loadProgressCard === 'function') window.loadProgressCard();
 }
 
 // _automationStopLoaders ends the polling and tick timers of the Automation
