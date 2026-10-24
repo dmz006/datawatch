@@ -130,7 +130,7 @@ func (m *Manager) EndSession(fullID string, why EndReason) error {
 		m.triggerSummarize(sess.FullID, 200)
 	}
 
-	// BL351 — deep recursive cascade: kill all descendants regardless of their own settings.
+	// Deep recursive cascade: kill all descendants regardless of their own settings.
 	if sess.KillChildrenRecursive {
 		var killAll func(parent *Session)
 		killAll = func(parent *Session) {
@@ -145,7 +145,7 @@ func (m *Manager) EndSession(fullID string, why EndReason) error {
 		}
 		killAll(sess)
 	} else if sess.KillChildren {
-		// BL347 — shallow cascade: direct children only.
+		// Shallow cascade: direct children only.
 		for _, child := range m.GetChildren(sess.FullID) {
 			if child.State == StateRunning || child.State == StateWaitingInput || child.State == StateRateLimited {
 				if err := m.EndSession(child.FullID, cascadeReason(why, sess)); err != nil {
