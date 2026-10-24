@@ -174,7 +174,24 @@ the existing ceiling today.
 
 ## Operator decisions
 
-Pending operator confirmation.
+Recorded 2026-10-24 from the operator's answers in the supervisor session. Confirmed: yes
+
+1. **Capacity card layout (open point 1):** the node name beside each holder, plus a pool summary
+   line above the node bars with the total free slots across the pool and which node the next
+   worker would take. No per-node row.
+2. **Busy GPU (open point 2):** subtract the memory already in use. Slots come from free memory
+   against the model, so a program holding memory lowers the slots. A floor keeps workers that are
+   already running from being counted out from under themselves.
+3. **Per-node slot override field:** a new field named `session_slots` (YAML and JSON), whole
+   number, 0 means derive from observer data, validated as not negative, and the effective count
+   never above `max_concurrent_sessions` when that is set. The existing `max_concurrent_sessions`
+   stays a hard cap on top and keeps its meaning. The field goes on every surface listed under
+   Configuration surfaces and Parity surface, including the config file node record, the seed
+   conversion, MCP add and update, the CLI flags, the comm channel and the PWA add and edit forms.
+4. **Pi routing mechanism:** approved. Each pi session gets its own provider table in a per-session
+   configuration directory selected through `PI_CODING_AGENT_DIR` on the launch command. If pi
+   cannot be repointed this way, stop and bring the fallback to the operator before any code is
+   written.
 
 ## Parity surface
 
