@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+Every session the daemon ends now records who ended it and why.
+
+- Each end the daemon makes (the verifier's stall and idle detectors, the SSE stall watchdog, the orphan sweep, the verifier reconcile, the exit hook restart, kill on exit and shutdown) records a caller and a reason on the session. The reason names the detector and the numbers it measured, for example the idle time and its limit.
+- The CLI stop-all and kill commands run outside the daemon, so they print the caller and reason instead of recording them.
+- The capacity lease reaper prints one line per released lease with its holder, its session and why the lease was judged not live.
+
 ## v9.6.0 — mcp.public_url for the MCP SSE endpoint behind a reverse proxy
 
 Adds `mcp.public_url` so the MCP SSE endpoint works behind a reverse proxy. Contributed by Cairn Viktor (external pull request 208, fixing issue 207).

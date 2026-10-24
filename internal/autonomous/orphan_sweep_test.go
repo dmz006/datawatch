@@ -1,19 +1,22 @@
 package autonomous
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
 type orphanHarness struct {
-	m      *Manager
-	prd    *PRD
-	now    time.Time
-	mu     sync.Mutex
-	list   []SessionInfo
-	killed []string
-	audits []string
+	m       *Manager
+	prd     *PRD
+	now     time.Time
+	mu      sync.Mutex
+	list    []SessionInfo
+	killed  []string
+	callers []string
+	reasons []string
+	audits  []string
 }
 
 func newOrphanHarness(t *testing.T) *orphanHarness {
@@ -38,10 +41,12 @@ func newOrphanHarness(t *testing.T) *orphanHarness {
 		defer h.mu.Unlock()
 		return append([]SessionInfo(nil), h.list...)
 	})
-	m.SetSessionKillerFn(func(id, _, _ string) error {
+	m.SetSessionKillerFn(func(id, caller, reason string) error {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		h.killed = append(h.killed, id)
+		h.callers = append(h.callers, caller)
+		h.reasons = append(h.reasons, reason)
 		return nil
 	})
 	m.SetAuditFn(func(a string, _ map[string]any) { h.audits = append(h.audits, a) })
@@ -109,6 +114,28 @@ func TestOrphanSweepLeavesBoundSession(t *testing.T) {
 	h.m.sweepOrphanSessions()
 	if _, ok := h.m.orphanSeen["sess-late"]; ok || len(h.killed) != 0 {
 		t.Fatalf("bound session not cleared/left alone: seen=%v killed=%v", h.m.orphanSeen, h.killed)
+	}
+}
+
+func TestEndAttributionOrphanSweepPassesNoteAsReason(t *testing.T) {
+	h := newOrphanHarness(t)
+	h.list = []SessionInfo{h.worker("sess-orphan")}
+	h.m.sweepOrphanSessions()
+	h.now = h.now.Add(301 * time.Second)
+	h.m.sweepOrphanSessions()
+
+	if len(h.killed) != 1 {
+		t.Fatalf("killed = %v, want one end", h.killed)
+	}
+	if h.callers[0] != orphanSweepCaller {
+		t.Errorf("caller = %q, want %q", h.callers[0], orphanSweepCaller)
+	}
+	want := orphanEndNote(h.worker("sess-orphan"), 301*time.Second, 300*time.Second)
+	if h.reasons[0] != want {
+		t.Errorf("reason = %q\nwant the sweep's note %q", h.reasons[0], want)
+	}
+	if !strings.Contains(h.reasons[0], "after 5m1s unbound") {
+		t.Errorf("reason %q does not name the measured orphan age", h.reasons[0])
 	}
 }
 
