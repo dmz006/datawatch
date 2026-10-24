@@ -207,6 +207,10 @@ type capacityPoolJSON struct {
 	// "unlimited by design" (local/API kinds or an explicit operator 0).
 	EffectiveMaxInflight *int    `json:"effective_max_inflight,omitempty"`
 	InflightSource       *string `json:"inflight_source,omitempty"`
+	// Usage carries the per-node usage figures (loaded models, GPU stats;
+	// see the nodeUsage contract in node_usage.go) for node:<name> pools.
+	// Nil — and therefore omitted from JSON — on host: and llm: pools.
+	Usage *nodeUsage `json:"usage,omitempty"`
 }
 
 // capacityResponse is the /api/capacity body.
@@ -438,6 +442,17 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Prune the per-node usage cache once per request, against the full
+	// registered node set and before any ?prd_id= scoping, so scoping to a
+	// PRD's own pools never evicts cache entries for other nodes.
+	if s.computeReg != nil {
+		names := []string{}
+		for _, n := range s.computeReg.List() {
+			names = append(names, n.Name)
+		}
+		s.nodeUsageCache().prune(names)
+	}
+
 	if prdID := r.URL.Query().Get("prd_id"); prdID != "" {
 		relevant, ok := s.prdRelevantPools(prdID)
 		if ok {
@@ -503,6 +518,16 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 			holder := strings.Join(p.Holders, ",")
 			pj.QueueDepth = &depth
 			pj.Holder = &holder
+			if s.computeReg != nil {
+				if n, err := s.computeReg.Get(strings.TrimPrefix(p.Name, "node:")); err == nil && n != nil {
+					// Non-blocking: the cache returns the cached figure (or a
+					// pending placeholder) immediately and starts at most one
+					// background refresh per node — it never waits on the
+					// network probes, so this handler stays fast.
+					u := s.nodeUsageCache().get(s, *n)
+					pj.Usage = &u
+				}
+			}
 			// holder_names: the same holders as readable objects, alongside the
 			// untouched comma-string and the raw holders array.
 			pj.HolderNames = make([]autonomous.HolderNameView, 0, len(p.Holders))

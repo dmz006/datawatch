@@ -5,7 +5,8 @@
 // registry snapshot, or the local observer — in that order). A small TTL
 // cache (nodeUsageCache) serves repeated reads without blocking on the
 // network and runs at most one background refresh per node at a time.
-// Not yet wired into handleCapacity.
+// handleCapacity attaches one entry to each node:<name> pool as its
+// "usage" field.
 
 package server
 
