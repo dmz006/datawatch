@@ -88,3 +88,59 @@ from main at c468569, which is 1802 commits behind the current main.
   `internal/server/reload.go`.
 - The `internal/mcp/server.go` conflict is the one that matters: resolving it by taking the PR's
   side would drop `server.WithKeepAliveInterval(10*time.Second)` and its comment.
+
+## Config surface parity
+
+Candidate branch `review/mcp-public-url-candidate` (nested worktree `.datawatch/candidate`): merge
+commit of the PR head (sha above, merge kept with the contributor's authorship and a co-author
+trailer), then one follow-up commit. The `ServeSSE` merge keeps `sseBaseURL(s.cfg)` and
+`server.WithKeepAliveInterval(10*time.Second)` with its comment. The CHANGELOG entry is plain
+bullets under `## [Unreleased]` with no version heading; no version variable was touched.
+
+| Surface | Status |
+|---|---|
+| YAML (struct tag, annotated template) | Present in the PR; conflicts with the new bind-timeout key resolved by keeping both |
+| REST read (`GET /api/config`) | Present in the PR |
+| REST write (`PUT /api/config`) | Present in the PR; validation and 400 added by the follow-up |
+| Restart-required list (`reload.go`) | Present in the PR; not applied live (confirmed by the parity test) |
+| MCP `config_set` | Already worked: no key allow-list, forwards to the same PUT (still gated by the self-config setting) |
+| CLI `datawatch config set` | Already worked: same PUT, no key allow-list or key-naming help text |
+| Comm channel `configure` | Help text in the PR; the follow-up proves the key reaches the same PUT through `configureFn` and adds router tests |
+| PWA field and restart flag | Present in the PR (label key, restart list); tracker reference not found in the PWA label |
+| Locales (en, de, es, fr, ja) | Present in the PR (English placeholder); follow-up adds a parity test |
+| Config reference | Present in the PR; tracker reference removed from the comment |
+| Operator docs | `mcp.md`, `implementation.md` and `operations.md` in the PR; follow-up adds the five-row access-method table and validation text; `internal/mcp/README.md` line added |
+
+Also removed the tracker reference from the config struct comment. It remains in the CHANGELOG
+bullet and in test-file comments the contributor wrote.
+
+Not changed: `internal/wizard/defs.go` (the setup wizard asks only for the port; the setting is
+optional and set after setup), `docs/cursor-mcp.md`, and the generated docs search index
+(regenerated at build time, git-ignored here).
+
+### Validation rules implemented
+
+`config.NormalizePublicURL` trims surrounding whitespace and trailing slashes. Empty or
+whitespace-only input is empty with no error. Otherwise the value must parse with `net/url`, have
+scheme `http` or `https` (case-insensitive), a non-empty host, no user-info, no query (including a
+bare `?`) and no fragment (including a bare `#`). Rejected shapes covered by table tests:
+`ftp://x`, `host:8081`, `//host`, `/relative`, `javascript:alert(1)`, user-info, query, fragment,
+`https://`, a port-only host, and a space in the host.
+
+- `PUT /api/config` validates before anything is applied: a bad value returns 400 naming
+  `mcp.public_url` and leaves the config and file unchanged.
+- `sseBaseURL` treats an invalid configured value as empty and falls back to the bind-address
+  URL; `ServeSSE` prints one warning line. The bound addresses are unchanged.
+
+Checks run in the candidate: `gofmt -l` on added Go files, `go vet` on the four packages, the
+targeted tests, `node --check app.js` and `scripts/check-docs-sync.sh` all pass. The full test
+suite was not run.
+
+### Follow-ups for the operator
+
+Nothing was filed. For the operator to decide:
+
+- File the Android and iPhone settings parity issues for the MCP SSE public URL field (AGENT.md
+  Mobile-Parity Rule).
+- File the datawatch-app issue for the new locale key `settings_mcp_public_url` (Section B, B4).
+- Decide whether the setup wizard should ask for the public URL.
