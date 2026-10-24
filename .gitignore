@@ -23,6 +23,9 @@ scripts/test-stories/pwa/evidence/
 .env.build
 dist/
 /datawatch-stats
+# restart-matrix sandboxes (RM_TMP_BASE) and their run logs
+/.rm/
+/.rm-work/
 
 # Local-environment leak prevention (AGENT.md "No local-environment
 # leaks in git" rule). Operator-specific values stay out of the repo.

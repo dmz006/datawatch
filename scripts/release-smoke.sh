@@ -4724,6 +4724,65 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "80. Daemon restart matrix - in-flight work survives a restart (strict)"
+# Runs scripts/restart-matrix.sh --strict, one state at a time, for the rows
+# that must survive a daemon restart. The matrix starts its own throwaway
+# daemons (own config, data dir, free ports, TLS off, own multiplexer socket
+# dir) and refuses to start when a target matches the production daemon, so
+# this section never touches this smoke's daemon or production. Rows still
+# marked OPERATOR PICK in docs/plans/restart-matrix-findings.md are skipped
+# with a reason, not run, because their outcome is an undecided design choice.
+# Needs jq, curl, python3, tmux and git, and a daemon binary ($_DW_BIN). Each
+# state is bounded by SMOKE_RESTART_TIMEOUT (default 900s) through `timeout`
+# when available. SMOKE_RESTART_MATRIX=0 skips the whole section.
+RM_SURVIVE_STATES=(worker-running waiting-capacity waiting-external git-operation automation-branches scheduled-due websocket-clients)
+RM_PICK_STATES=(
+  "planning|OPERATOR PICK: a planning PRD is reset to draft on restart and the operator re-plans; the fix is not chosen"
+  "verify-script|OPERATOR PICK: the verification script is a daemon child that runs again after a restart; where it runs is not chosen"
+  "verify-script-mid|OPERATOR PICK: the verification script is a daemon child that runs again after a restart; where it runs is not chosen"
+  "final-gate|OPERATOR PICK: the final gate script is a daemon child that runs again after a restart; where it runs is not chosen"
+  "verify-session|the live verifier session is not adopted after a restart and the verifier runs once more; adopting it needs a consumer for its output, not built"
+)
+RM_MISSING=""
+for RM_T in jq curl python3 tmux git; do
+  command -v "$RM_T" >/dev/null 2>&1 || RM_MISSING="$RM_MISSING $RM_T"
+done
+if [[ "${SMOKE_RESTART_MATRIX:-1}" == "0" ]]; then
+  skip "restart matrix: disabled by SMOKE_RESTART_MATRIX=0"
+elif [[ ! -x "$SMOKE_DIR/restart-matrix.sh" ]]; then
+  skip "restart matrix: scripts/restart-matrix.sh not found or not executable"
+elif [[ -n "$RM_MISSING" ]]; then
+  skip "restart matrix: required tool(s) missing:$RM_MISSING"
+elif [[ -z "${_DW_BIN:-}" ]]; then
+  skip "restart matrix: no datawatch binary (build it or set DATAWATCH_BIN)"
+else
+  RM_BASE="$(mktemp -d "${TMPDIR:-/tmp}/rms.XXXXXX")" # short path: the multiplexer socket path has a length limit
+  RM_TO_BIN="$(command -v timeout 2>/dev/null || true)"
+  for RM_S in "${RM_SURVIVE_STATES[@]}"; do
+    RM_OUT="$RM_BASE/$RM_S.out"
+    if [[ -n "$RM_TO_BIN" ]]; then
+      env -u TMUX -u TMUX_TMPDIR DATAWATCH_BIN="$_DW_BIN" RM_TMP_BASE="$RM_BASE" RM_KILL_MODE=control-group \
+        "$RM_TO_BIN" "${SMOKE_RESTART_TIMEOUT:-900}" bash "$SMOKE_DIR/restart-matrix.sh" --strict --only "$RM_S" >"$RM_OUT" 2>&1
+    else
+      env -u TMUX -u TMUX_TMPDIR DATAWATCH_BIN="$_DW_BIN" RM_TMP_BASE="$RM_BASE" RM_KILL_MODE=control-group \
+        bash "$SMOKE_DIR/restart-matrix.sh" --strict --only "$RM_S" >"$RM_OUT" 2>&1
+    fi
+    RM_RC=$?
+    RM_RESULT="$(grep -E '^  -> ' "$RM_OUT" | tail -1 | sed -E 's/^  -> //; s/, record:.*//')"
+    case "$RM_RC" in
+      0) ok "restart matrix $RM_S: survives a restart (${RM_RESULT:-strict clean})" ;;
+      1) ko "restart matrix $RM_S: ${RM_RESULT:-failed}; failing checks: $(grep -E '^  FAIL ' "$RM_OUT" | sed -E 's/^  FAIL +//' | head -3 | tr '\n' ';' | head -c 400)" ;;
+      124) ko "restart matrix $RM_S: timed out after ${SMOKE_RESTART_TIMEOUT:-900}s" ;;
+      *) ko "restart matrix $RM_S: harness fault (rc=$RM_RC): $(tail -2 "$RM_OUT" | tr '\n' ' ' | head -c 300)" ;;
+    esac
+  done
+  for RM_P in "${RM_PICK_STATES[@]}"; do
+    skip "restart matrix ${RM_P%%|*}: ${RM_P#*|}"
+  done
+  rm -rf "$RM_BASE"
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

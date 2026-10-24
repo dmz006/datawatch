@@ -41,7 +41,9 @@ import (
 // - DCS/PM/APC sequences: \x1bP...\x1b\\ , \x1b^...\x1b\\ , \x1b_...\x1b\\
 // - Simple two-byte escapes: \x1bX where X is in [@-Z\\-_]
 // - DEC private two-byte escapes: \x1b7, \x1b8, \x1b=, \x1b> (cursor save/restore, keypad mode)
-var ansiEscapeRe = regexp.MustCompile(`\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b_[^\x1b]*\x1b\\|\x1b\^[^\x1b]*\x1b\\|\x1b(?:[78=>]|[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
+// An OSC payload ends at its first terminator and never contains ESC, so output
+// between two OSC sequences is not swallowed as one long payload.
+var ansiEscapeRe = regexp.MustCompile(`\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b_[^\x1b]*\x1b\\|\x1b\^[^\x1b]*\x1b\\|\x1b(?:[78=>]|[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
 
 // cursorForwardRe matches ANSI cursor-forward sequences: \x1b[Nc where N >= 1.
 // TUI applications (e.g. claude-code) use these instead of literal space characters.

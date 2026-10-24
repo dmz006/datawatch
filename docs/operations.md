@@ -163,22 +163,55 @@ A restart (`systemctl --user restart datawatch`, `datawatch restart`, or a stop 
 
 The first two rows were observed on sandbox daemons during the restart audit, by signalling the daemon and relaunching it. The systemd unit path was not exercised there. The live test is the check to re-run on any daemon before relying on them. The release build has not yet been run through that live test, so the lease and subprocess rows are confirmed by unit tests only until it is.
 
+The restart matrix (`scripts/restart-matrix.sh`, see [The restart matrix](#the-restart-matrix)) is the test that enforces the in-flight rows below. It restarts a throwaway daemon with one unit of autonomous work in each state and records what became of it; the release smoke runs it with `--strict` for the states that must survive.
+
 | What survives a restart | Status | Enforced by |
 |---|---|---|
 | tmux pane and the LLM process inside it | Verified. The pane and process stay up across the restart. | `TestBL462_DaemonRestartSurvivesLive` (opt-in, below) |
 | Session state and output monitoring | Verified. A live session stays `running` or `waiting_input`, and its log keeps growing after the restart (the output pipe is re-attached). | `TestBL462_DaemonRestartSurvivesLive` (opt-in, below) |
 | Capacity-ledger lease for a PRD task on a live session | Fixed. A task in `verifying` on a live session has its lease re-adopted at boot, so the host pool counts it. Before the fix, the lease was dropped and the pool undercounted. | Unit tests `TestAdoptRestoresLeaseOverLimitWithoutWaiting`, `TestAdoptIsIdempotent` and `TestCapacity_BootResumeReadoptsLiveTaskLease`. The live test does not check leases. |
 | Task completion and verification | Observed. A PRD task that was `verifying` on a live session ran to completion after two daemon restarts in the audit. | Live audit only. The live test does not check task completion. |
+| Task whose worker is running | Verified on a sandbox daemon. The worker session is re-attached, the task keeps its session and capacity lease, and the worker is not started again. | Restart matrix state `worker-running` |
+| Task waiting for capacity, or parked on an external condition | Verified on a sandbox daemon. The wait is rebuilt at boot from the live holder session; the task is admitted or released once and the worker runs once. The variant where a parked task gives up its host slot and waits for re-admission behind another task is not exercised. | Restart matrix states `waiting-capacity`, `waiting-external` |
+| Task whose worker finished while it was verifying | Verified on a sandbox daemon. The task stays `verifying` with its worker session and result; no retry is counted and the worker is not run again. Only the verification runs again. | Restart matrix states `verify-script`, `verify-script-mid`, `final-gate`, `verify-session`; unit test `TestReconcileStuckKeepsFinishedWorkerVerifying` |
+| Automation with active branches | Verified on a sandbox daemon. Both cursors come back, a branch with a live worker is kept, a branch that was verifying is verified once, and the join is released. | Restart matrix state `automation-branches` |
+| Scheduled job that came due while the daemon was down | Verified on a sandbox daemon. The job fires once after boot and is marked done. | Restart matrix state `scheduled-due` |
+| Open WebSocket clients | Verified on a sandbox daemon. Clients reconnect on their own and get a full session snapshot first. Events emitted while the daemon was down are not replayed, so clients must not assume gap-free delivery. | Restart matrix state `websocket-clients` |
+| Git commit in flight | Verified for the task-start snapshot commit only. Git removes its own index lock on TERM, the task is reset to pending, and the commit is made once by the new run. A merge, a push and the commit of a worker's output are not measured. | Restart matrix state `git-operation` |
 
-**Tasks that were mid-run.** A task that was executing (not yet verifying) when the daemon stopped has no session to re-attach to. It is reset at boot and re-run, and it holds no lease to restore. This is the one case where a restart interrupts work: that task starts again from the beginning.
+**What does not survive.** Two things, both listed as open choices in `docs/plans/restart-matrix-findings.md` and neither changed:
 
-**Tasks that were verifying.** A task whose worker had finished and whose result was not yet recorded is kept at boot. Only its verification runs again. The worker session is not ended and no retry is counted. If the worker had not finished, the task is reset and re-run as described above.
+- **Planning.** A PRD whose decompose was running is reset to `draft` and its decompose session is ended, because the code that would read the plan was inside the stopped daemon. The PRD waits for the operator to plan again; nothing is planned automatically.
+- **Daemon-run verification scripts.** A verification script, and a final-gate script, run as a direct child of the daemon with no durable record. A restart ends it (or leaves it orphaned, see the KillMode note) and the verification runs the script again from the start. The worker is not run again beside it. A script that is slow or has effects that cannot be repeated should not be relied on to survive a restart.
+
+One more case runs part of the work again: a task verifying through a live verifier session keeps its worker, retry count and session count, but the verifier that was in flight is not adopted and a second verifier is started once.
+
+**Tasks that were mid-run.** A task whose worker session is alive is not interrupted: the daemon re-attaches to the session at boot and the executor waits on it. A task that had no session yet (for example one inside its start-of-task commit) is reset to pending at boot and starts once, since there is nothing to re-attach to.
+
+**Tasks that were verifying.** A task whose worker had finished and whose result was not yet recorded is kept at boot. Only its verification runs again. The worker session is not ended and no retry is counted. Reading the worker's recorded output for the completion marker depends on the shared output cleaner keeping every real line between two terminal escape sequences; it now does.
+
+**KillMode.** The systemd unit uses the default `KillMode=control-group`: a stop or restart sends TERM to every process in the unit's control group, not only the daemon. Workers, verifiers and planners live in a multiplexer server outside the daemon's tree and are not affected. A process the daemon starts directly (the verification script, a git command) is ended, so its work starts again. With a restart that signals only the daemon process (`datawatch restart`, a `KillMode=process` unit), such a child is orphaned and can keep running beside its own re-run. The matrix simulates the control-group case by sending TERM to the daemon and to its direct children by pid (`RM_KILL_MODE`); it is a stand-in, not the service manager, and covers TERM only (not a crash, a kill signal, an out-of-memory kill or a reboot).
 
 **Subprocess sessions** (`subprocess: true`, no tmux pane). A subprocess session records its process ID and exit status in its session directory. At boot, the daemon re-attaches to a subprocess that is still running and keeps the session `running` until the process exits, then records the exit status. If the process ended while the daemon was down, the recorded status is used. The session is marked `failed` only when the process is gone and no exit status was recorded. This restart behaviour is fixed but not yet confirmed by the live test. A systemd stop or restart kills the daemon's child processes too (the unit's default `KillMode=control-group`), so a subprocess survives only a restart that signals the daemon process alone.
 
 **Encrypted sessions** (`--secure`). Not covered by this guarantee. At boot the daemon does not re-attach the output pipe for encrypted sessions, so their output may stop after a restart. After restarting a `--secure` daemon, check that each session that matters is still producing output, and restart any session whose output has stopped.
 
 **Long task text and no-override restarts.** Restarting a session is no longer limited by how long its task text is. The claude-code backend, and the aider and goose-prompt one-shot paths, deliver the task through a scratch file that the typed command reads, so the full text is not typed inline. A no-override restart of a resumed conversation therefore no longer resends the original task. If a tmux command still fails, the returned and logged error now carries tmux's own stderr text (for example `command too long`) instead of a bare exit status.
+
+#### The restart matrix
+
+`scripts/restart-matrix.sh` is the test that enforces the table above. It puts one unit of autonomous work into each of twelve states, restarts a sandbox daemon, and records session ids, process ids, retry counts, duplicates, lost output and work redone, before and after. Each state runs against its own throwaway daemon (generated config, own data dir, free ports, TLS off, own multiplexer socket directory). It refuses to start when a target matches the production daemon, its ports or its data directory, and it never touches them. No real model is used: planner, worker, verifier and guardrail judge are one fake backend, so the matrix measures the daemon's restart handling, not model behaviour.
+
+```bash
+scripts/restart-matrix.sh --list                      # state names
+scripts/restart-matrix.sh --strict                    # exit 1 if any state fails
+scripts/restart-matrix.sh --strict --only worker-running,scheduled-due
+RM_KILL_MODE=process scripts/restart-matrix.sh --only verify-script   # daemon pid only
+```
+
+Set `DATAWATCH_BIN` to a daemon binary built from the tree under test. A full run takes about 25 minutes. The per-state result, the measured cells and the open choices are in `docs/plans/restart-matrix-findings.md`.
+
+`scripts/release-smoke.sh` runs the matrix as section 80, in its own sandboxes and never against production. It runs `--strict` for the states that must survive (`worker-running`, `waiting-capacity`, `waiting-external`, `git-operation`, `automation-branches`, `scheduled-due`, `websocket-clients`). It skips with a reason the states still left as an open choice (`planning`, `verify-script`, `verify-script-mid`, `final-gate`) and `verify-session`, whose in-flight verifier is not adopted. Skipping is not a pass: those rows stay in the table above as not surviving until a choice is made and the skip is removed. `SMOKE_RESTART_MATRIX=0` turns the section off; `SMOKE_RESTART_TIMEOUT` bounds each state (default 900 seconds).
 
 **Confirming on a live daemon.** `TestBL462_DaemonRestartSurvivesLive` in `internal/session/restart_safety_live_test.go` restarts a daemon and checks that a live probe session survives it. It is skipped unless `DW_LIVE_RESTART_TEST=1` is set, so `go test ./...` does not run it. It needs `DW_BASE` set to the daemon under test, and it must run on the daemon's host with the same `TMUX_TMPDIR`. The default restart path is `systemctl --user restart datawatch`. Use `DW_LIVE_RESTART_CMD` only for a sandbox daemon that systemd does not manage. Run it against a sandbox, never against production.
 
