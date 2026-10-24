@@ -4436,7 +4436,7 @@ func (m *Manager) Start(parent context.Context) {
 		return
 	}
 	m.ctx, m.cancel = context.WithCancel(parent)
-	go m.run()
+	go m.run(m.ctx)
 	if r := m.progressSnaps; r != nil {
 		go r.Run(m.ctx)
 	}
@@ -4592,7 +4592,11 @@ func (m *Manager) reconcileStuckTasks() {
 // pipeline.Executor or operator-driven `datawatch autonomous run`)
 // can pick them up. The actual Task → Session dispatch is done by
 // the executor in executor.go (called from REST handler).
-func (m *Manager) run() {
+//
+// ctx is the context Start created. The loop must not read m.ctx: Stop
+// clears it, and a loop that had not yet reached its select would then call
+// Done on a nil context.
+func (m *Manager) run(ctx context.Context) {
 	m.reconcileStuckTasks()
 
 	interval := time.Duration(m.cfg.PollIntervalSeconds) * time.Second
@@ -4603,7 +4607,7 @@ func (m *Manager) run() {
 	defer t.Stop()
 	for {
 		select {
-		case <-m.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-t.C:
 			m.mu.Lock()
