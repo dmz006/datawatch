@@ -250,5 +250,5 @@ func (m *Manager) journalf(format string, args ...any) {
 	if m.journal != nil {
 		out = m.journal
 	}
-	fmt.Fprintf(out, format, args...)
+	_, _ = fmt.Fprintf(out, format, args...)
 }
