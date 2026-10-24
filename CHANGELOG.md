@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.6.1 — Paged Automata list and small reconnect refresh
+
+Stops the web UI from downloading full lists on load, reconnect and refresh.
+
+- The Automata tab now loads the paged summary list (50 rows per page with a Load more control, as on the sessions tab) instead of the full list of about 360 MB. Opening a row fetches that one PRD in full, children load on expand, and the loading, cached, stale and failed states with Retry apply.
+- The reconnect refresh in the non-local session mode is one small summary request instead of the full session list of about 35 MB.
+- Every other list call in the web files was audited. Those that run on a tab open, a reconnect or a timer now use the summary form, and the ones left alone are listed with the reason in the audit test.
+- A byte-budget ratchet test fails when a list endpoint is requested in the full form from a load, reconnect or timer path, and a browser story checks the bytes and the number of requests for a dropped and restored connection.
+
 ## v9.6.0 — mcp.public_url for the MCP SSE endpoint behind a reverse proxy
 
 Adds `mcp.public_url` so the MCP SSE endpoint works behind a reverse proxy. Contributed by Cairn Viktor (external pull request 208, fixing issue 207).
