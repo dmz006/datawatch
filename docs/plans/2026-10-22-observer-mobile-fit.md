@@ -257,3 +257,24 @@ state: per-row findings, detail panes and populated lists are not represented
 here. The header-control and tab-bar groups above are state-independent and are
 the solid ground truth; after the shared fixes, re-run with seeded data (see
 `mobile-fit-seeds.mjs` for provider seeding) to catch the row-level cases.
+
+## Release smoke run
+
+2026-10-22 — live smoke of `scripts/release-smoke-mobile-fit.sh` against a fresh
+daemon built from this tree (isolated loopback ports, never the production daemon):
+
+- **Live run** (`DATAWATCH_BASE` = fresh daemon, `DATAWATCH_TOKEN` set): exit
+  **0**; the report path is printed (`OK: report: .../mobile-fit-report.json`).
+  The quick profile ran **95 scenarios**; report summary line:
+  `mobile-fit: 95 scenarios, 411 findings in 6 groups` (remaining worklist groups
+  only — tap-target `#headerHelpLink` / `#headerAlertPill` / `#peerStaleBadge` /
+  `#headerFullscreenBtn`, clipped-text `.nav-icon`, interaction
+  `#settings-sec-stats`).
+- **Skip run** (`DATAWATCH_BASE` on an unused port): exit **2** with the line
+  `SKIP: daemon unreachable at <base>`.
+
+Script note: the smoke originally treated a completed browser run that reports
+findings (runner exit 1) as a failure; the fix makes it pass when the suite ran
+to completion and wrote a usable report, and fail (exit 1) only when no usable
+report was produced or a scenario could not even open its view
+(`open-failed`). Exit 2/skip semantics unchanged.
