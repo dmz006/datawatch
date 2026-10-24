@@ -89,7 +89,8 @@ Other channels:
 
 - **PWA:** Settings > Compute > node edit > *Max concurrent sessions*;
   LLM edit > *Max in flight*; Settings > General > Automata > capacity
-  fields; Automata > Capacity card shows pools and the queue.
+  fields; the Capacity card on the Automata tab's Automation sub-tab shows the
+  machine-wide pools and the queue.
 - **MCP:** `compute_node_update` (`max_concurrent_sessions`),
   `llm_update` (`max_inflight`), `config_set` for
   `autonomous.capacity_*` and `session.reserved_interactive`,

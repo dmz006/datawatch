@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-- The Automata and Templates sub-tab body no longer carries the two status panels: the capacity card and the progress card now live on the Automation sub-tab body, while the capacity card on an individual Automaton's detail page stays in place.
+- The *Progress* card and the *Capacity* card now show only on the Automation sub-tab, at the top above its list — the *Progress* card directly below the filter bar and the *Capacity* card — and are gone from the Automata and Templates sub-tabs (the scope-limited capacity card on an Automaton's detail page stays as before). The *Progress* card loads when the Automation sub-tab is selected and nothing keeps polling after you leave it; leaving the sub-tab stops its refresh and its timers. Patch-level change, front-end only.
 
 ## v9.9.1 — Orphan sweep no longer ends live workers
 
