@@ -16,7 +16,7 @@ func reapReq(holder string) capacity.Request {
 // reapPass runs one reaper pass at the given fake time.
 func reapPass(led *capacity.Ledger, reg *verifierRegistry, alive map[string]bool, now time.Time) []string {
 	return led.Reap(func(ls capacity.Lease) bool {
-		return leaseHolderLive(ls, reg, func(id string) bool { return alive[id] }, now)
+		return leaseHolderLive(ls, reg, reg.isActive, func(id string) bool { return alive[id] }, now)
 	})
 }
 
@@ -111,5 +111,74 @@ func TestLeaseReaperNeverExceedsPoolLimitWhileVerifiersRun(t *testing.T) {
 		if p.Name == "gpu" && p.Held > p.Limit {
 			t.Fatalf("held %d > limit %d", p.Held, p.Limit)
 		}
+	}
+}
+
+// Judge leases ("judge:<unit id>") are judged by the same live-session /
+// spawn-grace logic as verifier leases, over their own registry instance
+// (the holderAlive closure of the judges registry in wireCapacity).
+
+func TestLeaseReaperKeepsLongRunningJudge(t *testing.T) {
+	led := capacity.New(capacity.Options{})
+	led.SetLimit("gpu", 1)
+	jreg := newVerifierRegistry() // the judges' registry, same type
+	holder := autonomous.JudgeHolder("u1")
+	led.Adopt(reapReq(holder), "")
+	end := jreg.begin(holder)
+	defer end()
+	start := time.Now()
+	// active judge (e.g. the /api/ask path) with no session: kept at every
+	// age, exactly like the verifier rule.
+	for _, d := range []time.Duration{time.Minute, 11 * time.Minute, 25 * time.Minute, 29 * time.Minute} {
+		if got := reapPass(led, jreg, nil, start.Add(d)); len(got) != 0 {
+			t.Fatalf("reaped %v at +%v", got, d)
+		}
+	}
+	// bound judge session: its liveness decides.
+	jreg.bindSession(holder, "j1")
+	led.Bind(holder, "j1")
+	if got := reapPass(led, jreg, map[string]bool{"j1": true}, start.Add(30*time.Minute)); len(got) != 0 {
+		t.Fatalf("reaped %v with live judge session", got)
+	}
+	if !led.Held(holder) {
+		t.Fatal("lease lost")
+	}
+}
+
+func TestLeaseReaperReapsJudgeLeaseWhoseSessionCompleted(t *testing.T) {
+	led := capacity.New(capacity.Options{})
+	led.SetLimit("gpu", 1)
+	jreg := newVerifierRegistry()
+	holder := autonomous.JudgeHolder("u2")
+	led.Adopt(reapReq(holder), "")
+	end := jreg.begin(holder)
+	jreg.bindSession(holder, "j2")
+	led.Bind(holder, "j2")
+	// The bound session is dead: same rule as the verifier lease — the
+	// session decides, the registration does not keep a dead lease alive.
+	got := reapPass(led, jreg, map[string]bool{"j2": false}, time.Now())
+	end()
+	if len(got) != 1 || got[0] != holder {
+		t.Fatalf("reaped %v, want [%s]", got, holder)
+	}
+}
+
+func TestLeaseReaperReapsLeakedUnregisteredJudgeLease(t *testing.T) {
+	led := capacity.New(capacity.Options{})
+	led.SetLimit("gpu", 1)
+	jreg := newVerifierRegistry()
+	lost := autonomous.JudgeHolder("gone")
+	fresh := autonomous.JudgeHolder("fresh")
+	led.Adopt(reapReq(lost), "")
+	led.Adopt(reapReq(fresh), "")
+	// within spawn grace: kept even though unregistered
+	if got := reapPass(led, jreg, nil, time.Now()); len(got) != 0 {
+		t.Fatalf("reaped %v inside spawn grace", got)
+	}
+	// after the grace expires: reaped exactly like the unregistered verifier
+	// lease.
+	got := reapPass(led, jreg, nil, time.Now().Add(11*time.Minute))
+	if len(got) != 2 {
+		t.Fatalf("reaped %v, want both judge leases", got)
 	}
 }

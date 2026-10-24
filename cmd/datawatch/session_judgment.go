@@ -236,6 +236,17 @@ func sessionPaneMarker(cfg *config.Config, id string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// judgeLiveSession, when set, returns the id of a guardrail-judge session
+// that is still running and is named exactly sessionName, or "" when none
+// is live (wireCapacity sets it from the session manager's live-session
+// listing). runOneShotJSONSessionWithReader consults it for judge session
+// names before it would POST /api/sessions/start and reuses (adopts) the
+// live session instead of spawning a second one — the daemon-restart
+// double-spawn guard: the capacity ledger is in-memory, so a restart drops
+// the in-flight judge's lease while the judge session itself survives.
+// Tests set a fake; nil means "no adopt, spawn as before".
+var judgeLiveSession func(sessionName string) string
+
 // runOneShotJSONSessionWithReader is the spawn / poll / kill body shared by
 // runOneShotJSONSessionCaptureID and runOneShotJudgeSessionCaptureID. readOutput
 // decides how the output file is read, and whether it is removed from the
@@ -257,73 +268,104 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 	}
 	_ = os.Remove(outputFile) // clear stale/empty output from an incomplete prior attempt
 
-	startReq := map[string]any{
-		"task":        sessionTask,
-		"project_dir": projectDir,
-		"backend":     backend,
-		"model":       model,
-		"name":        sessionName,
-		"one_shot":    true,
-		"prd_id":      prdID,
-		// Planning/judgment sessions must never stage or commit the repo.
-		"skip_snapshot": true,
-		// PRD-owned judgment session: keep its tmux commands off the
-		// production server.
-		"scrub_tmux_env": true,
+	// Adopt, never double-spawn (daemon restart): a guardrail-judge
+	// session named exactly sessionName may still be running even though
+	// the in-memory capacity lease is gone. Reuse that live session
+	// instead of starting a second judge for the same unit — two judges
+	// would double-bill the session cap and race on the same
+	// content-addressed output file. Only judge session names (parseable
+	// by judgeUnitFromSessionName) consult the hook; every other caller
+	// keeps its spawn behavior. The adopted judge writes the same output
+	// file this call's poll loop reads, and the deferred kill below still
+	// ends the session when the call returns.
+	var startOut struct {
+		ID string `json:"id"`
 	}
-	if effort != "" {
-		startReq["effort"] = effort
+	adopted := false
+	if judgeLiveSession != nil {
+		if unitID, ok := judgeUnitFromSessionName(sessionName); ok && unitID != "" {
+			if id := judgeLiveSession(sessionName); id != "" {
+				startOut.ID = id
+				adopted = true
+			}
+		}
 	}
-	body, _ := json.Marshal(startReq)
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// A full session cap is a wait, not a failure: retry until a slot
-	// frees or the timeout expires.
-	var rb []byte
-	for {
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			loopbackBaseURL(cfg)+"/api/sessions/start",
-			bytes.NewReader(body))
-		if err != nil {
-			return "", "", err
+	if !adopted {
+		startReq := map[string]any{
+			"task":        sessionTask,
+			"project_dir": projectDir,
+			"backend":     backend,
+			"model":       model,
+			"name":        sessionName,
+			"one_shot":    true,
+			"prd_id":      prdID,
+			// Planning/judgment sessions must never stage or commit the repo.
+			"skip_snapshot": true,
+			// PRD-owned judgment session: keep its tmux commands off the
+			// production server.
+			"scrub_tmux_env": true,
 		}
-		httpReq.Header.Set("Content-Type", "application/json")
-		if cfg.Server.Token != "" {
-			httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+		if effort != "" {
+			startReq["effort"] = effort
 		}
-		resp, err := http.DefaultClient.Do(httpReq)
-		if err != nil {
-			return "", "", fmt.Errorf("%s session start: %w", sessionName, err)
+		body, _ := json.Marshal(startReq)
+
+		// A full session cap is a wait, not a failure: retry until a slot
+		// frees or the timeout expires.
+		var rb []byte
+		for {
+			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+				loopbackBaseURL(cfg)+"/api/sessions/start",
+				bytes.NewReader(body))
+			if err != nil {
+				return "", "", err
+			}
+			httpReq.Header.Set("Content-Type", "application/json")
+			if cfg.Server.Token != "" {
+				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+			}
+			resp, err := http.DefaultClient.Do(httpReq)
+			if err != nil {
+				return "", "", fmt.Errorf("%s session start: %w", sessionName, err)
+			}
+			rb, _ = io.ReadAll(resp.Body)
+			resp.Body.Close() //nolint:errcheck
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+			if !strings.Contains(string(rb), "max sessions") {
+				return "", "", fmt.Errorf("%s session start: %s — %s", sessionName, resp.Status, string(rb))
+			}
+			fmt.Printf("[%s] waiting for a free session slot: %s\n", sessionName, strings.TrimSpace(string(rb)))
+			select {
+			case <-ctx.Done():
+				return "", "", fmt.Errorf("%s session start: %w while waiting for capacity", sessionName, ctx.Err())
+			case <-time.After(15 * time.Second):
+			}
 		}
-		rb, _ = io.ReadAll(resp.Body)
-		resp.Body.Close() //nolint:errcheck
-		if resp.StatusCode == http.StatusOK {
-			break
+		if err := json.Unmarshal(rb, &startOut); err != nil {
+			return "", "", fmt.Errorf("%s session start: malformed JSON: %w", sessionName, err)
 		}
-		if !strings.Contains(string(rb), "max sessions") {
-			return "", "", fmt.Errorf("%s session start: %s — %s", sessionName, resp.Status, string(rb))
+		if startOut.ID == "" {
+			return "", "", fmt.Errorf("%s session start: no id in response: %s", sessionName, string(rb))
 		}
-		fmt.Printf("[%s] waiting for a free session slot: %s\n", sessionName, strings.TrimSpace(string(rb)))
-		select {
-		case <-ctx.Done():
-			return "", "", fmt.Errorf("%s session start: %w while waiting for capacity", sessionName, ctx.Err())
-		case <-time.After(15 * time.Second):
-		}
-	}
-	var startOut struct {
-		ID string `json:"id"`
-	}
-	_ = json.Unmarshal(rb, &startOut)
-	if startOut.ID == "" {
-		return "", "", fmt.Errorf("%s session start: no id in response: %s", sessionName, string(rb))
 	}
 	sessionID = startOut.ID
 	if verifierSessionStarted != nil {
 		verifierSessionStarted(sessionName, sessionID)
 	}
-	fmt.Printf("[%s] spawned %s (backend=%s, output=%s)\n", sessionName, startOut.ID, backend, outputFile)
+	if judgeSessionStarted != nil {
+		judgeSessionStarted(sessionName, sessionID)
+	}
+	if adopted {
+		fmt.Printf("[%s] adopting live session %s (a guardrail judge with this name is already running — not spawning a second)\n", sessionName, startOut.ID)
+	} else {
+		fmt.Printf("[%s] spawned %s (backend=%s, output=%s)\n", sessionName, startOut.ID, backend, outputFile)
+	}
 	// Record the spawn time as soon as the session id is known: while the
 	// daemon is still delivering the task within its delivery budget the
 	// session can sit in waiting_input before the Claude main prompt is

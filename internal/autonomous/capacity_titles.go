@@ -23,6 +23,9 @@ const (
 	HolderKindTask HolderKind = "task"
 	// HolderKindVerifier: "verify:<taskID>", the task being verified.
 	HolderKindVerifier HolderKind = "verifier"
+	// HolderKindJudge: "judge:<unitID>", a unit (task, story, or PRD) being
+	// judged by the guardrail judge.
+	HolderKindJudge HolderKind = "judge"
 	// HolderKindDecompose: "plan:<prdID>" (and "decompose:<prdID>"), the PRD's planner.
 	HolderKindDecompose HolderKind = "decompose"
 	// HolderKindSession: anything else, normally an operator session id.
@@ -62,7 +65,7 @@ type TitleLookupFn func() TitleSnapshot
 // HolderName is the resolved, operator-readable form of a raw holder id.
 type HolderName struct {
 	ID        string     // raw holder id, unchanged
-	Kind      HolderKind // task | verifier | decompose | session
+	Kind      HolderKind // task | verifier | judge | decompose | session
 	TaskTitle string     // the task's full title ("", when there is none)
 	PRDID     string     // the PRD the holder belongs to (when known)
 	PRDTitle  string     // the PRD's full title ("" when unknown)
@@ -277,6 +280,10 @@ func resolveHolder(holderID string, snap TitleSnapshot, sessionName func(string)
 	if rest, ok := strings.CutPrefix(holderID, "verify:"); ok {
 		return verifierHolder(rest, snap)
 	}
+	// "judge:<unitID>": a unit (task, story, or PRD) under a guardrail judge.
+	if rest, ok := strings.CutPrefix(holderID, "judge:"); ok {
+		return judgeHolder(rest, snap)
+	}
 	// "plan:<prdID>" / "decompose:<prdID>": the PRD's planner lease.
 	for _, prefix := range []string{"plan:", "decompose:"} {
 		if rest, ok := strings.CutPrefix(holderID, prefix); ok {
@@ -338,6 +345,41 @@ func verifierHolder(taskID string, snap TitleSnapshot) HolderName {
 		Readable: readable,
 		Full:     full,
 	}
+}
+
+func judgeHolder(unitID string, snap TitleSnapshot) HolderName {
+	short := shortID(unitID)
+	id := "judge:" + unitID
+	// A unit may be a PRD (the completion judges: rules review, CI watch),
+	// a task (per-task guardrails), or a story / unknown id with no title.
+	if title, ok := snap.PRDs[unitID]; ok {
+		return HolderName{
+			ID: id, Kind: HolderKindJudge,
+			PRDID: unitID, PRDTitle: title,
+			ShortID:  short,
+			Readable: "Judging rules: " + shortTitle(title) + " (" + short + ")",
+			Full:     "Judging rules: " + title + " (" + short + ")",
+		}
+	}
+	if ref, ok := snap.Tasks[unitID]; ok {
+		if strings.TrimSpace(ref.Title) == "" {
+			readable := "Judging: (untitled " + short + ")"
+			return HolderName{
+				ID: id, Kind: HolderKindJudge,
+				TaskTitle: ref.Title, PRDID: ref.PRDID, PRDTitle: snap.PRDs[ref.PRDID],
+				ShortID: short, Readable: readable, Full: readable,
+			}
+		}
+		return HolderName{
+			ID: id, Kind: HolderKindJudge,
+			TaskTitle: ref.Title, PRDID: ref.PRDID, PRDTitle: snap.PRDs[ref.PRDID],
+			ShortID:  short,
+			Readable: "Judging: " + shortTitle(ref.Title) + " (" + short + ")",
+			Full:     "Judging: " + ref.Title + " (" + short + ")",
+		}
+	}
+	readable := "Judging: (untitled " + short + ")"
+	return HolderName{ID: id, Kind: HolderKindJudge, ShortID: short, Readable: readable, Full: readable}
 }
 
 func decomposeHolder(prdID string, snap TitleSnapshot) HolderName {

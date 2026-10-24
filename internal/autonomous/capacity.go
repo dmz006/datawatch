@@ -410,6 +410,16 @@ func (m *Manager) releaseCapacity(taskID string) {
 // "verify:<taskID>").
 func VerifyHolder(taskID string) string { return "verify:" + taskID }
 
+// JudgeHolder is the capacity-holder name a guardrail judge admits under
+// while judging a unit (task, story, or PRD). One unit never has two
+// concurrent judges — runPerTaskGuardrails / runPerStoryGuardrails run their
+// resolved guardrail list strictly sequentially (executor.go), the PRD
+// completion judges (rules review, CI watch) fire one at a time at rollup,
+// and rejudge runs only after the PRD left the running state — so a bare
+// "judge:<unitID>" is always unique per unit and needs no guardrail-name
+// suffix.
+func JudgeHolder(unitID string) string { return "judge:" + unitID }
+
 // HandoffVerifyLease re-keys the task's worker lease (holder taskID) to the
 // verifier's "verify:<taskID>" lease so the task in verification holds exactly
 // one slot instead of two, with no release-and-re-wait window in which a

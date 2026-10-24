@@ -728,3 +728,162 @@ func TestPlanningSessionStartRequestSkipsSnapshot(t *testing.T) {
 		assertPlanningStartBody(t, startBody, "prd-judge-skip")
 	})
 }
+
+// The daemon-restart double-spawn guard: when the one-shot runner is about to
+// start a guardrail judge but a judge session with exactly that name is still
+// running (the capacity lease did not survive a daemon restart), it must
+// adopt the live session — zero start requests, poll and kill the adopted id —
+// instead of spawning a second judge for the same unit.
+func TestRunOneShotJudgeSession_AdoptsLiveSessionInsteadOfSpawning(t *testing.T) {
+	projectDir := t.TempDir()
+	dataDir := t.TempDir()
+	outputFile := filepath.Join(projectDir, ".guardrail-output-adopt.json")
+	const want = `{"outcome":"pass","severity":"info","summary":"from the surviving judge"}`
+	const adoptedID = "sess-survivor"
+	const adoptName = judgeSessionNamePrefix + ":adopt-u1"
+
+	orig := judgeLiveSession
+	t.Cleanup(func() { judgeLiveSession = orig })
+	consults := make([]string, 0)
+	judgeLiveSession = func(name string) string {
+		consults = append(consults, name)
+		if name == adoptName {
+			return adoptedID
+		}
+		return ""
+	}
+
+	var mu sync.Mutex
+	starts := 0
+	kills := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sessions/start", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		starts++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "sess-unwanted"})
+	})
+	mux.HandleFunc("/api/sessions/"+adoptedID, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if starts == 0 {
+			_ = os.WriteFile(outputFile, []byte(want), 0o600)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"state": "running"})
+	})
+	mux.HandleFunc("/api/sessions/kill", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		kills++
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	withFakeLoopback(t, srv)
+
+	cfg := &config.Config{}
+	cfg.DataDir = dataDir
+
+	got, id, err := runOneShotJudgeSessionCaptureID(cfg, "prd-adopt", projectDir, "claude-code", "sonnet", "",
+		adoptName, "judge it, write JSON to "+outputFile, outputFile, "guardrail-adopt.json",
+		10*time.Second)
+	if err != nil {
+		t.Fatalf("runOneShotJudgeSessionCaptureID: %v", err)
+	}
+	if got != want {
+		t.Errorf("content = %q, want the surviving judge's output %q", got, want)
+	}
+	if id != adoptedID {
+		t.Errorf("session id = %q, want the adopted %q", id, adoptedID)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if starts != 0 {
+		t.Errorf("start requests = %d, want 0 (a live judge with this name must be adopted, not duplicated)", starts)
+	}
+	if kills != 1 {
+		t.Errorf("kill calls = %d, want 1 (the call still owns the adopted session's lifecycle)", kills)
+	}
+	if len(consults) != 1 || consults[0] != adoptName {
+		t.Errorf("judgeLiveSession consulted with %v, want exactly [%s]", consults, adoptName)
+	}
+}
+
+// The adopt lookup must only fire for judge session names: a judgeLiveSession
+// registered (e.g. set by wireCapacity) must not be consulted for verifier or
+// decompose names, and a judge name with no live match must spawn as before.
+func TestRunOneShotJudgeSession_AdoptLookupOnlyForJudgeNames(t *testing.T) {
+	orig := judgeLiveSession
+	t.Cleanup(func() { judgeLiveSession = orig })
+
+	t.Run("verifier name never consults the hook", func(t *testing.T) {
+		consulted := make([]string, 0)
+		// A hook that would have to be called if the guard were missing — it
+		// is set to "a live session" on purpose, so the test also proves a
+		// non-judge name could never be adopted even in the presence of a
+		// false-positive hook.
+		judgeLiveSession = func(name string) string {
+			consulted = append(consulted, name)
+			return "sess-wrong"
+		}
+
+		projectDir := t.TempDir()
+		dataDir := t.TempDir()
+		outputFile := filepath.Join(projectDir, ".verify-output-nook.json")
+
+		srv, _ := fakeSessionServer(t, "running", outputFile, `{"ok":true}`, true)
+		withFakeLoopback(t, srv)
+
+		cfg := &config.Config{}
+		cfg.DataDir = dataDir
+
+		name := "autonomous:verify:t9"
+		got, id, err := runOneShotJSONSessionCaptureID(cfg, "prd-nook", projectDir, "claude-code", "sonnet", "",
+			name, "verify it, write JSON to "+outputFile, outputFile, "verify.json",
+			10*time.Second)
+		if err != nil {
+			t.Fatalf("runOneShotJSONSessionCaptureID: %v", err)
+		}
+		if len(consulted) != 0 {
+			t.Fatalf("judgeLiveSession consulted for a non-judge name %v", consulted)
+		}
+		if got == "" || id != "sess-test-1" {
+			t.Fatalf("content=%q id=%q, want the spawned path", got, id)
+		}
+	})
+
+	t.Run("judge name with no live match spawns as before", func(t *testing.T) {
+		consulted := make([]string, 0)
+		judgeLiveSession = func(name string) string {
+			consulted = append(consulted, name)
+			return ""
+		}
+
+		projectDir := t.TempDir()
+		dataDir := t.TempDir()
+		outputFile := filepath.Join(projectDir, ".guardrail-output-none.json")
+		const want = `{"outcome":"pass","severity":"info","summary":"fresh"}`
+
+		srv, _ := fakeSessionServer(t, "running", outputFile, want, true)
+		withFakeLoopback(t, srv)
+
+		cfg := &config.Config{}
+		cfg.DataDir = dataDir
+
+		name := judgeSessionNamePrefix + ":fresh-u1"
+		got, id, err := runOneShotJudgeSessionCaptureID(cfg, "prd-none", projectDir, "claude-code", "sonnet", "",
+			name, "judge it, write JSON to "+outputFile, outputFile, "guardrail-fresh.json",
+			10*time.Second)
+		if err != nil {
+			t.Fatalf("runOneShotJudgeSessionCaptureID: %v", err)
+		}
+		if got != want || id != "sess-test-1" {
+			t.Fatalf("content=%q id=%q, want the spawned path with output", got, id)
+		}
+		if len(consulted) != 1 || consulted[0] != name {
+			t.Errorf("judgeLiveSession consulted with %v, want exactly [%s]", consulted, name)
+		}
+	})
+}

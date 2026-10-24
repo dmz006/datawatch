@@ -174,6 +174,98 @@ func (c *countingLookup) fn() TitleLookupFn {
 	return func() TitleSnapshot { c.n++; return c.snap }
 }
 
+func TestJudgeHolderNamePRD(t *testing.T) {
+	r := NewTitleResolver(TitleResolverOptions{Lookup: testTitlesSnap})
+	h := r.Resolve(JudgeHolder("aaaaaaaa"))
+	if h.ID != "judge:aaaaaaaa" {
+		t.Errorf("ID = %q, want the raw id", h.ID)
+	}
+	if h.Kind != HolderKindJudge {
+		t.Errorf("Kind = %q, want %q", h.Kind, HolderKindJudge)
+	}
+	if h.PRDID != "aaaaaaaa" || h.PRDTitle != "Automate the release pipeline" {
+		t.Errorf("PRD = %q / %q", h.PRDID, h.PRDTitle)
+	}
+	if h.ShortID != "aaaaaaaa" {
+		t.Errorf("ShortID = %q", h.ShortID)
+	}
+	want := "Judging rules: Automate the release pipeline (aaaaaaaa)"
+	if h.Readable != want {
+		t.Errorf("Readable = %q, want %q", h.Readable, want)
+	}
+	if h.Full != want {
+		t.Errorf("Full = %q, want %q", h.Full, want)
+	}
+}
+
+func TestJudgeHolderNameTask(t *testing.T) {
+	r := NewTitleResolver(TitleResolverOptions{Lookup: testTitlesSnap})
+	h := r.Resolve(JudgeHolder("bbbbbbbb"))
+	if h.Kind != HolderKindJudge {
+		t.Errorf("Kind = %q, want %q", h.Kind, HolderKindJudge)
+	}
+	if h.TaskTitle != "Wire up the retry path" || h.PRDID != "aaaaaaaa" {
+		t.Errorf("task = %q / PRD = %q", h.TaskTitle, h.PRDID)
+	}
+	want := "Judging: Wire up the retry path (bbbbbbbb)"
+	if h.Readable != want {
+		t.Errorf("Readable = %q, want %q", h.Readable, want)
+	}
+	if h.Full != want {
+		t.Errorf("Full = %q, want %q", h.Full, want)
+	}
+}
+
+func TestJudgeHolderNameUnknown(t *testing.T) {
+	r := NewTitleResolver(TitleResolverOptions{Lookup: testTitlesSnap})
+	h := r.Resolve(JudgeHolder("ffffffff"))
+	if h.Kind != HolderKindJudge {
+		t.Errorf("Kind = %q, want %q", h.Kind, HolderKindJudge)
+	}
+	if h.ShortID != "ffffffff" {
+		t.Errorf("ShortID = %q", h.ShortID)
+	}
+	want := "Judging: (untitled ffffffff)"
+	if h.Readable != want {
+		t.Errorf("Readable = %q, want %q", h.Readable, want)
+	}
+	if h.Full != want {
+		t.Errorf("Full = %q, want %q", h.Full, want)
+	}
+}
+
+func TestJudgeHolderNameLongTitle(t *testing.T) {
+	longPRD := strings.Repeat("p", 120)
+	longTask := strings.Repeat("q", 120)
+	snap := TitleSnapshot{
+		PRDs:  map[string]string{"aaaaaaaa": longPRD},
+		Tasks: map[string]TaskRef{"bbbbbbbb": {PRDID: "aaaaaaaa", Title: longTask}},
+	}
+	r := NewTitleResolver(TitleResolverOptions{Lookup: func() TitleSnapshot { return snap }})
+
+	// The PRD form truncates under the per-title limit in Readable only; Full
+	// keeps the whole title.
+	h := r.Resolve(JudgeHolder("aaaaaaaa"))
+	if want := "Judging rules: " + shortTitle(longPRD) + " (aaaaaaaa)"; h.Readable != want {
+		t.Errorf("Readable = %q, want %q", h.Readable, want)
+	}
+	if want := "Judging rules: " + longPRD + " (aaaaaaaa)"; h.Full != want {
+		t.Errorf("Full = %q, must keep the full PRD title", h.Full)
+	}
+	if tr := shortTitle(longPRD); len([]rune(tr)) != titleLimit || strings.Count(tr, "…") != 1 {
+		t.Errorf("truncated title %q: want %d runes with one middle ellipsis", tr, titleLimit)
+	}
+
+	// The task form does the same for the task title.
+	h = r.Resolve(JudgeHolder("bbbbbbbb"))
+	if want := "Judging: " + shortTitle(longTask) + " (bbbbbbbb)"; h.Readable != want {
+		t.Errorf("Readable = %q, want %q", h.Readable, want)
+	}
+	if want := "Judging: " + longTask + " (bbbbbbbb)"; h.Full != want {
+		t.Errorf("Full must keep the full task title: %q", h.Full)
+	}
+}
+
 func TestTitleResolverCacheWithinTTL(t *testing.T) {
 	tclk := &titleTestClock{now: time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)}
 	lookup := &countingLookup{snap: testTitlesSnap()}

@@ -251,14 +251,14 @@ func TestEndAttributionLeaseVerdictNamesEvidence(t *testing.T) {
 	running := func(string) bool { return true }
 
 	t.Run("bound session running is live", func(t *testing.T) {
-		live, why := leaseLiveVerdict(capacity.Lease{Holder: "worker", SessionID: "sess-a", Acquired: now}, nil, running, now)
+		live, why := leaseLiveVerdict(capacity.Lease{Holder: "worker", SessionID: "sess-a", Acquired: now}, nil, nil, running, now)
 		if !live || why != "" {
 			t.Errorf("live=%v why=%q, want live with no reason", live, why)
 		}
 	})
 
 	t.Run("bound session gone names the session", func(t *testing.T) {
-		live, why := leaseLiveVerdict(capacity.Lease{Holder: "worker", SessionID: "sess-a", Acquired: now}, nil, notRunning, now)
+		live, why := leaseLiveVerdict(capacity.Lease{Holder: "worker", SessionID: "sess-a", Acquired: now}, nil, nil, notRunning, now)
 		if live {
 			t.Fatal("lease live with a dead session")
 		}
@@ -269,7 +269,7 @@ func TestEndAttributionLeaseVerdictNamesEvidence(t *testing.T) {
 
 	t.Run("unbound lease past spawn grace names the age and grace", func(t *testing.T) {
 		acquired := now.Add(-(spawnGrace + 90*time.Second))
-		live, why := leaseLiveVerdict(capacity.Lease{Holder: "worker", Acquired: acquired}, nil, notRunning, now)
+		live, why := leaseLiveVerdict(capacity.Lease{Holder: "worker", Acquired: acquired}, nil, nil, notRunning, now)
 		if live {
 			t.Fatal("unbound lease past grace judged live")
 		}
@@ -279,7 +279,7 @@ func TestEndAttributionLeaseVerdictNamesEvidence(t *testing.T) {
 	})
 
 	t.Run("unbound lease inside spawn grace is live", func(t *testing.T) {
-		live, _ := leaseLiveVerdict(capacity.Lease{Holder: "worker", Acquired: now.Add(-time.Minute)}, nil, notRunning, now)
+		live, _ := leaseLiveVerdict(capacity.Lease{Holder: "worker", Acquired: now.Add(-time.Minute)}, nil, nil, notRunning, now)
 		if !live {
 			t.Fatal("unbound lease inside grace judged dead")
 		}

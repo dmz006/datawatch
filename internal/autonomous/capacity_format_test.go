@@ -173,3 +173,48 @@ func TestDisplayHolderName(t *testing.T) {
 		}
 	}
 }
+
+func judgeFormatFixtureBody() string {
+	return `{
+"pools":[
+{"name":"node:a","limit":1,"held":1,"holders":["judge:aaaaaaaa"],
+ "holder_names":[{"id":"judge:aaaaaaaa","kind":"judge","readable":"Judging rules: Automate the release pipeline (aaaaaaaa)","short_id":"aaaaaaaa"}]},
+{"name":"host","limit":2,"held":1,"holders":["t1"]}],
+"leases":[],
+"waiting":[{"holder":"judge:bbbbbbbb","prd_id":"aaaaaaaa","pools":["node:a"],
+ "holder_name":{"id":"judge:bbbbbbbb","kind":"judge","readable":"Judging: Wire up the retry path (bbbbbbbb)","short_id":"bbbbbbbb"},
+ "reason":"waiting for node a: 1/1 engines in use, held by judge:aaaaaaaa","since":"2026-10-22T16:00:00Z"}],
+"tasks":{"waiting":[],"running":[]}}`
+}
+
+// TestJudgeCapacityText asserts the CLI text renderer prints a RUNNING judge
+// on its pool line (holder_names form) and a QUEUED judge on its waiting line
+// (holder_name form), both with readable names: no raw "judge:" holder id in
+// either holder position, and the queued judge's wait reason still names the
+// pool and the running holder.
+func TestJudgeCapacityText(t *testing.T) {
+	CapacityTextClock = func() time.Time { return time.Date(2026, 10, 22, 17, 0, 0, 0, time.UTC) }
+	t.Cleanup(func() { CapacityTextClock = time.Now })
+
+	out, err := FormatCapacityText([]byte(judgeFormatFixtureBody()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		// Running judge: readable pool-hold line, short id already in the sentence.
+		"node:a: 1/1 held by Judging rules: Automate the release pipeline (aaaaaaaa)",
+		// Queued judge: holder column readable, reason names the pool + holder.
+		"Judging: Wire up the retry path (bbbbbbbb) (PRD aaaaaaaa) 1h0m0s: waiting for node a: 1/1 engines in use, held by judge:aaaaaaaa",
+		// Unresolved pools keep their raw form.
+		"host: 1/2 held by t1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	// The queued judge's raw id appears nowhere in the holder position — only
+	// the readable form.
+	if strings.Contains(out, "judge:bbbbbbbb") {
+		t.Fatalf("raw queued judge id leaked into the text:\n%s", out)
+	}
+}

@@ -576,6 +576,41 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// slot. False means "no hand-off possible" and the caller must fall back
 	// to the separate acquire (releasing the worker lease first — no
 	// stacking, no deadlock).
+	// Guardrail judge: the same node:/llm: pools as the verifier, under its
+	// own "judge:<unit id>" holders and its own registry instance (see
+	// judgeAdmitters). Its one-shot session name binds to the lease the
+	// same way the verifier's does.
+	judges := newVerifierRegistry()
+	judgeAdmitFn, judgeTryFn, judgeStartedFn := judgeAdmitters(led, judges, keys, amgr.CapacityWaitDuration())
+	judgeCapacityAdmit = judgeAdmitFn
+	judgeCapacityTryAdmit = judgeTryFn
+	judgeSessionStarted = judgeStartedFn
+	// Adopt, never double-spawn: on a daemon restart a guardrail-judge
+	// session may still be live while the capacity ledger is empty, so the
+	// one-shot runner consults the live-session listing and reuses an
+	// already-running judge named exactly "autonomous:guardrail:<unit id>"
+	// instead of spawning a second one. See judgeLiveSession in
+	// session_judgment.go (it is consulted only for judge session names).
+	judgeLiveSession = func(sessionName string) string {
+		var bestID string
+		var bestAt time.Time
+		for _, s := range mgr.ListSessions() {
+			if s.Name != sessionName || !sessionRunning(mgr, s.FullID) {
+				continue
+			}
+			if bestID == "" || s.CreatedAt.After(bestAt) {
+				bestID, bestAt = s.FullID, s.CreatedAt
+			}
+		}
+		return bestID
+	}
+	// Judge leases ("judge:...") share the same live-session / spawn-grace
+	// treatment as verifier leases under the reaper; the judges registry
+	// also backs the startup guardrail-judge reconcile host.
+	if amgr != nil {
+		amgr.SetJudgeHost(&judgeReconcileHost{mgr: mgr, led: led, reg: judges})
+	}
+
 	verifyHandoff := func(taskID, backend, model string) bool {
 		return amgr.HandoffVerifyLease(taskID, backend, model)
 	}
@@ -731,7 +766,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		sessionOf := map[string]string{}
 		whys := map[string]string{}
 		live := func(ls capacity.Lease) bool {
-			ok, why := leaseLiveVerdict(ls, verifiers, func(id string) bool { return sessionRunning(mgr, id) }, time.Now())
+			ok, why := leaseLiveVerdict(ls, verifiers, judges.isActive, func(id string) bool { return sessionRunning(mgr, id) }, time.Now())
 			if !ok {
 				sid := ls.SessionID
 				if verifiers != nil && verifiers.sessionOf(ls.Holder) != "" {
