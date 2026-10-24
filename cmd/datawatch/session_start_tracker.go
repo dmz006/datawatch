@@ -18,21 +18,25 @@ import (
 // which keeps it testable with a fake clock.
 type sessionStartTracker struct {
 	limit          time.Duration
-	lastEvidenceAt time.Time // latest tick with evidence of work; zero until one is seen
-	silentSince    time.Time // first silent waiting_input tick; the anchor until evidence is seen
-	prevPane       string    // pane captured on the previous observation
-	havePrevPane   bool      // prevPane holds a capture a later pane can be compared with
-	lastChannelAt  time.Time // session LastChannelEventAt as of the previous observation
+	lastEvidenceAt time.Time    // latest tick with evidence of work; zero until one is seen
+	silentSince    time.Time    // first silent waiting_input tick; the anchor until evidence is seen
+	prevPane       string       // pane captured on the previous observation
+	havePrevPane   bool         // prevPane holds a capture a later pane can be compared with
+	lastChannelAt  time.Time    // session LastChannelEventAt as of the previous observation
+	prevChildren   map[int]bool // runner-started pids on the previous observation
+	haveChildren   bool         // prevChildren is a baseline a later set can be compared with
 }
 
 // sessionStartInput is one tick's view of the worker, gathered by the wait loop.
 type sessionStartInput struct {
-	Now        time.Time
-	State      session.State
-	Pane       string    // visible pane capture; empty when the capture failed
-	Delivered  bool      // the task prompt was typed into the session
-	ChannelAt  time.Time // session LastChannelEventAt
-	ChildAlive bool      // a runner child process is alive under the session
+	Now       time.Time
+	State     session.State
+	Pane      string    // visible pane capture; empty when the capture failed
+	Delivered bool      // the task prompt was typed into the session
+	ChannelAt time.Time // session LastChannelEventAt
+	// ChildPIDs are the live processes the runner started (never the runner
+	// itself). Nil when the process tree could not be read.
+	ChildPIDs map[int]bool
 }
 
 // newSessionStartTracker starts a tracker with the given bound. seedAt is the
@@ -52,7 +56,7 @@ func newSessionStartTracker(limit time.Duration, seedAt, channelAt time.Time) *s
 func (t *sessionStartTracker) Observe(in sessionStartInput) autonomouspkg.SessionStartObservation {
 	ev := autonomouspkg.StartEvidence{
 		TaskDelivered:             in.Delivered,
-		AgentChildProcess:         in.ChildAlive,
+		AgentChildProcess:         t.childWorkStarted(in.ChildPIDs),
 		ChannelEventAfterDelivery: in.Delivered && in.ChannelAt.After(t.lastChannelAt),
 	}
 	if in.ChannelAt.After(t.lastChannelAt) {
@@ -86,6 +90,30 @@ func (t *sessionStartTracker) Observe(in sessionStartInput) autonomouspkg.Sessio
 		obs.WaitingFor = in.Now.Sub(anchor)
 	}
 	return obs
+}
+
+// childWorkStarted reports whether the runner started a process since the
+// previous observation. Only new pids count. A worker parked at a dialog keeps
+// the helpers it launched at startup (an MCP server, say) alive for as long as
+// it is parked, and a helper that is merely alive is not work. A command the
+// runner starts during a tool call is new, so it is. The first observation sets
+// the baseline and reports nothing. Nil means the probe failed: it reports
+// nothing and keeps the previous baseline.
+func (t *sessionStartTracker) childWorkStarted(pids map[int]bool) bool {
+	if pids == nil {
+		return false
+	}
+	started := false
+	if t.haveChildren {
+		for pid := range pids {
+			if !t.prevChildren[pid] {
+				started = true
+				break
+			}
+		}
+	}
+	t.prevChildren, t.haveChildren = pids, true
+	return started
 }
 
 // anchor is the moment the silence is measured from: the last evidence of

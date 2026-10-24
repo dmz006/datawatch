@@ -45,7 +45,8 @@ type startStep struct {
 	pane      string
 	delivered bool
 	channel   time.Time // session LastChannelEventAt on this tick
-	child     bool      // a live runner child process on this tick
+	children  []int     // pids the runner has live on this tick (its own children only)
+	failProbe bool      // the process tree could not be read on this tick
 	wantStall bool
 }
 
@@ -54,12 +55,12 @@ func runStartSteps(t *testing.T, tr *sessionStartTracker, steps []startStep) {
 	t.Helper()
 	for _, st := range steps {
 		obs := tr.Observe(sessionStartInput{
-			Now:        startAt(st.sec),
-			State:      st.state,
-			Pane:       st.pane,
-			Delivered:  st.delivered,
-			ChannelAt:  st.channel,
-			ChildAlive: st.child,
+			Now:       startAt(st.sec),
+			State:     st.state,
+			Pane:      st.pane,
+			Delivered: st.delivered,
+			ChannelAt: st.channel,
+			ChildPIDs: childPIDSet(st),
 		})
 		stalled, reason := obs.Stalled()
 		if stalled != st.wantStall {
@@ -111,15 +112,109 @@ func TestSessionStartTrackerPaneChangeRefreshesClock(t *testing.T) {
 	})
 }
 
-func TestSessionStartTrackerLiveChildProcessKeepsClockRunning(t *testing.T) {
+// childPIDSet is the probe result a step reports: nil when the probe failed,
+// otherwise the set of pids the runner has live (empty when it has none).
+func childPIDSet(st startStep) map[int]bool {
+	if st.failProbe {
+		return nil
+	}
+	pids := make(map[int]bool, len(st.children))
+	for _, pid := range st.children {
+		pids[pid] = true
+	}
+	return pids
+}
+
+func TestSessionStartTrackerNewChildProcessKeepsClockRunning(t *testing.T) {
 	w := session.StateWaitingInput
+	// The command the runner starts at 100 is evidence. It is still running at
+	// 200, but a process that merely persists is not new work, so the clock
+	// keeps running from 100 and the silence ends at 221.
 	runStartSteps(t, newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
 		{sec: 0, state: w, pane: startSilentPane},
-		{sec: 100, state: w, pane: startSilentPane, child: true},
-		{sec: 200, state: w, pane: startSilentPane, child: true},
-		{sec: 300, state: w, pane: startSilentPane},
-		{sec: 321, state: w, pane: startSilentPane, wantStall: true},
+		{sec: 100, state: w, pane: startSilentPane, children: []int{7002}},
+		{sec: 200, state: w, pane: startSilentPane, children: []int{7002}},
+		{sec: 220, state: w, pane: startSilentPane, children: []int{7002}},
+		{sec: 221, state: w, pane: startSilentPane, children: []int{7002}, wantStall: true},
 	})
+}
+
+func TestSessionStartTrackerPersistentHelperDoesNotKeepDialogAlive(t *testing.T) {
+	w := session.StateWaitingInput
+	// An MCP helper started before the dialog is alive from the first tick to
+	// the end. It was in the baseline, so it is not evidence and the bound runs
+	// from the first silent tick.
+	helper := []int{7001}
+	runStartSteps(t, newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
+		{sec: 0, state: w, pane: startSilentPane, children: helper},
+		{sec: 60, state: w, pane: startSilentPane, children: helper},
+		{sec: 120, state: w, pane: startSilentPane, children: helper},
+		{sec: 121, state: w, pane: startSilentPane, children: helper, wantStall: true},
+	})
+}
+
+func TestSessionStartTrackerFailedProbeIsNoObservation(t *testing.T) {
+	w := session.StateWaitingInput
+	// A failed tree read at 60 is neither evidence nor a new baseline. The helper
+	// seen at 0 is still the baseline at 100, when a second process appears and
+	// counts as work.
+	runStartSteps(t, newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
+		{sec: 0, state: w, pane: startSilentPane, children: []int{7001}},
+		{sec: 60, state: w, pane: startSilentPane, failProbe: true},
+		{sec: 100, state: w, pane: startSilentPane, children: []int{7001, 7002}},
+		{sec: 220, state: w, pane: startSilentPane, children: []int{7001, 7002}},
+		{sec: 221, state: w, pane: startSilentPane, children: []int{7001, 7002}, wantStall: true},
+	})
+}
+
+func TestSessionStartTrackerDialogStuckRunnerFromProcessTreeIsEnded(t *testing.T) {
+	// The probe's own walker feeds the tracker, as the wait loop does. Pane shell
+	// 100 runs claude 200, and claude's startup MCP helper 300 is alive. The
+	// runner is not work, and the helper was there from the first tick, so the
+	// dialog-stuck worker is ended at the limit.
+	roots := []int{100}
+	tree := map[int][]int{100: {200}, 200: {300}}
+	names := map[int]string{100: "bash", 200: "claude", 300: "node"}
+	pids := processTreeRunnerDescendants(roots, tree, fakeProcessNames(names))
+	tr := newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{})
+	w := session.StateWaitingInput
+	for _, sec := range []int{0, 60, 120, 121} {
+		obs := tr.Observe(sessionStartInput{Now: startAt(sec), State: w, Pane: startSilentPane, ChildPIDs: pids})
+		stalled, reason := obs.Stalled()
+		if want := sec == 121; stalled != want {
+			t.Fatalf("t=%ds: Stalled() = %v (WaitingFor %s), want %v", sec, stalled, obs.WaitingFor, want)
+		}
+		if stalled && reason != autonomouspkg.SessionStartFailureReason {
+			t.Fatalf("t=%ds: stall reason = %q, want %q", sec, reason, autonomouspkg.SessionStartFailureReason)
+		}
+	}
+}
+
+func TestSessionStartTrackerRunnerSpawnedCommandFromProcessTreeIsWork(t *testing.T) {
+	// Claude 200 runs under the pane shell. A tool call at 100 starts bash 400
+	// under it, which is new since the baseline, so the silence restarts there.
+	roots := []int{100}
+	names := map[int]string{100: "bash", 200: "claude", 400: "bash"}
+	base := processTreeRunnerDescendants(roots, map[int][]int{100: {200}}, fakeProcessNames(names))
+	spawned := processTreeRunnerDescendants(roots, map[int][]int{100: {200}, 200: {400}}, fakeProcessNames(names))
+	tr := newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{})
+	w := session.StateWaitingInput
+	steps := []struct {
+		sec   int
+		pids  map[int]bool
+		stall bool
+	}{
+		{sec: 0, pids: base},
+		{sec: 100, pids: spawned},
+		{sec: 220, pids: spawned},
+		{sec: 221, pids: spawned, stall: true},
+	}
+	for _, st := range steps {
+		obs := tr.Observe(sessionStartInput{Now: startAt(st.sec), State: w, Pane: startSilentPane, ChildPIDs: st.pids})
+		if stalled, _ := obs.Stalled(); stalled != st.stall {
+			t.Fatalf("t=%ds: Stalled() = %v (WaitingFor %s), want %v", st.sec, stalled, obs.WaitingFor, st.stall)
+		}
+	}
 }
 
 func TestSessionStartTrackerChannelEventAfterDeliveryRefreshesClock(t *testing.T) {

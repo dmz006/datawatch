@@ -4996,12 +4996,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								startPane = ""
 							}
 							startObs := startTracker.Observe(sessionStartInput{
-								Now:        time.Now(),
-								State:      s.State,
-								Pane:       startPane,
-								Delivered:  mgr.TaskDelivered(s.FullID),
-								ChannelAt:  s.LastChannelEventAt,
-								ChildAlive: hasLiveChildProcess(s.TmuxSession),
+								Now:       time.Now(),
+								State:     s.State,
+								Pane:      startPane,
+								Delivered: mgr.TaskDelivered(s.FullID),
+								ChannelAt: s.LastChannelEventAt,
+								ChildPIDs: runnerDescendantPIDs(s.TmuxSession),
 							})
 							if s.State == session.StateWaitingInput && startPane != "" && !startObs.HasAssistantOutput {
 								startSupersedes = true

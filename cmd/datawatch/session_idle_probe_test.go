@@ -105,3 +105,57 @@ func TestSessionIdleProbe_BuildTreeRespectsVisitedAndDepth(t *testing.T) {
 		t.Fatalf("childrenOf called %d times; visited set should bound it", calls)
 	}
 }
+
+func TestSessionIdleProbe_RunnerAloneHasNoDescendants(t *testing.T) {
+	// A worker parked at a dialog: pane 100 -> claude 200, nothing below it.
+	// The runner is alive, but it is not work, so the set is empty.
+	roots := []int{100}
+	children := map[int][]int{100: {200}}
+	names := map[int]string{100: "bash", 200: "claude"}
+	got := processTreeRunnerDescendants(roots, children, fakeProcessNames(names))
+	if got == nil || len(got) != 0 {
+		t.Fatalf("runner alone: got %v, want an empty non-nil set", got)
+	}
+}
+
+func TestSessionIdleProbe_RunnerDescendantsExcludeRunnerAndNonRunnerBranches(t *testing.T) {
+	// pane 100 -> bash 200 -> claude 300 -> { node 400 (MCP helper), bash 500 }
+	// and pane 100 -> vim 600 (outside any runner). Only the runner's children
+	// count: 400 and 500, never the runner 300, and never vim 600.
+	roots := []int{100}
+	children := map[int][]int{100: {200, 600}, 200: {300}, 300: {400, 500}}
+	names := map[int]string{100: "bash", 200: "bash", 300: "claude", 400: "node", 500: "bash", 600: "vim"}
+	got := processTreeRunnerDescendants(roots, children, fakeProcessNames(names))
+	want := map[int]bool{400: true, 500: true}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for pid := range want {
+		if !got[pid] {
+			t.Fatalf("got %v, missing %d", got, pid)
+		}
+	}
+}
+
+func TestSessionIdleProbe_RootRunnerCountsItsChildren(t *testing.T) {
+	// The pane pid is the runner itself (exec'd), so the commands it starts count
+	// and the root does not.
+	roots := []int{100}
+	children := map[int][]int{100: {200}}
+	names := map[int]string{100: "claude", 200: "bash"}
+	got := processTreeRunnerDescendants(roots, children, fakeProcessNames(names))
+	if !got[200] || got[100] || len(got) != 1 {
+		t.Fatalf("got %v, want only the child 200", got)
+	}
+}
+
+func TestSessionIdleProbe_RunnerDescendantsCycleTerminates(t *testing.T) {
+	// claude 200 -> bash 300 -> claude 200 cycle: the visited set stops it.
+	roots := []int{100}
+	children := map[int][]int{100: {200}, 200: {300}, 300: {200}}
+	names := map[int]string{100: "bash", 200: "claude", 300: "bash"}
+	got := processTreeRunnerDescendants(roots, children, fakeProcessNames(names))
+	if !got[300] || got[200] || len(got) != 1 {
+		t.Fatalf("got %v, want only 300", got)
+	}
+}

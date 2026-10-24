@@ -50,9 +50,11 @@ func nudgeStallEndReason(obs autonomouspkg.WorkerNudgeObservation, stallAfter ti
 }
 
 // sessionStartEndReason names the start-confirm stall: a claude-code session
-// sat in waiting_input without ever producing an assistant turn.
+// sat in waiting_input without ever producing an assistant turn, and the silence
+// is counted from its last evidence of work (pane change, tool call, new process
+// or channel event), not from the first silent tick.
 func sessionStartEndReason(obs autonomouspkg.SessionStartObservation) string {
-	return fmt.Sprintf("session start detector: %s without assistant output for %s, limit %s",
+	return fmt.Sprintf("session start detector: %s without assistant output for %s since its last evidence of work (or first silent tick), limit %s",
 		obs.State, endSecs(obs.WaitingFor), endSecs(obs.Limit))
 }
 
