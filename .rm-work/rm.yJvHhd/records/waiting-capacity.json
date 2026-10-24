@@ -1,0 +1,250 @@
+{
+  "state": "waiting-capacity",
+  "description": "a task waits for admission while another task holds the one-slot host pool",
+  "result": "FAIL",
+  "note": "PRD A held the only host slot; PRD B queued behind it",
+  "restart": {
+    "old_pid": "1597699",
+    "new_pid": "1600474",
+    "term_clean": true,
+    "down_seconds": 1
+  },
+  "derived": {
+    "task_status_before": "waiting_capacity",
+    "task_status_after": "blocked",
+    "session_ids_before": [
+      "restart-matrix-24ec",
+      "restart-matrix-e602",
+      "restart-matrix-e925"
+    ],
+    "session_ids_after": [
+      "restart-matrix-24ec",
+      "restart-matrix-3a7e",
+      "restart-matrix-568c",
+      "restart-matrix-ac30",
+      "restart-matrix-e602",
+      "restart-matrix-e925"
+    ],
+    "pane_pids_before": [
+      "cs-restart-matrix-24ec:1600039"
+    ],
+    "pane_pids_after": [],
+    "retry_count_before": 0,
+    "retry_count_after": 0,
+    "duplicate_sessions": 0,
+    "lost_output_bytes": 0,
+    "redone": false
+  },
+  "criteria": [
+    {
+      "criterion": "restart_exited_on_term",
+      "result": "PASS",
+      "detail": "daemon pid 1597699 down in 1s"
+    },
+    {
+      "criterion": "daemon_replaced",
+      "result": "PASS",
+      "detail": "pid 1597699 -> 1600474"
+    },
+    {
+      "criterion": "no_duplicate_sessions",
+      "result": "PASS",
+      "detail": "0 extra live session(s) beyond one per role"
+    },
+    {
+      "criterion": "no_lost_output",
+      "result": "PASS",
+      "detail": "0 byte(s) of earlier output missing afterwards"
+    },
+    {
+      "criterion": "retry_count_unchanged",
+      "result": "PASS",
+      "detail": "retries 0 -> 0"
+    },
+    {
+      "criterion": "still_waiting_after_restart",
+      "result": "PASS",
+      "detail": "task status after restart: waiting_capacity (wait reason before: pool host full (1/1, held by 7b660002))"
+    },
+    {
+      "criterion": "one_worker_per_task",
+      "result": "PASS",
+      "detail": "worker starts: 2 (task A and task B, once each)"
+    },
+    {
+      "criterion": "admitted_after_slot_freed",
+      "result": "PASS",
+      "detail": "task B started after task A's worker finished"
+    },
+    {
+      "criterion": "task_completes",
+      "result": "FAIL",
+      "detail": "task B status: blocked"
+    }
+  ],
+  "pass": 8,
+  "fail": 1,
+  "before": {
+    "label": "waiting-capacity-before",
+    "at": "2026-10-24T08:09:40Z",
+    "daemon": {
+      "pid": "1597699",
+      "uptime_seconds": 11
+    },
+    "prd_status": "running",
+    "prd_info": {
+      "blocked_reason": null,
+      "failure_reason": null,
+      "rejection_reason": null
+    },
+    "task": {
+      "id": "50b80002",
+      "status": "waiting_capacity",
+      "retry_count": 0,
+      "prior_attempt_count": 0,
+      "session_id": "",
+      "adopted_session": false,
+      "error": "",
+      "wait_reason": "pool host full (1/1, held by 7b660002)"
+    },
+    "sessions": [
+      {
+        "id": "24ec",
+        "full_id": "restart-matrix-24ec",
+        "name": "autonomous:matrix task",
+        "state": "running",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-24ec/output.log",
+        "tmux_session": "cs-restart-matrix-24ec"
+      },
+      {
+        "id": "e602",
+        "full_id": "restart-matrix-e602",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-e602/output.log",
+        "tmux_session": "cs-restart-matrix-e602"
+      },
+      {
+        "id": "e925",
+        "full_id": "restart-matrix-e925",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-e925/output.log",
+        "tmux_session": "cs-restart-matrix-e925"
+      }
+    ],
+    "session_ids": [
+      "restart-matrix-24ec",
+      "restart-matrix-e602",
+      "restart-matrix-e925"
+    ],
+    "pane_pids": [
+      "cs-restart-matrix-24ec:1600039"
+    ],
+    "counts": {
+      "planner_starts": 2,
+      "worker_starts": 1,
+      "verifier_starts": 0,
+      "guardrail_starts": 0,
+      "script_launched": 0,
+      "script_starts": 0,
+      "script_finished": 0
+    },
+    "worker_counter_bytes": 7,
+    "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/snap-waiting-capacity-before"
+  },
+  "after": {
+    "label": "waiting-capacity-final",
+    "at": "2026-10-24T08:10:55Z",
+    "daemon": {
+      "pid": "1600474",
+      "uptime_seconds": 74
+    },
+    "prd_status": "blocked",
+    "prd_info": {
+      "blocked_reason": "guardrail rules returned block (text-only judge) - guardrail rules could not run: no judge model is configured for it (no guardrail judge model configured: none of the PRD guardrail_model, task guardrail_model, autonomous.guardrail_model, autonomous.verification_model or autonomous.planning_model tiers resolved to a model the guardrail backend can serve — a pi-family judge must never fall back to the backend's built-in default model (resolved backend \"shell\")). This is a configuration failure, not a finding about the work under review.",
+      "failure_reason": null,
+      "rejection_reason": null
+    },
+    "task": {
+      "id": "50b80002",
+      "status": "blocked",
+      "retry_count": 0,
+      "prior_attempt_count": 0,
+      "session_id": "3a7e",
+      "adopted_session": false,
+      "error": "",
+      "wait_reason": ""
+    },
+    "sessions": [
+      {
+        "id": "24ec",
+        "full_id": "restart-matrix-24ec",
+        "name": "autonomous:matrix task",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-24ec/output.log",
+        "tmux_session": "cs-restart-matrix-24ec"
+      },
+      {
+        "id": "3a7e",
+        "full_id": "restart-matrix-3a7e",
+        "name": "autonomous:matrix task",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-3a7e/output.log",
+        "tmux_session": "cs-restart-matrix-3a7e"
+      },
+      {
+        "id": "568c",
+        "full_id": "restart-matrix-568c",
+        "name": "autonomous:verify:7b660002",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-568c/output.log",
+        "tmux_session": "cs-restart-matrix-568c"
+      },
+      {
+        "id": "ac30",
+        "full_id": "restart-matrix-ac30",
+        "name": "autonomous:verify:50b80002",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-ac30/output.log",
+        "tmux_session": "cs-restart-matrix-ac30"
+      },
+      {
+        "id": "e602",
+        "full_id": "restart-matrix-e602",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-e602/output.log",
+        "tmux_session": "cs-restart-matrix-e602"
+      },
+      {
+        "id": "e925",
+        "full_id": "restart-matrix-e925",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-e925/output.log",
+        "tmux_session": "cs-restart-matrix-e925"
+      }
+    ],
+    "session_ids": [
+      "restart-matrix-24ec",
+      "restart-matrix-3a7e",
+      "restart-matrix-568c",
+      "restart-matrix-ac30",
+      "restart-matrix-e602",
+      "restart-matrix-e925"
+    ],
+    "pane_pids": [],
+    "counts": {
+      "planner_starts": 2,
+      "worker_starts": 2,
+      "verifier_starts": 2,
+      "guardrail_starts": 0,
+      "script_launched": 0,
+      "script_starts": 0,
+      "script_finished": 0
+    },
+    "worker_counter_bytes": 231,
+    "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/snap-waiting-capacity-final"
+  }
+}

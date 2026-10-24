@@ -1,0 +1,19 @@
+{
+  "title": "matrix plan",
+  "stories": [
+    {
+      "title": "matrix story",
+      "description": "one story for the restart matrix",
+      "depends_on": [],
+      "tasks": [
+        {
+          "title": "matrix task",
+          "spec": "Do the one unit of work the matrix probes.",
+          "depends_on": [],
+          "verification_script_reason": "judged by a verifier session; this restart-matrix state has no script"
+        }
+      ],
+      "verification_script_reason": "judged by a verifier session; this restart-matrix state has no script"
+    }
+  ]
+}

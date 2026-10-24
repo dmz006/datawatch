@@ -1,0 +1,70 @@
+{
+  "label": "waiting-external-before",
+  "at": "2026-10-24T08:18:11Z",
+  "daemon": {
+    "pid": "1683418",
+    "uptime_seconds": 20
+  },
+  "prd_status": "running",
+  "prd_info": {
+    "blocked_reason": null,
+    "failure_reason": null,
+    "rejection_reason": null
+  },
+  "task": {
+    "id": "86540002",
+    "status": "waiting_capacity",
+    "retry_count": 0,
+    "prior_attempt_count": 0,
+    "session_id": "ca8e",
+    "adopted_session": false,
+    "error": "",
+    "wait_reason": "await_external: matrix external condition — pool host full (1/1, held by 5cf70002)"
+  },
+  "sessions": [
+    {
+      "id": "289a",
+      "full_id": "restart-matrix-289a",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.BcXVi9/waiting-external/data/sessions/restart-matrix-289a/output.log",
+      "tmux_session": "cs-restart-matrix-289a"
+    },
+    {
+      "id": "50f0",
+      "full_id": "restart-matrix-50f0",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.BcXVi9/waiting-external/data/sessions/restart-matrix-50f0/output.log",
+      "tmux_session": "cs-restart-matrix-50f0"
+    },
+    {
+      "id": "ca8e",
+      "full_id": "restart-matrix-ca8e",
+      "name": "autonomous:matrix task",
+      "state": "running",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.BcXVi9/waiting-external/data/sessions/restart-matrix-ca8e/output.log",
+      "tmux_session": "cs-restart-matrix-ca8e"
+    }
+  ],
+  "session_ids": [
+    "restart-matrix-289a",
+    "restart-matrix-50f0",
+    "restart-matrix-ca8e"
+  ],
+  "pane_pids": [
+    "cs-restart-matrix-2bbd:1687836",
+    "cs-restart-matrix-ca8e:1686236"
+  ],
+  "counts": {
+    "planner_starts": 2,
+    "worker_starts": 1,
+    "verifier_starts": 0,
+    "guardrail_starts": 0,
+    "script_launched": 0,
+    "script_starts": 0,
+    "script_finished": 0
+  },
+  "worker_counter_bytes": 56,
+  "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.BcXVi9/waiting-external/snap-waiting-external-before"
+}

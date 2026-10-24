@@ -1,0 +1,58 @@
+{
+  "label": "waiting-external-final",
+  "at": "2026-10-24T08:22:06Z",
+  "daemon": {
+    "pid": "1709679",
+    "uptime_seconds": 35
+  },
+  "prd_status": "completed",
+  "prd_info": {
+    "blocked_reason": null,
+    "failure_reason": null,
+    "rejection_reason": null
+  },
+  "task": {
+    "id": "e3d50002",
+    "status": "completed",
+    "retry_count": 0,
+    "prior_attempt_count": 0,
+    "session_id": "3fc4",
+    "adopted_session": false,
+    "error": "",
+    "wait_reason": ""
+  },
+  "sessions": [
+    {
+      "id": "1905",
+      "full_id": "restart-matrix-1905",
+      "name": "autonomous:verify:e3d50002",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.UZwRQQ/waiting-external/data/sessions/restart-matrix-1905/output.log",
+      "tmux_session": "cs-restart-matrix-1905"
+    },
+    {
+      "id": "bc49",
+      "full_id": "restart-matrix-bc49",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.UZwRQQ/waiting-external/data/sessions/restart-matrix-bc49/output.log",
+      "tmux_session": "cs-restart-matrix-bc49"
+    }
+  ],
+  "session_ids": [
+    "restart-matrix-1905",
+    "restart-matrix-bc49"
+  ],
+  "pane_pids": [],
+  "counts": {
+    "planner_starts": 1,
+    "worker_starts": 1,
+    "verifier_starts": 1,
+    "guardrail_starts": 0,
+    "script_launched": 0,
+    "script_starts": 0,
+    "script_finished": 0
+  },
+  "worker_counter_bytes": 191,
+  "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.UZwRQQ/waiting-external/snap-waiting-external-final"
+}

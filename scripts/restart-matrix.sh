@@ -32,6 +32,13 @@ RM_ENTRY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=restart-matrix/lib.sh
 . "$RM_ENTRY_DIR/restart-matrix/lib.sh"
 
+# State files, run in this order. Each runs as its own process with the names it
+# owns (see --only below) and shares this entry point's work root and summary.
+RM_STATE_FILES=(
+  states-session.sh # in-flight PRD work: planning, worker, verifier, script states
+  states-other.sh   # capacity, external wait, final gate, git, automations, schedules, WebSocket
+)
+
 for arg in "$@"; do
   case "$arg" in
     -h | --help)
@@ -40,8 +47,8 @@ for arg in "$@"; do
       ;;
     --list)
       # no work root is created just to print names
-      for states in "$RM_ENTRY_DIR"/restart-matrix/states-*.sh; do
-        [[ -f "$states" ]] && bash "$states" --list
+      for f in "${RM_STATE_FILES[@]}"; do
+        bash "$RM_ENTRY_DIR/restart-matrix/$f" --list
       done
       exit 0
       ;;
@@ -67,8 +74,9 @@ requested=()
 
 files=()
 file_names=()
-for states in "$RM_ENTRY_DIR"/restart-matrix/states-*.sh; do
-  [[ -f "$states" ]] || continue
+for f in "${RM_STATE_FILES[@]}"; do
+  states="$RM_ENTRY_DIR/restart-matrix/$f"
+  [[ -f "$states" ]] || rm_die "missing state file: $f"
   files+=("$states")
   file_names+=("$(bash "$states" --list | paste -sd, -)")
 done

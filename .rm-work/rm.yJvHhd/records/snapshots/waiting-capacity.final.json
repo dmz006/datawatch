@@ -1,0 +1,94 @@
+{
+  "label": "waiting-capacity-final",
+  "at": "2026-10-24T08:10:55Z",
+  "daemon": {
+    "pid": "1600474",
+    "uptime_seconds": 74
+  },
+  "prd_status": "blocked",
+  "prd_info": {
+    "blocked_reason": "guardrail rules returned block (text-only judge) - guardrail rules could not run: no judge model is configured for it (no guardrail judge model configured: none of the PRD guardrail_model, task guardrail_model, autonomous.guardrail_model, autonomous.verification_model or autonomous.planning_model tiers resolved to a model the guardrail backend can serve — a pi-family judge must never fall back to the backend's built-in default model (resolved backend \"shell\")). This is a configuration failure, not a finding about the work under review.",
+    "failure_reason": null,
+    "rejection_reason": null
+  },
+  "task": {
+    "id": "50b80002",
+    "status": "blocked",
+    "retry_count": 0,
+    "prior_attempt_count": 0,
+    "session_id": "3a7e",
+    "adopted_session": false,
+    "error": "",
+    "wait_reason": ""
+  },
+  "sessions": [
+    {
+      "id": "24ec",
+      "full_id": "restart-matrix-24ec",
+      "name": "autonomous:matrix task",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-24ec/output.log",
+      "tmux_session": "cs-restart-matrix-24ec"
+    },
+    {
+      "id": "3a7e",
+      "full_id": "restart-matrix-3a7e",
+      "name": "autonomous:matrix task",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-3a7e/output.log",
+      "tmux_session": "cs-restart-matrix-3a7e"
+    },
+    {
+      "id": "568c",
+      "full_id": "restart-matrix-568c",
+      "name": "autonomous:verify:7b660002",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-568c/output.log",
+      "tmux_session": "cs-restart-matrix-568c"
+    },
+    {
+      "id": "ac30",
+      "full_id": "restart-matrix-ac30",
+      "name": "autonomous:verify:50b80002",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-ac30/output.log",
+      "tmux_session": "cs-restart-matrix-ac30"
+    },
+    {
+      "id": "e602",
+      "full_id": "restart-matrix-e602",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-e602/output.log",
+      "tmux_session": "cs-restart-matrix-e602"
+    },
+    {
+      "id": "e925",
+      "full_id": "restart-matrix-e925",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-e925/output.log",
+      "tmux_session": "cs-restart-matrix-e925"
+    }
+  ],
+  "session_ids": [
+    "restart-matrix-24ec",
+    "restart-matrix-3a7e",
+    "restart-matrix-568c",
+    "restart-matrix-ac30",
+    "restart-matrix-e602",
+    "restart-matrix-e925"
+  ],
+  "pane_pids": [],
+  "counts": {
+    "planner_starts": 2,
+    "worker_starts": 2,
+    "verifier_starts": 2,
+    "guardrail_starts": 0,
+    "script_launched": 0,
+    "script_starts": 0,
+    "script_finished": 0
+  },
+  "worker_counter_bytes": 231,
+  "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/snap-waiting-capacity-final"
+}

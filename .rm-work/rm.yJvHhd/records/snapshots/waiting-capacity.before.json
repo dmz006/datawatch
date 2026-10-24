@@ -1,0 +1,69 @@
+{
+  "label": "waiting-capacity-before",
+  "at": "2026-10-24T08:09:40Z",
+  "daemon": {
+    "pid": "1597699",
+    "uptime_seconds": 11
+  },
+  "prd_status": "running",
+  "prd_info": {
+    "blocked_reason": null,
+    "failure_reason": null,
+    "rejection_reason": null
+  },
+  "task": {
+    "id": "50b80002",
+    "status": "waiting_capacity",
+    "retry_count": 0,
+    "prior_attempt_count": 0,
+    "session_id": "",
+    "adopted_session": false,
+    "error": "",
+    "wait_reason": "pool host full (1/1, held by 7b660002)"
+  },
+  "sessions": [
+    {
+      "id": "24ec",
+      "full_id": "restart-matrix-24ec",
+      "name": "autonomous:matrix task",
+      "state": "running",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-24ec/output.log",
+      "tmux_session": "cs-restart-matrix-24ec"
+    },
+    {
+      "id": "e602",
+      "full_id": "restart-matrix-e602",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-e602/output.log",
+      "tmux_session": "cs-restart-matrix-e602"
+    },
+    {
+      "id": "e925",
+      "full_id": "restart-matrix-e925",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/data/sessions/restart-matrix-e925/output.log",
+      "tmux_session": "cs-restart-matrix-e925"
+    }
+  ],
+  "session_ids": [
+    "restart-matrix-24ec",
+    "restart-matrix-e602",
+    "restart-matrix-e925"
+  ],
+  "pane_pids": [
+    "cs-restart-matrix-24ec:1600039"
+  ],
+  "counts": {
+    "planner_starts": 2,
+    "worker_starts": 1,
+    "verifier_starts": 0,
+    "guardrail_starts": 0,
+    "script_launched": 0,
+    "script_starts": 0,
+    "script_finished": 0
+  },
+  "worker_counter_bytes": 7,
+  "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.yJvHhd/waiting-capacity/snap-waiting-capacity-before"
+}

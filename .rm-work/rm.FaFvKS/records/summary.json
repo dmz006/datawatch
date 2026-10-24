@@ -1,0 +1,46 @@
+{
+  "generated_at": "2026-10-24T08:14:51Z",
+  "mode": "measure",
+  "states": [
+    {
+      "state": "waiting-external",
+      "description": "a worker parks on an external condition; its re-admission waits behind a task holding the one-slot pool",
+      "result": "FAIL",
+      "pass": 0,
+      "fail": 1,
+      "derived": {
+        "task_status_before": "waiting_capacity",
+        "task_status_after": "waiting_capacity",
+        "session_ids_before": [
+          "restart-matrix-09df",
+          "restart-matrix-ada7",
+          "restart-matrix-f929"
+        ],
+        "session_ids_after": [
+          "restart-matrix-09df",
+          "restart-matrix-ada7",
+          "restart-matrix-f929"
+        ],
+        "pane_pids_before": [
+          "cs-restart-matrix-f929:1638171"
+        ],
+        "pane_pids_after": [
+          "cs-restart-matrix-f929:1638171"
+        ],
+        "retry_count_before": 0,
+        "retry_count_after": 0,
+        "duplicate_sessions": 0,
+        "lost_output_bytes": 0,
+        "redone": false
+      },
+      "failed_criteria": [
+        {
+          "criterion": "state_reached",
+          "detail": "E never parked behind the external condition (E: waiting_capacity await_external: matrix external condition — pool host full (1/1, held by b4e20002); H: waiting_capacity)"
+        }
+      ]
+    }
+  ],
+  "pass": 0,
+  "fail": 1
+}

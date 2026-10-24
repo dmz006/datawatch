@@ -1,0 +1,32 @@
+{
+  "title": "matrix plan",
+  "stories": [
+    {
+      "title": "matrix story",
+      "description": "one story for the restart matrix",
+      "depends_on": [],
+      "tasks": [
+        {
+          "title": "matrix task",
+          "spec": "Do the one unit of work the matrix probes.",
+          "depends_on": [],
+          "files": [
+            "worker-result.txt"
+          ],
+          "files_generated": [
+            "worker-result.txt"
+          ],
+          "verification_script": "verify/gated.sh",
+          "kind": "final_gate"
+        }
+      ],
+      "files": [
+        "worker-result.txt"
+      ],
+      "files_generated": [
+        "worker-result.txt"
+      ],
+      "verification_script": "verify/gated.sh"
+    }
+  ]
+}

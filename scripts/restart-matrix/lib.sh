@@ -209,10 +209,21 @@ case "\$role" in
     ;;
   worker)
     ticks="\$(num worker_ticks 6)"
+    # park_first_workers: the first N worker starts park on an external condition
+    # after park_after_ticks ticks, until the scenario creates await.release.
+    parks=0
+    ((\$(grep -c '' "\$ctrl/worker.starts") <= \$(num park_first_workers 0))) && parks=1
+    park_at="\$(num park_after_ticks 0)"
     : >"\$dir/worker-counter.txt"
     for i in \$(seq 1 "\$ticks"); do
       echo "tick \$i" >>"\$dir/worker-counter.txt"
       echo "worker tick \$i"
+      if ((parks && i == park_at)); then
+        echo "\$(date +%s) pid=\$\$" >>"\$ctrl/worker.parked"
+        echo "DATAWATCH_AWAIT_EXTERNAL: matrix external condition"
+        while [[ ! -e "\$ctrl/await.release" ]]; do sleep 1; done
+        parks=0
+      fi
       sleep 1
     done
     echo "work for this task" >"\$dir/worker-result.txt"
@@ -235,11 +246,12 @@ server:
   tls_enabled: false
   tls_port: $RM_TLS_PORT
   token: ""
+  proxy_sandbox_port: 0 # the sandbox never binds the default proxy port (8444)
 memory:
   enabled: false
 session:
   llm_backend: shell
-  max_sessions: 20
+  max_sessions: ${RM_MAX_SESSIONS:-20}
 shell_backend:
   enabled: true
   script_path: $RM_CTRL/fake-backend.sh
@@ -250,7 +262,6 @@ autonomous:
   execution_backend: shell
   poll_interval_seconds: 1
   refuse_dirty_tree_start: false
-  per_task_guardrails: [rules]
 EOF
 }
 
@@ -375,6 +386,9 @@ rm_daemon_restart() {
     rm_wait_until 10 bash -c "! kill -0 $pid 2>/dev/null" || rm_die "sandbox daemon pid $pid will not exit"
   fi
   wait "$pid" 2>/dev/null || true
+  # RM_DOWNTIME keeps the daemon down that many seconds before relaunch, so a
+  # scenario can put a scheduled job due while the daemon is down.
+  [[ -n "${RM_DOWNTIME:-}" ]] && sleep "$RM_DOWNTIME"
   RM_RESTART_DOWN_SECONDS=$((SECONDS - t0))
   rm_launch_daemon || return 1
   RM_RESTART_NEW_PID="$RM_DAEMON_PID"
@@ -478,10 +492,14 @@ rm_snapshot() {
   rm -rf "$copydir"
   mkdir -p "$copydir/logs"
   [[ -f "$RM_PROJECT/worker-counter.txt" ]] && cp "$RM_PROJECT/worker-counter.txt" "$copydir/worker-counter.txt"
-  local lf
-  while IFS= read -r lf; do
-    [[ -n "$lf" && -f "$lf" ]] && cp "$lf" "$copydir/logs/$(basename "$lf")"
-  done < <(printf '%s' "$sess_rows" | jq -r '.[]? | .log_file // empty')
+  # Copies are keyed by session id: every session's log is called output.log, so
+  # the file name alone would collide.
+  local sid lf
+  while IFS=$'\t' read -r sid lf; do
+    [[ -n "$lf" && -f "$lf" ]] && cp "$lf" "$copydir/logs/$sid.log"
+  done < <(printf '%s' "$sess_rows" | jq -r '.[]? | [(.full_id // .id // "unknown"), (.log_file // "")] | @tsv')
+  local prd_info
+  prd_info="$(rm_prd_json "$prd" | jq -c '(.prd // .) | {blocked_reason, failure_reason, rejection_reason}' 2>/dev/null || echo '{}')"
   jq -n \
     --arg label "$label" \
     --arg at "$(date -u +%FT%TZ)" \
@@ -489,6 +507,7 @@ rm_snapshot() {
     --arg uptime "$(rm_uptime)" \
     --arg prd_status "$(rm_prd_status "$prd")" \
     --argjson task "$task" \
+    --argjson prd_info "$prd_info" \
     --argjson sessions "$sess_rows" \
     --argjson panes "$pane_pids" \
     --arg copydir "$copydir" \
@@ -504,11 +523,13 @@ rm_snapshot() {
       label: $label, at: $at,
       daemon: {pid: $daemon_pid, uptime_seconds: ($uptime | tonumber? // null)},
       prd_status: $prd_status,
+      prd_info: $prd_info,
       task: {
         id: ($task.id // ""), status: ($task.status // ""),
         retry_count: ($task.retry_count // 0),
         prior_attempt_count: ($task.prior_attempt_count // 0),
-        session_id: ($task.session_id // ""), adopted_session: ($task.adopted_session // false)
+        session_id: ($task.session_id // ""), adopted_session: ($task.adopted_session // false),
+        error: ($task.error // ""), wait_reason: ($task.wait_reason // "")
       },
       sessions: ($sessions | map({id: (.id // .full_id // ""), full_id: (.full_id // ""), name: (.name // ""), state: (.state // ""), log_file: (.log_file // ""), tmux_session: (.tmux_session // "")})),
       session_ids: ($sessions | map(.full_id // .id // "")),
@@ -531,13 +552,15 @@ rm_lost_bytes() {
   [[ -s "$before" ]] || { echo 0; return; }
   bs="$(stat -c%s "$before")"
   [[ -f "$after" ]] || { echo "$bs"; return; }
-  if msg="$(cmp "$before" "$after" 2>&1)"; then
+  if msg="$(LC_ALL=C cmp "$before" "$after" 2>&1)"; then
     echo 0
     return
   fi
+  # cmp quotes file names in its message, so match on the path itself rather than
+  # on a quoted form of it.
   case "$msg" in
-    *"EOF on $before"*) echo 0 ;;
-    *"EOF on $after"*) echo $((bs - $(stat -c%s "$after"))) ;;
+    *"EOF on"*"$after"*) echo $((bs - $(stat -c%s "$after"))) ;;
+    *"EOF on"*) echo 0 ;;
     *)
       n="$(printf '%s' "$msg" | sed -nE 's/.*byte ([0-9]+).*/\1/p')"
       echo $((bs - ${n:-1} + 1))
@@ -548,7 +571,7 @@ rm_lost_bytes() {
 # rm_total_lost_bytes BEFORE_SNAPSHOT AFTER_SNAPSHOT — output lost across the
 # worker counter file plus every session log that existed before the restart.
 rm_total_lost_bytes() {
-  local b="$1" a="$2" bc ac total=0 f lost
+  local b="$1" a="$2" bc ac total=0 f lost id path
   bc="$(jq -r .copies "$b")"
   ac="$(jq -r .copies "$a")"
   lost="$(rm_lost_bytes "$bc/worker-counter.txt" "$ac/worker-counter.txt")"
@@ -556,7 +579,15 @@ rm_total_lost_bytes() {
   if [[ -d "$bc/logs" ]]; then
     for f in "$bc"/logs/*; do
       [[ -e "$f" ]] || continue
-      lost="$(rm_lost_bytes "$f" "$ac/logs/$(basename "$f")")"
+      id="$(basename "$f" .log)"
+      if [[ -f "$ac/logs/$id.log" ]]; then
+        lost="$(rm_lost_bytes "$f" "$ac/logs/$id.log")"
+      else
+        # The session left the live list, so it has no copy after the restart. Its
+        # log file may still be on disk: compare with that, else it is all lost.
+        path="$(jq -r --arg id "$id" '[.sessions[] | select((.full_id // .id) == $id) | .log_file][0] // empty' "$b")"
+        lost="$(rm_lost_bytes "$f" "$path")"
+      fi
       total=$((total + lost))
     done
   fi

@@ -1,0 +1,184 @@
+{
+  "state": "waiting-external",
+  "description": "a worker parks on an external condition; its re-admission waits behind a task holding the one-slot pool",
+  "result": "FAIL",
+  "note": "E never parked behind the external condition (E: waiting_capacity await_external: matrix external condition — pool host full (1/1, held by c2ad0002); H: waiting_capacity)",
+  "restart": {
+    "old_pid": "",
+    "new_pid": "",
+    "term_clean": false,
+    "down_seconds": null
+  },
+  "derived": {
+    "task_status_before": "waiting_capacity",
+    "task_status_after": "waiting_capacity",
+    "session_ids_before": [
+      "restart-matrix-3f2b",
+      "restart-matrix-8718",
+      "restart-matrix-ebf0"
+    ],
+    "session_ids_after": [
+      "restart-matrix-3f2b",
+      "restart-matrix-8718",
+      "restart-matrix-ebf0"
+    ],
+    "pane_pids_before": [
+      "cs-restart-matrix-ebf0:1660726"
+    ],
+    "pane_pids_after": [
+      "cs-restart-matrix-ebf0:1660726"
+    ],
+    "retry_count_before": 0,
+    "retry_count_after": 0,
+    "duplicate_sessions": 0,
+    "lost_output_bytes": 0,
+    "redone": false
+  },
+  "criteria": [
+    {
+      "criterion": "state_reached",
+      "result": "FAIL",
+      "detail": "E never parked behind the external condition (E: waiting_capacity await_external: matrix external condition — pool host full (1/1, held by c2ad0002); H: waiting_capacity)"
+    }
+  ],
+  "pass": 0,
+  "fail": 1,
+  "before": {
+    "label": "waiting-external-before",
+    "at": "2026-10-24T08:17:21Z",
+    "daemon": {
+      "pid": "1658704",
+      "uptime_seconds": 131
+    },
+    "prd_status": "running",
+    "prd_info": {
+      "blocked_reason": null,
+      "failure_reason": null,
+      "rejection_reason": null
+    },
+    "task": {
+      "id": "ec460002",
+      "status": "waiting_capacity",
+      "retry_count": 0,
+      "prior_attempt_count": 0,
+      "session_id": "ebf0",
+      "adopted_session": false,
+      "error": "",
+      "wait_reason": "await_external: matrix external condition — pool host full (1/1, held by c2ad0002)"
+    },
+    "sessions": [
+      {
+        "id": "3f2b",
+        "full_id": "restart-matrix-3f2b",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.P6Hj8N/waiting-external/data/sessions/restart-matrix-3f2b/output.log",
+        "tmux_session": "cs-restart-matrix-3f2b"
+      },
+      {
+        "id": "8718",
+        "full_id": "restart-matrix-8718",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.P6Hj8N/waiting-external/data/sessions/restart-matrix-8718/output.log",
+        "tmux_session": "cs-restart-matrix-8718"
+      },
+      {
+        "id": "ebf0",
+        "full_id": "restart-matrix-ebf0",
+        "name": "autonomous:matrix task",
+        "state": "waiting_input",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.P6Hj8N/waiting-external/data/sessions/restart-matrix-ebf0/output.log",
+        "tmux_session": "cs-restart-matrix-ebf0"
+      }
+    ],
+    "session_ids": [
+      "restart-matrix-3f2b",
+      "restart-matrix-8718",
+      "restart-matrix-ebf0"
+    ],
+    "pane_pids": [
+      "cs-restart-matrix-ebf0:1660726"
+    ],
+    "counts": {
+      "planner_starts": 2,
+      "worker_starts": 1,
+      "verifier_starts": 0,
+      "guardrail_starts": 0,
+      "script_launched": 0,
+      "script_starts": 0,
+      "script_finished": 0
+    },
+    "worker_counter_bytes": 56,
+    "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.P6Hj8N/waiting-external/snap-waiting-external-before"
+  },
+  "after": {
+    "label": "waiting-external-before",
+    "at": "2026-10-24T08:17:21Z",
+    "daemon": {
+      "pid": "1658704",
+      "uptime_seconds": 131
+    },
+    "prd_status": "running",
+    "prd_info": {
+      "blocked_reason": null,
+      "failure_reason": null,
+      "rejection_reason": null
+    },
+    "task": {
+      "id": "ec460002",
+      "status": "waiting_capacity",
+      "retry_count": 0,
+      "prior_attempt_count": 0,
+      "session_id": "ebf0",
+      "adopted_session": false,
+      "error": "",
+      "wait_reason": "await_external: matrix external condition — pool host full (1/1, held by c2ad0002)"
+    },
+    "sessions": [
+      {
+        "id": "3f2b",
+        "full_id": "restart-matrix-3f2b",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.P6Hj8N/waiting-external/data/sessions/restart-matrix-3f2b/output.log",
+        "tmux_session": "cs-restart-matrix-3f2b"
+      },
+      {
+        "id": "8718",
+        "full_id": "restart-matrix-8718",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.P6Hj8N/waiting-external/data/sessions/restart-matrix-8718/output.log",
+        "tmux_session": "cs-restart-matrix-8718"
+      },
+      {
+        "id": "ebf0",
+        "full_id": "restart-matrix-ebf0",
+        "name": "autonomous:matrix task",
+        "state": "waiting_input",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.P6Hj8N/waiting-external/data/sessions/restart-matrix-ebf0/output.log",
+        "tmux_session": "cs-restart-matrix-ebf0"
+      }
+    ],
+    "session_ids": [
+      "restart-matrix-3f2b",
+      "restart-matrix-8718",
+      "restart-matrix-ebf0"
+    ],
+    "pane_pids": [
+      "cs-restart-matrix-ebf0:1660726"
+    ],
+    "counts": {
+      "planner_starts": 2,
+      "worker_starts": 1,
+      "verifier_starts": 0,
+      "guardrail_starts": 0,
+      "script_launched": 0,
+      "script_starts": 0,
+      "script_finished": 0
+    },
+    "worker_counter_bytes": 56,
+    "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.P6Hj8N/waiting-external/snap-waiting-external-before"
+  }
+}

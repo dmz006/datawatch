@@ -1,0 +1,28 @@
+{
+  "signal": "terminated",
+  "sender_pid": 0,
+  "parent_chain": [
+    {
+      "pid": 1713490,
+      "cmdline": "/home/dmz/.datawatch/prd-worktrees/d0210001/datawatch --config /home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.sKPLrs/final-gate/config.yaml start --foreground",
+      "user": "dmz"
+    },
+    {
+      "pid": 1713447,
+      "cmdline": "bash /home/dmz/.datawatch/prd-worktrees/d0210001/scripts/restart-matrix/states-other.sh --only final-gate",
+      "user": "dmz"
+    },
+    {
+      "pid": 13433,
+      "cmdline": "/usr/lib/systemd/systemd --user",
+      "user": "dmz"
+    },
+    {
+      "pid": 1,
+      "cmdline": "/usr/lib/systemd/systemd --switched-root --system --deserialize=52 splash",
+      "user": "root"
+    }
+  ],
+  "source": "procscan",
+  "time": "2026-10-24T04:24:33.818885841-04:00"
+}

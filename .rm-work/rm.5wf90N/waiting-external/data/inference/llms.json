@@ -1,0 +1,26 @@
+[
+  {
+    "name": "claude-code",
+    "kind": "claude-code",
+    "created_at": "2026-10-24T08:19:03.484125885Z",
+    "updated_at": "2026-10-24T08:19:20.765863608Z",
+    "auto_created": true,
+    "binary": "claude",
+    "output_mode": "terminal",
+    "input_mode": "tmux",
+    "skip_permissions": true,
+    "channel_enabled": true,
+    "auto_accept_disclaimer": true,
+    "default_effort": "normal"
+  },
+  {
+    "name": "shell",
+    "kind": "shell",
+    "created_at": "2026-10-24T08:19:03.478892708Z",
+    "updated_at": "2026-10-24T08:19:20.765863788Z",
+    "auto_created": true,
+    "binary": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.5wf90N/waiting-external/ctrl/fake-backend.sh",
+    "output_mode": "terminal",
+    "input_mode": "tmux"
+  }
+]

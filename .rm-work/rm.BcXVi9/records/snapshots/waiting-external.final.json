@@ -1,0 +1,78 @@
+{
+  "label": "waiting-external-final",
+  "at": "2026-10-24T08:18:50Z",
+  "daemon": {
+    "pid": "1688170",
+    "uptime_seconds": 38
+  },
+  "prd_status": "completed",
+  "prd_info": {
+    "blocked_reason": null,
+    "failure_reason": null,
+    "rejection_reason": null
+  },
+  "task": {
+    "id": "86540002",
+    "status": "completed",
+    "retry_count": 0,
+    "prior_attempt_count": 0,
+    "session_id": "ca8e",
+    "adopted_session": false,
+    "error": "",
+    "wait_reason": ""
+  },
+  "sessions": [
+    {
+      "id": "289a",
+      "full_id": "restart-matrix-289a",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.BcXVi9/waiting-external/data/sessions/restart-matrix-289a/output.log",
+      "tmux_session": "cs-restart-matrix-289a"
+    },
+    {
+      "id": "2bbd",
+      "full_id": "restart-matrix-2bbd",
+      "name": "autonomous:matrix task",
+      "state": "running",
+      "log_file": "",
+      "tmux_session": "cs-restart-matrix-2bbd"
+    },
+    {
+      "id": "3be5",
+      "full_id": "restart-matrix-3be5",
+      "name": "autonomous:verify:86540002",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.BcXVi9/waiting-external/data/sessions/restart-matrix-3be5/output.log",
+      "tmux_session": "cs-restart-matrix-3be5"
+    },
+    {
+      "id": "50f0",
+      "full_id": "restart-matrix-50f0",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.BcXVi9/waiting-external/data/sessions/restart-matrix-50f0/output.log",
+      "tmux_session": "cs-restart-matrix-50f0"
+    }
+  ],
+  "session_ids": [
+    "restart-matrix-289a",
+    "restart-matrix-2bbd",
+    "restart-matrix-3be5",
+    "restart-matrix-50f0"
+  ],
+  "pane_pids": [
+    "cs-restart-matrix-2bbd:1687836"
+  ],
+  "counts": {
+    "planner_starts": 2,
+    "worker_starts": 1,
+    "verifier_starts": 1,
+    "guardrail_starts": 0,
+    "script_launched": 0,
+    "script_starts": 0,
+    "script_finished": 0
+  },
+  "worker_counter_bytes": 191,
+  "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.BcXVi9/waiting-external/snap-waiting-external-final"
+}

@@ -1,0 +1,89 @@
+{
+  "label": "waiting-capacity-final",
+  "at": "2026-10-24T08:08:55Z",
+  "daemon": {
+    "pid": "1578609",
+    "uptime_seconds": 74
+  },
+  "prd_status": "blocked",
+  "task": {
+    "id": "2e0d0002",
+    "status": "blocked",
+    "retry_count": 0,
+    "prior_attempt_count": 0,
+    "session_id": "58eb",
+    "adopted_session": false,
+    "error": "",
+    "wait_reason": ""
+  },
+  "sessions": [
+    {
+      "id": "3754",
+      "full_id": "restart-matrix-3754",
+      "name": "autonomous:verify:568a0001",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.o2il8n/waiting-capacity/data/sessions/restart-matrix-3754/output.log",
+      "tmux_session": "cs-restart-matrix-3754"
+    },
+    {
+      "id": "58eb",
+      "full_id": "restart-matrix-58eb",
+      "name": "autonomous:matrix task",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.o2il8n/waiting-capacity/data/sessions/restart-matrix-58eb/output.log",
+      "tmux_session": "cs-restart-matrix-58eb"
+    },
+    {
+      "id": "9d0f",
+      "full_id": "restart-matrix-9d0f",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.o2il8n/waiting-capacity/data/sessions/restart-matrix-9d0f/output.log",
+      "tmux_session": "cs-restart-matrix-9d0f"
+    },
+    {
+      "id": "dd51",
+      "full_id": "restart-matrix-dd51",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.o2il8n/waiting-capacity/data/sessions/restart-matrix-dd51/output.log",
+      "tmux_session": "cs-restart-matrix-dd51"
+    },
+    {
+      "id": "e0ee",
+      "full_id": "restart-matrix-e0ee",
+      "name": "autonomous:matrix task",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.o2il8n/waiting-capacity/data/sessions/restart-matrix-e0ee/output.log",
+      "tmux_session": "cs-restart-matrix-e0ee"
+    },
+    {
+      "id": "fb78",
+      "full_id": "restart-matrix-fb78",
+      "name": "autonomous:verify:2e0d0002",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.o2il8n/waiting-capacity/data/sessions/restart-matrix-fb78/output.log",
+      "tmux_session": "cs-restart-matrix-fb78"
+    }
+  ],
+  "session_ids": [
+    "restart-matrix-3754",
+    "restart-matrix-58eb",
+    "restart-matrix-9d0f",
+    "restart-matrix-dd51",
+    "restart-matrix-e0ee",
+    "restart-matrix-fb78"
+  ],
+  "pane_pids": [],
+  "counts": {
+    "planner_starts": 2,
+    "worker_starts": 2,
+    "verifier_starts": 2,
+    "guardrail_starts": 0,
+    "script_launched": 0,
+    "script_starts": 0,
+    "script_finished": 0
+  },
+  "worker_counter_bytes": 231,
+  "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.o2il8n/waiting-capacity/snap-waiting-capacity-final"
+}
