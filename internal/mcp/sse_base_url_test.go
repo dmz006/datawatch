@@ -83,7 +83,7 @@ func readEndpointEvent(t *testing.T, baseURL string) string {
 	if err != nil {
 		t.Fatalf("GET /sse: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	sc := bufio.NewScanner(resp.Body)
 	sawEndpoint := false
