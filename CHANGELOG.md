@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.11.0 — Automatic lane fill in shadow mode
+
+Automatic lane fill in the Automation coordinator, in shadow mode first. Each poll the coordinator computes, for every idle lane (two local GPU channels as one pool and a configurable number of Claude channels), which eligible PRD it would start and why, and what blocks each idle lane. In shadow mode it records every decision as an audit entry and starts nothing; the operator compares that log with what was actually done before switching it on. Eligibility respects holds, sequencing and the operator's lane count and usage policy; an idle lane with eligible work raises an alert after a configurable time. Configuration is on every surface (config file, REST, MCP, CLI, comm channel, web settings with the five locales), with a lane fill card on the Automation sub-tab and a how-to.
+
 ## v9.10.4 — Judges obey the capacity limits
 
 Guardrail and plan-review judge sessions now take capacity leases like verifiers and workers. A judge waits when its pool is full, releases its lease when it ends or fails, and a restart mid-judge neither leaks the lease nor starts a second judge. The lease reaper treats a judge lease by the same rule as a verifier lease, and the capacity view lists queued and running judges by a readable name. Judge routing through the verifier policy and the time limit with retry are follow-up work.
