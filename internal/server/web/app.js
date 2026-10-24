@@ -2380,6 +2380,13 @@ function _hideHeaderRefreshSpinner() {
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 function navigate(view, sessionId, fromPopstate) {
+  // Automation is a sub-tab of Automata, not a view of its own. The old name
+  // still arrives from stored history entries and saved links, so it selects
+  // the sub-tab and continues as the Automata view.
+  if (view === 'automation') {
+    _automataState.tab = 'automation';
+    view = 'autonomous';
+  }
   // Close the new-session modal on any navigation (Escape or nav tap).
   if (document.getElementById('newSessionModal')) closeNewSessionModal();
 
@@ -24533,9 +24540,7 @@ function _backToAutomataList() {
   const searchBtn = document.getElementById('headerSearchBtn');
   if (searchBtn) searchBtn.style.display = 'inline-flex';
   if (returnAutomationId) {
-    _automataState.tab = 'automation';
-    navigate('autonomous');
-    openAutomationDetail(returnAutomationId);
+    openAutomationLink(returnAutomationId);
     return;
   }
   navigate('autonomous');
@@ -25671,6 +25676,32 @@ function openAutomationDetail(id) {
   return renderAutomationDetail(id);
 }
 window.openAutomationDetail = openAutomationDetail;
+
+// openAutomationLink is the entry for every link that targets one Automation:
+// it selects the Automation sub-tab on the Automata view, then opens the item.
+// With no id it lands on the sub-tab's list.
+function openAutomationLink(id) {
+  _automataState.tab = 'automation';
+  navigate('autonomous');
+  if (!id) return Promise.resolve();
+  return openAutomationDetail(id);
+}
+window.openAutomationLink = openAutomationLink;
+
+// _automationRouteFromLocation reads an Automation target out of a saved link:
+// '#automation', '#automation/<id>' or '?automation=<id>'. It returns null for
+// any other location, '' for the bare list and the id for one Automation.
+function _automationRouteFromLocation(loc) {
+  const hash = String((loc && loc.hash) || '');
+  const m = /^#automation(?:\/(.+))?$/.exec(hash);
+  if (m) {
+    if (!m[1]) return '';
+    try { return decodeURIComponent(m[1]); } catch (_) { return m[1]; }
+  }
+  const q = new URLSearchParams((loc && loc.search) || '').get('automation');
+  return q ? q : null;
+}
+window._automationRouteFromLocation = _automationRouteFromLocation;
 
 // renderAutomationDetail loads one Automation and draws its page. opts.quiet
 // skips the loading block and keeps the page on a failed reload; live refresh
@@ -30185,6 +30216,14 @@ document.addEventListener('DOMContentLoaded', () => {
       _initView = state._autonomousEnabled === false ? 'sessions' : 'autonomous';
     }
     navigate(_initView || 'sessions', _initSession || undefined);
+
+    // A saved link to the Automation list or one Automation lands on the
+    // Automata tab's Automation sub-tab (and opens the item) once the
+    // subsystem is known to be on.
+    const _deepLinkAutomation = _automationRouteFromLocation(window.location);
+    if (_deepLinkAutomation !== null && state._autonomousEnabled !== false) {
+      setTimeout(() => { if (state._autonomousEnabled !== false) openAutomationLink(_deepLinkAutomation); }, 300);
+    }
 
     // GH#182 — alert deep link. A browser rewrites a registered
     // web+datawatch://alert/<id> link into start_url?alert=<id> per the
