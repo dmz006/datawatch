@@ -143,3 +143,25 @@ after delivery (`WaitingInput` to `Running`), bare shell pane staying
 `WaitingInput`, terminal states staying sticky, the gap watcher not flipping a
 busy session and flipping it once the pane goes quiet, the recovery pass, and
 the scope limit to claude-code. All use `NewFakeTmux` and a fake child check.
+
+## Start-tracker restart-matrix findings
+
+These rows cover the start-confirm tracker in the wait loop, the four states in
+`docs/plans/silent-first-tool-call-matrix.md`. Each state runs as a fake-clock
+scenario test in `cmd/datawatch/session_start_scenarios_test.go`. Observed
+results are from `go test ./cmd/datawatch/ -run TestSessionStart`: 21 top-level
+test functions, the four scenario tests and 17 tracker tests, all passing. No
+live daemon restart was run.
+
+| State | Observed result | Status |
+|---|---|---|
+| (a) Six-minute silent tool call, `waiting_input` | Survived every tick at the 120 s and 300 s bounds in all four variants (spinner moving or frozen, live command child or not). The tool line is evidence on every tick. In the frozen variants the only pane change is the one at 30 s, so the tool line alone carries the clock. | Pass |
+| (b) Bare shell session | Ended at 121 s. The end reason names the 121 s silence against the 120 s limit. | Pass |
+| (c) Live working worker adopted after a daemon restart | Not ended at adoption. Survived 0 s and 90 s, and was ended at 91 s, 121 s after the last evidence of life (the pane change at -30 s). A live tool call on the first tick also survives (`TestSessionStartTrackerAdoptedSessionToolCallStillKeepsItAlive`). The brief's "expected survive" holds for a worker showing work, and a frozen pane with no tool line is ended after its bound. | Pass, with a design question for the operator: is a worker whose pane has been frozen with no tool line for the full bound still working? The tracker says no. |
+| (d) Bare shell adopted after a restart | Ended at 21 s, 121 s after the adoption seed, not 121 s after the first tick. | Pass |
+
+Open point for the operator: state (c) as written in the brief is "expected
+survive". The tests show survival for a worker that shows a tool line or a
+changing pane, and an end after the bound for a worker with a frozen pane and
+no tool line. Whether a frozen-pane worker should count as working is a design
+choice. The tracker follows the current rule, and this change does not alter it.

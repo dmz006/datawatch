@@ -101,18 +101,24 @@ func runScenario(t *testing.T, tr *sessionStartTracker, ticks []scenarioTick) st
 
 // silentToolCallTicks is six minutes of a delivered task whose agent sits in
 // waiting_input. The pane is silent until the tool call starts at 30s, then
-// shows the tool line and a spinner that moves on every tick until 360s. The
-// command the tool call runs is a child of the agent when withCommand is set.
-func silentToolCallTicks(withCommand bool) []scenarioTick {
+// shows the tool line until 360s. The spinner's elapsed count moves on every
+// tick when spinning is set and stays at zero when it is not, so a frozen pane
+// is covered too. The command the tool call runs is a child of the agent when
+// withCommand is set.
+func silentToolCallTicks(withCommand, spinning bool) []scenarioTick {
 	w := session.StateWaitingInput
 	ticks := []scenarioTick{
 		{sec: 0, state: w, pane: startSilentPane, delivered: true, tree: scenarioAgentTree(false)},
 	}
 	for sec := 30; sec <= 360; sec += 30 {
+		elapsed := time.Duration(0)
+		if spinning {
+			elapsed = time.Duration(sec-30) * time.Second
+		}
 		ticks = append(ticks, scenarioTick{
 			sec:       sec,
 			state:     w,
-			pane:      scenarioToolCallPane(time.Duration(sec-30) * time.Second),
+			pane:      scenarioToolCallPane(elapsed),
 			delivered: true,
 			tree:      scenarioAgentTree(withCommand),
 		})
@@ -126,13 +132,16 @@ func TestSessionStartScenarioSilentToolCallSurvives(t *testing.T) {
 			for _, variant := range []struct {
 				name        string
 				withCommand bool
+				spinning    bool
 			}{
-				{name: "tool call in pane", withCommand: false},
-				{name: "tool call in pane with a live command", withCommand: true},
+				{name: "tool call in pane", withCommand: false, spinning: true},
+				{name: "tool call in pane with a live command", withCommand: true, spinning: true},
+				{name: "frozen tool call in pane", withCommand: false, spinning: false},
+				{name: "frozen tool call in pane with a live command", withCommand: true, spinning: false},
 			} {
 				t.Run(variant.name, func(t *testing.T) {
 					tr := newSessionStartTracker(limit, time.Time{}, time.Time{})
-					if got := runScenario(t, tr, silentToolCallTicks(variant.withCommand)); got != "" {
+					if got := runScenario(t, tr, silentToolCallTicks(variant.withCommand, variant.spinning)); got != "" {
 						t.Fatalf("session ended during a silent tool call: %q", got)
 					}
 				})
