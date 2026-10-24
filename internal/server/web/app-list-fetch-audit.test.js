@@ -86,7 +86,7 @@ const ENDPOINTS = [
   { path: '/api/queue', markers: [] },
   { path: '/api/projects', markers: [] },
   { path: '/api/mcp/resources', markers: [] },
-  { path: '/api/mcp/templates', markers: [] },
+  { path: '/api/mcp/resources/templates', markers: [] },
   { path: '/api/mcp/prompts', markers: [] },
   { path: '/api/ollama/models', markers: [] },
   { path: '/api/openwebui/models', markers: [] },
@@ -154,7 +154,7 @@ const ALLOWLIST = [
   { endpoint: '/api/queue', trigger: 'Settings tab open', reason: BOUNDED_BY_CONFIG },
   { endpoint: '/api/projects', trigger: 'user action only', reason: BOUNDED_BY_CONFIG },
   { endpoint: '/api/mcp/resources', trigger: 'user action only', reason: BOUNDED_BY_CONFIG },
-  { endpoint: '/api/mcp/templates', trigger: 'user action only', reason: BOUNDED_BY_CONFIG },
+  { endpoint: '/api/mcp/resources/templates', trigger: 'user action only', reason: BOUNDED_BY_CONFIG },
   { endpoint: '/api/mcp/prompts', trigger: 'user action only', reason: BOUNDED_BY_CONFIG },
   { endpoint: '/api/ollama/models', trigger: 'user action only', reason: BOUNDED_BY_CONFIG },
   { endpoint: '/api/openwebui/models', trigger: 'user action only', reason: BOUNDED_BY_CONFIG },
@@ -345,8 +345,18 @@ function scanSource(src) {
         args = src.slice(open, matchClose(masked, open) + 1);
       }
       const writes = /method\s*:\s*['"`](POST|PUT|PATCH|DELETE)/i.test(args) || /^\(\s*['"](POST|PUT|PATCH|DELETE)['"]/i.test(args);
+      // What the same expression appends after this literal, for example
+      // '...search?q=' + encodeURIComponent(q) + '&limit=10'.
+      let tailEnd = lit.end, tdepth = 0;
+      for (; tailEnd < masked.length; tailEnd++) {
+        const c = masked[tailEnd];
+        if (c === ';') break;
+        if (c === '(' || c === '[' || c === '{') tdepth++;
+        else if (c === ')' || c === ']' || c === '}') { if (tdepth === 0) break; tdepth--; }
+        else if (c === ',' && tdepth === 0) break;
+      }
       const fn = enclosing(line);
-      units.push({ line, endpoint: ep, segment: seg, query, callee, writes, fn: fn.name, fnText: fn.text });
+      units.push({ line, endpoint: ep, segment: seg, query, callee, writes, tail: src.slice(lit.end, tailEnd), fn: fn.name, fnText: fn.text });
     });
   }
   return { units, fulls };
@@ -360,8 +370,13 @@ function narrowed(u) {
   if (u.query === null) return !!ep.bareIsSummary; // bare path
   if (!ep.markers.length) return false;
   const has = (text) => ep.markers.some(mk => text.includes(mk));
-  if (u.query.length && !u.query.endsWith('&')) return has(u.query); // a complete query states its own form
-  return has(u.fnText); // a query builder: the function adds the parameters
+  if (has(u.query)) return true;
+  if (u.query.length && !u.query.endsWith('&')) {
+    // A query that ends in a parameter name or value continues in the same
+    // expression: look only at what the expression appends.
+    return u.query.endsWith('=') ? has(u.tail) : false;
+  }
+  return has(u.tail) || has(u.fnText); // a query builder: the function adds the parameters
 }
 
 function allowed(u) {
@@ -384,7 +399,14 @@ test('static: sessions, Automata and alerts list requests use the small form wit
   const { units } = scanSource(APP_SRC);
   const strict = units.filter(u => ['/api/sessions', '/api/autonomous/prds', '/api/alerts'].includes(u.endpoint.path));
   assert.ok(strict.length >= 6, `expected the sessions, Automata and alerts call sites, found ${strict.length}`);
+  // The one recorded exception: an alert deep link finds one alert by id and
+  // runs once per click.
+  const DEEP_LINK = 'openAlertDeepLink';
   for (const u of strict) {
+    if (u.fn === DEEP_LINK && u.endpoint.path === '/api/alerts') {
+      assert.ok(allowed(u).length === 1 && /user action only/.test(allowed(u)[0].trigger), 'the alert deep link must be the user-action-only entry');
+      continue;
+    }
     assert.ok(narrowed(u), `app.js:${u.line} (${u.fn}) requests ${u.endpoint.path} without a small form`);
     assert.equal(allowed(u).length, 0, `${u.endpoint.path} must not need an allowlist entry (${u.fn})`);
   }
@@ -401,6 +423,24 @@ test('static: full=1 appears in no request built by app.js', () => {
   assert.ok(!/['"`][^'"`\n]*\bfull=(1|true)\b/.test(APP_SRC.replace(/\/\/.*$/gm, '')), 'full=1 inside a string literal');
 });
 
+// The note groups sibling endpoints under one stem: `/api/profiles/projects|clusters`,
+// `/api/docs/trust` and `/pending`. An endpoint is recorded when the note names it
+// whole, or names its stem and then its tail on its own.
+function noteRecords(note, endpoint) {
+  if (note.includes(endpoint)) return true;
+  const segs = endpoint.split('/').filter(Boolean); // ['api', 'profiles', 'clusters']
+  for (let k = 2; k < segs.length; k++) {
+    const stem = '/' + segs.slice(0, k).join('/');
+    const tail = '/' + segs.slice(k).join('/');
+    const esc = tail.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&');
+    if (note.includes(stem) && new RegExp('(^|[\\s`,(|])' + esc + '([\\s`,)|.]|$)').test(note)) return true;
+    // the alternation form: /api/profiles/projects|clusters
+    const leaf = segs[segs.length - 1];
+    if (k === segs.length - 1 && note.includes(stem) && new RegExp('\\|' + leaf + '([\\s`,)|.]|$)').test(note)) return true;
+  }
+  return false;
+}
+
 test('static: every allowlist entry is used, has a reason, and is recorded in the audit note', () => {
   const { units } = scanSource(APP_SRC);
   const note = fs.readFileSync(AUDIT_NOTE, 'utf8');
@@ -410,7 +450,7 @@ test('static: every allowlist entry is used, has a reason, and is recorded in th
     const hit = units.filter(u => u.endpoint.path === a.endpoint && (!a.fn || u.fn === a.fn));
     assert.ok(hit.length, `stale allowlist entry: ${a.endpoint}${a.fn ? ' in ' + a.fn : ''} no longer appears in app.js`);
     assert.ok(hit.some(u => !narrowed(u)), `allowlist entry for ${a.endpoint}${a.fn ? ' in ' + a.fn : ''} covers only requests that now pass; remove it`);
-    assert.ok(note.includes(a.endpoint), `${a.endpoint} is not recorded in docs/plans/web-list-fetch-audit.md`);
+    assert.ok(noteRecords(note, a.endpoint), `${a.endpoint} is not recorded in docs/plans/web-list-fetch-audit.md`);
     if (a.fn) assert.ok(note.includes('`' + a.fn + '`') || note.includes(a.fn), `${a.fn} is not recorded in docs/plans/web-list-fetch-audit.md`);
   }
 });
@@ -433,8 +473,11 @@ test('static: the scanner flags a bare sessions list, a full=1 request, an unlis
   const verdict = Object.fromEntries(units.map(u => [u.fn, narrowed(u)]));
   assert.equal(verdict.good, true);
   assert.equal(verdict.badBare, false);
-  assert.equal(verdict.badFull, true, 'bare-summary endpoint with a query: caught by the full=1 rule instead');
+  // full=1 carries no narrowing marker, so the request is not a small form; the
+  // full=1 rule flags the same literal on its own.
+  assert.equal(verdict.badFull, false);
   assert.equal(fulls.length, 1);
+  assert.match(fulls[0].text, /full=1/);
   assert.equal(verdict.builder, true);
   assert.equal(verdict.badBuilder, false);
   assert.equal(verdict.fanOut, false);
@@ -442,7 +485,7 @@ test('static: the scanner flags a bare sessions list, a full=1 request, an unlis
   assert.equal(verdict.tpl, true);
   assert.ok(!units.some(u => u.fn === 'sub'), 'a per-session sub-resource is not a list');
   assert.equal(units.filter(u => u.fn === 'rx').length, 1, 'the regex literal does not swallow the real call');
-  assert.equal(units.length, 9 - 1 + 0, 'comment and sub-resource ignored');
+  assert.equal(units.length, 9, 'the comment and the per-session sub-resource are not counted');
 });
 
 // ── Runtime harness ──────────────────────────────────────────────────────────
@@ -584,7 +627,7 @@ function makePage({ server = '', panels = [], connected = true } = {}) {
   const calls = []; // { url, method, bytesOut, bytesIn }
   sandbox.fetch = (url, init) => {
     const method = String((init && init.method) || 'GET').toUpperCase();
-    const text = answer(url);
+    const text = method === 'GET' ? answer(url) : '{}'; // a write answers a small acknowledgement
     const rec = { url: String(url), method, bytesOut: Buffer.byteLength(String(url)) + Buffer.byteLength(String((init && init.body) || '')), bytesIn: Buffer.byteLength(text) };
     calls.push(rec);
     return Promise.resolve({
