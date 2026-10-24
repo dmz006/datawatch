@@ -11,7 +11,7 @@
 #                         another task that holds the one-slot pool
 #   final-gate            a final-gate task's verification script is running (start marker written)
 #   git-operation         the daemon's commit of a worker's output is inside a slow pre-commit hook
-#   automation-branches   an Automation forks into two active PRD branches and joins them
+#   automation-branches   an Automation runs an entry PRD, forks into two active PRD branches and joins them
 #   scheduled-due         a scheduled spawn comes due while the daemon is down
 #   websocket-clients     two WebSocket clients ride out the restart (scripts/restart-matrix/ws-client.py)
 #
@@ -79,10 +79,15 @@ ot_plan() {
 
 # ot_run PRD — approves a planned PRD when needed and starts its executor.
 ot_run() {
+  ot_approve "$1"
+  rm_api POST "/api/autonomous/prds/$1/run" '{}' >/dev/null
+}
+
+# ot_approve PRD — approves a planned PRD and leaves it unstarted.
+ot_approve() {
   if sc_prd_status_in "$1" needs_review; then
     rm_api POST "/api/autonomous/prds/$1/approve" '{"actor":"restart-matrix","note":"sandbox run"}' >/dev/null
   fi
-  rm_api POST "/api/autonomous/prds/$1/run" '{}' >/dev/null
 }
 
 ot_task_wait_reason() { rm_task_field "$1" wait_reason; }
@@ -109,6 +114,11 @@ ot_second_start_after_first_done() {
 ot_automation_status() { rm_api GET "/api/automations/$1" | jq -r '.status // empty'; }
 ot_automation_is() { [[ "$(ot_automation_status "$1")" == "$2" ]]; }
 ot_automation_cursors() { rm_api GET "/api/automations/$1" | jq -r '[.active_cursors[]?] | length'; }
+ot_automation_last_block() { rm_api GET "/api/automations/$1" | jq -r '[.decisions[]? | "\(.kind): \(.note)"] | .[-3:] | join(" | ") | if . == "" then "none" else . end'; }
+
+# ot_branches_started AUTO — both branch workers started, or the Automation blocked
+# (so a refused activation is reported at once, with its reason).
+ot_branches_started() { sc_ctrl_at_least worker.starts 3 || ot_automation_is "$1" blocked; }
 
 ot_schedule_json() { rm_api GET /api/schedules | jq -c --arg id "$1" '[.[] | select(.id == $id)][0] // {}'; }
 ot_schedule_field() { ot_schedule_json "$1" | jq -r ".$2 // empty"; }
@@ -249,6 +259,7 @@ state_final_gate() {
   rm_write_plan verify/gated.sh
   jq '.stories[0].tasks[0].kind = "final_gate"' "$RM_CTRL/plan.json" >"$RM_CTRL/plan.tmp" && mv "$RM_CTRL/plan.tmp" "$RM_CTRL/plan.json"
   SC_PRD="$(ot_prd_create "$RM_PROJECT")"
+  rm_prd_script_guardrails "$SC_PRD"
   ot_plan "$SC_PRD" || { sc_abort_state "$name" "PRD never reached review (status: $(rm_prd_status "$SC_PRD"))"; return; }
   ot_run "$SC_PRD"
   if ! rm_wait_until 180 sc_ctrl_at_least script.starts 1; then
@@ -278,7 +289,7 @@ state_final_gate() {
 }
 
 state_git_operation() {
-  local name=git-operation status_after lock head_before results
+  local name=git-operation status_after lock head_before results dirty
   SC_PRD=""
   rm_state_begin "$name" "the daemon's commit of a worker's output is inside a slow pre-commit hook in the project repo"
   ot_boot "$name"
@@ -298,6 +309,11 @@ EOF
 
   rm_write_plan ""
   SC_PRD="$(ot_prd_create "$RM_PROJECT")"
+  rm_prd_git_enable "$SC_PRD"
+  # The daemon's own bookkeeping files (.mcp.json, .datawatch/tree.lock) are dirty
+  # before every git-enabled task, with or without a restart; with the default
+  # block they stop the task before the restart matters. Measure in warn mode.
+  rm_api PUT "/api/autonomous/prds/$SC_PRD/guardrails" '{"block_on_file_drift":false}' >/dev/null
   ot_plan "$SC_PRD" || { sc_abort_state "$name" "PRD never reached review (status: $(rm_prd_status "$SC_PRD"))"; return; }
   echo 20 >"$RM_CTRL/git-slow"
   ot_run "$SC_PRD"
@@ -321,45 +337,56 @@ EOF
   rm_check "no_stale_index_lock" "$lock" "index.lock present after settle: $([[ $lock == 1 ]] && echo yes || echo no)"
   results="$(ot_git -C "$RM_PROJECT" log --format=%H --diff-filter=A -- worker-result.txt | wc -l | tr -d ' ')"
   rm_check "result_committed_once" "$([[ "$results" == 1 ]] && echo 0 || echo 1)" "commits adding worker-result.txt: $results (HEAD count when the hook was reached: $head_before)"
-  rm_check "repo_clean_after_settle" "$([[ -z "$(ot_git -C "$RM_PROJECT" status --porcelain)" ]] && echo 0 || echo 1)" "git status after settle: $(ot_git -C "$RM_PROJECT" status --porcelain | wc -l | tr -d ' ') changed path(s)"
+  # The daemon rewrites its own .mcp.json and .datawatch/ bookkeeping after a commit, so those
+  # paths are excluded; any other changed path is output the commit left behind.
+  dirty="$(ot_git -C "$RM_PROJECT" status --porcelain -- . ':!.mcp.json' ':!.datawatch' ':!.gitignore')"
+  rm_check "repo_clean_after_settle" "$([[ -z "$dirty" ]] && echo 0 || echo 1)" "uncommitted worker output after settle: $(printf '%s' "$dirty" | grep -c . | tr -d ' ') path(s) (daemon bookkeeping excluded)"
   rm_check "task_completes" "$(sc_task_status_in "$SC_PRD" completed && echo 0 || echo 1)" "task status: $(rm_task_field "$SC_PRD" status) (after restart: $status_after)"
   rm_state_end "$SC_BEFORE" "$SC_FINAL" "commit blocked in a 20s pre-commit hook when the daemon was restarted"
 }
 
 state_automation_branches() {
-  local name=automation-branches l r auto body status_after cursors_before cursors_after
+  local name=automation-branches e l r p auto body status_after cursors_before cursors_after
   SC_PRD=""
   rm_state_begin "$name" "an Automation forks into two active PRD branches; the daemon restarts while both run"
   ot_boot "$name"
   echo 1 >"$RM_CTRL/planner_delay"
   echo 30 >"$RM_CTRL/worker_ticks"
 
+  # The entry member runs first and fires the fork (a fork cannot be the entry).
   rm_write_plan ""
-  l="$(ot_prd_create "$RM_PROJECT")"
-  SC_PRD="$l"
-  ot_plan "$l" || { sc_abort_state "$name" "branch PRD never reached review (status: $(rm_prd_status "$l"))"; return; }
+  e="$(ot_prd_create "$RM_PROJECT")"
+  SC_PRD="$e"
+  ot_plan "$e" || { sc_abort_state "$name" "entry PRD never reached review (status: $(rm_prd_status "$e"))"; return; }
+  ot_project_new "$RM_SB/project-l"
+  rm_write_plan ""
+  l="$(ot_prd_create "$RM_SB/project-l")"
+  ot_plan "$l" || { SC_PRD="$l"; sc_abort_state "$name" "branch PRD never reached review (status: $(rm_prd_status "$l"))"; return; }
   ot_project_new "$RM_SB/project-r"
   rm_write_plan ""
   r="$(ot_prd_create "$RM_SB/project-r")"
   ot_plan "$r" || { SC_PRD="$r"; sc_abort_state "$name" "second branch PRD never reached review (status: $(rm_prd_status "$r"))"; return; }
 
-  body="$(jq -n --arg l "$l" --arg r "$r" '{
+  body="$(jq -n --arg e "$e" --arg l "$l" --arg r "$r" '{
     name: "restart matrix branches",
     actor: "restart-matrix",
-    reason: "fork two PRD branches and join when both finish",
-    entry_member_id: "fork1",
+    reason: "fork two PRD branches after an entry member and join when both finish",
+    entry_member_id: "entry",
     members: [
+      {id: "entry", prd_id: $e, on_complete: "fork1"},
       {id: "fork1", kind: "fork", fork_members: ["branch-a", "branch-b"]},
       {id: "branch-a", prd_id: $l},
       {id: "branch-b", prd_id: $r},
       {id: "join1", kind: "join", join_members: ["branch-a", "branch-b"], on_branch_failure: "all_must_succeed"}
     ]
   }')"
+  # The Automation starts member PRDs; it will not start one still waiting for review.
+  for p in "$e" "$l" "$r"; do ot_approve "$p"; done
   auto="$(rm_api POST /api/automations "$body" | jq -r '.id // empty')"
   if [[ -z "$auto" ]]; then sc_abort_state "$name" "the Automation was not created"; return; fi
   rm_api POST "/api/automations/$auto/activate" '{"actor":"restart-matrix","reason":"sandbox run"}' >/dev/null
-  if ! rm_wait_until 180 sc_ctrl_at_least worker.starts 2; then
-    sc_abort_state "$name" "both branches never started (automation status: $(ot_automation_status "$auto"))"
+  if ! rm_wait_until 180 ot_branches_started "$auto" || ! sc_ctrl_at_least worker.starts 2; then
+    sc_abort_state "$name" "both branches never started (automation status: $(ot_automation_status "$auto"), last block: $(ot_automation_last_block "$auto"))"
     return
   fi
   cursors_before="$(ot_automation_cursors "$auto")"
@@ -380,7 +407,7 @@ state_automation_branches() {
   rm_check "both_branches_survive" "$([[ "$cursors_after" == 2 ]] && echo 0 || echo 1)" "active branches: $cursors_before before, $cursors_after after restart"
   local starts
   starts="$(rm_count_lines "$RM_CTRL/worker.starts")"
-  rm_check "branches_not_rerun" "$([[ "$starts" == 2 ]] && echo 0 || echo 1)" "worker starts: $starts (each branch once)"
+  rm_check "branches_not_rerun" "$([[ "$starts" == 3 ]] && echo 0 || echo 1)" "worker starts: $starts (entry once, each branch once)"
   rm_check "automation_completes" "$(ot_automation_is "$auto" completed && echo 0 || echo 1)" "Automation status: $(ot_automation_status "$auto")"
   rm_check "both_branches_complete" "$([[ "$(rm_prd_status "$l")" == completed && "$(rm_prd_status "$r")" == completed ]] && echo 0 || echo 1)" "branch PRD statuses: $(rm_prd_status "$l") and $(rm_prd_status "$r")"
   rm_state_end "$SC_BEFORE" "$SC_FINAL" "automation $auto: branches $cursors_before -> $cursors_after across the restart"

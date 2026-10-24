@@ -450,6 +450,19 @@ rm_prd_create() { # prints the PRD id
 rm_prd_json() { rm_api GET "/api/autonomous/prds/$1"; }
 rm_prd_status() { rm_prd_json "$1" | jq -r '.status // .prd.status // empty'; }
 
+# rm_prd_git_enable PRD — gives the PRD git settings, so its task sessions run
+# git-enabled and a finished task's work is committed by the daemon.
+rm_prd_git_enable() {
+  rm_api POST "/api/autonomous/prds/$1/set_git" '{"auto_pr":false,"base_branch":"main"}' >/dev/null
+}
+
+# rm_prd_script_guardrails PRD — a task's verification script runs in the
+# per-task guardrail step, so a PRD that verifies through a script needs one
+# configured. A clean script exit passes that guardrail without a judge call.
+rm_prd_script_guardrails() {
+  rm_api PUT "/api/autonomous/prds/$1/guardrails" '{"per_task_guardrails":["rules-review"]}' >/dev/null
+}
+
 # First task of the PRD, as JSON (the matrix PRDs have exactly one task).
 rm_task_json() {
   rm_prd_json "$1" | jq -c '(.prd // .) as $p | [$p.stories[]?.tasks[]?][0] // {}'

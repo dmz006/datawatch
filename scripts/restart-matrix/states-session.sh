@@ -290,6 +290,7 @@ sc_script_state() { # NAME DESCRIPTION GATE_OPEN
   echo 20 >"$RM_CTRL/script_sleep"
   [[ "$gate_open" == 1 ]] && : >"$RM_CTRL/script.gate"
   sc_prd_new verify/gated.sh || { sc_abort_state "$name" "could not create the PRD"; return; }
+  rm_prd_script_guardrails "$SC_PRD"
   sc_plan_start
   sc_approve_and_run || { sc_abort_state "$name" "plan never became runnable (PRD status: $(rm_prd_status "$SC_PRD"))"; return; }
   local marker=script.launched
