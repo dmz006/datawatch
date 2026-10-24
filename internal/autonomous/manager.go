@@ -829,6 +829,9 @@ type Manager struct {
 	// session; orphanNow is the sweep's clock (nil = time.Now). Guarded by mu.
 	orphanSeen map[string]time.Time
 	orphanNow  func() time.Time
+	// orphanFormLogged records that the orphan sweep's session-id form
+	// self-check has logged its one mismatch line. Guarded by mu.
+	orphanFormLogged bool
 
 	// sessionContinueFn — design §6.ii: sends a "resume" prompt to a parked
 	// worker session after an await-external cycle re-admits it. Optional.
