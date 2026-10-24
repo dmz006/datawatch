@@ -60,6 +60,7 @@ Subcommands:
   prd-remove-task <id>            Remove one task from a story without re-running decompose
   prd-set-type <id> <type>        Set automaton type (BL221 Phase 4)
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
+  prd-set-notify-events <id> [kinds]  Set the event kinds that produce notifications for an Automaton (inherit or omit to clear)
   prd-set-git <id> on|off         Set AutoPR (+--base-branch override) for a PRD (BL407 Phase 5)
   prd-set-skills <id> <csv>       Assign skills to PRD (BL221 Phase 4)
   prd-scan <id>                   Trigger security scan (BL221 Phase 3)
@@ -142,6 +143,7 @@ Subcommands:
 		newAutonomousTagDeleteCmd(),
 		newAutonomousPRDSetTagsCmd(),
 		newAutonomousPRDSetGuidedModeCmd(),
+		newAutonomousPRDSetNotifyEventsCmd(),
 		newAutonomousPRDSetGitCmd(),
 		newAutonomousPRDSetSkillsCmd(),
 		newAutonomousTypesListCmd(),
@@ -1251,6 +1253,48 @@ func newAutonomousPRDSetGuidedModeCmd() *cobra.Command {
 			enabled := args[1] == "on" || args[1] == "true" || args[1] == "1"
 			body, _ := json.Marshal(map[string]bool{"guided_mode": enabled})
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_guided_mode", body)
+		},
+	}
+}
+
+// Per-Automaton notify event kinds: which lifecycle events produce
+// notifications for one Automaton. An empty list (inherit) falls back
+// to the guardrail profile, then the global default set.
+func newAutonomousPRDSetNotifyEventsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prd-set-notify-events <id> [kinds]",
+		Short: "Set the lifecycle event kinds that produce notifications for an Automaton",
+		Long: `Set the notify event kinds for one Automaton.
+
+kinds is a comma-separated list of lifecycle event kinds, e.g.:
+  prd-set-notify-events a1 prd.blocked,task.session_started
+
+Use inherit (or omit the kinds argument) to clear the Automaton's list
+and inherit from its guardrail profile or the global default set.
+
+Valid kinds:
+  prd.active prd.approved prd.archived prd.blocked prd.cancelled prd.completed
+  prd.draft prd.failed prd.needs_review prd.paused prd.planning prd.rejected
+  prd.revisions_asked prd.running
+  task.awaiting_approval task.blocked task.cancelled task.completed task.failed
+  task.in_progress task.pending task.queued task.running_tests
+  task.session_cleared task.session_started task.verifying task.waiting_capacity
+
+Default set (used when the Automaton and its guardrail profile both inherit):
+  prd.needs_review prd.blocked prd.failed prd.completed prd.cancelled
+`,
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			events := []string{}
+			if len(args) == 2 && !strings.EqualFold(args[1], "inherit") {
+				for _, k := range strings.Split(args[1], ",") {
+					if t := strings.TrimSpace(k); t != "" {
+						events = append(events, t)
+					}
+				}
+			}
+			body, _ := json.Marshal(map[string]any{"notify_events": events})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_notify_events", body)
 		},
 	}
 }
