@@ -2178,5 +2178,16 @@
   "automation_assistant_would_have": "Would have: %1$s",
   "automation_assistant_decided": "Decided: %1$s",
   "automation_assistant_confidence": "Confidence %1$s",
-  "automation_assistant_evidence": "Evidence: %1$s"
+  "automation_assistant_evidence": "Evidence: %1$s",
+  "notify_events_label": "Notification events",
+  "notify_events_help": "Choose which lifecycle events notify. Inherit uses the guardrail profile, then the global default.",
+  "notify_events_inherit": "Inherit",
+  "notify_events_effective": "Effective notification events",
+  "notify_events_none": "none",
+  "notify_events_source_automaton": "this Automaton",
+  "notify_events_source_profile": "guardrail profile",
+  "notify_events_source_global": "global default",
+  "notify_events_saved": "Notification events saved",
+  "notify_events_save_failed": "Could not save notification events",
+  "notify_events_default_marker": "default"
 }
