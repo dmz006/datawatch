@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.8.0 — Progress dashboard for the Automata
+
+The Automata tab now shows how far the work has got and roughly when the rest will be done, and the same numbers are available everywhere.
+
+- A metrics engine computes counts by kind (feature or bug) and state, elapsed and active time with inactive windows excluded, throughput per day, lane utilization, known versus estimated remaining work and a completion range.
+- A PRD kind field (feature or bug, defaulting from its registry row) and a machine-readable backlog read from the roadmap rows.
+- The same metrics object on REST, MCP, CLI and the comm channel, with daily snapshots and a trend view.
+- A Progress card on the Automata tab, with loading, stale and failed states and a Retry button.
+- Settings `autonomous.progress.lanes`, `inactive_gap_hours`, `snapshot_retention_days`, `backlog_path` and `since`.
+- A golden test compares the engine's numbers with the supervisor status script on a fixed fixture.
+
 ## v9.7.0 — Automation is the first sub-tab of the Automata tab
 
 The Automation view is now the first sub-tab of the Automata tab, to the left of Automata and Templates, instead of a second main navigation page, so everything about running work is in one place.
