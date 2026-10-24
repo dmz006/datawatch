@@ -2652,3 +2652,18 @@ covers the REST and comm `configure` round trips for both keys.
 
 The design's provisional keys `enabled` and `empty_edge_action` were not built; they are
 not built, no surface owed.
+
+## Supervisor duties the Automation coordinator must absorb (added 2026-10-24)
+
+These came out of 2026-10-24 incidents, where the human supervisor loop missed them. Each is a requirement on the coordinator, written as behaviour; the numbers (times, counts) are configurable policy settings whose defaults the operator decides.
+
+1. **Watch CI for every workflow, not only the release one.** After a push or a tag the coordinator lists the result of every workflow on the head of main and on the tag (release, security scan, docs sync, secret scan, CI summary). A failed or stuck run is read, classified and either fixed through a fix PRD or reported with its failing job and log excerpt. A hung step is rerun once. A red workflow is never shown as running. Failed runs are deleted after a confirmed green fix. (Security scan sat red for a day while the loop only watched the release workflow.)
+2. **Security-failure exception.** A dependency or CVE failure from a security workflow for an advisory older than 72 hours that the project already suppresses is never fixed or documented by the coordinator: it stops and sends the operator the dependency, advisory id, publication date, allowlist entry and an upgrade-or-keep recommendation. Suppressions are written only to the accepted-risks registry, with the real first-added date and a real trace, never to the generated ignore file.
+3. **Merge pending is visible and alerting.** A completed PRD whose commits are not on main, compared by commit content and not by commit count, shows as merge pending in the Automation view and raises an alert after a configurable time. A branch whose commits are all on main is reported as safe to delete. (A finished lane-fill PRD sat unmerged for five days and the feature was built a second time.)
+4. **Search before create.** Creating a PRD warns, without blocking, when its title or spec overlaps an existing PRD of any status, a registry row, or an unmerged branch, and names what it found.
+5. **Failed and blocked PRDs are triaged every poll.** A PRD that moves to failed or blocked is reported with the failed task, its error and the recorded session end reason, and the coordinator applies the retry policy before it waits for a person. (A PRD sat failed for hours with an idle lane behind it.)
+6. **A lane whose PRDs all wait on verifiers is idle.** Lane fill counts a Claude lane as available when every PRD on it is waiting for a verifier slot, and starts another PRD there, under the operator's lane count and usage policy.
+7. **Gate implementation on open design points.** A task that depends on an operator decision starts only when the decision is recorded; otherwise it stops and reports the missing decision.
+8. **Gate on a task that mentions an error phrase.** Stall and failure detectors match the tool's own error line for the backend they were built for, never ordinary output text.
+
+Open for the operator: the default alert times and the retry count for items 1, 3 and 5, and whether item 1 may rerun a hung step without asking.

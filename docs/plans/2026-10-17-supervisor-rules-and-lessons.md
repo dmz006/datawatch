@@ -410,6 +410,7 @@ The coordinator replaces the human loop, so these become mechanical:
 - Completed-but-unmerged detection: a completed PRD whose commits are not on main (compared by
   content, not by commit count) is shown as merge pending in the Automation view, and raises
   an alert when it sits longer than a configurable time. Never silent (da660001, 2026-10-24).
+- CI for every workflow, the security-failure exception, failed and blocked PRD triage each poll, a Claude lane whose PRDs all wait on verifiers counted as idle, and detectors that match the tool's own error line: see the Automation design doc section 'Supervisor duties the Automation coordinator must absorb' (2026-10-24), which is the requirement list for the Automation PRD.
 - Search before create: creating a PRD warns when its title or spec overlaps an existing PRD of
   any status or an unmerged branch, and names it. Warn, never block.
 
