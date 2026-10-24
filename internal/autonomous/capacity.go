@@ -279,6 +279,20 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 	}
 }
 
+// heldNode returns the compute node the task's worker lease was granted on,
+// or "" when capacity is off or the lease names no node. It is read after
+// admit succeeds, so the spawn runs where the ledger placed the task.
+func (m *Manager) heldNode(taskID string) string {
+	led := m.Capacity()
+	if led == nil {
+		return ""
+	}
+	if ls := led.LeaseOf(taskID); ls != nil {
+		return ls.Node
+	}
+	return ""
+}
+
 // decomposeAdmitted runs one decompose attempt inside a RolePlanner capacity
 // lease on the same pools a task on that backend+model would use, minus the
 // "host" pool.

@@ -1804,6 +1804,11 @@ type StartOptions struct {
 	// a compute node. Written to opencode.json at launch.
 	OllamaURL string
 
+	// NodeAddress — the compute node's address for pi-family and opencode
+	// sessions, resolved from the compute registry by the server. Persisted on
+	// the Session (Session.NodeAddress) so a resume or restart reuses the host.
+	NodeAddress string
+
 	// Chrome (v8.8.3) — when non-nil, passes --chrome (true) or --no-chrome (false)
 	// to claude-code at launch. Nil = omit flag (use claude default).
 	Chrome *bool
@@ -2053,6 +2058,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.OllamaURL != "" {
 		sess.OllamaURL = opt.OllamaURL
+	}
+	if opt != nil && opt.NodeAddress != "" {
+		sess.NodeAddress = opt.NodeAddress
 	}
 	if opt != nil && opt.ParentID != "" {
 		sess.ParentID = opt.ParentID

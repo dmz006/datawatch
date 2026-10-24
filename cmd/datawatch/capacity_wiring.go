@@ -652,12 +652,20 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// the same node:/llm: pools an autonomous task would use for the same
 	// backend+model. See handleStartSession's req.OneShot check for why
 	// autonomous spawns skip this (they already admit via m.admit()).
-	httpServer.SetCapacityAdmit(func(ctx context.Context, backend, model, holder string, priority int) error {
+	httpServer.SetCapacityAdmit(func(ctx context.Context, backend, model, holder string, priority int) (string, error) {
 		pools, node, nodeChoices := resolve(backend, model)
 		if len(pools) == 0 {
-			return nil
+			return "", nil
 		}
-		return led.Acquire(ctx, withNodeChoices(interactiveAdmitRequest(holder, pools, node, model, priority), nodeChoices), 0, func() bool { return false }, func(string) {})
+		if err := led.Acquire(ctx, withNodeChoices(interactiveAdmitRequest(holder, pools, node, model, priority), nodeChoices), 0, func() bool { return false }, func(string) {}); err != nil {
+			return "", err
+		}
+		// The ledger chose one node for this holder among the candidates; report
+		// it so the session starts on that node.
+		if ls := led.LeaseOf(holder); ls != nil {
+			return ls.Node, nil
+		}
+		return "", nil
 	})
 	httpServer.SetCapacityBind(func(holder, sessionID string) { led.Bind(holder, sessionID) })
 	httpServer.SetCapacityRelease(func(holder string) { led.Release(holder) })
