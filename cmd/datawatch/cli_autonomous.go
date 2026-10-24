@@ -25,6 +25,9 @@ each Task spawned as a worker session with independent verification.
 
 Subcommands:
   status                          Loop status (running, active PRDs, queued/running tasks)
+  progress [--json] [--automation ID] [--tag ID] [--since DATE] [--until DATE]
+                                  Progress counts, rates, work left and the completion range
+  progress-trend [--days N] [--json]  How the completion range moved over the saved daily snapshots
   config-get                      Read current autonomous config
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
@@ -90,6 +93,8 @@ Subcommands:
 `,
 	}
 	cmd.AddCommand(
+		newAutonomousProgressCmd(),
+		newAutonomousProgressTrendCmd(),
 		newAutonomousStatusCmd(),
 		newAutonomousConfigGetCmd(),
 		newAutonomousConfigSetCmd(),

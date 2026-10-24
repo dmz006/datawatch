@@ -62,3 +62,9 @@ func (s *Server) handleAutonomousProgressTrend(_ context.Context, req mcpsdk.Cal
 	}
 	return textOK(string(out)), nil
 }
+
+// ProgressToolNames lists the progress tools, for the parity test.
+func ProgressToolNames() []string {
+	s := &Server{}
+	return []string{s.toolAutonomousProgress().Name, s.toolAutonomousProgressTrend().Name}
+}

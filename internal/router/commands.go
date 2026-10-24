@@ -32,6 +32,7 @@ const (
 	CmdStats             CommandType = "stats"
 	CmdCapacity          CommandType = "capacity"
 	CmdCapacityAdmission CommandType = "capacity-admission"
+	CmdProgress          CommandType = "progress" // progress [automation=..] | progress trend [days]
 	CmdConfigure         CommandType = "configure"
 	CmdCopy              CommandType = "copy"
 	CmdPrompt            CommandType = "prompt"
@@ -1156,6 +1157,9 @@ func Parse(text string) Command {
 	case lower == "capacity":
 		return Command{Type: CmdCapacity}
 
+	case lower == "progress" || strings.HasPrefix(lower, "progress "):
+		return Command{Type: CmdProgress, Text: strings.TrimSpace(text[len("progress"):])}
+
 	case lower == "capacity admission" || strings.HasPrefix(lower, "capacity admission "):
 		return Command{Type: CmdCapacityAdmission, Text: strings.TrimSpace(text[len("capacity admission"):])}
 
@@ -1792,6 +1796,8 @@ alerts [n|system]               show last N alerts or system-only alerts
 stats                           show system statistics (CPU, memory, disk, sessions)
 capacity                        show Automata capacity pools, holders and wait queue
 capacity admission <backend> [node] [model]  would a start be admitted now, queued or moved elsewhere (changes nothing)
+progress [automation=<id>] [tag=<id>] [since=<date>] [until=<date>]  Automata progress: counts, rates, work left, completion range
+progress trend [days]           how the completion range moved over the saved daily snapshots
 configure <key>=<value>         set a config value (e.g. session.console_cols=120)
 configure list                  show common configurable settings
 setup <service>                 configure a backend (telegram/discord/.../llm/session/mcp)
