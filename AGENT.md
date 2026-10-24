@@ -144,6 +144,13 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
   commit that covers every branch merged in that run.
 - `scripts/check-merge-version.sh` runs before each branch is merged. It refuses a branch whose
   version change is not the expected next patch, and the refusal names the expected version.
+- Lint precondition: every branch must have passed `make lint` before it is handed to the merge
+  helper — the helper cannot lint branches that have not been merged yet. What the helper does
+  check is the main tree itself: when the repository's Makefile defines a `check-internal-refs`
+  target, the helper runs `make check-internal-refs` on the checked-out main tree after the
+  per-branch version checks and before any merge, and aborts with nothing merged if it fails.
+  Repositories without that target (e.g. the temporary test repositories) run the helper exactly
+  as before.
 - `scripts/set-release-version.sh` is the writer. It sets the version in both version files and
   adds the matching heading to `CHANGELOG.md`. The merge script calls it; do not edit those
   three places by hand for a merge.
@@ -225,8 +232,7 @@ update docs is a blocking issue — do not merge/push without them.
 
 **Corrected 2026-10-07** — this rule's text had drifted out of sync with
 the actual enforced policy for a long time. The real, deliberately-scoped
-rule (encoded in `scripts/check-no-internal-refs.sh`, wired into
-`release-smoke.sh` and now also `ci.yaml`, referencing
+rule (encoded in `scripts/check-no-internal-refs.sh`, referencing
 `memory: feedback_user_facing_docs_no_internals`) is narrower than the
 file list this section used to name: internal tracking IDs (B1, B23, F4,
 F11, F16, BL7, S##, etc.) must **never** appear in a surface an operator
@@ -265,6 +271,20 @@ not drift):
 When writing NEW content for one of the must-not-contain surfaces above,
 use a plain English description instead (e.g. "multi-user access control
 feature" not "BL7"). GitHub release notes follow the same rule.
+
+**Where the check runs** — the canonical invocation is the Makefile target
+`check-internal-refs` (a prerequisite of `lint` alongside `check-tmux`,
+`check-service-scope` and `check-go-pins`), so `make lint` runs it on every
+lint pass. It also runs in `ci.yaml` on every push/PR and in the release
+workflow before anything is released. A branch must have passed `make lint`
+before it is handed to the merge helper, and the helper itself runs
+`make check-internal-refs` on the checked-out main tree before merging —
+so a merge that adds a tracker ID to one of the listed surfaces fails in
+ci.yaml, in the release workflow, or at merge time, i.e. before it can
+ship. This check is datawatch's own development lint and quality gate for
+this repository — it is not a shipped product feature. User projects that
+run datawatch keep their own lint rules and quality gates; nothing here
+imposes a lint configuration on them.
 
 ### General documentation checklist (every change)
 
