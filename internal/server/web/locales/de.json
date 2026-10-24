@@ -2297,7 +2297,7 @@
   "settings_lane_fill_gpu_lanes": "Lane-Füllung GPU-Lanes (ganze Zahl, Standard 2)",
   "settings_lane_fill_claude_lanes": "Lane-Füllung Claude-Lanes (ganze Zahl, Standard 3, 0 = keine)",
   "settings_lane_fill_idle_alert_minutes": "Leerlauf-Warnung der Lane-Füllung (Minuten im Leerlauf bei wartender Arbeit, 0 = aus, Standard 30)",
-  "settings_lane_fill_decompose_ahead_min": "Mindestanzahl vorab zerlegter Automata je Lane (Standard 2)",
+  "settings_lane_fill_decompose_ahead_min": "Mindestanzahl vorab zerlegter Automaten je Lane (Standard 2)",
   "settings_lane_fill_poll_seconds": "Abfrageintervall der Lane-Füllung (Sekunden, mindestens 5, Standard 60)",
   "settings_lane_fill_gpu_backend": "Lane-Füllung GPU-Backend (Standard pi-prompt)",
   "settings_lane_fill_gpu_model": "Lane-Füllung GPU-Modell (leer = Standard des Backends)",

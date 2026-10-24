@@ -2297,7 +2297,7 @@
   "settings_lane_fill_gpu_lanes": "Carriles GPU del llenado (número entero, predeterminado 2)",
   "settings_lane_fill_claude_lanes": "Carriles de Claude del llenado (número entero, predeterminado 3, 0 = ninguno)",
   "settings_lane_fill_idle_alert_minutes": "Alerta de carril inactivo del llenado (minutos inactivo con trabajo en espera, 0 = desactivada, predeterminado 30)",
-  "settings_lane_fill_decompose_ahead_min": "Mínimo de descomposición anticipada del llenado (Automata descompuestos listos por carril, predeterminado 2)",
+  "settings_lane_fill_decompose_ahead_min": "Mínimo de descomposición anticipada del llenado (autómatas descompuestos listos por carril, predeterminado 2)",
   "settings_lane_fill_poll_seconds": "Intervalo de sondeo del llenado (segundos, mínimo 5, predeterminado 60)",
   "settings_lane_fill_gpu_backend": "Backend GPU del llenado (predeterminado pi-prompt)",
   "settings_lane_fill_gpu_model": "Modelo GPU del llenado (vacío = predeterminado del backend)",

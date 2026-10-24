@@ -2297,7 +2297,7 @@
   "settings_lane_fill_gpu_lanes": "レーン充填のGPUレーン数（整数、既定 2）",
   "settings_lane_fill_claude_lanes": "レーン充填のClaudeレーン数（整数、既定 3、0 = なし）",
   "settings_lane_fill_idle_alert_minutes": "レーン充填の待機アラート（作業待ちのまま待機する分数、0 = オフ、既定 30）",
-  "settings_lane_fill_decompose_ahead_min": "レーン充填の先行分解の最小数（レーンごとに用意する分解済み Automata、既定 2）",
+  "settings_lane_fill_decompose_ahead_min": "レーン充填の先行分解の最小数（レーンごとに用意する分解済みオートマトン、既定 2）",
   "settings_lane_fill_poll_seconds": "レーン充填のポーリング間隔（秒、最小 5、既定 60）",
   "settings_lane_fill_gpu_backend": "レーン充填のGPUバックエンド（既定 pi-prompt）",
   "settings_lane_fill_gpu_model": "レーン充填のGPUモデル（空欄 = バックエンドの既定）",
