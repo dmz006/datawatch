@@ -165,8 +165,9 @@ func TestProgressEngineWorkedExample(t *testing.T) {
 	peNearPtr(t, "approved->first task", lt.ApprovedToFirstTaskMedianHours, 32)
 	peNearPtr(t, "run", lt.RunMedianHours, 3)
 	peNearPtr(t, "created->last done", lt.CreatedToLastDoneMedianHours, 37)
-	if len(m.NotMeasured) != 0 {
-		t.Fatalf("not_measured = %v, want none", m.NotMeasured)
+	// Every lead-time stage has samples; only the absent backlog is reported.
+	if strings.Join(m.NotMeasured, ",") != "backlog" {
+		t.Fatalf("not_measured = %v, want only the missing backlog", m.NotMeasured)
 	}
 }
 
@@ -393,6 +394,8 @@ func TestProgressEngineNullNotZeroWhenUnmeasured(t *testing.T) {
 		"approved_to_first_task_median_hours",
 		"run_median_hours",
 		"created_to_last_done_median_hours",
+		"backlog",
+		"tasks_per_prd",
 	}
 	if strings.Join(m.NotMeasured, ",") != strings.Join(want, ",") {
 		t.Fatalf("not_measured = %v, want %v", m.NotMeasured, want)
@@ -555,7 +558,7 @@ func TestProgressEngineLeadTimeStageWithoutSamplesIsNull(t *testing.T) {
 	peNil(t, "approved->first", lt.ApprovedToFirstTaskMedianHours)
 	peNearPtr(t, "run", lt.RunMedianHours, 4)
 	peNearPtr(t, "lead", lt.CreatedToLastDoneMedianHours, 28)
-	want := "created_to_approved_median_hours,approved_to_first_task_median_hours"
+	want := "created_to_approved_median_hours,approved_to_first_task_median_hours,backlog"
 	if strings.Join(m.NotMeasured, ",") != want {
 		t.Fatalf("not_measured = %v", m.NotMeasured)
 	}

@@ -614,7 +614,3 @@ func computeLeadTime(recs []progressRec) (ProgressLeadTime, []string) {
 	}
 	return lt, missing
 }
-
-// computeRemaining fills Remaining and Completion. It is a placeholder here:
-// the remaining-work and completion-range code replaces it.
-func computeRemaining(m *ProgressMetrics, in ProgressInput, recs []progressRec) {}
