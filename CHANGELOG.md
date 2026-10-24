@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.9.0 — Bounded websocket session list with per-session updates
+
+Stops the daemon from pushing the whole session list to every client over the websocket, which made the PWA slow, laggy and unstable and could stall a session view on a phone link.
+
+- On connect the websocket sends only what the default session list shows: active sessions and finished sessions inside the recent window (the same recent-minutes setting the PWA already uses, default 5 minutes), as small summary rows. A state change sends only the one changed session. Finished sessions older than the window are never sent over the websocket; Show history fetches them over the paged REST list.
+- Clients announce the new form in their hello (`session_list: window`). Older clients that do not announce it still get the `sessions` frame, now bounded to the same default-view rows with a flag saying more exist, so the Android and iOS apps keep working until they adopt the new form.
+- A byte-budget test on the hub with a 4,000-session fixture and a browser story that measures websocket bytes for a cold connect, a reconnect, an idle session and Show history.
+- Documentation for the new message shape and a note for the datawatch-app clients.
+
 ## v9.8.2 — Internal-ID check in the development lint
 
 Adds the internal-tracker-ID check to the datawatch development lint, so a change that puts a tracker id in user-facing text fails before it ships. This is development tooling for the datawatch repository only; it does not change how any user project is linted or gated.
