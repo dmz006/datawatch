@@ -241,6 +241,8 @@ func TestCapFederationFingerprintOnlyInFullControl(t *testing.T) {
 	if got := federation.Resolve([]string{federation.CapFederationFingerprint}, nil); len(got) != 1 || got[0] != federation.CapFederationFingerprint {
 		t.Errorf("standalone grant of %s should resolve to itself, got %v", federation.CapFederationFingerprint, got)
 	}
+}
+
 // TestPluginCaps_NotInDefaultPresets: plugin:read / plugin:write must be
 // granted explicitly — no built-in group other than full-control carries them.
 func TestPluginCaps_NotInDefaultPresets(t *testing.T) {
