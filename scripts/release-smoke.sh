@@ -4465,6 +4465,32 @@ sys.exit(0 if any(b.get("llm") == os.environ["UC_L"] and b.get("ceiling_usd") ==
   fi
 fi
 
+H "78. Mobile-fit view runner (release smoke)"
+# Runs the mobile-fit view harness (observer view, quick profile, Playwright)
+# via release-smoke-mobile-fit.sh, which derives TEST_HTTP / TEST_TLS /
+# TEST_TOKEN from this script's BASE/TOK and prints the report path.
+# Skips (not a failure) when the daemon is unreachable, node or Playwright
+# are missing, or no browser could be launched.
+MOBILE_FIT_SCRIPT="$(dirname "$0")/release-smoke-mobile-fit.sh"
+if [[ -f "$MOBILE_FIT_SCRIPT" ]]; then
+  if MF_OUT=$(DATAWATCH_BASE="$BASE" DATAWATCH_TOKEN="$TOK" bash "$MOBILE_FIT_SCRIPT" 2>&1); then
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      [[ "$line" == OK:* ]] && continue
+      ok "$line"
+    done <<< "$MF_OUT"
+  else
+    rc=$?
+    if [[ $rc -eq 2 ]]; then
+      skip "mobile-fit runner skipped: $(echo "$MF_OUT" | grep -F 'SKIP:' | tail -1 | sed 's/^SKIP: //')"
+    else
+      ko "mobile-fit runner failed: $(echo "$MF_OUT" | grep -Ev '^$' | tail -3 | tr '\n' ' ')"
+    fi
+  fi
+else
+  skip "release-smoke-mobile-fit.sh missing; mobile-fit probe deferred"
+fi
+
 # ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
