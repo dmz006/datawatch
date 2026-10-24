@@ -1,0 +1,10 @@
+────────────────────────────────────────────────────────────────────────────────────────
+❯ run the matrix suite and summarize the failures
+────────────────────────────────────────────────────────────────────────────────────────
+⏺ Bash(datawatch matrix run --all --timeout 15m)
+  ⎿  Running…
+
+✻ Running… (6m 12s · ↓ 3.1k tokens · esc to interrupt)
+────────────────────────────────────────────────────────────────────────────────────────
+❯
+⏵⏵ bypass permissions on (shift+tab to cycle)
