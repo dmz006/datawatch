@@ -20,14 +20,15 @@ var (
 // its recorded TaskID matches (and PRDID, when set), or it has no task link and
 // runs in the task's resolved worktree under the same PRD. Sessions linked to
 // another task, or recorded on another task of the PRD, are never returned.
-// keep is never returned (a session just adopted for this task).
+// keep is never returned (a session just adopted for this task). Sessions are
+// compared by short id, so a full lister id matches the short id a task stores.
 func liveSessionsOfTask(prd *PRD, t *Task, sessions []SessionInfo, keep string) []SessionInfo {
 	claimed := map[string]bool{}
 	for si := range prd.Story {
 		for ti := range prd.Story[si].Tasks {
 			o := &prd.Story[si].Tasks[ti]
 			if o.ID != t.ID && o.SessionID != "" {
-				claimed[o.SessionID] = true
+				claimed[sessionShortID(o.SessionID)] = true
 			}
 		}
 	}
@@ -37,7 +38,7 @@ func liveSessionsOfTask(prd *PRD, t *Task, sessions []SessionInfo, keep string) 
 	}
 	var out []SessionInfo
 	for _, s := range sessions {
-		if !s.Alive || s.ID == "" || s.ID == keep || claimed[s.ID] {
+		if !s.Alive || s.ID == "" || sameSessionID(s.ID, keep) || claimed[sessionShortID(s.ID)] {
 			continue
 		}
 		switch {

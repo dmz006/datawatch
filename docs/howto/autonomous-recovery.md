@@ -261,7 +261,7 @@ resetting it again.
 A periodic sweep looks for live task worker sessions that are bound to no
 non-terminal task. A session is given a grace period before anything is done
 to it; the period is `autonomous.orphan_grace_seconds` (default `300`; `0` or
-unset uses the default).
+unset uses the default). The sweep compares session ids in short form, the text after the last hyphen, so a worker bound to a task is never ended because of how its id is written.
 
 1. **Report.** The first time a session is seen unbound, the sweep records a
    note in the Automaton's decision history and writes an audit entry

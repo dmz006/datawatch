@@ -829,6 +829,9 @@ type Manager struct {
 	// session; orphanNow is the sweep's clock (nil = time.Now). Guarded by mu.
 	orphanSeen map[string]time.Time
 	orphanNow  func() time.Time
+	// orphanFormLogged records that the orphan sweep's session-id form
+	// self-check has logged its one mismatch line. Guarded by mu.
+	orphanFormLogged bool
 
 	// sessionContinueFn — design §6.ii: sends a "resume" prompt to a parked
 	// worker session after an await-external cycle re-admits it. Optional.
@@ -3286,7 +3289,7 @@ func (m *Manager) RejectStory(prdID, storyID, actor, reason string) (*PRD, error
 // pair so the post-session diff callback can route to
 // RecordTaskFilesTouched. Returns ("","") when the session isn't
 // linked to any autonomous task — the post-session hook treats
-// that as a no-op.
+// that as a no-op. The argument may be the full or the short session id.
 func (m *Manager) FindTaskBySessionID(sessionID string) (prdID, taskID string) {
 	if sessionID == "" {
 		return "", ""
@@ -3294,7 +3297,7 @@ func (m *Manager) FindTaskBySessionID(sessionID string) (prdID, taskID string) {
 	for _, prd := range m.store.ListPRDs() {
 		for si := range prd.Story {
 			for ti := range prd.Story[si].Tasks {
-				if prd.Story[si].Tasks[ti].SessionID == sessionID {
+				if sameSessionID(prd.Story[si].Tasks[ti].SessionID, sessionID) {
 					return prd.ID, prd.Story[si].Tasks[ti].ID
 				}
 			}

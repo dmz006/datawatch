@@ -1,6 +1,8 @@
 package autonomous
 
 import (
+	"bytes"
+	"log"
 	"strings"
 	"sync"
 	"testing"
@@ -8,15 +10,16 @@ import (
 )
 
 type orphanHarness struct {
-	m       *Manager
-	prd     *PRD
-	now     time.Time
-	mu      sync.Mutex
-	list    []SessionInfo
-	killed  []string
-	callers []string
-	reasons []string
-	audits  []string
+	m            *Manager
+	prd          *PRD
+	now          time.Time
+	mu           sync.Mutex
+	list         []SessionInfo
+	killed       []string
+	callers      []string
+	reasons      []string
+	audits       []string
+	auditDetails []map[string]any
 }
 
 func newOrphanHarness(t *testing.T) *orphanHarness {
@@ -49,7 +52,10 @@ func newOrphanHarness(t *testing.T) *orphanHarness {
 		h.reasons = append(h.reasons, reason)
 		return nil
 	})
-	m.SetAuditFn(func(a string, _ map[string]any) { h.audits = append(h.audits, a) })
+	m.SetAuditFn(func(a string, d map[string]any) {
+		h.audits = append(h.audits, a)
+		h.auditDetails = append(h.auditDetails, d)
+	})
 	return h
 }
 
@@ -66,7 +72,7 @@ func TestOrphanSweepReportsBeforeGrace(t *testing.T) {
 	if len(h.killed) != 0 {
 		t.Fatalf("killed %v before grace elapsed", h.killed)
 	}
-	if _, ok := h.m.orphanSeen["sess-orphan"]; !ok {
+	if _, ok := h.m.orphanSeen[sessionShortID("sess-orphan")]; !ok {
 		t.Fatal("first-seen time not tracked")
 	}
 	got, _ := h.m.Store().GetPRD(h.prd.ID)
@@ -84,7 +90,7 @@ func TestOrphanSweepEndsOrphanAfterGrace(t *testing.T) {
 	if len(h.killed) != 1 || h.killed[0] != "sess-orphan" {
 		t.Fatalf("killed = %v, want [sess-orphan]", h.killed)
 	}
-	if _, ok := h.m.orphanSeen["sess-orphan"]; ok {
+	if _, ok := h.m.orphanSeen[sessionShortID("sess-orphan")]; ok {
 		t.Fatal("first-seen entry not cleared after ending")
 	}
 }
@@ -104,7 +110,7 @@ func TestOrphanSweepLeavesBoundSession(t *testing.T) {
 	// Becoming bound clears the first-seen time.
 	h.list = []SessionInfo{h.worker("sess-late")}
 	h.m.sweepOrphanSessions()
-	if _, ok := h.m.orphanSeen["sess-late"]; !ok {
+	if _, ok := h.m.orphanSeen[sessionShortID("sess-late")]; !ok {
 		t.Fatal("orphan not tracked")
 	}
 	prd, _ := h.m.Store().GetPRD(h.prd.ID)
@@ -112,7 +118,7 @@ func TestOrphanSweepLeavesBoundSession(t *testing.T) {
 	_ = h.m.Store().SavePRD(prd)
 	h.now = h.now.Add(time.Hour)
 	h.m.sweepOrphanSessions()
-	if _, ok := h.m.orphanSeen["sess-late"]; ok || len(h.killed) != 0 {
+	if _, ok := h.m.orphanSeen[sessionShortID("sess-late")]; ok || len(h.killed) != 0 {
 		t.Fatalf("bound session not cleared/left alone: seen=%v killed=%v", h.m.orphanSeen, h.killed)
 	}
 }
@@ -179,5 +185,140 @@ func TestOrphanSweepIgnoresVerifierDecomposeAndJudgeSessions(t *testing.T) {
 	h.m.sweepOrphanSessions()
 	if len(h.killed) != 0 {
 		t.Fatalf("non-worker sessions ended: %v", h.killed)
+	}
+}
+
+// bindTaskSession stores sessionID on the harness PRD's only task, the way the
+// executor stores the short id it gets back at spawn.
+func (h *orphanHarness) bindTaskSession(t *testing.T, sessionID string) {
+	t.Helper()
+	prd, ok := h.m.Store().GetPRD(h.prd.ID)
+	if !ok {
+		t.Fatalf("PRD %s not found", h.prd.ID)
+	}
+	prd.Story[0].Tasks[0].SessionID = sessionID
+	if err := h.m.Store().SavePRD(prd); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
+}
+
+// auditDetail returns the details of the first audit entry named action, or nil.
+func (h *orphanHarness) auditDetail(action string) map[string]any {
+	for i, a := range h.audits {
+		if a == action {
+			return h.auditDetails[i]
+		}
+	}
+	return nil
+}
+
+func TestOrphanSweepKeepsWorkerBoundByShortID(t *testing.T) {
+	h := newOrphanHarness(t)
+	h.bindTaskSession(t, "8b57")
+	w := h.worker("johnnyjohnny-8b57")
+	w.TaskID = h.prd.Story[0].Tasks[0].ID
+	h.list = []SessionInfo{w}
+	for i := 0; i < 4; i++ {
+		h.m.sweepOrphanSessions()
+		h.now = h.now.Add(10 * time.Minute) // past the 300s grace several times over
+	}
+	if len(h.killed) != 0 {
+		t.Fatalf("bound worker ended: %v", h.killed)
+	}
+	if len(h.m.orphanSeen) != 0 {
+		t.Fatalf("bound worker tracked as an orphan: %v", h.m.orphanSeen)
+	}
+	if len(h.audits) != 0 {
+		t.Fatalf("bound worker produced audit entries: %v", h.audits)
+	}
+}
+
+func TestOrphanSweepEndsTrueOrphanByFullID(t *testing.T) {
+	h := newOrphanHarness(t)
+	h.bindTaskSession(t, "8b57")
+	h.list = []SessionInfo{h.worker("johnnyjohnny-c3d4")}
+
+	h.m.sweepOrphanSessions()
+	if len(h.killed) != 0 {
+		t.Fatalf("killed %v on first sight", h.killed)
+	}
+	if h.auditDetail("autonomous_orphan_session_seen") == nil {
+		t.Fatal("orphan not reported on first sight")
+	}
+	seen := h.auditDetail("autonomous_orphan_session_seen")
+	if seen["session_id"] != "johnnyjohnny-c3d4" || seen["session_short_id"] != "c3d4" {
+		t.Errorf("seen audit ids = session_id %v, session_short_id %v; want the lister id and its short id", seen["session_id"], seen["session_short_id"])
+	}
+
+	h.now = h.now.Add(200 * time.Second) // inside the 300s grace
+	h.m.sweepOrphanSessions()
+	if len(h.killed) != 0 {
+		t.Fatalf("killed %v before grace elapsed", h.killed)
+	}
+
+	h.now = h.now.Add(101 * time.Second) // 301s since first sight
+	h.m.sweepOrphanSessions()
+	if len(h.killed) != 1 || h.killed[0] != "johnnyjohnny-c3d4" {
+		t.Fatalf("killed = %v, want [johnnyjohnny-c3d4]", h.killed)
+	}
+	ended := h.auditDetail("autonomous_orphan_session_ended")
+	if ended == nil {
+		t.Fatal("no ended audit entry")
+	}
+	if ended["session_id"] != "johnnyjohnny-c3d4" || ended["session_short_id"] != "c3d4" {
+		t.Errorf("ended audit ids = session_id %v, session_short_id %v; want the lister id and its short id", ended["session_id"], ended["session_short_id"])
+	}
+}
+
+func TestOrphanSweepLogsSessionIDFormMismatchOnce(t *testing.T) {
+	h := newOrphanHarness(t)
+	h.bindTaskSession(t, "8b57")
+	h.list = []SessionInfo{h.worker("johnnyjohnny-c3d4")}
+
+	prev := log.Writer()
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+	for i := 0; i < 3; i++ {
+		h.m.sweepOrphanSessions()
+		h.now = h.now.Add(time.Minute)
+	}
+	log.SetOutput(prev)
+
+	var formLines []string
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if strings.Contains(line, "session id form check") {
+			formLines = append(formLines, line)
+		}
+	}
+	if len(formLines) != 1 {
+		t.Fatalf("form-check line logged %d times over three passes, want 1:\n%s", len(formLines), buf.String())
+	}
+	for _, want := range []string{
+		"[autonomous] orphan-sweep:",
+		"full ids (example johnnyjohnny-c3d4)",
+		"short ids (example 8b57)",
+		"by short id",
+	} {
+		if !strings.Contains(formLines[0], want) {
+			t.Errorf("form-check line %q lacks %q", formLines[0], want)
+		}
+	}
+}
+
+func TestOrphanSweepFormCheckSilentWhenFormsMatch(t *testing.T) {
+	h := newOrphanHarness(t)
+	h.bindTaskSession(t, "8b57")
+	h.list = []SessionInfo{h.worker("c3d4")}
+
+	prev := log.Writer()
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+	h.m.sweepOrphanSessions()
+	log.SetOutput(prev)
+
+	if strings.Contains(buf.String(), "session id form check") {
+		t.Fatalf("form check logged although the lister and tasks both use short ids:\n%s", buf.String())
 	}
 }
