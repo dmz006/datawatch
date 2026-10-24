@@ -1040,6 +1040,39 @@ paths:
         "200": {description: Updated PRD, carries tag_ids}
         "404": {description: Unknown tag}
 
+  /api/autonomous/prds/{id}/set_notify_events:
+    post:
+      summary: Set the lifecycle event kinds an Automaton notifies on
+      description: |
+        The Automaton's notification list is the most specific tier of the
+        notify_events precedence chain (Automaton > guardrail profile > global
+        default). A missing `notify_events` key, `null` or an empty array
+        clears the list, so the Automaton inherits from its assigned guardrail
+        profile and, behind that, the global default set. The reply is the
+        updated Automaton and carries the computed read-time view
+        `notify_events_effective` — `{events, source}` where `source` is
+        `automaton`, `profile` or `global`, the tier that actually supplied
+        the effective list. POST only; any other method is rejected with 405.
+      operationId: autonomousPRDSetNotifyEvents
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notify_events:
+                  type: array
+                  items: {type: string}
+                  description: "Lifecycle event kinds, e.g. prd.completed, task.completed; absent/null/empty clears (inherit)"
+      responses:
+        "200": {description: "Updated Automaton; carries notify_events and notify_events_effective"}
+        "400": {description: "An invalid entry — message names the offending kind (or its index) and lists the valid kinds; nothing is changed"}
+        "405": {description: "POST-only action"}
+
   /api/autonomous/tags:
     get:
       summary: List Automata tags
@@ -1095,6 +1128,66 @@ paths:
         "200": {description: "{deleted: id}"}
         "404": {description: Unknown tag}
         "409": {description: "Has child tags, or assigned to Automata (body carries count)"}
+
+  /api/autonomous/guardrail_profiles:
+    get:
+      summary: List guardrail profiles
+      operationId: autonomousGuardrailProfileList
+      tags: [Autonomous]
+      responses: {"200": {description: "[profiles]"}}
+    post:
+      summary: Create a guardrail profile
+      description: A profile is a named bundle of guardrail settings. `notify_events` seeds the profile tier of the notification precedence chain; an absent or empty list means the profile inherits the global default.
+      operationId: autonomousGuardrailProfileCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string}
+                description: {type: string}
+                guardrails: {type: array, items: {type: string}}
+                block_on_file_drift: {type: boolean}
+                notify_events: {type: array, items: {type: string}}
+      responses: {"201": {description: "Created profile, carries notify_events"}, "400": {description: "Invalid name or entry — message lists the valid kinds"}}
+
+  /api/autonomous/guardrail_profiles/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Read one guardrail profile
+      operationId: autonomousGuardrailProfileGet
+      tags: [Autonomous]
+      responses: {"200": {description: "The profile, with its notify_events list"}, "404": {description: "Unknown profile"}}
+    put:
+      summary: Update a guardrail profile
+      description: >
+        Omitted fields are unchanged. notify_events follows the same key
+        rule — a key left out keeps the list as-is, an explicit empty array
+        clears it, a present list replaces it.
+      operationId: autonomousGuardrailProfileUpdate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                description: {type: string}
+                guardrails: {type: array, items: {type: string}}
+                block_on_file_drift: {type: boolean}
+                notify_events: {type: array, items: {type: string}}
+      responses: {"200": {description: "Updated profile"}, "400": {description: "Invalid entry or unknown profile"}, "404": {description: "Unknown profile"}}
+    delete:
+      summary: Delete a guardrail profile
+      operationId: autonomousGuardrailProfileDelete
+      tags: [Autonomous]
+      responses: {"204": {description: Deleted}, "404": {description: Unknown profile}}
 
   /api/alerts:
     get:
@@ -1289,6 +1382,12 @@ paths:
         `ceiling_display` (for example `$12.40 of $40.00 (week)`) and `budget`,
         the computed budget view. The estimated allocation figure appears
         only inside `budget.allocation_estimate`, always marked estimated.
+        The snapshot also carries `notify`: `default_events`, the in-effect
+        global default kinds, and `overrides`, one entry per non-terminal
+        Automaton whose effective list resolves from the `automaton` or
+        `profile` tier (`id`, `source` — `automaton` or `profile`, the
+        tier supplying its list — and `events`). Sorted by Automaton ID and
+        capped at 100. Both arrays are always lists: empty, never null.
       operationId: autonomousStatus
       tags: [Autonomous]
       responses:
@@ -1331,6 +1430,19 @@ paths:
                             rule: {type: string, enum: [all_must_succeed, any_one_is_enough, continue_anyway]}
                             pending_branches: {type: array, items: {type: string}}
                             failed_branches: {type: array, items: {type: string}}
+                  notify:
+                    type: object
+                    description: "Notify-event resolution: the in-effect global default and the non-terminal Automata whose list resolves from the automaton or profile tier (sorted by Automaton ID, capped at 100). Both arrays are always lists - empty, never null."
+                    properties:
+                      default_events: {type: array, items: {type: string}, description: "In-effect global default kinds"}
+                      overrides:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: {type: string}
+                            source: {type: string, enum: [automaton, profile], description: "Tier supplying this Automaton's effective list"}
+                            events: {type: array, items: {type: string}}
   /api/autonomous/config:
     get:
       summary: Read autonomous config
@@ -3923,6 +4035,13 @@ components:
         id: {type: string}
         spec: {type: string}
         status: {type: string}
+        notify_events: {type: array, items: {type: string}, description: "Lifecycle event kinds that notify for this Automaton; absent or empty means inherit from the guardrail profile, then the global default"}
+        notify_events_effective:
+          type: object
+          description: "Computed read-time view (never persisted): the effective kinds and the tier supplying them"
+          properties:
+            events: {type: array, items: {type: string}}
+            source: {type: string, enum: [automaton, profile, global]}
         plan_review: {$ref: "#/components/schemas/PlanReviewVerdict", description: "Present once a review has run (warn/block modes)"}
         story:
           type: array

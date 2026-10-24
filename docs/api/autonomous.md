@@ -53,6 +53,7 @@ POST   /api/autonomous/prds/{id}/set_verifier_policy         per-Automaton verif
 POST   /api/autonomous/prds/{id}/set_task_verifier_policy    per-task verifier policy; body: {task_id, [mode], [backends[]], actor}
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
 POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {tag_ids[]} ([] clears)
+POST   /api/autonomous/prds/{id}/set_notify_events  set the lifecycle event kinds the Automaton notifies on; body: {notify_events[]} — absent/null/[] clears (inherit); the reply carries the computed notify_events_effective
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
 GET    /api/autonomous/prds?tag={id}[&include_sub=false]  Automata carrying a tag (and, by default, any descendant tag)
 
@@ -67,9 +68,9 @@ GET    /api/autonomous/learnings           extracted post-task learnings
 # Guardrail Library + Profiles
 GET    /api/autonomous/guardrails                  list guardrail library (built-ins + skill-contributed)
 GET    /api/autonomous/guardrail_profiles          list profiles
-POST   /api/autonomous/guardrail_profiles          create profile; body: {name, description?, guardrails[]}
+POST   /api/autonomous/guardrail_profiles          create profile; body: {name, description?, guardrails[], block_on_file_drift?, notify_events?}
 GET    /api/autonomous/guardrail_profiles/{id}     get one profile
-PUT    /api/autonomous/guardrail_profiles/{id}     update profile
+PUT    /api/autonomous/guardrail_profiles/{id}     update profile (a key left out stays as-is; an explicit empty notify_events clears it)
 DELETE /api/autonomous/guardrail_profiles/{id}     delete profile
 PUT    /api/autonomous/prds/{id}/guardrails        set per-Automaton override; body: {guardrail_profile?, per_task_guardrails[], per_story_guardrails[]}
 
@@ -108,6 +109,53 @@ daemon runs the subscription engine; otherwise 503.
 
 When `autonomous.enabled` is false, every endpoint returns
 `503 autonomous disabled`.
+
+### Notify events (`set_notify_events`)
+The set of lifecycle event kinds (the same known set as the subscription
+filter above, `prd.completed`, `task.completed`, …) that the notification
+pipeline fires for this Automaton, independent of who is subscribed.
+Resolution is a tiered precedence chain — **Automaton > guardrail profile
+> global default**. Each level may supply the whole set, or inherit
+from the level behind it. An empty or unset list on a tier falls
+through to the next one; the result is always an effective list.
+
+```
+POST /api/autonomous/prds/{id}/set_notify_events
+     {"notify_events":["prd.completed","task.completed"]}
+     # clear → inherit from the guardrail profile / global default:
+     #   {}            /  {"notify_events":null}  /  {"notify_events":[]}
+```
+
+* **Per-Automaton** (`set_notify_events`): sets, replaces, or clears
+    (`notify_events` null, `[]`, or an absent key) the list for that
+    Automaton. POST only — any other method is `405`. Invalid entries are
+    rejected with `400` and a message that names the offending kind (or
+    its index) *and* lists the valid kinds, so nothing is ever partially
+    applied.
+* **Per-guardrail-profile** (create/update body `notify_events`, same
+    key rule): applies to every Automaton that runs under the profile and
+    whose Automaton-tier list is empty.
+* **Global default** (config key `autonomous.notify.default_events`,
+    written through the standard config surfaces — `PUT /api/config`
+    and the autonomous config endpoint): the floor of the chain. Unset
+    (`nil`) falls back to the built-in five default kinds; an explicit
+    empty list is preserved as "no events at all", so it is distinguishable
+    from unset.
+
+Reads surface the resolution without ambiguity. The by-id Automaton and
+`set_*` replies carry both `notify_events` (the raw list set at this
+tier) and `notify_events_effective` — `{events, source}` where
+`source` is `automaton`, `profile` or `global`, the tier that actually
+supplied the effective kinds. `GET /api/autonomous/status` reports a
+`notify` block: `default_events` (the in-effect global defaults) and
+`overrides`, one entry per non-terminal Automaton whose effective list
+resolves from the `automaton` or `profile` tier (`id`, `source`,
+`events`) — sorted by Automaton ID and capped at 100. Both arrays are
+always lists: empty, never null. All of these endpoints follow the same
+auth as the other
+`/api/autonomous` routes: the `set_notify_events` action requires
+`autonomous:write` for federation peers, `autonomous:read` for the
+status/config reads.
 
 ### Clean restart on `reset_task`
 
