@@ -357,6 +357,7 @@ type Manager struct {
 	workspaceRoot  string // F10: container/PVC base for relative project_dirs
 	store          *Store
 	tmux           TmuxAPI
+	paneChildFn    func(tmuxSession string) bool // busy probe: pane has child processes; nil → paneHasChildProcess
 	idleTimeout    time.Duration
 	autoGitInit    bool   // whether to git init project dir if needed
 	verbose        bool   // enable debug logging
@@ -5018,6 +5019,9 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 			err := m.SendInput(fullID, input, "channel-task")
 			if err == nil {
 				m.MarkTaskDelivered(fullID)
+				// The worker may already be inside a silent tool call; keep it
+				// Running rather than letting the gap watcher flip it back.
+				m.applyBusyProbe(fullID, time.Time{})
 				return nil
 			}
 			m.debugf("DeliverOneShotTask: send_input for %s attempt %d/%d (window %s): %v", fullID, attempt, maxAttempts, window, err)

@@ -212,6 +212,18 @@ func (m *Manager) runChannelStateWatcherTick(now time.Time, gap time.Duration) {
 	if m == nil || m.store == nil {
 		return
 	}
+	// Busy probe, recovery pass: a delivered one-shot worker that went
+	// WaitingInput while its pane still shows work returns to Running. Running
+	// first, so the gap pass below sees the refreshed LastChannelEventAt.
+	for _, sess := range m.store.List() {
+		if sess == nil || sess.State != StateWaitingInput || !sess.OneShot {
+			continue
+		}
+		if !m.TaskDelivered(sess.FullID) {
+			continue
+		}
+		m.applyBusyProbe(sess.FullID, now)
+	}
 	for _, sess := range m.store.List() {
 		if sess == nil || sess.State != StateRunning {
 			continue
@@ -235,6 +247,12 @@ func (m *Manager) runChannelStateWatcherTick(now time.Time, gap time.Duration) {
 			sessGap = acpSilenceGap
 		}
 		if now.Sub(ref) < sessGap {
+			continue
+		}
+		// Busy probe, gap pass: a silent but working pane keeps the session
+		// Running. applyBusyProbe refreshes LastChannelEventAt, so the gap
+		// restarts and the next flip check is a full gap later.
+		if m.applyBusyProbe(sess.FullID, now) {
 			continue
 		}
 		oldState := sess.State
