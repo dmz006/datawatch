@@ -134,42 +134,43 @@ kept in a bounded history so the shadow comparison below can read a full day.
 
 ## Phases
 
-All phases are **Planned**. Each phase's own checklist includes the Phase Completion Checklist
+Status as of 2026-10-24: phases 1 to 6 are **Done** in code, tests and docs; phase 7 is **Not started** (the smoke test is not written and no sandbox daemon has run lane fill in any mode). Each phase's own checklist includes the Phase Completion Checklist
 from `AGENT.md` (functionality, unit tests, live smoke against a real daemon, `go test ./...`
 and `node --test internal/server/web/*.test.js`, the general documentation checklist, the
 Mobile-Parity Rule, the Localization Rule, and the plan status line).
 
-1. **Phase 1: config and lane preference.** Status: Planned.
+1. **Phase 1: config and lane preference.** Status: Done (unit-tested; config, REST, MCP, CLI, comm and PWA surfaces shipped with it).
    - `autonomous.lane_fill` keys: `mode`, `claude_lanes`, `idle_alert_minutes`, and the
-     decompose-ahead minimum.
+     decompose-ahead minimum. Shipped also with `gpu_lanes`, `poll_seconds`, `gpu_backend`,
+     `gpu_model` and `claude_backend`.
    - The per-Automaton lane preference field (`gpu`, `claude`, `any`, default `any`) with
      validation and persistence.
    - Every config surface gets the keys (REST get and put, MCP, CLI, comm channel, PWA settings,
      `docs/config-reference.yaml`).
-2. **Phase 2: planner.** Status: Planned.
+2. **Phase 2: planner.** Status: Done (unit-tested, table-driven).
    - A pure function from a queue and lane snapshot to a list of decisions, with the fill order,
      the exclusions, the lane preference rule and the decompose-ahead rule.
    - Table-driven unit tests, including the 2026-10-24 shape: two idle GPU lanes, eight
      decomposed Automata, none marked held.
-3. **Phase 3: coordinator modes.** Status: Planned.
+3. **Phase 3: coordinator modes.** Status: Done (unit-tested; the live restart check is in phase 7).
    - The poll loop in the coordinator, the three modes, the bounded decision history, and the
      `on` mode path through the existing admission call.
    - Restart reconciliation: the history survives a restart or is rebuilt without double starts.
-4. **Phase 4: evidence and alert.** Status: Planned.
+4. **Phase 4: evidence and alert.** Status: Done (unit-tested; not yet seen against the live pool or a live alert sink).
    - The pool idleness evidence from running sessions and loaded models on the local and remote
      hosts, with an evidence-disagreement state.
    - The idle lane alert through the existing alert path.
-5. **Phase 5: REST, MCP, CLI, comm channel and PWA surfaces.** Status: Planned.
+5. **Phase 5: REST, MCP, CLI, comm channel and PWA surfaces.** Status: Done (unit and node tests; the PWA card has not been seen in a running daemon).
    - REST `GET /api/autonomous/lane-fill` and the lane preference setter; MCP
      `autonomous_lane_fill_status` and `autonomous_prd_set_lane_preference`; CLI
      `datawatch autonomous lane-fill`; comm `autonomous lane-fill`; the PWA lane fill view on the
      Automation sub-tab; `openapi.yaml`; locale keys in all five bundles; federation capability
      table entries.
-6. **Phase 6: docs and tracker.** Status: Planned.
+6. **Phase 6: docs and tracker.** Status: Done (how-to, tracker rows, changelog and reference docs written; every live tracker row is Validated = No).
    - How-to, `CHANGELOG.md`, `docs/config-reference.yaml`, `docs/commands.md`, `docs/mcp.md`,
      `docs/api-mcp-mapping.md`, `docs/testing-tracker.md`, the doc indexes, and this plan's
      status and shipped-in line.
-7. **Phase 7: smoke and final gate.** Status: Planned.
+7. **Phase 7: smoke and final gate.** Status: Not started. `TestLaneFillSmoke` is not written, so `.datawatch/verify/lane-fill-restart-smoke.sh` fails until it is.
    - A restart smoke against a sandbox daemon in each mode, the full test suites, lint, and the
      documentation checklist.
 
@@ -211,7 +212,31 @@ Decisions for the operator before the mode is switched to `on`:
 - [ ] The default number of Claude lanes (`autonomous.lane_fill.claude_lanes`).
 - [ ] The default idle alert minutes (`autonomous.lane_fill.idle_alert_minutes`).
 - [ ] Whether an Automaton running on a backend that is neither the GPU backend nor the Claude
-  backend counts toward lane occupancy.
+  backend counts toward lane occupancy. The shipped code says no: such an Automaton occupies no lane.
+
+### Code notes (2026-10-24)
+
+Where the shipped code differs from the design text above, the code is what runs. The operator
+should confirm each point before the mode is switched to `on`:
+
+- **Approval in `on` mode.** A start of a `needs_review` Automaton calls the existing approve path
+  (`Approve`), which runs the plan-coverage and plan-review gates. So the shipped answer to the
+  first question above is "may approve through the approve call".
+- **Worker backend in `on` mode.** A start changes the Automaton's worker backend to the lane's
+  backend when its status allows the change (`BackendChangeAllowed`, the set-llm status rules).
+  This is not limited to Automata whose worker was set explicitly, which the Out of scope list
+  names. The planner excludes a non-GPU Automaton from a GPU lane when its backend cannot change.
+- **Decompose ahead.** The decompose call uses the draft's own planning settings. The planner does
+  not pick a backend per lane type, and it does not serialise decomposes per lane type: one
+  decompose runs at a time per Automaton.
+- **Holds.** The shipped holds are a line starting with `HOLD`, the words "do not run", "sequenced
+  last", and "sequenced after" an Automaton that has not completed. There is no
+  "operator decision pending" hold.
+- **Lane preference verbs.** The CLI verb is `datawatch autonomous prd-set-lane-preference <id>
+  gpu|claude|any`, and the comm verb is `autonomous set-lane-preference <prd-id> gpu|claude|any`.
+  `datawatch autonomous prd-create` also takes `--lane-preference`.
+- **Default Claude lanes.** The shipped default is 3, as the config block and the how-to say. The
+  open question above is still for the operator.
 
 ## Shadow mode comparison
 
@@ -239,8 +264,8 @@ If any criterion fails, stay in shadow, fix the cause, and run another day.
 |---|---|---|
 | REST | Yes | `GET /api/autonomous/lane-fill` returns the lane snapshot, the recorded decisions, the evidence and the queued counts; a setter route sets an Automaton's lane preference. Config get and put carry the `autonomous.lane_fill` keys. Documented in `openapi.yaml`. |
 | MCP | Yes | `autonomous_lane_fill_status` and `autonomous_prd_set_lane_preference`, both added to the federation capability table; config keys through the existing config tools. |
-| CLI | Yes | `datawatch autonomous lane-fill` shows the status; the lane preference is set through the existing Automaton commands; `datawatch config set` covers the keys. |
-| comm channel | Yes | `autonomous lane-fill` returns a compact status for a chat message; the mode is changed with `configure autonomous.lane_fill.mode=<value>`. |
+| CLI | Yes | `datawatch autonomous lane-fill` shows the status; `datawatch autonomous prd-set-lane-preference <id> gpu\|claude\|any` sets the preference (and `prd-create --lane-preference` sets it at creation); `datawatch config set` covers the keys. |
+| comm channel | Yes | `autonomous lane-fill` returns a compact status for a chat message; `autonomous set-lane-preference <prd-id> gpu\|claude\|any` sets the preference; the mode is changed with `configure autonomous.lane_fill.mode=<value>`. |
 | YAML/config | Yes | `autonomous.lane_fill.mode`, `claude_lanes`, `idle_alert_minutes` and the decompose-ahead minimum, in `docs/config-reference.yaml`, with the shadow default. |
 | PWA | Yes | A lane fill view on the Automation sub-tab showing lanes, occupants, recorded decisions and the evidence, a lane preference selector on the Automaton detail, the config fields in Settings, and locale keys in all five bundles. |
 | Android | Excluded in this work | This work does not change the apps. The supervisor files the datawatch-app issue at merge, using the draft text below. |
@@ -273,6 +298,8 @@ Body:
 
 ## Status
 
-Planned.
+In progress. Phases 1 to 6 are done in code, tests and docs (commits on the lane fill branch, not
+yet merged). Phase 7 (the restart smoke against a sandbox daemon in each mode, and the final gate)
+is not started. Nothing is released, and the mode is still `shadow` by default.
 
-Shipped in:
+Shipped in: not yet released (the merge helper sets the version at merge).

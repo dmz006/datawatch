@@ -5,7 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.9.1 — Orphan sweep no longer ends live workers
+### Lane fill: keeping the GPU and Claude lanes busy
+
+The daemon now fills idle execution lanes itself. Before this, a person had to notice an idle lane and start the next queued Automaton by hand, and both GPU lanes once sat idle for hours with work waiting.
+
+- On every poll the planner looks at the GPU lanes, the Claude lanes and the queue, and decides what each idle lane should take: a decomposed Automaton that is ready, a draft to decompose ahead, or a reason the lane must stay idle. It does not read a spec and judge whether the work is hard or needs design.
+- Three modes. `off` does nothing. `shadow` is the default: it records every decision it would make, with the pool evidence it used, and starts nothing. `on` carries the decisions out through the normal start path, so capacity limits, approval gates, quality gates and the stuck-task rules apply as they do to a manual start.
+- Shadow mode comes first so the rules can be checked against what the operator actually did for about a day before the daemon acts on them. The how-to has the comparison procedure and the criteria for switching to on.
+- Pool evidence from the running sessions and the models loaded on the pool hosts. A lane is never called idle on a guess: an unreadable host is reported as an error and blocks the idle call for the GPU lanes.
+- Each Automaton has a lane preference: `gpu`, `claude` or `any` (the default). The planner honours `gpu` and `claude` exactly. The preference is set through REST, MCP, the CLI, the comm channel and the Automaton settings in the PWA.
+- An idle-lane alert, raised once per idle period when a lane sits idle with eligible work waiting, naming the lane and the first eligible Automaton. It clears when the lane takes work. The threshold is configurable and `0` turns it off.
+- Status on every surface: REST `GET /api/autonomous/lane-fill`, MCP `autonomous_lane_fill_status`, `datawatch autonomous lane-fill`, the comm verb `autonomous lane-fill`, and a Lane fill card on the Automation sub-tab of the PWA.
+- New settings under `autonomous.lane_fill`: mode, GPU and Claude lane counts, the idle alert minutes, the decompose-ahead minimum, the poll interval, and the GPU and Claude backends and model. All are live, with no restart.
+- Restart behaviour: decisions are kept across a restart, nothing is decided until boot recovery has finished, and an Automaton that already started is never started twice.
+- Lane fill never merges finished work, never holds GPU work because of Claude usage limits (GPU lanes cost no Claude usage), and never starts a held Automaton.
+
+ — Orphan sweep no longer ends live workers
 
 Fixes the orphan sweep that ended every live Claude worker about five minutes after its task was delivered, which had been failing long tasks with "no new changes" since the sweep went live.
 

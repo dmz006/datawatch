@@ -1127,6 +1127,8 @@ Comm channels for lane fill: `autonomous lane-fill [limit]` replies with one lin
 eligible counts, then the newest five decisions (`limit` is how many decisions are read); and
 `autonomous set-lane-preference <prd-id> <gpu|claude|any>` sets the lane an Automaton may take.
 
+Lane fill settings are configuration keys, not commands: `datawatch config set autonomous.lane_fill.mode shadow` (or `on`, or `off`), and the other `autonomous.lane_fill.*` keys. In chat, `configure autonomous.lane_fill.mode=on`. The keys and the surfaces are listed in the Lane fill section of `docs/operations.md`.
+
 ### `datawatch automation <subcommand>`
 
 Automations: chains of Automata run one after another or in branches. Every

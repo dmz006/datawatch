@@ -147,6 +147,16 @@ activated from REST, MCP, the CLI or chat — see
 Automation tab in the web app lists, draws and steers them — see
 [automation-tab.md](docs/howto/automation-tab.md).
 
+Lane fill keeps the execution lanes busy without a supervisor tick. On every
+poll the daemon checks the GPU and Claude lanes against the queue and decides
+what each idle lane should start. It runs in shadow mode by default, which
+records the decisions and starts nothing, so they can be checked against what
+the operator did first; switching to on starts the work through the normal
+admission path. An idle lane with eligible work raises an alert. Each Automaton
+can prefer a GPU lane, a Claude lane or either. It never merges and never holds
+GPU work because of Claude usage limits — see
+[automation-lane-fill.md](docs/howto/automation-lane-fill.md).
+
 **v9.0.0 — Memory Lifecycle Complete.** The
 first major version since the memory-scope/lifecycle work landed:
 per-session and shared memory scopes, seeding/harvest/archive across
@@ -442,7 +452,7 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 | Sessions + hooks | [docs/howto/sessions-deep-dive.md](docs/howto/sessions-deep-dive.md) · [docs/howto/claude-hooks.md](docs/howto/claude-hooks.md) |
 | Backends | [docs/llm-backends.md](docs/llm-backends.md) · [docs/messaging-backends.md](docs/messaging-backends.md) |
 | Interfaces | [docs/mcp.md](docs/mcp.md) · [docs/howto/mcp-tools.md](docs/howto/mcp-tools.md) · [docs/howto/docs-as-mcp.md](docs/howto/docs-as-mcp.md) · [internal/server/web/openapi.yaml](internal/server/web/openapi.yaml) |
-| Autonomous + plugins | [docs/api/autonomous.md](docs/api/autonomous.md) · [docs/howto/automata-progress.md](docs/howto/automata-progress.md) · [docs/api/orchestrator.md](docs/api/orchestrator.md) · [docs/api/plugins.md](docs/api/plugins.md) · [docs/skills.md](docs/skills.md) · [docs/howto/result-panel.md](docs/howto/result-panel.md) |
+| Autonomous + plugins | [docs/api/autonomous.md](docs/api/autonomous.md) · [docs/howto/automata-progress.md](docs/howto/automata-progress.md) · [docs/howto/automation-lane-fill.md](docs/howto/automation-lane-fill.md) · [docs/api/orchestrator.md](docs/api/orchestrator.md) · [docs/api/plugins.md](docs/api/plugins.md) · [docs/skills.md](docs/skills.md) · [docs/howto/result-panel.md](docs/howto/result-panel.md) |
 | Comms + federation | [docs/howto/channel-routing.md](docs/howto/channel-routing.md) · [docs/howto/file-service.md](docs/howto/file-service.md) · [docs/howto/discussion-scopes.md](docs/howto/discussion-scopes.md) · [docs/howto/comm-channels.md](docs/howto/comm-channels.md) |
 | Memory & intelligence | [docs/memory.md](docs/memory.md) · [docs/memory-usage-guide.md](docs/memory-usage-guide.md) |
 | Operations & security | [docs/operations.md](docs/operations.md) · [docs/config-reference.yaml](docs/config-reference.yaml) · [docs/encryption.md](docs/encryption.md) · [docs/multi-session.md](docs/multi-session.md) · [docs/uninstall.md](docs/uninstall.md) |

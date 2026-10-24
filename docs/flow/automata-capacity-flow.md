@@ -90,6 +90,28 @@ re-queues it if the session is dead). Each cycle emits the
 `autonomous_idle_wait_release` audit event naming the pools and tree
 lock it released.
 
+## Lane fill feeds the same admission
+
+Lane fill decides which idle lane should take which Automaton, on every coordinator poll. It does not have its own admission: a start in `on` mode goes through the same `Run` path as a manual start, so every pool and wait rule above applies. In `shadow` mode (the default) the decision is recorded and nothing is started.
+
+```mermaid
+flowchart TD
+    P[Coordinator poll] --> M{lane_fill.mode}
+    M -- off --> X[nothing read, nothing recorded]
+    M -- shadow / on --> S[snapshot: lanes, queue, pool evidence]
+    S --> PL[PlanLaneFill: pure decisions]
+    PL --> R[record each decision, dedupe, audit]
+    R --> Q{mode}
+    Q -- shadow --> N[executed = false: would start]
+    Q -- on --> E[start: approve if needed, set backend if allowed, Run]
+    E --> A[Run: task admission, leases and waits as above]
+    PL --> AL[idle lane with eligible work past threshold: one alert]
+```
+
+The planner reads the GPU pool's evidence (running sessions on the GPU backend or on a pool host, and loaded models). An unreadable host blocks the idle call for GPU lanes, so a busy pool is never reported idle on a guess. A GPU lane costs no Claude usage, so Claude usage limits and budget pace are not planner inputs.
+
+See [howto/automation-lane-fill.md](../howto/automation-lane-fill.md) for the operator procedure.
+
 ## Pools
 
 | Pool | Limit from | Counts |
