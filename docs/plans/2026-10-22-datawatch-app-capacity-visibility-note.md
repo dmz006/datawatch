@@ -137,3 +137,33 @@ The `*` must be sent as-is (URL-encode it as `%2A` if the HTTP client requires).
 
 1. Should the budgets block live on the same card as the pools, or as its own card on the Automata list?
 2. Should the apps poll `GET /api/capacity` on a timer, or refresh only on pull-to-refresh and when a task's status changes?
+
+## Follow-up: node beside each holder (2026-10-24)
+
+Mobile-Parity Rule follow-up for the holder-node change. The daemon now carries the
+node each holder's lease sits on, and the PWA capacity card shows it.
+
+**New field (optional, parse as absent when missing):** `GET /api/capacity` → each
+`pools[]` entry → `hold_nodes` (array of strings, parallel to `holders`). An entry is
+`""` when that lease names no node. The field is omitted when no holder has a node.
+
+**Display rule (same on every client):** show the node name as a small muted label
+beside each holder's short id in the pool's holder line, and only when the pool's
+holders span two or more distinct nodes. A pool whose holders all sit on one node
+(or have no node) renders exactly as before. The node name is data from the
+daemon: render it as plain text, never as markup. No new locale string is needed,
+because only the node name is shown, with no added word.
+
+**Android and iPhone/iOS work item:** add the holder-node label to the capacity card
+pool rows, under the rule above. Capability parity is required; each platform uses its
+own layout.
+
+**Issue status:** not filed from the daemon session that wrote this section, which has
+no access to `dmz006/datawatch-app`. It must be filed by the supervisor or the operator
+as a `[sync]` issue (Mobile App Sync Rule), using this section as the issue text.
+
+| Surface | Status |
+|---|---|
+| PWA capacity card: node beside each holder | ✅ done in the daemon repo |
+| Android: node beside each holder on the capacity card | ❌ — work item for this follow-up |
+| iOS: same as Android | ❌ — same issue, same scope |

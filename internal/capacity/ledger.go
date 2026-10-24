@@ -169,6 +169,10 @@ type PoolStatus struct {
 	// HoldNames is the operator-readable form of Holders, in the same order
 	// (nil = unresolved; the renderer then shows the raw ids as before).
 	HoldNames []string `json:"hold_names,omitempty"`
+	// HoldNodes is the node each holder's lease names, parallel to Holders
+	// ("" = that lease names no node). Nil when no holder has a node, so a pool
+	// without node-bound leases keeps its existing shape.
+	HoldNodes []string `json:"hold_nodes,omitempty"`
 	// Rate ceiling fields appear only for pools that carry one.
 	RateRequests      int       `json:"rate_requests,omitempty"`
 	RateTokens        int64     `json:"rate_tokens,omitempty"`
@@ -401,6 +405,42 @@ func (l *Ledger) holdersLocked(pool string) string {
 		return "other sessions"
 	}
 	return strings.Join(hs, ",")
+}
+
+// holderNodesLocked returns the node of each holder's lease, parallel to
+// holders ("" when that lease names no node). Nil when no holder has a node.
+func (l *Ledger) holderNodesLocked(holders []string) []string {
+	var nodes []string
+	for i, h := range holders {
+		ls := l.leases[h]
+		if ls == nil || ls.Node == "" {
+			continue
+		}
+		if nodes == nil {
+			nodes = make([]string, len(holders))
+		}
+		nodes[i] = ls.Node
+	}
+	return nodes
+}
+
+// shownHoldNodes returns HoldNodes when the pool's holders span two or more
+// nodes, else nil. A one-node entry (every holder on the same node, or none)
+// renders exactly as it did before the node was carried.
+func (p PoolStatus) shownHoldNodes() []string {
+	if len(p.HoldNodes) != len(p.Holders) {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, n := range p.HoldNodes {
+		if n != "" {
+			seen[n] = true
+		}
+	}
+	if len(seen) < 2 {
+		return nil
+	}
+	return p.HoldNodes
 }
 
 // orderLocked sorts waiters into grant order: role (verifier, worker,
@@ -770,6 +810,7 @@ func (l *Ledger) Snapshot() Status {
 		if ps.Holders[0] == "" {
 			ps.Holders = nil
 		}
+		ps.HoldNodes = l.holderNodesLocked(ps.Holders)
 		st.Pools = append(st.Pools, ps)
 	}
 	sort.Slice(st.Pools, func(i, j int) bool { return st.Pools[i].Name < st.Pools[j].Name })
@@ -800,7 +841,15 @@ func FormatPools(pools []PoolStatus) string {
 			if len(p.HoldNames) == len(p.Holders) {
 				holders = p.HoldNames
 			}
-			fmt.Fprintf(&b, " held by %s", strings.Join(holders, ","))
+			nodes := p.shownHoldNodes()
+			parts := make([]string, len(holders))
+			for i, h := range holders {
+				parts[i] = h
+				if nodes != nil && nodes[i] != "" {
+					parts[i] += " on " + nodes[i]
+				}
+			}
+			fmt.Fprintf(&b, " held by %s", strings.Join(parts, ","))
 		}
 		if p.RateRequests > 0 || p.RateTokens > 0 {
 			b.WriteString(" rate")

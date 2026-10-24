@@ -23053,16 +23053,29 @@ function capacityHolders(p, leases) {
   else if (Array.isArray(leases)) ids = leases.filter(l => l && Array.isArray(l.pools) && l.pools.includes(p.name)).map(l => l.holder);
   return ids.map(h => String(h||'').trim().slice(0, 8)).filter(Boolean);
 }
+// The node each holder's lease sits on, parallel to ids (short ids, as shown).
+// Shown only when the pool's holders span two or more nodes: a one-node entry
+// (every holder on one node, or none) renders exactly as before.
+function capacityHolderNodes(p, ids) {
+  const byId = {};
+  if (Array.isArray(p.holders) && Array.isArray(p.hold_nodes) && p.hold_nodes.length === p.holders.length) {
+    p.holders.forEach((h, i) => { if (p.hold_nodes[i]) byId[String(h||'').trim().slice(0, 8)] = p.hold_nodes[i]; });
+  }
+  const nodes = ids.map(id => byId[id] || '');
+  return new Set(nodes.filter(Boolean)).size >= 2 ? nodes : nodes.map(() => '');
+}
 function capacityHoldersLine(p, leases) {
   const ids = capacityHolders(p, leases);
   const names = Array.isArray(p.holder_names) ? p.holder_names
     : (Array.isArray(p.hold_names) ? p.hold_names : null);
+  const nodes = capacityHolderNodes(p, ids);
   const queued = p.name.startsWith('node:') && p.queue_depth > 0
     ? `${escHtml(t('capacity_waiting_for_node')||'waiting for node')} ${escHtml(p.name.slice(5))}` : '';
   const holders = ids.length
     ? `${escHtml(t('capacity_card_holders')||'Holders')}: ${ids.map((id, i) => {
         const h = (names && names[i] != null) ? window.capacityNameHtml(names[i], id) : '';
-        return h || escHtml(id);
+        const label = h || escHtml(id);
+        return nodes[i] ? `${label} <span class="cap-node" style="font-size:10px;color:var(--text2);">${escHtml(nodes[i])}</span>` : label;
       }).join(', ')}`
     : '';
   const parts = [holders, queued].filter(Boolean).join(' · ');

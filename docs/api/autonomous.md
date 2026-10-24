@@ -1173,6 +1173,34 @@ dot — the raw id fields still carry the real id in the body.
   the `(untitled <short id>)` fallback above. The web tests asserting the
   rendering are in `internal/server/web/app-capacity-names.test.js`.
 
+### Holder nodes
+
+Every pool in `GET /api/capacity` carries `hold_nodes`, the node each holder's
+lease sits on. It is a parallel array to `holders` (same length, same order):
+the entry at index `i` is the node of the lease held by `holders[i]`, or `""`
+when that lease names no node. The field is omitted when no holder of the pool
+has a node, so a pool with only node-less leases serialises exactly as before.
+`hold_nodes` is a pure addition; `holders`, `holder` and `holder_names` are
+unchanged.
+
+The same node is printed in the text views, which read the same snapshot. The
+pool line gains ` on <node>` after each holder, so `llm:pi: 2/4 held by
+task-a on gpu-a,task-b on gpu-b`. The node appears only on a pool whose holders
+span two or more nodes; a one-node entry (every holder on one node) renders as
+it did before.
+
+- **REST:** `GET /api/capacity` and `GET /api/capacity?prd_id=<id>` both carry
+  `hold_nodes` on each pool. The Automaton-scoped view keeps the same pool
+  objects, so it carries the field too.
+- **MCP:** `capacity_status` returns the same body, so it carries `hold_nodes`.
+- **CLI:** `datawatch capacity` prints the node after each holder in the pool
+  line; `datawatch capacity --json` carries `hold_nodes`.
+- **Comm channel:** the `capacity` reply prints the node after each holder in
+  the pool line, as the CLI does.
+- **PWA:** the capacity card shows the node name as a small muted label beside
+  each holder's short id, under the same one-node rule. The web tests asserting
+  it are in `internal/server/web/app-capacity-holder-nodes.test.js`.
+
 ### Rate ceilings
 
 A pool can carry a rolling-window rate ceiling (requests and/or tokens per
