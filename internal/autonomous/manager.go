@@ -784,6 +784,9 @@ type Manager struct {
 	capacity     *capacity.Ledger
 	capAudit     *CapacityAudit // admission wait/release audit recorder (nil drops)
 	capacityKeys CapacityKeysFn
+	// capacityChoices lists the candidate compute nodes of a backend+model
+	// when its LLM entry pools two or more (nil = single-node behaviour).
+	capacityChoices CapacityChoicesFn
 	// cooldownUntilFn reports when the BL30 global cooldown ends (zero when
 	// none is active); waitClock is the time source for the spawn-wait loop
 	// (nil = wall clock). Both are set via capacity.go.

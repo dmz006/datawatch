@@ -15,6 +15,14 @@ import (
 // needs plus its primary compute node (for model affinity).
 type CapacityKeysFn func(backend, model string) (pools []string, node string)
 
+// CapacityChoicesFn is CapacityKeysFn's sibling: the candidate compute nodes
+// (name and scheduling priority) of the LLM entry a backend and model resolve
+// to. When it returns two or more, CapacityKeysFn leaves node:<name> out of the
+// pools and the caller puts these on its capacity.Request so the ledger picks
+// the node at dispatch time. Fewer than two means the single-node path: pools
+// and node from CapacityKeysFn, no choices.
+type CapacityChoicesFn func(backend, model string) []capacity.NodeChoice
+
 var errCancelledWhileWaiting = errors.New("task cancelled while waiting for capacity")
 
 // errDecomposeCancelled is returned by decomposeAdmitted when the operator
@@ -50,6 +58,15 @@ func (m *Manager) SetCapacity(l *capacity.Ledger, keys CapacityKeysFn) {
 	defer m.mu.Unlock()
 	m.capacity = l
 	m.capacityKeys = keys
+}
+
+// SetCapacityChoices wires the candidate-node resolver that sits beside the
+// CapacityKeysFn given to SetCapacity. Nil (the default) keeps every admission
+// on the single-node path.
+func (m *Manager) SetCapacityChoices(fn CapacityChoicesFn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.capacityChoices = fn
 }
 
 // SetCooldownUntilFn wires the BL30 global-cooldown reset time (zero = none
@@ -112,6 +129,27 @@ func (m *Manager) CapacityKeys() CapacityKeysFn {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.capacityKeys
+}
+
+// CapacityChoices returns the candidate-node resolver wired via
+// SetCapacityChoices (nil when not wired), for callers outside the executor
+// loop that build their own capacity.Request next to CapacityKeys.
+func (m *Manager) CapacityChoices() CapacityChoicesFn {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.capacityChoices
+}
+
+// nodeChoicesFor returns the candidate nodes for backend and model, or nil
+// unless there are two or more: the signal to put them on the request.
+func nodeChoicesFor(fn CapacityChoicesFn, backend, model string) []capacity.NodeChoice {
+	if fn == nil {
+		return nil
+	}
+	if choices := fn(backend, model); len(choices) >= 2 {
+		return choices
+	}
+	return nil
 }
 
 // CapacityWaitDuration returns the configured capacity-wait bound (mirrors
@@ -199,18 +237,19 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 		return nil
 	}
 	m.mu.Lock()
-	led, keysFn := m.capacity, m.capacityKeys
+	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
 	m.mu.Unlock()
 	pools, node := keysFn(backend, model)
 	if len(pools) == 0 {
 		return nil
 	}
+	choices := nodeChoicesFor(choicesFn, backend, model)
 	waited := false
 	rec := m.capacityAudit()
 	var waitStart time.Time
 	var lastCause WaitCause
 	err := led.Acquire(ctx, capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, Model: model, Role: role,
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, Model: model, Role: role,
 	}, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
 		if !waited {
 			waitStart = rec.Now()
@@ -272,16 +311,17 @@ func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req Decompo
 		return m.decompose(req)
 	}
 	m.mu.Lock()
-	led, keysFn := m.capacity, m.capacityKeys
+	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
 	m.mu.Unlock()
 	allPools, node := keysFn(backend, model)
 	pools := decomposePools(allPools)
-	if len(pools) == 0 {
+	choices := nodeChoicesFor(choicesFn, backend, model)
+	if len(pools) == 0 && len(choices) == 0 {
 		return m.decompose(req)
 	}
 	holder := "plan:" + prd.ID
 	err := led.Acquire(context.Background(), capacity.Request{
-		Holder: holder, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, Model: model, Role: capacity.RolePlanner,
+		Holder: holder, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, Model: model, Role: capacity.RolePlanner,
 	}, m.capacityWait(), func() bool { return m.plannerCancelled(prd.ID) }, func(reason string) {
 		m.setPRDWaitReason(prd.ID, reason)
 	})
@@ -380,7 +420,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 		return
 	}
 	m.mu.Lock()
-	led, keysFn := m.capacity, m.capacityKeys
+	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
 	fallback := m.cfg.ExecutionBackend
 	m.mu.Unlock()
 	story := findStory(prd, t.StoryID)
@@ -390,7 +430,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 		return
 	}
 	led.Adopt(capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, Model: model,
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), Model: model,
 	}, t.SessionID)
 }
 

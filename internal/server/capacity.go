@@ -128,8 +128,15 @@ func (s *Server) resolvePoolsForBackend(backend string) []string {
 		return nil
 	}
 	pools := []string{"llm:" + l.Name}
-	if len(l.ComputeNodes) > 0 {
-		pools = append(pools, "node:"+l.ComputeNodes[0])
+	// Every node of the entry is listed so a card scoped to it finds each
+	// node a start may land on; a one-node entry lists its one node as before.
+	seen := map[string]bool{}
+	for _, n := range l.ComputeNodes {
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		pools = append(pools, "node:"+n)
 	}
 	return pools
 }

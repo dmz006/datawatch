@@ -12,6 +12,7 @@ import (
 	auditpkg "github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/metrics"
@@ -58,24 +59,125 @@ var verifierCapacityTryAdmit func(ctx context.Context, backend, model, taskID, p
 // this var at call time, not at wiring time).
 var councilCapacityAdmit func(ctx context.Context, backend, model, holder, prdID string) (release func(), err error)
 
-// engineNodes maps each inference LLM kind (the provider prefix of a model
-// such as "ollama/qwen3.8:27b") to the compute node that hosts it: the first
-// ComputeNode of the first LLM of that kind. Kinds with no compute node are
+// engineEntries maps each inference LLM kind (the provider prefix of a model
+// such as "ollama/qwen3.8:27b") to the LLM entry that hosts it: the first LLM
+// of that kind that lists any compute node. Kinds with no such entry are
 // absent, so autonomous.LocalEngineGate leaves them ungated. A nil registry
 // yields an empty map.
-func engineNodes(reg *inference.Registry) map[string]string {
-	nodes := map[string]string{}
+func engineEntries(reg *inference.Registry) map[string]inference.LLM {
+	entries := map[string]inference.LLM{}
 	if reg == nil {
-		return nodes
+		return entries
 	}
 	for _, l := range reg.List() {
 		kind := string(l.Kind)
-		if _, seen := nodes[kind]; seen || len(l.ComputeNodes) == 0 {
+		if _, seen := entries[kind]; seen || len(l.ComputeNodes) == 0 {
 			continue
 		}
-		nodes[kind] = l.ComputeNodes[0]
+		entries[kind] = *l
+	}
+	return entries
+}
+
+// engineNodes maps each inference LLM kind to every compute node of the LLM
+// entry engineEntries picks for it, in the entry's list order.
+func engineNodes(reg *inference.Registry) map[string][]string {
+	nodes := map[string][]string{}
+	for kind, l := range engineEntries(reg) {
+		nodes[kind] = append([]string(nil), l.ComputeNodes...)
 	}
 	return nodes
+}
+
+// defaultNodePriority is the scheduling priority of a compute node whose
+// record leaves it unset (the compute registry applies the same default).
+const defaultNodePriority = 50
+
+// computePriority reads a node's scheduling priority from the compute
+// registry; a node the registry does not hold is unknown. A nil registry
+// knows no node.
+func computePriority(nodes func() *compute.Registry) func(string) (int, bool) {
+	return func(name string) (int, bool) {
+		var reg *compute.Registry
+		if nodes != nil {
+			reg = nodes()
+		}
+		if reg == nil {
+			return 0, false
+		}
+		n, err := reg.Get(name)
+		if err != nil || n == nil {
+			return 0, false
+		}
+		if n.SchedulingPriority == 0 {
+			return defaultNodePriority, true
+		}
+		return n.SchedulingPriority, true
+	}
+}
+
+// capacityResolver builds the pool resolver the admission paths share. For a
+// backend and model it returns the capacity pools, the primary compute node
+// and, when the LLM entry pools two or more known nodes, those candidates.
+//
+// A session on a local engine whose entry yields one node (or one known node)
+// gets that node's pool and node exactly as before. When two or more nodes are
+// candidates the pools carry no node:<name> pool and node is empty: the caller
+// puts the candidates on its capacity.Request and the ledger picks the node.
+// An entry none of whose nodes the compute registry knows keeps its first node,
+// as it always did.
+func capacityResolver(registry func() *inference.Registry, nodes func() *compute.Registry) func(backend, model string) (pools []string, node string, choices []capacity.NodeChoice) {
+	priority := computePriority(nodes)
+	return func(backend, model string) ([]string, string, []capacity.NodeChoice) {
+		pools := []string{"host"}
+		var reg *inference.Registry
+		if registry != nil {
+			reg = registry()
+		}
+		if reg != nil {
+			if l, err := reg.Get(backend); err == nil && l != nil {
+				pools = append(pools, "llm:"+l.Name)
+			}
+		}
+		// Only a local-engine session takes a compute node's pool. A
+		// hosted-backend session gets no node pool and no node affinity.
+		entries := engineEntries(reg)
+		var entry inference.LLM
+		node, gated := autonomous.LocalEngineGate(backend, model, func(provider string) (string, bool) {
+			l, ok := entries[provider]
+			if !ok {
+				return "", false
+			}
+			entry = l
+			return l.ComputeNodes[0], true
+		})
+		if !gated {
+			return pools, node, nil
+		}
+		if len(entry.ComputeNodes) > 1 {
+			ordered := inference.OrderedPoolNodes(entry, priority)
+			if len(ordered) >= 2 {
+				choices := make([]capacity.NodeChoice, 0, len(ordered))
+				for _, n := range ordered {
+					choices = append(choices, capacity.NodeChoice{Name: n.Name, Priority: n.Priority})
+				}
+				return pools, "", choices
+			}
+			if len(ordered) == 1 {
+				node = ordered[0].Name
+			}
+		}
+		return append(pools, "node:"+node), node, nil
+	}
+}
+
+// withNodeChoices puts the candidate nodes on a request; fewer than two leaves
+// it unchanged.
+func withNodeChoices(req capacity.Request, choices []capacity.NodeChoice) capacity.Request {
+	if len(choices) >= 2 {
+		req.NodeChoices = choices
+	}
+	return req
 }
 
 // syncLLMLimits sets the ledger limit for every LLM entry's pool
@@ -494,26 +596,17 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// Usage deltas feed both the dollar budget and the token rate ceilings.
 	mgr.SetUsageEventHook(recordUsage(autonomousBudget, registry, led))
 
+	resolve := capacityResolver(httpServer.InferenceRegistry, httpServer.ComputeRegistry)
 	keys := func(backend, model string) ([]string, string) {
-		pools := []string{"host"}
-		reg := httpServer.InferenceRegistry()
-		if reg != nil {
-			if l, err := reg.Get(backend); err == nil && l != nil {
-				pools = append(pools, "llm:"+l.Name)
-			}
-		}
-		// Only a local-engine session takes a compute node's pool. A
-		// hosted-backend session gets no node pool and no node affinity.
-		node, gated := autonomous.LocalEngineGate(backend, model, func(provider string) (string, bool) {
-			n, ok := engineNodes(reg)[provider]
-			return n, ok
-		})
-		if gated {
-			pools = append(pools, "node:"+node)
-		}
+		pools, node, _ := resolve(backend, model)
 		return pools, node
 	}
+	choices := func(backend, model string) []capacity.NodeChoice {
+		_, _, c := resolve(backend, model)
+		return c
+	}
 	amgr.SetCapacity(led, keys)
+	amgr.SetCapacityChoices(choices)
 	amgr.SetCapacityAudit(capacityAudit)
 	amgr.SetBackoff(autonomousBackoff)
 	amgr.SetPatternsStatus(mgr.RateLimitGuardStatus)
@@ -560,11 +653,11 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// backend+model. See handleStartSession's req.OneShot check for why
 	// autonomous spawns skip this (they already admit via m.admit()).
 	httpServer.SetCapacityAdmit(func(ctx context.Context, backend, model, holder string, priority int) error {
-		pools, node := keys(backend, model)
+		pools, node, nodeChoices := resolve(backend, model)
 		if len(pools) == 0 {
 			return nil
 		}
-		return led.Acquire(ctx, interactiveAdmitRequest(holder, pools, node, model, priority), 0, func() bool { return false }, func(string) {})
+		return led.Acquire(ctx, withNodeChoices(interactiveAdmitRequest(holder, pools, node, model, priority), nodeChoices), 0, func() bool { return false }, func(string) {})
 	})
 	httpServer.SetCapacityBind(func(holder, sessionID string) { led.Bind(holder, sessionID) })
 	httpServer.SetCapacityRelease(func(holder string) { led.Release(holder) })
@@ -604,12 +697,12 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		// already gone). Release the worker's slot first so it can neither
 		// wait behind its own task's lease nor hold two.
 		led.Release(taskID)
-		pools, node := keys(backend, model)
+		pools, node, nodeChoices := resolve(backend, model)
 		if len(pools) == 0 {
 			return func() {}, nil
 		}
 		waitDur := amgr.CapacityWaitDuration()
-		if err := led.Acquire(ctx, verifierAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, sessionID)), waitDur, func() bool { return false }, func(string) {}); err != nil {
+		if err := led.Acquire(ctx, withNodeChoices(verifierAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, sessionID)), nodeChoices), waitDur, func() bool { return false }, func(string) {}); err != nil {
 			return func() {}, err
 		}
 		end := verifiers.begin(holder)
@@ -622,12 +715,12 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// autonomous.capacity_wait_seconds avoids a third copy of the same
 	// config knob rather than inventing a council-specific one.
 	councilCapacityAdmit = func(ctx context.Context, backend, model, holder, prdID string) (func(), error) {
-		pools, node := keys(backend, model)
+		pools, node, nodeChoices := resolve(backend, model)
 		if len(pools) == 0 {
 			return func() {}, nil
 		}
 		waitDur := amgr.CapacityWaitDuration()
-		if err := led.Acquire(ctx, councilAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, holder)), waitDur, func() bool { return false }, func(string) {}); err != nil {
+		if err := led.Acquire(ctx, withNodeChoices(councilAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, holder)), nodeChoices), waitDur, func() bool { return false }, func(string) {}); err != nil {
 			return func() {}, err
 		}
 		return func() { led.Release(holder) }, nil
@@ -647,12 +740,12 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			end := verifiers.begin(holder)
 			return func() { end(); led.Release(holder) }, true
 		}
-		if pools, node := keys(backend, model); len(pools) > 0 {
+		if pools, node, nodeChoices := resolve(backend, model); len(pools) > 0 {
 			// Fallback probe. The worker lease is released first (idempotent)
 			// so this candidate either takes its own slot or does not — never
 			// a second slot on top of the worker's.
 			led.Release(taskID)
-			if err := led.Acquire(ctx, verifierAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, sessionID)), 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
+			if err := led.Acquire(ctx, withNodeChoices(verifierAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, sessionID)), nodeChoices), 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
 				return func() {}, false
 			}
 			end := verifiers.begin(holder)
@@ -700,8 +793,10 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			engines = 1
 		}
 		hosting := map[string]bool{}
-		for _, node := range engineNodes(httpServer.InferenceRegistry()) {
-			hosting[node] = true
+		for _, entryNodes := range engineNodes(httpServer.InferenceRegistry()) {
+			for _, node := range entryNodes {
+				hosting[node] = true
+			}
 		}
 		if reg := httpServer.ComputeRegistry(); reg != nil {
 			for _, n := range reg.List() {

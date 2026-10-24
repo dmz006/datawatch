@@ -264,7 +264,7 @@ func (m *Manager) awaitReAdmit(ctx context.Context, prd *PRD, t *Task, condition
 		return nil
 	}
 	m.mu.Lock()
-	led, keysFn := m.capacity, m.capacityKeys
+	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
 	fallback := m.cfg.ExecutionBackend
 	m.mu.Unlock()
 	story := findStory(prd, t.StoryID)
@@ -275,7 +275,7 @@ func (m *Manager) awaitReAdmit(ctx context.Context, prd *PRD, t *Task, condition
 	}
 	prefix := AwaitExternalWaitReasonFor(condition)
 	err := led.Acquire(ctx, capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, Model: model, Role: capacity.RoleWorker,
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), Model: model, Role: capacity.RoleWorker,
 	}, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
 		m.setWaiting(t, prefix+" — "+reason)
 	})
