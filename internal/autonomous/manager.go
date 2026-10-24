@@ -185,13 +185,13 @@ type Config struct {
 	// worker start-confirmation loop reads it from config.Config. The
 	// field exists so the handleAutonomousConfig live round-trip
 	// (internal/server/autonomous.go) does not drop the key.
-	SessionStartConfirmSeconds int    `json:"session_start_confirm_seconds,omitempty"`
+	SessionStartConfirmSeconds int `json:"session_start_confirm_seconds,omitempty"`
 	// OrphanGraceSeconds mirrors autonomous.orphan_grace_seconds: how long a
 	// live task worker session may stay unbound to any non-terminal task
 	// before the orphan sweep ends it. 0 or unset => 300
 	// (config.NormalizeOrphanGraceSeconds).
-	OrphanGraceSeconds int `json:"orphan_grace_seconds,omitempty"`
-	VerificationModel          string `json:"verification_model,omitempty"`
+	OrphanGraceSeconds int    `json:"orphan_grace_seconds,omitempty"`
+	VerificationModel  string `json:"verification_model,omitempty"`
 	// GuardrailModel (v9.10.18) — pinned model for guardrail judge
 	// sessions (rules-review, ci-watch, per-task/per-story guardrails,
 	// rejudge). Tier 3 of ResolveGuardrailModel (guardrail_model.go):
@@ -1279,15 +1279,22 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 				}
 				// Empty or dead session without a marker: orphaned, reset below.
 			case TaskVerifying, TaskRunningTests:
-				switch ResolveVerifyingTask(aliveFn, t) {
-				case TaskVerifying:
+				switch ResolveVerifyingResume(aliveFn, outputFn, t) {
+				case VerifyingResumeReverify:
+					// Worker finished, no verdict recorded: keep the task verifying
+					// with its session, result and SHAs untouched. No kill, no
+					// retry counted; executeOne verifies it once.
+					m.adoptCapacity(prd, t)
+					log.Printf("[autonomous] boot-resume: prd=%s task %s kept verifying (was %s): worker finished, no verdict recorded, session %s", prd.ID, t.ID, prevStatus, t.SessionID)
+					continue
+				case VerifyingResumeKeepLive:
 					// Session still live; leave it for executeOne to resume. Re-take
 					// its capacity lease now (BL462 F1) so admission counts it before
 					// any other task on this PRD or another PRD is admitted.
 					m.adoptCapacity(prd, t)
 					log.Printf("[autonomous] boot-resume: prd=%s task %s kept (was %s) on live session %s, capacity lease re-adopted", prd.ID, t.ID, prevStatus, t.SessionID)
 					continue
-				case TaskCompleted:
+				case VerifyingResumeComplete:
 					// A recorded ok verification verdict stands: complete the task
 					// instead of resetting it for a blind re-run. Verification is
 					// kept untouched.
@@ -1308,7 +1315,7 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 					log.Printf("[autonomous] boot-resume: completed task %s (was %s) for prd=%s from recorded ok verification", t.ID, prevStatus, prd.ID)
 					continue
 				}
-				// TaskPending: fall through to the reset-to-pending path below;
+				// Reset: fall through to the reset-to-pending path below;
 				// it was an orphaned verifying task re-queued for retry.
 				requeuedCount++
 			default:
