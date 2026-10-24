@@ -82,6 +82,16 @@ type CommSinkConfig struct {
 // entries degrade delivery to the next fallback: no FindSession means
 // the target is unresolvable (an error), no PostBridge means no bridge
 // path (SendInput only), no SendInput means the session sink fails.
+//
+// Delivery is gated the same way as the built-in sinks: the FIRST thing
+// the handler does, before ANY delivery, queueing, or one-shot
+// deletion, is Manager.NotifyEventAllowed — the Automaton's resolved
+// notify-event set (Automaton > profile > global default) is applied
+// first, and a subscription narrows it; it can never widen it. A
+// subscription to a kind outside the resolved set therefore fires
+// nothing: no delivery attempt, no pending-event queueing, no one-shot
+// consumption; the record stays armed until a DELIVERED event consumes
+// it.
 type SessionPushConfig struct {
 	// FindSession resolves a session name, full ID, or short ID to the
 	// session's FullID and channel-bridge port (0 when the session has
@@ -383,6 +393,13 @@ func subscriptionAuditDetails(sub Subscription) map[string]any {
 func (e *LifecycleSubscriptionEngine) handle(sub Subscription, ev LifecycleEvent) {
 	if sub.ExpiresAt != nil && !sub.ExpiresAt.After(e.nowFn()) {
 		return // expired: never fires (resync also drops the filter)
+	}
+	// GATE: the resolved set applies before any delivery, queueing, or
+	// one-shot deletion — the resolver runs first, this subscription's
+	// filter only narrows it (NotifyEventAllowed). A gated one-shot is
+	// simply ignored and stays armed.
+	if !e.m.NotifyEventAllowed(ev) {
+		return
 	}
 	if sub.Filter.AutomationID != "" {
 		// Matches() treats AutomationID as a wildcard (the event carries

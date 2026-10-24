@@ -93,9 +93,55 @@ func (m *Manager) ResolveNotifyEvents(prd *PRD) NotifyEventSet {
 // Automaton of the given ID, loading it from the store first. It reports
 // false when no such Automaton exists.
 func (m *Manager) ResolveNotifyEventsFor(prdID string) (NotifyEventSet, bool) {
-	prd, ok := m.store.GetPRD(prdID)
-	if !ok {
-		return NotifyEventSet{}, false
+	if prd, ok := m.store.GetPRD(prdID); ok {
+		return m.ResolveNotifyEvents(prd), true
 	}
-	return m.ResolveNotifyEvents(prd), true
+	return NotifyEventSet{}, false
+}
+
+// NotifyEventAllowed reports whether ev may be delivered to a built-in
+// notification consumer (the lifecycle sinks or a persisted
+// subscription) for its Automaton.
+//
+// It is the enforcement point for the resolve precedence above: the
+// resolved set is applied FIRST and a subscription filter can only
+// narrow what that set delivers. An event kind not in the resolved set
+// is never dispatched for its Automaton, and a subscription cannot
+// widen it.
+//
+// Never gated: synthetic test events (ev.Test — a subscription test
+// fire), kinds that are not notify event kinds at all (prd.updated,
+// automation.* kinds, unknown kinds), or events with a kind in the
+// resolved set. The lookup runs on subscriber goroutines: the store
+// call happens outside any Manager mutex, and only m.mu is held for
+// the global-tier config read — same lock ordering as
+// ResolveNotifyEvents (m.mu never held across store calls).
+func (m *Manager) NotifyEventAllowed(ev LifecycleEvent) bool {
+	if ev.Test {
+		return true // synthetic test-fire events are never gated
+	}
+	// Kinds outside the notify surface are not lifecycle notify events
+	// (prd.updated, automation.* kinds, unknown kinds) and are never
+	// gated by the resolved set.
+	if !KnownEventKinds[ev.Kind] || ev.Kind == KindPRDUpdated {
+		return true
+	}
+	if m.store != nil && ev.PRDID != "" {
+		if prd, ok := m.store.GetPRD(ev.PRDID); ok && prd != nil {
+			return notifySetContains(m.ResolveNotifyEvents(prd).Events, ev.Kind)
+		}
+	}
+	// Missing Automaton or empty PRDID: the global tier decides.
+	return notifySetContains(m.ResolveNotifyEvents(nil).Events, ev.Kind)
+}
+
+// notifySetContains reports whether kind is one of events (a small,
+// rarely resolved list — a linear scan beats a map allocation here).
+func notifySetContains(events []string, kind string) bool {
+	for _, e := range events {
+		if e == kind {
+			return true
+		}
+	}
+	return false
 }

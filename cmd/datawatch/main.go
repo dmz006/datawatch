@@ -5993,17 +5993,17 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				httpServer.BroadcastPRDUpdate(autonomouspkg.PRDUpdatePayload(ev))
 			})
 			// Built-in lifecycle-event sinks (alert store + topic push) plus the
-			// comm fan-out. They act on exactly the kinds listed in
-			// autonomous.notify.default_events — shipped default is the
-			// five-kind baseline (autonomouspkg.DefaultNotifyEvents); operator
-			// can list custom kinds there, or set `default_events: []` to turn
-			// the built-in sinks off (nothing subscribed = no-op).
+			// comm fan-out. They subscribe to every notify event kind; which
+			// of those actually deliver is decided per Automaton by the resolver
+			// (autonomouspkg.ResolveNotifyEvents): Automaton's own notify_events
+			// > guardrail profile > autonomous.notify.default_events (shipped
+			// default is the five-kind baseline, autonomouspkg.DefaultNotifyEvents
+			// — `default_events: []` turns the global tier off).
 			// InstallLifecycleSinks wraps the CommSink below in a comm fan-out
 			// sink (autonomouspkg.NewCommFanoutSink) that coalesces events
 			// within CommWindow — the same 5s quiet window as the remote-alert
 			// bundler above.
 			_ = autonomouspkg.InstallLifecycleSinks(amgr, autonomouspkg.SinkConfig{
-				Kinds: cfg.Autonomous.Notify.DefaultEvents,
 				RecordAlert: func(level, title, body string) {
 					lv := alertspkg.LevelInfo
 					switch level {

@@ -99,6 +99,15 @@ type SubscriptionAction struct {
 // doc, Follow-up implementation PRD "Data model"). In-process
 // subscriptions (Manager.Subscribe) are code-registered and are NOT
 // stored here.
+//
+// Gating: delivery is subject to the notify-event resolver applied
+// FIRST — the Automaton's resolved notify-event set decides which of its
+// kinds can ever be delivered to this subscription, and Filter.Kinds
+// only narrows within that set (it can never widen it). A
+// subscription to a kind outside the resolved set therefore delivers
+// nothing: no delivery attempt, no pending-event queueing, no one-shot
+// consumption — the record stays armed until a DELIVERED event consumes
+// it.
 type Subscription struct {
 	ID        string              `json:"id"`
 	Owner     string              `json:"owner,omitempty"`
