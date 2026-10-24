@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-24T11:14:19.628Z",
+  "generated_at": "2026-10-24T11:43:02.062Z",
   "meta": {
     "views": [
       "observer"
@@ -14,7 +14,7 @@
   "summary": {
     "total": 0,
     "by_check": {},
-    "scenarios": 281,
+    "scenarios": 284,
     "scenarios_with_findings": 0,
     "groups": 0
   },
@@ -23,6 +23,45 @@
   "runs": [
     {
       "scenario": "no-peers@320x568/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "interaction:section-collapse-expand",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "interaction:refresh",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "interaction:rerender-timers",
       "view": "observer",
       "state": "no-peers",
       "theme": "dark",

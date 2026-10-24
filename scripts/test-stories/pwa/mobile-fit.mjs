@@ -59,8 +59,9 @@
 //     seed(page, state) -> Promise,            // seed the view into its state
 //     open(page) -> Promise,                   // open/navigate to the view
 //     settle(page, state, phase) -> Promise,   // wait for a phase to be stable
-//     runInteraction(page, id) -> Promise,     // replay one interaction and
-//                                             //   return extra findings
+//     runInteraction(page, id, { scope }) -> Promise,  // replay one interaction
+//                                             //   and return extra findings;
+//                                             //   scope narrows its layout checks
 //   }
 // Every missing key falls back to the default; a provider that fails to
 // load or to export the expected shape is skipped WITHOUT an error and the
@@ -353,8 +354,9 @@ export async function buildPlan(config) {
 //     ['settled']); phases other than 'settled' append '#<phase>' to the
 //     scenario name, and provider.settle() is the wait for that phase;
 //   * provider interactions, when present, run ONCE per profile at the first
-//     matrix cell as 'interaction:<id>' scenarios; they are skipped
-//     entirely when a scope option is set (flag or MOBILE_FIT_SCOPE);
+//     matrix cell as 'interaction:<id>' scenarios; when a scope option is set
+//     (flag or MOBILE_FIT_SCOPE) they still run, with their layout checks
+//     narrowed to that scope;
 //   * provider named scenarios run in every profile, in addition to the
 //     matrix cells, each with its own viewport/theme/zoom/state/scope;
 //     an explicit scope option overrides the named scenario's own scope;
@@ -532,8 +534,7 @@ async function runCell(view, provider, cell, dep) {
 }
 
 function shouldRunInteractions(config, plan) {
-  return config.scope.length === 0
-    && plan.interactions.length > 0
+  return plan.interactions.length > 0
     && plan.provider
     && typeof plan.provider.runInteraction === 'function';
 }
@@ -560,7 +561,7 @@ async function runInteractions(view, plan, cell, dep) {
       continue;
     }
     try {
-      const extra = await provider.runInteraction(page, id);
+      const extra = await provider.runInteraction(page, id, { scope: dep.scopeList });
       run.findings = Array.isArray(extra) ? extra.filter((f) => f && typeof f === 'object') : [];
       if (run.findings.length > 0) await dep.screenshot(page, run).catch(() => {});
     } catch (err) {
@@ -698,7 +699,7 @@ async function collectSavedRuns(config) {
     for (const cell of cells) {
       runs.push({ scenario: cell.scenario, view, state: cell.state, theme: cell.theme, zoom: cell.zoom, viewport: cell.viewport, findings: [] });
     }
-    if (config.scope.length === 0 && plan.interactions.length > 0) {
+    if (plan.interactions.length > 0) {
       const first = cells.length > 0 ? cells[0] : null;
       for (const id of plan.interactions) {
         runs.push({

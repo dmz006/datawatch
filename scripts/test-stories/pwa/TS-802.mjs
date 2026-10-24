@@ -26,6 +26,14 @@
 // The mobile-fit report is re-emitted into this story's evidence directory
 // ($EVIDENCE_DIR/TS-802/mobile-fit-report.json + .txt).
 //
+// Scope: like the harness, MOBILE_FIT_SCOPE (comma separated CSS selectors)
+// narrows every layout check to the matching subtree. The Observer pass is
+// replayed with MOBILE_FIT_SCOPE=#view, so recorded groups whose element lives
+// in the shared header or navigation bar (outside #view, owned by the separate
+// shared-navigation pass) cannot reproduce; the verdict then covers every
+// recorded group that lives inside the Observer view. Without a scope the full
+// page is checked and the shared chrome counts too.
+//
 // Runs through runStory (single retry on transient navigation errors).
 // Exit 1 = recorded regressions still present (expected on the unfixed tree),
 // or a harness error. Exit 0 = none of the 68 recorded groups reproduce.
@@ -41,6 +49,11 @@ import { observerProvider } from './mobile-fit-observer.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REGRESSIONS_PATH = path.join(HERE, 'mobile-fit-observer-regressions.json');
+
+// Optional layout-check scope (same variable and format as mobile-fit.mjs).
+const SCOPE_LIST = (process.env.MOBILE_FIT_SCOPE || '')
+  .split(',').map((s) => s.trim()).filter(Boolean);
+const SCOPE_OPTS = SCOPE_LIST.length ? { scope: SCOPE_LIST } : {};
 
 const CELL_RE = /^(.+)@(\d+)x(\d+)\/(light|dark)\/z(\d+)$/;
 
@@ -139,7 +152,7 @@ async function runCellScenario(ctx, cell, evidenceDir) {
     await observerProvider.seed(ctx.page, cell.state);
     await observerProvider.open(ctx.page);
     await observerProvider.settle(ctx.page, cell.state, 'settled');
-    run.findings = await collectFindings(ctx.page, {});
+    run.findings = await collectFindings(ctx.page, SCOPE_OPTS);
   } catch (err) {
     run.error = (err && err.message) ? err.message : String(err);
     failed = true;
@@ -231,7 +244,8 @@ await runStory(async (page) => {
         await observerProvider.seed(namedCtx.page, namedEntry.state);
         await observerProvider.open(namedCtx.page);
         await observerProvider.settle(namedCtx.page, namedEntry.state, 'settled');
-        const scopeList = (namedEntry.scope && (Array.isArray(namedEntry.scope) ? namedEntry.scope : [namedEntry.scope])) || [];
+        const ownScope = (namedEntry.scope && (Array.isArray(namedEntry.scope) ? namedEntry.scope : [namedEntry.scope])) || [];
+        const scopeList = SCOPE_LIST.length ? SCOPE_LIST : ownScope;
         run.findings = await withTimeout(
           collectFindings(namedCtx.page, scopeList.length ? { scope: scopeList } : {}),
           NAMED_TIMEOUT_MS, 'named scenario',
@@ -268,7 +282,7 @@ await runStory(async (page) => {
           await observerProvider.seed(interCtx.page, firstCell.state);
           await observerProvider.open(interCtx.page);
           await observerProvider.settle(interCtx.page, firstCell.state, 'settled');
-          run.findings = await withTimeout(observerProvider.runInteraction(interCtx.page, id), INTERACTION_TIMEOUT_MS, `interaction ${id}`);
+          run.findings = await withTimeout(observerProvider.runInteraction(interCtx.page, id, SCOPE_OPTS), INTERACTION_TIMEOUT_MS, `interaction ${id}`);
         } catch (err) {
           run.error = (err && err.message) ? err.message : String(err);
         }
@@ -288,6 +302,7 @@ await runStory(async (page) => {
     story: 'TS-802',
     views: ['observer'],
     profile: 'quick',
+    scope: SCOPE_LIST,
     regression_guard: true,
     recorded_groups: recorded.length,
     recorded_source: 'docs/testing/runs/observer-mobile-fit/repro-report.json',

@@ -79,17 +79,17 @@ async function waitBodyState(page, id, wantVisible) {
 }
 
 // Run collectFindings once (defensively) and append to the accumulator.
-async function collectInto(page, findings) {
-  const found = await collectFindings(page).catch(() => []);
+async function collectInto(page, findings, scopeOpts = {}) {
+  const found = await collectFindings(page, scopeOpts).catch(() => []);
   findings.push(...found);
 }
 
 // One collapse/expand verification: wait for the body to actually switch, then
 // checkpoint. If the display never switches, record an interaction finding.
-async function verifySwap(page, findings, id, wantVisible, label) {
+async function verifySwap(page, findings, id, wantVisible, label, scopeOpts = {}) {
   try {
     await waitBodyState(page, id, wantVisible);
-    await collectInto(page, findings);
+    await collectInto(page, findings, scopeOpts);
   } catch {
     findings.push(interactionFinding(
       `#${id}`,
@@ -102,7 +102,7 @@ async function verifySwap(page, findings, id, wantVisible, label) {
 // Cycle the System Statistics header 3x (each toggle must visibly collapse and
 // bring the section back), then expand/collapse both inner collapsibles — the
 // MCP channel bridge and the channel bridge diagnostics.
-async function runSectionCollapseExpand(page) {
+async function runSectionCollapseExpand(page, scopeOpts = {}) {
   const findings = [];
   await seedAndOpen(page);
 
@@ -125,13 +125,13 @@ async function runSectionCollapseExpand(page) {
       findings.push(interactionFinding(`[onclick*="stats"]`, `cycle ${cycle}: System Statistics section header (toggleSettingsSection) not found in the Observer view`));
       continue;
     }
-    await verifySwap(page, findings, STATS, false, `stats collapse ${cycle}/3`);
+    await verifySwap(page, findings, STATS, false, `stats collapse ${cycle}/3`, scopeOpts);
     const expandedOk = await clickOnclickMatch(page, STATS_HEADER).catch(() => false);
     if (!expandedOk) {
       findings.push(interactionFinding(`[onclick*="stats"]`, `cycle ${cycle}: System Statistics section header (toggleSettingsSection) not found in the Observer view`));
       continue;
     }
-    await verifySwap(page, findings, STATS, true, `stats expand ${cycle}/3`);
+    await verifySwap(page, findings, STATS, true, `stats expand ${cycle}/3`, scopeOpts);
   }
 
   const innerSections = [
@@ -140,11 +140,11 @@ async function runSectionCollapseExpand(page) {
   ];
   for (const [id, label] of innerSections) {
     const expandedOk = await clickOnclickMatch(page, id).catch(() => false);
-    if (expandedOk) await verifySwap(page, findings, id, true, `expand ${label}`);
+    if (expandedOk) await verifySwap(page, findings, id, true, `expand ${label}`, scopeOpts);
     else findings.push(interactionFinding(`[onclick*="${id}"]`, `${label} header not found in the Observer view`));
 
     const collapsedOk = await clickOnclickMatch(page, id).catch(() => false);
-    if (collapsedOk) await verifySwap(page, findings, id, false, `collapse ${label}`);
+    if (collapsedOk) await verifySwap(page, findings, id, false, `collapse ${label}`, scopeOpts);
     else findings.push(interactionFinding(`[onclick*="${id}"]`, `${label} header not found in the Observer view`));
   }
   return findings;
@@ -154,7 +154,7 @@ async function runSectionCollapseExpand(page) {
 // Drive every refresh path into the stats section and, after each, verify the
 // view is settled (no spinner/skeleton in #statsPanel), the per-system grid
 // shows the full ten-peers card count, and layout has not regressed.
-async function refreshStep(page, findings, label, act, extraSelector) {
+async function refreshStep(page, findings, label, act, extraSelector, scopeOpts = {}) {
   let fired = true;
   try {
     await act();
@@ -199,10 +199,10 @@ async function refreshStep(page, findings, label, act, extraSelector) {
     return;
   }
 
-  await collectInto(page, findings);
+  await collectInto(page, findings, scopeOpts);
 }
 
-async function runRefresh(page) {
+async function runRefresh(page, scopeOpts = {}) {
   const findings = [];
   await seedAndOpen(page);
 
@@ -213,7 +213,7 @@ async function runRefresh(page) {
   };
 
   // Path 1: the section header itself (collapse/expand pass through it).
-  await refreshStep(page, findings, 'header toggle', headerClick);
+  await refreshStep(page, findings, 'header toggle', headerClick, undefined, scopeOpts);
   // Restore expanded state for the remaining paths.
   const statsHidden = await page.evaluate((id) => {
     const el = document.getElementById(id);
@@ -228,19 +228,19 @@ async function runRefresh(page) {
   await refreshStep(page, findings, 'stats grid refresh', () => page.evaluate(() => {
     if (typeof window.loadSystemStatsGrid !== 'function') throw new Error('window.loadSystemStatsGrid is not a function');
     window.loadSystemStatsGrid();
-  }));
+  }), undefined, scopeOpts);
 
   // Path 3: the stats panel refresh (window.loadStatsPanel).
   await refreshStep(page, findings, 'stats panel refresh', () => page.evaluate(() => {
     if (typeof window.loadStatsPanel !== 'function') throw new Error('window.loadStatsPanel is not a function');
     window.loadStatsPanel();
-  }));
+  }), undefined, scopeOpts);
 
   // Path 4: the peers card refresh (window.renderObserverPeersCard).
   await refreshStep(page, findings, 'peers card refresh', () => page.evaluate(() => {
     if (typeof window.renderObserverPeersCard !== 'function') throw new Error('window.renderObserverPeersCard is not a function');
     window.renderObserverPeersCard();
-  }), 'observerPeersPanel');
+  }), 'observerPeersPanel', scopeOpts);
 
   // Path 5: the small refresh button in the channel bridge diagnostics block.
   const diagPart = 'loadChannelDiagnostics()';
@@ -252,7 +252,7 @@ async function runRefresh(page) {
       const el = document.getElementById('channelDiagBody');
       return !el || !el.querySelector(ph);
     }, LOADING_PLACEHOLDERS, { timeout: 8000, polling: 100 });
-  });
+  }, undefined, scopeOpts);
 
   // Path 6: one 8-second auto tick (the live peers / stats grid pollers
   // refresh on an 8s cycle while Observer is active). Wait just past two
@@ -261,7 +261,7 @@ async function runRefresh(page) {
   await refreshStep(page, findings, '8s auto tick', async () => {
     const panel = await page.evaluate(() => document.getElementById('statsPanel') !== null);
     if (!panel) throw new Error('#statsPanel missing after auto tick');
-  });
+  }, undefined, scopeOpts);
 
   return findings;
 }
@@ -273,7 +273,7 @@ async function runRefresh(page) {
 // request rate in two 17s windows bracketing the re-renders. Uses a fresh
 // page with an addInitScript setInterval wrapper — the runner's context is
 // out of scope by the time the first matrix cell has already painted.
-async function runRerenderTimers(page) {
+async function runRerenderTimers(page, scopeOpts = {}) {
   const findings = [];
   const base = process.env.TEST_HTTP || 'http://127.0.0.1:18080';
   const token = process.env.TEST_TOKEN || 'dw-test-token-12345';
@@ -398,7 +398,7 @@ async function runRerenderTimers(page) {
       await sleep(1000); // let the app finish its first paint (timer registration included)
 
       const N1 = await p2.evaluate(() => (window.__liveIntervals && window.__liveIntervals.size) || 0);
-      const baselineLayout = await collectFindings(p2).catch(() => []);
+      const baselineLayout = await collectFindings(p2, scopeOpts).catch(() => []);
 
       // Window 1: 17s of normal auto-refresh traffic.
       let statsRequests = 0;
@@ -421,11 +421,14 @@ async function runRerenderTimers(page) {
       }
 
       const N2 = await p2.evaluate(() => (window.__liveIntervals && window.__liveIntervals.size) || 0);
+      // The re-render loop itself fetches stats on every navigation; mark where
+      // it ended so window 2 counts only the steady-state poller traffic.
+      const RAfterLoop = statsRequests;
 
-      // Window 2: another 17s; the delta vs window 1 is the steady-state rate
-      // after 10 re-renders.
+      // Window 2: another 17s; its request count vs window 1 is the
+      // steady-state rate after 10 re-renders.
       await sleep(17000);
-      const R2 = statsRequests;
+      const R2 = statsRequests - RAfterLoop;
       p2.off('request', listener);
 
       if (N2 > N1) {
@@ -444,11 +447,11 @@ async function runRerenderTimers(page) {
       if (R2 - R1 > perTick) {
         findings.push(interactionFinding(
           '#perSystemGrid',
-          `auto-refresh stacking: /api/stats requests grew from ${R1} (before re-renders) to ${R2} (after) — delta ${R2 - R1} exceeds tolerance ${perTick}`,
+          `auto-refresh stacking: /api/stats requests per 17s window grew from ${R1} (before re-renders) to ${R2} (after) — delta ${R2 - R1} exceeds tolerance ${perTick}`,
         ));
       }
 
-      const finalLayout = await collectFindings(p2).catch(() => []);
+      const finalLayout = await collectFindings(p2, scopeOpts).catch(() => []);
       if (JSON.stringify(finalLayout) !== JSON.stringify(baselineLayout)) {
         findings.push(interactionFinding(
           '#settings-sec-stats',
@@ -573,11 +576,14 @@ export const observerProvider = {
 
   // Interactions: run one named interaction at the (already at the first
   // matrix cell) live page, returning extra interaction findings.
-  async runInteraction(page, id) {
+  // opts.scope (a CSS selector list) narrows the layout checks the interaction
+  // runs between its steps; the interaction's own behavioural checks always run.
+  async runInteraction(page, id, opts = {}) {
+    const scopeOpts = Array.isArray(opts.scope) && opts.scope.length > 0 ? { scope: opts.scope } : {};
     switch (id) {
-      case 'section-collapse-expand': return runSectionCollapseExpand(page);
-      case 'refresh': return runRefresh(page);
-      case 'rerender-timers': return runRerenderTimers(page);
+      case 'section-collapse-expand': return runSectionCollapseExpand(page, scopeOpts);
+      case 'refresh': return runRefresh(page, scopeOpts);
+      case 'rerender-timers': return runRerenderTimers(page, scopeOpts);
       default: throw new Error(`unknown interaction: ${id}`);
     }
   },
