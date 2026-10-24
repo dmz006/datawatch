@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.8.1 — Every session end records who ended it and why
+
+Every session end now records who ended it and why, so a worker that is ended early can be traced instead of vanishing without a reason.
+
+- A reason-bearing end API in the session manager. Every path that ends a session goes through it and writes a `killed` timeline line with `by=` and a reason, and a journal line.
+- Every caller is attributed: the daemon shutdown and cleanup paths, the executor, the orphan sweep, the lease reaper, and the REST, MCP and comm-channel kill commands. A hook event such as Stop or SubagentStop is recorded as not ending a session.
+- A guard test fails if any code ends a session without going through the reason-bearing helper.
+- This is the first part of the investigation into Claude workers being ended about five minutes after their task is delivered; the reproduction and fix follow once real runs show the recorded reason.
+
 ## v9.8.0 — Progress dashboard for the Automata
 
 The Automata tab now shows how far the work has got and roughly when the rest will be done, and the same numbers are available everywhere.
