@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.10.3 — Status cards only on the Automation sub-tab
+
+The Progress card and the capacity card now appear only on the Automation sub-tab. They are removed from the Automata and Templates sub-tabs, load only when the Automation sub-tab is selected, and stop their polling when the operator leaves it. The Automation sub-tab shows its capacity card exactly once, and the PRD detail view has no progress card. Node tests and browser stories updated for the new placement.
+
 ## v9.10.2 — Stall detector limited to opencode sessions
 
 The stall detector, written for opencode losing its Ollama connection, now applies only to the opencode family, decided from the session's backend and not from its output. For those backends it matches the provider error line as the tool prints it, not a bare phrase anywhere in the last 300 lines, and text already present at the previous scan does not match again. Claude and pi sessions are never ended by it, so a task that writes or tests network code (connection refused, deadline exceeded) is no longer ended mid-run. Each end records the matched line, the backend and the scan source in the end reason.
