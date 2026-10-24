@@ -23423,8 +23423,9 @@ window.paintProgressCard = function() {
 // loadProgressCard fetches the metrics (and, best effort, the trend) through
 // apiFetch. A failed refresh keeps the last good data and marks it stale; the
 // failed state shows only when nothing was ever loaded. It runs from the
-// Automation sub-tab's own mount (_automationMount), so it needs no timer of
-// its own. force skips the short refetch guard (the retry button).
+// Automation sub-tab's mount (_automationMount) and from that sub-tab's
+// refresh path (the automation list loader's afterPaint), so it needs no
+// timer of its own. force skips the short refetch guard (the retry button).
 window.loadProgressCard = function(force) {
   const S = window._progressCardState;
   if (S.inflight) return S.inflight;
@@ -25454,7 +25455,12 @@ function _automationLoader() {
       const ctx = { prdTitles: d.titles, now: Date.now() };
       return items.map(a => buildAutomationCardHTML(a, ctx)).join('');
     },
-    afterPaint: () => { if (_automationState.detailId) renderAutomationStrip(); },
+    afterPaint: () => {
+      if (_automationState.detailId) renderAutomationStrip();
+      // Refresh the progress card on each 30-second automation poll; its own
+      // refetch guard makes this a no-op if it loaded very recently.
+      if (typeof window.loadProgressCard === 'function') window.loadProgressCard();
+    },
   });
 }
 function loadAutomationList() {
