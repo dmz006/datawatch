@@ -822,6 +822,13 @@ type Manager struct {
 	// verifierHost — session/lease access for the startup verifier
 	// reconcile. Guarded by mu. Nil = reconcile skipped.
 	verifierHost VerifierHost
+	// judgeHost — session/lease access for the startup guardrail-judge
+	// reconcile. Guarded by mu. Nil = reconcile skipped.
+	judgeHost JudgeHost
+	// judgeAdopts records which guardrail-judge session was adopted for each
+	// unit at startup, so a repeated reconcile adopts it as a no-op. Guarded
+	// by mu.
+	judgeAdopts map[string]string
 
 	// orphanSeen records when the orphan sweep first saw each unbound worker
 	// session; orphanNow is the sweep's clock (nil = time.Now). Guarded by mu.

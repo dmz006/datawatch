@@ -132,9 +132,13 @@ func (a *API) resumeRunningPRDs() {
 	// surviving verifier instead of spawning a second one.
 	a.M.mu.Lock()
 	vhost := a.M.verifierHost
+	jhost := a.M.judgeHost
 	a.M.mu.Unlock()
 	if n := len(a.M.ReconcileVerifiers(vhost)); n > 0 {
 		fmt.Printf("[autonomous] boot-resume: reconciled %d verifier session(s)\n", n)
+	}
+	if n := len(a.M.ReconcileJudges(jhost)); n > 0 {
+		fmt.Printf("[autonomous] boot-resume: reconciled %d guardrail judge session(s)\n", n)
 	}
 
 	// B165 — counts for the per-PRD decision log + summary line.
