@@ -943,6 +943,60 @@ func (a *API) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (a
 	}
 	return out, err
 }
+
+// reviewSlotWait bounds how long ResolveTaskReview waits for a held Automaton's
+// executor to exit before it changes anything.
+const reviewSlotWait = 5 * time.Second
+
+// ResolveTaskReview is the operator's decision on a task held for review (see
+// Manager.ResolveTaskReview). A held Automaton's executor exits right after it
+// blocks, so the call first waits briefly for that exit: a run launched while
+// the old executor still holds its slot would be dropped. Then the change is
+// made, and the run is relaunched the way Resume relaunches it.
+func (a *API) ResolveTaskReview(prdID, taskID string, req ReviewResolution, actor string) (any, error) {
+	if !a.waitRunSlotFree(prdID, reviewSlotWait) {
+		return nil, fmt.Errorf("prd %q: its executor is still finishing; try again shortly", prdID)
+	}
+	out, err := a.M.ResolveTaskReview(prdID, taskID, req, actor)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	if out.Status == PRDRunning {
+		if err := a.Run(prdID); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// SetFailureEscalation sets or clears the failure escalation override (see
+// Manager.SetFailureEscalation). An empty taskID addresses the Automaton.
+func (a *API) SetFailureEscalation(prdID, taskID string, policy *FailureEscalationPolicy, actor string) (any, error) {
+	out, err := a.M.SetFailureEscalation(prdID, taskID, policy, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
+// waitRunSlotFree reports whether id has no live executor slot, polling for up
+// to wait. It returns false when the slot is still held at the deadline.
+func (a *API) waitRunSlotFree(id string, wait time.Duration) bool {
+	deadline := time.Now().Add(wait)
+	for {
+		a.runMu.Lock()
+		_, alive := a.runCancels[id]
+		a.runMu.Unlock()
+		if !alive {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
 func (a *API) SetTaskProjectDir(prdID, taskID, dir, actor string) (any, error) {
 	out, err := a.M.SetTaskProjectDir(prdID, taskID, dir, actor)
 	if err == nil {

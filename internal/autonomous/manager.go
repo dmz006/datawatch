@@ -2587,6 +2587,14 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 // true makes the next attempt skip the restore of preserved attempt work
 // (Task.CleanRestart); false keeps the restore on, as ResetTask always did.
 func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, cleanRestart bool) (*PRD, error) {
+	return m.resetTask(prdID, taskID, actor, force, cleanRestart, nil)
+}
+
+// resetTask is ResetTaskWithOptions with an optional operator review. A nil
+// review is a plain reset. A non-nil review (ResolveTaskReview's retry) also
+// accepts a task held for review and applies the operator's changes in the
+// same save as the requeue, so the changes and the requeue land together.
+func (m *Manager) resetTask(prdID, taskID, actor string, force, cleanRestart bool, review *reviewRequeue) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -2633,7 +2641,7 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
 			if t.ID == taskID {
-				isRetryable := t.Status == TaskFailed || t.Status == TaskBlocked
+				isRetryable := t.Status == TaskFailed || t.Status == TaskBlocked || (review != nil && t.Status == TaskReviewNeeded)
 				isRequeue := force && (t.Status == TaskCompleted || t.Status == TaskCancelled)
 				if !isRetryable && !isRequeue {
 					if force {
@@ -2705,6 +2713,11 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 				// the flag false, so an unconsumed clean restart never carries
 				// over into a later reset.
 				t.CleanRestart = cleanRestart
+				// An operator review's changes go on last, so the hint they
+				// set replaces the generic one built above.
+				if review != nil {
+					review.apply(t, time.Now())
+				}
 				t.StartedAt = nil
 				t.CompletedAt = nil
 				t.UpdatedAt = time.Now()
@@ -2748,11 +2761,19 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 	}
 	kind := "reset_task"
 	note := fmt.Sprintf("task=%s reset to pending for retry", taskID)
+	decActor := actor
 	if force {
 		kind = "requeue_task"
 		note = fmt.Sprintf("task=%s requeued (force=true)", taskID)
 	}
-	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: actor, Note: note})
+	if review != nil {
+		kind = reviewDecisionKind
+		note = review.decisionNote(taskID, actor)
+		decActor = reviewDecisionActor
+		// The block reason named the held task, which is no longer held.
+		prd.BlockedReason = ""
+	}
+	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: decActor, Note: note})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
