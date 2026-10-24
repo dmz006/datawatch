@@ -143,6 +143,11 @@ const (
 	// this state (same mechanism StoryAwaitingApproval already uses at
 	// story granularity); ApproveTask transitions it back to pending.
 	TaskAwaitingApproval TaskStatus = "awaiting_approval"
+	// TaskReviewNeeded: the task failed enough attempts (the failure
+	// escalation policy's max_failures) that it is held for the operator to
+	// retry or cancel it. It is not terminal and not a failure; see
+	// failure_escalation.go and ResolveTaskReview.
+	TaskReviewNeeded TaskStatus = "review_needed"
 )
 
 // Effort mirrors session.EffortLevels (BL41) but kept separate so
@@ -218,6 +223,11 @@ type PRD struct {
 	// list for this Automaton. Precedence: task → Automaton (here) → global
 	// autonomous.verifier_policy. Nil = inherit. See ResolveVerifierPolicy.
 	VerifierPolicy *VerifierPolicyOverride `json:"verifier_policy,omitempty"`
+	// FailureEscalation overrides the global failure escalation policy for
+	// every task of this Automaton. Precedence per field: task → Automaton
+	// (here) → global autonomous.failure_escalation. Nil = inherit. See
+	// resolveFailureEscalation.
+	FailureEscalation *FailureEscalationPolicy `json:"failure_escalation,omitempty"`
 	// LSPLanguage (v8.7.1) — language server preset for OpenCode-backed workers.
 	// Applies to all tasks unless overridden at the task level.
 	LSPLanguage string `json:"lsp_language,omitempty"`
@@ -849,6 +859,21 @@ type Task struct {
 	// and backend list for this task — the most specific level. Nil =
 	// inherit. See ResolveVerifierPolicy.
 	VerifierPolicy *VerifierPolicyOverride `json:"verifier_policy,omitempty"`
+	// FailureEscalation overrides the Automaton and global failure
+	// escalation policy for this task, per field. Nil = inherit. See
+	// resolveFailureEscalation.
+	FailureEscalation *FailureEscalationPolicy `json:"failure_escalation,omitempty"`
+	// Attempts is the per-attempt history the failure escalation policy
+	// records for this task (one entry per failed, stalled or cancelled
+	// attempt).
+	Attempts []TaskAttempt `json:"attempts,omitempty"`
+	// EscalationFailures counts failed attempts since the last operator
+	// action; it indexes the policy's steps and is compared with
+	// max_failures.
+	EscalationFailures int `json:"escalation_failures,omitempty"`
+	// ReviewSummary is the plain-text report written when the task is held
+	// in TaskReviewNeeded.
+	ReviewSummary *ReviewSummary `json:"review_summary,omitempty"`
 	// ExecutorSource is the level that supplied the execution backend for
 	// the most recent run attempt: "task", "story", "prd", "automation" or
 	// "global" (no level set one, so the fallback backend was used). Set by

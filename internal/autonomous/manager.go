@@ -402,6 +402,11 @@ type Config struct {
 	// regression from a VALID baseline (an invalid gate never blocks
 	// under any policy). Unset or unrecognized values read as "warn".
 	GateDisagreement string `json:"gate_disagreement,omitempty"`
+	// FailureEscalation — the global default failure escalation policy
+	// (mirrors autonomous.failure_escalation). Automaton and task overrides
+	// win per field; see resolveFailureEscalation. An unset MaxFailures reads
+	// as 3 and a nil Enabled reads as true.
+	FailureEscalation FailureEscalationPolicy `json:"failure_escalation"`
 	// MaxEnginesPerNode is how many local-model engine sessions one
 	// compute node may run at once. 1 = one per node (default). Mirrors
 	// config.AutonomousConfig.MaxEnginesPerNode; the runtime copy is what
@@ -485,6 +490,7 @@ func DefaultConfig() Config {
 		MaxConcurrentTasks:  1,
 		MaxEnginesPerNode:   1,
 		GateDisagreement:    "warn",
+		FailureEscalation:   defaultFailureEscalationPolicy(),
 		AutoFixRetries:      1,
 		SecurityScan:        true,
 		MaxRecursionDepth:   5,
@@ -1528,6 +1534,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	}
 	types := make([]AutomatonType, len(builtinTypes))
 	copy(types, builtinTypes)
+	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
 	m := &Manager{
 		cfg:         cfg,
 		store:       st,
@@ -1555,6 +1562,9 @@ func (m *Manager) SetConfig(cfg Config) {
 	if cfg.GateDisagreement != "warn" && cfg.GateDisagreement != "block" {
 		cfg.GateDisagreement = "warn"
 	}
+	// failure_escalation: an unset max_failures reads as 3 and a nil enabled
+	// reads as true.
+	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
 	m.cfg = cfg
 }
 

@@ -23820,7 +23820,8 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
   ['lifecycle_sub_form_group_task', 'Task status', [
     'task.pending', 'task.queued', 'task.in_progress', 'task.running_tests',
     'task.verifying', 'task.completed', 'task.failed', 'task.blocked',
-    'task.cancelled', 'task.waiting_capacity', 'task.awaiting_approval']],
+    'task.cancelled', 'task.waiting_capacity', 'task.awaiting_approval',
+    'task.review_needed']],
   ['lifecycle_sub_form_group_other', 'Other', [
     'task.session_started', 'task.session_cleared', 'prd.updated']],
 ];
