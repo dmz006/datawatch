@@ -358,7 +358,7 @@ test-e2e-pwa:
 	until docker compose -f $(E2E_COMPOSE) ps datawatch | grep -q healthy; do sleep 2; done
 	docker compose -f $(E2E_COMPOSE) run --rm playwright
 
-# PWA slow-network load group (TS-802..TS-810) via run-all.mjs --group load.
+# PWA slow-network load group (TS-802..TS-812) via run-all.mjs --group load.
 test-e2e-pwa-load:
 	bash scripts/e2e-pwa.sh load
 

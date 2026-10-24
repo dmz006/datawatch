@@ -1,5 +1,5 @@
 // scripts/test-stories/pwa/perf-lib.mjs — shared helpers for the load-performance
-// PWA stories (TS-802 .. TS-810).
+// PWA stories (TS-802 .. TS-812).
 //
 // Built on lib.mjs. Provides: network throttle profiles (Chrome DevTools
 // Protocol), time-to-first-content and "loading indicator within 200 ms"
@@ -15,6 +15,11 @@
 //   PERF_SEED_SESSIONS      large set: sessions                     (default 3000)
 //   PERF_SEED_AUTOMATA      large set: heavy Automata               (default 300)
 //   PERF_LOADER_TIMEOUT_MS  the list loader's request timeout       (default 15000)
+//   PERF_BUDGET_TAB_BYTES   data bytes for one tab's first load      (default 524288)
+//   PERF_BUDGET_RECONNECT_REQUESTS  requests after a reconnect      (default 6)
+//   PERF_BUDGET_RECONNECT_BYTES     bytes after a reconnect         (default 262144)
+//   PERF_OUTAGE_MS          how long the connection stays dropped   (default 40000,
+//                           past the 35 s socket watchdog threshold)
 //
 // The large set is normally supplied by a daemon started on the seeded fixture
 // (SeedPerfServer in internal/server/perf_seed_test.go). seedLargeSet() checks
@@ -39,6 +44,10 @@ export const BUDGET = {
   seedSessions: num('PERF_SEED_SESSIONS', 3000),
   seedAutomata: num('PERF_SEED_AUTOMATA', 300),
   loaderTimeoutMs: num('PERF_LOADER_TIMEOUT_MS', 15000),
+  tabBytes: num('PERF_BUDGET_TAB_BYTES', 512 * 1024),
+  reconnectRequests: num('PERF_BUDGET_RECONNECT_REQUESTS', 6),
+  reconnectBytes: num('PERF_BUDGET_RECONNECT_BYTES', 256 * 1024),
+  outageMs: num('PERF_OUTAGE_MS', 40000),
 };
 
 // Throttle profiles for Network.emulateNetworkConditions. slow-4G is the
@@ -318,6 +327,70 @@ export async function reorderEndpoint(page, pathname, { markStale = (b) => b, me
   }, method);
   return ctl;
 }
+
+// --- network recording -------------------------------------------------------
+
+// List endpoints that have a small (summary) form. A GET of one of these
+// without view=summary is a full-form list request.
+export const SUMMARY_LIST_PATHS = ['/api/sessions', '/api/autonomous/prds'];
+
+// Why `url` is a full-form list request, or '' when it is not. A request
+// through a federation proxy is judged on the path behind the proxy prefix.
+export function fullFormReason(url, method = 'GET') {
+  if (method !== 'GET') return '';
+  let u;
+  try { u = new URL(url, 'http://localhost'); } catch { return ''; }
+  const full = u.searchParams.get('full');
+  if (full === '1' || full === 'true') return 'full=1';
+  const p = u.pathname.replace(/^\/api\/proxy\/[^/]+/, '');
+  if (SUMMARY_LIST_PATHS.includes(p) && u.searchParams.get('view') !== 'summary') {
+    return 'list endpoint without view=summary';
+  }
+  return '';
+}
+
+// Record every request the page makes, with the encoded size of its response
+// body (page.on('response') + Request.sizes()). mark() returns a position;
+// since(pos) returns the entries recorded after it. Call flush() before
+// reading sizes so bodies still in flight are counted.
+export function recordNetwork(page) {
+  const entries = [];
+  const byRequest = new Map();
+  const pending = [];
+  page.on('request', (req) => {
+    const u = req.url();
+    if (u.startsWith('data:') || u.startsWith('blob:')) return;
+    const e = { url: u, method: req.method(), status: null, bytes: 0, failed: false, at: Date.now() };
+    entries.push(e);
+    byRequest.set(req, e);
+  });
+  page.on('response', (resp) => {
+    const req = resp.request();
+    const e = byRequest.get(req);
+    if (!e) return;
+    e.status = resp.status();
+    pending.push(
+      req.sizes()
+        .then((s) => { e.bytes = Math.max(0, s.responseBodySize); })
+        .catch(() => {
+          const cl = Number(resp.headers()['content-length']);
+          e.bytes = Number.isFinite(cl) ? cl : 0;
+        }),
+    );
+  });
+  page.on('requestfailed', (req) => {
+    const e = byRequest.get(req);
+    if (e) e.failed = true;
+  });
+  return {
+    entries,
+    mark: () => entries.length,
+    since: (pos) => entries.slice(pos),
+    flush: () => Promise.all(pending.splice(0)).then(() => {}),
+  };
+}
+
+export const sumBytes = (entries) => entries.reduce((n, e) => n + e.bytes, 0);
 
 // --- seeding -----------------------------------------------------------------
 
