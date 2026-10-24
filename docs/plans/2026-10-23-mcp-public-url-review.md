@@ -159,7 +159,9 @@ Candidate commit: c3f1150a7e1f10c55bac9241ab758494b4bf450c
 
 Pre-existing failures found on the merge base: the internal-refs leak in README.md (script check, no Go package or test). No failing Go package or test.
 
-New failures: the lint finding in `internal/mcp/sse_base_url_test.go`, fixed in the candidate with a follow-up commit; no unresolved new failures.
+History: the first lint run on an earlier candidate head reported one finding in `internal/mcp/sse_base_url_test.go`; the follow-up commit fixed it and that commit is the current candidate head. Re-verified on the current head (candidate c3f1150a, merged on the task branch): `golangci-lint run` over the four touched packages reports 0 issues, and `go test -count=1` on `internal/mcp`, `internal/config`, `internal/server` and `internal/router` passes (2397 tests). The repo's `make lint` wrapper stops earlier at its tmux-kill audit, which trips on the git-ignored `.datawatch/verify/lint.log` text and not on any tracked file.
+
+New failures: none
 
 ## Result
 
@@ -169,9 +171,10 @@ before, and the keepalive option survived the merge. The value is read only to c
 does not touch the listen address, redirects, outbound requests or TLS setup. It is validated as empty or
 an absolute http or https URL on the PUT path (400) and again at SSE start (an invalid value falls back to
 the bind-address URL with a warning). Every surface in the parity table is present and the parity tests
-pass. On the results wording: the section does not say `New failures: none` literally. Its one new
-finding, a lint error in the candidate's own test file, was fixed by a follow-up commit, lint reran clean,
-and no unresolved new failure remains. The candidate commit line (c3f1150a) matches the candidate head. After the
+pass. On the results wording: an earlier lint finding in the candidate's own test file was fixed by the
+follow-up commit, so the candidate head carries no failure. Lint and the four-package tests were rerun on
+the current head, and the results section now reads `New failures: none` literally. The candidate commit
+line (c3f1150a) matches the candidate head. After the
 merge, `go vet` on `internal/mcp` and `internal/config` and the targeted `PublicURL|SSEBaseURL|SSEEndpoint|SurfaceParity`
 tests across the four packages all passed. The extension check does not change the outcome: skills and
 plugins cannot reach the SSE transport, so core code is needed.
