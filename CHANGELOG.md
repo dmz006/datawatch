@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.10.2 — Stall detector limited to opencode sessions
+
+The stall detector, written for opencode losing its Ollama connection, now applies only to the opencode family, decided from the session's backend and not from its output. For those backends it matches the provider error line as the tool prints it, not a bare phrase anywhere in the last 300 lines, and text already present at the previous scan does not match again. Claude and pi sessions are never ended by it, so a task that writes or tests network code (connection refused, deadline exceeded) is no longer ended mid-run. Each end records the matched line, the backend and the scan source in the end reason.
+
 ## v9.10.1 — Restart matrix for in-flight work
 
 The restart matrix runs the daemon restart scenarios from the BL590 plan (adoption of live sessions, launch windows, in-flight tasks, verifier sessions) in a sandbox and records each result; the matrix is wired into the release smoke, with strict mode for the final gate. Restart behaviour fixes found by the matrix are included. Documented in the operator docs and the testing tracker.
