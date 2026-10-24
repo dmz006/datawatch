@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## Next patch above main — Capacity card shows compute node usage (BL604)
+
+The capacity card shows, per compute node beside the slots held of the limit, the loaded model with its memory size and expiry (or that it stays loaded) plus GPU utilization and GPU memory from the node's observer.
+
+- New `usage` object on the node pools of `GET /api/capacity` (`state`, `checked_at`, `models`, `gpu`); the body is additive — a pool without usage serialises as before.
+- Figures come from a short-TTL daemon cache (about 15 seconds, at most one refresh per node at a time), so the capacity page never waits on a node; `Unreachable` and the *Checking...* state are reported instead of blocking.
+- Only `ollama`-kind nodes report loaded models; GPU figures need an observer peer set on the node.
+- The same figures on `datawatch capacity`, the comm command `capacity` and the `capacity_status` MCP tool.
+- Strings ship in all five locale bundles. PWA card and every surface are covered by unit, Node and surface tests; a live run against a real Ollama node and a real observer peer is still owed; Android and iPhone await the datawatch-app issue written up in `docs/plans/2026-10-24-datawatch-app-capacity-node-usage-note.md` (not filed).
+
 ## v9.9.1 — Orphan sweep no longer ends live workers
 
 Fixes the orphan sweep that ended every live Claude worker about five minutes after its task was delivered, which had been failing long tasks with "no new changes" since the sweep went live.
