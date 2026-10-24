@@ -412,3 +412,89 @@ The six days total 72.0, which is the reading. The readings are between 1.17 and
 - **Run until used up:** advice 2 lanes. The headline reads "Over budget at the recent burn: 3 lanes run out about 6 hours before the reset. 2 lanes end at 96.1%." The chart and the cost table do not change with the policy; only the advice does. Worked result: 2 lanes, ending near 96 percent. The page never advises zero lanes, never holds points back for later in the week, and never slows or stops a lane.
 - **Pace to the week:** advice 1 lane, since 2 lanes at 96.1 percent misses the 95-percent target. The headline reads "Over budget for the week at 3 lanes (106% at the reset). 1 lane ends at 86.1%." Worked result: 1 lane. The page never advises zero lanes and never slows or stops a lane.
 - **Run flat out:** the finish line reads "Work finishes Sat 20:54, 5.2 points to spare" on the fixed 20 points, with 3 lanes advised and every lane running. The headline reads "Within budget: the work finishes in about 22.8 hours with 5.2 points of allowance to spare", while the recent burn still projects over at 106 percent. The example queue of 3.3 points is not part of this figure, and the page says the operator decides which of the two figures to enter. The page never reports a finish the numbers do not support, never advises zero lanes, and never slows or stops a lane.
+
+## Shipping variants side by side behind a setting
+
+This section answers one question: how could the three variants ship together, so the operator can run them for a while and compare them on the same readings, without a rewrite of the calculation? The answer is one shared core, with each variant as a view-only renderer over its result. Adding or removing a variant then touches a renderer, its switcher label and one setting value, and nothing that computes. This pass changes no code. The build that follows owes the surfaces listed in item 5 below.
+
+### 1. The shared core
+
+The calculation is one pure function, `UsageModel.advise`, defined in `.datawatch/verify/usage-calc-reference-model.js` and described in the shared model section above. It reads the readings, the lane history and the policy, and it returns one advice result. Every surface reads that result: the three PWA renderers, the CLI, the comm channel and MCP. A renderer reads fields and draws them. It never computes a burn, a projection, a verdict or a lane count, and it never reads a reading or the policy from anywhere else. Because of that, adding or removing a variant never touches the calculation, the stored readings or the policy code.
+
+The proposed read surfaces for that result are:
+
+- **REST:** `GET /api/usage/advice`, with optional `variant` and `policy` query values. The `variant` value chooses the renderer for one call and never changes a number. The `policy` value overrides the setting for one call and changes only the advice, as the policy section above requires.
+- **MCP:** a `usage_advice` tool that returns the same body, following the proxy pattern of `internal/mcp/budget.go`, where `budget_status` proxies `GET /api/budget`.
+- **CLI:** `datawatch usage advice`, in a new file beside `cmd/datawatch/cli_budget.go`, which already formats the `GET /api/budget` body with a shared formatter.
+- **Comm channel:** `usage advice`, parsed in `internal/router/commands.go` the way `parseBudget` and `parseUsageBackoff` parse their tails.
+
+The CLI and the comm channel render the same text form from the same body, in the field order given under "Text forms" above: reading, reset, pace line, burn, projected end, run out, verdict, lanes and policy, then the advice. A field added to the result therefore appears in both text forms at the same place.
+
+### 2. The setting
+
+Two proposed settings sit under a new `usage:` block in `docs/config-reference.yaml`, named in the same dotted style as `autonomous.usage_backoff` and `autonomous.backoff_max_wait_minutes`:
+
+| Key | Values | Default |
+|---|---|---|
+| `usage.calculator.variant` | `pace-gauge`, `lane-planner`, `burn-ledger`, `all` | `all`, while the operator compares |
+| `usage.calculator.policy` | `use-all` (Run until used up), `pace` (Pace to the week), `finish-early` (Run flat out) | `use-all`, the model default |
+
+Variant and policy are independent. The variant chooses how the result is drawn, and the policy chooses which target the advice aims at. Any variant can show any policy, and changing one never changes the other. With `all`, the PWA shows a switcher on the same reading and the same policy, so the operator can switch renderers and see the same numbers move nowhere. Switching the policy changes only the headline, the notes, the lane suggestion and the finish block.
+
+The CLI and the comm channel take the variant as an argument for one call and do not save it: `datawatch usage advice --variant lane-planner` and `usage advice variant=lane-planner`. In this proposal the text lines are the same whichever variant is named, because the text form has one field order. The argument is still validated against the four values, so a later variant with its own text form can use the same command. Whether text forms should differ is an open question below.
+
+The five access methods, as the Feature Documentation rule in AGENT.md asks, for the variant setting:
+
+| Method | How |
+|---|---|
+| **YAML** | `usage.calculator.variant` and `usage.calculator.policy` in `~/.datawatch/config.yaml`, documented in `docs/config-reference.yaml` |
+| **CLI** | `datawatch config set usage.calculator.variant burn-ledger`, or `datawatch usage advice --variant pace-gauge` for one call |
+| **Web UI** | Settings, General Configuration, a Usage calculator card (proposed) |
+| **REST API** | `PUT /api/config` with `{"usage.calculator.variant": "burn-ledger"}`; `GET /api/usage/advice?variant=pace-gauge` for one call |
+| **Comm channel** | `configure usage.calculator.variant=burn-ledger`; `usage advice variant=lane-planner` for one call |
+
+### 3. Fair comparison
+
+- **One store, one reading.** Readings and lane history are stored once, in a single series that every variant reads from the daemon. No renderer keeps its own copy. Every variant therefore shows the same reading, the same lane table and the same day totals at the same moment. The mockups fix that series inside each page's script (the `usage-view` script in each variant page). A build removes that and reads the series from the daemon instead.
+- **At least one full weekly cycle.** The reset is weekly, Sunday 08:00 local in this design. Running all variants for seven days, from one reset to the next, lets the operator see the reset itself: the pace line starting again at zero, the day totals in the burn ledger starting again, and the verdict clearing. A comparison made inside one day shows only one slice of the week and would favour whichever variant reads best at that moment.
+- **An optional counter, off by default.** When the operator turns it on, the PWA counts which variant was opened and whether the advice was used. The counter is kept in the browser's local storage, never sent to the daemon, and shown back to the operator on request so they can look back over the comparison. It is a per-viewer convenience. The daemon never depends on it, and CLI and comm calls are not counted.
+- **Retiring a variant.** Remove its renderer and its value from the allowed list of `usage.calculator.variant`. No data migration is needed, because no variant owns data. A saved setting that names a retired value falls back to `all`, and the daemon logs one line saying so.
+
+### 4. What every variant keeps identical
+
+A comparison of layouts is fair only if the numbers and the words do not change between renderers. Every variant keeps these identical:
+
+- **The model.** `UsageModel.advise` and its formulas, unchanged in every variant.
+- **The verdict wording.** "Within budget" and "Over budget", decided by the same rule: the recent burn gives the main verdict and the week-average burn gives the verdict beside it.
+- **The field names and their order**, as given in item 1.
+- **The three policy labels**, Run until used up, Pace to the week and Run flat out, with the ids `use-all`, `pace` and `finish-early`.
+- **The zero-lanes rule.** The advice never names zero lanes. `lanesSuggested` is at least 1 for `use-all` and `pace`, and it is `maxLanes` for `finish-early`. A zero that the operator sets is shown as the operator's own choice, never as advice.
+- **The operator decides the count.** No renderer or surface stops, slows or reorders a lane.
+
+A build should test this directly: feed one fixed result body to every renderer and compare the field values. If a renderer shows a different number for the same reading, it is no longer a layout comparison.
+
+### 5. Surfaces and parity a later build owes
+
+The build follows the Configuration Accessibility Rule and the Mobile-Parity Rule in AGENT.md. It owes these, and this design pass edits none of them:
+
+- **Config reference:** a `usage:` block in `docs/config-reference.yaml` with both keys, annotated as `autonomous.usage_backoff` is annotated.
+- **Config handling:** the GET and PUT handling in `internal/server/api.go`, and the General Configuration fields list `GENERAL_CONFIG_FIELDS` in `internal/server/web/app.js`, so the settings card can edit both keys.
+- **Locale keys:** the same key names in all five bundles, `internal/server/web/locales/en.json`, `de.json`, `es.json`, `fr.json` and `ja.json`, for example `settings_usage_calculator_variant`, mirroring `settings_usage_backoff`.
+- **OpenAPI entries:** `GET /api/usage/advice` and the two config keys, in `docs/api/openapi.yaml` and in the served copy `internal/server/web/openapi.yaml`.
+- **MCP tool:** `usage_advice`, beside `internal/mcp/budget.go`.
+- **CLI command:** `datawatch usage advice`, beside `cmd/datawatch/cli_budget.go`.
+- **Comm channel command:** `usage advice`, in `internal/router/commands.go`.
+- **Docs and howto pages:** a section in `docs/operations.md` and `docs/setup.md` with the five-method table, and a howto page that `docs/howto/automata-capacity.md` links to, since that page already covers the back-off and the budget.
+- **Mobile tracking issue:** one datawatch-app issue for Android and iPhone, filed once the operator has chosen a variant. The Mobile-Parity Rule requires it for any operator-visible change. This pass files none and does not choose.
+
+### 6. Federation: open question for the operator
+
+Section 4e of `docs/plans/2026-10-14-concurrency-and-budget-design.md` says the subscription meter is account-scoped, not daemon-scoped. A weekly reading describes the account, not the daemon that stores it. If two federated daemons share a `billing_group`, a reading entered on one would describe both, and the lane history would have to be read across both. If the reading stays one daemon's record, each daemon shows only its own lanes against the account's percent, which is the undercount section 4e warns about.
+
+This design does not decide it. The open question is whether a reading belongs to one daemon or to the shared account that peers confirm. The answer decides where the series is stored, and whether the REST read needs a federation capability guard, which the Federation-Parity Rule in AGENT.md requires for autonomous read cases.
+
+### Open questions for the operator
+
+- Does a reading belong to one daemon or to the shared account (item 6)?
+- Should the text forms differ per variant, or stay one form with the variant argument only validated (item 2)?
+- Is `all` the right default while the operator compares, and is the local counter worth its browser storage?
