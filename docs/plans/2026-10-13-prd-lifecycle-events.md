@@ -698,9 +698,14 @@ smoke against a real daemon, full `go test ./...` + `node --test`, the
    (`TestMCPQueueSinkWebhookStillRejected`) and no webhook or federation
    forwarding code exists; `docs/config-reference.yaml` documents
    `autonomous.notify.pending_events_max`.
-5. **Phase 5 — Planned.** Outbound webhook URL sink (HMAC, SSRF guard,
-   retry/backoff), federation forwarding. *(Phase Completion Checklist
-   applies.)*
+5. **Phase 5 — in progress - shipping disabled pending operator confirmation
+   of the proposal.** Outbound webhook URL sink (HMAC, SSRF guard,
+   retry/backoff), federation forwarding. The open values (retry curve,
+   signature format, payload shape, peer addressing, offline-peer behaviour)
+   are proposed in
+   [2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md](2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md);
+   the sink and the forwarding stay disabled until the operator confirms it.
+   *(Phase Completion Checklist applies.)*
 
 ---
 
@@ -821,8 +826,11 @@ shipped in v9.3.0). Current status of each intended surface:
   registration; the app-side UI is likewise tracked in that note, not built
   in this repo.
 
-**Phase 5 (not started):** outbound webhook URL sink (HMAC / SSRF guard /
-retry-backoff) and federation forwarding of the event stream. The `webhook`
+**Phase 5 (in progress - shipping disabled pending operator confirmation of
+the proposal):** outbound webhook URL sink (HMAC / SSRF guard /
+retry-backoff) and federation forwarding of the event stream. Proposal:
+[2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md](2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md).
+The `webhook`
 sink type is rejected at creation until then (clear phase error); `mcp_queue`
 is accepted from Phase 4.
 

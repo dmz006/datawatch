@@ -201,7 +201,7 @@ Rows are in execution order; the numbers are stable ids, not positions. Operator
 | 20 | PRD `d1160001` (Claude); operator decisions Q1 and Q7 recorded | **done**, shipped in 9.5.97 (18 tasks; the live browser smoke row is still owed) | 18 |
 | 21 | **done**, shipped in 9.5.71 (PRD `98e10001`: update and test-fire, pending-events queue, PWA Subscriptions tab) | draft PRD `98e10001` filed 2026-10-21 19:25 (pi-prompt worker on a GPU lane, Claude decompose); dependency row 11 shipped in 9.5.64 | 11 |
 | 22 | [BL431 Phase 7](2026-10-14-automation-orchestration-design.md) Remaining parity, migration and close-out | **done**, shipped in 9.5.106 (PRD `19fe0001`) | 20 |
-| 23 | [BL427 Phase 5](2026-10-13-prd-lifecycle-events.md) Webhook sink and federation forwarding | operator 2026-10-23: yes to an outbound webhook sink with a configured host allow-list (vault secret, HMAC, retry then alert, SSRF guard) and yes to federation forwarding to peers; details proposed in the first task and confirmed by the operator; draft PRD `3d9f0001` (claude-code), to decompose | 21 |
+| 23 | [BL427 Phase 5](2026-10-13-prd-lifecycle-events.md) Webhook sink and federation forwarding | operator 2026-10-23: yes to an outbound webhook sink with a configured host allow-list (vault secret, HMAC, retry then alert, SSRF guard) and yes to federation forwarding to peers; details proposed in the first task and confirmed by the operator; draft PRD `3d9f0001` (claude-code), to decompose; proposal awaiting operator confirmation: [2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md](2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md) (the sink and the forwarding ship disabled until confirmed) | 21 |
 
 ### Stage C: remaining backlog, queued as an Automation
 
