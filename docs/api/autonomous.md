@@ -29,7 +29,7 @@ GET    /api/autonomous/status              loop snapshot (running, active PRDs, 
 GET    /api/autonomous/config              read current config
 PUT    /api/autonomous/config              replace config (full body)
 
-POST   /api/autonomous/prds                create PRD; body: {spec, project_dir, [backend], [effort]}
+POST   /api/autonomous/prds                create PRD; body: {spec, project_dir, [backend], [effort], [kind]}
 GET    /api/autonomous/prds                summary list, newest-updated first, paged; ?full=1 for whole records (see "Automata list" below)
 GET    /api/autonomous/prds/{id}           one PRD with story+task tree
 PATCH  /api/autonomous/prds/{id}           edit PRD title + spec (non-running only); body: {title, spec, actor}     [v5.19.0]
@@ -53,6 +53,7 @@ POST   /api/autonomous/prds/{id}/set_verifier_policy         per-Automaton verif
 POST   /api/autonomous/prds/{id}/set_task_verifier_policy    per-task verifier policy; body: {task_id, [mode], [backends[]], actor}
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
 POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {tag_ids[]} ([] clears)
+POST   /api/autonomous/prds/{id}/set_kind  Automaton kind; body: {kind} (feature|bug|other; "" derives it again); 400 on an unknown kind, 404 on an unknown id
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
 GET    /api/autonomous/prds?tag={id}[&include_sub=false]  Automata carrying a tag (and, by default, any descendant tag)
 
@@ -1248,6 +1249,8 @@ datawatch autonomous tag-rename <id> <new-name>
 datawatch autonomous tag-move <id> --parent <new-parent-id|root>
 datawatch autonomous tag-delete <id>
 datawatch autonomous prd-set-tags <prd-id> --tags <id1,id2>   # empty value clears
+datawatch autonomous prd-create "Fix the retry loop" --kind bug   # optional; omit to derive the kind
+datawatch autonomous prd-set-kind <id> <feature|bug|other>
 datawatch autonomous learnings
 ```
 
@@ -1272,6 +1275,7 @@ operator-facing AI can drive the autonomous loop end-to-end:
 | `autonomous_learnings`      | list learnings |
 | `autonomous_tag_list` / `_tag_create` / `_tag_rename` / `_tag_set_parent` / `_tag_set_color` / `_tag_delete` | Automata tag registry; see [howto/automata-tags](../howto/automata-tags.md) |
 | `autonomous_prd_set_tags`   | replace an Automaton's tags (`tag_ids_json`) |
+| `autonomous_prd_set_kind`   | set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again); `autonomous_prd_create` takes the same optional `kind` |
 | `autonomous_prd_set_task_verification_llm` / `_set_story_verification_llm` / `_set_verification_llm` | per-task / per-story / per-Automaton verifier LLM |
 | `autonomous_prd_set_verifier_policy` / `_set_task_verifier_policy` | per-Automaton / per-task verifier policy (`mode`, `backends`; `""` / `[]` clears, omit = unchanged) |
 | `autonomous_prd_set_task_project_dir` | per-task project dir override (empty = inherit Automaton dir) |
@@ -1304,12 +1308,22 @@ autonomous set-verification-llm abcd1234 model=
 autonomous tags
 autonomous tag-create "Mobile App" parent=1a2b3c4d
 autonomous set-tags abcd1234 1a2b3c4d,5e6f7a8b
+autonomous set-kind abcd1234 bug
 ```
 
 `guardrail_backend=` / `guardrail_model=` tokens can be appended to
 `autonomous set-llm` / `set-task-llm`; when they are the only settings
 given, no backend positional is needed and the worker LLM is left
 unchanged. `guardrail_model=` with no value clears the override.
+
+### Automaton kind
+
+An Automaton carries a kind of `feature`, `bug` or `other`. When none is set the
+kind is derived from the title and the start of the spec. Set it when the Automaton
+is created (`kind` in the create body, `--kind` on `prd-create`, `kind` on
+`autonomous_prd_create`) or change it later with `set_kind` (`prd-set-kind`,
+`autonomous_prd_set_kind`, `autonomous set-kind`). An unknown kind is refused with a
+400 and the valid values. Each change is logged on the decision timeline.
 
 The per-node engine cap is a daemon setting, so it goes through `configure`
 rather than an `autonomous` subcommand: `configure autonomous.max_engines_per_node=2`.

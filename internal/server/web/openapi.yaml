@@ -1152,6 +1152,34 @@ paths:
       responses:
         "200": {description: Updated PRD}
 
+  /api/autonomous/prds/{id}/set_kind:
+    post:
+      summary: Set the kind of an Automaton
+      description: |
+        Sets the Automaton kind to `feature`, `bug` or `other`. An empty kind clears the
+        setting, so the kind is derived again from the title and spec. The change is
+        recorded on the decision timeline. Needs the autonomous write capability when
+        called by a federated peer.
+      operationId: autonomousPRDSetKind
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind: {type: string, enum: [feature, bug, other, ""]}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: Unknown kind}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Unknown Automaton id}
+        "405": {description: Method not allowed}
+
   /api/alerts:
     get:
       summary: List alerts
@@ -1412,6 +1440,7 @@ paths:
                 project_dir: {type: string}
                 backend: {type: string}
                 effort: {type: string}
+                kind: {type: string, enum: [feature, bug, other], description: "Optional Automaton kind; omit to derive it from the title and spec"}
       responses: {"200": {description: OK}}
   /api/autonomous/prds/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]

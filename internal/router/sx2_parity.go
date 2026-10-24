@@ -416,7 +416,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|get <id>|decompose <id>|approve <id>|plan-review <id> [note]|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|verifier-policy|verifier-policy-set key=value [k2=v2 ...]|set-verifier-policy <prd> [mode=X] [backends=a,b]|set-task-verifier-policy <prd> <task> [mode=X] [backends=a,b]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|reset-to-draft <id>|resume <id> [note]|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|tags|tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]|tag-rename <id> <new-name>|tag-move <id> <parent-id|root>|tag-color <id> <color>|tag-delete <id>|set-tags <prd-id> [tag-id1,tag-id2]|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]|events [queue=<name>] [since=<cursor>]|subscribe <kinds|short-names> [prd=<id>] [task=<id>]|unsubscribe <id>|subscription-update <id> key=value...|subscription-test <id>|subscriptions}"
+	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|get <id>|decompose <id>|approve <id>|plan-review <id> [note]|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|verifier-policy|verifier-policy-set key=value [k2=v2 ...]|set-verifier-policy <prd> [mode=X] [backends=a,b]|set-task-verifier-policy <prd> <task> [mode=X] [backends=a,b]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|reset-to-draft <id>|resume <id> [note]|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|set-kind <id> <feature|bug|other>|tags|tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]|tag-rename <id> <new-name>|tag-move <id> <parent-id|root>|tag-color <id> <color>|tag-delete <id>|set-tags <prd-id> [tag-id1,tag-id2]|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]|events [queue=<name>] [since=<cursor>]|subscribe <kinds|short-names> [prd=<id>] [task=<id>]|unsubscribe <id>|subscription-update <id> key=value...|subscription-test <id>|subscriptions}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -1011,6 +1011,24 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous set-type", prettyJSON(out))
+	case "set-kind", "set_kind":
+		const kindUsage = "usage: autonomous set-kind <prd-id> <feature|bug|other>"
+		if len(args) < 3 {
+			r.reply("autonomous set-kind failed", kindUsage)
+			return
+		}
+		kind, ok := autonomous.NormalizePRDKind(args[2])
+		if !ok || kind == "" {
+			r.reply("autonomous set-kind failed", "unknown Automaton kind "+strconv.Quote(args[2])+"; "+kindUsage)
+			return
+		}
+		body, _ := json.Marshal(map[string]string{"kind": kind})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/set_kind", string(body))
+		if err != nil {
+			r.reply("autonomous set-kind failed", err.Error())
+			return
+		}
+		r.reply("autonomous set-kind", prettyJSON(out))
 	case "tags", "tag-create", "tag_create", "tag-rename", "tag_rename",
 		"tag-move", "tag_move", "tag-color", "tag_color", "tag-delete", "tag_delete",
 		"set-tags", "set_tags":

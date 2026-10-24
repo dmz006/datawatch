@@ -413,6 +413,7 @@ func (s *Server) toolAutonomousPRDCreate() mcpsdk.Tool {
 		mcpsdk.WithString("backend", mcpsdk.Description("LLM backend override")),
 		mcpsdk.WithString("model", mcpsdk.Description("LLM model override (e.g. ollama/qwen3.8:27b, opencode/big-pickle). Applied to every task session.")),
 		mcpsdk.WithString("effort", mcpsdk.Description("BL41 effort hint (low/medium/high/max)")),
+		mcpsdk.WithString("kind", mcpsdk.Enum("feature", "bug", "other"), mcpsdk.Description("Optional Automaton kind; omit to derive it from the title and spec")),
 	)
 }
 func (s *Server) handleAutonomousPRDCreate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -423,7 +424,24 @@ func (s *Server) handleAutonomousPRDCreate(_ context.Context, req mcpsdk.CallToo
 		"model":       req.GetString("model", ""),
 		"effort":      req.GetString("effort", ""),
 	}
+	if kind := req.GetString("kind", ""); kind != "" {
+		body["kind"] = kind
+	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds", body)
+	return llmSetterResult(out, err)
+}
+
+func (s *Server) toolAutonomousPRDSetKind() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_kind",
+		mcpsdk.WithDescription("Set the kind of an Automaton: feature, bug or other. The kind feeds the progress figures. An empty kind clears the setting so the kind is derived again from the title and spec."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+		mcpsdk.WithString("kind", mcpsdk.Required(), mcpsdk.Enum("feature", "bug", "other", ""), mcpsdk.Description("feature, bug or other; empty to derive")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetKind(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{"kind": req.GetString("kind", "")})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_kind", body)
 	return llmSetterResult(out, err)
 }
 

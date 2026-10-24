@@ -4887,6 +4887,47 @@ func (m *Manager) SetPRDPriority(prdID string, n int) error {
 	return m.store.SavePRD(prd)
 }
 
+// kindSetAttempts bounds how often SetPRDKind retries after another writer
+// changed the record between its read of the revision and its commit.
+const kindSetAttempts = 3
+
+// SetPRDKind sets the explicit kind of an Automaton. An empty kind clears it,
+// so the kind is derived again at read time. An unknown kind is refused. The
+// change is committed only if the record kept the revision it was read at, and
+// is logged on the decision timeline.
+func (m *Manager) SetPRDKind(prdID, kind string) error {
+	k, ok := NormalizePRDKind(kind)
+	if !ok {
+		return fmt.Errorf("unknown Automaton kind %q: use feature, bug or other", strings.TrimSpace(kind))
+	}
+	for attempt := 0; attempt < kindSetAttempts; attempt++ {
+		rev, found := m.store.PRDRev(prdID)
+		if !found {
+			return fmt.Errorf("prd %q not found", prdID)
+		}
+		err := m.store.CommitPRDIfRev(prdID, rev, func(p *PRD) bool {
+			from := p.Kind
+			if from == "" {
+				from = "derived"
+			}
+			to := k
+			if to == "" {
+				to = "derived"
+			}
+			p.Kind = k
+			p.Decisions = append(p.Decisions, Decision{
+				At: time.Now(), Kind: "set_kind", Actor: "operator",
+				Note: fmt.Sprintf("kind %s -> %s", from, to),
+			})
+			return true
+		})
+		if !errors.Is(err, ErrPRDStale) {
+			return err
+		}
+	}
+	return ErrPRDStale
+}
+
 // SetPRDDirs sets the per-PRD read-only and writable directory scope. Nil
 // leaves a list unchanged; an empty non-nil slice clears it.
 func (m *Manager) SetPRDDirs(prdID string, readDirs, writeDirs []string) error {

@@ -818,6 +818,7 @@ type AutonomousAPI interface {
 	SetPRDConcurrency(prdID string, n int) (any, error)
 	SetPRDDirs(prdID string, readDirs, writeDirs []string) (any, error)
 	SetPRDPriority(prdID string, n int) (any, error)
+	SetPRDKind(prdID, kind string) (any, error)
 
 	// BL367 — per-PRD quality gate config.
 	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (any, error)

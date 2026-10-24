@@ -129,6 +129,7 @@ Selected core tools:
 | `reply_to_parent` | Send a message back to the spawning parent session (v8.10.0) |
 | `autonomous_prd_create` / `autonomous_prd_decompose` / `autonomous_prd_run` | Autonomous PRD lifecycle |
 | `autonomous_prd_children` | List child PRDs spawned via `Task.SpawnPRD` |
+| `autonomous_prd_set_kind` | Set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again) |
 | `autonomous_prd_rejudge` | Re-judge the completion guardrail of a blocked Automaton whose tasks are all completed, without resetting any task — pass unblocks it, block keeps it blocked; refused otherwise |
 | `autonomous_prd_set_task_verification_llm` / `autonomous_prd_set_story_verification_llm` / `autonomous_prd_set_verification_llm` | Pick the LLM that verifies one task / one story / a whole Automaton (`verification_backend`, `verification_model`, `verification_effort`; `""` clears, omit = unchanged). Precedence task > story > Automaton > global (v9.0.69) |
 | `observer_stats` / `observer_envelopes` | Per-session + per-LLM-backend stats |
