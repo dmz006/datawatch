@@ -92,9 +92,14 @@ func TestEndAttributionDetectorReasonsCarryTheirNumbers(t *testing.T) {
 			parts:  []string{"waiting_input stall detector", "3 consecutive ticks", "threshold 3"},
 		},
 		{
-			name:   "sse watchdog",
-			reason: sseWatchdogEndReason("rate limit", session.StateRunning, 6*time.Minute),
-			parts:  []string{"SSE stall watchdog", `"rate limit"`, "running for 360s"},
+			name: "sse watchdog",
+			reason: sseWatchdogEndReason(sseStallMatch{
+				Pattern: "rate limit",
+				Line:    "AI_APICallError: rate limit",
+				Backend: "opencode-acp",
+				Source:  sseStallSourceWatchdog,
+			}, session.StateRunning, 6*time.Minute),
+			parts: []string{"SSE stall watchdog", `"rate limit"`, "running for 360s"},
 		},
 		{
 			name:   "shutdown",

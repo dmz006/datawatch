@@ -79,16 +79,34 @@ func exitSilenceEndReason(trackerReason string) string {
 	return "exit-silence detector: " + trackerReason
 }
 
-// sseStallEndReason names the SSE stall scan of the verifier wait loop.
-func sseStallEndReason(pattern string) string {
-	return fmt.Sprintf("SSE stall detector: scrollback matched %q in the last 300 lines", pattern)
+// sseEndReasonLineCap bounds the matched line quoted in an end reason so
+// the journal stays readable even if the line limit in sse_stall.go
+// changes.
+const sseEndReasonLineCap = 120
+
+// sseEndReasonLine quotes the matched line for an end reason, truncated to
+// sseEndReasonLineCap runes with an ellipsis when cut.
+func sseEndReasonLine(line string) string {
+	r := []rune(line)
+	if len(r) <= sseEndReasonLineCap {
+		return line
+	}
+	return string(r[:sseEndReasonLineCap]) + "…"
+}
+
+// sseStallEndReason names the SSE stall scan of the verifier wait loop,
+// recording the matched line, backend and scan source.
+func sseStallEndReason(m sseStallMatch) string {
+	return fmt.Sprintf("SSE stall detector: backend %s, source %s, matched line %q (pattern %q)",
+		m.Backend, m.Source, sseEndReasonLine(m.Line), m.Pattern)
 }
 
 // sseWatchdogEndReason names the SSE stall watchdog, which probes sessions
-// running longer than its five-minute floor.
-func sseWatchdogEndReason(pattern string, state session.State, age time.Duration) string {
-	return fmt.Sprintf("SSE stall watchdog: scrollback matched %q; session %s running for %s, probe floor 5m0s",
-		pattern, state, endSecs(age))
+// running longer than its five-minute floor, recording the matched line,
+// backend and scan source.
+func sseWatchdogEndReason(m sseStallMatch, state session.State, age time.Duration) string {
+	return fmt.Sprintf("SSE stall watchdog: backend %s, source %s, matched line %q (pattern %q); session %s running for %s, probe floor 5m0s",
+		m.Backend, m.Source, sseEndReasonLine(m.Line), m.Pattern, state, endSecs(age))
 }
 
 // activityStallEndReason names the no-activity stall, around the evidence the

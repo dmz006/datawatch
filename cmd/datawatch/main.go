@@ -4861,6 +4861,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							continue
 						}
 						if s.State == session.StateComplete || s.State == session.StateFailed || s.State == session.StateKilled {
+							// The session is over: drop its scan-history entry so
+							// the fresh-tracker map cannot grow without bound.
+							sseFreshTracker.forget(s.FullID)
 							break waitLoop
 						}
 						// Design §6.ii — await-external: the worker emitted a
@@ -5090,12 +5093,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// session will never self-terminate.
 						if waitTick%10 == 9 && s.TmuxSession != "" {
 							if sb, sbErr := mgr.CapturePaneScrollback(s.FullID, 300); sbErr == nil && sb != "" {
-								if pat, matched := matchSSEStallPattern(sb); matched {
-									log.Printf("[autonomous] SSE stall detected in session %s task %s/%s (%q); killing for retry",
-										task.SessionID, task.PRDID, task.ID, pat)
+								if m, matched := sseStallScan(s.FullID, family, sb, sseStallSourceWaitLoop); matched {
+									log.Printf("[autonomous] SSE stall detected in session %s task %s/%s (backend %s, source %s, line %q, pattern %q); killing for retry",
+										task.SessionID, task.PRDID, task.ID, m.Backend, m.Source, m.Line, m.Pattern)
 									killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID,
-										session.EndReason{Caller: endCallerSSEStall, Reason: sseStallEndReason(pat)})
-									stallErr = fmt.Errorf("opencode SSE stall detected (%q): %w", pat, autonomouspkg.ErrWorkerStalled)
+										session.EndReason{Caller: endCallerSSEStall, Reason: sseStallEndReason(m)})
+									stallErr = fmt.Errorf("opencode SSE stall detected (line %q): %w", m.Line, autonomouspkg.ErrWorkerStalled)
 									break waitLoop
 								}
 							}
@@ -6329,6 +6332,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 									continue
 								}
 								s, ok := mgr.GetSession(task.SessionID)
+								if s != nil && (s.State == session.StateComplete ||
+									s.State == session.StateFailed || s.State == session.StateKilled) {
+									// The session is over: drop its scan-history entry
+									// so the fresh-tracker map cannot grow without bound.
+									sseFreshTracker.forget(s.FullID)
+								}
 								if !ok || s.State == session.StateComplete ||
 									s.State == session.StateFailed ||
 									s.State == session.StateKilled {
@@ -6342,10 +6351,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 								if sbErr != nil || sb == "" {
 									continue
 								}
-								if pat, matched := matchSSEStallPattern(sb); matched {
-									log.Printf("[automata-watchdog] stall detected PRD=%s task=%s session=%s (%q); killing",
-										prd.ID, task.ID, task.SessionID, pat)
-									_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerSSEWatchdog, Reason: sseWatchdogEndReason(pat, s.State, time.Since(s.CreatedAt))})
+								if m, matched := sseStallScan(s.FullID, s.BackendFamily, sb, sseStallSourceWatchdog); matched {
+									log.Printf("[automata-watchdog] stall detected PRD=%s task=%s session=%s (backend %s, source %s, line %q, pattern %q); killing",
+										prd.ID, task.ID, task.SessionID, m.Backend, m.Source, m.Line, m.Pattern)
+									_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerSSEWatchdog, Reason: sseWatchdogEndReason(m, s.State, time.Since(s.CreatedAt))})
 								}
 							}
 						}
