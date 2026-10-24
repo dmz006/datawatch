@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/alerts"
@@ -202,6 +203,10 @@ type Hub struct {
 	// viewSourceFn snapshots the default-view sessions and the set of every
 	// held session ID in one store pass (ws_session_broadcast.go).
 	viewSourceFn func(keep func(session.State, time.Time) bool) ([]*session.Session, map[string]struct{})
+	// legacyFrameBuilds counts bounded legacy `sessions` frames actually
+	// marshalled; it stays zero while only window and delta clients are
+	// connected (tests assert on it).
+	legacyFrameBuilds atomic.Int64
 }
 
 var upgrader = websocket.Upgrader{

@@ -145,6 +145,7 @@ func (h *Hub) legacySessionsFrame(view []*session.Session, total int) func() []b
 	window := h.recentWindow()
 	textChars := h.summaryTextChars()
 	return func() []byte {
+		h.legacyFrameBuilds.Add(1)
 		recs := make([]sessionListRecord, 0, len(view))
 		for _, sess := range view {
 			rec := sessionListRecord{}
