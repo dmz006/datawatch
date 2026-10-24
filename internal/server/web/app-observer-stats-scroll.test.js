@@ -96,11 +96,15 @@ function cssBlock(css, selector) {
 // mustContain anchor pins us to the MOBILE-FIT one rather than an
 // unrelated block that happens to share the breakpoint).
 function mediaBlock(css, widthPx, mustContain) {
-  const marker = `@media (max-width: ${widthPx}px) {`;
+  // The touch block also covers short landscape screens, so the query may
+  // carry a trailing ", (max-height: …)" alternative.
+  const marker = new RegExp(`@media \\(max-width: ${widthPx}px\\)(?:, \\(max-height: \\d+px\\))? \\{`, 'g');
   let searchFrom = 0;
   for (;;) {
-    const start = css.indexOf(marker, searchFrom);
-    if (start === -1) return null;
+    marker.lastIndex = searchFrom;
+    const hit = marker.exec(css);
+    if (!hit) return null;
+    const start = hit.index;
     let depth = 0;
     for (let i = css.indexOf('{', start); i < css.length; i += 1) {
       if (css[i] === '{') depth += 1;

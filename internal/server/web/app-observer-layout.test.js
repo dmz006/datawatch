@@ -48,7 +48,7 @@ test('style.css keeps the observer classes inside a max-width media query', () =
   const idx = css.lastIndexOf('.obs-row {');
   assert.ok(idx >= 0, 'base observer rules missing');
   const tail = css.slice(idx);
-  const m = tail.match(/@media \(max-width: (\d+)px\) \{([\s\S]*)\n\}\s*$/);
+  const m = tail.match(/@media \(max-width: (\d+)px\)(?:, \(max-height: \d+px\))? \{([\s\S]*)\n\}\s*$/);
   assert.ok(m, 'no max-width media query after the observer rules');
   assert.ok(Number(m[1]) <= 768, 'breakpoint must not affect widths above 768px');
   for (const sel of ['.obs-tap', '.obs-maint-grid', '.obs-scope-input', '.obs-log']) {

@@ -1,0 +1,11 @@
+mobile-fit report
+generated_at: 2026-10-24T11:14:19.628Z
+meta.views: ["observer"]
+meta.profile: full
+meta.scope: ["#view"]
+meta.report_only: false
+meta.exhaustive: false
+
+totals: 0 finding(s) in 281 scenario run(s), 0 group(s)
+
+no findings

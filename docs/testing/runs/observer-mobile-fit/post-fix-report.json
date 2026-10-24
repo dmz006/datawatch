@@ -1,0 +1,3678 @@
+{
+  "generated_at": "2026-10-24T11:14:19.628Z",
+  "meta": {
+    "views": [
+      "observer"
+    ],
+    "profile": "full",
+    "scope": [
+      "#view"
+    ],
+    "report_only": false,
+    "exhaustive": false
+  },
+  "summary": {
+    "total": 0,
+    "by_check": {},
+    "scenarios": 281,
+    "scenarios_with_findings": 0,
+    "groups": 0
+  },
+  "groups": [],
+  "findings": [],
+  "runs": [
+    {
+      "scenario": "no-peers@320x568/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@360x740/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@375x667/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@390x844/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@412x915/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@600x960/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@768x1024/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@568x320/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@740x360/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@667x375/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@844x390/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@915x412/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@320x568/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@360x740/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@375x667/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@390x844/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@412x915/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@600x960/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@768x1024/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@568x320/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@740x360/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@667x375/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@844x390/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@915x412/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@320x568/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@360x740/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@375x667/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@390x844/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@412x915/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@600x960/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@768x1024/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@568x320/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@740x360/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@667x375/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@844x390/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@915x412/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@320x568/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@360x740/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@375x667/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@390x844/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@412x915/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@600x960/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@768x1024/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@568x320/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@740x360/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@667x375/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@844x390/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@915x412/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@320x568/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@360x740/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@375x667/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@390x844/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@412x915/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@600x960/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@768x1024/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@568x320/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@740x360/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@667x375/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@844x390/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@915x412/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@320x568/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@360x740/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@375x667/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@390x844/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@412x915/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@600x960/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@768x1024/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@568x320/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@740x360/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@667x375/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@844x390/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@915x412/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@320x568/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@360x740/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@375x667/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@390x844/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@412x915/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@600x960/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@768x1024/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@568x320/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@740x360/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@667x375/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@844x390/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@915x412/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@320x568/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@360x740/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@375x667/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@390x844/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@412x915/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@600x960/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@768x1024/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@568x320/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@740x360/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@667x375/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@844x390/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@915x412/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@320x568/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@360x740/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@375x667/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@390x844/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@412x915/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@600x960/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@768x1024/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@568x320/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@740x360/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@667x375/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@844x390/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@915x412/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@320x568/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@360x740/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@375x667/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@390x844/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@412x915/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@600x960/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@768x1024/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@568x320/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@740x360/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@667x375/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@844x390/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@915x412/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@320x568/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@360x740/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@375x667/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@390x844/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@412x915/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@600x960/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@768x1024/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@568x320/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@740x360/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@667x375/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@844x390/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@915x412/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@320x568/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@360x740/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@375x667/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@390x844/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@412x915/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@600x960/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@768x1024/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@568x320/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@740x360/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@667x375/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@844x390/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@915x412/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@320x568/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@360x740/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@375x667/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@390x844/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@412x915/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@600x960/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@768x1024/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@568x320/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@740x360/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@667x375/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@844x390/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@915x412/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@320x568/dark/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@320x568/dark/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@360x740/dark/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@360x740/dark/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@375x667/dark/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@375x667/dark/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@390x844/dark/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@390x844/dark/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@412x915/dark/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@412x915/dark/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@600x960/dark/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@600x960/dark/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@768x1024/dark/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@768x1024/dark/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@568x320/dark/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@568x320/dark/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@740x360/dark/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@740x360/dark/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@667x375/dark/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@667x375/dark/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@844x390/dark/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@844x390/dark/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@915x412/dark/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@915x412/dark/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@320x568/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@360x740/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@375x667/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@390x844/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@412x915/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@600x960/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@768x1024/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@568x320/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@740x360/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@667x375/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@844x390/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@915x412/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@320x568/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@360x740/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@375x667/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 375,
+        "height": 667,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@390x844/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@412x915/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@600x960/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 600,
+        "height": 960,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@768x1024/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@568x320/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@740x360/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@667x375/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 667,
+        "height": 375,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@844x390/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@915x412/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 915,
+        "height": 412,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@360x740/light/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@390x844/light/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@768x1024/light/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@740x360/light/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@360x740/light/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@390x844/light/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@768x1024/light/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@740x360/light/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@360x740/light/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@390x844/light/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@768x1024/light/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@740x360/light/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@360x740/light/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@390x844/light/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@768x1024/light/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@740x360/light/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@360x740/light/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@390x844/light/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@768x1024/light/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@740x360/light/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@360x740/light/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@390x844/light/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@768x1024/light/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@740x360/light/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@360x740/light/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@390x844/light/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@768x1024/light/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@740x360/light/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@360x740/light/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@390x844/light/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@768x1024/light/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@740x360/light/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@360x740/light/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@390x844/light/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@768x1024/light/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@740x360/light/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@360x740/light/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@390x844/light/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@768x1024/light/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@740x360/light/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@360x740/light/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@390x844/light/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@768x1024/light/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@740x360/light/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@360x740/light/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@390x844/light/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@768x1024/light/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@740x360/light/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@360x740/light/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@390x844/light/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@768x1024/light/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@740x360/light/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@360x740/light/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@360x740/light/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@390x844/light/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@390x844/light/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@768x1024/light/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@768x1024/light/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@740x360/light/z100#loading",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-slow@740x360/light/z100",
+      "view": "observer",
+      "state": "stats-slow",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@360x740/light/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@390x844/light/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@768x1024/light/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@740x360/light/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@360x740/light/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@390x844/light/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@768x1024/light/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@740x360/light/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@320x568/dark/z130",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 130,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@360x740/dark/z130",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 130,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@390x844/dark/z130",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 130,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@412x915/dark/z130",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 130,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@320x568/dark/z200",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@360x740/dark/z200",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@390x844/dark/z200",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@412x915/dark/z200",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 412,
+        "height": 915,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "system-stats-phone",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    }
+  ]
+}

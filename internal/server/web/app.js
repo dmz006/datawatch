@@ -8230,8 +8230,8 @@ function settingsSectionHeader(key, title, docsPath) {
   // as a diagnostic fallback label, no longer the actual target).
   const collapsed = !!settingsCollapsed[key];
   const dl = defsLink(key, title);
-  return `<div class="settings-section-title settings-section-toggle" onclick="toggleSettingsSection('${key}')">
-    <span id="settings-chev-${key}" class="settings-chevron">${collapsed ? '▶' : '▼'}</span>${escHtml(title)}${dl}
+  return `<div class="settings-section-title settings-section-toggle">
+    <span class="settings-section-hit" onclick="toggleSettingsSection('${key}')"><span id="settings-chev-${key}" class="settings-chevron">${collapsed ? '▶' : '▼'}</span>${escHtml(title)}${dl}</span>
   </div>`;
 }
 
@@ -17512,7 +17512,7 @@ function listMemories() {
       return `<div class="settings-row obs-mem-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
         <div style="flex:1;min-width:0;">
           <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role} ${date}${sim}</span>${tags}
-          <div class="obs-mem-body" title="${escHtml(m.content || '')}" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
+          <div class="obs-mem-body" title="${escHtml(m.content || '')}">${escHtml(content)}</div>
         </div>
         <button class="btn-icon obs-tap" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
       </div>`;
@@ -17526,8 +17526,8 @@ function listMemories() {
 function _renderMemoryTagChips(tagsStr) {
   const tags = (tagsStr || '').split(',').map(t => t.trim()).filter(Boolean);
   if (tags.length === 0) return '';
-  return `<div style="margin-top:2px;">${tags.map(tag =>
-    `<span style="font-size:9px;padding:1px 6px;margin-right:3px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);">${escHtml(tag)}</span>`
+  return `<div class="obs-mem-tags">${tags.map(tag =>
+    `<span style="font-size:9px;padding:1px 6px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);">${escHtml(tag)}</span>`
   ).join('')}</div>`;
 }
 
@@ -17550,7 +17550,7 @@ function searchMemories() {
       return `<div class="settings-row obs-mem-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
         <div style="flex:1;min-width:0;">
           <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role}${sim}</span>${tags}
-          <div class="obs-mem-body" title="${escHtml(m.content || '')}" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
+          <div class="obs-mem-body" title="${escHtml(m.content || '')}">${escHtml(content)}</div>
         </div>
         <button class="btn-icon obs-tap" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
       </div>`;
@@ -27212,10 +27212,10 @@ function loadChannelDiagnostics() {
         const portStr = sd.channel_port > 0 ? `port ${sd.channel_port}` : 'port –';
         const name = sd.session_name || sd.session_id;
         if (sd.bridge_alive) {
-          html += `<div>✓ <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}</span></div>`;
+          html += `<div class="obs-diag-row">✓ <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}</span></div>`;
         } else {
           const err = sd.probe_error ? ` — ${sd.probe_error}` : '';
-          html += `<div><span style="color:var(--warning);">✗</span> <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}${escHtml(err)}</span></div>`;
+          html += `<div class="obs-diag-row"><span style="color:var(--warning);">✗</span> <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}${escHtml(err)}</span></div>`;
         }
       });
     }
@@ -27623,7 +27623,7 @@ function loadObserverPeers() {
     // existing flat per-peer table.
     const groupByNode = localStorage.getItem('cs_peer_group_by_node') === '1';
     const pills = peers.length > 0
-      ? `<div style="display:flex;gap:4px;padding:0 0 6px;flex-wrap:wrap;align-items:center;">
+      ? `<div class="obs-peer-pills" style="display:flex;gap:4px;padding:0 0 6px;flex-wrap:wrap;align-items:center;">
           ${pillBtn('all','All')}
           ${pillBtn('A','Agents')}
           ${pillBtn('B','Standalone')}
@@ -27674,7 +27674,7 @@ function loadObserverPeers() {
       const attachTag = bound.length > 0
         ? `<span title="${escHtml(t('observer_attached_to')||'attached to ComputeNode')}" style="margin-left:6px;font-size:11px;color:var(--accent2);border:1px solid var(--accent2);border-radius:3px;padding:0 4px;">⇄ ${escHtml(bound.join(', '))}</span>`
         : `<span title="${escHtml(t('observer_free_tooltip')||'no ComputeNode bound to this peer')}" style="margin-left:6px;font-size:11px;color:var(--text2);border:1px dashed var(--text2);border-radius:3px;padding:0 4px;">${escHtml(t('observer_free')||'free')}</span>`;
-      return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${attachTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${actions}</div>`;
+      return `<div class="obs-peer-item" style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${attachTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${actions}</div>`;
     }).join('');
     if (groupByNode) {
       // alpha.24 — render per-CN buckets, fetched from the meta-peers
@@ -31965,7 +31965,7 @@ function renderObserverView() {
                added end-to-end; this input sends it in the same
                POST /api/memory/save addMemoryQuick already calls. -->
           <div style="padding:0 12px 4px;">
-            <input type="text" id="memoryQuickAddTags" class="form-input obs-fluid" style="width:100%;font-size:11px;" placeholder="${escHtml(t('obs_add_memory_tags_placeholder')||'Tags (comma-separated, optional)')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
+            <input type="text" id="memoryQuickAddTags" class="form-input obs-fluid obs-tap" style="width:100%;font-size:11px;" placeholder="${escHtml(t('obs_add_memory_tags_placeholder')||'Tags (comma-separated, optional)')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
           </div>
           <div class="obs-row obs-filter-row">
             <input type="text" id="memorySearchInput" class="form-input obs-fluid obs-search" style="flex:1;" placeholder="Search memories…" />
@@ -31994,7 +31994,7 @@ function renderObserverView() {
         ${settingsSectionHeader('memscopes', 'Memory Scopes', 'memory.md')}
         <div id="settings-sec-memscopes" style="${secContent('memscopes')}">
           <div style="font-size:10px;color:var(--text2);padding:0 12px 6px;">Recall walks every scope layer top-down and merges the hits — the dropdown below isn't a recall filter, it's the default target when you promote an entry. See <a href="/diagrams.html#docs/memory.md" target="_blank" rel="noopener">docs/memory.md</a> for the full model.</div>
-          <div id="memScopeInventory" style="padding:4px 12px;margin-bottom:8px;"><em style="color:var(--text2);">${loadingEyeBlock('Loading inventory…')}</em></div>
+          <div id="memScopeInventory" class="obs-table-scroll" style="padding:4px 12px;margin-bottom:8px;"><em style="color:var(--text2);">${loadingEyeBlock('Loading inventory…')}</em></div>
           <div class="obs-row obs-scope-row">
             <select id="memScopeSelect" class="form-select obs-tap obs-select" style="font-size:11px;">
               <option value="session-local">session-local</option>
@@ -34439,7 +34439,7 @@ function loadAuditPanel() {
         ? `<span style="opacity:0.5;font-size:10px;font-family:monospace;margin-left:4px;">${escHtml(e.session_id.slice(-8))}</span>` : '';
       return `<div style="padding:4px 0;border-top:1px solid var(--border);">
         <div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;">
-          <span style="opacity:0.5;white-space:nowrap;">${escHtml(ts)}</span>
+          <span style="opacity:0.5;min-width:0;overflow-wrap:anywhere;">${escHtml(ts)}</span>
           <strong>${escHtml(e.action||'')}</strong>
           <span style="opacity:0.7;">${escHtml(e.actor||'')}</span>${sessLink}
         </div>${details}

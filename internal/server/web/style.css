@@ -6348,7 +6348,7 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
    profile cells while leaving true desktop 1280/1920 baselined unchanged.
    Grid stacking below stays at <=600px so tablet desktop multi-column layout
    is not collapsed. */
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-height: 500px) {
   .stats-taprow { min-height: 40px; flex-wrap: wrap; }
   #statsPanel a[href] { display: inline-block; min-height: 40px; line-height: 38px; padding: 0 6px; }
   #statsPanel button { min-height: 40px; min-width: 40px; }
@@ -6435,7 +6435,7 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
    headers (toggled via onclick) and the hints <summary>; the
    communication-backends Test buttons sit here too. Scoped to the block
    so out-of-section buttons keep the desktop baseline. */
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-height: 500px) {
   #settings-sec-stats button { min-height: 40px; min-width: 40px; }
   #channelBridgeBlock > div:first-child,
   #channelDiagBlock > div:first-child { min-height: 40px; }
@@ -6469,15 +6469,29 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .obs-kg-triple { overflow-wrap: anywhere; }
 .obs-sched-meta { flex-shrink: 0; }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-height: 500px) {
   .obs-tap { min-height: 40px; min-width: 40px; box-sizing: border-box; }
   .obs-maint-grid { grid-template-columns: 1fr; }
   .obs-row > .obs-fluid,
-  .obs-row > .obs-select { flex: 1 1 140px; width: auto; min-width: 0; max-width: 100%; }
+  .obs-row > .obs-select { flex: 1 1 140px; width: auto; min-width: 40px; max-width: 100%; }
   .obs-row-nowrap > .obs-fluid { flex: 1 1 0; }
-  .obs-search { flex: 1 1 100%; min-width: 0; }
-  .obs-scope-input { flex: 1 1 120px; width: auto; min-width: 0; max-width: 100%; }
-  .obs-sweep-days { flex: 0 1 96px; min-width: 0; }
+  .obs-row-nowrap > button { flex: 0 0 auto; }
+  .obs-search { flex: 1 1 100%; min-width: 40px; }
+  .obs-scope-input { flex: 1 1 120px; width: auto; min-width: 40px; max-width: 100%; }
+  .obs-sweep-days { flex: 0 1 96px; min-width: 40px; }
+  [id^="settings-sec-"] { overflow-wrap: anywhere; }
+  /* The tap target is the clickable span inside the title bar, 40px tall;
+     the negative margins give the extra height back so the title bar keeps
+     the height it has on wide screens. */
+  .settings-section-hit { min-height: 40px; margin-top: -10.5px; margin-bottom: -10.5px; box-sizing: border-box; }
+  .settings-section-title .docs-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    min-width: 40px;
+    box-sizing: border-box;
+  }
   .obs-log { max-height: 240px; overflow-wrap: anywhere; max-width: 100%; box-sizing: border-box; }
   .obs-log-actions { padding: 6px 0; }
   .obs-mem-row, .obs-sched-row { flex-wrap: wrap; }
@@ -6489,4 +6503,42 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .obs-peer-row { gap: 4px; overflow-wrap: anywhere; }
   .obs-kg-results { overflow-wrap: anywhere; }
   .obs-list { overflow-wrap: anywhere; }
+}
+
+.settings-section-hit { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; overflow-wrap: anywhere; cursor: pointer; }
+.obs-mem-body { font-size: 12px; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; text-overflow: ellipsis; }
+.obs-diag-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; min-width: 0; }
+.obs-diag-row > span { min-width: 0; overflow-wrap: anywhere; }
+.obs-mem-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 2px; min-width: 0; }
+.obs-mem-tags > span { overflow-wrap: anywhere; }
+
+/* Tablet portrait (601-768px) keeps the wide-layout footprint of the peer
+   list. The filter pills become one scrolling line of full 40px buttons
+   (padded to the height two wrapped lines take on desktop). Each peer row
+   stays on one line: its text shrinks and wraps inside its own span, the
+   action buttons stay 40px wide, and their 40px height is offset with
+   negative margins so rows keep their desktop height. Phones (<=600px)
+   and short landscape screens simply wrap and grow. */
+@media (min-width: 601px) and (max-width: 768px) and (min-height: 501px) {
+  #observerPeersList .obs-peer-pills { flex-wrap: nowrap !important; overflow-x: auto; padding-bottom: 11px !important; }
+  #observerPeersList .obs-peer-pills > button { flex: 0 0 auto; }
+  #observerPeersList .obs-peer-item { flex-wrap: nowrap !important; margin-right: -12px; }
+  #observerPeersList .obs-peer-item > .btn-icon { flex: 0 0 auto; margin: -11.5px 0 !important; }
+  #observerPeersList .obs-peer-item > .obs-dot { margin-right: 2px !important; }
+  #observerPeersList .obs-peer-item > span:nth-child(3) { margin-left: 0 !important; }
+  #observerPeersList .obs-peer-item > span:nth-child(4) { margin-left: 2px !important; }
+  #channelBridgeBlock > div:first-child,
+  #channelDiagBlock > div:first-child { box-sizing: border-box; margin-top: -9.5px; margin-bottom: -9.5px; }
+  #channelBridgeBlock a,
+  #channelDiagBlock a,
+  #channelDiagBlock summary,
+  #channelDiagBlock button { margin-top: -12px; margin-bottom: -12px; }
+}
+
+/* Very narrow screens (a phone at 200% zoom is 160px wide): the add-memory
+   row cannot hold an input and its button side by side, so it wraps. */
+@media (max-width: 240px) {
+  .obs-row-nowrap { flex-wrap: wrap; }
+  .obs-row-nowrap > .obs-fluid { flex: 1 1 100%; }
+  .obs-row-nowrap > button { max-width: 100%; }
 }
