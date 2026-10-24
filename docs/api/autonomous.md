@@ -29,7 +29,7 @@ GET    /api/autonomous/status              loop snapshot (running, active PRDs, 
 GET    /api/autonomous/config              read current config
 PUT    /api/autonomous/config              replace config (full body)
 
-POST   /api/autonomous/prds                create PRD; body: {spec, project_dir, [backend], [effort]}
+POST   /api/autonomous/prds                create PRD; body: {spec, project_dir, [backend], [effort], [kind]}
 GET    /api/autonomous/prds                summary list, newest-updated first, paged; ?full=1 for whole records (see "Automata list" below)
 GET    /api/autonomous/prds/{id}           one PRD with story+task tree
 PATCH  /api/autonomous/prds/{id}           edit PRD title + spec (non-running only); body: {title, spec, actor}     [v5.19.0]
@@ -53,6 +53,7 @@ POST   /api/autonomous/prds/{id}/set_verifier_policy         per-Automaton verif
 POST   /api/autonomous/prds/{id}/set_task_verifier_policy    per-task verifier policy; body: {task_id, [mode], [backends[]], actor}
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
 POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {tag_ids[]} ([] clears)
+POST   /api/autonomous/prds/{id}/set_kind  Automaton kind; body: {kind} (feature|bug|other; "" derives it again); 400 on an unknown kind, 404 on an unknown id
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
 GET    /api/autonomous/prds?tag={id}[&include_sub=false]  Automata carrying a tag (and, by default, any descendant tag)
 
@@ -63,6 +64,8 @@ DELETE /api/autonomous/tags/{id}            409 while the tag has child tags, 40
 GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD                                      [v5.9.0  / BL191 Q4]
 
 GET    /api/autonomous/learnings           extracted post-task learnings
+GET    /api/autonomous/progress[?automation_id=&tag_id=&since=&until=]  progress metrics object (counts by kind, throughput, utilization, remaining work, completion range); since/until are YYYY-MM-DD, until is inclusive; 400 on a bad date
+GET    /api/autonomous/progress/trend[?days=]  saved daily snapshots as {days, points[], direction}; days 1..365 (default 30), 400 outside that range
 
 # Guardrail Library + Profiles
 GET    /api/autonomous/guardrails                  list guardrail library (built-ins + skill-contributed)
@@ -1248,6 +1251,8 @@ datawatch autonomous tag-rename <id> <new-name>
 datawatch autonomous tag-move <id> --parent <new-parent-id|root>
 datawatch autonomous tag-delete <id>
 datawatch autonomous prd-set-tags <prd-id> --tags <id1,id2>   # empty value clears
+datawatch autonomous prd-create "Fix the retry loop" --kind bug   # optional; omit to derive the kind
+datawatch autonomous prd-set-kind <id> <feature|bug|other>
 datawatch autonomous learnings
 ```
 
@@ -1272,6 +1277,8 @@ operator-facing AI can drive the autonomous loop end-to-end:
 | `autonomous_learnings`      | list learnings |
 | `autonomous_tag_list` / `_tag_create` / `_tag_rename` / `_tag_set_parent` / `_tag_set_color` / `_tag_delete` | Automata tag registry; see [howto/automata-tags](../howto/automata-tags.md) |
 | `autonomous_prd_set_tags`   | replace an Automaton's tags (`tag_ids_json`) |
+| `autonomous_prd_set_kind`   | set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again); `autonomous_prd_create` takes the same optional `kind` |
+| `autonomous_progress` / `autonomous_progress_trend` | read the progress metrics object (`automation_id`, `tag_id`, `since`, `until`) / the trend over the saved daily snapshots (`days`); read-only, proxied through the REST routes |
 | `autonomous_prd_set_task_verification_llm` / `_set_story_verification_llm` / `_set_verification_llm` | per-task / per-story / per-Automaton verifier LLM |
 | `autonomous_prd_set_verifier_policy` / `_set_task_verifier_policy` | per-Automaton / per-task verifier policy (`mode`, `backends`; `""` / `[]` clears, omit = unchanged) |
 | `autonomous_prd_set_task_project_dir` | per-task project dir override (empty = inherit Automaton dir) |
@@ -1304,12 +1311,52 @@ autonomous set-verification-llm abcd1234 model=
 autonomous tags
 autonomous tag-create "Mobile App" parent=1a2b3c4d
 autonomous set-tags abcd1234 1a2b3c4d,5e6f7a8b
+autonomous set-kind abcd1234 bug
 ```
 
 `guardrail_backend=` / `guardrail_model=` tokens can be appended to
 `autonomous set-llm` / `set-task-llm`; when they are the only settings
 given, no backend positional is needed and the worker LLM is left
 unchanged. `guardrail_model=` with no value clears the override.
+
+### Automaton kind
+
+An Automaton carries a kind of `feature`, `bug` or `other`. When none is set the
+kind is derived from the title and the start of the spec. Set it when the Automaton
+is created (`kind` in the create body, `--kind` on `prd-create`, `kind` on
+`autonomous_prd_create`) or change it later with `set_kind` (`prd-set-kind`,
+`autonomous_prd_set_kind`, `autonomous set-kind`). An unknown kind is refused with a
+400 and the valid values. Each change is logged on the decision timeline.
+
+### Progress metrics
+
+`GET /api/autonomous/progress` returns the one metrics object every surface shows
+(MCP `autonomous_progress` returns the same body). `GET /api/autonomous/progress/trend`
+returns the saved daily snapshots as a trend (MCP `autonomous_progress_trend`).
+
+```
+GET /api/autonomous/progress?tag_id=t-ui&since=2026-10-10&until=2026-10-20
+GET /api/autonomous/progress/trend?days=90
+```
+
+| Query | Route | Meaning |
+|---|---|---|
+| `automation_id` | progress | Count only the Automata of this Automation |
+| `tag_id` | progress | Count only the Automata carrying this tag |
+| `since` | progress | First day counted, `YYYY-MM-DD` (default: the configured `autonomous.progress.since`, else the first record's creation date) |
+| `until` | progress | Last day counted, `YYYY-MM-DD`, inclusive (default: now) |
+| `days` | trend | How many days back to read, 1 to 365 (default 30) |
+
+The progress reply carries `groups` (feature, bug and other), `totals`, `throughput`,
+`utilization`, `lead_time`, `inactive`, `remaining`, `completion`, `unfiled_rows`,
+`backlog_available` and `not_measured`. The backlog is read from
+`autonomous.progress.backlog_path`; a missing file gives `backlog_available: false`
+and is not an error. Explicit inactive windows are read from
+`operator-wait-windows.tsv` in the same folder as the backlog file. The trend reply is
+`{"days": N, "points": [...], "direction": "converging|widening|flat|unknown"}`; with no
+saved snapshots `points` is empty and `direction` is `unknown`. A bad date, `until`
+before `since`, or `days` outside 1 to 365 is a 400. Both routes need the autonomous
+read capability when called by a federated peer, and answer 503 when autonomous is off.
 
 The per-node engine cap is a daemon setting, so it goes through `configure`
 rather than an `autonomous` subcommand: `configure autonomous.max_engines_per_node=2`.

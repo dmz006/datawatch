@@ -596,6 +596,14 @@ paths:
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
         `autonomous.automation.idle_alert_minutes` (whole minutes >= 0, default 0 =
         off; a negative or non-integer value is rejected with 400),
+        `autonomous.progress.lanes` (whole number >= 0, default 0 = 5),
+        `autonomous.progress.inactive_gap_hours` (number >= 0, default 0 = 3),
+        `autonomous.progress.backlog_path` (string, default docs/plans/README.md; a
+        relative path resolves against `autonomous.worktree_base_repo` when set, else
+        the daemon working directory),
+        `autonomous.progress.since` (YYYY-MM-DD, empty = the first record's creation
+        date), `autonomous.progress.snapshot_retention_days` (whole number >= 0,
+        default 0 = 90); a bad progress value is rejected with 400 and nothing is written,
         `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
         `autonomous.plan_review_mode` (off | warn | block),
         `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`,
@@ -897,6 +905,105 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/autonomous/progress:
+    get:
+      summary: Progress metrics
+      description: |
+        The one metrics object every surface returns: counts by kind (feature, bug,
+        other) and in total, throughput per active day, worker utilization, lead time
+        per stage, the inactive windows left out of every rate, the remaining work
+        split into known records and estimated work, and the completion range in days
+        with the method behind each figure. The backlog is read from the configured
+        path; a missing file gives `backlog_available: false`, not an error. Explicit
+        inactive windows are read from `operator-wait-windows.tsv` next to the backlog
+        file. `since` falls back to the configured date, then to the first record's
+        creation date. Needs the autonomous read capability when called by a federated
+        peer.
+      operationId: autonomousProgress
+      tags: [Autonomous]
+      parameters:
+        - {name: automation_id, in: query, required: false, description: Count only the Automata of this Automation, schema: {type: string}}
+        - {name: tag_id, in: query, required: false, description: Count only the Automata carrying this tag, schema: {type: string}}
+        - {name: since, in: query, required: false, description: "First day counted, YYYY-MM-DD", schema: {type: string, format: date}}
+        - {name: until, in: query, required: false, description: "Last day counted, YYYY-MM-DD, inclusive", schema: {type: string, format: date}}
+      responses:
+        "200":
+          description: Metrics object
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  since: {type: string, format: date-time}
+                  scope: {type: string, description: "all, automation:<id>, tag:<id> or the two joined with +"}
+                  calendar_days: {type: number}
+                  active_days: {type: number}
+                  lanes: {type: integer}
+                  groups: {type: object, description: "feature, bug and other, each a count block", additionalProperties: {type: object}}
+                  totals: {type: object, description: Count block over all kinds}
+                  completed_prds: {type: integer}
+                  running_prds: {type: integer}
+                  throughput: {type: object}
+                  utilization: {type: object}
+                  lead_time: {type: object}
+                  inactive: {type: object}
+                  remaining: {type: object, description: "known, estimated and combined remaining work"}
+                  completion: {type: object, description: "Completion range in days (low_days, high_days) with drivers and the method behind each figure"}
+                  unfiled_rows: {type: array, items: {type: object}}
+                  backlog_available: {type: boolean}
+                  not_measured: {type: array, items: {type: string}}
+        "400": {description: Invalid since or until, or until before since}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/progress/trend:
+    get:
+      summary: Progress trend
+      description: |
+        The saved daily snapshots reduced to the figures the trend view plots, oldest
+        first, and the way the completion range is moving (`converging`, `widening`,
+        `flat` or `unknown`). Without saved snapshots the list is empty and the
+        direction is `unknown`. Needs the autonomous read capability when called by a
+        federated peer.
+      operationId: autonomousProgressTrend
+      tags: [Autonomous]
+      parameters:
+        - {name: days, in: query, required: false, description: "How many days back to read, 1 to 365 (default 30)", schema: {type: integer, minimum: 1, maximum: 365, default: 30}}
+      responses:
+        "200":
+          description: Trend over the saved snapshots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  days: {type: integer}
+                  points:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: {type: string, format: date}
+                        reason: {type: string, description: "daily or milestone"}
+                        completion_low_days: {type: number, nullable: true}
+                        completion_high_days: {type: number, nullable: true}
+                        known_tasks: {type: integer}
+                        estimated_tasks: {type: number}
+                        throughput_3d: {type: number}
+                        utilization: {type: number}
+                        completed_prds: {type: integer}
+                  direction: {type: string, enum: [converging, widening, flat, unknown]}
+        "400": {description: days is not a whole number from 1 to 365}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/capacity:
     get:
       summary: Capacity admission status
@@ -1018,6 +1125,34 @@ paths:
                 priority: {type: integer}
       responses:
         "200": {description: Updated PRD}
+
+  /api/autonomous/prds/{id}/set_kind:
+    post:
+      summary: Set the kind of an Automaton
+      description: |
+        Sets the Automaton kind to `feature`, `bug` or `other`. An empty kind clears the
+        setting, so the kind is derived again from the title and spec. The change is
+        recorded on the decision timeline. Needs the autonomous write capability when
+        called by a federated peer.
+      operationId: autonomousPRDSetKind
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind: {type: string, enum: [feature, bug, other, ""]}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: Unknown kind}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Unknown Automaton id}
+        "405": {description: Method not allowed}
 
   /api/autonomous/prds/{id}/set_tags:
     post:
@@ -1397,6 +1532,7 @@ paths:
                 project_dir: {type: string}
                 backend: {type: string}
                 effort: {type: string}
+                kind: {type: string, enum: [feature, bug, other], description: "Optional Automaton kind; omit to derive it from the title and spec"}
       responses: {"200": {description: OK}}
   /api/autonomous/prds/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]

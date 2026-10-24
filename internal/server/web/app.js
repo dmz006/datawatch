@@ -15181,6 +15181,7 @@ function openPRDSettingsModal(prdID) {
     .then(prd => {
       const cur = {
         type:                 prd.type || '',
+        kind:                 prd.kind || '',
         backend:              prd.backend || '',
         effort:               prd.effort || '',
         model:                prd.model || '',
@@ -15219,6 +15220,13 @@ function openPRDSettingsModal(prdID) {
               <select id="prdSettingsType" class="form-select">
                 <option value="" ${!cur.type?'selected':''}>—</option>
                 ${['software','research','operational','personal'].map(v => `<option value="${v}" ${cur.type===v?'selected':''}>${v}</option>`).join('')}
+              </select>
+            </div>
+            <div class="wizard-field">
+              <label class="wizard-label">${escHtml(t('progress_card_kind_label'))}</label>
+              <select id="prdSettingsKind" class="form-select">
+                <option value="" ${!cur.kind?'selected':''}>${escHtml(t('progress_card_kind_derived'))}</option>
+                ${['feature','bug','other'].map(v => `<option value="${v}" ${cur.kind===v?'selected':''}>${escHtml(t(PC_KEYS.kind[v]))}</option>`).join('')}
               </select>
             </div>
             <div class="wizard-grid-mobile">
@@ -15377,6 +15385,13 @@ function openPRDSettingsModal(prdID) {
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_dirs', {
               method: 'POST', headers: {'Content-Type':'application/json'},
               body: JSON.stringify({ read_dirs: _splitDirs(newReadStr), write_dirs: _splitDirs(newWriteStr) }),
+            }));
+          }
+          const newKind = (document.getElementById('prdSettingsKind')?.value || '');
+          if (newKind !== cur.kind) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_kind', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ kind: newKind }),
             }));
           }
           const newPriority = parseInt(document.getElementById('prdSettingsPriority')?.value || '0', 10) || 0;
@@ -15774,6 +15789,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.backoff_max_wait_minutes', label: 'Usage back-off max wait (minutes when a rate limit has no reset time, default 60)', labelKey: 'settings_backoff_max_wait_minutes', type: 'number', placeholder: '60', min: 1, step: 1, default: '60' },
     { key: 'autonomous.automation.idle_alert_minutes', label: 'Automation idle alert (minutes idle before one alert, 0 = off)', labelKey: 'settings_automation_idle_alert_minutes', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
     { key: 'autonomous.automation.agent_insert_policy', label: 'Automation agent insert policy (allow | require_operator, default allow)', labelKey: 'settings_automation_agent_insert_policy', type: 'select', options: ['allow', 'require_operator'], default: 'allow' },
+    // Progress engine parameters (0 or empty = the default shown as placeholder).
+    { key: 'autonomous.progress.lanes', label: 'Progress lanes (parallel lanes of Automata used for utilization, 0 = 5)', labelKey: 'settings_progress_lanes', type: 'number', placeholder: '5', min: 0, step: 1, default: '0' },
+    { key: 'autonomous.progress.inactive_gap_hours', label: 'Progress inactive gap (hours without activity that count as an inactive window, 0 = 3)', labelKey: 'settings_progress_inactive_gap_hours', type: 'number', placeholder: '3', min: 0, step: 0.5, default: '0' },
+    { key: 'autonomous.progress.backlog_path', label: 'Progress backlog file (relative paths resolve against the base repository, default docs/plans/README.md)', labelKey: 'settings_progress_backlog_path', type: 'text', placeholder: 'docs/plans/README.md', default: 'docs/plans/README.md' },
+    { key: 'autonomous.progress.since', label: 'Progress start date (YYYY-MM-DD, empty = first record\'s creation date)', labelKey: 'settings_progress_since', type: 'text', placeholder: 'YYYY-MM-DD', default: '' },
+    { key: 'autonomous.progress.snapshot_retention_days', label: 'Progress snapshot retention (days kept, 0 = 90)', labelKey: 'settings_progress_snapshot_retention_days', type: 'number', placeholder: '90', min: 0, step: 1, default: '0' },
     // Plan tier inflight caps — ties each subscription plan tier
     // (pro | max_5x | max_20x | api) to the inflight session count it may
     // occupy (0 leaves the tier unlimited; unset tier = no tier cap). An
@@ -21214,7 +21235,7 @@ function renderAutomataCard(prd) {
       ${checkboxCell}
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          ${typeBadge}${_tagChipsHTML(prd)}${tplBadge}${gateInvalidBadge}
+          ${typeBadge}${window.automatonKindChipHtml(prd)}${_tagChipsHTML(prd)}${tplBadge}${gateInvalidBadge}
           <span style="font-weight:700;font-size:15px;color:var(--text);flex:1;min-width:0;">${escHtml(title)}</span>
           <span style="margin-left:auto;flex-shrink:0;">${statusPill(status)}</span>
         </div>
@@ -21519,8 +21540,11 @@ function loadAutomataPanel() {
   if (!panel) return Promise.resolve();
   // Same loader for first load, filter changes, polling and WebSocket
   // refreshes: after the first response the spinner never returns and open
-  // cards stay open.
-  return _automataLoader().load();
+  // cards stay open. The progress card rides the same refresh path (it
+  // throttles itself, so filter typing does not refetch it every keystroke).
+  const loading = _automataLoader().load();
+  if (typeof window.loadProgressCard === 'function') window.loadProgressCard();
+  return loading;
 }
 window.loadAutomataPanel = loadAutomataPanel;
 
@@ -21925,6 +21949,7 @@ function switchAutomataTab(tab) {
     renderAutonomousView();
     return;
   }
+  if (typeof window.paintProgressCard === 'function') window.paintProgressCard();
   if (tab === 'templates') loadAutomataTemplatesPanel();
   else _automataShowList();
 }
@@ -23106,6 +23131,253 @@ window._loadPRDCapacityCard = function(prdId) {
   };
   render();
   window._prdCapacityInterval = setInterval(render, 5000);
+};
+
+// ── Automata progress card ───────────────────────────────────────────────────
+// progressCardHtml(state, opts) is a pure function from the loader state to
+// markup. state: {status: 'loading'|'ok'|'stale'|'failed', data: the
+// GET /api/autonomous/progress body or null, error, fetchedAt (ms), trend:
+// {direction} or null}. opts.now (ms) pins the clock. A value the server
+// could not measure is null and renders as the localized "not measured",
+// never as 0. Counts that the server always sends are plain numbers.
+const PROGRESS_STALE_MS = 5 * 60 * 1000;
+const PROGRESS_MIN_REFETCH_MS = 5000;
+const PROGRESS_METHODS = ['prd_rate', 'task_rate', 'task_rate_24h', 'worker_hours'];
+const PROGRESS_METHOD_FIELDS = {
+  prd_rate: 'by_prd_rate_days', task_rate: 'by_task_rate_days',
+  task_rate_24h: 'by_task_rate_24h_days', worker_hours: 'by_worker_hours_days',
+};
+// Locale keys, spelled out so each one is a literal the key-coverage guard
+// can see. The API's own key names map onto them.
+const PC_KEYS = {
+  col: {
+    records: 'progress_card_col_records', done: 'progress_card_col_done', running: 'progress_card_col_running',
+    waiting: 'progress_card_col_waiting', blocked: 'progress_card_col_blocked', tasks: 'progress_card_col_tasks',
+    tasks_done: 'progress_card_col_tasks_done', left: 'progress_card_col_left', work_time: 'progress_card_col_work_time',
+    median: 'progress_card_col_median', mean_task: 'progress_card_col_mean_task',
+  },
+  kind: { feature: 'progress_card_kind_feature', bug: 'progress_card_kind_bug', other: 'progress_card_kind_other' },
+  method: {
+    prd_rate: 'progress_card_method_record_rate', task_rate: 'progress_card_method_task_rate',
+    task_rate_24h: 'progress_card_method_task_rate_24h', worker_hours: 'progress_card_method_worker_hours',
+  },
+  methodText: {
+    prd_rate: 'progress_card_method_record_rate_text', task_rate: 'progress_card_method_task_rate_text',
+    task_rate_24h: 'progress_card_method_task_rate_24h_text', worker_hours: 'progress_card_method_worker_hours_text',
+  },
+  driver: {
+    utilization: 'progress_card_driver_utilization', large_prd_mix: 'progress_card_driver_large_record_mix',
+    undecomposed_backlog: 'progress_card_driver_undecomposed_backlog', sparse_history: 'progress_card_driver_sparse_history',
+  },
+  trend: { converging: 'progress_card_trend_converging', widening: 'progress_card_trend_widening', flat: 'progress_card_trend_flat' },
+};
+const PROGRESS_WINDOWS_SHOWN = 6;
+
+// _pcKey returns the locale key for an API value, or '' for anything that is
+// not one of ours (including inherited names such as "constructor").
+function _pcKey(group, v) {
+  return (typeof v === 'string' && Object.prototype.hasOwnProperty.call(PC_KEYS[group], v)) ? PC_KEYS[group][v] : '';
+}
+function _pcIsNum(v) { return typeof v === 'number' && isFinite(v); }
+// The ...T helpers return plain text (for t() placeholders); the unsuffixed
+// ones return escaped markup.
+function _pcNmT() { return t('progress_card_not_measured'); }
+function _pcNumT(v, digits) {
+  if (!_pcIsNum(v)) return _pcNmT();
+  return String(digits != null ? Number(v.toFixed(digits)) : v);
+}
+function _pcHoursT(h) {
+  if (!_pcIsNum(h)) return _pcNmT();
+  return h >= 48 ? t('progress_card_unit_days', [(h / 24).toFixed(1)]) : t('progress_card_unit_hours', [h.toFixed(1)]);
+}
+function _pcDaysT(d) {
+  if (!_pcIsNum(d)) return _pcNmT();
+  return t('progress_card_unit_days', [d.toFixed(1)]);
+}
+// Worker hours per day stay in hours however large they get.
+function _pcHoursOnlyT(h) { return _pcIsNum(h) ? t('progress_card_unit_hours', [h.toFixed(1)]) : _pcNmT(); }
+function _pcPctT(r) { return _pcIsNum(r) ? Math.round(r * 100) + '%' : _pcNmT(); }
+function _pcNm() { return escHtml(_pcNmT()); }
+function _pcNum(v, digits) { return escHtml(_pcNumT(v, digits)); }
+function _pcHours(h) { return escHtml(_pcHoursT(h)); }
+function _pcDays(d) { return escHtml(_pcDaysT(d)); }
+function _pcFmt(key, vars) { return escHtml(t(key, vars)); } // vars are plain text
+function _pcRow(label, valueHtml) {
+  return `<div class="progress-card-line"><span style="color:var(--text2);">${escHtml(label)}</span> ${valueHtml}</div>`;
+}
+function _pcSection(titleKey, body) {
+  return `<div class="progress-card-section" style="margin-top:8px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t(titleKey))}</div>${body}</div>`;
+}
+
+function _pcTable(data) {
+  const groups = (data && data.groups) || {};
+  const cols = ['records', 'done', 'running', 'waiting', 'blocked', 'tasks', 'tasks_done', 'left', 'work_time', 'median', 'mean_task'];
+  const head = cols.map(c => `<th style="text-align:right;padding:2px 6px;font-weight:600;white-space:nowrap;">${escHtml(t(PC_KEYS.col[c]))}</th>`).join('');
+  const cell = h => `<td style="text-align:right;padding:2px 6px;font-variant-numeric:tabular-nums;white-space:nowrap;">${h}</td>`;
+  const rowHtml = (label, g) => {
+    g = g || {};
+    return `<tr><th scope="row" style="text-align:left;padding:2px 6px;font-weight:600;">${escHtml(label)}</th>` +
+      cell(_pcNum(g.prds)) + cell(_pcNum(g.done)) + cell(_pcNum(g.running)) + cell(_pcNum(g.waiting)) + cell(_pcNum(g.blocked)) +
+      cell(_pcNum(g.tasks)) + cell(_pcNum(g.tasks_done)) + cell(_pcNum(g.tasks_left)) +
+      cell(_pcHours(g.work_hours)) + cell(_pcHours(g.median_prd_wall_hours)) + cell(_pcHours(g.mean_task_hours)) + '</tr>';
+  };
+  const rows = ['feature', 'bug', 'other'].filter(k => k !== 'other' || (groups.other && groups.other.prds > 0))
+    .map(k => rowHtml(t(PC_KEYS.kind[k]), groups[k])).join('');
+  return `<div style="overflow-x:auto;"><table class="progress-card-table" style="border-collapse:collapse;font-size:12px;min-width:100%;"><thead><tr><th></th>${head}</tr></thead><tbody>${rows}${rowHtml(t('progress_card_row_total'), data && data.totals)}</tbody></table></div>`;
+}
+
+function _pcRemaining(data) {
+  const r = (data && data.remaining) || {};
+  const k = r.known || {}, e = r.estimated || {}, c = r.combined || {};
+  const tpp = e.tasks_per_prd || {};
+  const measured = _pcIsNum(tpp.samples) && tpp.samples > 0;
+  const known = _pcRow(t('progress_card_known_title'), '') +
+    _pcRow(t('progress_card_known_open_records'), _pcNum(k.prds)) +
+    _pcRow(t('progress_card_known_open_tasks'), _pcNum(k.tasks)) +
+    _pcRow(t('progress_card_known_undecomposed'), _pcNum(k.undecomposed_prds));
+  const est = _pcRow(t('progress_card_estimated_title'), '') +
+    _pcRow(t('progress_card_estimated_new_items'), _pcNum(e.new_prds)) +
+    _pcRow(t('progress_card_estimated_undecomposed'), _pcNum(e.undecomposed_prds)) +
+    _pcRow(t('progress_card_estimated_tasks'), _pcNum(e.estimated_tasks, 0)) +
+    _pcRow(t('progress_card_tasks_per_record_mean'), measured ? _pcNum(tpp.mean, 1) : _pcNm()) +
+    _pcRow(t('progress_card_tasks_per_record_median'), measured ? _pcNum(tpp.median, 1) : _pcNm());
+  const comb = _pcRow(t('progress_card_combined_estimate'), _pcFmt('progress_card_combined_value', [_pcNumT(c.prds), _pcNumT(c.tasks, 0)]));
+  return _pcSection('progress_card_remaining_title', `<div class="progress-card-known">${known}</div><div class="progress-card-estimated">${est}</div><div class="progress-card-combined">${comb}</div>`);
+}
+
+function _pcCompletion(data) {
+  const c = (data && data.completion) || {};
+  let body;
+  if (!_pcIsNum(c.low_days) || !_pcIsNum(c.high_days)) {
+    body = _pcRow(t('progress_card_range_label'), _pcNm());
+  } else {
+    body = _pcRow(t('progress_card_range_label'), `${_pcDays(c.low_days)} – ${_pcDays(c.high_days)} <em style="color:var(--text2);">${escHtml(t('progress_card_estimate_note'))}</em>`);
+  }
+  const methodText = (c && c.method) || {};
+  const keys = PROGRESS_METHODS.concat(Object.keys(methodText).filter(k => PROGRESS_METHODS.indexOf(k) < 0));
+  body += keys.map(key => {
+    const known = !!_pcKey('method', key);
+    const label = known ? t(PC_KEYS.method[key]) : String(key);
+    const sentence = known ? t(PC_KEYS.methodText[key]) : (methodText[key] || '');
+    const val = known ? _pcDays(c[PROGRESS_METHOD_FIELDS[key]]) : _pcNm();
+    return `<div class="progress-card-method">${_pcRow(label, val)}<div style="font-size:11px;color:var(--text2);margin-left:10px;">${escHtml(sentence)}</div></div>`;
+  }).join('');
+  if (_pcIsNum(c.calendar_days)) body += _pcRow(t('progress_card_calendar_view'), _pcDays(c.calendar_days));
+  const drivers = Array.isArray(c.drivers) ? c.drivers : [];
+  if (drivers.length) {
+    body += `<div class="progress-card-drivers" style="margin-top:4px;"><span style="color:var(--text2);">${escHtml(t('progress_card_drivers_label'))}</span><ul style="margin:2px 0 0 18px;padding:0;">` +
+      drivers.map(d => `<li>${escHtml(_pcKey('driver', d) ? t(_pcKey('driver', d)) : String(d))}</li>`).join('') + '</ul></div>';
+  }
+  return _pcSection('progress_card_completion_title', body);
+}
+
+function _pcWindows(data) {
+  const inactive = (data && data.inactive) || {};
+  const ws = Array.isArray(inactive.windows) ? inactive.windows.slice() : [];
+  ws.sort((a, b) => String(a && a.start).localeCompare(String(b && b.start)));
+  const shown = ws.slice(-PROGRESS_WINDOWS_SHOWN);
+  const day = s => escHtml(String(s == null ? '' : s).slice(0, 16).replace('T', ' '));
+  let body = _pcRow(t('progress_card_windows_summary'), _pcFmt('progress_card_windows_value', [ws.length, _pcHoursT(inactive.excluded_hours), _pcPctT(inactive.share_of_calendar)]));
+  if (ws.length > shown.length) body += `<div style="font-size:11px;color:var(--text2);">${_pcFmt('progress_card_windows_more', [ws.length - shown.length])}</div>`;
+  body += shown.map(w => {
+    w = w || {};
+    const why = [w.kind, w.reason].filter(Boolean).map(x => escHtml(String(x))).join(' · ');
+    const inferred = w.inferred ? ` <span class="progress-card-inferred" style="font-size:10px;padding:0 6px;border-radius:8px;border:1px solid var(--border);color:var(--text2);">${escHtml(t('progress_card_inferred'))}</span>` : '';
+    return `<div class="progress-card-window" style="font-size:12px;">${day(w.start)} – ${day(w.end)}${why ? ' · ' + why : ''}${inferred}</div>`;
+  }).join('');
+  return _pcSection('progress_card_windows_title', body);
+}
+
+window.progressCardHtml = function(state, opts) {
+  opts = opts || {};
+  state = state || {};
+  const now = _pcIsNum(opts.now) ? opts.now : Date.now();
+  const data = (state.data && typeof state.data === 'object') ? state.data : null;
+  const title = `<div class="cap-title">${escHtml(t('progress_card_title'))}</div>`;
+  const wrap = (status, inner) => `<div class="prd-capacity-card progress-card" data-progress-status="${escHtml(status)}">${title}${inner}</div>`;
+  if (!data) {
+    if (state.status === 'failed') {
+      return wrap('failed', `<div class="progress-card-failed" role="alert"><span>${escHtml(t('progress_card_failed'))}${state.error ? ': ' + escHtml(state.error) : ''}</span> ` +
+        `<button type="button" class="btn-secondary progress-card-retry" onclick="window.loadProgressCard(true)">${escHtml(t('progress_card_retry'))}</button></div>`);
+    }
+    return wrap('loading', `<div class="progress-card-loading" role="status" style="color:var(--text2);">${escHtml(t('progress_card_loading'))}</div>`);
+  }
+  // Stale: the last refresh failed, or the numbers were generated more than
+  // five minutes ago. The age is that of the data, not of the page.
+  const gen = Date.parse(data.generated_at);
+  const since = isFinite(gen) ? gen : (_pcIsNum(state.fetchedAt) ? state.fetchedAt : now);
+  const old = isFinite(gen) && (now - gen) > PROGRESS_STALE_MS;
+  const stale = state.status === 'stale' || state.status === 'failed' || old;
+  let banner = '';
+  if (stale) {
+    const ageSec = Math.max(0, Math.floor((now - since) / 1000));
+    banner = `<div class="progress-card-stale" role="status" style="color:var(--warning,#f59e0b);font-size:12px;">${escHtml(t('progress_card_stale'))} · ${escHtml(t('last_updated_ago', [ageSec]))}` +
+      (state.error ? ` · ${escHtml(state.error)}` : '') + '</div>';
+  }
+  const tp = data.throughput || {}, ut = data.utilization || {};
+  const throughput = _pcSection('progress_card_throughput_title',
+    _pcRow(t('progress_card_throughput_24h'), _pcFmt('progress_card_throughput_24h_value', [_pcNumT(tp.prds_last_24h), _pcNumT(tp.tasks_last_24h)])) +
+    _pcRow(t('progress_card_throughput_3d'), _pcFmt('progress_card_throughput_3d_value', [_pcNumT(tp.prds_last_3d), _pcNumT(tp.prds_per_day_3d, 1), _pcNumT(tp.tasks_per_day, 1)])));
+  const util = _pcSection('progress_card_utilization_title',
+    _pcRow(t('progress_card_utilization_workers'), _pcFmt('progress_card_utilization_value', [_pcHoursOnlyT(ut.worker_hours_per_day), _pcPctT(ut.ratio), _pcNumT(data.lanes)])));
+  const unfiled = Array.isArray(data.unfiled_rows) ? data.unfiled_rows.length : null;
+  const backlog = _pcSection('progress_card_backlog_title',
+    _pcRow(t('progress_card_backlog_unfiled'), data.backlog_available === false || unfiled == null ? _pcNm() : _pcNum(unfiled)));
+  const dir = state.trend && state.trend.direction;
+  const trendLabel = !dir || dir === 'unknown' ? _pcNm()
+    : escHtml(_pcKey('trend', dir) ? t(_pcKey('trend', dir)) : String(dir));
+  const trend = _pcSection('progress_card_trend_title', _pcRow(t('progress_card_trend_label'), trendLabel));
+  return wrap(stale ? 'stale' : 'ok', banner + _pcTable(data) + _pcRemaining(data) + _pcCompletion(data) + throughput + util + _pcWindows(data) + backlog + trend);
+};
+
+window._progressCardState = window._progressCardState || { status: 'loading', data: null, error: '', fetchedAt: 0, trend: null, attemptedAt: 0, inflight: null };
+
+// paintProgressCard draws the current state into the slot on the Automata
+// tab and hides the slot on any other tab.
+window.paintProgressCard = function() {
+  const slot = document.getElementById('progressCard');
+  if (!slot) return;
+  const onTab = !_automataState || _automataState.tab === 'automata';
+  slot.style.display = onTab ? 'block' : 'none';
+  if (onTab) slot.innerHTML = window.progressCardHtml(window._progressCardState);
+};
+
+// loadProgressCard fetches the metrics (and, best effort, the trend) through
+// apiFetch. A failed refresh keeps the last good data and marks it stale; the
+// failed state shows only when nothing was ever loaded. It runs from the
+// Automata panel's own refresh path (loadAutomataPanel), so it needs no timer
+// of its own. force skips the short refetch guard (the retry button).
+window.loadProgressCard = function(force) {
+  const S = window._progressCardState;
+  if (S.inflight) return S.inflight;
+  const t0 = Date.now();
+  if (!force && S.attemptedAt && (t0 - S.attemptedAt) < PROGRESS_MIN_REFETCH_MS) return Promise.resolve();
+  S.attemptedAt = t0;
+  if (!S.data) { S.status = 'loading'; S.error = ''; window.paintProgressCard(); }
+  const p = Promise.all([
+    apiFetch('/api/autonomous/progress'),
+    apiFetch('/api/autonomous/progress/trend?days=14').catch(() => null),
+  ]).then(([data, trend]) => {
+    if (!data || typeof data !== 'object') throw new Error(t('progress_card_not_measured'));
+    S.data = data; S.status = 'ok'; S.error = ''; S.fetchedAt = Date.now();
+    if (trend && typeof trend === 'object') S.trend = { direction: trend.direction || 'unknown' };
+  }).catch(err => {
+    S.error = (err && err.message) || String(err);
+    S.status = S.data ? 'stale' : 'failed';
+  }).then(() => {
+    S.inflight = null;
+    window.paintProgressCard();
+  });
+  S.inflight = p;
+  return p;
+};
+
+// The kind chip on an Automaton card: shown for an explicit kind only (an
+// empty kind is derived by the server and is not part of the list body).
+window.automatonKindChipHtml = function(prd) {
+  const k = prd && prd.kind;
+  if (k !== 'feature' && k !== 'bug' && k !== 'other') return '';
+  return `<span class="kind-chip kind-chip-${k}" style="font-size:11px;padding:2px 9px;border-radius:8px;border:1px solid var(--border);color:var(--text2);font-weight:600;">${escHtml(t(PC_KEYS.kind[k]))}</span>`;
 };
 
 window._loadPRDActiveSessionCard = function(prd) {
@@ -24873,6 +25145,7 @@ function renderAutonomousView() {
         </label>
       </div>
       <div id="prdCapacityCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
+      <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automataPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>`}
@@ -24887,6 +25160,7 @@ function renderAutonomousView() {
     else if (reuse) _automataShowList();
     else loadAutomataPanel();
     window._loadPRDCapacityCard();
+    if (typeof window.paintProgressCard === 'function') window.paintProgressCard();
   }
   _automataReuseList = false;
   _injectServerPickerBar(view, renderAutonomousView); // BL312 S3

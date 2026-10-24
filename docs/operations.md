@@ -603,6 +603,26 @@ Autonomous Automata state lives as plain JSONL files under the autonomous data d
 
 **Automation advance and idle alert.** An active Automation starts its next Automaton by itself when the current one reaches a terminal state; after a daemon restart it reconciles once boot-resume has finished (a member that finished while the daemon was down advances, a running one is left alone). `autonomous.automation.idle_alert_minutes` (default `0` = off, whole minutes) raises one alert when an active Automation has had no member running that long; it is read live, so changing it needs no restart. See [howto/automation-queue-advance.md](howto/automation-queue-advance.md).
 
+**Progress engine settings.** Every parameter of the progress engine is a configuration key, changed live with no restart. A bad value is rejected (HTTP 400, or an error on load) and nothing is written.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomous.progress.lanes` | `0` (= 5) | Parallel lanes of Automata the utilization figures assume. Whole number >= 0. |
+| `autonomous.progress.inactive_gap_hours` | `0` (= 3) | Hours without activity that count as an inactive window. Number >= 0. |
+| `autonomous.progress.backlog_path` | `docs/plans/README.md` | Backlog file. A relative path resolves against `autonomous.worktree_base_repo` when set, else the daemon working directory. |
+| `autonomous.progress.since` | empty | First day counted, `YYYY-MM-DD`; empty = the first record's creation date. |
+| `autonomous.progress.snapshot_retention_days` | `0` (= 90) | Days saved progress snapshots are kept. Whole number >= 0. |
+
+Each key is reachable through all five configuration methods (MCP agents use `config_set` with the same keys, or the `progress_lanes`, `progress_inactive_gap_hours`, `progress_backlog_path`, `progress_since` and `progress_snapshot_retention_days` arguments of `autonomous_config_set`):
+
+| Key | YAML (`autonomous.progress:` block) | CLI | Web UI (Settings → General → Autonomous) | REST | Chat |
+|---|---|---|---|---|---|
+| `autonomous.progress.lanes` | `lanes: 5` | `datawatch config set autonomous.progress.lanes 5` | *Progress lanes* | `PUT /api/config` `{"autonomous.progress.lanes": 5}` | `configure autonomous.progress.lanes=5` |
+| `autonomous.progress.inactive_gap_hours` | `inactive_gap_hours: 3` | `datawatch config set autonomous.progress.inactive_gap_hours 3` | *Progress inactive gap* | `PUT /api/config` `{"autonomous.progress.inactive_gap_hours": 3}` | `configure autonomous.progress.inactive_gap_hours=3` |
+| `autonomous.progress.backlog_path` | `backlog_path: docs/plans/README.md` | `datawatch config set autonomous.progress.backlog_path docs/plans/README.md` | *Progress backlog file* | `PUT /api/config` `{"autonomous.progress.backlog_path": "docs/plans/README.md"}` | `configure autonomous.progress.backlog_path=docs/plans/README.md` |
+| `autonomous.progress.since` | `since: "2026-09-01"` | `datawatch config set autonomous.progress.since 2026-09-01` | *Progress start date* | `PUT /api/config` `{"autonomous.progress.since": "2026-09-01"}` | `configure autonomous.progress.since=2026-09-01` |
+| `autonomous.progress.snapshot_retention_days` | `snapshot_retention_days: 90` | `datawatch config set autonomous.progress.snapshot_retention_days 90` | *Progress snapshot retention* | `PUT /api/config` `{"autonomous.progress.snapshot_retention_days": 90}` | `configure autonomous.progress.snapshot_retention_days=90` |
+
 ### Backup command
 
 ```bash
@@ -3764,6 +3784,56 @@ REST `GET /api/audit`, MCP `audit_query` and the `audit` chat command
 (`audit action=autonomous_budget_* subject=claude-code`) take the same
 filters. The full table of causes, example texts, actors, subjects and values
 is in [howto/automata-capacity.md](howto/automata-capacity.md).
+
+---
+
+## Automata progress dashboard
+
+A read-only view of how far the Automata have got and roughly when the rest
+will be done: counts by kind (feature, bug, other), throughput and worker
+utilization per **active** day, lead time, the work left split into **known**
+(Automata that exist) and **estimated** (backlog rows not filed yet, Automata
+with no tasks yet), and a completion range in active days with the method behind
+each figure. Stretches with no activity are left out of every rate and listed,
+never hidden. Lead time is shown but never feeds an estimate. Anything that
+could not be measured reads *not measured*, not zero. Operator guide:
+[howto/automata-progress.md](howto/automata-progress.md).
+
+**Inputs.** The Automata store; the backlog table (`autonomous.progress.backlog_path`,
+default `docs/plans/README.md`), where `{kind=feature|bug|other}` and
+`{phases=N}` in an item cell set a row's kind and how many Automata it becomes;
+and, optionally, `operator-wait-windows.tsv` in the same folder as the backlog
+file (tab separated: start, end, kind, reason) for stretches to leave out. A
+missing backlog or waits file is not an error.
+
+**Data written.** `progress-snapshots.jsonl` in the Automata data directory, one
+snapshot a day (UTC) plus one each time an Automaton completes, pruned after
+`autonomous.progress.snapshot_retention_days`. Back it up with the other
+Automata files if you want the trend history kept.
+
+**The five access methods.**
+
+| Task | YAML | CLI | Web UI | REST | Chat |
+|---|---|---|---|---|---|
+| Read the numbers | n/a | `datawatch autonomous progress [--automation ID] [--tag ID] [--since DATE] [--until DATE] [--json]` | Automata tab, *Progress* card | `GET /api/autonomous/progress` | `progress [automation=ID] [tag=ID] [since=DATE] [until=DATE]` |
+| Read the trend | n/a | `datawatch autonomous progress-trend [--days N] [--json]` | Trend section of the card | `GET /api/autonomous/progress/trend?days=N` | `progress trend [days]` |
+| Set an Automaton kind | n/a | `datawatch autonomous prd-set-kind ID KIND`, `prd-create --kind KIND` | Automaton settings, *Kind* | `POST /api/autonomous/prds/{id}/set_kind` | `autonomous set-kind ID KIND` |
+| Change a setting | `autonomous.progress.*` | `datawatch config set autonomous.progress.lanes 5` | Settings, General, Autonomous | `PUT /api/config` | `configure autonomous.progress.lanes=5` |
+
+MCP agents use `autonomous_progress`, `autonomous_progress_trend` (both
+read-only), `autonomous_prd_set_kind`, and `config_set`. All surfaces return or
+print the same object. The settings keys and their defaults are in the table
+under *Progress engine settings* in the backup section above and in
+`docs/config-reference.yaml`.
+
+**Where to see it.**
+
+| Where | What |
+|---|---|
+| Web UI, Automata tab | The *Progress* card; shows the last good data with a stale notice when a refresh fails. |
+| CLI and chat | The status table as text. |
+| REST and MCP | The JSON object, for dashboards and scripts. |
+| Android and iOS | Not yet. |
 
 ---
 

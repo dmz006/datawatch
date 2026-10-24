@@ -18,7 +18,34 @@ record was closed at merge); other cancelled, rejected and archived PRDs are
 replaced or abandoned records and are not counted.
 
 Usage: python3 scripts/v10-status.py [--json] [--since 2026-10-10]
+           [--prds-file PATH] [--registry PATH] [--windows PATH]
+           [--now ISO] [--lanes N] [--gap-hours X]
 No third-party packages; stdlib only.
+
+Optional inputs (each defaults to the live behavior when left out):
+  --prds-file PATH   read the JSON that `datawatch autonomous prd-list` prints
+                     instead of running that command
+  --registry PATH    the plans registry (default docs/plans/README.md)
+  --windows PATH     explicit inactive windows (default
+                     docs/plans/operator-wait-windows.tsv)
+  --now ISO          fixed clock, e.g. 2026-10-20T12:00:00Z (default: the
+                     wall clock)
+  --lanes N          lane count for utilization (default 5)
+  --gap-hours X      hours without task activity that make an inactive window
+                     (default 3)
+These let the golden test in internal/autonomous run this script and the
+progress engine on one fixture and compare every number.
+
+Four behavior changes, made so the engine and this script agree:
+  (a) Overlapping or touching inactive windows are merged before hours are
+      summed, so no stretch of time is excluded twice.
+  (b) A multi-phase registry row is read from the {phases=N} marker in its
+      Item cell, not from the names of two particular rows. An unfiled row
+      adds max(N, 1) new PRDs; a filed row adds max(N - linked ids, 0).
+  (c) The tasks-per-PRD average divides by the records that have at least one
+      task, not by every record.
+  (d) Records whose is_template field is true are skipped.
+All other logic is unchanged, and the --json keys are unchanged.
 """
 import json
 import re
@@ -61,12 +88,23 @@ def parse_ts(s):
         return None
 
 
-def load_prds():
-    out = subprocess.run(
-        ["datawatch", "autonomous", "prd-list"], capture_output=True, text=True
-    )
-    d = json.loads(out.stdout)
-    return d.get("prds", d)
+def load_prds(path=None):
+    if path:
+        with open(path) as f:
+            d = json.load(f)
+    else:
+        out = subprocess.run(
+            ["datawatch", "autonomous", "prd-list"], capture_output=True, text=True
+        )
+        d = json.loads(out.stdout)
+    return d.get("prds", d) if isinstance(d, dict) else d
+
+
+def opt(name, default=None):
+    """Value following an optional --name flag in argv, else default."""
+    if name in sys.argv:
+        return sys.argv[sys.argv.index(name) + 1]
+    return default
 
 
 def is_bug(p):
@@ -98,21 +136,37 @@ def registry_open_rows(path="docs/plans/README.md"):
             continue
         if POST10_RE.search(" ".join(cells)):
             continue
-        has_prd = bool(re.search(r"PRD `[0-9a-f]{8}`|`[0-9a-f]{8}`", " ".join(cells)))
-        rows.append((m.group(1), item[:70], status[:60], has_prd))
+        linked = set(re.findall(r"`([0-9a-f]{8})`", " ".join(cells)))
+        has_prd = bool(linked)
+        phases = 1
+        pm = re.search(r"\{phases=([^{}|]*)\}", item)
+        if pm:
+            try:
+                phases = max(int(pm.group(1).strip()), 1)
+            except ValueError:
+                pass
+        rows.append((m.group(1), item[:70], status[:60], has_prd, phases, len(linked)))
     return rows
 
 
 def main():
     want_json = "--json" in sys.argv
-    since = SINCE
-    if "--since" in sys.argv:
-        since = sys.argv[sys.argv.index("--since") + 1]
+    since = opt("--since", SINCE)
     since_dt = datetime.fromisoformat(since).replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
+    if opt("--now"):
+        now = parse_ts(opt("--now"))
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+    lanes = int(opt("--lanes", LANES))
+    gap_h = float(opt("--gap-hours", GAP_H))
+    windows_path = opt("--windows", "docs/plans/operator-wait-windows.tsv")
+    registry_path = opt("--registry", "docs/plans/README.md")
 
     prds = []
-    for p in load_prds():
+    for p in load_prds(opt("--prds-file")):
+        if p.get("is_template"):
+            continue
         if p["status"] in SKIP_STATUS:
             # A cancelled record whose tasks all completed is merged work whose
             # record was closed at merge time: count it as done. Anything else
@@ -196,10 +250,10 @@ def main():
     evs.sort()
     windows = []
     for a, b in zip(evs, evs[1:]):
-        if (b - a).total_seconds() / 3600.0 >= GAP_H:
+        if (b - a).total_seconds() / 3600.0 >= gap_h:
             windows.append((a, b, "inactive"))
     try:
-        for line in open("docs/plans/operator-wait-windows.tsv"):
+        for line in open(windows_path):
             f = line.rstrip("\n").split("\t")
             if len(f) >= 3 and not f[0].startswith("#"):
                 a, b = parse_ts(f[0]), parse_ts(f[1])
@@ -207,6 +261,16 @@ def main():
                     windows.append((a, b, f[2]))
     except OSError:
         pass
+    # Merge overlapping or touching windows so no stretch is excluded twice.
+    windows.sort(key=lambda w: w[0])
+    merged = []
+    for w in windows:
+        if merged and w[0] <= merged[-1][1]:
+            if w[1] > merged[-1][1]:
+                merged[-1] = (merged[-1][0], w[1], merged[-1][2])
+        else:
+            merged.append(w)
+    windows = merged
 
     def active_hours(t0, t1):
         total = (t1 - t0).total_seconds() / 3600.0
@@ -226,7 +290,7 @@ def main():
     last72 = sum(1 for p in done_ps if last_done(p) and last_done(p).timestamp() >= cut72)
     throughput = last72 / (active_hours(now - timedelta(days=3), now) / 24.0) if last72 else 0.0
 
-    open_rows = registry_open_rows()
+    open_rows = registry_open_rows(registry_path)
     # Remaining work = (1) PRDs that already exist and are not done, with the
     # tasks they still have, plus (2) work that has no PRD yet: registry rows
     # with no PRD id, and the PRDs that multi-phase rows will expand into.
@@ -241,16 +305,21 @@ def main():
         1 for p in existing_left
         if not any(story.get("tasks") for story in p.get("stories", []))
     )
+    with_tasks = sum(
+        1 for p in prds if any(story.get("tasks") for story in p.get("stories", []))
+    )
     avg_tasks = (
-        (st["feature"]["tasks"] + st["bug"]["tasks"]) / max(len(prds), 1)
+        (st["feature"]["tasks"] + st["bug"]["tasks"]) / max(with_tasks, 1)
     )
     unfiled_rows = [r for r in open_rows if not r[3]]
+    # Multi-phase rows: the {phases=N} marker says how many PRDs a row becomes.
+    # expand is the part not counted as one PRD per unfiled row already.
     expand = 0
-    for rid, item, _, _ in open_rows:
-        if "BL405" in item:
-            expand += 10
-        if item.startswith("Security remediation"):
-            expand += 3
+    for rid, item, _, has_prd, phases, n_linked in open_rows:
+        if not has_prd:
+            expand += max(phases, 1) - 1
+        else:
+            expand += max(phases - n_linked, 0)
     new_prds = len(unfiled_rows) + expand
     remaining_prds = existing_prds_left + new_prds
     est_tasks_new = (new_prds + undecomposed) * avg_tasks
@@ -263,7 +332,7 @@ def main():
     done_tasks_n = st["feature"]["tasks_done"] + st["bug"]["tasks_done"]
     h_per_task = total_work_h / done_tasks_n if done_tasks_n else None
     worker_h_per_day = total_work_h / elapsed_days
-    utilization = worker_h_per_day / (LANES * 24.0)
+    utilization = worker_h_per_day / (lanes * 24.0)
     work_left_h = remaining_tasks * h_per_task if h_per_task else None
     eta_lane_days = (work_left_h / worker_h_per_day) if (work_left_h and worker_h_per_day) else None
 
@@ -291,7 +360,7 @@ def main():
         print(json.dumps(result, indent=1))
         return
 
-    print("v10.0.0 STATUS  (since %s: %.1f calendar days, %.1f ACTIVE days after excluding %d inactive windows of %.0f h; %d lanes)" % (since, cal_days, elapsed_days, len(windows), excluded_h, LANES))
+    print("v10.0.0 STATUS  (since %s: %.1f calendar days, %.1f ACTIVE days after excluding %d inactive windows of %.0f h; %d lanes)" % (since, cal_days, elapsed_days, len(windows), excluded_h, lanes))
     print("%-8s %5s %5s %5s %6s %7s | %6s %6s %5s | %9s %9s %9s" % (
         "", "PRDs", "done", "run", "wait", "blocked", "tasks", "done", "left",
         "work", "med/PRD", "avg/task"))
@@ -322,7 +391,7 @@ def main():
         throughput, "-" if eta_days is None else "%.1f days" % eta_days))
     print("      worker-hours: %.2f h/task x %d tasks = %s of work; lanes did %.1f worker-h/day = %.0f%% of %d lanes -> about %s at today's utilization" % (
         h_per_task or 0, remaining_tasks, "-" if work_left_h is None else "%.0f h" % work_left_h,
-        worker_h_per_day, utilization * 100, LANES,
+        worker_h_per_day, utilization * 100, lanes,
         "-" if eta_lane_days is None else "%.1f days" % eta_lane_days))
     # Lead-time stages (tracking only, not used for the estimate): created ->
     # approved -> first task start -> last task complete. The estimate uses

@@ -617,6 +617,48 @@ arguments is answered with the usage line and nothing is sent to the daemon.
 
 ---
 
+### `progress [automation=<id>] [tag=<id>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>]` / `progress trend [days]`
+
+Show how far the Automata have got and when the rest should be done. Both
+verbs are read-only and print the same text as `datawatch autonomous progress`
+and `datawatch autonomous progress-trend`, built from the same object as
+`GET /api/autonomous/progress`, `GET /api/autonomous/progress/trend` and the
+`autonomous_progress` and `autonomous_progress_trend` MCP tools.
+
+**Syntax:**
+```
+progress
+progress tag=<id> since=2026-10-01
+progress automation=<id>
+progress trend 14
+```
+
+- `automation=<id>` counts only the Automata of one Automation; `tag=<id>`
+  only the Automata carrying one tag. `since` is the first day counted and
+  `until` the last (inclusive); both are `YYYY-MM-DD`. A mistake in the
+  arguments is answered with the usage line and nothing is sent to the daemon.
+- `progress trend [days]` reads the saved daily snapshots for the last `days`
+  days (1 to 365, default 30) and says whether the completion range is
+  converging, widening, flat or unknown.
+
+**What the reply shows:**
+- a header with the calendar days, the active days after the inactive windows
+  are left out, and the number of lanes;
+- one row each for feature, bug (and other, when it has any) and the total:
+  Automata, done, running, waiting, blocked, tasks, done and left, work time,
+  the median wall time of a finished Automaton and the mean time of a task;
+- `LEFT`: the known work (Automata that exist) and the estimated work (rows
+  not filed yet, Automata with no tasks yet) on separate lines, then the
+  combined figure, labelled as an estimate;
+- `ETA`: the completion range in active days with the method behind each
+  figure and what drives the spread;
+- `LEAD`, `WAITS` (every inactive window, never hidden) and the first 14
+  backlog rows not filed yet, as plain item text.
+
+Anything that has not been measured reads `not measured`, never zero.
+
+---
+
 ### `federation fingerprint list [state]` / `federation fingerprint confirm <id>` / `federation fingerprint reject <id>`
 
 List the **pending matches** this daemon found while reconciling resource fingerprints with its federation peers, and **decide** them yourself. A match means the two daemons appear to be holding the *same underlying resource* — a compute node (e.g. the same GPU), or an LLM entry billed to a shared account. **Confirm** makes those two resources one shared pool (for a compute node, the peer's admitted work now also counts against our admission capacity; rejecting again stops that). **Reject** keeps them as separate things (and undoes a prior confirmation). Nothing is confirmed automatically: a match stays pending until we decide.
@@ -1051,6 +1093,8 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `status` | One-shot status (running PRDs, child PRD count, max recursion depth, blocked PRDs, verdict counts) |
 | `config get/set` | Get / set autonomous engine config (max_recursion_depth, auto_approve_children, per_task_guardrails, per_story_guardrails) |
 | `learnings` | List engine learnings (BL202) |
+| `progress [--json] [--automation <id>] [--tag <id>] [--since <date>] [--until <date>]` | Automata progress: counts by kind, work left (known and estimated, shown separately), the completion range with its methods, lead time and inactive windows. `--json` prints the `GET /api/autonomous/progress` body untouched; chat: `progress [automation=<id>] [tag=<id>] [since=<date>]` |
+| `progress-trend [--days <n>] [--json]` | How the completion range moved over the saved daily snapshots (1 to 365 days, default 30); `GET /api/autonomous/progress/trend`; chat: `progress trend [days]` |
 | `subscribe --on <kind> [--level prd|task] [--prd <id>] [--task <id>] --sink comm\|session\|topic\|alert --target <t> [--send <text>] [--one-shot] [--coalesce] [--expires <secs>]` | Subscribe to Automaton lifecycle events and route them to a sink (BL427 phase 3); `--on` is repeatable; shorthand words map to task kinds, full kinds pass through |
 | `unsubscribe <id>` | Delete a lifecycle-event subscription by id (BL427 phase 3) |
 | `subscriptions [--owner <owner>]` | List lifecycle-event subscriptions, optionally scoped to one owner (BL427 phase 3) |
@@ -1065,10 +1109,16 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `tag-rename <id> <new-name>`, `tag-color <id> <color>`, `tag-move <id> --parent <new-parent-id\|root>` | Edit a tag; `PATCH /api/autonomous/tags/{id}`. A move that would make a tag its own ancestor is refused |
 | `tag-delete <id>` | Delete a tag; refused while it has child tags, and refused with a count while Automata still carry it |
 | `prd-set-tags <prd-id> --tags <id1,id2,...>` | Replace the tags on an Automaton; an empty `--tags` value clears them; `POST /api/autonomous/prds/{id}/set_tags` |
+| `prd-set-kind <id> <feature\|bug\|other>` | Set the Automaton kind the progress figures count it under; an unknown kind is refused before anything is sent; `POST /api/autonomous/prds/{id}/set_kind` (body `{"kind": ...}`, an empty kind derives it again) |
+| `prd-create <spec> --kind <feature\|bug\|other>` | Give the kind at creation; omit it to derive the kind from the title and spec |
 
 Comm channels: `autonomous tags`, `tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]`,
 `tag-rename <id> <new-name>`, `tag-move <id> <parent-id|root>`, `tag-color <id> <color>`,
 `tag-delete <id>`, and `set-tags <prd-id> <tag-id1,tag-id2,...>` (omit the list to clear).
+
+Comm channels for the progress figures: `progress [automation=<id>] [tag=<id>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>]`
+and `progress trend [days]` (see their own section above), and
+`autonomous set-kind <prd-id> <feature|bug|other>` to set an Automaton kind.
 
 ### `datawatch automation <subcommand>`
 

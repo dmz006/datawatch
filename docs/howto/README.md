@@ -34,6 +34,7 @@ you already have a daemon you can talk to.
 | [Autonomous recovery](autonomous-recovery.md) | Recover a stuck/failed task, a cancelled-and-never-restarted story, or a completed Automaton with a skipped dependency; repair_depends_on for pre-v8.36.5 Automata |
 | [Container image refresh](container-image-refresh.md) | Daily pipeline that rebuilds, scans and promotes the published container images so OS/base fixes reach released versions |
 | [Automata capacity](automata-capacity.md) | Wait for free sessions / node / LLM slots instead of failing; fair queue, priority, reserved interactive slots |
+| [Automata progress](automata-progress.md) | How far along the Automata are and roughly when the rest will be done: counts by kind, rates per active day, known versus estimated work left, a completion range, the daily trend; set an Automaton kind, backlog markers, the waits file |
 | [Automata tags](automata-tags.md) | Organise Automata in a nested tag tree: assign several tags, browse with an include-sub-tags switch, bulk tag; deletes of used tags are refused |
 | [Automata DAG orchestrator](automata-orchestrator.md) | Compose multiple Automata into a graph with guardrails (rules, security, release-readiness, docs integrity) |
 | [Automation queue advance](automation-queue-advance.md) | Chain Automatons in an Automation: activate, automatic advance on completion, blocked/idle alerts, restart behaviour |

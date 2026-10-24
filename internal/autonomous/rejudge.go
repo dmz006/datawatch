@@ -199,6 +199,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor s
 		prd.Status = PRDCompleted
 		prd.BlockedReason = ""
 		m.emitPRDStatus(prd, old, lastDecision(prd, "guardrail_rejudge"), nil)
+		m.recordProgressMilestone(prd.ID)
 		return prd, nil
 	}
 

@@ -887,6 +887,13 @@ type Manager struct {
 	// is not additionally guarded by mu.
 	memoryReportWG sync.WaitGroup
 
+	// progressSnaps records the daily and milestone progress snapshots; nil
+	// until EnableProgressSnapshots. progressSnapWG tracks in-flight milestone
+	// goroutines so tests can wait for them. progressSnaps is guarded by mu,
+	// the WaitGroup is self-synchronizing.
+	progressSnaps  *ProgressSnapshotRunner
+	progressSnapWG sync.WaitGroup
+
 	// loop state
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -4429,7 +4436,10 @@ func (m *Manager) Start(parent context.Context) {
 		return
 	}
 	m.ctx, m.cancel = context.WithCancel(parent)
-	go m.run()
+	go m.run(m.ctx)
+	if r := m.progressSnaps; r != nil {
+		go r.Run(m.ctx)
+	}
 }
 
 // Stop signals the loop to exit (does not block).
@@ -4582,7 +4592,11 @@ func (m *Manager) reconcileStuckTasks() {
 // pipeline.Executor or operator-driven `datawatch autonomous run`)
 // can pick them up. The actual Task → Session dispatch is done by
 // the executor in executor.go (called from REST handler).
-func (m *Manager) run() {
+//
+// ctx is the context Start created. The loop must not read m.ctx: Stop
+// clears it, and a loop that had not yet reached its select would then call
+// Done on a nil context.
+func (m *Manager) run(ctx context.Context) {
 	m.reconcileStuckTasks()
 
 	interval := time.Duration(m.cfg.PollIntervalSeconds) * time.Second
@@ -4593,7 +4607,7 @@ func (m *Manager) run() {
 	defer t.Stop()
 	for {
 		select {
-		case <-m.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-t.C:
 			m.mu.Lock()
@@ -4892,6 +4906,47 @@ func (m *Manager) SetPRDPriority(prdID string, n int) error {
 	prd.Priority = n
 	prd.UpdatedAt = time.Now()
 	return m.store.SavePRD(prd)
+}
+
+// kindSetAttempts bounds how often SetPRDKind retries after another writer
+// changed the record between its read of the revision and its commit.
+const kindSetAttempts = 3
+
+// SetPRDKind sets the explicit kind of an Automaton. An empty kind clears it,
+// so the kind is derived again at read time. An unknown kind is refused. The
+// change is committed only if the record kept the revision it was read at, and
+// is logged on the decision timeline.
+func (m *Manager) SetPRDKind(prdID, kind string) error {
+	k, ok := NormalizePRDKind(kind)
+	if !ok {
+		return fmt.Errorf("unknown Automaton kind %q: use feature, bug or other", strings.TrimSpace(kind))
+	}
+	for attempt := 0; attempt < kindSetAttempts; attempt++ {
+		rev, found := m.store.PRDRev(prdID)
+		if !found {
+			return fmt.Errorf("prd %q not found", prdID)
+		}
+		err := m.store.CommitPRDIfRev(prdID, rev, func(p *PRD) bool {
+			from := p.Kind
+			if from == "" {
+				from = "derived"
+			}
+			to := k
+			if to == "" {
+				to = "derived"
+			}
+			p.Kind = k
+			p.Decisions = append(p.Decisions, Decision{
+				At: time.Now(), Kind: "set_kind", Actor: "operator",
+				Note: fmt.Sprintf("kind %s -> %s", from, to),
+			})
+			return true
+		})
+		if !errors.Is(err, ErrPRDStale) {
+			return err
+		}
+	}
+	return ErrPRDStale
 }
 
 // SetPRDDirs sets the per-PRD read-only and writable directory scope. Nil

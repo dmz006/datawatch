@@ -479,6 +479,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/alerts/count", api.handleAlertsCount)           // BL432 / GH#242
 	apiMux.HandleFunc("/api/alerts", api.handleAlerts)
 	apiMux.HandleFunc("/api/capacity", api.handleCapacity) // admission ledger: pools, holders, wait queue
+	apiMux.HandleFunc("/api/autonomous/progress", api.handleAutonomousProgress)
+	apiMux.HandleFunc("/api/autonomous/progress/trend", api.handleAutonomousProgressTrend)
 	apiMux.HandleFunc("/api/capacity/admission", api.handleCapacityAdmission) // read-only admission query
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)

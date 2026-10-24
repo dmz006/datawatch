@@ -354,6 +354,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				Type           string   `json:"type,omitempty"`        // BL221 Phase 4 — automaton type
 				GuidedMode     bool     `json:"guided_mode,omitempty"` // BL221 Phase 4 — step-by-step operator checkpoints
 				Skills         []string `json:"skills,omitempty"`      // BL221 Phase 4 — skill IDs passed to task sessions
+				Kind           string   `json:"kind,omitempty"`        // feature | bug | other; empty = derive
 				// BL367 — per-PRD quality gate config (optional; nil = use manager default).
 				QualityGates *struct {
 					Enabled           bool   `json:"enabled"`
@@ -396,6 +397,11 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
+			// Refuse an unknown kind before anything is created.
+			if _, ok := autonomous.NormalizePRDKind(req.Kind); !ok {
+				http.Error(w, unknownKindMsg(req.Kind), http.StatusBadRequest)
+				return
+			}
 			prd, err := s.autonomousMgr.CreatePRD(req.Spec, req.ProjectDir, req.Backend, req.Model, req.Effort)
 			if err != nil {
 				http.Error(w, err.Error(), modelBackendErrStatus(err, http.StatusBadRequest))
@@ -437,6 +443,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 					if _, err := s.autonomousMgr.SetPRDType(prdID, req.Type); err != nil {
 						_ = s.autonomousMgr.DeletePRD(prdID)
 						http.Error(w, "type-set: "+err.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if strings.TrimSpace(req.Kind) != "" {
+					if _, err := s.autonomousMgr.SetPRDKind(prdID, req.Kind); err != nil {
+						_ = s.autonomousMgr.DeletePRD(prdID)
+						http.Error(w, "kind-set: "+err.Error(), http.StatusBadRequest)
 						return
 					}
 				}
@@ -2035,6 +2048,38 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_priority", "automaton", id, map[string]any{"priority": req.Priority}) // GH#201 Phase 4
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
+	// Per-Automaton kind: feature, bug or other (empty = derive again).
+	case "set_kind":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			Kind string `json:"kind"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if _, ok := autonomous.NormalizePRDKind(req.Kind); !ok {
+			http.Error(w, unknownKindMsg(req.Kind), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDKind(id, req.Kind)
+		if err != nil {
+			if _, exists := s.autonomousMgr.GetPRD(id); !exists {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "set_kind", "automaton", id, map[string]any{"kind": req.Kind})
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+
 	// Per-PRD directory scope: read-only and writable dirs.
 	case "set_dirs":
 		if r.Method != http.MethodPost {
@@ -3610,4 +3655,9 @@ func derefString(p *string) string {
 		return ""
 	}
 	return *p
+}
+
+// unknownKindMsg is the 400 text for a kind that is not feature, bug or other.
+func unknownKindMsg(kind string) string {
+	return "unknown Automaton kind " + strconv.Quote(strings.TrimSpace(kind)) + ": use feature, bug or other"
 }

@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dmz006/datawatch/internal/autonomous"
 )
 
 func newAutonomousCmd() *cobra.Command {
@@ -23,6 +25,9 @@ each Task spawned as a worker session with independent verification.
 
 Subcommands:
   status                          Loop status (running, active PRDs, queued/running tasks)
+  progress [--json] [--automation ID] [--tag ID] [--since DATE] [--until DATE]
+                                  Progress counts, rates, work left and the completion range
+  progress-trend [--days N] [--json]  How the completion range moved over the saved daily snapshots
   config-get                      Read current autonomous config
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
@@ -37,7 +42,7 @@ Subcommands:
   prd-set-verifier-policy <id>    Override verifier routing for one Automaton (--mode, --backends)
   prd-set-task-verifier-policy <id> --task <task-id>  Override verifier routing for one task
   prd-list                        List all PRDs
-  prd-create <spec>               Create a draft PRD (--type, --guided-mode, --skills)
+  prd-create <spec>               Create a draft PRD (--type, --kind, --guided-mode, --skills)
   prd-get <id>                    Fetch one PRD with story+task tree
   prd-plan <id>                   Run the LLM planning phase for a PRD (alias: prd-decompose)
   prd-decompose <id>              Run the LLM planning phase for a PRD (alias: prd-plan)
@@ -59,6 +64,7 @@ Subcommands:
   prd-add-task <id>               Add a new task to an existing story without re-running decompose
   prd-remove-task <id>            Remove one task from a story without re-running decompose
   prd-set-type <id> <type>        Set automaton type (BL221 Phase 4)
+  prd-set-kind <id> <kind>        Set the Automaton kind: feature, bug or other
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
   prd-set-git <id> on|off         Set AutoPR (+--base-branch override) for a PRD (BL407 Phase 5)
   prd-set-skills <id> <csv>       Assign skills to PRD (BL221 Phase 4)
@@ -87,6 +93,8 @@ Subcommands:
 `,
 	}
 	cmd.AddCommand(
+		newAutonomousProgressCmd(),
+		newAutonomousProgressTrendCmd(),
 		newAutonomousStatusCmd(),
 		newAutonomousConfigGetCmd(),
 		newAutonomousConfigSetCmd(),
@@ -134,6 +142,7 @@ Subcommands:
 		newAutonomousScanConfigSetCmd(),
 		// BL221 Phase 4 — type registry, Guided Mode, skills.
 		newAutonomousPRDSetTypeCmd(),
+		newAutonomousPRDSetKindCmd(),
 		newAutonomousTagListCmd(),
 		newAutonomousTagCreateCmd(),
 		newAutonomousTagRenameCmd(),
@@ -535,7 +544,7 @@ func newAutonomousPRDListCmd() *cobra.Command {
 }
 
 func newAutonomousPRDCreateCmd() *cobra.Command {
-	var projectDir, backend, effort, typ, skillsCSV string
+	var projectDir, backend, effort, typ, skillsCSV, kind string
 	var guidedMode bool
 	cmd := &cobra.Command{
 		Use:   "prd-create <spec>",
@@ -551,6 +560,13 @@ func newAutonomousPRDCreateCmd() *cobra.Command {
 			}
 			if typ != "" {
 				body["type"] = typ
+			}
+			if kind != "" {
+				k, err := parseKindArg(kind)
+				if err != nil {
+					return err
+				}
+				body["kind"] = k
 			}
 			if guidedMode {
 				body["guided_mode"] = true
@@ -571,6 +587,7 @@ func newAutonomousPRDCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&backend, "backend", "", "LLM backend override")
 	cmd.Flags().StringVar(&effort, "effort", "", "Effort hint (low/medium/high/max)")
 	cmd.Flags().StringVar(&typ, "type", "", "Automaton type (software|research|operational|personal or custom)")
+	cmd.Flags().StringVar(&kind, "kind", "", "Automaton kind (feature|bug|other); omit to derive it from the title and spec")
 	cmd.Flags().BoolVar(&guidedMode, "guided-mode", false, "Enable Guided Mode (step-by-step operator checkpoints)")
 	cmd.Flags().StringVar(&skillsCSV, "skills", "", "Comma-separated skill IDs (e.g. git,docker,pytest)")
 	return cmd
@@ -1238,6 +1255,31 @@ func newAutonomousPRDSetTypeCmd() *cobra.Command {
 		RunE: func(_ *cobra.Command, args []string) error {
 			body, _ := json.Marshal(map[string]string{"type": args[1]})
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_type", body)
+		},
+	}
+}
+
+// parseKindArg checks an Automaton kind typed on the command line.
+func parseKindArg(arg string) (string, error) {
+	k, ok := autonomous.NormalizePRDKind(arg)
+	if !ok || k == "" {
+		return "", fmt.Errorf("unknown Automaton kind %q: use feature, bug or other", strings.TrimSpace(arg))
+	}
+	return k, nil
+}
+
+func newAutonomousPRDSetKindCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prd-set-kind <id> <feature|bug|other>",
+		Short: "Set the Automaton kind (feature, bug or other)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			kind, err := parseKindArg(args[1])
+			if err != nil {
+				return err
+			}
+			body, _ := json.Marshal(map[string]string{"kind": kind})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_kind", body)
 		},
 	}
 }

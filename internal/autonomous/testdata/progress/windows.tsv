@@ -1,0 +1,6 @@
+# start	end	kind	reason
+
+2026-10-17T20:00:00Z	2026-10-18T14:00:00Z	operator-wait	Weekend, inside an inferred gap
+2026-10-18T18:00:00-04:00	2026-10-19T08:30:00Z	outage	Straddles the end of an inferred gap
+2026-10-19T11:15:00Z	2026-10-19T11:45:00Z	operator-wait	Lunch, inside active time
+2026-10-19T12:00:00Z	2026-10-19T11:00:00Z	operator-wait	End before start, skipped

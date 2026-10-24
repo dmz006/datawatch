@@ -2919,13 +2919,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		r.SetConfigureFunc(func(key, value string) error {
 			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
 			apiURL := loopbackBaseURL(cfg) + "/api/config"
-			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)
-			// Try as number or bool
-			if value == "true" || value == "false" {
-				body = fmt.Sprintf(`{"%s":%s}`, key, value)
-			} else if _, err := fmt.Sscanf(value, "%d", new(int)); err == nil {
-				body = fmt.Sprintf(`{"%s":%s}`, key, value)
-			}
+			body := configureRequestBody(key, value)
 			req, err := http.NewRequest(http.MethodPut, apiURL, strings.NewReader(body))
 			if err != nil {
 				return err
@@ -5961,6 +5955,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// written to the daemon log once; the status endpoint keeps them.
 			amgr.ReportPairingWarnings()
 			amgr.SetGuardrail(autonomousGuardrail)
+			// Daily and milestone progress snapshots, stored with the other
+			// autonomous data; the runner starts with amgr.Start below.
+			if _, err := amgr.EnableProgressSnapshots(func() autonomouspkg.ProgressSnapshotSettings {
+				return progressSnapshotSettings(cfg)
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "[warn] progress snapshots: %v\n", err)
+			}
 			// Foreign-file drift (and future autonomous audit events) →
 			// operator audit log, so they land in JSON-lines + CEF mirror.
 			if wiredAuditLog != nil {
@@ -6991,12 +6992,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		testRouter.SetChannelDiagnosticsFn(channelDiagnosticsSummary) // BL362
 		testRouter.SetConfigureFunc(func(key, value string) error {
 			apiURL := loopbackBaseURL(cfg) + "/api/config"
-			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)
-			if value == "true" || value == "false" {
-				body = fmt.Sprintf(`{"%s":%s}`, key, value)
-			} else if _, err := fmt.Sscanf(value, "%d", new(int)); err == nil {
-				body = fmt.Sprintf(`{"%s":%s}`, key, value)
-			}
+			body := configureRequestBody(key, value)
 			req, err := http.NewRequest(http.MethodPut, apiURL, strings.NewReader(body))
 			if err != nil {
 				return err

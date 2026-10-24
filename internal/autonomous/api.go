@@ -1310,6 +1310,17 @@ func (a *API) SetPRDPriority(prdID string, n int) (any, error) {
 	return prd, nil
 }
 
+// SetPRDKind sets the explicit kind (feature, bug or other) of an Automaton;
+// an empty kind clears it.
+func (a *API) SetPRDKind(prdID, kind string) (any, error) {
+	if err := a.M.SetPRDKind(prdID, kind); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
+}
+
 // SetPRDDirs sets per-PRD read-only/writable directory scope.
 func (a *API) SetPRDDirs(prdID string, readDirs, writeDirs []string) (any, error) {
 	if err := a.M.SetPRDDirs(prdID, readDirs, writeDirs); err != nil {
@@ -1584,3 +1595,11 @@ func controlResult(a *Automation, err error) (any, error) {
 	}
 	return a, err
 }
+
+// ProgressSource returns the record source the progress metrics count: the
+// manager's store.
+func (a *API) ProgressSource() ProgressSource { return a.M.Store() }
+
+// ProgressSnapshots returns the snapshot store behind the trend view, or nil
+// when snapshots are not enabled.
+func (a *API) ProgressSnapshots() *ProgressSnapshotStore { return a.M.ProgressSnapshotStore() }
