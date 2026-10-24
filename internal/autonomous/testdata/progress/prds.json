@@ -1,0 +1,504 @@
+{
+ "prds": [
+  {
+   "id": "a1000001",
+   "title": "Add widget export",
+   "spec": "Let operators export a widget as a file.",
+   "status": "completed",
+   "created_at": "2026-10-11T18:00:00Z",
+   "approved_at": "2026-10-11T19:00:00Z",
+   "stories": [
+    {
+     "id": "a1000001-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a1000001-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-12T09:00:00Z",
+       "completed_at": "2026-10-12T11:00:00Z"
+      },
+      {
+       "id": "a1000001-t2",
+       "title": "Step 2",
+       "status": "completed",
+       "started_at": "2026-10-12T11:30:00Z",
+       "completed_at": "2026-10-12T13:00:00Z"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a1000002",
+   "title": "Add retention report",
+   "spec": "Show how long records are kept.",
+   "status": "completed",
+   "created_at": "2026-10-12T20:00:00Z",
+   "approved_at": "2026-10-12T21:00:00Z",
+   "stories": [
+    {
+     "id": "a1000002-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a1000002-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-13T09:00:00Z",
+       "completed_at": "2026-10-13T12:00:00Z"
+      }
+     ]
+    },
+    {
+     "id": "a1000002-s2",
+     "title": "Part 2",
+     "tasks": [
+      {
+       "id": "a1000002-t2",
+       "title": "Step 2",
+       "status": "completed",
+       "started_at": "2026-10-13T12:30:00Z",
+       "completed_at": "2026-10-13T14:00:00Z"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a1000003",
+   "title": "Add audit export",
+   "spec": "Export the audit trail as a table.",
+   "status": "completed",
+   "created_at": "2026-10-16T07:00:00Z",
+   "approved_at": "2026-10-16T08:00:00Z",
+   "stories": [
+    {
+     "id": "a1000003-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a1000003-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-17T09:00:00Z",
+       "completed_at": "2026-10-17T10:30:00Z"
+      },
+      {
+       "id": "a1000003-t2",
+       "title": "Step 2",
+       "status": "completed",
+       "started_at": "2026-10-17T10:45:00Z",
+       "completed_at": "2026-10-17T13:00:00Z"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a1000004",
+   "title": "Fix flaky scheduler test",
+   "spec": "The scheduler test passes and fails on the same code.",
+   "status": "completed",
+   "created_at": "2026-10-18T08:00:00Z",
+   "approved_at": "2026-10-18T09:00:00Z",
+   "stories": [
+    {
+     "id": "a1000004-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a1000004-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-19T13:00:00Z",
+       "completed_at": "2026-10-19T14:30:00Z"
+      },
+      {
+       "id": "a1000004-t2",
+       "title": "Step 2",
+       "status": "completed",
+       "started_at": "2026-10-19T15:00:00Z",
+       "completed_at": "2026-10-19T16:15:00Z"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a1000005",
+   "title": "Add lane summary card",
+   "spec": "A card that shows each lane at a glance.",
+   "status": "completed",
+   "created_at": "2026-10-19T06:00:00Z",
+   "approved_at": "2026-10-19T07:00:00Z",
+   "stories": [
+    {
+     "id": "a1000005-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a1000005-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-19T18:00:00Z",
+       "completed_at": "2026-10-19T20:00:00Z"
+      },
+      {
+       "id": "a1000005-t2",
+       "title": "Step 2",
+       "status": "completed",
+       "started_at": "2026-10-20T05:00:00Z",
+       "completed_at": "2026-10-20T07:00:00Z"
+      }
+     ]
+    },
+    {
+     "id": "a1000005-s2",
+     "title": "Part 2",
+     "tasks": [
+      {
+       "id": "a1000005-t3",
+       "title": "Step 3",
+       "status": "completed",
+       "completed_at": "2026-10-20T07:30:00Z"
+      },
+      {
+       "id": "a1000005-t4",
+       "title": "Step 4",
+       "status": "completed",
+       "started_at": "2026-10-20T07:45:00Z"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a1000006",
+   "title": "Add export scheduling",
+   "spec": "Run exports on a timer.",
+   "status": "cancelled",
+   "created_at": "2026-10-16T10:00:00Z",
+   "approved_at": "2026-10-16T11:00:00Z",
+   "stories": [
+    {
+     "id": "a1000006-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a1000006-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-19T08:00:00Z",
+       "completed_at": "2026-10-19T09:30:00Z"
+      },
+      {
+       "id": "a1000006-t2",
+       "title": "Step 2",
+       "status": "completed",
+       "started_at": "2026-10-19T09:45:00Z",
+       "completed_at": "2026-10-19T11:00:00Z"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a1000007",
+   "title": "Add legacy import",
+   "spec": "Import records from the old format.",
+   "status": "completed",
+   "created_at": "2026-10-08T09:00:00Z",
+   "approved_at": "2026-10-08T10:00:00Z",
+   "stories": [
+    {
+     "id": "a1000007-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a1000007-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-18T13:00:00Z",
+       "completed_at": "2026-10-18T14:00:00Z"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a1000008",
+   "title": "Add theme picker",
+   "spec": "Choose a colour theme.",
+   "status": "cancelled",
+   "created_at": "2026-10-14T09:00:00Z",
+   "approved_at": "2026-10-14T10:00:00Z",
+   "stories": [
+    {
+     "id": "a1000008-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a1000008-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-15T14:00:00Z",
+       "completed_at": "2026-10-15T15:30:00Z"
+      },
+      {
+       "id": "a1000008-t2",
+       "title": "Step 2",
+       "status": "pending"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a1000009",
+   "title": "Add voice notes",
+   "spec": "Record a short note.",
+   "status": "rejected",
+   "created_at": "2026-10-15T09:00:00Z",
+   "stories": [
+    {
+     "id": "a1000009-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a1000009-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-18T15:00:00Z",
+       "completed_at": "2026-10-18T15:45:00Z"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a100000a",
+   "title": "Add tag colours",
+   "spec": "Pick a colour per tag.",
+   "status": "archived",
+   "created_at": "2026-10-15T10:00:00Z",
+   "stories": [
+    {
+     "id": "a100000a-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a100000a-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-18T16:00:00Z",
+       "completed_at": "2026-10-18T17:00:00Z"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a100000b",
+   "title": "Add capacity forecast",
+   "spec": "Forecast lane load for the week.",
+   "status": "running",
+   "created_at": "2026-10-15T10:00:00Z",
+   "approved_at": "2026-10-15T11:00:00Z",
+   "stories": [
+    {
+     "id": "a100000b-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a100000b-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-16T09:00:00Z",
+       "completed_at": "2026-10-16T11:00:00Z"
+      },
+      {
+       "id": "a100000b-t2",
+       "title": "Step 2",
+       "status": "completed",
+       "started_at": "2026-10-16T11:15:00Z",
+       "completed_at": "2026-10-16T12:45:00Z"
+      }
+     ]
+    },
+    {
+     "id": "a100000b-s2",
+     "title": "Part 2",
+     "tasks": [
+      {
+       "id": "a100000b-t3",
+       "title": "Step 3",
+       "status": "running",
+       "started_at": "2026-10-20T08:00:00Z"
+      },
+      {
+       "id": "a100000b-t4",
+       "title": "Step 4",
+       "status": "pending"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a100000c",
+   "title": "Stall in queue advance",
+   "spec": "The queue stops moving after a restart.",
+   "status": "blocked",
+   "created_at": "2026-10-14T08:00:00Z",
+   "approved_at": "2026-10-14T09:00:00Z",
+   "stories": [
+    {
+     "id": "a100000c-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a100000c-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-15T09:00:00Z",
+       "completed_at": "2026-10-15T10:30:00Z"
+      },
+      {
+       "id": "a100000c-t2",
+       "title": "Step 2",
+       "status": "blocked",
+       "started_at": "2026-10-15T10:45:00Z"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a100000d",
+   "title": "Add peer sync",
+   "spec": "Keep two daemons in step.",
+   "status": "failed",
+   "created_at": "2026-10-13T08:00:00Z",
+   "approved_at": "2026-10-13T09:00:00Z",
+   "stories": [
+    {
+     "id": "a100000d-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a100000d-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-14T10:00:00Z",
+       "completed_at": "2026-10-14T12:00:00Z"
+      },
+      {
+       "id": "a100000d-t2",
+       "title": "Step 2",
+       "status": "failed",
+       "started_at": "2026-10-14T12:20:00Z"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a100000e",
+   "title": "Add dashboard filters",
+   "spec": "Filter the dashboard by tag.",
+   "status": "approved",
+   "created_at": "2026-10-16T09:00:00Z",
+   "approved_at": "2026-10-16T10:00:00Z",
+   "stories": [
+    {
+     "id": "a100000e-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a100000e-t1",
+       "title": "Step 1",
+       "status": "pending"
+      },
+      {
+       "id": "a100000e-t2",
+       "title": "Step 2",
+       "status": "pending"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a100000f",
+   "title": "Add keyboard shortcuts",
+   "spec": "Shortcuts for the common actions.",
+   "status": "needs_review",
+   "created_at": "2026-10-05T09:00:00Z",
+   "stories": [
+    {
+     "id": "a100000f-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a100000f-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-06T10:00:00Z",
+       "completed_at": "2026-10-06T12:00:00Z"
+      },
+      {
+       "id": "a100000f-t2",
+       "title": "Step 2",
+       "status": "pending"
+      },
+      {
+       "id": "a100000f-t3",
+       "title": "Step 3",
+       "status": "pending"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "a1000010",
+   "title": "Add notification routing",
+   "spec": "Route alerts to the right channel.",
+   "status": "draft",
+   "created_at": "2026-10-19T09:00:00Z",
+   "stories": []
+  },
+  {
+   "id": "a1000011",
+   "title": "Race in cache refresh",
+   "spec": "Two refreshes overlap and one is lost.",
+   "status": "draft",
+   "created_at": "2026-10-19T10:00:00Z"
+  },
+  {
+   "id": "a1000012",
+   "title": "Template for reports",
+   "spec": "A reusable report layout.",
+   "status": "draft",
+   "created_at": "2026-10-09T09:00:00Z",
+   "stories": [
+    {
+     "id": "a1000012-s1",
+     "title": "Part 1",
+     "tasks": [
+      {
+       "id": "a1000012-t1",
+       "title": "Step 1",
+       "status": "completed",
+       "started_at": "2026-10-18T10:00:00Z",
+       "completed_at": "2026-10-18T11:00:00Z"
+      }
+     ]
+    }
+   ],
+   "is_template": true
+  }
+ ]
+}
