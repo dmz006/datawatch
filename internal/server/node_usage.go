@@ -392,23 +392,24 @@ func (c *nodeUsageCache) refreshSync(ctx context.Context, s *Server, n compute.N
 func (c *nodeUsageCache) get(s *Server, n compute.Node) nodeUsage {
 	c.mu.Lock()
 	e := c.entries[n.Name]
+	start := false
 	if e == nil {
 		e = &nodeUsageEntry{usage: newPendingNodeUsage()}
 		e.refreshing = true
 		c.entries[n.Name] = e
-		c.mu.Unlock()
-		c.startRefresh(s, n)
-		return e.usage
-	}
-	stale := !e.fetchedAt.IsZero() && c.now().Sub(e.fetchedAt) > c.ttl
-	if stale && !e.refreshing {
+		start = true
+	} else if !e.refreshing && !e.fetchedAt.IsZero() && c.now().Sub(e.fetchedAt) > c.ttl {
 		e.refreshing = true
-		c.mu.Unlock()
-		c.startRefresh(s, n)
-	} else {
-		c.mu.Unlock()
+		start = true
 	}
-	return e.usage
+	// Capture the payload under the lock: the background refresh replaces
+	// e.usage concurrently, so reading it after Unlock would race.
+	out := e.usage
+	c.mu.Unlock()
+	if start {
+		c.startRefresh(s, n)
+	}
+	return out
 }
 
 // startRefresh launches the background refresh, bounded by the overall
