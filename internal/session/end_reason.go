@@ -214,6 +214,32 @@ func (m *Manager) shortID(fullID string) string {
 	return fullID
 }
 
+// SetJournal sends the daemon journal lines to w instead of stdout. Callers
+// that need to read what the daemon logged for an end or a hook event use it.
+func (m *Manager) SetJournal(w io.Writer) { m.journal = w }
+
+// NoteHookBoardEvent journals one Stop or SubagentStop hook event for a
+// session. Those events change only the session's status board, never the
+// session, so the line says so: the event, whether it was a SubagentStop, the
+// session state at the time, and action=none. It is written only in verbose
+// mode and does nothing for any other event.
+func (m *Manager) NoteHookBoardEvent(fullID, event string) {
+	if m == nil || !m.verbose || (event != "Stop" && event != "SubagentStop") {
+		return
+	}
+	id, state := fullID, "unknown"
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+	}
+	if ok {
+		snap := m.store.Snapshot(sess)
+		id, state = snap.ID, string(snap.State)
+	}
+	m.journalf("[session:debug] hook event %s subagent=%t session=%s state=%s action=none (board only)\n",
+		event, event == "SubagentStop", id, state)
+}
+
 // journalf writes one line to the daemon journal. The journal is stdout unless
 // a test has set Manager.journal.
 func (m *Manager) journalf(format string, args ...any) {
