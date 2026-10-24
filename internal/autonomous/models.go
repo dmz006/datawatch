@@ -309,7 +309,10 @@ type PRD struct {
 	// (e.g., "software", "research", "operational", "personal").
 	// Skills is the list of skill IDs assigned to this automaton; passed to
 	// spawn requests so workers can load the appropriate skill context.
-	Type   string   `json:"type,omitempty"`
+	Type string `json:"type,omitempty"`
+	// Kind classifies the work as "feature", "bug" or "other"; empty means
+	// derive at read time (old records keep working). See EffectiveKind.
+	Kind   string   `json:"kind,omitempty"`
 	Skills []string `json:"skills,omitempty"`
 	// TagIDs lists the managed Tag IDs assigned to this automaton.
 	TagIDs []string `json:"tag_ids,omitempty"`
