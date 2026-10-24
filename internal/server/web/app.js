@@ -22964,6 +22964,25 @@ function capacityFmtWait(since, now) {
   const s = Math.max(0, Math.round(((now == null ? Date.now() : now) - new Date(since).getTime()) / 1000));
   return s >= 3600 ? Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm' : s >= 60 ? Math.floor(s/60) + 'm ' + (s%60) + 's' : s + 's';
 }
+// Duration-from-now formatting in the same style as capacityFmtWait, for
+// "X remaining" text (clamped at zero so a past time is not drawn as
+// negative).
+function capacityFmtUntil(when, now) {
+  const s = Math.max(0, Math.round((new Date(when).getTime() - (now == null ? Date.now() : now)) / 1000));
+  return s >= 3600 ? Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm' : s >= 60 ? Math.floor(s/60) + 'm ' + (s%60) + 's' : s + 's';
+}
+// The shared fmtBytes caps at MB; node model/GPU figures are GiB-sized, so
+// format them in GiB with one decimal.
+function capacityFmtBytes(n) {
+  return (Math.round(((Number(n) || 0) / 1073741824) * 10) / 10).toFixed(1) + ' GiB';
+}
+// t() does not fill the {placeholder} style used by the capacity_node_*
+// locale strings, so substitute them here (values pre-escaped by the caller).
+function capacityNodeT(key, fallback, vars) {
+  let s = (t(key) && t(key) !== key) ? t(key) : (fallback || '');
+  if (vars) s = Object.keys(vars).reduce((acc, k) => acc.split('{' + k + '}').join(String(vars[k] != null ? vars[k] : '')), s);
+  return s;
+}
 // Pool names are internal ledger keys ("host", "node:<name>", "llm:<name>")
 // that don't explain themselves — operator-reported confusion: seeing
 // "host: 3/9" on a PRD card reads as if it were this PRD's own LLM/compute
@@ -23068,22 +23087,90 @@ function capacityHoldersLine(p, leases) {
   const parts = [holders, queued].filter(Boolean).join(' · ');
   return parts ? `<div class="cap-holders" style="font-size:11px;color:var(--text2);min-width:0;">${parts}</div>` : '';
 }
-function capacityPoolsHtml(cap) {
+// Node-pool usage rows, built from the optional `usage` object the daemon
+// attaches to `node:<name>` pool entries (model server probe + observer GPU
+// figures). Pure: data in, HTML string out; '' when the pool has no usage
+// block (older daemon bodies) or the pool is not a node pool, so non-node
+// pools render exactly as before.
+const CAPACITY_USAGE_ROW = 'font-size:11px;color:var(--text2);min-width:0;overflow-wrap:anywhere;';
+window.capacityNodeUsageHtml = function(p, now) {
+  if (!p || typeof p.name !== 'string' || !p.name.startsWith('node:')) return '';
+  const u = p.usage;
+  if (!u || typeof u !== 'object') return '';
+  const rows = [];
+  const state = u.state;
+  if (state === 'pending') {
+    rows.push(`<div style="${CAPACITY_USAGE_ROW}">${escHtml(capacityNodeT('capacity_node_checking', 'Checking…'))}</div>`);
+  } else {
+    if (state === 'unreachable') {
+      rows.push(`<div style="${CAPACITY_USAGE_ROW}"><span style="display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;border:1px solid var(--warning,#f59e0b);color:var(--warning,#f59e0b);" title="${escHtml(u.error || '')}">${escHtml(capacityNodeT('capacity_node_unreachable', 'Unreachable'))}</span></div>`);
+    }
+    // Loaded-model lines, only for node kinds that expose a model list.
+    if (u.models_supported) {
+      const models = Array.isArray(u.models) ? u.models : [];
+      if (state === 'ok' && models.length === 0) {
+        rows.push(`<div style="${CAPACITY_USAGE_ROW}">${escHtml(capacityNodeT('capacity_node_no_model', 'No model loaded'))}</div>`);
+      }
+      const modelLabel = escHtml(capacityNodeT('capacity_node_model', 'Model'));
+      models.forEach(m => {
+        const name = escHtml(String(m.name || ''));
+        const size = escHtml(capacityNodeT('capacity_node_in_memory', '{size} in memory', { size: capacityFmtBytes(m.size_bytes) }));
+        let when = '';
+        if (m.no_expiry) {
+          when = escHtml(capacityNodeT('capacity_node_never_expires', 'stays loaded'));
+        } else if (m.expires_at) {
+          const msMs = new Date(m.expires_at).getTime();
+          const at = now == null ? Date.now() : now;
+          if (!Number.isNaN(msMs) && msMs <= at) {
+            when = escHtml(capacityNodeT('capacity_node_expires_now', 'expiring now'));
+          } else if (!Number.isNaN(msMs)) {
+            when = escHtml(capacityNodeT('capacity_node_expires', 'expires in {time}', { time: capacityFmtUntil(m.expires_at, now) }));
+          }
+        }
+        rows.push(`<div style="${CAPACITY_USAGE_ROW}">${modelLabel}: ${name} — ${size}${when ? ' · ' + when : ''}</div>`);
+      });
+    }
+    // GPU lines, whenever the observer has figures (even on an unreachable
+    // model server); thresholds match the slot bar (75/100).
+    const gpus = Array.isArray(u.gpu) ? u.gpu : [];
+    gpus.forEach(g => {
+      const pct = Math.min(100, Math.max(0, Math.round(Number(g.util_pct) || 0)));
+      const color = pct >= 100 ? 'var(--error,#ef4444)' : pct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
+      const parts = [
+        escHtml(String(g.name || '')),
+        `<span style="font-variant-numeric:tabular-nums;color:${color};">${escHtml(capacityNodeT('capacity_node_gpu_util', 'GPU {pct}%', { pct: pct }))}</span>`,
+      ];
+      if ((Number(g.mem_total_bytes) || 0) > 0) {
+        parts.push(escHtml(capacityNodeT('capacity_node_gpu_mem', 'GPU memory {used} of {total}', {
+          used: capacityFmtBytes(g.mem_used_bytes),
+          total: capacityFmtBytes(g.mem_total_bytes),
+        })));
+      }
+      rows.push(`<div style="${CAPACITY_USAGE_ROW}">${parts.join(' · ')}</div>`);
+    });
+    if (state === 'ok' && gpus.length === 0) {
+      rows.push(`<div style="${CAPACITY_USAGE_ROW}">${escHtml(capacityNodeT('capacity_node_no_gpu_data', 'No GPU data from the observer'))}</div>`);
+    }
+  }
+  if (rows.length === 0) return '';
+  return `<div class="cap-node-usage" title="${escHtml(capacityNodeT('capacity_node_usage_hint', 'Live figures from the node\'s model server and the observer, refreshed about every 15 seconds.'))}">${rows.join('')}</div>`;
+};
+function capacityPoolsHtml(cap, now) {
   const allPools = (cap && cap.pools) || [];
   const leases = cap && cap.leases;
   const limited = allPools.filter(p => p.limit > 0).map(p => {
     const used = (p.held || 0) + (p.external || 0);
     const pct = Math.min(100, Math.round(100 * used / p.limit));
     const color = pct >= 100 ? 'var(--error,#ef4444)' : pct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
-    return `<div class="cap-pool" style="margin-bottom:4px;" title="${escHtml(capacityPoolTitle(p))}"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(capacityPoolLabel(p))}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div>${capacityHoldersLine(p, leases)}</div>`;
+    return `<div class="cap-pool" style="margin-bottom:4px;" title="${escHtml(capacityPoolTitle(p))}"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(capacityPoolLabel(p))}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div>${window.capacityNodeUsageHtml(p, now)}${capacityHoldersLine(p, leases)}</div>`;
   }).join('');
   const unlimited = allPools.filter(p => !(p.limit > 0) && ((p.held||0)+(p.external||0)) > 0)
-    .map(p => `<div class="cap-pool" style="color:var(--text2);" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>${capacityHoldersLine(p, leases)}`).join('');
+    .map(p => `<div class="cap-pool" style="color:var(--text2);" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>${window.capacityNodeUsageHtml(p, now)}${capacityHoldersLine(p, leases)}`).join('');
   // v8.36.0 — a registered compute node with no configured session cap and no
   // current activity used to be entirely invisible. List it plainly so real
   // hardware isn't hidden just because nobody capped it.
   const idleNodes = allPools.filter(p => p.name.startsWith('node:') && !(p.limit > 0) && ((p.held||0)+(p.external||0)) === 0)
-    .map(p => `<div class="cap-pool" style="color:var(--text2);opacity:0.7;" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${escHtml(t('capacity_no_cap_configured')||'no cap configured')}</div>${capacityHoldersLine(p, leases)}`).join('');
+    .map(p => `<div class="cap-pool" style="color:var(--text2);opacity:0.7;" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${escHtml(t('capacity_no_cap_configured')||'no cap configured')}</div>${window.capacityNodeUsageHtml(p, now)}${capacityHoldersLine(p, leases)}`).join('');
   return limited + unlimited + idleNodes;
 }
 // One row per active back-off flag: backend, when it resets (or the label for
@@ -23182,7 +23269,7 @@ function capacityWaitingHtml(waiting, now) {
 // placeholder instead of an empty string when there is nothing to show.
 window.capacityCardHtml = function(cap, opts) {
   opts = opts || {};
-  const pools = capacityPoolsHtml(cap);
+  const pools = capacityPoolsHtml(cap, opts.now);
   const backoff = capacityBackoffHtml(cap && cap.backoff);
   const budgetLines = budgetCapacityLines(cap && cap.budgets);
   const queue = capacityWaitingHtml(cap && cap.waiting, opts.now);
