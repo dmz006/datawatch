@@ -67,7 +67,7 @@ func bootVerifyingSetup(t *testing.T, mutate func(task *Task)) (*Manager, *PRD, 
 	}
 
 	killed := &[]string{}
-	m.SetSessionKillerFn(func(sessionID string) error {
+	m.SetSessionKillerFn(func(sessionID, _, _ string) error {
 		*killed = append(*killed, sessionID)
 		return nil
 	})

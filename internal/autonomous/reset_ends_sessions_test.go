@@ -24,7 +24,7 @@ func (f *liveFake) list() []SessionInfo {
 	return append([]SessionInfo(nil), f.sessions...)
 }
 
-func (f *liveFake) kill(id string) error {
+func (f *liveFake) kill(id, _, _ string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.kills = append(f.kills, id)
@@ -64,7 +64,7 @@ func TestResetEndsEveryLiveSessionOfTaskWorktree(t *testing.T) {
 		{ID: "other-task", TaskID: "someone-else", PRDID: prd.ID, ProjectDir: dir, Alive: true},
 	}}
 	f.wire(m)
-	got := m.endLiveSessionsOfTask(prd, &prd.Story[0].Tasks[0], "")
+	got := m.endLiveSessionsOfTask(prd, &prd.Story[0].Tasks[0], "", "autonomous.test", "test reason")
 	if len(got) != 2 {
 		t.Fatalf("ended %v, want by-task and by-dir only", got)
 	}
@@ -75,7 +75,7 @@ func TestResetEndsEveryLiveSessionOfTaskWorktree(t *testing.T) {
 	// a just-adopted session is never ended
 	f2 := &liveFake{sessions: []SessionInfo{{ID: "adopted", TaskID: task.ID, PRDID: prd.ID, Alive: true}}}
 	f2.wire(m)
-	if got := m.endLiveSessionsOfTask(prd, &prd.Story[0].Tasks[0], "adopted"); len(got) != 0 || len(f2.kills) != 0 {
+	if got := m.endLiveSessionsOfTask(prd, &prd.Story[0].Tasks[0], "adopted", "autonomous.test", "test reason"); len(got) != 0 || len(f2.kills) != 0 {
 		t.Fatalf("adopted session ended: %v", got)
 	}
 }
@@ -126,7 +126,7 @@ func TestOneSessionTotalAfterUnadoptableReset(t *testing.T) {
 		t.Fatalf("live after reset = %v, want none before launch", live)
 	}
 	// the replacement launch: the executor ends leftovers again (none), then spawns one
-	if again := m.endLiveSessionsOfTask(got, &got.Story[0].Tasks[0], ""); len(again) != 0 {
+	if again := m.endLiveSessionsOfTask(got, &got.Story[0].Tasks[0], "", "autonomous.test", "test reason"); len(again) != 0 {
 		t.Fatalf("second end pass found %v", again)
 	}
 	f.mu.Lock()

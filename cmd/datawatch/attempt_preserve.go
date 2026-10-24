@@ -5,12 +5,13 @@ import (
 	"log"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // attemptKiller is the slice of the session manager the stall kill needs. It
 // is an interface so the pre-kill ordering can be tested with a fake.
 type attemptKiller interface {
-	Kill(fullID string) error
+	EndSession(fullID string, why session.EndReason) error
 }
 
 // attemptSnapshotStore persists a snapshot ref on the task it was taken from.
@@ -22,12 +23,13 @@ type attemptSnapshotStore interface {
 // session. The snapshot is taken first, while the work dir still holds the
 // attempt's own state. A snapshot failure is logged and never blocks the kill.
 // When preserve is false (autonomous.preserve_attempt_work off) no snapshot is
-// taken and the kill proceeds as before.
-func killStalledWorker(ctx context.Context, killer attemptKiller, store attemptSnapshotStore, preserve bool, workDir string, task *autonomouspkg.Task, sessionID string) {
+// taken and the kill proceeds as before. why is recorded on the session as its
+// end.
+func killStalledWorker(ctx context.Context, killer attemptKiller, store attemptSnapshotStore, preserve bool, workDir string, task *autonomouspkg.Task, sessionID string, why session.EndReason) {
 	if preserve && workDir != "" {
 		preserveAttemptWork(ctx, store, workDir, task)
 	}
-	_ = killer.Kill(sessionID)
+	_ = killer.EndSession(sessionID, why)
 }
 
 // preserveAttemptWork snapshots workDir under the task's next attempt number

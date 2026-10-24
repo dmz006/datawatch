@@ -27,10 +27,10 @@ func (h *verifierReconcileHost) LiveVerifiers() []autonomous.VerifierSession {
 	return out
 }
 
-// End ends the session through the manager's normal kill path; the reason is
-// recorded by the reconcile's task decision and audit event.
-func (h *verifierReconcileHost) End(sessionID, _ string) error {
-	return h.mgr.Kill(sessionID)
+// End ends the verifier session through the manager and records the reason the
+// reconcile gives on the session.
+func (h *verifierReconcileHost) End(sessionID, reason string) error {
+	return endVerifierSession(h.mgr, sessionID, reason)
 }
 
 // BindLease points the verifier's lease and registry entry at sessionID.

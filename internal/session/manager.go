@@ -5418,7 +5418,14 @@ func (m *Manager) Close() error {
 	return m.store.Close()
 }
 
+// KillAll ends every live session on this host with the stop-all reason.
 func (m *Manager) KillAll() error {
+	return m.EndAllSessions(EndReason{Caller: callerAt(0), Reason: "stop all sessions requested"})
+}
+
+// EndAllSessions ends every live session on this host, recording why for each.
+// Only running, waiting-input and rate-limited sessions are ended.
+func (m *Manager) EndAllSessions(why EndReason) error {
 	var errs []string
 	for _, sess := range m.store.List() {
 		if sess.Hostname != m.hostname {
@@ -5427,7 +5434,6 @@ func (m *Manager) KillAll() error {
 		if sess.State != StateRunning && sess.State != StateWaitingInput && sess.State != StateRateLimited {
 			continue
 		}
-		why := EndReason{Caller: callerAt(0), Reason: "stop all sessions requested"}
 		if err := m.EndSession(sess.FullID, why); err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", sess.ID, err))
 		}

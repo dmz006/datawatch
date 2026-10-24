@@ -38,7 +38,7 @@ func newOrphanHarness(t *testing.T) *orphanHarness {
 		defer h.mu.Unlock()
 		return append([]SessionInfo(nil), h.list...)
 	})
-	m.SetSessionKillerFn(func(id string) error {
+	m.SetSessionKillerFn(func(id, _, _ string) error {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		h.killed = append(h.killed, id)

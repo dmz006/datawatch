@@ -744,7 +744,9 @@ type Manager struct {
 	// sessionKillerFn — when set, Cancel calls this for each task
 	// session that is still running at the time of cancellation.
 	// Injected from main.go to avoid a circular import on session.Manager.
-	sessionKillerFn func(sessionID string) error
+	// caller names the code path that ends the session; reason says why, with
+	// the numbers that path measured. The daemon records both on the session.
+	sessionKillerFn func(sessionID, caller, reason string) error
 
 	// sessionAliveFn — when set, reconcileStuckTasks uses it to skip
 	// tasks whose session is still running (B90). Nil = conservative:
@@ -923,7 +925,7 @@ func (m *Manager) SetContextFn(fn func(prdType string) string) {
 // SetSessionKillerFn wires the session-kill callback used by Cancel to
 // terminate any task sessions still running when a PRD is cancelled.
 // Injected from main.go; nil disables the kill (sessions age out normally).
-func (m *Manager) SetSessionKillerFn(fn func(sessionID string) error) {
+func (m *Manager) SetSessionKillerFn(fn func(sessionID, caller, reason string) error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessionKillerFn = fn
@@ -948,8 +950,9 @@ func (m *Manager) killOrphanDecomposeSessions(prdID string) int {
 		return 0
 	}
 	n := 0
+	why := fmt.Sprintf("orphan planning session for PRD %s: the decompose goroutine that reads it did not survive the daemon restart", prdID)
 	for _, id := range find(prdID) {
-		if err := kill(id); err != nil {
+		if err := kill(id, "autonomous.boot-resume.orphan-decompose", why); err != nil {
 			log.Printf("[autonomous] boot-resume: kill orphan decompose session %s (prd=%s): %v", id, prdID, err)
 			continue
 		}
@@ -1292,7 +1295,8 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 					// instead of resetting it for a blind re-run. Verification is
 					// kept untouched.
 					if killerFn != nil && t.SessionID != "" {
-						if err := killerFn(t.SessionID); err != nil {
+						why := fmt.Sprintf("boot-resume: task %s had a recorded ok verification; its dead session is ended before the task completes", t.ID)
+						if err := killerFn(t.SessionID, "autonomous.boot-resume.complete-from-verdict", why); err != nil {
 							log.Printf("[autonomous] boot-resume: kill orphaned session %s: %v", t.SessionID, err)
 						}
 					}
@@ -1315,7 +1319,8 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 				continue
 			}
 			if killerFn != nil && t.SessionID != "" {
-				if err := killerFn(t.SessionID); err != nil {
+				why := fmt.Sprintf("boot-resume: task %s was %s with no live session; the orphaned session is ended before the task is requeued", t.ID, prevStatus)
+				if err := killerFn(t.SessionID, "autonomous.boot-resume.reset", why); err != nil {
 					log.Printf("[autonomous] boot-resume: kill orphaned session %s: %v", t.SessionID, err)
 				}
 			}
@@ -1408,7 +1413,8 @@ func (m *Manager) resetKilledTasksForResume(prd *PRD) bool {
 				continue
 			}
 			if killerFn != nil && t.SessionID != "" {
-				if err := killerFn(t.SessionID); err != nil {
+				why := fmt.Sprintf("boot-resume: failed task %s is reset to pending; its retained session is ended before the retry", t.ID)
+				if err := killerFn(t.SessionID, "autonomous.boot-resume.failed-reset", why); err != nil {
 					log.Printf("[autonomous] boot-resume: kill orphaned session %s: %v", t.SessionID, err)
 				}
 			}
@@ -1460,7 +1466,8 @@ func (m *Manager) killPRDSessions(prd *PRD) {
 		for ti := range prd.Story[si].Tasks {
 			sid := prd.Story[si].Tasks[ti].SessionID
 			if sid != "" {
-				if err := fn(sid); err != nil {
+				why := fmt.Sprintf("PRD %s cancelled: task %s session ends with the PRD", prd.ID, prd.Story[si].Tasks[ti].ID)
+				if err := fn(sid, "autonomous.cancel.prd", why); err != nil {
 					log.Printf("[autonomous] cancel: kill session %s: %v", sid, err)
 				}
 			}
@@ -2808,7 +2815,8 @@ func (m *Manager) CancelStory(prdID, storyID, actor, reason string) (*PRD, error
 			for ti := range prd.Story[si].Tasks {
 				t := &prd.Story[si].Tasks[ti]
 				if t.SessionID != "" && fn != nil {
-					if err := fn(t.SessionID); err != nil {
+					why := fmt.Sprintf("story %s cancelled: task %s session ends with the story", storyID, t.ID)
+					if err := fn(t.SessionID, "autonomous.cancel.story", why); err != nil {
 						log.Printf("[autonomous] cancel_story: kill session %s: %v", t.SessionID, err)
 					}
 				}
@@ -2870,7 +2878,8 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 					fn := m.sessionKillerFn
 					m.mu.Unlock()
 					if fn != nil {
-						if err := fn(t.SessionID); err != nil {
+						why := fmt.Sprintf("task %s cancelled: its session ends with the task", taskID)
+						if err := fn(t.SessionID, "autonomous.cancel.task", why); err != nil {
 							log.Printf("[autonomous] cancel_task: kill session %s: %v", t.SessionID, err)
 						}
 					}
@@ -4495,7 +4504,7 @@ func (m *Manager) reconcileStuckTasks() {
 				if !completing {
 					if id, _ := m.adoptUnlinkedSession(prd, t, listFn); id != "" {
 						// Older live matches would run beside the adopted session.
-						recordEndedSessions(prd, t, m.endLiveSessionsOfTask(prd, t, id), "older duplicate of the session adopted on daemon restart")
+						recordEndedSessions(prd, t, m.endLiveSessionsOfTask(prd, t, id, "autonomous.boot-reconcile.duplicate", "older duplicate of the session adopted on daemon restart"), "older duplicate of the session adopted on daemon restart")
 						adoptedAny = true
 						continue
 					}
@@ -4503,7 +4512,8 @@ func (m *Manager) reconcileStuckTasks() {
 				// Kill any surviving tmux session so the new executor doesn't
 				// spawn alongside it.
 				if killerFn != nil && t.SessionID != "" {
-					if err := killerFn(t.SessionID); err != nil {
+					why := fmt.Sprintf("boot-reconcile: task %s was %s with no live session; the surviving session is ended so the new executor does not spawn beside it", t.ID, t.Status)
+					if err := killerFn(t.SessionID, "autonomous.boot-reconcile.stuck", why); err != nil {
 						log.Printf("[autonomous] boot-reconcile: kill orphaned session %s: %v", t.SessionID, err)
 					}
 				}
@@ -4517,7 +4527,7 @@ func (m *Manager) reconcileStuckTasks() {
 				}
 				// Every other live session of this task or its worktree must end
 				// before the replacement launches.
-				recordEndedSessions(prd, t, m.endLiveSessionsOfTask(prd, t, ""), "task reset on daemon restart")
+				recordEndedSessions(prd, t, m.endLiveSessionsOfTask(prd, t, "", "autonomous.boot-reconcile.reset", "task reset on daemon restart: every other live session of the task or its worktree ends before the replacement"), "task reset on daemon restart")
 				now := time.Now()
 				if completing {
 					log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskCompleted (recorded ok verification, dead session)",

@@ -16,7 +16,7 @@ func TestBootResume_PlanningPRDKillsItsOrphanDecomposeSession(t *testing.T) {
 	live := map[string][]string{prd.ID: {"dec-1"}, other.ID: {"dec-2", "dec-3"}}
 	var killed []string
 	m.SetDecomposeSessionsFn(func(id string) []string { return live[id] })
-	m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+	m.SetSessionKillerFn(func(id, _, _ string) error { killed = append(killed, id); return nil })
 
 	api.resumeRunningPRDs()
 
@@ -62,7 +62,7 @@ func TestBootResume_CancelledPRDKillsLiveDecomposeSessionWithoutRedecompose(t *t
 	live := map[string][]string{prd.ID: {"dec-cancelled-1"}}
 	var killed []string
 	m.SetDecomposeSessionsFn(func(id string) []string { return live[id] })
-	m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+	m.SetSessionKillerFn(func(id, _, _ string) error { killed = append(killed, id); return nil })
 
 	api.resumeRunningPRDs()
 
@@ -87,7 +87,7 @@ func TestBootResume_CancelledPRDWithNoSessionsIsNoOp(t *testing.T) {
 
 	var killed []string
 	m.SetDecomposeSessionsFn(func(string) []string { return nil })
-	m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+	m.SetSessionKillerFn(func(id, _, _ string) error { killed = append(killed, id); return nil })
 
 	api.resumeRunningPRDs()
 	api.resumeRunningPRDs()
@@ -116,7 +116,7 @@ func TestBootResume_PlanningPRDContrastStillResetsToDraft(t *testing.T) {
 	live := map[string][]string{prd.ID: {"dec-planning-1"}}
 	var killed []string
 	m.SetDecomposeSessionsFn(func(id string) []string { return live[id] })
-	m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+	m.SetSessionKillerFn(func(id, _, _ string) error { killed = append(killed, id); return nil })
 
 	api.resumeRunningPRDs()
 

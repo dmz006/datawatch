@@ -63,7 +63,7 @@ func (f *fakeSessions) aliveFn(sessionID string) bool {
 	return f.alive[sessionID]
 }
 
-func (f *fakeSessions) killFn(sessionID string) error {
+func (f *fakeSessions) killFn(sessionID, _, _ string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.kills = append(f.kills, sessionID)

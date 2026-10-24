@@ -1674,6 +1674,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// Kill tmux session on completion/failure only when kill_sessions_on_exit is enabled.
 			// When disabled the tmux window stays alive so the operator can inspect output.
 			if cfg.Session.KillSessionsOnExit {
+				exitState := sess.State
 				go func() {
 					defer func() {
 						if p := recover(); p != nil {
@@ -1681,7 +1682,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 					}()
 					time.Sleep(2 * time.Second) // brief delay to let final output flush
-					mgr.KillTmuxSession(sess.FullID)
+					_ = mgr.EndSession(sess.FullID, session.EndReason{Caller: endCallerKillOnExit, Reason: killOnExitEndReason(exitState)})
 				}()
 			}
 			if sess.BackendFamily == "claude-code" {
@@ -1866,7 +1867,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		recordShutdownCause(sig)
 		if cfg.Session.KillSessionsOnExit {
 			fmt.Println("Killing active sessions...")
-			if err := mgr.KillAll(); err != nil {
+			if err := mgr.EndAllSessions(session.EndReason{Caller: endCallerShutdown, Reason: shutdownEndReason(sig)}); err != nil {
 				fmt.Printf("[warn] kill sessions on exit: %v\n", err)
 			}
 		}
@@ -4834,10 +4835,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// windows are shorter than the session idle timeout, so the nudge
 				// fires first. Nil for other families.
 				var nudgeTracker *autonomouspkg.WorkerNudgeTracker
+				var nudgeStallAfter time.Duration
 				if family == autonomouspkg.WorkerNudgeFamily {
+					nudgeStallAfter = time.Duration(config.NormalizeWorkerIdleNudgeStallSeconds(liveCfg.WorkerIdleNudgeStallSeconds)) * time.Second
 					nudgeTracker = autonomouspkg.NewWorkerNudgeTracker(
 						time.Duration(config.NormalizeWorkerIdleNudgeSeconds(liveCfg.WorkerIdleNudgeSeconds))*time.Second,
-						time.Duration(config.NormalizeWorkerIdleNudgeStallSeconds(liveCfg.WorkerIdleNudgeStallSeconds))*time.Second)
+						nudgeStallAfter)
 				}
 				// pi-prompt exit-silence detector. One-shot `pi --print` runs write
 				// nothing to the log until they finish, so the log-mtime stall check
@@ -4901,12 +4904,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						if nudgeTracker != nil {
 							_, nudgeOutputAge, _ := staleWorkerCheck(staleLogPath, idleLimit, time.Now())
 							nudgeTail, _ := mgr.TailOutput(task.SessionID, 50)
-							switch nudgeTracker.Observe(time.Now(), s.BackendFamily, true, autonomouspkg.WorkerNudgeObservation{
+							nudgeObs := autonomouspkg.WorkerNudgeObservation{
 								State:               string(s.State),
 								OutputAge:           nudgeOutputAge,
 								HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
 								CompletionSeen:      session.ExtractCompletionSummary(nudgeTail) != "",
-							}) {
+							}
+							switch nudgeTracker.Observe(time.Now(), s.BackendFamily, true, nudgeObs) {
 							case autonomouspkg.WorkerNudgeSend:
 								nudgeDelivered, nudgeTask := false, ""
 								if nudgeSess, ok := mgr.GetSession(task.SessionID); ok {
@@ -4934,7 +4938,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							case autonomouspkg.WorkerNudgeStall:
 								log.Printf("[autonomous] idle worker %s task %s/%s still silent after nudge; killing for retry",
 									task.SessionID, task.PRDID, task.ID)
-								_ = mgr.Kill(task.SessionID)
+								_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerNudgeStall, Reason: nudgeStallEndReason(nudgeObs, nudgeStallAfter)})
 								stallErr = fmt.Errorf("worker idle after completion nudge (session=%s): %w", task.SessionID, autonomouspkg.ErrWorkerStalled)
 								break waitLoop
 							}
@@ -5000,7 +5004,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										task.StartFailureTail = autonomouspkg.LastLines(pane, 20)
 										log.Printf("[autonomous] one-shot session %s task %s/%s never started: %s in waiting_input without assistant output for %s (limit %s); killing for retry",
 											task.SessionID, task.PRDID, task.ID, autonomouspkg.SessionStartFailureReason, obs.WaitingFor.Round(time.Second), sessionStartLimit)
-										_ = mgr.Kill(task.SessionID)
+										_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerSessionStart, Reason: sessionStartEndReason(obs)})
 										stallErr = fmt.Errorf("%s: no assistant output after %s (last %d pane line(s) recorded on the task) — %w; %w",
 											autonomouspkg.SessionStartFailureReason, obs.WaitingFor.Round(time.Second), len(task.StartFailureTail),
 											autonomouspkg.ErrSessionNeverStarted, autonomouspkg.ErrWorkerStalled)
@@ -5023,7 +5027,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						if stalled && !startSupersedes {
 							log.Printf("[autonomous] one-shot session %s task %s/%s is waiting_input (not disclaimer-oscillation); killing for retry",
 								task.SessionID, task.PRDID, task.ID)
-							_ = mgr.Kill(task.SessionID)
+							_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerWaitingInput, Reason: waitingInputEndReason(waitingInputTicks)})
 							stallErr = fmt.Errorf("worker stopped and asked an interactive question instead of completing the one-shot task — this is a one-shot run, no one will answer; make the most reasonable judgment call yourself (e.g. if output already exists from a prior attempt, verify it's still correct and either finish or redo it) and continue to DATAWATCH_COMPLETE without asking: %w", autonomouspkg.ErrWorkerStalled)
 							break waitLoop
 						}
@@ -5052,7 +5056,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								if idleStalled, idleReason := idleObs.Stalled(); idleStalled {
 									log.Printf("[autonomous] session idle detector fired for %s task %s/%s: %s; killing for retry",
 										task.SessionID, task.PRDID, task.ID, idleReason)
-									_ = mgr.Kill(task.SessionID)
+									_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerIdleDetector, Reason: idleDetectorEndReason(idleObs)})
 									alertspkg.EmitSystem(alertspkg.LevelError, "Task session idle without completion",
 										fmt.Sprintf("prd=%s task=%s: %s", prd.ID, task.Title, idleReason))
 									stallErr = autonomouspkg.SessionIdleError(idleObs)
@@ -5080,7 +5084,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								}); stalled {
 								log.Printf("[autonomous] exit-silence detector fired for session %s task %s/%s: %s; killing for retry",
 									task.SessionID, task.PRDID, task.ID, reason)
-								_ = mgr.Kill(task.SessionID)
+								_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerExitSilence, Reason: exitSilenceEndReason(reason)})
 								alertspkg.EmitSystem(alertspkg.LevelError, "Task session exited silently",
 									fmt.Sprintf("prd=%s task=%s: %s", prd.ID, task.Title, reason))
 								stallErr = autonomouspkg.ExitSilenceError(reason)
@@ -5095,7 +5099,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								if pat, matched := matchSSEStallPattern(sb); matched {
 									log.Printf("[autonomous] SSE stall detected in session %s task %s/%s (%q); killing for retry",
 										task.SessionID, task.PRDID, task.ID, pat)
-									killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID)
+									killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID,
+										session.EndReason{Caller: endCallerSSEStall, Reason: sseStallEndReason(pat)})
 									stallErr = fmt.Errorf("opencode SSE stall detected (%q): %w", pat, autonomouspkg.ErrWorkerStalled)
 									break waitLoop
 								}
@@ -5173,7 +5178,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									}
 									log.Printf("[autonomous] worker stall detected in session %s task %s/%s (%s); killing for retry",
 										task.SessionID, task.PRDID, task.ID, reason)
-									killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID)
+									killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID,
+										session.EndReason{Caller: endCallerActivityStall, Reason: activityStallEndReason(reason)})
 									stallErr = workerStallError(reason, staleThreshold)
 									if stallScriptOutput != "" {
 										stallErr = fmt.Errorf("%w; task verification script output: %s", stallErr, stallScriptOutput)
@@ -5221,7 +5227,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 					}
 					if s.State != session.StateKilled {
-						_ = mgr.Kill(task.SessionID)
+						_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerPostWait, Reason: postWaitEndReason(s.State)})
 					}
 					// Record the worker session's deterministic commit sha (if
 					// any) on the task's ordered, de-duplicated attempt record.
@@ -6150,9 +6156,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				stopPinKeepers()
 			}()
 			// Wire session killer so Cancel also terminates running task sessions.
-			amgr.SetSessionKillerFn(func(sessionID string) error {
-				return mgr.Kill(sessionID)
-			})
+			amgr.SetSessionKillerFn(sessionEndFromAutonomous(mgr))
 			amgr.SetDecomposeSessionsFn(func(prdID string) []string {
 				var ids []string
 				for _, s := range mgr.ListSessions() {
@@ -6340,7 +6344,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 								if pat, matched := matchSSEStallPattern(sb); matched {
 									log.Printf("[automata-watchdog] stall detected PRD=%s task=%s session=%s (%q); killing",
 										prd.ID, task.ID, task.SessionID, pat)
-									_ = mgr.Kill(task.SessionID)
+									_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerSSEWatchdog, Reason: sseWatchdogEndReason(pat, s.State, time.Since(s.CreatedAt))})
 								}
 							}
 						}
@@ -11518,6 +11522,7 @@ func runSessionKill(cfg *config.Config, id string) error {
 		return fmt.Errorf("tmux kill-session: %w\n%s", err, out)
 	}
 	fmt.Printf("Session %s killed (tmux: %s)\n", id, sess.TmuxSession)
+	fmt.Printf("  ended by=%s reason=%s\n", endCallerCLIKill, cliKillEndReason(sess.ID, sess.TmuxSession))
 	return nil
 }
 
@@ -11922,9 +11927,11 @@ func runSessionStopAll(cfg *config.Config) error {
 			fmt.Printf("[warn] kill session %s: %v %s\n", sess.ID, err, out)
 			continue
 		}
+		why := cliStopAllEndReason(sess.TmuxSession, sess.State)
 		sess.State = session.StateKilled
 		_ = store.Save(sess)
 		fmt.Printf("Killed session %s (%s)\n", sess.ID, truncate(sess.Task, 40))
+		fmt.Printf("  ended by=%s reason=%s\n", endCallerCLIStopAll, why)
 		killed++
 	}
 	if killed == 0 {
@@ -17281,7 +17288,7 @@ func runExitHookSetEnabled(cfg *config.Config, id string, enabled bool) error {
 // runExitHookRestart kills the zombie/failed session and relaunches it with the same task.
 func runExitHookRestart(mgr *session.Manager, sess *session.Session, hook *session.ExitHookEntry) {
 	// Kill the zombie (ignore error — may already be dead).
-	_ = mgr.Kill(sess.FullID)
+	_ = mgr.EndSession(sess.FullID, session.EndReason{Caller: endCallerExitHook, Reason: exitHookRestartEndReason(hook.ID)})
 	time.Sleep(500 * time.Millisecond)
 	ctx := context.Background()
 	opts := &session.StartOptions{
