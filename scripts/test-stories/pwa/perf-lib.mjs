@@ -1,5 +1,5 @@
 // scripts/test-stories/pwa/perf-lib.mjs — shared helpers for the load-performance
-// PWA stories (TS-802 .. TS-810).
+// PWA stories (TS-802 .. TS-811).
 //
 // Built on lib.mjs. Provides: network throttle profiles (Chrome DevTools
 // Protocol), time-to-first-content and "loading indicator within 200 ms"
@@ -15,6 +15,11 @@
 //   PERF_SEED_SESSIONS      large set: sessions                     (default 3000)
 //   PERF_SEED_AUTOMATA      large set: heavy Automata               (default 300)
 //   PERF_LOADER_TIMEOUT_MS  the list loader's request timeout       (default 15000)
+//   PERF_BUDGET_WIRE_FRAME_BYTES         largest single websocket frame    (default 307200)
+//   PERF_BUDGET_WIRE_COLD_BYTES          websocket bytes, cold connect     (default 524288)
+//   PERF_BUDGET_WIRE_RECONNECT_BYTES     websocket bytes, 10 s after reconnect (default 524288)
+//   PERF_BUDGET_WIRE_IDLE_BYTES_PER_MIN  websocket bytes per minute, one idle session open
+//                                        (default 262144)
 //
 // The large set is normally supplied by a daemon started on the seeded fixture
 // (SeedPerfServer in internal/server/perf_seed_test.go). seedLargeSet() checks
@@ -39,6 +44,16 @@ export const BUDGET = {
   seedSessions: num('PERF_SEED_SESSIONS', 3000),
   seedAutomata: num('PERF_SEED_AUTOMATA', 300),
   loaderTimeoutMs: num('PERF_LOADER_TIMEOUT_MS', 15000),
+  // Websocket byte budgets (TS-811). The frame budget is the largest single
+  // message a client may receive: a summary-row frame stays well under it, and
+  // a single oversized frame is what blocks the UI thread on a phone.
+  wireFrameBytes: num('PERF_BUDGET_WIRE_FRAME_BYTES', 307200),
+  // Everything received from the first socket until the sessions list renders.
+  wireColdBytes: num('PERF_BUDGET_WIRE_COLD_BYTES', 524288),
+  // Everything received in the 10 s after a 2.5 s outage reconnects.
+  wireReconnectBytes: num('PERF_BUDGET_WIRE_RECONNECT_BYTES', 524288),
+  // Received bytes per minute with one running session's detail view idle.
+  wireIdleBytesPerMin: num('PERF_BUDGET_WIRE_IDLE_BYTES_PER_MIN', 262144),
 };
 
 // Throttle profiles for Network.emulateNetworkConditions. slow-4G is the

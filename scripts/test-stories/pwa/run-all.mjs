@@ -12,6 +12,7 @@
 //   node run-all.mjs --dry-run                — list the stories that would run, then exit
 //   node run-all.mjs --group load             — run a named group (load = TS-802..TS-810)
 //   node run-all.mjs --dry-run --group load   — list the load group's stories, then exit
+//   node run-all.mjs --group wire             — run the websocket byte-budget group (TS-811)
 
 import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
@@ -25,6 +26,7 @@ const dryRun = argv.includes('--dry-run');
 // Named groups: fixed lists of story ids, run in this order.
 const GROUPS = {
   load: ['TS-802', 'TS-803', 'TS-804', 'TS-805', 'TS-806', 'TS-807', 'TS-808', 'TS-809', 'TS-810'],
+  wire: ['TS-811'],
 };
 
 let groupName = null;
