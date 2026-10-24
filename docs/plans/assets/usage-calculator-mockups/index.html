@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Usage calculator mockups</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --bg2: #1a1d27;
+  --bg3: #22263a;
+  --accent: #7c3aed;
+  --accent2: #a855f7;
+  --text: #e2e8f0;
+  --text2: #94a3b8;
+  --border: #2d3148;
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --bad: #ef4444;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc;
+    --bg2: #ffffff;
+    --bg3: #e2e8f0;
+    --accent: #7c3aed;
+    --accent2: #6d28d9;
+    --text: #0f172a;
+    --text2: #475569;
+    --border: #cbd5e1;
+    --ok: #15803d;
+    --warn: #b45309;
+    --bad: #b91c1c;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding: 16px;
+}
+h1 { font-size: 1.6rem; line-height: 1.2; margin: 0 0 8px; }
+h2 { font-size: 1.15rem; margin: 22px 0 8px; }
+h3 { font-size: 1.05rem; margin: 0 0 6px; }
+p { margin: 0 0 8px; }
+.page { max-width: 1100px; margin: 0 auto; }
+.kicker { color: var(--text2); font-size: 0.85rem; margin: 0 0 4px; }
+.caption { color: var(--text2); font-size: 0.92rem; }
+.note { color: var(--text2); font-size: 0.9rem; }
+.need { color: var(--text2); font-size: 0.95rem; }
+
+a { color: var(--accent2); font-weight: 600; }
+a:focus-visible { outline: 3px solid var(--accent2); outline-offset: 2px; }
+
+.policies { margin: 0 0 8px; padding-left: 1.2rem; }
+.policies li + li { margin-top: 6px; }
+
+.cards { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); margin: 10px 0 0; }
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  min-width: 0;
+}
+.card p.open { margin: 12px 0 0; }
+.card a {
+  display: inline-block;
+  min-height: 44px;
+  padding: 10px 0;
+}
+
+.worked { margin: 0 0 8px; padding-left: 1.2rem; }
+.worked li + li { margin-top: 4px; }
+.verdicts { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  font-weight: 700;
+}
+.chip.over { color: var(--bad); }
+.chip.within { color: var(--ok); }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  margin: 8px 0 0;
+}
+caption {
+  text-align: left;
+  color: var(--text2);
+  font-size: 0.9rem;
+  padding-bottom: 8px;
+}
+th, td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+thead th { color: var(--text2); font-size: 0.85rem; }
+tbody th { font-weight: 600; width: 22%; }
+
+@media (max-width: 599px) {
+  table, thead, tbody, tr, th, td { display: block; width: 100%; }
+  thead { display: none; }
+  tr { border-bottom: 2px solid var(--border); padding: 6px 0; }
+  th, td { border-bottom: none; padding: 4px 0; }
+  td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--text2);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+}
+
+@media (min-width: 600px) {
+  .cards { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (min-width: 900px) {
+  .cards { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); }
+}
+</style>
+</head>
+<body>
+<main class="page">
+
+  <header>
+    <p class="kicker">Usage calculator, index of the three variants</p>
+    <h1>Usage calculator mockups</h1>
+    <p>On every usage reading the calculator tells the operator the weekly percent, the days since the weekly reset, the pace line, the burn per 24 hours (both the recent burn and the week average), the projected end at the reset and the time the allowance would run out, and whether the burn is within budget or over budget. The operator chooses the number of Claude lanes; the calculator only advises.</p>
+  </header>
+
+  <section aria-labelledby="h-policies">
+    <h2 id="h-policies">The three usage policies</h2>
+    <p>The operator picks one usage policy. Every variant page has a policy selector with these three choices, and the policy changes only the advice, never the numbers of the reading.</p>
+    <ul class="policies">
+      <li><strong>Run until used up</strong>: spend the whole weekly allowance, because unused points are lost at the reset. The advice is the largest lane count that projects to 100 percent or less at the reset.</li>
+      <li><strong>Pace to the week</strong>: last until the reset with a margin of 5 points, so the week does not run out before its end. The advice is the largest lane count that projects to 95 percent or less.</li>
+      <li><strong>Run flat out</strong>: finish the remaining work before the allowance does. All lanes run, and the calculator checks the work against the allowance without slowing any lane.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="h-variants">
+    <h2 id="h-variants">The three variants</h2>
+    <p class="caption">Each variant reads the same reading and calls the same model, so the figures agree. The variants differ in layout and in which field comes first.</p>
+    <div class="cards">
+
+      <article class="card" aria-labelledby="v-gauge">
+        <h3 id="v-gauge">Pace gauge</h3>
+        <p>It shows the verdict first, then the weekly percent on a gauge with the pace line and the two projections to the reset. The reading fields and a chart of the readings since the reset follow it.</p>
+        <p class="need"><strong>Data it needs:</strong> the weekly percent and the time it was read, the weekly reset day and time, and the previous reading from the operator's log for the recent burn. The session percent is optional.</p>
+        <p class="open"><a href="variant-pace-gauge.html">Open the pace gauge mockup</a></p>
+      </article>
+
+      <article class="card" aria-labelledby="v-planner">
+        <h3 id="v-planner">Lane planner</h3>
+        <p>It shows the verdict first, then a table of what each lane count projects to at the reset, with the advice and the chosen count marked. A timeline from the reading to the reset follows the table.</p>
+        <p class="need"><strong>Data it needs:</strong> the weekly percent and the time it was read, the weekly reset, the previous reading, the number of lanes that ran in the recent window, the idle baseline (3 points per 24 hours by default), the safety margin and the remaining work for Run flat out.</p>
+        <p class="open"><a href="variant-lane-planner.html">Open the lane planner mockup</a></p>
+      </article>
+
+      <article class="card" aria-labelledby="v-ledger">
+        <h3 id="v-ledger">Burn ledger</h3>
+        <p>It shows the verdict and the reading fields first, then the points of weekly allowance used on each day since the reset. A cost section follows, with the planning coefficients and the points per 24 hours at each lane count.</p>
+        <p class="need"><strong>Data it needs:</strong> the weekly percent and the time it was read, the previous reading from the operator's log, and the readings since the reset. The split of each day by kind of work is an illustration until attribution data exists.</p>
+        <p class="open"><a href="variant-burn-ledger.html">Open the burn ledger mockup</a></p>
+      </article>
+
+    </div>
+  </section>
+
+  <section aria-labelledby="h-compare">
+    <h2 id="h-compare">Comparison</h2>
+    <table>
+      <caption>Each cell describes its variant. The table does not rank the variants.</caption>
+      <thead>
+        <tr>
+          <th scope="col">Aspect</th>
+          <th scope="col">Pace gauge</th>
+          <th scope="col">Lane planner</th>
+          <th scope="col">Burn ledger</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">What it shows first</th>
+          <td data-label="Pace gauge">The verdict, then the weekly percent on a gauge against the pace line and both projections to the reset.</td>
+          <td data-label="Lane planner">The verdict, then a table of the projected end and run out for each lane count, then a timeline to the reset.</td>
+          <td data-label="Burn ledger">The verdict and the reading fields, then the points of allowance used on each day since the reset.</td>
+        </tr>
+        <tr>
+          <th scope="row">Data the operator enters</th>
+          <td data-label="Pace gauge">The weekly percent and read time, the weekly reset day and time, an optional session percent, the policy and the lanes running.</td>
+          <td data-label="Lane planner">The weekly percent and read time, the weekly reset, the lanes in the recent window, the idle baseline, the safety margin, the remaining work, the policy and the lanes running.</td>
+          <td data-label="Burn ledger">The weekly percent. The reset and the earlier reading are fixed on the page. The policy and the lanes running are also entered.</td>
+        </tr>
+        <tr>
+          <th scope="row">Data inferred or collected</th>
+          <td data-label="Pace gauge">The previous reading from the operator's log, for the recent burn. Every other figure is computed from the reset and the reading.</td>
+          <td data-label="Lane planner">The previous reading from the log. The burn per lane is inferred from the recent burn above the idle baseline, and the baseline itself is inferred and can be overridden.</td>
+          <td data-label="Burn ledger">The previous reading from the log. Points per day are estimated from the readings at each 08:00 boundary. The split by kind of work is illustrative, because no attribution exists yet.</td>
+        </tr>
+        <tr>
+          <th scope="row">Text form shape, CLI and comm channel</th>
+          <td data-label="Pace gauge">Three CLI blocks and three comm-channel blocks, one per policy, in the same field order.</td>
+          <td data-label="Lane planner">Three CLI blocks and three comm-channel blocks, one per policy, in the same field order.</td>
+          <td data-label="Burn ledger">Three CLI blocks and three comm-channel blocks, one per policy, in the same field order.</td>
+        </tr>
+        <tr>
+          <th scope="row">Treatment of each policy</th>
+          <td data-label="Pace gauge">Changes the advice and the headline. The numbers of the reading stay the same.</td>
+          <td data-label="Lane planner">Changes the target line and how each lane row is marked. Run flat out adds a finish line. The numbers stay the same.</td>
+          <td data-label="Burn ledger">Changes the advice, the chosen-count line and the finish line. The numbers stay the same.</td>
+        </tr>
+        <tr>
+          <th scope="row">What it takes to build</th>
+          <td data-label="Pace gauge">Two drawn parts, a gauge and a chart, plus a reading form and the text forms.</td>
+          <td data-label="Lane planner">The same drawn parts and forms, plus a lane table, a per-lane timeline and inputs for the baseline, the safety margin and the remaining work.</td>
+          <td data-label="Burn ledger">The same drawn parts and forms, plus per-day sums from the readings, a split by kind of work that needs attribution data, and the cost and other-consumer sections.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section aria-labelledby="h-worked">
+    <h2 id="h-worked">The worked reading</h2>
+    <p>The worked reading is the 22:08 reading of Friday 2026-10-23, at 72 percent weekly. All three variants show these figures for it, from the same reference model.</p>
+    <div class="verdicts" role="group" aria-label="Verdicts for the worked reading">
+      <span class="chip over">&#x2716; Over budget at the recent burn</span>
+      <span class="chip within">&#x2714; Within budget at the week average</span>
+    </div>
+    <ul class="worked">
+      <li>The last weekly reset was Sunday 08:00, 5.59 days before the reading, with 1.41 days left.</li>
+      <li>Pace line 79.8 percent, so the reading is 7.8 points under pace. Hand arithmetic on the rounded 5.59 days gives 79.9; the model works from the timestamps and shows 79.8.</li>
+      <li>Burn per 24 hours: 24.1 at the recent burn, measured from the 17:09 reading 4.98 hours earlier, and 12.9 at the week average.</li>
+      <li>Projected end at the reset: 106.0 percent at the recent burn, which is over budget, and 90.2 percent at the week average, which is within budget.</li>
+      <li>Run out at the recent burn: Sunday 02:02, about six hours (5.96) before the reset. At the week average the allowance lasts until the reset.</li>
+      <li>The advice differs by policy. Run until used up suggests 2 lanes, which end at 96.1 percent. Pace to the week suggests 1 lane, which ends at 86.1 percent.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="h-note">
+    <h2 id="h-note">About these pages</h2>
+    <p class="note">These pages are mockups built on real operator-reported readings. Nothing is saved or sent from them. The commands in the text forms are proposals, and the final names are not decided. The choice of variant is the operator's.</p>
+  </section>
+
+</main>
+</body>
+</html>
