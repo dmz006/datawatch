@@ -476,3 +476,7 @@ Task specs that contain an absolute home or temp path, or the words kill and tmu
 ## Lesson: run go mod tidy before shipping (2026-10-22)
 
 The v9.5.90 release (BL428 Phase 5) failed the pipeline's "verify go.mod is tidy" step: the worker's code imported a module directly that `go.mod` still listed as indirect. Build, lint and tests do not catch it. `finish-merge.sh` now runs `go mod tidy` and stages `go.mod` and `go.sum` before committing, so the merge commit carries the fix. Also check the Release workflow's goreleaser job for every tag, not only the go test job.
+
+## Rule: release numbering, features are minor and fixes are patch (operator 2026-10-23)
+
+Each feature is a minor version bump (x.y.z becomes x.(y+1).0). Defects, fixes, flaky-test repairs and pure documentation or test changes that ship with a fix are patch bumps (x.y.z becomes x.y.(z+1)). The supervisor decides which a merge is by reading the PRD: if it adds operator-visible behaviour or a setting, it is a feature. Only the 10.0 tag belongs to the operator. Until 2026-10-23 every release was a patch bump, including features (9.5.100 to 9.5.125); those stay as released. The merge helper takes `BUMP=minor` for a feature and defaults to a patch. Features waiting at that date: the progress dashboard, the Automation sub-tab and the failure escalation policy; fixes: the Automata list paging, the external pull request review, the commit scope check and the restart matrix.
