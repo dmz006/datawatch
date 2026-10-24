@@ -1,0 +1,42 @@
+{
+  "label": "planning-final",
+  "at": "2026-10-24T03:01:42Z",
+  "daemon": {
+    "pid": "4115219",
+    "uptime_seconds": 156
+  },
+  "prd_status": "draft",
+  "task": {
+    "id": "",
+    "status": "",
+    "retry_count": 0,
+    "prior_attempt_count": 0,
+    "session_id": "",
+    "adopted_session": false
+  },
+  "sessions": [
+    {
+      "id": "4885",
+      "full_id": "restart-matrix-4885",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/planning/data/sessions/restart-matrix-4885/output.log",
+      "tmux_session": "cs-restart-matrix-4885"
+    }
+  ],
+  "session_ids": [
+    "restart-matrix-4885"
+  ],
+  "pane_pids": [],
+  "counts": {
+    "planner_starts": 1,
+    "worker_starts": 0,
+    "verifier_starts": 0,
+    "guardrail_starts": 0,
+    "script_launched": 0,
+    "script_starts": 0,
+    "script_finished": 0
+  },
+  "worker_counter_bytes": 0,
+  "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/planning/snap-planning-final"
+}

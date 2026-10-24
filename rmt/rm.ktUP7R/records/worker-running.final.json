@@ -1,0 +1,51 @@
+{
+  "label": "worker-running-final",
+  "at": "2026-10-24T03:02:42Z",
+  "daemon": {
+    "pid": "4172613",
+    "uptime_seconds": 46
+  },
+  "prd_status": "completed",
+  "task": {
+    "id": "739a0002",
+    "status": "completed",
+    "retry_count": 0,
+    "prior_attempt_count": 0,
+    "session_id": "b32a",
+    "adopted_session": false
+  },
+  "sessions": [
+    {
+      "id": "8740",
+      "full_id": "restart-matrix-8740",
+      "name": "autonomous:verify:739a0002",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/worker-running/data/sessions/restart-matrix-8740/output.log",
+      "tmux_session": "cs-restart-matrix-8740"
+    },
+    {
+      "id": "aaf8",
+      "full_id": "restart-matrix-aaf8",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/worker-running/data/sessions/restart-matrix-aaf8/output.log",
+      "tmux_session": "cs-restart-matrix-aaf8"
+    }
+  ],
+  "session_ids": [
+    "restart-matrix-8740",
+    "restart-matrix-aaf8"
+  ],
+  "pane_pids": [],
+  "counts": {
+    "planner_starts": 1,
+    "worker_starts": 1,
+    "verifier_starts": 1,
+    "guardrail_starts": 0,
+    "script_launched": 0,
+    "script_starts": 1,
+    "script_finished": 0
+  },
+  "worker_counter_bytes": 351,
+  "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/worker-running/snap-worker-running-final"
+}

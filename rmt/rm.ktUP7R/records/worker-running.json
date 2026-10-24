@@ -1,0 +1,191 @@
+{
+  "state": "worker-running",
+  "description": "worker running: a short real session writing a counter file",
+  "result": "FAIL",
+  "note": "",
+  "restart": {
+    "old_pid": "4166689",
+    "new_pid": "4172613",
+    "term_clean": true,
+    "down_seconds": 0
+  },
+  "derived": {
+    "task_status_before": "verifying",
+    "task_status_after": "completed",
+    "session_ids_before": [
+      "restart-matrix-aaf8",
+      "restart-matrix-b32a"
+    ],
+    "session_ids_after": [
+      "restart-matrix-8740",
+      "restart-matrix-aaf8"
+    ],
+    "pane_pids_before": [
+      "cs-restart-matrix-b32a:4170902"
+    ],
+    "pane_pids_after": [],
+    "retry_count_before": 0,
+    "retry_count_after": 0,
+    "duplicate_sessions": 0,
+    "lost_output_bytes": 5632,
+    "redone": false
+  },
+  "criteria": [
+    {
+      "criterion": "restart_exited_on_term",
+      "result": "PASS",
+      "detail": "daemon pid 4166689 down in 0s"
+    },
+    {
+      "criterion": "daemon_replaced",
+      "result": "PASS",
+      "detail": "pid 4166689 -> 4172613"
+    },
+    {
+      "criterion": "no_duplicate_sessions",
+      "result": "PASS",
+      "detail": "0 extra live session(s) beyond one per role"
+    },
+    {
+      "criterion": "no_lost_output",
+      "result": "FAIL",
+      "detail": "5632 byte(s) of earlier output missing afterwards"
+    },
+    {
+      "criterion": "retry_count_unchanged",
+      "result": "PASS",
+      "detail": "retries 0 -> 0"
+    },
+    {
+      "criterion": "worker_process_survived",
+      "result": "PASS",
+      "detail": "worker pid 4171142 alive right after the restart: yes"
+    },
+    {
+      "criterion": "worker_not_redone",
+      "result": "PASS",
+      "detail": "worker starts 1 -> 1"
+    },
+    {
+      "criterion": "session_id_stable",
+      "result": "FAIL",
+      "detail": "task session b32a -> b32a"
+    },
+    {
+      "criterion": "counter_file_complete",
+      "result": "PASS",
+      "detail": "counter lines 45 of 45"
+    },
+    {
+      "criterion": "task_completes",
+      "result": "PASS",
+      "detail": "task status: completed"
+    }
+  ],
+  "pass": 8,
+  "fail": 2,
+  "before": {
+    "label": "worker-running-before",
+    "at": "2026-10-24T03:01:55Z",
+    "daemon": {
+      "pid": "4166689",
+      "uptime_seconds": 12
+    },
+    "prd_status": "running",
+    "task": {
+      "id": "739a0002",
+      "status": "verifying",
+      "retry_count": 0,
+      "prior_attempt_count": 0,
+      "session_id": "b32a",
+      "adopted_session": false
+    },
+    "sessions": [
+      {
+        "id": "aaf8",
+        "full_id": "restart-matrix-aaf8",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/worker-running/data/sessions/restart-matrix-aaf8/output.log",
+        "tmux_session": "cs-restart-matrix-aaf8"
+      },
+      {
+        "id": "b32a",
+        "full_id": "restart-matrix-b32a",
+        "name": "autonomous:matrix task",
+        "state": "running",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/worker-running/data/sessions/restart-matrix-b32a/output.log",
+        "tmux_session": "cs-restart-matrix-b32a"
+      }
+    ],
+    "session_ids": [
+      "restart-matrix-aaf8",
+      "restart-matrix-b32a"
+    ],
+    "pane_pids": [
+      "cs-restart-matrix-b32a:4170902"
+    ],
+    "counts": {
+      "planner_starts": 1,
+      "worker_starts": 1,
+      "verifier_starts": 0,
+      "guardrail_starts": 0,
+      "script_launched": 0,
+      "script_starts": 0,
+      "script_finished": 0
+    },
+    "worker_counter_bytes": 28,
+    "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/worker-running/snap-worker-running-before"
+  },
+  "after": {
+    "label": "worker-running-final",
+    "at": "2026-10-24T03:02:42Z",
+    "daemon": {
+      "pid": "4172613",
+      "uptime_seconds": 46
+    },
+    "prd_status": "completed",
+    "task": {
+      "id": "739a0002",
+      "status": "completed",
+      "retry_count": 0,
+      "prior_attempt_count": 0,
+      "session_id": "b32a",
+      "adopted_session": false
+    },
+    "sessions": [
+      {
+        "id": "8740",
+        "full_id": "restart-matrix-8740",
+        "name": "autonomous:verify:739a0002",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/worker-running/data/sessions/restart-matrix-8740/output.log",
+        "tmux_session": "cs-restart-matrix-8740"
+      },
+      {
+        "id": "aaf8",
+        "full_id": "restart-matrix-aaf8",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/worker-running/data/sessions/restart-matrix-aaf8/output.log",
+        "tmux_session": "cs-restart-matrix-aaf8"
+      }
+    ],
+    "session_ids": [
+      "restart-matrix-8740",
+      "restart-matrix-aaf8"
+    ],
+    "pane_pids": [],
+    "counts": {
+      "planner_starts": 1,
+      "worker_starts": 1,
+      "verifier_starts": 1,
+      "guardrail_starts": 0,
+      "script_launched": 0,
+      "script_starts": 1,
+      "script_finished": 0
+    },
+    "worker_counter_bytes": 351,
+    "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/worker-running/snap-worker-running-final"
+  }
+}

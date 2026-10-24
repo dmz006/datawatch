@@ -1,0 +1,31 @@
+{
+  "title": "matrix plan",
+  "stories": [
+    {
+      "title": "matrix story",
+      "description": "one story for the restart matrix",
+      "files": [
+        "worker-result.txt"
+      ],
+      "depends_on": [],
+      "files_generated": [
+        "worker-result.txt"
+      ],
+      "tasks": [
+        {
+          "title": "matrix task",
+          "spec": "Write worker-result.txt in the project directory.",
+          "files": [
+            "worker-result.txt"
+          ],
+          "depends_on": [],
+          "files_generated": [
+            "worker-result.txt"
+          ],
+          "verification_script_reason": "judged by a verifier session; the restart matrix has no script for this state"
+        }
+      ],
+      "verification_script_reason": "judged by a verifier session; the restart matrix has no script for this state"
+    }
+  ]
+}

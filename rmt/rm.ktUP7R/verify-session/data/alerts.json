@@ -1,0 +1,56 @@
+[
+  {
+    "id": "2a93d46b",
+    "level": "info",
+    "title": "restart-matrix: autonomous:decompose [fb05]: started (shell)",
+    "body": "You are decomposing a feature request into a structured Product Requirements Document.\n\nSCOPE (hard ...",
+    "session_id": "restart-matrix-fb05",
+    "read": false,
+    "created_at": "2026-10-23T23:02:48.18462727-04:00"
+  },
+  {
+    "id": "e1957ed1",
+    "level": "info",
+    "title": "restart-matrix: autonomous:decompose [fb05]: running → complete",
+    "body": "You are decomposing a feature request into a structured Product Requirements Document.\n\nSCOPE (hard ...",
+    "session_id": "restart-matrix-fb05",
+    "read": false,
+    "created_at": "2026-10-23T23:02:49.298160514-04:00"
+  },
+  {
+    "id": "7550be4c",
+    "level": "warn",
+    "title": "restart-matrix: autonomous:decompose [fb05]: complete → killed",
+    "body": "You are decomposing a feature request into a structured Product Requirements Document.\n\nSCOPE (hard ...",
+    "session_id": "restart-matrix-fb05",
+    "read": false,
+    "created_at": "2026-10-23T23:02:51.210279948-04:00"
+  },
+  {
+    "id": "ce10644d",
+    "level": "info",
+    "title": "restart-matrix: autonomous:decompose [2533]: started (shell)",
+    "body": "You are decomposing a feature request into a structured Product Requirements Document.\n\nSCOPE (hard ...",
+    "session_id": "restart-matrix-2533",
+    "read": false,
+    "created_at": "2026-10-23T23:02:51.390706461-04:00"
+  },
+  {
+    "id": "42d2f5f2",
+    "level": "info",
+    "title": "restart-matrix: autonomous:decompose [2533]: running → complete",
+    "body": "You are decomposing a feature request into a structured Product Requirements Document.\n\nSCOPE (hard ...",
+    "session_id": "restart-matrix-2533",
+    "read": false,
+    "created_at": "2026-10-23T23:02:52.516172201-04:00"
+  },
+  {
+    "id": "586b0e14",
+    "level": "warn",
+    "title": "restart-matrix: autonomous:decompose [2533]: complete → killed",
+    "body": "You are decomposing a feature request into a structured Product Requirements Document.\n\nSCOPE (hard ...",
+    "session_id": "restart-matrix-2533",
+    "read": false,
+    "created_at": "2026-10-23T23:02:54.415801303-04:00"
+  }
+]

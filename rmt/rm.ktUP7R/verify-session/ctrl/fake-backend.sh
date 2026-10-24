@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 task="${1:-}"
 dir="${2:-.}"
-ctrl="/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/planning/ctrl"
+ctrl="/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/verify-session/ctrl"
 num() { local v; v="$(cat "$ctrl/$1" 2>/dev/null)"; printf '%s' "${v:-$2}"; }
 out="$(printf '%s' "$task" | grep -oE '[^[:space:]]*\.(decompose|verify|guardrail)-output-[0-9a-f]+\.json' | tail -1)"
 case "$task" in
