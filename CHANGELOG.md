@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## next patch above main — Automata tab loads small and stays small after a reconnect
+
+The Automata and Sessions tabs no longer ask the daemon for every record in full, so they open quickly over a phone or Tailscale link and a dropped connection no longer triggers a large reload.
+
+- The tabs request a paged summary of 50 rows. **Load more** fetches the next 50. Opening a row fetches the full record for that one Automaton, and its children.
+- When the connection drops and comes back, the web app sends one small request for the first page of sessions. Other lists refresh only if their tab is on screen and overdue, and then only their first page. Repeated drops stay inside the same budget.
+- The remaining list requests in the web app were audited; the ones that loaded whole records on a tab open, a reconnect or a timer now ask for the summary form. The audit is recorded in `docs/plans/web-list-fetch-audit.md`.
+- A node test fails if a list request in full form returns, and two new slow-network scenarios check the first-load and reconnect byte budgets.
+- New how-to `automata-tab-loading` explains the loading, cached, stale and failed states, **Load more**, children and reconnect behavior, with troubleshooting for a slow link.
+
 ## v9.5.125 — Restart keeps a finished worker and re-verifies only
 
 A daemon restart no longer redoes a worker that had already finished.
