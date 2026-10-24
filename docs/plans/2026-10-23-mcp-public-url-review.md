@@ -144,3 +144,19 @@ Nothing was filed. For the operator to decide:
   Mobile-Parity Rule).
 - File the datawatch-app issue for the new locale key `settings_mcp_public_url` (Section B, B4).
 - Decide whether the setup wizard should ask for the public URL.
+
+## Test and lint results
+
+Candidate commit: c3f1150a7e1f10c55bac9241ab758494b4bf450c
+
+- `make build`: passed; the docs sync left the tree clean, so no regenerated files were committed.
+- `go test -timeout 30m -count=1 ./...`: passed, every package ok (run on the original candidate head; after the one-line test fix below, `internal/mcp` was rerun and passed).
+- `make lint`: first run failed with one finding, `errcheck` on the unchecked `resp.Body.Close` in `internal/mcp/sse_base_url_test.go`. That file does not exist on the merge base, so the finding was introduced by the candidate. Fixed with a follow-up commit that discards the close error as the neighbouring tests do; rerun reports 0 issues.
+- `node --check internal/server/web/app.js`: passed.
+- `bash scripts/check-no-internal-refs.sh`: reports 1 leak (README release line); the merge base reports the same 1 leak, so it is pre-existing and not fixed here.
+- `bash scripts/check-docs-sync.sh`: passed, docs and embedded docs in sync.
+- Locale files (de, en, es, fr, ja): all five parse as JSON.
+
+Pre-existing failures found on the merge base: the internal-refs leak in README.md (script check, no Go package or test). No failing Go package or test.
+
+New failures: the lint finding in `internal/mcp/sse_base_url_test.go`, fixed in the candidate with a follow-up commit; no unresolved new failures.
