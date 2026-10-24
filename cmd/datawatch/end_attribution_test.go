@@ -92,9 +92,26 @@ func TestEndAttributionDetectorReasonsCarryTheirNumbers(t *testing.T) {
 			parts:  []string{"waiting_input stall detector", "3 consecutive ticks", "threshold 3"},
 		},
 		{
-			name:   "sse watchdog",
-			reason: sseWatchdogEndReason("rate limit", session.StateRunning, 6*time.Minute),
-			parts:  []string{"SSE stall watchdog", `"rate limit"`, "running for 360s"},
+			name: "sse detector",
+			reason: sseStallEndReason(sseStallMatch{
+				Pattern: "SSE read timed out",
+				Line:    "SSE read timed out",
+				Backend: "opencode",
+				Source:  sseStallSourceWaitLoop,
+			}),
+			parts: []string{"SSE stall detector", "backend opencode", "source verifier wait loop",
+				`matched line "SSE read timed out"`, `pattern "SSE read timed out"`},
+		},
+		{
+			name: "sse watchdog",
+			reason: sseWatchdogEndReason(sseStallMatch{
+				Pattern: "SSE read timed out",
+				Line:    "SSE read timed out",
+				Backend: "opencode-acp",
+				Source:  sseStallSourceWatchdog,
+			}, session.StateRunning, 6*time.Minute),
+			parts: []string{"SSE stall watchdog", "backend opencode-acp", "source automata watchdog",
+				`matched line "SSE read timed out"`, `pattern "SSE read timed out"`, "running for 360s"},
 		},
 		{
 			name:   "shutdown",
@@ -171,6 +188,42 @@ func TestEndAttributionStalledWorkerKillRecordsReason(t *testing.T) {
 	}
 	if sessions.whys[0] != why {
 		t.Errorf("recorded end = %+v, want %+v", sessions.whys[0], why)
+	}
+}
+
+func TestEndAttributionSSEStallKillRecordsMatchDetails(t *testing.T) {
+	// Call-site-level test of the wait loop's end path: it builds the caller
+	// and reason from a scan match and hands them to killStalledWorker, which
+	// records the end on the session. The two scan call sites themselves (wait
+	// loop and watchdog) only run inside a live daemon behind tmux panes, so
+	// they cannot be driven here — see the comment on
+	// TestSSEStallScan_SourceParity in sse_stall_test.go.
+	var events []string
+	rec := &recordingEnder{}
+	store := &fakeStallStore{events: &events}
+	task := &autonomouspkg.Task{ID: "task-1", PRDID: "prd-1"}
+	m := sseStallMatch{
+		Pattern: "SSE read timed out",
+		Line:    "SSE read timed out",
+		Backend: "opencode",
+		Source:  sseStallSourceWaitLoop,
+	}
+	why := session.EndReason{Caller: endCallerSSEStall, Reason: sseStallEndReason(m)}
+
+	killStalledWorker(context.Background(), rec, store, false, "", task, "sess-sse", why)
+
+	if len(rec.ids) != 1 || rec.ids[0] != "sess-sse" {
+		t.Fatalf("ended ids = %v, want [sess-sse]", rec.ids)
+	}
+	got := rec.whys[0]
+	if got.Caller != endCallerSSEStall {
+		t.Errorf("caller = %q, want %q", got.Caller, endCallerSSEStall)
+	}
+	for _, part := range []string{"SSE stall detector", "backend opencode", "source verifier wait loop",
+		`matched line "SSE read timed out"`, `pattern "SSE read timed out"`} {
+		if !strings.Contains(got.Reason, part) {
+			t.Errorf("recorded reason %q missing %q", got.Reason, part)
+		}
 	}
 }
 
