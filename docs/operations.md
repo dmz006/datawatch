@@ -436,6 +436,11 @@ mcp:
   # Default: 8081
   sse_port: 8081
 
+  # Public base URL advertised to SSE clients (the "endpoint" event).
+  # Set when sse_host is localhost behind a TLS-terminating reverse proxy.
+  # Default: "" (advertise <scheme>://<sse_host>:<sse_port>)
+  public_url: ""
+
   # Bearer token for SSE connections. Empty = no auth.
   # Default: ""
   token: ""
@@ -1105,7 +1110,30 @@ mcp:
   sse_host: "127.0.0.1"  # AI agents on same machine
   sse_port: 8081
   token: "mcp-auth-token"
+  # Required when remote MCP clients reach SSE through the proxy:
+  public_url: "https://host.example.ts.net:8081"
 ```
+
+The MCP SSE transport tells each client where to POST messages (the
+`endpoint` event). By default that URL is built from the bind address, so
+a server bound to `127.0.0.1` behind a proxy would point remote clients at
+their own localhost. Set `mcp.public_url` to the URL clients actually use
+to reach the proxy (for example the `tailscale serve --https=8081` URL) and
+the server advertises that instead. Changing it requires a daemon restart.
+
+The value is empty, or an absolute `http` or `https` URL with a host and no
+user-info, query or fragment; surrounding whitespace and trailing slashes are
+ignored. An invalid value is rejected with a 400 by the REST API (and so by the
+CLI, MCP `config_set` and chat), and an invalid value in a hand-edited YAML
+file is ignored with a warning at SSE start, so the bind address is advertised.
+
+| Access method | How to set `mcp.public_url` |
+|---|---|
+| YAML | `mcp.public_url: "https://host.example.ts.net:8081"` in `~/.datawatch/config.yaml` |
+| CLI | `datawatch config set mcp.public_url https://host.example.ts.net:8081` |
+| Web UI | Settings → Comms → MCP Server → "SSE public URL (reverse proxy)" |
+| REST API | `PUT /api/config` with `{"mcp.public_url": "https://host.example.ts.net:8081"}`; read it from `GET /api/config` (`mcp.public_url`). MCP `config_set` uses the same path. |
+| Comm channel | `configure mcp.public_url=https://host.example.ts.net:8081` |
 
 ### DNS Channel (Public-Facing)
 
@@ -1468,6 +1496,7 @@ Every listener's bind address is fully configurable:
 | `server.port` | HTTP/PWA port | Any port number |
 | `mcp.sse_host` | MCP SSE bind interface | `0.0.0.0` / `127.0.0.1` / specific IP |
 | `mcp.sse_port` | MCP SSE port | Any port number |
+| `mcp.public_url` | URL advertised to MCP SSE clients | Reverse-proxy URL, or empty for the bind address |
 | `dns_channel.listen` | DNS bind address | `host:port` format |
 | `github_webhook.addr` | GitHub webhook bind | `host:port` format |
 | `webhook.addr` | Generic webhook bind | `host:port` format |

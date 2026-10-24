@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- The MCP SSE server can now advertise a public base URL. New setting `mcp.public_url`: when set, it replaces `<scheme>://<first sse_host>:<sse_port>` in the SSE `endpoint` event, so clients behind a TLS-terminating reverse proxy (Tailscale serve, Caddy, nginx) are no longer told to POST to the bind address (GH#207). Empty keeps the old behaviour.
+- `mcp.public_url` is validated: empty, or an absolute `http` or `https` URL with a host and no user-info, query or fragment. An invalid value is rejected with a 400 on `PUT /api/config`, and an invalid value in a hand-edited YAML file is ignored with a warning at SSE start.
+- `mcp.public_url` is reachable from YAML, the REST API, MCP `config_set`, the CLI, chat `configure`, and the Settings MCP Server card, and needs a restart to take effect.
+
 ## v9.5.125 — Restart keeps a finished worker and re-verifies only
 
 A daemon restart no longer redoes a worker that had already finished.
