@@ -330,6 +330,11 @@ type Server struct {
 	// v7.0.0 S1 — ComputeNode registry (nil when disabled).
 	computeReg *compute.Registry
 
+	// Per-node usage cache for the node:<name> capacity pools. Lazily
+	// created by (s *Server) nodeUsageCache(); see node_usage.go.
+	nodeUsageCacheOnce sync.Once
+	nodeUsageCacheVal  *nodeUsageCache
+
 	// v7.0.0 S2 — LLM-inference registry + dispatcher (nil when disabled).
 	inferenceReg   *inference.Registry
 	roleMonitor    inference.RoleContentionMonitor
