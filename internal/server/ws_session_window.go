@@ -96,10 +96,9 @@ type sessionsRowsData struct {
 // setSessionWindowConfig wires the live readers the window frames need.
 // Must be called before Run starts; nil hooks fall back to built-in
 // defaults (bare-hub tests).
-func (h *Hub) setSessionWindowConfig(window func() time.Duration, row func(*session.Session, int) sessionSummaryRow, list func() []*session.Session) {
+func (h *Hub) setSessionWindowConfig(window func() time.Duration, row func(*session.Session, int) sessionSummaryRow) {
 	h.recentWindowFn = window
 	h.sessionRowFn = row
-	h.listSessionsFn = list
 }
 
 func (h *Hub) recentWindow() time.Duration {
@@ -116,19 +115,14 @@ func (h *Hub) summaryRow(sess *session.Session, textChars int) sessionSummaryRow
 	return (&Server{}).sessionSummaryRow(sess, textChars)
 }
 
-func (h *Hub) heldSessions() []*session.Session {
-	if h.listSessionsFn != nil {
-		return h.listSessionsFn()
-	}
-	return nil
-}
-
 // boundedSessionsFrame is the connect-time `sessions` frame for a client
 // that has not announced the window form: default-view sessions only, text
-// cut at server.session_summary_text_chars.
+// cut at server.session_summary_text_chars. The view is the locked copy from
+// defaultViewSnapshot, never the live sessions, which the monitors write.
 func (h *Hub) boundedSessionsFrame() []byte {
 	window := h.recentWindow()
-	view, total := splitDefaultView(h.heldSessions(), time.Now(), window)
+	view, held := h.defaultViewSnapshot()
+	total := len(held)
 	textChars := h.summaryTextChars()
 	recs := make([]sessionListRecord, 0, len(view))
 	for _, sess := range view {
@@ -147,7 +141,8 @@ func (h *Hub) boundedSessionsFrame() []byte {
 // first.
 func (h *Hub) windowSessionsFrame() []byte {
 	window := h.recentWindow()
-	view, total := splitDefaultView(h.heldSessions(), time.Now(), window)
+	view, held := h.defaultViewSnapshot()
+	total := len(held)
 	sort.SliceStable(view, func(i, j int) bool { return sessionLess(view[i], view[j]) })
 	textChars := h.summaryTextChars()
 	rows := make([]sessionSummaryRow, 0, len(view))

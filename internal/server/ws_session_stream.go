@@ -1,4 +1,4 @@
-// WebSocket session-list negotiation and delta stream (BL432 / GH#242).
+// WebSocket session-list negotiation and delta stream.
 //
 // Every session-list change used to go out to every WebSocket client as a
 // full "sessions" frame — the whole list, multiple megabytes on a busy
@@ -78,11 +78,14 @@
 // fingerprint is an FNV-64a hash of the session's JSON encoding. Any
 // change to a serialized field — rename, state, needs-input prompt,
 // updated_at, last response — therefore produces a session_state. The
-// snapshot is maintained on every BroadcastSessions call even while no
-// delta client is connected, so a client that joins later is diffed
-// against the true previous state. BroadcastSessionState (the per-change
-// call in NotifyStateChange) goes through the same snapshot, so a delta
-// client never receives the same unchanged session twice.
+// snapshot is kept only while a window or delta client is connected; with
+// none connected nothing is fingerprinted and the snapshot is dropped. A
+// window or delta client that joins seeds it from the current default view
+// (at connect for a delta default, otherwise at its hello), so its first
+// change is diffed against the list it was given. BroadcastSessionState
+// (the per-change call in NotifyStateChange) goes through the same
+// snapshot, so a delta client never receives the same unchanged session
+// twice.
 
 package server
 
@@ -243,13 +246,13 @@ func (h *Hub) BroadcastSessions(sessions []*session.Session) {
 	h.broadcastSessionList(sessions, held)
 }
 
-// BroadcastSessionState (v8.37.0, GH#162) sends a single updated session.
-// Legacy clients always get it, alongside the bounded list (see
-// HTTPServer.NotifyStateChange), exactly as before. Window and delta
-// clients get it only when it differs from the snapshot, so the
-// session_state that BroadcastSessions already streamed for the same change
-// is not repeated. The caller passes a snapshot copy that is in the
-// default view; finished sessions older than the window are never sent.
+// BroadcastSessionState sends a single updated session. Legacy clients
+// always get it, alongside the bounded list (see HTTPServer.NotifyStateChange),
+// exactly as before. Window and delta clients get it only when it differs
+// from the snapshot, so the session_state that BroadcastSessions already
+// streamed for the same change is not repeated. The caller passes a
+// snapshot copy that is in the default view; finished sessions older than
+// the window are never sent.
 func (h *Hub) BroadcastSessionState(sess *session.Session) {
 	if sess == nil {
 		return
@@ -257,14 +260,16 @@ func (h *Hub) BroadcastSessionState(sess *session.Session) {
 	h.snapMu.Lock()
 	defer h.snapMu.Unlock()
 	changed := true
-	if fp, ok := sessionFingerprint(sess); ok {
-		if old, seen := h.snapshot[sess.FullID]; seen && old == fp {
-			changed = false
-		} else {
-			if h.snapshot == nil {
-				h.snapshot = make(map[string]uint64)
+	if h.hasClient(h.isStreamClient) {
+		if fp, ok := sessionFingerprint(sess); ok {
+			if old, seen := h.snapshot[sess.FullID]; seen && old == fp {
+				changed = false
+			} else {
+				if h.snapshot == nil {
+					h.snapshot = make(map[string]uint64)
+				}
+				h.snapshot[sess.FullID] = fp
 			}
-			h.snapshot[sess.FullID] = fp
 		}
 	}
 	h.sendSessionState(sess, func(c *client) bool { return changed || h.isLegacyClient(c) })
@@ -341,12 +346,7 @@ func (s *Server) wsSummaryTextChars() int {
 func (s *Server) wireHubSessionStream() {
 	if s.hub != nil {
 		s.hub.setSessionStreamConfig(s.wsSessionListDefault, s.wsSummaryTextChars)
-		s.hub.setSessionWindowConfig(s.recentSessionWindow, s.sessionSummaryRow, func() []*session.Session {
-			if s.manager == nil {
-				return nil
-			}
-			return s.manager.ListSessions()
-		})
+		s.hub.setSessionWindowConfig(s.recentSessionWindow, s.sessionSummaryRow)
 		if s.manager != nil {
 			s.hub.setSessionViewSource(s.manager.SnapshotFiltered)
 		}

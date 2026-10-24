@@ -352,3 +352,33 @@ func TestWSBroadcastDelta_FrameSizeBoundedWith4000Sessions(t *testing.T) {
 		}
 	}
 }
+
+func TestWSBroadcastDelta_JoinAfterLegacyOnlyStreamsOnlyTheNextChange(t *testing.T) {
+	s, srv := newSessionStreamServer(t, "")
+	now := time.Now()
+	seedDeltaSessions(t, s, now)
+	legacyConn := dialSessionStream(t, srv)
+	readWSFrame(t, legacyConn)
+
+	// With only a legacy client connected nothing is diffed, so no snapshot
+	// is kept.
+	changeSession(t, s, "d004", session.StateRunning, now)
+	broadcastAndWait(s)
+	drainUntilSentinel(t, s.hub, legacyConn)
+	s.hub.snapMu.Lock()
+	kept := s.hub.snapshot != nil || s.hub.heldPrev != nil
+	s.hub.snapMu.Unlock()
+	if kept {
+		t.Fatal("snapshot kept with only a legacy client connected")
+	}
+
+	// A window client that joins now is seeded from the current view, so the
+	// next change is the only session_state it receives.
+	windowConn := dialWindowClient(t, srv)
+	changeSession(t, s, "d008", session.StateRunning, now)
+	broadcastAndWait(s)
+	frames := drainUntilSentinel(t, s.hub, windowConn, legacyConn)
+	if w := frames[0]; len(w) != 1 || w[0].Type != MsgSessionState || rowFullID(t, w[0]) != "testhost-d008" {
+		t.Fatalf("window client frames = %v, want one session_state for testhost-d008", frameTypes(w))
+	}
+}

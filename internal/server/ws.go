@@ -199,7 +199,6 @@ type Hub struct {
 	// built-in-defaults rule.
 	recentWindowFn func() time.Duration
 	sessionRowFn   func(*session.Session, int) sessionSummaryRow
-	listSessionsFn func() []*session.Session
 	// viewSourceFn snapshots the default-view sessions and the set of every
 	// held session ID in one store pass (ws_session_broadcast.go).
 	viewSourceFn func(keep func(session.State, time.Time) bool) ([]*session.Session, map[string]struct{})

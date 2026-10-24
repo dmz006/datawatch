@@ -71,17 +71,19 @@ func (h *Hub) broadcastLazy(build func() []byte, want func(*client) bool) {
 }
 
 // setSessionViewSource wires the one-pass default-view snapshot. Must be
-// called before Run starts; nil leaves the hub without a list source (the
-// bare-hub tests that call BroadcastSessions directly).
+// called before Run starts; nil leaves the hub without a list source, which
+// holds no sessions (see defaultViewSnapshot).
 func (h *Hub) setSessionViewSource(fn func(keep func(session.State, time.Time) bool) ([]*session.Session, map[string]struct{})) {
 	h.viewSourceFn = fn
 }
 
 // defaultViewSnapshot copies the default-view sessions now and returns them
-// with the set of held session IDs.
+// with the set of held session IDs. Without a list source (a bare hub) it
+// holds nothing, so legacy clients still get their bounded frame, with zero
+// sessions.
 func (h *Hub) defaultViewSnapshot() ([]*session.Session, map[string]struct{}) {
 	if h.viewSourceFn == nil {
-		return nil, nil
+		return nil, map[string]struct{}{}
 	}
 	now, window := time.Now(), h.recentWindow()
 	return h.viewSourceFn(func(st session.State, updated time.Time) bool {
@@ -169,7 +171,10 @@ func (h *Hub) broadcastSessionList(view []*session.Session, held map[string]stru
 	// order as snapshot updates.
 	h.snapMu.Lock()
 	defer h.snapMu.Unlock()
-	if h.ClientCount() == 0 {
+	if !h.hasClient(h.isStreamClient) {
+		// Only legacy clients (or none) need this change, and they need no
+		// diff. Keep no snapshot: a window or delta client that joins later
+		// is seeded from the default view (seedSnapshotIfIdle).
 		h.snapshot, h.heldPrev = nil, nil
 		return
 	}
@@ -207,9 +212,6 @@ func (h *Hub) broadcastSessionList(view []*session.Session, held map[string]stru
 	sort.Strings(removed)
 	h.snapshot, h.heldPrev = next, held
 
-	if !h.hasClient(h.isStreamClient) {
-		return
-	}
 	for _, sess := range changed {
 		h.sendSessionState(sess, h.isStreamClient)
 	}
