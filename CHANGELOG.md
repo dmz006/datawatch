@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.8.2 — Internal-ID check in the development lint
+
+Adds the internal-tracker-ID check to the datawatch development lint, so a change that puts a tracker id in user-facing text fails before it ships. This is development tooling for the datawatch repository only; it does not change how any user project is linted or gated.
+
+- New `make check-internal-refs` target, run by `make lint` and by the release workflow.
+- The branch merge helper runs the check on the main tree before merging, when the repository defines the target.
+- A regression test proves the check fails when a tracker id appears in user-facing text and passes when it does not.
+- Development documentation updated.
+
 ## v9.8.1 — Every session end records who ended it and why
 
 Every session end now records who ended it and why, so a worker that is ended early can be traced instead of vanishing without a reason.
