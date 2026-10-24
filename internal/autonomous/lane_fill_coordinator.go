@@ -88,9 +88,11 @@ type LaneFillEvidence struct {
 
 // LaneFillAlert is an idle-lane alert raised by lane fill.
 type LaneFillAlert struct {
-	At      time.Time `json:"at"`
-	LaneID  string    `json:"lane_id"`
-	Message string    `json:"message"`
+	At     time.Time `json:"at"`
+	LaneID string    `json:"lane_id"`
+	// Work names the first eligible item the lane could have taken.
+	Work    string `json:"work"`
+	Message string `json:"message"`
 }
 
 // LaneFillStatus is the lane fill status: the mode, the lanes and evidence of
@@ -123,12 +125,18 @@ type laneFillState struct {
 	// pollMu serializes polls.
 	pollMu sync.Mutex
 
-	mu          sync.Mutex
-	records     *laneFillRecords
-	evidence    PoolEvidenceSource
-	probe       MergeProbe
-	status      LaneFillStatus
-	idleSince   map[string]time.Time
+	mu        sync.Mutex
+	records   *laneFillRecords
+	evidence  PoolEvidenceSource
+	probe     MergeProbe
+	status    LaneFillStatus
+	idleSince map[string]time.Time
+	// workSince, alerted and alerts are the idle alert state (see
+	// lane_fill_alert.go): when each lane was first seen idle with eligible
+	// work, which episodes already alerted, and the recent alerts newest first.
+	workSince   map[string]time.Time
+	alerted     map[string]bool
+	alerts      []LaneFillAlert
 	started     map[string]laneFillStart
 	decomposing map[string]LaneType
 	wg          sync.WaitGroup
@@ -137,6 +145,8 @@ type laneFillState struct {
 func newLaneFillState() laneFillState {
 	return laneFillState{
 		idleSince:   map[string]time.Time{},
+		workSince:   map[string]time.Time{},
+		alerted:     map[string]bool{},
 		started:     map[string]laneFillStart{},
 		decomposing: map[string]LaneType{},
 	}
@@ -192,6 +202,7 @@ func (c *Coordinator) laneFillStatus(cfg LaneFillConfig, limit int) LaneFillStat
 	c.lf.mu.Lock()
 	st := c.lf.status
 	rec := c.lf.records
+	st.Alerts = append([]LaneFillAlert{}, c.lf.alerts...)
 	c.lf.mu.Unlock()
 	st.Mode = cfg.EffectiveMode()
 	if st.Mode == string(LaneFillModeOff) {
@@ -258,7 +269,11 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 
 	cfg := c.m.Config().LaneFill
 	mode := cfg.EffectiveMode()
-	if mode == string(LaneFillModeOff) || !c.Ready() {
+	if mode == string(LaneFillModeOff) {
+		c.laneFillResetAlerts()
+		return
+	}
+	if !c.Ready() {
 		return
 	}
 	if mode != string(LaneFillModeOn) {
@@ -276,6 +291,7 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	now := c.now()
 	in, status := c.laneFillSnapshot(ctx, cfg, now)
 	decisions := PlanLaneFill(in)
+	c.laneFillCheckAlerts(cfg, in.Lanes, in.Candidates, now)
 
 	candidates := make(map[string]LaneFillCandidate, len(in.Candidates))
 	for _, cand := range in.Candidates {
@@ -295,7 +311,6 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	status.Mode = mode
 	status.LastPollAt = now
 	c.lf.mu.Lock()
-	status.Alerts = c.lf.status.Alerts
 	c.lf.status = status
 	c.lf.mu.Unlock()
 }

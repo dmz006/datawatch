@@ -888,6 +888,15 @@ func (s *HTTPServer) SetServerStore(st *multiserver.Store) {
 	}
 }
 
+// FederationSessions returns this host's sessions and each enabled peer's, with
+// a per-peer error for each peer that could not be read.
+func (s *HTTPServer) FederationSessions() FederationResponse {
+	if s.api == nil {
+		return FederationResponse{Proxied: map[string][]*session.Session{}, Errors: map[string]string{"local": "server not ready"}}
+	}
+	return s.api.FederationSessions()
+}
+
 // ServerStore returns the multi-server registry (BL317 — for MCP fed-auth wiring).
 func (s *HTTPServer) ServerStore() *multiserver.Store {
 	if s.api == nil {

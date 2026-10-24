@@ -59,27 +59,7 @@ func (s *Server) handleFederationSessions(w http.ResponseWriter, r *http.Request
 		Errors:  map[string]string{},
 	}
 
-	// Build combined list: YAML-seeded cfg.Servers + runtime-registered federated peers.
-	type remoteTarget struct {
-		name  string
-		url   string
-		token string
-	}
-	var targets []remoteTarget
-	if s.cfg != nil {
-		for _, srv := range s.cfg.Servers {
-			if srv.Enabled && srv.URL != "" {
-				targets = append(targets, remoteTarget{srv.Name, srv.URL, srv.Token})
-			}
-		}
-	}
-	if s.serverStore != nil {
-		for _, peer := range s.serverStore.ListFederated() {
-			if peer.Enabled && peer.URL != "" {
-				targets = append(targets, remoteTarget{peer.Name, peer.URL, peer.Token})
-			}
-		}
-	}
+	targets := s.federationTargets()
 
 	if !includeProxied || len(targets) == 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -109,6 +89,64 @@ func (s *Server) handleFederationSessions(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// federationTarget is one remote datawatch the aggregate views read.
+type federationTarget struct {
+	name  string
+	url   string
+	token string
+}
+
+// federationTargets is the combined list: YAML-seeded cfg.Servers plus
+// runtime-registered federated peers.
+func (s *Server) federationTargets() []federationTarget {
+	var targets []federationTarget
+	if s.cfg != nil {
+		for _, srv := range s.cfg.Servers {
+			if srv.Enabled && srv.URL != "" {
+				targets = append(targets, federationTarget{srv.Name, srv.URL, srv.Token})
+			}
+		}
+	}
+	if s.serverStore != nil {
+		for _, peer := range s.serverStore.ListFederated() {
+			if peer.Enabled && peer.URL != "" {
+				targets = append(targets, federationTarget{peer.Name, peer.URL, peer.Token})
+			}
+		}
+	}
+	return targets
+}
+
+// FederationSessions returns this host's sessions and, per enabled peer, the
+// sessions that peer reports, with a per-peer error for each one that could not
+// be read. It is the unfiltered view behind GET /api/federation/sessions.
+func (s *Server) FederationSessions() FederationResponse {
+	out := FederationResponse{
+		Primary: s.manager.ListSessions(),
+		Proxied: map[string][]*session.Session{},
+		Errors:  map[string]string{},
+	}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, t := range s.federationTargets() {
+		t := t
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sessions, err := fetchRemoteSessions(t.url, t.token)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				out.Errors[t.name] = err.Error()
+				return
+			}
+			out.Proxied[t.name] = sessions
+		}()
+	}
+	wg.Wait()
+	return out
 }
 
 func fetchRemoteSessions(baseURL, token string) ([]*session.Session, error) {
