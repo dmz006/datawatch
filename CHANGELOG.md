@@ -17,6 +17,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A task held for review is resolved with `POST /api/autonomous/prds/{id}/resolve_task_review` (retry with an optional spec, worker and narrowed file list, or cancel), MCP `autonomous_prd_resolve_task_review`, CLI `datawatch autonomous resolve-review`, and the comm verb `review-task`. A task that is not held answers 409.
 - The daemon-wide failure escalation default is in `GET /api/config` as `autonomous.failure_escalation` and is set with `PUT /api/config` keys `autonomous.failure_escalation.enabled`, `.max_failures` and `.steps` (a JSON array or the text `backend:model[@attempts],...`). A bad value refuses the whole write with a 400 that names the key, and an accepted value takes effect without a restart.
 - Held tasks are listed with their failure count, last worker and hold time in the Automaton summary, the task listing (with the attempt count and report text) and the Automation status (`review_needed_count` and `review_needed_task_ids` for the current member Automaton).
+- The web UI shows the escalation policy in Settings (enable, failures before review, and the steps as `backend:model@attempts`). A held task shows a review chip, its attempts and report, and the Retry, Edit spec and retry, Change worker, Narrow scope and Cancel actions. The Automaton and each task have an override editor, and held counts appear on Automaton headers, list rows and Automation strips.
 
 ## v9.5.125 — Restart keeps a finished worker and re-verifies only
 

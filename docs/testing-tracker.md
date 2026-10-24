@@ -27,6 +27,20 @@ Failure escalation has a REST, MCP, CLI and comm surface for the Automaton and t
 
 ---
 
+## Failure escalation — web UI (Unreleased)
+
+The web UI shows the escalation policy in Settings, the held tasks with their attempt reports on the Automaton detail and the Automation strip, the operator actions, and the override editors. The node tests load the real `app.js` into a sandbox and drive its functions with a recording fetch.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Settings → Automata: `autonomous.failure_escalation.enabled` (toggle), `.max_failures` (number, minimum 1), `.steps` (compact text with an example hint), in the General field list and the Automata settings block | **Yes** (`internal/server/web/app-failure-escalation.test.js`, node) | No | `node --test` (real field arrays, English bundle) | **LIVE pending:** change each field in a browser and read it back from `GET /api/config` |
+| Automaton detail: held-task chip and badge, attempt summary, review report, and the Retry, Edit spec and retry, Change worker, Narrow scope and Cancel actions | **Yes** (same file, node) | No | `node --test` (recording fetch, modal submit captured) | **LIVE pending:** hold a task on a real run and resolve it from the browser |
+| Override editors on the Automaton and on each task (`set_failure_escalation`; an all-inherit editor clears) | **Yes** (same file, node) | No | `node --test` (recording fetch) | **LIVE pending:** save and clear an override in the browser |
+| Held counts on the Automaton header, list rows and Automation member and strip (`review_needed`, `review_needed_count`) | **Yes** (same file, node) | No | `node --test` (loop status and PRD list fakes) | **LIVE pending:** read the counts on a running chain |
+| Locale keys for the escalation surfaces in en, de, es, fr and ja | **Yes** (same file, node; `internal/server/v5280_locales_test.go`, Go) | No | `go test` and `node --test` | The held status key is in the Go locale guard |
+
+---
+
 ## LLM workload roles and session priority
 
 Roles tag an LLM registry entry with the workloads it serves; priority orders a session in the capacity wait queue.
