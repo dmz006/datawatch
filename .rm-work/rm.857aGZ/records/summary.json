@@ -1,0 +1,40 @@
+{
+  "generated_at": "2026-10-24T08:31:17Z",
+  "mode": "measure",
+  "states": [
+    {
+      "state": "final-gate",
+      "description": "the final-gate task's verification script is running (start marker written, sleeping)",
+      "result": "FAIL",
+      "pass": 0,
+      "fail": 1,
+      "derived": {
+        "task_status_before": "completed",
+        "task_status_after": "completed",
+        "session_ids_before": [
+          "restart-matrix-c43c",
+          "restart-matrix-fcee"
+        ],
+        "session_ids_after": [
+          "restart-matrix-c43c",
+          "restart-matrix-fcee"
+        ],
+        "pane_pids_before": [],
+        "pane_pids_after": [],
+        "retry_count_before": 0,
+        "retry_count_after": 0,
+        "duplicate_sessions": 0,
+        "lost_output_bytes": 0,
+        "redone": false
+      },
+      "failed_criteria": [
+        {
+          "criterion": "state_reached",
+          "detail": "the final-gate script never started (task status: completed)"
+        }
+      ]
+    }
+  ],
+  "pass": 0,
+  "fail": 1
+}

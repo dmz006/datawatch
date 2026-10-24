@@ -1,0 +1,60 @@
+{
+  "label": "waiting-external-after-restart",
+  "at": "2026-10-24T08:27:41Z",
+  "daemon": {
+    "pid": "1747362",
+    "uptime_seconds": 6
+  },
+  "prd_status": "running",
+  "prd_info": {
+    "blocked_reason": null,
+    "failure_reason": null,
+    "rejection_reason": null
+  },
+  "task": {
+    "id": "ce1d0002",
+    "status": "in_progress",
+    "retry_count": 0,
+    "prior_attempt_count": 0,
+    "session_id": "da2f",
+    "adopted_session": false,
+    "error": "",
+    "wait_reason": ""
+  },
+  "sessions": [
+    {
+      "id": "071e",
+      "full_id": "restart-matrix-071e",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.jfbwdl/waiting-external/data/sessions/restart-matrix-071e/output.log",
+      "tmux_session": "cs-restart-matrix-071e"
+    },
+    {
+      "id": "da2f",
+      "full_id": "restart-matrix-da2f",
+      "name": "autonomous:matrix task",
+      "state": "running",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.jfbwdl/waiting-external/data/sessions/restart-matrix-da2f/output.log",
+      "tmux_session": "cs-restart-matrix-da2f"
+    }
+  ],
+  "session_ids": [
+    "restart-matrix-071e",
+    "restart-matrix-da2f"
+  ],
+  "pane_pids": [
+    "cs-restart-matrix-da2f:1746447"
+  ],
+  "counts": {
+    "planner_starts": 1,
+    "worker_starts": 1,
+    "verifier_starts": 0,
+    "guardrail_starts": 0,
+    "script_launched": 0,
+    "script_starts": 0,
+    "script_finished": 0
+  },
+  "worker_counter_bytes": 56,
+  "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.jfbwdl/waiting-external/snap-waiting-external-after-restart"
+}

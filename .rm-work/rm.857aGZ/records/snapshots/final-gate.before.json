@@ -1,0 +1,58 @@
+{
+  "label": "final-gate-before",
+  "at": "2026-10-24T08:31:17Z",
+  "daemon": {
+    "pid": "1751536",
+    "uptime_seconds": 186
+  },
+  "prd_status": "completed",
+  "prd_info": {
+    "blocked_reason": null,
+    "failure_reason": null,
+    "rejection_reason": null
+  },
+  "task": {
+    "id": "a2df0001",
+    "status": "completed",
+    "retry_count": 0,
+    "prior_attempt_count": 0,
+    "session_id": "2138",
+    "adopted_session": false,
+    "error": "",
+    "wait_reason": ""
+  },
+  "sessions": [
+    {
+      "id": "c43c",
+      "full_id": "restart-matrix-c43c",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.857aGZ/final-gate/data/sessions/restart-matrix-c43c/output.log",
+      "tmux_session": "cs-restart-matrix-c43c"
+    },
+    {
+      "id": "fcee",
+      "full_id": "restart-matrix-fcee",
+      "name": "autonomous:verify:a2df0001",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.857aGZ/final-gate/data/sessions/restart-matrix-fcee/output.log",
+      "tmux_session": "cs-restart-matrix-fcee"
+    }
+  ],
+  "session_ids": [
+    "restart-matrix-c43c",
+    "restart-matrix-fcee"
+  ],
+  "pane_pids": [],
+  "counts": {
+    "planner_starts": 1,
+    "worker_starts": 1,
+    "verifier_starts": 1,
+    "guardrail_starts": 0,
+    "script_launched": 0,
+    "script_starts": 0,
+    "script_finished": 0
+  },
+  "worker_counter_bytes": 14,
+  "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.857aGZ/final-gate/snap-final-gate-before"
+}

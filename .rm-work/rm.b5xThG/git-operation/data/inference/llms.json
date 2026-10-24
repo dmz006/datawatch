@@ -1,0 +1,21 @@
+[
+  {
+    "name": "claude-code",
+    "kind": "claude-code",
+    "created_at": "2026-10-24T08:31:20.632349967Z",
+    "updated_at": "2026-10-24T08:31:20.632349967Z",
+    "auto_created": true,
+    "binary": "claude",
+    "skip_permissions": true,
+    "channel_enabled": true,
+    "default_effort": "normal"
+  },
+  {
+    "name": "shell",
+    "kind": "shell",
+    "created_at": "2026-10-24T08:31:20.627569217Z",
+    "updated_at": "2026-10-24T08:31:20.627569217Z",
+    "auto_created": true,
+    "binary": "/home/dmz/.datawatch/prd-worktrees/d0210001/.rm-work/rm.b5xThG/git-operation/ctrl/fake-backend.sh"
+  }
+]
