@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The orphan sweep compared full and short session ids, so live Claude workers bound to a task were ended after the orphan grace period. The sweep now compares session ids by their short form on both sides, so a worker that a task is bound to is never ended. A once-per-process log line reports when the two id forms differ. This fix ships in the next patch above main.
+
 ## v9.8.1 — Every session end records who ended it and why
 
 Every session end now records who ended it and why, so a worker that is ended early can be traced instead of vanishing without a reason.
