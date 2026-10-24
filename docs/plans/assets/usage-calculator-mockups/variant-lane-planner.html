@@ -1,0 +1,1020 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lane planner mockup</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --bg2: #1a1d27;
+  --bg3: #22263a;
+  --accent: #7c3aed;
+  --accent2: #a855f7;
+  --text: #e2e8f0;
+  --text2: #94a3b8;
+  --border: #2d3148;
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --bad: #ef4444;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc;
+    --bg2: #ffffff;
+    --bg3: #e2e8f0;
+    --accent: #7c3aed;
+    --accent2: #6d28d9;
+    --text: #0f172a;
+    --text2: #475569;
+    --border: #cbd5e1;
+    --ok: #15803d;
+    --warn: #b45309;
+    --bad: #b91c1c;
+  }
+}
+
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding: 16px;
+}
+h1 { font-size: 1.6rem; line-height: 1.2; margin: 0 0 6px; }
+h2 { font-size: 1.05rem; margin: 0 0 10px; }
+h3 { font-size: 0.95rem; margin: 14px 0 6px; }
+p { margin: 0 0 8px; }
+.page { max-width: 1200px; margin: 0 auto; }
+.kicker { color: var(--text2); font-size: 0.85rem; margin: 0 0 4px; }
+.caption { color: var(--text2); font-size: 0.92rem; }
+.note { color: var(--text2); font-size: 0.88rem; }
+.intro { margin-bottom: 14px; }
+
+.frames { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 14px; }
+.frames span { color: var(--text2); font-size: 0.9rem; margin-right: 4px; }
+.btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn[aria-pressed="true"], .btn[aria-checked="true"] {
+  border: 2px solid var(--accent2);
+  font-weight: 700;
+}
+.btn:focus-visible, input:focus-visible { outline: 3px solid var(--accent2); outline-offset: 2px; }
+
+.device {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  container-type: inline-size;
+}
+.app {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "verdict"
+    "notes"
+    "policy"
+    "table"
+    "timeline"
+    "inputs"
+    "text";
+}
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  min-width: 0;
+}
+.z-verdict { grid-area: verdict; }
+.z-notes { grid-area: notes; }
+.z-policy { grid-area: policy; }
+.z-table { grid-area: table; }
+.z-timeline { grid-area: timeline; }
+.z-inputs { grid-area: inputs; }
+.z-text { grid-area: text; }
+
+.eyebrow { color: var(--text2); font-size: 0.9rem; margin-bottom: 8px; }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  background: var(--bg);
+  font-weight: 700;
+}
+.chip.over { color: var(--bad); }
+.chip.within { color: var(--ok); }
+.chip-small { min-height: 32px; font-size: 0.88rem; }
+.chip-note, .avg-line { color: var(--text2); font-size: 0.9rem; }
+.avg-line { margin: 0 0 10px; }
+.headline { font-size: 1.05rem; font-weight: 600; margin: 0 0 10px; }
+.notes { margin: 0; padding-left: 1.2rem; color: var(--text2); font-size: 0.92rem; }
+.notes li + li { margin-top: 4px; }
+
+.fields-wrap summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  color: var(--text2);
+}
+.fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px 12px; margin: 0; }
+.field dt { color: var(--text2); font-size: 0.82rem; }
+.field dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.field small { display: block; color: var(--text2); font-size: 0.8rem; font-weight: 400; }
+
+.radios { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); margin-bottom: 6px; }
+.radios .btn { text-align: left; width: 100%; }
+.stepper { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 6px 0; }
+.stepper output { min-width: 3ch; text-align: center; font-size: 1.4rem; font-weight: 700; }
+.advice { margin: 0; font-weight: 600; }
+.warn-note { color: var(--warn); font-weight: 600; font-size: 0.92rem; }
+.projection { font-size: 0.95rem; margin: 8px 0 0; }
+
+.whatif { margin-top: 10px; }
+.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.row.head { display: none; }
+.row.is-advice { outline: 3px solid var(--accent2); outline-offset: 2px; }
+.cell { min-width: 0; overflow-wrap: anywhere; }
+.cell::before { content: attr(data-label); display: block; color: var(--text2); font-size: 0.78rem; }
+.lanes { font-weight: 700; }
+.badge {
+  display: inline-block;
+  font-size: 0.76rem;
+  font-weight: 700;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0 8px;
+  margin: 2px 4px 0 0;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.badge.advice { color: var(--accent2); }
+.badge.choice { color: var(--text); }
+.fit-yes { color: var(--ok); font-weight: 600; }
+.fit-no { color: var(--bad); font-weight: 600; }
+
+.tl { width: 100%; height: auto; display: block; }
+.t-axis { stroke: var(--border); stroke-width: 1; }
+.t-budget { stroke: var(--warn); stroke-width: 1; }
+.t-pace { stroke: var(--text2); stroke-width: 1.5; stroke-dasharray: 4 4; fill: none; }
+.t-read { stroke: var(--accent2); stroke-width: 2; fill: none; }
+.t-dot { fill: var(--accent2); }
+.t-now { stroke: var(--text2); stroke-width: 1; stroke-dasharray: 2 2; }
+.t-now-dot { fill: var(--text); }
+.t-l0 { stroke: var(--text2); stroke-width: 2; stroke-dasharray: 1 3; fill: none; }
+.t-l1 { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 3; fill: none; }
+.t-l2 { stroke: var(--text); stroke-width: 2; stroke-dasharray: 3 2 1 2; fill: none; }
+.t-l3 { stroke: var(--bad); stroke-width: 2.5; fill: none; }
+.t-out { fill: var(--bad); }
+.t-txt { fill: var(--text2); font-size: 10px; }
+.legend { list-style: none; margin: 10px 0 0; padding: 0; font-size: 0.9rem; color: var(--text2); }
+.legend li { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.sw { display: inline-block; width: 26px; height: 0; flex: none; }
+.sw-read { border-top: 2px solid var(--accent2); }
+.sw-pace { border-top: 2px dashed var(--text2); }
+.sw-l0 { border-top: 2px dotted var(--text2); }
+.sw-l1 { border-top: 2px dashed var(--accent); }
+.sw-l2 { border-top: 2px dashed var(--text); }
+.sw-l3 { border-top: 3px solid var(--bad); }
+
+.form label { display: block; font-weight: 600; font-size: 0.9rem; margin: 12px 0 4px; }
+.form input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.form .note { margin: 4px 0 0; }
+.tag {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--text2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 8px;
+  margin-left: 6px;
+}
+.error { color: var(--bad); font-weight: 600; font-size: 0.9rem; margin: 10px 0 0; }
+
+.forms { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+pre {
+  margin: 0 0 8px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.label { color: var(--text2); font-size: 0.88rem; margin: 8px 0 4px; font-weight: 600; }
+
+@container (min-width: 600px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "verdict notes"
+      "policy timeline"
+      "table inputs"
+      "text text";
+  }
+  .fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .rows { gap: 6px; }
+  .row {
+    grid-template-columns: 1.2fr 0.8fr 0.9fr 1.1fr 0.7fr 1.2fr;
+    align-items: center;
+    padding: 8px 10px;
+  }
+  .row.head {
+    display: grid;
+    border: 0;
+    background: none;
+    padding: 0 10px;
+    color: var(--text2);
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .cell::before { display: none; }
+  .forms { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+
+@container (min-width: 1000px) {
+  .app {
+    grid-template-columns: minmax(230px, 0.8fr) minmax(0, 1.4fr) minmax(250px, 1fr);
+    grid-template-areas:
+      "inputs policy verdict"
+      "inputs table notes"
+      "inputs timeline notes"
+      "text text text";
+  }
+  .fields { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+</head>
+<body data-variant="lane-planner">
+<main class="page">
+  <header class="intro">
+    <p class="kicker">Usage calculator, variant two of three</p>
+    <h1>Lane planner</h1>
+    <p class="caption">The numbers come from the operator-reported readings. This page is a mockup: the controls change only this page, and nothing is saved or sent.</p>
+    <div class="frames" role="group" aria-label="Preview frame">
+      <span>Preview frame</span>
+      <button type="button" class="btn" data-frame="phone" aria-pressed="false">Phone</button>
+      <button type="button" class="btn" data-frame="tablet" aria-pressed="false">Tablet</button>
+      <button type="button" class="btn" data-frame="desktop" aria-pressed="false">Desktop</button>
+    </div>
+  </header>
+
+  <div class="device">
+    <div class="app">
+
+      <section class="card z-verdict" aria-labelledby="h-verdict">
+        <h2 id="h-verdict">Verdict</h2>
+        <p id="o-eyebrow" class="eyebrow">Weekly 72% at Fri 22:08</p>
+        <div class="chips">
+          <span id="o-verdict" class="chip over">&#x2716; Over budget</span>
+          <span class="chip-note">at the recent burn</span>
+        </div>
+        <p class="avg-line">Week average: <span id="o-verdictAvg" class="chip within chip-small">&#x2714; Within budget</span></p>
+        <p id="o-headline" class="headline" aria-live="polite">Over budget for the week at 3 lanes (106% at the reset). 1 lane ends at 86.1%.</p>
+        <details class="fields-wrap" open>
+          <summary>Reading fields</summary>
+          <dl class="fields">
+            <div class="field"><dt>Weekly percent</dt><dd id="o-percentOut">72%</dd></div>
+            <div class="field"><dt>Read</dt><dd>Fri 22:08</dd></div>
+            <div class="field"><dt>Last reset</dt><dd>Sun 08:00</dd></div>
+            <div class="field"><dt>Days since the reset</dt><dd id="o-days">5.59</dd></div>
+            <div class="field"><dt>Days left</dt><dd id="o-daysLeft">1.41</dd></div>
+            <div class="field"><dt>Pace line</dt><dd id="o-pace">79.8%</dd><small id="o-headroom">headroom 7.8 points</small></div>
+            <div class="field"><dt>Burn per 24 hours, recent</dt><dd id="o-burnRecent">24.1</dd><small id="o-burnNote">from Fri 17:09, 4.98 hours before</small></div>
+            <div class="field"><dt>Burn per 24 hours, week average</dt><dd id="o-burnAvg">12.9</dd></div>
+            <div class="field"><dt>Projected end at the reset, recent</dt><dd id="o-projRecent">106.0% (over)</dd></div>
+            <div class="field"><dt>Projected end at the reset, week average</dt><dd id="o-projAvg">90.2% (within)</dd></div>
+            <div class="field"><dt>Run out, recent burn</dt><dd id="o-runRecent">Sun 02:02, about 6 hours early</dd></div>
+            <div class="field"><dt>Run out, week average</dt><dd id="o-runAvg">None before the reset</dd></div>
+            <div class="field"><dt>Verdict, recent burn</dt><dd id="o-fVerdict">Over budget</dd></div>
+            <div class="field"><dt>Verdict, week average</dt><dd id="o-fVerdictAvg">Within budget</dd></div>
+            <div class="field"><dt>Ahead of pace</dt><dd id="o-ahead">No</dd></div>
+          </dl>
+        </details>
+      </section>
+
+      <section class="card z-notes" aria-labelledby="h-notes">
+        <h2 id="h-notes">Notes</h2>
+        <ul id="o-notes" class="notes">
+          <li>The operator chooses the number of lanes; this is advice only.</li>
+        </ul>
+      </section>
+
+      <section class="card z-policy" aria-labelledby="h-policy">
+        <h2 id="h-policy">Usage policy</h2>
+        <div class="radios" role="radiogroup" aria-labelledby="h-policy">
+          <button type="button" class="btn" role="radio" aria-checked="false" tabindex="-1" data-policy="use-all">Run until used up</button>
+          <button type="button" class="btn" role="radio" aria-checked="true" tabindex="0" data-policy="pace">Pace to the week</button>
+          <button type="button" class="btn" role="radio" aria-checked="false" tabindex="-1" data-policy="finish-early">Run flat out</button>
+        </div>
+        <h3 id="h-lanes">Claude lanes running (your choice)</h3>
+        <div class="stepper" role="group" aria-labelledby="h-lanes">
+          <button type="button" id="lanesMinus" class="btn" aria-label="Run one fewer lane">&minus;</button>
+          <output id="o-lanes" aria-live="polite">3</output>
+          <button type="button" id="lanesPlus" class="btn" aria-label="Run one more lane" disabled>+</button>
+        </div>
+        <p class="advice">Advice: <span id="o-advice">1 lane</span></p>
+        <p id="o-zeroNote" class="warn-note" hidden>Zero lanes is the operator's decision and is never advised.</p>
+        <p id="o-chosen" class="projection">3 lanes: 24.1 per 24 hours, ends at 106.0% (over), runs out Sun 02:02.</p>
+      </section>
+
+      <section class="card z-table" aria-labelledby="h-whatif">
+        <h2 id="h-whatif">What if: each lane count for the week</h2>
+        <p class="caption">Each row runs the same reading with that many lanes until the reset. The advice and your choice are marked on their own rows.</p>
+        <p id="o-target" class="note">Target for this policy: 95% at the reset (100 minus the 5 point safety margin).</p>
+        <p id="o-finishLine" class="projection" hidden></p>
+        <div class="whatif">
+          <div class="row head" aria-hidden="true">
+            <span class="cell">Lanes</span>
+            <span class="cell">Burn per 24 hours</span>
+            <span class="cell">Projected end at reset</span>
+            <span class="cell">Run out</span>
+            <span class="cell">Hours early</span>
+            <span class="cell">Fit</span>
+          </div>
+          <ul id="o-rows" class="rows">
+            <li class="row" data-lanes="0">
+              <span class="cell lanes" data-label="Lanes">0 lanes <span class="badge">never advised</span><span class="badge">operator's decision</span></span>
+              <span class="cell" data-label="Burn per 24 hours">3.0</span>
+              <span class="cell" data-label="Projected end at reset">76.2%</span>
+              <span class="cell" data-label="Run out">does not run out</span>
+              <span class="cell" data-label="Hours early">none</span>
+              <span class="cell fit-yes" data-label="Fit">&#x2714; fits</span>
+            </li>
+            <li class="row is-advice" data-lanes="1">
+              <span class="cell lanes" data-label="Lanes">1 lane <span class="badge advice">Advice</span></span>
+              <span class="cell" data-label="Burn per 24 hours">10.0</span>
+              <span class="cell" data-label="Projected end at reset">86.1%</span>
+              <span class="cell" data-label="Run out">does not run out</span>
+              <span class="cell" data-label="Hours early">none</span>
+              <span class="cell fit-yes" data-label="Fit">&#x2714; fits</span>
+            </li>
+            <li class="row" data-lanes="2">
+              <span class="cell lanes" data-label="Lanes">2 lanes</span>
+              <span class="cell" data-label="Burn per 24 hours">17.1</span>
+              <span class="cell" data-label="Projected end at reset">96.1%</span>
+              <span class="cell" data-label="Run out">does not run out</span>
+              <span class="cell" data-label="Hours early">none</span>
+              <span class="cell fit-no" data-label="Fit">&#x2716; does not fit</span>
+            </li>
+            <li class="row" data-lanes="3">
+              <span class="cell lanes" data-label="Lanes">3 lanes <span class="badge choice">Your choice</span></span>
+              <span class="cell" data-label="Burn per 24 hours">24.1</span>
+              <span class="cell" data-label="Projected end at reset">106.0%</span>
+              <span class="cell" data-label="Run out">Sun 02:02</span>
+              <span class="cell" data-label="Hours early">6.0 hours</span>
+              <span class="cell fit-no" data-label="Fit">&#x2716; does not fit</span>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="card z-timeline" aria-labelledby="h-timeline">
+        <h2 id="h-timeline">Week timeline: what if from now to the reset</h2>
+        <div id="o-timeline"><svg class="tl" viewBox="0 0 320 196" role="img" aria-label="Week timeline from the Sunday reset to the next reset, with the readings, the pace line and one projection per lane count"><line class="t-axis" x1="36" y1="168" x2="308" y2="168"/><line class="t-axis" x1="36" y1="18" x2="36" y2="168"/><line class="t-budget" x1="36" y1="43.0" x2="308" y2="43.0"/><path class="t-pace" d="M36 168 L308 43.0"/><path class="t-read" d="M39.8 165.5 L46.5 163.0 L50.6 161.8 L57.2 159.3 L78.0 156.8 L90.8 151.8 L94.7 150.5 L108.1 148.0 L127.7 144.3 L163.4 130.5 L169.6 126.8 L171.5 125.5 L198.9 111.8 L212.0 99.3 L221.7 95.5 L245.1 84.3 L253.2 78.0"/><circle class="t-dot" cx="39.8" cy="165.5" r="2"/><circle class="t-dot" cx="46.5" cy="163.0" r="2"/><circle class="t-dot" cx="50.6" cy="161.8" r="2"/><circle class="t-dot" cx="57.2" cy="159.3" r="2"/><circle class="t-dot" cx="78.0" cy="156.8" r="2"/><circle class="t-dot" cx="90.8" cy="151.8" r="2"/><circle class="t-dot" cx="94.7" cy="150.5" r="2"/><circle class="t-dot" cx="108.1" cy="148.0" r="2"/><circle class="t-dot" cx="127.7" cy="144.3" r="2"/><circle class="t-dot" cx="163.4" cy="130.5" r="2"/><circle class="t-dot" cx="169.6" cy="126.8" r="2"/><circle class="t-dot" cx="171.5" cy="125.5" r="2"/><circle class="t-dot" cx="198.9" cy="111.8" r="2"/><circle class="t-dot" cx="212.0" cy="99.3" r="2"/><circle class="t-dot" cx="221.7" cy="95.5" r="2"/><circle class="t-dot" cx="245.1" cy="84.3" r="2"/><circle class="t-dot" cx="253.2" cy="78.0" r="2"/><path class="t-l0" d="M253.2 78.0 L308.0 72.7"/><text class="t-txt" x="306.0" y="68.7" text-anchor="end">0</text><path class="t-l1" d="M253.2 78.0 L308.0 60.3"/><text class="t-txt" x="306.0" y="56.3" text-anchor="end">1</text><path class="t-l2" d="M253.2 78.0 L308.0 47.9"/><text class="t-txt" x="306.0" y="43.9" text-anchor="end">2</text><path class="t-l3" d="M253.2 78.0 L298.4 43.0"/><circle class="t-out" cx="298.4" cy="43.0" r="4"/><text class="t-txt" x="292.4" y="36.0" text-anchor="end">3 lanes run out Sun 02:02</text><line class="t-now" x1="253.2" y1="18" x2="253.2" y2="168"/><text class="t-txt" x="250.2" y="12" text-anchor="end">now Fri 22:08</text><circle class="t-now-dot" cx="253.2" cy="78.0" r="4"/><text class="t-txt" x="32" y="171.0" text-anchor="end">0</text><text class="t-txt" x="32" y="108.5" text-anchor="end">50</text><text class="t-txt" x="32" y="46.0" text-anchor="end">100</text><line class="t-axis" x1="36.0" y1="168" x2="36.0" y2="172"/><text class="t-txt" x="36.0" y="186" text-anchor="start">Sun</text><line class="t-axis" x1="74.9" y1="168" x2="74.9" y2="172"/><text class="t-txt" x="74.9" y="186" text-anchor="middle">Mon</text><line class="t-axis" x1="113.7" y1="168" x2="113.7" y2="172"/><text class="t-txt" x="113.7" y="186" text-anchor="middle">Tue</text><line class="t-axis" x1="152.6" y1="168" x2="152.6" y2="172"/><text class="t-txt" x="152.6" y="186" text-anchor="middle">Wed</text><line class="t-axis" x1="191.4" y1="168" x2="191.4" y2="172"/><text class="t-txt" x="191.4" y="186" text-anchor="middle">Thu</text><line class="t-axis" x1="230.3" y1="168" x2="230.3" y2="172"/><text class="t-txt" x="230.3" y="186" text-anchor="middle">Fri</text><line class="t-axis" x1="269.1" y1="168" x2="269.1" y2="172"/><text class="t-txt" x="269.1" y="186" text-anchor="middle">Sat</text><line class="t-axis" x1="308.0" y1="168" x2="308.0" y2="172"/><text class="t-txt" x="308.0" y="186" text-anchor="end">Sun</text></svg></div>
+        <ul class="legend">
+          <li><span class="sw sw-read"></span><span>Solid line: readings since the reset</span></li>
+          <li><span class="sw sw-pace"></span><span>Grey dashed: pace line, 100 at the reset</span></li>
+          <li><span class="sw sw-l0"></span><span>Dotted: 0 lanes, to the reset</span></li>
+          <li><span class="sw sw-l1"></span><span>Long dashes: 1 lane, to the reset</span></li>
+          <li><span class="sw sw-l2"></span><span>Dash and dot: 2 lanes, to the reset</span></li>
+          <li><span class="sw sw-l3"></span><span>Red: 3 lanes, stops at its run out point</span></li>
+        </ul>
+        <p class="note">Ticks mark every 24 hours from the Sunday 08:00 reset. Each lane line starts at the reading and stops at the reset, or at its run out point.</p>
+      </section>
+
+      <section class="card z-inputs" aria-labelledby="h-inputs">
+        <h2 id="h-inputs">Inputs</h2>
+        <div class="form">
+          <label for="percent">Weekly percent</label>
+          <input id="percent" type="number" inputmode="numeric" min="0" max="100" step="1" value="72">
+
+          <label for="recentLanes">Claude lanes that ran in the recent window</label>
+          <input id="recentLanes" type="number" inputmode="numeric" min="0" max="3" step="1" value="3">
+          <p class="note">Between the previous reading and this one. The per-lane burn is inferred from it.</p>
+
+          <label for="baseline">Idle baseline per 24 hours <span class="tag">inferred, you can override</span></label>
+          <input id="baseline" type="number" inputmode="decimal" min="0" max="20" step="0.1" value="3">
+
+          <label for="safety">Safety margin, points</label>
+          <input id="safety" type="number" inputmode="numeric" min="0" max="50" step="1" value="5">
+          <p class="note">Used by Pace to the week only: the target is 100 minus this margin.</p>
+
+          <div id="workField" hidden>
+            <label for="work">Remaining work, points</label>
+            <input id="work" type="number" inputmode="decimal" min="0" max="100" step="0.5" value="20">
+            <p class="note">Shown for Run flat out only.</p>
+          </div>
+
+          <p id="inputError" class="error" hidden>Enter numbers in the allowed ranges: percent 0 to 100, lanes 0 to 3 as whole numbers, baseline 0 to 20, safety margin 0 to 50, work 0 to 100.</p>
+          <p class="note">Changing any input re-runs the model. The reading time and the previous reading stay at Fri 22:08 and Fri 17:09.</p>
+        </div>
+        <p id="o-perLane" class="note">Burn per lane, inferred: 7.0 per 24 hours (recent burn minus the baseline, divided by the lanes in the window).</p>
+      </section>
+
+      <section class="card z-text" aria-labelledby="h-text">
+        <h2 id="h-text">Text forms</h2>
+        <p class="caption">The commands are proposals; the final names are not decided. All six show the 22:08 reading at 72 percent with three lanes running, under each policy.</p>
+        <div class="forms">
+          <div>
+            <h3>Terminal (CLI)</h3>
+            <p class="label">Run until used up</p>
+<pre data-form="cli" data-policy="use-all">usage: 72% read Fri 22:08, reset Sun 08:00 (1.41 days left)
+pace line 79.8%, headroom 7.8, days since reset 5.59
+burn 24.1 per 24h recent, 12.9 per 24h week average
+projected end 106.0% recent (over), 90.2% week average (within)
+policy Run until used up, target 100%
+lanes  burn/24h  end at reset  run out    early    fit
+0      3.0       76.2%         none       none     fits
+1      10.0      86.1%         none       none     fits
+2      17.1      96.1%         none       none     fits, advice
+3      24.1      106.0%        Sun 02:02  6.0 h    does not fit, your choice
+0 lanes: never advised, operator's decision.
+advice: over budget at the recent burn; 2 lanes end at 96.1%.
+example command: usage lanes 2 (example, not final)</pre>
+            <p class="label">Pace to the week</p>
+<pre data-form="cli" data-policy="pace">usage: 72% read Fri 22:08, reset Sun 08:00 (1.41 days left)
+pace line 79.8%, headroom 7.8, days since reset 5.59
+burn 24.1 per 24h recent, 12.9 per 24h week average
+projected end 106.0% recent (over), 90.2% week average (within)
+policy Pace to the week, target 95%
+lanes  burn/24h  end at reset  run out    early    fit
+0      3.0       76.2%         none       none     fits
+1      10.0      86.1%         none       none     fits, advice
+2      17.1      96.1%         none       none     does not fit
+3      24.1      106.0%        Sun 02:02  6.0 h    does not fit, your choice
+0 lanes: never advised, operator's decision.
+advice: over budget for the week at 3 lanes; 1 lane ends at 86.1%.
+example command: usage lanes 1 (example, not final)</pre>
+            <p class="label">Run flat out</p>
+<pre data-form="cli" data-policy="finish-early">usage: 72% read Fri 22:08, reset Sun 08:00 (1.41 days left)
+pace line 79.8%, headroom 7.8, days since reset 5.59
+burn 24.1 per 24h recent, 12.9 per 24h week average
+projected end 106.0% recent (over), 90.2% week average (within)
+policy Run flat out, work 20 points, all lanes run
+lanes  burn/24h  end at reset  run out    early    fit
+0      3.0       76.2%         none       none     running
+1      10.0      86.1%         none       none     running
+2      17.1      96.1%         none       none     running
+3      24.1      106.0%        Sun 02:02  6.0 h    running, advice, your choice
+0 lanes: never advised, operator's decision.
+work: within budget, finishes Sat 20:54, 5.2 points to spare.
+advice: 3 lanes, about 22.8 hours.
+example command: usage lanes 2 (example, not final)</pre>
+          </div>
+          <div>
+            <h3>Comm channel</h3>
+            <p class="label">Run until used up</p>
+<pre data-form="chat" data-policy="use-all">Weekly 72% (read Fri 22:08)
+Run until used up, target 100%
+0 lanes: 76.2%, never advised
+1 lane: 86.1%, fits
+2 lanes: 96.1%, fits, advice
+3 lanes: 106.0%, runs out Sun 02:02, your choice
+Advice: 2 lanes end at 96.1%.
+Reply: lanes 2 (example, not final)</pre>
+            <p class="label">Pace to the week</p>
+<pre data-form="chat" data-policy="pace">Weekly 72% (read Fri 22:08)
+Pace to the week, target 95%
+0 lanes: 76.2%, never advised
+1 lane: 86.1%, fits, advice
+2 lanes: 96.1%, does not fit
+3 lanes: 106.0%, runs out Sun 02:02, your choice
+Advice: 1 lane ends at 86.1%.
+Reply: lanes 1 (example, not final)</pre>
+            <p class="label">Run flat out</p>
+<pre data-form="chat" data-policy="finish-early">Weekly 72% (read Fri 22:08)
+Run flat out, work 20 points
+0 lanes: 76.2%, never advised
+1 lane: 86.1%, running
+2 lanes: 96.1%, running
+3 lanes: 106.0%, running, advice, your choice
+Advice: 3 lanes, finish Sat 20:54, 5.2 spare.
+Reply: policy pace (example, not final)</pre>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</main>
+
+<script id="usage-model">
+// Reference model for the usage calculator mockups. Pure functions, no window or document use.
+// The three mockup pages embed this block unchanged inside <script id="usage-model"> so that
+// their numbers agree. The design document describes each formula in the same words.
+const UsageModel = (() => {
+  const DAY = 24 * 3600 * 1000;
+  const HOUR = 3600 * 1000;
+  const MIN_RECENT_GAP_HOURS = 2;
+  const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const num = (v, fallback) => (typeof v === "number" && isFinite(v) ? v : fallback);
+  const round1 = (v) => Math.round(v * 10) / 10;
+  const lanesWord = (n) => n + (n === 1 ? " lane" : " lanes");
+  const lanesEnd = (n) => lanesWord(n) + (n === 1 ? " ends" : " end");
+
+  // "Sun 02:08" for an ISO time, shown at a fixed offset from UTC (hours, for example -4).
+  function formatClock(iso, offsetHours) {
+    const shifted = new Date(Date.parse(iso) + num(offsetHours, 0) * HOUR);
+    const hh = String(shifted.getUTCHours()).padStart(2, "0");
+    const mm = String(shifted.getUTCMinutes()).padStart(2, "0");
+    return WEEKDAYS[shifted.getUTCDay()] + " " + hh + ":" + mm;
+  }
+
+  function advise(input) {
+    const readMs = Date.parse(input.readAt);
+    const lastResetMs = Date.parse(input.lastResetAt);
+    const nextResetMs = input.nextResetAt ? Date.parse(input.nextResetAt) : lastResetMs + 7 * DAY;
+    const percent = input.percent;
+    const maxLanes = num(input.maxLanes, 3);
+    const safety = num(input.safetyPoints, 5);
+
+    // Position in the week.
+    const daysSinceReset = (readMs - lastResetMs) / DAY;
+    const daysLeft = Math.max((nextResetMs - readMs) / DAY, 0);
+    const allowancePer24h = 100 / 7;
+    const paceLine = (daysSinceReset / 7) * 100;
+    const headroom = paceLine - percent;
+
+    // Burn: week average from the whole week, recent from the previous reading.
+    const weekAvgBurnPer24h = daysSinceReset > 0 ? percent / daysSinceReset : 0;
+    let recentBurnPer24h = weekAvgBurnPer24h;
+    let recentFallback = true;
+    if (input.previous) {
+      const hours = (readMs - Date.parse(input.previous.readAt)) / HOUR;
+      if (hours >= MIN_RECENT_GAP_HOURS) {
+        recentBurnPer24h = Math.max(((percent - input.previous.percent) / hours) * 24, 0);
+        recentFallback = false;
+      }
+    }
+
+    // Projection to the reset, and the moment the allowance would run out.
+    const runOutOf = (burn) => {
+      if (burn <= 0) return { at: null, hoursEarly: 0 };
+      const days = (100 - percent) / burn;
+      if (days >= daysLeft) return { at: null, hoursEarly: 0 };
+      return { at: new Date(readMs + days * DAY).toISOString(), hoursEarly: (daysLeft - days) * 24 };
+    };
+    const projectedEndRecent = percent + recentBurnPer24h * daysLeft;
+    const projectedEndAvg = percent + weekAvgBurnPer24h * daysLeft;
+    const runRecent = runOutOf(recentBurnPer24h);
+    const runAvg = runOutOf(weekAvgBurnPer24h);
+
+    // What each lane count would cost. The burn per lane is inferred from the recent burn,
+    // the idle baseline and the number of lanes that were running in that window.
+    const baseline = num(input.baselinePer24h, 3);
+    const recentLanes = num(input.recentLanes, num(input.lanes, maxLanes));
+    const perLane = num(
+      input.perLanePer24h,
+      recentLanes > 0 ? Math.max((recentBurnPer24h - baseline) / recentLanes, 0) : 0
+    );
+    const byLanes = [];
+    for (let l = 0; l <= maxLanes; l++) {
+      const burn = baseline + l * perLane;
+      const run = runOutOf(burn);
+      byLanes.push({
+        lanes: l,
+        burnPer24h: burn,
+        projectedEnd: percent + burn * daysLeft,
+        runOutAt: run.at,
+        hoursEarly: run.hoursEarly,
+      });
+    }
+
+    const verdict = projectedEndRecent > 100 ? "over" : "within";
+    const verdictAvg = projectedEndAvg > 100 ? "over" : "within";
+    const chosen = byLanes[Math.min(Math.max(num(input.lanes, maxLanes), 0), maxLanes)];
+
+    // Advice per policy. The advice never names zero lanes: stopping every lane is the
+    // operator's decision, not the calculator's.
+    const policy = input.policy || "use-all";
+    const largestFitting = (limit) => {
+      let best = 1;
+      for (const row of byLanes) if (row.lanes >= 1 && row.projectedEnd <= limit) best = row.lanes;
+      return best;
+    };
+    const notes = ["The operator chooses the number of lanes; this is advice only."];
+    let lanesSuggested = maxLanes;
+    let headline = "";
+    let finish = null;
+    const atMax = byLanes[maxLanes];
+
+    if (policy === "use-all") {
+      lanesSuggested = largestFitting(100);
+      const row = byLanes[lanesSuggested];
+      if (atMax.projectedEnd <= 100) {
+        headline = "Within budget: " + lanesEnd(maxLanes) + " the week at " + round1(atMax.projectedEnd) +
+          "%, " + round1(100 - atMax.projectedEnd) + " points unused at the reset.";
+        notes.push("Unused allowance is lost at the reset; there is room for more work.");
+      } else {
+        headline = "Over budget at the recent burn: " + lanesWord(maxLanes) + " run out about " +
+          round1(atMax.hoursEarly) + " hours before the reset. " + lanesEnd(lanesSuggested) + " at " +
+          round1(row.projectedEnd) + "%.";
+        notes.push("Running out early is allowed under this policy; the alternative is " + lanesWord(lanesSuggested) + " to the reset.");
+      }
+    } else if (policy === "pace") {
+      lanesSuggested = largestFitting(100 - safety);
+      const row = byLanes[lanesSuggested];
+      if (atMax.projectedEnd <= 100 - safety) {
+        headline = "Within budget: " + lanesEnd(maxLanes) + " the week at " + round1(atMax.projectedEnd) +
+          "%, inside the " + (100 - safety) + "% target.";
+      } else {
+        headline = "Over budget for the week at " + lanesWord(maxLanes) + " (" + round1(atMax.projectedEnd) +
+          "% at the reset). " + lanesEnd(lanesSuggested) + " at " + round1(row.projectedEnd) + "%.";
+      }
+      if (row.projectedEnd > 100 - safety) {
+        notes.push("Even " + lanesWord(lanesSuggested) + " does not reach the target; the allowance is the limit.");
+      }
+      if (percent > paceLine) notes.push("Usage is ahead of the pace line by " + round1(percent - paceLine) + " points.");
+    } else {
+      lanesSuggested = maxLanes;
+      const work = input.remainingWork;
+      if (typeof work !== "number") {
+        headline = "Enter the remaining work to see whether it finishes before the allowance does.";
+      } else {
+        const laneRate = maxLanes * perLane;
+        const days = laneRate > 0 ? work / laneRate : Infinity;
+        const endPercent = percent + work + baseline * days;
+        const spare = 100 - endPercent;
+        finish = {
+          hours: days * 24,
+          at: isFinite(days) ? new Date(readMs + days * DAY).toISOString() : null,
+          endPercent,
+          sparePoints: spare,
+          beforeAllowance: spare >= 0 && days <= daysLeft,
+        };
+        headline = finish.beforeAllowance
+          ? "Within budget: the work finishes in about " + round1(finish.hours) + " hours with " +
+            round1(spare) + " points of allowance to spare."
+          : "Over budget: the allowance runs out before the work finishes (" + round1(Math.min(spare, 0)) +
+            " points short). Consider pacing or running until used up.";
+      }
+      notes.push("All lanes run; the calculator does not slow them down under this policy.");
+    }
+
+    return {
+      daysSinceReset, daysLeft, allowancePer24h, paceLine, headroom,
+      recentBurnPer24h, weekAvgBurnPer24h, recentFallback,
+      projectedEndRecent, projectedEndAvg,
+      runOutAtRecent: runRecent.at, runOutAtAvg: runAvg.at,
+      hoursEarlyRecent: runRecent.hoursEarly, hoursEarlyAvg: runAvg.hoursEarly,
+      verdict, verdictAvg, aheadOfPace: percent > paceLine,
+      perLanePer24h: perLane, baselinePer24h: baseline,
+      byLanes, chosen,
+      advice: { policy, lanesSuggested, headline, notes, finish },
+    };
+  }
+
+  return { advise, formatClock };
+})();
+</script>
+<script id="usage-view">
+// Lane planner view. Runs after the usage-model script and reads UsageModel.advise.
+const UsageView = (() => {
+  const HOUR = 3600 * 1000;
+  const OFFSET = -4;
+  const READ_AT = "2026-10-23T22:08:00-04:00";
+  const LAST_RESET = "2026-10-18T08:00:00-04:00";
+  const NEXT_RESET = "2026-10-25T08:00:00-04:00";
+  const PREVIOUS = { percent: 67, readAt: "2026-10-23T17:09:00-04:00" };
+  // Readings since the reset of Sunday 2026-10-18 08:00 local. The reading being shown is appended.
+  const SERIES = [
+    ["2026-10-18T10:20:00-04:00", 2],
+    ["2026-10-18T14:30:00-04:00", 4],
+    ["2026-10-18T17:00:00-04:00", 5],
+    ["2026-10-18T21:05:00-04:00", 7],
+    ["2026-10-19T09:55:00-04:00", 9],
+    ["2026-10-19T17:50:00-04:00", 13],
+    ["2026-10-19T20:15:00-04:00", 14],
+    ["2026-10-20T04:31:00-04:00", 16],
+    ["2026-10-20T16:40:00-04:00", 19],
+    ["2026-10-21T14:40:00-04:00", 30],
+    ["2026-10-21T18:30:00-04:00", 33],
+    ["2026-10-21T19:40:00-04:00", 34],
+    ["2026-10-22T12:36:00-04:00", 45],
+    ["2026-10-22T20:44:00-04:00", 55],
+    ["2026-10-23T02:40:00-04:00", 58],
+    ["2026-10-23T17:09:00-04:00", 67],
+  ];
+  const CHECK = "✔";
+  const CROSS = "✖";
+  const TL = { left: 36, right: 308, top: 18, bottom: 168, max: 120, week: 168 };
+  const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const LANE_CLASS = ["t-l0", "t-l1", "t-l2", "t-l3"];
+  const FIELDS = [
+    { id: "percent", key: "percent", lo: 0, hi: 100, whole: false },
+    { id: "recentLanes", key: "recentLanes", lo: 0, hi: 3, whole: true },
+    { id: "baseline", key: "baseline", lo: 0, hi: 20, whole: false },
+    { id: "safety", key: "safety", lo: 0, hi: 50, whole: false },
+    { id: "work", key: "work", lo: 0, hi: 100, whole: false },
+  ];
+
+  const state = { percent: 72, policy: "pace", lanes: 3, recentLanes: 3, baseline: 3, safety: 5, work: 20 };
+
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  const f1 = (v) => v.toFixed(1);
+  const pct1 = (v) => v.toFixed(1) + "%";
+  const lanesWord = (n) => n + (n === 1 ? " lane" : " lanes");
+  const clock = (iso) => UsageModel.formatClock(iso, OFFSET);
+  const hoursFromReset = (iso) => (Date.parse(iso) - Date.parse(LAST_RESET)) / HOUR;
+  const chx = (h) => TL.left + (clamp(h, 0, TL.week) / TL.week) * (TL.right - TL.left);
+  const chy = (v) => TL.bottom - (clamp(v, 0, TL.max) / TL.max) * (TL.bottom - TL.top);
+  const early = (hours) => {
+    const h = Math.round(hours);
+    return "about " + h + (h === 1 ? " hour early" : " hours early");
+  };
+  const runText = (iso, hours) => (iso ? clock(iso) + ", " + early(hours) : "None before the reset");
+
+  function inputFor(s) {
+    return {
+      percent: s.percent,
+      readAt: READ_AT,
+      lastResetAt: LAST_RESET,
+      nextResetAt: NEXT_RESET,
+      previous: PREVIOUS,
+      lanes: s.lanes,
+      recentLanes: s.recentLanes,
+      maxLanes: 3,
+      baselinePer24h: s.baseline,
+      safetyPoints: s.safety,
+      remainingWork: s.work,
+      policy: s.policy,
+    };
+  }
+
+  function compute(s) {
+    const input = inputFor(s);
+    return { input, r: UsageModel.advise(input) };
+  }
+
+  // The end target for each policy. Run flat out has no end target; its finish line goes above the table.
+  function targetFor(policy, safety) {
+    if (policy === "use-all") return 100;
+    if (policy === "pace") return 100 - safety;
+    return null;
+  }
+
+  function targetText(policy, safety) {
+    if (policy === "use-all") return "Target for this policy: 100% at the reset.";
+    if (policy === "pace") {
+      return "Target for this policy: " + (100 - safety) + "% at the reset (100 minus the " + safety + " point safety margin).";
+    }
+    return "Run flat out has no end target: every lane runs, and the finish line is above the table.";
+  }
+
+  function finishText(fin) {
+    if (!fin) return "Enter the remaining work to see the finish time.";
+    if (!fin.at) return "No finish time: no lane is burning above the idle baseline.";
+    return fin.beforeAllowance
+      ? "Work of " + state.work + " points at " + lanesWord(3) + " finishes " + clock(fin.at) + ", " + fin.sparePoints.toFixed(1) + " points to spare."
+      : "Work does not finish before the allowance runs out.";
+  }
+
+  function fitOf(row, policy, target) {
+    if (policy === "finish-early") return { text: "running", cls: "" };
+    return row.projectedEnd <= target
+      ? { text: CHECK + " fits", cls: "fit-yes" }
+      : { text: CROSS + " does not fit", cls: "fit-no" };
+  }
+
+  function rowHtml(row, r, policy, target) {
+    const fit = fitOf(row, policy, target);
+    const badges = [];
+    if (row.lanes === 0) {
+      badges.push('<span class="badge">never advised</span>', '<span class="badge">operator\'s decision</span>');
+    }
+    const advised = r.advice.lanesSuggested === row.lanes;
+    if (advised) badges.push('<span class="badge advice">Advice</span>');
+    if (state.lanes === row.lanes) badges.push('<span class="badge choice">Your choice</span>');
+    const runOut = row.runOutAt ? clock(row.runOutAt) : "does not run out";
+    const early = row.runOutAt ? f1(row.hoursEarly) + " hours" : "none";
+    return '<li class="row' + (advised ? " is-advice" : "") + '" data-lanes="' + row.lanes + '">' +
+      '<span class="cell lanes" data-label="Lanes">' + lanesWord(row.lanes) + " " + badges.join("") + "</span>" +
+      '<span class="cell" data-label="Burn per 24 hours">' + f1(row.burnPer24h) + "</span>" +
+      '<span class="cell" data-label="Projected end at reset">' + pct1(row.projectedEnd) + "</span>" +
+      '<span class="cell" data-label="Run out">' + runOut + "</span>" +
+      '<span class="cell" data-label="Hours early">' + early + "</span>" +
+      '<span class="cell ' + fit.cls + '" data-label="Fit">' + fit.text + "</span>" +
+      "</li>";
+  }
+
+  // Week timeline: readings, the pace line, the 100 percent budget, and one line per lane count.
+  function timelineSvg(s, r) {
+    const nowX = chx(hoursFromReset(READ_AT));
+    const nowY = chy(s.percent);
+    const readings = SERIES.concat([[READ_AT, s.percent]]).map(([at, v]) => [chx(hoursFromReset(at)), chy(v)]);
+    const readPath = readings.map(([x, y], i) => (i ? "L" : "M") + f1(x) + " " + f1(y)).join(" ");
+    const dots = readings.map(([x, y]) => '<circle class="t-dot" cx="' + f1(x) + '" cy="' + f1(y) + '" r="2"/>').join("");
+    const lanes = r.byLanes.map((row) => {
+      const runs = Boolean(row.runOutAt);
+      const endX = chx(runs ? hoursFromReset(row.runOutAt) : TL.week);
+      const endY = chy(runs ? 100 : row.projectedEnd);
+      const line = '<path class="' + LANE_CLASS[row.lanes] + '" d="M' + f1(nowX) + " " + f1(nowY) + " L" + f1(endX) + " " + f1(endY) + '"/>';
+      if (!runs) {
+        return line + '<text class="t-txt" x="' + f1(TL.right - 2) + '" y="' + f1(endY - 4) + '" text-anchor="end">' + row.lanes + "</text>";
+      }
+      return line +
+        '<circle class="t-out" cx="' + f1(endX) + '" cy="' + f1(endY) + '" r="4"/>' +
+        '<text class="t-txt" x="' + f1(endX - 6) + '" y="' + f1(endY - 7) + '" text-anchor="end">' +
+        lanesWord(row.lanes) + " run out " + clock(row.runOutAt) + "</text>";
+    }).join("");
+    const days = DAYS.map((d, i) => {
+      const x = chx(i * 24);
+      const anchor = i === 0 ? "start" : i === DAYS.length - 1 ? "end" : "middle";
+      return '<line class="t-axis" x1="' + f1(x) + '" y1="' + TL.bottom + '" x2="' + f1(x) + '" y2="' + (TL.bottom + 4) + '"/>' +
+        '<text class="t-txt" x="' + f1(x) + '" y="186" text-anchor="' + anchor + '">' + d + "</text>";
+    }).join("");
+    const scale = [0, 50, 100].map((v) =>
+      '<text class="t-txt" x="' + (TL.left - 4) + '" y="' + f1(chy(v) + 3) + '" text-anchor="end">' + v + "</text>"
+    ).join("");
+    return [
+      '<svg class="tl" viewBox="0 0 320 196" role="img" aria-label="Week timeline from the Sunday reset to the next reset, with the readings, the pace line and one projection per lane count">',
+      '<line class="t-axis" x1="' + TL.left + '" y1="' + TL.bottom + '" x2="' + TL.right + '" y2="' + TL.bottom + '"/>',
+      '<line class="t-axis" x1="' + TL.left + '" y1="' + TL.top + '" x2="' + TL.left + '" y2="' + TL.bottom + '"/>',
+      '<line class="t-budget" x1="' + TL.left + '" y1="' + f1(chy(100)) + '" x2="' + TL.right + '" y2="' + f1(chy(100)) + '"/>',
+      '<path class="t-pace" d="M' + TL.left + " " + TL.bottom + " L" + TL.right + " " + f1(chy(100)) + '"/>',
+      '<path class="t-read" d="' + readPath + '"/>',
+      dots,
+      lanes,
+      '<line class="t-now" x1="' + f1(nowX) + '" y1="' + TL.top + '" x2="' + f1(nowX) + '" y2="' + TL.bottom + '"/>',
+      '<text class="t-txt" x="' + f1(nowX - 3) + '" y="' + (TL.top - 6) + '" text-anchor="end">now ' + clock(READ_AT) + "</text>",
+      '<circle class="t-now-dot" cx="' + f1(nowX) + '" cy="' + f1(nowY) + '" r="4"/>',
+      scale,
+      days,
+      "</svg>",
+    ].join("");
+  }
+
+  function render() {
+    const { r } = compute(state);
+    const adv = r.advice;
+    const over = r.verdict === "over";
+    const policy = state.policy;
+    const target = targetFor(policy, state.safety);
+    const at = (id) => document.getElementById(id);
+    const put = (id, text) => { at(id).textContent = text; };
+    const chip = (el, verdict) => {
+      el.className = "chip " + verdict;
+      el.textContent = verdict === "over" ? CROSS + " Over budget" : CHECK + " Within budget";
+    };
+    const gapHours = (Date.parse(READ_AT) - Date.parse(PREVIOUS.readAt)) / HOUR;
+
+    chip(at("o-verdict"), r.verdict);
+    chip(at("o-verdictAvg"), r.verdictAvg);
+    put("o-eyebrow", "Weekly " + state.percent + "% at Fri 22:08");
+    put("o-headline", adv.headline);
+    at("o-notes").replaceChildren(...adv.notes.map((t) => {
+      const li = document.createElement("li");
+      li.textContent = t;
+      return li;
+    }));
+
+    put("o-target", targetText(policy, state.safety));
+    at("o-finishLine").hidden = policy !== "finish-early";
+    if (policy === "finish-early") put("o-finishLine", finishText(adv.finish));
+    at("o-rows").innerHTML = r.byLanes.map((row) => rowHtml(row, r, policy, target)).join("");
+    at("o-timeline").innerHTML = timelineSvg(state, r);
+
+    put("o-percentOut", state.percent + "%");
+    put("o-days", r.daysSinceReset.toFixed(2));
+    put("o-daysLeft", r.daysLeft.toFixed(2));
+    put("o-pace", pct1(r.paceLine));
+    put("o-headroom", r.aheadOfPace ? "ahead of the pace line" : "headroom " + r.headroom.toFixed(1) + " points");
+    put("o-burnRecent", r.recentBurnPer24h.toFixed(1));
+    put("o-burnNote", r.recentFallback
+      ? "week average used: no earlier reading two hours or more before"
+      : "from " + clock(PREVIOUS.readAt) + ", " + gapHours.toFixed(2) + " hours before");
+    put("o-burnAvg", r.weekAvgBurnPer24h.toFixed(1));
+    put("o-projRecent", pct1(r.projectedEndRecent) + (over ? " (over)" : " (within)"));
+    put("o-projAvg", pct1(r.projectedEndAvg) + (r.verdictAvg === "over" ? " (over)" : " (within)"));
+    put("o-runRecent", runText(r.runOutAtRecent, r.hoursEarlyRecent));
+    put("o-runAvg", runText(r.runOutAtAvg, r.hoursEarlyAvg));
+    put("o-fVerdict", over ? "Over budget" : "Within budget");
+    put("o-fVerdictAvg", r.verdictAvg === "over" ? "Over budget" : "Within budget");
+    put("o-ahead", r.aheadOfPace ? "Yes" : "No");
+
+    document.querySelectorAll('[role="radio"]').forEach((b) => {
+      const on = b.dataset.policy === policy;
+      b.setAttribute("aria-checked", String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
+    put("o-lanes", String(state.lanes));
+    at("lanesMinus").disabled = state.lanes === 0;
+    at("lanesPlus").disabled = state.lanes === 3;
+    at("o-zeroNote").hidden = state.lanes !== 0;
+    put("o-advice", lanesWord(adv.lanesSuggested));
+    const row = r.chosen;
+    put("o-chosen", lanesWord(row.lanes) + ": " + row.burnPer24h.toFixed(1) + " per 24 hours, ends at " +
+      pct1(row.projectedEnd) + (row.projectedEnd > 100 ? " (over)" : " (within)") +
+      (row.runOutAt ? ", runs out " + clock(row.runOutAt) : ", no run out before the reset") + ".");
+
+    at("workField").hidden = policy !== "finish-early";
+    put("o-perLane", "Burn per lane, inferred: " + r.perLanePer24h.toFixed(1) +
+      " per 24 hours (recent burn minus the baseline, divided by the lanes in the window).");
+  }
+
+  function setPolicy(policy) {
+    state.policy = policy;
+    render();
+  }
+
+  function setLanes(n) {
+    state.lanes = clamp(n, 0, 3);
+    render();
+  }
+
+  // Reads every input. Nothing changes unless all of them are in range.
+  function onInput() {
+    const next = {};
+    let ok = true;
+    for (const f of FIELDS) {
+      if (f.key === "work" && state.policy !== "finish-early") continue;
+      const raw = document.getElementById(f.id).value;
+      const v = Number(raw);
+      const valid = raw !== "" && Number.isFinite(v) && v >= f.lo && v <= f.hi && (!f.whole || Number.isInteger(v));
+      if (valid) next[f.key] = v;
+      else ok = false;
+    }
+    document.getElementById("inputError").hidden = ok;
+    if (ok) {
+      Object.assign(state, next);
+      render();
+    }
+  }
+
+  function init() {
+    const device = document.querySelector(".device");
+    const frames = document.querySelectorAll("[data-frame]");
+    const widths = { phone: 390, tablet: 820, desktop: 1180 };
+    frames.forEach((btn) => btn.addEventListener("click", () => {
+      device.style.width = Math.min(widths[btn.dataset.frame], document.documentElement.clientWidth - 32) + "px";
+      frames.forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+    }));
+
+    const radios = Array.from(document.querySelectorAll('[role="radio"]'));
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+    radios.forEach((btn, i) => {
+      btn.addEventListener("click", () => setPolicy(btn.dataset.policy));
+      btn.addEventListener("keydown", (e) => {
+        if (!(e.key in step)) return;
+        e.preventDefault();
+        const next = radios[(i + step[e.key] + radios.length) % radios.length];
+        next.focus();
+        setPolicy(next.dataset.policy);
+      });
+    });
+
+    document.getElementById("lanesMinus").addEventListener("click", () => setLanes(state.lanes - 1));
+    document.getElementById("lanesPlus").addEventListener("click", () => setLanes(state.lanes + 1));
+    FIELDS.forEach((f) => document.getElementById(f.id).addEventListener("input", onInput));
+    render();
+  }
+
+  if (typeof document !== "undefined" && document.getElementById("o-timeline")) init();
+  return { compute, timelineSvg, state };
+})();
+
+</script>
+</body>
+</html>
