@@ -119,6 +119,12 @@ Limits of the simulation, plainly:
 - The "work redone" flag no longer counts a role's first start after the restart as a redo (this had marked the git row as redone when its worker had simply not started yet).
 - The git row's description now says which commit it interrupts.
 
+## Release smoke and documentation
+
+- `scripts/release-smoke.sh` section 80 runs `scripts/restart-matrix.sh --strict` one state at a time for the rows that must survive: `worker-running`, `waiting-capacity`, `waiting-external`, `git-operation`, `automation-branches`, `scheduled-due`, `websocket-clients`. It runs in the matrix's own throwaway sandboxes, never production. The rows still open as an OPERATOR PICK (`planning`, `verify-script`, `verify-script-mid`, `final-gate`) and `verify-session` (the in-flight verifier is not adopted) are skipped with a reason, not run. When a choice is made, move the row from the skipped list to the strict list in that section.
+- `docs/operations.md` (Restart safety) states what survives, what does not, the KillMode note, and names the matrix as the enforcing test.
+- `docs/testing-tracker.md` has unit rows for the two fixes and live rows for the matrix, with Validated marked Partly: fake backend, one machine, one run per cell, no real service manager.
+
 ## Reproduce
 
 ```bash
