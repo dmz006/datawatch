@@ -33,9 +33,9 @@ func (h *judgeReconcileHost) LiveJudges() []autonomous.JudgeSession {
 	return out
 }
 
-// End ends the session through the manager's normal kill path.
-func (h *judgeReconcileHost) End(sessionID, _ string) error {
-	return h.mgr.Kill(sessionID)
+// End ends the session through the manager with the reason the reconcile gives.
+func (h *judgeReconcileHost) End(sessionID, reason string) error {
+	return h.mgr.EndSession(sessionID, session.EndReason{Caller: endCallerJudgeReconcile, Reason: reason})
 }
 
 // BindLease points the judge's lease and registry entry at sessionID so

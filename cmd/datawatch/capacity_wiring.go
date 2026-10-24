@@ -581,9 +581,8 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// judgeAdmitters). Its one-shot session name binds to the lease the
 	// same way the verifier's does.
 	judges := newVerifierRegistry()
-	judgeAdmitFn, judgeTryFn, judgeStartedFn := judgeAdmitters(led, judges, keys, amgr.CapacityWaitDuration())
+	judgeAdmitFn, _, judgeStartedFn := judgeAdmitters(led, judges, keys, amgr.CapacityWaitDuration())
 	judgeCapacityAdmit = judgeAdmitFn
-	judgeCapacityTryAdmit = judgeTryFn
 	judgeSessionStarted = judgeStartedFn
 	// Adopt, never double-spawn: on a daemon restart a guardrail-judge
 	// session may still be live while the capacity ledger is empty, so the

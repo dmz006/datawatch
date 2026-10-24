@@ -24,14 +24,6 @@ const judgeSessionNamePrefix = "autonomous:guardrail"
 // the capacity card.
 var judgeCapacityAdmit func(ctx context.Context, backend, model, unitID, prdID string) (release func(), err error)
 
-// judgeCapacityTryAdmit is judgeCapacityAdmit's non-blocking sibling: a
-// short, real Acquire bounded to a probe window (at most one probe lease
-// held at a time, released by the caller when done) so a caller can learn
-// whether this backend+model has room now without committing to the normal
-// admission wait. Set in wireCapacity beside judgeCapacityAdmit; nil until
-// then.
-var judgeCapacityTryAdmit func(ctx context.Context, backend, model, unitID, prdID string) (release func(), ok bool)
-
 // judgeSessionStarted is called by the one-shot runner as soon as a session
 // is started, with its name and id. wireCapacity points it at the judge
 // registry so the judge's lease follows the judge session it spawned

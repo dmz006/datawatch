@@ -23,6 +23,7 @@ const (
 	endCallerPostWait       = "autonomous.verifier.post-wait"
 	endCallerSSEWatchdog    = "autonomous.watchdog.sse-stall"
 	endCallerReconcileHost  = "autonomous.verifier-reconcile"
+	endCallerJudgeReconcile = "autonomous.judge-reconcile"
 	endCallerKillOnExit     = "daemon.kill-sessions-on-exit"
 	endCallerShutdown       = "daemon.shutdown"
 	endCallerExitHook       = "daemon.exit-hook-restart"
