@@ -1,9 +1,9 @@
 {
   "label": "planning-before",
-  "at": "2026-10-24T02:59:05Z",
+  "at": "2026-10-24T03:28:38Z",
   "daemon": {
-    "pid": "4113740",
-    "uptime_seconds": 4
+    "pid": "250859",
+    "uptime_seconds": 5
   },
   "prd_status": "planning",
   "task": {
@@ -16,19 +16,19 @@
   },
   "sessions": [
     {
-      "id": "4885",
-      "full_id": "restart-matrix-4885",
+      "id": "3c01",
+      "full_id": "restart-matrix-3c01",
       "name": "autonomous:decompose",
       "state": "running",
-      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/planning/data/sessions/restart-matrix-4885/output.log",
-      "tmux_session": "cs-restart-matrix-4885"
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.HuTxyd/planning/data/sessions/restart-matrix-3c01/output.log",
+      "tmux_session": "cs-restart-matrix-3c01"
     }
   ],
   "session_ids": [
-    "restart-matrix-4885"
+    "restart-matrix-3c01"
   ],
   "pane_pids": [
-    "cs-restart-matrix-4885:4114706"
+    "cs-restart-matrix-3c01:251817"
   ],
   "counts": {
     "planner_starts": 1,
@@ -40,5 +40,5 @@
     "script_finished": 0
   },
   "worker_counter_bytes": 0,
-  "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/planning/snap-planning-before"
+  "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.HuTxyd/planning/snap-planning-before"
 }

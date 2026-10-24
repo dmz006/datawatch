@@ -117,8 +117,9 @@ rm_init_root() {
   mkdir -p "$base"
   RM_ROOT="$(mktemp -d "$base/rm.XXXXXX")"
   RM_REC="$RM_ROOT/records"
-  mkdir -p "$RM_REC"
-  export RM_ROOT RM_REC
+  RM_SNAP="$RM_REC/snapshots"
+  mkdir -p "$RM_REC" "$RM_SNAP"
+  export RM_ROOT RM_REC RM_SNAP
 }
 
 # rm_sandbox_new NAME — lays out a fresh sandbox for one scenario under the
@@ -402,29 +403,27 @@ rm_sandbox_down() {
 # --------------------------------------------------------- scenario plumbing ----
 
 # rm_write_plan [SCRIPT_REL] — one story, one task. With SCRIPT_REL the task is
-# verified by that daemon-run script; without it the task states why it has no
-# script, so the verdict comes from a verifier session instead.
+# verified by that daemon-run script. Without it the task plans no files and
+# states why it has no script (the plan checker exempts such a task), so the
+# verdict comes from a verifier session instead.
 rm_write_plan() {
   local script="${1:-}"
   jq -n --arg script "$script" '
     def vfy: if $script != "" then {verification_script: $script}
-             else {verification_script_reason: "judged by a verifier session; the restart matrix has no script for this state"} end;
+             else {verification_script_reason: "judged by a verifier session; this restart-matrix state has no script"} end;
+    def planned: if $script != "" then {files: ["worker-result.txt"], files_generated: ["worker-result.txt"]} else {} end;
     {
       title: "matrix plan",
       stories: [({
         title: "matrix story",
         description: "one story for the restart matrix",
-        files: ["worker-result.txt"],
         depends_on: [],
-        files_generated: ["worker-result.txt"],
         tasks: [({
           title: "matrix task",
-          spec: "Write worker-result.txt in the project directory.",
-          files: ["worker-result.txt"],
-          depends_on: [],
-          files_generated: ["worker-result.txt"]
-        } + vfy)]
-      } + vfy)]
+          spec: "Do the one unit of work the matrix probes.",
+          depends_on: []
+        } + planned + vfy)]
+      } + planned + vfy)]
     }' >"$RM_CTRL/plan.json"
 }
 

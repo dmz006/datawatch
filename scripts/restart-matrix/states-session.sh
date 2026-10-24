@@ -57,6 +57,24 @@ sc_task_status_in() { # PRD STATUS...
 }
 
 sc_task_terminal() { sc_task_status_in "$1" completed failed cancelled blocked; }
+
+# sc_wait_settled PRD MARKER_FILE TIMEOUT — waits for the work to be really over:
+# the role's done marker exists (when a marker is named) and the task has stayed
+# in a terminal status for a few seconds. A task can report completed while its
+# verification is still running, so status alone ends the wait too early.
+sc_wait_settled() {
+  local prd="$1" marker="$2" timeout="$3" deadline=$((SECONDS + $3)) steady=0
+  while ((SECONDS < deadline)); do
+    if sc_task_terminal "$prd" && { [[ -z "$marker" ]] || [[ -s "$RM_CTRL/$marker" ]]; }; then
+      steady=$((steady + 1))
+      ((steady >= 6)) && return 0
+    else
+      steady=0
+    fi
+    sleep 1
+  done
+  return 1
+}
 sc_ctrl_at_least() { (($(rm_ctrl_count "$1") >= $2)); }
 
 # sc_boot NAME — fresh sandbox plus a running daemon for one scenario.
@@ -88,8 +106,8 @@ sc_approve_and_run() {
 # sc_restart_with_snapshots LABEL — before snapshot, restart, immediate-after
 # snapshot. Files land in the record dir as <label>.before.json etc.
 sc_restart_with_snapshots() {
-  SC_BEFORE="$RM_REC/$1.before.json"
-  SC_AFTER_RESTART="$RM_REC/$1.after-restart.json"
+  SC_BEFORE="$RM_SNAP/$1.before.json"
+  SC_AFTER_RESTART="$RM_SNAP/$1.after-restart.json"
   rm_snapshot "$1-before" "$SC_PRD" "$SC_BEFORE"
   rm_daemon_restart || return 1
   sleep 3 # let the new daemon's resume pass run
@@ -98,7 +116,7 @@ sc_restart_with_snapshots() {
 
 # sc_finish LABEL — final snapshot once the work settles (or the wait runs out).
 sc_finish() {
-  SC_FINAL="$RM_REC/$1.final.json"
+  SC_FINAL="$RM_SNAP/$1.final.json"
   rm_snapshot "$1-final" "$SC_PRD" "$SC_FINAL"
 }
 
@@ -106,7 +124,7 @@ sc_finish() {
 # nothing to restart. Recorded as a failed state rather than aborting the run.
 sc_abort_state() {
   rm_check "state_reached" 1 "$2"
-  local snap="$RM_REC/$1.before.json"
+  local snap="$RM_SNAP/$1.before.json"
   [[ -n "${SC_PRD:-}" ]] && rm_snapshot "$1-before" "$SC_PRD" "$snap"
   rm_state_end "$snap" "$snap" "$2"
 }
@@ -152,10 +170,14 @@ sc_redone_flag() {
   RM_DERIVED_REDONE="$redone"
 }
 
-# sc_session_ids_survive BEFORE FINAL — every session id present before the
-# restart is still known afterwards.
-sc_session_ids_survive() {
-  jq -e --slurpfile a "$2" '(.session_ids) as $b | ($b - ($a[0].session_ids)) | length == 0' "$1" >/dev/null
+# sc_task_session_stable BEFORE FINAL — the task kept the one session it had
+# before the restart (a finished session may leave the live list, so the task's
+# own session id is the thing compared).
+sc_task_session_stable() {
+  local b a
+  b="$(sc_json_get "$1" '.task.session_id')"
+  a="$(sc_json_get "$2" '.task.session_id')"
+  [[ -n "$b" && "$b" == "$a" ]]
 }
 
 # ---------------------------------------------------------------- scenarios ----
@@ -165,7 +187,7 @@ state_planning() {
   rm_state_begin "$name" "decompose or planning is running"
   sc_boot "$name"
   echo 45 >"$RM_CTRL/planner_delay"
-  sc_prd_new || { sc_abort_state "$name" "could not create the PRD"; return; }
+  sc_prd_new verify/quick.sh || { sc_abort_state "$name" "could not create the PRD"; return; }
   sc_plan_start
   if ! rm_wait_until 90 sc_ctrl_at_least planner.starts 1; then
     sc_abort_state "$name" "the planner session never started (PRD status: $(rm_prd_status "$SC_PRD"))"
@@ -209,14 +231,14 @@ state_worker_running() {
   sc_restart_with_snapshots "$name" || { sc_abort_state "$name" "sandbox daemon did not come back"; return; }
   local survived=1
   rm_pid_alive "$worker_pid" && survived=0
-  rm_wait_until 240 sc_task_terminal "$SC_PRD"
+  sc_wait_settled "$SC_PRD" worker.done 240
   sc_finish "$name"
 
   sc_common_criteria "$SC_BEFORE" "$SC_AFTER_RESTART" "$SC_FINAL"
   sc_redone_flag "$SC_BEFORE" "$SC_FINAL" worker
   rm_check "worker_process_survived" "$survived" "worker pid $worker_pid alive right after the restart: $([[ $survived == 0 ]] && echo yes || echo no)"
   rm_check "worker_not_redone" "$([[ "$RM_DERIVED_REDONE" == false ]] && echo 0 || echo 1)" "worker starts $(sc_json_get "$SC_BEFORE" .counts.worker_starts) -> $(sc_json_get "$SC_FINAL" .counts.worker_starts)"
-  rm_check "session_id_stable" "$(sc_session_ids_survive "$SC_BEFORE" "$SC_FINAL" && echo 0 || echo 1)" "task session $(sc_json_get "$SC_BEFORE" .task.session_id) -> $(sc_json_get "$SC_FINAL" .task.session_id)"
+  rm_check "session_id_stable" "$(sc_task_session_stable "$SC_BEFORE" "$SC_FINAL" && echo 0 || echo 1)" "task session $(sc_json_get "$SC_BEFORE" .task.session_id) -> $(sc_json_get "$SC_FINAL" .task.session_id)"
   local lines
   lines="$(rm_count_lines "$RM_PROJECT/worker-counter.txt")"
   rm_check "counter_file_complete" "$([[ "$lines" == "$ticks" ]] && echo 0 || echo 1)" "counter lines $lines of $ticks"
@@ -245,7 +267,7 @@ state_verify_session() {
   sc_restart_with_snapshots "$name" || { sc_abort_state "$name" "sandbox daemon did not come back"; return; }
   local survived=1
   rm_pid_alive "$verifier_pid" && survived=0
-  rm_wait_until 240 sc_task_terminal "$SC_PRD"
+  sc_wait_settled "$SC_PRD" verifier.done 240
   sc_finish "$name"
 
   sc_common_criteria "$SC_BEFORE" "$SC_AFTER_RESTART" "$SC_FINAL"
@@ -282,7 +304,7 @@ sc_script_state() { # NAME DESCRIPTION GATE_OPEN
   local status_after
   status_after="$(sc_json_get "$SC_AFTER_RESTART" .task.status)"
   : >"$RM_CTRL/script.gate" # the re-run (or the original) may proceed
-  rm_wait_until 240 sc_task_terminal "$SC_PRD"
+  sc_wait_settled "$SC_PRD" script.finished 240
   sc_finish "$name"
 
   sc_common_criteria "$SC_BEFORE" "$SC_AFTER_RESTART" "$SC_FINAL"

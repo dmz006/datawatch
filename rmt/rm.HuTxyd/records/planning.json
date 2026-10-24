@@ -4,8 +4,8 @@
   "result": "FAIL",
   "note": "",
   "restart": {
-    "old_pid": "4113740",
-    "new_pid": "4115219",
+    "old_pid": "250859",
+    "new_pid": "252225",
     "term_clean": true,
     "down_seconds": 1
   },
@@ -13,13 +13,13 @@
     "task_status_before": "",
     "task_status_after": "",
     "session_ids_before": [
-      "restart-matrix-4885"
+      "restart-matrix-3c01"
     ],
     "session_ids_after": [
-      "restart-matrix-4885"
+      "restart-matrix-3c01"
     ],
     "pane_pids_before": [
-      "cs-restart-matrix-4885:4114706"
+      "cs-restart-matrix-3c01:251817"
     ],
     "pane_pids_after": [],
     "retry_count_before": 0,
@@ -32,12 +32,12 @@
     {
       "criterion": "restart_exited_on_term",
       "result": "PASS",
-      "detail": "daemon pid 4113740 down in 1s"
+      "detail": "daemon pid 250859 down in 1s"
     },
     {
       "criterion": "daemon_replaced",
       "result": "PASS",
-      "detail": "pid 4113740 -> 4115219"
+      "detail": "pid 250859 -> 252225"
     },
     {
       "criterion": "no_duplicate_sessions",
@@ -57,7 +57,7 @@
     {
       "criterion": "planner_process_survived",
       "result": "FAIL",
-      "detail": "planner pid 4115004 alive right after the restart: no"
+      "detail": "planner pid 252082 alive right after the restart: no"
     },
     {
       "criterion": "planner_not_redone",
@@ -79,10 +79,10 @@
   "fail": 3,
   "before": {
     "label": "planning-before",
-    "at": "2026-10-24T02:59:05Z",
+    "at": "2026-10-24T03:28:38Z",
     "daemon": {
-      "pid": "4113740",
-      "uptime_seconds": 4
+      "pid": "250859",
+      "uptime_seconds": 5
     },
     "prd_status": "planning",
     "task": {
@@ -95,19 +95,19 @@
     },
     "sessions": [
       {
-        "id": "4885",
-        "full_id": "restart-matrix-4885",
+        "id": "3c01",
+        "full_id": "restart-matrix-3c01",
         "name": "autonomous:decompose",
         "state": "running",
-        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/planning/data/sessions/restart-matrix-4885/output.log",
-        "tmux_session": "cs-restart-matrix-4885"
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.HuTxyd/planning/data/sessions/restart-matrix-3c01/output.log",
+        "tmux_session": "cs-restart-matrix-3c01"
       }
     ],
     "session_ids": [
-      "restart-matrix-4885"
+      "restart-matrix-3c01"
     ],
     "pane_pids": [
-      "cs-restart-matrix-4885:4114706"
+      "cs-restart-matrix-3c01:251817"
     ],
     "counts": {
       "planner_starts": 1,
@@ -119,13 +119,13 @@
       "script_finished": 0
     },
     "worker_counter_bytes": 0,
-    "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/planning/snap-planning-before"
+    "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.HuTxyd/planning/snap-planning-before"
   },
   "after": {
     "label": "planning-final",
-    "at": "2026-10-24T03:01:42Z",
+    "at": "2026-10-24T03:31:16Z",
     "daemon": {
-      "pid": "4115219",
+      "pid": "252225",
       "uptime_seconds": 156
     },
     "prd_status": "draft",
@@ -139,16 +139,16 @@
     },
     "sessions": [
       {
-        "id": "4885",
-        "full_id": "restart-matrix-4885",
+        "id": "3c01",
+        "full_id": "restart-matrix-3c01",
         "name": "autonomous:decompose",
         "state": "killed",
-        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/planning/data/sessions/restart-matrix-4885/output.log",
-        "tmux_session": "cs-restart-matrix-4885"
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.HuTxyd/planning/data/sessions/restart-matrix-3c01/output.log",
+        "tmux_session": "cs-restart-matrix-3c01"
       }
     ],
     "session_ids": [
-      "restart-matrix-4885"
+      "restart-matrix-3c01"
     ],
     "pane_pids": [],
     "counts": {
@@ -161,6 +161,6 @@
       "script_finished": 0
     },
     "worker_counter_bytes": 0,
-    "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/planning/snap-planning-final"
+    "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.HuTxyd/planning/snap-planning-final"
   }
 }
