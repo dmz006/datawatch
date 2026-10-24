@@ -5681,6 +5681,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"sse_enabled":       s.cfg.MCP.SSEEnabled,
 			"sse_host":          s.cfg.MCP.SSEHost,
 			"sse_port":          s.cfg.MCP.SSEPort,
+			"public_url":        s.cfg.MCP.PublicURL,
 			"token":             mask(s.cfg.MCP.Token),
 			"tls_enabled":       s.cfg.MCP.TLSEnabled,
 			"tls_auto_generate": s.cfg.MCP.TLSAutoGenerate,
@@ -6144,6 +6145,15 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["autonomous.plan_coverage_min_ratio"]; ok {
 		if _, verr := configPatchFloat(v); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// mcp.public_url is advertised verbatim to MCP SSE clients, so a value
+	// that is not an absolute http(s) URL is rejected before anything is
+	// applied and the config is left unchanged.
+	if v, ok := patch["mcp.public_url"]; ok {
+		if _, verr := config.NormalizePublicURL(toString(v)); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -6834,6 +6844,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "mcp.sse_port":
 			if n, ok := toInt(v); ok {
 				cfg.MCP.SSEPort = n
+			}
+		case "mcp.public_url":
+			// handlePutConfig has already rejected invalid values; an invalid
+			// one reaching here (a direct caller) leaves the field unchanged.
+			if u, err := config.NormalizePublicURL(toString(v)); err == nil {
+				cfg.MCP.PublicURL = u
 			}
 		case "mcp.sse_enabled":
 			cfg.MCP.SSEEnabled = toBool(v)

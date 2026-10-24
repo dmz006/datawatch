@@ -179,7 +179,7 @@ func (s *Server) reload() ReloadResult {
 	res.RequiresRestart = []string{
 		"server.host", "server.port",
 		"signal.account_number", "signal.group_id",
-		"mcp.sse_host", "mcp.sse_port",
+		"mcp.sse_host", "mcp.sse_port", "mcp.public_url",
 		"database.*", "agents.*",
 	}
 
