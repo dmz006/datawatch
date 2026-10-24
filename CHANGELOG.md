@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+The SSE stall detector no longer ends non-opencode sessions whose output merely contains a network error phrasing, and now ends only an opencode-family session that prints the real provider error line.
+
+- The detector now applies only to the opencode family, decided from the session's backend; other backends are never ended by it and keep their silence and activity detectors untouched.
+- It matches the provider error line as the tool prints it (a short line, optionally with an `Error:` or `AI_APICallError:` prefix, case-insensitive), and treats as a miss any text already present at the previous scan and any phrase inside a tool result or code block.
+- Each end records the matched line, the backend and the scan source (verifier wait loop or automata watchdog) in the end reason.
+- Tests with fake scrollbacks cover the cases, including a Claude test run full of the phrases that must never be ended.
+
 ## v9.9.1 — Orphan sweep no longer ends live workers
 
 Fixes the orphan sweep that ended every live Claude worker about five minutes after its task was delivered, which had been failing long tasks with "no new changes" since the sweep went live.
