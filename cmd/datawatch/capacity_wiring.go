@@ -171,6 +171,30 @@ func capacityResolver(registry func() *inference.Registry, nodes func() *compute
 	}
 }
 
+// nodeLoader is the autonomous.NodeLoader a worker's placement uses on a
+// multi-node LLM entry: it finds the leased node in the compute registry and
+// makes the model resident there. A node the registry does not hold fails the
+// load, so the task fails over to another node of the entry.
+func nodeLoader(nodes func() *compute.Registry) autonomous.NodeLoader {
+	loader := &inference.ModelLoader{}
+	return func(ctx context.Context, name, model string, wait func(reason string)) error {
+		var reg *compute.Registry
+		if nodes != nil {
+			reg = nodes()
+		}
+		var node *compute.Node
+		if reg != nil {
+			if n, err := reg.Get(name); err == nil {
+				node = n
+			}
+		}
+		if node == nil {
+			return &inference.NodeLoadError{Node: name, Model: model, Cause: fmt.Errorf("node %s is not in the compute registry", name)}
+		}
+		return loader.Ensure(ctx, node, model, wait)
+	}
+}
+
 // withNodeChoices puts the candidate nodes on a request; fewer than two leaves
 // it unchanged.
 func withNodeChoices(req capacity.Request, choices []capacity.NodeChoice) capacity.Request {
@@ -561,7 +585,7 @@ func gpuNodeBackpressure(limitPct func() int, mu *sync.Mutex, util map[string]fl
 // limits current with config, compute nodes and LLMs, refreshes GPU
 // backpressure, reaps leaked leases and raises long-wait alerts. It returns
 // the ledger so the pin keepers can tell when a node is in use.
-func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager, amgr *autonomous.Manager, httpServer *server.HTTPServer, alertFn func(title, body string)) *capacity.Ledger {
+func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager, amgr *autonomous.Manager, httpServer *server.HTTPServer, alertFn func(title, body string), nodeAlerts autonomous.NodeLoadAlerts) *capacity.Ledger {
 	var gpuMu sync.Mutex
 	gpuUtil := map[string]float64{}
 
@@ -607,6 +631,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	}
 	amgr.SetCapacity(led, keys)
 	amgr.SetCapacityChoices(choices)
+	amgr.SetNodeLoad(nodeLoader(httpServer.ComputeRegistry), nodeAlerts)
 	amgr.SetCapacityAudit(capacityAudit)
 	amgr.SetBackoff(autonomousBackoff)
 	amgr.SetPatternsStatus(mgr.RateLimitGuardStatus)

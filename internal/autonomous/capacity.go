@@ -69,6 +69,17 @@ func (m *Manager) SetCapacityChoices(fn CapacityChoicesFn) {
 	m.capacityChoices = fn
 }
 
+// SetNodeLoad wires the step that makes a worker's model resident on the
+// node its lease was granted on, and the alert sink for a failed load. It
+// runs only for an LLM entry that pools two or more nodes; a nil loader
+// keeps every worker on the spawn path it always took.
+func (m *Manager) SetNodeLoad(loader NodeLoader, alerts NodeLoadAlerts) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.nodeLoad = loader
+	m.nodeAlerts = alerts
+}
+
 // SetCooldownUntilFn wires the BL30 global-cooldown reset time (zero = none
 // active), used only to word the wait reason when a spawn hits
 // session.ErrGlobalCooldown.
@@ -233,6 +244,13 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 			return err
 		}
 	}
+	return m.acquireLease(ctx, prd, t, backend, model, role, nil)
+}
+
+// acquireLease blocks until the task holds a capacity lease, never on a node
+// named in exclude. admit calls it with nil; the node-load failover calls it
+// again with the nodes that failed for this attempt.
+func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, model string, role capacity.Role, exclude []string) error {
 	if !m.capacityOn() {
 		return nil
 	}
@@ -249,7 +267,7 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 	var waitStart time.Time
 	var lastCause WaitCause
 	err := led.Acquire(ctx, capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, Model: model, Role: role,
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, ExcludeNodes: exclude, Model: model, Role: role,
 	}, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
 		if !waited {
 			waitStart = rec.Now()

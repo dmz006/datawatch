@@ -787,6 +787,11 @@ type Manager struct {
 	// capacityChoices lists the candidate compute nodes of a backend+model
 	// when its LLM entry pools two or more (nil = single-node behaviour).
 	capacityChoices CapacityChoicesFn
+	// nodeLoad makes a worker's model resident on the node its lease was
+	// granted on; nodeAlerts receives the error when that fails. Both are nil
+	// until SetNodeLoad wires them (single-node entries never use them).
+	nodeLoad   NodeLoader
+	nodeAlerts NodeLoadAlerts
 	// cooldownUntilFn reports when the BL30 global cooldown ends (zero when
 	// none is active); waitClock is the time source for the spawn-wait loop
 	// (nil = wall clock). Both are set via capacity.go.

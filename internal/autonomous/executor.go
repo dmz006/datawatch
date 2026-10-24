@@ -1184,6 +1184,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 				return aerr
 			}
+			// A multi-node LLM entry needs its model resident on the leased node
+			// before the spawn; a single-node entry skips this step entirely.
+			if lerr := m.loadWorkerNode(ctx, prd, t, backend, model); lerr != nil {
+				if errors.Is(lerr, errCancelledWhileWaiting) {
+					return nil
+				}
+				return lerr
+			}
 			// The node the lease was granted on decides where the worker runs.
 			heldNode := m.heldNode(t.ID)
 			// BL428 §3a — tree lock after capacity, before spawn: a second
