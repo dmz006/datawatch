@@ -21323,6 +21323,23 @@ function loadAutomataPanel() {
 }
 window.loadAutomataPanel = loadAutomataPanel;
 
+// _automataShowList brings the Automata list back after a sub-tab switch. When
+// the loader already holds a fetched list (or is still fetching one) it only
+// repaints from that state; the list is requested again only when nothing was
+// fetched yet. The loader keeps its own polling, so freshness is unchanged.
+function _automataShowList() {
+  const ctl = window._listLoaders && window._listLoaders.automata;
+  const s = ctl && ctl.state;
+  if (s && (s.loading || (s.hasData && !s.fromCache && !s.error))) {
+    ctl.paint();
+    return Promise.resolve();
+  }
+  return loadAutomataPanel();
+}
+// Set by switchAutomataTab for the one render it triggers, so that render
+// reuses the Automata list state instead of fetching it again.
+let _automataReuseList = false;
+
 // Generic modal (title + body HTML + confirm/cancel). Closes on overlay click.
 function showModal({ title, body, confirmLabel, cancelLabel, onConfirm }) {
   const existing = document.getElementById('genericModal');
@@ -21700,11 +21717,15 @@ function switchAutomataTab(tab) {
   if (tab === 'automation' || prev === 'automation') {
     _automataDetailId = null;
     _automationState.detailId = null;
+    // Leaving the Automation sub-tab ends its polling; selecting it starts
+    // the loaders again from _automationMount.
+    if (tab !== 'automation') _automationStopLoaders();
+    _automataReuseList = true;
     renderAutonomousView();
     return;
   }
   if (tab === 'templates') loadAutomataTemplatesPanel();
-  else loadAutomataPanel();
+  else _automataShowList();
 }
 window.switchAutomataTab = switchAutomataTab;
 
@@ -24657,10 +24678,14 @@ function renderAutonomousView() {
   if (isAutomation) {
     _automationMount();
   } else {
+    const reuse = _automataReuseList;
+    _automataReuseList = false;
     if (st.tab === 'templates') loadAutomataTemplatesPanel();
+    else if (reuse) _automataShowList();
     else loadAutomataPanel();
     window._loadPRDCapacityCard();
   }
+  _automataReuseList = false;
   _injectServerPickerBar(view, renderAutonomousView); // BL312 S3
 }
 window.renderAutonomousView = renderAutonomousView;
@@ -24755,6 +24780,15 @@ function _automationMount() {
   // The capacity card and the list load in parallel; each loader owns its
   // own loading and failed states, so one failing never blanks the other.
   listLoaderAll([_automationCapacityLoader(), _automationLoader()]);
+}
+
+// _automationStopLoaders ends the polling and tick timers of the Automation
+// list and capacity loaders. Their state stays, and load() starts them again.
+function _automationStopLoaders() {
+  ['automation', 'automation_capacity'].forEach(k => {
+    const ctl = window._listLoaders && window._listLoaders[k];
+    if (ctl) ctl.stop();
+  });
 }
 
 // renderAutomationView shows the Automation list: the Automata view with its

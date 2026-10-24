@@ -505,6 +505,39 @@ body {
 .automata-action-btn:hover { color: var(--text); background: var(--bg3); }
 .automata-action-btn.active { color: var(--accent); border-color: var(--accent); background: rgba(96,165,250,0.1); }
 
+/* Phone width: three sub-tabs plus the action buttons must fit at 320 px with
+   no clipping and no sideways scroll. The tabs shrink (ellipsis) before they
+   would overflow, the action buttons wrap onto a second row when they do not
+   fit beside them, and every tab and action button keeps a 40 px tap target. */
+@media (max-width: 600px), (pointer: coarse) {
+  .automata-tabs-bar {
+    flex-wrap: wrap;
+    overflow: visible;
+    box-sizing: border-box;
+    max-width: 100%;
+    row-gap: 4px;
+  }
+  .automata-tabs-bar .output-tab {
+    flex: 0 1 auto;
+    min-width: 0;
+    min-height: 40px;
+    padding: 6px 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+  }
+  .automata-tabs-bar > div:empty { flex: 1 1 0; min-width: 0; }
+  .automata-tabs-bar .automata-action-btn {
+    min-width: 40px;
+    min-height: 40px;
+    height: 40px;
+  }
+  .automata-tabs-bar .btn-primary {
+    min-height: 40px;
+    box-sizing: border-box;
+  }
+}
+
 /* Filter bar */
 .automata-filter-bar {
   display: flex;
