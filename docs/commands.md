@@ -1095,6 +1095,7 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `learnings` | List engine learnings (BL202) |
 | `progress [--json] [--automation <id>] [--tag <id>] [--since <date>] [--until <date>]` | Automata progress: counts by kind, work left (known and estimated, shown separately), the completion range with its methods, lead time and inactive windows. `--json` prints the `GET /api/autonomous/progress` body untouched; chat: `progress [automation=<id>] [tag=<id>] [since=<date>]` |
 | `progress-trend [--days <n>] [--json]` | How the completion range moved over the saved daily snapshots (1 to 365 days, default 30); `GET /api/autonomous/progress/trend`; chat: `progress trend [days]` |
+| `lane-fill [--limit <n>] [--json]` | Lane fill: each GPU and Claude lane with what it is running or why it is idle, the queued eligible counts and the newest decisions (`--limit` 1 to 1000, default 50). `--json` prints the `GET /api/autonomous/lane-fill` body untouched; a bad `--limit` is refused before anything is sent |
 | `subscribe --on <kind> [--level prd|task] [--prd <id>] [--task <id>] --sink comm\|session\|topic\|alert --target <t> [--send <text>] [--one-shot] [--coalesce] [--expires <secs>]` | Subscribe to Automaton lifecycle events and route them to a sink (BL427 phase 3); `--on` is repeatable; shorthand words map to task kinds, full kinds pass through |
 | `unsubscribe <id>` | Delete a lifecycle-event subscription by id (BL427 phase 3) |
 | `subscriptions [--owner <owner>]` | List lifecycle-event subscriptions, optionally scoped to one owner (BL427 phase 3) |
@@ -1111,6 +1112,8 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `prd-set-tags <prd-id> --tags <id1,id2,...>` | Replace the tags on an Automaton; an empty `--tags` value clears them; `POST /api/autonomous/prds/{id}/set_tags` |
 | `prd-set-kind <id> <feature\|bug\|other>` | Set the Automaton kind the progress figures count it under; an unknown kind is refused before anything is sent; `POST /api/autonomous/prds/{id}/set_kind` (body `{"kind": ...}`, an empty kind derives it again) |
 | `prd-create <spec> --kind <feature\|bug\|other>` | Give the kind at creation; omit it to derive the kind from the title and spec |
+| `prd-set-lane-preference <id> <gpu\|claude\|any>` | Set which lane an Automaton may take; an unknown value is refused before anything is sent; `POST /api/autonomous/prds/{id}/set_lane_preference` (body `{"lane_preference": ...}`) |
+| `prd-create <spec> --lane-preference <gpu\|claude\|any>` | Give the lane preference at creation; omit it to take any lane |
 
 Comm channels: `autonomous tags`, `tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]`,
 `tag-rename <id> <new-name>`, `tag-move <id> <parent-id|root>`, `tag-color <id> <color>`,
@@ -1119,6 +1122,10 @@ Comm channels: `autonomous tags`, `tag-create <name> [parent=<id>] [color=<hex>]
 Comm channels for the progress figures: `progress [automation=<id>] [tag=<id>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>]`
 and `progress trend [days]` (see their own section above), and
 `autonomous set-kind <prd-id> <feature|bug|other>` to set an Automaton kind.
+
+Comm channels for lane fill: `autonomous lane-fill [limit]` replies with one line per lane, the queued
+eligible counts, then the newest five decisions (`limit` is how many decisions are read); and
+`autonomous set-lane-preference <prd-id> <gpu|claude|any>` sets the lane an Automaton may take.
 
 ### `datawatch automation <subcommand>`
 

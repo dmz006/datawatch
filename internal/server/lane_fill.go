@@ -152,3 +152,18 @@ func laneFillConfigSurface(c config.AutonomousLaneFillConfig) map[string]interfa
 		"claude_backend":      c.EffectiveClaudeBackend(),
 	}
 }
+
+// LaneFillRESTOperation is one lane fill REST route, read by the parity test.
+type LaneFillRESTOperation struct {
+	Name   string
+	Method string
+	Path   string
+}
+
+// LaneFillRESTOperations is the single list of lane fill REST operations.
+func LaneFillRESTOperations() []LaneFillRESTOperation {
+	return []LaneFillRESTOperation{
+		{"status", http.MethodGet, "/api/autonomous/lane-fill"},
+		{"set_lane_preference", http.MethodPost, "/api/autonomous/prds/{id}/set_lane_preference"},
+	}
+}

@@ -28,6 +28,7 @@ Subcommands:
   progress [--json] [--automation ID] [--tag ID] [--since DATE] [--until DATE]
                                   Progress counts, rates, work left and the completion range
   progress-trend [--days N] [--json]  How the completion range moved over the saved daily snapshots
+  lane-fill [--limit N] [--json]  Lane fill: each lane, queued eligible counts and the newest decisions
   config-get                      Read current autonomous config
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
@@ -65,6 +66,7 @@ Subcommands:
   prd-remove-task <id>            Remove one task from a story without re-running decompose
   prd-set-type <id> <type>        Set automaton type (BL221 Phase 4)
   prd-set-kind <id> <kind>        Set the Automaton kind: feature, bug or other
+  prd-set-lane-preference <id> gpu|claude|any  Set which lane an Automaton may take
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
   prd-set-git <id> on|off         Set AutoPR (+--base-branch override) for a PRD (BL407 Phase 5)
   prd-set-skills <id> <csv>       Assign skills to PRD (BL221 Phase 4)
@@ -95,6 +97,7 @@ Subcommands:
 	cmd.AddCommand(
 		newAutonomousProgressCmd(),
 		newAutonomousProgressTrendCmd(),
+		newAutonomousLaneFillCmd(),
 		newAutonomousStatusCmd(),
 		newAutonomousConfigGetCmd(),
 		newAutonomousConfigSetCmd(),
@@ -143,6 +146,7 @@ Subcommands:
 		// BL221 Phase 4 — type registry, Guided Mode, skills.
 		newAutonomousPRDSetTypeCmd(),
 		newAutonomousPRDSetKindCmd(),
+		newAutonomousPRDSetLanePreferenceCmd(),
 		newAutonomousTagListCmd(),
 		newAutonomousTagCreateCmd(),
 		newAutonomousTagRenameCmd(),
@@ -544,7 +548,7 @@ func newAutonomousPRDListCmd() *cobra.Command {
 }
 
 func newAutonomousPRDCreateCmd() *cobra.Command {
-	var projectDir, backend, effort, typ, skillsCSV, kind string
+	var projectDir, backend, effort, typ, skillsCSV, kind, lanePref string
 	var guidedMode bool
 	cmd := &cobra.Command{
 		Use:   "prd-create <spec>",
@@ -568,6 +572,13 @@ func newAutonomousPRDCreateCmd() *cobra.Command {
 				}
 				body["kind"] = k
 			}
+			if lanePref != "" {
+				p, err := parseLanePreferenceArg(lanePref)
+				if err != nil {
+					return err
+				}
+				body["lane_preference"] = p
+			}
 			if guidedMode {
 				body["guided_mode"] = true
 			}
@@ -588,6 +599,7 @@ func newAutonomousPRDCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&effort, "effort", "", "Effort hint (low/medium/high/max)")
 	cmd.Flags().StringVar(&typ, "type", "", "Automaton type (software|research|operational|personal or custom)")
 	cmd.Flags().StringVar(&kind, "kind", "", "Automaton kind (feature|bug|other); omit to derive it from the title and spec")
+	cmd.Flags().StringVar(&lanePref, "lane-preference", "", "Lane the Automaton may take (gpu|claude|any); omit for any")
 	cmd.Flags().BoolVar(&guidedMode, "guided-mode", false, "Enable Guided Mode (step-by-step operator checkpoints)")
 	cmd.Flags().StringVar(&skillsCSV, "skills", "", "Comma-separated skill IDs (e.g. git,docker,pytest)")
 	return cmd

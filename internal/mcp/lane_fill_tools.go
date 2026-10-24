@@ -76,3 +76,9 @@ func laneFillConfigArgs(req mcpsdk.CallToolRequest) map[string]any {
 	}
 	return lane
 }
+
+// LaneFillToolNames lists the lane fill tools, for the parity test.
+func LaneFillToolNames() []string {
+	s := &Server{}
+	return []string{s.toolAutonomousLaneFillStatus().Name, s.toolAutonomousPRDSetLanePreference().Name}
+}
