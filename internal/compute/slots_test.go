@@ -39,15 +39,36 @@ func TestNodeSlotsFromObserverGPUsAndMemory(t *testing.T) {
 		want    int
 	}{
 		{
-			name: "one slot per GPU with no model loaded",
+			name: "one slot per GPU when no model size is known",
 			obs:  NodeObservation{GPUs: fakeGPUs(24, 0, 0)},
 			want: 2,
 		},
 		{
-			name: "model loaded on one GPU still leaves a slot per GPU",
+			name: "no model size known, so a full GPU is not counted out",
+			obs:  NodeObservation{GPUs: fakeGPUs(24, 22, 22)},
+			want: 2,
+		},
+		{
+			name: "the node's own loaded model is subtracted like any other memory in use",
 			obs: NodeObservation{
 				GPUs:             fakeGPUs(24, 20, 0),
 				LoadedModelBytes: []uint64{20 * testGiB},
+			},
+			want: 1,
+		},
+		{
+			name: "a foreign program holding memory on every GPU lowers the count",
+			obs: NodeObservation{
+				GPUs:           fakeGPUs(24, 10, 10),
+				LastModelBytes: 20 * testGiB,
+			},
+			want: 1,
+		},
+		{
+			name: "the last served model size applies while no model is loaded",
+			obs: NodeObservation{
+				GPUs:           fakeGPUs(24, 0, 0),
+				LastModelBytes: 20 * testGiB,
 			},
 			want: 2,
 		},
@@ -145,9 +166,29 @@ func TestSingleGPUNodeStaysAtOneSlot(t *testing.T) {
 			},
 		},
 		{
+			name: "GPU full with only the last served model size known",
+			obs: NodeObservation{
+				GPUs:           fakeGPUs(24, 24),
+				LastModelBytes: 20 * testGiB,
+			},
+		},
+		{
 			name: "a worker already running",
 			held: 1,
 			obs:  NodeObservation{GPUs: fakeGPUs(80, 10), LoadedModelBytes: []uint64{10 * testGiB}},
+		},
+		{
+			name: "two workers already running",
+			held: 2,
+			obs:  NodeObservation{GPUs: fakeGPUs(80, 10), LoadedModelBytes: []uint64{10 * testGiB}},
+		},
+		{
+			name: "three workers already running on a full GPU",
+			held: 3,
+			obs: NodeObservation{
+				GPUs:             fakeGPUs(24, 24),
+				LoadedModelBytes: []uint64{20 * testGiB},
+			},
 		},
 	}
 	for _, tc := range cases {

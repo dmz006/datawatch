@@ -521,7 +521,7 @@ signal:
 
 ### Verifier node limit
 
-Verifier runs take a lease on the same node pool as the worker they check, and a node that hosts local engines gets its pool limit from `autonomous.max_engines_per_node` (default 1), capped by the compute node's own `max_concurrent_sessions` when that is smaller (see `syncPools` in `cmd/datawatch/capacity_wiring.go`). In practice a verifier on such a node therefore runs one at a time, and a verification can queue behind another task's lease.
+Verifier runs take a lease on the same node pool as the worker they check, and a node that hosts local engines gets its pool limit from its slot count (see "Compute-node queue" below), which is one slot per GPU when the observer reports GPU data and `autonomous.max_engines_per_node` (default 1) when it does not, capped by the compute node's own `max_concurrent_sessions` when that is smaller (see `syncPools` in `cmd/datawatch/capacity_wiring.go`). A node with one GPU therefore runs one verifier at a time, and a verification can queue behind another task's lease.
 
 Assessment: the limit should not rise on a guess. One slot is the right default while the GPU is the bottleneck, because a second concurrent judge slows both runs. It becomes too tight only when verifiers spend a large share of their time waiting rather than running. This work does **not** change the limit; it adds the counters that decide the question.
 
@@ -3155,10 +3155,15 @@ with no ancestor `CLAUDE.md` files also shows none.
 ## Compute-node queue (max_engines_per_node)
 
 A compute node can only run so many local models at once. Each node has a
-capacity pool named `node:<name>`, and its limit is
-`autonomous.max_engines_per_node` (default `1`; values below `1` are clamped
-to `1`). A node's own `max_concurrent_sessions` still acts as a ceiling when
-it is set and smaller.
+capacity pool named `node:<name>`, and its limit is its slot count. The
+operator's `session_slots` on the node wins when it is set. Otherwise a node
+that hosts local engines derives its count from observer GPU data: one slot per
+GPU, limited by the free GPU memory against the size of the model it serves.
+A node with no observer data falls back to `autonomous.max_engines_per_node`
+(default `1`; values below `1` are clamped to `1`). The node's own
+`max_concurrent_sessions` still acts as a ceiling when it is set and smaller.
+The count is re-read every 10 seconds, so a change takes effect without a
+restart.
 
 ### What is gated
 

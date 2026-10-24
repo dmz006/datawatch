@@ -10618,6 +10618,8 @@ function buildComputeNodeForm(n) {
     <input id="fe_compute_max_models" type="number" min="0" class="form-input" value="${cap.max_concurrent_models||''}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_max_sessions')||'Max concurrent sessions (0 = unlimited)')}</label>
     <input id="fe_compute_max_sessions" type="number" min="0" class="form-input" value="${n.max_concurrent_sessions||''}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_session_slots')||'Session slots (0 = derive from GPU data)')}</label>
+    <input id="fe_compute_session_slots" type="number" min="0" class="form-input" value="${n.session_slots||''}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_priority')||'Scheduling priority (0–100)')}</label>
     <input id="fe_compute_priority" type="number" min="0" max="100" class="form-input" value="${n.scheduling_priority||50}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_tags')||'Tags')}</label>
@@ -10655,6 +10657,7 @@ function collectComputeNodeForm(originalRecord) {
   out.declared_capacity = out.declared_capacity || {};
   out.declared_capacity.max_concurrent_models = parseInt((document.getElementById('fe_compute_max_models')||{}).value || '0', 10) || 0;
   out.max_concurrent_sessions = parseInt((document.getElementById('fe_compute_max_sessions')||{}).value || '0', 10) || 0;
+  out.session_slots = parseInt((document.getElementById('fe_compute_session_slots')||{}).value || '0', 10) || 0;
   out.scheduling_priority = parseInt((document.getElementById('fe_compute_priority')||{}).value || '50', 10) || 50;
   out.tags = getBadgeInputValue('fe_compute_tags').split(',').map(s => s.trim()).filter(Boolean);
   out.observer_peer = ((document.getElementById('fe_compute_observer_peer')||{}).value || '').trim();

@@ -61,6 +61,7 @@ func (s *Server) toolComputeNodeUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("gpu_mem_gb", mcpsdk.Description("declared GPU memory in GB")),
 		mcpsdk.WithString("scheduling_priority", mcpsdk.Description("0-100")),
 		mcpsdk.WithString("max_concurrent_sessions", mcpsdk.Description("cap on autonomous sessions in flight on this node (0 = unlimited)")),
+		mcpsdk.WithString("session_slots", mcpsdk.Description("operator-set worker count for this node (0 = derive from observer GPU data: one slot per GPU, limited by free GPU memory). Capped by max_concurrent_sessions when set. Update replaces the whole node, so omitting this clears the override.")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated tags")),
 		mcpsdk.WithString("node_pinned_model", mcpsdk.Description("pin this node to one model. Update replaces the whole node, so omitting this clears the pin. Empty = no pin.")),
 		mcpsdk.WithBoolean("allow_model_swap", mcpsdk.Description("let an explicit request replace the pinned model. Default false. Update replaces the whole node, so omitting this resets it to false.")),
@@ -367,6 +368,11 @@ func computeBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 		var n int
 		_, _ = fmt.Sscanf(v, "%d", &n)
 		body["max_concurrent_sessions"] = n
+	}
+	if v := optString(req, "session_slots"); v != "" {
+		var n int
+		_, _ = fmt.Sscanf(v, "%d", &n)
+		body["session_slots"] = n
 	}
 	cap := map[string]any{}
 	if v := optString(req, "max_concurrent_models"); v != "" {

@@ -85,16 +85,24 @@ curl -X PUT https://localhost:8443/api/compute/nodes/gpu-1 \
   -H 'Content-Type: application/json' -d '{"name":"gpu-1", "max_concurrent_sessions": 1, "...": "other fields unchanged"}'
 ```
 
+A node's worker count can also be set by the operator with `session_slots`.
+When it is `0` (the default), the daemon derives the count from the node's
+observer data: one slot per GPU, limited by the free GPU memory against the
+size of the model the node serves. The count is re-read on every capacity
+tick, so a change takes effect without a restart. A node with no observer GPU
+data takes `autonomous.max_engines_per_node`.
+
 Other channels:
 
-- **PWA:** Settings > Compute > node edit > *Max concurrent sessions*;
-  LLM edit > *Max in flight*; Settings > General > Automata > capacity
-  fields; Automata > Capacity card shows pools and the queue.
-- **MCP:** `compute_node_update` (`max_concurrent_sessions`),
+- **PWA:** Settings > Compute > node edit > *Max concurrent sessions* and
+  *Session slots*; LLM edit > *Max in flight*; Settings > General > Automata >
+  capacity fields; Automata > Capacity card shows pools and the queue.
+- **MCP:** `compute_node_update` (`session_slots`, `max_concurrent_sessions`),
   `llm_update` (`max_inflight`), `config_set` for
   `autonomous.capacity_*` and `session.reserved_interactive`,
   `capacity_status` to view, `autonomous_prd_set_priority`.
-- **CLI:** `datawatch capacity` (add `--json`), `datawatch config set
+- **CLI:** `datawatch compute node update <name> --session-slots N`,
+  `datawatch capacity` (add `--json`), `datawatch config set
   autonomous.capacity_wait_timeout_seconds 7200`.
 - **Chat channels:** `capacity`, and `configure
   session.reserved_interactive=2`.
