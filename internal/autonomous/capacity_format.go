@@ -6,6 +6,8 @@ package autonomous
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,10 +28,42 @@ type capacityBackoffView struct {
 
 // capacityPoolView is one /api/capacity pool entry: the base PoolStatus plus
 // HolderNames (node pools), the resolved readable form of the raw holder ids
-// in Holders. Absent on older daemons.
+// in Holders, and Usage (node pools) — the per-node usage object. HolderNames
+// and Usage are absent on older daemons.
 type capacityPoolView struct {
 	capacity.PoolStatus
-	HolderNames []HolderNameView `json:"holder_names"`
+	HolderNames []HolderNameView   `json:"holder_names"`
+	Usage       *capacityNodeUsage `json:"usage"`
+}
+
+// capacityNodeUsage is the per-node usage object a node:<name> pool of
+// /api/capacity carries when the daemon reports it: the model-probe state,
+// the models loaded in memory (with their memory footprint and eviction time)
+// and the GPU figures. Absent on older daemons and on non-node pools.
+type capacityNodeUsage struct {
+	State           string                   `json:"state"`
+	CheckedAt       time.Time                `json:"checked_at"`
+	Error           string                   `json:"error"`
+	ModelsSupported bool                     `json:"models_supported"`
+	Models          []capacityNodeUsageModel `json:"models"`
+	GPU             []capacityNodeUsageGPU   `json:"gpu"`
+}
+
+// capacityNodeUsageModel is one loaded model inside a node's usage object.
+type capacityNodeUsageModel struct {
+	Name          string    `json:"name"`
+	SizeBytes     int64     `json:"size_bytes"`
+	SizeVRAMBytes int64     `json:"size_vram_bytes"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	NoExpiry      bool      `json:"no_expiry"`
+}
+
+// capacityNodeUsageGPU is one GPU inside a node's usage object.
+type capacityNodeUsageGPU struct {
+	Name          string  `json:"name"`
+	UtilPct       float64 `json:"util_pct"`
+	MemUsedBytes  int64   `json:"mem_used_bytes"`
+	MemTotalBytes int64   `json:"mem_total_bytes"`
 }
 
 // capacityWaiterView is one ledger waiter as /api/capacity carries it, plus
@@ -68,7 +102,7 @@ func FormatCapacityText(body []byte) (string, error) {
 	}
 	now := CapacityTextClock()
 	var b strings.Builder
-	b.WriteString(capacity.FormatPools(capacityPoolsForText(c.Pools)))
+	b.WriteString(poolsTextWithUsage(c.Pools))
 
 	switch {
 	case len(c.Tasks.Waiting) > 0:
@@ -170,6 +204,73 @@ func capacityPoolsForText(views []capacityPoolView) []capacity.PoolStatus {
 		out = append(out, ps)
 	}
 	return out
+}
+
+// poolsTextWithUsage renders the pools section: each pool exactly as
+// capacity.FormatPools prints it, and directly under every pool that carries
+// the per-node usage object, the indented usage lines. A body whose pools
+// carry no usage objects renders byte-for-byte the way FormatPools does.
+func poolsTextWithUsage(views []capacityPoolView) string {
+	if len(views) == 0 {
+		return capacity.FormatPools(nil)
+	}
+	folds := capacityPoolsForText(views)
+	var b strings.Builder
+	for i := range views {
+		b.WriteString(capacity.FormatPools(folds[i : i+1]))
+		writePoolUsage(&b, views[i].Usage)
+	}
+	return b.String()
+}
+
+// writePoolUsage prints the indented per-node usage lines under a pool line:
+// one "  model: ..." line per loaded model (its memory footprint, then when
+// it is evicted or "stays loaded") and one "  GPU <name>: ..." line per GPU.
+// The GPU lines are printed whenever the observer has them, including for an
+// unreachable model server. A pending probe prints "  checking..." instead,
+// an unreachable one "  unreachable: <reason>", and a no_data node adds no
+// line. A nil usage (absent from the body) prints nothing.
+func writePoolUsage(b *strings.Builder, u *capacityNodeUsage) {
+	if u == nil {
+		return
+	}
+	switch u.State {
+	case "pending":
+		b.WriteString("  checking...\n")
+	case "no_data":
+		// The node has no address and no observer data: nothing to show.
+	case "unreachable":
+		if u.Error != "" {
+			fmt.Fprintf(b, "  unreachable: %s\n", u.Error)
+		} else {
+			b.WriteString("  unreachable\n")
+		}
+	default: // "ok" and any state we do not know
+		now := CapacityTextClock()
+		for _, m := range u.Models {
+			expiry := "stays loaded"
+			if !m.NoExpiry && !m.ExpiresAt.IsZero() {
+				d := m.ExpiresAt.Sub(now)
+				if d < 0 {
+					d = 0
+				}
+				expiry = "expires in " + d.Round(time.Second).String()
+			}
+			fmt.Fprintf(b, "  model: %s %s GiB in memory, %s\n", m.Name, gibs(m.SizeBytes), expiry)
+		}
+	}
+	if u.State == "ok" || u.State == "unreachable" {
+		for _, g := range u.GPU {
+			fmt.Fprintf(b, "  GPU %s: %s%% util, %s of %s GiB memory\n",
+				g.Name, strconv.FormatFloat(g.UtilPct, 'g', -1, 64), gibs(g.MemUsedBytes), gibs(g.MemTotalBytes))
+		}
+	}
+}
+
+// gibs renders a byte count in GiB, one decimal ("5.0").
+func gibs(bytes int64) string {
+	v := float64(bytes) / (1024 * 1024 * 1024)
+	return strconv.FormatFloat(math.Round(v*10)/10, 'f', 1, 64)
 }
 
 // holderNameDisplay renders one resolved holder from the API's holder_names
