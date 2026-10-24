@@ -65,6 +65,7 @@ type capLease struct {
 type capWaiter struct {
 	Holder     string                    `json:"holder"`
 	PRDID      string                    `json:"prd_id"`
+	Reason     string                    `json:"reason"`
 	HolderName autonomous.HolderNameView `json:"holder_name"`
 }
 type capTaskWait struct {
@@ -409,6 +410,270 @@ func assertVerifierHolderName(t *testing.T, v autonomous.HolderNameView, where s
 	}
 }
 
+// TestJudgeCapacityEndpoint asserts judge holders render readably in the
+// capacity response: one RUNNING judge holds the node slot (pools and leases)
+// and one QUEUED judge waits for the same slot (waiting[]). Both carry the
+// readable name ("Judging rules: <PRD title> (<short id>)" for a PRD unit,
+// "Judging: <task title> (<short id>)" for a task unit) with kind "judge"
+// beside the old raw id fields, in the short response and with a non-empty
+// "full" only under ?long=1; the queued judge's wait reason names the full
+// pool and the holder it waits on.
+func TestJudgeCapacityEndpoint(t *testing.T) {
+	s := &Server{autonomousMgr: &holderNameAPI{}}
+	l := capacity.New(capacity.Options{})
+	s.SetCapacity(l)
+	l.SetLimit("node:gpu", 1)
+
+	// The running judge holds the one node:gpu slot.
+	held := make(chan struct{}, 1)
+	go func() {
+		_ = l.Acquire(context.Background(), capacity.Request{Holder: "judge:prd-a", PRDID: "prd-a", Pools: []string{"node:gpu"}}, 0, nil, nil)
+		held <- struct{}{}
+	}()
+	<-held
+
+	// The queued judge wants the same full slot and parks in waiting[].
+	go func() {
+		_ = l.Acquire(context.Background(), capacity.Request{Holder: "judge:t-aaaa1111", PRDID: "prd-a", Pools: []string{"node:gpu"}}, 30*time.Second, nil, nil)
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(l.Snapshot().Waiting) == 0 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if len(l.Snapshot().Waiting) == 0 {
+		t.Fatal("the queued judge never reached the wait queue")
+	}
+
+	// --- short form: readable name + kind "judge", "full" must be absent ---
+	var body capBody
+	{
+		rec := httptest.NewRecorder()
+		s.handleCapacity(rec, httptest.NewRequest(http.MethodGet, "/api/capacity", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /api/capacity = %d: %s", rec.Code, rec.Body.String())
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode: %v\n%s", err, rec.Body.String())
+		}
+	}
+
+	// pools: the running judge's readable name sits next to its raw id.
+	gpu := findPool(t, body.Pools, "node:gpu")
+	if len(gpu.Holders) != 1 || gpu.Holders[0] != "judge:prd-a" {
+		t.Fatalf("node:gpu holders (old) = %v, want [judge:prd-a]", gpu.Holders)
+	}
+	if gpu.Holder == nil || *gpu.Holder != "judge:prd-a" {
+		t.Fatalf("node:gpu holder (old) = %v, want judge:prd-a", gpu.Holder)
+	}
+	if len(gpu.HolderNames) != 1 {
+		t.Fatalf("node:gpu holder_names = %v, want one readable entry", gpu.HolderNames)
+	}
+	assertJudgePRDHolderName(t, gpu.HolderNames[0], "pools[].holder_names")
+
+	// leases: the running judge's readable name alongside its raw id.
+	lz := findCapacityLease(t, body.Leases, "judge:prd-a")
+	if lz.PRDID != "prd-a" {
+		t.Errorf("judge lease prd_id = %q, want prd-a", lz.PRDID)
+	}
+	assertJudgePRDHolderName(t, lz.HolderName, "leases[].holder_name")
+
+	// waiting: the queued judge's readable name, plus its plain wait reason
+	// which names the full pool and the holder it waits on.
+	wt := findCapacityWaiter(t, body.Waiting, "judge:t-aaaa1111")
+	if wt.PRDID != "prd-a" {
+		t.Errorf("queued judge prd_id = %q, want prd-a", wt.PRDID)
+	}
+	if wt.Reason == "" {
+		t.Errorf("queued judge has no wait reason")
+	}
+	if !strings.Contains(wt.Reason, "node gpu") {
+		t.Errorf("queued judge reason = %q, want the full node pool named", wt.Reason)
+	}
+	if !strings.Contains(wt.Reason, "held by judge:prd-a") {
+		t.Errorf("queued judge reason = %q, want the running holder named", wt.Reason)
+	}
+	assertJudgeTaskHolderName(t, wt.HolderName, "waiting[].holder_name")
+
+	// Raw-key checks: no "full" key anywhere without long=1, and the old
+	// raw id and reason fields stay put.
+	{
+		rec := httptest.NewRecorder()
+		s.handleCapacity(rec, httptest.NewRequest(http.MethodGet, "/api/capacity", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET (raw) = %d: %s", rec.Code, rec.Body.String())
+		}
+		var raw struct {
+			Pools   []map[string]json.RawMessage `json:"pools"`
+			Leases  []map[string]json.RawMessage `json:"leases"`
+			Waiting []map[string]json.RawMessage `json:"waiting"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+			t.Fatalf("raw decode: %v", err)
+		}
+		pool := findRawByName(t, raw.Pools, "node:gpu")
+		assertJudgeShortHolderJSON(t, pool["holder_names"], "judge:prd-a", "pools[].holder_names")
+		assertJudgeShortHolderJSON(t, rawLeaseHolder(t, raw.Leases, "judge:prd-a")["holder_name"], "judge:prd-a", "leases[].holder_name")
+		waiter := rawLeaseHolder(t, raw.Waiting, "judge:t-aaaa1111")
+		if _, ok := waiter["reason"]; !ok {
+			t.Errorf("queued judge entry lost its plain reason key: %s", waiter)
+		}
+		assertJudgeShortHolderJSON(t, waiter["holder_name"], "judge:t-aaaa1111", "waiting[].holder_name")
+	}
+
+	// --- long=1: "full" is exposed next to the short form ---
+	{
+		rec := httptest.NewRecorder()
+		s.handleCapacity(rec, httptest.NewRequest(http.MethodGet, "/api/capacity?long=1", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET long=1 = %d: %s", rec.Code, rec.Body.String())
+		}
+		var raw struct {
+			Pools   []map[string]json.RawMessage `json:"pools"`
+			Leases  []map[string]json.RawMessage `json:"leases"`
+			Waiting []map[string]json.RawMessage `json:"waiting"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+			t.Fatalf("raw decode: %v", err)
+		}
+		const wantPRDFull = "Judging rules: Automate billing (prd-a)"
+		pool := findRawByName(t, raw.Pools, "node:gpu")
+		assertJudgeFullHolderJSON(t, pool["holder_names"], "judge:prd-a", wantPRDFull, "pools[].holder_names")
+		assertJudgeFullHolderJSON(t, rawLeaseHolder(t, raw.Leases, "judge:prd-a")["holder_name"], "judge:prd-a", wantPRDFull, "leases[].holder_name")
+		assertJudgeFullHolderJSON(t, rawLeaseHolder(t, raw.Waiting, "judge:t-aaaa1111")["holder_name"], "judge:t-aaaa1111",
+			"Judging: Wire up the webhooks (t-aaaa11)", "waiting[].holder_name")
+	}
+}
+
+// findRawByName returns the first array element whose string field "name"
+// equals want.
+func findRawByName(t *testing.T, arr []map[string]json.RawMessage, want string) map[string]json.RawMessage {
+	t.Helper()
+	for _, m := range arr {
+		var v string
+		if err := json.Unmarshal(m["name"], &v); err == nil && v == want {
+			return m
+		}
+	}
+	t.Fatalf("element with name %q not in raw array", want)
+	return nil
+}
+
+// rawLeaseHolder returns the first array element whose string field "holder"
+// equals want.
+func rawLeaseHolder(t *testing.T, arr []map[string]json.RawMessage, want string) map[string]json.RawMessage {
+	t.Helper()
+	for _, m := range arr {
+		var v string
+		if err := json.Unmarshal(m["holder"], &v); err == nil && v == want {
+			return m
+		}
+	}
+	t.Fatalf("element with holder %q not in raw array", want)
+	return nil
+}
+
+// rawHolderEntry decodes either a holder_name object or a holder_names array,
+// returning the one entry (the fixtures carry a single judge holder).
+func rawHolderEntry(t *testing.T, field json.RawMessage, where string) map[string]json.RawMessage {
+	t.Helper()
+	var names []map[string]json.RawMessage
+	if err := json.Unmarshal(field, &names); err == nil {
+		if len(names) != 1 {
+			t.Fatalf("%s: holder_names has %d entries, want 1", where, len(names))
+		}
+		return names[0]
+	}
+	var entry map[string]json.RawMessage
+	if err := json.Unmarshal(field, &entry); err != nil {
+		t.Fatalf("%s: decode holder view failed: %v\n%s", where, err, field)
+	}
+	return entry
+}
+
+// assertJudgeShortHolderJSON checks the short-form holder view: the raw id and
+// kind "judge" are present and "full" is omitted.
+func assertJudgeShortHolderJSON(t *testing.T, field json.RawMessage, wantID, where string) {
+	t.Helper()
+	e := rawHolderEntry(t, field, where)
+	if got := rawHolderString(t, e, "id"); got != wantID {
+		t.Errorf("%s id = %q, want %q", where, got, wantID)
+	}
+	if got := rawHolderString(t, e, "kind"); got != "judge" {
+		t.Errorf("%s kind = %q, want judge", where, got)
+	}
+	if _, ok := e["full"]; ok {
+		t.Errorf("%s: full must be omitted without long=1: %s", where, e)
+	}
+}
+
+// assertJudgeFullHolderJSON checks the long=1 holder view: non-empty "full"
+// holding the exact readable sentence.
+func assertJudgeFullHolderJSON(t *testing.T, field json.RawMessage, wantID, wantFull, where string) {
+	t.Helper()
+	e := rawHolderEntry(t, field, where)
+	if got := rawHolderString(t, e, "id"); got != wantID {
+		t.Errorf("%s id = %q, want %q", where, got, wantID)
+	}
+	if got := rawHolderString(t, e, "full"); got != wantFull {
+		t.Errorf("%s full = %q, want %q", where, got, wantFull)
+	}
+}
+
+func rawHolderString(t *testing.T, e map[string]json.RawMessage, key string) string {
+	t.Helper()
+	var v string
+	if err := json.Unmarshal(e[key], &v); err != nil {
+		t.Fatalf("decode %s failed: %v (entry: %s)", key, err, e)
+	}
+	return v
+}
+
+func assertJudgePRDHolderName(t *testing.T, v autonomous.HolderNameView, where string) {
+	t.Helper()
+	if v.ID != "judge:prd-a" {
+		t.Errorf("%s id = %q, want judge:prd-a", where, v.ID)
+	}
+	if v.Kind != autonomous.HolderKindJudge {
+		t.Errorf("%s kind = %q, want judge", where, v.Kind)
+	}
+	if v.PRDID != "prd-a" || v.PRDTitle != "Automate billing" {
+		t.Errorf("%s prd = %q/%q, want prd-a/Automate billing", where, v.PRDID, v.PRDTitle)
+	}
+	if v.ShortID != "prd-a" {
+		t.Errorf("%s short_id = %q, want prd-a", where, v.ShortID)
+	}
+	if v.Readable != "Judging rules: Automate billing (prd-a)" {
+		t.Errorf("%s readable = %q, want %q", where, v.Readable, "Judging rules: Automate billing (prd-a)")
+	}
+	if v.Full != "" {
+		t.Errorf("%s full = %q, want empty in the short form", where, v.Full)
+	}
+}
+
+func assertJudgeTaskHolderName(t *testing.T, v autonomous.HolderNameView, where string) {
+	t.Helper()
+	if v.ID != "judge:t-aaaa1111" {
+		t.Errorf("%s id = %q, want judge:t-aaaa1111", where, v.ID)
+	}
+	if v.Kind != autonomous.HolderKindJudge {
+		t.Errorf("%s kind = %q, want judge", where, v.Kind)
+	}
+	if v.TaskTitle != "Wire up the webhooks" {
+		t.Errorf("%s task_title = %q, want %q", where, v.TaskTitle, "Wire up the webhooks")
+	}
+	if v.PRDID != "prd-a" || v.PRDTitle != "Automate billing" {
+		t.Errorf("%s prd = %q/%q, want prd-a/Automate billing", where, v.PRDID, v.PRDTitle)
+	}
+	if v.ShortID != "t-aaaa11" {
+		t.Errorf("%s short_id = %q, want t-aaaa11", where, v.ShortID)
+	}
+	if v.Readable != "Judging: Wire up the webhooks (t-aaaa11)" {
+		t.Errorf("%s readable = %q, want %q", where, v.Readable, "Judging: Wire up the webhooks (t-aaaa11)")
+	}
+	if v.Full != "" {
+		t.Errorf("%s full = %q, want empty in the short form", where, v.Full)
+	}
+}
 func assertUntitledHolderName(t *testing.T, v autonomous.HolderNameView, where string) {
 	t.Helper()
 	if v.ID != "t-cccc2222" {
