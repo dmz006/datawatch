@@ -857,3 +857,14 @@ is accepted from Phase 4.
    in-process subscriber of this dispatcher?
 9. **BL422 follow-up:** confirm that tier-mismatch events are a separate
    follow-up filed only after BL422's results land.
+
+## Operator decisions, 2026-10-23
+
+Recorded from the operator review of the open questions above.
+
+- **Q1, default event set:** `needs_review`, `blocked`, `failed`, `completed` and `cancelled`. Task session start and end events are opt-in only.
+- **Q2, configurability shape:** a global default, per-subscription filters, and also a per-Automaton `notify_events` setting. Precedence is per-Automaton over profile over global, and a subscription filter narrows the resolved set. Implemented by the per-Automaton `notify_events` PRD.
+- **Q3, action subscriptions:** the design is notify only. The existing `send_input` action stays as it is (session sink only, 4,096 character cap) and a future design can grow from it, for example other action types. No change now.
+- **Q5, outbound webhook sink:** yes, with a configured host allow-list, a vault-backed secret, HMAC signing, retry then alert, and an SSRF guard. The existing Generic Webhook backend is inbound only and stays as it is.
+- **Q7, federation:** yes, Automaton events are deliverable to subscribers on federated peers through the existing federation path.
+- **Q8, sequencing with BL431:** moot, the Automation coordinator and the dispatcher have both shipped.
