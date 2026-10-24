@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -495,20 +496,63 @@ func (m *Manager) HandoffVerifyLease(taskID, verifierBackend, verifierModel stri
 		return false
 	}
 	m.mu.Lock()
-	led, keysFn := m.capacity, m.capacityKeys
+	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
 	m.mu.Unlock()
+	_, ok := judgeHandoff(led, keysFn, choicesFn, taskID, VerifyHolder(taskID), verifierBackend, verifierModel)
+	return ok
+}
+
+// judgeHandoff re-keys the worker lease of taskID to holder when a judge that
+// resolves to backend and model can run on it, and returns the node the judge
+// holds. The node is "" when the judge's entry has fewer than two candidate
+// nodes: a single-node judge keeps the rule it always had, the lease's pool
+// set must equal the judge's pool set exactly.
+//
+// A judge whose entry pools two or more nodes is different. The worker lease
+// names one of those nodes in its pools (node:<name>), and the judge's own
+// pools carry no node pool, so the two are compared without their node pools.
+// The hand-off then needs the worker's node among the judge's candidates, and
+// keeps that node: the lease moves as it is, with no release and no re-wait.
+func judgeHandoff(led *capacity.Ledger, keysFn CapacityKeysFn, choicesFn CapacityChoicesFn, taskID, holder, backend, model string) (string, bool) {
+	if led == nil || keysFn == nil {
+		return "", false
+	}
 	workerLease := led.LeaseOf(taskID)
 	if workerLease == nil {
-		return false
+		return "", false
 	}
-	verifyPools, _ := keysFn(verifierBackend, verifierModel)
+	verifyPools, _ := keysFn(backend, model)
 	if len(verifyPools) == 0 {
-		return false
+		return "", false
 	}
-	if !samePoolSet(workerLease.Pools, verifyPools) {
-		return false
+	choices := nodeChoicesFor(choicesFn, backend, model)
+	if len(choices) == 0 {
+		if !samePoolSet(workerLease.Pools, verifyPools) {
+			return "", false
+		}
+		return "", led.Handoff(taskID, holder)
 	}
-	return led.Handoff(taskID, VerifyHolder(taskID))
+	if workerLease.Node == "" || !slices.ContainsFunc(choices, func(c capacity.NodeChoice) bool { return c.Name == workerLease.Node }) {
+		return "", false
+	}
+	if !samePoolSet(withoutNodePools(workerLease.Pools), withoutNodePools(verifyPools)) {
+		return "", false
+	}
+	if !led.Handoff(taskID, holder) {
+		return "", false
+	}
+	return workerLease.Node, true
+}
+
+// withoutNodePools returns pools minus every node:<name> pool.
+func withoutNodePools(pools []string) []string {
+	out := make([]string, 0, len(pools))
+	for _, p := range pools {
+		if !strings.HasPrefix(p, "node:") {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // samePoolSet reports whether the two pool lists name the same set of pools

@@ -425,7 +425,7 @@ func TestRunOneShotJSONSession_PiPromptStartBodyCarriesModelVerbatim(t *testing.
 	cfg.DataDir = dataDir
 
 	got, err := runOneShotJSONSessionWithEffort(cfg, "prd-4", projectDir, "pi-prompt", model, "",
-		"autonomous:verify", "verify the thing", outputFile, "verify-pi.json", 10*time.Second)
+		"autonomous:verify", "verify the thing", outputFile, "verify-pi.json", 10*time.Second, "")
 	if err != nil {
 		t.Fatalf("runOneShotJSONSessionWithEffort: %v", err)
 	}
@@ -545,7 +545,7 @@ func TestRunOneShotJudgeSession_KeepsProjectOutputAndCopiesToScratch(t *testing.
 
 	got, id, err := runOneShotJudgeSessionCaptureID(cfg, "prd-judge", projectDir, "claude-code", "sonnet", "",
 		"autonomous:guardrail:unit-1", "judge it, write JSON to "+outputFile, outputFile, "guardrail-unit-1-sec.json",
-		10*time.Second)
+		10*time.Second, "")
 	if err != nil {
 		t.Fatalf("runOneShotJudgeSessionCaptureID: %v", err)
 	}
@@ -601,7 +601,7 @@ func TestRunOneShotJudgeSession_ReusesPresentOutputWithoutStarting(t *testing.T)
 	for call := 1; call <= 2; call++ {
 		got, id, err := runOneShotJudgeSessionCaptureID(cfg, "prd-judged", projectDir, "claude-code", "sonnet", "",
 			"autonomous:guardrail:unit-2", "unused", outputFile, "guardrail-unit-2-sec.json",
-			10*time.Second)
+			10*time.Second, "")
 		if err != nil {
 			t.Fatalf("call %d: runOneShotJudgeSessionCaptureID: %v", call, err)
 		}
@@ -718,7 +718,7 @@ func TestPlanningSessionStartRequestSkipsSnapshot(t *testing.T) {
 
 		got, id, err := runOneShotJudgeSessionCaptureID(cfg, "prd-judge-skip", projectDir, "claude-code", "sonnet", "",
 			"autonomous:guardrail:skip-unit", "judge it, write JSON to "+outputFile, outputFile, "guardrail-skip-unit-sec.json",
-			10*time.Second)
+			10*time.Second, "")
 		if err != nil {
 			t.Fatalf("runOneShotJudgeSessionCaptureID: %v", err)
 		}

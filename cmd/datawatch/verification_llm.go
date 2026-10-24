@@ -32,6 +32,9 @@ type verifierSelection struct {
 	// Release is non-nil only when a pool candidate was admitted
 	// (Source == pool); the caller must call it when the call ends.
 	Release func()
+	// Node is the compute node the admitted candidate holds; "" unless its
+	// LLM entry pools two or more nodes. The judge starts on this node.
+	Node string
 }
 
 // selectVerifierLLM decides the verifier backend/kind/model, whether the
@@ -62,7 +65,7 @@ type verifierSelection struct {
 // in so this stays independently testable.
 func selectVerifierLLM(
 	in verifierSelectInput,
-	tryAdmit func(backend, model string) (release func(), ok bool),
+	tryAdmit func(backend, model string) (release func(), node string, ok bool),
 	resolveAskBackend func(raw string) (kind, model string, err error),
 	askCompatible func(kind string) bool,
 	isSessionKind func(kind string) bool,
@@ -78,10 +81,10 @@ func selectVerifierLLM(
 	}
 	if len(in.Pool) > 0 && tryAdmit != nil {
 		for _, c := range resolveVerifierCandidates(in.Pool, resolveAskBackend, askCompatible) {
-			if r, ok := tryAdmit(c.backend, c.model); ok {
+			if r, node, ok := tryAdmit(c.backend, c.model); ok {
 				return verifierSelection{
 					Backend: c.backend, Kind: c.kind, Model: c.model,
-					Source: autonomouspkg.VerifierSourcePool, Release: r,
+					Source: autonomouspkg.VerifierSourcePool, Release: r, Node: node,
 				}
 			}
 		}

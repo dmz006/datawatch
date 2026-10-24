@@ -27,9 +27,9 @@ func selectInputFor(prd *autonomouspkg.PRD, task *autonomouspkg.Task, cfg autono
 // poolAdmitter records tryAdmit calls and admits every candidate.
 type poolAdmitter struct{ calls []string }
 
-func (p *poolAdmitter) tryAdmit(backend, _ string) (func(), bool) {
+func (p *poolAdmitter) tryAdmit(backend, _ string) (func(), string, bool) {
 	p.calls = append(p.calls, backend)
-	return func() {}, true
+	return func() {}, "", true
 }
 
 func overrideFixture() (*autonomouspkg.PRD, *autonomouspkg.Task, autonomouspkg.Config) {
@@ -133,7 +133,7 @@ func TestSelectVerifierLLM_GlobalFallsBackLikeToday(t *testing.T) {
 	prd, task, cfg := overrideFixture()
 	resolve, compatible := fakeAskResolver(
 		map[string]string{"pool-a": "ollama", "pool-b": "ollama"}, nil)
-	full := func(string, string) (func(), bool) { return nil, false }
+	full := func(string, string) (func(), string, bool) { return nil, "", false }
 
 	in := selectInputFor(prd, task, cfg)
 	sel := selectVerifierLLM(in, full, resolve, compatible, fakeIsSessionKind)

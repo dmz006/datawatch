@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -12,13 +11,6 @@ func TestPriorityReachesInteractiveRequest(t *testing.T) {
 	r := interactiveAdmitRequest("h", []string{"host"}, "", "m", 4)
 	if r.Priority != 4 || !r.Interactive {
 		t.Fatalf("interactive request = %+v", r)
-	}
-}
-
-func TestPriorityReachesVerifierRequest(t *testing.T) {
-	r := verifierAdmitRequest("verify:t", "prd", []string{"host"}, "", "m", 5)
-	if r.Priority != 5 || r.Role != capacity.RoleVerifier {
-		t.Fatalf("verifier request = %+v", r)
 	}
 }
 

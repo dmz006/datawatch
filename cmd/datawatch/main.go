@@ -5602,9 +5602,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}()
 			explicitEffortCfg := liveCfg
 			explicitEffortCfg.VerificationEffort = ""
-			var verifierTryAdmit func(backend, model string) (func(), bool)
+			var verifierTryAdmit func(backend, model string) (func(), string, bool)
 			if verifierCapacityTryAdmit != nil {
-				verifierTryAdmit = func(backend, model string) (func(), bool) {
+				verifierTryAdmit = func(backend, model string) (func(), string, bool) {
 					return verifierCapacityTryAdmit(ctx, backend, model, task.ID, prd.ID, task.SessionID)
 				}
 			}
@@ -5649,6 +5649,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 			}
 			release := vsel.Release
+			// vnode is the compute node the verifier's lease holds ("" for a
+			// one-node entry): the judge session or ask call runs there.
+			vnode := vsel.Node
 			if release != nil {
 				vGrantedAt = time.Now()
 			}
@@ -5656,7 +5659,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			defer func() { vsel.stamp(&vres) }()
 			if release == nil {
 				if verifierCapacityAdmit != nil {
-					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, task.ID, prd.ID, task.SessionID)
+					r, n, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, task.ID, prd.ID, task.SessionID)
 					if aerr != nil {
 						// BL410 Phase 0 — resource contention/admission
 						// failure, not a content judgment.
@@ -5668,6 +5671,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						}, nil
 					}
 					release = r
+					vnode = n
 					vGrantedAt = time.Now()
 				}
 			}
@@ -5686,7 +5690,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				sessionTask := sessionJudgmentTask(prompt, taskDir, outputFile)
 				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
 					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
-					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg))
+					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), vnode)
 				if serr != nil {
 					// BL410 Phase 0 — the session itself failed; see the
 					// identical fix in autonomousGuardrail's closure above.
@@ -5725,16 +5729,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 			// /api/ask has no effort field — an override effort is only
 			// recorded (VerifierEffort) on this path, not applied.
-			askBody := map[string]any{
-				"question": prompt,
-				"backend":  vkind,
-			}
-			if vbackend != vkind && vbackend != "" {
-				askBody["llm"] = vbackend
-			}
-			if verifyModel != "" {
-				askBody["model"] = verifyModel
-			}
+			askBody := judgeAskBody(prompt, vkind, vbackend, verifyModel, vnode)
 			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/ask",
@@ -5801,6 +5796,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// liveAutonomousConfig).
 			gcfg := liveAutonomousConfig()
 			prompt := buildAutonomousGuardrailPrompt(req)
+			// The judgment's own lease name; both paths below admit under it.
+			judgeHolder := guardrailJudgeHolder(req.UnitID, req.Guardrail, prompt)
 			// BL416 Phase 3 — per-unit resolved backend/model win over the flat config.
 			gbackend, guardrailModel := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
 			gkind, gmodel, _ := resolveAskBackend(gbackend)
@@ -5838,9 +5835,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					specHash := sha256.Sum256([]byte(req.UnitID + "|" + req.Guardrail + "|" + prompt))
 					outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")
 					sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
+					// The judgment takes a node lease like a worker and starts on
+					// the node it holds (a one-node entry takes none).
+					judgeNode, releaseJudge, blocked := admitGuardrailJudge(ctx, gbackend, sessionModel, judgeHolder, req.PRDID)
+					if blocked != nil {
+						return *blocked, nil
+					}
+					defer releaseJudge()
 					content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 						"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
-						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", verificationSessionTimeout(cfg))
+						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", verificationSessionTimeout(cfg), judgeNode)
 					if serr != nil {
 						// BL410 Phase 0 — the SESSION itself failed (timeout,
 						// crash); no judgment ever ran. "infra", not a real
@@ -5888,16 +5892,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			if guardrailModel == "" {
 				guardrailModel = gmodel
 			}
-			askBody := map[string]any{
-				"question": prompt,
-				"backend":  gkind,
+			judgeNode, releaseJudge, blocked := admitGuardrailJudge(ctx, gbackend, guardrailModel, judgeHolder, req.PRDID)
+			if blocked != nil {
+				return *blocked, nil
 			}
-			if gbackend != gkind && gbackend != "" {
-				askBody["llm"] = gbackend
-			}
-			if guardrailModel != "" {
-				askBody["model"] = guardrailModel
-			}
+			defer releaseJudge()
+			askBody := judgeAskBody(prompt, gkind, gbackend, guardrailModel, judgeNode)
 			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/ask",

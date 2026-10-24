@@ -44,12 +44,22 @@ var capacityTextFn func() string
 // worker lease left) falls back to the separate acquire — releasing the
 // task's worker lease FIRST, so the verifier can never wait behind, or
 // double-book with, its own task's slot.
-var verifierCapacityAdmit func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (release func(), err error)
+//
+// The node return is the compute node the verifier holds: "" unless its LLM
+// entry pools two or more nodes, in which case the verifier session or ask
+// call must start on that node.
+var verifierCapacityAdmit func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (release func(), node string, err error)
 
 // verifierCapacityTryAdmit (v8.36.9) is verifierCapacityAdmit's
 // non-blocking sibling for probing autonomous.verification_backends
 // candidates — see its assignment in wireCapacity for why this exists.
-var verifierCapacityTryAdmit func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (release func(), ok bool)
+var verifierCapacityTryAdmit func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (release func(), node string, ok bool)
+
+// guardrailCapacityAdmit gives a guardrail judgment its node lease (holder is
+// the judgment's own lease name). node is the compute node the judgment holds,
+// "" for an entry with one node, which takes no lease at all. Set once at
+// daemon startup by wireCapacity; nil until then, so callers must check.
+var guardrailCapacityAdmit func(ctx context.Context, backend, model, holder, prdID string) (release func(), node string, err error)
 
 // councilCapacityAdmit (v8.38.0, BL390) lets council persona/synthesis
 // calls acquire the same node:/llm: pools a PRD task on that
@@ -695,17 +705,6 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	httpServer.SetCapacityBind(func(holder, sessionID string) { led.Bind(holder, sessionID) })
 	httpServer.SetCapacityRelease(func(holder string) { led.Release(holder) })
 
-	// verifyHandoff re-keys the task's worker lease (holder = the task id) to
-	// the verifier's "verify:<taskID>" lease when both resolve to the same
-	// pool set: one slot for the task from spawn through verification, with
-	// no release-and-re-wait window in which a sibling task can steal the
-	// slot. False means "no hand-off possible" and the caller must fall back
-	// to the separate acquire (releasing the worker lease first — no
-	// stacking, no deadlock).
-	verifyHandoff := func(taskID, backend, model string) bool {
-		return amgr.HandoffVerifyLease(taskID, backend, model)
-	}
-
 	verifiers := newVerifierRegistry()
 	verifierSessionStarted = func(name, sessionID string) {
 		if taskID, ok := verifierTaskFromSessionName(name); ok {
@@ -717,29 +716,21 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 
 	amgr.SetVerifierHost(&verifierReconcileHost{mgr: mgr, led: led, reg: verifiers})
 
-	verifierCapacityAdmit = func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (func(), error) {
+	// The verifier takes its lease through AdmitJudge: the worker's lease is
+	// handed over when the verifier can run on it (keeping the worker's node),
+	// otherwise the worker's slot is released first and the verifier acquires
+	// its own. The node is the one the verifier holds, "" for a one-node entry.
+	verifierCapacityAdmit = func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (func(), string, error) {
 		holder := autonomous.VerifyHolder(taskID)
-		if verifyHandoff(taskID, backend, model) {
-			// The worker's slot is now the verifier's lease: release it by
-			// its new name; the executor's deferred release of the worker
-			// lease is a harmless no-op.
-			end := verifiers.begin(holder)
-			return func() { end(); led.Release(holder) }, nil
-		}
-		// Fallback: the verifier resolves elsewhere (or the worker lease is
-		// already gone). Release the worker's slot first so it can neither
-		// wait behind its own task's lease nor hold two.
-		led.Release(taskID)
-		pools, node, nodeChoices := resolve(backend, model)
-		if len(pools) == 0 {
-			return func() {}, nil
-		}
-		waitDur := amgr.CapacityWaitDuration()
-		if err := led.Acquire(ctx, withNodeChoices(verifierAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, sessionID)), nodeChoices), waitDur, func() bool { return false }, func(string) {}); err != nil {
-			return func() {}, err
+		node, release, err := amgr.AdmitJudge(ctx, autonomous.JudgeAdmit{
+			Holder: holder, WorkerHolder: taskID, PRDID: prdID, Backend: backend, Model: model,
+			Priority: sessionPriority(mgr, sessionID), Wait: amgr.CapacityWaitDuration(),
+		})
+		if err != nil {
+			return func() {}, "", err
 		}
 		end := verifiers.begin(holder)
-		return func() { end(); led.Release(holder) }, nil
+		return func() { end(); release() }, node, nil
 	}
 
 	// councilCapacityAdmit (v8.38.0, BL390) — same shape and wait-duration
@@ -767,24 +758,27 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// path already grants immediately when a pool has room, so this
 	// just bounds how long a genuinely-busy candidate is given before
 	// the caller moves on to the next one.
-	verifierCapacityTryAdmit = func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (func(), bool) {
+	// The probe runs AdmitJudge with a short wait: the worker's lease is
+	// handed over or released first (idempotent), so a candidate either takes
+	// its own slot or does not, never a second slot on top of the worker's.
+	verifierCapacityTryAdmit = func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (func(), string, bool) {
 		holder := autonomous.VerifyHolder(taskID)
-		if verifyHandoff(taskID, backend, model) {
-			end := verifiers.begin(holder)
-			return func() { end(); led.Release(holder) }, true
+		node, release, err := amgr.AdmitJudge(ctx, autonomous.JudgeAdmit{
+			Holder: holder, WorkerHolder: taskID, PRDID: prdID, Backend: backend, Model: model,
+			Priority: sessionPriority(mgr, sessionID), Wait: 150 * time.Millisecond,
+		})
+		if err != nil {
+			return func() {}, "", false
 		}
-		if pools, node, nodeChoices := resolve(backend, model); len(pools) > 0 {
-			// Fallback probe. The worker lease is released first (idempotent)
-			// so this candidate either takes its own slot or does not — never
-			// a second slot on top of the worker's.
-			led.Release(taskID)
-			if err := led.Acquire(ctx, withNodeChoices(verifierAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, sessionID)), nodeChoices), 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
-				return func() {}, false
-			}
-			end := verifiers.begin(holder)
-			return func() { end(); led.Release(holder) }, true
-		}
-		return func() {}, true
+		end := verifiers.begin(holder)
+		return func() { end(); release() }, node, true
+	}
+
+	// guardrailCapacityAdmit gives a guardrail judgment its node lease. It is
+	// NodeOnly: an entry with one node takes no lease, so that judgment starts
+	// exactly as it did before judges held leases.
+	guardrailCapacityAdmit = func(ctx context.Context, backend, model, holder, prdID string) (func(), string, error) {
+		return guardrailAdmitOn(ctx, amgr, backend, model, holder, prdID)
 	}
 
 	// verifierBackendLoad feeds the verifier policy's balance mode: the
@@ -933,12 +927,22 @@ func sessionPriority(mgr *session.Manager, id string) int {
 	return 0
 }
 
-func interactiveAdmitRequest(holder string, pools []string, node, model string, priority int) capacity.Request {
-	return capacity.Request{Holder: holder, Pools: pools, Node: node, Model: model, Interactive: true, Priority: priority}
+// guardrailAdmitOn takes a guardrail judgment's node lease on mgr's ledger. It
+// is NodeOnly: an entry with one node takes no lease. The returned node is the
+// one the judgment must start on ("" for a one-node entry).
+func guardrailAdmitOn(ctx context.Context, mgr *autonomous.Manager, backend, model, holder, prdID string) (func(), string, error) {
+	node, release, err := mgr.AdmitJudge(ctx, autonomous.JudgeAdmit{
+		Holder: holder, PRDID: prdID, Backend: backend, Model: model,
+		Wait: mgr.CapacityWaitDuration(), NodeOnly: true,
+	})
+	if err != nil {
+		return func() {}, "", err
+	}
+	return release, node, nil
 }
 
-func verifierAdmitRequest(holder, prdID string, pools []string, node, model string, priority int) capacity.Request {
-	return capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model, Role: capacity.RoleVerifier, Priority: priority}
+func interactiveAdmitRequest(holder string, pools []string, node, model string, priority int) capacity.Request {
+	return capacity.Request{Holder: holder, Pools: pools, Node: node, Model: model, Interactive: true, Priority: priority}
 }
 
 func councilAdmitRequest(holder, prdID string, pools []string, node, model string, priority int) capacity.Request {

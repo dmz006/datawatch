@@ -59,13 +59,15 @@ func verifierPolicyBackends(p config.VerifierPolicyConfig, candidates []string) 
 // per task, so at most one probe lease is kept at a time: probing the next
 // backend first lets go of the previous one.
 type verifierProbeLoad struct {
-	tryAdmit func(backend, model string) (func(), bool)
+	tryAdmit func(backend, model string) (func(), string, bool)
 	modelOf  func(backend string) string
 
 	results map[string]bool
 	loads   map[string]float64
 	held    string
 	release func()
+	// node is the compute node the held probe lease landed on ("" for one-node).
+	node string
 }
 
 func (p *verifierProbeLoad) TryAdmit(backend string) bool {
@@ -80,10 +82,10 @@ func (p *verifierProbeLoad) TryAdmit(backend string) bool {
 		p.loads[backend] = verifierBackendLoad(backend, model)
 	}
 	p.dropHeld()
-	rel, ok := p.tryAdmit(backend, model)
+	rel, node, ok := p.tryAdmit(backend, model)
 	p.results[backend] = ok
 	if ok {
-		p.held, p.release = backend, rel
+		p.held, p.release, p.node = backend, rel, node
 	}
 	return ok
 }
@@ -101,25 +103,26 @@ func (p *verifierProbeLoad) dropHeld() {
 	if p.release != nil {
 		p.release()
 	}
-	p.held, p.release = "", nil
+	p.held, p.release, p.node = "", nil, ""
 }
 
-// take returns the admission lease for the chosen backend, or nil when the
-// caller must admit it itself. Any other probe lease is let go.
-func (p *verifierProbeLoad) take(chosen, model string) func() {
+// take returns the admission lease for the chosen backend and the node it
+// holds, or a nil lease when the caller must admit it itself. Any other probe
+// lease is let go.
+func (p *verifierProbeLoad) take(chosen, model string) (func(), string) {
 	if p.tryAdmit == nil {
-		return nil
+		return nil, ""
 	}
 	if p.held == chosen && p.release != nil {
-		rel := p.release
-		p.held, p.release = "", nil
-		return rel
+		rel, node := p.release, p.node
+		p.held, p.release, p.node = "", nil, ""
+		return rel, node
 	}
 	p.dropHeld()
-	if rel, ok := p.tryAdmit(chosen, model); ok {
-		return rel
+	if rel, node, ok := p.tryAdmit(chosen, model); ok {
+		return rel, node
 	}
-	return nil
+	return nil, ""
 }
 
 // verifierPolicyPick is the policy's decision, ready for the verify path.
@@ -141,7 +144,7 @@ type verifierPolicyPick struct {
 // (the stronger verifier is never probed).
 func pickVerifierByPolicy(
 	in verifierPolicyInput,
-	tryAdmit func(backend, model string) (release func(), ok bool),
+	tryAdmit func(backend, model string) (release func(), node string, ok bool),
 	resolveAskBackend func(raw string) (kind, model string, err error),
 	askCompatible func(kind string) bool,
 	isSessionKind func(kind string) bool,
@@ -170,7 +173,7 @@ func pickVerifierByPolicy(
 	}
 	sel.Source = autonomouspkg.VerifierSourcePolicy
 	if sel.Backend == backend {
-		sel.Release = probe.take(backend, sel.Model)
+		sel.Release, sel.Node = probe.take(backend, sel.Model)
 	} else {
 		// The backend was downgraded by the routing safety logic; the probe
 		// lease belongs to the backend that was not used.
@@ -197,7 +200,7 @@ func policyVerifierSelection(
 	prd *autonomouspkg.PRD, task *autonomouspkg.Task,
 	resolved autonomouspkg.VerificationLLM, liveCfg autonomouspkg.Config,
 	projectDir string,
-	tryAdmit func(backend, model string) (func(), bool),
+	tryAdmit func(backend, model string) (func(), string, bool),
 	resolveAskBackend func(raw string) (kind, model string, err error),
 	askCompatible func(kind string) bool,
 	isSessionKind func(kind string) bool,
