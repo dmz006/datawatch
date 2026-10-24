@@ -4,7 +4,7 @@
 #
 # Usage:
 #   bash scripts/e2e-pwa.sh [story-base-name]        # default: schedule-flood
-#   bash scripts/e2e-pwa.sh load | group:load        # the `load` group (TS-802..TS-810)
+#   bash scripts/e2e-pwa.sh load | group:load        # the `load` group (TS-802..TS-812)
 #   TEST_TRUSTED_TLS=https://127.0.0.1:2443 bash scripts/e2e-pwa.sh
 #
 # What it does (local mode):

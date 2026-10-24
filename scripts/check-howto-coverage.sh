@@ -27,6 +27,7 @@ LLM_ONLY=(
     testing-against-a-running-daemon  # dev/CI reference for shell-script env vars (DW_BASE, TEST_BASE); no MCP-callable steps
     automation-tab      # PWA-only view; nothing callable from MCP (like dashboard) — reference/conceptual doc
     list-endpoints-and-paging  # curl-based API reference + PWA presentation states; running a daemon is in testing-against-a-running-daemon
+    automata-tab-loading  # PWA-only view; nothing callable from MCP (like automation-tab) — reference/conceptual doc
 )
 
 ERRORS=0

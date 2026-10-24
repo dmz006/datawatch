@@ -10,7 +10,7 @@
 // Usage:
 //   node run-all.mjs                          — run all stories
 //   node run-all.mjs --dry-run                — list the stories that would run, then exit
-//   node run-all.mjs --group load             — run a named group (load = TS-802..TS-810)
+//   node run-all.mjs --group load             — run a named group (load = TS-802..TS-812)
 //   node run-all.mjs --dry-run --group load   — list the load group's stories, then exit
 
 import { spawnSync } from 'node:child_process';
@@ -24,7 +24,7 @@ const dryRun = argv.includes('--dry-run');
 
 // Named groups: fixed lists of story ids, run in this order.
 const GROUPS = {
-  load: ['TS-802', 'TS-803', 'TS-804', 'TS-805', 'TS-806', 'TS-807', 'TS-808', 'TS-809', 'TS-810'],
+  load: ['TS-802', 'TS-803', 'TS-804', 'TS-805', 'TS-806', 'TS-807', 'TS-808', 'TS-809', 'TS-810', 'TS-811', 'TS-812'],
 };
 
 let groupName = null;

@@ -221,7 +221,7 @@ const ALERT = { id: 'x1', level: 'info', title: 'Hello alert', body: 'b', create
 
 function alertsRoutes(over = {}) {
   return (url) => {
-    if (url === '/api/alerts') return over.alerts ? over.alerts() : { body: { alerts: [ALERT] } };
+    if (url === '/api/alerts?limit=100') return over.alerts ? over.alerts() : { body: { alerts: [ALERT] } };
     if (url === '/api/commands') return { body: [] };
     if (url === '/api/sessions') return { body: [] };
     return { body: {} };

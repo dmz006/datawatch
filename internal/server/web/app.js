@@ -349,7 +349,10 @@ function _fedFetchError(resp) {
 function _checkFederatedConnection(serverName) {
   state._fedConnStatus = { server: serverName, phase: 'connecting' };
   if (state.activeView === 'sessions') renderSessionsView();
-  fetch('/api/proxy/' + encodeURIComponent(serverName) + '/api/sessions', { headers: tokenHeader() })
+  // First summary page only (rows, not whole records); Load more walks the rest.
+  const lState = _sl();
+  lState.next = ''; lState.total = 0; lState.moreError = '';
+  fetch(_sessionsProxyPrefix(serverName) + '/api/sessions?view=summary&limit=' + SESSIONS_PAGE, { headers: tokenHeader() })
     .then(r => {
       if (r.status === 401 || r.status === 403 || r.status === 502) return _fedFetchError(r);
       if (!r.ok) return Promise.reject(new Error('HTTP ' + r.status));
@@ -367,7 +370,10 @@ function _checkFederatedConnection(serverName) {
     .then(sessions => {
       if (state.activeServer !== serverName) return; // switched away while this was in flight
       state._fedConnStatus = null; // real data is in state.sessions now, no status banner needed
-      state.sessions = sessions || [];
+      const rows = Array.isArray(sessions) ? sessions : ((sessions && sessions.sessions) || []);
+      lState.next = (sessions && !Array.isArray(sessions) && sessions.next_cursor) || '';
+      lState.total = (sessions && !Array.isArray(sessions) && sessions.total) || rows.length;
+      state.sessions = rows;
       if (state.activeView === 'sessions') { onSessionsUpdated(); renderSessionsView(); }
     })
     .catch(e => {
@@ -571,10 +577,14 @@ function _loadUiConfig() {
   }).catch(() => {});
 }
 
-// Reconnect resync: exactly one GET /api/sessions (batched apply + one
-// onSessionsUpdated) and, for an open session-detail view, a single
-// 'subscribe' so the daemon sends a fresh capture. The terminal is left
-// intact when the same session is still active and already has content.
+// Reconnect resync: exactly one first-page GET /api/sessions?view=summary
+// (via _resyncSessions: merged rows, one onSessionsUpdated) and, for an open
+// session-detail view, a single 'subscribe' so the daemon sends a fresh
+// capture. The open session's full record comes from GET /api/sessions/{id}
+// when its summary row is still truncated. Other lists are not refetched here:
+// only a list loader whose tab is active and overdue reloads its first page.
+// The terminal is left intact when the same session is still active and
+// already has content.
 function _resyncAfterReconnect() {
   _refreshOverdueLoaders();
   const view = state.activeView;
@@ -588,19 +598,18 @@ function _resyncAfterReconnect() {
       renderSessionDetail(sid);
     }
   };
-  const resync = _sessionsLocalMode()
-    ? loadSessionsList().then(rows => (_sl().error ? null : rows))
-    : _sessionsFetchPage('').then(page => {
-      page.rows.forEach(_mergeSessionRow); onSessionsUpdated();
-      return page.rows;
-    }).catch(() => null);
-  resync
+  _resyncSessions()
     .then(sessions => {
       if (!detail || state.activeView !== 'session-detail' || state.activeSession !== sid) {
         if (view === 'alerts') renderAlertsView();
         return;
       }
-      const exists = !sessions || sessions.some(s => s.full_id === sid || s.id === sid) || state.sessions.some(s => s.full_id === sid || s.id === sid);
+      const open = state.sessions.find(s => s.full_id === sid || s.id === sid);
+      const exists = !sessions || sessions.some(s => s.full_id === sid || s.id === sid) || !!open;
+      // The resync may have re-truncated the open session; refetch its full
+      // record (the once-per-session guard from the earlier open is lifted).
+      if (open && (open.truncated_fields || []).length && state._fullSessionFetch) delete state._fullSessionFetch[open.full_id];
+      _ensureFullSession(sid, open);
       if (exists && termLive()) {
         // Keep the terminal on screen; the fresh capture redraws it.
         send('subscribe', { session_id: sid });
@@ -778,40 +787,20 @@ function connect() {
       // now happens inside renderSessionDetail (see line ~2200) which
       // also clears _termHasContent so the splash placement + initXterm
       // path runs cleanly and a fresh subscribe is sent.
-      (_sessionsLocalMode()
-        ? loadSessionsList().then(rows => (_sl().error ? null : rows))
-        : fetch('/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null))
-        .then(sessions => {
-          if (sessions && _sessionsLocalMode()) {
-            // loadSessionsList already merged the rows and notified.
-            if (state.activeView === 'alerts') renderAlertsView();
-          } else if (sessions) {
-            // Batch the reconnect refresh: apply ALL session updates to
-            // state first, then notify once — instead of updateSession() per
-            // session, which ran onSessionsUpdated (and, before the
-            // schedule-load refactor, a per-session schedule-bar fetch) N
-            // times for the same snapshot. Detail-side rendering is covered
-            // by the renderSessionDetail(sid) below.
-            sessions.forEach(s => applySessionUpdate(s));
-            onSessionsUpdated();
-            if (state.activeView === 'alerts') renderAlertsView();
-          }
-          if (state.activeView === 'session-detail' && state.activeSession === sid) {
-            // Reset frame cache + terminal-content flag IMMEDIATELY
-            // before the render so post-render pane_capture frames
-            // are guaranteed to draw.
-            state._lastPaneFrame = null;
-            state._termHasContent = false;
-            renderSessionDetail(sid);
-          }
-        })
-        .catch(() => {
-          if (state.activeView === 'session-detail' && state.activeSession === sid) {
-            state._lastPaneFrame = null;
-            state._termHasContent = false;
-            renderSessionDetail(sid);
-          }
-        });
+      // Summary first page only (local, or through the proxy for a named
+      // server); rows merge into state.sessions, and renderSessionDetail
+      // fetches the open session's full record itself.
+      const redrawDetail = () => {
+        if (state.activeView === 'session-detail' && state.activeSession === sid) {
+          // Reset frame cache + terminal-content flag IMMEDIATELY
+          // before the render so post-render pane_capture frames
+          // are guaranteed to draw.
+          state._lastPaneFrame = null;
+          state._termHasContent = false;
+          renderSessionDetail(sid);
+        }
+      };
+      _resyncSessions().then(redrawDetail).catch(redrawDetail);
     }
   });
 
@@ -1182,7 +1171,11 @@ function handleMessage(msg) {
       if (msg.data && msg.data.version) {
         if (!state._daemonVersion) {
           state._daemonVersion = msg.data.version;
-        } else if (state._daemonVersion !== msg.data.version) {
+        } else if (state._daemonVersion !== msg.data.version && state._versionChangeSeen !== msg.data.version) {
+          // Once per new version: every later 'sessions' frame carries the same
+          // version and would otherwise refetch /api/config each time while the
+          // update banner waits for an idle moment to reload.
+          state._versionChangeSeen = msg.data.version;
           _loadUiConfig();
           _onDaemonVersionChange(msg.data.version);
         }
@@ -2697,10 +2690,15 @@ function _mergeSessionRow(row) {
 function _sessionsLocalMode() {
   return !state.activeServer || state.activeServer === 'local';
 }
-function _sessionsFetchPage(cursor) {
+// Proxy prefix for a named federated server; '' for local and 'all' (whose
+// WebSocket and list endpoint are the local daemon's).
+function _sessionsProxyPrefix(server) {
+  return (server && server !== 'local' && server !== 'all') ? '/api/proxy/' + encodeURIComponent(server) : '';
+}
+function _sessionsFetchPage(cursor, server) {
   const ac = (typeof AbortController === 'function') ? new AbortController() : null;
   const timer = setTimeout(() => { if (ac) { try { ac.abort(); } catch (e) { /* ignore */ } } }, 15000);
-  const q = '/api/sessions?view=summary&limit=' + SESSIONS_PAGE + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+  const q = _sessionsProxyPrefix(server) + '/api/sessions?view=summary&limit=' + SESSIONS_PAGE + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
   const init = { headers: tokenHeader() };
   if (ac) init.signal = ac.signal;
   return fetch(q, init).then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))).then(data => {
@@ -2737,12 +2735,41 @@ function loadSessionsList() {
   return l.promise;
 }
 window.loadSessionsList = loadSessionsList;
+// One small session refresh for a WebSocket (re)connect: the first summary page
+// only, never the full list. Local mode shares loadSessionsList's in-flight
+// guard; a named server fetches the same page through its proxy prefix. Calls
+// while one is in flight, or that follow within RESYNC_COALESCE_MS (a flapping
+// socket opens again before the first answer is old), share its promise. A
+// failed resync is not reused. Resolves to the rows, or null on failure.
+const RESYNC_COALESCE_MS = 3000;
+function _resyncSessions() {
+  const now = Date.now();
+  const prev = state._resync;
+  if (prev && prev.server === state.activeServer && (prev.inFlight || (now - prev.at) < RESYNC_COALESCE_MS)) return prev.promise;
+  const rec = { at: now, inFlight: true, server: state.activeServer, promise: null };
+  const fetchRows = _sessionsLocalMode()
+    ? loadSessionsList().then(rows => (_sl().error ? null : rows))
+    : _sessionsFetchPage('', state.activeServer).then(page => {
+      page.rows.forEach(_mergeSessionRow);
+      onSessionsUpdated();
+      return page.rows;
+    }).catch(() => null);
+  rec.promise = fetchRows.then(rows => {
+    rec.inFlight = false;
+    if (rows === null) rec.at = 0;
+    return rows;
+  });
+  state._resync = rec;
+  return rec.promise;
+}
 window.sessionsLoadMore = function() {
   const l = _sl();
   if (!l.next || l.loadingMore) return;
   l.loadingMore = true; l.moreError = '';
   renderSessionsView();
-  _sessionsFetchPage(l.next).then(page => {
+  const server = state.activeServer;
+  _sessionsFetchPage(l.next, _sessionsLocalMode() ? '' : server).then(page => {
+    if (state.activeServer !== server) return; // switched away while this was in flight
     page.rows.forEach(_mergeSessionRow);
     l.next = page.next; l.total = page.total;
   }).catch(err => { l.moreError = (err && err.message) || String(err); })
@@ -3036,7 +3063,7 @@ function renderSessionsView() {
 
 function _sessionsLoadMoreHtml() {
   const l = _sl();
-  if (!_sessionsLocalMode()) return '';
+  if (state.activeServer === 'all') return '';
   let h = '';
   if (l.error) h += `<div class="list-state-failed" role="alert"><span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(l.error)}</span><button type="button" class="btn-secondary list-state-retry" onclick="loadSessionsList()">${escHtml(t('retry'))}</button></div>`;
   if (l.next && state.sessions.length < l.total) {
@@ -12683,37 +12710,186 @@ window.reloadSubsystem = reloadSubsystem;
 state._prdBackends = null;
 state._prdEfforts = ['', 'low', 'medium', 'high', 'max', 'quick', 'normal', 'thorough'];
 
+// The panel pages the summary list (GET /api/autonomous/prds?view=summary&limit=N
+// [&cursor=C]): a row carries counts, not stories. Opening a row fetches the
+// full PRD once (GET /api/autonomous/prds/{id}) and its children once (the
+// children route); both are kept in _prdPanelState.detail and refetched only
+// when the row's revision moves. A refresh refetches the first page plus as
+// many rows as are already loaded (capped), always as a summary.
+const PRD_PANEL_PAGE = 50;
+const PRD_PANEL_RELOAD_MAX = 500;
+const PRD_PANEL_POLL_MS = 30000;
+const _prdPanelState = {
+  open: new Set(),   // ids of rows the operator has open
+  detail: {},        // id → { loading, error, prd, children, forRev, forUpdated, promise }
+  loaded: 0,         // rows held now; sizes the next refresh
+  filterKey: '',     // the server-side filter the held rows were fetched with
+  loadingMore: false, moreError: '',
+};
+function _prdPanelFilters() {
+  return {
+    status: (document.getElementById('prdFilterStatus') || {}).value || '',
+    includeTpl: !!(document.getElementById('prdIncludeTemplates') || {}).checked,
+  };
+}
+function _prdPanelQuery(cursor, limit) {
+  const f = _prdPanelFilters();
+  const q = ['view=summary', 'limit=' + limit];
+  if (cursor) q.push('cursor=' + encodeURIComponent(cursor));
+  if (f.status) q.push('status=' + encodeURIComponent(f.status));
+  return '/api/autonomous/prds?' + q.join('&');
+}
+function _prdPanelFetch(url, o) {
+  const key = _prdPanelFilters().status;
+  if (key !== _prdPanelState.filterKey) { _prdPanelState.filterKey = key; _prdPanelState.loaded = 0; }
+  const limit = Math.min(Math.max(_prdPanelState.loaded, PRD_PANEL_PAGE), PRD_PANEL_RELOAD_MAX);
+  return Promise.all([
+    apiFetch(_prdPanelQuery('', limit), o),
+    apiFetch('/api/llms', o).catch(() => null),
+  ]).then(([data, llms]) => {
+    if (llms) state._prdBackends = (llms.llms || []).filter(l => !l.disabled);
+    const prds = (data && data.prds) || [];
+    _prdPanelState.loaded = prds.length;
+    return { prds, total: (data && data.total) || prds.length, next: (data && data.next_cursor) || '' };
+  });
+}
+function _prdPanelActive() {
+  return !!document.getElementById('prdPanel');
+}
+// The status filter is applied by the server; it is applied again here so
+// rows cached under another filter never show. The server has no templates
+// filter, so the include-templates checkbox filters the loaded pages only.
+function _prdPanelVisible(d) {
+  const f = _prdPanelFilters();
+  return ((d && d.prds) || []).filter(p => (f.includeTpl || !p.is_template) && (!f.status || p.status === f.status));
+}
+function _prdPanelRow(id) {
+  const ctl = window._listLoaders && window._listLoaders.prdpanel;
+  const d = ctl && ctl.state.data;
+  return d ? d.prds.find(p => p.id === id) : null;
+}
+// The summary row, with the full PRD's fields behind it once it is loaded.
+// The row wins where both hold a field, so status and revision stay current.
+function _prdPanelMerged(row) {
+  const e = _prdPanelState.detail[row.id];
+  return (e && e.prd) ? Object.assign({}, e.prd, row) : row;
+}
+function _prdPanelBodyHtml(prd, storiesHtml) {
+  const id = prd.id;
+  const e = _prdPanelState.detail[id];
+  const failed = (msg) => `<div class="list-state-failed" role="alert"><span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(msg)}</span>` +
+    `<button type="button" class="btn-secondary list-state-retry" onclick="${escHtml('prdPanelLoadDetail(' + JSON.stringify(id) + ',true)')}">${escHtml(t('retry'))}</button></div>`;
+  if (e && e.prd) {
+    const kids = e.children ? `<details style="margin-top:6px;" open><summary style="cursor:pointer;font-size:11px;color:var(--accent2);">Children</summary><div id="prd-children-${escHtml(id)}" style="font-size:10px;color:var(--text2);padding:2px 0;">${e.children}</div></details>` : `<div id="prd-children-${escHtml(id)}"></div>`;
+    return (e.error ? failed(e.error) : '') + storiesHtml() + kids;
+  }
+  if (e && e.error) return failed(e.error);
+  if (e && e.loading) return `<div class="list-state-skeleton" role="status"><span class="list-state-loading-label">${escHtml(t('loading'))}</span></div>`;
+  return `<span style="color:var(--text2);font-size:12px;">${escHtml(t('automata_open_to_load') || 'Open to load stories and tasks')}</span>`;
+}
+function _prdPanelRepaint() {
+  const ctl = window._listLoaders && window._listLoaders.prdpanel;
+  if (ctl) ctl.paint();
+}
+// Fetch the full PRD for one row and then its children, each once per
+// revision of the row. force re-runs both.
+function _prdPanelLoadDetail(id, force) {
+  const st = _prdPanelState;
+  const row = _prdPanelRow(id);
+  const cur = st.detail[id];
+  if (cur && cur.loading) return cur.promise;
+  const rev = row ? row.rev : undefined;
+  const upd = row ? row.updated_at : undefined;
+  if (!force && cur && (cur.prd || cur.error) && cur.forRev === rev && cur.forUpdated === upd) return Promise.resolve(cur.prd);
+  const e = { loading: true, error: '', prd: cur && cur.prd, children: cur && cur.children, forRev: rev, forUpdated: upd };
+  st.detail[id] = e;
+  _prdPanelRepaint();
+  e.promise = apiFetch('/api/autonomous/prds/' + encodeURIComponent(id)).then(prd => {
+    e.prd = prd; e.children = '';
+  }).catch(err => {
+    e.error = (err && err.message) || String(err);
+  }).then(() => {
+    e.loading = false;
+    _prdPanelRepaint();
+    if (e.error || !st.open.has(id) || typeof window.loadPRDChildren !== 'function') return e.prd;
+    return Promise.resolve(window.loadPRDChildren(id)).then(html => { e.children = html || ''; return e.prd; });
+  });
+  return e.promise;
+}
+window.prdPanelLoadDetail = _prdPanelLoadDetail;
+window.prdPanelToggle = function(id, det) {
+  const st = _prdPanelState;
+  if (det && det.open) {
+    st.open.add(id);
+    _prdPanelLoadDetail(id);
+  } else {
+    st.open.delete(id);
+  }
+};
+// Edit, LLM and Permission prefill from fields a summary row does not carry.
+window.prdPanelOpenFull = function(id, which) {
+  const row = _prdPanelRow(id);
+  const e = _prdPanelState.detail[id];
+  const have = (e && e.prd) ? Promise.resolve(e.prd) : apiFetch('/api/autonomous/prds/' + encodeURIComponent(id));
+  have.then(prd => {
+    if (!(e && e.prd)) _prdPanelState.detail[id] = { prd, children: '', forRev: row && row.rev, forUpdated: row && row.updated_at };
+    if (which === 'llm') openPRDSetLLMModal(id, _prdLLMCurrent(prd));
+    else if (which === 'permission') openPRDSetPermissionModeModal(id, prd.permission_mode || '');
+    else openPRDEditModal(id, prd.title || '', prd.spec || '');
+  }).catch(err => showToast(String((err && err.message) || err), 'error', 4000));
+};
+function _prdPanelLoadMoreHtml(d) {
+  const st = _prdPanelState;
+  if (!d.next) return '';
+  const shown = d.prds.length;
+  const label = (d.total > shown) ? `${t('load_more') || 'Load more'} (${shown}/${d.total})` : (t('load_more') || 'Load more');
+  return `<div class="list-load-more" style="text-align:center;padding:8px;"><button type="button" class="btn-secondary" id="prdPanelLoadMore" ${st.loadingMore ? 'disabled' : ''} onclick="prdPanelLoadMore()">${escHtml(st.loadingMore ? t('loading') : label)}</button>` +
+    (st.moreError ? ` <span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(st.moreError)}</span>` : '') + '</div>';
+}
+function _prdPanelRender(d) {
+  const rows = _prdPanelVisible(d);
+  const more = _prdPanelLoadMoreHtml(d);
+  if (rows.length === 0) return `<em style="color:var(--text2);">${t('prd_list_empty')||'No Automata match.'}</em>` + more;
+  return rows.map(p => renderPRDRow(_prdPanelMerged(p), { panel: true })).join('') + more;
+}
+// Rows that are open need their detail; a moved revision refetches it.
+function _prdPanelAfterPaint(el, keep, d) {
+  for (const id of _prdPanelState.open) {
+    if (_prdPanelRow(id)) _prdPanelLoadDetail(id);
+  }
+}
+function _prdPanelLoader() {
+  const cur = window._listLoaders && window._listLoaders.prdpanel;
+  if (cur) return cur;
+  return listLoader({
+    key: 'prdpanel', el: 'prdPanel', pollMs: PRD_PANEL_POLL_MS,
+    fetch: _prdPanelFetch,
+    active: _prdPanelActive,
+    render: _prdPanelRender,
+    afterPaint: _prdPanelAfterPaint,
+  });
+}
+window.prdPanelLoadMore = function() {
+  const st = _prdPanelState;
+  const ctl = window._listLoaders && window._listLoaders.prdpanel;
+  const d = ctl && ctl.state.data;
+  if (!d || !d.next || st.loadingMore) return;
+  st.loadingMore = true; st.moreError = '';
+  ctl.paint();
+  apiFetch(_prdPanelQuery(d.next, PRD_PANEL_PAGE)).then(data => {
+    const seen = new Set(d.prds.map(p => p.id));
+    ((data && data.prds) || []).forEach(p => { if (!seen.has(p.id)) d.prds.push(p); });
+    d.next = (data && data.next_cursor) || '';
+    d.total = (data && data.total) || d.total;
+    st.loaded = d.prds.length;
+  }).catch(err => {
+    st.moreError = (err && err.message) || String(err);
+  }).then(() => { st.loadingMore = false; ctl.paint(); });
+};
+
 function loadPRDPanel() {
-  const panel = document.getElementById('prdPanel');
-  if (!panel) return;
-  Promise.all([
-    apiFetch('/api/autonomous/prds?full=1').catch(() => ({ prds: [] })),
-    fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-  ]).then(([data, backendsResp]) => {
-    state._prdBackends = (backendsResp && backendsResp.llms || []).filter(l => !l.disabled);
-    const allPrds = (data && data.prds) || [];
-    // v5.26.12 — operator-reported: children should load with
-    // everything else, not lazy. Build a parent_id → [children] index
-    // from the flat list so each row can render its children inline.
-    // This is O(N) and avoids the N+1 GET /children fan-out the
-    // lazy-load path used.
-    const childIdx = {};
-    for (const p of allPrds) {
-      const pid = p.parent_prd_id || '';
-      if (!pid) continue;
-      (childIdx[pid] = childIdx[pid] || []).push(p);
-    }
-    state._prdChildIndex = childIdx;
-    const filterStatus = (document.getElementById('prdFilterStatus') || {}).value || '';
-    const includeTpl = (document.getElementById('prdIncludeTemplates') || {}).checked;
-    let prds = allPrds.filter(p => includeTpl || !p.is_template);
-    if (filterStatus) prds = prds.filter(p => p.status === filterStatus);
-    if (prds.length === 0) {
-      panel.innerHTML = `<em style="color:var(--text2);">${t('prd_list_empty')||'No Automata match.'}</em>`;
-      return;
-    }
-    panel.innerHTML = prds.map(renderPRDRow).join('');
-  }).catch(err => { panel.innerHTML = '<span style="color:var(--error);">load failed: ' + escHtml(String(err)) + '</span>'; });
+  if (!document.getElementById('prdPanel')) return Promise.resolve();
+  return _prdPanelLoader().load();
 }
 window.loadPRDPanel = loadPRDPanel;
 
@@ -12895,7 +13071,8 @@ window.prdrPlanReviewReRun = function(id, btn) {
   });
 };
 
-function renderPRDRow(prd) {
+function renderPRDRow(prd, opts) {
+  const panel = !!(opts && opts.panel);
   const id = prd.id || '';
   const stories = prd.stories || [];
   // Phase 4 follow-up (v5.26.67) — file-conflict detection. Build a
@@ -12917,6 +13094,11 @@ function renderPRDRow(prd) {
     }
   }
   const taskCount = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
+  // A summary row carries counts only; use them when present so a collapsed
+  // row needs no stories array.
+  const nStories = typeof prd.story_count === 'number' ? prd.story_count : stories.length;
+  const nTasks = typeof prd.task_count === 'number' ? prd.task_count : taskCount;
+  const nDecisions = typeof prd.decision_count === 'number' ? prd.decision_count : (prd.decisions ? prd.decisions.length : 0);
   const tplBadge = prd.is_template ? '<span style="background:#7c3aed;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-left:4px;">template</span>' : '';
   const tplOf = prd.template_of ? `<span style="font-size:10px;color:var(--text2);margin-left:4px;">from ${escHtml(prd.template_of)}</span>` : '';
   const llmBadge = (prd.backend || prd.effort || prd.model)
@@ -12949,23 +13131,13 @@ function renderPRDRow(prd) {
   const serverBadge = (prd.server && prd.server !== 'local')
     ? `<span class="server-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);font-weight:600;margin-left:4px;" title="Server: ${escHtml(prd.server)}">${escHtml(prd.server)}</span>`
     : '';
-  return `<div class="prd-row prd-card ${statusClass}">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}
-        <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
-        <div style="font-size:10px;color:var(--text2);">${stories.length} stories &middot; ${taskCount} tasks &middot; ${prd.decisions ? prd.decisions.length : 0} decisions</div>
-        ${renderPRDDecomposeFailure(prd)}
-        ${renderPRDPlanReview(prd)}
-      </div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">${dashExpandBtn}${actions}</div>
-    </div>
-    <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'}</summary>
-      <div style="margin-top:6px;">${stories.map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
-      ${prd.decisions && prd.decisions.length ? '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Decisions log (' + prd.decisions.length + ')</summary>' + prd.decisions.map(d => '<div style="font-size:10px;color:var(--text2);padding:2px 0;border-top:1px solid var(--border);"><code>' + escHtml(d.kind) + '</code> ' + escHtml(d.actor || '') + ' ' + escHtml((d.note || '')) + '</div>').join('') + '</details>' : ''}
+  const storiesHtml = () => `<div style="margin-top:6px;">${stories.map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
+      ${prd.decisions && prd.decisions.length ? '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Decisions log (' + prd.decisions.length + ')</summary>' + prd.decisions.map(d => '<div style="font-size:10px;color:var(--text2);padding:2px 0;border-top:1px solid var(--border);"><code>' + escHtml(d.kind) + '</code> ' + escHtml(d.actor || '') + ' ' + escHtml((d.note || '')) + '</div>').join('') + '</details>' : ''}`;
+  const legacyBody = () => storiesHtml() + `
       ${(() => {
-        // v5.26.12 — children load with the rest of the panel from the
-        // flat-list parent index built in loadPRDPanel. No lazy fetch.
+        // Callers that hold the whole forest fill state._prdChildIndex
+        // (parent_prd_id → children of the loaded rows). The paged panel does
+        // not; it fetches the children route when a row is opened.
         const kids = (state._prdChildIndex || {})[id] || [];
         if (kids.length === 0) return '';
         const rows = kids.map(c => {
@@ -12984,7 +13156,20 @@ function renderPRDRow(prd) {
           return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this automaton's row">${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
         }).join('');
         return `<details style="margin-top:6px;" open><summary style="cursor:pointer;font-size:11px;color:var(--accent2);">Children (${kids.length})</summary><div style="font-size:10px;color:var(--text2);padding:2px 0;">${rows}</div></details>`;
-      })()}
+      })()}`;
+  return `<div class="prd-row prd-card ${statusClass}">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:0;">
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}
+        <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
+        <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
+        ${renderPRDDecomposeFailure(prd)}
+        ${renderPRDPlanReview(prd)}
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">${dashExpandBtn}${actions}</div>
+    </div>
+    <details style="margin-top:6px;"${panel ? ` data-prd-id="${escHtml(id)}" ${_prdPanelState.open.has(id) ? 'open' : ''} ontoggle="${escHtml('prdPanelToggle(' + JSON.stringify(id) + ',this)')}"` : ''}><summary style="cursor:pointer;font-size:11px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'}</summary>
+      ${panel ? _prdPanelBodyHtml(prd, storiesHtml) : legacyBody()}
     </details>
   </div>`;
 }
@@ -13001,11 +13186,13 @@ window.loadPRDChildren = function(prdID) {
   const target = document.getElementById('prd-children-' + prdID);
   if (!target) return;
   target.innerHTML = loadingEyeBlock();
-  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/children').then(data => {
+  // Resolves to the markup it painted ('' when the fetch failed), so a caller
+  // can keep it across repaints.
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/children').then(data => {
     const kids = (data && data.children) || [];
     if (kids.length === 0) {
       target.innerHTML = '<em style="opacity:0.7;">no children — none of this automaton\'s tasks spawned a child automaton yet</em>';
-      return;
+      return target.innerHTML;
     }
     target.innerHTML = kids.map(c => {
       const stories = (c.stories || []);
@@ -13022,8 +13209,10 @@ window.loadPRDChildren = function(prdID) {
       const idClick = `scrollToPRD(${JSON.stringify(c.id)})`;
       return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this automaton's row">${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
     }).join('');
+    return target.innerHTML;
   }).catch(err => {
     target.innerHTML = '<span style="color:var(--error,#ef4444);">load failed: ' + escHtml(String((err && err.message) || err)) + '</span>';
+    return '';
   });
 };
 
@@ -13766,6 +13955,14 @@ window.toggleVerdictDrilldown = function(groupId, idx) {
 // └─────────────────┴──────────────────────────────────────────────────────┘
 // LLM absent on running+completed (can't change LLM mid-run or post-run).
 // Edit absent on running (spec change during execution is unsafe).
+// The LLM-editor prefill for one PRD.
+function _prdLLMCurrent(prd) {
+  return { backend: prd.backend || '', effort: String(prd.effort || ''), model: prd.model || '', decomposition_profile: prd.decomposition_profile || '', decomposition_model: prd.decomposition_model || '', verification_backend: prd.verification_backend || '', verification_model: prd.verification_model || '', verification_effort: String(prd.verification_effort || '') };
+}
+// A row of GET /api/autonomous/prds?view=summary: counts, no stories array.
+function _prdIsSummaryOnly(prd) {
+  return !!prd && typeof prd.story_count === 'number' && !Array.isArray(prd.stories);
+}
 function renderPRDActions(prd) {
   const id = prd.id || '';
   const idJ = JSON.stringify(id);
@@ -13784,11 +13981,13 @@ function renderPRDActions(prd) {
   const btns = [];
   if (status === 'draft' || status === 'revisions_asked') btns.push(a('Plan', `prdAction(${idJ},'decompose','POST')`));
   // BL203 — Set LLM button is available pre-Run so the operator can pin a backend before approval.
+  // A summary row from the paged list lacks the fields these three editors
+  // prefill from, so their buttons fetch the full PRD first (prdPanelOpenFull).
+  const summaryOnly = _prdIsSummaryOnly(prd);
   if (status !== 'running' && status !== 'completed') {
-    const cur = JSON.stringify({ backend: prd.backend || '', effort: String(prd.effort || ''), model: prd.model || '', decomposition_profile: prd.decomposition_profile || '', decomposition_model: prd.decomposition_model || '', verification_backend: prd.verification_backend || '', verification_model: prd.verification_model || '', verification_effort: String(prd.verification_effort || '') });
-    btns.push(a('LLM', `openPRDSetLLMModal(${idJ},${cur})`, ''));
+    btns.push(a('LLM', summaryOnly ? `prdPanelOpenFull(${idJ},'llm')` : `openPRDSetLLMModal(${idJ},${JSON.stringify(_prdLLMCurrent(prd))})`, ''));
     // GH#172 D75 — edit PRD permission_mode.
-    btns.push(a(t('prd_action_permission')||'Permission', `openPRDSetPermissionModeModal(${idJ},${JSON.stringify(prd.permission_mode||'')})`, ''));
+    btns.push(a(t('prd_action_permission')||'Permission', summaryOnly ? `prdPanelOpenFull(${idJ},'permission')` : `openPRDSetPermissionModeModal(${idJ},${JSON.stringify(prd.permission_mode||'')})`, ''));
   }
   if (status === 'needs_review' || status === 'revisions_asked') {
     btns.push(a('Approve', `prdActionPrompt(${idJ},'approve','note','Approval note (optional)')`, '#10b981'));
@@ -13801,12 +14000,12 @@ function renderPRDActions(prd) {
   // status; Delete (hard remove + descendants) on every status. Both
   // confirm before firing because they're destructive.
   if (status !== 'running') {
-    btns.push(a('Edit', `openPRDEditModal(${idJ},${JSON.stringify(prd.title || '')},${JSON.stringify(prd.spec || '')})`, ''));
+    btns.push(a('Edit', summaryOnly ? `prdPanelOpenFull(${idJ},'edit')` : `openPRDEditModal(${idJ},${JSON.stringify(prd.title || '')},${JSON.stringify(prd.spec || '')})`, ''));
   }
   // GH#172 D76 — "repair depends_on" button (Android already has this).
   // One-time repair for stories whose depends_on predates the v8.36.5
   // title->ID fix; harmless to re-run on an already-correct PRD.
-  if (status !== 'running' && (prd.stories || []).length > 0) {
+  if (status !== 'running' && (typeof prd.story_count === 'number' ? prd.story_count : (prd.stories || []).length) > 0) {
     btns.push(a(t('prd_action_repair_deps') || 'Repair deps', `prdAction(${idJ},'repair_depends_on','POST',{actor:'operator'})`, ''));
   }
   btns.push(a('Delete', `confirmPRDDelete(${idJ})`, '#7c2d12'));
@@ -18167,6 +18366,7 @@ function _loadAllServersSessions() {
       if (!data) return;
       // data is [{...session, server:"name"}, ...] — merge with local sessions already in state
       state.sessions = data;
+      _sl().next = '';
       if (state.activeView === 'sessions') renderSessionsView();
     })
     .catch(() => {});
@@ -22882,7 +23082,9 @@ window._loadPRDActiveSessionCard = function(prd) {
       clearInterval(window._prdActiveSessionInterval);
       return;
     }
-    apiFetch('/api/sessions').then(allSessions => {
+    // 5s timer: only live sessions are matched below (terminal ones are dropped),
+    // and the match reads prd_id / compute_node_ref, which summary rows omit.
+    apiFetch('/api/sessions?states=active').then(allSessions => {
       const list = Array.isArray(allSessions) ? allSessions : (allSessions.sessions || []);
       const taskSessionIds = new Set(Object.keys(sessionTaskMap));
       const terminalStates = new Set(['killed','complete','completed','failed','cancelled','stopped','error']);
@@ -27444,11 +27646,29 @@ function renderAlertCard(a, sessState, isFirst, cmds) {
 // _alertsFetch loads the alerts, the quick-reply commands and the sessions the
 // alerts are classified against, in parallel. A failed alerts response rejects,
 // so the loader shows a failed state with Retry instead of an empty list.
+// The Alerts tab loads the newest ALERTS_PAGE alerts and a Load more button
+// widens that window by one page. A refresh re-requests the whole window in
+// one call, so a poll never drops what was already loaded. The aggregated
+// (all servers) endpoint has no paged form and stays whole.
+const ALERTS_PAGE = 100;
+function _alertsWindow() {
+  const srv = String(state.activeServer || 'local');
+  const w = state._alertsWin;
+  if (w && w.server === srv) return w;
+  return (state._alertsWin = { server: srv, limit: ALERTS_PAGE });
+}
+window.alertsLoadMore = function() {
+  _alertsWindow().limit += ALERTS_PAGE;
+  const ctl = window._listLoaders['alerts:' + (state.activeServer || 'local')];
+  if (ctl) ctl.load();
+};
 function _alertsFetch() {
   const _alertsSrv = state.activeServer;
   const _alertsIsRemote = _alertsSrv && _alertsSrv !== 'all' && _alertsSrv !== 'local';
   const _alertsProxyPrefix = _alertsIsRemote ? '/api/proxy/' + encodeURIComponent(_alertsSrv) : '';
-  const alertsEndpoint = _alertsSrv === 'all' ? '/api/alerts/aggregated' : _alertsProxyPrefix + '/api/alerts';
+  const alertsEndpoint = _alertsSrv === 'all'
+    ? '/api/alerts/aggregated'
+    : _alertsProxyPrefix + '/api/alerts?limit=' + _alertsWindow().limit;
   // BL312 S5 — use aggregated endpoint in all-servers mode.
   // Operator-reported (2026-10-08): selecting a SPECIFIC federated host
   // did nothing here -- only 'all' mode was special-cased; any other
@@ -27477,10 +27697,11 @@ function _alertsFetch() {
     // current elsewhere); proxy it for a specific remote.
     _alertsSrv === 'all'
       ? Promise.resolve(null)
-      : fetch(_alertsProxyPrefix + '/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => [])
+      : _sessionsFetchPage('', _alertsIsRemote ? _alertsSrv : '').then(page => page.rows).catch(() => [])
   ]).then(([data, cmds, fresh]) => {
-    // Active/inactive classification needs the live sessions: merge them in.
-    if (Array.isArray(fresh) && fresh.length > 0) state.sessions = fresh;
+    // Active/inactive classification needs the live sessions: merge the first
+    // summary page in (a reconnect re-renders this view, so never the full list).
+    if (Array.isArray(fresh) && fresh.length > 0) { fresh.forEach(_mergeSessionRow); onSessionsUpdated(); }
     const list = Array.isArray(data) ? data : (data && data.alerts ? data.alerts : null);
     if (list && list.length > 0) {
       state.alertUnread = 0;
@@ -27489,7 +27710,8 @@ function _alertsFetch() {
       updateAlertBadge();
       fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ all: true }) });
     }
-    return { data, cmds };
+    const paged = data && !Array.isArray(data);
+    return { data, cmds, hasMore: !!(paged && data.has_more), total: (paged && data.total) || 0 };
   });
 }
 
@@ -27792,7 +28014,15 @@ function _alertsBuildHtml(result) {
     }
   }
 
-  return tabsRow + topBar + bodyHTML;
+  // More alerts exist past the loaded window: a button widens it by one page.
+  let moreHTML = '';
+  if (result.hasMore) {
+    const shown = alertList.length;
+    const label = `${t('load_more') || 'Load more'} (${shown}${result.total ? '/' + result.total : ''})`;
+    moreHTML = `<div class="list-load-more" style="text-align:center;padding:8px;"><button type="button" class="btn-secondary" id="alertsLoadMore" onclick="alertsLoadMore()">${escHtml(label)}</button></div>`;
+  }
+
+  return tabsRow + topBar + bodyHTML + moreHTML;
 }
 
 function renderAlertsView() {
@@ -30102,14 +30332,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // than waiting for the first view that happens to need it.
   loadServerListEager();
 
-  // Load initial unread alert count
-  fetch('/api/alerts', { headers: tokenHeader() })
+  // Load initial unread alert count. unread=1 returns only the unread alerts
+  // (plus unread_count), which is all the badge and the watched-only seed read.
+  fetch('/api/alerts?unread=1', { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       if (!data) return;
       state.alertUnread = data.unread_count || 0;
       // GH#192 D61a — the plain unread_count field has no per-session
-      // breakdown; derive the watched-only seed from the full alerts
+      // breakdown; derive the watched-only seed from the unread alerts
       // array the same endpoint already returns.
       state.alertWatchedUnread = (data.alerts || []).filter(a =>
         !a.read && a.session_id && state.watchedSessions.has(a.session_id)
@@ -32263,7 +32494,9 @@ function _runtimeBadge(sess) {
 // two copies for as long as it did).
 function _dashFetchPRDs() {
   const isAllServers = state.activeServer === 'all';
-  return apiFetch(isAllServers ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds').then(d => {
+  // Single server: the summary list narrowed to the three statuses kept below
+  // (the all-servers aggregate has no summary or filter form).
+  return apiFetch(isAllServers ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds?status=running,blocked,planning&limit=500').then(d => {
     const list = Array.isArray(d) ? d : ((d && d.prds) || []);
     _dash._prds = list.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
   });

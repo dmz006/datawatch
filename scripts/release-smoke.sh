@@ -49,7 +49,7 @@
 # variable name. See docs/howto/testing-against-a-running-daemon.md
 # for the full reference (both mechanisms, side by side).
 #
-# §79 runs the nine PWA slow-network load scenarios (TS-802..TS-810) against this smoke daemon itself (never a second daemon).
+# §79 runs the eleven PWA slow-network load scenarios (TS-802..TS-812) against this smoke daemon itself (never a second daemon).
 #
 # Returns 0 on success, non-zero on first failure.
 
@@ -4673,7 +4673,7 @@ fi
 
 # ---------------------------------------------------------------------------
 H "79. Web UI slow-network load scenarios - cold load, empty, failed, stale, offline, reload"
-# Runs the nine slow-network load scenarios (TS-802..TS-810) via the PWA
+# Runs the eleven slow-network load scenarios (TS-802..TS-812) via the PWA
 # runner's load group (added by the "Wire the load scenarios into the PWA
 # runner" task — requires `node run-all.mjs --group load`). Against THIS
 # smoke daemon only ($BASE/$TOK) — this section never starts a second
@@ -4683,7 +4683,7 @@ H "79. Web UI slow-network load scenarios - cold load, empty, failed, stale, off
 # exit 0 with only skipped scenarios, or exit 2 → skip with the runner's
 # reason; exit 1 (or the timeout bound) → ko with the last output lines.
 # Environment is scrubbed of TMUX/TMUX_TMPDIR for the node invocation, and
-# the run is bounded by SMOKE_LOAD_TIMEOUT (default 600s) through the
+# the run is bounded by SMOKE_LOAD_TIMEOUT (default 900s) through the
 # `timeout` command when it is available, with a plain run as fallback.
 PWA_DIR="$REPO_DIR/scripts/test-stories/pwa"
 if ! command -v node >/dev/null 2>&1; then
@@ -4698,7 +4698,7 @@ else
   LOAD_TO_BIN="$(command -v timeout 2>/dev/null || true)"
   if [[ -n "$LOAD_TO_BIN" ]]; then
     env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$LOAD_EVD" \
-      "$LOAD_TO_BIN" "${SMOKE_LOAD_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group load >"$LOAD_OUT_FILE" 2>&1
+      "$LOAD_TO_BIN" "${SMOKE_LOAD_TIMEOUT:-900}" node "$PWA_DIR/run-all.mjs" --group load >"$LOAD_OUT_FILE" 2>&1
   else
     env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$LOAD_EVD" \
       node "$PWA_DIR/run-all.mjs" --group load >"$LOAD_OUT_FILE" 2>&1
@@ -4711,12 +4711,12 @@ else
     if [[ "${LOAD_PASSED:-""}" == "0" ]]; then
       skip "load scenarios: runner exited 0 but every scenario was skipped ($LOAD_SUMMARY)"
     else
-      ok "load scenarios (TS-802..TS-810): $LOAD_PASSED passed (${LOAD_SUMMARY#summary: })"
+      ok "load scenarios (TS-802..TS-812): $LOAD_PASSED passed (${LOAD_SUMMARY#summary: })"
     fi
   elif [[ "$LOAD_RC" -eq 2 ]]; then
     skip "load scenarios: runner exited 2 ("$(tail -1 "$LOAD_OUT_FILE")")"
   elif [[ "$LOAD_RC" -eq 124 ]]; then
-    ko "load scenarios timed out after ${SMOKE_LOAD_TIMEOUT:-600}s: $(tail -1 "$LOAD_OUT_FILE")"
+    ko "load scenarios timed out after ${SMOKE_LOAD_TIMEOUT:-900}s: $(tail -1 "$LOAD_OUT_FILE")"
   else
     ko "load scenarios failed (run-all.mjs rc=$LOAD_RC): $(tail -5 "$LOAD_OUT_FILE" | tr '\n' ' ' | head -c 400)"
   fi
