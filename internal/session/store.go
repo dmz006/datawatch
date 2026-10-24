@@ -774,6 +774,27 @@ func (s *Store) Snapshot(sess *Session) Session {
 	return *sess
 }
 
+// SnapshotFiltered returns copies of the sessions keep selects by state and
+// update time, plus the ID of every session held. One pass under the read
+// lock: the cheap state / UpdatedAt check runs first and only the selected
+// sessions are copied (shallow, like Snapshot), so a caller that needs a
+// small slice of a large store never copies or marshals the rest.
+func (s *Store) SnapshotFiltered(keep func(State, time.Time) bool) ([]*Session, map[string]struct{}) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	held := make(map[string]struct{}, len(s.sessions))
+	var out []*Session
+	for id, sess := range s.sessions {
+		held[id] = struct{}{}
+		if keep(sess.State, sess.UpdatedAt) {
+			cp := *sess
+			out = append(out, &cp)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].FullID < out[j].FullID })
+	return out, held
+}
+
 // Get returns a session by full ID.
 func (s *Store) Get(fullID string) (*Session, bool) {
 	s.mu.RLock()

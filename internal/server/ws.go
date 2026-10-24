@@ -157,9 +157,14 @@ func (c *client) safeSend(msg []byte) {
 // nil means every connected client (the behavior of plain Broadcast).
 // want runs on the Hub.Run goroutine while it holds h.mu, so it must not
 // take h.mu itself; locking the client's own mutex is fine.
+//
+// build, when set, replaces payload: the Hub.Run goroutine calls it only if
+// at least one client matches want, so a frame nobody needs is never
+// marshalled (see broadcastLazy).
 type hubMessage struct {
 	payload []byte
 	want    func(*client) bool
+	build   func() []byte
 }
 
 // Hub manages all WebSocket clients
@@ -177,6 +182,11 @@ type Hub struct {
 	// snapMu because BroadcastSessions runs on many goroutines.
 	snapMu   sync.Mutex
 	snapshot map[string]uint64
+	// heldPrev is the set of session IDs the manager held at the last
+	// list pass; a session in it that is no longer held was deleted (as
+	// opposed to aged out of the default view). nil until a pass has run
+	// with clients connected. Guarded by snapMu.
+	heldPrev map[string]struct{}
 
 	// Live-config hooks wired by NewServer before Run starts; nil in
 	// bare-hub tests, which then get the built-in defaults.
@@ -189,6 +199,9 @@ type Hub struct {
 	recentWindowFn func() time.Duration
 	sessionRowFn   func(*session.Session, int) sessionSummaryRow
 	listSessionsFn func() []*session.Session
+	// viewSourceFn snapshots the default-view sessions and the set of every
+	// held session ID in one store pass (ws_session_broadcast.go).
+	viewSourceFn func(keep func(session.State, time.Time) bool) ([]*session.Session, map[string]struct{})
 }
 
 var upgrader = websocket.Upgrader{
@@ -244,6 +257,15 @@ func (h *Hub) Run() {
 			}
 			h.mu.Unlock()
 		case m := <-h.broadcast:
+			if m.build != nil {
+				if !h.anyClientWants(m.want) {
+					continue
+				}
+				m.payload = m.build()
+				if h.chanStats != nil {
+					h.chanStats.RecordSent(len(m.payload))
+				}
+			}
 			// Write lock: a slow client is deleted from h.clients below.
 			h.mu.Lock()
 			for c := range h.clients {

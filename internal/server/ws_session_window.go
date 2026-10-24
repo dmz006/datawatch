@@ -49,10 +49,13 @@ func inDefaultView(sess *session.Session, now time.Time, window time.Duration) b
 	if sess == nil {
 		return false
 	}
-	if !sess.State.IsTerminal() {
-		return true
-	}
-	return now.Sub(sess.UpdatedAt) < window
+	return stateInDefaultView(sess.State, sess.UpdatedAt, now, window)
+}
+
+// stateInDefaultView is inDefaultView on the two fields it reads, for
+// callers that test sessions while holding a lock and have no copy yet.
+func stateInDefaultView(st session.State, updated, now time.Time, window time.Duration) bool {
+	return !st.IsTerminal() || now.Sub(updated) < window
 }
 
 // splitDefaultView returns the default-view sessions (input order kept) and
