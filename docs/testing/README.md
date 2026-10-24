@@ -52,6 +52,16 @@ Makefile target `make test-e2e-pwa-load`). Stories that exit 2 (skip — e.g. no
 seeded fixture or no Chrome) are counted as skipped in the runner's summary
 and do not fail the run.
 
+**Wire group** — the `wire` group (`group:wire` for `scripts/e2e-pwa.sh`, or
+`node run-all.mjs --group wire`) runs TS-816: websocket bytes on a 390x844 phone
+viewport against the seeded fixture (cold connect, reconnect after a 2.5 s
+outage, one idle session open for 60 s, and Show history). It fails when a frame
+exceeds 300 KB, when the cold connect or reconnect exceeds 512 KB, when the idle
+view exceeds 256 KB per minute, or when a window-form client gets more than one
+`sessions` frame per socket. Budgets are `PERF_BUDGET_WIRE_*` in
+`scripts/test-stories/pwa/perf-lib.mjs`. It skips (exit 2) without the seeded
+fixture.
+
 What the target does (`scripts/e2e-pwa.sh`):
 
 1. Picks free 127.0.0.1 ports, generates an isolated config from

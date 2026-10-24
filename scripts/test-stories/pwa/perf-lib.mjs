@@ -20,6 +20,11 @@
 //   PERF_BUDGET_RECONNECT_BYTES     bytes after a reconnect         (default 262144)
 //   PERF_OUTAGE_MS          how long the connection stays dropped   (default 40000,
 //                           past the 35 s socket watchdog threshold)
+//   PERF_BUDGET_WIRE_FRAME_BYTES         largest single websocket frame    (default 307200)
+//   PERF_BUDGET_WIRE_COLD_BYTES          websocket bytes, cold connect     (default 524288)
+//   PERF_BUDGET_WIRE_RECONNECT_BYTES     websocket bytes, 10 s after reconnect (default 524288)
+//   PERF_BUDGET_WIRE_IDLE_BYTES_PER_MIN  websocket bytes per minute, one idle session open
+//                                        (default 262144)
 //
 // The large set is normally supplied by a daemon started on the seeded fixture
 // (SeedPerfServer in internal/server/perf_seed_test.go). seedLargeSet() checks
@@ -48,6 +53,16 @@ export const BUDGET = {
   reconnectRequests: num('PERF_BUDGET_RECONNECT_REQUESTS', 6),
   reconnectBytes: num('PERF_BUDGET_RECONNECT_BYTES', 256 * 1024),
   outageMs: num('PERF_OUTAGE_MS', 40000),
+  // Websocket byte budgets (TS-816). The frame budget is the largest single
+  // message a client may receive: a summary-row frame stays well under it, and
+  // a single oversized frame is what blocks the UI thread on a phone.
+  wireFrameBytes: num('PERF_BUDGET_WIRE_FRAME_BYTES', 307200),
+  // Everything received from the first socket until the sessions list renders.
+  wireColdBytes: num('PERF_BUDGET_WIRE_COLD_BYTES', 524288),
+  // Everything received in the 10 s after a 2.5 s outage reconnects.
+  wireReconnectBytes: num('PERF_BUDGET_WIRE_RECONNECT_BYTES', 524288),
+  // Received bytes per minute with one running session's detail view idle.
+  wireIdleBytesPerMin: num('PERF_BUDGET_WIRE_IDLE_BYTES_PER_MIN', 262144),
 };
 
 // Throttle profiles for Network.emulateNetworkConditions. slow-4G is the

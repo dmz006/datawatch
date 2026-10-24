@@ -28,6 +28,7 @@ Legend:
 | Feature | PWA | Android | iOS |
 |---------|-----|---------|-----|
 | Session list + status | ✅ | ✅ | ✅ (three-way parity release, 2026-10-04) |
+| WebSocket session window (default-view rows on connect, one `session_state` per change, paged history over REST) | ✅ | ❌ pending the datawatch-app issue | ❌ pending the datawatch-app issue |
 | Start / stop / kill session | ✅ | ✅ | ✅ |
 | Session output streaming | ✅ | ✅ | ✅ |
 | Settings — General | ✅ | ✅ | ✅ |

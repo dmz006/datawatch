@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/alerts"
@@ -60,6 +61,13 @@ type WSMessage struct {
 type SessionsData struct {
 	Sessions []*session.Session `json:"sessions"`
 	Version  string             `json:"version,omitempty"`
+	// WindowMinutes, Total and More describe the default-view window (see
+	// ws_session_window.go): the window length, how many sessions the daemon
+	// holds, and whether the frame omits some of them. Zero when the frame
+	// is not window-bounded.
+	WindowMinutes int  `json:"window_minutes,omitempty"`
+	Total         int  `json:"total,omitempty"`
+	More          bool `json:"more,omitempty"`
 }
 
 // SessionStateData carries a single updated session for the lighter-weight
@@ -150,9 +158,14 @@ func (c *client) safeSend(msg []byte) {
 // nil means every connected client (the behavior of plain Broadcast).
 // want runs on the Hub.Run goroutine while it holds h.mu, so it must not
 // take h.mu itself; locking the client's own mutex is fine.
+//
+// build, when set, replaces payload: the Hub.Run goroutine calls it only if
+// at least one client matches want, so a frame nobody needs is never
+// marshalled (see broadcastLazy).
 type hubMessage struct {
 	payload []byte
 	want    func(*client) bool
+	build   func() []byte
 }
 
 // Hub manages all WebSocket clients
@@ -170,12 +183,29 @@ type Hub struct {
 	// snapMu because BroadcastSessions runs on many goroutines.
 	snapMu   sync.Mutex
 	snapshot map[string]uint64
+	// heldPrev is the set of session IDs the manager held at the last
+	// list pass; a session in it that is no longer held was deleted (as
+	// opposed to aged out of the default view). nil until a pass has run
+	// with clients connected. Guarded by snapMu.
+	heldPrev map[string]struct{}
 
 	// Live-config hooks wired by NewServer before Run starts; nil in
 	// bare-hub tests, which then get the built-in defaults.
 	sessionListDefaultFn func() string
 	summaryTextCharsFn   func() int
 	outputScopeDefaultFn func() string
+
+	// Default-view window hooks (ws_session_window.go); same nil-means-
+	// built-in-defaults rule.
+	recentWindowFn func() time.Duration
+	sessionRowFn   func(*session.Session, int) sessionSummaryRow
+	// viewSourceFn snapshots the default-view sessions and the set of every
+	// held session ID in one store pass (ws_session_broadcast.go).
+	viewSourceFn func(keep func(session.State, time.Time) bool) ([]*session.Session, map[string]struct{})
+	// legacyFrameBuilds counts bounded legacy `sessions` frames actually
+	// marshalled; it stays zero while only window and delta clients are
+	// connected (tests assert on it).
+	legacyFrameBuilds atomic.Int64
 }
 
 var upgrader = websocket.Upgrader{
@@ -231,6 +261,15 @@ func (h *Hub) Run() {
 			}
 			h.mu.Unlock()
 		case m := <-h.broadcast:
+			if m.build != nil {
+				if !h.anyClientWants(m.want) {
+					continue
+				}
+				m.payload = m.build()
+				if h.chanStats != nil {
+					h.chanStats.RecordSent(len(m.payload))
+				}
+			}
 			// Write lock: a slow client is deleted from h.clients below.
 			h.mu.Lock()
 			for c := range h.clients {

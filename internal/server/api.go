@@ -198,24 +198,31 @@ var startTime = time.Now()
 // Version is set at build time. The server package uses this for /api/health and /api/info.
 var Version = "9.8.2"
 
-// broadcastSessionsAsync pushes the current session list to every client
-// without blocking the caller. The goroutine is tracked in broadcastWG so
-// a test can wait for it before mutating or tearing down the sessions it
-// marshals.
+// broadcastSessionsAsync pushes the session-list change to every client
+// without blocking the caller. The default-view sessions are selected with
+// the cheap state / UpdatedAt check and copied under the store lock here,
+// on the caller's goroutine: the monitor goroutines keep writing the live
+// sessions, and marshalling them from the broadcast goroutine would race
+// with those writes. Nothing outside the default view is copied, and
+// nothing at all when no client is connected. The goroutine is tracked in
+// broadcastWG so a test can wait for it before mutating or tearing down
+// the sessions it marshals.
 func (s *Server) broadcastSessionsAsync() {
-	live := s.manager.ListSessions()
-	// Copy under the store lock here, on the caller's goroutine: the monitor
-	// goroutines keep writing the live sessions, and marshalling them from
-	// the broadcast goroutine would race with those writes.
-	sessions := make([]*session.Session, len(live))
-	for i, sess := range live {
-		snap := s.manager.SessionSnapshot(sess)
-		sessions[i] = &snap
+	if s.hub == nil {
+		return
+	}
+	if s.hub.ClientCount() == 0 {
+		s.hub.resetSessionSnapshot()
+		return
+	}
+	view, held := s.hub.defaultViewSnapshot()
+	if held == nil {
+		return
 	}
 	s.broadcastWG.Add(1)
 	go func() {
 		defer s.broadcastWG.Done()
-		s.hub.BroadcastSessions(sessions)
+		s.hub.broadcastSessionList(view, held)
 	}()
 }
 
@@ -2222,13 +2229,13 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	// Send initial session list — unless the configured default is the
 	// delta stream, whose clients fetch the list over REST instead (see
-	// ws_session_stream.go).
+	// ws_session_stream.go). The frame is bounded to the default-view
+	// sessions; a client that then announces the window form gets its rows
+	// frame from handleHello.
 	if s.wsSessionListDefault() != sessionListDelta {
-		sessions := s.manager.ListSessions()
-		raw, _ := json.Marshal(SessionsData{Sessions: sessions})
-		msg := WSMessage{Type: MsgSessions, Data: raw, Timestamp: time.Now()}
-		payload, _ := json.Marshal(msg)
-		c.safeSend(payload)
+		c.safeSend(s.hub.boundedSessionsFrame())
+	} else {
+		s.hub.seedSnapshotIfIdle()
 	}
 
 	go c.writePump()
@@ -2317,7 +2324,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				result = fmt.Sprintf("Error: %v", err)
 			} else {
 				result = fmt.Sprintf("[%s][%s] Started: %s\nTmux: %s", s.hostname, sess.ID, d.Task, sess.TmuxSession)
-				s.hub.BroadcastSessions(s.manager.ListSessions())
+				s.broadcastSessionsAsync()
 			}
 			respRaw, _ := json.Marshal(NotificationData{Message: result})
 			resp := WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}
@@ -6798,7 +6805,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "server.ws_session_list_default":
 			// Only "full" or "delta"; anything else is ignored.
-			if m := normalizeSessionListMode(strings.TrimSpace(strings.ToLower(toString(v)))); m != "" {
+			if m := normalizeSessionListDefault(strings.TrimSpace(strings.ToLower(toString(v)))); m != "" {
 				cfg.Server.WSSessionListDefault = m
 			}
 		case "server.ws_output_scope_default":

@@ -4722,6 +4722,13 @@ func (m *Manager) SessionSnapshot(sess *Session) Session {
 	return m.store.Snapshot(sess)
 }
 
+// SnapshotFiltered returns copies of the sessions keep selects by state and
+// update time (safe to marshal while the monitor goroutines keep writing the
+// live ones) and the set of every held session ID; see Store.SnapshotFiltered.
+func (m *Manager) SnapshotFiltered(keep func(State, time.Time) bool) ([]*Session, map[string]struct{}) {
+	return m.store.SnapshotFiltered(keep)
+}
+
 // GetSession returns a session by full ID or short ID.
 func (m *Manager) GetSession(id string) (*Session, bool) {
 	if sess, ok := m.store.Get(id); ok {

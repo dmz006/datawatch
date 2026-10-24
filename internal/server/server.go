@@ -1269,18 +1269,45 @@ func (s *HTTPServer) NotifyAlert(a *alerts.Alert) {
 }
 
 // NotifyStateChange broadcasts a session state change to all WS clients.
-// v8.37.0 (GH#162) — also emits the lighter-weight single-session
-// session_state message alongside the existing full-list broadcast; see
-// Hub.BroadcastSessionState's doc comment.
+// Emits the lighter-weight single-session session_state
+// message; only a legacy full client also gets the (bounded, default-view)
+// sessions frame. Window and delta clients cost one session copy, never a
+// walk of the session list. See Hub.BroadcastSessionState's doc comment.
 func (s *HTTPServer) NotifyStateChange(sess *session.Session, oldState session.State) {
-	s.hub.BroadcastSessions(s.manager.ListSessions())
-	s.hub.BroadcastSessionState(sess)
+	s.notifySessionChanged(sess, true)
 }
 
 // NotifyNeedsInput broadcasts a needs-input event to all WS clients
 func (s *HTTPServer) NotifyNeedsInput(sess *session.Session, prompt string) {
 	s.hub.BroadcastNeedsInput(sess.FullID, prompt)
-	s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.notifySessionChanged(sess, false)
+}
+
+// notifySessionChanged streams one changed session. A legacy client gets
+// the bounded sessions frame (built from the default-view sessions only,
+// which also streams any other change to window and delta clients), then,
+// when withState, the legacy session_state. With no legacy client connected
+// the changed session alone is streamed. Finished sessions older than the
+// default-view window are never sent, and no work is done with no client.
+func (s *HTTPServer) notifySessionChanged(sess *session.Session, withState bool) {
+	if s.hub == nil || s.manager == nil || sess == nil {
+		return
+	}
+	if s.hub.ClientCount() == 0 {
+		s.hub.resetSessionSnapshot()
+		return
+	}
+	snap := s.manager.SessionSnapshot(sess)
+	legacy := s.hub.hasLegacyClient()
+	if legacy {
+		s.hub.BroadcastSessionView()
+		if !withState {
+			return
+		}
+	}
+	if inDefaultView(&snap, time.Now(), s.hub.recentWindow()) {
+		s.hub.BroadcastSessionState(&snap)
+	}
 }
 
 // NotifyOutput broadcasts new output lines for a session

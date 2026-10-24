@@ -285,30 +285,82 @@ Apply: `datawatch sessions start --template audit-flow`.
 
 ### 5f. WebSocket push (mobile / external clients)
 
-`GET /ws` (upgrade) takes the same Bearer token as REST — no separate
-auth path, no subscribe frame needed for session-list updates. On
-connect the server immediately sends the full list, then again on every
-session-affecting change:
+`GET /ws` (upgrade) takes the same Bearer token as REST. No subscribe frame
+is needed for session-list updates.
 
-```json
-{"type":"sessions","data":{"sessions":[...],"version":"8.37.0"},"ts":"..."}
-```
+**What changed.** The socket used to send every session on connect and
+again on every change. On a daemon with about 4,000 sessions that was
+about 35 MB per change, which is too much for a phone on a metered
+connection. The daemon now sends only the sessions that belong in the
+default view, and only what changed.
 
-v8.37.0 adds a lighter-weight single-session message alongside it, for
-clients on a metered connection that would rather not re-parse the full
-list on every change:
+**The default view.** A session is in it when it is not finished, or when
+it finished (complete, failed or killed) within the last
+`server.recent_session_minutes` minutes (default 5; a value of 0 or less
+also means 5). Finished sessions older than that are never sent over the
+socket. Read them over REST instead, with the paged list (see
+[list-endpoints-and-paging.md](list-endpoints-and-paging.md)).
 
-```json
-{"type":"session_state","data":{"session":{...}},"ts":"..."}
-```
+**Before and after.** Measured with the hub byte-budget test on a
+4,000-session fixture (40 sessions in the default view, each with about
+2,500 to 3,000 characters of text). Sizes are the raw WebSocket message
+sizes.
 
-Both are sent together from the same state transition — `session_state`
-is additive, not a replacement. A client that only understands
-`"sessions"` keeps working unchanged; a client that wants smaller
-payloads can listen for `"session_state"` instead. No poll interval is
-needed either way — see `PrdHub`-style patterns in `datawatch-app` for
-the client-side "any open WS connection is a free broadcast pipe" idiom
-already used there for `prd_update`.
+| Message | Before | After |
+|---|---|---|
+| Connect, legacy client (no `hello`) | `sessions` with every session: 35.8 MB | bounded `sessions` frame: 44.8 KB |
+| Connect, window client (after `hello`) | not available | rows `sessions` frame: 20.2 KB, once |
+| One session changes, window client | `sessions` 35.8 MB and `session_state` 9.0 KB | `session_state` 588 bytes |
+| One session changes, legacy client | `sessions` 35.8 MB and `session_state` 9.0 KB | bounded `sessions` 44.8 KB and `session_state` 9.0 KB |
+| 20 changes in a row, window client | 20 × 35.8 MB | 11.7 KB in total |
+
+These numbers come from a test fixture, not a live daemon. A live daemon
+with longer text or more active sessions sends larger frames. The test
+fails any single WebSocket message over 300 KB, so that is the ceiling the
+design holds to.
+
+**Which mode you get.**
+
+| Client | Sends in `hello` | On connect | On each change |
+|---|---|---|---|
+| Window form (new apps and the PWA) | `"session_list":"window"` | bounded legacy frame, then one rows frame after `hello_ack` | `session_state` for the changed session only |
+| Legacy (no `hello`, or `full`) | nothing | bounded `sessions` frame | bounded `sessions` frame and the full `session_state` |
+| Delta | `"session_list":"delta"` | no `sessions` frame | `session_state` or `session_removed` |
+
+A bounded frame carries `data.more`, `data.total` and `data.window_minutes`.
+Long text fields are cut to `server.session_summary_text_chars` and listed
+in `truncated_fields`; the full text comes from `GET /api/sessions/{id}`.
+The window form and the rest of the message shapes are specified in
+[mobile-surface.md](../api/mobile-surface.md#low-bandwidth-client-flow).
+
+**Operator settings.**
+
+- `server.recent_session_minutes` sets the window (default 5). Clients read
+  it from `window_minutes` and never hard-code it. `PUT /api/config` applies
+  it without a restart.
+- `server.session_summary_text_chars` sets how much text a cut field keeps
+  (default 200).
+- `server.ws_session_list_default` is the mode for clients that never say
+  `hello`: `full` (the default) or `delta`. `window` is not valid here,
+  because only a client that says `hello` can ask for it.
+
+**Confirm it in a browser's network panel.**
+
+1. Open the PWA in a browser, then open the browser's developer tools.
+2. In the Network tab, filter for `WS`, click the `/ws` connection, and open
+   its Messages pane (Chrome) or Frames pane (Firefox). Each row is one
+   message, with its type and length.
+3. On a daemon with about 4,000 sessions, expect a connect `sessions` frame
+   of about 45 KB, then one `sessions` rows frame of about 20 KB after the
+   client's `hello_ack`, then only small `session_state` rows (about 1 KB or
+   less each). No further `sessions` frame should appear.
+4. Toggle **Show history**. The history comes from a `GET
+   /api/sessions?view=summary...` request in the Fetch/XHR filter, not from a
+   new large WebSocket message.
+
+The Playwright story TS-816 (group `wire`) checks these budgets
+automatically against the seeded fixture. See
+[testing/README.md](../testing/README.md).
 
 ## Diagram
 

@@ -46,6 +46,9 @@ func TestSeededLocalServerServe(t *testing.T) {
 
 	seed := SeedPerfServer(t, t.TempDir())
 	seed.Server.hub = hub
+	// Wire the hub to the live config and the manager's session view, as
+	// the daemon does, so the websocket serves the seeded sessions.
+	seed.Server.wireHubSessionStream()
 	api := seed.Server
 
 	webSub, err := fs.Sub(webFS, "web")
