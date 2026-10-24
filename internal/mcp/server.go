@@ -637,6 +637,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetSkills(), tracked(s.handleAutonomousPRDSetSkills))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetQualityGates(), tracked(s.handleAutonomousPRDSetQualityGates)) // BL367
 	mcpSrv.AddTool(s.toolAutonomousPRDSetContinueOnStoryFailure(), tracked(s.handleAutonomousPRDSetContinueOnStoryFailure))
+	// autonomous_prd_set_notify_events
+	mcpSrv.AddTool(s.toolAutonomousPRDSetNotifyEvents(), tracked(s.handleAutonomousPRDSetNotifyEvents))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetGit(), tracked(s.handleAutonomousPRDSetGit))                     // BL407 Phase 5
 	mcpSrv.AddTool(s.toolAutonomousPRDSetMemorySeed(), tracked(s.handleAutonomousPRDSetMemorySeed))       // BL386 P1
 	mcpSrv.AddTool(s.toolAutonomousPRDSetMemoryHarvest(), tracked(s.handleAutonomousPRDSetMemoryHarvest)) // BL386 P2

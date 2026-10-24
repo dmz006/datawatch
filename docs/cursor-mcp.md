@@ -131,6 +131,8 @@ Selected core tools:
 | `autonomous_prd_children` | List child PRDs spawned via `Task.SpawnPRD` |
 | `autonomous_prd_rejudge` | Re-judge the completion guardrail of a blocked Automaton whose tasks are all completed, without resetting any task — pass unblocks it, block keeps it blocked; refused otherwise |
 | `autonomous_prd_set_task_verification_llm` / `autonomous_prd_set_story_verification_llm` / `autonomous_prd_set_verification_llm` | Pick the LLM that verifies one task / one story / a whole Automaton (`verification_backend`, `verification_model`, `verification_effort`; `""` clears, omit = unchanged). Precedence task > story > Automaton > global (v9.0.69) |
+| `autonomous_prd_set_notify_events` | Set which lifecycle event kinds notify for one Automaton (`notify_events`, e.g. `["prd.blocked","task.session_started"]`); empty or omitted clears the Automaton-level set. Default set: `prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`, `prd.cancelled`; `task.session_started` / `task.session_cleared` are opt-in. Precedence: Automaton > guardrail profile > global default; a subscription filter can only narrow |
+| `guardrail_profile_create` / `guardrail_profile_update` | Optional `notify_events_json` (JSON array of event kinds) sets the profile tier of the same notify_events precedence chain; on update omitted = unchanged, `"[]"` = clear; invalid JSON → error |
 | `observer_stats` / `observer_envelopes` | Per-session + per-LLM-backend stats |
 | `observer_envelopes_all_peers` | Federation-aware envelope view with cross-host caller attribution |
 | `memory_remember` / `memory_recall` / `kg_query` | Episodic memory + knowledge graph |
