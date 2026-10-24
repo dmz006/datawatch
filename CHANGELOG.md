@@ -10,6 +10,7 @@ Every session the daemon ends now records who ended it and why.
 - Each end the daemon makes (the verifier's stall and idle detectors, the SSE stall watchdog, the orphan sweep, the verifier reconcile, the exit hook restart, kill on exit and shutdown) records a caller and a reason on the session. The reason names the detector and the numbers it measured, for example the idle time and its limit.
 - The CLI stop-all and kill commands run outside the daemon, so they print the caller and reason instead of recording them.
 - The capacity lease reaper prints one line per released lease with its holder, its session and why the lease was judged not live.
+- The REST kill, the `kill` command, the PRD delete, the MCP kill and stop-all tools and the comm channel kill all name their surface and reason in the session timeline. A Stop or SubagentStop hook event changes only the status board: the journal says `action=none (board only)` and no end is recorded.
 
 ## v9.6.0 — mcp.public_url for the MCP SSE endpoint behind a reverse proxy
 

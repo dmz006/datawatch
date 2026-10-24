@@ -7585,6 +7585,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				canonicalACP = "Activity"
 			}
 			if canonicalACP != "" {
+				mgr.NoteHookBoardEvent(fullID, canonicalACP)
 				server.RecordHookEvent(fullID, canonicalACP, eventType, map[string]any{
 					"backend":     "opencode-acp",
 					"acp_event":   eventType,
