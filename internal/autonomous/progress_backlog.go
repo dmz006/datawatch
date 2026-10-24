@@ -23,7 +23,7 @@ type BacklogRow struct {
 }
 
 var (
-	backlogRowRE     = regexp.MustCompile("^\\| (\\d+[a-z]?) \\| ")
+	backlogRowRE     = regexp.MustCompile(`^\| (\d+[a-z]?) \| `)
 	backlogLinkedRE  = regexp.MustCompile("`([0-9a-f]{8})`")
 	backlogTokenRE   = regexp.MustCompile(`\b[A-Z]{2}\d+\b`)
 	backlogKindMark  = regexp.MustCompile(`\s*\{kind=([^{}|]*)\}`)
@@ -67,7 +67,7 @@ func LoadBacklog(path string) ([]BacklogRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return ParseBacklog(f), nil
 }
 

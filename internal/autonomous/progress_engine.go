@@ -354,7 +354,7 @@ func allTasksCompleted(p *PRD) bool {
 
 func inProgressScope(p *PRD, o ProgressOptions) bool {
 	if o.AutomationID != "" || len(o.MemberIDs) > 0 {
-		if !(o.AutomationID != "" && p.AutomationID == o.AutomationID) && !o.MemberIDs[p.ID] {
+		if (o.AutomationID == "" || p.AutomationID != o.AutomationID) && !o.MemberIDs[p.ID] {
 			return false
 		}
 	}
@@ -420,12 +420,12 @@ func ComputeProgress(in ProgressInput) ProgressMetrics {
 			acc = accs[PRDKindOther]
 		}
 		acc.g.PRDs++
-		switch {
-		case r.status == PRDCompleted:
+		switch r.status {
+		case PRDCompleted:
 			acc.g.Done++
-		case r.status == PRDRunning || r.status == PRDPlanning:
+		case PRDRunning, PRDPlanning:
 			acc.g.Running++
-		case r.status == PRDBlocked || r.status == PRDFailed:
+		case PRDBlocked, PRDFailed:
 			acc.g.Blocked++
 		default:
 			acc.g.Waiting++
