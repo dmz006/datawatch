@@ -3822,6 +3822,46 @@ is in [howto/automata-capacity.md](howto/automata-capacity.md).
 
 ---
 
+## Lane fill (`autonomous.lane_fill`)
+
+Lane fill keeps the GPU and Claude lanes busy. On every poll the planner looks at the lanes and the queue and decides what each idle lane should start. It is in **shadow** mode by default: it records every decision it would make and starts nothing. Switch `autonomous.lane_fill.mode` to `on` only after the shadow comparison in [howto/automation-lane-fill.md](howto/automation-lane-fill.md) has passed.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomous.lane_fill.mode` | `shadow` | `off` (nothing runs), `shadow` (decide and record, start nothing) or `on` (carry the decisions out). |
+| `autonomous.lane_fill.gpu_lanes` | `2` | GPU lanes on the local model pool. |
+| `autonomous.lane_fill.claude_lanes` | `3` | Claude lanes. `0` means none. |
+| `autonomous.lane_fill.idle_alert_minutes` | `30` | How long a lane may sit idle with eligible work waiting before one alert. `0` turns the alert off. |
+| `autonomous.lane_fill.decompose_ahead_min` | `2` | Decomposed Automata kept ready per lane type. |
+| `autonomous.lane_fill.poll_seconds` | `60` | Seconds between planner polls. Values below 5 are raised to 5. |
+| `autonomous.lane_fill.gpu_backend` | `pi-prompt` | Backend the GPU lanes run. |
+| `autonomous.lane_fill.gpu_model` | empty | Model the GPU lanes run. Empty leaves it to the backend. |
+| `autonomous.lane_fill.claude_backend` | `claude-code` | Backend the Claude lanes run. |
+
+Every key is read live. Mode and threshold changes apply on the next poll, with no restart. A bad value is refused and nothing is written.
+
+**Lane preference.** Each Automaton has a lane preference, `gpu`, `claude` or `any` (the default). It is stored on the Automaton, and the planner honours `gpu` and `claude` exactly. Set it per Automaton: REST `POST /api/autonomous/prds/{id}/set_lane_preference`, MCP `autonomous_prd_set_lane_preference`, CLI `datawatch autonomous prd-set-lane-preference <id> gpu|claude|any`, comm `autonomous set-lane-preference <prd-id> gpu|claude|any`, or the Lane preference select in the Automaton settings form.
+
+### Lane fill surfaces
+
+| Surface | Read the status | Change the mode or a threshold | Set a lane preference |
+|---|---|---|---|
+| REST | `GET /api/autonomous/lane-fill?limit=N` (`limit` 1 to 1000, default 50) | `PUT /api/config` with the `autonomous.lane_fill.*` key | `POST /api/autonomous/prds/{id}/set_lane_preference` |
+| MCP | `autonomous_lane_fill_status` | `autonomous_config_set` with `lane_fill_mode` and the other `lane_fill_*` arguments | `autonomous_prd_set_lane_preference` |
+| CLI | `datawatch autonomous lane-fill [--limit N] [--json]` | `datawatch config set autonomous.lane_fill.mode on` | `datawatch autonomous prd-set-lane-preference <id> gpu\|claude\|any` |
+| Comm channel | `autonomous lane-fill [limit]` | `configure autonomous.lane_fill.mode=on` | `autonomous set-lane-preference <prd-id> gpu\|claude\|any` |
+| PWA | Automata tab, Automation sub-tab, the **Lane fill** card (reloads every 5 seconds) | Settings → General → Autonomous, the Lane fill fields | Automaton settings form, **Lane preference** select |
+
+**What the status shows.** Each lane with its occupant or its blocker, the queued eligible counts for GPU and Claude work, the pool evidence (active GPU sessions and loaded models, or the error when a pool host could not be read), the newest decisions with whether each was executed, and the idle-lane alerts. In shadow mode a decision with `executed: false` is a would-start and must not be read as a start.
+
+**Restart.** The decision history (up to 1000 decisions) is kept in a file in the autonomous data directory and reloads after a restart. Nothing is decided until boot recovery has finished, so Automata that were running are not read as idle lanes. A started Automaton is never started a second time. Idle timers start again after a restart, so an idle lane alerts only after a full threshold from the restart.
+
+**What lane fill never does.** It never merges finished work. It never judges design or difficulty. It never holds GPU work because of Claude usage limits, since GPU lanes cost no Claude usage and the planner does not read usage or budget. It never starts an Automaton that is held (a `HOLD` line, "do not run", "sequenced last", or "sequenced after" an unfinished Automaton). It adds no second start path: every start in `on` mode goes through the normal admission, approval and quality-gate rules.
+
+**Known gaps before `on`.** The plan's open questions are still open: whether `on` mode may approve a review-pending Automaton through the approve call (the shipped code does, subject to the plan-coverage and plan-review gates), whether an Automaton on a backend other than the GPU or Claude backend counts toward lane occupancy, and the default Claude lane count and alert minutes. Answer them before switching to `on`.
+
+---
+
 ## Automata progress dashboard
 
 A read-only view of how far the Automata have got and roughly when the rest

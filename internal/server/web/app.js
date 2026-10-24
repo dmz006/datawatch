@@ -15260,6 +15260,7 @@ function openPRDSettingsModal(prdID) {
       const cur = {
         type:                 prd.type || '',
         kind:                 prd.kind || '',
+        lane_preference:      prd.lane_preference || 'any',
         backend:              prd.backend || '',
         effort:               prd.effort || '',
         model:                prd.model || '',
@@ -15300,12 +15301,20 @@ function openPRDSettingsModal(prdID) {
                 ${['software','research','operational','personal'].map(v => `<option value="${v}" ${cur.type===v?'selected':''}>${v}</option>`).join('')}
               </select>
             </div>
-            <div class="wizard-field">
-              <label class="wizard-label">${escHtml(t('progress_card_kind_label'))}</label>
-              <select id="prdSettingsKind" class="form-select">
-                <option value="" ${!cur.kind?'selected':''}>${escHtml(t('progress_card_kind_derived'))}</option>
-                ${['feature','bug','other'].map(v => `<option value="${v}" ${cur.kind===v?'selected':''}>${escHtml(t(PC_KEYS.kind[v]))}</option>`).join('')}
-              </select>
+            <div class="wizard-grid-mobile">
+              <div class="wizard-field">
+                <label class="wizard-label">${escHtml(t('progress_card_kind_label'))}</label>
+                <select id="prdSettingsKind" class="form-select">
+                  <option value="" ${!cur.kind?'selected':''}>${escHtml(t('progress_card_kind_derived'))}</option>
+                  ${['feature','bug','other'].map(v => `<option value="${v}" ${cur.kind===v?'selected':''}>${escHtml(t(PC_KEYS.kind[v]))}</option>`).join('')}
+                </select>
+              </div>
+              <div class="wizard-field">
+                <label class="wizard-label">${escHtml(t('lane_fill_pref_label'))}</label>
+                <select id="prdSettingsLanePreference" class="form-select">
+                  ${['any','gpu','claude'].map(v => `<option value="${v}" ${cur.lane_preference===v?'selected':''}>${escHtml(t(LANE_FILL_PREF_KEYS[v]))}</option>`).join('')}
+                </select>
+              </div>
             </div>
             <div class="wizard-grid-mobile">
               <div class="wizard-field">
@@ -15470,6 +15479,13 @@ function openPRDSettingsModal(prdID) {
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_kind', {
               method: 'POST', headers: {'Content-Type':'application/json'},
               body: JSON.stringify({ kind: newKind }),
+            }));
+          }
+          const newLanePreference = document.getElementById('prdSettingsLanePreference')?.value || 'any';
+          if (newLanePreference !== cur.lane_preference) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_lane_preference', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ lane_preference: newLanePreference }),
             }));
           }
           const newPriority = parseInt(document.getElementById('prdSettingsPriority')?.value || '0', 10) || 0;
@@ -15866,6 +15882,16 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.usage_backoff', label: 'Usage back-off (pause_backend | off, default pause_backend)', labelKey: 'settings_usage_backoff', type: 'select', options: ['pause_backend', 'off'], default: 'pause_backend' },
     { key: 'autonomous.backoff_max_wait_minutes', label: 'Usage back-off max wait (minutes when a rate limit has no reset time, default 60)', labelKey: 'settings_backoff_max_wait_minutes', type: 'number', placeholder: '60', min: 1, step: 1, default: '60' },
     { key: 'autonomous.automation.idle_alert_minutes', label: 'Automation idle alert (minutes idle before one alert, 0 = off)', labelKey: 'settings_automation_idle_alert_minutes', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
+    // Lane fill — shadow (default) computes and records every decision and starts nothing.
+    { key: 'autonomous.lane_fill.mode', label: 'Lane fill mode (off, shadow or on; default shadow)', labelKey: 'settings_lane_fill_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
+    { key: 'autonomous.lane_fill.gpu_lanes', label: 'Lane fill GPU lanes (whole number, default 2)', labelKey: 'settings_lane_fill_gpu_lanes', type: 'number', placeholder: '2', min: 0, step: 1, default: '2' },
+    { key: 'autonomous.lane_fill.claude_lanes', label: 'Lane fill Claude lanes (whole number, default 3, 0 = none)', labelKey: 'settings_lane_fill_claude_lanes', type: 'number', placeholder: '3', min: 0, step: 1, default: '3' },
+    { key: 'autonomous.lane_fill.idle_alert_minutes', label: 'Lane fill idle alert (minutes a lane sits idle with work waiting, 0 = off, default 30)', labelKey: 'settings_lane_fill_idle_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
+    { key: 'autonomous.lane_fill.decompose_ahead_min', label: 'Lane fill decompose-ahead minimum (decomposed Automata kept ready per lane, default 2)', labelKey: 'settings_lane_fill_decompose_ahead_min', type: 'number', placeholder: '2', min: 0, step: 1, default: '2' },
+    { key: 'autonomous.lane_fill.poll_seconds', label: 'Lane fill poll interval (seconds, minimum 5, default 60)', labelKey: 'settings_lane_fill_poll_seconds', type: 'number', placeholder: '60', min: 5, step: 1, default: '60' },
+    { key: 'autonomous.lane_fill.gpu_backend', label: 'Lane fill GPU backend (default pi-prompt)', labelKey: 'settings_lane_fill_gpu_backend', type: 'text', placeholder: 'pi-prompt', default: 'pi-prompt' },
+    { key: 'autonomous.lane_fill.gpu_model', label: 'Lane fill GPU model (empty = backend default)', labelKey: 'settings_lane_fill_gpu_model', type: 'text', placeholder: '' },
+    { key: 'autonomous.lane_fill.claude_backend', label: 'Lane fill Claude backend (default claude-code)', labelKey: 'settings_lane_fill_claude_backend', type: 'text', placeholder: 'claude-code', default: 'claude-code' },
     { key: 'autonomous.automation.agent_insert_policy', label: 'Automation agent insert policy (allow | require_operator, default allow)', labelKey: 'settings_automation_agent_insert_policy', type: 'select', options: ['allow', 'require_operator'], default: 'allow' },
     // Progress engine parameters (0 or empty = the default shown as placeholder).
     { key: 'autonomous.progress.lanes', label: 'Progress lanes (parallel lanes of Automata used for utilization, 0 = 5)', labelKey: 'settings_progress_lanes', type: 'number', placeholder: '5', min: 0, step: 1, default: '0' },
@@ -23211,6 +23237,102 @@ window._loadPRDCapacityCard = function(prdId) {
   window._prdCapacityInterval = setInterval(render, 5000);
 };
 
+// ── Lane fill card ──────────────────────────────────────────────────────────
+// laneFillCardHtml(status) turns the decoded GET /api/autonomous/lane-fill body
+// into the Automation sub-tab's lane card: the mode, one row per lane, the
+// eligible work queued for each lane type, the pool evidence, the newest
+// decisions and the recent idle-lane alerts. A missing status renders the
+// placeholder; the loader owns the failed state. Every value is escaped.
+// The key maps hold literal locale keys, so the key-coverage guard can see them.
+const LANE_FILL_DECISION_ROWS = 10;
+const LANE_FILL_ALERT_ROWS = 5;
+const LANE_FILL_MODE_KEYS = { off: 'lane_fill_mode_off', shadow: 'lane_fill_mode_shadow', on: 'lane_fill_mode_on' };
+const LANE_FILL_TYPE_KEYS = { gpu: 'lane_fill_type_gpu', claude: 'lane_fill_type_claude' };
+const LANE_FILL_PREF_KEYS = { any: 'lane_fill_pref_any', gpu: 'lane_fill_type_gpu', claude: 'lane_fill_type_claude' };
+const LANE_FILL_ACTION_KEYS = {
+  start_prd: 'lane_fill_action_start', decompose: 'lane_fill_action_decompose',
+  decompose_ahead: 'lane_fill_action_decompose_ahead', report_merge: 'lane_fill_action_report_merge',
+  blocked: 'lane_fill_action_blocked', idle: 'lane_fill_action_idle',
+};
+// _laneFillKey returns the locale key for an API value, or '' for anything that
+// is not one of ours (including inherited names such as "constructor").
+function _laneFillKey(map, v) {
+  return (typeof v === 'string' && Object.prototype.hasOwnProperty.call(map, v)) ? map[v] : '';
+}
+// _laneFillClock formats a server time; the zero time the server sends when
+// unset has no clock reading, so it renders as nothing.
+function _laneFillClock(at) {
+  const ms = Date.parse(at);
+  return (isNaN(ms) || ms < 0) ? '' : new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+function _laneFillSection(title, body) {
+  return `<div style="margin-top:6px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(title)}</div>${body}`;
+}
+function _laneFillModeHtml(mode) {
+  const key = _laneFillKey(LANE_FILL_MODE_KEYS, mode);
+  const label = key ? t(key) : String(mode || '');
+  const badge = `<span class="lane-fill-mode lane-fill-mode-${key ? escHtml(mode) : 'unknown'}" style="display:inline-block;padding:1px 8px;border:1px solid var(--text2);border-radius:10px;font-size:12px;font-weight:600;">${escHtml(t('lane_fill_mode_label'))}: ${escHtml(label)}</span>`;
+  const note = mode === 'shadow' ? `<div class="lane-fill-shadow-note" style="margin-top:4px;font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('lane_fill_shadow_text'))}</div>` : '';
+  return `<div style="margin-top:4px;">${badge}</div>${note}`;
+}
+function _laneFillLaneHtml(l) {
+  const occupied = l.state === 'occupied';
+  const typeKey = _laneFillKey(LANE_FILL_TYPE_KEYS, l.type);
+  const typeLabel = typeKey ? t(typeKey) : String(l.type || '');
+  const stateLabel = t(occupied ? 'lane_fill_state_occupied' : 'lane_fill_state_idle');
+  const waiting = Number(l.eligible_waiting) > 0
+    ? `<span class="lane-fill-waiting" style="color:var(--accent2,var(--text));font-weight:600;">&#9203; ${escHtml(t('lane_fill_waiting', [Number(l.eligible_waiting)]))}</span>` : '';
+  const occupant = occupied && l.occupant
+    ? [l.occupant.title, l.occupant.backend].filter(Boolean).join(' · ') : '';
+  const blocker = l.blocker ? `<div style="color:var(--text2);">${escHtml(t('lane_fill_blocked', [l.blocker]))}</div>` : '';
+  return `<div class="lane-fill-lane" style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;padding:4px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    `<span style="font-weight:600;overflow-wrap:anywhere;">${escHtml(l.id)} · ${escHtml(typeLabel)}</span>` +
+    `<span>${escHtml(stateLabel)}</span>${waiting}` +
+    `<div style="flex-basis:100%;min-width:0;overflow-wrap:anywhere;">${occupant ? `<div>${escHtml(occupant)}</div>` : ''}${blocker}</div></div>`;
+}
+function _laneFillDecisionHtml(d) {
+  const clock = _laneFillClock(d.at);
+  const actionKey = _laneFillKey(LANE_FILL_ACTION_KEYS, d.action);
+  const action = actionKey ? t(actionKey) : String(d.action || '');
+  // Only a start is worded as a start; other actions show their own name.
+  const wording = d.action === 'start_prd' ? (d.executed ? t('lane_fill_started') : t('lane_fill_would_start')) : '';
+  const reason = d.blocker || d.reason || '';
+  const err = d.error ? `<div style="color:var(--error,#c00);overflow-wrap:anywhere;">${escHtml(d.error)}</div>` : '';
+  return `<div class="lane-fill-decision" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
+    `<span style="color:var(--text2);">${escHtml(clock)}</span> ${escHtml(d.lane_id)} · ${escHtml(action)} · ${escHtml(d.title)}` +
+    (wording ? ` <span style="font-weight:600;">— ${escHtml(wording)}</span>` : '') +
+    (reason ? `<div style="color:var(--text2);">${escHtml(reason)}</div>` : '') + err + `</div>`;
+}
+function _laneFillAlertHtml(a) {
+  const message = a.message ? ` — ${a.message}` : '';
+  return `<div class="lane-fill-alert" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
+    `<span style="color:var(--text2);">${escHtml(_laneFillClock(a.at))}</span> ${escHtml(a.lane_id)} · ${escHtml(a.work)}${escHtml(message)}</div>`;
+}
+window.laneFillCardHtml = function(status) {
+  const head = `<div class="cap-title">${escHtml(t('lane_fill_card_title'))}</div>`;
+  if (!status || typeof status !== 'object') {
+    return `<div class="prd-capacity-card lane-fill-card">${head}<div style="color:var(--text2);">${escHtml(t('lane_fill_empty'))}</div></div>`;
+  }
+  const lanes = Array.isArray(status.lanes) ? status.lanes : [];
+  const lanesHtml = lanes.length ? lanes.map(_laneFillLaneHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_lanes'))}</div>`;
+  const queued = status.queued_eligible || {};
+  const queuedLine = `<div style="margin-top:6px;">${escHtml(t('lane_fill_queued', [Number(queued.gpu) || 0, Number(queued.claude) || 0]))}</div>`;
+  const ev = status.evidence || {};
+  const models = (Array.isArray(ev.loaded_models) ? ev.loaded_models : []).map(m => `${m.host} ${m.model}`).join(', ');
+  const evidenceLine = ev.error
+    ? t('lane_fill_evidence_error', [ev.error])
+    : t('lane_fill_evidence', [Number(ev.gpu_active_sessions) || 0, models || t('lane_fill_evidence_none')]);
+  const evidence = `<div style="margin-top:6px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(evidenceLine)}</div>`;
+  const decisions = (Array.isArray(status.decisions) ? status.decisions : []).slice(0, LANE_FILL_DECISION_ROWS);
+  const decisionsHtml = decisions.length ? decisions.map(_laneFillDecisionHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_decisions'))}</div>`;
+  const alerts = (Array.isArray(status.alerts) ? status.alerts : []).slice(0, LANE_FILL_ALERT_ROWS);
+  const alertsHtml = alerts.length ? alerts.map(_laneFillAlertHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_alerts'))}</div>`;
+  return `<div class="prd-capacity-card lane-fill-card" style="min-width:0;">${head}${_laneFillModeHtml(status.mode)}` +
+    _laneFillSection(t('lane_fill_lanes_heading'), lanesHtml) + queuedLine + evidence +
+    _laneFillSection(t('lane_fill_decisions_heading'), decisionsHtml) +
+    _laneFillSection(t('lane_fill_alerts_heading'), alertsHtml) + `</div>`;
+};
+
 // ── Automata progress card ───────────────────────────────────────────────────
 // progressCardHtml(state, opts) is a pure function from the loader state to
 // markup. state: {status: 'loading'|'ok'|'stale'|'failed', data: the
@@ -25323,6 +25445,7 @@ function _automationBodyHTML() {
       </div>
       <div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
+      <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>`;
@@ -25335,7 +25458,7 @@ function _automationMount() {
   _automationState.loaded = false;
   // The capacity card and the list load in parallel; each loader owns its
   // own loading and failed states, so one failing never blanks the other.
-  listLoaderAll([_automationCapacityLoader(), _automationLoader()]);
+  listLoaderAll([_automationCapacityLoader(), _automationLaneFillLoader(), _automationLoader()]);
   // The progress card runs on its own state-machine path; it renders when the
   // data lands and its failed state never touches the list or capacity card.
   if (typeof window.loadProgressCard === 'function') window.loadProgressCard();
@@ -25344,7 +25467,7 @@ function _automationMount() {
 // _automationStopLoaders ends the polling and tick timers of the Automation
 // list and capacity loaders. Their state stays, and load() starts them again.
 function _automationStopLoaders() {
-  ['automation', 'automation_capacity'].forEach(k => {
+  ['automation', 'automation_capacity', 'automation_lane_fill'].forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
   });
@@ -25405,6 +25528,17 @@ function _automationCapacityLoader() {
     failedText: msg => t('automation_capacity_failed', [msg]),
     active: () => !!document.getElementById('automationCapacityCard'),
     render: cap => window.capacityCardHtml(cap, { showEmpty: true }),
+  });
+}
+
+// _automationLaneFillLoader polls the lane fill status beside the capacity
+// card. Its failed state is the list loader's banner, like the capacity card.
+function _automationLaneFillLoader() {
+  return window._listLoaders.automation_lane_fill || listLoader({
+    key: 'automation_lane_fill', el: 'automationLaneFillCard', url: '/api/autonomous/lane-fill?limit=20', pollMs: 5000,
+    failedText: msg => t('lane_fill_failed', [msg]),
+    active: () => !!document.getElementById('automationLaneFillCard'),
+    render: status => window.laneFillCardHtml(status),
   });
 }
 

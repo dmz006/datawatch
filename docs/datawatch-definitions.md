@@ -1492,6 +1492,14 @@ event; it never types the action text and never consumes a one-shot. See
 and
 [flow/lifecycle-subscription-flow.md](flow/lifecycle-subscription-flow.md).
 
+**Lane** — one channel an Automaton can run in. There are two kinds. A **GPU lane** is one of the channels on the local model pool; which machine serves a given session is not fixed per lane, so the pool is full when every GPU lane is in use wherever it runs. A **Claude lane** runs one Automaton at a time on the Claude backend. A lane is **occupied** while work runs in it and **idle** otherwise. See [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
+
+**Lane fill** — the daemon's own check that every lane stays busy. On each poll it looks at the idle lanes and the queued Automata, and decides what each idle lane should start: a decomposed Automaton that is ready, or a draft to decompose ahead. A lane that cannot take anything shows the reason it stays idle. Lane fill never merges, never judges design or difficulty, and never holds GPU work because of Claude usage limits. See [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
+
+**Shadow mode** — the default lane fill mode. The planner runs on every poll and records every decision it would make, with the evidence it used, but starts nothing. It is how the operator checks the lane fill rules against what the supervisor actually did before the daemon acts on them. The other modes are `off` (nothing runs) and `on` (the decisions are carried out).
+
+**Lane preference** — the setting on each Automaton that says which lane it may take: `gpu`, `claude`, or `any` (the default). The planner honours `gpu` and `claude` exactly. A person sets it; lane fill does not infer it from the work.
+
 ---
 
 ## Core feature reference matrix
@@ -1504,6 +1512,7 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Session Telemetry | [`howto/session-telemetry.md`](howto/session-telemetry.md) | ✓ | [`flow/telemetry-flow.md`](flow/telemetry-flow.md) |
 | Channel-driven session state engine | [`howto/channel-state-engine.md`](howto/channel-state-engine.md) | active backlog | covered in `architecture.md` |
 | Automata / DAG orchestrator | [`howto/autonomous-planning.md`](howto/autonomous-planning.md), [`howto/autonomous-review-approve.md`](howto/autonomous-review-approve.md), [`howto/automata-orchestrator.md`](howto/automata-orchestrator.md) | many plans | architecture covers it |
+| Lane fill (shadow mode first) | [`howto/automation-lane-fill.md`](howto/automation-lane-fill.md) | [`plans/2026-10-24-lane-fill-shadow-mode.md`](plans/2026-10-24-lane-fill-shadow-mode.md) | [`flow/automata-capacity-flow.md`](flow/automata-capacity-flow.md) (lane fill section) |
 | Skills | [`howto/skills-sync.md`](howto/skills-sync.md) | ✓ | ✓ |
 | Council Mode | [`howto/council-mode.md`](howto/council-mode.md) | ✓ | ✓ |
 | Algorithm Mode | [`howto/algorithm-mode.md`](howto/algorithm-mode.md) | ✓ | ✓ |

@@ -481,7 +481,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/capacity", api.handleCapacity) // admission ledger: pools, holders, wait queue
 	apiMux.HandleFunc("/api/autonomous/progress", api.handleAutonomousProgress)
 	apiMux.HandleFunc("/api/autonomous/progress/trend", api.handleAutonomousProgressTrend)
-	apiMux.HandleFunc("/api/capacity/admission", api.handleCapacityAdmission) // read-only admission query
+	apiMux.HandleFunc("/api/autonomous/lane-fill", api.handleAutonomousLaneFill) // lane fill status: lanes, decisions, alerts
+	apiMux.HandleFunc("/api/capacity/admission", api.handleCapacityAdmission)    // read-only admission query
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)
 	apiMux.HandleFunc("/api/channel/send", api.handleChannelSend)
@@ -886,6 +887,15 @@ func (s *HTTPServer) SetServerStore(st *multiserver.Store) {
 	if s.api != nil {
 		s.api.SetServerStore(st)
 	}
+}
+
+// FederationSessions returns this host's sessions and each enabled peer's, with
+// a per-peer error for each peer that could not be read.
+func (s *HTTPServer) FederationSessions() FederationResponse {
+	if s.api == nil {
+		return FederationResponse{Proxied: map[string][]*session.Session{}, Errors: map[string]string{"local": "server not ready"}}
+	}
+	return s.api.FederationSessions()
 }
 
 // ServerStore returns the multi-server registry (BL317 — for MCP fed-auth wiring).

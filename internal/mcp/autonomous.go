@@ -70,6 +70,15 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithArray("task_override_statuses", mcpsdk.Description("PRD statuses that accept task/story-level LLM overrides; names: draft, planning, needs_review, approved, revisions_asked, active, running, completed, rejected, cancelled, archived, blocked, failed, paused; empty array restores the defaults (needs_review, revisions_asked, cancelled, blocked)")),
 		mcpsdk.WithString("plan_coverage_check", mcpsdk.Description("Plan requirement-coverage gate mode: off (no gate), warn (failing coverage is reported on the PRD but approval proceeds), block (the default: approving a PRD with a failing plan-coverage report is blocked until the operator acknowledges that exact failing surface with autonomous_prd_plan_coverage_acknowledge)")),
 		mcpsdk.WithNumber("automation_idle_alert_minutes", mcpsdk.Description("Minutes an active Automation may sit idle (a member finished and no next member started) before one idle alert is raised. Whole number >= 0; 0 turns the alert off.")),
+		mcpsdk.WithString("lane_fill_mode", mcpsdk.Enum("off", "shadow", "on"), mcpsdk.Description("Lane fill mode: off (no planning), shadow (plans and records every decision but starts nothing) or on (starts the planned work). Empty is shadow.")),
+		mcpsdk.WithNumber("lane_fill_gpu_lanes", mcpsdk.Description("Number of GPU lanes lane fill plans for. Whole number >= 0.")),
+		mcpsdk.WithNumber("lane_fill_claude_lanes", mcpsdk.Description("Number of Claude lanes lane fill plans for. Whole number >= 0; 0 means no Claude lane.")),
+		mcpsdk.WithNumber("lane_fill_idle_alert_minutes", mcpsdk.Description("Minutes a lane may sit idle with eligible work queued before one alert is raised. Whole number >= 0; 0 turns the alert off.")),
+		mcpsdk.WithNumber("lane_fill_decompose_ahead_min", mcpsdk.Description("Minimum number of decomposed Automata kept ready per lane. Whole number >= 0.")),
+		mcpsdk.WithNumber("lane_fill_poll_seconds", mcpsdk.Description("Seconds between lane fill planner polls. Whole number, at least 5.")),
+		mcpsdk.WithString("lane_fill_gpu_backend", mcpsdk.Description("LLM backend the GPU lanes run (default pi-prompt).")),
+		mcpsdk.WithString("lane_fill_gpu_model", mcpsdk.Description("Model the GPU lanes run. Empty leaves the model to the backend.")),
+		mcpsdk.WithString("lane_fill_claude_backend", mcpsdk.Description("LLM backend the Claude lanes run (default claude-code).")),
 		mcpsdk.WithString("automation_agent_insert_policy", mcpsdk.Description("What happens when an agent session inserts a member into an Automation: allow (the default) lets a draft insert land at once, require_operator holds every agent insert until an operator approves it.")),
 		mcpsdk.WithNumber("progress_lanes", mcpsdk.Description("Number of parallel lanes the progress figures assume (autonomous.progress.lanes). Whole number >= 0; 0 = 5.")),
 		mcpsdk.WithNumber("progress_inactive_gap_hours", mcpsdk.Description("Hours without activity that count as an inactive window in the progress figures (autonomous.progress.inactive_gap_hours). Number >= 0; 0 = 3.")),
@@ -232,6 +241,11 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if len(auto) > 0 {
 		body["automation"] = auto
+	}
+	// Lane fill (autonomous.lane_fill.*) rides in its own nested object,
+	// sent only when one of the lane_fill_* arguments is given.
+	if lane := laneFillConfigArgs(req); len(lane) > 0 {
+		body["lane_fill"] = lane
 	}
 	// plan_tier_max_inflight — the per-tier inflight cap table (tier → integer).
 	// It is a table in the REST surface, so parse the tool's string argument to

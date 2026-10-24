@@ -4320,6 +4320,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			DefaultAutoPR: acfgIn.DefaultAutoPR,
 			// Automation idle-alert threshold (autonomous.automation.*).
 			Automation: autonomouspkg.AutomationConfig{IdleAlertMinutes: acfgIn.Automation.IdleAlertMinutes},
+			// Lane fill (autonomous.lane_fill.*).
+			LaneFill: autonomouspkg.LaneFillConfigFromYAML(acfgIn.LaneFill),
 		}
 		// BL191 Q4 defaults — preserve the autonomouspkg defaults when
 		// the operator hasn't explicitly configured these.
@@ -6314,6 +6316,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// Automation coordinator: advances an Automation's cursor from
 			// member lifecycle events (nil-safe if it could not be built).
 			autoCoord := autonomouspkg.NewCoordinator(amgr, aAPI)
+			autoCoord.SetLaneFillEvidenceSource(newLaneFillEvidenceSource(amgr, httpServer, computeReg, cfg.Ollama.Host))
 			autoCoord.Start()
 			// Wire the HTTP server readiness channel so boot-resume goroutines
 			// wait until the server is accepting connections before spawning

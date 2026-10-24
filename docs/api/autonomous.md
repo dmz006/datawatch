@@ -54,6 +54,7 @@ POST   /api/autonomous/prds/{id}/set_task_verifier_policy    per-task verifier p
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
 POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {tag_ids[]} ([] clears)
 POST   /api/autonomous/prds/{id}/set_kind  Automaton kind; body: {kind} (feature|bug|other; "" derives it again); 400 on an unknown kind, 404 on an unknown id
+POST   /api/autonomous/prds/{id}/set_lane_preference  lane an Automaton may take; body: {lane_preference: gpu|claude|any} ("" means any); 400 on an unknown value, 404 on an unknown id
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
 GET    /api/autonomous/prds?tag={id}[&include_sub=false]  Automata carrying a tag (and, by default, any descendant tag)
 
@@ -66,6 +67,7 @@ GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD 
 GET    /api/autonomous/learnings           extracted post-task learnings
 GET    /api/autonomous/progress[?automation_id=&tag_id=&since=&until=]  progress metrics object (counts by kind, throughput, utilization, remaining work, completion range); since/until are YYYY-MM-DD, until is inclusive; 400 on a bad date
 GET    /api/autonomous/progress/trend[?days=]  saved daily snapshots as {days, points[], direction}; days 1..365 (default 30), 400 outside that range
+GET    /api/autonomous/lane-fill[?limit=N]  lane fill status: mode, lanes, queued eligible counts, pool evidence, newest decisions and idle alerts; limit 1..1000 (default 50), 400 outside that range
 
 # Guardrail Library + Profiles
 GET    /api/autonomous/guardrails                  list guardrail library (built-ins + skill-contributed)
@@ -1029,6 +1031,64 @@ planning-backend=<b> planning-model=<m>` and `automation set-verification-llm
 empty value clears).
 
 ---
+
+## Lane fill (`GET /api/autonomous/lane-fill`)
+
+Lane fill runs a planner on every coordinator poll. It records, for each idle lane, what it would start, and in `on` mode it carries the decisions out. The how-to is [howto/automation-lane-fill.md](../howto/automation-lane-fill.md).
+
+**Status response.** `GET /api/autonomous/lane-fill` (`limit` 1 to 1000, default 50; the decisions are newest first):
+
+```json
+{
+  "mode": "shadow",
+  "last_poll_at": "2026-10-24T13:00:00Z",
+  "lanes": [
+    {"id": "gpu-1", "type": "gpu", "state": "occupied",
+     "occupant": {"prd_id": "a1b2c3d4", "title": "Example Automaton", "backend": "pi-prompt"},
+     "blocker": "", "eligible_waiting": 0},
+    {"id": "claude-1", "type": "claude", "state": "idle", "occupant": null,
+     "blocker": "no eligible work for this lane", "eligible_waiting": 0}
+  ],
+  "queued_eligible": {"gpu": 3, "claude": 1},
+  "evidence": {"checked_at": "2026-10-24T13:00:00Z", "gpu_active_sessions": 1,
+               "loaded_models": [{"host": "local", "model": "qwen3.8:27b"}], "error": ""},
+  "decisions": [
+    {"at": "2026-10-24T13:00:00Z", "mode": "shadow", "lane_id": "gpu-2", "lane_type": "gpu",
+     "action": "start_prd", "prd_id": "b1c2d3e4", "title": "Example", "reason": "...",
+     "blocker": "", "executed": false, "error": "", "repeat_count": 1,
+     "last_seen_at": "2026-10-24T13:00:00Z"}
+  ],
+  "alerts": [
+    {"at": "2026-10-24T12:30:00Z", "lane_id": "gpu-2", "work": "Example (b1c2d3e4)",
+     "message": "Lane gpu-2 has been idle for 30 minutes with eligible work waiting. First eligible: Example (b1c2d3e4)."}
+  ]
+}
+```
+
+- `lanes[].state` is `occupied` or `idle`. An idle lane carries a `blocker` when the planner will not call it idle without a reason.
+- `evidence.error` is set when a pool host could not be read. A GPU lane is then never reported as idle.
+- `decisions[].action` is `start_prd`, `decompose`, `decompose_ahead`, `report_merge`, `blocked` or `idle`. `executed: false` is a would-start in shadow mode and must not be shown as a start.
+- `decisions[].mode` is `off`, `shadow` or `on`, the mode in effect when the decision was made.
+
+**Lane preference.** `POST /api/autonomous/prds/{id}/set_lane_preference` with `{"lane_preference": "gpu" | "claude" | "any"}`. An empty value means `any`. The stored value is returned on the Automaton as `lane_preference`, and an absent value means `any`. A value outside the three is refused with 400 and nothing is stored.
+
+**Configuration.** Every key is under `autonomous.lane_fill` and is read live:
+
+```yaml
+autonomous:
+  lane_fill:
+    mode: shadow               # off | shadow | on (default shadow)
+    gpu_lanes: 2               # GPU lanes on the local model pool
+    claude_lanes: 3            # Claude lanes; 0 means none
+    idle_alert_minutes: 30     # 0 turns the idle alert off
+    decompose_ahead_min: 2     # decomposed Automata kept ready per lane type
+    poll_seconds: 60           # minimum 5
+    gpu_backend: pi-prompt
+    gpu_model: ""              # empty = the backend's own model
+    claude_backend: claude-code
+```
+
+**Surfaces.** The same status is read by MCP `autonomous_lane_fill_status`, the CLI `datawatch autonomous lane-fill [--limit N] [--json]` and the comm verb `autonomous lane-fill [limit]`. The preference is set with MCP `autonomous_prd_set_lane_preference`, the CLI `datawatch autonomous prd-set-lane-preference <id> gpu|claude|any` and the comm verb `autonomous set-lane-preference <prd-id> gpu|claude|any`. The PWA shows the status on the Automation sub-tab.
 
 ## Configuration
 
