@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
+
+	"github.com/dmz006/datawatch/internal/pipeline"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -178,17 +181,34 @@ func (s *Server) toolAutonomousPRDSetQualityGates() mcpsdk.Tool {
 		mcpsdk.WithString("test_command", mcpsdk.Description("Shell command to run as the quality gate (e.g. 'go test ./...')")),
 		mcpsdk.WithNumber("timeout", mcpsdk.Description("Timeout in seconds (0 = no limit)")),
 		mcpsdk.WithBoolean("block_on_regression", mcpsdk.Description("Block and enter auto-fix cycle when regression is detected")),
+		mcpsdk.WithString("scope", mcpsdk.Description("Gate scope: full | touched-plus-smoke | touched. Controls how much of the test suite the gate task runs (empty = inherit the global/default full scope)")),
+		mcpsdk.WithString("smoke_packages", mcpsdk.Description("Smoke package patterns (comma-separated or JSON array) used by the touched-plus-smoke scope (empty = the built-in set)")),
 	)
 }
 func (s *Server) handleAutonomousPRDSetQualityGates(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	body, _ := json.Marshal(map[string]any{
+	body := map[string]any{
 		"enabled":             req.GetBool("enabled", false),
 		"test_command":        req.GetString("test_command", ""),
 		"timeout":             int(req.GetFloat("timeout", 0)),
 		"block_on_regression": req.GetBool("block_on_regression", false),
-	})
-	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_quality_gates", body)
+	}
+	if scope := strings.TrimSpace(req.GetString("scope", "")); scope != "" {
+		if _, err := pipeline.ParseGateScope(scope); err != nil {
+			return toolError("autonomous_prd_set_quality_gates", err), nil
+		}
+		body["scope"] = scope
+	}
+	if args := req.GetArguments(); args != nil {
+		if v, ok := args["smoke_packages"]; ok {
+			body["smoke_packages"] = qualityGatesSmokePackages(v)
+		}
+	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_quality_gates", b)
 	if err != nil {
 		return nil, err
 	}
