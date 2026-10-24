@@ -180,7 +180,7 @@ func TestLifecycleEmitPRD_Transitions(t *testing.T) {
 		{
 			name: "Manager.Run roll-up failed", want: PRDFailed, old: PRDRunning,
 			setup: func(t *testing.T) (*Manager, string, func() error) {
-				m := newEmitManager(t, DefaultConfig(), fakeDecompose)
+				m := newEmitManager(t, legacyFailureConfig(), fakeDecompose)
 				p := newEmitPRD(t, m, PRDApproved)
 				return m, p.ID, func() error { return m.Run(context.Background(), p.ID, fakeSpawn, failingVerify) }
 			},

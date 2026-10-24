@@ -59,7 +59,41 @@ func runEscalationPRD(t *testing.T, m *Manager, api *API, prd *PRD, log *escalat
 	if err := api.Run(prd.ID); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	pollPRDTerminal(t, m, prd.ID, 10*time.Second)
+	pollEscalationSettled(t, m, prd.ID, 10*time.Second)
+}
+
+// pollEscalationSettled waits until the Automaton is terminal, or blocked
+// with a task held for operator review, which is where an exhausted task
+// with escalation on leaves it.
+func pollEscalationSettled(t *testing.T, m *Manager, id string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		got, ok := m.Store().SnapshotPRD(id)
+		if ok {
+			if got.Status == PRDCompleted || got.Status == PRDFailed {
+				return
+			}
+			if got.Status == PRDBlocked && m.reviewHeldTaskID(got) != "" {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			var status string
+			var states []string
+			if ok {
+				status = string(got.Status)
+				for si := range got.Story {
+					for _, tk := range got.Story[si].Tasks {
+						states = append(states, tk.Title+"="+string(tk.Status))
+					}
+				}
+			}
+			t.Fatalf("pollEscalationSettled: PRD %s not settled within %s (status %q, tasks %v)",
+				id, timeout, status, states)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 // escalationOn returns a pointer to v, for the Enabled field of a policy.
@@ -384,7 +418,7 @@ func TestFailureEscalation_RestartContinuesAtRightStep(t *testing.T) {
 	if err := api.Run(prd.ID); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	pollPRDTerminal(t, m, prd.ID, 10*time.Second)
+	pollEscalationSettled(t, m, prd.ID, 10*time.Second)
 
 	if !sawStored {
 		t.Fatalf("second spawn never ran, so the reload was not checked")

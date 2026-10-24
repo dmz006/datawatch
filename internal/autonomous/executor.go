@@ -336,6 +336,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// Sequential path (default) — tasks run in dependency order.
 		// failedIDs tracks tasks that failed so dependents can be skipped.
 		failedIDs := make(map[string]bool)
+		// heldIDs holds the tasks held for operator review, and the tasks
+		// waiting behind one. Neither runs nor counts as failed.
+		heldIDs := make(map[string]bool)
 		for _, tid := range order {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -359,6 +362,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if t.Status == TaskFailed || t.Status == TaskCancelled {
 					failedIDs[tid] = true
 				}
+				continue
+			}
+			// A held task, or one waiting behind a held task, stays pending.
+			if m.taskOnReview(t) || m.waitsOnReview(prd, t, heldIDs) {
+				heldIDs[tid] = true
 				continue
 			}
 			// Skip tasks whose dependencies failed — propagate failure forward.
@@ -413,6 +421,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					if lt.Status == TaskFailed {
 						failedIDs[tid] = true
 					}
+					if lt.Status == TaskReviewNeeded {
+						heldIDs[tid] = true
+					}
 					// BL191 Q6 (v5.10.0) — when a task lands in TaskBlocked from a
 					// per-task guardrail block verdict, halt the walk so the
 					// operator can review before more tasks run.
@@ -462,6 +473,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		completedIDs := make(map[string]bool, len(order))
 		failedIDs := make(map[string]bool, len(order))
 		inFlight := make(map[string]bool, concurrency)
+		// heldIDs holds the tasks held for operator review. They are never
+		// completed, so their dependents never become ready.
+		heldIDs := make(map[string]bool, len(order))
 		remaining := len(order)
 
 		// v8.36.5 — seed tracking for tasks that are already terminal before
@@ -489,7 +503,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 
 		isReady := func(tid string) bool {
 			t := lookupTask(prd, tid)
-			if t == nil || completedIDs[tid] || inFlight[tid] {
+			if t == nil || completedIDs[tid] || inFlight[tid] || heldIDs[tid] {
 				return false
 			}
 			for _, dep := range t.DependsOn {
@@ -630,8 +644,14 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					}
 					failedIDs[r.tid] = true
 				}
-				completedIDs[r.tid] = true
 				latest, _ := m.store.GetPRD(prdID)
+				// A task held for operator review is neither completed nor
+				// failed, so its dependents stay unready behind it.
+				if latest != nil && m.taskHeldIn(latest, r.tid) {
+					heldIDs[r.tid] = true
+				} else {
+					completedIDs[r.tid] = true
+				}
 				if latest != nil {
 					// GH#172 D52 — operator paused this PRD while tasks were
 					// in flight. Let already-launched goroutines finish
@@ -730,6 +750,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			_ = m.store.SavePRD(prd)
 			return m.Run(ctx, prd.ID, spawn, verify)
 		}
+	}
+	// A task held for operator review keeps the Automaton open. Every task that
+	// can run has run by now, so the Automaton blocks until the operator acts,
+	// and the roll-up below neither completes nor fails it.
+	if held := m.reviewHeldTaskID(prd); held != "" {
+		m.blockForTaskReview(prd, held)
+		return nil
 	}
 	// Roll up PRD status: completed/failed once every task is in a terminal state.
 	//
@@ -1605,6 +1632,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
 		}
 	}
+	// Failure escalation: with the policy on, the task is held for operator
+	// review rather than marked failed. Disabled, the legacy path below runs.
+	if esc.Enabled {
+		// No more attempts are coming, so sweep any leftover CHECKPOINT.md,
+		// as the legacy exhaustion path does.
+		m.relocateCheckpoint(prd, t)
+		return m.holdTaskForReview(prd, t, lastFailureCategory, hint)
+	}
 	exhaustedOld := t.Status
 	m.store.WithLock(func() {
 		t.Status = TaskFailed
@@ -1682,6 +1717,11 @@ func flattenTasks(prd *PRD) []*Task {
 			// re-entered when ApproveTask transitions it back to
 			// pending (see ApproveTask).
 			if prd.Story[i].Tasks[j].Status == TaskAwaitingApproval {
+				continue
+			}
+			// A task held for operator review does not run again until the
+			// operator resolves it (see ResolveTaskReview).
+			if prd.Story[i].Tasks[j].Status == TaskReviewNeeded {
 				continue
 			}
 			out = append(out, &prd.Story[i].Tasks[j])

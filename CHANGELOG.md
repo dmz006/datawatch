@@ -11,6 +11,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A failed attempt moves the next attempt to the next worker on the Automaton's or task's escalation ladder. Each step covers its own number of failed attempts, and the last step covers the rest. A worker change is written to the Automaton's decision log.
 - With failure escalation on, a task gets `max_failures` failed attempts (default 3) instead of one attempt plus `auto_fix_retries`. Escalation is on by default, so an Automaton without explicit settings now gets three attempts. Set `autonomous.failure_escalation.enabled: false` to keep the previous bound.
 - A ladder step's backend and model are checked before the Automaton starts, so a step that cannot run refuses the start and names the task and the step.
+- A task that uses up its failed attempts under an enabled failure escalation policy is held for operator review instead of marked failed. It shows as `review_needed` with a report of every attempt, and one error alert is raised. Independent tasks keep running, dependent tasks wait, and the Automaton is blocked until the operator acts.
+- With failure escalation disabled, an exhausted task is marked failed as before.
 
 ## v9.5.125 — Restart keeps a finished worker and re-verifies only
 

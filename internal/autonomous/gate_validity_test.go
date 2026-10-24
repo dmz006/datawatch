@@ -291,8 +291,8 @@ func TestGateValidity_RealRun_RegressionStillFailsTask(t *testing.T) {
 		t.Fatal("PRD not found after run")
 	}
 	task := got.Story[0].Tasks[0]
-	if task.Status != TaskFailed {
-		t.Fatalf("task status = %s, want failed (valid baseline + new failing test must block)", task.Status)
+	if task.Status != TaskReviewNeeded {
+		t.Fatalf("task status = %s, want review_needed (valid baseline + new failing test must block)", task.Status)
 	}
 	if task.QualityGateResult == nil {
 		t.Fatal("task.QualityGateResult is nil")
@@ -300,7 +300,8 @@ func TestGateValidity_RealRun_RegressionStillFailsTask(t *testing.T) {
 	if !task.QualityGateResult.Regression || task.QualityGateResult.Invalid {
 		t.Fatalf("gate result = %+v, want Regression=true Invalid=false", task.QualityGateResult)
 	}
-	if !strings.Contains(task.Error, "regression") {
-		t.Errorf("task.Error = %q, want it to mention the regression", task.Error)
+	// The held task's Error is the one-line hold note; the cause is in the failure detail.
+	if task.FailureReason == nil || !strings.Contains(task.FailureReason.Detail, "regression") {
+		t.Errorf("failure detail = %+v, want it to mention the regression", task.FailureReason)
 	}
 }

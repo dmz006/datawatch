@@ -73,16 +73,17 @@ func TestLaunchFailureRetry_BoundedAndFailsInfra(t *testing.T) {
 	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) {
 		return VerificationResult{}, LaunchFailureError("s-1", "claude-code", "killed")
 	}
-	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
-	if got.Status != PRDFailed {
-		t.Fatalf("persistent launch failure must fail once the budget is spent, got %s", got.Status)
+	got := runToTerminalOrBlocked(t, m, api, prd.ID, spawn, verify)
+	if got.Status != PRDBlocked {
+		t.Fatalf("persistent launch failure must hold the task once the budget is spent, got %s", got.Status)
 	}
 	tk := got.Story[0].Tasks[0]
-	if tk.Status != TaskFailed {
-		t.Fatalf("task must end failed, got %s", tk.Status)
+	if tk.Status != TaskReviewNeeded {
+		t.Fatalf("task must be held for review, got %s", tk.Status)
 	}
-	if !strings.Contains(tk.Error, LaunchFailureReason) {
-		t.Fatalf("task Error should contain launch-failure reason, got %q", tk.Error)
+	// The held task's Error is the one-line hold note; the cause is in the failure detail.
+	if tk.FailureReason == nil || !strings.Contains(tk.FailureReason.Detail, LaunchFailureReason) {
+		t.Fatalf("failure detail should contain the launch-failure reason, got %+v", tk.FailureReason)
 	}
 }
 
@@ -111,6 +112,11 @@ func TestLaunchFailureRetry_BoundedAndFailsInfra_NeverBlocked(t *testing.T) {
 			// per call and auto-cleaned at test end).
 			prd, _ := m.CreatePRD("s", t.TempDir(), "claude-code", "", EffortNormal)
 			_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "write docs/x.md"}}}})
+			// The race this loop pins belongs to the legacy terminal state; a held
+			// Automaton is a legitimate PRDBlocked, so escalation stays off here.
+			fp, _ := m.Store().GetPRD(prd.ID)
+			fp.FailureEscalation = &FailureEscalationPolicy{Enabled: escalationOn(false)}
+			_ = m.Store().SavePRD(fp)
 
 			spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
 				return SpawnResult{SessionID: "s-" + r.TaskID}, nil
