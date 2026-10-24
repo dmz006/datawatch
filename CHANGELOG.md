@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- Every failed attempt of a task is recorded: the worker it ran on, its duration, how it ended, the verifier's summary and issues, and the files it changed. Records are kept across operator actions.
+- The next attempt's prompt carries the earlier reports, oldest first. When the reports would exceed the prompt limit, the oldest attempts are shortened to one line each, then left out, and the prompt says so.
+- With failure escalation disabled, the retry hint is unchanged from before.
+
 ## v9.5.125 — Restart keeps a finished worker and re-verifies only
 
 A daemon restart no longer redoes a worker that had already finished.
