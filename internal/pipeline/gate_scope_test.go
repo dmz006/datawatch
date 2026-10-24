@@ -441,7 +441,7 @@ func TestGateScope_RestrictBaseline(t *testing.T) {
 	// Restricting to packages with no baseline failures yields a clean
 	// baseline that ClassifyBaseline accepts.
 	clean := RestrictBaseline(baseline, []string{"example.com/gs/web"})
-	if len(clean.FailedTests) != 0 || clean.PackageFailures != nil && len(clean.PackageFailures) != 0 || clean.ExitCode != 0 {
+	if len(clean.FailedTests) != 0 || len(clean.PackageFailures) != 0 || clean.ExitCode != 0 {
 		t.Errorf("clean baseline: %v exit=%d", clean.FailedTests, clean.ExitCode)
 	}
 	if valid, reason := ClassifyBaseline(clean); !valid {
