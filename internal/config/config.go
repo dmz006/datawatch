@@ -2525,6 +2525,11 @@ type AutonomousConfig struct {
 	// coordination. See AutonomousAutomationConfig.
 	Automation AutonomousAutomationConfig `yaml:"automation" json:"automation"`
 
+	// Progress — parameters of the progress metrics engine (lane count,
+	// inactive-window gap, backlog file, start date, snapshot retention).
+	// See AutonomousProgressConfig.
+	Progress AutonomousProgressConfig `yaml:"progress" json:"progress"`
+
 	// PlanReview (2026-10-17 pre-approval gate) — a one-shot LLM judge
 	// over the freshly decomposed plan, run at the end of Decompose and
 	// re-runnable via Manager.ReviewPlan. Internal wiring: see the
@@ -2592,6 +2597,136 @@ func ValidateUndeclaredEditMode(mode string) error {
 type AutonomousAutomationConfig struct {
 	IdleAlertMinutes  int    `yaml:"idle_alert_minutes" json:"idle_alert_minutes"`
 	AgentInsertPolicy string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
+}
+
+// autonomous.progress defaults. A zero numeric value means "use the default".
+const (
+	DefaultProgressLanes                 = 5
+	DefaultProgressInactiveGapHours      = 3.0
+	DefaultProgressBacklogPath           = "docs/plans/README.md"
+	DefaultProgressSnapshotRetentionDays = 90
+	progressSinceLayout                  = "2006-01-02"
+)
+
+// AutonomousProgressConfig — autonomous.progress sub-config: every parameter
+// of the progress metrics engine. Lanes is the number of parallel lanes used
+// for the utilization figures (0 = 5). InactiveGapHours is the length of a gap
+// between two activity events that counts as an inactive window (0 = 3).
+// BacklogPath is the machine-readable backlog file; a relative path resolves
+// against autonomous.worktree_base_repo when that is set, else the daemon's
+// working directory. Since is the first day counted (YYYY-MM-DD; empty = the
+// first record's creation date). SnapshotRetentionDays is how long saved
+// progress snapshots are kept (0 = 90). None are omitempty, so an explicit
+// zero survives a round trip.
+type AutonomousProgressConfig struct {
+	Lanes                 int     `yaml:"lanes" json:"lanes"`
+	InactiveGapHours      float64 `yaml:"inactive_gap_hours" json:"inactive_gap_hours"`
+	BacklogPath           string  `yaml:"backlog_path" json:"backlog_path"`
+	Since                 string  `yaml:"since" json:"since"`
+	SnapshotRetentionDays int     `yaml:"snapshot_retention_days" json:"snapshot_retention_days"`
+}
+
+// EffectiveLanes returns the lane count in effect: 0 (or less) means 5.
+func (c AutonomousProgressConfig) EffectiveLanes() int {
+	if c.Lanes <= 0 {
+		return DefaultProgressLanes
+	}
+	return c.Lanes
+}
+
+// EffectiveInactiveGapHours returns the inactive-window gap in effect: 0 (or
+// less) means 3 hours.
+func (c AutonomousProgressConfig) EffectiveInactiveGapHours() float64 {
+	if c.InactiveGapHours <= 0 {
+		return DefaultProgressInactiveGapHours
+	}
+	return c.InactiveGapHours
+}
+
+// EffectiveSnapshotRetentionDays returns the snapshot retention in effect: 0
+// (or less) means 90 days.
+func (c AutonomousProgressConfig) EffectiveSnapshotRetentionDays() int {
+	if c.SnapshotRetentionDays <= 0 {
+		return DefaultProgressSnapshotRetentionDays
+	}
+	return c.SnapshotRetentionDays
+}
+
+// EffectiveBacklogPath returns the backlog path in effect: an empty value
+// means docs/plans/README.md.
+func (c AutonomousProgressConfig) EffectiveBacklogPath() string {
+	if strings.TrimSpace(c.BacklogPath) == "" {
+		return DefaultProgressBacklogPath
+	}
+	return c.BacklogPath
+}
+
+// ResolveBacklogPath returns the backlog file location: an absolute path as
+// is, a relative one joined onto worktreeBaseRepo (autonomous.worktree_base_repo)
+// when that is set, else made absolute against the daemon's working directory.
+func (c AutonomousProgressConfig) ResolveBacklogPath(worktreeBaseRepo string) string {
+	p := c.EffectiveBacklogPath()
+	if filepath.IsAbs(p) {
+		return p
+	}
+	if base := strings.TrimSpace(worktreeBaseRepo); base != "" {
+		return filepath.Join(base, p)
+	}
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
+}
+
+// SinceTime parses Since. An empty value yields the zero time and ok=false,
+// meaning the first record's creation date applies.
+func (c AutonomousProgressConfig) SinceTime() (t time.Time, ok bool) {
+	if strings.TrimSpace(c.Since) == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(progressSinceLayout, strings.TrimSpace(c.Since))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+// ValidateProgressSince accepts the empty string (first record's creation
+// date) and a YYYY-MM-DD date, and rejects every other value.
+func ValidateProgressSince(since string) error {
+	if strings.TrimSpace(since) == "" {
+		return nil
+	}
+	if _, err := time.Parse(progressSinceLayout, strings.TrimSpace(since)); err != nil {
+		return fmt.Errorf("autonomous.progress.since: %q is not a valid date (must be YYYY-MM-DD or empty)", since)
+	}
+	return nil
+}
+
+// ValidateProgressBacklogPath rejects a path containing a NUL byte. An empty
+// value is accepted and means docs/plans/README.md.
+func ValidateProgressBacklogPath(path string) error {
+	if strings.ContainsRune(path, 0) {
+		return fmt.Errorf("autonomous.progress.backlog_path: must not contain a NUL byte")
+	}
+	return nil
+}
+
+// validate checks every autonomous.progress value on the load paths.
+func (c AutonomousProgressConfig) validate() error {
+	if c.Lanes < 0 {
+		return fmt.Errorf("autonomous.progress.lanes: %d must be >= 0 (0 = %d)", c.Lanes, DefaultProgressLanes)
+	}
+	if c.InactiveGapHours < 0 || math.IsNaN(c.InactiveGapHours) || math.IsInf(c.InactiveGapHours, 0) {
+		return fmt.Errorf("autonomous.progress.inactive_gap_hours: %v must be a finite number >= 0 (0 = %v)", c.InactiveGapHours, DefaultProgressInactiveGapHours)
+	}
+	if c.SnapshotRetentionDays < 0 {
+		return fmt.Errorf("autonomous.progress.snapshot_retention_days: %d must be >= 0 (0 = %d)", c.SnapshotRetentionDays, DefaultProgressSnapshotRetentionDays)
+	}
+	if err := ValidateProgressBacklogPath(c.BacklogPath); err != nil {
+		return err
+	}
+	return ValidateProgressSince(c.Since)
 }
 
 // autonomous.automation.agent_insert_policy values.
@@ -3164,6 +3299,7 @@ func DefaultConfig() *Config {
 			DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
 			UndeclaredEditMode:      "warn",
 			Automation:              AutonomousAutomationConfig{AgentInsertPolicy: AgentInsertPolicyAllow},
+			Progress:                AutonomousProgressConfig{BacklogPath: DefaultProgressBacklogPath},
 			// Notify is left as the zero value on purpose: an empty
 			// DefaultEvents list means the built-in lifecycle sinks
 			// subscribe to nothing — zero config = zero behavior change.
@@ -3573,6 +3709,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.Autonomous.Automation.AgentInsertPolicy == "" {
 		cfg.Autonomous.Automation.AgentInsertPolicy = AgentInsertPolicyAllow
 	}
+	if strings.TrimSpace(cfg.Autonomous.Progress.BacklogPath) == "" {
+		cfg.Autonomous.Progress.BacklogPath = DefaultProgressBacklogPath
+	}
 	// BL397 — native ACME subsystem defaults.
 	if cfg.Acme.Endpoint == "" {
 		cfg.Acme.Endpoint = "staging"
@@ -3632,6 +3771,9 @@ func validateLoaded(cfg *Config) error {
 			autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel)
 	}
 	if err := ValidateAgentInsertPolicy(cfg.Autonomous.Automation.AgentInsertPolicy); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.Progress.validate(); err != nil {
 		return err
 	}
 	// 2026-10-17 plan-review gate: mode must be empty/off/warn/block.

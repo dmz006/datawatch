@@ -5975,6 +5975,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"idle_alert_minutes":  s.cfg.Autonomous.Automation.IdleAlertMinutes,
 				"agent_insert_policy": s.cfg.Autonomous.Automation.EffectiveAgentInsertPolicy(),
 			},
+			"progress": map[string]interface{}{
+				"lanes":                   s.cfg.Autonomous.Progress.Lanes,
+				"inactive_gap_hours":      s.cfg.Autonomous.Progress.InactiveGapHours,
+				"backlog_path":            s.cfg.Autonomous.Progress.EffectiveBacklogPath(),
+				"since":                   s.cfg.Autonomous.Progress.Since,
+				"snapshot_retention_days": s.cfg.Autonomous.Progress.SnapshotRetentionDays,
+			},
 			"scan": map[string]interface{}{
 				"enabled":              s.cfg.Autonomous.Scan.Enabled,
 				"sast_enabled":         s.cfg.Autonomous.Scan.SASTEnabled,
@@ -6183,6 +6190,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
+	}
+	// Progress engine parameters: every autonomous.progress.* value is checked
+	// before anything is applied, so one bad value rejects the whole PUT.
+	if verr := validateProgressPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
 	}
 	// tier -> max-inflight table: validate the whole value before anything
 	// is applied, so a bad tier key or negative limit rejects the PUT
@@ -7510,6 +7523,31 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if validateAgentInsertPolicy(v) == nil {
 				cfg.Autonomous.Automation.AgentInsertPolicy = toString(v)
 			}
+		case "autonomous.progress.lanes":
+			// Validated in handlePutConfig; 0 = the default of 5.
+			if n, err := parseProgressWhole("autonomous.progress.lanes", v); err == nil {
+				cfg.Autonomous.Progress.Lanes = n
+			}
+		case "autonomous.progress.inactive_gap_hours":
+			// Validated in handlePutConfig; 0 = the default of 3 hours.
+			if f, err := parseProgressGapHours(v); err == nil {
+				cfg.Autonomous.Progress.InactiveGapHours = f
+			}
+		case "autonomous.progress.backlog_path":
+			// Validated in handlePutConfig; empty = docs/plans/README.md.
+			if str, ok := v.(string); ok && config.ValidateProgressBacklogPath(str) == nil {
+				cfg.Autonomous.Progress.BacklogPath = strings.TrimSpace(str)
+			}
+		case "autonomous.progress.since":
+			// Validated in handlePutConfig; empty = the first record's creation date.
+			if str, ok := v.(string); ok && config.ValidateProgressSince(str) == nil {
+				cfg.Autonomous.Progress.Since = strings.TrimSpace(str)
+			}
+		case "autonomous.progress.snapshot_retention_days":
+			// Validated in handlePutConfig; 0 = the default of 90 days.
+			if n, err := parseProgressWhole("autonomous.progress.snapshot_retention_days", v); err == nil {
+				cfg.Autonomous.Progress.SnapshotRetentionDays = n
+			}
 		case "pin_check_seconds":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
@@ -8160,6 +8198,102 @@ func parsePinCheckSeconds(v interface{}) (int, error) {
 		return 0, errors.New(msg)
 	}
 	return n, nil
+}
+
+// parseProgressWhole reads a whole-number autonomous.progress.* value from a
+// PUT /api/config body. It accepts a JSON number and a numeric string (the CLI
+// and comm channel send strings); the value must be >= 0 (0 = the default).
+func parseProgressWhole(key string, v interface{}) (int, error) {
+	msg := key + ": must be a whole number >= 0 (0 = default)"
+	switch x := v.(type) {
+	case float64:
+		if x != math.Trunc(x) || x < 0 || x > math.MaxInt32 {
+			return 0, errors.New(msg)
+		}
+		return int(x), nil
+	case int:
+		if x < 0 || x > math.MaxInt32 {
+			return 0, errors.New(msg)
+		}
+		return x, nil
+	case string:
+		if strings.TrimSpace(x) == "" {
+			return 0, nil // a cleared Settings field means the default
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(x))
+		if err != nil || n < 0 || n > math.MaxInt32 {
+			return 0, errors.New(msg)
+		}
+		return n, nil
+	}
+	return 0, errors.New(msg)
+}
+
+// parseProgressGapHours reads autonomous.progress.inactive_gap_hours: a finite
+// number of hours >= 0 (0 = the default), as a JSON number or numeric string.
+func parseProgressGapHours(v interface{}) (float64, error) {
+	const msg = "autonomous.progress.inactive_gap_hours: must be a number of hours >= 0 (0 = default)"
+	var f float64
+	switch x := v.(type) {
+	case float64:
+		f = x
+	case int:
+		f = float64(x)
+	case string:
+		if strings.TrimSpace(x) == "" {
+			return 0, nil // a cleared Settings field means the default
+		}
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
+		if err != nil {
+			return 0, errors.New(msg)
+		}
+		f = parsed
+	default:
+		return 0, errors.New(msg)
+	}
+	if math.IsNaN(f) || math.IsInf(f, 0) || f < 0 || f > 24*366 {
+		return 0, errors.New(msg)
+	}
+	return f, nil
+}
+
+// validateProgressPatch checks every autonomous.progress.* key present in a
+// PUT /api/config body and returns the first problem.
+func validateProgressPatch(patch map[string]interface{}) error {
+	if v, ok := patch["autonomous.progress.lanes"]; ok {
+		if _, err := parseProgressWhole("autonomous.progress.lanes", v); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.progress.inactive_gap_hours"]; ok {
+		if _, err := parseProgressGapHours(v); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.progress.snapshot_retention_days"]; ok {
+		if _, err := parseProgressWhole("autonomous.progress.snapshot_retention_days", v); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.progress.backlog_path"]; ok {
+		str, isStr := v.(string)
+		if !isStr {
+			return errors.New("autonomous.progress.backlog_path: must be a string (empty = docs/plans/README.md)")
+		}
+		if err := config.ValidateProgressBacklogPath(str); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.progress.since"]; ok {
+		str, isStr := v.(string)
+		if !isStr {
+			return errors.New("autonomous.progress.since: must be a YYYY-MM-DD date string (empty = first record's creation date)")
+		}
+		if err := config.ValidateProgressSince(str); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // validateIdleAlertMinutes checks autonomous.automation.idle_alert_minutes:

@@ -710,6 +710,14 @@ paths:
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
         `autonomous.automation.idle_alert_minutes` (whole minutes >= 0, default 0 =
         off; a negative or non-integer value is rejected with 400),
+        `autonomous.progress.lanes` (whole number >= 0, default 0 = 5),
+        `autonomous.progress.inactive_gap_hours` (number >= 0, default 0 = 3),
+        `autonomous.progress.backlog_path` (string, default docs/plans/README.md; a
+        relative path resolves against `autonomous.worktree_base_repo` when set, else
+        the daemon working directory),
+        `autonomous.progress.since` (YYYY-MM-DD, empty = the first record's creation
+        date), `autonomous.progress.snapshot_retention_days` (whole number >= 0,
+        default 0 = 90); a bad progress value is rejected with 400 and nothing is written,
         `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
         `autonomous.plan_review_mode` (off | warn | block),
         `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`.

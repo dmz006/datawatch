@@ -596,6 +596,26 @@ Autonomous Automata state lives as plain JSONL files under the autonomous data d
 
 **Automation advance and idle alert.** An active Automation starts its next Automaton by itself when the current one reaches a terminal state; after a daemon restart it reconciles once boot-resume has finished (a member that finished while the daemon was down advances, a running one is left alone). `autonomous.automation.idle_alert_minutes` (default `0` = off, whole minutes) raises one alert when an active Automation has had no member running that long; it is read live, so changing it needs no restart. See [howto/automation-queue-advance.md](howto/automation-queue-advance.md).
 
+**Progress engine settings.** Every parameter of the progress engine is a configuration key, changed live with no restart. A bad value is rejected (HTTP 400, or an error on load) and nothing is written.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomous.progress.lanes` | `0` (= 5) | Parallel lanes of Automata the utilization figures assume. Whole number >= 0. |
+| `autonomous.progress.inactive_gap_hours` | `0` (= 3) | Hours without activity that count as an inactive window. Number >= 0. |
+| `autonomous.progress.backlog_path` | `docs/plans/README.md` | Backlog file. A relative path resolves against `autonomous.worktree_base_repo` when set, else the daemon working directory. |
+| `autonomous.progress.since` | empty | First day counted, `YYYY-MM-DD`; empty = the first record's creation date. |
+| `autonomous.progress.snapshot_retention_days` | `0` (= 90) | Days saved progress snapshots are kept. Whole number >= 0. |
+
+Each key is reachable through all five configuration methods (MCP agents use `config_set` with the same keys):
+
+| Key | YAML (`autonomous.progress:` block) | CLI | Web UI (Settings → General → Autonomous) | REST | Chat |
+|---|---|---|---|---|---|
+| `autonomous.progress.lanes` | `lanes: 5` | `datawatch config set autonomous.progress.lanes 5` | *Progress lanes* | `PUT /api/config` `{"autonomous.progress.lanes": 5}` | `configure autonomous.progress.lanes=5` |
+| `autonomous.progress.inactive_gap_hours` | `inactive_gap_hours: 3` | `datawatch config set autonomous.progress.inactive_gap_hours 3` | *Progress inactive gap* | `PUT /api/config` `{"autonomous.progress.inactive_gap_hours": 3}` | `configure autonomous.progress.inactive_gap_hours=3` |
+| `autonomous.progress.backlog_path` | `backlog_path: docs/plans/README.md` | `datawatch config set autonomous.progress.backlog_path docs/plans/README.md` | *Progress backlog file* | `PUT /api/config` `{"autonomous.progress.backlog_path": "docs/plans/README.md"}` | `configure autonomous.progress.backlog_path=docs/plans/README.md` |
+| `autonomous.progress.since` | `since: "2026-09-01"` | `datawatch config set autonomous.progress.since 2026-09-01` | *Progress start date* | `PUT /api/config` `{"autonomous.progress.since": "2026-09-01"}` | `configure autonomous.progress.since=2026-09-01` |
+| `autonomous.progress.snapshot_retention_days` | `snapshot_retention_days: 90` | `datawatch config set autonomous.progress.snapshot_retention_days 90` | *Progress snapshot retention* | `PUT /api/config` `{"autonomous.progress.snapshot_retention_days": 90}` | `configure autonomous.progress.snapshot_retention_days=90` |
+
 ### Backup command
 
 ```bash
