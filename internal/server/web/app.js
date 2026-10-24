@@ -13552,6 +13552,7 @@ function renderTask(prd, story, task, editable) {
     ${window.taskHoldsHtml(task)}
     ${errRow}${verifRow}
     ${task.executor_source ? `<div style="font-size:10px;color:var(--text2);">${escHtml(t('status_executor_label')||'Executor')}: ${escHtml(task.executor_source)}</div>` : ''}
+    ${renderTaskGateScopePlan(task)}
     ${renderTaskFileDrift(task)}
     ${renderTaskUndeclaredEdits(task)}
     ${filesP}
@@ -15553,6 +15554,15 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.default_quality_gates.test_command', label: 'Quality gate test command', labelKey: 'settings_quality_gates_test_command', type: 'text', placeholder: 'go test ./...' },
     { key: 'autonomous.default_quality_gates.timeout', label: 'Quality gate timeout (seconds, 0=no limit)', labelKey: 'settings_quality_gates_timeout', type: 'number', placeholder: '0' },
     { key: 'autonomous.default_quality_gates.block_on_regression', label: 'Block task on test regression', labelKey: 'settings_quality_gates_block_on_regression', type: 'toggle' },
+    // Quality gate test scope: full = complete suite, touched = changed
+    // packages (+ direct importers), touched-plus-smoke = those plus the
+    // smoke packages below. Empty = the built-in default (full); a runner
+    // failure always falls back to the full suite.
+    { key: 'autonomous.default_quality_gates.scope', label: 'Quality gate test scope (empty = full, the built-in default)', labelKey: 'settings_gate_scope', type: 'select', options: ['full', 'touched-plus-smoke', 'touched'], helpKey: 'settings_gate_scope_hint', onchange: 'saveGateScopeSetting(this)' },
+    // Comma-separated Go package patterns run additionally under
+    // touched-plus-smoke. The change handler converts the comma list to an
+    // array before the PUT (the config endpoint accepts both shapes).
+    { key: 'autonomous.default_quality_gates.smoke_packages', label: 'Smoke test packages (comma-separated)', labelKey: 'settings_gate_smoke_packages', type: 'text', placeholder: 'internal/pipeline, internal/server', helpKey: 'settings_gate_smoke_packages_hint', onchange: 'saveGateSmokePackagesSetting(this)' },
     // What happens when the verifier passed a task but the quality gate found
     // a regression: warn records both results and the task still finishes,
     // block fails the task. An invalid gate never blocks.
@@ -16076,9 +16086,10 @@ function loadLLMTabConfig() {
           }
         } else if (f.type === 'select') {
           const opts = f.options.map(o => `<option value="${escHtml(o)}" ${String(val || '') === o ? 'selected' : ''}>${escHtml(o)}</option>`).join('');
+          const selOnchange = f.onchange || `saveGeneralField('${f.key}', this.value)`;
           html += `<div class="settings-row" style="justify-content:space-between;">
             <div class="settings-label">${escHtml(f.label)}</div>
-            <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
+            <select class="form-select general-cfg-input" onchange="${selOnchange}">${opts}</select>
           </div>`;
         } else if (f.csv) {
           // BL327 — badge/chip multi-select for CSV list fields
@@ -16423,9 +16434,12 @@ function loadGeneralConfig() {
             const opts = (f.options || []).map(o =>
               `<option value="${escHtml(o)}" ${selVal === o || (selVal === '' && f.default !== undefined && String(f.default) === o) ? 'selected' : ''}>${escHtml(o)}</option>`
             ).join('');
+            // f.onchange lets a field supply its own save handler (the gate
+            // scope select, for example, saves an empty selection as '').
+            const selOnchange = f.onchange || `saveGeneralField('${f.key}', this.value)`;
             html += `<div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">${escHtml(fLabel)}</div>
-              <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}</div>
+              <select class="form-select general-cfg-input" onchange="${selOnchange}">${opts}</select>
             </div>`;
           } else if (f.type === 'button') {
             // v5.19.0 — operator-reported regression: the whisper.test_button
@@ -16617,15 +16631,20 @@ function loadGeneralConfig() {
                 onchange="saveGeneralField('${f.key}', this.value)">${escHtml(String(val || ''))}</textarea>
             </div>`;
           } else {
-            const defVal = (val !== '' && val !== undefined) ? String(val) : (f.default !== undefined ? String(f.default) : '');
+            // Array values (e.g. the smoke-package pattern list) render as
+            // a comma-joined string again.
+            const defVal = (val !== '' && val !== undefined)
+              ? (Array.isArray(val) ? val.join(', ') : String(val))
+              : (f.default !== undefined ? String(f.default) : '');
+            const txtOnchange = f.onchange || `saveGeneralField('${f.key}', ${f.type === 'number' ? 'Number(this.value)' : 'this.value'})`;
             html += `<div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">${escHtml(fLabel)}</div>
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}</div>
               <input type="${f.type}" class="form-input general-cfg-input" value="${escHtml(defVal)}"
                 ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
                 ${f.min !== undefined ? 'min="' + f.min + '"' : ''}
                 ${f.max !== undefined ? 'max="' + f.max + '"' : ''}
                 ${f.step !== undefined ? 'step="' + f.step + '"' : ''}
-                onchange="saveGeneralField('${f.key}', ${f.type === 'number' ? 'Number(this.value)' : 'this.value'})" />
+                onchange="${txtOnchange}" />
             </div>`;
           }
         }
@@ -16770,7 +16789,7 @@ const RESTART_FIELDS = new Set([
   'dns_channel.enabled', 'dns_channel.listen', 'dns_channel.domain',
 ]);
 
-function saveGeneralField(key, value) {
+function saveGeneralConfigPut(key, value) {
   fetch('/api/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
@@ -16797,6 +16816,25 @@ function saveGeneralField(key, value) {
       }
     })
     .catch(() => showToast('Save failed', 'error'));
+}
+
+function saveGeneralField(key, value) {
+  saveGeneralConfigPut(key, value);
+}
+
+// Quality-gate scoping settings: the scope select saves its value as-is,
+// with an unmade/empty selection saved as '' so the gate inherits the
+// built-in default (full); the smoke_packages text field converts its
+// comma list to an array before the PUT, so an empty box saves an empty
+// list rather than a stray blank entry.
+function saveGateScopeSetting(el) {
+  saveGeneralConfigPut('autonomous.default_quality_gates.scope', (el && el.value) || '');
+}
+
+function saveGateSmokePackagesSetting(el) {
+  const list = String(el && el.value ? el.value : '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  saveGeneralConfigPut('autonomous.default_quality_gates.smoke_packages', list);
 }
 
 // plan tier inflight caps — collects the four per-tier inputs into a
@@ -22249,7 +22287,7 @@ function renderDetailStoriesTree(prd) {
         <span class="prd-task-title">${escHtml(t.title || t.Title || '(task ' + (ti+1) + ')')}</span>
         <span class="prd-task-status">${escHtml(sts)}</span>
         ${sessionLink}${childPRD}
-      </div>${renderTaskFileDrift(t)}${renderTaskUndeclaredEdits(t)}`;
+      </div>${renderTaskGateScopePlan(t)}${renderTaskFileDrift(t)}${renderTaskUndeclaredEdits(t)}`;
     }).join('');
     const verdicts = renderVerdicts(st.verdicts);
     // B99: same effective-status override as _renderStatusGraphs — if any task is
@@ -22303,6 +22341,44 @@ function renderDetailVerdicts(prd) {
 // Per-task foreign-file drift: files the task's own commit swept in that
 // were already uncommitted before it started and weren't in its planned
 // files. Warn-only unless block_on_file_drift is on. Empty when none.
+// Per-task quality-gate scope plan — shown when the gate ran under a
+// recorded scope (non-full suite). Renders the scope decision plus the
+// packages that ran with a reason per package, all as escaped plain text
+// inside a collapsed <details>. Renders nothing when the task has no gate
+// result or no scope plan (full-suite runs and older tasks).
+function renderTaskGateScopePlan(task) {
+  const res = task && task.quality_gate_result;
+  const plan = res && (res.scope_plan || res.ScopePlan);
+  if (!plan || typeof plan !== 'object') return '';
+  const label = t('prd_task_gate_scope') || 'Quality gate scope';
+  const fullLabel = t('prd_task_gate_scope_full') || 'full suite';
+  const scope = String(plan.scope || (plan.full ? 'full' : ''));
+  const source = plan.scope_source ? ' · ' + escHtml(String(plan.scope_source)) : '';
+  const lines = [];
+  if (plan.full) {
+    lines.push(escHtml(fullLabel) + (plan.full_reason ? ' — ' + escHtml(String(plan.full_reason)) : ''));
+    if (plan.fallback_reason) lines.push(escHtml(String(plan.fallback_reason)));
+  } else {
+    const packages = (plan.packages || []).map(p => escHtml(String(p)));
+    lines.push(packages.length ? packages.join(', ') : '—');
+    (plan.reasons || []).forEach(r => {
+      const pkg = r && (r.package || r.Package);
+      const why = r && (r.reason != null ? r.reason : r.Reason);
+      if (pkg || (why !== undefined && why !== '')) {
+        lines.push(escHtml(pkg || '') + (pkg && why !== undefined ? ' — ' : '') + escHtml(why != null ? String(why) : ''));
+      }
+    });
+    if (plan.fallback_reason) lines.push(escHtml(String(plan.fallback_reason)));
+  }
+  return `<div style="margin-top:6px;">
+    <details>
+      <summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--text2);">⚖ ${escHtml(label)}: ${escHtml(scope)}${source}</summary>
+      <div style="margin-top:4px;padding-left:2px;font-size:11px;color:var(--text2);line-height:1.5;white-space:pre-wrap;">${lines.join('\n')}</div>
+    </details>
+  </div>`;
+}
+window.renderTaskGateScopePlan = renderTaskGateScopePlan;
+
 function renderTaskFileDrift(task) {
   const drift = (task && task.foreign_file_drift) || [];
   if (!drift.length) return '';
@@ -35334,6 +35410,8 @@ window.toggleLLM = toggleLLM;
 window.openLLMSetup = openLLMSetup;
 window.loadGeneralConfig = loadGeneralConfig;
 window.saveGeneralField = saveGeneralField;
+window.saveGateScopeSetting = saveGateScopeSetting;
+window.saveGateSmokePackagesSetting = saveGateSmokePackagesSetting;
 window.saveInterfaceField = saveInterfaceField;
 window.toggleSettingsDirBrowser = toggleSettingsDirBrowser;
 window.selectServer = selectServer;
