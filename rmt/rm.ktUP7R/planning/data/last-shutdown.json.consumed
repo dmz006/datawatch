@@ -1,0 +1,38 @@
+{
+  "signal": "terminated",
+  "sender_pid": 0,
+  "parent_chain": [
+    {
+      "pid": 4113740,
+      "cmdline": "/home/dmz/.datawatch/prd-worktrees/d0210001/datawatch --config /home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/planning/config.yaml start --foreground",
+      "user": "dmz"
+    },
+    {
+      "pid": 4113680,
+      "cmdline": "bash /home/dmz/.datawatch/prd-worktrees/d0210001/scripts/restart-matrix/states-session.sh",
+      "user": "dmz"
+    },
+    {
+      "pid": 4113671,
+      "cmdline": "bash scripts/restart-matrix.sh",
+      "user": "dmz"
+    },
+    {
+      "pid": 4113669,
+      "cmdline": "/bin/bash -c source /home/dmz/.claude/shell-snapshots/snapshot-bash-1792810710803-q5953e.sh 2\u003e/dev/null || true \u0026\u0026 shopt -u extglob 2\u003e/dev/null || true \u0026\u0026 { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } \u003e/dev/null 2\u003e\u00261 || true \u0026\u0026 eval 'python3 -I - \u003c\u003c'\"'\"'EOF'\"'\"'\np='\"'\"'scripts/restart-matrix.sh'\"'\"'\ns=open(p).read()\ns=s.replace('\"'\"''\"'\"''\"'\"'case \"${1:-}\" in\n  -h | --help)\n    sed -n '\"'\"'2,/^$/p'\"'\"' \"${BASH_SOURCE[0]}\" | sed -E '\"'\"'s/^# ?//'\"'\"'\n    exit 0\n    ;;\nesac\n'\"'\"''\"'\"''\"'\"','\"'\"''\"'\"''\"'\"'for arg in \"$@\"; do\n  case \"$arg\" in\n    -h | --help)\n      sed -n '\"'\"'2,/^$/p'\"'\"' \"${BASH_SOURCE[0]}\" | sed -E '\"'\"'s/^# ?//'\"'\"'\n      exit 0\n      ;;\n    --list)\n      # no work root is created just to print names\n      for states in \"$RM_ENTRY_DIR\"/restart-matrix/states-*.sh; do\n        [[ -f \"$states\" ]] \u0026\u0026 bash \"$states\" --list\n      done\n      exit 0\n      ;;\n  esac\ndone\n'\"'\"''\"'\"''\"'\"')\nopen(p,'\"'\"'w'\"'\"').write(s)\nEOF\nbash -n scripts/restart-matrix.sh \u0026\u0026 scripts/restart-matrix.sh --list\nmkdir -p rmt\n(echo \"[$(date '\"'\"'+%H:%M:%S'\"'\"')] start\"; RM_TMP_BASE=$PWD/rmt env -u TMUX -u TMUX_TMPDIR scripts/restart-matrix.sh; echo \"exit=$?\"; echo \"[$(date '\"'\"'+%H:%M:%S'\"'\"')] done\") \u003e /tmp/claude-1000/-home-dmz--datawatch-prd-worktrees-d0210001/4f1e26dd-0903-50e8-bcbf-c563d943f801/scratchpad/run1.log 2\u003e\u00261 \u0026\necho launched' \u0026\u0026 pwd -P \u003e| /tmp/claude-0e1d-cwd",
+      "user": "dmz"
+    },
+    {
+      "pid": 13433,
+      "cmdline": "/usr/lib/systemd/systemd --user",
+      "user": "dmz"
+    },
+    {
+      "pid": 1,
+      "cmdline": "/usr/lib/systemd/systemd --switched-root --system --deserialize=52 splash",
+      "user": "root"
+    }
+  ],
+  "source": "procscan",
+  "time": "2026-10-23T22:59:05.492770842-04:00"
+}

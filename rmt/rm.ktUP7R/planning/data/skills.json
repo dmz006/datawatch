@@ -8,8 +8,8 @@
       "enabled": true,
       "description": "Official datawatch community skills + plugins registry. Connect to browse and install community-contributed extensions.",
       "is_builtin": true,
-      "created_at": "2026-10-24T02:38:09.330570243Z",
-      "updated_at": "2026-10-24T02:38:09.330570243Z",
+      "created_at": "2026-10-24T02:59:04.464851945Z",
+      "updated_at": "2026-10-24T02:59:04.464851945Z",
       "last_synced_at": "0001-01-01T00:00:00Z"
     },
     {
@@ -20,11 +20,11 @@
       "enabled": true,
       "description": "Personal AI Infrastructure (danielmiessler/PAI) — built-in default skill registry. v1 sync target. See docs/skills.md.",
       "is_builtin": true,
-      "created_at": "2026-10-24T02:38:09.344551854Z",
-      "updated_at": "2026-10-24T02:38:09.344551854Z",
+      "created_at": "2026-10-24T02:59:04.478486738Z",
+      "updated_at": "2026-10-24T02:59:04.478486738Z",
       "last_synced_at": "0001-01-01T00:00:00Z"
     }
   ],
   "synced": null,
-  "updated_at": "2026-10-24T02:38:09.344553346Z"
+  "updated_at": "2026-10-24T02:59:04.478488831Z"
 }

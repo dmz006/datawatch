@@ -1,0 +1,20 @@
+[
+  {
+    "id": "90025a38",
+    "level": "info",
+    "title": "restart-matrix: autonomous:decompose [4885]: started (shell)",
+    "body": "You are decomposing a feature request into a structured Product Requirements Document.\n\nSCOPE (hard ...",
+    "session_id": "restart-matrix-4885",
+    "read": false,
+    "created_at": "2026-10-23T22:59:05.094441925-04:00"
+  },
+  {
+    "id": "328a9c5f",
+    "level": "warn",
+    "title": "restart-matrix: autonomous:decompose [4885]: running → killed",
+    "body": "You are decomposing a feature request into a structured Product Requirements Document.\n\nSCOPE (hard ...",
+    "session_id": "restart-matrix-4885",
+    "read": false,
+    "created_at": "2026-10-23T22:59:09.254231351-04:00"
+  }
+]

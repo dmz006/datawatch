@@ -32,12 +32,21 @@ RM_ENTRY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=restart-matrix/lib.sh
 . "$RM_ENTRY_DIR/restart-matrix/lib.sh"
 
-case "${1:-}" in
-  -h | --help)
-    sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed -E 's/^# ?//'
-    exit 0
-    ;;
-esac
+for arg in "$@"; do
+  case "$arg" in
+    -h | --help)
+      sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed -E 's/^# ?//'
+      exit 0
+      ;;
+    --list)
+      # no work root is created just to print names
+      for states in "$RM_ENTRY_DIR"/restart-matrix/states-*.sh; do
+        [[ -f "$states" ]] && bash "$states" --list
+      done
+      exit 0
+      ;;
+  esac
+done
 
 rm_require_tools
 rm_init_root # one work root shared by every states-*.sh script below

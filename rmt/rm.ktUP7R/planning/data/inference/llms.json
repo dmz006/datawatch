@@ -2,8 +2,8 @@
   {
     "name": "claude-code",
     "kind": "claude-code",
-    "created_at": "2026-10-24T02:38:09.446388824Z",
-    "updated_at": "2026-10-24T02:38:11.051514399Z",
+    "created_at": "2026-10-24T02:59:04.558374981Z",
+    "updated_at": "2026-10-24T02:59:06.010310722Z",
     "auto_created": true,
     "binary": "claude",
     "output_mode": "terminal",
@@ -16,10 +16,10 @@
   {
     "name": "shell",
     "kind": "shell",
-    "created_at": "2026-10-24T02:38:09.441102402Z",
-    "updated_at": "2026-10-24T02:38:11.051514529Z",
+    "created_at": "2026-10-24T02:59:04.553617401Z",
+    "updated_at": "2026-10-24T02:59:06.010310842Z",
     "auto_created": true,
-    "binary": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.hVajEQ/planning/ctrl/fake-backend.sh",
+    "binary": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/planning/ctrl/fake-backend.sh",
     "output_mode": "terminal",
     "input_mode": "tmux"
   }

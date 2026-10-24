@@ -1,83 +1,83 @@
 [
   {
-    "id": "108b",
+    "id": "9322",
     "pattern": "Do you want to proceed\\?",
     "action": "schedule",
     "value": "yes",
     "enabled": true,
     "seeded": true,
-    "created_at": "2026-10-23T22:38:09.367395604-04:00"
+    "created_at": "2026-10-23T22:59:04.493028581-04:00"
   },
   {
-    "id": "ccca",
+    "id": "a127",
     "pattern": "You've hit your limit|rate limit exceeded|quota exceeded|limit reached|weekly usage limit|hit weekly limit|opus limit reached|sonnet limit reached",
     "action": "alert",
     "value": "Rate limit detected — session may be paused.",
     "enabled": true,
     "seeded": true,
-    "created_at": "2026-10-23T22:38:09.367409485-04:00"
+    "created_at": "2026-10-23T22:59:04.493046878-04:00"
   },
   {
-    "id": "621d",
+    "id": "59ba",
     "pattern": "trust the files|Trust ",
     "action": "alert",
     "value": "Trust dialog detected — review with 'status \u003cid\u003e' before approving.",
     "enabled": true,
     "seeded": true,
-    "created_at": "2026-10-23T22:38:09.367413381-04:00"
+    "created_at": "2026-10-23T22:59:04.493050664-04:00"
   },
   {
-    "id": "3193",
+    "id": "81c8",
     "pattern": "Do you want to|Would you like|Proceed\\?|Allow this action",
     "action": "detect_prompt",
     "value": "",
     "enabled": true,
     "seeded": true,
-    "created_at": "2026-10-23T22:38:09.367418679-04:00"
+    "created_at": "2026-10-23T22:59:04.493055751-04:00"
   },
   {
-    "id": "48c2",
+    "id": "7b87",
     "pattern": "\\[y/N\\]|\\[Y/n\\]|\\(y/n\\)|\\(yes/no\\)|\\(y/n/always\\)",
     "action": "detect_prompt",
     "value": "",
     "enabled": true,
     "seeded": true,
-    "created_at": "2026-10-23T22:38:09.36742628-04:00"
+    "created_at": "2026-10-23T22:59:04.493062071-04:00"
   },
   {
-    "id": "11f7",
+    "id": "88f6",
     "pattern": "Enter to confirm|Esc to cancel",
     "action": "detect_prompt",
     "value": "",
     "enabled": true,
     "seeded": true,
-    "created_at": "2026-10-23T22:38:09.36743294-04:00"
+    "created_at": "2026-10-23T22:59:04.493065105-04:00"
   },
   {
-    "id": "1a8d",
+    "id": "7f37",
     "pattern": "Yes, I trust|trust this folder|Quick safety check",
     "action": "detect_prompt",
     "value": "",
     "enabled": true,
     "seeded": true,
-    "created_at": "2026-10-23T22:38:09.367438298-04:00"
+    "created_at": "2026-10-23T22:59:04.493073208-04:00"
   },
   {
-    "id": "ea36",
+    "id": "54bc",
     "pattern": "I am using this for local development|Loading development channels",
     "action": "detect_prompt",
     "value": "",
     "enabled": true,
     "seeded": true,
-    "created_at": "2026-10-23T22:38:09.367442855-04:00"
+    "created_at": "2026-10-23T22:59:04.493079847-04:00"
   },
   {
-    "id": "0f2d",
+    "id": "c81e",
     "pattern": "Yes, I accept",
     "action": "detect_prompt",
     "value": "",
     "enabled": true,
     "seeded": true,
-    "created_at": "2026-10-23T22:38:09.367444488-04:00"
+    "created_at": "2026-10-23T22:59:04.493081169-04:00"
   }
 ]
