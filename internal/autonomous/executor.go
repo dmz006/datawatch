@@ -1050,12 +1050,19 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 				}
-			case t.Status == TaskVerifying && outputFn != nil:
-				// Finished while the daemon was down (boot-resume moved it to
-				// verifying): its recorded output holds the marker, so verify
-				// it instead of killing and respawning.
-				if out, ok := outputFn(t.SessionID); ok && outputHasCompletionMarker(out) {
-					log.Printf("[autonomous] executeOne: task %s verifying finished session %s from recorded output (daemon restart)", t.ID, t.SessionID)
+			case t.Status == TaskVerifying:
+				// Finished while the daemon was down (boot-resume kept it
+				// verifying): its recorded output holds the marker, or the task
+				// carries a recorded worker result, so verify it instead of
+				// killing and respawning.
+				finished := t.Verification == nil && taskHasWorkerResult(t)
+				if !finished && outputFn != nil {
+					if out, ok := outputFn(t.SessionID); ok && outputHasCompletionMarker(out) {
+						finished = true
+					}
+				}
+				if finished {
+					log.Printf("[autonomous] executeOne: task %s verifying finished session %s from recorded result (daemon restart)", t.ID, t.SessionID)
 					skipSpawn = true
 				}
 			}

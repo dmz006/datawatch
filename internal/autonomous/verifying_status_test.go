@@ -61,3 +61,34 @@ func TestResolveVerifyingTask(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveVerifyingResume(t *testing.T) {
+	okVerdict := &VerificationResult{OK: true, Summary: "all checks passed", VerifiedAt: time.Now()}
+
+	alive := func(id string) bool { return id == "live" }
+	dead := func(string) bool { return false }
+	finishedOut := func(string) (string, bool) { return "work done\nDATAWATCH_COMPLETE: did the thing\n", true }
+	unfinishedOut := func(string) (string, bool) { return "still thinking", true }
+
+	tests := []struct {
+		name   string
+		alive  func(string) bool
+		output func(string) (string, bool)
+		task   *Task
+		want   VerifyingResume
+	}{
+		{"live verifier session kept", alive, unfinishedOut, &Task{SessionID: "live"}, VerifyingResumeKeepLive},
+		{"finished worker with no verdict re-verifies only", dead, finishedOut, &Task{SessionID: "gone"}, VerifyingResumeReverify},
+		{"recorded worker result with no verdict re-verifies only", dead, nil, &Task{SessionID: "gone", AttemptCommitSHAs: []string{"abc123"}}, VerifyingResumeReverify},
+		{"recorded ok verdict completes", dead, unfinishedOut, &Task{SessionID: "gone", Verification: okVerdict}, VerifyingResumeComplete},
+		{"worker unfinished resets", dead, unfinishedOut, &Task{SessionID: "gone"}, VerifyingResumeReset},
+		{"empty session resets", dead, finishedOut, &Task{}, VerifyingResumeReset},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ResolveVerifyingResume(tt.alive, tt.output, tt.task); got != tt.want {
+				t.Errorf("ResolveVerifyingResume() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
