@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.6.0 — mcp.public_url for the MCP SSE endpoint behind a reverse proxy
+
+Adds `mcp.public_url` so the MCP SSE endpoint works behind a reverse proxy. Contributed by Cairn Viktor (external pull request 208, fixing issue 207).
+
+- The SSE `endpoint` event used to advertise the first `mcp.sse_host` bind address, so behind `tailscale serve`, Caddy or nginx remote clients were told to POST to `http://127.0.0.1:8081/message` and every tool call failed.
+- With `mcp.public_url` set (whitespace and trailing slashes trimmed) it is used as the advertised base URL. With it empty the advertised URL is exactly what it was before.
+- Review additions on top of the contribution: the value must be empty or an absolute http or https URL, the setting appears on every config surface (REST, MCP, CLI, comm channel, PWA settings and the config reference) with parity tests, and the keep-alive option of the SSE server is kept.
+
 ## v9.5.126 — PRD commits stay inside the declared scope
 
 Checks the three PRD commit-scope rules and closes the one gap found.
