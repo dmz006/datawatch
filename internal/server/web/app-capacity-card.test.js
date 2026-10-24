@@ -126,7 +126,7 @@ test('the poller keeps its 5 second interval on window and hides an empty card',
   await new Promise(r => setImmediate(r));
   assert.deepEqual(intervals, [5000]);
   assert.equal(vm.runInContext('window._prdCapacityInterval', sandbox), 7);
-  assert.equal(calls[0], '/api/capacity', 'list view must not send a prd_id');
+  assert.equal(calls[0], '/api/capacity', 'the no-argument call must not send a prd_id');
   assert.equal(slot.style.display, 'none');
   assert.equal(slot.innerHTML, '');
 });
