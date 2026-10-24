@@ -49,12 +49,47 @@ for arg in "$@"; do
 done
 
 rm_require_tools
+
+# --only is split here and each state file gets only the names it owns, so a
+# name from one file never reaches another file's parser. A name no file knows
+# is a usage error, caught before any sandbox is made.
+only=""
+pass=()
+while (($#)); do
+  case "$1" in
+    --only) only="${2:-}"; shift || true; shift || true ;;
+    --only=*) only="${1#--only=}"; shift ;;
+    *) pass+=("$1"); shift ;;
+  esac
+done
+requested=()
+[[ -n "$only" ]] && IFS=, read -r -a requested <<<"$only"
+
+files=()
+file_names=()
+for states in "$RM_ENTRY_DIR"/restart-matrix/states-*.sh; do
+  [[ -f "$states" ]] || continue
+  files+=("$states")
+  file_names+=("$(bash "$states" --list | paste -sd, -)")
+done
+for r in "${requested[@]}"; do
+  found=0
+  for names in "${file_names[@]}"; do [[ ",$names," == *",$r,"* ]] && found=1; done
+  ((found)) || rm_die "unknown state: $r (see --list)"
+done
+
 rm_init_root # one work root shared by every states-*.sh script below
 
 status=0
-for states in "$RM_ENTRY_DIR"/restart-matrix/states-*.sh; do
-  [[ -f "$states" ]] || continue
-  bash "$states" "$@"
+for i in "${!files[@]}"; do
+  args=("${pass[@]}")
+  if ((${#requested[@]})); then
+    subset=()
+    for r in "${requested[@]}"; do [[ ",${file_names[i]}," == *",$r,"* ]] && subset+=("$r"); done
+    ((${#subset[@]})) || continue
+    args+=(--only "$(IFS=,; echo "${subset[*]}")")
+  fi
+  bash "${files[i]}" "${args[@]}"
   rc=$?
   case $rc in
     0) ;;
