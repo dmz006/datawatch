@@ -42,6 +42,7 @@ you already have a daemon you can talk to.
 | [List endpoints + paging](list-endpoints-and-paging.md) | Why list endpoints are small: `view=summary`, `limit`/`cursor` paging, ETag / 304, gzip, and the web UI's loading / cached / stale / failed states |
 | [Guardrail Library](guardrail-library.md) | Named guardrail registry, profiles, per-Automaton overrides, skill-declared guardrails, scan unification |
 | [Retry Policy](retry-policy.md) | Failure categories (infra/content/scope/policy), bounded auto-retry budgets, content auto-fix, retry profiles |
+| [Failure escalation](failure-escalation.md) | A failing task moves up a worker ladder, is held for review at a failure count, and is retried, changed or cancelled by the operator; override per Automaton and task |
 | [File Drift Guardrail](file-drift-guardrail.md) | Foreign-file drift for direct-mode Automata: a task whose commit swept in someone else's pre-existing uncommitted edit **blocks by default** (`autonomous.drift_mode: block`; set `warn` to flag-only) — the task's own in-run edits only ever warn — worktree mode skipped |
 | [CI Watch Guardrail](ci-watch-guardrail.md) | Opt-in completion guardrail: wait for the pushed commit's GitHub Actions runs; on failure an LLM judge applies your project's rules (operator decision / auto-fix / CI re-run) |
 | [Project + Cluster Profiles](profiles.md) | Operator walkthrough for both profile sets — REST/MCP/CLI/comm CRUD, the unified Automaton profile dropdown, common multi-cluster patterns, troubleshooting |

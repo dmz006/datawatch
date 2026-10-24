@@ -1327,6 +1327,10 @@ Three Settings → About cards exist only in the mobile apps, with no server-sid
 
 Key terms used across the docs, API, and hook payloads.
 
+**Failure escalation policy** — the rule for a task that keeps failing. After each failed attempt the next attempt can run on the next worker on a ladder (for example a local model, then a stronger Claude model that reads the earlier failure reports). After a set number of failed attempts (default 3, settable to 4 or more) the task is held for operator review instead of being marked failed. It is set once for the whole daemon, and an Automaton or a single task can override it. Each setting resolves on its own, task first, then Automaton, then the daemon default. Turn it off to get the old behaviour: retry up to the auto-fix retry count, then mark the task failed. See [howto/failure-escalation](howto/failure-escalation.md).
+
+**review-needed (task status)** — a task held after its failed attempts reached the escalation limit. The status is `review_needed` in the API and reads "Held for review" in the web UI. It is not a failure and not finished: the task keeps its attempts and a report, the Automaton shows as blocked, and one error alert is raised. The operator retries it (optionally with a changed spec, worker or file list) or cancels it, from the web UI, the CLI, the REST API, MCP or the comm channel.
+
 **SessionTelemetry** — structured telemetry accumulated from hook
 payloads for a session. Contains the current task, active tool and
 file, sprint ancestry, task list with server-stamped timings, test
