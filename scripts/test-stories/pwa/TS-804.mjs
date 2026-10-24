@@ -4,7 +4,7 @@
  * tags: surface:pwa feature:load-performance feature:empty-state
  *
  * /api/automations answers an empty list (route fulfilment, so the test does not
- * depend on the daemon's data). The Automation tab must go loading -> empty
+ * depend on the daemon's data). The Automation sub-tab (opened from the Automata tab) must go loading -> empty
  * state, never blank, never the empty state before the load finished, and the
  * empty state must carry the Create Automation button that opens the form. The
  * shared capacity card must render beside it.
@@ -24,7 +24,7 @@ await runPerfStory(async (page) => {
     await delayEndpoint(p, '/api/capacity', 600);
 
     const states = [];
-    const r = await measureTab(p, 'automation', { timeout: 30000, watchMs: 800 });
+    const r = await measureTab(p, 'autonomous', { subtab: 'automation', timeout: 30000, watchMs: 800 });
     states.push(...r.states);
     assertMeasure('automation-empty', r);
     check(r.firstState === 'empty', `first settled state was "${r.firstState}", expected the empty state (${r.states.join(' > ')})`);

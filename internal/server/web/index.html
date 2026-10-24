@@ -135,12 +135,6 @@
            enabled:true. JS unhides the button on boot when the feature
            is configured. Operator-reported: tabs for disabled
            subsystems shouldn't render at all. -->
-      <!-- Automation tab: hidden until the autonomous subsystem is enabled
-           (same gate as the Automata tab). -->
-      <button id="navBtnAutomation" class="nav-btn" data-view="automation" onclick="navigate('automation')" style="display:none;">
-        <span class="nav-icon">&#9939;</span>
-        <span class="nav-label" data-i18n="nav_automation">Automation</span>
-      </button>
       <button id="navBtnAutonomous" class="nav-btn" data-view="autonomous" onclick="navigate('autonomous')" style="display:none;">
         <span class="nav-icon">&#129302;</span>
         <span class="nav-label" data-i18n="nav_automata">Automata</span>

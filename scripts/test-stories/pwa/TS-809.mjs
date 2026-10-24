@@ -39,7 +39,7 @@ await runPerfStory(async (page) => {
             await p.waitForTimeout(60);
           }
         })();
-        const r = await measureTab(p, tab.view, { timeout: 30000 });
+        const r = await measureTab(p, tab.view, { subtab: tab.subtab, timeout: 30000 });
         await poll;
         try {
           assertMeasure(label, r);

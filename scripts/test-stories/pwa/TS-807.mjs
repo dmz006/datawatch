@@ -10,14 +10,14 @@
  */
 import { screenshot } from './lib.mjs';
 import {
-  runPerfStory, coldPage, openPWA, reorderEndpoint, check, saveJson,
+  runPerfStory, openTab, coldPage, openPWA, reorderEndpoint, check, saveJson,
 } from './perf-lib.mjs';
 
 await runPerfStory(async (page) => {
   const { context, page: p } = await coldPage(page.context().browser());
   try {
     await openPWA(p);
-    await p.evaluate(() => window.navigate('automation'));
+    await openTab(p, { view: 'autonomous', subtab: 'automation' });
     await p.waitForFunction(() => window._listLoaders && window._listLoaders.automation_capacity
       && window._listLoaders.automation_capacity.state.loadedOnce, null, { timeout: 30000 })
       .catch(() => { throw new Error('automation_capacity loader never loaded'); });

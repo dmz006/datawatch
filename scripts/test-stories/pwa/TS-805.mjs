@@ -3,14 +3,14 @@
  * TS-805 — a failing endpoint shows the failed state with Retry, and Retry recovers
  * tags: surface:pwa feature:load-performance feature:failed-state
  *
- * For Sessions, Automata and Automation: the tab's list endpoint answers 500.
+ * For Sessions, Automata and Automation (a sub-tab of Automata): the tab's list endpoint answers 500.
  * The tab must show the failed state (.list-state-failed) with a Retry button
  * and never go blank. After the fault is removed, clicking Retry must replace
  * the failed state with content (or the empty state).
  */
 import { screenshot } from './lib.mjs';
 import {
-  runPerfStory, TABS, coldPage, openPWA, failEndpoint, waitForState, viewState,
+  runPerfStory, TABS, openTab, coldPage, openPWA, failEndpoint, waitForState, viewState,
   check, saveJson,
 } from './perf-lib.mjs';
 
@@ -23,7 +23,7 @@ await runPerfStory(async (page) => {
       // Start from an empty loader cache so the failure is a first-load failure.
       await p.evaluate(() => { try { Object.keys(localStorage).filter((k) => k.startsWith('cs_list_')).forEach((k) => localStorage.removeItem(k)); } catch {} });
       const fault = await failEndpoint(p, tab.endpoint, { status: 500 });
-      await p.evaluate((v) => { document.getElementById('view').innerHTML = ''; window.navigate(v); }, tab.view);
+      await openTab(p, tab, { clear: true });
       await waitForState(p, ['failed'], 20000).catch(() => {
         throw new Error(`${tab.name}: no failed state after ${tab.endpoint} returned 500 (state: ${'see screenshot'})`);
       });

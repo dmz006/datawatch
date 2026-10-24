@@ -124,7 +124,7 @@ test('the capacity card is present on both the Automation and the Automata tab',
   const { sb, out } = load({ '/api/automations': { status: 200, body: [] }, '/api/capacity': { status: 200, body: CAP } });
   sb.renderAutomationView();
   assert.match(out.view, /id="automationCapacityCard"/);
-  sb.renderAutonomousView();
+  sb.switchAutomataTab('automata');
   assert.match(out.view, /id="prdCapacityCard"/);
   const automata = vm.runInContext('window._loadPRDCapacityCard.toString()', sb);
   assert.match(automata, /capacityCardHtml/, 'the Automata tab builds its card with the same component');

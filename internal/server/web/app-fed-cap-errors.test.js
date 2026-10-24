@@ -106,7 +106,7 @@ test('loadAutomataPanel: a federated capability error reaches the panel, not an 
   const sandbox = loadAppJS();
   const panelEl = makeStubElement();
   sandbox.document.getElementById = (id) => (id === 'automataPanel' ? panelEl : makeStubElement());
-  vm.runInContext(`state.activeServer = 'host-a';`, sandbox);
+  vm.runInContext(`state.activeServer = 'host-a'; _automataState.tab = 'automata';`, sandbox);
   sandbox.fetch = (url) => {
     if (url.includes('/api/autonomous/prds')) return Promise.resolve(fakeResponse(403, 'federation peer lacks capability: autonomous:list'));
     return Promise.resolve(fakeResponse(200, '{}'));

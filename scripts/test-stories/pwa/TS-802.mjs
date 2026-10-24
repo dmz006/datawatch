@@ -27,7 +27,7 @@ await runPerfStory(async (page) => {
       await tolerateTransient(() => openPWA(p));
       report[profile] = {};
       for (const tab of TABS) {
-        const r = await measureTab(p, tab.view, { timeout: 60000 });
+        const r = await measureTab(p, tab.view, { subtab: tab.subtab, timeout: 60000 });
         report[profile][tab.name] = r;
         try {
           assertMeasure(`${profile}/${tab.name}`, r, { budgetMs: budgetFor(profile) });

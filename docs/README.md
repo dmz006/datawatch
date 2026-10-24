@@ -32,6 +32,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [howto/automation-queue-advance.md](howto/automation-queue-advance.md) | Automation (chained Automatons): activate, automatic advance, idle alert |
 | [howto/automation-tab.md](howto/automation-tab.md) | Automation tab: list, pipeline strip, create and edit form, member controls |
 | [howto/automata-tab-loading.md](howto/automata-tab-loading.md) | Automata tab loading: paged summary, Load more, loading / cached / stale / failed states, reconnect |
+| [howto/automation-tab.md](howto/automation-tab.md) | Automation view (first sub-tab of Automata): list, pipeline strip, create and edit form, member controls |
 | [howto/multi-servers.md](howto/multi-servers.md) | Multi-server PWA — register remote instances, per-tab picker, all-servers aggregation (v7.2.0) |
 | [api/openapi.yaml](api/openapi.yaml) | OpenAPI 3.0 REST API specification |
 

@@ -37,7 +37,7 @@ you already have a daemon you can talk to.
 | [Automata tags](automata-tags.md) | Organise Automata in a nested tag tree: assign several tags, browse with an include-sub-tags switch, bulk tag; deletes of used tags are refused |
 | [Automata DAG orchestrator](automata-orchestrator.md) | Compose multiple Automata into a graph with guardrails (rules, security, release-readiness, docs integrity) |
 | [Automation queue advance](automation-queue-advance.md) | Chain Automatons in an Automation: activate, automatic advance on completion, blocked/idle alerts, restart behaviour |
-| [Automation tab](automation-tab.md) | The Automation tab: list and filters, pipeline strip (branches, forks, joins, nested), create and edit form, pause / resume / cancel / skip / insert / remove controls |
+| [Automation view](automation-tab.md) | The Automation view, the first sub-tab of Automata: list and filters, pipeline strip (branches, forks, joins, nested), create and edit form, pause / resume / cancel / skip / insert / remove controls |
 | [Automation decision assistant](automation-decision-assistant.md) | The optional local-model decision assistant: enable per Automation or member, shadow mode first, hook points, thresholds, what it can never do, escalation |
 | [List endpoints + paging](list-endpoints-and-paging.md) | Why list endpoints are small: `view=summary`, `limit`/`cursor` paging, ETag / 304, gzip, and the web UI's loading / cached / stale / failed states |
 | [How the Automata tab loads](automata-tab-loading.md) | The paged 50-row summary, Load more, loading / cached / stale / failed states, opening a row for the full record, children, what a reconnect does, and troubleshooting a slow tab over a phone or Tailscale link |

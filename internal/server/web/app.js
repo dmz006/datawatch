@@ -750,11 +750,9 @@ function connect() {
       // list just never included 'autonomous', so clicking a different
       // picker chip updated state.activeServer and reconnected the WS,
       // but never actually re-fetched the PRD list -- nothing visibly
-      // happened until navigating away and back.
+      // happened until navigating away and back. The view also hosts the
+      // Automation sub-tab, so this one call covers it.
       renderAutonomousView();
-    } else if (state.activeView === 'automation') {
-      // Same picker gap as the Automata case above.
-      renderAutomationView();
     } else if (state.activeView === 'dashboard') {
       // Same gap, found proactively while fixing the above (Dashboard
       // has the same picker, per BL312 S6) -- not yet operator-reported,
@@ -912,7 +910,7 @@ document.addEventListener('visibilitychange', () => {
   } else {
     _wsWake();
     _refreshOverdueLoaders();
-    if (state.activeView === 'automation') refreshAutomationView();
+    if (_automationTabActive()) refreshAutomationView();
   }
 });
 
@@ -1385,13 +1383,12 @@ function handleMessage(msg) {
             apiFetch('/api/autonomous/prds/' + encodeURIComponent(_automataDetailId))
               .then(prd => { if (prd && prd.id) _liveUpdateDetail(prd); })
               .catch(() => {});
+          } else if (_automationTabActive()) {
+            refreshAutomationView();
           } else {
             loadAutomataPanel();
           }
         }, 250);
-      } else if (state.activeView === 'automation') {
-        clearTimeout(state._prdReloadTimer);
-        state._prdReloadTimer = setTimeout(() => refreshAutomationView(), 250);
       }
       break;
     case 'hook_update':
@@ -2376,6 +2373,13 @@ function _hideHeaderRefreshSpinner() {
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 function navigate(view, sessionId, fromPopstate) {
+  // Automation is a sub-tab of Automata, not a view of its own. The old name
+  // still arrives from stored history entries and saved links, so it selects
+  // the sub-tab and continues as the Automata view.
+  if (view === 'automation') {
+    _automataState.tab = 'automation';
+    view = 'autonomous';
+  }
   // Close the new-session modal on any navigation (Escape or nav tap).
   if (document.getElementById('newSessionModal')) closeNewSessionModal();
 
@@ -2419,11 +2423,7 @@ function navigate(view, sessionId, fromPopstate) {
       fab.onclick = openNewSessionModal;
       fab.classList.remove('hidden');
     } else if (view === 'autonomous') {
-      fab.textContent = '⚡';
-      fab.title = t('fab_launch_auto')||'Launch Automaton';
-      fab.setAttribute('aria-label', t('fab_launch_auto')||'Launch Automaton');
-      fab.onclick = openLaunchAutomatonWizard;
-      fab.classList.remove('hidden');
+      _automataSyncFab(_automataNormalizeTab());
     } else {
       fab.classList.add('hidden');
     }
@@ -2459,8 +2459,7 @@ function navigate(view, sessionId, fromPopstate) {
     const anchorMap = {
       'sessions':       viewer + '#sessions-list',
       'session-detail': viewer + '#inside-a-session-terminal-area',
-      'autonomous':     viewer + '#automata',
-      'automation':     viewer + '#automation',
+      'autonomous':     viewer + (_automataNormalizeTab() === 'automation' ? '#automation' : '#automata'),
       'observer':       viewer + '#observer',
       'settings':       viewer + '#settings',
     };
@@ -2521,7 +2520,7 @@ function navigate(view, sessionId, fromPopstate) {
 
     // GH#192 D6 — pulse the header refresh spinner for every real
     // view switch (not 'new'/'settings', which don't list-refresh data).
-    if (['sessions', 'alerts', 'autonomous', 'automation', 'dashboard', 'observer'].includes(view)) {
+    if (['sessions', 'alerts', 'autonomous', 'dashboard', 'observer'].includes(view)) {
       _showHeaderRefreshSpinner();
     }
     if (view === 'sessions') {
@@ -2537,15 +2536,12 @@ function navigate(view, sessionId, fromPopstate) {
       headerTitle.textContent = t('nav_alerts')||'Alerts';
       renderAlertsView();
     } else if (view === 'autonomous') {
-      headerTitle.textContent = t('automata_tab_automata') || 'Automata';
+      headerTitle.textContent = _automataHeaderTitle();
       _automataDetailId = null;
       _automataDetailBreadcrumb = [];
       _automataDetailPRD = null;
-      renderAutonomousView();
-    } else if (view === 'automation') {
-      headerTitle.textContent = t('nav_automation') || 'Automation';
       _automationState.detailId = null;
-      renderAutomationView();
+      renderAutonomousView();
     } else if (view === 'dashboard') {
       // BL303 S4 — /dashboard Mission Control.
       headerTitle.textContent = t('nav_dashboard') || 'Dashboard';
@@ -6089,6 +6085,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
 // Open an Automaton's detail view from the session Status tab.
 function _statusOpenAutomaton(prdId) {
   if (!prdId) return;
+  _automataState.tab = 'automata';  // the Automaton's back control lands on the Automata list
   navigate('autonomous');
   // Give the automata view a moment to mount before opening the detail.
   setTimeout(() => { if (typeof renderPRDDetailView === 'function') renderPRDDetailView(prdId); }, 80);
@@ -14148,7 +14145,9 @@ function _refreshAutomataOrPRD() {
       .catch(() => {});
     return;
   }
-  if (state.activeView === 'autonomous' && typeof loadAutomataPanel === 'function') {
+  if (_automationTabActive()) {
+    refreshAutomationView();
+  } else if (state.activeView === 'autonomous' && typeof loadAutomataPanel === 'function') {
     loadAutomataPanel();
   } else {
     loadPRDPanel();
@@ -20748,8 +20747,23 @@ setTimeout(updatePeerStaleBadge, 1500);  // initial paint after auth settles
 // and other internal callers).
 
 // Module-level Automata view state (survives re-renders within the tab).
+// The sub-tab a first visit to the Automata tab opens on: Automation is the
+// high-level view, and the operator digs deeper from there.
+const _AUTOMATA_DEFAULT_TAB = 'automation';
+// Remembering the last chosen sub-tab is an undecided operator design
+// question: this switch stays off, so every visit starts on the default.
+const _AUTOMATA_REMEMBER_TAB = false;
+const _AUTOMATA_TAB_STORE_KEY = 'cs_automata_tab';
+function _automataInitialTab() {
+  if (!_AUTOMATA_REMEMBER_TAB) return _AUTOMATA_DEFAULT_TAB;
+  try {
+    const v = localStorage.getItem(_AUTOMATA_TAB_STORE_KEY);
+    if (v === 'automation' || v === 'automata' || v === 'templates') return v;
+  } catch (_) { /* storage blocked: use the default */ }
+  return _AUTOMATA_DEFAULT_TAB;
+}
 const _automataState = {
-  tab: 'automata',      // 'automata' | 'templates'
+  tab: _automataInitialTab(),      // 'automation' | 'automata' | 'templates'
   historyOn: false,     // false = active-only; true = includes completed/rejected/cancelled/archived
   filterOpen: (localStorage.getItem('cs_automata_filter') === '1'),
   selectMode: false,    // BL246 v6.6.0 — per-card checkboxes hidden until Select toggled
@@ -21510,6 +21524,23 @@ function loadAutomataPanel() {
 }
 window.loadAutomataPanel = loadAutomataPanel;
 
+// _automataShowList brings the Automata list back after a sub-tab switch. When
+// the loader already holds a fetched list (or is still fetching one) it only
+// repaints from that state; the list is requested again only when nothing was
+// fetched yet. The loader keeps its own polling, so freshness is unchanged.
+function _automataShowList() {
+  const ctl = window._listLoaders && window._listLoaders.automata;
+  const s = ctl && ctl.state;
+  if (s && (s.loading || (s.hasData && !s.fromCache && !s.error))) {
+    ctl.paint();
+    return Promise.resolve();
+  }
+  return loadAutomataPanel();
+}
+// Set by switchAutomataTab for the one render it triggers, so that render
+// reuses the Automata list state instead of fetching it again.
+let _automataReuseList = false;
+
 // Generic modal (title + body HTML + confirm/cancel). Closes on overlay click.
 function showModal({ title, body, confirmLabel, cancelLabel, onConfirm }) {
   const existing = document.getElementById('genericModal');
@@ -21781,42 +21812,121 @@ function _automataRenderCards() {
   if (ctl && ctl.state.hasData) ctl.paint();
 }
 
+// _automataNormalizeTab returns the sub-tab the view should show. The
+// Automation sub-tab needs the autonomous subsystem enabled: when it is
+// disabled or its config was unreachable, a stored 'automation' falls back to
+// 'automata'.
+function _automataNormalizeTab() {
+  const st = _automataState;
+  if (st.tab === 'automation' && state._autonomousEnabled === false) st.tab = 'automata';
+  return st.tab;
+}
+
+// _automataFallbackFromAutomation applies the enable gate once the config
+// answer is known: a disabled subsystem moves the view off the Automation
+// sub-tab.
+function _automataFallbackFromAutomation() {
+  const before = _automataState.tab;
+  if (_automataNormalizeTab() !== before && state.activeView === 'autonomous' && !_automataDetailId) {
+    renderAutonomousView();
+  }
+}
+
+function _automataHeaderTitle() {
+  return _automataNormalizeTab() === 'automation'
+    ? (t('nav_automation') || 'Automation')
+    : (t('automata_tab_automata') || 'Automata');
+}
+
+// _automationTabActive is true while the Automation sub-tab is on screen
+// (list, detail or form) and no Automaton page has taken over the view.
+function _automationTabActive() {
+  return state.activeView === 'autonomous' && _automataNormalizeTab() === 'automation' && !_automataDetailId;
+}
+
+// The shared floating action button follows the selected sub-tab.
+function _automataSyncFab(tab) {
+  const fab = document.getElementById('newSessionFab');
+  if (!fab) return;
+  if (tab === 'automation') {
+    fab.textContent = '+';
+    fab.title = t('automation_new');
+    fab.setAttribute('aria-label', t('automation_new'));
+    fab.onclick = () => { if (typeof openAutomationForm === 'function') openAutomationForm(); };
+  } else if (tab === 'templates') {
+    // The Templates tab reuses the same shared FAB the Sessions and Automata
+    // views repurpose per view.
+    fab.textContent = '+';
+    fab.title = t('fab_new_template')||'New template';
+    fab.setAttribute('aria-label', 'New template');
+    fab.onclick = openTemplateCreateModal;
+  } else {
+    fab.textContent = '⚡';
+    fab.title = t('fab_launch_auto')||'Launch Automaton';
+    fab.setAttribute('aria-label', t('fab_launch_auto')||'Launch Automaton');
+    fab.onclick = openLaunchAutomatonWizard;
+  }
+  fab.classList.remove('hidden');
+}
+
+// _automataSyncActions shows the action buttons that belong to the tab:
+// select, filter, history and watch for Automata; filter, history and new for
+// Automation; none of them for Templates.
+function _automataSyncActions(tab) {
+  const show = {
+    automataSelectBtn: tab === 'automata',
+    automataFilterBtn: tab === 'automata',
+    automataHistoryBtn: tab === 'automata',
+    automataWatchFilterBtn: tab === 'automata',
+    automationFilterBtn: tab === 'automation',
+    automationHistoryBtn: tab === 'automation',
+    automationNewBtn: tab === 'automation',
+  };
+  Object.keys(show).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show[id] ? '' : 'none';
+  });
+  // The Launch button is not in the header (the FAB covers it); the inline
+  // "+ Template" header button stays hidden for the same reason.
+  const newTmplBtn = document.getElementById('automataNewTmplBtn');
+  if (newTmplBtn) newTmplBtn.style.display = 'none';
+}
+
 function switchAutomataTab(tab) {
-  _automataState.tab = tab;
-  _automataState.selected.clear();
-  document.querySelectorAll('.automata-tab').forEach(btn => {
+  const st = _automataState;
+  const prev = st.tab;
+  st.tab = tab;
+  tab = _automataNormalizeTab();
+  if (_AUTOMATA_REMEMBER_TAB) {
+    try { localStorage.setItem(_AUTOMATA_TAB_STORE_KEY, tab); } catch (_) { /* storage blocked */ }
+  }
+  st.selected.clear();
+  document.querySelectorAll('.automata-tabs-bar .output-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
-  // BL221 — toggle action buttons per tab.
-  // BL246-followup v6.6.1 — Launch button removed from header (FAB covers it).
-  const newTmplBtn = document.getElementById('automataNewTmplBtn');
-  const filterBtn = document.getElementById('automataFilterBtn');
-  const historyBtn = document.getElementById('automataHistoryBtn');
-  // GH#182 — floating ＋ button on the Templates tab (Android already
-  // has this), reusing the same shared FAB the Sessions/Automata views
-  // repurpose per-view. Replaces the inline "+ Template" header button
-  // (hidden below) so there's one consistent create affordance per tab.
-  if (newTmplBtn) newTmplBtn.style.display = 'none';
-  const fab = document.getElementById('newSessionFab');
-  if (fab) {
-    if (tab === 'templates') {
-      fab.textContent = '+';
-      fab.title = t('fab_new_template')||'New template';
-      fab.setAttribute('aria-label', 'New template');
-      fab.onclick = openTemplateCreateModal;
-      fab.classList.remove('hidden');
-    } else {
-      fab.textContent = '⚡';
-      fab.title = t('fab_launch_auto')||'Launch Automaton';
-      fab.setAttribute('aria-label', t('fab_launch_auto')||'Launch Automaton');
-      fab.onclick = openLaunchAutomatonWizard;
-      fab.classList.remove('hidden');
-    }
+  if (state.activeView === 'autonomous') {
+    const headerTitle = document.getElementById('headerTitle');
+    if (headerTitle) headerTitle.textContent = _automataHeaderTitle();
+    const helpLink = document.getElementById('headerHelpLink');
+    if (helpLink) helpLink.href = '/diagrams.html#docs/datawatch-definitions.md#' + (tab === 'automation' ? 'automation' : 'automata');
   }
-  if (filterBtn) filterBtn.style.display = tab === 'automata' ? '' : 'none';
-  if (historyBtn) historyBtn.style.display = tab === 'automata' ? '' : 'none';
+  _automataSyncFab(tab);
+  _automataSyncActions(tab);
+  // The Automation body differs from the Automata and Templates body (own
+  // filter bar, capacity card and panel), so entering or leaving it redraws
+  // the view; Automata and Templates swap the panel content in place.
+  if (tab === 'automation' || prev === 'automation') {
+    _automataDetailId = null;
+    _automationState.detailId = null;
+    // Leaving the Automation sub-tab ends its polling; selecting it starts
+    // the loaders again from _automationMount.
+    if (tab !== 'automation') _automationStopLoaders();
+    _automataReuseList = true;
+    renderAutonomousView();
+    return;
+  }
   if (tab === 'templates') loadAutomataTemplatesPanel();
-  else loadAutomataPanel();
+  else _automataShowList();
 }
 window.switchAutomataTab = switchAutomataTab;
 
@@ -22290,7 +22400,8 @@ function openAutomataHowto() {
 window.openAutomataHowto = openAutomataHowto;
 
 function _toggleAutonomousFilters() {
-  toggleAutomataFilter();
+  if (_automataNormalizeTab() === 'automation') toggleAutomationFilter();
+  else toggleAutomataFilter();
 }
 window._toggleAutonomousFilters = _toggleAutonomousFilters;
 
@@ -24653,8 +24764,7 @@ function _backToAutomataList() {
   const searchBtn = document.getElementById('headerSearchBtn');
   if (searchBtn) searchBtn.style.display = 'inline-flex';
   if (returnAutomationId) {
-    navigate('automation');
-    openAutomationDetail(returnAutomationId);
+    openAutomationLink(returnAutomationId);
     return;
   }
   navigate('autonomous');
@@ -24705,6 +24815,8 @@ function renderAutonomousView() {
   const view = document.getElementById('view');
   if (!view) return;
   const st = _automataState;
+  _automataNormalizeTab();
+  const isAutomation = st.tab === 'automation';
   // Active statuses + completed (shown by default); then terminal statuses behind history toggle
   const statusBadgesActive = ['draft','planning','needs_review','approved','running','paused','blocked','completed'].map(s => {
     const active = st.statusFilter.has(s) ? 'active' : '';
@@ -24740,16 +24852,18 @@ function renderAutonomousView() {
            All action buttons share the .automata-action-btn class for
            consistent sizing + padding (defined in style.css). -->
       <div class="output-tabs automata-tabs-bar">
+        ${state._autonomousEnabled === false ? '' : `<button class="output-tab ${st.tab==='automation'?'active':''}" data-tab="automation" onclick="switchAutomataTab('automation')">${escHtml(t('nav_automation'))}</button>`}
         <button class="output-tab ${st.tab==='automata'?'active':''}" data-tab="automata" onclick="switchAutomataTab('automata')">${escHtml(t('automata_tab_automata'))}</button>
         <button class="output-tab ${st.tab==='templates'?'active':''}" data-tab="templates" onclick="switchAutomataTab('templates')">${escHtml(t('automata_tab_templates'))}</button>
         <div style="flex:1;"></div>
-        <button id="automataSelectBtn" class="automata-action-btn ${st.selectMode?'active':''}" onclick="toggleAutomataSelectMode()" title="${escHtml(t('automata_select_title')||'Select cards for batch actions')}" style="${st.tab==='templates'?'display:none;':''}">&#9745;</button>
-        <button id="automataFilterBtn" class="automata-action-btn ${st.filterOpen?'active':''}" onclick="toggleAutomataFilter()" title="Filter" style="${st.tab==='templates'?'display:none;':''}">⊞</button>
-        <button id="automataHistoryBtn" class="automata-action-btn ${st.historyOn?'active':''}" onclick="toggleAutomataHistory()" title="${escHtml(st.historyOn ? t('automata_history_on') : t('automata_history_off'))}" style="${st.tab==='templates'?'display:none;':''}">⏱</button>
-        <button id="automataWatchFilterBtn" class="automata-action-btn ${st.watchFilter?'active':''}" onclick="toggleAutomataWatchFilter()" title="${escHtml(t('automata_watch_filter_title')||'Show watched only')}" style="${st.tab==='templates'?'display:none;':''}">👁</button>
-        <button id="automataNewTmplBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${st.tab!=='templates'?'display:none;':''}" onclick="openTemplateCreateModal()">＋ ${escHtml(t('automata_tmpl_new_short')||'Template')}</button>
+        <button id="automataSelectBtn" class="automata-action-btn ${st.selectMode?'active':''}" onclick="toggleAutomataSelectMode()" title="${escHtml(t('automata_select_title')||'Select cards for batch actions')}" style="${st.tab!=='automata'?'display:none;':''}">&#9745;</button>
+        <button id="automataFilterBtn" class="automata-action-btn ${st.filterOpen?'active':''}" onclick="toggleAutomataFilter()" title="Filter" style="${st.tab!=='automata'?'display:none;':''}">⊞</button>
+        <button id="automataHistoryBtn" class="automata-action-btn ${st.historyOn?'active':''}" onclick="toggleAutomataHistory()" title="${escHtml(st.historyOn ? t('automata_history_on') : t('automata_history_off'))}" style="${st.tab!=='automata'?'display:none;':''}">⏱</button>
+        <button id="automataWatchFilterBtn" class="automata-action-btn ${st.watchFilter?'active':''}" onclick="toggleAutomataWatchFilter()" title="${escHtml(t('automata_watch_filter_title')||'Show watched only')}" style="${st.tab!=='automata'?'display:none;':''}">👁</button>
+        <button id="automataNewTmplBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;display:none;" onclick="openTemplateCreateModal()">＋ ${escHtml(t('automata_tmpl_new_short')||'Template')}</button>
+        ${_automationActionButtonsHTML(isAutomation)}
       </div>
-      <div id="automataFilterBar" class="automata-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
+      ${isAutomation ? _automationBodyHTML() : `<div id="automataFilterBar" class="automata-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
         <input id="automataSearch" type="text" class="form-input" placeholder="${escHtml(t('automata_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomataSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">
         <div class="automata-badge-group">${statusBadges}</div>
         <div class="automata-badge-group">${typeBadges}</div>
@@ -24761,11 +24875,20 @@ function renderAutonomousView() {
       <div id="prdCapacityCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automataPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
-      </div>
+      </div>`}
     </div>
   `;
-  loadAutomataPanel();
-  window._loadPRDCapacityCard();
+  if (isAutomation) {
+    _automationMount();
+  } else {
+    const reuse = _automataReuseList;
+    _automataReuseList = false;
+    if (st.tab === 'templates') loadAutomataTemplatesPanel();
+    else if (reuse) _automataShowList();
+    else loadAutomataPanel();
+    window._loadPRDCapacityCard();
+  }
+  _automataReuseList = false;
   _injectServerPickerBar(view, renderAutonomousView); // BL312 S3
 }
 window.renderAutonomousView = renderAutonomousView;
@@ -24822,43 +24945,61 @@ window.automationRequest = automationRequest;
 
 const _AUTOMATION_STATUSES = ['draft', 'active', 'paused', 'blocked', 'completed', 'cancelled'];
 
-function renderAutomationView() {
-  const view = document.getElementById('view');
-  if (!view) return;
+// The Automation sub-tab's action buttons, drawn into the Automata tab bar:
+// filter, history and new. They are hidden on the other sub-tabs.
+function _automationActionButtonsHTML(visible) {
+  const st = _automationState;
+  const hide = visible ? '' : 'display:none;';
+  const historyTitle = escHtml(st.historyOn ? t('automation_hide_history') : t('automation_show_history'));
+  return `<button id="automationFilterBtn" class="automata-action-btn ${st.filterOpen ? 'active' : ''}" onclick="toggleAutomationFilter()" title="${escHtml(t('automation_filter_toggle'))}" aria-label="${escHtml(t('automation_filter_toggle'))}" style="${hide}">⊞</button>
+        <button id="automationHistoryBtn" class="automata-action-btn ${st.historyOn ? 'active' : ''}" onclick="toggleAutomationHistory()" title="${historyTitle}" aria-label="${historyTitle}" style="${hide}">⏱</button>
+        <button id="automationNewBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${hide}" onclick="if (typeof openAutomationForm === 'function') openAutomationForm()">＋ ${escHtml(t('automation_new'))}</button>`;
+}
+
+// The Automation sub-tab's body: the filter bar, the capacity card and the
+// list panel.
+function _automationBodyHTML() {
   const st = _automationState;
   const statusBadges = _AUTOMATION_STATUSES.map(s => {
     const active = st.statusFilter.has(s) ? 'active' : '';
     const label = escHtml(t('automation_status_' + s));
     return `<button class="automata-filter-badge status-${s} ${active}" onclick="toggleAutomationStatusFilter('${s}')">${label}</button>`;
   }).join('');
-  const historyTitle = escHtml(st.historyOn ? t('automation_hide_history') : t('automation_show_history'));
-  view.innerHTML = `
-    <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
-    <div class="view-content" style="position:relative;">
-      <div class="output-tabs automata-tabs-bar">
-        <button class="output-tab active" data-tab="automation">${escHtml(t('nav_automation'))}</button>
-        <div style="flex:1;"></div>
-        <button id="automationFilterBtn" class="automata-action-btn ${st.filterOpen ? 'active' : ''}" onclick="toggleAutomationFilter()" title="${escHtml(t('automation_filter_toggle'))}" aria-label="${escHtml(t('automation_filter_toggle'))}">⊞</button>
-        <button id="automationHistoryBtn" class="automata-action-btn ${st.historyOn ? 'active' : ''}" onclick="toggleAutomationHistory()" title="${historyTitle}" aria-label="${historyTitle}">⏱</button>
-        <button id="automationNewBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="if (typeof openAutomationForm === 'function') openAutomationForm()">＋ ${escHtml(t('automation_new'))}</button>
-      </div>
-      <div id="automationFilterBar" class="automata-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
+  return `<div id="automationFilterBar" class="automata-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
         <input id="automationSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_filter_search'))}" aria-label="${escHtml(t('automation_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomationSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">
         <div class="automata-badge-group">${statusBadges}</div>
       </div>
       <div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
-      </div>
-    </div>
-  `;
+      </div>`;
+}
+
+// _automationMount starts the loaders for the markup _automationBodyHTML drew.
+function _automationMount() {
   // A fresh render has not loaded anything yet: the empty state waits for a
   // load that succeeds after this point.
-  st.loaded = false;
+  _automationState.loaded = false;
   // The capacity card and the list load in parallel; each loader owns its
   // own loading and failed states, so one failing never blanks the other.
   listLoaderAll([_automationCapacityLoader(), _automationLoader()]);
-  _injectServerPickerBar(view, renderAutomationView);
+}
+
+// _automationStopLoaders ends the polling and tick timers of the Automation
+// list and capacity loaders. Their state stays, and load() starts them again.
+function _automationStopLoaders() {
+  ['automation', 'automation_capacity'].forEach(k => {
+    const ctl = window._listLoaders && window._listLoaders[k];
+    if (ctl) ctl.stop();
+  });
+}
+
+// renderAutomationView shows the Automation list: the Automata view with its
+// Automation sub-tab selected. The create form and the detail page draw over
+// #view and come back through here.
+function renderAutomationView() {
+  _automataState.tab = 'automation';
+  renderAutonomousView();
 }
 window.renderAutomationView = renderAutomationView;
 
@@ -25772,6 +25913,32 @@ function openAutomationDetail(id) {
   return renderAutomationDetail(id);
 }
 window.openAutomationDetail = openAutomationDetail;
+
+// openAutomationLink is the entry for every link that targets one Automation:
+// it selects the Automation sub-tab on the Automata view, then opens the item.
+// With no id it lands on the sub-tab's list.
+function openAutomationLink(id) {
+  _automataState.tab = 'automation';
+  navigate('autonomous');
+  if (!id) return Promise.resolve();
+  return openAutomationDetail(id);
+}
+window.openAutomationLink = openAutomationLink;
+
+// _automationRouteFromLocation reads an Automation target out of a saved link:
+// '#automation', '#automation/<id>' or '?automation=<id>'. It returns null for
+// any other location, '' for the bare list and the id for one Automation.
+function _automationRouteFromLocation(loc) {
+  const hash = String((loc && loc.hash) || '');
+  const m = /^#automation(?:\/(.+))?$/.exec(hash);
+  if (m) {
+    if (!m[1]) return '';
+    try { return decodeURIComponent(m[1]); } catch (_) { return m[1]; }
+  }
+  const q = new URLSearchParams((loc && loc.search) || '').get('automation');
+  return q ? q : null;
+}
+window._automationRouteFromLocation = _automationRouteFromLocation;
 
 // renderAutomationDetail loads one Automation and draws its page. opts.quiet
 // skips the loading block and keeps the page on a failed reload; live refresh
@@ -30307,10 +30474,21 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('cs_active_view', 'observer');
       localStorage.removeItem('cs_settings_tab');
     }
-    // The Automation tab is hidden while the autonomous subsystem is
-    // disabled; do not restore into a view with no tab.
-    if (_initView === 'automation' && state._autonomousEnabled === false) _initView = 'sessions';
+    // Automation used to be a top-level view; it is now a sub-tab of
+    // Automata, so a stored 'automation' view restores into that sub-tab.
+    if (_initView === 'automation') {
+      _automataState.tab = 'automation';
+      _initView = state._autonomousEnabled === false ? 'sessions' : 'autonomous';
+    }
     navigate(_initView || 'sessions', _initSession || undefined);
+
+    // A saved link to the Automation list or one Automation lands on the
+    // Automata tab's Automation sub-tab (and opens the item) once the
+    // subsystem is known to be on.
+    const _deepLinkAutomation = _automationRouteFromLocation(window.location);
+    if (_deepLinkAutomation !== null && state._autonomousEnabled !== false) {
+      setTimeout(() => { if (state._autonomousEnabled !== false) openAutomationLink(_deepLinkAutomation); }, 300);
+    }
 
     // GH#182 — alert deep link. A browser rewrites a registered
     // web+datawatch://alert/<id> link into start_url?alert=<id> per the
@@ -30371,20 +30549,18 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(cfg => {
       const btn = document.getElementById('navBtnAutonomous');
       if (btn && cfg && cfg.enabled === true) btn.style.display = '';
-      const automationBtn = document.getElementById('navBtnAutomation');
-      if (automationBtn && cfg && cfg.enabled === true) automationBtn.style.display = '';
-      // A restored Automation view falls back to Sessions when the
-      // subsystem is disabled (the tab stays hidden in that case).
+      // The Automation sub-tab needs the subsystem enabled: when it is
+      // disabled, a stored 'automation' sub-tab falls back to 'automata'.
       state._autonomousEnabled = !!(cfg && cfg.enabled === true);
-      if (!state._autonomousEnabled && state.activeView === 'automation') navigate('sessions');
+      _automataFallbackFromAutomation();
       // BL313 — Dashboard is part of the autonomous subsystem; gate it on the same flag.
       const dashBtn = document.getElementById('navBtnDashboard');
       if (dashBtn && cfg && cfg.enabled === true) dashBtn.style.display = '';
     })
     .catch(() => {
-      // Config unreachable: the tab stays hidden, so do not stay on it.
+      // Config unreachable: no Automation sub-tab, so do not stay on it.
       state._autonomousEnabled = false;
-      if (state.activeView === 'automation') navigate('sessions');
+      _automataFallbackFromAutomation();
     });
 
   // BL247-followup v6.7.2 — Observer view folded into Settings → Monitor
@@ -32459,6 +32635,7 @@ window._dashNodeClick = function(id) {
   const node = _dash.nodes[id];
   if (!node) return;
   if (node.prd) {
+    _automataState.tab = 'automata';  // the Automaton's back control lands on the Automata list
     navigate('autonomous');
     // Give the automata view a moment to render then open the detail
     setTimeout(() => {

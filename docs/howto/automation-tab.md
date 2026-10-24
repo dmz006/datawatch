@@ -3,10 +3,12 @@ docs:
   index: true
   topics: [automation, automata, pipeline, pwa]
 ---
-# How-to: the Automation tab
+# How-to: the Automation view
 
-The **Automation** tab is the place in the web app where you build, watch and
-steer chains of Automata. It shows every Automation as a card, draws the chain
+The **Automation** view is the place in the web app where you build, watch and
+steer chains of Automata. It is the first sub-tab of the **Automata** tab: open
+Automata in the bottom navigation and Automation is selected on the sub-tab bar,
+left of **Automata** and **Templates**. It shows every Automation as a card, draws the chain
 of the one you open as a strip, and puts the controls (pause, resume, cancel,
 skip, insert, remove, edit edges) next to the members they act on.
 
@@ -19,9 +21,33 @@ datawatch starts the next Automaton by itself. See
 [automation-queue-advance.md](automation-queue-advance.md) for how the hand-off
 works behind the scenes.
 
-The Automation tab sits **left of the Automata tab** in the bottom navigation.
-The Automata tab lists single Automata; the Automation tab lists the chains
+The bottom navigation has no Automation button of its own. Inside the Automata
+tab, the sub-tab bar reads **Automation**, **Automata**, **Templates**. The
+Automata sub-tab lists single Automata; the Automation sub-tab lists the chains
 that connect them.
+
+## Opening it, the remembered sub-tab and saved links
+
+- **First visit.** Tapping Automata in the bottom navigation opens on the
+  Automation sub-tab. Tap **Automata** or **Templates** on the sub-tab bar to
+  switch; the action buttons at the right of the bar (select, filter, history,
+  watch, new) change with the sub-tab, and so does the round action button.
+- **Remembered sub-tab.** While the web app stays open, the sub-tab you chose
+  stays selected when you leave the Automata tab and come back. A fresh load of
+  the page always starts on Automation again: storing the last chosen sub-tab
+  across loads is switched off until the operator decides how it should behave.
+- **Saved links.** A link to `#automation` opens the Automata tab on the
+  Automation sub-tab and shows its list. `#automation/<id>` and
+  `?automation=<id>` do the same and open that Automation. Older links and
+  history entries that name the Automation view land in the same place, and the
+  back control on a member's Automaton page returns to the Automation that holds
+  it.
+- **Subsystem off.** When the autonomous subsystem is not enabled, the
+  Automation sub-tab is not offered and every one of these links lands on the
+  Automata sub-tab.
+- **Phone width.** On a narrow screen the sub-tab bar wraps the action buttons
+  onto a second row instead of scrolling or clipping, and every sub-tab and
+  action button is at least 40 px tall and wide enough to tap.
 
 ## Base requirements
 
@@ -31,13 +57,13 @@ that connect them.
 
 ## The list
 
-Open the Automation tab to see one card per Automation, ordered by status
+Open the Automation sub-tab to see one card per Automation, ordered by status
 (active, blocked, paused, draft, completed, cancelled) and then by name.
 
 ### Capacity and queue card
 
-Above the list sits the same capacity and queue summary card the Automata tab
-shows: the pools and their usage, any usage back-off, budgets, and the
+Above the list sits the same capacity and queue summary card the Automata
+sub-tab shows: the pools and their usage, any usage back-off, budgets, and the
 Automata waiting for capacity. It loads in parallel with the list and has its
 own loading skeleton and, if the request fails, its own error with a Retry
 button; a failed card never blanks the list, and a failed list never blanks the
@@ -45,8 +71,8 @@ card.
 
 ### The empty state
 
-When the list loads successfully and there are no Automations at all, the tab
-shows **No Automations yet**, a one-line explanation (an Automation chains
+When the list loads successfully and there are no Automations at all, the
+sub-tab shows **No Automations yet**, a one-line explanation (an Automation chains
 Automata; an Automaton is a single planned unit of work) and a **Create
 Automation** button that opens the same form as **＋ New Automation**. It never
 appears while the list is still loading or after a load that failed; a failed
