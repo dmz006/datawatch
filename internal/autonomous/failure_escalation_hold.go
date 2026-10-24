@@ -65,7 +65,7 @@ func buildReviewSummary(t *Task, now time.Time) *ReviewSummary {
 // the Automaton, and one error alert is raised. It returns the error from
 // saving the task; the other side effects are best effort.
 func (m *Manager) holdTaskForReview(prd *PRD, t *Task, lastCategory, detail string) error {
-	now := time.Now()
+	now := m.attemptNow()
 	var oldStatus TaskStatus
 	var failures int
 	var last *TaskAttempt

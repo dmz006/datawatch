@@ -848,6 +848,11 @@ type Manager struct {
 	// Guarded by mu. Nil = alerts silently skipped.
 	alertSink func(level, title, body string)
 
+	// attemptClock — the time source for failure escalation attempt records
+	// and review holds (attemptNow). Nil reads the wall clock; tests inject a
+	// fake so attempt durations are exact. Set before the Manager runs.
+	attemptClock func() time.Time
+
 	// driftGit — git runner for checkForeignFileDrift's committed-file
 	// lookup. nil means defaultDriftGitRunner; tests inject a counting
 	// fake.

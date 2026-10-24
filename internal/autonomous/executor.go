@@ -1134,7 +1134,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				m.store.WithLock(func() { recordEndedSessions(prd, t, ended, "replacement session launching") })
 				_ = m.store.SavePRD(prd)
 			}
-			now := time.Now()
+			now := m.attemptNow()
 			m.store.WithLock(func() {
 				t.StartedAt = &now
 				t.Status = TaskInProgress
@@ -1160,9 +1160,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// Failure escalation: the ladder step that the failed attempts so
 			// far select replaces the worker for this attempt only. Backend,
 			// model and effort come from the same step (a model never cascades
-			// from another level), and t.Backend/t.Model are not written.
+			// from another level), and t.Backend/t.Model are not written. A
+			// worker the operator chose in a review retry is kept instead.
 			escalated, stepIdx := false, -1
-			if esc.Enabled {
+			if esc.Enabled && !t.OperatorWorkerSet {
 				if step, idx, ok := selectEscalationStep(esc, m.escalationFailureCount(t)); ok {
 					backend, model, execSource = step.Backend, step.Model, ExecutorSourceEscalation
 					if step.Effort != "" {

@@ -397,6 +397,7 @@ Both routes write an audit entry (`set_failure_escalation` or `resolve_task_revi
 | Task | `attempts` | One entry per failed, stalled or cancelled attempt: `number`, `backend`, `model`, `effort`, `started_at`, `ended_at`, `duration_seconds`, `outcome`, `failure_category`, `failure_summary`, `verifier_summary`, `verifier_issues`, `changed_files`, `snapshot_ref`, `escalated`. |
 | Task | `escalation_failures` | Failed attempts since the last operator action. Any reset of the task sets it back to 0. |
 | Task | `review_summary` | Set while the task is held: `held_at`, `failure_count`, `total_seconds` and `text`, a plain-text report of every attempt. |
+| Task | `operator_worker_set` | `true` when the operator's last review retry chose the task's worker. The escalation ladder then keeps that worker; a retry without a worker change clears it. |
 | Task | `status` | `review_needed` while held. It is not terminal and not a failure. |
 | Task | `executor_source` | `escalation` when a ladder step chose the worker. |
 | Decision log | `kind` | `failure_escalation` when an attempt moves to a different worker; `review_needed` when a task is held. |

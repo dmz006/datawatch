@@ -63,6 +63,7 @@ func (r *reviewRequeue) apply(t *Task, now time.Time) {
 	if r.workerChanged {
 		t.Backend, t.Model, t.Effort = r.req.Backend, r.req.Model, r.req.Effort
 	}
+	t.OperatorWorkerSet = r.workerChanged
 	if r.filesChanged {
 		t.FilesPlanned = r.files
 	}

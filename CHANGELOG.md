@@ -19,6 +19,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Held tasks are listed with their failure count, last worker and hold time in the Automaton summary, the task listing (with the attempt count and report text) and the Automation status (`review_needed_count` and `review_needed_task_ids` for the current member Automaton).
 - The web UI shows the escalation policy in Settings (enable, failures before review, and the steps as `backend:model@attempts`). A held task shows a review chip, its attempts and report, and the Retry, Edit spec and retry, Change worker, Narrow scope and Cancel actions. The Automaton and each task have an override editor, and held counts appear on Automaton headers, list rows and Automation strips.
 - Operator how-to for failure escalation (`docs/howto/failure-escalation.md`): the policy and its three levels, GPU-only, Claude-only and mixed ladders, what the retry prompt holds, the review-needed state on every surface, the five review actions, and the override order. The operations guide, REST reference, MCP and mapping references, parity table, glossary and testing tracker cover the same surfaces. The operations guide no longer says the web UI lacks the review actions.
+- A review retry that changes the worker keeps that worker for the attempts after it. The escalation ladder no longer replaces an operator-chosen worker; a review retry without a worker change lets the ladder apply again.
 
 ## v9.5.125 — Restart keeps a finished worker and re-verifies only
 

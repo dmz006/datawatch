@@ -160,7 +160,10 @@ too long, the oldest are left out, and the prompt says which attempts were left
 out. The worker is never silently missing a failure.
 
 Any operator reset of the task, including a retry from review, starts the failure
-count again from zero, so the ladder starts over at step 1.
+count again from zero, so the ladder starts over at step 1. The exception is a
+review retry that changes the worker: the worker you chose is kept for the
+attempts after it, and the ladder does not replace it. A review retry without a
+worker change lets the ladder apply again.
 
 ## When a task needs review
 

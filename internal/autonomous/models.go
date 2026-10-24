@@ -874,6 +874,11 @@ type Task struct {
 	// ReviewSummary is the plain-text report written when the task is held
 	// in TaskReviewNeeded.
 	ReviewSummary *ReviewSummary `json:"review_summary,omitempty"`
+	// OperatorWorkerSet is true when the operator's last review retry chose
+	// the task's worker. The failure escalation ladder then does not replace
+	// that worker for the attempts that follow; a retry without a worker
+	// change clears it, and the ladder applies again.
+	OperatorWorkerSet bool `json:"operator_worker_set,omitempty"`
 	// ExecutorSource is the level that supplied the execution backend for
 	// the most recent run attempt: "task", "story", "prd", "automation",
 	// "global" (no level set one, so the fallback backend was used) or

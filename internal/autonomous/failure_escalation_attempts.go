@@ -59,13 +59,22 @@ type attemptFailure struct {
 	Requeue bool
 }
 
+// attemptNow returns the time an attempt starts or ends at: the injected
+// attempt clock when one is set, else the wall clock.
+func (m *Manager) attemptNow() time.Time {
+	if m.attemptClock != nil {
+		return m.attemptClock()
+	}
+	return time.Now()
+}
+
 // recordFailedAttempt appends a TaskAttempt for the attempt that just failed
 // and persists the task. The worker falls back to the task's resolved worker
 // when the attempt did not spawn one (a resumed session). Changed files come
 // from the snapshot this attempt recorded, when it recorded one. A persist
 // failure is logged; it never changes the attempt's outcome.
 func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, run attemptRun, f attemptFailure) {
-	ended := time.Now()
+	ended := m.attemptNow()
 	backend, model, effort := run.Backend, run.Model, run.Effort
 	if backend == "" {
 		story := findStory(prd, t.StoryID)
