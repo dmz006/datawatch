@@ -13,3 +13,7 @@ Restart onto the build with flexible verifier routing, with one PRD mid-run and 
 - The shutdown-cause recording worked: the journal names the sender of the stop (a shell command from this supervisor session, found by process scan).
 - tmux was untouched (NRestarts 3). The capacity API answered in about 4 ms after the restart.
 - Filed as a defect row and a draft PRD (see the registry).
+
+## Fix
+
+Boot reconcile now keeps a verifying task whose worker finished and which has no recorded verdict. It re-runs only that task's verification, does not end the worker session and does not count a retry. A verifying task whose worker has not finished still resets to pending. The live re-validation of this fix is the next restart stage.

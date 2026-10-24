@@ -172,6 +172,8 @@ The first two rows were observed on sandbox daemons during the restart audit, by
 
 **Tasks that were mid-run.** A task that was executing (not yet verifying) when the daemon stopped has no session to re-attach to. It is reset at boot and re-run, and it holds no lease to restore. This is the one case where a restart interrupts work: that task starts again from the beginning.
 
+**Tasks that were verifying.** A task whose worker had finished and whose result was not yet recorded is kept at boot. Only its verification runs again. The worker session is not ended and no retry is counted. If the worker had not finished, the task is reset and re-run as described above.
+
 **Subprocess sessions** (`subprocess: true`, no tmux pane). A subprocess session records its process ID and exit status in its session directory. At boot, the daemon re-attaches to a subprocess that is still running and keeps the session `running` until the process exits, then records the exit status. If the process ended while the daemon was down, the recorded status is used. The session is marked `failed` only when the process is gone and no exit status was recorded. This restart behaviour is fixed but not yet confirmed by the live test. A systemd stop or restart kills the daemon's child processes too (the unit's default `KillMode=control-group`), so a subprocess survives only a restart that signals the daemon process alone.
 
 **Encrypted sessions** (`--secure`). Not covered by this guarantee. At boot the daemon does not re-attach the output pipe for encrypted sessions, so their output may stop after a restart. After restarting a `--secure` daemon, check that each session that matters is still producing output, and restart any session whose output has stopped.
