@@ -1121,6 +1121,20 @@ their own localhost. Set `mcp.public_url` to the URL clients actually use
 to reach the proxy (for example the `tailscale serve --https=8081` URL) and
 the server advertises that instead. Changing it requires a daemon restart.
 
+The value is empty, or an absolute `http` or `https` URL with a host and no
+user-info, query or fragment; surrounding whitespace and trailing slashes are
+ignored. An invalid value is rejected with a 400 by the REST API (and so by the
+CLI, MCP `config_set` and chat), and an invalid value in a hand-edited YAML
+file is ignored with a warning at SSE start, so the bind address is advertised.
+
+| Access method | How to set `mcp.public_url` |
+|---|---|
+| YAML | `mcp.public_url: "https://host.example.ts.net:8081"` in `~/.datawatch/config.yaml` |
+| CLI | `datawatch config set mcp.public_url https://host.example.ts.net:8081` |
+| Web UI | Settings → Comms → MCP Server → "SSE public URL (reverse proxy)" |
+| REST API | `PUT /api/config` with `{"mcp.public_url": "https://host.example.ts.net:8081"}`; read it from `GET /api/config` (`mcp.public_url`). MCP `config_set` uses the same path. |
+| Comm channel | `configure mcp.public_url=https://host.example.ts.net:8081` |
+
 ### DNS Channel (Public-Facing)
 
 The DNS service is designed to be the **only publicly exposed** listener. All other services should be bound to localhost or behind a VPN.

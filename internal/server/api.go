@@ -6148,6 +6148,15 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// mcp.public_url is advertised verbatim to MCP SSE clients, so a value
+	// that is not an absolute http(s) URL is rejected before anything is
+	// applied and the config is left unchanged.
+	if v, ok := patch["mcp.public_url"]; ok {
+		if _, verr := config.NormalizePublicURL(toString(v)); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	// Usage back-off knobs: an unrecognized mode would otherwise normalize to
 	// "off" and silently disable the automatic back-off, and a non-whole or
 	// sub-1 maximum would be clamped; reject the whole PUT instead.
@@ -6837,7 +6846,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.MCP.SSEPort = n
 			}
 		case "mcp.public_url":
-			cfg.MCP.PublicURL = strings.TrimRight(strings.TrimSpace(toString(v)), "/")
+			// handlePutConfig has already rejected invalid values; an invalid
+			// one reaching here (a direct caller) leaves the field unchanged.
+			if u, err := config.NormalizePublicURL(toString(v)); err == nil {
+				cfg.MCP.PublicURL = u
+			}
 		case "mcp.sse_enabled":
 			cfg.MCP.SSEEnabled = toBool(v)
 		case "mcp.tls_enabled":

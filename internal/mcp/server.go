@@ -1449,7 +1449,9 @@ func (s *Server) ServeStdio(ctx context.Context) error {
 // built from the first mcp.sse_host entry, the SSE port, and the TLS
 // setting, which is the historical behavior (unchanged).
 func sseBaseURL(cfg *config.MCPConfig) string {
-	if pub := strings.TrimRight(strings.TrimSpace(cfg.PublicURL), "/"); pub != "" {
+	// An invalid configured value (for example from a hand-edited YAML file)
+	// is treated as empty; ServeSSE prints the warning.
+	if pub, err := config.NormalizePublicURL(cfg.PublicURL); err == nil && pub != "" {
 		return pub
 	}
 	host := strings.TrimSpace(strings.Split(cfg.SSEHost, ",")[0])
@@ -1471,7 +1473,11 @@ func (s *Server) ServeSSE(ctx context.Context) error {
 
 	baseURL := sseBaseURL(s.cfg)
 	if strings.TrimSpace(s.cfg.PublicURL) != "" {
-		fmt.Printf("datawatch MCP SSE server advertising public URL %s to clients\n", baseURL)
+		if _, err := config.NormalizePublicURL(s.cfg.PublicURL); err != nil {
+			fmt.Printf("datawatch MCP SSE server: ignoring mcp.public_url (%v); advertising %s\n", err, baseURL)
+		} else {
+			fmt.Printf("datawatch MCP SSE server advertising public URL %s to clients\n", baseURL)
+		}
 	}
 
 	sseSrv := server.NewSSEServer(

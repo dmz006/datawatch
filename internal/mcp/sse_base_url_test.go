@@ -116,3 +116,24 @@ func TestSSEEndpointEvent_DefaultsToBindAddress(t *testing.T) {
 		t.Errorf("endpoint event = %q, want prefix http://127.0.0.1:8081/message?sessionId=", got)
 	}
 }
+
+// An invalid configured value (for example from a hand-edited YAML file)
+// is treated as empty, so the advertised URL falls back to the bind address.
+func TestSSEBaseURL_InvalidPublicURLFallsBack(t *testing.T) {
+	invalid := []string{
+		"ftp://x", "host:8081", "//host", "/relative", "javascript:alert(1)",
+		"https://user:pw@host", "https://host?x=1", "https://host#f", "https://",
+	}
+	for _, v := range invalid {
+		t.Run(v, func(t *testing.T) {
+			cfg := config.MCPConfig{SSEHost: "127.0.0.1", SSEPort: 8081, PublicURL: v}
+			if got, want := sseBaseURL(&cfg), "http://127.0.0.1:8081"; got != want {
+				t.Errorf("sseBaseURL() = %q, want %q", got, want)
+			}
+			cfg.TLSEnabled = true
+			if got, want := sseBaseURL(&cfg), "https://127.0.0.1:8081"; got != want {
+				t.Errorf("sseBaseURL() with TLS = %q, want %q", got, want)
+			}
+		})
+	}
+}
