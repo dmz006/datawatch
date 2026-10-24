@@ -25,6 +25,8 @@ function harness(route, panelIds = []) {
   loadScript(path.join(__dirname, 'app.js'), sandbox);
   sandbox._i18n = sandbox._i18n || {};
   sandbox._i18n.bundle = EN;
+  // These tests drive the Automata sub-tab; a first visit opens on Automation.
+  vm.runInContext("_automataState.tab = 'automata'", sandbox);
   const calls = [];
   sandbox.fetch = (url, init) => {
     calls.push(String(url));

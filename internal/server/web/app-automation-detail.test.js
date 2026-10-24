@@ -213,7 +213,8 @@ test('the Automaton back control returns to the Automation it was opened from', 
   sb.openAutomationDetail = id => { log.push(['open', id]); };
   log.length = 0;
   sb._backToAutomataList();
-  assert.deepEqual(log, [['navigate', 'automation'], ['open', 'a1b2c3d4']]);
+  assert.deepEqual(log, [['navigate', 'autonomous'], ['open', 'a1b2c3d4']]);
+  assert.equal(vm.runInContext('_automataState.tab', sb), 'automation');
 });
 
 test('the member drawer shows id, kind, status, outcome, edge and times, and the insert fields for an inserted member', async () => {
