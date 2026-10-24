@@ -48,6 +48,12 @@ jobs:
           make sync-docs docs-index
       - name: go test
         run: go test ./... -count=1 -timeout 5m
+      - name: internal-ref leak check
+        # Calls the check target directly (not the full `make lint`): the
+        # golangci-lint binary is installed by the action below and is not
+        # guaranteed to be on PATH here, and the other lint dependencies are
+        # exercised by `make lint` in ci.yaml anyway.
+        run: make check-internal-refs
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:

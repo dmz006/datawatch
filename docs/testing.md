@@ -72,6 +72,23 @@ When documenting a test, use this table format:
 - Every verification script must run with `env -u TMUX -u TMUX_TMPDIR`, for example `env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-unscoped-tmux.sh`.
 - `scripts/check-no-unscoped-tmux.sh` enforces these rules. It runs in `make lint`, in CI, and as a check when a PRD is decomposed. A line that only holds fixture text and is never run against tmux may carry a `tmux-scope-ok` marker.
 
+## Internal-Ref Leak Check
+
+- `scripts/check-no-internal-refs.sh` blocks internal tracking IDs from leaking into
+  operator-facing surfaces (locale bundles, OpenAPI summaries, API `note` fields, PWA
+  strings, `docs/howto/` prose, `README.md`). The canonical invocation is the Makefile
+  target `check-internal-refs`, and the `lint` target depends on it, so `make lint` runs
+  the check as part of every lint pass.
+- It is a hard gate in both workflows: `ci.yaml` runs `bash scripts/check-no-internal-refs.sh`
+  on every push, and the release workflow's `go test + lint` job runs
+  `make check-internal-refs` (the dedicated step right before golangci-lint) before
+  anything is released.
+- The merge helper `scripts/merge-branches-bump-version.sh` also runs `make check-internal-refs`
+  on the checked-out main tree before merging anything, but only when the repository's Makefile
+  defines the target, so lightweight temporary repositories without a Makefile are unaffected.
+  Because the helper can only check main, each incoming branch must have passed `make lint`
+  before it is handed to the helper.
+
 ## Historical Feature Tests
 
 ### 1. Splash Screen

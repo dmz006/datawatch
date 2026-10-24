@@ -144,6 +144,13 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
   commit that covers every branch merged in that run.
 - `scripts/check-merge-version.sh` runs before each branch is merged. It refuses a branch whose
   version change is not the expected next patch, and the refusal names the expected version.
+- Lint precondition: every branch must have passed `make lint` before it is handed to the merge
+  helper — the helper cannot lint branches that have not been merged yet. What the helper does
+  check is the main tree itself: when the repository's Makefile defines a `check-internal-refs`
+  target, the helper runs `make check-internal-refs` on the checked-out main tree after the
+  per-branch version checks and before any merge, and aborts with nothing merged if it fails.
+  Repositories without that target (e.g. the temporary test repositories) run the helper exactly
+  as before.
 - `scripts/set-release-version.sh` is the writer. It sets the version in both version files and
   adds the matching heading to `CHANGELOG.md`. The merge script calls it; do not edit those
   three places by hand for a merge.

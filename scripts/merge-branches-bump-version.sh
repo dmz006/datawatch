@@ -11,6 +11,12 @@
 #      working tree to be clean (exit 1 otherwise).
 #   3. Run check-merge-version.sh for every branch before merging anything.
 #      If any check fails, nothing is merged (exit 1).
+#      Then run `make check-internal-refs` against the checked-out main tree
+#      (only when the repository's Makefile defines that target) — a failed
+#      check stops everything before any merge.
+#      Note: this script can only check the main tree; every branch handed to
+#      it must already have passed `make lint` itself, which the script
+#      cannot enforce for not-yet-merged branches.
 #   4. Compute NEXT: the patch number of the version in
 #      cmd/datawatch/main.go, plus one.
 #   5. Merge each branch in order with --no-ff. A conflicting merge is
@@ -79,6 +85,21 @@ for branch in "${BRANCHES[@]}"; do
         exit 1
     fi
 done
+
+# The merge helper cannot lint branches that have not been merged yet, so the
+# caller is responsible for every incoming branch having passed `make lint`
+# before it is handed to this script. What it CAN check before merging is the
+# main tree it is about to merge into: run the internal-ref leak check on
+# main, but only when this repository's Makefile actually defines the target
+# — the small temporary repositories used by the merge-helper tests have no
+# Makefile and must keep behaving exactly as before.
+if grep -q '^check-internal-refs:' Makefile 2>/dev/null; then
+    echo "==> Checking main tree for internal-ref leaks (make check-internal-refs)"
+    if ! make check-internal-refs; then
+        echo "✗ check-internal-refs failed on the checked-out $MAIN_BRANCH tree; nothing was merged" >&2
+        exit 1
+    fi
+fi
 
 # --- 4. next version --------------------------------------------------------
 MAIN_V=$(grep -E '^var Version = "' "$MAIN_FILE" | head -1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
