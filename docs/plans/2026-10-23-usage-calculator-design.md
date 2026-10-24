@@ -498,3 +498,51 @@ This design does not decide it. The open question is whether a reading belongs t
 - Does a reading belong to one daemon or to the shared account (item 6)?
 - Should the text forms differ per variant, or stay one form with the variant argument only validated (item 2)?
 - Is `all` the right default while the operator compares, and is the local counter worth its browser storage?
+
+## Recommendation for the operator
+
+The choice of variant is the operator's choice. This design pass does not pick a variant, and no variant is picked here. The three pages are `docs/plans/assets/usage-calculator-mockups/variant-pace-gauge.html`, `variant-lane-planner.html` and `variant-burn-ledger.html`, linked from `docs/plans/assets/usage-calculator-mockups/index.html`. The order of the variants on that index is not a ranking. What follows is a process to run, a neutral comparison the operator can judge, and four invariants that hold whatever the operator chooses.
+
+**Process, not a winner.** Run it in three steps:
+
+1. Build the shared core first. Port `UsageModel.advise` from `.datawatch/verify/usage-calc-reference-model.js` into the daemon as the only calculation, and expose its result through the REST, MCP, CLI and comm-channel surfaces described in "Shipping variants side by side behind a setting". Settle the zero-burn case in that core before any renderer is built, using the known gap in the reference model, described under "The three usage policies" above, so that no renderer invents its own wording.
+2. Ship the three renderers together behind `usage.calculator.variant`, with `all` as the default while the operator compares. Each renderer reads the same result body, so the numbers cannot differ between them.
+3. Run all three for at least one full weekly cycle, from the Sunday 08:00 reset of 2026-10-25 to the one on 2026-11-01, on the same readings. Then compare them, and let the operator set the variant or keep `all`.
+
+**Neutral comparison.** The table sets the three variants against the criteria the operator asked for. Each cell describes what the page does today, as the variant sections above and `docs/plans/assets/usage-calculator-mockups/index.html` describe it. No cell is a score.
+
+| Criterion | Pace gauge | Lane planner | Burn ledger |
+|---|---|---|---|
+| Glanceability on a phone | One bar shows the weekly percent, the pace line and both projections at the reset. The verdict is the first card. | The verdict comes first, then a table of six columns with one row for each lane count. It is the densest block on a phone. | The verdict and reading fields come first, then a bar chart of the days since the reset. The lane stepper sits after the chart, the cost table and the other-consumer rows. |
+| Help choosing the number of lanes | The chosen count, the advised count and one line for three lanes. There is no table of counts. | The strongest: one row for each count from 0 to 3, with burn, projected end, run out and a fit mark against the target. | A measured column and a planning column for each count. The two disagree (3.0 to 24.1 measured, 3.0 to 5.1 planned), and the page says the planning column is not a forecast. |
+| Run until used up | The advice and the headline change, against 100 percent. | The fit marks change, against 100 percent. | The advice and the headline change. The chart and the cost table do not. |
+| Pace to the week | The advice and the headline change, against the 95 percent target. | The target line and the fit marks show why a count is advised. | The advice and the headline change. |
+| Run flat out | A finish line on the fixed 20 points, with all lanes advised. | A finish line, and every row reads "running". | A finish line on the fixed 20 points, beside the 3.3-point example queue, which the page says does not yet agree with it. |
+| Data that must exist before build | The stored readings and the previous reading, the reset setting and, optionally, the session percent. | Everything the pace gauge needs, plus a per-lane start and stop record, a measured idle baseline, the safety margin setting and a remaining-work input. | Everything the lane planner needs, plus a per-day rollup, a kind of work on each session, cost overrides, a points estimate for each queued Automaton and a consumer registry. |
+| Build effort | Smallest: one gauge, one chart, one reading form and the text forms. | Medium: a lane table, a timeline, four more inputs and a lane record. | Largest: per-day sums, attribution, and the cost and consumer sections, each needing data the code does not hold. |
+
+**Where each variant fits best.** These are situations, not a ranking.
+
+- The pace gauge fits an operator who wants the position in the week at a glance and changes the lane count rarely. Its single bar in `docs/plans/assets/usage-calculator-mockups/variant-pace-gauge.html` answers how far through the week the account is.
+- The lane planner fits an operator who changes the lane count often and wants every count compared on one screen, with the fit mark against the policy target.
+- The burn ledger fits an operator who wants to see where the week's points went day by day, and who will wait for real attribution data before trusting the split in `docs/plans/assets/usage-calculator-mockups/variant-burn-ledger.html`.
+
+**Invariants that hold whatever the choice.** Every variant keeps these, as "Variant" and "Shared model" in `docs/plans/2026-10-23-usage-calculator-design.md` require:
+
+- The advice never names zero lanes. Zero appears only as the operator's own choice, as `variant-lane-planner.html` shows with the row marked "never advised".
+- The operator chooses the lane count and the policy. No renderer, endpoint or background check sets either.
+- The verdict wording is the same everywhere: "Over budget" or "Within budget", decided at the recent burn, with the week-average verdict beside it. The lane planner's finish line already says "No finish time" where its headline keeps the model's own words, so the core must decide that wording once.
+- The supervisor never stops all Claude lanes on its own projection. This is the operator decision recorded in `docs/plans/2026-10-14-concurrency-and-budget-design.md`, and the calculator must not reopen it.
+
+## Open questions
+
+1. Should the safety margin for Pace to the week stay at 5 points? It sets the target, and at the 22:08 reading a 3-point margin would advise 2 lanes instead of 1, per the worked example in `docs/plans/2026-10-23-usage-calculator-design.md`.
+2. Should the hourly session window get its own verdict? Today it is a secondary line only, so a verdict would need a session series that no reading table in this design holds.
+3. Should the burn per lane be inferred per model, Haiku and Sonnet separately, instead of one number? One figure averages lanes that may burn at different rates, and per-model figures need a lane record per model that does not exist yet.
+4. What should happen when there is no previous reading within 2 hours? The model falls back to the week average, which hides the recent burn, and the readings table has a 1.17-hour gap at 10-21 19:40, so the fallback is not rare.
+5. Are readings typed by hand only, or also pasted from the usage screen text? The mockups only type them; a paste path would need the screen's text layout, which the repository does not record.
+6. Where does the remaining work for Run flat out come from: typed in, or the queued Automata times a cost? The worked example uses a fixed 20 points, the burn ledger's example queue prices at 3.3, and no dollars-to-points rule exists in `internal/autonomous/automation.go`.
+7. How is the reset moment stored across a daylight saving change? `UsageModel.formatClock` takes a fixed UTC offset, so a stored offset would move the reset by an hour on the day the clocks change and show a wrong run-out time.
+8. Does a reading belong to one daemon, or to the shared account across federated daemons? The answer decides where the series is stored and whether the REST read needs a federation capability guard, as section 6 of "Shipping variants side by side behind a setting" describes.
+9. How should bought extra credit, as on 2026-10-17, appear next to the weekly allowance? A top-up can take the account past 100 percent, but the verdict and the run-out figures assume a ceiling at 100 and the model has no field for extra credit.
+10. Should the older reading entry for the 22:08 reading be corrected? The entry under "Inflight caps set to match the lane model" in `docs/plans/2026-10-14-concurrency-and-budget-design.md` gives 1.39 days, 105 percent and a run out around 05:00, while the timestamps give 1.41 days, 106.0 percent and 02:02, as the worked example notes.
