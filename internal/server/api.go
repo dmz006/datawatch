@@ -458,6 +458,10 @@ type Server struct {
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
 
+	// progressNow is the clock the progress routes read; nil means time.Now.
+	// Tests set it to a fixed time.
+	progressNow func() time.Time
+
 	// BL427 phase 3 — lifecycle event subscription store for
 	// /api/autonomous/subscriptions. Wired from main.go alongside the
 	// subscription engine; nil (default) makes the handlers return 503.

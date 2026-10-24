@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `capacity_status` |
+| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `capacity_status` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
@@ -305,6 +305,33 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 
   Returns the write reply described above (a small summary, not the whole Automaton). These overrides are separate from `guardrail_backend` / `guardrail_model` on `autonomous_prd_set_llm` / `autonomous_prd_set_task_llm`, which pick the guardrail judge.
 - **`autonomous_prd_set_kind`** — set the kind of an Automaton: `feature`, `bug` or `other`. Takes `id` and `kind`; an empty `kind` clears the setting so the kind is derived again from the title and spec. An unknown kind is refused. `autonomous_prd_create` takes the same optional `kind`. Proxies `POST /api/autonomous/prds/{id}/set_kind`.
+- **`autonomous_progress`** — read the progress metrics: counts by kind (feature, bug, other) and in total, throughput per active day, worker utilization, lead time per stage, the inactive windows left out of every rate, the remaining work split into known records and estimated work, and the completion range in days with the method behind each figure. Read-only; returns the same object as `GET /api/autonomous/progress`. All parameters are optional.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `automation_id` | no | Count only the Automata of this Automation |
+  | `tag_id` | no | Count only the Automata carrying this tag |
+  | `since` | no | First day counted, `YYYY-MM-DD` (default: the configured date, else the first record's creation date) |
+  | `until` | no | Last day counted, `YYYY-MM-DD`, inclusive (default: now) |
+
+  ```
+  autonomous_progress()
+  autonomous_progress(tag_id="t-ui", since="2026-10-10")
+  ```
+
+  A missing backlog file is not an error: the reply carries `backlog_available: false`. A bad date, or `until` before `since`, is refused. Needs the autonomous read capability when called by a federated peer.
+- **`autonomous_progress_trend`** — read the progress trend from the saved daily snapshots. Read-only; returns the same body as `GET /api/autonomous/progress/trend`: `days`, `points` (one per snapshot, oldest first: `date`, `reason`, `completion_low_days`, `completion_high_days`, `known_tasks`, `estimated_tasks`, `throughput_3d`, `utilization`, `completed_prds`) and `direction` (`converging`, `widening`, `flat` or `unknown`).
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `days` | no | How many days back to read, a whole number from 1 to 365 (default 30) |
+
+  ```
+  autonomous_progress_trend()
+  autonomous_progress_trend(days=90)
+  ```
+
+  Without saved snapshots `points` is empty and `direction` is `unknown`. A `days` value outside 1 to 365 is refused.
 - **`autonomous_prd_instantiate`** (v5.x) — instantiate from a template PRD with variable substitution.
 - **`autonomous_prd_rejudge`** — re-judge the PRD-completion "rules-review" guardrail of a **blocked** Automaton whose work is fully done, on an operator's behalf, without resetting or editing any task. Use it when the guardrail verdict that blocked the Automaton deserves a fresh evaluation (new evidence, revised gate settings) but no task needs another attempt. Refused — with a clear error, no side effects on any task — when the Automaton is not `blocked`, or when any task in any story is not `completed` (the refusal names the first such task and its status; re-run that work with `autonomous_prd_reset_task` first). The identical completion-guardrail invocation the rollup runs is re-executed through the same infra-retry wrapper. Outcome: the verdict is durably recorded on the Automaton's decision log (`guardrail_verdict` + a `guardrail_rejudge` Decision attributed to the acting operator) **before** any status change — `pass` clears the blocked reason and completes the Automaton, `block` keeps it `blocked` with the blocked reason set from the new verdict, and no verdict (judge error or empty outcome) keeps it `blocked` with its previous reason and returns an error. Proxies `POST /api/autonomous/prds/{id}/rejudge` (see [howto/autonomous-recovery.md](howto/autonomous-recovery.md)).
 

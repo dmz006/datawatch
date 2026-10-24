@@ -64,6 +64,8 @@ DELETE /api/autonomous/tags/{id}            409 while the tag has child tags, 40
 GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD                                      [v5.9.0  / BL191 Q4]
 
 GET    /api/autonomous/learnings           extracted post-task learnings
+GET    /api/autonomous/progress[?automation_id=&tag_id=&since=&until=]  progress metrics object (counts by kind, throughput, utilization, remaining work, completion range); since/until are YYYY-MM-DD, until is inclusive; 400 on a bad date
+GET    /api/autonomous/progress/trend[?days=]  saved daily snapshots as {days, points[], direction}; days 1..365 (default 30), 400 outside that range
 
 # Guardrail Library + Profiles
 GET    /api/autonomous/guardrails                  list guardrail library (built-ins + skill-contributed)
@@ -1276,6 +1278,7 @@ operator-facing AI can drive the autonomous loop end-to-end:
 | `autonomous_tag_list` / `_tag_create` / `_tag_rename` / `_tag_set_parent` / `_tag_set_color` / `_tag_delete` | Automata tag registry; see [howto/automata-tags](../howto/automata-tags.md) |
 | `autonomous_prd_set_tags`   | replace an Automaton's tags (`tag_ids_json`) |
 | `autonomous_prd_set_kind`   | set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again); `autonomous_prd_create` takes the same optional `kind` |
+| `autonomous_progress` / `autonomous_progress_trend` | read the progress metrics object (`automation_id`, `tag_id`, `since`, `until`) / the trend over the saved daily snapshots (`days`); read-only, proxied through the REST routes |
 | `autonomous_prd_set_task_verification_llm` / `_set_story_verification_llm` / `_set_verification_llm` | per-task / per-story / per-Automaton verifier LLM |
 | `autonomous_prd_set_verifier_policy` / `_set_task_verifier_policy` | per-Automaton / per-task verifier policy (`mode`, `backends`; `""` / `[]` clears, omit = unchanged) |
 | `autonomous_prd_set_task_project_dir` | per-task project dir override (empty = inherit Automaton dir) |
@@ -1324,6 +1327,36 @@ is created (`kind` in the create body, `--kind` on `prd-create`, `kind` on
 `autonomous_prd_create`) or change it later with `set_kind` (`prd-set-kind`,
 `autonomous_prd_set_kind`, `autonomous set-kind`). An unknown kind is refused with a
 400 and the valid values. Each change is logged on the decision timeline.
+
+### Progress metrics
+
+`GET /api/autonomous/progress` returns the one metrics object every surface shows
+(MCP `autonomous_progress` returns the same body). `GET /api/autonomous/progress/trend`
+returns the saved daily snapshots as a trend (MCP `autonomous_progress_trend`).
+
+```
+GET /api/autonomous/progress?tag_id=t-ui&since=2026-10-10&until=2026-10-20
+GET /api/autonomous/progress/trend?days=90
+```
+
+| Query | Route | Meaning |
+|---|---|---|
+| `automation_id` | progress | Count only the Automata of this Automation |
+| `tag_id` | progress | Count only the Automata carrying this tag |
+| `since` | progress | First day counted, `YYYY-MM-DD` (default: the configured `autonomous.progress.since`, else the first record's creation date) |
+| `until` | progress | Last day counted, `YYYY-MM-DD`, inclusive (default: now) |
+| `days` | trend | How many days back to read, 1 to 365 (default 30) |
+
+The progress reply carries `groups` (feature, bug and other), `totals`, `throughput`,
+`utilization`, `lead_time`, `inactive`, `remaining`, `completion`, `unfiled_rows`,
+`backlog_available` and `not_measured`. The backlog is read from
+`autonomous.progress.backlog_path`; a missing file gives `backlog_available: false`
+and is not an error. Explicit inactive windows are read from
+`operator-wait-windows.tsv` in the same folder as the backlog file. The trend reply is
+`{"days": N, "points": [...], "direction": "converging|widening|flat|unknown"}`; with no
+saved snapshots `points` is empty and `direction` is `unknown`. A bad date, `until`
+before `since`, or `days` outside 1 to 365 is a 400. Both routes need the autonomous
+read capability when called by a federated peer, and answer 503 when autonomous is off.
 
 The per-node engine cap is a daemon setting, so it goes through `configure`
 rather than an `autonomous` subcommand: `configure autonomous.max_engines_per_node=2`.

@@ -1069,6 +1069,105 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/autonomous/progress:
+    get:
+      summary: Progress metrics
+      description: |
+        The one metrics object every surface returns: counts by kind (feature, bug,
+        other) and in total, throughput per active day, worker utilization, lead time
+        per stage, the inactive windows left out of every rate, the remaining work
+        split into known records and estimated work, and the completion range in days
+        with the method behind each figure. The backlog is read from the configured
+        path; a missing file gives `backlog_available: false`, not an error. Explicit
+        inactive windows are read from `operator-wait-windows.tsv` next to the backlog
+        file. `since` falls back to the configured date, then to the first record's
+        creation date. Needs the autonomous read capability when called by a federated
+        peer.
+      operationId: autonomousProgress
+      tags: [Autonomous]
+      parameters:
+        - {name: automation_id, in: query, required: false, description: Count only the Automata of this Automation, schema: {type: string}}
+        - {name: tag_id, in: query, required: false, description: Count only the Automata carrying this tag, schema: {type: string}}
+        - {name: since, in: query, required: false, description: "First day counted, YYYY-MM-DD", schema: {type: string, format: date}}
+        - {name: until, in: query, required: false, description: "Last day counted, YYYY-MM-DD, inclusive", schema: {type: string, format: date}}
+      responses:
+        "200":
+          description: Metrics object
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  since: {type: string, format: date-time}
+                  scope: {type: string, description: "all, automation:<id>, tag:<id> or the two joined with +"}
+                  calendar_days: {type: number}
+                  active_days: {type: number}
+                  lanes: {type: integer}
+                  groups: {type: object, description: "feature, bug and other, each a count block", additionalProperties: {type: object}}
+                  totals: {type: object, description: Count block over all kinds}
+                  completed_prds: {type: integer}
+                  running_prds: {type: integer}
+                  throughput: {type: object}
+                  utilization: {type: object}
+                  lead_time: {type: object}
+                  inactive: {type: object}
+                  remaining: {type: object, description: "known, estimated and combined remaining work"}
+                  completion: {type: object, description: "Completion range in days (low_days, high_days) with drivers and the method behind each figure"}
+                  unfiled_rows: {type: array, items: {type: object}}
+                  backlog_available: {type: boolean}
+                  not_measured: {type: array, items: {type: string}}
+        "400": {description: Invalid since or until, or until before since}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/progress/trend:
+    get:
+      summary: Progress trend
+      description: |
+        The saved daily snapshots reduced to the figures the trend view plots, oldest
+        first, and the way the completion range is moving (`converging`, `widening`,
+        `flat` or `unknown`). Without saved snapshots the list is empty and the
+        direction is `unknown`. Needs the autonomous read capability when called by a
+        federated peer.
+      operationId: autonomousProgressTrend
+      tags: [Autonomous]
+      parameters:
+        - {name: days, in: query, required: false, description: "How many days back to read, 1 to 365 (default 30)", schema: {type: integer, minimum: 1, maximum: 365, default: 30}}
+      responses:
+        "200":
+          description: Trend over the saved snapshots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  days: {type: integer}
+                  points:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: {type: string, format: date}
+                        reason: {type: string, description: "daily or milestone"}
+                        completion_low_days: {type: number, nullable: true}
+                        completion_high_days: {type: number, nullable: true}
+                        known_tasks: {type: integer}
+                        estimated_tasks: {type: number}
+                        throughput_3d: {type: number}
+                        utilization: {type: number}
+                        completed_prds: {type: integer}
+                  direction: {type: string, enum: [converging, widening, flat, unknown]}
+        "400": {description: days is not a whole number from 1 to 365}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/capacity:
     get:
       summary: Capacity admission status

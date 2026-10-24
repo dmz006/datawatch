@@ -192,3 +192,15 @@ func (m *Manager) recordProgressMilestone(prdID string) {
 		}
 	}()
 }
+
+// ProgressSnapshotStore returns the snapshot store the trend view reads, or nil
+// until EnableProgressSnapshots has been called.
+func (m *Manager) ProgressSnapshotStore() *ProgressSnapshotStore {
+	m.mu.Lock()
+	r := m.progressSnaps
+	m.mu.Unlock()
+	if r == nil {
+		return nil
+	}
+	return r.Store()
+}

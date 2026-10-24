@@ -1595,3 +1595,11 @@ func controlResult(a *Automation, err error) (any, error) {
 	}
 	return a, err
 }
+
+// ProgressSource returns the record source the progress metrics count: the
+// manager's store.
+func (a *API) ProgressSource() ProgressSource { return a.M.Store() }
+
+// ProgressSnapshots returns the snapshot store behind the trend view, or nil
+// when snapshots are not enabled.
+func (a *API) ProgressSnapshots() *ProgressSnapshotStore { return a.M.ProgressSnapshotStore() }
