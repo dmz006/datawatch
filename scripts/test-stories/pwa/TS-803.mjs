@@ -28,7 +28,7 @@ await runPerfStory(async (page) => {
     await throttle(p, 'slow-4g');
     await openPWA(p, { timeout: 120000 });
     for (const tab of TABS.filter((t) => ['sessions', 'automata', 'automation'].includes(t.name))) {
-      const r = await measureTab(p, tab.view, { timeout: 120000 });
+      const r = await measureTab(p, tab.view, { subtab: tab.subtab, timeout: 120000 });
       report[tab.name] = r;
       try {
         assertMeasure(`large/${tab.name}`, r, { budgetMs: budgetFor('slow-4g') });

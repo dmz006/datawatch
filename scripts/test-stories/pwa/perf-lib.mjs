@@ -57,11 +57,13 @@ export function budgetFor(profileName) {
   return profileName === 'slow-4g' ? BUDGET.slow4gMs : BUDGET.fastMs;
 }
 
-// Main tabs and the list endpoint each one loads first.
+// Main tabs and the list endpoint each one loads first. Automata and Automation
+// share one main tab (view 'autonomous'); `subtab` is the sub-tab button the
+// story selects after opening it (see openTabSrc / openTab).
 export const TABS = [
   { name: 'sessions', view: 'sessions', endpoint: '/api/sessions' },
-  { name: 'automata', view: 'autonomous', endpoint: '/api/autonomous/prds' },
-  { name: 'automation', view: 'automation', endpoint: '/api/automations' },
+  { name: 'automata', view: 'autonomous', subtab: 'automata', endpoint: '/api/autonomous/prds' },
+  { name: 'automation', view: 'autonomous', subtab: 'automation', endpoint: '/api/automations' },
   { name: 'observer', view: 'observer', endpoint: '/api/observer/stats' },
   { name: 'settings', view: 'settings', endpoint: '/api/config' },
 ];
@@ -160,6 +162,27 @@ export async function waitForState(page, states, timeout = 30000) {
   return Date.now() - t0;
 }
 
+// Runs in the page: open a main tab and, when it has one, select its sub-tab by
+// clicking the sub-tab button (the same path an operator takes). The button is
+// found by its data-tab value; window.switchAutomataTab is the fallback when the
+// bar has not rendered yet.
+export const OPEN_TAB_SRC = `((view, subtab) => {
+  window.navigate(view);
+  if (!subtab) return;
+  const btn = document.querySelector('.automata-tabs-bar .output-tab[data-tab="' + subtab + '"]');
+  if (btn) { if (!btn.classList.contains('active')) btn.click(); }
+  else if (window.switchAutomataTab) window.switchAutomataTab(subtab);
+})`;
+
+// Open `tab` (an entry of TABS) in the page. `clear` empties #view first so the
+// next state seen is the one the open produced.
+export function openTab(page, tab, { clear = false } = {}) {
+  return page.evaluate(({ src, view, subtab, clear }) => {
+    if (clear) document.getElementById('view').innerHTML = '';
+    return eval(src)(view, subtab);
+  }, { src: OPEN_TAB_SRC, view: tab.view, subtab: tab.subtab || null, clear });
+}
+
 // --- measurement -------------------------------------------------------------
 
 // Navigate to `view` inside the page and measure, in-page and so unaffected by
@@ -169,8 +192,8 @@ export async function waitForState(page, states, timeout = 30000) {
 //   blankAfterIndicator  number of samples that were blank AFTER the indicator
 //   states       ordered list of distinct states seen
 // `watchMs` keeps sampling after first content so a late blank is caught.
-export function measureTab(page, view, { timeout = 60000, watchMs = 500 } = {}) {
-  return page.evaluate(({ view, timeout, watchMs, src }) => new Promise((resolve) => {
+export function measureTab(page, view, { timeout = 60000, watchMs = 500, subtab = null } = {}) {
+  return page.evaluate(({ view, subtab, timeout, watchMs, src, openSrc }) => new Promise((resolve) => {
     const classify = () => eval(src);
     const el = document.getElementById('view');
     const res = { indicatorMs: null, firstContentMs: null, blankAfterIndicator: 0, states: [], timedOut: false };
@@ -204,9 +227,9 @@ export function measureTab(page, view, { timeout = 60000, watchMs = 500 } = {}) 
     }
     mo.observe(el, { childList: true, subtree: true, characterData: true, attributes: true });
     iv = setInterval(sample, 20);
-    window.navigate(view);
+    eval(openSrc)(view, subtab);
     sample();
-  }), { view, timeout, watchMs, src: CLASSIFY_SRC });
+  }), { view, subtab, timeout, watchMs, src: CLASSIFY_SRC, openSrc: OPEN_TAB_SRC });
 }
 
 // Poll the tab container for `ms` and return every sample's state. Used by the

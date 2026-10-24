@@ -10,7 +10,7 @@
  */
 import { screenshot } from './lib.mjs';
 import {
-  runPerfStory, TABS, coldPage, openPWA, waitForState, sampleStates, assertNeverBlank,
+  runPerfStory, TABS, openTab, coldPage, openPWA, waitForState, sampleStates, assertNeverBlank,
   viewState, check, saveJson,
 } from './perf-lib.mjs';
 
@@ -23,13 +23,13 @@ await runPerfStory(async (page) => {
 
     // Warm each tab once online so the list cache exists for the offline pass.
     for (const tab of tabs) {
-      await p.evaluate((v) => window.navigate(v), tab.view);
+      await openTab(p, tab);
       await waitForState(p, ['content', 'empty'], 30000);
     }
 
     await context.setOffline(true);
     for (const tab of tabs) {
-      await p.evaluate((v) => { document.getElementById('view').innerHTML = ''; window.navigate(v); }, tab.view);
+      await openTab(p, tab, { clear: true });
       const samples = await sampleStates(p, 2500);
       assertNeverBlank(`offline/${tab.name}`, samples);
       const last = samples[samples.length - 1].s;
@@ -40,7 +40,7 @@ await runPerfStory(async (page) => {
 
     await context.setOffline(false);
     for (const tab of tabs) {
-      await p.evaluate((v) => window.navigate(v), tab.view);
+      await openTab(p, tab);
       const retry = await p.$('#view .list-state-retry').catch(() => null);
       if (retry) await retry.click().catch(() => {});
       await waitForState(p, ['content', 'empty'], 30000)

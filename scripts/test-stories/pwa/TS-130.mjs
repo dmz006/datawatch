@@ -10,7 +10,7 @@ await runStory(async (page) => {
   // Sessions view (default) — nav button active + main view container visible
   await assertVisible(page, '[data-view="sessions"].active, #view', 'sessions view');
   await assertVisible(page, '#nav, nav', 'bottom nav bar');
-  await assertCount(page, '#nav [data-view], nav [data-view]', 4, 5000); // at least 4 nav buttons
+  await assertCount(page, '#nav [data-view], nav [data-view]', 4, 5000); // at least 4 nav buttons (Automation is a sub-tab of Automata, not a nav button)
   await screenshot(page, '02-sessions-view');
 
   // Alerts view

@@ -145,6 +145,6 @@ asked.
 
 ## Related
 
-- [automation-tab.md](automation-tab.md): the Automation tab in the web app
+- [automation-tab.md](automation-tab.md): the Automation view in the web app
 - [automation-chains.md](automation-chains.md): edges, forks, joins, budget
 - [automation-queue-advance.md](automation-queue-advance.md): automatic advance

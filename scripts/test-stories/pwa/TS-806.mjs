@@ -5,7 +5,7 @@
  * tags: surface:pwa feature:load-performance feature:stale-state
  *
  * Uses the Automation capacity card (/api/capacity, pollMs 5000, loader timeout
- * PERF_LOADER_TIMEOUT_MS, default 15000) inside the Automation tab.
+ * PERF_LOADER_TIMEOUT_MS, default 15000) inside the Automation sub-tab of Automata.
  *   A. First load takes longer than the timeout: the card goes loading -> failed
  *      with Retry. .list-state-stale must never be present, at any sample.
  *   B. A slower-than-normal but successful first load: no stale warning while
@@ -15,9 +15,11 @@
  */
 import { screenshot } from './lib.mjs';
 import {
-  runPerfStory, coldPage, openPWA, failEndpoint, delayEndpoint, check, saveJson, BUDGET,
+  runPerfStory, openTab, coldPage, openPWA, failEndpoint, delayEndpoint, check, saveJson, BUDGET,
 } from './perf-lib.mjs';
 
+// Automation is the first sub-tab of the Automata tab: open the tab, select the sub-tab.
+const AUTOMATION_TAB = { view: 'autonomous', subtab: 'automation' };
 const CARD = '#automationCapacityCard';
 const POLL_MS = 5000; // pollMs of the automation_capacity loader
 
@@ -41,7 +43,7 @@ await runPerfStory(async (page) => {
     try {
       await openPWA(p);
       const slow = await delayEndpoint(p, '/api/capacity', BUDGET.loaderTimeoutMs + 4000);
-      await p.evaluate(() => { document.getElementById('view').innerHTML = ''; window.navigate('automation'); });
+      await openTab(p, AUTOMATION_TAB, { clear: true });
       let sawLoading = false, sawStale = false, sawFailed = false;
       await sample(p, BUDGET.loaderTimeoutMs + 3000, async () => {
         if (await cardHas(p, '.list-state-skeleton')) sawLoading = true;
@@ -66,7 +68,7 @@ await runPerfStory(async (page) => {
     try {
       await openPWA(p);
       const slow = await delayEndpoint(p, '/api/capacity', 2500, { times: 1 });
-      await p.evaluate(() => { document.getElementById('view').innerHTML = ''; window.navigate('automation'); });
+      await openTab(p, AUTOMATION_TAB, { clear: true });
       let staleDuringFirst = false;
       let loaded = false;
       await sample(p, 9000, async () => {
