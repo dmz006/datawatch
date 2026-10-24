@@ -45,7 +45,7 @@ work it has decided on, through the same start path a person uses.
 
 | Lane | What it is | Default count | Backend it runs |
 |---|---|---|---|
-| GPU lane | A channel on the local model pool. Two machines can share one pool, and which machine serves a given session is not fixed per lane. A GPU lane costs no Claude usage. | 2 | `pi-prompt` with the backend's own model (`gpu_backend`, `gpu_model`) |
+| GPU lane | A channel on the local model pool. Two machines can share one pool, and which machine serves a given session is not fixed per lane. A GPU lane costs no Claude usage. | 2 | `pi-prompt` by default (`gpu_backend`), with the model in `gpu_model` |
 | Claude lane | A channel that runs one Automaton at a time on the Claude backend. | 3 (0 means none) | `claude-code` (`claude_backend`) |
 
 A lane is **occupied** when an Automaton is running on it, or when a session is
@@ -79,9 +79,10 @@ The status shows the same facts on every surface:
 - the eligible work queued for each lane type (GPU and Claude);
 - the pool evidence: how many sessions are using the GPU pool, which models are
   loaded on the pool hosts, or the error if a host could not be read;
-- the newest decisions, newest first, each with its action (`start`,
-  `decompose`, `decompose ahead`, `report merge`, `blocked`, `idle`), its reason,
-  whether it was executed, and any error;
+- the newest decisions, newest first, each with its action (`start_prd`,
+  `decompose`, `decompose_ahead`, `report_merge`, `blocked` or `idle`; the PWA and
+  the comm reply show them as plain words), its reason, whether it was executed,
+  and any error;
 - the recent idle-lane alerts.
 
 | Surface | How |
@@ -116,7 +117,7 @@ is a decision for a person, and it is recorded on the Automaton.
 | MCP | `autonomous_prd_set_lane_preference` with `id` and `lane_preference`; an empty value means `any` |
 | CLI | `datawatch autonomous prd-set-lane-preference <id> gpu\|claude\|any` |
 | Comm channel | `autonomous set-lane-preference <automaton-id> gpu\|claude\|any` |
-| PWA | The **Lane preference** select in the Automaton settings form, beside **Kind**. An Automaton with nothing stored shows **Any lane**. |
+| PWA | The **Lane preference** select in the Automaton settings form. An Automaton with nothing stored shows **Any lane**. |
 
 A value other than the three above is refused. The CLI and the comm channel refuse
 it before they send anything, and the daemon answers 400 to any other caller. The
@@ -158,7 +159,7 @@ hand. Then compare:
 1. **Start on the default mode.** Confirm the status shows `mode: shadow`. Each
    poll adds decisions; none show `executed: true`.
 2. **Read the status at the end of the day.** Use `--limit 1000`, the largest
-   the status keeps, so the whole day is in view:
+   the status returns, so the whole day is in view:
 
    ```bash
    datawatch autonomous lane-fill --limit 1000 --json > lane-fill-day.json
@@ -243,9 +244,10 @@ needs no restart.
   in a file beside the other autonomous stores.
 - **Nothing is decided before boot recovery has finished.** Automata that were
   running before the restart are not read as idle lanes.
-- **An Automaton that was started is never started twice.** Once the store shows
-  it running, lane fill leaves it alone. A start that the store has not yet
-  shown as running is remembered for the same poll.
+- **An Automaton that was started is never started twice.** Lane fill remembers
+  the starts it made until the store shows the Automaton as running, so the next
+  poll neither starts it again nor reads its lane as idle. An Automaton started
+  before the restart already shows as running in the store, so it is left alone.
 - **Idle timers begin again.** The idle alert counts from the restart, so a lane
   that was idle before the restart alerts after the full threshold, not earlier.
 - **Mode and thresholds are read live.** A changed mode or threshold applies on

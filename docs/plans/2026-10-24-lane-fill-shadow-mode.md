@@ -152,7 +152,7 @@ Mobile-Parity Rule, the Localization Rule, and the plan status line).
      the exclusions, the lane preference rule and the decompose-ahead rule.
    - Table-driven unit tests, including the 2026-10-24 shape: two idle GPU lanes, eight
      decomposed Automata, none marked held.
-3. **Phase 3: coordinator modes.** Status: Done (unit-tested; the live restart check is in phase 7).
+3. **Phase 3: coordinator modes.** Status: Done with one open defect (unit-tested; `TestLaneFillShadowLoopPollsOnItsOwn` fails intermittently on a race in the test's shutdown, see the testing tracker; the live restart check is in phase 7).
    - The poll loop in the coordinator, the three modes, the bounded decision history, and the
      `on` mode path through the existing admission call.
    - Restart reconciliation: the history survives a restart or is rebuilt without double starts.
@@ -299,7 +299,10 @@ Body:
 ## Status
 
 In progress. Phases 1 to 6 are done in code, tests and docs (commits on the lane fill branch, not
-yet merged). Phase 7 (the restart smoke against a sandbox daemon in each mode, and the final gate)
+yet merged), with one open defect: `TestLaneFillShadowLoopPollsOnItsOwn` fails intermittently
+(3 of 10 reruns on 2026-10-24) because `Coordinator.Stop` does not wait for an in-flight poll that
+can still write into the test's temporary directory. The fix (wait for the loop to exit) is not
+made yet. Phase 7 (the restart smoke against a sandbox daemon in each mode, and the final gate)
 is not started. Nothing is released, and the mode is still `shadow` by default.
 
 Shipped in: not yet released (the merge helper sets the version at merge).

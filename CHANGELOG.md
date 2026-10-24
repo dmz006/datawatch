@@ -20,7 +20,7 @@ The daemon now fills idle execution lanes itself. Before this, a person had to n
 - Restart behaviour: decisions are kept across a restart, nothing is decided until boot recovery has finished, and an Automaton that already started is never started twice.
 - Lane fill never merges finished work, never holds GPU work because of Claude usage limits (GPU lanes cost no Claude usage), and never starts a held Automaton.
 
- — Orphan sweep no longer ends live workers
+## v9.9.1 — Orphan sweep no longer ends live workers
 
 Fixes the orphan sweep that ended every live Claude worker about five minutes after its task was delivered, which had been failing long tasks with "no new changes" since the sweep went live.
 
