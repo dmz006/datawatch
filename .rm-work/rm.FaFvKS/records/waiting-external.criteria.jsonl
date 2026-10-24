@@ -1,1 +1,0 @@
-{"criterion":"state_reached","result":"FAIL","detail":"E never parked behind the external condition (E: waiting_capacity await_external: matrix external condition — pool host full (1/1, held by b4e20002); H: waiting_capacity)"}

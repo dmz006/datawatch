@@ -1,3 +1,0 @@
-waiting-capacity rc=0
-waiting-external rc=0
-final-gate rc=0

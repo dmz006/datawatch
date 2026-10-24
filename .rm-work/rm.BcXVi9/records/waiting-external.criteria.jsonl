@@ -1,9 +1,0 @@
-{"criterion":"restart_exited_on_term","result":"PASS","detail":"daemon pid 1683418 down in 1s"}
-{"criterion":"daemon_replaced","result":"PASS","detail":"pid 1683418 -> 1688170"}
-{"criterion":"no_duplicate_sessions","result":"FAIL","detail":"1 extra live session(s) beyond one per role"}
-{"criterion":"no_lost_output","result":"PASS","detail":"0 byte(s) of earlier output missing afterwards"}
-{"criterion":"retry_count_unchanged","result":"PASS","detail":"retries 0 -> 0"}
-{"criterion":"park_survives_restart","result":"FAIL","detail":"status after restart: in_progress; wait reason: none (before: await_external: matrix external condition — pool host full (1/1, held by 5cf70002))"}
-{"criterion":"worker_not_restarted","result":"FAIL","detail":"worker starts: 1 (parked task once, holder once)"}
-{"criterion":"holder_completes","result":"FAIL","detail":"holder task status: in_progress"}
-{"criterion":"task_completes","result":"PASS","detail":"parked task status: completed"}
