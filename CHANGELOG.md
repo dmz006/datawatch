@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.125 — Restart keeps a finished worker and re-verifies only
+
+A daemon restart no longer redoes a worker that had already finished.
+
+- A task that was verifying when the daemon stopped, whose worker had finished and left a completion marker or a recorded result but no verdict, now keeps the worker's work. Only the verification is run again. The worker session is not ended and no retry is counted.
+- A verifying task whose worker did not finish is still reset to pending, as before.
+- The decision is a small pure function with a table test, plus a restart-adoption test with fakes for the finished-worker case.
+- The restart-adoption notes and the testing tracker are updated.
+
 ## v9.5.124 — Flexible verifier routing
 
 Verifier backend selection is now a policy instead of a fixed global setting, so verification can use whichever backend has a free slot, all local, all Claude, or a mix.
