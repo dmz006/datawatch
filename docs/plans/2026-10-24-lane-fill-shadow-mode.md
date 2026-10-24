@@ -152,7 +152,7 @@ Mobile-Parity Rule, the Localization Rule, and the plan status line).
      the exclusions, the lane preference rule and the decompose-ahead rule.
    - Table-driven unit tests, including the 2026-10-24 shape: two idle GPU lanes, eight
      decomposed Automata, none marked held.
-3. **Phase 3: coordinator modes.** Status: Done with one open defect (unit-tested; `TestLaneFillShadowLoopPollsOnItsOwn` fails intermittently on a race in the test's shutdown, see the testing tracker; the live restart check is in phase 7).
+3. **Phase 3: coordinator modes.** Status: Done (unit-tested; `TestLaneFillShadowLoopPollsOnItsOwn` was flaky because `Coordinator.Stop` did not wait for the loop, fixed in the final gate; the live restart check is in phase 7).
    - The poll loop in the coordinator, the three modes, the bounded decision history, and the
      `on` mode path through the existing admission call.
    - Restart reconciliation: the history survives a restart or is rebuilt without double starts.
@@ -296,13 +296,47 @@ Body:
 > selector round-trips, and unknown fields in the status response are ignored.
 > The release that ships this is named in the plan's status section.
 
-## Status
+implemented, awaiting merge and the one-day shadow comparison
 
-In progress. Phases 1 to 6 are done in code, tests and docs (commits on the lane fill branch, not
-yet merged), with one open defect: `TestLaneFillShadowLoopPollsOnItsOwn` fails intermittently
-(3 of 10 reruns on 2026-10-24) because `Coordinator.Stop` does not wait for an in-flight poll that
-can still write into the test's temporary directory. The fix (wait for the loop to exit) is not
-made yet. Phase 7 (the restart smoke against a sandbox daemon in each mode, and the final gate)
-is not started. Nothing is released, and the mode is still `shadow` by default.
+Final gate, run in the worktree with `env -u TMUX -u TMUX_TMPDIR` in front of each command:
+
+- `go build ./...`: pass
+- `go vet ./...`: pass
+- `make lint` (golangci-lint is installed; its prerequisites `check-tmux`, `check-service-scope`,
+  `check-go-pins` and `check-internal-refs` pass): 0 issues
+- `go test ./...`: pass (about 135 s)
+- `node --test internal/server/web/*.test.js`: 962 pass, 0 fail
+- `scripts/check-howto-coverage.sh`, `scripts/check-docs-sync.sh`, `scripts/check-no-unscoped-tmux.sh`,
+  `scripts/check-no-production-service-control.sh`, `scripts/check-no-internal-refs.sh`: pass
+- `.datawatch/verify/lane-fill-final-gate.sh`: `OK: lane-fill-final-gate`
+
+Fixes made in this gate:
+
+- `Coordinator.Stop` now waits for the lane fill loop to exit. This removes the race behind
+  `TestLaneFillShadowLoopPollsOnItsOwn`, which had failed 3 of 10 reruns. It now passes 30 of 30.
+- `internal/federation/hopchain_test.go` was not gofmt-clean on this branch. It is reformatted and
+  now matches main.
+
+Checked by reading and search:
+
+- No tracker ID or release version number in any new file name, function, test, locale string,
+  API note or how-to prose.
+- Every `autonomous.lane_fill` key (`mode`, `gpu_lanes`, `claude_lanes`, `idle_alert_minutes`,
+  `decompose_ahead_min`, `poll_seconds`, `gpu_backend`, `gpu_model`, `claude_backend`) appears in
+  `docs/config-reference.yaml`, `docs/implementation.md` and the PWA settings fields.
+- `shadow` is the default in code, in `docs/config-reference.yaml` and in the how-to.
+- The planner and the coordinator read no Claude usage figure.
+- A shadow poll makes no starter call. The starter calls (run, approve, backend change, decompose)
+  are reachable only from the `on` mode execute path.
+
+Outside this feature, not changed here:
+
+- The branch is 13 commits ahead of main and 40 behind it, so `git diff --name-only main` also lists
+  main-side changes: the `.rm-run/` and `rmt/` records, and the `var Version` lines in
+  `internal/server/api.go` and `cmd/datawatch/main.go`. The `BL221` comments in
+  `internal/server/autonomous.go` are already on main.
+
+Phase 7 (the restart smoke against a sandbox daemon in each mode) is not part of this gate and is
+not re-run here. Nothing is released, and the mode is still `shadow` by default.
 
 Shipped in: not yet released (the merge helper sets the version at merge).

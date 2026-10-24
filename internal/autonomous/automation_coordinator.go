@@ -74,6 +74,7 @@ type Coordinator struct {
 	// replaces the poll_seconds interval of the lane fill loop (tests).
 	lf           laneFillState
 	laneFillStop chan struct{}
+	laneFillDone chan struct{}
 	laneFillTick time.Duration
 
 	// preApply is a test seam: when set, advance calls it after the step is
@@ -133,7 +134,11 @@ func (c *Coordinator) Start() {
 	go c.idleLoop(c.idleStop, c.idleTick)
 	c.openLaneFill()
 	c.laneFillStop = make(chan struct{})
-	go c.laneFillLoop(c.laneFillStop)
+	c.laneFillDone = make(chan struct{})
+	go func(stop <-chan struct{}, done chan<- struct{}) {
+		defer close(done)
+		c.laneFillLoop(stop)
+	}(c.laneFillStop, c.laneFillDone)
 	c.mu.Unlock()
 
 	c.m.mu.Lock()
@@ -141,7 +146,8 @@ func (c *Coordinator) Start() {
 	c.m.mu.Unlock()
 }
 
-// Stop cancels the subscription.
+// Stop cancels the subscription. It returns once the lane fill loop has
+// exited, so no poll is still writing when Stop returns.
 func (c *Coordinator) Stop() {
 	if c == nil {
 		return
@@ -153,13 +159,18 @@ func (c *Coordinator) Stop() {
 		close(c.idleStop)
 		c.idleStop = nil
 	}
+	laneFillDone := c.laneFillDone
 	if c.laneFillStop != nil {
 		close(c.laneFillStop)
 		c.laneFillStop = nil
+		c.laneFillDone = nil
 	}
 	c.mu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	if laneFillDone != nil {
+		<-laneFillDone
 	}
 	c.m.mu.Lock()
 	if c.m.coordinator == c {
