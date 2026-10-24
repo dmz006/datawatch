@@ -209,3 +209,41 @@ func TestRateCeilingComm_ConfigureAndHelp(t *testing.T) {
 		}
 	}
 }
+
+// The failure escalation keys are set from chat with configure, so both the
+// usage text and the list text must name each of them.
+func TestFailureEscalationConfigureHelpListsKeys(t *testing.T) {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var sent []string
+	capture := func(s string) {
+		mu.Lock()
+		sent = append(sent, s)
+		mu.Unlock()
+		wg.Done()
+	}
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: capture}}
+	r.SetConfigureFunc(func(string, string) error { return nil })
+
+	for _, text := range []string{"help", "list"} {
+		wg.Add(1)
+		r.handleConfigure(Command{Type: CmdConfigure, Text: text})
+		wg.Wait()
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) != 2 {
+		t.Fatalf("sent=%q", sent)
+	}
+	for i, s := range sent {
+		for _, key := range []string{
+			"autonomous.failure_escalation.enabled",
+			"autonomous.failure_escalation.max_failures",
+			"autonomous.failure_escalation.steps",
+		} {
+			if !strings.Contains(s, key) {
+				t.Errorf("reply %d lacks %s: %q", i, key, s)
+			}
+		}
+	}
+}

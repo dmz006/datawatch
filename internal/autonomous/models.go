@@ -1292,6 +1292,10 @@ type LoopStatus struct {
 	// Automations summarises each non-terminal Automation (draft, active,
 	// paused or blocked): where its cursor is and how long it has sat idle.
 	Automations []AutomationStatusSummary `json:"automations,omitempty"`
+
+	// ReviewNeeded lists every task held for operator review across all
+	// Automata, oldest hold first. Omitted when none is held.
+	ReviewNeeded []HeldTaskStatus `json:"review_needed,omitempty"`
 }
 
 // AutomationStatusSummary is one Automation's row in LoopStatus. SpentUSD,

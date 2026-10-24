@@ -1,15 +1,18 @@
 // `datawatch autonomous failure-escalation` and `datawatch autonomous
 // resolve-review`: the failure escalation policy from the command line.
 //
-// failure-escalation set|clear change the override on one Automaton or on one
-// of its tasks (--task). failure-escalation global writes the daemon-wide
-// default through PUT /api/config, which persists it and applies it live.
-// resolve-review is the operator's retry or cancel of a task held for review.
+// failure-escalation show|set|clear read and change the override on one
+// Automaton or on one of its tasks (--task). failure-escalation global writes
+// the daemon-wide default through PUT /api/config, which persists it and
+// applies it live. resolve-review is the operator's retry or cancel of a task
+// held for review.
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -18,16 +21,26 @@ import (
 )
 
 // failureEscalationFlags are the policy flags shared by the override and the
-// global forms.
+// global forms. enabled is text ("true" or "false") so that both
+// `--enabled false` and `--enabled=false` work.
 type failureEscalationFlags struct {
-	enabled     bool
+	enabled     string
 	maxFailures int
 	steps       string
 }
 
+// parseEnabledFlag reads the --enabled value. It must be true or false.
+func parseEnabledFlag(v string) (bool, error) {
+	enabled, err := strconv.ParseBool(strings.TrimSpace(v))
+	if err != nil {
+		return false, fmt.Errorf("--enabled must be true or false (got %q)", v)
+	}
+	return enabled, nil
+}
+
 // addFailureEscalationPolicyFlags registers the policy flags on cmd.
 func addFailureEscalationPolicyFlags(cmd *cobra.Command, f *failureEscalationFlags) {
-	cmd.Flags().BoolVar(&f.enabled, "enabled", true, "turn failure escalation on (false restores the old retry-then-fail behaviour)")
+	cmd.Flags().StringVar(&f.enabled, "enabled", "", "true or false: turn failure escalation on (false restores the old retry-then-fail behaviour); empty leaves it unset")
 	cmd.Flags().IntVar(&f.maxFailures, "max-failures", 0, "failed attempts before the task is held for review (1 or more; 0 leaves it unset)")
 	cmd.Flags().StringVar(&f.steps, "steps", "", "worker ladder as backend:model[@attempts],... ; - means the task's normal worker; empty leaves it unset")
 }
@@ -38,7 +51,10 @@ func addFailureEscalationPolicyFlags(cmd *cobra.Command, f *failureEscalationFla
 func policyFromFlags(cmd *cobra.Command, f failureEscalationFlags) (*autonomouspkg.FailureEscalationPolicy, error) {
 	p := &autonomouspkg.FailureEscalationPolicy{}
 	if cmd.Flags().Changed("enabled") {
-		enabled := f.enabled
+		enabled, err := parseEnabledFlag(f.enabled)
+		if err != nil {
+			return nil, err
+		}
 		p.Enabled = &enabled
 	}
 	if cmd.Flags().Changed("max-failures") {
@@ -63,13 +79,16 @@ failed attempt moves to the next worker on the ladder, and after max-failures
 failed attempts the task is held for operator review.
 
 Subcommands:
-  set <automaton-id> [--task <task-id>] [--enabled=bool] [--max-failures N] [--steps ...]
+  show <automaton-id> [--task <task-id>]
+                                  Print the override stored on the Automaton (or
+                                  on one task of it) and the daemon-wide default.
+  set <automaton-id> [--task <task-id>] [--enabled true|false] [--max-failures N] [--steps ...]
                                   Override the policy on an Automaton, or on one
                                   task of it. Unset flags inherit from the next
                                   level (task, then Automaton, then the default).
   clear <automaton-id> [--task <task-id>]
                                   Remove the override at that level.
-  global [--enabled=bool] [--max-failures N] [--steps ...]
+  global [--enabled true|false] [--max-failures N] [--steps ...]
                                   Set the daemon-wide default (saved to config.yaml).
 
 Steps are written backend:model[@attempts], comma separated, for example
@@ -77,10 +96,114 @@ Steps are written backend:model[@attempts], comma separated, for example
 `,
 	}
 	cmd.AddCommand(
+		newAutonomousFailureEscalationShowCmd(),
 		newAutonomousFailureEscalationSetCmd(),
 		newAutonomousFailureEscalationClearCmd(),
 		newAutonomousFailureEscalationGlobalCmd(),
 	)
+	return cmd
+}
+
+// failureEscalationShowPRD is the part of an Automaton detail that show reads.
+type failureEscalationShowPRD struct {
+	ID                string          `json:"id"`
+	Title             string          `json:"title"`
+	FailureEscalation json.RawMessage `json:"failure_escalation"`
+	Story             []struct {
+		Tasks []struct {
+			ID                 string          `json:"id"`
+			Title              string          `json:"title"`
+			Status             string          `json:"status"`
+			EscalationFailures int             `json:"escalation_failures"`
+			FailureEscalation  json.RawMessage `json:"failure_escalation"`
+		} `json:"tasks"`
+	} `json:"stories"`
+}
+
+// failureEscalationShowView builds what show prints from the Automaton detail
+// and the daemon config. Each override is the stored one, or null when it is not
+// set at that level; the daemon default is read from the autonomous config.
+func failureEscalationShowView(prd failureEscalationShowPRD, taskID string, cfg []byte) (map[string]any, error) {
+	var global struct {
+		Autonomous struct {
+			FailureEscalation json.RawMessage `json:"failure_escalation"`
+		} `json:"autonomous"`
+	}
+	if len(cfg) > 0 {
+		if err := json.Unmarshal(cfg, &global); err != nil {
+			return nil, fmt.Errorf("daemon config is not JSON: %w", err)
+		}
+	}
+	view := map[string]any{
+		"automaton": map[string]any{
+			"id":                 prd.ID,
+			"title":              prd.Title,
+			"failure_escalation": rawOrNull(prd.FailureEscalation),
+		},
+		"daemon_default": rawOrNull(global.Autonomous.FailureEscalation),
+		"rule":           "each field resolves task, then Automaton, then the daemon default",
+	}
+	if taskID == "" {
+		return view, nil
+	}
+	for _, s := range prd.Story {
+		for _, t := range s.Tasks {
+			if t.ID != taskID {
+				continue
+			}
+			view["task"] = map[string]any{
+				"id":                  t.ID,
+				"title":               t.Title,
+				"status":              t.Status,
+				"escalation_failures": t.EscalationFailures,
+				"failure_escalation":  rawOrNull(t.FailureEscalation),
+			}
+			return view, nil
+		}
+	}
+	return nil, fmt.Errorf("task %q is not on Automaton %q", taskID, prd.ID)
+}
+
+// rawOrNull returns the JSON value raw, or nil when it is empty.
+func rawOrNull(raw json.RawMessage) any {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	return raw
+}
+
+func newAutonomousFailureEscalationShowCmd() *cobra.Command {
+	var taskID string
+	cmd := &cobra.Command{
+		Use:   "show <automaton-id>",
+		Short: "Show the failure escalation override on an Automaton or one task, and the daemon default",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			prdBody, err := daemonJSONBody(http.MethodGet, "/api/autonomous/prds/"+args[0], nil)
+			if err != nil {
+				return err
+			}
+			var prd failureEscalationShowPRD
+			if err := json.Unmarshal(prdBody, &prd); err != nil {
+				return fmt.Errorf("automaton detail is not JSON: %w", err)
+			}
+			cfgBody, err := daemonJSONBody(http.MethodGet, "/api/config", nil)
+			if err != nil {
+				return err
+			}
+			view, err := failureEscalationShowView(prd, taskID, cfgBody)
+			if err != nil {
+				return err
+			}
+			out, err := json.MarshalIndent(view, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(out))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&taskID, "task", "", "task ID; empty shows the Automaton override")
 	return cmd
 }
 
@@ -132,7 +255,11 @@ func newAutonomousFailureEscalationGlobalCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			patch := map[string]any{}
 			if cmd.Flags().Changed("enabled") {
-				patch["autonomous.failure_escalation.enabled"] = f.enabled
+				enabled, err := parseEnabledFlag(f.enabled)
+				if err != nil {
+					return err
+				}
+				patch["autonomous.failure_escalation.enabled"] = enabled
 			}
 			if cmd.Flags().Changed("max-failures") {
 				patch["autonomous.failure_escalation.max_failures"] = f.maxFailures

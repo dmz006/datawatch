@@ -147,6 +147,37 @@ func (r *Router) handleAutonomousReviewTask(args []string) {
 	r.reply(label, prettyJSON(out))
 }
 
+// replyHeldForReview follows the status reply with one line per task held for
+// operator review, so the operator sees what needs a decision without reading
+// the JSON. It sends nothing when no task is held.
+func (r *Router) replyHeldForReview(status []byte) {
+	var st struct {
+		ReviewNeeded []struct {
+			AutomatonID    string `json:"automaton_id"`
+			AutomatonTitle string `json:"automaton_title"`
+			TaskID         string `json:"task_id"`
+			TaskTitle      string `json:"task_title"`
+			FailureCount   int    `json:"failure_count"`
+			LastBackend    string `json:"last_backend"`
+			LastModel      string `json:"last_model"`
+			HeldAt         string `json:"held_at"`
+		} `json:"review_needed"`
+	}
+	if json.Unmarshal(status, &st) != nil || len(st.ReviewNeeded) == 0 {
+		return
+	}
+	lines := make([]string, 0, len(st.ReviewNeeded))
+	for _, h := range st.ReviewNeeded {
+		worker := h.LastBackend
+		if h.LastModel != "" {
+			worker += ":" + h.LastModel
+		}
+		lines = append(lines, fmt.Sprintf("%s %q task %s %q: %d failed attempts, last worker %s, held since %s",
+			h.AutomatonID, h.AutomatonTitle, h.TaskID, h.TaskTitle, h.FailureCount, worker, h.HeldAt))
+	}
+	r.reply("autonomous held for review", strings.Join(lines, "\n")+"\nDecide with: autonomous review-task <automaton> <task> retry|cancel")
+}
+
 // splitReviewWords splits a comma-separated file list, dropping blanks.
 func splitReviewWords(s string) []string {
 	var out []string

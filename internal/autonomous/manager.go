@@ -4363,9 +4363,14 @@ func (m *Manager) Status() LoopStatus {
 	budgets := m.budgetsSummary()
 	// Same rule for the task views: they read the PRD store and the ledger.
 	queue, holdings := m.buildTaskVisibility(budgets)
+	// Held tasks are read under the store lock (the lock is not re-entrant, so
+	// this runs before m.mu is taken, as the PRD reads above do).
+	var held []HeldTaskStatus
+	m.store.WithLock(func() { held = heldTasksAcrossPRDs(m.store.prds) })
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st := m.status
+	st.ReviewNeeded = held
 	st.Budgets = budgets
 	st.Queue, st.Holdings = queue, holdings
 	st.BootResume = append([]BootResumeEntry(nil), m.bootResumeReport...)

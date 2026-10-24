@@ -430,6 +430,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous status", prettyJSON(out))
+		r.replyHeldForReview([]byte(out))
 	// v8.36.9 — config-get/config-set: the autonomous config surface
 	// (verification_backends among others) had REST + MCP but no comm-
 	// channel parity at all. SetConfig replaces the whole object, so

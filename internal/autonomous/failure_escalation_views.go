@@ -7,7 +7,10 @@
 // is shown in the task listing only as the review_summary text.
 package autonomous
 
-import "time"
+import (
+	"sort"
+	"time"
+)
 
 // ReviewNeededEntry is one task held for operator review, as the Automaton
 // summary lists it. It carries identity, counts and the worker of the last
@@ -63,6 +66,38 @@ func reviewNeededEntry(story *Story, t *Task) ReviewNeededEntry {
 		e.LastBackend, e.LastModel = last.Backend, last.Model
 	}
 	return e
+}
+
+// HeldTaskStatus is one task held for operator review, as the daemon status
+// lists it across every Automaton. It names the Automaton the task belongs to
+// and carries the same row the Automaton summary lists.
+type HeldTaskStatus struct {
+	AutomatonID    string `json:"automaton_id"`
+	AutomatonTitle string `json:"automaton_title,omitempty"`
+	ReviewNeededEntry
+}
+
+// heldTasksAcrossPRDs lists every task of the given Automata held in
+// TaskReviewNeeded. The rows are ordered by when each task was held, oldest
+// first, since the oldest hold is the one waiting longest for the operator. It
+// returns nil when no task is held. The caller holds the store lock.
+func heldTasksAcrossPRDs(prds map[string]*PRD) []HeldTaskStatus {
+	var out []HeldTaskStatus
+	for _, p := range prds {
+		for _, e := range reviewNeededEntries(p) {
+			out = append(out, HeldTaskStatus{AutomatonID: p.ID, AutomatonTitle: p.Title, ReviewNeededEntry: e})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].HeldAt.Equal(out[j].HeldAt) {
+			return out[i].HeldAt.Before(out[j].HeldAt)
+		}
+		if out[i].AutomatonID != out[j].AutomatonID {
+			return out[i].AutomatonID < out[j].AutomatonID
+		}
+		return out[i].TaskID < out[j].TaskID
+	})
+	return out
 }
 
 // heldTaskIDs returns the IDs of the tasks of prd held in TaskReviewNeeded, in
