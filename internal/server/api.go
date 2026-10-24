@@ -820,7 +820,7 @@ type AutonomousAPI interface {
 	SetPRDPriority(prdID string, n int) (any, error)
 
 	// BL367 — per-PRD quality gate config.
-	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (any, error)
+	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool, scope string, smokePackages []string) (any, error)
 
 	// Per-PRD override for whether a story failure halts the PRD (default)
 	// or the executor continues into later, independent stories.

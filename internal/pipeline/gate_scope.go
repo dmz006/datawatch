@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // Gate scope values select how much of the test suite a gate task runs.
@@ -25,6 +27,13 @@ const (
 	// change right here.
 	DefaultGateScope = GateScopeFull
 )
+
+// DefaultGateSmokePackages is the built-in smoke set (the proposed smoke
+// set from docs/plans/2026-10-23-quality-gate-scope.md), aliased from
+// config.DefaultGateSmokePackages, which owns the single source of truth
+// so the config load paths can fill it in without importing pipeline
+// (that direction is an import cycle: pipeline -> session -> config).
+var DefaultGateSmokePackages = config.DefaultGateSmokePackages
 
 const (
 	scopeSourceAutomaton = "automaton"

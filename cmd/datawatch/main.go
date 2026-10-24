@@ -54,6 +54,7 @@ import (
 	"github.com/dmz006/datawatch/internal/evals"
 	"github.com/dmz006/datawatch/internal/federation"
 	gitpkg "github.com/dmz006/datawatch/internal/git"
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/hookinstaller"
 	"github.com/dmz006/datawatch/internal/identity"
 	"github.com/dmz006/datawatch/internal/inference"
@@ -97,7 +98,6 @@ import (
 	secretspkg "github.com/dmz006/datawatch/internal/secrets"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
-	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/session"
 	shutdowncause "github.com/dmz006/datawatch/internal/shutdowncause"
 	signalpkg "github.com/dmz006/datawatch/internal/signal"
@@ -4307,6 +4307,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				TestCommand:       acfgIn.DefaultQualityGates.TestCommand,
 				Timeout:           acfgIn.DefaultQualityGates.Timeout,
 				BlockOnRegression: acfgIn.DefaultQualityGates.BlockOnRegression,
+				Scope:             acfgIn.DefaultQualityGates.Scope,
+				SmokePackages:     acfgIn.DefaultQualityGates.SmokePackages,
 			},
 			// BL369 — prompt injection guard config bridge.
 			InjectionGuard:   acfgIn.InjectionGuard,

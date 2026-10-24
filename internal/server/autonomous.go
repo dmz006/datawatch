@@ -457,7 +457,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				// BL367 — per-PRD quality gate config.
 				if req.QualityGates != nil {
 					qg := req.QualityGates
-					if _, err := s.autonomousMgr.SetPRDQualityGates(prdID, qg.Enabled, qg.TestCommand, qg.Timeout, qg.BlockOnRegression); err != nil {
+					if _, err := s.autonomousMgr.SetPRDQualityGates(prdID, qg.Enabled, qg.TestCommand, qg.Timeout, qg.BlockOnRegression, "", nil); err != nil {
 						_ = s.autonomousMgr.DeletePRD(prdID)
 						http.Error(w, "quality-gates-set: "+err.Error(), http.StatusBadRequest)
 						return
@@ -2079,7 +2079,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		updated, err := s.autonomousMgr.SetPRDQualityGates(id, req.Enabled, req.TestCommand, req.Timeout, req.BlockOnRegression)
+		updated, err := s.autonomousMgr.SetPRDQualityGates(id, req.Enabled, req.TestCommand, req.Timeout, req.BlockOnRegression, "", nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
