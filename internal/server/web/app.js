@@ -571,10 +571,14 @@ function _loadUiConfig() {
   }).catch(() => {});
 }
 
-// Reconnect resync: exactly one GET /api/sessions (batched apply + one
-// onSessionsUpdated) and, for an open session-detail view, a single
-// 'subscribe' so the daemon sends a fresh capture. The terminal is left
-// intact when the same session is still active and already has content.
+// Reconnect resync: exactly one first-page GET /api/sessions?view=summary
+// (via _resyncSessions: merged rows, one onSessionsUpdated) and, for an open
+// session-detail view, a single 'subscribe' so the daemon sends a fresh
+// capture. The open session's full record comes from GET /api/sessions/{id}
+// when its summary row is still truncated. Other lists are not refetched here:
+// only a list loader whose tab is active and overdue reloads its first page.
+// The terminal is left intact when the same session is still active and
+// already has content.
 function _resyncAfterReconnect() {
   _refreshOverdueLoaders();
   const view = state.activeView;
@@ -588,19 +592,18 @@ function _resyncAfterReconnect() {
       renderSessionDetail(sid);
     }
   };
-  const resync = _sessionsLocalMode()
-    ? loadSessionsList().then(rows => (_sl().error ? null : rows))
-    : _sessionsFetchPage('').then(page => {
-      page.rows.forEach(_mergeSessionRow); onSessionsUpdated();
-      return page.rows;
-    }).catch(() => null);
-  resync
+  _resyncSessions()
     .then(sessions => {
       if (!detail || state.activeView !== 'session-detail' || state.activeSession !== sid) {
         if (view === 'alerts') renderAlertsView();
         return;
       }
-      const exists = !sessions || sessions.some(s => s.full_id === sid || s.id === sid) || state.sessions.some(s => s.full_id === sid || s.id === sid);
+      const open = state.sessions.find(s => s.full_id === sid || s.id === sid);
+      const exists = !sessions || sessions.some(s => s.full_id === sid || s.id === sid) || !!open;
+      // The resync may have re-truncated the open session; refetch its full
+      // record (the once-per-session guard from the earlier open is lifted).
+      if (open && (open.truncated_fields || []).length && state._fullSessionFetch) delete state._fullSessionFetch[open.full_id];
+      _ensureFullSession(sid, open);
       if (exists && termLive()) {
         // Keep the terminal on screen; the fresh capture redraws it.
         send('subscribe', { session_id: sid });
@@ -778,40 +781,20 @@ function connect() {
       // now happens inside renderSessionDetail (see line ~2200) which
       // also clears _termHasContent so the splash placement + initXterm
       // path runs cleanly and a fresh subscribe is sent.
-      (_sessionsLocalMode()
-        ? loadSessionsList().then(rows => (_sl().error ? null : rows))
-        : fetch('/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null))
-        .then(sessions => {
-          if (sessions && _sessionsLocalMode()) {
-            // loadSessionsList already merged the rows and notified.
-            if (state.activeView === 'alerts') renderAlertsView();
-          } else if (sessions) {
-            // Batch the reconnect refresh: apply ALL session updates to
-            // state first, then notify once — instead of updateSession() per
-            // session, which ran onSessionsUpdated (and, before the
-            // schedule-load refactor, a per-session schedule-bar fetch) N
-            // times for the same snapshot. Detail-side rendering is covered
-            // by the renderSessionDetail(sid) below.
-            sessions.forEach(s => applySessionUpdate(s));
-            onSessionsUpdated();
-            if (state.activeView === 'alerts') renderAlertsView();
-          }
-          if (state.activeView === 'session-detail' && state.activeSession === sid) {
-            // Reset frame cache + terminal-content flag IMMEDIATELY
-            // before the render so post-render pane_capture frames
-            // are guaranteed to draw.
-            state._lastPaneFrame = null;
-            state._termHasContent = false;
-            renderSessionDetail(sid);
-          }
-        })
-        .catch(() => {
-          if (state.activeView === 'session-detail' && state.activeSession === sid) {
-            state._lastPaneFrame = null;
-            state._termHasContent = false;
-            renderSessionDetail(sid);
-          }
-        });
+      // Summary first page only (local, or through the proxy for a named
+      // server); rows merge into state.sessions, and renderSessionDetail
+      // fetches the open session's full record itself.
+      const redrawDetail = () => {
+        if (state.activeView === 'session-detail' && state.activeSession === sid) {
+          // Reset frame cache + terminal-content flag IMMEDIATELY
+          // before the render so post-render pane_capture frames
+          // are guaranteed to draw.
+          state._lastPaneFrame = null;
+          state._termHasContent = false;
+          renderSessionDetail(sid);
+        }
+      };
+      _resyncSessions().then(redrawDetail).catch(redrawDetail);
     }
   });
 
@@ -1182,7 +1165,11 @@ function handleMessage(msg) {
       if (msg.data && msg.data.version) {
         if (!state._daemonVersion) {
           state._daemonVersion = msg.data.version;
-        } else if (state._daemonVersion !== msg.data.version) {
+        } else if (state._daemonVersion !== msg.data.version && state._versionChangeSeen !== msg.data.version) {
+          // Once per new version: every later 'sessions' frame carries the same
+          // version and would otherwise refetch /api/config each time while the
+          // update banner waits for an idle moment to reload.
+          state._versionChangeSeen = msg.data.version;
           _loadUiConfig();
           _onDaemonVersionChange(msg.data.version);
         }
@@ -2697,10 +2684,15 @@ function _mergeSessionRow(row) {
 function _sessionsLocalMode() {
   return !state.activeServer || state.activeServer === 'local';
 }
-function _sessionsFetchPage(cursor) {
+// Proxy prefix for a named federated server; '' for local and 'all' (whose
+// WebSocket and list endpoint are the local daemon's).
+function _sessionsProxyPrefix(server) {
+  return (server && server !== 'local' && server !== 'all') ? '/api/proxy/' + encodeURIComponent(server) : '';
+}
+function _sessionsFetchPage(cursor, server) {
   const ac = (typeof AbortController === 'function') ? new AbortController() : null;
   const timer = setTimeout(() => { if (ac) { try { ac.abort(); } catch (e) { /* ignore */ } } }, 15000);
-  const q = '/api/sessions?view=summary&limit=' + SESSIONS_PAGE + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+  const q = _sessionsProxyPrefix(server) + '/api/sessions?view=summary&limit=' + SESSIONS_PAGE + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
   const init = { headers: tokenHeader() };
   if (ac) init.signal = ac.signal;
   return fetch(q, init).then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))).then(data => {
@@ -2737,6 +2729,33 @@ function loadSessionsList() {
   return l.promise;
 }
 window.loadSessionsList = loadSessionsList;
+// One small session refresh for a WebSocket (re)connect: the first summary page
+// only, never the full list. Local mode shares loadSessionsList's in-flight
+// guard; a named server fetches the same page through its proxy prefix. Calls
+// while one is in flight, or that follow within RESYNC_COALESCE_MS (a flapping
+// socket opens again before the first answer is old), share its promise. A
+// failed resync is not reused. Resolves to the rows, or null on failure.
+const RESYNC_COALESCE_MS = 3000;
+function _resyncSessions() {
+  const now = Date.now();
+  const prev = state._resync;
+  if (prev && prev.server === state.activeServer && (prev.inFlight || (now - prev.at) < RESYNC_COALESCE_MS)) return prev.promise;
+  const rec = { at: now, inFlight: true, server: state.activeServer, promise: null };
+  const fetchRows = _sessionsLocalMode()
+    ? loadSessionsList().then(rows => (_sl().error ? null : rows))
+    : _sessionsFetchPage('', state.activeServer).then(page => {
+      page.rows.forEach(_mergeSessionRow);
+      onSessionsUpdated();
+      return page.rows;
+    }).catch(() => null);
+  rec.promise = fetchRows.then(rows => {
+    rec.inFlight = false;
+    if (rows === null) rec.at = 0;
+    return rows;
+  });
+  state._resync = rec;
+  return rec.promise;
+}
 window.sessionsLoadMore = function() {
   const l = _sl();
   if (!l.next || l.loadingMore) return;
@@ -27648,10 +27667,11 @@ function _alertsFetch() {
     // current elsewhere); proxy it for a specific remote.
     _alertsSrv === 'all'
       ? Promise.resolve(null)
-      : fetch(_alertsProxyPrefix + '/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => [])
+      : _sessionsFetchPage('', _alertsIsRemote ? _alertsSrv : '').then(page => page.rows).catch(() => [])
   ]).then(([data, cmds, fresh]) => {
-    // Active/inactive classification needs the live sessions: merge them in.
-    if (Array.isArray(fresh) && fresh.length > 0) state.sessions = fresh;
+    // Active/inactive classification needs the live sessions: merge the first
+    // summary page in (a reconnect re-renders this view, so never the full list).
+    if (Array.isArray(fresh) && fresh.length > 0) { fresh.forEach(_mergeSessionRow); onSessionsUpdated(); }
     const list = Array.isArray(data) ? data : (data && data.alerts ? data.alerts : null);
     if (list && list.length > 0) {
       state.alertUnread = 0;

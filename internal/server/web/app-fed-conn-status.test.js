@@ -232,7 +232,7 @@ test('renderAlertsView() proxies through /api/proxy/<name>/... for a specific na
   const alertsUrl = fetchedUrls.find(u => u.includes('/alerts') && !u.includes('/commands'));
   const sessionsUrl = fetchedUrls.find(u => u.includes('/sessions'));
   assert.equal(alertsUrl, '/api/proxy/host-a/api/alerts', `alerts fetch should proxy through host-a, got: ${alertsUrl}`);
-  assert.equal(sessionsUrl, '/api/proxy/host-a/api/sessions', `sessions fetch should proxy through host-a, got: ${sessionsUrl}`);
+  assert.equal(sessionsUrl, '/api/proxy/host-a/api/sessions?view=summary&limit=50', `sessions fetch should be the first summary page through host-a, got: ${sessionsUrl}`);
 });
 
 test('renderAlertsView() stays on the aggregated endpoint for "all" mode and does not clobber state.sessions', () => {
@@ -263,7 +263,7 @@ test('renderAlertsView() uses plain local endpoints when no federated server is 
   const alertsUrl = fetchedUrls.find(u => u.includes('/alerts') && !u.includes('/commands'));
   const sessionsUrl = fetchedUrls.find(u => u.includes('/sessions'));
   assert.equal(alertsUrl, '/api/alerts');
-  assert.equal(sessionsUrl, '/api/sessions');
+  assert.equal(sessionsUrl, '/api/sessions?view=summary&limit=50');
 });
 
 test('reconnect-driven view refresh now includes "alerts" (switching servers mid-tab used to do nothing until navigating away and back)', () => {
