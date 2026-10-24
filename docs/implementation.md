@@ -1454,7 +1454,18 @@ Response:
 
 ## Session start confirm timeout (autonomous.session_start_confirm_seconds)
 
-- **Field:** `autonomous.session_start_confirm_seconds`, default `120` (2 minutes). Bounds a claude-code autonomous session that is still in `waiting_input` with no assistant output — i.e. started but never began working.
+- **Field:** `autonomous.session_start_confirm_seconds`, default `120` (2 minutes). Bounds a claude-code autonomous session that is still in `waiting_input` and shows no evidence of work — i.e. started but never began working.
+- **Start evidence model:** `StartEvidence` (`internal/autonomous/session_start_evidence.go`) lists what counts as started. Any one of these rules out a stall:
+  - an assistant response bullet (`•`) after the prompt line (`HasAssistantOutput`);
+  - a tool call in the pane (`PaneShowsToolCall`): a tool-use line (`⏺ Bash(...)`), a tool result or running line (`⎿ ...`), the older `● Tool(...)` line, or a spinner line (`✻ Running…`);
+  - a process the runner started since the previous observation. `runnerDescendantPIDs` feeds `childWorkStarted` in `cmd/datawatch/session_start_tracker.go`; only new pids count, so a helper the runner started at launch and kept alive is not work;
+  - a pane change since the previous tick (`PaneChangedAt`);
+  - a channel event that arrived after the task was delivered.
+
+  Task delivery alone is never evidence: `TaskDelivered` is context only.
+- **Clock:** `sessionStartTracker` (`cmd/datawatch/session_start_tracker.go`) measures the silence from the last tick with evidence of work, or from the first silent `waiting_input` tick when no evidence has been seen. A session stalls only when that silence is strictly longer than the limit, so a worker in a long silent tool call is never ended while the pane keeps showing its tool line or spinner.
+- **After adoption:** an adopted session's clock starts from its seed, the latest of its update time, last channel event and session log mtime (`sessionStartAdoptionSeed`). A worker that was live before a daemon restart is therefore judged from its last evidence of life, not from the moment it was adopted. If that evidence is already older than the limit, the first tick judges it.
+- **Busy probe:** `paneLooksBusy` (`internal/session/busy_probe.go`) keeps a claude-code worker in `running` while its pane shows work: the `esc to interrupt` status bar, a `⎿ …` running line or a `✻ Verb…` spinner line in the last 15 non-empty lines, or a live pane child process when no idle prompt (`❯`, `$`, `%`) is visible. `DeliverOneShotTask` runs the probe once the task is delivered. The channel state watcher runs it in two places: a delivered one-shot in `waiting_input` whose pane is busy returns to `running`, and a `running` session that the gap check would flip is kept `running`. The probe never changes terminal or rate-limited states, and it governs only the claude-code family.
 - **Surfaces:**
   - config YAML (`internal/config/config.go`, `Autonomous.SessionStartConfirmSeconds`);
   - REST `GET` / `PUT` on the `autonomous.*` config (`internal/server/api.go`);
@@ -1462,7 +1473,7 @@ Response:
   - web settings card (`internal/server/web/app.js`) with strings in 5 locales (en, de, es, fr, ja);
   - comm channels via `configure autonomous.session_start_confirm_seconds=<n>`, which the router forwards to the REST `PUT` config endpoint.
 - **Default:** `SessionStartConfirmDefaultSeconds = 120` and `NormalizeSessionStartConfirmSeconds` in `internal/config/session_start_confirm.go`. Zero or negative values normalize to the default.
-- **Failure path:** a tripped bound is reported as the infra failure `session never started`; the alert carries the last 20 lines of the session transcript as evidence. Up to 2 start failures are retried (start-failure budget) before the task stays failed. This budget is separate from `auto_fix_retries`.
+- **Failure path:** a tripped bound is reported as the infra failure `session never started`; the alert carries the last 20 lines of the session transcript as evidence, and the same 20 lines are stored on the task as `start_failure_tail`. The session end reason reads `session start detector: <state> without assistant output for <n>s since its last evidence of work (or first silent tick), limit <n>s`. Up to 2 start failures are retried (start-failure budget) before the task stays failed. This budget is separate from `auto_fix_retries`.
 
 ## Automation decision assistant (set_decision_assistant)
 

@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## Next patch above main — A long silent first tool call no longer ends a worker
+
+A claude-code worker that starts with a long tool call that prints nothing new was ended by the start-confirm check after 120 seconds, and a busy worker could flip back to `waiting_input` while its tool was still running. Both are fixed.
+
+- **What counts as started:** an assistant turn, a tool line or spinner in the pane, a process the worker started, a pane change, or a channel event after delivery. Delivering the task alone does not count. The bound (`autonomous.session_start_confirm_seconds`, default 120) is measured from the last sign of work, so a worker in one long silent tool call is not ended.
+- **After a daemon restart:** an adopted worker is measured from its last evidence of life, not from the moment it was adopted.
+- **Busy probe:** a delivered claude-code one-shot worker stays `running` while its pane shows work, including a silent tool call with a live command. The session state watcher no longer flips it back to `waiting_input` on the gap alone.
+- The `session never started` failure and its retry budget of two are unchanged. The session end reason now says the silence is counted from the last evidence of work.
+
 ## v9.9.1 — Orphan sweep no longer ends live workers
 
 Fixes the orphan sweep that ended every live Claude worker about five minutes after its task was delivered, which had been failing long tasks with "no new changes" since the sweep went live.
