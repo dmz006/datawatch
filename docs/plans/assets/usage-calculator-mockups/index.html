@@ -213,9 +213,9 @@ tbody th { font-weight: 600; width: 22%; }
         </tr>
         <tr>
           <th scope="row">Text form shape, CLI and comm channel</th>
-          <td data-label="Pace gauge">Three CLI blocks and three comm-channel blocks, one per policy, in the same field order.</td>
-          <td data-label="Lane planner">Three CLI blocks and three comm-channel blocks, one per policy, in the same field order.</td>
-          <td data-label="Burn ledger">Three CLI blocks and three comm-channel blocks, one per policy, in the same field order.</td>
+          <td data-label="Pace gauge">Three CLI blocks and three comm-channel blocks, one per policy, following the field order of the design.</td>
+          <td data-label="Lane planner">Three CLI blocks and three comm-channel blocks, one per policy. Each adds a lane table before the advice, so its field order differs.</td>
+          <td data-label="Burn ledger">Three CLI blocks and three comm-channel blocks, one per policy. Each adds the points per day, and the CLI leads with the verdict, so its field order differs.</td>
         </tr>
         <tr>
           <th scope="row">Treatment of each policy</th>
@@ -246,7 +246,7 @@ tbody th { font-weight: 600; width: 22%; }
       <li>Burn per 24 hours: 24.1 at the recent burn, measured from the 17:09 reading 4.98 hours earlier, and 12.9 at the week average.</li>
       <li>Projected end at the reset: 106.0 percent at the recent burn, which is over budget, and 90.2 percent at the week average, which is within budget.</li>
       <li>Run out at the recent burn: Sunday 02:02, about six hours (5.96) before the reset. At the week average the allowance lasts until the reset.</li>
-      <li>The advice differs by policy. Run until used up suggests 2 lanes, which end at 96.1 percent. Pace to the week suggests 1 lane, which ends at 86.1 percent.</li>
+      <li>The advice differs by policy. Run until used up suggests 2 lanes, which end at 96.1 percent. Pace to the week suggests 1 lane, which ends at 86.1 percent. Run flat out suggests all 3 lanes: the fixed 20 points of remaining work take about 22.8 hours and finish Saturday 20:54, with 5.2 points to spare.</li>
     </ul>
   </section>
 

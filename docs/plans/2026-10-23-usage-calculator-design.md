@@ -130,7 +130,7 @@ Each mockup page embeds `.datawatch/verify/usage-calc-reference-model.js` unchan
 The CLI and the comm channel get text forms of the same reading. Rules that apply to both:
 
 - CLI lines are at most 80 columns. Comm-channel lines are at most 50 columns, because the channel wraps narrower than a terminal.
-- The field order matches the PWA: reading, reset, pace line, burn, projected end, run out, verdict, lanes and policy, then the advice.
+- The field order matches the PWA: reading, reset, pace line, burn, projected end, run out, verdict, lanes and policy, then the advice. The mockups add a lane table (lane planner) and points per day (burn ledger) as extra lines, so those two forms are longer; the build settles the final layout.
 - The comm-channel form ends with the reply the operator can send to choose a policy or a lane count.
 - The commands shown below are examples. The final command names are not decided here.
 
@@ -514,7 +514,7 @@ The choice of variant is the operator's choice. This design pass does not pick a
 | Criterion | Pace gauge | Lane planner | Burn ledger |
 |---|---|---|---|
 | Glanceability on a phone | One bar shows the weekly percent, the pace line and both projections at the reset. The verdict is the first card. | The verdict comes first, then a table of six columns with one row for each lane count. It is the densest block on a phone. | The verdict and reading fields come first, then a bar chart of the days since the reset. The lane stepper sits after the chart, the cost table and the other-consumer rows. |
-| Help choosing the number of lanes | The chosen count, the advised count and one line for three lanes. There is no table of counts. | The strongest: one row for each count from 0 to 3, with burn, projected end, run out and a fit mark against the target. | A measured column and a planning column for each count. The two disagree (3.0 to 24.1 measured, 3.0 to 5.1 planned), and the page says the planning column is not a forecast. |
+| Help choosing the number of lanes | The chosen count, the advised count and one line for three lanes. There is no table of counts. | One row for each count from 0 to 3, with burn, projected end, run out and a fit mark against the target. | A measured column and a planning column for each count. The two disagree (3.0 to 24.1 measured, 3.0 to 5.1 planned), and the page says the planning column is not a forecast. |
 | Run until used up | The advice and the headline change, against 100 percent. | The fit marks change, against 100 percent. | The advice and the headline change. The chart and the cost table do not. |
 | Pace to the week | The advice and the headline change, against the 95 percent target. | The target line and the fit marks show why a count is advised. | The advice and the headline change. |
 | Run flat out | A finish line on the fixed 20 points, with all lanes advised. | A finish line, and every row reads "running". | A finish line on the fixed 20 points, beside the 3.3-point example queue, which the page says does not yet agree with it. |
