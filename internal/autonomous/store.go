@@ -221,6 +221,7 @@ func (s *Store) SavePRD(p *PRD) error {
 	p.UpdatedAt = time.Now()
 	p.Decisions = trimDecisions(p.Decisions)
 	clearStaleBlockedReason(p)
+	p.NotifyEventsEffective = nil // computed read-time view; never persisted
 	p.Rev++
 	s.prds[p.ID] = p
 	return s.persistPRD(p.ID)
@@ -252,6 +253,7 @@ func (s *Store) CommitPRDIfRev(id string, expectedRev int, mutate func(p *PRD) b
 	p.UpdatedAt = time.Now()
 	p.Decisions = trimDecisions(p.Decisions)
 	clearStaleBlockedReason(p)
+	p.NotifyEventsEffective = nil // computed read-time view; never persisted
 	p.Rev++
 	return s.persistPRD(id)
 }

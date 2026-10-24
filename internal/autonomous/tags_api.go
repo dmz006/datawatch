@@ -82,15 +82,12 @@ func (a *API) SetPRDTags(prdID string, tagIDs []string) (any, error) {
 	return prd, nil
 }
 
-// ListPRDsByTag returns the PRDs carrying a tag (or any descendant).
+// ListPRDsByTag returns the PRDs carrying a tag (or any descendant), each
+// as the read-time copy that carries notify_events_effective (same fill as
+// ListPRDs).
 func (a *API) ListPRDsByTag(tagID string, includeSub bool) ([]any, error) {
 	if _, err := a.M.requireTag(tagID); err != nil {
 		return nil, err
 	}
-	src := a.M.PRDsWithTag(tagID, includeSub)
-	out := make([]any, len(src))
-	for i, p := range src {
-		out[i] = p
-	}
-	return out, nil
+	return a.M.PRDsWithNotifyEffective(a.M.PRDsWithTag(tagID, includeSub)), nil
 }

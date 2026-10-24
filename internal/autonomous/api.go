@@ -441,7 +441,7 @@ func (a *API) GetPRD(id string) (any, bool) {
 	if !ok {
 		return nil, false
 	}
-	return p, true
+	return a.M.PRDWithNotifyEffective(p), true
 }
 
 // FindTaskBySessionID maps a datawatch session id to its (prd_id,
@@ -477,12 +477,7 @@ func (a *API) SessionIDsForPRD(prdID string) []string {
 }
 
 func (a *API) ListPRDs() []any {
-	src := a.M.Store().ListPRDs()
-	out := make([]any, len(src))
-	for i, p := range src {
-		out[i] = p
-	}
-	return out
+	return a.M.PRDsWithNotifyEffective(a.M.Store().ListPRDs())
 }
 
 func (a *API) Decompose(id string) (any, error) {
@@ -1375,7 +1370,9 @@ func (a *API) SetPRDNotifyEvents(prdID string, kinds []string) (any, error) {
 		return nil, err
 	}
 	a.M.EmitPRDUpdate(prdID)
-	return prd, nil
+	// Return the updated Automaton with its effective notify-events view
+	// filled (the stored object itself never carries it).
+	return a.M.PRDWithNotifyEffective(prd), nil
 }
 
 // SetPRDGit (BL407 Phase 5) sets the per-PRD Git.AutoPR/BaseBranch overrides.

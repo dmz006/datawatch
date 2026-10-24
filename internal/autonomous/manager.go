@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -4358,6 +4359,20 @@ func (m *Manager) Status() LoopStatus {
 	st.UsageBackoff = usageBackoff
 	st.Running = m.ctx != nil && m.ctx.Err() == nil
 	verdictCounts := map[string]int{}
+	// Notify block (notify-events): the effective global default plus the
+	// non-finished Automata whose own (or profile) list overrides it.
+	// defNotify is captured under m.mu like every other Config read; the
+	// tier resolution itself is the lock-free core (store calls may run
+	// under m.mu — same nesting as the ListPRDs loop below).
+	defNotify := m.cfg.NotifyDefaultEvents
+	if defNotify == nil {
+		defNotify = DefaultNotifyEvents()
+	}
+	notifyDefault := copyStrings(defNotify)
+	if notifyDefault == nil {
+		notifyDefault = []string{}
+	}
+	var notifyOverrides []NotifyOverride
 	for _, p := range m.store.ListPRDs() {
 		if p.Status == PRDActive || p.Status == PRDRunning {
 			st.ActivePRDs++
@@ -4370,6 +4385,18 @@ func (m *Manager) Status() LoopStatus {
 		}
 		if p.Status == PRDBlocked {
 			st.BlockedPRDs++
+		}
+		// The Automaton overrides the global notify tier when its resolved
+		// set comes from the automaton or profile tier; finished Automata
+		// no longer running and never count as overrides.
+		if !finishedPRDStatus(p.Status) {
+			if set := m.resolveNotifyTier(p, defNotify); set.Source != NotifySourceGlobal {
+				notifyOverrides = append(notifyOverrides, NotifyOverride{
+					ID:     p.ID,
+					Source: set.Source,
+					Events: set.Events,
+				})
+			}
 		}
 		for _, s := range p.Story {
 			for _, v := range s.Verdicts {
@@ -4432,6 +4459,23 @@ func (m *Manager) Status() LoopStatus {
 	}
 	if len(verdictCounts) > 0 {
 		st.VerdictCounts = verdictCounts
+	}
+	// Notify block — the resolved global tier and the per-Automaton
+	// overrides, sorted by ID and capped. Both lists are never nil, so
+	// the block always emits both keys as lists (empty, never null).
+	if len(notifyOverrides) > 0 {
+		sort.Slice(notifyOverrides, func(i, j int) bool {
+			return notifyOverrides[i].ID < notifyOverrides[j].ID
+		})
+		if len(notifyOverrides) > NotifyStatusMaxOverrides {
+			notifyOverrides = notifyOverrides[:NotifyStatusMaxOverrides]
+		}
+	} else {
+		notifyOverrides = []NotifyOverride{}
+	}
+	st.Notify = &NotifyStatus{
+		DefaultEvents: notifyDefault,
+		Overrides:     notifyOverrides,
 	}
 	st.Warnings = PairingWarnings(m.cfg, m.pairingDecomposeRefs(m.cfg))
 	st.Automations = automations

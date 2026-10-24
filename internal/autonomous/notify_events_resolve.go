@@ -53,6 +53,24 @@ func copyStrings(in []string) []string {
 // read — the same lock ordering resolveGuardrails uses: m.mu guards the
 // global Config read only, never store calls.
 func (m *Manager) ResolveNotifyEvents(prd *PRD) NotifyEventSet {
+	// Tier 3 input — the global default. m.mu guards this read only; the
+	// profile-tier store lookup that follows runs with the mutex not held.
+	m.mu.Lock()
+	def := m.cfg.NotifyDefaultEvents
+	if def == nil {
+		def = DefaultNotifyEvents()
+	}
+	m.mu.Unlock()
+	return m.resolveNotifyTier(prd, def)
+}
+
+// resolveNotifyTier is the lock-free core of ResolveNotifyEvents: it
+// resolves the tier for the Automaton named by prd (nil means “no
+// Automaton”, i.e. the global tier only) against a global default list
+// the caller already captured. It takes no Manager lock of its own — the
+// profile-tier store call needs only the store's own mutex — so it is
+// safe to call from Manager methods that already hold the mutex.
+func (m *Manager) resolveNotifyTier(prd *PRD, global []string) NotifyEventSet {
 	if prd != nil {
 		// Tier 1 — the Automaton's own list. Non-empty wins; a nil or empty
 		// list here means inherit, and on its own never turns notifications
@@ -75,16 +93,9 @@ func (m *Manager) ResolveNotifyEvents(prd *PRD) NotifyEventSet {
 			}
 		}
 	}
-	// Tier 3 — the global default. m.mu guards this read only; the
-	// profile lookup above ran with the mutex not held.
-	m.mu.Lock()
-	def := m.cfg.NotifyDefaultEvents
-	m.mu.Unlock()
-	if def == nil {
-		def = DefaultNotifyEvents()
-	}
+	// Tier 3 — the global default captured by the caller.
 	return NotifyEventSet{
-		Events: copyStrings(def),
+		Events: copyStrings(global),
 		Source: NotifySourceGlobal,
 	}
 }
@@ -97,6 +108,44 @@ func (m *Manager) ResolveNotifyEventsFor(prdID string) (NotifyEventSet, bool) {
 		return m.ResolveNotifyEvents(prd), true
 	}
 	return NotifyEventSet{}, false
+}
+
+// PRDWithNotifyEffective returns a shallow copy of prd with
+// NotifyEventsEffective set to prd's effective notify event set (and the
+// tier that supplied it). prd itself is left untouched, so the copy is
+// what callers may hand to the serializer — the stored row never carries
+// the field. A nil prd yields nil.
+func (m *Manager) PRDWithNotifyEffective(prd *PRD) *PRD {
+	if prd == nil {
+		return nil
+	}
+	out := *prd
+	set := m.ResolveNotifyEvents(prd)
+	out.NotifyEventsEffective = &set
+	return &out
+}
+
+// PRDsWithNotifyEffective returns copies of the given PRDs with
+// NotifyEventsEffective filled, for API read responses (GetPRD, ListPRDs
+// and the like). Nil entries are copied through as nil. The input slice
+// is not modified.
+func (m *Manager) PRDsWithNotifyEffective(prds []*PRD) []any {
+	out := make([]any, len(prds))
+	for i, p := range prds {
+		out[i] = m.PRDWithNotifyEffective(p)
+	}
+	return out
+}
+
+// finishedPRDStatus reports whether a PRD status is finished: a PRD in
+// any of these states is no longer running, so the status loop does not
+// count it as a notify-events override.
+func finishedPRDStatus(s PRDStatus) bool {
+	switch s {
+	case PRDCompleted, PRDFailed, PRDCancelled, PRDRejected, PRDArchived:
+		return true
+	}
+	return false
 }
 
 // NotifyEventAllowed reports whether ev may be delivered to a built-in
