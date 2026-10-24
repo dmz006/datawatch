@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.126 — PRD commits stay inside the declared scope
+
+Checks the three PRD commit-scope rules and closes the one gap found.
+
+- A PRD commit stages only the files under the task's declared write directories, and a worktree-mode PRD scopes to its own worktree. Both were already enforced, and the verification report names the code path and test for each.
+- A direct-mode PRD with no declared write directories no longer commits automatically. That was the gap: it is now covered by a code change and tests.
+- New tests check that the write directories and the worktree path reach the session start request, and that the direct-mode case does not commit.
+- The verification report is in `docs/plans/2026-10-23-prd-commit-scope-verification.md` and the testing tracker is updated.
+
 ## v9.5.125 — Restart keeps a finished worker and re-verifies only
 
 A daemon restart no longer redoes a worker that had already finished.
