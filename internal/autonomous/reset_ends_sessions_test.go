@@ -136,3 +136,47 @@ func TestOneSessionTotalAfterUnadoptableReset(t *testing.T) {
 		t.Fatalf("live = %v, want exactly [new]", live)
 	}
 }
+
+// shortIDAlive reports a session alive when its short id is shortID, the way
+// the daemon's liveness hook resolves either id form.
+func shortIDAlive(shortID string) func(string) bool {
+	return func(id string) bool { return sessionShortID(id) == shortID }
+}
+
+func TestResetKeepsBoundWorkerWhenStoredIDIsShort(t *testing.T) {
+	m, prd, dir := adoptReconcileSetup(t, "a1b2")
+	task := prd.Story[0].Tasks[0]
+	f := &liveFake{sessions: []SessionInfo{
+		{ID: "datawatch-box-a1b2", TaskID: task.ID, PRDID: prd.ID, ProjectDir: dir, Alive: true},
+	}}
+	f.wire(m)
+	m.SetSessionAliveFn(shortIDAlive("a1b2"))
+	// The task stores the short id; the caller keeps the bound worker by that id.
+	got := m.endLiveSessionsOfTask(prd, &task, task.SessionID, "autonomous.test", "test reason")
+	if len(got) != 0 || len(f.kills) != 0 {
+		t.Fatalf("bound worker ended: ended=%v kills=%v", got, f.kills)
+	}
+	if live := f.liveIDs(); len(live) != 1 || live[0] != "datawatch-box-a1b2" {
+		t.Fatalf("live = %v, want the bound worker", live)
+	}
+}
+
+func TestResetDoesNotEndWorkerClaimedByAnotherTask(t *testing.T) {
+	m, prd, dir := claimedPairSetup(t, "a1b2")
+	unclaimed := prd.Story[0].Tasks[0]
+	f := &liveFake{sessions: []SessionInfo{
+		// bound to task b under its short id; unlinked, same worktree, so only the claim keeps it
+		{ID: "datawatch-box-a1b2", PRDID: prd.ID, ProjectDir: dir, Alive: true},
+		// same worktree and unclaimed by any task: the control that proves the match runs
+		{ID: "datawatch-box-c3d4", PRDID: prd.ID, ProjectDir: dir, Alive: true},
+	}}
+	f.wire(m)
+	m.SetSessionAliveFn(shortIDAlive("a1b2"))
+	got := m.endLiveSessionsOfTask(prd, &unclaimed, "", "autonomous.test", "test reason")
+	if len(got) != 1 || got[0] != "datawatch-box-c3d4" {
+		t.Fatalf("ended %v, want only the unclaimed worker", got)
+	}
+	if live := strings.Join(f.liveIDs(), ","); live != "datawatch-box-a1b2" {
+		t.Fatalf("live after reset = %q, want the worker claimed by task b", live)
+	}
+}

@@ -115,3 +115,46 @@ func TestBootReconcileNoAdoptableSessionSingleReplacement(t *testing.T) {
 		t.Fatalf("want reset to pending, got status=%s session=%q", tk.Status, tk.SessionID)
 	}
 }
+
+// claimedPairSetup is adoptReconcileSetup with a second task: task a (the first)
+// is unlinked and task b stores boundID as its session. Tests reset or adopt
+// for task a while a live worker belongs to task b.
+func claimedPairSetup(t *testing.T, boundID string) (*Manager, *PRD, string) {
+	t.Helper()
+	m, prd, dir := adoptReconcileSetup(t, "")
+	_ = m.Store().SetStories(prd.ID, []Story{{
+		Title: "story",
+		Tasks: []Task{
+			{Title: "task a", Status: TaskInProgress},
+			{Title: "task b", Status: TaskInProgress, SessionID: boundID},
+		},
+	}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	return m, prd, dir
+}
+
+func TestBootReconcileDoesNotAdoptSessionClaimedByAnotherTask(t *testing.T) {
+	m, prd, dir := claimedPairSetup(t, "a1b2")
+	taskA := prd.Story[0].Tasks[0]
+	f := &liveFake{sessions: []SessionInfo{
+		// task b's worker under its full lister id; its task text names task a and
+		// its worktree matches, so only the claim by task b keeps it from adoption
+		{ID: "datawatch-box-a1b2", Task: "autonomous: do work for " + taskA.ID, ProjectDir: dir,
+			CreatedAt: time.Now().Add(-40 * time.Second), Alive: true},
+	}}
+	f.wire(m)
+	m.SetSessionAliveFn(shortIDAlive("a1b2"))
+	m.reconcileStuckTasks()
+
+	got, _ := m.Store().GetPRD(prd.ID)
+	tk := got.Story[0].Tasks[0]
+	if tk.SessionID != "" || tk.Status != TaskPending {
+		t.Fatalf("task a adopted a claimed session: status=%s session=%q", tk.Status, tk.SessionID)
+	}
+	if countAdoptDecisions(got, "datawatch-box-a1b2") != 0 {
+		t.Fatalf("boot_reconcile decision names the claimed session: %+v", got.Decisions)
+	}
+	if live := strings.Join(f.liveIDs(), ","); live != "datawatch-box-a1b2" {
+		t.Fatalf("live = %q, want task b's worker left running", live)
+	}
+}

@@ -38,14 +38,14 @@ func (m *Manager) SetSessionListerFn(fn func() []SessionInfo) {
 // when its task text contains the task id and its ProjectDir equals the task's
 // resolved project dir. The newest match is the adopted one; adopted is nil
 // when nothing matches. Sessions already linked to a different task of the PRD
-// are never matched.
+// are never matched, whichever id form the task or the lister uses.
 func findAdoptableSession(prd *PRD, t *Task, sessions []SessionInfo) (adopted *SessionInfo, others []SessionInfo) {
 	claimed := map[string]bool{}
 	for si := range prd.Story {
 		for ti := range prd.Story[si].Tasks {
 			o := &prd.Story[si].Tasks[ti]
 			if o.ID != t.ID && o.SessionID != "" {
-				claimed[o.SessionID] = true
+				claimed[sessionShortID(o.SessionID)] = true
 			}
 		}
 	}
@@ -55,7 +55,7 @@ func findAdoptableSession(prd *PRD, t *Task, sessions []SessionInfo) (adopted *S
 	}
 	var matches []SessionInfo
 	for _, s := range sessions {
-		if !s.Alive || s.ID == "" || claimed[s.ID] {
+		if !s.Alive || s.ID == "" || claimed[sessionShortID(s.ID)] {
 			continue
 		}
 		if s.TaskID != "" {
