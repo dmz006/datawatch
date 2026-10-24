@@ -868,3 +868,6 @@ Recorded from the operator review of the open questions above.
 - **Q5, outbound webhook sink:** yes, with a configured host allow-list, a vault-backed secret, HMAC signing, retry then alert, and an SSRF guard. The existing Generic Webhook backend is inbound only and stays as it is.
 - **Q7, federation:** yes, Automaton events are deliverable to subscribers on federated peers through the existing federation path.
 - **Q8, sequencing with BL431:** moot, the Automation coordinator and the dispatcher have both shipped.
+- **Q4, scope warnings and guardrail warn verdicts:** yes, as opt-in event kinds (`scope_warning` and `guardrail_warn`), off by default. Held until the per-Automaton `notify_events` work ships.
+- **Q6, generic MCP clients:** the polling tool stays, and MCP resource subscriptions (`resources/subscribe`, `notifications/resources/updated`) will be implemented later with extensive regression testing. Held until the operator says so.
+- **Q9, BL422 follow-up:** a tier-mismatch event will probably be added as another opt-in event kind, but only after BL422's results land. At that point the design is validated against the results and added only if the results agree. Nothing is filed as a PRD until then.
