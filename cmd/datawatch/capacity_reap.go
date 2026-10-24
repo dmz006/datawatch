@@ -65,12 +65,12 @@ func (r *verifierRegistry) sessionOf(holder string) string {
 // leaseHolderLive reports whether a lease still has a live holder. A verify:
 // lease is judged by its verifier session when one was started, and otherwise
 // stays live while its verifier is registered as active, whatever the bound
-// (worker) session or lease age says. A judge:<unit> lease likewise stays
-// live while its judge is registered as active (holderAlive), covering the
-// /api/ask path that never spawns a session; it reaps through the normal
-// bound-session check once the judge is no longer active. Any other lease is
-// live while its bound session is running, or for spawnGrace when it has
-// none.
+// (worker) session or lease age says. A judge:<unit> lease is judged by the
+// same rule — its judge session decides first, then active registration,
+// including the /api/ask path where the judge runs inline and has no
+// session; it reaps through the normal bound-session or spawn-grace check
+// once the judge is off and its session is done. Any other lease is live
+// while its bound session is running, or for spawnGrace when it has none.
 func leaseHolderLive(ls capacity.Lease, reg *verifierRegistry, holderAlive func(holder string) bool, sessionAlive func(id string) bool, now time.Time) bool {
 	if strings.HasPrefix(ls.Holder, autonomous.VerifyHolder("")) && reg != nil {
 		if sid := reg.sessionOf(ls.Holder); sid != "" {
@@ -81,6 +81,16 @@ func leaseHolderLive(ls capacity.Lease, reg *verifierRegistry, holderAlive func(
 		}
 	}
 	if strings.HasPrefix(ls.Holder, autonomous.JudgeHolder("")) {
+		// Same live-session / spawn-grace logic as verifier leases: the
+		// judge's bound session (set through led.Bind when its spawn is
+		// reported, mirroring the judges registry) decides first — a dead
+		// judge session is a dead lease even if registration lingers — and
+		// only with no session bound is active registration (the /api/ask
+		// path, spawn in progress) kept alive, after which the
+		// spawn-grace rule below applies.
+		if ls.SessionID != "" {
+			return sessionAlive(ls.SessionID)
+		}
 		if holderAlive != nil && holderAlive(ls.Holder) {
 			return true
 		}
