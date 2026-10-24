@@ -1,0 +1,90 @@
+# Review: external SSE public URL change (PR 208, issue 207)
+
+PR head: ddb94e16e2978b9dca7374f6b9987d1bb0dbe1a0
+
+Date: 2026-10-23. First draft, no merge decision. PR 208 adds `mcp.public_url` so the MCP SSE
+`endpoint` event can advertise a reverse-proxy address instead of the bind address. It branched
+from main at c468569, which is 1802 commits behind the current main.
+
+## Behaviour check
+
+- (a) `public_url` set: `sseBaseURL` trims whitespace, then trailing slashes, and returns the
+  result, which `ServeSSE` passes to `server.WithBaseURL`. Verified from the diff and its table tests.
+- (b) `public_url` empty or whitespace only: the result is `<scheme>://<first sse_host entry,
+  trimmed>:<sse_port>`, https when `tls_enabled`. The current code computes the same string
+  (`"%s:%d"` then `"%s://%s"`), so the output is byte-for-byte equal.
+- Empty `sse_host`: `strings.Split("", ",")` returns `[""]`, so both versions give `http://:8081`.
+  The existing `len(hosts) == 0` fallback in `ServeSSE` is dead code, and the PR leaves it as is.
+- Differences between the PR's `ServeSSE` and the current one:
+  - The PR builds `sseSrv` with `server.NewSSEServer(s.srv, server.WithBaseURL(baseURL))` only.
+    Current main also passes `server.WithKeepAliveInterval(10*time.Second)` with its multi-line
+    CRASH-SAFETY / RELIABILITY comment. Both must survive the merge.
+  - The PR's hunk sits at line 1306; the same code is now near line 1446, and the surrounding
+    code changed (`mcpFedAuthMiddleware`, `ObserveSSEHandler`, `LogSSEServerTimeouts`,
+    `listenWithRetry` with `SSEBindTimeout`, TLS via `tlsutil.Build`). The PR does not touch those.
+  - The PR adds a `fmt.Printf` of the advertised URL when `public_url` is set. Keep it.
+- Likely conflicts beyond `server.go`: `CHANGELOG.md` (the PR's entry sits under `[Unreleased]`;
+  main now has many versioned headings below it and uses short entries), `docs/config-reference.yaml`,
+  `internal/config/config.go`, `internal/config/template.go`, `internal/router/router.go` (the
+  configure key list), `internal/server/web/app.js` (the `COMMS_CONFIG_FIELDS` and `RESTART_FIELDS`
+  lines moved by about 1700 lines), and all five locale files.
+- `internal/server/api.go` and `internal/server/reload.go` apply cleanly, but the context has
+  moved: the PUT case sits near `mcp.sse_port` at about line 6834 and the GET map near line 5683.
+- Not covered by the PR: `internal/wizard/defs.go` (MCP setup wizard) and `internal/mcp/README.md`
+  list `sse_port` but get no `public_url`. `internal/server/web/assets/docs-bm25-index.json` is
+  generated and needs regenerating after the docs change.
+- Rules still open on the PR: no version bump (correct for a branch, the merge script handles it),
+  no Android or iPhone parity issue, no datawatch-app locale issue for `settings_mcp_public_url`,
+  and the PR's CHANGELOG text uses a tracker reference. All five locales carry the English value
+  as a placeholder, as the Localization Rule allows.
+
+## Safety review
+
+- Every non-test use of `MCPConfig.PublicURL`: the struct field, the config template line, the
+  `GET /api/config` map, the `applyConfigPatch` case, and `sseBaseURL`, which is called only from
+  `ServeSSE`. The value is read only to compute the base URL.
+- It does not feed the listen address or the `hosts`/`addrs` binding loop (those use `SSEHost`
+  and `SSEPort`), any `http.Redirect`, any outbound HTTP client call, TLS certificate generation
+  (`tlsutil.Build` gets cert, key, auto-generate and data dir only), or any CORS or origin check.
+- `go doc github.com/mark3labs/mcp-go/server WithBaseURL`: "sets the base URL for the SSE
+  server". The library only prefixes the message endpoint it sends in the `endpoint` event with it;
+  it does not bind, redirect or fetch. The value reaches the client as text, so a bad value
+  misdirects clients rather than the daemon. Anyone who can write config can already change `sse_host`.
+- Validation today: none. `applyConfigPatch` only trims whitespace and trailing slashes. Values
+  such as `ftp://x`, `host:8081`, a relative path like `/mcp`, or text with a query, fragment or
+  user-info (`https://u:p@host/?a=b#c`) are accepted and advertised to clients.
+- Required validation, applied after trimming surrounding whitespace and trailing slashes: the
+  value is empty, or an absolute URL with scheme http or https (case-insensitive), a non-empty
+  host, no user-info, no query and no fragment. Reject anything else with a clear error from the
+  PUT path, and add table tests for each rejected shape.
+
+## Extension check
+
+- Skills inject markdown at session spawn. Plugins are executables hooking `pre_session_start`,
+  `post_session_output`, `post_session_complete` and `on_alert` (see `docs/api/plugins.md`). None
+  of these hooks sees or can change the daemon's MCP SSE transport: the `endpoint` event is
+  written by the mcp-go SSE handler inside the daemon from the `WithBaseURL` value fixed at
+  startup, and no hook runs on the transport or receives that event. Session output hooks act on
+  session text, not on the daemon's own protocol responses.
+- The one non-core workaround is a reverse proxy that rewrites the `endpoint` event body in the
+  stream. It is worse than a setting because it must buffer and edit a long-lived event stream
+  (breaking streaming and the keepalive pings if done badly), needs per-proxy configuration
+  (Caddy, nginx and `tailscale serve` differ, and `tailscale serve` is not known to offer body rewriting), and
+  moves a daemon fact into infrastructure the operator then has to keep in step. So the request
+  needs core code, and a config key is the smaller change.
+
+## Mergeability
+
+- The PR head commit is not in the local object store. Fetching it would write outside the
+  project directory, so no `git merge-tree` run was done. Equivalent dry run:
+  `gh pr diff 208 | git apply --check` against the current tree, which touches nothing.
+- Result: does not apply as a whole. Conflicting files (13): `CHANGELOG.md`,
+  `docs/config-reference.yaml`, `internal/config/config.go`, `internal/config/template.go`,
+  `internal/mcp/server.go`, `internal/router/router.go`, `internal/server/web/app.js`, and
+  `internal/server/web/locales/{de,en,es,fr,ja}.json`.
+- Applies cleanly (each checked on its own): `docs/implementation.md`, `docs/mcp.md`,
+  `docs/operations.md`, `internal/config/config_test.go`, `internal/mcp/sse_base_url_test.go`,
+  `internal/server/api.go`, `internal/server/mcp_public_url_patch_test.go`,
+  `internal/server/reload.go`.
+- The `internal/mcp/server.go` conflict is the one that matters: resolving it by taking the PR's
+  side would drop `server.WithKeepAliveInterval(10*time.Second)` and its comment.
