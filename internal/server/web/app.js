@@ -644,6 +644,11 @@ function connect() {
     state._wsOutageToastShown = false;
     startWsWatchdog();
     updateStatusDot();
+    // Ask for the bounded session list (ws_session_stream.go): the daemon
+    // answers with hello_ack and one frame of summary rows for the default
+    // view; after that each change arrives as one session_state. Sent on
+    // every socket, so a reconnect negotiates again.
+    send('hello', { session_list: 'window', session_view: 'summary' });
     // v7.0.0-alpha.18 #250 — auto-close the disconnect error toast
     // when WS reconnects. Operator: "if connection is fixed it should
     // auto close the error window".
@@ -1158,11 +1163,15 @@ function handleMessage(msg) {
       // reload check) still applies regardless of mode.
       if (state.activeServer === 'all') {
         _loadAllServersSessions();
-      } else if (msg.data && msg.data.sessions) {
-        state.sessions = msg.data.sessions || [];
-        _sessionsMarkFresh();
       } else {
-        state.sessions = msg.data || [];
+        // Rows, not the whole list: the frame covers only the default view
+        // (finished sessions older than the window are never sent), so
+        // _applySessionsFrame keeps what REST fetched for history.
+        const rows = Array.isArray(msg.data) ? msg.data : ((msg.data && msg.data.sessions) || []);
+        _applySessionsFrame(rows);
+        // The daemon's window is the authority for the default view, so the
+        // client's recent-window follows it rather than the config read.
+        if (msg.data && msg.data.window_minutes > 0) state._recentMinutes = msg.data.window_minutes;
         _sessionsMarkFresh();
       }
       if (_sl().next && state.sessions.length >= _sl().total) _sl().next = '';
@@ -1196,6 +1205,28 @@ function handleMessage(msg) {
       // dead code until v8.37.0 actually started sending session_state, so
       // the mismatch was never exercised until now.
       if (msg.data && msg.data.session) updateSession(msg.data.session);
+      break;
+    case 'session_removed': {
+      // Sent only when the daemon no longer holds the session (deleted),
+      // never because it aged out of the window: drop it from the list.
+      const id = msg.data && msg.data.session_id;
+      if (!id) break;
+      const before = state.sessions.length;
+      state.sessions = state.sessions.filter(s => s.full_id !== id && s.id !== id);
+      _restSessionIds().delete(id);
+      if (state.sessions.length !== before) {
+        onSessionsUpdated();
+        if (state.activeView === 'sessions') renderSessionsView();
+      }
+      break;
+    }
+    case 'hello_ack':
+      // Reply to our hello. Only 'window' changes the frames we get; an
+      // older daemon (or one that echoes another mode) keeps the legacy
+      // stream. Its bounded sessions frame still feeds the list, and the
+      // REST list stays the source for history and paging.
+      state._sessionListWindow = !!(msg.data && msg.data.session_list === 'window');
+      if (!state._sessionListWindow && state.activeView === 'sessions' && !_sl().loaded) loadSessionsList();
       break;
     case 'output':
       if (msg.data) {
@@ -1944,12 +1975,14 @@ function applySessionUpdate(sess) {
   // Sync channel_ready from session state updates
   if (sess.channel_ready) state.channelReady[sess.full_id] = true;
   const idx = state.sessions.findIndex(s => s.full_id === sess.full_id);
-  const oldState = idx >= 0 ? state.sessions[idx].state : null;
+  const cur = idx >= 0 ? state.sessions[idx] : null;
+  const oldState = cur ? cur.state : null;
   const changed = idx < 0 || oldState !== sess.state;
+  const merged = _mergeSessionFields(cur, sess);
   if (idx >= 0) {
-    state.sessions[idx] = sess;
+    state.sessions[idx] = merged;
   } else {
-    state.sessions.push(sess);
+    state.sessions.push(merged);
   }
   // Schedule refresh: the server does NOT broadcast schedule-change events
   // over WS (see internal/server/ws.go MessageType list — no schedule type),
@@ -1970,6 +2003,9 @@ function applySessionUpdate(sess) {
 function updateSession(sess) {
   if (!sess) return;
   const changed = applySessionUpdate(sess);
+  // The record as held after the merge: a summary row carries no task or
+  // input_mode, so the detail checks below read the held record, not the row.
+  const held = state.sessions.find(s => s.full_id === sess.full_id) || sess;
   onSessionsUpdated();
   // If viewing alerts and session state changed, refresh to update quick-input buttons
   if (state.activeView === 'alerts' && changed) {
@@ -1983,7 +2019,7 @@ function updateSession(sess) {
     refreshNeedsInputBanner(sess.full_id);
     updateSessionDetailButtons(sess.full_id);
     refreshGeneratingIndicator(sess.full_id); // v5.27.7 BL208/#26
-    refreshLastActivityIndicator(sess);
+    refreshLastActivityIndicator(held);
     // BL263 follow-up / v6.11.10 — operator: "Restart seemed better but
     // still had the tmux command window at bottom not return after
     // refresh." During the disconnect window the session may have been
@@ -1993,8 +2029,8 @@ function updateSession(sess) {
     // bar should be restored. Detect the missing-bar case and force a
     // re-render. Only fires when the bar is genuinely absent — if it's
     // present this is a no-op.
-    const sessActive = sess && (sess.state === 'running' || sess.state === 'waiting_input' || sess.state === 'rate_limited');
-    const inputModeOK = (sess && sess.input_mode || 'tmux') !== 'none';
+    const sessActive = held.state === 'running' || held.state === 'waiting_input' || held.state === 'rate_limited';
+    const inputModeOK = (held.input_mode || 'tmux') !== 'none';
     const barNeeded = sessActive && inputModeOK;
     const barPresent = !!document.getElementById('inputBar');
     if (barNeeded && !barPresent) {
@@ -2678,11 +2714,22 @@ function _sessionsStale() {
   if (!state.connected) return true;
   return !!l.error && (Date.now() - l.at) > SESSIONS_POLL_MS;
 }
-// A summary row cut some text fields; keep the full text we already hold
-// when it is the same record.
-function _mergeSessionRow(row) {
-  if (!row) return;
-  const cur = state.sessions.find(s => s.full_id === row.full_id);
+// Keys a summary row carries (GET /api/sessions?view=summary, the window
+// frame and its session_state). They are omitempty on the daemon, so a
+// summary row that omits one means that field is empty now.
+const SESSION_SUMMARY_KEYS = [
+  'id', 'full_id', 'name', 'state', 'backend', 'llm_ref', 'project_dir', 'hostname',
+  'created_at', 'updated_at', 'last_activity', 'parent_id', 'est_cost_usd',
+  'tokens_in', 'tokens_out', 'status_line', 'truncated_fields',
+];
+// _mergeSessionFields is the one merge for an incoming record over the one
+// already held. A summary row has no task key (the summary and window forms
+// never carry task), so the held record keeps task, last_response,
+// input_mode, channel_ready and every other field the row lacks; the summary
+// keys are taken from the row. A full record (it carries task whenever it has
+// one) replaces the held record. A text field the row cut short keeps the
+// full text already held when it is the same record.
+function _mergeSessionFields(cur, row) {
   if (cur && Array.isArray(row.truncated_fields)) {
     const still = [];
     for (const f of row.truncated_fields) {
@@ -2692,6 +2739,33 @@ function _mergeSessionRow(row) {
     }
     if (still.length) row.truncated_fields = still; else delete row.truncated_fields;
   }
+  if (!cur || 'task' in row) return Object.assign({}, row);
+  const out = Object.assign({}, cur);
+  for (const k of SESSION_SUMMARY_KEYS) if (!(k in row)) delete out[k];
+  return Object.assign(out, row);
+}
+// _lacksFullDetail is true for a record that still needs GET /api/sessions/{id}:
+// one whose text was cut, or a summary row with no task held yet.
+function _lacksFullDetail(sess) {
+  return (sess.truncated_fields || []).length > 0 || !('task' in sess);
+}
+// _restSessionIds is the set of sessions a REST list page has returned. A
+// sessions frame replaces the websocket-held part of the list only; these
+// stay (history, and rows past the frame's default view).
+function _restSessionIds() {
+  return state._restSessionIds || (state._restSessionIds = new Set());
+}
+// _applySessionsFrame applies a `sessions` frame's rows: the frame is the
+// current default view, so a held session it omits and REST did not fetch
+// has left the view and is dropped; every row merges field by field.
+function _applySessionsFrame(rows) {
+  const framed = new Set(rows.map(r => r && r.full_id).filter(Boolean));
+  const rest = _restSessionIds();
+  state.sessions = state.sessions.filter(s => framed.has(s.full_id) || rest.has(s.full_id));
+  rows.forEach(_mergeSessionRow);
+}
+function _mergeSessionRow(row) {
+  if (!row) return;
   applySessionUpdate(row);
 }
 function _sessionsLocalMode() {
@@ -2700,12 +2774,15 @@ function _sessionsLocalMode() {
 function _sessionsFetchPage(cursor) {
   const ac = (typeof AbortController === 'function') ? new AbortController() : null;
   const timer = setTimeout(() => { if (ac) { try { ac.abort(); } catch (e) { /* ignore */ } } }, 15000);
-  const q = '/api/sessions?view=summary&limit=' + SESSIONS_PAGE + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+  // History on asks for the archive too; finished sessions older than the
+  // window are in the live list and come back through the same paging.
+  const q = '/api/sessions?view=summary&limit=' + SESSIONS_PAGE + (state.showHistory ? '&history=1' : '') + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
   const init = { headers: tokenHeader() };
   if (ac) init.signal = ac.signal;
   return fetch(q, init).then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))).then(data => {
     clearTimeout(timer);
     const rows = Array.isArray(data) ? data : ((data && data.sessions) || []);
+    rows.forEach(r => { if (r && r.full_id) _restSessionIds().add(r.full_id); });
     return { rows, next: (data && data.next_cursor) || '', total: (data && data.total) || rows.length };
   }, err => { clearTimeout(timer); throw err; });
 }
@@ -2748,9 +2825,10 @@ window.sessionsLoadMore = function() {
   }).catch(err => { l.moreError = (err && err.message) || String(err); })
     .then(() => { l.loadingMore = false; renderSessionsView(); });
 };
-// A summary row cut some text; the full record comes from GET /api/sessions/{id}.
+// A record without full detail (cut text, or a summary row) gets the full
+// record from GET /api/sessions/{id}, once per session.
 function _ensureFullSession(sessionId, sess) {
-  if (!sess || !(sess.truncated_fields || []).length) return;
+  if (!sess || !_lacksFullDetail(sess)) return;
   state._fullSessionFetch = state._fullSessionFetch || {};
   if (state._fullSessionFetch[sess.full_id]) return;
   state._fullSessionFetch[sess.full_id] = true;
