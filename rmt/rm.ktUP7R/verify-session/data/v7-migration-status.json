@@ -1,9 +1,0 @@
-{
-  "at_unix": 1792810967,
-  "howto": "/docs/howto/v7-compute-migration.md",
-  "migrated": [
-    "shell"
-  ],
-  "notice": "v7 unification: 1 LLM(s) migrated from v6 cfg blocks. Review them in Compute → LLMs.",
-  "version": "7.0.0"
-}

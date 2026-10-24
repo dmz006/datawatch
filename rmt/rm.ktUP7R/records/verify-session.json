@@ -1,0 +1,142 @@
+{
+  "state": "verify-session",
+  "description": "worker finished; the task is verifying through a live verifier session",
+  "result": "FAIL",
+  "note": "plan never became runnable (PRD status: draft)",
+  "restart": {
+    "old_pid": "",
+    "new_pid": "",
+    "term_clean": false,
+    "down_seconds": null
+  },
+  "derived": {
+    "task_status_before": "",
+    "task_status_after": "",
+    "session_ids_before": [
+      "restart-matrix-2533",
+      "restart-matrix-fb05"
+    ],
+    "session_ids_after": [
+      "restart-matrix-2533",
+      "restart-matrix-fb05"
+    ],
+    "pane_pids_before": [],
+    "pane_pids_after": [],
+    "retry_count_before": 0,
+    "retry_count_after": 0,
+    "duplicate_sessions": 0,
+    "lost_output_bytes": 0,
+    "redone": false
+  },
+  "criteria": [
+    {
+      "criterion": "state_reached",
+      "result": "FAIL",
+      "detail": "plan never became runnable (PRD status: draft)"
+    }
+  ],
+  "pass": 0,
+  "fail": 1,
+  "before": {
+    "label": "verify-session-before",
+    "at": "2026-10-24T03:05:48Z",
+    "daemon": {
+      "pid": "4183271",
+      "uptime_seconds": 184
+    },
+    "prd_status": "draft",
+    "task": {
+      "id": "",
+      "status": "",
+      "retry_count": 0,
+      "prior_attempt_count": 0,
+      "session_id": "",
+      "adopted_session": false
+    },
+    "sessions": [
+      {
+        "id": "2533",
+        "full_id": "restart-matrix-2533",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/verify-session/data/sessions/restart-matrix-2533/output.log",
+        "tmux_session": "cs-restart-matrix-2533"
+      },
+      {
+        "id": "fb05",
+        "full_id": "restart-matrix-fb05",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/verify-session/data/sessions/restart-matrix-fb05/output.log",
+        "tmux_session": "cs-restart-matrix-fb05"
+      }
+    ],
+    "session_ids": [
+      "restart-matrix-2533",
+      "restart-matrix-fb05"
+    ],
+    "pane_pids": [],
+    "counts": {
+      "planner_starts": 2,
+      "worker_starts": 0,
+      "verifier_starts": 0,
+      "guardrail_starts": 0,
+      "script_launched": 0,
+      "script_starts": 0,
+      "script_finished": 0
+    },
+    "worker_counter_bytes": 0,
+    "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/verify-session/snap-verify-session-before"
+  },
+  "after": {
+    "label": "verify-session-before",
+    "at": "2026-10-24T03:05:48Z",
+    "daemon": {
+      "pid": "4183271",
+      "uptime_seconds": 184
+    },
+    "prd_status": "draft",
+    "task": {
+      "id": "",
+      "status": "",
+      "retry_count": 0,
+      "prior_attempt_count": 0,
+      "session_id": "",
+      "adopted_session": false
+    },
+    "sessions": [
+      {
+        "id": "2533",
+        "full_id": "restart-matrix-2533",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/verify-session/data/sessions/restart-matrix-2533/output.log",
+        "tmux_session": "cs-restart-matrix-2533"
+      },
+      {
+        "id": "fb05",
+        "full_id": "restart-matrix-fb05",
+        "name": "autonomous:decompose",
+        "state": "killed",
+        "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/verify-session/data/sessions/restart-matrix-fb05/output.log",
+        "tmux_session": "cs-restart-matrix-fb05"
+      }
+    ],
+    "session_ids": [
+      "restart-matrix-2533",
+      "restart-matrix-fb05"
+    ],
+    "pane_pids": [],
+    "counts": {
+      "planner_starts": 2,
+      "worker_starts": 0,
+      "verifier_starts": 0,
+      "guardrail_starts": 0,
+      "script_launched": 0,
+      "script_starts": 0,
+      "script_finished": 0
+    },
+    "worker_counter_bytes": 0,
+    "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.ktUP7R/verify-session/snap-verify-session-before"
+  }
+}
