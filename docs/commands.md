@@ -1109,10 +1109,16 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `tag-rename <id> <new-name>`, `tag-color <id> <color>`, `tag-move <id> --parent <new-parent-id\|root>` | Edit a tag; `PATCH /api/autonomous/tags/{id}`. A move that would make a tag its own ancestor is refused |
 | `tag-delete <id>` | Delete a tag; refused while it has child tags, and refused with a count while Automata still carry it |
 | `prd-set-tags <prd-id> --tags <id1,id2,...>` | Replace the tags on an Automaton; an empty `--tags` value clears them; `POST /api/autonomous/prds/{id}/set_tags` |
+| `prd-set-kind <id> <feature\|bug\|other>` | Set the Automaton kind the progress figures count it under; an unknown kind is refused before anything is sent; `POST /api/autonomous/prds/{id}/set_kind` (body `{"kind": ...}`, an empty kind derives it again) |
+| `prd-create <spec> --kind <feature\|bug\|other>` | Give the kind at creation; omit it to derive the kind from the title and spec |
 
 Comm channels: `autonomous tags`, `tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]`,
 `tag-rename <id> <new-name>`, `tag-move <id> <parent-id|root>`, `tag-color <id> <color>`,
 `tag-delete <id>`, and `set-tags <prd-id> <tag-id1,tag-id2,...>` (omit the list to clear).
+
+Comm channels for the progress figures: `progress [automation=<id>] [tag=<id>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>]`
+and `progress trend [days]` (see their own section above), and
+`autonomous set-kind <prd-id> <feature|bug|other>` to set an Automaton kind.
 
 ### `datawatch automation <subcommand>`
 

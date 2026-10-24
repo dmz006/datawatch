@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Automata progress dashboard
+
+A read-only view of how far the Automata have got and roughly when the rest will be done.
+
+- New progress figures: counts by kind (feature, bug, other), throughput and worker utilization per active day, lead time, inactive windows left out of every rate and listed, the work left split into known (Automata that exist) and estimated (backlog rows not filed yet, Automata with no tasks yet), and a completion range in active days with the method and drivers behind it. Lead time is shown but never feeds an estimate, and anything not measured reads "not measured", never zero.
+- Reachable on REST (`GET /api/autonomous/progress`, `GET /api/autonomous/progress/trend`), MCP (`autonomous_progress`, `autonomous_progress_trend`), the CLI (`datawatch autonomous progress`, `progress-trend`), the comm channel (`progress`, `progress trend`) and a Progress card on the web UI Automata tab. All return the same object.
+- An Automaton can carry a kind (feature, bug or other), set at creation or afterwards on REST, MCP, CLI, comm and in Automaton settings; without one, the kind comes from the backlog row's `{kind=...}` marker, then from the title and spec. Backlog rows can carry `{phases=N}` to say how many Automata they become.
+- Stretches to leave out can be listed in an `operator-wait-windows.tsv` file next to the backlog file; overlapping windows are merged so no time is subtracted twice.
+- The numbers are saved once a day and on each Automaton completion (`progress-snapshots.jsonl`), and the trend says whether the completion range is converging, widening or flat.
+- Five settings under `autonomous.progress` (`lanes`, `inactive_gap_hours`, `backlog_path`, `since`, `snapshot_retention_days`) on YAML, CLI, web UI, REST and chat, applied without a restart.
+- The status script keeps working as the reference; four deliberate differences were made in both the script and the engine: overlapping windows are merged, multi-phase rows follow the `{phases=N}` marker, tasks per Automaton divides by the Automata that have tasks, and template records are skipped.
+- New how-to `docs/howto/automata-progress.md`, operations and command reference sections, testing tracker rows (live run still owed) and a parity row (web UI done; Android and iOS not yet).
+
 ## v9.5.124 — Flexible verifier routing
 
 Verifier backend selection is now a policy instead of a fixed global setting, so verification can use whichever backend has a free slot, all local, all Claude, or a mix.

@@ -3756,6 +3756,56 @@ is in [howto/automata-capacity.md](howto/automata-capacity.md).
 
 ---
 
+## Automata progress dashboard
+
+A read-only view of how far the Automata have got and roughly when the rest
+will be done: counts by kind (feature, bug, other), throughput and worker
+utilization per **active** day, lead time, the work left split into **known**
+(Automata that exist) and **estimated** (backlog rows not filed yet, Automata
+with no tasks yet), and a completion range in active days with the method behind
+each figure. Stretches with no activity are left out of every rate and listed,
+never hidden. Lead time is shown but never feeds an estimate. Anything that
+could not be measured reads *not measured*, not zero. Operator guide:
+[howto/automata-progress.md](howto/automata-progress.md).
+
+**Inputs.** The Automata store; the backlog table (`autonomous.progress.backlog_path`,
+default `docs/plans/README.md`), where `{kind=feature|bug|other}` and
+`{phases=N}` in an item cell set a row's kind and how many Automata it becomes;
+and, optionally, `operator-wait-windows.tsv` in the same folder as the backlog
+file (tab separated: start, end, kind, reason) for stretches to leave out. A
+missing backlog or waits file is not an error.
+
+**Data written.** `progress-snapshots.jsonl` in the Automata data directory, one
+snapshot a day (UTC) plus one each time an Automaton completes, pruned after
+`autonomous.progress.snapshot_retention_days`. Back it up with the other
+Automata files if you want the trend history kept.
+
+**The five access methods.**
+
+| Task | YAML | CLI | Web UI | REST | Chat |
+|---|---|---|---|---|---|
+| Read the numbers | n/a | `datawatch autonomous progress [--automation ID] [--tag ID] [--since DATE] [--until DATE] [--json]` | Automata tab, *Progress* card | `GET /api/autonomous/progress` | `progress [automation=ID] [tag=ID] [since=DATE] [until=DATE]` |
+| Read the trend | n/a | `datawatch autonomous progress-trend [--days N] [--json]` | Trend section of the card | `GET /api/autonomous/progress/trend?days=N` | `progress trend [days]` |
+| Set an Automaton kind | n/a | `datawatch autonomous prd-set-kind ID KIND`, `prd-create --kind KIND` | Automaton settings, *Kind* | `POST /api/autonomous/prds/{id}/set_kind` | `autonomous set-kind ID KIND` |
+| Change a setting | `autonomous.progress.*` | `datawatch config set autonomous.progress.lanes 5` | Settings, General, Autonomous | `PUT /api/config` | `configure autonomous.progress.lanes=5` |
+
+MCP agents use `autonomous_progress`, `autonomous_progress_trend` (both
+read-only), `autonomous_prd_set_kind`, and `config_set`. All surfaces return or
+print the same object. The settings keys and their defaults are in the table
+under *Progress engine settings* in the backup section above and in
+`docs/config-reference.yaml`.
+
+**Where to see it.**
+
+| Where | What |
+|---|---|
+| Web UI, Automata tab | The *Progress* card; shows the last good data with a stale notice when a refresh fails. |
+| CLI and chat | The status table as text. |
+| REST and MCP | The JSON object, for dashboards and scripts. |
+| Android and iOS | Not yet. |
+
+---
+
 ## Terminal Performance
 
 ### xterm.js load time

@@ -1410,8 +1410,8 @@ Configuration Accessibility Rule and the full parity-surface set.
 | **Comm channel** | Yes (control + status) | `automation list`, `automation status <id>`, `automation pause\|resume\|cancel <id> [reason]`, `automation skip <id> <member> <edge> <reason>`, `automation insert <id> after <member> <prd> <reason>`, `automation set-budget <id> key=value...` (built in Phase 5; `clear=true` removes the policy; the arguments are the REST fields). Create and edge rewiring are excluded from comm because they are graph editing and do not fit one line; use the PWA, CLI or MCP. Advance, blocked and budget-breach notifications go through BL427's comm fan-out, not a separate path. |
 | **YAML/config** | Yes | Provisional keys under `autonomous.automation`: `enabled` (bool); `idle_alert_minutes` (int); `empty_edge_action` (`block`\|`pause`, Open question 6); `agent_insert_policy` (`allow`\|`require_operator`, Open question 8); ~~`default_budget_on_breach` (`pause`\|`block`)~~ (not built: Phase 5 added no config key, and `on_breach` defaults to `pause` on the policy itself). Each is in `handleGetConfig` / `handlePutConfig`, `docs/config-reference.yaml`, `configure <key>=<value>` and `datawatch config set`. Automation objects themselves are runtime data in `automations.jsonl`, not YAML. |
 | **PWA** | Yes | The Automation tab left of Automata; list, pipeline-strip detail and create/edit (see **PWA**); the config fields in Settings → General (autonomous section); locale keys in all bundles. |
-| **Android** | Yes, via a parity issue | A `datawatch-app` issue: Automation list + strip detail + pause/resume/cancel/skip; create/edit may lag one release. Filed in the companion app repo by the implementation PRD, not here. Phase 5 adds: parse the `budget_policy` fields, the `budget` view, the status `budget` / `spent_usd` / `ceiling_display` fields and the paused or blocked budget reason. **Not filed yet** (cannot be filed from the implementing session). Phase 7: the ready-to-file text is under `### Phase 7 companion apps` (Android issue); still **not filed**. |
-| **iPhone/iOS** | Yes, via a parity issue | Same scope as Android, in the companion app repo's iOS track; the Phase 5 budget fields above are not filed yet either. Advance and blocked push notifications ride on BL427's mobile topic sink (`PublishToTopic`), so APNs/FCM need no Automation-specific delivery. Phase 7: the ready-to-file text is under `### Phase 7 companion apps` (iOS issue); still **not filed**. |
+| **Android** | Yes, via a parity issue | A `datawatch-app` issue: Automation list + strip detail + pause/resume/cancel/skip; create/edit may lag one release. Filed in the companion app repo by the implementation PRD, not here. Phase 5 adds: parse the `budget_policy` fields, the `budget` view, the status `budget` / `spent_usd` / `ceiling_display` fields and the paused or blocked budget reason. **Not filed yet** (cannot be filed from the implementing session). Phase 7: the ready-to-file text is under `### Phase 7 companion apps` (Android issue); still **not filed**. Phase 8 (progress card and Automaton kind): the ready-to-file text is under `### Phase 8 companion apps` (Android issue); **not filed**. |
+| **iPhone/iOS** | Yes, via a parity issue | Same scope as Android, in the companion app repo's iOS track; the Phase 5 budget fields above are not filed yet either. Advance and blocked push notifications ride on BL427's mobile topic sink (`PublishToTopic`), so APNs/FCM need no Automation-specific delivery. Phase 7: the ready-to-file text is under `### Phase 7 companion apps` (iOS issue); still **not filed**. Phase 8: the ready-to-file text is under `### Phase 8 companion apps` (iOS issue); **not filed**. |
 
 ---
 
@@ -1599,12 +1599,114 @@ howto, and the `datawatch-app` issue where applicable.
      fields, and the `deprecated` and `deprecation` fields on old orchestrator graph responses.
    - Acceptance criteria: 1 to 6 of the Android issue, verified on iOS.
    - Advance and blocked push notifications ride on BL427's mobile topic sink, so no Automation-specific APNs work is needed.
-8. **Phase 8 — Progress, estimates and running dashboard (BL553).** Status: Planned.
+8. **Phase 8 — Progress, estimates and running dashboard (BL553).** Status: Done (development build; released with the next release).
    - The metrics engine (counts by kind and state, correct time and throughput, utilization,
      remaining work split known vs estimated, completion range) with REST, MCP, CLI and comm verb.
    - The explicit PRD `kind` field and a machine-readable backlog.
    - Daily snapshots and trend; the PWA dashboard card; `scripts/v10-status.py` kept as the oracle
      and as a golden test.
+   - Operator guide `docs/howto/automata-progress.md`, tracker section `Automata progress dashboard — unreleased`
+     in `docs/testing-tracker.md`; the `datawatch-app` Android and iOS issues are written as ready-to-file text
+     (see Phase 8 companion apps); **not filed yet**.
+
+### Phase 8 status note
+
+   **Phase 8 status note.** What shipped:
+   - Engine: `internal/autonomous/progress_engine.go` (counts, throughput, utilization, lead time),
+     `progress_time.go` (inactive windows, active hours, median), `progress_remaining.go` (known and estimated
+     work, completion range and drivers), `progress_kind.go` (kind resolution), `progress_backlog.go` (backlog
+     reader and the `{kind=...}` and `{phases=N}` markers), `progress_text.go` (the one text renderer).
+   - Surfaces: REST `GET /api/autonomous/progress` and `GET /api/autonomous/progress/trend`
+     (`internal/server/progress.go`, read capability); MCP `autonomous_progress` and `autonomous_progress_trend`
+     (read-only) and `autonomous_prd_set_kind`; CLI `datawatch autonomous progress`, `progress-trend`,
+     `prd-set-kind` and `prd-create --kind`; comm `progress`, `progress trend [days]` and `autonomous set-kind`;
+     REST `POST /api/autonomous/prds/{id}/set_kind`.
+   - Snapshots: `progress-snapshots.jsonl` next to the Automata store, one per UTC day plus one per completed
+     Automaton, pruned at `autonomous.progress.snapshot_retention_days`; trend direction converging, widening,
+     flat or unknown (10% tolerance on the width of the range).
+   - Config: `autonomous.progress.lanes`, `inactive_gap_hours`, `backlog_path`, `since`, `snapshot_retention_days`
+     on YAML, CLI, web UI, REST, MCP and comm, applied live.
+   - PWA: the Progress card on the Automata tab (`progressCardHtml`, `loadProgressCard`), the *Kind* select in
+     Automaton settings, the five settings fields; locale keys `progress_card_*` and `settings_progress_*` in
+     all five bundles.
+   - Oracle and golden test: `internal/autonomous/progress_golden_test.go` runs the engine and
+     `scripts/v10-status.py` on the fixture in `internal/autonomous/testdata/progress/` and compares every number.
+   - Howto: `docs/howto/automata-progress.md`. Tracker section: `Automata progress dashboard — unreleased`.
+
+   The four documented oracle changes (made in `scripts/v10-status.py` and the engine together, so they still agree):
+   - (a) Overlapping or touching inactive windows are merged before hours are summed, so no stretch is excluded twice.
+   - (b) A multi-phase backlog row is read from its `{phases=N}` marker instead of the names of two particular
+     rows: an unfiled row adds max(N, 1) new Automata, a filed row adds max(N minus its linked ids, 0).
+   - (c) Tasks per Automaton divides by the Automata that have at least one task, not by every Automaton.
+   - (d) Records whose `is_template` field is true are skipped.
+
+   Still owed:
+   - The live smoke result: the tracker rows are Tested by unit and golden tests with fakes and fixtures only, so
+     every Validated cell stays No until a sandbox run covers the end-to-end story (real finished Automata, a real
+     backlog and waits file, a day boundary for the snapshot, the card in a browser).
+   - Deferred, not built: the stage ledger timestamps (lead time uses the existing created, approved and task
+     start and completion times, so a stage that is not recorded reads not measured); per-lane optimization
+     inputs (utilization is one figure against a configured lane count, not a per-lane or per-backend view);
+     and critical-path figures (the completion range divides total work by a rate; it does not model task
+     dependencies or which Automaton gates the finish).
+   - The mobile apps: no mobile code is in this phase; see Phase 8 companion apps.
+
+### Phase 8 companion apps
+
+   **`datawatch-app` parity: not filed yet.** The two issues below are ready to file in `dmz006/datawatch-app`.
+   They cannot be filed from the implementing session; the supervisor files them and this note is updated
+   with the issue numbers. No mobile code is in this phase.
+
+   **Issue 1 — Android: Automata progress card and Automaton kind**
+   - Scope: an Automata progress card and a kind field. Read `GET /api/autonomous/progress` (optional
+     `automation_id`, `tag_id`, `since`, `until`) and `GET /api/autonomous/progress/trend?days=N` (1 to 365,
+     default 30). Parse the metrics object: `generated_at`, `since`, `scope`, `calendar_days`, `active_days`,
+     `lanes`; `groups` (`feature`, `bug`, `other`, always all three) and `totals`, each with `prds`, `done`,
+     `running`, `waiting`, `blocked`, `tasks`, `tasks_done`, `tasks_left`, `work_hours` and the nullable
+     `median_prd_wall_hours`, `mean_prd_wall_hours`, `mean_task_hours`, `median_task_hours`; `throughput`;
+     `utilization`; `lead_time` (every stage nullable); `inactive` (`windows` with `start`, `end`, `kind`,
+     `reason`, `inferred`, plus `excluded_hours`, `share_of_calendar`, `calendar_estimate_days`); `remaining`
+     (`known`, `estimated`, `combined`); `completion` (`low_days`, `high_days`, the four `by_*_days` figures,
+     `calendar_days`, `drivers`, `method`); `unfiled_rows`; `backlog_available`; `not_measured`. From the trend
+     object read `days`, `direction` and `points` (`date`, `reason`, `completion_low_days`,
+     `completion_high_days`, `known_tasks`, `estimated_tasks`, `throughput_3d`, `utilization`,
+     `completed_prds`). Treat every nullable number as not measured; never show a missing value as 0. Add a
+     Kind picker (feature, bug, other, or derived) that calls `POST /api/autonomous/prds/{id}/set_kind` with
+     `{"kind": ...}` (an empty kind derives it again), and send `kind` when creating an Automaton. Never show
+     the `id` or `number` of an `unfiled_rows` entry; show its `item` text only.
+   - Card contents, in this order: the kind table (one row each for feature, bug and, when non-zero, other, plus
+     a total: Automata, done, running, waiting, blocked, tasks, tasks done, tasks left, work time, median per
+     Automaton, mean per task); the work-remaining block with the known part (Automata not done, tasks still
+     open, not decomposed yet) and the estimated part (new items not filed yet, Automata with no tasks yet,
+     estimated tasks, tasks per Automaton mean and median) kept apart, then the combined estimate; the
+     completion range with the four method lines and their sentences, the calendar view and the drivers; the
+     throughput, utilization and inactive-windows summaries (inferred windows marked); the unfiled-row count
+     and the trend direction. Show a stale notice when the last refresh failed or the data is older than five
+     minutes, keep the last good data on screen, and show a retry control when the first load fails.
+   - Locale keys: add all `progress_card_*` keys (title, loading, stale, failed, retry, not measured, inferred,
+     the units, the `col_*` headings, the `kind_*` labels, the remaining, completion, method, driver,
+     throughput, utilization, windows, backlog and trend keys) and the five `settings_progress_*` keys
+     (`lanes`, `inactive_gap_hours`, `backlog_path`, `since`, `snapshot_retention_days`) from the five server
+     locale bundles under `internal/server/web/locales/`, in the five languages (en, de, es, fr, ja). Map the
+     API `drivers` values `utilization`, `large_prd_mix`, `undecomposed_backlog` and `sparse_history` to the
+     `progress_card_driver_*` keys, and the `method` keys `prd_rate`, `task_rate`, `task_rate_24h` and
+     `worker_hours` to the `progress_card_method_*` keys; an unknown value must not break the screen.
+   - Acceptance criteria:
+     1. The card lists a row per kind and a total, and the *other* row appears only when it has Automata.
+     2. Known and estimated remaining work are shown separately and the combined figure is labelled an estimate.
+     3. A null number shows the localized *not measured* text, never 0, and a response missing a field does not crash the screen.
+     4. The completion range shows low to high active days, each method with its sentence, and the drivers as localized text.
+     5. Inactive windows list with the inferred mark; the stale notice and the retry control behave as described.
+     6. The trend direction shows converging, widening or flat, and nothing when it is unknown or no snapshot exists.
+     7. Setting the kind calls the route, shows an error on a 400 or 404, and an empty kind clears it.
+     8. No tracker id, internal term or `unfiled_rows` id appears anywhere on screen; hostile text in a row is shown as plain text.
+
+   **Issue 2 — iOS: Automata progress card and Automaton kind**
+   - Scope: the same as the Android issue, in the companion app repo's iOS track: the progress and trend reads,
+     the metrics parsing with nullable numbers, the kind picker and create-time kind, the card contents and
+     states, and the `progress_card_*` and `settings_progress_*` locale keys in the five languages.
+   - Acceptance criteria: 1 to 8 of the Android issue, verified on iOS.
+   - No push or APNs work is needed: the progress figures are read on demand and carry no notification.
 
 ---
 
