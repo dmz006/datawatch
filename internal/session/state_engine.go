@@ -44,6 +44,19 @@ const (
 	EventComplete
 )
 
+// String names the event kind for the journal and for timeline reasons.
+func (k ChannelEventKind) String() string {
+	switch k {
+	case EventRunning:
+		return "running"
+	case EventIdle:
+		return "idle"
+	case EventComplete:
+		return "complete"
+	}
+	return "unknown"
+}
+
 // DefaultRunningToWaitingGap is the universal-fallback silence window. A
 // Running session whose LastChannelEventAt is older than this is flipped
 // to WaitingInput by the watcher. Operator-chosen 2026-05-05 (15 s, see
@@ -131,6 +144,10 @@ func (m *Manager) markChannelEventAt(fullID string, kind ChannelEventKind, ts ti
 	_ = m.store.Save(sess)
 	if sticky {
 		return
+	}
+	if newState == StateComplete && oldState != newState {
+		m.recordEnd(sess, m.getTracker(sess.FullID), oldState, newState,
+			EndReason{Caller: "channel-event", Reason: "channel event: " + kind.String()})
 	}
 	// Fire downstream hooks for state changes (mirrors the historical
 	// MarkChannelActivityFromText behaviour). onStateChange always; onSessionEnd
