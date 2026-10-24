@@ -50,8 +50,11 @@ func callerAt(skip int) string {
 	return fmt.Sprintf("%s@%s:%d", name, filepath.Base(file), line)
 }
 
-// Kill ends a session with no reason. Callers that know why should call
-// EndSession. The recorded caller is the immediate caller of Kill.
+// Kill ends a session with no reason. It is kept only as a compatibility
+// wrapper: new code must call EndSession with an EndReason. Code outside this
+// package that calls Kill, KillTmuxSession or KillAll without an end-reason-ok
+// marker fails TestSessionEndGuardNoBareKillCallers. The recorded caller is the
+// immediate caller of Kill.
 func (m *Manager) Kill(fullID string) error {
 	return m.EndSession(fullID, EndReason{Caller: callerAt(1), Reason: noReasonGiven})
 }

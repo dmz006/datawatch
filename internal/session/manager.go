@@ -4239,7 +4239,7 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 
 	// Kill if still active
 	if sess.State == StateRunning || sess.State == StateWaitingInput || sess.State == StateRateLimited {
-		if err := m.Kill(fullID); err != nil {
+		if err := m.EndSession(fullID, EndReason{Caller: callerAt(0), Reason: "session deleted while still active"}); err != nil {
 			return fmt.Errorf("kill before delete: %w", err)
 		}
 	}

@@ -24,6 +24,7 @@ func signalServiceProcessGroup(cmd *exec.Cmd, force bool) error {
 	if force {
 		sig = syscall.SIGKILL
 	}
+	// end-reason-ok: signals a plugin service's OS process group, not a datawatch session
 	if err := syscall.Kill(-cmd.Process.Pid, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return err
 	}
