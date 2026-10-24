@@ -1,0 +1,48 @@
+{
+  "signal": "terminated",
+  "sender_pid": 0,
+  "parent_chain": [
+    {
+      "pid": 3816190,
+      "cmdline": "/home/dmz/.datawatch/prd-worktrees/d0210001/datawatch --config /home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.hVajEQ/planning/config.yaml start --foreground",
+      "user": "dmz"
+    },
+    {
+      "pid": 3816125,
+      "cmdline": "bash /home/dmz/.datawatch/prd-worktrees/d0210001/scripts/restart-matrix/states-session.sh --only planning",
+      "user": "dmz"
+    },
+    {
+      "pid": 3816114,
+      "cmdline": "bash scripts/restart-matrix.sh --only planning",
+      "user": "dmz"
+    },
+    {
+      "pid": 3816111,
+      "cmdline": "/bin/bash -c source /home/dmz/.claude/shell-snapshots/snapshot-bash-1792809281059-dlre0r.sh 2\u003e/dev/null || true \u0026\u0026 shopt -u extglob 2\u003e/dev/null || true \u0026\u0026 { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } \u003e/dev/null 2\u003e\u00261 || true \u0026\u0026 eval 'T=$(date +%s); echo \"[$(date '\"'\"'+%H:%M:%S'\"'\"')] start\" \u0026\u0026 RM_TMP_BASE=$PWD/rmt RM_KEEP=1 env -u TMUX -u TMUX_TMPDIR bash scripts/restart-matrix.sh --only planning 2\u003e\u00261 | tail -40; echo \"[$(date '\"'\"'+%H:%M:%S'\"'\"')] done ($(( $(date +%s) - T ))s)\"' \u003c /dev/null \u0026\u0026 pwd -P \u003e| /tmp/claude-7cd8-cwd",
+      "user": "dmz"
+    },
+    {
+      "pid": 3744875,
+      "cmdline": "claude --dangerously-load-development-channels server:datawatch-johnnyjohnny-54e8 --channels server:datawatch-johnnyjohnny-54e8 --add-dir /home/dmz/.datawatch/prd-worktrees/d0210001 --permission-mode bypassPermissions --effort high --name autonomous:Build restart-matrix harness core and session states --settings {\"claudeMdExcludes\":[\"/home/dmz/CLAUDE.md\"]} --session-id aabafc34-1e5c-57a6-8cf6-49780822ecd7",
+      "user": "dmz"
+    },
+    {
+      "pid": 3744470,
+      "cmdline": "-bash",
+      "user": "dmz"
+    },
+    {
+      "pid": 3715867,
+      "cmdline": "/usr/bin/tmux new-session -d -s datawatch-keepalive",
+      "user": "dmz"
+    },
+    {
+      "pid": 13433,
+      "cmdline": "/usr/lib/systemd/systemd --user",
+      "user": "dmz"
+    }
+  ],
+  "source": "procscan",
+  "time": "2026-10-23T22:38:10.537706028-04:00"
+}

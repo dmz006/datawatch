@@ -1,0 +1,28 @@
+{
+  "signal": "terminated",
+  "sender_pid": 0,
+  "parent_chain": [
+    {
+      "pid": 3818165,
+      "cmdline": "/home/dmz/.datawatch/prd-worktrees/d0210001/datawatch --config /home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.hVajEQ/planning/config.yaml start --foreground",
+      "user": "dmz"
+    },
+    {
+      "pid": 3816125,
+      "cmdline": "bash /home/dmz/.datawatch/prd-worktrees/d0210001/scripts/restart-matrix/states-session.sh --only planning",
+      "user": "dmz"
+    },
+    {
+      "pid": 13433,
+      "cmdline": "/usr/lib/systemd/systemd --user",
+      "user": "dmz"
+    },
+    {
+      "pid": 1,
+      "cmdline": "/usr/lib/systemd/systemd --switched-root --system --deserialize=52 splash",
+      "user": "root"
+    }
+  ],
+  "source": "procscan",
+  "time": "2026-10-23T22:39:54.166551503-04:00"
+}

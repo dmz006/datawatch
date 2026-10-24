@@ -266,12 +266,18 @@ EOF
   # gated: records that it launched, waits for the gate file, then records the
   # start marker, sleeps, and finishes. The gate lets a scenario pick whether
   # the restart lands before the script's real work begins or in the middle.
+  # A service manager ends a daemon's child processes when it restarts the
+  # daemon; this harness signals only the daemon pid, so the script ends itself
+  # when the daemon that launched it is gone, which has the same effect.
   cat >"$RM_PROJECT/verify/gated.sh" <<EOF
 #!/usr/bin/env bash
+parent=\$PPID
+alive() { kill -0 "\$parent" 2>/dev/null; }
 echo "\$(date +%s) pid=\$\$" >>"$RM_CTRL/script.launched"
-for _ in \$(seq 1 120); do [[ -e "$RM_CTRL/script.gate" ]] && break; sleep 0.5; done
+while [[ ! -e "$RM_CTRL/script.gate" ]]; do alive || exit 143; sleep 0.5; done
 echo "\$(date +%s) pid=\$\$" >>"$RM_CTRL/script.starts"
-sleep "\$(cat "$RM_CTRL/script_sleep" 2>/dev/null || echo 4)"
+end=\$((SECONDS + \$(cat "$RM_CTRL/script_sleep" 2>/dev/null || echo 4)))
+while ((SECONDS < end)); do alive || exit 143; sleep 0.5; done
 echo "\$(date +%s) done" >>"$RM_CTRL/script.finished"
 test -s worker-result.txt
 EOF
@@ -395,29 +401,31 @@ rm_sandbox_down() {
 
 # --------------------------------------------------------- scenario plumbing ----
 
-# rm_write_plan SCRIPT_REL — one story, one task, naming SCRIPT_REL as the
-# task's verification script.
+# rm_write_plan [SCRIPT_REL] — one story, one task. With SCRIPT_REL the task is
+# verified by that daemon-run script; without it the task states why it has no
+# script, so the verdict comes from a verifier session instead.
 rm_write_plan() {
-  local script="$1"
-  jq -n --arg script "$script" '{
-    title: "matrix plan",
-    stories: [{
-      title: "matrix story",
-      description: "one story for the restart matrix",
-      files: ["worker-result.txt"],
-      depends_on: [],
-      verification_script: $script,
-      files_generated: ["worker-result.txt"],
-      tasks: [{
-        title: "matrix task",
-        spec: "Write worker-result.txt in the project directory.",
+  local script="${1:-}"
+  jq -n --arg script "$script" '
+    def vfy: if $script != "" then {verification_script: $script}
+             else {verification_script_reason: "judged by a verifier session; the restart matrix has no script for this state"} end;
+    {
+      title: "matrix plan",
+      stories: [({
+        title: "matrix story",
+        description: "one story for the restart matrix",
         files: ["worker-result.txt"],
         depends_on: [],
-        verification_script: $script,
-        files_generated: ["worker-result.txt"]
-      }]
-    }]
-  }' >"$RM_CTRL/plan.json"
+        files_generated: ["worker-result.txt"],
+        tasks: [({
+          title: "matrix task",
+          spec: "Write worker-result.txt in the project directory.",
+          files: ["worker-result.txt"],
+          depends_on: [],
+          files_generated: ["worker-result.txt"]
+        } + vfy)]
+      } + vfy)]
+    }' >"$RM_CTRL/plan.json"
 }
 
 rm_prd_create() { # prints the PRD id
@@ -637,17 +645,19 @@ rm_state_end() {
       criteria: $criteria, pass: $pass, fail: $fail,
       before: $before, after: $after
     }' >"$RM_REC/$RM_STATE.json"
-  RM_STATES_RUN+=("$RM_STATE")
   printf '  -> %s (%d pass, %d fail), record: %s\n' "$result" "$RM_STATE_PASS" "$RM_STATE_FAIL" "$RM_REC/$RM_STATE.json"
   unset RM_DERIVED_LOST_BYTES RM_DERIVED_DUPLICATES RM_DERIVED_REDONE
   RM_RESTART_OLD_PID="" RM_RESTART_NEW_PID="" RM_RESTART_TERM_CLEAN="" RM_RESTART_DOWN_SECONDS=""
 }
 
-# rm_write_summary — combined summary of every state run, as JSON and a table.
+# rm_write_summary — combined summary of every state record under the work
+# root, as JSON and a table. Several state scripts may share one work root.
 rm_write_summary() {
-  local files=() s
-  for s in "${RM_STATES_RUN[@]:-}"; do
-    [[ -n "$s" && -f "$RM_REC/$s.json" ]] && files+=("$RM_REC/$s.json")
+  local files=() f
+  for f in "$RM_REC"/*.json; do
+    [[ -f "$f" ]] || continue
+    [[ "$(basename "$f")" == summary.json ]] && continue
+    files+=("$f")
   done
   if ((${#files[@]} == 0)); then
     echo '{"states":[],"pass":0,"fail":0}' >"$RM_REC/summary.json"
@@ -655,11 +665,23 @@ rm_write_summary() {
   fi
   jq -s '{
     generated_at: (now | todate),
-    mode: env.RM_MODE,
+    mode: (env.RM_MODE // "measure"),
     states: map({state, description, result, pass, fail, derived, failed_criteria: [.criteria[] | select(.result == "FAIL") | {criterion, detail}]}),
     pass: (map(select(.result == "PASS")) | length),
     fail: (map(select(.result == "FAIL")) | length)
   }' "${files[@]}" >"$RM_REC/summary.json"
   printf '\n== summary (%s)\n' "$RM_REC/summary.json"
   jq -r '.states[] | "  \(.result)  \(.state)  (\(.pass) pass, \(.fail) fail)" + (if (.failed_criteria | length) > 0 then "\n        failing: " + ([.failed_criteria[].criterion] | join(", ")) else "" end)' "$RM_REC/summary.json"
+}
+
+# rm_total_failures — number of failing states across the work root.
+rm_total_failures() { jq -r '.fail // 0' "$RM_REC/summary.json" 2>/dev/null || echo 0; }
+
+# rm_sandbox_finish — stops the scenario's daemon and sessions and, unless
+# RM_KEEP=1, removes the scenario's sandbox dir. The JSON records stay.
+rm_sandbox_finish() {
+  rm_sandbox_down
+  if [[ "${RM_KEEP:-0}" != 1 && -n "${RM_SB:-}" && -d "$RM_SB" && "$RM_SB" == "$RM_ROOT"/* ]]; then
+    rm -rf "$RM_SB"
+  fi
 }

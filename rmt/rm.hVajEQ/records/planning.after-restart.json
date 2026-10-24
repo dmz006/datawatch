@@ -1,0 +1,42 @@
+{
+  "label": "planning-after-restart",
+  "at": "2026-10-24T02:38:17Z",
+  "daemon": {
+    "pid": "3818165",
+    "uptime_seconds": 6
+  },
+  "prd_status": "draft",
+  "task": {
+    "id": "",
+    "status": "",
+    "retry_count": 0,
+    "prior_attempt_count": 0,
+    "session_id": "",
+    "adopted_session": false
+  },
+  "sessions": [
+    {
+      "id": "67aa",
+      "full_id": "restart-matrix-67aa",
+      "name": "autonomous:decompose",
+      "state": "killed",
+      "log_file": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.hVajEQ/planning/data/sessions/restart-matrix-67aa/output.log",
+      "tmux_session": "cs-restart-matrix-67aa"
+    }
+  ],
+  "session_ids": [
+    "restart-matrix-67aa"
+  ],
+  "pane_pids": [],
+  "counts": {
+    "planner_starts": 1,
+    "worker_starts": 0,
+    "verifier_starts": 0,
+    "guardrail_starts": 0,
+    "script_launched": 0,
+    "script_starts": 0,
+    "script_finished": 0
+  },
+  "worker_counter_bytes": 0,
+  "copies": "/home/dmz/.datawatch/prd-worktrees/d0210001/rmt/rm.hVajEQ/planning/snap-planning-after-restart"
+}
