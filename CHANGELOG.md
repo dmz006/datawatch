@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.7.0 — Automation is the first sub-tab of the Automata tab
+
+The Automation view is now the first sub-tab of the Automata tab, to the left of Automata and Templates, instead of a second main navigation page, so everything about running work is in one place.
+
+- Opening the Automata tab lands on the Automation sub-tab, since Automation is the high-level view and you dig deeper from there. The last sub-tab you chose is not remembered.
+- The separate Automation navigation button and page are gone. The enable gate is unchanged: the sub-tab shows only when the autonomous subsystem is enabled.
+- Every old link, route and alert link that pointed at Automation lands on the Automata tab with the Automation sub-tab selected and the item opened.
+- The sub-tab bar fits at 320 px wide with 40 px tap targets and adds no horizontal scroll. The Automation data loads only when its sub-tab is selected, with no full-list request.
+- Locale strings in all five locales, updated tests and browser stories, how-to and testing tracker rows.
+
 ## v9.6.1 — Paged Automata list and small reconnect refresh
 
 Stops the web UI from downloading full lists on load, reconnect and refresh.
