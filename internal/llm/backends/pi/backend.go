@@ -30,10 +30,12 @@ package pi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/llm"
@@ -98,6 +100,187 @@ func reserveScratchFile(tmuxSession, purpose string) (string, error) {
 	return f.Name(), nil
 }
 
+// errNodeProvider means the pi provider table has no entry for the provider
+// the model names, so a compute node cannot be bound to it. pi needs a full
+// entry (api, key, models) for a provider; a bare baseUrl does not make one,
+// so the launch refuses instead of guessing that entry.
+var errNodeProvider = errors.New("pi provider table has no entry for the model's provider")
+
+// nodeAgentDir writes the per-session pi config directory that points the
+// model's provider at nodeAddr and returns its path. With no node address it
+// returns "" and writes nothing, so the launch keeps pi's own configuration.
+func nodeAgentDir(nodeAddr, model, tmuxSession string) (string, error) {
+	if nodeAddr == "" {
+		return "", nil
+	}
+	if strings.TrimSpace(model) == "" {
+		return "", ErrNoModel
+	}
+	provider, _, hasProvider := strings.Cut(model, "/")
+	if !hasProvider || provider == "" {
+		return "", fmt.Errorf("model %q has no provider prefix to bind to node %q", model, nodeAddr)
+	}
+	source, err := agentSourceDir()
+	if err != nil {
+		return "", err
+	}
+	return writeNodeHostAgentDir(source, tmuxSession, provider, nodeBaseURL(nodeAddr))
+}
+
+// agentSourceDir is the pi config directory this daemon's own launches read:
+// PI_CODING_AGENT_DIR when it is set, otherwise pi's documented default,
+// ~/.pi/agent.
+func agentSourceDir() (string, error) {
+	if dir := os.Getenv("PI_CODING_AGENT_DIR"); dir != "" {
+		return filepath.Abs(dir)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".pi", "agent"), nil
+}
+
+// nodeBaseURL is the base URL a provider entry takes for a compute node: the
+// address with an http:// scheme when it has none (as internal/server/api.go
+// adds it), plus the /v1 suffix of an OpenAI-compatible endpoint (as the
+// opencode provider block writes it).
+func nodeBaseURL(nodeAddr string) string {
+	if !strings.HasPrefix(nodeAddr, "http://") && !strings.HasPrefix(nodeAddr, "https://") {
+		nodeAddr = "http://" + nodeAddr
+	}
+	return strings.TrimSuffix(nodeAddr, "/") + "/v1"
+}
+
+// writeNodeHostAgentDir creates the per-session pi config directory under the
+// same scratch location as the task files. Every entry of sourceDir is linked
+// in, so credentials and sessions stay the source's own, and models.json is
+// the source's provider table with only the named provider's baseUrl changed.
+func writeNodeHostAgentDir(sourceDir, tmuxSession, provider, baseURL string) (string, error) {
+	raw, err := os.ReadFile(filepath.Join(sourceDir, "models.json"))
+	if err != nil {
+		return "", fmt.Errorf("read pi provider table: %w", err)
+	}
+	table, err := nodeHostProviderTable(raw, provider, baseURL)
+	if err != nil {
+		return "", err
+	}
+	entries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return "", fmt.Errorf("read pi agent directory: %w", err)
+	}
+	dir, err := os.MkdirTemp("", "datawatch-pi-agent-"+scratchNamePart(tmuxSession)+"-*")
+	if err != nil {
+		return "", err
+	}
+	for _, e := range entries {
+		if e.Name() == "models.json" {
+			continue
+		}
+		if err := os.Symlink(filepath.Join(sourceDir, e.Name()), filepath.Join(dir, e.Name())); err != nil {
+			_ = os.RemoveAll(dir)
+			return "", err
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "models.json"), table, 0o600); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", err
+	}
+	return dir, nil
+}
+
+// nodeHostProviderTable returns pi's provider table with the named provider's
+// baseUrl replaced. Every other top-level key and every other provider keeps
+// the value the source wrote. The provider must already exist in the source.
+func nodeHostProviderTable(raw []byte, provider, baseURL string) ([]byte, error) {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("parse pi provider table: %w", err)
+	}
+	providersRaw, ok := doc["providers"]
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", errNodeProvider, provider)
+	}
+	var providers map[string]json.RawMessage
+	if err := json.Unmarshal(providersRaw, &providers); err != nil {
+		return nil, fmt.Errorf("parse pi provider table: %w", err)
+	}
+	entryRaw, ok := providers[provider]
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", errNodeProvider, provider)
+	}
+	var entry map[string]json.RawMessage
+	if err := json.Unmarshal(entryRaw, &entry); err != nil || entry == nil {
+		return nil, fmt.Errorf("pi provider %q is not an object", provider)
+	}
+	base, err := json.Marshal(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	entry["baseUrl"] = base
+	entryOut, err := json.Marshal(entry)
+	if err != nil {
+		return nil, err
+	}
+	providers[provider] = entryOut
+	providersOut, err := json.Marshal(providers)
+	if err != nil {
+		return nil, err
+	}
+	doc["providers"] = providersOut
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(out, '\n'), nil
+}
+
+// piInvocation prefixes the pi binary with the config-directory setting when a
+// per-session agent directory is in use. The assignment applies to the pi
+// process alone; nothing else in the shell sees it.
+func piInvocation(binary, agentDir string) string {
+	if agentDir == "" {
+		return binary
+	}
+	return fmt.Sprintf("PI_CODING_AGENT_DIR='%s' %s", shellEscape(agentDir), binary)
+}
+
+// agentDirCleanup removes the per-session agent directory once pi has exited.
+func agentDirCleanup(agentDir string) string {
+	if agentDir == "" {
+		return ""
+	}
+	return fmt.Sprintf("rm -rf '%s'; ", shellEscape(agentDir))
+}
+
+// sendLaunch builds one pi launch command and sends it. With a node address,
+// the per-session agent directory is written first and its path is handed to
+// build. The directory is removed again if the launch fails; once the command
+// runs, its own cleanup removes it. Build errors carry label as a prefix.
+func sendLaunch(ctx context.Context, label, tmuxSession, nodeAddr, model string, build func(agentDir string) (string, error)) error {
+	agentDir, err := nodeAgentDir(nodeAddr, model, tmuxSession)
+	if err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	cmd, err := build(agentDir)
+	if err != nil {
+		removeAgentDir(agentDir)
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	if err := llm.SendKeys(ctx, tmuxSession, cmd); err != nil {
+		removeAgentDir(agentDir)
+		return err
+	}
+	return nil
+}
+
+// removeAgentDir deletes a per-session agent directory; "" is a no-op.
+func removeAgentDir(agentDir string) {
+	if agentDir != "" {
+		_ = os.RemoveAll(agentDir)
+	}
+}
+
 func shellEscape(s string) string {
 	return strings.ReplaceAll(s, "'", `'\''`)
 }
@@ -131,6 +314,7 @@ type Backend struct {
 	binary      string
 	model       string // e.g. "ollama/qwen3.8:27b"; empty uses pi's own default
 	sessionName string
+	nodeHost    string // compute node address; empty uses pi's own provider table
 }
 
 // New creates an interactive pi backend. binary defaults to "pi".
@@ -150,6 +334,13 @@ func (b *Backend) PromptRequired() bool           { return false }
 // SetModel(string) }` optional interface (see internal/session/manager.go).
 // Expects pi's own "provider/model" form, e.g. "ollama/qwen3.8:27b".
 func (b *Backend) SetModel(model string) { b.model = model }
+
+// SetNodeHost implements the session manager's duck-typed `interface{
+// SetNodeHost(string) }` optional interface. nodeAddr is the session's compute
+// node address, with or without a scheme. An empty address clears it, so the
+// next launch uses pi's own provider table. The backend is shared across
+// sessions, so the manager sets this on every launch.
+func (b *Backend) SetNodeHost(nodeAddr string) { b.nodeHost = nodeAddr }
 
 // SetSessionName implements llm.Nameable. Stored verbatim and passed to pi
 // as --session-id, which both creates and resumes a session by an
@@ -176,6 +367,13 @@ func (b *Backend) Version() string { return versionOf(b.binary) }
 // literal so "$pi_status" keeps real double quotes verbatim (the
 // acceptance gate matches it as a fixed string).
 func buildInteractiveCmd(binary, model, sessionID, task, projectDir, tmuxSession string) (string, error) {
+	return buildInteractiveCmdWithAgentDir(binary, model, sessionID, task, projectDir, tmuxSession, "")
+}
+
+// buildInteractiveCmdWithAgentDir is buildInteractiveCmd for a launch that may
+// run pi on a per-session config directory (see nodeAgentDir). An empty
+// agentDir gives exactly the command buildInteractiveCmd has always built.
+func buildInteractiveCmdWithAgentDir(binary, model, sessionID, task, projectDir, tmuxSession, agentDir string) (string, error) {
 	if strings.TrimSpace(model) == "" {
 		return "", ErrNoModel
 	}
@@ -186,8 +384,8 @@ func buildInteractiveCmd(binary, model, sessionID, task, projectDir, tmuxSession
 		sessionFlag = fmt.Sprintf("--session-id '%s' ", shellEscape(sessionID))
 	}
 	argExpr, cleanup := taskArgExpr(tmuxSession, task)
-	return fmt.Sprintf(`cd '%s' && %s --approve %s%s%s; %spi_status=$?; echo; if [ "$pi_status" -eq 0 ]; then echo 'DATAWATCH_COMPLETE: pi session ended'; else echo "DATAWATCH_PI_FAILED: pi exited with status $pi_status"; fi; exit "$pi_status"`,
-		escapedDir, binary, modelFlag, sessionFlag, argExpr, cleanup), nil
+	return fmt.Sprintf(`cd '%s' && %s --approve %s%s%s; %spi_status=$?; %secho; if [ "$pi_status" -eq 0 ]; then echo 'DATAWATCH_COMPLETE: pi session ended'; else echo "DATAWATCH_PI_FAILED: pi exited with status $pi_status"; fi; exit "$pi_status"`,
+		escapedDir, piInvocation(binary, agentDir), modelFlag, sessionFlag, argExpr, cleanup, agentDirCleanup(agentDir)), nil
 }
 
 // Launch starts a fresh interactive pi session. If SetSessionName was
@@ -197,11 +395,9 @@ func buildInteractiveCmd(binary, model, sessionID, task, projectDir, tmuxSession
 // MaxSendKeysCommand length guard applies and a tmux failure surfaces
 // its stderr text in the returned error.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
-	cmd, err := buildInteractiveCmd(b.binary, b.model, b.sessionName, task, projectDir, tmuxSession)
-	if err != nil {
-		return fmt.Errorf("pi interactive launch: %w", err)
-	}
-	return llm.SendKeys(ctx, tmuxSession, cmd)
+	return sendLaunch(ctx, "pi interactive launch", tmuxSession, b.nodeHost, b.model, func(agentDir string) (string, error) {
+		return buildInteractiveCmdWithAgentDir(b.binary, b.model, b.sessionName, task, projectDir, tmuxSession, agentDir)
+	})
 }
 
 // LaunchResume implements llm.Resumable: resumes (or, per pi's own
@@ -211,18 +407,17 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 	if id == "" {
 		id = b.sessionName
 	}
-	cmd, err := buildInteractiveCmd(b.binary, b.model, id, task, projectDir, tmuxSession)
-	if err != nil {
-		return fmt.Errorf("pi interactive resume: %w", err)
-	}
-	return llm.SendKeys(ctx, tmuxSession, cmd)
+	return sendLaunch(ctx, "pi interactive resume", tmuxSession, b.nodeHost, b.model, func(agentDir string) (string, error) {
+		return buildInteractiveCmdWithAgentDir(b.binary, b.model, id, task, projectDir, tmuxSession, agentDir)
+	})
 }
 
 // PromptBackend runs pi in --print (non-interactive, run-to-completion)
 // mode. Always requires a task.
 type PromptBackend struct {
-	binary string
-	model  string
+	binary   string
+	model    string
+	nodeHost string // compute node address; empty uses pi's own provider table
 }
 
 // NewPrompt creates a pi-prompt backend for one-shot task execution.
@@ -244,6 +439,10 @@ func (b *PromptBackend) PromptRequired() bool           { return true }
 // goose use for a per-task/story/PRD model override.
 func (b *PromptBackend) SetModel(model string) { b.model = model }
 
+// SetNodeHost implements the session manager's duck-typed `interface{
+// SetNodeHost(string) }` optional interface, as Backend.SetNodeHost does.
+func (b *PromptBackend) SetNodeHost(nodeAddr string) { b.nodeHost = nodeAddr }
+
 func (b *PromptBackend) Version() string { return versionOf(b.binary) }
 
 // Launch runs `pi --print ... '<task>'` as a single blocking command inside
@@ -255,11 +454,9 @@ func (b *PromptBackend) Version() string { return versionOf(b.binary) }
 // non-interactively (there is no human to answer an approval prompt in a
 // one-shot task).
 func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
-	cmd, err := buildLaunchCmd(b.binary, b.model, task, projectDir, tmuxSession)
-	if err != nil {
-		return fmt.Errorf("pi-prompt launch: %w", err)
-	}
-	return llm.SendKeys(ctx, tmuxSession, cmd)
+	return sendLaunch(ctx, "pi-prompt launch", tmuxSession, b.nodeHost, b.model, func(agentDir string) (string, error) {
+		return buildLaunchCmdWithAgentDir(b.binary, b.model, task, projectDir, tmuxSession, agentDir)
+	})
 }
 
 // buildLaunchCmd builds the shell command string sent to tmux. Pulled out
@@ -285,6 +482,14 @@ func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDi
 // fallback every launch path must not take (ErrNoModel). The
 // DATAWATCH_PI_FAILED wording for other failures is unchanged.
 func buildLaunchCmd(binary, model, task, projectDir, tmuxSession string) (string, error) {
+	return buildLaunchCmdWithAgentDir(binary, model, task, projectDir, tmuxSession, "")
+}
+
+// buildLaunchCmdWithAgentDir is buildLaunchCmd for a launch that may run pi on
+// a per-session config directory (see nodeAgentDir). The directory is removed
+// right after pi's scratch files, before the outcome checks, which exit. An
+// empty agentDir gives exactly the command buildLaunchCmd has always built.
+func buildLaunchCmdWithAgentDir(binary, model, task, projectDir, tmuxSession, agentDir string) (string, error) {
 	if strings.TrimSpace(model) == "" {
 		return "", ErrNoModel
 	}
@@ -293,16 +498,16 @@ func buildLaunchCmd(binary, model, task, projectDir, tmuxSession string) (string
 	outPath, errOut := reserveScratchFile(tmuxSession, "out")
 	statusPath, errStatus := reserveScratchFile(tmuxSession, "status")
 	if errOut != nil || errStatus != nil {
-		return "echo 'DATAWATCH_PI_FAILED: could not create scratch file for pi output capture'; exit 1", nil
+		return agentDirCleanup(agentDir) + "echo 'DATAWATCH_PI_FAILED: could not create scratch file for pi output capture'; exit 1", nil
 	}
 	argExpr, cleanup := taskArgExpr(tmuxSession, task)
 	escapedOut := shellEscape(outPath)
 	escapedStatus := shellEscape(statusPath)
 	return fmt.Sprintf("cd '%s' && { %s --print --mode text --approve %s%s; echo $? > '%s'; } | tee '%s'; "+
-		"read dw_status < '%s'; [ -s '%s' ]; dw_has_output=$?; %srm -f '%s' '%s'; "+
+		"read dw_status < '%s'; [ -s '%s' ]; dw_has_output=$?; %srm -f '%s' '%s'; %s"+
 		"if [ \"${dw_status:-1}\" -ne 0 ]; then printf 'DATAWATCH_PI_FAILED: pi exited with status %%s (model %%s)\\n' \"${dw_status:-1}\" '%s'; exit \"${dw_status:-1}\"; fi; "+
 		"if [ \"$dw_has_output\" -ne 0 ]; then echo 'DATAWATCH_PI_FAILED: pi produced no output'; exit 1; fi; "+
 		"echo 'DATAWATCH_COMPLETE: pi done'",
-		escapedDir, binary, modelFlag, argExpr, escapedStatus, escapedOut,
-		escapedStatus, escapedOut, cleanup, escapedOut, escapedStatus, shellEscape(model)), nil
+		escapedDir, piInvocation(binary, agentDir), modelFlag, argExpr, escapedStatus, escapedOut,
+		escapedStatus, escapedOut, cleanup, escapedOut, escapedStatus, agentDirCleanup(agentDir), shellEscape(model)), nil
 }

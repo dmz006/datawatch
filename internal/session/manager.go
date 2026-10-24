@@ -2253,6 +2253,13 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 	}
 
+	// Pi family: point the launch at the session's compute node. The backend
+	// is shared across sessions, so this runs on every launch; a session that
+	// names no node passes an empty address, which clears any earlier node.
+	if nh, ok := backendObj.(interface{ SetNodeHost(string) }); ok {
+		nh.SetNodeHost(sess.NodeAddress)
+	}
+
 	// BL363 T2+T3 — inject Goose provider/model/apikey/channel into goose family backends.
 	switch backendName {
 	case "goose", "goose-prompt":
@@ -4052,6 +4059,11 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	// Set session name on the backend (for --name flag) if it supports it
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
+	}
+
+	// Pi family: a restart reuses the node the session was started on.
+	if nh, ok := backendObj.(interface{ SetNodeHost(string) }); ok {
+		nh.SetNodeHost(sess.NodeAddress)
 	}
 
 	// BL363 T2+T3 — re-inject goose config on restart (same as initial launch path).
