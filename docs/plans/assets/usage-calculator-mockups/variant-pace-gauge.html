@@ -1,0 +1,884 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pace gauge mockup</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --bg2: #1a1d27;
+  --bg3: #22263a;
+  --accent: #7c3aed;
+  --accent2: #a855f7;
+  --text: #e2e8f0;
+  --text2: #94a3b8;
+  --border: #2d3148;
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --bad: #ef4444;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc;
+    --bg2: #ffffff;
+    --bg3: #e2e8f0;
+    --accent: #7c3aed;
+    --accent2: #6d28d9;
+    --text: #0f172a;
+    --text2: #475569;
+    --border: #cbd5e1;
+    --ok: #15803d;
+    --warn: #b45309;
+    --bad: #b91c1c;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding: 16px;
+}
+h1 { font-size: 1.6rem; line-height: 1.2; margin: 0 0 6px; }
+h2 { font-size: 1.05rem; margin: 0 0 10px; }
+h3 { font-size: 0.95rem; margin: 14px 0 6px; }
+p { margin: 0 0 8px; }
+.page { max-width: 1200px; margin: 0 auto; }
+.kicker { color: var(--text2); font-size: 0.85rem; margin: 0 0 4px; }
+.caption { color: var(--text2); font-size: 0.92rem; }
+.note { color: var(--text2); font-size: 0.88rem; }
+.intro { margin-bottom: 14px; }
+
+.frames { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 14px; }
+.frames span { color: var(--text2); font-size: 0.9rem; margin-right: 4px; }
+.btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn[aria-pressed="true"], .btn[aria-checked="true"] {
+  border: 2px solid var(--accent2);
+  font-weight: 700;
+}
+.btn:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--accent2); outline-offset: 2px; }
+
+.device {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  container-type: inline-size;
+}
+.app {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "verdict"
+    "notes"
+    "gauge"
+    "fields"
+    "policy"
+    "chart"
+    "form"
+    "text";
+}
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  min-width: 0;
+}
+.z-verdict { grid-area: verdict; }
+.z-notes { grid-area: notes; }
+.z-gauge { grid-area: gauge; }
+.z-fields { grid-area: fields; }
+.z-policy { grid-area: policy; }
+.z-chart { grid-area: chart; }
+.z-form { grid-area: form; }
+.z-text { grid-area: text; }
+
+.eyebrow { color: var(--text2); font-size: 0.9rem; margin-bottom: 8px; }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  background: var(--bg);
+  font-weight: 700;
+}
+.chip.over { color: var(--bad); }
+.chip.within { color: var(--ok); }
+.chip-small { font-size: 0.88rem; }
+.avg-line { color: var(--text2); font-size: 0.9rem; }
+.headline { font-size: 1.05rem; font-weight: 600; margin: 0; }
+.notes { margin: 0; padding-left: 1.2rem; color: var(--text2); font-size: 0.92rem; }
+.notes li + li { margin-top: 4px; }
+
+.gauge { width: 100%; height: auto; display: block; }
+.g-track { fill: var(--bg3); }
+.g-zone { fill: var(--bad); fill-opacity: 0.22; }
+.g-fill { fill: var(--accent); }
+.g-pace { stroke: var(--text); stroke-width: 2; }
+.g-avg { stroke: var(--accent2); stroke-width: 2; stroke-dasharray: 1 3; }
+.g-recent { stroke: var(--bad); stroke-width: 2; stroke-dasharray: 4 3; }
+.g-txt { fill: var(--text2); font-size: 10px; }
+.g-over { fill: var(--bad); font-size: 11px; font-weight: 700; }
+.legend { list-style: none; margin: 10px 0 0; padding: 0; font-size: 0.9rem; color: var(--text2); }
+.legend li { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.sw { display: inline-block; width: 22px; height: 10px; flex: none; border-radius: 3px; }
+.sw-fill { background: var(--accent); }
+.sw-pace { width: 3px; height: 16px; background: var(--text); }
+.sw-recent { height: 0; border-top: 3px dashed var(--bad); }
+.sw-avg { height: 0; border-top: 3px dotted var(--accent2); }
+
+.fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 12px; margin: 0; }
+.field dt { color: var(--text2); font-size: 0.82rem; }
+.field dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.field small { display: block; color: var(--text2); font-size: 0.8rem; font-weight: 400; }
+
+.radios { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); margin-bottom: 6px; }
+.radios .btn { text-align: left; width: 100%; }
+.stepper { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 6px 0; }
+.stepper output { min-width: 3ch; text-align: center; font-size: 1.4rem; font-weight: 700; }
+.advice { margin: 0; font-weight: 600; }
+.projection { font-size: 0.95rem; margin: 8px 0 0; }
+.warn-note { color: var(--warn); font-weight: 600; font-size: 0.92rem; }
+
+.form label { display: block; font-weight: 600; font-size: 0.9rem; margin: 10px 0 4px; }
+.form input, .form select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.form .btn { margin-top: 14px; }
+.error { color: var(--bad); font-weight: 600; font-size: 0.9rem; margin: 6px 0 0; }
+
+.chart { width: 100%; height: auto; display: block; }
+.c-axis { stroke: var(--border); stroke-width: 1; }
+.c-budget { stroke: var(--text2); stroke-width: 1; stroke-dasharray: 2 3; }
+.c-pace { stroke: var(--text2); stroke-width: 1.5; stroke-dasharray: 6 4; fill: none; }
+.c-line { stroke: var(--accent2); stroke-width: 2; fill: none; }
+.c-dot { fill: var(--accent2); }
+.c-proj-recent { stroke: var(--bad); stroke-width: 1.5; stroke-dasharray: 4 3; fill: none; }
+.c-proj-avg { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 1 3; fill: none; }
+.c-txt { fill: var(--text2); font-size: 10px; }
+
+.forms { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+pre {
+  margin: 0 0 8px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.label { color: var(--text2); font-size: 0.88rem; margin: 8px 0 4px; font-weight: 600; }
+
+@container (min-width: 600px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "verdict policy"
+      "notes policy"
+      "gauge chart"
+      "fields chart"
+      "fields form"
+      "text text";
+  }
+  .forms { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+
+@container (min-width: 1000px) {
+  .app {
+    grid-template-columns: minmax(230px, 0.9fr) minmax(0, 1.3fr) minmax(250px, 1fr);
+    grid-template-areas:
+      "policy verdict fields"
+      "policy gauge fields"
+      "form chart notes"
+      "text text text";
+  }
+  .fields { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+</head>
+<body data-variant="pace-gauge">
+<main class="page">
+  <header class="intro">
+    <p class="kicker">Usage calculator, variant one of three</p>
+    <h1>Pace gauge</h1>
+    <p class="caption">The numbers come from the operator-reported readings. This page is a mockup: the controls change only this page, and nothing is saved or sent.</p>
+    <div class="frames" role="group" aria-label="Preview frame">
+      <span>Preview frame</span>
+      <button type="button" class="btn" data-frame="phone" aria-pressed="false">Phone</button>
+      <button type="button" class="btn" data-frame="tablet" aria-pressed="false">Tablet</button>
+      <button type="button" class="btn" data-frame="desktop" aria-pressed="false">Desktop</button>
+    </div>
+  </header>
+
+  <div class="device">
+    <div class="app">
+
+      <section class="card z-verdict" aria-labelledby="h-verdict">
+        <h2 id="h-verdict">Verdict</h2>
+        <p id="o-eyebrow" class="eyebrow">Weekly 72% at Fri 22:08</p>
+        <div class="chips">
+          <span id="o-verdict" class="chip over">&#x2716; Over budget</span>
+          <span class="avg-line">Week average: <span id="o-verdictAvg" class="chip within chip-small">&#x2714; Within budget</span></span>
+        </div>
+        <p id="o-headline" class="headline" aria-live="polite">Over budget for the week at 3 lanes (106% at the reset). 1 lane ends at 86.1%.</p>
+      </section>
+
+      <section class="card z-notes" aria-labelledby="h-notes">
+        <h2 id="h-notes">Model notes</h2>
+        <ul id="o-notes" class="notes">
+          <li>The operator chooses the number of lanes; this is advice only.</li>
+        </ul>
+      </section>
+
+      <section class="card z-gauge" aria-labelledby="h-gauge">
+        <h2 id="h-gauge">Weekly percent and the end of the week</h2>
+        <div id="o-gauge"><svg class="gauge" viewBox="0 0 320 84" role="img" aria-label="Weekly percent 72 on a scale from 0 to 100"><rect class="g-track" x="10" y="24" width="270" height="22"/><rect class="g-zone" x="280" y="24" width="20" height="22"/><rect class="g-fill" x="10" y="24" width="194.4" height="22"/><line class="g-pace" x1="225.6" y1="16" x2="225.6" y2="54"/><line class="g-avg" x1="253.5" y1="16" x2="253.5" y2="54"/><line class="g-recent" x1="296.1" y1="16" x2="296.1" y2="54"/><text class="g-over" x="296.1" y="10" text-anchor="end">Over</text><text class="g-txt" x="10" y="74">0</text><text class="g-txt" x="145" y="74" text-anchor="middle">50</text><text class="g-txt" x="280" y="74" text-anchor="middle">100</text></svg></div>
+        <ul class="legend">
+          <li><span class="sw sw-fill"></span><span>Filled bar: weekly percent, <span id="o-legPercent">72%</span></span></li>
+          <li><span class="sw sw-pace"></span><span>Solid tick: pace line, <span id="o-legPace">79.8%</span></span></li>
+          <li><span class="sw sw-recent"></span><span>Dashed red: recent burn at the reset, <span id="o-legRecent">106.0% (over)</span></span></li>
+          <li><span class="sw sw-avg"></span><span>Dotted purple: week average at the reset, <span id="o-legAvg">90.2%</span></span></li>
+        </ul>
+      </section>
+
+      <section class="card z-fields" aria-labelledby="h-fields">
+        <h2 id="h-fields">Reading fields</h2>
+        <dl class="fields">
+          <div class="field"><dt>Weekly percent</dt><dd id="o-percentOut">72%</dd></div>
+          <div class="field"><dt>Read</dt><dd>Fri 22:08</dd></div>
+          <div class="field"><dt>Last reset</dt><dd id="o-reset">Sun 08:00</dd></div>
+          <div class="field"><dt>Days since the reset</dt><dd id="o-days">5.59</dd></div>
+          <div class="field"><dt>Days left</dt><dd id="o-daysLeft">1.41</dd></div>
+          <div class="field"><dt>Pace line</dt><dd><span id="o-pace">79.8%</span><small id="o-headroom">headroom 7.8 points</small></dd></div>
+          <div class="field"><dt>Burn per 24 hours, recent</dt><dd id="o-burnRecent">24.1</dd><small id="o-burnNote">from Fri 17:09, 4.98 hours before</small></div>
+          <div class="field"><dt>Burn per 24 hours, week average</dt><dd id="o-burnAvg">12.9</dd></div>
+          <div class="field"><dt>Projected end at the reset, recent</dt><dd id="o-projRecent">106.0% (over)</dd></div>
+          <div class="field"><dt>Projected end at the reset, week average</dt><dd id="o-projAvg">90.2% (within)</dd></div>
+          <div class="field"><dt>Run out, recent burn</dt><dd id="o-runRecent">Sun 02:02, about 6 hours early</dd></div>
+          <div class="field"><dt>Run out, week average</dt><dd id="o-runAvg">None before the reset</dd></div>
+          <div class="field"><dt>Verdict, recent burn</dt><dd id="o-fVerdict">Over budget</dd></div>
+          <div class="field"><dt>Verdict, week average</dt><dd id="o-fVerdictAvg">Within budget</dd></div>
+          <div class="field"><dt>Ahead of pace</dt><dd id="o-ahead">No</dd></div>
+        </dl>
+      </section>
+
+      <section class="card z-policy" aria-labelledby="h-policy">
+        <h2 id="h-policy">Usage policy</h2>
+        <div class="radios" role="radiogroup" aria-labelledby="h-policy">
+          <button type="button" class="btn" role="radio" aria-checked="false" tabindex="-1" data-policy="use-all">Run until used up</button>
+          <button type="button" class="btn" role="radio" aria-checked="true" tabindex="0" data-policy="pace">Pace to the week</button>
+          <button type="button" class="btn" role="radio" aria-checked="false" tabindex="-1" data-policy="finish-early">Run flat out</button>
+        </div>
+        <h3 id="h-lanes">Claude lanes running</h3>
+        <div class="stepper" role="group" aria-labelledby="h-lanes">
+          <button type="button" id="lanesMinus" class="btn" aria-label="Run one fewer lane">&minus;</button>
+          <output id="o-lanes" aria-live="polite">3</output>
+          <button type="button" id="lanesPlus" class="btn" aria-label="Run one more lane" disabled>+</button>
+          <p class="advice">Advice: <span id="o-advice">1 lane</span></p>
+        </div>
+        <p id="o-zeroNote" class="warn-note" hidden>Zero lanes is the operator's decision and is never advised.</p>
+        <p id="o-chosen" class="projection">3 lanes: 24.1 per 24 hours, ends at 106.0% (over), runs out Sun 02:02.</p>
+        <p id="o-finish" class="projection" hidden></p>
+      </section>
+
+      <section class="card z-chart" aria-labelledby="h-chart">
+        <h2 id="h-chart">Since the reset</h2>
+        <div id="o-chart"><svg class="chart" viewBox="0 0 320 180" role="img" aria-label="Weekly percent since the reset, with the pace line and the projections to the reset"><line class="c-axis" x1="34" y1="150" x2="308" y2="150"/><line class="c-axis" x1="34" y1="10" x2="34" y2="150"/><line class="c-budget" x1="34" y1="33.3" x2="308" y2="33.3"/><path class="c-pace" d="M34 150 L308 33.3"/><path class="c-line" d="M37.8 147.7 L44.6 145.3 L48.7 144.2 L55.3 141.8 L76.3 139.5 L89.2 134.8 L93.1 133.7 L106.6 131.3 L126.4 127.8 L162.3 115.0 L168.6 111.5 L170.5 110.3 L198.1 97.5 L211.3 85.8 L221.0 82.3 L244.6 71.8 L252.8 66.0"/><circle class="c-dot" cx="37.8" cy="147.7" r="2.5"/><circle class="c-dot" cx="44.6" cy="145.3" r="2.5"/><circle class="c-dot" cx="48.7" cy="144.2" r="2.5"/><circle class="c-dot" cx="55.3" cy="141.8" r="2.5"/><circle class="c-dot" cx="76.3" cy="139.5" r="2.5"/><circle class="c-dot" cx="89.2" cy="134.8" r="2.5"/><circle class="c-dot" cx="93.1" cy="133.7" r="2.5"/><circle class="c-dot" cx="106.6" cy="131.3" r="2.5"/><circle class="c-dot" cx="126.4" cy="127.8" r="2.5"/><circle class="c-dot" cx="162.3" cy="115.0" r="2.5"/><circle class="c-dot" cx="168.6" cy="111.5" r="2.5"/><circle class="c-dot" cx="170.5" cy="110.3" r="2.5"/><circle class="c-dot" cx="198.1" cy="97.5" r="2.5"/><circle class="c-dot" cx="211.3" cy="85.8" r="2.5"/><circle class="c-dot" cx="221.0" cy="82.3" r="2.5"/><circle class="c-dot" cx="244.6" cy="71.8" r="2.5"/><circle class="c-dot" cx="252.8" cy="66.0" r="2.5"/><path class="c-proj-recent" d="M252.8 66.0 L308.0 26.4"/><path class="c-proj-avg" d="M252.8 66.0 L308.0 44.8"/><text class="c-txt" x="30" y="153" text-anchor="end">0</text><text class="c-txt" x="30" y="94.7" text-anchor="end">50</text><text class="c-txt" x="30" y="36.3" text-anchor="end">100</text><text class="c-txt" x="34" y="166">Reset Sun 08:00</text><text class="c-txt" x="308" y="166" text-anchor="end">Next reset Sun 08:00</text></svg></div>
+        <p class="note">Dots are the readings. Solid line: weekly percent. Dashed grey line: pace line to 100 at the reset. Dashed red: recent burn to the reset. Dotted purple: week average to the reset.</p>
+      </section>
+
+      <section class="card z-form" aria-labelledby="h-form">
+        <h2 id="h-form">Enter a reading</h2>
+        <form id="readingForm" class="form">
+          <label for="percent">Weekly percent</label>
+          <input id="percent" type="number" inputmode="numeric" min="0" max="100" step="1" value="72">
+          <p id="percentError" class="error" hidden>Enter a number from 0 to 100.</p>
+          <label for="resetDay">Weekly reset day</label>
+          <select id="resetDay">
+            <option value="0" selected>Sunday</option>
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5">Friday</option>
+            <option value="6">Saturday</option>
+          </select>
+          <label for="resetTime">Weekly reset time</label>
+          <input id="resetTime" type="time" value="08:00">
+          <label for="session">Session percent (optional)</label>
+          <input id="session" type="number" inputmode="numeric" min="0" max="100" step="1">
+          <p class="note">The session percent is optional. It is shown as a secondary line and does not feed the verdict.</p>
+          <p id="o-session" class="note" hidden></p>
+          <button type="submit" class="btn">Recalculate</button>
+        </form>
+        <p class="note">This mockup keeps the reading at Fri 22:08 and the earlier reading at Fri 17:09. Changing the percent keeps those times.</p>
+      </section>
+
+      <section class="card z-text" aria-labelledby="h-text">
+        <h2 id="h-text">Text forms</h2>
+        <p class="caption">The commands are proposals; the final names are not decided. All six show the 22:08 reading at 72 percent, under each policy.</p>
+        <div class="forms">
+          <div>
+            <h3>Terminal (CLI)</h3>
+            <p class="label">Run until used up</p>
+<pre data-form="cli" data-policy="use-all">usage: 72% read Fri 22:08, reset Sun 08:00 (1.41 days left)
+pace line 79.8%, headroom 7.8, days since reset 5.59
+burn 24.1 per 24h recent, 12.9 per 24h week average
+projected end 106.0% recent (over), 90.2% week average (within)
+runs out Sun 02:02, 6 hours before the reset (recent burn)
+lanes 3 running, policy Run until used up
+advice: 2 lanes end at 96.1%; 3 lanes run out about 6 hours early
+example command: usage lanes 2 (example, not final)</pre>
+            <p class="label">Pace to the week</p>
+<pre data-form="cli" data-policy="pace">usage: 72% read Fri 22:08, reset Sun 08:00 (1.41 days left)
+pace line 79.8%, headroom 7.8, days since reset 5.59
+burn 24.1 per 24h recent, 12.9 per 24h week average
+projected end 106.0% recent (over), 90.2% week average (within)
+runs out Sun 02:02, 6 hours before the reset (recent burn)
+lanes 3 running, policy Pace to the week
+advice: over budget for the week at 3 lanes; 1 lane ends at 86.1%
+example command: usage lanes 1 (example, not final)</pre>
+            <p class="label">Run flat out</p>
+<pre data-form="cli" data-policy="finish-early">usage: 72% read Fri 22:08, reset Sun 08:00 (1.41 days left)
+pace line 79.8%, headroom 7.8, days since reset 5.59
+burn 24.1 per 24h recent, 12.9 per 24h week average
+projected end 106.0% recent (over), 90.2% week average (within)
+runs out Sun 02:02, 6 hours before the reset (recent burn)
+lanes 3 running, policy Run flat out
+work 20 points: within budget, finishes Sat 20:54
+advice: 3 lanes, 22.8 hours, 5.2 points of allowance to spare
+example command: usage lanes 2 (example, not final)</pre>
+          </div>
+          <div>
+            <h3>Comm channel</h3>
+            <p class="label">Run until used up</p>
+<pre data-form="chat" data-policy="use-all">Weekly 72% (read Fri 22:08)
+Reset Sun 08:00, 1.41 days left
+Pace line 79.8%, headroom 7.8
+Burn 24.1 per 24h recent, 12.9 average
+Ends at reset: 106.0% recent, 90.2% average
+Over budget at the recent burn
+Runs out Sun 02:02, about 6 h early
+Lanes 3, policy Run until used up
+Advice: 2 lanes end at 96.1%
+Reply: lanes 2 (example, not final)</pre>
+            <p class="label">Pace to the week</p>
+<pre data-form="chat" data-policy="pace">Weekly 72% (read Fri 22:08)
+Reset Sun 08:00, 1.41 days left
+Pace line 79.8%, headroom 7.8
+Burn 24.1 per 24h recent, 12.9 average
+Ends at reset: 106.0% recent, 90.2% average
+Over budget at the recent burn
+Runs out Sun 02:02, about 6 h early
+Lanes 3, policy Pace to the week
+Advice: over budget for the week at 3 lanes
+1 lane ends at 86.1%
+Reply: lanes 1 (example, not final)</pre>
+            <p class="label">Run flat out</p>
+<pre data-form="chat" data-policy="finish-early">Weekly 72% (read Fri 22:08)
+Reset Sun 08:00, 1.41 days left
+Pace line 79.8%, headroom 7.8
+Burn 24.1 per 24h recent, 12.9 average
+Ends at reset: 106.0% recent, 90.2% average
+Over budget at the recent burn
+Work 20 points: within budget
+Finishes Sat 20:54, 22.8 h from the reading
+Advice: 3 lanes, 5.2 points to spare
+Reply: lanes 2 (example, not final)</pre>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</main>
+
+<script id="usage-model">
+// Reference model for the usage calculator mockups. Pure functions, no window or document use.
+// The three mockup pages embed this block unchanged inside <script id="usage-model"> so that
+// their numbers agree. The design document describes each formula in the same words.
+const UsageModel = (() => {
+  const DAY = 24 * 3600 * 1000;
+  const HOUR = 3600 * 1000;
+  const MIN_RECENT_GAP_HOURS = 2;
+  const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const num = (v, fallback) => (typeof v === "number" && isFinite(v) ? v : fallback);
+  const round1 = (v) => Math.round(v * 10) / 10;
+  const lanesWord = (n) => n + (n === 1 ? " lane" : " lanes");
+  const lanesEnd = (n) => lanesWord(n) + (n === 1 ? " ends" : " end");
+
+  // "Sun 02:08" for an ISO time, shown at a fixed offset from UTC (hours, for example -4).
+  function formatClock(iso, offsetHours) {
+    const shifted = new Date(Date.parse(iso) + num(offsetHours, 0) * HOUR);
+    const hh = String(shifted.getUTCHours()).padStart(2, "0");
+    const mm = String(shifted.getUTCMinutes()).padStart(2, "0");
+    return WEEKDAYS[shifted.getUTCDay()] + " " + hh + ":" + mm;
+  }
+
+  function advise(input) {
+    const readMs = Date.parse(input.readAt);
+    const lastResetMs = Date.parse(input.lastResetAt);
+    const nextResetMs = input.nextResetAt ? Date.parse(input.nextResetAt) : lastResetMs + 7 * DAY;
+    const percent = input.percent;
+    const maxLanes = num(input.maxLanes, 3);
+    const safety = num(input.safetyPoints, 5);
+
+    // Position in the week.
+    const daysSinceReset = (readMs - lastResetMs) / DAY;
+    const daysLeft = Math.max((nextResetMs - readMs) / DAY, 0);
+    const allowancePer24h = 100 / 7;
+    const paceLine = (daysSinceReset / 7) * 100;
+    const headroom = paceLine - percent;
+
+    // Burn: week average from the whole week, recent from the previous reading.
+    const weekAvgBurnPer24h = daysSinceReset > 0 ? percent / daysSinceReset : 0;
+    let recentBurnPer24h = weekAvgBurnPer24h;
+    let recentFallback = true;
+    if (input.previous) {
+      const hours = (readMs - Date.parse(input.previous.readAt)) / HOUR;
+      if (hours >= MIN_RECENT_GAP_HOURS) {
+        recentBurnPer24h = Math.max(((percent - input.previous.percent) / hours) * 24, 0);
+        recentFallback = false;
+      }
+    }
+
+    // Projection to the reset, and the moment the allowance would run out.
+    const runOutOf = (burn) => {
+      if (burn <= 0) return { at: null, hoursEarly: 0 };
+      const days = (100 - percent) / burn;
+      if (days >= daysLeft) return { at: null, hoursEarly: 0 };
+      return { at: new Date(readMs + days * DAY).toISOString(), hoursEarly: (daysLeft - days) * 24 };
+    };
+    const projectedEndRecent = percent + recentBurnPer24h * daysLeft;
+    const projectedEndAvg = percent + weekAvgBurnPer24h * daysLeft;
+    const runRecent = runOutOf(recentBurnPer24h);
+    const runAvg = runOutOf(weekAvgBurnPer24h);
+
+    // What each lane count would cost. The burn per lane is inferred from the recent burn,
+    // the idle baseline and the number of lanes that were running in that window.
+    const baseline = num(input.baselinePer24h, 3);
+    const recentLanes = num(input.recentLanes, num(input.lanes, maxLanes));
+    const perLane = num(
+      input.perLanePer24h,
+      recentLanes > 0 ? Math.max((recentBurnPer24h - baseline) / recentLanes, 0) : 0
+    );
+    const byLanes = [];
+    for (let l = 0; l <= maxLanes; l++) {
+      const burn = baseline + l * perLane;
+      const run = runOutOf(burn);
+      byLanes.push({
+        lanes: l,
+        burnPer24h: burn,
+        projectedEnd: percent + burn * daysLeft,
+        runOutAt: run.at,
+        hoursEarly: run.hoursEarly,
+      });
+    }
+
+    const verdict = projectedEndRecent > 100 ? "over" : "within";
+    const verdictAvg = projectedEndAvg > 100 ? "over" : "within";
+    const chosen = byLanes[Math.min(Math.max(num(input.lanes, maxLanes), 0), maxLanes)];
+
+    // Advice per policy. The advice never names zero lanes: stopping every lane is the
+    // operator's decision, not the calculator's.
+    const policy = input.policy || "use-all";
+    const largestFitting = (limit) => {
+      let best = 1;
+      for (const row of byLanes) if (row.lanes >= 1 && row.projectedEnd <= limit) best = row.lanes;
+      return best;
+    };
+    const notes = ["The operator chooses the number of lanes; this is advice only."];
+    let lanesSuggested = maxLanes;
+    let headline = "";
+    let finish = null;
+    const atMax = byLanes[maxLanes];
+
+    if (policy === "use-all") {
+      lanesSuggested = largestFitting(100);
+      const row = byLanes[lanesSuggested];
+      if (atMax.projectedEnd <= 100) {
+        headline = "Within budget: " + lanesEnd(maxLanes) + " the week at " + round1(atMax.projectedEnd) +
+          "%, " + round1(100 - atMax.projectedEnd) + " points unused at the reset.";
+        notes.push("Unused allowance is lost at the reset; there is room for more work.");
+      } else {
+        headline = "Over budget at the recent burn: " + lanesWord(maxLanes) + " run out about " +
+          round1(atMax.hoursEarly) + " hours before the reset. " + lanesEnd(lanesSuggested) + " at " +
+          round1(row.projectedEnd) + "%.";
+        notes.push("Running out early is allowed under this policy; the alternative is " + lanesWord(lanesSuggested) + " to the reset.");
+      }
+    } else if (policy === "pace") {
+      lanesSuggested = largestFitting(100 - safety);
+      const row = byLanes[lanesSuggested];
+      if (atMax.projectedEnd <= 100 - safety) {
+        headline = "Within budget: " + lanesEnd(maxLanes) + " the week at " + round1(atMax.projectedEnd) +
+          "%, inside the " + (100 - safety) + "% target.";
+      } else {
+        headline = "Over budget for the week at " + lanesWord(maxLanes) + " (" + round1(atMax.projectedEnd) +
+          "% at the reset). " + lanesEnd(lanesSuggested) + " at " + round1(row.projectedEnd) + "%.";
+      }
+      if (row.projectedEnd > 100 - safety) {
+        notes.push("Even " + lanesWord(lanesSuggested) + " does not reach the target; the allowance is the limit.");
+      }
+      if (percent > paceLine) notes.push("Usage is ahead of the pace line by " + round1(percent - paceLine) + " points.");
+    } else {
+      lanesSuggested = maxLanes;
+      const work = input.remainingWork;
+      if (typeof work !== "number") {
+        headline = "Enter the remaining work to see whether it finishes before the allowance does.";
+      } else {
+        const laneRate = maxLanes * perLane;
+        const days = laneRate > 0 ? work / laneRate : Infinity;
+        const endPercent = percent + work + baseline * days;
+        const spare = 100 - endPercent;
+        finish = {
+          hours: days * 24,
+          at: isFinite(days) ? new Date(readMs + days * DAY).toISOString() : null,
+          endPercent,
+          sparePoints: spare,
+          beforeAllowance: spare >= 0 && days <= daysLeft,
+        };
+        headline = finish.beforeAllowance
+          ? "Within budget: the work finishes in about " + round1(finish.hours) + " hours with " +
+            round1(spare) + " points of allowance to spare."
+          : "Over budget: the allowance runs out before the work finishes (" + round1(Math.min(spare, 0)) +
+            " points short). Consider pacing or running until used up.";
+      }
+      notes.push("All lanes run; the calculator does not slow them down under this policy.");
+    }
+
+    return {
+      daysSinceReset, daysLeft, allowancePer24h, paceLine, headroom,
+      recentBurnPer24h, weekAvgBurnPer24h, recentFallback,
+      projectedEndRecent, projectedEndAvg,
+      runOutAtRecent: runRecent.at, runOutAtAvg: runAvg.at,
+      hoursEarlyRecent: runRecent.hoursEarly, hoursEarlyAvg: runAvg.hoursEarly,
+      verdict, verdictAvg, aheadOfPace: percent > paceLine,
+      perLanePer24h: perLane, baselinePer24h: baseline,
+      byLanes, chosen,
+      advice: { policy, lanesSuggested, headline, notes, finish },
+    };
+  }
+
+  return { advise, formatClock };
+})();
+
+</script>
+<script id="usage-view">
+// Pace gauge view. Runs after the usage-model script and reads UsageModel.advise.
+const UsageView = (() => {
+  const HOUR = 3600 * 1000;
+  const DAY = 24 * HOUR;
+  const OFFSET = -4;
+  const READ_AT = "2026-10-23T22:08:00-04:00";
+  const PREVIOUS = { percent: 67, readAt: "2026-10-23T17:09:00-04:00" };
+  // Readings since the reset of Sunday 2026-10-18 08:00 local. The last row is the reading being shown.
+  const SERIES = [
+    ["2026-10-18T10:20:00-04:00", 2],
+    ["2026-10-18T14:30:00-04:00", 4],
+    ["2026-10-18T17:00:00-04:00", 5],
+    ["2026-10-18T21:05:00-04:00", 7],
+    ["2026-10-19T09:55:00-04:00", 9],
+    ["2026-10-19T17:50:00-04:00", 13],
+    ["2026-10-19T20:15:00-04:00", 14],
+    ["2026-10-20T04:31:00-04:00", 16],
+    ["2026-10-20T16:40:00-04:00", 19],
+    ["2026-10-21T14:40:00-04:00", 30],
+    ["2026-10-21T18:30:00-04:00", 33],
+    ["2026-10-21T19:40:00-04:00", 34],
+    ["2026-10-22T12:36:00-04:00", 45],
+    ["2026-10-22T20:44:00-04:00", 55],
+    ["2026-10-23T02:40:00-04:00", 58],
+    ["2026-10-23T17:09:00-04:00", 67],
+  ];
+  const CHECK = "\u2714";
+  const CROSS = "\u2716";
+  const GA = { x0: 10, x1: 280, edge: 300, top: 24, height: 22 };
+  const CH = { left: 34, right: 308, top: 10, bottom: 150, max: 120, week: 168 };
+
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  const f1 = (v) => v.toFixed(1);
+  const pct1 = (v) => v.toFixed(1) + "%";
+  const lanesWord = (n) => n + (n === 1 ? " lane" : " lanes");
+  const gax = (p) => GA.x0 + ((GA.x1 - GA.x0) / 100) * p;
+  const chx = (h) => CH.left + (clamp(h, 0, CH.week) / CH.week) * (CH.right - CH.left);
+  const chy = (v) => CH.bottom - (clamp(v, 0, CH.max) / CH.max) * (CH.bottom - CH.top);
+
+  const state = { percent: 72, policy: "pace", lanes: 3, weekday: 0, resetTime: "08:00", session: "" };
+
+  // The most recent weekly reset at or before the reading, in local time (UTC-4).
+  function lastResetFor(weekday, time) {
+    const [hh, mm] = time.split(":").map(Number);
+    const local = Date.parse(READ_AT) + OFFSET * HOUR;
+    const d = new Date(local);
+    const back = (d.getUTCDay() - weekday + 7) % 7;
+    let at = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - back, hh, mm);
+    if (at > local) at -= 7 * DAY;
+    return new Date(at - OFFSET * HOUR).toISOString();
+  }
+
+  function inputFor(s) {
+    const lastResetAt = lastResetFor(s.weekday, s.resetTime);
+    return {
+      percent: s.percent,
+      readAt: READ_AT,
+      lastResetAt,
+      nextResetAt: new Date(Date.parse(lastResetAt) + 7 * DAY).toISOString(),
+      previous: PREVIOUS,
+      lanes: s.lanes,
+      recentLanes: 3,
+      maxLanes: 3,
+      baselinePer24h: 3,
+      safetyPoints: 5,
+      remainingWork: 20,
+      policy: s.policy,
+    };
+  }
+
+  function compute(s) {
+    const input = inputFor(s);
+    return { input, r: UsageModel.advise(input) };
+  }
+
+  // Weekly percent on a 0 to 100 track. Values past 100 fall in the over zone and stop at the right edge.
+  function gaugeSvg(r, percent) {
+    const far = gax(r.projectedEndRecent);
+    const xr = Math.min(far, GA.edge);
+    const xa = gax(r.projectedEndAvg);
+    const xp = gax(r.paceLine);
+    const y1 = GA.top - 8;
+    const y2 = GA.top + GA.height + 8;
+    const line = (cls, x) => `<line class="${cls}" x1="${f1(x)}" y1="${y1}" x2="${f1(x)}" y2="${y2}"/>`;
+    const over = r.projectedEndRecent > 100
+      ? `<text class="g-over" x="${f1(xr)}" y="10" text-anchor="end">${far > GA.edge ? "Over, past the edge" : "Over"}</text>`
+      : "";
+    return [
+      `<svg class="gauge" viewBox="0 0 320 84" role="img" aria-label="Weekly percent ${percent} on a scale from 0 to 100">`,
+      `<rect class="g-track" x="${GA.x0}" y="${GA.top}" width="${GA.x1 - GA.x0}" height="${GA.height}"/>`,
+      `<rect class="g-zone" x="${GA.x1}" y="${GA.top}" width="${GA.edge - GA.x1}" height="${GA.height}"/>`,
+      `<rect class="g-fill" x="${GA.x0}" y="${GA.top}" width="${f1(gax(percent) - GA.x0)}" height="${GA.height}"/>`,
+      line("g-pace", xp),
+      line("g-avg", xa),
+      line("g-recent", xr),
+      over,
+      `<text class="g-txt" x="${GA.x0}" y="74">0</text>`,
+      `<text class="g-txt" x="${(GA.x0 + GA.x1) / 2}" y="74" text-anchor="middle">50</text>`,
+      `<text class="g-txt" x="${GA.x1}" y="74" text-anchor="middle">100</text>`,
+      `</svg>`,
+    ].join("");
+  }
+
+  // Readings since the reset against the pace line, with dashed projections to the reset.
+  function chartSvg(input, r) {
+    const start = Date.parse(input.lastResetAt);
+    const pts = SERIES.concat([[READ_AT, input.percent]]).map(([at, v]) => ({
+      x: chx((Date.parse(at) - start) / HOUR),
+      y: chy(v),
+    }));
+    const last = pts[pts.length - 1];
+    const endX = chx(CH.week);
+    const path = pts.map((q, i) => `${i ? "L" : "M"}${f1(q.x)} ${f1(q.y)}`).join(" ");
+    const dots = pts.map((q) => `<circle class="c-dot" cx="${f1(q.x)}" cy="${f1(q.y)}" r="2.5"/>`).join("");
+    const clock = (iso) => UsageModel.formatClock(iso, OFFSET);
+    return [
+      `<svg class="chart" viewBox="0 0 320 180" role="img" aria-label="Weekly percent since the reset, with the pace line and the projections to the reset">`,
+      `<line class="c-axis" x1="${CH.left}" y1="${CH.bottom}" x2="${CH.right}" y2="${CH.bottom}"/>`,
+      `<line class="c-axis" x1="${CH.left}" y1="${CH.top}" x2="${CH.left}" y2="${CH.bottom}"/>`,
+      `<line class="c-budget" x1="${CH.left}" y1="${f1(chy(100))}" x2="${CH.right}" y2="${f1(chy(100))}"/>`,
+      `<path class="c-pace" d="M${CH.left} ${CH.bottom} L${CH.right} ${f1(chy(100))}"/>`,
+      `<path class="c-line" d="${path}"/>`,
+      dots,
+      `<path class="c-proj-recent" d="M${f1(last.x)} ${f1(last.y)} L${f1(endX)} ${f1(chy(r.projectedEndRecent))}"/>`,
+      `<path class="c-proj-avg" d="M${f1(last.x)} ${f1(last.y)} L${f1(endX)} ${f1(chy(r.projectedEndAvg))}"/>`,
+      `<text class="c-txt" x="${CH.left - 4}" y="${CH.bottom + 3}" text-anchor="end">0</text>`,
+      `<text class="c-txt" x="${CH.left - 4}" y="${f1(chy(50) + 3)}" text-anchor="end">50</text>`,
+      `<text class="c-txt" x="${CH.left - 4}" y="${f1(chy(100) + 3)}" text-anchor="end">100</text>`,
+      `<text class="c-txt" x="${CH.left}" y="166">Reset ${clock(input.lastResetAt)}</text>`,
+      `<text class="c-txt" x="${CH.right}" y="166" text-anchor="end">Next reset ${clock(input.nextResetAt)}</text>`,
+      `</svg>`,
+    ].join("");
+  }
+
+  function render() {
+    const { input, r } = compute(state);
+    const adv = r.advice;
+    const over = r.verdict === "over";
+    const at = (id) => document.getElementById(id);
+    const put = (id, text) => { at(id).textContent = text; };
+    const clock = (iso) => UsageModel.formatClock(iso, OFFSET);
+    const early = (hours) => {
+      const h = Math.round(hours);
+      return "about " + h + (h === 1 ? " hour early" : " hours early");
+    };
+    const runText = (iso, hours) => (iso ? clock(iso) + ", " + early(hours) : "None before the reset");
+    const chip = (el, verdict) => {
+      el.className = "chip " + verdict;
+      el.textContent = verdict === "over" ? CROSS + " Over budget" : CHECK + " Within budget";
+    };
+    const gapHours = (Date.parse(READ_AT) - Date.parse(PREVIOUS.readAt)) / HOUR;
+
+    chip(at("o-verdict"), r.verdict);
+    chip(at("o-verdictAvg"), r.verdictAvg);
+    put("o-eyebrow", "Weekly " + state.percent + "% at Fri 22:08");
+    put("o-headline", adv.headline);
+    at("o-notes").replaceChildren(...adv.notes.map((t) => {
+      const li = document.createElement("li");
+      li.textContent = t;
+      return li;
+    }));
+
+    at("o-gauge").innerHTML = gaugeSvg(r, state.percent);
+    at("o-chart").innerHTML = chartSvg(input, r);
+    put("o-legPercent", state.percent + "%");
+    put("o-legPace", pct1(r.paceLine));
+    put("o-legRecent", pct1(r.projectedEndRecent) + (over ? " (over)" : " (within)"));
+    put("o-legAvg", pct1(r.projectedEndAvg));
+
+    put("o-percentOut", state.percent + "%");
+    put("o-reset", clock(input.lastResetAt));
+    put("o-days", r.daysSinceReset.toFixed(2));
+    put("o-daysLeft", r.daysLeft.toFixed(2));
+    put("o-pace", pct1(r.paceLine));
+    put("o-headroom", r.aheadOfPace ? "ahead of the pace line" : "headroom " + r.headroom.toFixed(1) + " points");
+    put("o-burnRecent", r.recentBurnPer24h.toFixed(1));
+    put("o-burnNote", r.recentFallback
+      ? "week average used: no earlier reading two hours or more before"
+      : "from " + clock(PREVIOUS.readAt) + ", " + gapHours.toFixed(2) + " hours before");
+    put("o-burnAvg", r.weekAvgBurnPer24h.toFixed(1));
+    put("o-projRecent", pct1(r.projectedEndRecent) + (over ? " (over)" : " (within)"));
+    put("o-projAvg", pct1(r.projectedEndAvg) + (r.verdictAvg === "over" ? " (over)" : " (within)"));
+    put("o-runRecent", runText(r.runOutAtRecent, r.hoursEarlyRecent));
+    put("o-runAvg", runText(r.runOutAtAvg, r.hoursEarlyAvg));
+    put("o-ahead", r.aheadOfPace ? "Yes" : "No");
+    put("o-fVerdict", over ? "Over budget" : "Within budget");
+    put("o-fVerdictAvg", r.verdictAvg === "over" ? "Over budget" : "Within budget");
+
+    document.querySelectorAll('[role="radio"]').forEach((b) => {
+      const on = b.dataset.policy === state.policy;
+      b.setAttribute("aria-checked", String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
+    put("o-lanes", String(state.lanes));
+    at("lanesMinus").disabled = state.lanes === 0;
+    at("lanesPlus").disabled = state.lanes === 3;
+    at("o-zeroNote").hidden = state.lanes !== 0;
+    put("o-advice", lanesWord(adv.lanesSuggested));
+    const row = r.chosen;
+    put("o-chosen", lanesWord(row.lanes) + ": " + row.burnPer24h.toFixed(1) + " per 24 hours, ends at " +
+      pct1(row.projectedEnd) + (row.projectedEnd > 100 ? " (over)" : " (within)") +
+      (row.runOutAt ? ", runs out " + clock(row.runOutAt) : ", no run out before the reset") + ".");
+
+    const fin = adv.finish;
+    at("o-finish").hidden = !fin;
+    if (fin) {
+      put("o-finish", !fin.at
+        ? "No finish time: no lane is burning above the idle baseline."
+        : fin.beforeAllowance
+          ? "Work finishes " + clock(fin.at) + ", " + fin.sparePoints.toFixed(1) + " points to spare."
+          : "Work does not finish before the allowance runs out.");
+    }
+
+    const sess = at("o-session");
+    sess.hidden = state.session === "";
+    sess.textContent = "Session " + state.session + "% (secondary, not used in the verdict)";
+  }
+
+  function setPolicy(policy) {
+    state.policy = policy;
+    render();
+  }
+
+  function setLanes(n) {
+    state.lanes = clamp(n, 0, 3);
+    render();
+  }
+
+  function init() {
+    const device = document.querySelector(".device");
+    const frames = document.querySelectorAll("[data-frame]");
+    const widths = { phone: 390, tablet: 820, desktop: 1180 };
+    frames.forEach((btn) => btn.addEventListener("click", () => {
+      device.style.width = Math.min(widths[btn.dataset.frame], document.documentElement.clientWidth - 32) + "px";
+      frames.forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+    }));
+
+    const radios = Array.from(document.querySelectorAll('[role="radio"]'));
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+    radios.forEach((btn, i) => {
+      btn.addEventListener("click", () => setPolicy(btn.dataset.policy));
+      btn.addEventListener("keydown", (e) => {
+        if (!(e.key in step)) return;
+        e.preventDefault();
+        const next = radios[(i + step[e.key] + radios.length) % radios.length];
+        next.focus();
+        setPolicy(next.dataset.policy);
+      });
+    });
+
+    document.getElementById("lanesMinus").addEventListener("click", () => setLanes(state.lanes - 1));
+    document.getElementById("lanesPlus").addEventListener("click", () => setLanes(state.lanes + 1));
+
+    document.getElementById("percent").addEventListener("input", (e) => {
+      const raw = e.target.value;
+      const v = Number(raw);
+      const ok = raw !== "" && Number.isFinite(v) && v >= 0 && v <= 100;
+      document.getElementById("percentError").hidden = ok;
+      if (ok) {
+        state.percent = v;
+        render();
+      }
+    });
+    document.getElementById("resetDay").addEventListener("change", (e) => {
+      state.weekday = Number(e.target.value);
+      render();
+    });
+    document.getElementById("resetTime").addEventListener("input", (e) => {
+      if (/^\d\d:\d\d$/.test(e.target.value)) {
+        state.resetTime = e.target.value;
+        render();
+      }
+    });
+    document.getElementById("session").addEventListener("input", (e) => {
+      state.session = e.target.value;
+      render();
+    });
+    document.getElementById("readingForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      render();
+    });
+    render();
+  }
+
+  if (typeof document !== "undefined" && document.getElementById("o-gauge")) init();
+  return { gaugeSvg, chartSvg, compute, state };
+})();
+
+</script>
+</body>
+</html>
