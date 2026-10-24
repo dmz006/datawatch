@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"time"
 
@@ -351,11 +353,57 @@ func (s *Server) handleComputeNodeHealth(w http.ResponseWriter, _ *http.Request,
 	writeJSONOK(w, out)
 }
 
-// handleComputeNodeDetail performs the on-demand pull (ASK 24 hybrid)
+// handleComputeNodeDetail serves the node detail with the node's slot figures
+// added: session_slots is the operator's override (0 = derive from observer
+// data), and derived_slots is the slot count in effect, the pool limit syncPools
+// set from the same figures. The figures are added to a JSON object body only.
+func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request, name string) {
+	rec := httptest.NewRecorder()
+	s.serveComputeNodeDetail(rec, r, name)
+	body := rec.Body.Bytes()
+	if rec.Code == http.StatusOK {
+		body = s.withNodeSlots(name, body)
+	}
+	for k, v := range rec.Header() {
+		w.Header()[k] = v
+	}
+	w.Header().Del("Content-Length")
+	w.WriteHeader(rec.Code)
+	w.Write(body) //nolint:errcheck
+}
+
+// withNodeSlots adds session_slots and derived_slots to a node detail body. A
+// body that is not a JSON object is returned unchanged. derived_slots is left
+// out when the node has no pool limit yet.
+func (s *Server) withNodeSlots(name string, body []byte) []byte {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(body, &fields) != nil || fields == nil {
+		return body
+	}
+	n, err := s.computeReg.Get(name)
+	if err != nil {
+		return body
+	}
+	fields["session_slots"] = json.RawMessage(strconv.Itoa(n.SessionSlots))
+	if s.capacityLedger != nil {
+		for _, p := range s.capacityLedger.Snapshot().Pools {
+			if p.Name == "node:"+name && p.Limit > 0 {
+				fields["derived_slots"] = json.RawMessage(strconv.Itoa(p.Limit))
+			}
+		}
+	}
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// serveComputeNodeDetail performs the on-demand pull (ASK 24 hybrid)
 // to the Node's monitoring sidecar (--listen address). Operator clicks
 // "live process detail" in Automata UI; daemon hits stub:9001/api/stats
 // once and returns the snapshot.
-func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request, name string) {
+func (s *Server) serveComputeNodeDetail(w http.ResponseWriter, r *http.Request, name string) {
 	n, err := s.computeReg.Get(name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)

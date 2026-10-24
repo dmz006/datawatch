@@ -815,24 +815,16 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		} else {
 			led.SetLimit("host", 0)
 		}
-		// A node's pool limit is its slot count (compute.NodeSlots): the
-		// operator's session_slots wins; otherwise a node that hosts local
-		// engines derives its slots from observer GPU data, falling back to
-		// autonomous.max_engines_per_node when it has none. A node that hosts no
-		// local engine keeps its max_concurrent_sessions limit unless the
-		// operator set session_slots. max_concurrent_sessions stays a ceiling.
-		// Observer figures are read only when a derived count or the GPU
-		// backpressure gate needs them, in parallel so one slow monitoring
-		// endpoint does not hold up the rest.
+		// Every compute node's pool limit is its slot count (compute.NodeSlots):
+		// the operator's session_slots wins; otherwise one slot per GPU from
+		// observer data, limited by free GPU memory, falling back to
+		// autonomous.max_engines_per_node when the observer reports no GPU data.
+		// max_concurrent_sessions stays a ceiling. Observer figures are read
+		// only when a derived count or the GPU backpressure gate needs them, in
+		// parallel so one slow monitoring endpoint does not hold up the rest.
 		engines := cfg.Autonomous.MaxEnginesPerNode
 		if engines < 1 {
 			engines = 1
-		}
-		hosting := map[string]bool{}
-		for _, entryNodes := range engineNodes(httpServer.InferenceRegistry()) {
-			for _, node := range entryNodes {
-				hosting[node] = true
-			}
 		}
 		if reg := httpServer.ComputeRegistry(); reg != nil {
 			nodes := reg.List()
@@ -841,7 +833,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 				held[p.Name] = p.Held
 			}
 			needsObserver := func(n *compute.Node) bool {
-				return (hosting[n.Name] && n.SessionSlots == 0) || cfg.Autonomous.CapacityGPUUtilPct > 0
+				return n.SessionSlots == 0 || cfg.Autonomous.CapacityGPUUtilPct > 0
 			}
 			observed := make([]compute.NodeObservation, len(nodes))
 			var wg sync.WaitGroup
@@ -870,10 +862,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 					servedModel[n.Name] = loaded
 				}
 				obs.LastModelBytes = servedModel[n.Name]
-				limit := n.MaxConcurrentSessions
-				if hosting[n.Name] || n.SessionSlots > 0 {
-					limit = compute.NodeSlots(n.SessionSlots, n.MaxConcurrentSessions, engines, held["node:"+n.Name], obs)
-				}
+				limit := compute.NodeSlots(n.SessionSlots, n.MaxConcurrentSessions, engines, held["node:"+n.Name], obs)
 				led.SetLimit("node:"+n.Name, limit)
 				if cfg.Autonomous.CapacityGPUUtilPct > 0 && len(obs.GPUs) > 0 {
 					gpuMu.Lock()

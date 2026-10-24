@@ -36,6 +36,11 @@ type NodeObservation struct {
 // a pool limit of 0 means unlimited to the capacity ledger. The operator value
 // is not floored by held: it is the figure the operator asked for.
 //
+// Known gap: a node that runs more workers than it has GPUs reports a limit
+// below its held count, so the workers above the GPU count are not protected by
+// the floor. The ledger does not evict a lease when a limit drops; the workers
+// keep running and new work waits until the held count falls below the limit.
+//
 // ceiling is the node's max_concurrent_sessions; when above 0 it caps the
 // result.
 func NodeSlots(override, ceiling, fallback, held int, obs NodeObservation) int {

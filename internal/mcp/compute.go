@@ -41,6 +41,7 @@ func (s *Server) toolComputeNodeAdd() mcpsdk.Tool {
 		mcpsdk.WithString("max_concurrent_models", mcpsdk.Description("declared capacity")),
 		mcpsdk.WithString("gpu_mem_gb", mcpsdk.Description("declared GPU memory in GB")),
 		mcpsdk.WithString("scheduling_priority", mcpsdk.Description("0-100, default 50")),
+		mcpsdk.WithString("session_slots", mcpsdk.Description("operator-set worker count for this node (0 = derive from observer GPU data: one slot per GPU, limited by free GPU memory). Capped by max_concurrent_sessions when set.")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated tags")),
 		mcpsdk.WithString("node_pinned_model", mcpsdk.Description("pin this node to one model. Requests with no explicit model run on it; an explicit request for another model is refused unless allow_model_swap is true. Empty = no pin.")),
 		mcpsdk.WithBoolean("allow_model_swap", mcpsdk.Description("let an explicit request replace the pinned model. Default false. Ignored when no node_pinned_model is set.")),
@@ -93,7 +94,7 @@ func (s *Server) toolComputeNodeHealth() mcpsdk.Tool {
 
 func (s *Server) toolComputeNodeDetail() mcpsdk.Tool {
 	return mcpsdk.NewTool("compute_node_detail",
-		mcpsdk.WithDescription("v7.0.0 S1 — on-demand pull from the Node's monitoring sidecar (--listen). Use for live process drill-down."),
+		mcpsdk.WithDescription("On-demand pull from the Node's monitoring sidecar (--listen). Use for live process drill-down. The result also carries session_slots (the operator's override, 0 = derive) and derived_slots (the slot count in effect, when the node has a pool limit)."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("ComputeNode name")),
 	)
 }

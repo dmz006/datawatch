@@ -92,6 +92,11 @@ size of the model the node serves. The count is re-read on every capacity
 tick, so a change takes effect without a restart. A node with no observer GPU
 data takes `autonomous.max_engines_per_node`.
 
+This applies to every compute node, including one that hosts no local engine.
+A node that hosts no local engine with neither `session_slots` nor
+`max_concurrent_sessions` set used to have no limit; it now takes one slot by
+default. Set one of the two fields on it to choose a different count.
+
 Other channels:
 
 - **PWA:** Settings > Compute > node edit > *Max concurrent sessions* and
@@ -779,6 +784,15 @@ or cleared a back-off by hand: `datawatch audit --action
 - **Everything queues behind one big model.** That is the node limit
   doing its job. Raise `max_concurrent_sessions` if the server handles
   more than one at a time.
+- **A node has one slot although its GPU has room.** A node with one GPU
+  always takes one slot, and so does a node with no observer GPU data
+  (`autonomous.max_engines_per_node`). Set `session_slots` to override.
+- **Another program on the GPU lowers the slots.** Derived slots count
+  free memory, so memory held by another program reduces them. The count
+  never drops below the workers already running on the node, but that
+  floor is capped at the GPU count: a node with more workers than GPUs
+  reads a limit below its held count, and new work waits until the held
+  count falls below it. Running workers are not stopped.
 - **Tasks wait although nothing seems to run.** Your own interactive
   sessions count against the `host` pool. Check `datawatch capacity` for
   the holders, or lower `session.reserved_interactive`.

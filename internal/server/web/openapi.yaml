@@ -1168,6 +1168,79 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/compute/nodes/{name}:
+    get:
+      summary: Fetch one compute node
+      description: The node record. session_slots is the operator's slot override; 0 means the count is derived from observer GPU data.
+      operationId: computeNodeGet
+      tags: [Compute]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: The node record
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: {type: string}
+                  kind: {type: string}
+                  max_concurrent_sessions:
+                    type: integer
+                    minimum: 0
+                    description: Ceiling on autonomous sessions in flight on the node (0 = unlimited).
+                  session_slots:
+                    type: integer
+                    minimum: 0
+                    description: Operator-set worker count (0 = derive from observer GPU data, one slot per GPU limited by free GPU memory). Capped by max_concurrent_sessions when that is set.
+    put:
+      summary: Replace one compute node
+      description: Replaces the whole node. Omitting session_slots clears the override, and omitting max_concurrent_sessions clears the ceiling.
+      operationId: computeNodePut
+      tags: [Compute]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                max_concurrent_sessions: {type: integer, minimum: 0}
+                session_slots: {type: integer, minimum: 0, description: Operator-set worker count; 0 derives the count from observer GPU data.}
+      responses:
+        "200":
+          description: The updated node record
+
+  /api/compute/nodes/{name}/detail:
+    get:
+      summary: Compute node detail from the observer
+      description: Pulls the node's monitoring snapshot (or the cached observer snapshot) and adds the slot figures. The observer fields are passed through unchanged.
+      operationId: computeNodeDetail
+      tags: [Compute]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: The observer snapshot with the slot figures added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_slots:
+                    type: integer
+                    minimum: 0
+                    description: The operator's slot override (0 = derive).
+                  derived_slots:
+                    type: integer
+                    minimum: 0
+                    description: The slot count in effect, the node's pool limit. Equals session_slots when that is set. Absent when the node has no pool limit yet.
+        "503":
+          description: The node has no monitoring endpoint and no cached observer snapshot
+
   /api/capacity:
     get:
       summary: Capacity admission status

@@ -1155,9 +1155,10 @@ autonomous:
   # opencode-acp). Hosted backends such as claude-code are not gated by this key.
   # Sessions past the cap wait in the node queue (see docs/operations.md →
   # "Compute-node queue").
-  # A compute node with observer GPU data derives its own count (one slot per
-  # GPU, limited by free GPU memory), or takes the node's session_slots when the
-  # operator set one. This key is the count for a node with no observer data.
+  # Every compute node, including one that hosts no local engine, takes its own
+  # count: the node's session_slots when the operator set one, otherwise one
+  # slot per GPU from observer data (limited by free GPU memory). This key is
+  # the count for a node with no observer data.
   max_engines_per_node: 1
   # max_parallel_tasks: DEPRECATED — never had any effect; accepted and ignored
   # with a startup warning for one release, then removed. Use max_concurrent_tasks.

@@ -99,7 +99,7 @@ func (s *HTTPServer) NodeObservation(name string) (obs compute.NodeObservation, 
 	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/compute/nodes/"+name+"/detail", nil)
-	s.api.handleComputeNodeDetail(rec, req, name)
+	s.api.serveComputeNodeDetail(rec, req, name)
 	if rec.Code != http.StatusOK {
 		return obs, false
 	}
