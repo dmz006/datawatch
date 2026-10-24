@@ -155,7 +155,8 @@ an older daemon.
 GET /api/info
 → { "version": "...", "capabilities": ["sessions.view_summary", "alerts.paging",
      "alerts.count", "ws.alerts_read", "ws.hello", "ws.session_list_delta",
-     "ws.session_view_summary", "ws.output_scoped", "ws.unsubscribe", "api.gzip"], ... }
+     "ws.session_list_window", "ws.session_view_summary", "ws.output_scoped",
+     "ws.unsubscribe", "api.gzip"], ... }
 ```
 
 Treat a missing `capabilities` array as an empty one. Capability strings
@@ -193,9 +194,119 @@ The daemon answers with the modes now in effect:
 Send only the keys you want; each is independent. Frames that arrive
 before `hello_ack` can be ignored.
 
+#### Window form: `session_list: "window"`
+
+Capability `ws.session_list_window`. This is the bounded form and the one
+a phone list should use. The daemon sends only the default view, as compact
+rows, and after that only the sessions that change.
+
+The default view is every session that is not finished, plus each finished
+session (complete, failed or killed) updated within the window. The window is
+the daemon's `server.recent_session_minutes` setting (a value of 0 or less
+means 5). The daemon echoes it as `window_minutes` on every list frame, so read
+it there and never hard-code it.
+
+```json
+{"type":"hello","data":{"session_list":"window","session_view":"summary"}}
+```
+
+The daemon answers with `hello_ack` (`session_list` is `window`), then sends
+exactly one `sessions` frame:
+
+```json
+{"type":"sessions","data":{"sessions":[{"id":"...","full_id":"...","state":"running","updated_at":"..."}, ...],"version":"...","window_minutes":5,"total":4000,"more":true},"ts":"..."}
+```
+
+- `data.sessions` — summary rows, the same shape as
+  `GET /api/sessions?view=summary` (with `scheduled_count` where the schedule
+  store is wired). A row has no `task`; see the merge rules below.
+- `data.window_minutes` — the window this list is built on.
+- `data.total` — how many sessions the daemon holds, inside the window or not.
+- `data.more` — `true` when the daemon holds sessions this frame leaves out
+  (finished and older than the window). A field the daemon omits means `0` or
+  `false`.
+
+After that frame the socket sends no `sessions` frame at all. Each change is
+one `session_state` `{"session": {...}}` for the one session that changed:
+merge it by `full_id`, and add it if it is new to the window.
+
+`session_removed` `{"session_id": "..."}` is sent only when a session is
+deleted. A session that ages out of the window gets no frame; see *Aging*
+below.
+
+**Frames before `hello_ack`.** The socket is open before you can send
+`hello`, so the first frame on a new connection is the legacy bounded
+`sessions` frame (described below). Treat it as provisional. The rows frame
+that follows `hello_ack` replaces it. Sending `hello` again gets a fresh
+`hello_ack` and a fresh rows frame, which replaces your list.
+
+**Merge rules** (the PWA follows these):
+
+- A row without `task` keeps the `task`, `last_response`, `input_mode`,
+  `channel_ready` and the other fields you already hold for that session.
+- A summary key the row omits is empty now: clear it, do not keep the old
+  value. The summary keys are `id`, `full_id`, `name`, `state`, `backend`,
+  `llm_ref`, `project_dir`, `hostname`, `created_at`, `updated_at`,
+  `last_activity`, `parent_id`, `est_cost_usd`, `tokens_in`, `tokens_out`,
+  `status_line` and `truncated_fields`.
+- A text field named in `truncated_fields` was cut. If you hold the full text
+  for the same session, keep it. Otherwise show the cut text and fetch
+  `GET /api/sessions/{id}` when the user opens the session.
+- A full record (one that carries `task`) replaces the held record.
+
+**Aging.** The daemon never sends a removal because a finished session left
+the window. A rows frame is the whole default view, so a held session it omits
+and that you did not fetch over REST has left the view: drop it. Between
+frames you may also drop a finished session whose `updated_at` is older than
+`window_minutes`, so your list matches the daemon's.
+
+**History.** Finished sessions older than the window never come over the
+WebSocket, to any client mode. Fetch them over REST, with cursor paging:
+
+```
+GET /api/sessions?view=summary&limit=50
+GET /api/sessions?view=summary&limit=50&cursor=<next_cursor>
+GET /api/sessions?view=summary&limit=50&history=1&cursor=<next_cursor>
+```
+
+Repeat with each `next_cursor` until the response has none. `history=1` adds
+the archived sessions; send the same parameters on every page. A single
+session's full record is `GET /api/sessions/{id}`.
+
+**Legacy bounded frame.** A client that does not announce `window` (no
+`hello`, or `session_list` `full`) still gets a `sessions` frame on connect and
+on every change. It is bounded: only the default-view sessions, long text cut
+to `server.session_summary_text_chars` with `truncated_fields` set, and
+`more`, `total` and `window_minutes` alongside. Its `session_state` frames stay
+full records, for default-view sessions only. Get the full text of a cut field
+with `GET /api/sessions/{id}`, and page history over REST as above.
+
+**Adopting the window form, step by step:**
+
+1. Read `capabilities` from `GET /api/info`. Use the window form only when
+   both `ws.hello` and `ws.session_list_window` are present.
+2. Open `/ws` with the Bearer token, as today.
+3. Send `hello` with `"session_list":"window"` and your `session_view`.
+4. Wait for `hello_ack`. If its `session_list` is not `window`, keep the
+   legacy handling.
+5. On the next `sessions` frame, replace the default-view list with its rows
+   using the merge rules. Read `window_minutes`, `total` and `more` from the
+   frame. Do not fetch the initial list over REST.
+6. Apply each `session_state` (merge by `full_id`) and each `session_removed`
+   (drop by `session_id`).
+7. Age finished rows out locally, as described under *Aging*.
+8. Page history over REST when the user asks for it (`limit=50`, `cursor`,
+   `history=1`). The socket never carries history.
+9. On reconnect, send `hello` again and apply the new rows frame, which
+   replaces your list.
+
 ### 4. Load the initial list over REST
 
-Right after `hello_ack`:
+A `delta` client loads the list here. A `window` client does not: its list
+comes in the rows frame (see the window form above), and it fetches history
+only.
+
+Right after `hello_ack` (`delta` clients):
 
 ```
 GET /api/sessions?view=summary
@@ -213,6 +324,8 @@ the full record. Contract: [sessions.md](sessions.md#compact-session-list-viewsu
 ### 5. Apply the stream
 
 - `session_state` → replace (or insert) the session keyed by `full_id`.
+- `sessions` (window rows frame) → replace the default-view list, using the
+  merge rules in the window form above.
 - `session_removed` → drop that session.
 - On reconnect, send `hello` again and refetch with `since=` set to the
   last `updated_at` you saw (or refetch the whole summary list).
@@ -245,6 +358,7 @@ capture the subscription started. Full and short session IDs both work.
 |---|---|
 | `sessions.view_summary` | `GET /api/sessions` (full list; the params are ignored by older daemons, so check before relying on truncation or the omitted header). |
 | `ws.hello` | Do not send `hello`; expect the full `sessions` frame on connect and on every change. |
+| `ws.session_list_window` | Do not send `session_list: "window"`. Use `delta` when `ws.session_list_delta` is present (load the list over REST, step 4), otherwise keep the full handling. Where a daemon sends the bounded legacy frame, read `more`, `total` and `window_minutes` when present, and page history over REST. |
 | `ws.session_list_delta` / `ws.session_view_summary` | Keep handling `sessions` frames and full `session_state` records. `hello_ack` echoes what was actually applied, so trust it over what you asked for. |
 | `ws.output_scoped` | Expect output for every session; drop frames for sessions you have not opened. |
 | `ws.unsubscribe` | Skip `unsubscribe`; the subscription ends when the socket closes. |

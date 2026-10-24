@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- The WebSocket session list is now bounded to the default view: sessions that are not finished, plus sessions that finished within `server.recent_session_minutes` (default 5). The connect message and each state change are now small. On a 4,000-session test fixture the connect message for a client that sends no hello is about 45 KB, and a change to one session is under 1 KB for a client that asks for the window form. Before, every connect and every change sent the whole list (about 35 MB on that fixture).
+- Finished sessions older than the window are no longer sent over the WebSocket. Read them from the paged list: `GET /api/sessions?view=summary&limit=50`, following `next_cursor`, with `history=1` to include the archive.
+- Older apps that do not announce the window form get a bounded `sessions` frame, with `more`, `total` and `window_minutes` alongside it. Their `session_state` frames cover default-view sessions only, and cut text is listed in `truncated_fields`. Such apps should page history over REST.
+- New capability `ws.session_list_window`, listed in `GET /api/info` and in `hello_ack`. A client that sends `hello` with `session_list` set to `window` gets one rows frame after `hello_ack`, then one `session_state` for each changed session. `session_removed` is sent only when a session is deleted.
+- The PWA uses the window form.
+- Reuse audit - extends the existing hello handshake, summary rows and session_state frame.
+
 ## v9.5.125 — Restart keeps a finished worker and re-verifies only
 
 A daemon restart no longer redoes a worker that had already finished.
