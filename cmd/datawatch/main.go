@@ -5804,6 +5804,29 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// BL416 Phase 3 — per-unit resolved backend/model win over the flat config.
 			gbackend, guardrailModel := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
 			gkind, gmodel, _ := resolveAskBackend(gbackend)
+
+			// Capacity admission: the guardrail judge acquires the backend+node
+			// pools as soon as backend and model are decided — before it
+			// spawns or asks — and releases on every path (success, setup
+			// verdict, session error, unparseable output, ask failure, panic)
+			// via the deferred release. The judge runner's own deferred
+			// session kill runs before this closure's release, which is the
+			// order we want. A nil judgeCapacityAdmit (unset — e.g. tests)
+			// means no admission, exactly like the verifier's.
+			if judgeCapacityAdmit != nil {
+				admModel := guardrailModel
+				if admModel == "" {
+					admModel = gmodel
+				}
+				release, aerr := judgeCapacityAdmit(ctx, gbackend, admModel, req.UnitID, req.PRDID)
+				if aerr != nil {
+					// Admission failed (wait expired or context cancelled):
+					// resource contention, not a content judgment — the judge
+					// never ran. No session started, so stamp it as text-only.
+					return judgeVerdictWithSession(judgeAdmitFailureVerdict(aerr), "", ""), nil
+				}
+				defer release()
+			}
 			if !askCompatible(gkind) {
 				// B124 — a real tool-using backend with somewhere to run
 				// it: spawn a one-shot session instead of silently

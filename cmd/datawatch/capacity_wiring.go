@@ -576,6 +576,16 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// slot. False means "no hand-off possible" and the caller must fall back
 	// to the separate acquire (releasing the worker lease first — no
 	// stacking, no deadlock).
+	// Guardrail judge: the same node:/llm: pools as the verifier, under its
+	// own "judge:<unit id>" holders and its own registry instance (see
+	// judgeAdmitters). Its one-shot session name binds to the lease the
+	// same way the verifier's does.
+	judges := newVerifierRegistry()
+	judgeAdmitFn, judgeTryFn, judgeStartedFn := judgeAdmitters(led, judges, keys, amgr.CapacityWaitDuration())
+	judgeCapacityAdmit = judgeAdmitFn
+	judgeCapacityTryAdmit = judgeTryFn
+	judgeSessionStarted = judgeStartedFn
+
 	verifyHandoff := func(taskID, backend, model string) bool {
 		return amgr.HandoffVerifyLease(taskID, backend, model)
 	}
@@ -727,7 +737,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			syncLLMRates(cfg, reg, led)
 		}
 		live := func(ls capacity.Lease) bool {
-			return leaseHolderLive(ls, verifiers, func(id string) bool { return sessionRunning(mgr, id) }, time.Now())
+			return leaseHolderLive(ls, verifiers, judges.isActive, func(id string) bool { return sessionRunning(mgr, id) }, time.Now())
 		}
 		for _, h := range led.Reap(live) {
 			fmt.Printf("[capacity] reaped leaked lease holder=%s\n", h)

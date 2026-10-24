@@ -16,7 +16,7 @@ func reapReq(holder string) capacity.Request {
 // reapPass runs one reaper pass at the given fake time.
 func reapPass(led *capacity.Ledger, reg *verifierRegistry, alive map[string]bool, now time.Time) []string {
 	return led.Reap(func(ls capacity.Lease) bool {
-		return leaseHolderLive(ls, reg, func(id string) bool { return alive[id] }, now)
+		return leaseHolderLive(ls, reg, reg.isActive, func(id string) bool { return alive[id] }, now)
 	})
 }
 

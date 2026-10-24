@@ -65,14 +65,23 @@ func (r *verifierRegistry) sessionOf(holder string) string {
 // leaseHolderLive reports whether a lease still has a live holder. A verify:
 // lease is judged by its verifier session when one was started, and otherwise
 // stays live while its verifier is registered as active, whatever the bound
-// (worker) session or lease age says. Any other lease is live while its bound
-// session is running, or for spawnGrace when it has none.
-func leaseHolderLive(ls capacity.Lease, reg *verifierRegistry, sessionAlive func(id string) bool, now time.Time) bool {
+// (worker) session or lease age says. A judge:<unit> lease likewise stays
+// live while its judge is registered as active (holderAlive), covering the
+// /api/ask path that never spawns a session; it reaps through the normal
+// bound-session check once the judge is no longer active. Any other lease is
+// live while its bound session is running, or for spawnGrace when it has
+// none.
+func leaseHolderLive(ls capacity.Lease, reg *verifierRegistry, holderAlive func(holder string) bool, sessionAlive func(id string) bool, now time.Time) bool {
 	if strings.HasPrefix(ls.Holder, autonomous.VerifyHolder("")) && reg != nil {
 		if sid := reg.sessionOf(ls.Holder); sid != "" {
 			return sessionAlive(sid)
 		}
 		if reg.isActive(ls.Holder) {
+			return true
+		}
+	}
+	if strings.HasPrefix(ls.Holder, autonomous.JudgeHolder("")) {
+		if holderAlive != nil && holderAlive(ls.Holder) {
 			return true
 		}
 	}
