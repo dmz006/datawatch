@@ -33,7 +33,7 @@ const (
 // WorkerNudgeObservation is a point-in-time view of a worker session.
 type WorkerNudgeObservation struct {
 	State               string        // session state string; only waiting_input/idle count as idle
-	OutputAge           time.Duration // age of the last output (log mtime); 0 when unknown
+	OutputAge           time.Duration // age of the last output (log mtime), read after a nudge; 0 when unknown
 	HasLiveChildProcess bool          // a runner child process is alive
 	CompletionSeen      bool          // the completion marker has been seen
 }
@@ -101,12 +101,11 @@ func (t *WorkerNudgeTracker) Observe(now time.Time, family string, prdOwned bool
 	if t.idleSince.IsZero() {
 		t.idleSince = now
 	}
-	// Idle clock is the shorter of the observed quiet time and the time spent
-	// in the idle run, so earlier output cannot count as idleness.
+	// The idle clock runs from the start of the idle run. The log file's age
+	// is not used here: a cosmetic pane redraw touches the log on every tick
+	// and would hold the clock below the window forever. Real output after
+	// the nudge is still detected above and ends tracking as answered.
 	idleFor := now.Sub(t.idleSince)
-	if o.OutputAge > 0 && o.OutputAge < idleFor {
-		idleFor = o.OutputAge
-	}
 	if t.nudgeAfter > 0 && idleFor >= t.nudgeAfter {
 		t.nudgedAt = now
 		t.idleAtSend = idleFor

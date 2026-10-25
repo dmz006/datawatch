@@ -134,59 +134,97 @@ type postTurnDeps struct {
 }
 
 // postTurnNudge owns the claude-code idle nudge of one task's wait: the
-// tracker, its hooks, and the session and task it watches. A nil *postTurnNudge
-// is inert; a wait holds nil for every backend family other than claude-code.
+// tracker, its hooks, and the session and task it watches. The backend family
+// is not fixed at wait start. It is read on every tick until the session is
+// visible, and again whenever the session's identity changes, so a session that
+// appears after the wait starts is nudged from its first visible tick.
 type postTurnNudge struct {
-	sessions  postTurnSessions
+	deps      postTurnDeps
+	cfg       autonomouspkg.Config
+	task      *autonomouspkg.Task
 	sessionID string
-	label     string // "PRD/TASK", for log lines
-	tracker   *autonomouspkg.WorkerNudgeTracker
+	label     string                            // "PRD/TASK", for log lines
+	family    string                            // backend family of the bound session; "" until it is visible
+	fullID    string                            // identity of the session the tracker was built for
+	tracker   *autonomouspkg.WorkerNudgeTracker // set only while the family is claude-code
 	hooks     autonomouspkg.WorkerNudgeHooks
 }
 
-// newPostTurnNudge starts the nudge for one task's wait. It reads the session's
-// backend family once, here at wait start, and returns nil when the session is
-// not visible yet or is not claude-code. For claude-code the tracker takes its
-// windows from cfg (the live autonomous config), adopts a nudge already recorded
-// for this session, and is wired to the session through deps.
+// newPostTurnNudge starts the nudge for one task's wait. It binds to the session
+// at once when the session is already visible; otherwise the first Step that
+// finds it does. The result is never nil: whether the nudge owns the worker's
+// idleness depends on the family, which Active reports.
 func newPostTurnNudge(deps postTurnDeps, cfg autonomouspkg.Config, task *autonomouspkg.Task) *postTurnNudge {
-	snap, ok := deps.sessions.Snapshot(task.SessionID)
-	if !ok || snap.BackendFamily != autonomouspkg.WorkerNudgeFamily {
-		return nil
-	}
-	nudgeAfter, stallAfter := workerNudgeWindows(cfg)
-	tracker := autonomouspkg.NewWorkerNudgeTracker(nudgeAfter, stallAfter)
-	// A nudge already sent into this session before a daemon restart is persisted
-	// on the task; adopt it so the worker is not nudged twice and the stall window
-	// counts from the original send.
-	tracker.SeedNudgedAt(task.NudgeTimeForSession(task.SessionID))
-	return &postTurnNudge{
-		sessions:  deps.sessions,
+	n := &postTurnNudge{
+		deps:      deps,
+		cfg:       cfg,
+		task:      task,
 		sessionID: task.SessionID,
 		label:     task.PRDID + "/" + task.ID,
-		tracker:   tracker,
-		hooks:     workerNudgeHooksFor(deps.sessions, deps.probes, deps.recorder, task.SessionID, task.PRDID, task.ID, stallAfter),
 	}
+	n.wire()
+	if snap, ok := deps.sessions.Snapshot(n.sessionID); ok {
+		n.bind(snap)
+	}
+	return n
 }
 
-// Active reports whether a nudge tracker owns this worker's idleness. The
-// legacy waiting_input debounce applies only when it does not.
+// wire builds the hooks for the current session id. The hooks close over the id,
+// so they are rebuilt whenever the id changes.
+func (n *postTurnNudge) wire() {
+	_, stallAfter := workerNudgeWindows(n.cfg)
+	n.hooks = workerNudgeHooksFor(n.deps.sessions, n.deps.probes, n.deps.recorder, n.sessionID, n.task.PRDID, n.task.ID, stallAfter)
+}
+
+// bind records the session's backend family and identity. For claude-code it
+// builds the tracker, with its windows from the live config, seeded from the
+// nudge the task already recorded for this session. It changes nothing while the
+// family and identity are the same as before.
+func (n *postTurnNudge) bind(snap postTurnSnapshot) {
+	if snap.BackendFamily == n.family && snap.FullID == n.fullID {
+		return
+	}
+	n.family = snap.BackendFamily
+	n.fullID = snap.FullID
+	n.tracker = nil
+	if n.family != autonomouspkg.WorkerNudgeFamily {
+		return
+	}
+	nudgeAfter, stallAfter := workerNudgeWindows(n.cfg)
+	n.tracker = autonomouspkg.NewWorkerNudgeTracker(nudgeAfter, stallAfter)
+	// A nudge already sent into this session before a daemon restart, or before
+	// the session became visible, is persisted on the task. Adopt it so the worker
+	// is not nudged twice and the stall window counts from the original send.
+	n.tracker.SeedNudgedAt(n.task.NudgeTimeForSession(n.sessionID))
+}
+
+// Active reports whether this nudge owns the worker's idleness. The legacy
+// waiting_input debounce applies only when it does not. The nudge owns it for
+// claude-code, and also while the family is unknown: the session may still
+// turn out to be claude-code.
 func (n *postTurnNudge) Active() bool {
-	return n != nil
+	return n != nil && (n.family == "" || n.family == autonomouspkg.WorkerNudgeFamily)
 }
 
-// Step makes one nudge decision for the current wait tick. It reads the
-// session's backend family now and passes it to StepWorkerNudge. A returned
-// error means the worker stalled and the wait must stop.
+// Step makes one nudge decision for the current wait tick. It follows the task's
+// session id, binds the session's family and tracker (see bind), and then passes
+// the decision to StepWorkerNudge. A tick on which the session is not visible
+// does nothing. A returned error means the worker stalled and the wait must stop.
 func (n *postTurnNudge) Step(now time.Time) error {
 	if n == nil {
 		return nil
 	}
-	family := ""
-	if s, ok := n.sessions.Snapshot(n.sessionID); ok {
-		family = s.BackendFamily
+	if sid := n.task.SessionID; sid != n.sessionID {
+		n.sessionID = sid
+		n.family, n.fullID, n.tracker = "", "", nil
+		n.wire()
 	}
-	return autonomouspkg.StepWorkerNudge(n.tracker, now, family, n.sessionID, n.label, n.hooks)
+	snap, ok := n.deps.sessions.Snapshot(n.sessionID)
+	if !ok {
+		return nil
+	}
+	n.bind(snap)
+	return autonomouspkg.StepWorkerNudge(n.tracker, now, n.family, n.sessionID, n.label, n.hooks)
 }
 
 // Close ends nudge tracking because the wait finished on completion. An open

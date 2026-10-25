@@ -9,59 +9,55 @@ import (
 	"time"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
-// Findings — the post-turn nudge as extracted in post_turn_nudge.go, behaviour
-// unchanged from the verify wait loop. Run: go test ./cmd/datawatch/ -run TestPostTurnNudge_
+// Findings — the post-turn nudge of a claude-code worker in the verify wait.
+// Run: go test ./cmd/datawatch/ -run TestPostTurnNudge_
 //
-// Plain tests:
-//   TestPostTurnNudge_WindowsUseDefaultsWhenSettingsUnset  PASS
-//   TestPostTurnNudge_OtherFamilyIsNeverNudged             PASS
-//   TestPostTurnNudge_WorkChildBlocksTheNudge              PASS
+// Before the fix the headline test failed in three subtests (b, c, f). Each
+// confirmed cause and its fix:
 //
-// Headline TestPostTurnNudge_FakeClaudeSessionAtEmptyPromptIsNudged  FAIL (by subtest):
-//   (a) session visible from the first tick                        PASS
-//       Baseline: the nudge fires at the 180s window and is logged as
-//       "nudge 1 sent after".
-//   (b) session appears a few ticks after the wait starts          FAIL
-//       Confirmed cause: the backend family is read once, at wait start.
-//       newPostTurnNudge sees no session and returns nil, so no tracker is built,
-//       Active() is false and Step is inert for the whole wait. The legacy
-//       waiting_input debounce condition (family == claude-code && !Active)
-//       is therefore TRUE for this worker: once the delivery grace has passed,
-//       three waiting_input ticks stall it (checked by decomposeWaitingInputTick
-//       in the subtest, with the grace at zero). The debounce is
-//       armed here, not disabled, which corrects the reading that it is off.
-//       A/B against (a): the only difference is when the session becomes visible.
-//   (c) pane redraws keep the log file fresh while idle            FAIL
-//       Confirmed cause: the idle clock is the shorter of the observed output
-//       age and the idle run (worker_nudge.go). A redraw touches the log every
-//       tick, so the probe reports 2s each time and the idle clock never reaches
-//       180s. A/B against (a): the only difference is the redraw.
-//   (d) tail echoes the task text and the nudge sentence           PASS
-//       Neither counts as completion: the task text's instruction carries the
-//       placeholder "<one-sentence summary", and the nudge sentence has no
-//       "DATAWATCH_COMPLETE:" prefix.
-//   (e) status verifying and only a worker lease                   PASS
-//       The unit takes the task's identity and nudge events only; status and
-//       leases are not inputs, so nothing here gates it. This shows the unit
-//       does not read them. It does not test the production scheduling of the
-//       wait while a task is verifying.
-//   (f) bare template summary line "DATAWATCH_COMPLETE: <summary...>"  FAIL
-//       Confirmed cause: ExtractCompletionSummary (completion_summary.go)
-//       returns "<summary of this task>" for this line, because the placeholder
-//       check matches only "<one-sentence summary". Any non-empty summary sets
-//       the tracker to done, so nudging ends permanently. A/B against (a): the
-//       only difference is this line.
+//   (b) session appears a few ticks after the wait starts — FIXED
+//       Cause: the backend family was read once, at wait start. The unit saw no
+//       session, built no tracker, and reported Active() false, so the legacy
+//       waiting_input debounce (claude-code && !Active) stalled the worker.
+//       Fix: post_turn_nudge.go binds the family and the tracker on every tick
+//       until the session is visible, and again when its identity changes. The
+//       tracker is seeded from the task's persisted nudge for that session.
+//       Active() is true while the family is unknown or claude-code.
+//   (c) pane redraws keep the log file fresh while the pane is idle — FIXED
+//       Cause: the idle clock was the shorter of the idle run and the log age
+//       (worker_nudge.go). A redraw touches the log every tick, so the clock
+//       never passed 2s. Fix: the idle clock is the idle run; the log age is
+//       read only after a nudge, where real output still ends tracking.
+//   (f) bare template summary line "DATAWATCH_COMPLETE: <summary...>" — FIXED
+//       Cause: ExtractCompletionSummary matched only the placeholder
+//       "<one-sentence summary", so "<summary of this task>" counted as a
+//       completion and ended nudge tracking. Fix: it skips any marker line whose
+//       summary is an angle-bracket template, using isCompletionPlaceholder
+//       (the same rule live detection uses).
 //
-// Candidates not reproduced by the fake:
-//   - A persisted nudge event seeding the tracker as already nudged: the fake
-//     task has no NudgeEvents, so SeedNudgedAt is never given a time. Not tested.
-//   - The live config snapshot missing the two nudge settings: read, not tested.
-//     main.go copies WorkerIdleNudgeSeconds and WorkerIdleNudgeStallSeconds into
-//     the live config (main.go:4269-4270), and the windows come from that
-//     snapshot. The fake passes autonomouspkg.Config directly.
+// Passing and kept:
+//   (a) session visible from the first tick — the baseline nudge at 180s.
+//   (d) the tail echoes the task text and the nudge sentence — neither is a
+//       completion (the task echo's placeholder and the nudge sentence has no
+//       "DATAWATCH_COMPLETE:" prefix).
+//   (e) status verifying and only a worker lease — the unit takes the task's
+//       identity and nudge events only, so status and leases cannot gate it.
+//
+// Regression tests for the other requirements, all in this file unless noted:
+//   - the late-session subtests above, plus TestPostTurnNudge_LateSessionAdoptsPersistedNudge
+//     and TestPostTurnNudge_ReplacedSessionIsRebound
+//   - TestPostTurnNudge_NegativeSettingsUseDefaultWindows (zero and negative settings)
+//   - TestPostTurnNudge_NudgeWindowIsShorterThanDefaultIdleLimit
+//   - internal/session: TestExtractCompletionSummary (template and echo rows)
+//   - internal/autonomous: TestWorkerNudgeIdleClock_* (redraws do not hold the clock)
+//
+// Not changed: the family the verify wait captures once for its stale-log and
+// exit-silence checks (main.go) and the start-confirm tracker still read at wait
+// start. They are outside the nudge.
 
 const (
 	postTurnSessionID = "host-claude01"
@@ -348,19 +344,12 @@ func TestPostTurnNudge_FakeClaudeSessionAtEmptyPromptIsNudged(t *testing.T) {
 		f := newFakeClaudeSession(clock, "claude-code")
 		f.visibleFrom = postTurnT0.Add(3 * postTurnTick) // not visible when the wait starts
 
+		// The session is unknown at wait start. The nudge still owns the worker's
+		// idleness, so the legacy waiting_input debounce (claude-code && !Active)
+		// must not be armed for it.
 		nudge := newPostTurnNudge(f.deps(), autonomouspkg.Config{}, postTurnTaskFor(autonomouspkg.TaskInProgress))
 		if !nudge.Active() {
-			// The family was read once, at wait start, while the session was
-			// unknown. Without a tracker the nudge never steps, and the legacy
-			// waiting_input debounce (family == claude-code && !Active) applies.
-			t.Errorf("no nudge tracker: the family was read at wait start, before the session was visible; the legacy debounce condition is true for this worker (family=%q, Active=false)", f.snap.BackendFamily)
-			// The debounce the wait then arms: three consecutive waiting_input
-			// ticks stall the worker (grace already passed in this scenario).
-			ticks, stalled := 0, false
-			for i := 0; i < 3; i++ {
-				ticks, stalled = decomposeWaitingInputTick(ticks, session.StateWaitingInput, time.Hour, 0)
-			}
-			t.Logf("legacy debounce armed: three waiting_input ticks stall the worker = %v", stalled)
+			t.Fatal("the legacy waiting_input debounce is armed for a claude-code worker whose session was not visible at wait start")
 		}
 		if err := runPostTurnWait(clock, f, nudge, postTurnTicks, nil); err != nil {
 			t.Fatalf("unexpected stall: %v", err)
@@ -426,4 +415,99 @@ func TestPostTurnNudge_FakeClaudeSessionAtEmptyPromptIsNudged(t *testing.T) {
 		}
 		assertNudgedOnce(t, f, logBuf)
 	})
+}
+
+// TestPostTurnNudge_LateSessionAdoptsPersistedNudge proves that a nudge already
+// recorded for the session is adopted when the session appears late, so the
+// worker is not nudged a second time once it is visible.
+func TestPostTurnNudge_LateSessionAdoptsPersistedNudge(t *testing.T) {
+	logBuf := capturePostTurnLog(t)
+	clock := &fakeClock{now: postTurnT0}
+	f := newFakeClaudeSession(clock, "claude-code")
+	f.visibleFrom = postTurnT0.Add(3 * postTurnTick)
+
+	task := postTurnTaskFor(autonomouspkg.TaskInProgress)
+	task.NudgeEvents = []autonomouspkg.NudgeEvent{
+		{At: postTurnT0.Add(-time.Minute), Count: 1, SessionID: postTurnSessionID, Outcome: autonomouspkg.NudgeOutcomeSent},
+	}
+	nudge := newPostTurnNudge(f.deps(), autonomouspkg.Config{}, task)
+	if err := runPostTurnWait(clock, f, nudge, postTurnTicks, nil); err != nil {
+		t.Fatalf("unexpected stall: %v", err)
+	}
+	if nudge.tracker == nil || !nudge.tracker.Nudged() {
+		t.Fatal("the tracker was not built from the persisted nudge once the session became visible")
+	}
+	if len(f.sent) != 0 {
+		t.Fatalf("a worker nudged before its session became visible was nudged again: typed %q; log:\n%s", f.sent, logBuf.String())
+	}
+}
+
+// TestPostTurnNudge_ReplacedSessionIsRebound proves that when the task's session
+// is replaced by a claude-code session, the nudge binds the new session's family
+// and nudges it, instead of keeping the family of the session it first saw.
+func TestPostTurnNudge_ReplacedSessionIsRebound(t *testing.T) {
+	logBuf := capturePostTurnLog(t)
+	clock := &fakeClock{now: postTurnT0}
+	f := newFakeClaudeSession(clock, "opencode")
+
+	nudge := newPostTurnNudge(f.deps(), autonomouspkg.Config{}, postTurnTaskFor(autonomouspkg.TaskInProgress))
+	if nudge.Active() {
+		t.Fatal("a nudge tracker was built for an opencode session")
+	}
+	replaced := false
+	swapSession := func() {
+		if replaced || clock.now.Before(postTurnT0.Add(30*time.Second)) {
+			return
+		}
+		replaced = true
+		f.snap.BackendFamily = "claude-code"
+		f.snap.FullID = "host-" + postTurnSessionID + "-replacement"
+	}
+	if err := runPostTurnWait(clock, f, nudge, postTurnTicks, swapSession); err != nil {
+		t.Fatalf("unexpected stall: %v", err)
+	}
+	if !replaced {
+		t.Fatal("the session was never replaced; the scenario did not run")
+	}
+	assertNudgedOnce(t, f, logBuf)
+}
+
+// TestPostTurnNudge_NegativeSettingsUseDefaultWindows proves that zero and
+// negative nudge settings give the 180s nudge and 600s stall windows, both in the
+// window helper that the fresh and the adopted wait share and on the fresh wait's
+// own nudge timing.
+func TestPostTurnNudge_NegativeSettingsUseDefaultWindows(t *testing.T) {
+	for _, cfg := range []autonomouspkg.Config{
+		{WorkerIdleNudgeSeconds: -1, WorkerIdleNudgeStallSeconds: -600},
+		{WorkerIdleNudgeSeconds: 0, WorkerIdleNudgeStallSeconds: 0},
+	} {
+		nudgeAfter, stallAfter := workerNudgeWindows(cfg)
+		if nudgeAfter != 180*time.Second || stallAfter != 600*time.Second {
+			t.Errorf("windows for %+v = %s and %s, want 180s and 600s", cfg, nudgeAfter, stallAfter)
+		}
+	}
+
+	logBuf := capturePostTurnLog(t)
+	clock := &fakeClock{now: postTurnT0}
+	f := newFakeClaudeSession(clock, "claude-code")
+	cfg := autonomouspkg.Config{WorkerIdleNudgeSeconds: -1, WorkerIdleNudgeStallSeconds: -1}
+	nudge := newPostTurnNudge(f.deps(), cfg, postTurnTaskFor(autonomouspkg.TaskInProgress))
+	if err := runPostTurnWait(clock, f, nudge, postTurnTicks, nil); err != nil {
+		t.Fatalf("unexpected stall: %v", err)
+	}
+	assertNudgedOnce(t, f, logBuf)
+	if !strings.Contains(logBuf.String(), "sent after 3m0s idle") {
+		t.Fatalf("the fresh wait did not nudge at the 180s default window; log:\n%s", logBuf.String())
+	}
+}
+
+// TestPostTurnNudge_NudgeWindowIsShorterThanDefaultIdleLimit proves that under
+// default settings the nudge fires before the session idle detector can end the
+// session: the nudge window is shorter than the default idle limit.
+func TestPostTurnNudge_NudgeWindowIsShorterThanDefaultIdleLimit(t *testing.T) {
+	nudgeAfter, _ := workerNudgeWindows(autonomouspkg.Config{})
+	idleLimit := time.Duration(config.NormalizeSessionIdleTimeoutSeconds(0)) * time.Second
+	if nudgeAfter >= idleLimit {
+		t.Fatalf("nudge window %s is not shorter than the default session idle limit %s; the idle detector would end the session before the nudge", nudgeAfter, idleLimit)
+	}
 }

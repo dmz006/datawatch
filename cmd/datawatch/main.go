@@ -4851,8 +4851,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// claude-code idle nudge: one nudge after worker_idle_nudge_seconds of
 				// idle, a stall after worker_idle_nudge_stall_seconds more. Both
 				// windows are shorter than the session idle timeout, so the nudge
-				// fires first. Nil for other families. The family is read once, at
-				// wait start (see newPostTurnNudge).
+				// fires first. Inert for other families. The family is read on every
+				// tick until the session is visible (see postTurnNudge.Step), so a
+				// session that appears after wait start is nudged from its first tick.
 				nudge := newPostTurnNudge(postTurnDeps{
 					sessions: managerPostTurnSessions{mgr: mgr},
 					recorder: managerPostTurnRecorder{mgr: autonomousMgrRef},
