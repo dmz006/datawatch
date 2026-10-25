@@ -2717,4 +2717,6 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 9. **A low-risk default never covers a design question (quoted: "1, maybe 3, keep track of that for future possibility").** Defaults cover operational questions only (retry counts, ordering, which lane, wording); design questions always wait for the operator or the operator's skip. **Future possibility, tracked and not built:** a repeated design question the operator has already answered may take the earlier answer as its default. The proposal must keep room for it: an answer record that can be matched to a later question by type and subject, with the match shown to the operator and never applied silently.
 
+10. **What stays the operator's on a skip (answer: "1").** Three things stay with the operator even when a question is skipped: the 10.0 tag, releasing something the operator has not reviewed, and spending Claude usage beyond the operator's lane count. On a skip the supervisor decides everything else, and the record shows the answer as a supervisor decision made on the operator's skip, with its reasoning.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
