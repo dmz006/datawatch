@@ -235,8 +235,8 @@ branch is 460 commits behind main.
 
 **Confirmed from the diff against the merge base with main:**
 
-- (a) No version variable changed in `cmd/datawatch/main.go` or `internal/server/api.go` (both still read
-  9.5.125 at the base and on the branch). The new CHANGELOG entry sits under Unreleased and carries no
+- (a) No version variable changed in `cmd/datawatch/main.go` or `internal/server/api.go` (both still carry
+  the release version they had at the base). The new CHANGELOG entry sits under Unreleased and carries no
   version number.
 - (b) Not clean. The new file `scripts/test-stories/TS-819.sh` carries a story number in its name, and its
   `CURRENT_STORY` literal repeats it. The unit's verification script requires that exact file name, and
