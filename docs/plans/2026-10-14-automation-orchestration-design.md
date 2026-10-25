@@ -2693,4 +2693,11 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 **Open for the operator (not decided here).** Where the queue is shown first (Automation view or a new tab); whether a question may carry a deadline and what happens at expiry; who may answer when several operators exist; whether the supervisor's own tick may keep working with a default for low-risk questions; the retention of answered questions; how the Decision Interview Protocol in AGENT.md changes (ask through the queue first, terminal only as fallback).
 
+**Operator decisions, 2026-10-25 (quoted):** "Queues are a part of automation.  No expiring, unless operator says to slip out use supervisor decision,  low risk would be an option set in automation,  any other questions"
+
+1. **The question queue belongs to Automation.** It is part of the Automation subsystem and its view, not a separate tab or a separate subsystem.
+2. **Questions never expire.** An open question stays open until answered or withdrawn. The one exception is when the operator says to skip it ("slip out": read as skip); then the supervisor decides, and the record shows the answer as a supervisor decision made on the operator's skip, with its reasoning.
+3. **Low-risk handling is an Automation setting.** Whether a low-risk question may be answered by the supervisor's default is an option set in Automation, not a built-in behaviour and not a per-question deadline.
+4. The earlier open points about a deadline and its expiry behaviour are closed by items 2 and 3.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
