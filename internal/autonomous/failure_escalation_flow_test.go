@@ -109,6 +109,7 @@ func (r *flowRig) run(t *testing.T, prd *PRD) {
 		t.Fatalf("Run: %v", err)
 	}
 	pollEscalationSettled(t, r.m, prd.ID, 10*time.Second)
+	waitExecutorGone(t, r.api, prd.ID, 10*time.Second)
 }
 
 // flowParserVerifier fails the first failures verifications of the parser
