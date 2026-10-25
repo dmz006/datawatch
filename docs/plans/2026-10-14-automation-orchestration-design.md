@@ -2703,6 +2703,10 @@ Open for the operator: the default alert times and the retry count for items 1, 
 **Operator decisions, 2026-10-25 later (quoted):** "Skip would be specific or all, should be an option. We are not multi operator yet but any operator authorized for the automation.  All comms are parity so valid,  what else?"
 
 5. **Skip is an option with two scopes:** skip one specific question, or skip all open questions. The operator picks when skipping.
+
+**Operator clarification, 2026-10-25 (quoted):** "Skip is based on question,  not entire automation,  unless that was the option enable,  by default it is specific, but can apply wide."
+
+5a. **Skip is per question by default.** A skip applies to the one question it is given on, never to the whole Automation. Skipping wide (all open questions) is available only when that option is enabled in Automation; it is off by default. This replaces the reading of item 5 as a free choice of scope at skip time.
 6. **Who answers:** the system is not multi-operator yet; any operator authorized for the Automation may answer its questions.
 7. **Every communication channel is valid for answering,** by the parity rule: PWA, mobile apps, CLI, REST, MCP and every messaging channel.
 
