@@ -9,11 +9,11 @@ Date started: 2026-10-25. The ten open questions of `docs/plans/2026-10-20-tag-b
 2. **Counts: subtree counts as the main figure.** (Operator, 2026-10-25: "Q33 1 subtree counts".) Each tag shows the number of distinct items under it including its children, an item under two children counted once; the API may still return direct counts for views that want them.
 3. **Attention statuses: `blocked`, `needs_review` and `paused`.** (Operator, 2026-10-25: "2".) A paused Automaton joins the attention group so every paused item is visible in one place; the `attention_statuses` setting still lets the operator change the list. **Sub-question answered (operator, 2026-10-25: "Go with your recommendations"):** an Automaton with a task held for operator review (`review_needed`) also appears in the attention group.
 4. **List payload: add `tags` to each Automata list item and keep the existing task counts.** (Operator, 2026-10-25: "Go with your recommendations", for the supervisor's recommendation 1.) The tile shows progress from the counts the list already returns and tag chips from the new `tags` field, with no second request per tile; the three count fields stay as they are.
-5. **Placement: the Automata tab first, the Automation tab adopts the shared tile later.** (Operator, 2026-10-25: "1, Automata tab first".) The tag browser is built in the existing Automata tab as a shared tile component, with no dependency on the Automation tab's phase; the Automation tab reuses the tile afterwards.
-6. **Multi-tag display: both.** (Operator, 2026-10-25: "Actually both,  do it now".) An item with several tags appears under every tag's branch, with an "also in:" line naming its other tags and the counts correct (an item counted once per tag subtree), and the operator can also choose a primary tag per item, used for sorting. Read by the supervisor as options 1 and 2 together; the primary tag is optional and defaults to none.
+5. **Placement: both tabs, built together.** (Operator, 2026-10-25: first "1, Automata tab first", then clarified "Both all was for 37" after "Actually both,  do it now".) The tag browser is built in the Automata tab and in the Automation tab at the same time, as one shared tile component used by both, and the operator wants it built now. This replaces the earlier "Automata tab first" reading and makes the tag browser depend on the Automation tab's phase being in place.
 
 ## Still open (asked in order)
 
+6. Whether a tag shown under several branches is acceptable (asked again 2026-10-25: the earlier "both" answer was for question 5, placement, not for this one).
 7. Whether counts refresh on the event stream or on poll.
 8. Whether tags are local to one node or federated.
 9. The default match mode of the tag facet.
