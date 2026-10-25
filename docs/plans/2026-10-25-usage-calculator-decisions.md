@@ -17,6 +17,4 @@ Date started: 2026-10-25. The ten open questions of `docs/plans/2026-10-23-usage
 
 ## Status
 
-All ten questions of the usage calculator design are answered (decisions 1 to 10). The implementation PRD can be planned from this file. (asked in order)
-
-10. Whether the older 22:08 reading entry should be corrected.
+All ten questions of the usage calculator design are answered (decisions 1 to 10). The implementation PRD can be planned from this file.
