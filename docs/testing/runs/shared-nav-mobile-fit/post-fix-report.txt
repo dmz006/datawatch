@@ -1,0 +1,60 @@
+shared-nav-mobile-fit: post-fix run (2026-10-25)
+===============================================
+
+Tree: automaton/b54f0001, HEAD a7cc30e4 (fix commits ae73b0ff and a7cc30e4). Binary rebuilt from HEAD, datawatch v9.11.0.
+
+IMPORTANT: this is NOT the named checker
+----------------------------------------
+scripts/test-stories/pwa/shared-nav-mobile-fit.mjs is still absent from the branch and every ref.
+All results below come from the substitute probe, scripts/test-stories/pwa/shared-nav-mobile-fit-probe.mjs.
+Its measures are not the named checker's measures, so the "about 250 nav icon" and "35 px" findings are still unverified.
+One change to the probe: SHARED_NAV_GATE_THEMES was added (default dark, so the default gate is unchanged). This run used light,dark.
+
+Run method
+----------
+scripts/e2e-pwa.sh, local mode, isolated sandbox daemon, run with env -u TMUX -u TMUX_TMPDIR.
+TEST_BINARY is docs/testing/runs/shared-nav-mobile-fit/sandbox/run-daemon.sh, which pins TMUX_TMPDIR for the daemon,
+so the daemon uses the sandbox tmux socket and never the production one. npm ci is skipped by the sandbox shim (as before).
+
+1. Gate (SHARED_NAV_MODE=gate, themes light and dark, widths 320, 360, 390)
+---------------------------------------------------------------------------
+Result: PASS, 0 nav findings (clipped-text, tap-target at 44 px, overlap).
+Before the fix: 4 findings, dark theme only (Dashboard and Settings labels clipped, nav scrollWidth 440 at 320, 360 and 390).
+After the fix: scrollWidth equals clientWidth at every width and theme. No nav button is under 44x44.
+Files: post-fix/repro-report.json, post-fix/repro-report.txt
+
+2. Baseline geometry against nav-baseline.json (SHARED_NAV_MODE=baseline, widths 768x1024, 1024x768, 1280x800, light and dark)
+---------------------------------------------------------------------------------------------------------------------------
+Boxes compared: 456 (nav, button, icon, label; x, y, w, h).
+Max absolute delta: 0 px. Rows with any delta: 0.
+Tolerance: a value passes when within 2 px OR within 1 percent of the pre-fix value.
+baseline.withinTolerance: true
+Files: post-fix/nav-baseline.json
+
+3. Report-only pass on all tabs (6 viewports, 6 tabs, dark theme)
+-----------------------------------------------------------------
+                         before   after
+Total occurrences          336     292
+Groups                      26      21
+Bottom-nav occurrences      44       0   (all were horizontal-overflow)
+Other-tab occurrences      292     292
+Page-level horizontal scroll: none, before or after.
+
+Other-tab worklist: no row added or removed, and per-row counts are unchanged.
+Three rows changed size (still flagged at the 44 px probe threshold):
+  - button#headerSearchBtn.header-search-btn   35.5x26 -> 40x40   (12 occurrences)
+  - div.settings-section-title.settings-section-toggle   35 px tall -> 40 px tall   (6 occurrences)
+  - span#headerAlertPill.header-alert-pill   34.8 -> 34.2 px wide   (1 occurrence; not explained by either fix commit, not investigated)
+Other-tab tap targets under 40 px after the fix: 233 of 281 (smallest 11.1 px). These belong to the deferred Phase 3 rows.
+Remaining other-tab horizontal-overflow: 11 occurrences, button.settings-tab-btn.output-tab on settings (deferred, unchanged).
+Files: post-fix/report-only/report-only.json, post-fix/report-only/occurrences.json
+
+Not covered
+-----------
+- Text zoom: the matrix's zoom levels are not defined anywhere in the repo, so only 100 percent was measured.
+- Named checker: not run, because the file does not exist.
+
+Regressions
+-----------
+None found. The nav is clean in both themes, desktop and tablet geometry is unchanged, and no other-tab row is new.
+The three size changes are all upward toward 40 px.

@@ -22,6 +22,8 @@
 //                        and 1280x800, light and dark. gate writes repro-report.json
 //                        and repro-report.txt: nav clipped-text, tap-target and overlap
 //                        findings at 320, 360 and 390, and exits 1 when there are any.
+//   SHARED_NAV_GATE_THEMES  comma-separated themes for the gate (default "dark"; light and
+//                        dark are both accepted). Each theme is audited at every gate width.
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -209,6 +211,11 @@ const NAV_GATE_VIEWPORTS = [
   { name: '390x844', width: 390, height: 844 },
 ];
 const NAV_THEMES = ['light', 'dark'];
+const GATE_THEMES = (process.env.SHARED_NAV_GATE_THEMES || 'dark').split(',').map((t) => t.trim()).filter(Boolean);
+if (!GATE_THEMES.length || GATE_THEMES.some((t) => !NAV_THEMES.includes(t))) {
+  console.error(`shared-nav-mobile-fit-probe: SHARED_NAV_GATE_THEMES must name light and/or dark, got "${process.env.SHARED_NAV_GATE_THEMES}"`);
+  process.exit(2);
+}
 const NAV_TOLERANCE = { px: 2, percent: 1 };
 const NAV_CHECKS = {
   'clipped-text': 'nav label text extends past the visible nav bar, so it is cut off by the nav scroller',
@@ -349,16 +356,19 @@ async function runNavMode(cdp) {
     return 0;
   }
 
-  // gate: dark theme, the app default. The nav is measured at each phone width.
-  await setNavViewport(cdp, NAV_GATE_VIEWPORTS[0]);
-  await loadPWA(cdp, 'dark');
+  // gate: the app default is dark, so dark is the default theme. The nav is measured at
+  // each phone width, once per theme in GATE_THEMES. Keys are "<theme>/<viewport>".
   const viewports = {};
   let total = 0;
-  for (const vp of NAV_GATE_VIEWPORTS) {
-    await setNavViewport(cdp, vp);
-    const audit = await cdp.evaluate(`(${auditNavGate.toString()})(${MIN_TARGET})`);
-    viewports[vp.name] = audit;
-    total += audit.findings.length;
+  for (const theme of GATE_THEMES) {
+    await setNavViewport(cdp, NAV_GATE_VIEWPORTS[0]);
+    await loadPWA(cdp, theme);
+    for (const vp of NAV_GATE_VIEWPORTS) {
+      await setNavViewport(cdp, vp);
+      const audit = await cdp.evaluate(`(${auditNavGate.toString()})(${MIN_TARGET})`);
+      viewports[`${theme}/${vp.name}`] = { theme, ...audit };
+      total += audit.findings.length;
+    }
   }
   const gate = {
     story: 'shared-nav-mobile-fit',
@@ -367,6 +377,7 @@ async function runNavMode(cdp) {
     daemon_version: daemonVersion,
     gate: total ? 'fail' : 'pass',
     checks: NAV_CHECKS,
+    themes: GATE_THEMES,
     total_findings: total,
     viewports,
   };
@@ -375,7 +386,7 @@ async function runNavMode(cdp) {
   const lines = [
     'shared-nav-mobile-fit: gate run (substitute probe, not the named checker)',
     '='.repeat(72),
-    `Result: ${gate.gate.toUpperCase()}, ${total} nav findings at ${NAV_GATE_VIEWPORTS.map((v) => v.name).join(', ')}`,
+    `Result: ${gate.gate.toUpperCase()}, ${total} nav findings at ${NAV_GATE_VIEWPORTS.map((v) => v.name).join(', ')} in ${GATE_THEMES.join(', ')} theme`,
     `Daemon version: ${daemonVersion}`,
     `Substitute for: ${SUBSTITUTE_FOR}`,
     '',
@@ -383,9 +394,9 @@ async function runNavMode(cdp) {
     ...Object.entries(NAV_CHECKS).map(([k, v]) => `  ${k}: ${v}`),
     '',
   ];
-  for (const vp of NAV_GATE_VIEWPORTS) {
-    const v = viewports[vp.name];
-    lines.push(`Viewport ${vp.name}: ${v.findings.length} findings, ${v.navItems} nav items, nav bar ${v.navBox.w}x${v.navBox.h}, scrollWidth ${v.navScrollWidth}, clientWidth ${v.navClientWidth}`);
+  for (const theme of GATE_THEMES) for (const vp of NAV_GATE_VIEWPORTS) {
+    const v = viewports[`${theme}/${vp.name}`];
+    lines.push(`Theme ${theme}, viewport ${vp.name}: ${v.findings.length} findings, ${v.navItems} nav items, nav bar ${v.navBox.w}x${v.navBox.h}, scrollWidth ${v.navScrollWidth}, clientWidth ${v.navClientWidth}`);
     for (const f of v.findings) {
       const extra = f.check === 'clipped-text'
         ? ` clipped ${f.overflowLeft}px left, ${f.overflowRight}px right`

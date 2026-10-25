@@ -16,10 +16,11 @@ supplied or the operator confirms the probe is the intended measure.
 ## Phases
 
 - Phase 1, baseline report-only run on the unmodified tree: In Progress. The substitute probe is done through e2e-pwa.sh (336 occurrences, 26 groups, daemon 9.11.0). The named checker run is still outstanding because the file is absent. Release: none, this phase produces evidence only.
-- Phase 2, fix the one-line shared style findings (header chrome and the toast close button, 156 occurrences in 7 rows): Planned. Release: 9.14.3, the next patch above main 9.14.2.
+- Shared navigation bar root-cause fix (commits ae73b0ff and a7cc30e4): Done, proven 2026-10-25 on the fixed tree. Gate pass in light and dark at 320, 360 and 390 px (0 findings, was 4), and report-only nav occurrences 44 to 0. The nav no longer scrolls: scrollWidth equals clientWidth at every phone width. Desktop and tablet nav geometry matches nav-baseline.json (456 boxes, zero delta). Evidence: `docs/testing/runs/shared-nav-mobile-fit/post-fix-report.json` and `post-fix-report.txt`. Text zoom was not measured, because the matrix's zoom levels are not defined in the repo.
+- Phase 2, fix the one-line shared style findings (header chrome and the toast close button, 156 occurrences in 7 rows): In Progress, not Done. The fix commits raised the header search button and the Observer section toggle to 40 px, but all seven header rows are still flagged at the 44 px probe threshold. Release: 9.14.3, the next patch above main 9.14.2.
 - Phase 3, fix the per-tab findings (136 occurrences in 14 rows, deferred to each tab): Planned. Release: 9.14.4, the next patch above main after Phase 2 (9.14.3). The Observer rows here overlap BL572; see Worklist.
 
-Open decision, not assigned to a phase: the 44 bottom-nav horizontal-overflow findings. `.nav` is a deliberate horizontal scroller (`overflow-x: auto`, scroll-snap) on narrow widths, so they may be by design. The probe flags them against viewport width. The operator decides whether they are defects before any nav change.
+Open decision, now resolved by the shared nav fix: the 44 bottom-nav horizontal-overflow findings. The fix replaced the scroller with equal flex sizing, so the six buttons fit 320 to 414 px without scrolling, and the 44 findings are gone (scrollWidth equals clientWidth). The operator's earlier question about whether they were by design no longer applies to the phone widths measured here.
 
 ## Worklist
 
@@ -52,6 +53,14 @@ Classification is by placement, checked against `internal/server/web/style.css` 
 | button (text "History", no class) | tap-target | 49.1x17 | 768x1024 | observer | 1 | deferred to its tab |
 
 Totals: header rows 7 (156 occurrences, Phase 2). Tab rows 14 (136 occurrences, Phase 3). Bottom-nav rows are summarized below, not listed.
+
+Worklist outcome, post-fix report-only pass (2026-10-25, fixed tree a7cc30e4; `docs/testing/runs/shared-nav-mobile-fit/post-fix/report-only/`):
+
+- Total occurrences went from 336 in 26 groups to 292 in 21 groups. The 44 bottom-nav occurrences are gone. All other-tab occurrences remain (292).
+- No other-tab row was added or removed, and every row's count is unchanged. Only sizes moved, in three rows: `button#headerSearchBtn.header-search-btn` 35.5x26 to 40x40, the Observer `div.settings-section-title.settings-section-toggle` from 35 px to 40 px tall, and one `span#headerAlertPill.header-alert-pill` occurrence from 34.8 to 34.2 px wide. Those three are still flagged at 44 px.
+- The worklist therefore differs from the pre-fix list only in size, not in membership. The one-line-style claim holds for the header search button and the Observer section toggle, not for the other five header rows: `headerAlertPill`, `headerInstallBtn`, `headerHelpLink`, `headerIdentityBtn` and the toast close button still have no fix. Phase 2 stays open until those rows clear 44 px or the operator accepts 40 px as the bar.
+- After the fix, 233 of 281 other-tab tap-target occurrences are under 40 px (smallest 11.1 px). These are the Phase 3 rows and are unchanged.
+- The 11 remaining other-tab horizontal-overflow occurrences (`button.settings-tab-btn.output-tab` on settings) are unchanged and deferred to Phase 3.
 
 Observer rows (`div.settings-section-title.settings-section-toggle`, `a.docs-link`, the "History" button; 13 occurrences) are included because the spec asks for every other-tab finding. BL592 scopes the Observer tab to BL572, so the operator should decide whether these stay in this worklist.
 
