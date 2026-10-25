@@ -10,10 +10,10 @@ Date started: 2026-10-25. The ten open questions of `docs/plans/2026-10-20-tag-b
 3. **Attention statuses: `blocked`, `needs_review` and `paused`.** (Operator, 2026-10-25: "2".) A paused Automaton joins the attention group so every paused item is visible in one place; the `attention_statuses` setting still lets the operator change the list. **Sub-question answered (operator, 2026-10-25: "Go with your recommendations"):** an Automaton with a task held for operator review (`review_needed`) also appears in the attention group.
 4. **List payload: add `tags` to each Automata list item and keep the existing task counts.** (Operator, 2026-10-25: "Go with your recommendations", for the supervisor's recommendation 1.) The tile shows progress from the counts the list already returns and tag chips from the new `tags` field, with no second request per tile; the three count fields stay as they are.
 5. **Placement: the Automata tab first, the Automation tab adopts the shared tile later.** (Operator, 2026-10-25: "1, Automata tab first".) The tag browser is built in the existing Automata tab as a shared tile component, with no dependency on the Automation tab's phase; the Automation tab reuses the tile afterwards.
+6. **Multi-tag display: both.** (Operator, 2026-10-25: "Actually both,  do it now".) An item with several tags appears under every tag's branch, with an "also in:" line naming its other tags and the counts correct (an item counted once per tag subtree), and the operator can also choose a primary tag per item, used for sorting. Read by the supervisor as options 1 and 2 together; the primary tag is optional and defaults to none.
 
 ## Still open (asked in order)
 
-6. Whether a tag shown under several branches is acceptable.
 7. Whether counts refresh on the event stream or on poll.
 8. Whether tags are local to one node or federated.
 9. The default match mode of the tag facet.
