@@ -1,0 +1,8 @@
+mode: fresh-sandbox
+base: https://127.0.0.1:58793
+tree commit: bfed9b8a53d059c403c6b9df9462e035f7b6cbf9
+uncommitted paths: 3
+health status: ok
+go: go version go1.27.2 linux/amd64
+os: Linux 7.0.0-34-generic
+webhook settings at start: {"autonomous.notify.webhook.enabled": false, "autonomous.notify.webhook.allow_hosts": [], "autonomous.notify.webhook.backoff_seconds": [1, 4, 16, 64]}

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# TS-811 — lifecycle outbound webhook sink and peer forwarding smoke
+# TS-819 — lifecycle outbound webhook sink and peer forwarding smoke
 # tags: surface:api feature:lifecycle-webhook
 # The smoke script does the work against the runner's sandbox daemon and uses
 # its own throwaway receiver. It is not parallel:ok: it enables the webhook
 # sink on the shared sandbox for its run and restores the original values.
 # See scripts/release-smoke-lifecycle-webhook.sh for the eight steps.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-CURRENT_STORY="TS-811"
+CURRENT_STORY="TS-819"
 story_preflight "surface:api feature:lifecycle-webhook" || return 0
 
 smoke="$REPO_ROOT/scripts/release-smoke-lifecycle-webhook.sh"

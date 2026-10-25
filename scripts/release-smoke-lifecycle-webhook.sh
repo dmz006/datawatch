@@ -19,13 +19,28 @@
 #      GET /api/alerts plus a final failure audit record are present
 #   8. forwarding: the TestForwardedEvents* and TestForward* Go tests
 #
+# Two modes:
+#   fresh sandbox (default, DATAWATCH_BASE unset): builds the daemon from this
+#     tree into the scratch directory, starts it the way scripts/run-tests.sh
+#     does (config from testdata/datawatch.yaml, a data directory and a home
+#     directory under the scratch directory, free ports, TMUX and TMUX_TMPDIR
+#     unset) and ends it by the exact PID it started. This is the mode that
+#     can validate the feature; it never touches a daemon that is already
+#     running.
+#   existing sandbox (DATAWATCH_BASE set, as the story runner does): drives
+#     that daemon, which must come from a build of this tree.
+#
 # Environment:
-#   DATAWATCH_BASE              sandbox base URL (default https://127.0.0.1:18443)
+#   DATAWATCH_BASE              sandbox base URL; setting it selects the existing-sandbox mode
 #   DATAWATCH_TOKEN             bearer token (default: the sandbox test token)
 #   DATAWATCH_SMOKE_KEEP_WORK=1 keep the scratch directory for inspection
+#   DATAWATCH_SMOKE_EVIDENCE_DIR  directory that receives the forwarding test log
+#                                 and an environment record (for docs/testing/runs)
 #
-# Exit code: 0 = pass, 1 = real failure, 2 = skip (sandbox daemon unreachable,
-# or it was built before the webhook feature and has no webhook settings).
+# Exit code: 0 = pass, 1 = real failure, 2 = skip. A skip only happens in the
+# existing-sandbox mode (daemon unreachable, or built before the webhook
+# feature and so without webhook settings); the fresh-sandbox mode never
+# skips: a build or start problem is a failure.
 # The daemon is reached over HTTPS only (the sandbox certificate is
 # self-signed, so curl runs with -k). The webhook sink and the forwarding ship
 # disabled; this smoke enables the webhook sink on the sandbox for its run and
@@ -35,7 +50,9 @@ if [ -n "${TMUX:-}${TMUX_TMPDIR:-}" ]; then exec env -u TMUX -u TMUX_TMPDIR bash
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BASE="${DATAWATCH_BASE:-https://127.0.0.1:18443}"
+FRESH=0
+[[ -z "${DATAWATCH_BASE:-}" ]] && FRESH=1
+BASE="${DATAWATCH_BASE:-}"
 TOKEN="${DATAWATCH_TOKEN:-dw-test-token-12345}"
 SECRET_NAME="lifecycle-smoke-signing"
 # Obviously fake, and only ever stored for the length of this run.
@@ -45,6 +62,8 @@ ALERT_TITLE="Lifecycle webhook delivery failed"
 WORK="$(mktemp -d)"
 RECV_PID=""
 RECV_HOSTPORT=""
+SANDBOX_PID=""
+EVIDENCE_DIR="${DATAWATCH_SMOKE_EVIDENCE_DIR:-}"
 ORIG_JSON=""
 SUB_ID=""
 SUB_IDS=()
@@ -79,7 +98,8 @@ jfield() {
 
 # check MODE ARGS... — the verifier in $WORK/check.py (stdin for audit/alert modes).
 check() {
-  SMOKE_SECRET="$SECRET_VALUE" python3 -I "$WORK/check.py" "$WORK" "$@"
+  SMOKE_SECRET="$SECRET_VALUE" SMOKE_HOWTO="$REPO_ROOT/docs/howto/automaton-lifecycle-webhooks.md" \
+    python3 -I "$WORK/check.py" "$WORK" "$@"
 }
 
 count_requests() {
@@ -131,6 +151,76 @@ stop_receiver() {
   fi
 }
 
+# free_ports N — N distinct free loopback TCP ports, one per line.
+free_ports() {
+  python3 -I -c '
+import socket, sys
+socks = [socket.socket() for _ in range(int(sys.argv[1]))]
+for s in socks:
+    s.bind(("127.0.0.1", 0))
+for s in socks:
+    print(s.getsockname()[1])
+' "$1"
+}
+
+# start_sandbox — build this tree and start a throwaway daemon (fresh mode).
+start_sandbox() {
+  local sbx="$WORK/sandbox" bin="$WORK/datawatch" tpl="$REPO_ROOT/testdata/datawatch.yaml"
+  [[ -f "$tpl" ]] || die "sandbox config template missing: testdata/datawatch.yaml"
+  step "fresh sandbox: build the daemon from this tree"
+  local commit dirty
+  commit=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
+  dirty=$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  echo "tree: commit $commit, $dirty uncommitted path(s)"
+  (cd "$REPO_ROOT" && go build -o "$bin" ./cmd/datawatch/) > "$WORK/build.log" 2>&1 \
+    || { cat "$WORK/build.log"; die "go build of this tree failed"; }
+  pass "built $bin"
+
+  local ports p_http p_tls p_mcp p_dns p_hook p_ntfy
+  ports=$(free_ports 6) || die "could not pick free ports"
+  { read -r p_http; read -r p_tls; read -r p_mcp; read -r p_dns; read -r p_hook; read -r p_ntfy; } <<<"$ports"
+  mkdir -p "$sbx/data/projects" "$sbx/home"
+  sed \
+    -e "s|data_dir: /data|data_dir: $sbx/data|g" \
+    -e "s|default_project_dir: /data/projects|default_project_dir: $sbx/data/projects|g" \
+    -e "s|port: 8080|port: $p_http|g" \
+    -e "s|tls_port: 8443|tls_port: $p_tls|g" \
+    -e "s|sse_port: 9090|sse_port: $p_mcp|g" \
+    -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
+    -e "s|token: \"\"|token: \"$TOKEN\"|g" \
+    -e "s|token: \"WEBHOOK_NOAUTH\"|token: \"\"|g" \
+    -e "s|listen: \"127\.0\.0\.1:19053\".*|listen: \"127.0.0.1:$p_dns\"|g" \
+    -e "s|addr: 127\.0\.0\.1:19080|addr: 127.0.0.1:$p_hook|g" \
+    -e "s|server_url: http://127\.0\.0\.1:19180|server_url: http://127.0.0.1:$p_ntfy|g" \
+    "$tpl" > "$sbx/config.yaml"
+  cp "$sbx/config.yaml" "$sbx/data/config.yaml"
+
+  # Only the daemon gets the scratch home directory, so it cannot read or
+  # write any real data directory.
+  HOME="$sbx/home" env -u TMUX -u TMUX_TMPDIR "$bin" start --foreground --config "$sbx/config.yaml" \
+    > "$sbx/daemon.log" 2>&1 &
+  SANDBOX_PID=$!
+  BASE="https://127.0.0.1:$p_tls"
+  local i
+  for i in $(seq 1 120); do
+    curl -skf --max-time 2 "$BASE/api/health" >/dev/null 2>&1 && break
+    kill -0 "$SANDBOX_PID" 2>/dev/null || { tail -30 "$sbx/daemon.log"; die "sandbox daemon exited during start"; }
+    sleep 0.5
+  done
+  curl -skf --max-time 2 "$BASE/api/health" >/dev/null 2>&1 \
+    || { tail -30 "$sbx/daemon.log"; die "sandbox daemon did not become healthy within 60s"; }
+  pass "sandbox daemon pid $SANDBOX_PID healthy at $BASE (built from commit $commit)"
+}
+
+stop_sandbox() {
+  if [[ -n "$SANDBOX_PID" ]]; then
+    kill "$SANDBOX_PID" 2>/dev/null || true
+    wait "$SANDBOX_PID" 2>/dev/null || true
+    echo "stopped: sandbox daemon pid $SANDBOX_PID"
+    SANDBOX_PID=""
+  fi
+}
+
 cleanup() {
   local rc=$?
   stop_receiver
@@ -150,6 +240,7 @@ cleanup() {
     api DELETE "/api/secrets/$SECRET_NAME" >/dev/null 2>&1
     echo "removed: throwaway signing secret"
   fi
+  stop_sandbox
   if [[ "${DATAWATCH_SMOKE_KEEP_WORK:-0}" == 1 ]]; then
     echo "kept scratch directory: $WORK"
   else
@@ -234,6 +325,8 @@ PY
 cat > "$WORK/check.py" <<'PY'
 # Verifier for the webhook smoke. Modes:
 #   signature N SUB_ID   request N verifies, parses and names SUB_ID (env SMOKE_SECRET)
+#   snippet N            the receiver snippet from the how-to (env SMOKE_HOWTO) accepts request N
+#                        and rejects the same request with one byte of the body changed
 #   delivery N           print the X-Datawatch-Delivery id of request N
 #   gaps FIRST LAST      the gaps between requests FIRST..LAST grow
 #   same FIRST LAST      the requests share one delivery id; codes are 500,500,200
@@ -304,6 +397,26 @@ if MODE == "signature":
     if (env.get("event") or {}).get("test") is not True:
         fail("envelope event is not the labelled test event")
     print("PASS: request %d signature verifies, envelope parses, event is the labelled test" % n)
+
+elif MODE == "snippet":
+    n = int(sys.argv[3])
+    secret = os.environ["SMOKE_SECRET"].encode()
+    with open(os.environ["SMOKE_HOWTO"]) as f:
+        text = f.read()
+    marker = text.index("This Python snippet is a complete check")
+    start = text.index("```python\n", marker) + len("```python\n")
+    code = text[start:text.index("```", start)]
+    ns = {}
+    exec(compile(code, "howto-snippet", "exec"), ns)
+    meta, body = load(n)
+    sig = header(meta, "X-Datawatch-Signature")
+    if ns["verify"](secret, sig, body) is not True:
+        fail("the how-to snippet rejects the genuine request %d" % n)
+    if ns["verify"](secret, sig, body + b" ") is not False:
+        fail("the how-to snippet accepts a changed body")
+    if ns["verify"](b"not-the-secret", sig, body) is not False:
+        fail("the how-to snippet accepts the wrong secret")
+    print("PASS: the how-to snippet accepts request %d, and rejects a changed body and a wrong secret" % n)
 
 elif MODE == "delivery":
     meta, _ = load(int(sys.argv[3]))
@@ -391,8 +504,14 @@ PY
 # ---------------------------------------------------------------------------
 # Steps
 # ---------------------------------------------------------------------------
+if [[ "$FRESH" == 1 ]]; then
+  start_sandbox
+fi
 api GET /api/health
 if [[ "$HTTP_CODE" != 200 ]]; then
+  if [[ "$FRESH" == 1 ]]; then
+    die "the fresh sandbox daemon at $BASE is not healthy (health returned $HTTP_CODE)"
+  fi
   echo "SKIP: sandbox daemon unreachable at $BASE (health returned $HTTP_CODE)"
   exit 2
 fi
@@ -416,6 +535,9 @@ print("present" if isinstance(w, dict) and all(k in w for k in keys) else "missi
 case "$WEBHOOK_CONFIG" in
   present) ;;
   missing)
+    if [[ "$FRESH" == 1 ]]; then
+      die "the daemon built from this tree has no autonomous.notify.webhook settings in GET /api/config"
+    fi
     echo "SKIP: the daemon at $BASE predates the lifecycle webhook feature (GET /api/config has no autonomous.notify.webhook settings); point DATAWATCH_BASE at a sandbox started from this build"
     exit 2
     ;;
@@ -430,6 +552,20 @@ print(json.dumps({
     "autonomous.notify.webhook.backoff_seconds": w["backoff_seconds"],
 }))') || die "could not read the current webhook settings"
 echo "start: sandbox $BASE, webhook settings $ORIG_JSON"
+if [[ -n "$EVIDENCE_DIR" ]]; then
+  mkdir -p "$EVIDENCE_DIR"
+  api GET /api/health
+  {
+    echo "mode: $([[ "$FRESH" == 1 ]] && echo fresh-sandbox || echo existing-sandbox)"
+    echo "base: $BASE"
+    echo "tree commit: $(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+    echo "uncommitted paths: $(git -C "$REPO_ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+    echo "health status: $(printf '%s' "$API_BODY" | jfield "d['status']")"
+    echo "go: $(go version 2>/dev/null)"
+    echo "os: $(uname -sr)"
+    echo "webhook settings at start: $ORIG_JSON"
+  } > "$EVIDENCE_DIR/environment.txt"
+fi
 
 step "step 1: start the throwaway receiver"
 : > "$WORK/codes"
@@ -444,6 +580,17 @@ SECRET_MADE=1
 pass "secret $SECRET_NAME stored"
 
 step "step 3: enable the webhook sink with the receiver allow-listed"
+# With the switch off a webhook subscription is refused, even for an
+# allow-listed target.
+put_config "$(printf '{"autonomous.notify.webhook.enabled":false,"autonomous.notify.webhook.allow_hosts":["%s"]}' "$RECV_HOSTPORT")"
+count_subscriptions
+n_subs=$SUB_COUNT
+create_sub "http://$RECV_HOSTPORT/hook"
+[[ "$HTTP_CODE" == 400 ]] || die "a webhook subscription was accepted while the sink is switched off (HTTP $HTTP_CODE)"
+[[ "$API_BODY" == *"disabled"* ]] || die "the refusal while switched off does not say the sink is disabled: $API_BODY"
+count_subscriptions
+[[ "$SUB_COUNT" == "$n_subs" ]] || die "a subscription refused while switched off was stored"
+pass "with the sink switched off, a webhook subscription is refused (400, says disabled)"
 put_config "$(printf '{"autonomous.notify.webhook.enabled":true,"autonomous.notify.webhook.allow_hosts":["%s"]}' "$RECV_HOSTPORT")"
 api GET /api/config
 [[ "$(printf '%s' "$API_BODY" | jfield "d['autonomous']['notify']['webhook']['enabled']")" == "true" ]] || die "config GET does not show the sink enabled"
@@ -463,6 +610,7 @@ after=$(count_requests)
 [[ $((after - before)) -eq 1 ]] || die "expected exactly one POST at the receiver, got $((after - before))"
 pass "test-fire returned ok with exactly one POST at the receiver"
 check signature "$after" "$SUB_ID" || die "signature check failed"
+check snippet "$after" || die "the documented receiver snippet check failed"
 api GET "/api/audit?action=autonomous_lifecycle_webhook_delivery&limit=200"
 DELIVERY=$(printf '%s' "$API_BODY" | check latest-delivery autonomous_lifecycle_webhook_delivery "$SUB_ID") || die "no delivery audit record"
 printf '%s' "$API_BODY" | check audit "$DELIVERY" autonomous_lifecycle_webhook_delivery "delivered=1" || die "delivery audit record missing"
@@ -522,6 +670,22 @@ api GET /api/alerts
 printf '%s' "$API_BODY" | check alert "$SUB_ID" 5 || die "failure alert missing"
 printf '%s' "$API_BODY" | check clean || die "the secret value leaked into the alert list"
 
+# Fresh sandbox only: the daemon log and the on-disk audit files hold neither
+# the secret value nor a signature. (The vault itself holds the value, so it
+# is not scanned.)
+if [[ "$FRESH" == 1 ]]; then
+  scanned=0
+  while IFS= read -r f; do
+    scanned=$((scanned + 1))
+    grep -qF -- "$SECRET_VALUE" "$f" && die "the throwaway secret value appears in $f"
+    grep -qE 'v1=[0-9a-f]{64}' "$f" && die "a request signature appears in $f"
+  done < <(find "$WORK/sandbox/data" -maxdepth 2 -type f -name 'audit*' -print; echo "$WORK/sandbox/daemon.log")
+  [[ "$scanned" -ge 2 ]] || die "expected an audit file and the daemon log to scan, found $scanned file(s)"
+  audit_lines=$(cat "$WORK"/sandbox/data/audit* 2>/dev/null | grep -c autonomous_lifecycle_webhook)
+  [[ "$audit_lines" -ge 1 ]] || die "the on-disk audit file has no webhook records"
+  pass "the daemon log and $((scanned - 1)) audit file(s) hold no secret value and no signature ($audit_lines webhook audit line(s) on disk)"
+fi
+
 step "step 8: forwarding (in-process Go tests)"
 GO_LOG="$WORK/forwarding-tests.log"
 (cd "$REPO_ROOT" && go test -count=1 -v -run '^(TestForwardedEvents|TestForward)' \
@@ -534,6 +698,9 @@ if [[ $go_rc -ne 0 || $go_fail -ne 0 || $go_pass -eq 0 ]]; then
   die "forwarding tests: rc=$go_rc passed=$go_pass failed=$go_fail"
 fi
 pass "forwarding tests: $go_pass top-level tests passed"
+if [[ -n "$EVIDENCE_DIR" ]]; then
+  cp "$GO_LOG" "$EVIDENCE_DIR/forwarding-tests.log"
+fi
 
 check clean-requests || die "the secret value leaked into a receiver request"
 echo "OK: lifecycle webhook smoke passed"
