@@ -14,6 +14,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Audit:** set and clear are logged as `autonomous_notify_events_changed` (CEF `NotifyEventsChanged`, id 45, severity 3) with the old and new list and, for Automaton changes, the resolved source after the change.
 - **Docs & tests:** how-tos (`automaton-lifecycle-subscriptions.md` § *Choosing which events notify*, `guardrail-library.md` § *Notify events on a profile*), config reference, implementation, operations (default-change note and every level of turning it off), commands, parity status, testing tracker, release-smoke check 80, and the app parity note `docs/plans/2026-10-23-datawatch-app-notify-events-note.md`.
 - Design: `docs/plans/2026-10-13-prd-lifecycle-events.md` (open question 2 — configurability shape — resolved in this change).
+- Reuse audit: built on existing primitives rather than new machinery — the Automaton > profile > global precedence reuses `resolveGuardrails`' precedence resolution, and per-kind notification delivery reuses the existing lifecycle subscription engine (filters, fan-out, pending-events queue); only the notify set, its resolver and its surfaces are new.
 
 ## v9.6.0 — mcp.public_url for the MCP SSE endpoint behind a reverse proxy
 
