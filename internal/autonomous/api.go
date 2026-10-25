@@ -648,13 +648,15 @@ func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 		return true, nil // executors not configured — status-only mode
 	}
 	a.execWG.Add(1)
-	wake := a.reviewWake.arm(id)
-	ctx = withReviewWake(ctx, wake)
 	go func() {
 		defer a.execWG.Done()
 		defer a.releaseRun(id)
+		// The wake is armed here, before the first Run. A decision that
+		// lands before the arm is already in the store, which Run reads
+		// after it, so no decision is lost.
+		runCtx := withReviewWake(ctx, a.reviewWake.arm(id))
 		for {
-			if err := a.M.Run(ctx, id, a.spawnFn, a.verify); err != nil {
+			if err := a.M.Run(runCtx, id, a.spawnFn, a.verify); err != nil {
 				if p, ok := a.M.Store().GetPRD(id); ok {
 					// If cancelled by operator, leave status as cancelled.
 					// Otherwise revert to PRDApproved so they can retry.

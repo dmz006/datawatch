@@ -690,9 +690,16 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			case <-wake:
 				// An operator decision landed while tasks were running. Rebuild
 				// the order and the counts from the store and launch what the
-				// decision made ready. Tasks still in flight keep running, and
+				// decision made ready. A task this pass held that the decision
+				// released is no longer held, so its hold is dropped here and
+				// launch can start it. Tasks still in flight keep running, and
 				// nothing waits for them.
 				reorder()
+				for tid := range heldIDs {
+					if !m.taskHeldIn(prd, tid) {
+						delete(heldIDs, tid)
+					}
+				}
 				seed()
 				autoFailDeps()
 				launch()
