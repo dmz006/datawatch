@@ -1081,7 +1081,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				log.Printf("[autonomous] executeOne: task %s waiting on adopted session %s (daemon restart)", t.ID, t.SessionID)
 				m.adoptCapacity(prd, t)
 				skipSpawn = true
-				if werr := waitForAdoptedSession(ctx, waitFn, aliveFn, t.SessionID); werr != nil {
+				adopted := AdoptedWait{PRDID: prd.ID, TaskID: t.ID, SessionID: t.SessionID, NudgedAt: t.NudgeTimeForSession(t.SessionID)}
+				if werr := waitForAdoptedSession(ctx, waitFn, aliveFn, adopted); werr != nil {
 					if ctx.Err() != nil {
 						return nil
 					}

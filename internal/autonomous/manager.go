@@ -773,7 +773,7 @@ type Manager struct {
 	sessionOutputFn func(sessionID string) (output string, ok bool)
 	// sessionWaitFn — when set, executeOne waits on an adopted session through
 	// it; nil falls back to polling sessionAliveFn.
-	sessionWaitFn func(ctx context.Context, sessionID string) error
+	sessionWaitFn func(ctx context.Context, w AdoptedWait) error
 	// decomposeSessionsFn lists live planning sessions linked to a PRD.
 	decomposeSessionsFn func(prdID string) []string
 
@@ -1036,9 +1036,11 @@ func (m *Manager) SetSessionOutputFn(fn func(sessionID string) (output string, o
 
 // SetSessionWaitFn wires the wait used for a session adopted at boot-resume.
 // fn blocks until the session reaches its completion marker (nil error) or
-// fails/stalls (non-nil error, wrapping ErrWorkerStalled for a stall). Nil
-// falls back to polling the liveness hook.
-func (m *Manager) SetSessionWaitFn(fn func(ctx context.Context, sessionID string) error) {
+// fails/stalls (non-nil error, wrapping ErrWorkerStalled for a stall). It gets
+// the task identity and the persisted nudge time, so it can nudge and record
+// like a fresh worker (see WaitAdopted). Nil falls back to polling the
+// liveness hook.
+func (m *Manager) SetSessionWaitFn(fn func(ctx context.Context, w AdoptedWait) error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessionWaitFn = fn
