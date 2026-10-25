@@ -66,14 +66,45 @@ func waitingInputEndReason(ticks int) string {
 }
 
 // idleDetectorEndReason names the session idle detector with the numbers it
-// measured: the parked run, its limit, and the output age.
+// measured: the parked run, its limit, and the output age. It ends with the
+// nudge history of the session, so a nudged worker that stayed silent past its
+// limit says the nudge came first.
 func idleDetectorEndReason(obs autonomouspkg.SessionIdleObservation) string {
 	live := "no live child process"
 	if obs.HasLiveChildProcess {
 		live = "live child process"
 	}
-	return fmt.Sprintf("session idle detector: %s for %s, limit %s, %s, output age %s",
+	reason := fmt.Sprintf("session idle detector: %s for %s, limit %s, %s, output age %s",
 		obs.State, endSecs(obs.IdleFor), endSecs(obs.Limit), live, endSecs(obs.OutputAge))
+	if obs.Nudge != "" {
+		reason += ", " + obs.Nudge
+	}
+	return reason
+}
+
+// nudgeHistoryNote names the nudge history of one session from its recorded
+// nudge: "no nudge sent" when there is none, otherwise the nudge's number, the
+// time it was sent and its outcome. A nudge with no outcome yet was sent and not
+// answered, so it reads as sent.
+func nudgeHistoryNote(ev autonomouspkg.NudgeEvent, nudged bool) string {
+	if !nudged {
+		return "no nudge sent"
+	}
+	outcome := ev.Outcome
+	if outcome == "" {
+		outcome = autonomouspkg.NudgeOutcomeSent
+	}
+	return fmt.Sprintf("nudge %d sent at %s, outcome %s", ev.Count, ev.At.Format(time.RFC3339), outcome)
+}
+
+// sessionNudgeNote reads the nudge history of one session of a task from the
+// autonomous manager. A nil manager has recorded no nudges.
+func sessionNudgeNote(mgr *autonomouspkg.Manager, prdID, taskID, sessionID string) string {
+	if mgr == nil {
+		return nudgeHistoryNote(autonomouspkg.NudgeEvent{}, false)
+	}
+	ev, ok := mgr.NudgeEventForSession(prdID, taskID, sessionID)
+	return nudgeHistoryNote(ev, ok)
 }
 
 // exitSilenceEndReason names the pi-prompt exit-silence detector around the

@@ -296,3 +296,63 @@ func TestEndAttributionCLIReasonsNameTheTmuxSession(t *testing.T) {
 		t.Errorf("cliStopAllEndReason() = %q", stop)
 	}
 }
+
+func TestEndAttributionIdleDetectorReasonNamesNudgeHistory(t *testing.T) {
+	base := autonomouspkg.SessionIdleObservation{
+		State:     "waiting_input",
+		IdleFor:   912 * time.Second,
+		OutputAge: 905 * time.Second,
+		Limit:     900 * time.Second,
+	}
+	sent := time.Date(2026, 10, 25, 15, 3, 0, 0, time.UTC)
+	const measured = "session idle detector: waiting_input for 912s, limit 900s, no live child process, output age 905s"
+	cases := []struct {
+		name  string
+		nudge string
+		want  string
+	}{
+		{
+			name:  "no nudge sent",
+			nudge: nudgeHistoryNote(autonomouspkg.NudgeEvent{}, false),
+			want:  measured + ", no nudge sent",
+		},
+		{
+			name:  "nudge sent and still silent",
+			nudge: nudgeHistoryNote(autonomouspkg.NudgeEvent{Count: 1, At: sent, Outcome: autonomouspkg.NudgeOutcomeSent}, true),
+			want:  measured + ", nudge 1 sent at 2026-10-25T15:03:00Z, outcome sent",
+		},
+		{
+			name:  "nudge answered before the idle limit",
+			nudge: nudgeHistoryNote(autonomouspkg.NudgeEvent{Count: 2, At: sent, Outcome: autonomouspkg.NudgeOutcomeAnswered}, true),
+			want:  measured + ", nudge 2 sent at 2026-10-25T15:03:00Z, outcome answered",
+		},
+		{
+			name:  "nudge stalled",
+			nudge: nudgeHistoryNote(autonomouspkg.NudgeEvent{Count: 1, At: sent, Outcome: autonomouspkg.NudgeOutcomeStalled}, true),
+			want:  measured + ", nudge 1 sent at 2026-10-25T15:03:00Z, outcome stalled",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			obs := base
+			obs.Nudge = tc.nudge
+			if got := idleDetectorEndReason(obs); got != tc.want {
+				t.Errorf("idleDetectorEndReason() = %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEndAttributionNudgeHistoryNoteReadsMissingOutcomeAsSent(t *testing.T) {
+	sent := time.Date(2026, 10, 25, 15, 3, 0, 0, time.UTC)
+	got := nudgeHistoryNote(autonomouspkg.NudgeEvent{Count: 1, At: sent}, true)
+	if want := "nudge 1 sent at 2026-10-25T15:03:00Z, outcome sent"; got != want {
+		t.Errorf("nudgeHistoryNote() = %q, want %q", got, want)
+	}
+}
+
+func TestEndAttributionSessionNudgeNoteWithoutManagerSaysNoNudge(t *testing.T) {
+	if got := sessionNudgeNote(nil, "prd-1", "task-1", "sess-1"); got != "no nudge sent" {
+		t.Errorf("sessionNudgeNote(nil) = %q, want %q", got, "no nudge sent")
+	}
+}

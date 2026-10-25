@@ -25,6 +25,19 @@ type SessionIdleObservation struct {
 	OutputAge           time.Duration // age of the session log/mtime signal (0 if unknown)
 	HasLiveChildProcess bool          // true when a runner child (claude/pi/opencode) is alive in the pane tree
 	Limit               time.Duration // effective timeout (0 disables the detector)
+	// Nudge is the nudge history of this session as the daemon read it from the
+	// task: "no nudge sent", or "nudge N sent at T, outcome O". Empty when the
+	// caller did not read it, in which case no clause is named.
+	Nudge string
+}
+
+// nudgeClause returns the nudge history as a trailing clause of a reason, or
+// "" when the caller did not read it.
+func (o SessionIdleObservation) nudgeClause() string {
+	if o.Nudge == "" {
+		return ""
+	}
+	return ", " + o.Nudge
 }
 
 // Stalled reports whether the observed session is idle past its limit with
@@ -44,16 +57,16 @@ func (o SessionIdleObservation) Stalled() (bool, string) {
 	if o.IdleFor <= o.Limit {
 		return false, ""
 	}
-	return true, fmt.Sprintf("%s (session=%s, backend=%s, model=%s, idle %s > limit %s)",
-		SessionIdleFailureReason, o.SessionID, o.Backend, o.Model, o.IdleFor, o.Limit)
+	return true, fmt.Sprintf("%s (session=%s, backend=%s, model=%s, idle %s > limit %s%s)",
+		SessionIdleFailureReason, o.SessionID, o.Backend, o.Model, o.IdleFor, o.Limit, o.nudgeClause())
 }
 
 // SessionIdleError returns an error that wraps ErrWorkerStalled, so the
 // executor's stall retry path handles an idle session the same way it
 // handles an SSE or no-output stall.
 func SessionIdleError(o SessionIdleObservation) error {
-	msg := fmt.Sprintf("%s (session=%s, backend=%s, model=%s)",
-		SessionIdleFailureReason, o.SessionID, o.Backend, o.Model)
+	msg := fmt.Sprintf("%s (session=%s, backend=%s, model=%s%s)",
+		SessionIdleFailureReason, o.SessionID, o.Backend, o.Model, o.nudgeClause())
 	if stalled, reason := o.Stalled(); stalled {
 		msg = reason
 	}

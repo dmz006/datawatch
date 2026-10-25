@@ -63,7 +63,7 @@ func WaitAdopted(ctx context.Context, w AdoptedWait, p AdoptedWaitPorts) error {
 	// finish closes nudge tracking when the wait ends on completion.
 	finish := func() {
 		if tr.Nudged() {
-			CloseNudgeWait(tr, p.Nudge(w.SessionID))
+			CloseNudgeWait(tr, p.Nudge(w.SessionID), w.SessionID, label)
 		}
 	}
 	for {

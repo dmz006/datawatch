@@ -1088,20 +1088,32 @@ type UndeclaredEdit struct {
 	LinesChanged int    `json:"lines_changed"`
 }
 
+// NudgeEventForSession returns the latest nudge recorded for the given session
+// and whether that session has one. Nudges from other sessions, including
+// earlier attempts of this task, are ignored, and an empty sessionID matches
+// nothing.
+func (t *Task) NudgeEventForSession(sessionID string) (NudgeEvent, bool) {
+	if sessionID == "" {
+		return NudgeEvent{}, false
+	}
+	for i := len(t.NudgeEvents) - 1; i >= 0; i-- {
+		if t.NudgeEvents[i].SessionID == sessionID {
+			return t.NudgeEvents[i], true
+		}
+	}
+	return NudgeEvent{}, false
+}
+
 // NudgeTimeForSession returns the time of the latest nudge recorded for the
 // given session, or the zero time when that session has none. Nudges from
 // other sessions, including earlier attempts of this task, are ignored, and an
 // empty sessionID matches nothing.
 func (t *Task) NudgeTimeForSession(sessionID string) time.Time {
-	if sessionID == "" {
+	ev, ok := t.NudgeEventForSession(sessionID)
+	if !ok {
 		return time.Time{}
 	}
-	for i := len(t.NudgeEvents) - 1; i >= 0; i-- {
-		if t.NudgeEvents[i].SessionID == sessionID {
-			return t.NudgeEvents[i].At
-		}
-	}
-	return time.Time{}
+	return ev.At
 }
 
 // RecordAttemptCommit appends the deterministic commit sha recorded for a

@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -20,6 +21,34 @@ type WorkerNudgeHooks struct {
 	End       func(obs WorkerNudgeObservation)
 }
 
+// NudgeStallError is the stall of a worker that stayed silent for the stall
+// window after its completion nudge. It wraps ErrWorkerStalled, so the retry
+// path handles it like any other stall, and it names the session that was
+// ended.
+type NudgeStallError struct {
+	SessionID string
+}
+
+// Error names the session and the stall, in the text the daemon has always
+// recorded on the task.
+func (e NudgeStallError) Error() string {
+	return fmt.Sprintf("worker idle after completion nudge (session=%s): %s", e.SessionID, ErrWorkerStalled)
+}
+
+// Unwrap makes errors.Is(err, ErrWorkerStalled) hold for a nudge stall.
+func (e NudgeStallError) Unwrap() error { return ErrWorkerStalled }
+
+// StallRetryReason names why a stalled attempt is retried, for the executor's
+// retry log line: "after completion nudge" for a nudge stall, otherwise
+// "worker stall". The stall's own text is recorded on the task as the hint.
+func StallRetryReason(err error) string {
+	var nerr NudgeStallError
+	if errors.As(err, &nerr) {
+		return "after completion nudge"
+	}
+	return "worker stall"
+}
+
 // StepWorkerNudge makes one idle-nudge decision for a worker and carries it
 // out. It is shared by the fresh-session wait and the adopted-session wait so
 // both nudge, stall and record the same way. Workers of other families are
@@ -27,10 +56,10 @@ type WorkerNudgeHooks struct {
 //
 // A send types the task itself when it was never delivered, otherwise the
 // completion nudge, and records it. Output or completion after the nudge
-// records the nudge as answered. A stall records it as stalled, ends the
-// worker and returns an error wrapping ErrWorkerStalled, so the executor's
-// retry path takes it. Every other outcome returns nil. label names the task
-// in log lines ("PRD/TASK"); sessionID names the worker.
+// records the nudge as answered and logs it. A stall records it as stalled,
+// ends the worker and returns a NudgeStallError, so the executor's retry path
+// takes it. Every other outcome returns nil. label names the task in log lines
+// ("PRD/TASK"); sessionID names the worker.
 func StepWorkerNudge(tr *WorkerNudgeTracker, now time.Time, family, sessionID, label string, hooks WorkerNudgeHooks) error {
 	if family != WorkerNudgeFamily {
 		return nil
@@ -38,8 +67,15 @@ func StepWorkerNudge(tr *WorkerNudgeTracker, now time.Time, family, sessionID, l
 	obs := hooks.Observe()
 	wasDone := tr.done
 	action := tr.Observe(now, family, true, obs)
-	if !wasDone && tr.done && tr.Nudged() && hooks.Outcome != nil {
-		hooks.Outcome(NudgeOutcomeAnswered)
+	if !wasDone && tr.done && tr.Nudged() {
+		cause := "new output"
+		if obs.CompletionSeen {
+			cause = "completion marker"
+		}
+		log.Printf("[autonomous] idle worker %s task %s: nudge answered by %s", sessionID, label, cause)
+		if hooks.Outcome != nil {
+			hooks.Outcome(NudgeOutcomeAnswered)
+		}
 	}
 	switch action {
 	case WorkerNudgeSend:
@@ -69,20 +105,24 @@ func StepWorkerNudge(tr *WorkerNudgeTracker, now time.Time, family, sessionID, l
 			hooks.Outcome(NudgeOutcomeStalled)
 		}
 		hooks.End(obs)
-		return fmt.Errorf("worker idle after completion nudge (session=%s): %w", sessionID, ErrWorkerStalled)
+		return NudgeStallError{SessionID: sessionID}
 	}
 	return nil
 }
 
 // CloseNudgeWait ends nudge tracking because the wait finished on completion.
-// A nudge still open (sent, never answered) is recorded as answered. A wait
-// that already recorded its answer, or that never nudged, records nothing.
-func CloseNudgeWait(tr *WorkerNudgeTracker, hooks WorkerNudgeHooks) {
+// A nudge still open (sent, never answered) is recorded as answered and logged
+// with the session and task. A wait that already recorded its answer, or that
+// never nudged, records nothing.
+func CloseNudgeWait(tr *WorkerNudgeTracker, hooks WorkerNudgeHooks, sessionID, label string) {
 	if tr == nil || tr.done {
 		return
 	}
-	if tr.Nudged() && hooks.Outcome != nil {
-		hooks.Outcome(NudgeOutcomeAnswered)
+	if tr.Nudged() {
+		log.Printf("[autonomous] idle worker %s task %s: nudge answered by session completion", sessionID, label)
+		if hooks.Outcome != nil {
+			hooks.Outcome(NudgeOutcomeAnswered)
+		}
 	}
 	tr.done = true
 }
