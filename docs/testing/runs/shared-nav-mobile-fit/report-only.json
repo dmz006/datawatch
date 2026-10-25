@@ -1,0 +1,14 @@
+{
+  "story": "shared-nav-mobile-fit",
+  "mode": "report-only",
+  "status": "not_run",
+  "reason": "scripts/test-stories/pwa/shared-nav-mobile-fit.mjs does not exist on branch automaton/b54f0001 or on any ref. scripts/e2e-pwa.sh exited 1 with 'story not found' before it created a daemon or run directory.",
+  "command": "env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh shared-nav-mobile-fit",
+  "daemon_version": "9.11.0",
+  "daemon_version_source": "cmd/datawatch/main.go:119",
+  "tree": "unmodified, branch automaton/b54f0001 at a91196cb",
+  "main_version": "9.14.2",
+  "checker_on_main": "scripts/test-stories/pwa/mobile-fit-lib.mjs and mobile-fit-matrix.mjs exist on main, not on this branch",
+  "findings": null,
+  "run_at": "2026-10-25 12:52:44 local"
+}

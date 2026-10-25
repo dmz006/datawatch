@@ -1,0 +1,36 @@
+shared-nav-mobile-fit: report-only run
+======================================
+
+Status: NOT RUN (blocked)
+
+Daemon version: 9.11.0 (cmd/datawatch/main.go:119)
+Tree: unmodified, branch automaton/b54f0001 at a91196cb
+Main version for next-patch numbering: 9.14.2, so the next patch is 9.14.3
+
+What was attempted
+------------------
+Command: env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh shared-nav-mobile-fit
+Result:  exit 1
+Output:  e2e-pwa: story not found: .../scripts/test-stories/pwa/shared-nav-mobile-fit.mjs
+
+The launcher checks for the story file before it creates a run directory or starts a daemon. No sandbox daemon was started, and no session or process was touched.
+
+Why it is blocked
+-----------------
+1. shared-nav-mobile-fit.mjs does not exist on this branch or on any ref. Its only reference is docs/plans/2026-10-25-shared-nav-mobile-fit.md, which records the precondition as unmet.
+2. The Observer mobile-fit checker (mobile-fit-lib.mjs, mobile-fit-matrix.mjs, and related files) exists on main at 9.14.2. It is not on this branch.
+
+Findings
+--------
+None. No report was produced.
+- The ~250 navigation icon findings cannot be counted or grouped by selector.
+- The element behind the 35 px tap-target finding cannot be named, so it cannot be classified as a nav button or as a badge inside a nav icon.
+- The Worklist in the plan doc is empty for the same reason.
+
+Needed to unblock
+-----------------
+- Operator decision: bring the checker onto this branch. Options:
+  a. Copy only the mobile-fit library files from main, then write shared-nav-mobile-fit.mjs as a thin wrapper. This adds files but does not change app.js or style.css.
+  b. Rebase or merge main into this branch. This is a large tree change (9.11.0 to 9.14.2) and would break the "unmodified tree" requirement.
+- Pre-run requirement: scripts/e2e-pwa.sh creates its run directory under ${TMPDIR:-/tmp}. That is outside the project write scope, so set TMPDIR to a path under the project before the real run.
+- e2e-pwa.sh forwards only the story name. A report-only switch must therefore be an environment variable that the story reads, not a command-line flag.
