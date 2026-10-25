@@ -2730,4 +2730,8 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 16. **Question types (answer: "2 generic since we don't know what users of datawatch will use it for,  but default set based on 1").** There is one generic question record, with options, a recommendation, a risk level and links; the type is a label, not a different structure, because other users will use the queue for purposes we cannot predict. The default set of labels ships as decision, design review, approval and information (the four from the proposal), and a user may add or change labels. The low-risk type list from item 8 uses these labels.
 
+17. **Proposal files (answer: "1").** When the operator answers a proposal's questions through the queue, the answers set the proposal file's `Confirmed:` line to yes and write the operator's quotations into the file's decisions section, automatically. The PRD's gated tasks then proceed without a manual edit. (Done by hand for two proposals on 2026-10-24 and 2026-10-25.)
+
+**Status of the interview, 2026-10-25:** all ten open points are answered and recorded above (items 1 to 17). The proposal PRD (BL610) turns them into the data model, the order of PRD-sized steps and the parity surface; anything it finds that these answers do not cover goes back to the operator as a question.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
