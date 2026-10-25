@@ -51,6 +51,8 @@ POST   /api/autonomous/prds/{id}/set_story_verification_llm  per-story verifier 
 POST   /api/autonomous/prds/{id}/set_verification_llm        per-Automaton verifier LLM; body: {[verification_backend], [verification_model], [verification_effort], actor}       [v9.0.69]
 POST   /api/autonomous/prds/{id}/set_verifier_policy         per-Automaton verifier policy; body: {[mode], [backends[]], actor}
 POST   /api/autonomous/prds/{id}/set_task_verifier_policy    per-task verifier policy; body: {task_id, [mode], [backends[]], actor}
+POST   /api/autonomous/prds/{id}/set_failure_escalation     failure escalation override; body: {[task_id], policy|null, actor} (null clears; see "Failure escalation")
+POST   /api/autonomous/prds/{id}/resolve_task_review        operator decision on a task held for review; body: {task_id, action: retry|cancel, [spec], [backend], [model], [effort], [files[]], [note], actor}
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
 POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {tag_ids[]} ([] clears)
 POST   /api/autonomous/prds/{id}/set_kind  Automaton kind; body: {kind} (feature|bug|other; "" derives it again); 400 on an unknown kind, 404 on an unknown id
@@ -342,6 +344,74 @@ curl -sX PUT http://localhost:7433/api/autonomous/config \
   -H "Content-Type: application/json" \
   -d '{"verifier_policy":{"mode":"prefer-free","backends":["ollama-a","claude-code"],"claude_session_cap":4,"claude_cap_window_minutes":60}}'
 ```
+
+### Failure escalation and held tasks (`set_failure_escalation` / `resolve_task_review`)
+
+A task that keeps failing moves up a ladder of workers and, at `max_failures` failed attempts, is held with status `review_needed` for the operator. The policy has three fields, `enabled`, `max_failures` and `steps`, and each resolves per field: task override, then Automaton override, then the daemon default (`autonomous.failure_escalation`). A nil, zero or empty field means "not set at this level." The guide is [howto/failure-escalation.md](../howto/failure-escalation.md).
+
+```
+POST /api/autonomous/prds/{id}/set_failure_escalation
+{"task_id": "<optional>", "policy": {"enabled": true, "max_failures": 4,
+  "steps": [{"backend": "pi-prompt", "model": "ollama/qwen3.8:27b", "attempts": 2},
+            {"backend": "claude-code", "model": "claude-opus-5-5", "effort": "high"}]},
+ "actor": "operator"}
+
+POST /api/autonomous/prds/{id}/set_failure_escalation
+{"policy": null}              # clears the Automaton override
+{"task_id": "t1", "policy": null}   # clears one task's override
+```
+
+- `task_id` absent or empty addresses the Automaton; a non-empty `task_id` addresses that task.
+- `policy` is required. `null` clears the override at that level. An absent `policy` is a 400.
+- The response is the updated Automaton.
+
+```
+POST /api/autonomous/prds/{id}/resolve_task_review
+{"task_id": "t1", "action": "retry", "spec": "<replacement spec>", "backend": "claude-code",
+ "model": "claude-opus-5-5", "effort": "high", "files": ["internal/parser/parse.go"],
+ "note": "the failure is in the parser only", "actor": "operator"}
+
+{"task_id": "t1", "action": "cancel", "note": "out of scope for this release", "actor": "operator"}
+```
+
+- `action` is `retry` or `cancel`. The other fields apply to `retry` only.
+- Each change in a retry is checked before anything is written, so a refused change leaves the task held.
+- `note` is recorded on the Automaton's decision log and given to the next attempt.
+- The response is the updated Automaton.
+
+Status codes for both routes:
+
+| Code | When |
+|---|---|
+| 200 | Applied. The response is the updated Automaton. |
+| 400 | Bad JSON, an invalid policy or action, an unknown effort or model/backend pair, or a missing `policy` key. The message names the field. |
+| 403 | The session token lacks the autonomous-write capability (federation peers). |
+| 404 | Unknown Automaton or task. |
+| 405 | Method other than POST. |
+| 409 | `resolve_task_review` only: the task is not held for review. Nothing changes. |
+| 501 | The Automaton manager does not support the operation (test doubles only; the daemon always supports it). |
+
+Both routes write an audit entry (`set_failure_escalation` or `resolve_task_review`, target `automaton`).
+
+**New and changed fields.** These appear in the JSON views:
+
+| Where | Field | Meaning |
+|---|---|---|
+| Automaton | `failure_escalation` | The Automaton's override (omitted when unset). |
+| Task | `failure_escalation` | The task's override (omitted when unset). |
+| Task | `attempts` | One entry per failed, stalled or cancelled attempt: `number`, `backend`, `model`, `effort`, `started_at`, `ended_at`, `duration_seconds`, `outcome`, `failure_category`, `failure_summary`, `verifier_summary`, `verifier_issues`, `changed_files`, `snapshot_ref`, `escalated`. |
+| Task | `escalation_failures` | Failed attempts since the last operator action. Any reset of the task sets it back to 0. |
+| Task | `review_summary` | Set while the task is held: `held_at`, `failure_count`, `total_seconds` and `text`, a plain-text report of every attempt. |
+| Task | `operator_worker_set` | `true` when the operator's last review retry chose the task's worker. The escalation ladder then keeps that worker; a retry without a worker change clears it. |
+| Task | `status` | `review_needed` while held. It is not terminal and not a failure. |
+| Task | `executor_source` | `escalation` when a ladder step chose the worker. |
+| Decision log | `kind` | `failure_escalation` when an attempt moves to a different worker; `review_needed` when a task is held. |
+| `GET /api/autonomous/status` | `review_needed` | Every held task across all Automata, oldest hold first: `automaton_id`, `automaton_title`, `task_id`, `task_title`, `failure_count`, `last_backend`, `last_model`, `held_at`. Omitted when none is held. |
+| Automaton summary | `review_needed` | The Automaton's held tasks, in the same shape. Omitted when none is held. |
+| Task listing | `escalation_failures`, `attempt_count`, `review_summary` | The count, the number of attempts recorded, and the report text. |
+| Automation status | `review_needed_count`, `review_needed_task_ids` | Held tasks of the current member Automaton. Omitted when none is held. |
+
+Daemon default: `GET /api/config` returns `autonomous.failure_escalation` (`enabled`, `max_failures`, `steps`), and `PUT /api/config` takes the keys `autonomous.failure_escalation.enabled`, `.max_failures` and `.steps`. `steps` accepts a JSON array or the compact text `backend:model[@attempts],...`, where `-` means the task's normal worker. A bad value is a 400 naming the key, and nothing in that write is applied.
 
 ### Automata list (`GET /api/autonomous/prds`)
 
@@ -1123,13 +1193,47 @@ autonomous:
 
 ### Compute-node engine cap (`max_engines_per_node`)
 
-`autonomous.max_engines_per_node` caps how many local-model sessions one
-compute node runs at once. The default is `1`, and a value below `1` is
-clamped to `1`. Only sessions on a local engine on that node count
-(`pi`, `pi-prompt`, `ollama`, `opencode`, `opencode-acp`); hosted backends
-such as `claude-code` are not gated by it. Sessions past the cap wait with
-the reason `waiting for node <name>`. The operator guide, including queue
-priority, is in `docs/operations.md` → "Compute-node queue".
+`autonomous.max_engines_per_node` is the slot count of a compute node that
+hosts a local engine when the node has no operator `session_slots` and its
+observer reports neither GPU data nor system memory with a model size. It is
+the last step of the rule in [Node slots](#node-slots-session_slots). The
+default is `1`, and a value below `1` is clamped to `1`. Only sessions on a
+local engine on that node count (`pi`, `pi-prompt`, `ollama`, `opencode`,
+`opencode-acp`); hosted backends such as `claude-code` are not gated by it.
+Sessions past the count wait with the reason `waiting for node <name>`. The
+operator guide, including queue priority, is in `docs/operations.md` →
+"Compute-node queue".
+
+### Node slots (`session_slots`)
+
+Each compute node that hosts a local engine takes a slot count, the number of
+workers it runs at once. Its `node:<name>` pool limit is that count. The count
+is the first of these that applies:
+
+1. `session_slots` on the node, when above `0`. Set by the operator; `0` (the
+   default) means derive.
+2. One slot per GPU, from the observer's GPU data, limited by the free GPU
+   memory against the size of the served model. A GPU takes at most one engine.
+3. Free system memory divided by the served model's size, at least one, when the
+   observer reports no GPU data.
+4. `autonomous.max_engines_per_node`.
+
+`max_concurrent_sessions` on the node, when set and smaller, caps the count. A
+derived count never falls below the workers already holding the node, but that
+floor is capped at the GPU count. A negative `session_slots` is refused. A node
+that hosts no local engine ignores `session_slots` and keeps its
+`max_concurrent_sessions` limit. The count is re-read every 10 seconds.
+
+- **REST:** `PUT /api/compute/nodes/{name}` with `session_slots`.
+  `GET /api/compute/nodes/{name}/detail` returns `session_slots` (the operator's
+  value, `0` = derive) and `derived_slots` (the count in effect). `derived_slots`
+  is omitted until the node has a pool limit.
+- **MCP:** `compute_node_add` and `compute_node_update` take `session_slots`.
+  Update replaces the whole node, so omitting it clears the override.
+  `compute_node_detail` returns `session_slots` and `derived_slots`.
+- **CLI:** `datawatch compute node add|update <name> --session-slots N`;
+  `datawatch compute node detail <name>`.
+- **Comm channel:** `compute node update <name> session_slots=N`.
 
 - **REST:** `PUT /api/config` with `{"autonomous.max_engines_per_node": N}`;
   `PUT /api/autonomous/config` with `{"max_engines_per_node": N}`. Both
@@ -1233,6 +1337,34 @@ dot — the raw id fields still carry the real id in the body.
   the `(untitled <short id>)` fallback above. The web tests asserting the
   rendering are in `internal/server/web/app-capacity-names.test.js`.
 
+### Holder nodes
+
+Every pool in `GET /api/capacity` carries `hold_nodes`, the node each holder's
+lease sits on. It is a parallel array to `holders` (same length, same order):
+the entry at index `i` is the node of the lease held by `holders[i]`, or `""`
+when that lease names no node. The field is omitted when no holder of the pool
+has a node, so a pool with only node-less leases serialises exactly as before.
+`hold_nodes` is a pure addition; `holders`, `holder` and `holder_names` are
+unchanged.
+
+The same node is printed in the text views, which read the same snapshot. The
+pool line gains ` on <node>` after each holder, so `llm:pi: 2/4 held by
+task-a on gpu-a,task-b on gpu-b`. The node appears only on a pool whose holders
+span two or more nodes; a one-node entry (every holder on one node) renders as
+it did before.
+
+- **REST:** `GET /api/capacity` and `GET /api/capacity?prd_id=<id>` both carry
+  `hold_nodes` on each pool. The Automaton-scoped view keeps the same pool
+  objects, so it carries the field too.
+- **MCP:** `capacity_status` returns the same body, so it carries `hold_nodes`.
+- **CLI:** `datawatch capacity` prints the node after each holder in the pool
+  line; `datawatch capacity --json` carries `hold_nodes`.
+- **Comm channel:** the `capacity` reply prints the node after each holder in
+  the pool line, as the CLI does.
+- **PWA:** the capacity card shows the node name as a small muted label beside
+  each holder's short id, under the same one-node rule. The web tests asserting
+  it are in `internal/server/web/app-capacity-holder-nodes.test.js`.
+
 ### Rate ceilings
 
 A pool can carry a rolling-window rate ceiling (requests and/or tokens per
@@ -1279,7 +1411,10 @@ The response is a Decision:
 `kind` is `admit`, `queued` or `alternate_available`; `queue_position` is
 1-based (0 when admitted); `resets_at` is present only when a rate ceiling is
 the blocker and the time is known; `alternates` lists pools of the same kind
-elsewhere with room. A missing or unknown backend, a non-integer priority or
+elsewhere with room. When the backend's LLM entry pools two or more known nodes
+and no `node` is given, the node pools are not required, and `node` (present
+only with `admit`) names the node the start would be placed on. A missing or
+unknown backend, a non-integer priority or
 an unknown role returns 400. The same query is the MCP tool
 `capacity_admission` (read-only), `datawatch capacity admission --backend <b>`
 and the chat command `capacity admission <backend> [node] [model]`.

@@ -402,6 +402,11 @@ type Config struct {
 	// regression from a VALID baseline (an invalid gate never blocks
 	// under any policy). Unset or unrecognized values read as "warn".
 	GateDisagreement string `json:"gate_disagreement,omitempty"`
+	// FailureEscalation — the global default failure escalation policy
+	// (mirrors autonomous.failure_escalation). Automaton and task overrides
+	// win per field; see resolveFailureEscalation. An unset MaxFailures reads
+	// as 3 and a nil Enabled reads as true.
+	FailureEscalation FailureEscalationPolicy `json:"failure_escalation"`
 	// MaxEnginesPerNode is how many local-model engine sessions one
 	// compute node may run at once. 1 = one per node (default). Mirrors
 	// config.AutonomousConfig.MaxEnginesPerNode; the runtime copy is what
@@ -488,6 +493,7 @@ func DefaultConfig() Config {
 		MaxConcurrentTasks:  1,
 		MaxEnginesPerNode:   1,
 		GateDisagreement:    "warn",
+		FailureEscalation:   defaultFailureEscalationPolicy(),
 		AutoFixRetries:      1,
 		SecurityScan:        true,
 		MaxRecursionDepth:   5,
@@ -767,7 +773,7 @@ type Manager struct {
 	sessionOutputFn func(sessionID string) (output string, ok bool)
 	// sessionWaitFn — when set, executeOne waits on an adopted session through
 	// it; nil falls back to polling sessionAliveFn.
-	sessionWaitFn func(ctx context.Context, sessionID string) error
+	sessionWaitFn func(ctx context.Context, w AdoptedWait) error
 	// decomposeSessionsFn lists live planning sessions linked to a PRD.
 	decomposeSessionsFn func(prdID string) []string
 
@@ -788,6 +794,14 @@ type Manager struct {
 	capacity     *capacity.Ledger
 	capAudit     *CapacityAudit // admission wait/release audit recorder (nil drops)
 	capacityKeys CapacityKeysFn
+	// capacityChoices lists the candidate compute nodes of a backend+model
+	// when its LLM entry pools two or more (nil = single-node behaviour).
+	capacityChoices CapacityChoicesFn
+	// nodeLoad makes a worker's model resident on the node its lease was
+	// granted on; nodeAlerts receives the error when that fails. Both are nil
+	// until SetNodeLoad wires them (single-node entries never use them).
+	nodeLoad   NodeLoader
+	nodeAlerts NodeLoadAlerts
 	// cooldownUntilFn reports when the BL30 global cooldown ends (zero when
 	// none is active); waitClock is the time source for the spawn-wait loop
 	// (nil = wall clock). Both are set via capacity.go.
@@ -857,6 +871,11 @@ type Manager struct {
 	// alertSink — operator-facing alert callback (level, title, body).
 	// Guarded by mu. Nil = alerts silently skipped.
 	alertSink func(level, title, body string)
+
+	// attemptClock — the time source for failure escalation attempt records
+	// and review holds (attemptNow). Nil reads the wall clock; tests inject a
+	// fake so attempt durations are exact. Set before the Manager runs.
+	attemptClock func() time.Time
 
 	// driftGit — git runner for checkForeignFileDrift's committed-file
 	// lookup. nil means defaultDriftGitRunner; tests inject a counting
@@ -1025,9 +1044,11 @@ func (m *Manager) SetSessionOutputFn(fn func(sessionID string) (output string, o
 
 // SetSessionWaitFn wires the wait used for a session adopted at boot-resume.
 // fn blocks until the session reaches its completion marker (nil error) or
-// fails/stalls (non-nil error, wrapping ErrWorkerStalled for a stall). Nil
-// falls back to polling the liveness hook.
-func (m *Manager) SetSessionWaitFn(fn func(ctx context.Context, sessionID string) error) {
+// fails/stalls (non-nil error, wrapping ErrWorkerStalled for a stall). It gets
+// the task identity and the persisted nudge time, so it can nudge and record
+// like a fresh worker (see WaitAdopted). Nil falls back to polling the
+// liveness hook.
+func (m *Manager) SetSessionWaitFn(fn func(ctx context.Context, w AdoptedWait) error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessionWaitFn = fn
@@ -1556,6 +1577,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	}
 	types := make([]AutomatonType, len(builtinTypes))
 	copy(types, builtinTypes)
+	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
 	m := &Manager{
 		cfg:         cfg,
 		store:       st,
@@ -1583,6 +1605,9 @@ func (m *Manager) SetConfig(cfg Config) {
 	if cfg.GateDisagreement != "warn" && cfg.GateDisagreement != "block" {
 		cfg.GateDisagreement = "warn"
 	}
+	// failure_escalation: an unset max_failures reads as 3 and a nil enabled
+	// reads as true.
+	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
 	m.cfg = cfg
 }
 
@@ -2605,6 +2630,14 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 // true makes the next attempt skip the restore of preserved attempt work
 // (Task.CleanRestart); false keeps the restore on, as ResetTask always did.
 func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, cleanRestart bool) (*PRD, error) {
+	return m.resetTask(prdID, taskID, actor, force, cleanRestart, nil)
+}
+
+// resetTask is ResetTaskWithOptions with an optional operator review. A nil
+// review is a plain reset. A non-nil review (ResolveTaskReview's retry) also
+// accepts a task held for review and applies the operator's changes in the
+// same save as the requeue, so the changes and the requeue land together.
+func (m *Manager) resetTask(prdID, taskID, actor string, force, cleanRestart bool, review *reviewRequeue) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -2651,7 +2684,7 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
 			if t.ID == taskID {
-				isRetryable := t.Status == TaskFailed || t.Status == TaskBlocked
+				isRetryable := t.Status == TaskFailed || t.Status == TaskBlocked || (review != nil && t.Status == TaskReviewNeeded)
 				isRequeue := force && (t.Status == TaskCompleted || t.Status == TaskCancelled)
 				if !isRetryable && !isRequeue {
 					if force {
@@ -2705,6 +2738,9 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 				emitReset = func(dec *Decision) { m.emitPendingTaskEvents(prd, []pendingTaskEvent{resetEv}, dec) }
 				t.Verification = nil
 				t.RetryCount = 0
+				// A human reset starts a new count of failed attempts for the
+				// failure escalation policy, so the ladder restarts at step 1.
+				t.EscalationFailures = 0
 				// v9.2.1 — a manual (operator) reset is the strongest "this is a
 				// retry" signal: to reach this block the task already reached a
 				// terminal-ish status (failed/blocked, or completed/cancelled
@@ -2720,6 +2756,11 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 				// the flag false, so an unconsumed clean restart never carries
 				// over into a later reset.
 				t.CleanRestart = cleanRestart
+				// An operator review's changes go on last, so the hint they
+				// set replaces the generic one built above.
+				if review != nil {
+					review.apply(t, time.Now())
+				}
 				t.StartedAt = nil
 				t.CompletedAt = nil
 				t.UpdatedAt = time.Now()
@@ -2763,11 +2804,19 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 	}
 	kind := "reset_task"
 	note := fmt.Sprintf("task=%s reset to pending for retry", taskID)
+	decActor := actor
 	if force {
 		kind = "requeue_task"
 		note = fmt.Sprintf("task=%s requeued (force=true)", taskID)
 	}
-	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: actor, Note: note})
+	if review != nil {
+		kind = reviewDecisionKind
+		note = review.decisionNote(taskID, actor)
+		decActor = reviewDecisionActor
+		// The block reason named the held task, which is no longer held.
+		prd.BlockedReason = ""
+	}
+	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: decActor, Note: note})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -3465,9 +3514,10 @@ func (m *Manager) RecordTaskAttemptCommit(prdID, taskID, sha string) error {
 }
 
 // RecordTaskNudge records one idle-worker nudge on the task: bumps NudgeCount
-// and appends a NudgeEvent. Like RecordTaskAttemptCommit it fires from the
-// daemon while the worker runs, so there is no lock-after-approve gate.
-func (m *Manager) RecordTaskNudge(prdID, taskID string, at time.Time) error {
+// and appends a NudgeEvent tagged with the session it was typed into. Like
+// RecordTaskAttemptCommit it fires from the daemon while the worker runs, so
+// there is no lock-after-approve gate.
+func (m *Manager) RecordTaskNudge(prdID, taskID, sessionID string, at time.Time) error {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
@@ -3478,7 +3528,7 @@ func (m *Manager) RecordTaskNudge(prdID, taskID string, at time.Time) error {
 			t := &prd.Story[si].Tasks[ti]
 			if t.ID == taskID {
 				t.NudgeCount++
-				t.NudgeEvents = append(t.NudgeEvents, NudgeEvent{At: at, Count: t.NudgeCount, Outcome: "sent"})
+				t.NudgeEvents = append(t.NudgeEvents, NudgeEvent{At: at, Count: t.NudgeCount, SessionID: sessionID, Outcome: NudgeOutcomeSent})
 				t.UpdatedAt = at
 				found = true
 				break
@@ -3493,6 +3543,60 @@ func (m *Manager) RecordTaskNudge(prdID, taskID string, at time.Time) error {
 	}
 	prd.UpdatedAt = at
 	return m.store.SavePRD(prd)
+}
+
+// TaskNudgeCount returns how many idle-worker nudges the task has recorded
+// across all its sessions, or 0 when the task is unknown.
+func (m *Manager) TaskNudgeCount(prdID, taskID string) int {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return 0
+	}
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if t := &prd.Story[si].Tasks[ti]; t.ID == taskID {
+				return t.NudgeCount
+			}
+		}
+	}
+	return 0
+}
+
+// RecordTaskNudgeOutcome sets the outcome of the latest nudge sent into the
+// given session on the task. It returns an error when the outcome is not one
+// of the NudgeOutcome constants, the task is unknown, or the session has no
+// recorded nudge.
+func (m *Manager) RecordTaskNudgeOutcome(prdID, taskID, sessionID, outcome string) error {
+	switch outcome {
+	case NudgeOutcomeSent, NudgeOutcomeAnswered, NudgeOutcomeStalled:
+	default:
+		return fmt.Errorf("unknown nudge outcome %q", outcome)
+	}
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			t := &prd.Story[si].Tasks[ti]
+			if t.ID != taskID {
+				continue
+			}
+			for ei := len(t.NudgeEvents) - 1; ei >= 0; ei-- {
+				ev := &t.NudgeEvents[ei]
+				if sessionID == "" || ev.SessionID != sessionID {
+					continue
+				}
+				ev.Outcome = outcome
+				now := time.Now()
+				t.UpdatedAt = now
+				prd.UpdatedAt = now
+				return m.store.SavePRD(prd)
+			}
+			return fmt.Errorf("no nudge recorded for session %q on task %q", sessionID, taskID)
+		}
+	}
+	return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 }
 
 // RecordTaskDeliveryFailure records one task delivery failure on the task: it
@@ -4368,9 +4472,14 @@ func (m *Manager) Status() LoopStatus {
 	budgets := m.budgetsSummary()
 	// Same rule for the task views: they read the PRD store and the ledger.
 	queue, holdings := m.buildTaskVisibility(budgets)
+	// Held tasks are read under the store lock (the lock is not re-entrant, so
+	// this runs before m.mu is taken, as the PRD reads above do).
+	var held []HeldTaskStatus
+	m.store.WithLock(func() { held = heldTasksAcrossPRDs(m.store.prds) })
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st := m.status
+	st.ReviewNeeded = held
 	st.Budgets = budgets
 	st.Queue, st.Holdings = queue, holdings
 	st.BootResume = append([]BootResumeEntry(nil), m.bootResumeReport...)

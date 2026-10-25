@@ -135,6 +135,8 @@ Selected core tools:
 | `autonomous_lane_fill_status` | Read the lane fill status: lanes, idle state, recent planner decisions and idle alerts; optional `limit` (1 to 1000, default 50) |
 | `autonomous_prd_set_lane_preference` | Set an Automaton's lane to `gpu`, `claude` or `any` (empty means `any`); takes `id` and `lane_preference` |
 | `autonomous_prd_rejudge` | Re-judge the completion guardrail of a blocked Automaton whose tasks are all completed, without resetting any task — pass unblocks it, block keeps it blocked; refused otherwise |
+| `autonomous_prd_set_failure_escalation` | Set or clear the failure escalation override on an Automaton or one task (`policy` object, or `clear=true`) |
+| `autonomous_prd_resolve_task_review` | Retry (optionally with a changed spec, worker or file list) or cancel a task held for review |
 | `autonomous_prd_set_task_verification_llm` / `autonomous_prd_set_story_verification_llm` / `autonomous_prd_set_verification_llm` | Pick the LLM that verifies one task / one story / a whole Automaton (`verification_backend`, `verification_model`, `verification_effort`; `""` clears, omit = unchanged). Precedence task > story > Automaton > global (v9.0.69) |
 | `observer_stats` / `observer_envelopes` | Per-session + per-LLM-backend stats |
 | `observer_envelopes_all_peers` | Federation-aware envelope view with cross-host caller attribution |

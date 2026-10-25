@@ -35,6 +35,9 @@ type Decision struct {
 	Reason        string       `json:"reason,omitempty"`
 	ResetsAt      *time.Time   `json:"resets_at,omitempty"`
 	Alternates    []Alternate  `json:"alternates,omitempty"`
+	// Node is the compute node a request with NodeChoices would be placed on;
+	// set only with DecisionAdmit.
+	Node string `json:"node,omitempty"`
 }
 
 // Check is the Status-style non-blocking admission query: it reports whether
@@ -45,7 +48,7 @@ func (l *Ledger) Check(req Request) Decision {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.opt.Clock.Now()
-	reason := l.blockReasonLocked(req)
+	bound, reason := l.resolveLocked(req)
 
 	hyp := &waiter{req: req, seq: l.seq + 1, since: now}
 	list := append(append([]*waiter(nil), l.waiters...), hyp)
@@ -60,19 +63,26 @@ func (l *Ledger) Check(req Request) Decision {
 	}
 	competing := 0
 	for _, w := range ahead {
-		if sharesPool(w.req.Pools, req.Pools) && l.blockReasonLocked(w.req) == "" {
+		if !sharesPool(w.req.allPools(), req.allPools()) {
+			continue
+		}
+		if _, why := l.resolveLocked(w.req); why == "" {
 			competing++
 		}
 	}
 	if reason == "" && competing == 0 {
-		return Decision{Kind: DecisionAdmit}
+		d := Decision{Kind: DecisionAdmit}
+		if req.multiNode() {
+			d.Node = bound.Node
+		}
+		return d
 	}
 	d := Decision{Kind: DecisionQueued, QueuePosition: pos, Reason: reason}
 	if reason == "" {
 		d.Reason = fmt.Sprintf("behind %d earlier request(s) for the same pools", competing)
 	}
 	var blocked []string
-	for _, p := range req.Pools {
+	for _, p := range req.allPools() {
 		if l.blockReasonLocked(Request{Pools: []string{p}, Interactive: req.Interactive}) != "" {
 			blocked = append(blocked, p)
 		}
@@ -122,7 +132,7 @@ func (l *Ledger) alternatesLocked(req Request, blocked []string) []Alternate {
 		}
 	}
 	for _, w := range l.waiters {
-		for _, p := range w.req.Pools {
+		for _, p := range w.req.allPools() {
 			known[p] = true
 		}
 	}
@@ -132,9 +142,15 @@ func (l *Ledger) alternatesLocked(req Request, blocked []string) []Alternate {
 	if req.Node != "" {
 		known["node:"+req.Node] = true
 	}
+	for _, n := range req.candidateNames() {
+		known["node:"+n] = true
+	}
 	own := map[string]bool{}
-	for _, p := range req.Pools {
+	for _, p := range req.allPools() {
 		own[p] = true
+	}
+	for _, n := range req.ExcludeNodes {
+		own["node:"+n] = true // never suggest a node the request excludes
 	}
 	var out []Alternate
 	seen := map[string]bool{}

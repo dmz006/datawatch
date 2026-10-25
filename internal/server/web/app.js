@@ -1132,6 +1132,29 @@ window.listLoader = listLoader;
 window.listLoaderAll = listLoaderAll;
 window._listLoaders = _listLoaders;
 
+// MOBILE-FIT (plan fix item 5, "coalesce the sub-loaders"): the Observer
+// sub-loaders (loadStatsPanel, loadSystemStatsGrid) each fired their own
+// /api/stats request on every Observer render and on every 8s poll tick —
+// renderObserverView calls them back-to-back and the 8s pollers fire in
+// the same second, so re-render passes (navigating sessions→observer
+// repeatedly) stacked duplicate /api/stats pairs (F-10191: 2 → 44
+// requests in the rerender-timers scenario). Concurrent fetches of the
+// same endpoint now share one in-flight request. The entry is removed as
+// soon as the request settles, so nothing is ever cached past the
+// in-flight window: data is never stale and any repeated call issues a
+// fresh request (the 8s pollers and the one-shot render loaders only
+// coalesce when they actually overlap).
+const _sharedFetchInflight = {};
+function sharedFetch(url) {
+  if (!Object.prototype.hasOwnProperty.call(_sharedFetchInflight, url)) {
+    _sharedFetchInflight[url] = apiFetch(url).then(
+      d => { delete _sharedFetchInflight[url]; return d; },
+      e => { delete _sharedFetchInflight[url]; return Promise.reject(e); });
+  }
+  return _sharedFetchInflight[url];
+}
+window.sharedFetch = sharedFetch;
+
 // ── Message handlers ─────────────────────────────────────────────────────────
 function handleMessage(msg) {
   switch (msg.type) {
@@ -1714,6 +1737,46 @@ function fmtBytes(n) {
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
   return (n / 1024 / 1024).toFixed(1) + ' MB';
 }
+
+// MOBILE-FIT (Observer per-system cards / local system panel):
+// Shared compact formatters for the Observer Statistics view. Previously each render
+// path (the per-system stats grid, the peer resource overview, the local system
+// panel) duplicated its own bytes/count formatter — some capped at MB, some at GB/TB,
+// some counting raw toLocaleString — so large values rendered as e.g. "1073741824 B"
+// and clipped/wrapped at phone widths. These two helpers are the single source of
+// truth for compact byte and count values in that view; every caller must use them
+// (do not add new local copies). Exposed on window for unit tests.
+// fmtBytesCompact: B / KB / MB / GB / TB / PB / EB (base-1024, one decimal from KB
+// up), so each value stays short enough that a "33.5 / 65.5 GB" pair fits a card
+// value row — exabyte-scale machines (10^17+ bytes) stay "x.x EB" instead of
+// "5859375.0 TB". Zero, missing (null / undefined) and non-finite input render as
+// the '—' (em dash) missing-value sentinel — never "0 B".
+// fmtCountCompact: exact integers under 1000, else one-decimal K / M / B / T
+// compact (base-1000; small counts like 7, 6, 4 are unchanged, trillion-scale
+// counts stay "x.xT" instead of thousands of billions). Zero, missing and
+// non-finite input render as the '—' sentinel.
+function fmtBytesCompact(n) {
+  const b = Number(n);
+  if (!Number.isFinite(b) || b <= 0) return '—';
+  if (b < 1024) return Math.round(b) + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
+  if (b < 1024 * 1024 * 1024 * 1024) return (b / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+  if (b < 1024 * 1024 * 1024 * 1024 * 1024) return (b / 1024 / 1024 / 1024 / 1024).toFixed(1) + ' TB';
+  if (b < 1024 * 1024 * 1024 * 1024 * 1024 * 1024) return (b / 1024 / 1024 / 1024 / 1024 / 1024).toFixed(1) + ' PB';
+  return (b / 1024 / 1024 / 1024 / 1024 / 1024 / 1024).toFixed(1) + ' EB';
+}
+function fmtCountCompact(n) {
+  const c = Number(n);
+  if (!Number.isFinite(c) || c <= 0) return '—';
+  if (c < 1000) return String(Math.round(c));
+  if (c < 1000000) return (c / 1000).toFixed(1) + 'K';
+  if (c < 1000000000) return (c / 1000000).toFixed(1) + 'M';
+  if (c < 1000000000000) return (c / 1000000000).toFixed(1) + 'B';
+  return (c / 1000000000000).toFixed(1) + 'T';
+}
+window.fmtBytesCompact = fmtBytesCompact;
+window.fmtCountCompact = fmtCountCompact;
 
 function handleChannelReadyEvent(sessionId) {
   state.channelReady[sessionId] = true;
@@ -2440,6 +2503,15 @@ function navigate(view, sessionId, fromPopstate) {
   const backBtn = document.getElementById('backBtn');
   const nav = document.getElementById('nav');
   const headerTitle = document.getElementById('headerTitle');
+  // mobile-fit gate 2026-10-22: the header title truncates with overflow:
+  // hidden + text-overflow: ellipsis (style.css); keep a title= tooltip
+  // synced to whatever text the view sets so the full label stays
+  // reachable on hover. MutationObserver covers every assignment site
+  // instead of touching each t(...) line.
+  if (headerTitle && typeof MutationObserver !== 'undefined') {
+    new MutationObserver(() => { headerTitle.title = headerTitle.textContent; })
+      .observe(headerTitle, { childList: true, characterData: true, subtree: true });
+  }
 
   // Update nav button active states; scroll active tab into view for overflow nav
   document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -8615,8 +8687,8 @@ function settingsSectionHeader(key, title, docsPath) {
   // as a diagnostic fallback label, no longer the actual target).
   const collapsed = !!settingsCollapsed[key];
   const dl = defsLink(key, title);
-  return `<div class="settings-section-title settings-section-toggle" onclick="toggleSettingsSection('${key}')">
-    <span id="settings-chev-${key}" class="settings-chevron">${collapsed ? '▶' : '▼'}</span>${escHtml(title)}${dl}
+  return `<div class="settings-section-title settings-section-toggle">
+    <span class="settings-section-hit" onclick="toggleSettingsSection('${key}')"><span id="settings-chev-${key}" class="settings-chevron">${collapsed ? '▶' : '▼'}</span>${escHtml(title)}${dl}</span>
   </div>`;
 }
 
@@ -10618,6 +10690,8 @@ function buildComputeNodeForm(n) {
     <input id="fe_compute_max_models" type="number" min="0" class="form-input" value="${cap.max_concurrent_models||''}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_max_sessions')||'Max concurrent sessions (0 = unlimited)')}</label>
     <input id="fe_compute_max_sessions" type="number" min="0" class="form-input" value="${n.max_concurrent_sessions||''}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_session_slots')||'Session slots (0 = derive from GPU data)')}</label>
+    <input id="fe_compute_session_slots" type="number" min="0" class="form-input" value="${n.session_slots||''}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_priority')||'Scheduling priority (0–100)')}</label>
     <input id="fe_compute_priority" type="number" min="0" max="100" class="form-input" value="${n.scheduling_priority||50}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_tags')||'Tags')}</label>
@@ -10655,6 +10729,7 @@ function collectComputeNodeForm(originalRecord) {
   out.declared_capacity = out.declared_capacity || {};
   out.declared_capacity.max_concurrent_models = parseInt((document.getElementById('fe_compute_max_models')||{}).value || '0', 10) || 0;
   out.max_concurrent_sessions = parseInt((document.getElementById('fe_compute_max_sessions')||{}).value || '0', 10) || 0;
+  out.session_slots = parseInt((document.getElementById('fe_compute_session_slots')||{}).value || '0', 10) || 0;
   out.scheduling_priority = parseInt((document.getElementById('fe_compute_priority')||{}).value || '50', 10) || 50;
   out.tags = getBadgeInputValue('fe_compute_tags').split(',').map(s => s.trim()).filter(Boolean);
   out.observer_peer = ((document.getElementById('fe_compute_observer_peer')||{}).value || '').trim();
@@ -13660,7 +13735,7 @@ function renderTask(prd, story, task, editable) {
   state._prdTaskExpanded = state._prdTaskExpanded || {};
   // Default expansion: active/running tasks open so progress is visible without a click.
   if (!(taskID in state._prdTaskExpanded)) {
-    const activeTaskStatuses = ['running','in_progress','verifying','running_tests','waiting_capacity','blocked','failed','awaiting_approval'];
+    const activeTaskStatuses = ['running','in_progress','verifying','running_tests','waiting_capacity','blocked','failed','awaiting_approval','review_needed'];
     state._prdTaskExpanded[taskID] = activeTaskStatuses.includes(task.status || '');
   }
   const isExpanded = !!state._prdTaskExpanded[taskID];
@@ -13710,6 +13785,11 @@ function renderTask(prd, story, task, editable) {
   const smokeVkBadge = (task.kind === 'smoke' || task.kind === 'final_gate') && (task.verification_backend || task.verification_model)
     ? `<span class="prd-task-llm-badge" title="${escHtml(t('prd_task_smoke_verifier_tip') || 'Smoke verification LLM override for this task')}">vfy: ${escHtml(task.verification_backend || 'inherit')}${task.verification_model ? ' / ' + escHtml(task.verification_model) : ''}</span>`
     : '';
+  // Held for operator review: the status chip and the actions live in the
+  // expanded body (_taskReviewPanelHTML).
+  const heldBadge = task.status === 'review_needed'
+    ? `<span class="prd-task-review-badge" title="${escHtml(t('review_held_help'))}">&#9873; ${escHtml(t('task_status_review_needed'))}</span>`
+    : '';
   const spawnBadge = task.spawn_prd
     ? `<span class="prd-task-spawn-badge" title="this task spec is a child automaton spec; executor will Plan + Approve + Run">&#8627; spawn</span>`
     : '';
@@ -13752,7 +13832,7 @@ function renderTask(prd, story, task, editable) {
     : '';
 
   // Status glyph for the collapsed header row.
-  const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○', verifying: '⟳', running_tests: '🧪', blocked: '⛔', waiting_capacity: '⏳', awaiting_approval: '⏸'})[task.status] || '';
+  const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○', verifying: '⟳', running_tests: '🧪', blocked: '⛔', waiting_capacity: '⏳', awaiting_approval: '⏸', review_needed: '⚑'})[task.status] || '';
   const _waitTitle = task.status === 'waiting_capacity'
     ? (t('prd_task_waiting_capacity')||'Waiting for capacity') + (task.wait_reason ? ': ' + task.wait_reason : '')
     : '';
@@ -13814,6 +13894,7 @@ function renderTask(prd, story, task, editable) {
     ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
     ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason" style="min-width:0;overflow-wrap:anywhere;">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + window.taskWaitHtml(task) : ''}</div>` : ''}
     ${window.taskHoldsHtml(task)}
+    ${_taskReviewPanelHTML(prd, task)}
     ${errRow}${verifRow}
     ${task.executor_source ? `<div style="font-size:10px;color:var(--text2);">${escHtml(t('status_executor_label')||'Executor')}: ${escHtml(task.executor_source)}</div>` : ''}
     ${renderTaskFileDrift(task)}
@@ -13826,7 +13907,7 @@ function renderTask(prd, story, task, editable) {
   return `<div class="prd-task-row${isExpanded ? ' expanded' : ''}" data-task-id="${escHtml(taskID)}">
     <div class="prd-task-header" onclick="_prdToggleTask('${escHtml(taskID)}')" title="${isExpanded ? 'Collapse' : 'Expand'}">
       <span class="prd-task-chevron">${chevron}</span>
-      ${statusGlyphSpan}
+      ${statusGlyphSpan}${heldBadge}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
       ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
@@ -15865,6 +15946,12 @@ const GENERAL_CONFIG_FIELDS = [
     // a regression: warn records both results and the task still finishes,
     // block fails the task. An invalid gate never blocks.
     { key: 'autonomous.gate_disagreement', label: 'When the gate disagrees with a passing verifier', labelKey: 'settings_gate_disagreement', type: 'select', options: ['warn', 'block'] },
+    // Failure escalation — a failed attempt moves to the next ladder step; at
+    // max_failures the task is held for operator review. Disabled restores the
+    // retry-then-fail behaviour. Steps use the compact text form.
+    { key: 'autonomous.failure_escalation.enabled', label: 'Failure escalation enabled', labelKey: 'settings_failure_escalation_enabled', type: 'toggle' },
+    { key: 'autonomous.failure_escalation.max_failures', label: 'Failed attempts before the task is held for review (minimum 1, default 3)', labelKey: 'settings_failure_escalation_max_failures', type: 'number', placeholder: '3', min: 1, step: 1, default: '3' },
+    { key: 'autonomous.failure_escalation.steps', label: 'Escalation steps (backend:model@attempts, comma separated)', labelKey: 'settings_failure_escalation_steps', type: 'failure_escalation_steps', placeholder: 'ollama:qwen3.8:27b@2,claude-code:claude-sonnet-5-5', hintKey: 'settings_failure_escalation_steps_hint' },
     { key: 'autonomous.injection_guard', label: 'Prompt injection guard (warn on suspicious PRD/task specs)', labelKey: 'settings_injection_guard', type: 'toggle' },
     { key: 'autonomous.block_on_injection', label: 'Block PRD/task create when injection phrases detected', labelKey: 'settings_block_on_injection', type: 'toggle' },
     // Plan-coverage gate — how strictly decompose must cover the spec's
@@ -16934,6 +17021,17 @@ function loadGeneralConfig() {
                   });
               };
             }, 0);
+          } else if (f.type === 'failure_escalation_steps') {
+            // The config GET returns the steps as a JSON array; the field edits
+            // the compact text form, which the server parses on save.
+            const _hint = f.hintKey ? t(f.hintKey) : '';
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label">${escHtml(fLabel)}</div>
+              <input type="text" class="form-input general-cfg-input" value="${escHtml(_failureEscalationStepsText(val))}"
+                ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
+                onchange="saveGeneralField('${f.key}', this.value)" />
+              ${_hint && _hint !== f.hintKey ? `<div style="font-size:10px;color:var(--text2);margin-top:4px;">${escHtml(_hint)}</div>` : ''}
+            </div>`;
           } else if (f.type === 'textarea') {
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label">${escHtml(fLabel)}</div>
@@ -17093,6 +17191,326 @@ const RESTART_FIELDS = new Set([
   'mcp.enabled', 'mcp.sse_enabled', 'mcp.sse_host', 'mcp.sse_port', 'mcp.public_url', 'mcp.tls_enabled',
   'dns_channel.enabled', 'dns_channel.listen', 'dns_channel.domain',
 ]);
+
+// ── Failure escalation: policy codec, override editor and held-task review ──
+// The server stores a step ladder as a JSON array; the operator edits the
+// compact text form backend:model[@attempts], comma separated. A "-" item is a
+// step on the normally resolved worker. The parser below mirrors the server's
+// so a value typed here reads back as the same policy.
+
+// _failureEscalationStepsText renders a steps array in the compact text form.
+// Effort has no text form and is not shown.
+function _failureEscalationStepsText(steps) {
+  if (!Array.isArray(steps)) return '';
+  return steps.map(s => {
+    let item = s && s.backend ? s.backend + ':' + (s.model || '') : '-';
+    if (s && s.attempts > 0) item += '@' + s.attempts;
+    return item;
+  }).join(',');
+}
+
+// _parseFailureEscalationSteps reads the compact text form into a steps array.
+// Empty text yields []. It throws on an item the server would refuse.
+function _parseFailureEscalationSteps(text) {
+  const src = String(text || '').trim();
+  if (!src) return [];
+  return src.split(',').map((raw, i) => {
+    let item = raw.trim();
+    if (!item) throw new Error('step ' + (i + 1) + ' is empty');
+    let attempts = 0;
+    const at = item.lastIndexOf('@');
+    if (at >= 0) {
+      const n = Number(item.slice(at + 1));
+      if (!Number.isInteger(n) || n < 1) throw new Error('step ' + (i + 1) + ' has an invalid @attempts suffix');
+      attempts = n;
+      item = item.slice(0, at).trim();
+    }
+    const step = {};
+    if (item !== '-') {
+      const colon = item.indexOf(':');
+      if (colon < 0) throw new Error('step ' + (i + 1) + ' needs the form backend:model, or - for the normal worker');
+      step.backend = item.slice(0, colon).trim();
+      if (!step.backend) throw new Error('step ' + (i + 1) + ' has no backend');
+      const model = item.slice(colon + 1).trim();
+      if (model) step.model = model;
+    }
+    if (attempts) step.attempts = attempts;
+    return step;
+  });
+}
+
+// _fmtDurationSeconds renders an attempt or review duration as 45s or 3m 5s.
+function _fmtDurationSeconds(s) {
+  const n = Math.max(0, Math.round(Number(s) || 0));
+  if (n < 60) return n + 's';
+  return Math.floor(n / 60) + 'm ' + (n % 60) + 's';
+}
+
+// _prdHeldTaskCount counts the tasks of an Automaton held for operator review.
+// A summary row carries only the task_status_counts map, so it is read from there.
+function _prdHeldTaskCount(prd) {
+  const stories = prd.stories || prd.Story || [];
+  if (!stories.length) return (prd.task_status_counts || {}).review_needed || 0;
+  let n = 0;
+  stories.forEach(st => (st.tasks || st.Tasks || []).forEach(tk => {
+    if ((tk.status || tk.Status) === 'review_needed') n++;
+  }));
+  return n;
+}
+
+// _prdHeldBadgeHTML is the held-task badge for an Automaton header or list row.
+// It is empty when no task is held.
+function _prdHeldBadgeHTML(prd) {
+  const n = _prdHeldTaskCount(prd);
+  if (!n) return '';
+  return `<span class="prd-held-badge" title="${escHtml(t('review_held_help'))}">&#9873; ${n} ${escHtml(t('review_held_badge'))}</span>`;
+}
+
+// _findPRDTask returns the cached Automaton's task with taskID, or null.
+function _findPRDTask(prdID, taskID) {
+  const prd = _automataDetailPRD;
+  if (!prd || prd.id !== prdID) return null;
+  let found = null;
+  (prd.stories || prd.Story || []).forEach(st => (st.tasks || st.Tasks || []).forEach(tk => {
+    if (!found && tk.id === taskID) found = tk;
+  }));
+  return found;
+}
+
+// _failureEscalationScope names the form fields of one override editor. The
+// Automaton has the scope "prd"; a task has "task-<id>" with unsafe characters
+// replaced, so the id is safe to use in an element id.
+function _failureEscalationScope(taskID) {
+  return taskID ? 'task-' + String(taskID).replace(/[^A-Za-z0-9_-]/g, '_') : 'prd';
+}
+
+// _failureEscalationEditorHTML draws the override editor for the Automaton
+// (taskID empty) or one task. policy is the stored override, if any; an empty
+// field inherits the next level up.
+function _failureEscalationEditorHTML(prdID, taskID, policy) {
+  const scope = _failureEscalationScope(taskID);
+  const p = policy || {};
+  const enabledVal = p.enabled === true ? 'on' : p.enabled === false ? 'off' : '';
+  const opt = (v, label) => `<option value="${v}" ${enabledVal === v ? 'selected' : ''}>${escHtml(label)}</option>`;
+  const pid = escHtml(JSON.stringify(prdID || ''));
+  const tid = escHtml(JSON.stringify(taskID || ''));
+  return `<div class="prd-fe-editor" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border,#333);">
+    <div style="font-size:11px;font-weight:600;color:var(--text2);">${escHtml(t('review_override_title'))}</div>
+    <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${escHtml(t('review_override_hint'))}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">
+      <label style="font-size:11px;color:var(--text2);">${escHtml(t('review_override_enabled'))}<br>
+        <select id="feEnabled-${scope}" class="form-input" style="font-size:12px;width:auto;">${opt('', t('review_override_inherit'))}${opt('on', t('review_override_on'))}${opt('off', t('review_override_off'))}</select></label>
+      <label style="font-size:11px;color:var(--text2);">${escHtml(t('review_override_max_failures'))}<br>
+        <input id="feMax-${scope}" type="number" min="1" step="1" class="form-input" style="width:90px;font-size:12px;" value="${p.max_failures ? escHtml(String(p.max_failures)) : ''}" /></label>
+      <label style="font-size:11px;color:var(--text2);flex:1;min-width:220px;">${escHtml(t('review_override_steps'))}<br>
+        <input id="feSteps-${scope}" type="text" class="form-input" style="font-size:12px;width:100%;" value="${escHtml(_failureEscalationStepsText(p.steps))}" placeholder="${escHtml('ollama:qwen3.8:27b@2,claude-code:claude-sonnet-5-5')}" /></label>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <button type="button" class="btn-secondary" onclick="event.stopPropagation();prdSaveFailureEscalation(${pid},${tid},'${scope}',false)">${escHtml(t('review_override_save'))}</button>
+      <button type="button" class="btn-secondary" onclick="event.stopPropagation();prdSaveFailureEscalation(${pid},${tid},'${scope}',true)">${escHtml(t('review_override_clear'))}</button>
+    </div>
+  </div>`;
+}
+
+// _readFailureEscalationPolicy builds the policy from one editor. Empty fields
+// are left out, so an editor with nothing set reads as null (clear).
+function _readFailureEscalationPolicy(scope) {
+  const field = name => {
+    const el = document.getElementById(name + '-' + scope);
+    return el ? String(el.value || '').trim() : '';
+  };
+  const policy = {};
+  const enabled = field('feEnabled');
+  if (enabled === 'on') policy.enabled = true;
+  else if (enabled === 'off') policy.enabled = false;
+  const max = field('feMax');
+  if (max !== '') {
+    const n = Number(max);
+    if (!Number.isInteger(n) || n < 1) throw new Error('max_failures');
+    policy.max_failures = n;
+  }
+  const steps = field('feSteps');
+  if (steps !== '') policy.steps = _parseFailureEscalationSteps(steps);
+  return Object.keys(policy).length ? policy : null;
+}
+
+// setFailureEscalationPolicy posts the override for the Automaton (taskID
+// empty) or one task. A null policy clears it.
+function setFailureEscalationPolicy(prdID, taskID, policy) {
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_failure_escalation', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_id: taskID || '', policy: policy, actor: 'operator' }),
+  });
+}
+
+// prdSaveFailureEscalation saves one override editor, or clears it.
+function prdSaveFailureEscalation(prdID, taskID, scope, clear) {
+  let policy = null;
+  if (!clear) {
+    try { policy = _readFailureEscalationPolicy(scope); } catch (e) {
+      showToast(t('review_override_invalid'), 'error', 3000);
+      return Promise.resolve(null);
+    }
+  }
+  return setFailureEscalationPolicy(prdID, taskID, policy)
+    .then(() => { showToast(t('review_override_saved'), 'success', 1500); _refreshAutomataOrPRD(); })
+    .catch(err => showToast(String(err), 'error', 3000));
+}
+window.prdSaveFailureEscalation = prdSaveFailureEscalation;
+
+// prdResolveTaskReview posts an operator decision on a task held for review.
+// review is {action, ...} with the fields the chosen action carries.
+function prdResolveTaskReview(prdID, taskID, review) {
+  const body = Object.assign({ task_id: taskID, actor: 'operator' }, review);
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/resolve_task_review', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+    .then(() => { showToast(t('review_done'), 'success', 1500); _refreshAutomataOrPRD(); })
+    .catch(err => showToast(t('review_failed') + ': ' + String(err), 'error', 3000));
+}
+window.prdResolveTaskReview = prdResolveTaskReview;
+
+// prdReviewRetry sends a held task back to its normally resolved worker.
+function prdReviewRetry(prdID, taskID) {
+  return prdResolveTaskReview(prdID, taskID, { action: 'retry' });
+}
+
+// prdReviewCancel cancels a held task after the operator confirms.
+function prdReviewCancel(prdID, taskID) {
+  if (!confirm(t('review_cancel_confirm'))) return Promise.resolve();
+  return prdResolveTaskReview(prdID, taskID, { action: 'cancel' });
+}
+window.prdReviewRetry = prdReviewRetry;
+window.prdReviewCancel = prdReviewCancel;
+
+// _prdReviewBody builds the retry body for one of the three retry forms. A
+// field the form does not change is left out, so the server keeps it.
+function _prdReviewBody(mode, v) {
+  const body = { action: 'retry' };
+  if (mode === 'spec') body.spec = v.spec || '';
+  if (mode === 'worker') {
+    if (v.backend) body.backend = v.backend;
+    if (v.model) body.model = v.model;
+    if (v.effort) body.effort = v.effort;
+  }
+  if (mode === 'scope') body.files = (v.files || '').split(/[\n,]/).map(s => s.trim()).filter(Boolean);
+  if (v.note) body.note = v.note;
+  return body;
+}
+
+// openPRDTaskReviewModal opens the form for one retry mode: spec, worker or
+// scope. The form is prefilled from the cached Automaton's task.
+function openPRDTaskReviewModal(prdID, taskID, mode) {
+  const task = _findPRDTask(prdID, taskID) || {};
+  const titleKey = { spec: 'review_action_edit_retry', worker: 'review_action_change_worker', scope: 'review_action_narrow_scope' }[mode];
+  const head = `<div class="response-modal-header">
+      <strong>${escHtml(t(titleKey))} · ${escHtml(taskID)}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close') || 'Close'}">&#10005;</button>
+    </div>`;
+  const note = `<label style="font-size:11px;color:var(--text2);">${escHtml(t('review_form_note'))}
+      <input id="prdReviewNote" type="text" class="form-input" style="width:100%;" /></label>`;
+  const actions = `<div style="display:flex;gap:6px;justify-content:flex-end;">
+      <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel') || 'Cancel'}</button>
+      <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${escHtml(t('review_form_retry_submit'))}</button>
+    </div>`;
+  const val = id => { const el = document.getElementById(id); return el ? String(el.value || '') : ''; };
+  const submit = fields => () => {
+    const body = _prdReviewBody(mode, Object.assign({ note: val('prdReviewNote').trim() }, fields()));
+    if ((mode === 'spec' && !body.spec.trim()) || (mode === 'scope' && !(body.files || []).length)) {
+      showToast(t('review_failed'), 'error', 3000);
+      return;
+    }
+    _prdCloseModal();
+    return prdResolveTaskReview(prdID, taskID, body);
+  };
+  if (mode === 'worker') {
+    ensureLLMModelLists().then(() => {
+      _prdMountModal(`${head}
+        <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+            <div><label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_new_backend_label'))}</label>${renderBackendSelect('prdReviewBackend', task.backend || '', `refreshLLMModelField('prdReviewModelWrap','prdReviewModelInner','prdReviewBackend','')`)}</div>
+            <div><label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_new_effort_label'))}</label>${renderEffortSelect('prdReviewEffort', String(task.effort || ''), '')}</div>
+            <div id="prdReviewModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_new_model_label'))}</label><div id="prdReviewModelInner"></div></div>
+          </div>
+          ${note}
+          ${actions}
+        </form>`, submit(() => {
+        const modelEl = document.getElementById('prdReviewModelInner')?.querySelector('input,select');
+        return { backend: val('prdReviewBackend'), model: modelEl ? modelEl.value.trim() : '', effort: val('prdReviewEffort') };
+      }));
+      refreshLLMModelField('prdReviewModelWrap', 'prdReviewModelInner', 'prdReviewBackend', task.model || '');
+    });
+    return;
+  }
+  const field = mode === 'spec'
+    ? `<label style="font-size:11px;color:var(--text2);">${escHtml(t('review_form_spec'))}
+         <textarea id="prdReviewSpec" class="form-input" rows="6" style="resize:vertical;width:100%;">${escHtml(task.spec || '')}</textarea></label>`
+    : `<label style="font-size:11px;color:var(--text2);">${escHtml(t('review_form_files'))}
+         <textarea id="prdReviewFiles" class="form-input" rows="6" style="resize:vertical;width:100%;">${escHtml((task.files || []).join('\n'))}</textarea></label>`;
+  _prdMountModal(`${head}
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+      ${field}
+      ${note}
+      ${actions}
+    </form>`, submit(() => (mode === 'spec' ? { spec: val('prdReviewSpec') } : { files: val('prdReviewFiles') })));
+}
+window.openPRDTaskReviewModal = openPRDTaskReviewModal;
+
+// _taskAttemptsHTML draws the per-attempt summary of a task: the worker, the
+// time spent, the outcome, the files changed and the verifier report, plus the
+// review report text when the task is held.
+function _taskAttemptsHTML(task) {
+  const attempts = Array.isArray(task.attempts) ? task.attempts : [];
+  const summary = task.review_summary || null;
+  if (!attempts.length && !summary) return '';
+  const total = summary && summary.total_seconds
+    ? summary.total_seconds
+    : attempts.reduce((n, a) => n + (a.duration_seconds || 0), 0);
+  const rows = attempts.map(a => {
+    const worker = a.backend ? a.backend + (a.model ? ' / ' + a.model : '') : '—';
+    const esc = a.escalated ? ` <span class="prd-task-llm-badge">${escHtml(t('review_attempt_escalated'))}</span>` : '';
+    const files = (a.changed_files || []).map(f => `<li><code>${escHtml(f)}</code></li>`).join('');
+    const issues = (a.verifier_issues || []).map(i => `<li>${escHtml(i)}</li>`).join('');
+    const verifier = a.verifier_summary || issues
+      ? `<div>${escHtml(t('review_attempt_verifier'))}: ${escHtml(a.verifier_summary || '')}</div>${issues ? `<ul>${issues}</ul>` : ''}`
+      : '';
+    return `<div class="prd-task-attempt" style="margin-top:6px;">
+      <div><strong>#${escHtml(String(a.number || ''))}</strong> ${escHtml(worker)}${esc}
+        <span style="color:var(--text2);font-size:11px;"> · ${escHtml(_fmtDurationSeconds(a.duration_seconds))}</span></div>
+      <div style="font-size:11px;color:var(--text2);">${escHtml(t('review_attempt_outcome'))}: ${escHtml(a.outcome || '—')}${a.failure_category ? ' (' + escHtml(a.failure_category) + ')' : ''}</div>
+      ${a.failure_summary ? `<div style="font-size:11px;">${escHtml(a.failure_summary)}</div>` : ''}
+      ${files ? `<div style="font-size:11px;">${escHtml(t('review_attempt_files'))}:</div><ul class="prd-task-attempt-files">${files}</ul>` : ''}
+      ${verifier ? `<div style="font-size:11px;">${verifier}</div>` : ''}
+    </div>`;
+  }).join('');
+  const body = rows || `<em style="color:var(--text2);font-size:11px;">${escHtml(t('review_attempt_none'))}</em>`;
+  const report = summary && summary.text
+    ? `<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;">${escHtml(t('review_report_title'))}</summary><pre style="white-space:pre-wrap;font-size:11px;">${escHtml(summary.text)}</pre></details>`
+    : '';
+  return `<details class="prd-task-attempts" style="margin-top:6px;">
+    <summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--text2);">${escHtml(t('review_attempts_title'))} (${attempts.length}) · ${escHtml(t('review_attempts_total'))}: ${escHtml(_fmtDurationSeconds(total))}</summary>
+    ${body}${report}
+  </details>`;
+}
+
+// _taskReviewPanelHTML is the expanded body for a task's review state: the
+// operator actions when the task is held, the attempt summary, and the task's
+// own failure escalation override.
+function _taskReviewPanelHTML(prd, task) {
+  const pid = escHtml(JSON.stringify(prd.id || ''));
+  const tid = escHtml(JSON.stringify(task.id || ''));
+  const actions = task.status === 'review_needed'
+    ? `<div class="prd-task-review-actions" onclick="event.stopPropagation()" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;">
+        <button class="prd-task-retry-btn" onclick="event.stopPropagation();prdReviewRetry(${pid},${tid})">&#8635; ${escHtml(t('review_action_retry'))}</button>
+        <button class="prd-task-retry-btn" onclick="event.stopPropagation();openPRDTaskReviewModal(${pid},${tid},'spec')">${escHtml(t('review_action_edit_retry'))}</button>
+        <button class="prd-task-retry-btn" onclick="event.stopPropagation();openPRDTaskReviewModal(${pid},${tid},'worker')">${escHtml(t('review_action_change_worker'))}</button>
+        <button class="prd-task-retry-btn" onclick="event.stopPropagation();openPRDTaskReviewModal(${pid},${tid},'scope')">${escHtml(t('review_action_narrow_scope'))}</button>
+        <button class="prd-task-cancel-btn" onclick="event.stopPropagation();prdReviewCancel(${pid},${tid})">${escHtml(t('review_action_cancel'))}</button>
+      </div>`
+    : '';
+  return actions + _taskAttemptsHTML(task) + _failureEscalationEditorHTML(prd.id, task.id, task.failure_escalation);
+}
 
 function saveGeneralField(key, value) {
   fetch('/api/config', {
@@ -17695,6 +18113,7 @@ function isBackendConfigured(svc, s) {
     matrix: ['access_token'], ntfy: ['topic'], email: ['host', 'username'],
     twilio: ['account_sid', 'from_number'], github_webhook: ['secret'],
     webhook: ['addr'], dns_channel: ['domain', 'secret'],
+    imap_mcp: ['url'],
   };
   const fields = credFields[svc] || [];
   if (fields.length === 0) return true; // always considered configured
@@ -17708,7 +18127,7 @@ function loadConfigStatus() {
   // reflected a selected remote server's own comm-backend config.
   apiFetch('/api/config')
     .then(cfg => {
-      const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook', 'dns_channel'];
+      const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook', 'dns_channel', 'imap_mcp'];
       el.innerHTML = services.map(svc => {
         const s = cfg[svc] || {};
         const on = s.enabled;
@@ -17809,6 +18228,11 @@ const BACKEND_FIELDS = {
   webhook:        [{ key:'addr', label:'Listen Address', type:'text', placeholder:'127.0.0.1:9002' }, { key:'token', label:'Token (optional)', type:'password' }],
   signal:         [{ key:'group_id', label:'Group ID (base64)', type:'text' }, { key:'config_dir', label:'signal-cli config dir', type:'text' }, { key:'device_name', label:'Device name', type:'text' }],
   dns_channel:    [{ key:'mode', label:'Mode', type:'text', placeholder:'server' }, { key:'domain', label:'Domain', type:'text', placeholder:'ctl.example.com' }, { key:'listen', label:'Listen (server)', type:'text', placeholder:':53' }, { key:'upstream', label:'Upstream (client)', type:'text', placeholder:'8.8.8.8:53' }, { key:'secret', label:'Shared Secret', type:'password' }, { key:'ttl', label:'TTL (seconds)', type:'number', placeholder:'0' }, { key:'max_response_size', label:'Max Response Size', type:'number', placeholder:'512' }, { key:'poll_interval', label:'Poll Interval', type:'text', placeholder:'5s' }, { key:'rate_limit', label:'Rate limit (per IP/min)', type:'number', placeholder:'30' }],
+  // BL404 (operator-reported): imap-mcp channel had no PWA surface even
+  // though GET/PUT /api/config carry imap_mcp.*. Token is a password field
+  // and, like every other secret here, is never prefilled -- the server
+  // masks it as "***" and saveBackendConfig skips empty values.
+  imap_mcp:       [{ key:'url', label:'imap-mcp API URL', type:'text', placeholder:'http://localhost:8765' }, { key:'account', label:'Account (empty = default)', type:'text' }, { key:'to', label:'Outbound recipient address', type:'text', placeholder:'you@example.com' }, { key:'subject_prefix', label:'Subject prefix', type:'text', placeholder:'datawatch' }, { key:'token', label:'Bearer token', type:'password', placeholder:'${secret:imap_mcp_token}' }],
 };
 
 function openBackendSetup(service) {
@@ -18215,12 +18639,12 @@ function listMemories() {
       const content = (m.content || '').length > 200 ? m.content.slice(0, 200) + '…' : (m.content || '');
       const sim = m.similarity ? ` <span style="color:var(--accent2);">[${Math.round(m.similarity*100)}%]</span>` : '';
       const tags = _renderMemoryTagChips(m.tags); // GH#192 D78a
-      return `<div class="settings-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
+      return `<div class="settings-row obs-mem-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
         <div style="flex:1;min-width:0;">
           <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role} ${date}${sim}</span>${tags}
-          <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
+          <div class="obs-mem-body" title="${escHtml(m.content || '')}">${escHtml(content)}</div>
         </div>
-        <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
+        <button class="btn-icon obs-tap" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
       </div>`;
     }).join('');
   }).catch(() => { if (el) el.textContent = t('memory_failed_load') || 'Failed to load memories'; });
@@ -18232,8 +18656,8 @@ function listMemories() {
 function _renderMemoryTagChips(tagsStr) {
   const tags = (tagsStr || '').split(',').map(t => t.trim()).filter(Boolean);
   if (tags.length === 0) return '';
-  return `<div style="margin-top:2px;">${tags.map(tag =>
-    `<span style="font-size:9px;padding:1px 6px;margin-right:3px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);">${escHtml(tag)}</span>`
+  return `<div class="obs-mem-tags">${tags.map(tag =>
+    `<span style="font-size:9px;padding:1px 6px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);">${escHtml(tag)}</span>`
   ).join('')}</div>`;
 }
 
@@ -18253,12 +18677,12 @@ function searchMemories() {
       const content = (m.content || '').length > 200 ? m.content.slice(0, 200) + '…' : (m.content || '');
       const sim = m.similarity ? ` [${Math.round(m.similarity*100)}%]` : '';
       const tags = _renderMemoryTagChips(m.tags); // GH#192 D78a
-      return `<div class="settings-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
+      return `<div class="settings-row obs-mem-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
         <div style="flex:1;min-width:0;">
           <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role}${sim}</span>${tags}
-          <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
+          <div class="obs-mem-body" title="${escHtml(m.content || '')}">${escHtml(content)}</div>
         </div>
-        <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
+        <button class="btn-icon obs-tap" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
       </div>`;
     }).join('');
   }).catch(() => { if (el) el.textContent = t('memory_search_failed') || 'Search failed'; });
@@ -20819,7 +21243,10 @@ function updatePeerStaleBadge() {
     }
     if (stale > 0) {
       badge.textContent = stale > 99 ? '99+' : String(stale);
-      badge.style.display = 'inline';
+      // 'flex' (not 'inline') so the 44x44 badge centers its count — the
+      // element is a position:absolute 44x44 box (see index.html) and an
+      // inline display would ignore the box sizing.
+      badge.style.display = 'flex';
       badge.title = `${stale} federated peer(s) stale (>60s since last push)`;
     } else {
       badge.style.display = 'none';
@@ -21231,7 +21658,7 @@ function renderProgressBar(prd) {
   const pct = Math.round((done / total) * 100);
   const fillClass = pct === 100 ? 'automata-progress-fill complete' : 'automata-progress-fill';
   return `<div class="automata-progress-wrap"><div class="${fillClass}" style="width:${pct}%;"></div></div>
-          <div style="font-size:10px;color:var(--text2);">${done}/${total} tasks · ${pct}%</div>`;
+          <div style="font-size:10px;color:var(--text2);">${done}/${total} tasks · ${pct}%${_prdHeldBadgeHTML(prd) ? ' ' + _prdHeldBadgeHTML(prd) : ''}</div>`;
 }
 
 function renderCurrentPosition(prd) {
@@ -21380,7 +21807,7 @@ function renderDependencyGraph(prd) {
   const width = padLeft * 2 + stories.length * colWidth;
   const height = padTop + headerH + maxRows * rowHeight + padTop;
 
-  const statusColor = { completed: 'var(--success,#22c55e)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', failed: 'var(--error,#ef4444)', blocked: 'var(--error,#ef4444)' };
+  const statusColor = { completed: 'var(--success,#22c55e)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', failed: 'var(--error,#ef4444)', blocked: 'var(--error,#ef4444)', review_needed: 'var(--warning,#f59e0b)' };
   const colorFor = sts => statusColor[sts] || 'var(--text2)';
 
   // id -> {x, y, w, h, title, status} for every task, so edges (which
@@ -22651,7 +23078,7 @@ function _liveUpdateDetail(prd) {
 }
 
 function _taskStatusIcon(status) {
-  const icons = { completed: '✓', in_progress: '▶', running: '▶', verifying: '⟳', running_tests: '🧪', waiting_capacity: '⏳', failed: '✗', blocked: '✗', cancelled: '○', pending: '○' };
+  const icons = { completed: '✓', in_progress: '▶', running: '▶', verifying: '⟳', running_tests: '🧪', waiting_capacity: '⏳', failed: '✗', blocked: '✗', review_needed: '⚑', cancelled: '○', pending: '○' };
   return icons[status] || '○';
 }
 
@@ -22678,7 +23105,7 @@ function renderDetailStoriesTree(prd) {
     const taskRows = tasks.map((t, ti) => {
       const sts = t.status || t.Status || 'pending';
       const icon = _taskStatusIcon(sts);
-      const iconColor = { completed: 'var(--success)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', failed: 'var(--error)', blocked: 'var(--error)' }[sts] || 'var(--text2)';
+      const iconColor = { completed: 'var(--success)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', failed: 'var(--error)', blocked: 'var(--error)', review_needed: 'var(--warning,#f59e0b)' }[sts] || 'var(--text2)';
       const sessionLink = t.session_id
         ? `<span class="prd-task-session" onclick="event.stopPropagation();navigate('session-detail','${escHtml(t.session_id)}')" title="Go to session">→ session</span>`
         : '';
@@ -22878,7 +23305,7 @@ function _renderDetailContent(prd) {
 
   // BL246 v6.6.0 — persistent header toolbar across all sub-tabs.
   const tab = _automataDetailTab || 'overview';
-  const header = _renderDetailHeader(prd, typeBadge, tplBadge + `<span id="prdDetailTagRow" data-prd="${escHtml(prd.id)}" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;"></span>`);
+  const header = _renderDetailHeader(prd, typeBadge + _prdHeldBadgeHTML(prd), tplBadge +`<span id="prdDetailTagRow" data-prd="${escHtml(prd.id)}" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;"></span>`);
   const tabStrip = _renderDetailTabStrip(prd, tab);
   let tabBody = '';
   if (tab === 'overview') tabBody = _renderDetailOverview(prd);
@@ -22990,6 +23417,25 @@ function capacityFmtWait(since, now) {
   const s = Math.max(0, Math.round(((now == null ? Date.now() : now) - new Date(since).getTime()) / 1000));
   return s >= 3600 ? Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm' : s >= 60 ? Math.floor(s/60) + 'm ' + (s%60) + 's' : s + 's';
 }
+// Duration-from-now formatting in the same style as capacityFmtWait, for
+// "X remaining" text (clamped at zero so a past time is not drawn as
+// negative).
+function capacityFmtUntil(when, now) {
+  const s = Math.max(0, Math.round((new Date(when).getTime() - (now == null ? Date.now() : now)) / 1000));
+  return s >= 3600 ? Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm' : s >= 60 ? Math.floor(s/60) + 'm ' + (s%60) + 's' : s + 's';
+}
+// The shared fmtBytes caps at MB; node model/GPU figures are GiB-sized, so
+// format them in GiB with one decimal.
+function capacityFmtBytes(n) {
+  return (Math.round(((Number(n) || 0) / 1073741824) * 10) / 10).toFixed(1) + ' GiB';
+}
+// t() does not fill the {placeholder} style used by the capacity_node_*
+// locale strings, so substitute them here (values pre-escaped by the caller).
+function capacityNodeT(key, fallback, vars) {
+  let s = (t(key) && t(key) !== key) ? t(key) : (fallback || '');
+  if (vars) s = Object.keys(vars).reduce((acc, k) => acc.split('{' + k + '}').join(String(vars[k] != null ? vars[k] : '')), s);
+  return s;
+}
 // Pool names are internal ledger keys ("host", "node:<name>", "llm:<name>")
 // that don't explain themselves — operator-reported confusion: seeing
 // "host: 3/9" on a PRD card reads as if it were this PRD's own LLM/compute
@@ -23079,37 +23525,118 @@ function capacityHolders(p, leases) {
   else if (Array.isArray(leases)) ids = leases.filter(l => l && Array.isArray(l.pools) && l.pools.includes(p.name)).map(l => l.holder);
   return ids.map(h => String(h||'').trim().slice(0, 8)).filter(Boolean);
 }
+// The node each holder's lease sits on, parallel to ids (short ids, as shown).
+// Shown only when the pool's holders span two or more nodes: a one-node entry
+// (every holder on one node, or none) renders exactly as before.
+function capacityHolderNodes(p, ids) {
+  const byId = {};
+  if (Array.isArray(p.holders) && Array.isArray(p.hold_nodes) && p.hold_nodes.length === p.holders.length) {
+    p.holders.forEach((h, i) => { if (p.hold_nodes[i]) byId[String(h||'').trim().slice(0, 8)] = p.hold_nodes[i]; });
+  }
+  const nodes = ids.map(id => byId[id] || '');
+  return new Set(nodes.filter(Boolean)).size >= 2 ? nodes : nodes.map(() => '');
+}
 function capacityHoldersLine(p, leases) {
   const ids = capacityHolders(p, leases);
   const names = Array.isArray(p.holder_names) ? p.holder_names
     : (Array.isArray(p.hold_names) ? p.hold_names : null);
+  const nodes = capacityHolderNodes(p, ids);
   const queued = p.name.startsWith('node:') && p.queue_depth > 0
     ? `${escHtml(t('capacity_waiting_for_node')||'waiting for node')} ${escHtml(p.name.slice(5))}` : '';
   const holders = ids.length
     ? `${escHtml(t('capacity_card_holders')||'Holders')}: ${ids.map((id, i) => {
         const h = (names && names[i] != null) ? window.capacityNameHtml(names[i], id) : '';
-        return h || escHtml(id);
+        const label = h || escHtml(id);
+        return nodes[i] ? `${label} <span class="cap-node" style="font-size:10px;color:var(--text2);">${escHtml(nodes[i])}</span>` : label;
       }).join(', ')}`
     : '';
   const parts = [holders, queued].filter(Boolean).join(' · ');
   return parts ? `<div class="cap-holders" style="font-size:11px;color:var(--text2);min-width:0;">${parts}</div>` : '';
 }
-function capacityPoolsHtml(cap) {
+// Node-pool usage rows, built from the optional `usage` object the daemon
+// attaches to `node:<name>` pool entries (model server probe + observer GPU
+// figures). Pure: data in, HTML string out; '' when the pool has no usage
+// block (older daemon bodies) or the pool is not a node pool, so non-node
+// pools render exactly as before.
+const CAPACITY_USAGE_ROW = 'font-size:11px;color:var(--text2);min-width:0;overflow-wrap:anywhere;';
+window.capacityNodeUsageHtml = function(p, now) {
+  if (!p || typeof p.name !== 'string' || !p.name.startsWith('node:')) return '';
+  const u = p.usage;
+  if (!u || typeof u !== 'object') return '';
+  const rows = [];
+  const state = u.state;
+  if (state === 'pending') {
+    rows.push(`<div style="${CAPACITY_USAGE_ROW}">${escHtml(capacityNodeT('capacity_node_checking', 'Checking…'))}</div>`);
+  } else {
+    if (state === 'unreachable') {
+      rows.push(`<div style="${CAPACITY_USAGE_ROW}"><span style="display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;border:1px solid var(--warning,#f59e0b);color:var(--warning,#f59e0b);" title="${escHtml(u.error || '')}">${escHtml(capacityNodeT('capacity_node_unreachable', 'Unreachable'))}</span></div>`);
+    }
+    // Loaded-model lines, only for node kinds that expose a model list.
+    if (u.models_supported) {
+      const models = Array.isArray(u.models) ? u.models : [];
+      if (state === 'ok' && models.length === 0) {
+        rows.push(`<div style="${CAPACITY_USAGE_ROW}">${escHtml(capacityNodeT('capacity_node_no_model', 'No model loaded'))}</div>`);
+      }
+      const modelLabel = escHtml(capacityNodeT('capacity_node_model', 'Model'));
+      models.forEach(m => {
+        const name = escHtml(String(m.name || ''));
+        const size = escHtml(capacityNodeT('capacity_node_in_memory', '{size} in memory', { size: capacityFmtBytes(m.size_bytes) }));
+        let when = '';
+        if (m.no_expiry) {
+          when = escHtml(capacityNodeT('capacity_node_never_expires', 'stays loaded'));
+        } else if (m.expires_at) {
+          const msMs = new Date(m.expires_at).getTime();
+          const at = now == null ? Date.now() : now;
+          if (!Number.isNaN(msMs) && msMs <= at) {
+            when = escHtml(capacityNodeT('capacity_node_expires_now', 'expiring now'));
+          } else if (!Number.isNaN(msMs)) {
+            when = escHtml(capacityNodeT('capacity_node_expires', 'expires in {time}', { time: capacityFmtUntil(m.expires_at, now) }));
+          }
+        }
+        rows.push(`<div style="${CAPACITY_USAGE_ROW}">${modelLabel}: ${name} — ${size}${when ? ' · ' + when : ''}</div>`);
+      });
+    }
+    // GPU lines, whenever the observer has figures (even on an unreachable
+    // model server); thresholds match the slot bar (75/100).
+    const gpus = Array.isArray(u.gpu) ? u.gpu : [];
+    gpus.forEach(g => {
+      const pct = Math.min(100, Math.max(0, Math.round(Number(g.util_pct) || 0)));
+      const color = pct >= 100 ? 'var(--error,#ef4444)' : pct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
+      const parts = [
+        escHtml(String(g.name || '')),
+        `<span style="font-variant-numeric:tabular-nums;color:${color};">${escHtml(capacityNodeT('capacity_node_gpu_util', 'GPU {pct}%', { pct: pct }))}</span>`,
+      ];
+      if ((Number(g.mem_total_bytes) || 0) > 0) {
+        parts.push(escHtml(capacityNodeT('capacity_node_gpu_mem', 'GPU memory {used} of {total}', {
+          used: capacityFmtBytes(g.mem_used_bytes),
+          total: capacityFmtBytes(g.mem_total_bytes),
+        })));
+      }
+      rows.push(`<div style="${CAPACITY_USAGE_ROW}">${parts.join(' · ')}</div>`);
+    });
+    if (state === 'ok' && gpus.length === 0) {
+      rows.push(`<div style="${CAPACITY_USAGE_ROW}">${escHtml(capacityNodeT('capacity_node_no_gpu_data', 'No GPU data from the observer'))}</div>`);
+    }
+  }
+  if (rows.length === 0) return '';
+  return `<div class="cap-node-usage" title="${escHtml(capacityNodeT('capacity_node_usage_hint', 'Live figures from the node\'s model server and the observer, refreshed about every 15 seconds.'))}">${rows.join('')}</div>`;
+};
+function capacityPoolsHtml(cap, now) {
   const allPools = (cap && cap.pools) || [];
   const leases = cap && cap.leases;
   const limited = allPools.filter(p => p.limit > 0).map(p => {
     const used = (p.held || 0) + (p.external || 0);
     const pct = Math.min(100, Math.round(100 * used / p.limit));
     const color = pct >= 100 ? 'var(--error,#ef4444)' : pct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
-    return `<div class="cap-pool" style="margin-bottom:4px;" title="${escHtml(capacityPoolTitle(p))}"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(capacityPoolLabel(p))}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div>${capacityHoldersLine(p, leases)}</div>`;
+    return `<div class="cap-pool" style="margin-bottom:4px;" title="${escHtml(capacityPoolTitle(p))}"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(capacityPoolLabel(p))}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div>${window.capacityNodeUsageHtml(p, now)}${capacityHoldersLine(p, leases)}</div>`;
   }).join('');
   const unlimited = allPools.filter(p => !(p.limit > 0) && ((p.held||0)+(p.external||0)) > 0)
-    .map(p => `<div class="cap-pool" style="color:var(--text2);" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>${capacityHoldersLine(p, leases)}`).join('');
+    .map(p => `<div class="cap-pool" style="color:var(--text2);" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>${window.capacityNodeUsageHtml(p, now)}${capacityHoldersLine(p, leases)}`).join('');
   // v8.36.0 — a registered compute node with no configured session cap and no
   // current activity used to be entirely invisible. List it plainly so real
   // hardware isn't hidden just because nobody capped it.
   const idleNodes = allPools.filter(p => p.name.startsWith('node:') && !(p.limit > 0) && ((p.held||0)+(p.external||0)) === 0)
-    .map(p => `<div class="cap-pool" style="color:var(--text2);opacity:0.7;" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${escHtml(t('capacity_no_cap_configured')||'no cap configured')}</div>${capacityHoldersLine(p, leases)}`).join('');
+    .map(p => `<div class="cap-pool" style="color:var(--text2);opacity:0.7;" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${escHtml(t('capacity_no_cap_configured')||'no cap configured')}</div>${window.capacityNodeUsageHtml(p, now)}${capacityHoldersLine(p, leases)}`).join('');
   return limited + unlimited + idleNodes;
 }
 // One row per active back-off flag: backend, when it resets (or the label for
@@ -23208,7 +23735,7 @@ function capacityWaitingHtml(waiting, now) {
 // placeholder instead of an empty string when there is nothing to show.
 window.capacityCardHtml = function(cap, opts) {
   opts = opts || {};
-  const pools = capacityPoolsHtml(cap);
+  const pools = capacityPoolsHtml(cap, opts.now);
   const backoff = capacityBackoffHtml(cap && cap.backoff);
   const budgetLines = budgetCapacityLines(cap && cap.budgets);
   const queue = capacityWaitingHtml(cap && cap.waiting, opts.now);
@@ -24607,7 +25134,8 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
   ['lifecycle_sub_form_group_task', 'Task status', [
     'task.pending', 'task.queued', 'task.in_progress', 'task.running_tests',
     'task.verifying', 'task.completed', 'task.failed', 'task.blocked',
-    'task.cancelled', 'task.waiting_capacity', 'task.awaiting_approval']],
+    'task.cancelled', 'task.waiting_capacity', 'task.awaiting_approval',
+    'task.review_needed']],
   ['lifecycle_sub_form_group_other', 'Other', [
     'task.session_started', 'task.session_cleared', 'prd.updated']],
 ];
@@ -24893,6 +25421,7 @@ function _renderDetailOverview(prd) {
     </div>` : ''}
     ${renderDetailVerdicts(prd)}
     ${renderDetailCIWatch(prd)}
+    <div style="margin-top:12px;">${_failureEscalationEditorHTML(prd.id, '', prd.failure_escalation)}</div>
     ${prd.spec ? `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);">${escHtml(t('prd_view_spec')||'View spec')}</summary>
       <pre style="font-size:11px;background:var(--bg2);padding:8px;border-radius:4px;white-space:pre-wrap;margin-top:6px;max-height:300px;overflow:auto;">${escHtml(prd.spec)}</pre>
     </details>` : ''}
@@ -26016,6 +26545,13 @@ function _automationMemberActionsHTML(m, status, actions) {
   return `<span class="automation-member-actions" role="group" aria-label="${escHtml(t('automation_member_actions'))}">${buttons}</span>`;
 }
 
+// _automationHeldFor returns how many tasks of a member's Automaton are held for
+// operator review, or 0 for a member with no Automaton.
+function _automationHeldFor(m, c) {
+  const held = (c && c.reviewByPrd) || {};
+  return m && m.prd_id ? (held[m.prd_id] || 0) : 0;
+}
+
 function _automationMemberCardHTML(m, c, active, actions) {
   const kind = String(m.kind || 'prd');
   const status = automationMemberDisplayStatus(m, c.prdStatuses) || 'pending';
@@ -26027,6 +26563,12 @@ function _automationMemberCardHTML(m, c, active, actions) {
   const isActive = active.has(m.id);
   const clickable = kind === 'prd' && !!m.prd_id;
   const edgeCount = _AUTOMATION_OUTCOME_EDGES.filter(e => m[e]).length;
+  // Tasks of this member's Automaton held for operator review (the review_needed_count
+  // of the running Automation's status row).
+  const held = _automationHeldFor(m, c);
+  const heldBadge = held
+    ? `<span class="automation-held-badge" title="${escHtml(t('review_held_help'))}">&#9873; ${held} ${escHtml(t('review_held_badge'))}</span>`
+    : '';
 
   let cls = 'automation-member automation-member-' + statusClass;
   if (isActive) cls += ' automation-member-active';
@@ -26060,7 +26602,7 @@ function _automationMemberCardHTML(m, c, active, actions) {
     + `<span class="automation-member-title">${escHtml(_automationMemberTitle(m, c, chip))}</span>`
     + `<span class="automation-chip">${escHtml(chip)}</span>`
     + `<span class="automation-member-status">${escHtml(shownLabel)}</span>`
-    + extra + marker + fork + details + _automationMemberActionsHTML(m, status, actions) + '</div>';
+    + heldBadge + extra + marker + fork + details + _automationMemberActionsHTML(m, status, actions) + '</div>';
 }
 
 // _automationNestedHTML draws the expanded body of a nested member below its
@@ -26163,7 +26705,13 @@ function _automationStripBody(a, c, seen, depth) {
   if (unlinked.length) rows.push({ key: 'unlinked', linked: false, items: unlinked.map(m => ({ member: m, ref: false })) });
 
   const body = rows.filter(r => r.items.length).map(r => _automationRowHTML(r, env)).join('');
-  return `<div class="automation-strip" data-automation-id="${escHtml(a.id)}">${body}</div>`;
+  // The strip header counts the held tasks of every member Automaton, shown once
+  // at the top level so a nested strip does not repeat it.
+  const heldTotal = depth === 0 ? members.reduce((n, m) => n + _automationHeldFor(m, c), 0) : 0;
+  const heldStrip = heldTotal
+    ? `<div class="automation-held-strip">&#9873; ${heldTotal} ${escHtml(t('review_held_badge'))}</div>`
+    : '';
+  return `<div class="automation-strip" data-automation-id="${escHtml(a.id)}">${heldStrip}${body}</div>`;
 }
 
 // buildAutomationStripHTML returns the strip markup for one Automation.
@@ -26195,24 +26743,31 @@ window.toggleAutomationNested = toggleAutomationNested;
 const _AUTOMATION_DECISION_LIMIT = 20;
 let _automationDetailSeq = 0;
 
-// loadAutomationPrdInfo fetches the Automaton list once and resolves
-// {titles, statuses, flags}, all keyed by Automaton id; flags is
-// {template, child} and feeds the insert picker. It never rejects: a failed
-// or oddly shaped response leaves both maps empty.
+// loadAutomationPrdInfo fetches the Automaton list and the loop status once and
+// resolves {titles, statuses, flags, review}. titles, statuses and flags are
+// keyed by Automaton id; flags is {template, child} and feeds the insert
+// picker. review maps the Automaton a running Automation is on to its
+// review_needed_count, the tasks held for operator review. It never rejects: a
+// failed or oddly shaped response leaves the maps empty.
 function loadAutomationPrdInfo() {
-  return automationRequest('GET', '/api/autonomous/prds')
-    .then(data => {
+  const loop = automationRequest('GET', '/api/autonomous/status').catch(() => null);
+  return Promise.all([automationRequest('GET', '/api/autonomous/prds'), loop])
+    .then(([data, status]) => {
       const prds = Array.isArray(data) ? data : (data && Array.isArray(data.prds) ? data.prds : []);
-      const titles = {}, statuses = {}, flags = {};
+      const titles = {}, statuses = {}, flags = {}, review = {};
       prds.forEach(p => {
         if (!p || !p.id) return;
         if (p.title) titles[p.id] = String(p.title);
         if (p.status) statuses[p.id] = String(p.status);
         flags[p.id] = { template: !!p.is_template, child: !!p.parent_prd_id };
       });
-      return { titles, statuses, flags };
+      const rows = status && Array.isArray(status.automations) ? status.automations : [];
+      rows.forEach(r => {
+        if (r && r.current_prd_id && r.review_needed_count > 0) review[r.current_prd_id] = r.review_needed_count;
+      });
+      return { titles, statuses, flags, review };
     })
-    .catch(() => ({ titles: {}, statuses: {}, flags: {} }));
+    .catch(() => ({ titles: {}, statuses: {}, flags: {}, review: {} }));
 }
 window.loadAutomationPrdInfo = loadAutomationPrdInfo;
 
@@ -26222,7 +26777,7 @@ function _automationStripContext() {
   const st = _automationState;
   const automationsById = {};
   (Array.isArray(st.list) ? st.list : []).forEach(a => { if (a && a.id) automationsById[a.id] = a; });
-  return { prdTitles: st.prdTitles, prdStatuses: st.prdStatuses, expanded: st.expanded, automationsById };
+  return { prdTitles: st.prdTitles, prdStatuses: st.prdStatuses, reviewByPrd: st.reviewByPrd, expanded: st.expanded, automationsById };
 }
 
 // _automationJoinWait describes the join the chain is waiting on: the first
@@ -26456,6 +27011,7 @@ function renderAutomationDetail(id, opts) {
     st.prdTitles = info.titles;
     st.prdStatuses = info.statuses;
     st.prdFlags = info.flags;
+    st.reviewByPrd = info.review;
     if (res.error || !res.data || typeof res.data !== 'object') {
       if (quiet) return;
       st.detail = null;
@@ -26970,6 +27526,7 @@ function openAutomationInsertDialog(anchorMemberId, position) {
     st.prdTitles = info.titles;
     st.prdStatuses = info.statuses;
     st.prdFlags = info.flags;
+    st.reviewByPrd = info.review;
     _automationInsert.picked = '';
     _automationInsert.rows = _automationPickerRows(list);
     const field = (labelKey, input) =>
@@ -28796,7 +29353,7 @@ function loadStatsPanel() {
   const lkey = 'observer-stats:' + (state.activeServer || 'local');
   const ctl = window._listLoaders[lkey] || listLoader({
     key: lkey, el: 'statsPanel', pollMs: 60000,
-    fetch: () => apiFetch('/api/stats'),
+    fetch: () => sharedFetch('/api/stats'),
     active: () => !!document.getElementById('statsPanel'),
     render: () => '<div id="statsBody"></div>',
     errorText: e => _fedMsg(e, t('stats_unavailable') || 'Stats unavailable.'),
@@ -28851,7 +29408,7 @@ function loadAcmeHealthCard() {
       if (d.issued && daysLeft !== null) {
         dotColor = daysLeft > 14 ? 'var(--success,#10b981)' : 'var(--warning,#f59e0b)';
       }
-      const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dotColor};margin-right:6px;flex-shrink:0;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${dotColor};margin-right:6px;"></span>`;
       const label = d.in_flight ? 'issuing…' : (d.issued ? `expires in ${daysLeft}d` : 'not issued');
       const err = d.last_error ? ` <span style="color:var(--error);">(${escHtml(d.last_error)})</span>` : '';
       return `<div style="display:flex;align-items:center;padding:2px 0;">${dot}<span>${escHtml(d.domain)}</span> <span style="opacity:0.6;">— ${escHtml(label)}</span>${err}</div>`;
@@ -28883,7 +29440,7 @@ function loadBackendHealthCard() {
     el.innerHTML = backends.map(b => {
       const name = typeof b === 'string' ? b : (b.name || '?');
       const available = typeof b === 'string' ? true : !!b.available;
-      const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${available ? 'var(--success,#10b981)' : 'var(--error,#ef4444)'};margin-right:6px;flex-shrink:0;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${available ? 'var(--success,#10b981)' : 'var(--error,#ef4444)'};margin-right:6px;"></span>`;
       const version = (b && b.version) ? ` <span style="opacity:0.6;">${escHtml(b.version)}</span>` : '';
       const nodes = (b && Array.isArray(b.compute_nodes) && b.compute_nodes.length) ? ` <span style="opacity:0.6;">(${b.compute_nodes.map(escHtml).join(', ')})</span>` : '';
       return `<div style="display:flex;align-items:center;padding:2px 0;">${dot}<span>${escHtml(name)}</span>${version}${nodes}</div>`;
@@ -28904,13 +29461,10 @@ function loadObserverEnvelopesCard() {
       el.innerHTML = `<span style="opacity:0.6;">${escHtml(t('obs_envelopes_none')||'no envelopes tracked')}</span>`;
       return;
     }
-    const fmtBytes = b => {
-      if (!b) return '—';
-      if (b >= 1e9) return (b/1e9).toFixed(1)+' GB';
-      if (b >= 1e6) return (b/1e6).toFixed(1)+' MB';
-      if (b >= 1e3) return (b/1e3).toFixed(1)+' KB';
-      return b+' B';
-    };
+    // MOBILE-FIT: shared compact formatter (fmtBytesCompact) replaces the
+    // duplicated base-10 local copy — '—' is the missing-value sentinel,
+    // same as the peer-resources / per-system grid formatters.
+    const fmtBytes = b => (b ? fmtBytesCompact(b) : '—');
     const kindColor = { session: 'var(--accent)', backend: 'var(--accent2)', container: 'var(--warning)' };
     el.innerHTML = envs.slice(0, 20).map(e => {
       const color = kindColor[e.kind] || 'var(--text2)';
@@ -28990,10 +29544,10 @@ function loadChannelDiagnostics() {
         const portStr = sd.channel_port > 0 ? `port ${sd.channel_port}` : 'port –';
         const name = sd.session_name || sd.session_id;
         if (sd.bridge_alive) {
-          html += `<div>✓ <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}</span></div>`;
+          html += `<div class="obs-diag-row">✓ <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}</span></div>`;
         } else {
           const err = sd.probe_error ? ` — ${sd.probe_error}` : '';
-          html += `<div><span style="color:var(--warning);">✗</span> <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}${escHtml(err)}</span></div>`;
+          html += `<div class="obs-diag-row"><span style="color:var(--warning);">✗</span> <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}${escHtml(err)}</span></div>`;
         }
       });
     }
@@ -29036,19 +29590,16 @@ function loadPeerResourceOverview() {
         .then(snap => ({ peer: p, snap }))
         .catch(() => ({ peer: p, snap: null }))
     )).then(results => {
-      const fmtBytes = b => {
-        if (!b) return '—';
-        if (b >= 1e12) return (b/1e12).toFixed(1)+' TB';
-        if (b >= 1e9) return (b/1e9).toFixed(1)+' GB';
-        if (b >= 1e6) return (b/1e6).toFixed(1)+' MB';
-        return b+' B';
-      };
+      // MOBILE-FIT: shared compact formatter (fmtBytesCompact, defined near
+      // the module-level fmtBytes) replaces this duplicated local copy —
+      // same base-1024 output, keeps the '—' missing-value sentinel.
+      const fmtBytes = b => (b ? fmtBytesCompact(b) : '—');
       const now = Date.now();
       const rows = results.map(({ peer, snap }) => {
         const lastPush = peer.last_push_at ? new Date(peer.last_push_at).getTime() : 0;
         const ageMs = lastPush ? (now - lastPush) : Infinity;
         const dotColor = lastPush ? (ageMs < 15000 ? 'var(--success,#10b981)' : ageMs < 60000 ? 'var(--warning,#f59e0b)' : 'var(--error,#ef4444)') : 'var(--text2)';
-        const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:5px;flex-shrink:0;"></span>`;
+        const dot = `<span class="obs-dot" style="background:${dotColor};margin-right:5px;"></span>`;
         const cpu = (snap && snap.cpu) || null;
         const mem = (snap && snap.mem) || null;
         const gpus = (snap && snap.gpu) || [];
@@ -29074,8 +29625,8 @@ function loadPeerResourceOverview() {
         const chips = noData ? '<span style="opacity:0.5;font-size:10px;">no snapshot</span>' : (hostChips + gpuChips);
         const shapeTag = `<span style="opacity:0.45;font-size:10px;border:1px solid var(--text2);border-radius:3px;padding:0 3px;margin-right:4px;">${escHtml((peer.shape||'?').toLowerCase())}</span>`;
         return `<div style="padding:4px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;">
-          <div style="display:flex;align-items:center;min-width:90px;flex-shrink:0;">${dot}${shapeTag}<strong style="font-size:12px;">${escHtml(peer.name)}</strong></div>
-          <div style="display:flex;gap:4px;flex-wrap:wrap;font-size:11px;">${chips}</div>
+          <div class="peer-name-cell">${dot}${shapeTag}<strong style="font-size:12px;" title="${escHtml(peer.name)}">${escHtml(peer.name)}</strong></div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;font-size:11px;min-width:0;">${chips}</div>
         </div>`;
       }).join('');
       el.innerHTML = rows || '<span style="opacity:0.6;">no peer data</span>';
@@ -29096,37 +29647,44 @@ setInterval(() => {
 function loadSystemStatsGrid() {
   const el = document.getElementById('perSystemGrid');
   if (!el) return;
-  const fmtBytes = b => {
-    if (!b) return '—';
-    if (b >= 1e12) return (b/1e12).toFixed(1)+' TB';
-    if (b >= 1e9)  return (b/1e9).toFixed(1)+' GB';
-    if (b >= 1e6)  return (b/1e6).toFixed(1)+' MB';
-    return b+' B';
-  };
+  // MOBILE-FIT: shared compact formatter (fmtBytesCompact, defined near
+  // the module-level fmtBytes) replaces this duplicated local copy — same
+  // base-1024 output, keeps the '—' missing-value sentinel.
+  const fmtBytes = b => (b ? fmtBytesCompact(b) : '—');
+  // MOBILE-FIT: bar layout moved from inline styles to the shared .obs-bar*
+  // rules in style.css — identical look at every width; label/value spans
+  // may wrap at narrow widths instead of clipping.
   const bar = (label, val, max, color, extraLabel) => {
     const p = max > 0 ? Math.min(100, Math.round(100*val/max)) : 0;
-    return `<div style="margin-bottom:4px;">
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-bottom:2px;">
-        <span>${escHtml(label)}</span>
-        <span style="font-variant-numeric:tabular-nums;color:var(--text);">${escHtml(extraLabel||p+'%')}</span>
+    return `<div class="obs-bar">
+      <div class="obs-bar-head">
+        <span class="obs-bar-label">${escHtml(label)}</span>
+        <span class="obs-bar-val" title="${escHtml(extraLabel||p+'%')}">${escHtml(extraLabel||p+'%')}</span>
       </div>
-      <div style="height:5px;background:var(--bg);border-radius:3px;overflow:hidden;">
-        <div style="height:100%;width:${p}%;background:${color||'var(--accent)'};border-radius:3px;transition:width 0.3s;"></div>
+      <div class="obs-bar-track">
+        <div class="obs-bar-fill" style="width:${p}%;background:${color||'var(--accent)'};"></div>
       </div>
     </div>`;
   };
   // GH#194 -- no "local" tag/badge; the card's own name (the real
   // hostname) is label enough, and the word "local" never appears.
-  const sysCard = (name, dot, cpuHtml, memHtml, gpuHtml) => `
-    <div style="background:var(--surface1,var(--bg2));border:1px solid var(--border);border-radius:8px;padding:10px 12px;min-width:0;">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
-        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dot};flex-shrink:0;"></span>
-        <span style="font-size:11px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(name)}</span>
+  // `title` carries the accessibility clip-target: peer cards get their
+  // full hostname (stats-scroll contract: ellipsis clip + full name in
+  // title); the local card keeps the literal "System name" label so the
+  // local hostname renders exactly once (identity-label contract).
+  const sysCard = (name, dot, cpuHtml, memHtml, gpuHtml, title = name) => `
+    <div class="obs-sys-card" style="flex:1 1 200px;min-width:0;">
+      <div class="obs-sys-head">
+        <span class="obs-sys-dot" style="background:${dot};"></span>
+        <span class="obs-sys-name" title="${escHtml(title)}">${escHtml(name)}</span>
       </div>
       ${cpuHtml}${memHtml}${gpuHtml}
     </div>`;
 
-  const localP = apiFetch('/api/stats').then(d => {
+  // MOBILE-FIT: shared in-flight /api/stats request (see sharedFetch) —
+  // coalesces with loadStatsPanel's fetch when both run on the same
+  // Observer render pass (renderObserverView fires them back-to-back).
+  const localP = sharedFetch('/api/stats').then(d => {
     if (!d || !d.timestamp) return null;
     const cpuPct = d.cpu_cores > 0 ? Math.min(100, Math.round(100*d.cpu_load_avg_1/d.cpu_cores)) : 0;
     const cpuColor = cpuPct > 80 ? 'var(--error)' : cpuPct > 50 ? 'var(--warning)' : 'var(--success)';
@@ -29199,7 +29757,7 @@ function loadSystemStatsGrid() {
               gpuHtml += bar(gLabel+' temp', g.temp_c, 100, tc, g.temp_c.toFixed(0)+'°C');
             }
             if (g.power_w != null) {
-              gpuHtml += `<div style="margin-bottom:4px;display:flex;justify-content:space-between;font-size:10px;"><span style="color:var(--text2);">${escHtml(gLabel+' power')}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${g.power_w.toFixed(1)} W</span></div>`;
+              gpuHtml += `<div class="obs-kv"><span class="obs-kv-k">${escHtml(gLabel+' power')}</span><span class="obs-kv-v">${g.power_w.toFixed(1)} W</span></div>`;
             }
             if (g.mem_used_bytes && g.mem_total_bytes) {
               gpuHtml += bar(gLabel+' VRAM', g.mem_used_bytes, g.mem_total_bytes, 'var(--accent2,#60a5fa)',
@@ -29215,13 +29773,13 @@ function loadSystemStatsGrid() {
 
   Promise.all([localP, peersP]).then(([local, peers]) => {
     const cards = [];
-    if (local) cards.push(sysCard(local.name, local.dot, local.cpuHtml, local.memHtml, local.gpuHtml));
+    if (local) cards.push(sysCard(local.name, local.dot, local.cpuHtml, local.memHtml, local.gpuHtml, 'System name'));
     peers.forEach(p => cards.push(sysCard(p.name, p.dot, p.cpuHtml, p.memHtml, p.gpuHtml)));
     if (!cards.length) {
       el.innerHTML = '';
       return;
     }
-    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:4px;">${cards.join('')}</div>`;
+    el.innerHTML = `<div class="obs-sys-grid">${cards.join('')}</div>`;
   });
 }
 window.loadSystemStatsGrid = loadSystemStatsGrid;
@@ -29285,8 +29843,8 @@ function loadEBPFNetworkTraffic() {
       const name = escHtml(p.comm || ('PID ' + p.pid));
       html += `<tr style="border-top:1px solid var(--border);">
         <td style="padding:3px 4px 3px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;" title="${name}">${name}</td>
-        <td style="padding:3px 4px;text-align:right;color:var(--success,#10b981);">${formatBytes(p.rx_bps || 0)}/s</td>
-        <td style="padding:3px 0 3px 4px;text-align:right;color:var(--accent,#60a5fa);">${formatBytes(p.tx_bps || 0)}/s</td>
+        <td style="padding:3px 4px;text-align:right;color:var(--success,#10b981);">${fmtBytesCompact(p.rx_bps || 0)}/s</td>
+        <td style="padding:3px 0 3px 4px;text-align:right;color:var(--accent,#60a5fa);">${fmtBytesCompact(p.tx_bps || 0)}/s</td>
       </tr>`;
     }
     html += '</table>';
@@ -29304,24 +29862,28 @@ function loadPluginsStatus() {
   apiFetch('/api/plugins').then(data => {
     const plugins = (data && data.plugins) || [];
     const native = (data && data.native) || [];
+    // MOBILE-FIT: row is a flex-wrap chip line (.plugin-row in style.css)
+    // instead of inline flow — with inline flow, a chip span that wraps
+    // stays one union bounding box covering the status dot (an
+    // overlapping sibling pair at phone widths). Title attributes carry
+    // the full text when a chip truncates.
     const nativeRows = native.map(p => {
       const on = !!p.enabled;
-      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
-      const tag = ` <span style="opacity:0.55;font-size:11px;border:1px solid var(--text2);border-radius:3px;padding:0 4px;margin-left:4px;">native</span>`;
-      const ver = p.version ? ` <span style="opacity:0.6;">v${escHtml(p.version)}</span>` : '';
-      const desc = p.description ? ` &middot; <span style="opacity:0.7;">${escHtml(p.description)}</span>` : '';
-      const msg = p.message ? ` &middot; <span style="opacity:0.6;font-size:12px;">${escHtml(p.message)}</span>` : '';
-      return `<div style="padding:3px 0;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${msg}</div>`;
+      const dot = `<span class="obs-dot" style="background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
+      const ver = p.version ? `<span class="plugin-note" style="opacity:0.6;" title="v${escHtml(p.version)}">v${escHtml(p.version)}</span>` : '';
+      const desc = p.description ? `<span class="plugin-note" title="${escHtml(p.description)}">${escHtml(p.description)}</span>` : '';
+      const msg = p.message ? `<span class="plugin-note" title="${escHtml(p.message)}">${escHtml(p.message)}</span>` : '';
+      return `<div class="plugin-row">${dot}<strong class="plugin-name" title="${escHtml(p.name)}">${escHtml(p.name)}</strong><span class="plugin-tag">native</span>${ver}${desc}${msg}</div>`;
     }).join('');
     const subRows = plugins.map(p => {
       const on = !!p.enabled;
-      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
       const hooks = Array.isArray(p.hooks) && p.hooks.length
-        ? ` &middot; <span style="opacity:0.7;">${p.hooks.join(', ')}</span>` : '';
+        ? `<span class="plugin-note" title="${escHtml(p.hooks.join(', '))}">${escHtml(p.hooks.join(', '))}</span>` : '';
       const invokes = (typeof p.invoke_count === 'number' && p.invoke_count > 0)
-        ? ` &middot; <span style="opacity:0.7;">${p.invoke_count} invoke${p.invoke_count===1?'':'s'}</span>` : '';
-      const err = p.last_error ? ` &middot; <span style="color:var(--error);" title="${escHtml(p.last_error)}">last-error</span>` : '';
-      return `<div style="padding:3px 0;">${dot}<strong>${escHtml(p.name)}</strong>${p.version?` <span style="opacity:0.6;">v${escHtml(p.version)}</span>`:''} &middot; ${on?'enabled':'disabled'}${hooks}${invokes}${err}</div>`;
+        ? `<span class="plugin-note" title="invokes: ${p.invoke_count}">${p.invoke_count} invoke${p.invoke_count===1?'':'s'}</span>` : '';
+      const err = p.last_error ? `<span class="plugin-err" title="${escHtml(p.last_error)}">last-error</span>` : '';
+      return `<div class="plugin-row">${dot}<strong class="plugin-name" title="${escHtml(p.name)}">${escHtml(p.name)}</strong>${p.version?`<span class="plugin-note" style="opacity:0.6;" title="v${escHtml(p.version)}">v${escHtml(p.version)}</span>`:''}<span class="plugin-state">${on?'enabled':'disabled'}</span>${hooks}${invokes}${err}</div>`;
     }).join('');
     if (!nativeRows && !subRows) {
       list.innerHTML = '<span style="opacity:0.7;">none installed</span> &middot; <a href="/docs/api/plugins.md" style="color:var(--accent2);">plugin docs</a>';
@@ -29393,7 +29955,7 @@ function loadObserverPeers() {
     // existing flat per-peer table.
     const groupByNode = localStorage.getItem('cs_peer_group_by_node') === '1';
     const pills = peers.length > 0
-      ? `<div style="display:flex;gap:4px;padding:0 0 6px;flex-wrap:wrap;align-items:center;">
+      ? `<div class="obs-peer-pills" style="display:flex;gap:4px;padding:0 0 6px;flex-wrap:wrap;align-items:center;">
           ${pillBtn('all','All')}
           ${pillBtn('A','Agents')}
           ${pillBtn('B','Standalone')}
@@ -29428,7 +29990,7 @@ function loadObserverPeers() {
         else dotColor = 'var(--error,#ef4444)';
         ageLabel = 'last push ' + observerPeerAgo(ageMs);
       }
-      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:6px;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${dotColor};margin-right:6px;"></span>`;
       // S13 — friendlier shape labels.
       const shapeLabels = { A: 'agent', B: 'standalone', C: 'cluster' };
       const shapeKey = (p.shape || '?').toUpperCase();
@@ -29444,7 +30006,7 @@ function loadObserverPeers() {
       const attachTag = bound.length > 0
         ? `<span title="${escHtml(t('observer_attached_to')||'attached to ComputeNode')}" style="margin-left:6px;font-size:11px;color:var(--accent2);border:1px solid var(--accent2);border-radius:3px;padding:0 4px;">⇄ ${escHtml(bound.join(', '))}</span>`
         : `<span title="${escHtml(t('observer_free_tooltip')||'no ComputeNode bound to this peer')}" style="margin-left:6px;font-size:11px;color:var(--text2);border:1px dashed var(--text2);border-radius:3px;padding:0 4px;">${escHtml(t('observer_free')||'free')}</span>`;
-      return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${attachTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${actions}</div>`;
+      return `<div class="obs-peer-item" style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${attachTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${actions}</div>`;
     }).join('');
     if (groupByNode) {
       // alpha.24 — render per-CN buckets, fetched from the meta-peers
@@ -29715,7 +30277,7 @@ function loadObserverClusterNodes() {
       const cpuPct = Math.round(n.cpu_pct || 0);
       const memPct = Math.round(n.mem_pct || 0);
       const ready = n.ready !== false;
-      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ready?'var(--success,#10b981)':'var(--error,#ef4444)'};margin-right:6px;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${ready?'var(--success,#10b981)':'var(--error,#ef4444)'};margin-right:6px;"></span>`;
       const pressure = (n.pressure && n.pressure.length)
         ? ` <span style="opacity:0.7;color:var(--warning,#f59e0b);font-size:11px;">[${(n.pressure||[]).join(',')}]</span>` : '';
       const pods = (typeof n.pod_count === 'number') ? ` &middot; <span style="opacity:0.7;">${n.pod_count} pods</span>` : '';
@@ -29727,7 +30289,7 @@ function loadObserverClusterNodes() {
           </span>
           <span style="font-size:11px;opacity:0.7;">${p}%</span>
         </span>`;
-      return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(n.name)}</strong>${pressure}${pods}${bar('cpu', cpuPct, 'var(--accent)')}${bar('mem', memPct, 'var(--accent2)')}</div>`;
+      return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong title="${escHtml(n.name)}">${escHtml(n.name)}</strong>${pressure}${pods}${bar('cpu', cpuPct, 'var(--accent)')}${bar('mem', memPct, 'var(--accent2)')}</div>`;
     }).join('');
   }).catch(e => {
     // GH#194/coordinator-flagged (2026-10-08): same fix as the ACME
@@ -29800,15 +30362,17 @@ function webSearchOpenHistoryView() {
 function renderStatsData(el, data) {
     if (!data || !data.timestamp) { el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${t('stats_not_available')||'Stats not available.'}</div>`; return; }
     // Preserve scroll position to prevent visible jump on real-time updates
-    const scrollParent = el.closest('.settings-section') || el.parentElement;
+    // Defensive guard: vm/test sandboxes may expose a plain stub without
+    // Element.prototype.closest (mirrors the existing el.closest guard in
+    // isConnectionIndicator). Browsers always have it; fallback = parent.
+    const scrollParent = (el.closest && el.closest('.settings-section')) || el.parentElement;
     const savedScroll = scrollParent ? scrollParent.scrollTop : 0;
     const pageScroll = window.scrollY;
-    const fmt = (bytes) => {
-      if (bytes > 1e9) return (bytes/1e9).toFixed(1) + ' GB';
-      if (bytes > 1e6) return (bytes/1e6).toFixed(1) + ' MB';
-      if (bytes > 1e3) return (bytes/1e3).toFixed(1) + ' KB';
-      return bytes + ' B';
-    };
+    // MOBILE-FIT: shared compact formatter (fmtBytesCompact, defined near
+    // the module-level fmtBytes) replaces this duplicated local copy — same
+    // base-1024 output for every byte count the stats payload carries; zero /
+    // missing values render as the '—' missing-value sentinel.
+    const fmt = (bytes) => fmtBytesCompact(bytes);
     const pct = (used, total) => total > 0 ? Math.round(100*used/total) : 0;
     const bar = (label, val, max, color, extra) => {
       const p = max > 0 ? Math.min(100, Math.round(100*val/max)) : 0;
@@ -29819,7 +30383,10 @@ function renderStatsData(el, data) {
         </div>
       </div>`;
     };
-    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;padding:8px;">';
+    // MOBILE-FIT: named class (style.css) instead of the inline grid
+    // declaration — same auto-fit columns on desktop/tablet; style.css
+    // collapses this panel to a single column at ≤600px.
+    let html = '<div class="stats-panel-grid" style="display:grid;gap:8px;padding:8px;">';
     // CPU (load as % of cores)
     const cpuPct = Math.min(100, Math.round(100 * data.cpu_load_avg_1 / data.cpu_cores));
     html += bar('CPU Load', data.cpu_load_avg_1, data.cpu_cores, cpuPct > 80 ? 'var(--error)' : cpuPct > 50 ? 'var(--warning)' : 'var(--success)', data.cpu_load_avg_1.toFixed(2) + ' / ' + data.cpu_cores + ' cores');
@@ -29949,7 +30516,7 @@ function renderStatsData(el, data) {
     // window._webSearchStatsInterval guard (same fix as the BL v8.33.5 "PWA
     // stats poll stacking" bug) ensures only one refresh timer ever exists
     // across repeated renderStatsData calls.
-    html += `<div class="stat-card" style="grid-column:span 2;min-width:260px;">
+    html += `<div class="stat-card stats-panel-wide">
       <div class="stat-label">${t('stats_web_search')||'Search Usage'}</div>
       <div id="websearchStatsCardBody" style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${window._webSearchStatsHTML || ('<span style="color:var(--text2);">'+loadingEyeBlock()+'</span>')}</div>
     </div>`;
@@ -29987,7 +30554,7 @@ function renderStatsData(el, data) {
     const activePct = Math.min(100, Math.round(100 * active / maxSess));
     html += `<div style="display:flex;align-items:center;gap:12px;padding:4px 8px;">
       <div style="width:48px;height:48px;border-radius:50%;background:conic-gradient(var(--success) 0% ${activePct}%, var(--border) ${activePct}% 100%);display:flex;align-items:center;justify-content:center;">
-        <div style="width:32px;height:32px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text);">${active}</div>
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text);">${fmtCountCompact(active)}</div>
       </div>
       <div style="font-size:11px;color:var(--text2);">
         <div><span style="color:var(--success);font-weight:600;">${active}</span> of ${maxSess} max</div>
@@ -30022,7 +30589,7 @@ function renderStatsData(el, data) {
         const isOpen = _expandedSessions.has(sid);
         const memStr = s.rss_bytes > 1e6 ? (s.rss_bytes/1e6).toFixed(0) + ' MB' : Math.round(s.rss_bytes/1024) + ' KB';
         html += `<div style="border-bottom:1px solid var(--border);padding:4px 0;">
-          <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedSessions.has('${sid}')?_expandedSessions.delete('${sid}'):_expandedSessions.add('${sid}');loadStatsPanel()">
+          <div class="stats-taprow" style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedSessions.has('${sid}')?_expandedSessions.delete('${sid}'):_expandedSessions.add('${sid}');loadStatsPanel()">
             <span style="font-size:8px;color:var(--text2);width:10px;">${isOpen ? '▼' : '▶'}</span>
             <span style="font-size:11px;font-weight:${isDaemon?'700':'500'};flex:1;">${escHtml(s.name || sid)}${!isDaemon ? ' <span style="color:var(--text2);font-weight:400;">(#' + escHtml(sid) + ')</span>' : ''}</span>
             <span class="state-badge-${s.state}" style="font-size:9px;padding:1px 5px;border-radius:4px;">${s.state}</span>
@@ -30063,7 +30630,7 @@ function renderStatsData(el, data) {
         const safeCid = escJsAttr(cid);
         const isOpen = _expandedChannels.has(safeCid);
         return `<div style="border-bottom:1px solid var(--border);padding:4px 0;">
-          <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedChannels.has('${safeCid}')?_expandedChannels.delete('${safeCid}'):_expandedChannels.add('${safeCid}');loadStatsPanel()">
+          <div class="stats-taprow" style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedChannels.has('${safeCid}')?_expandedChannels.delete('${safeCid}'):_expandedChannels.add('${safeCid}');loadStatsPanel()">
             <span style="font-size:8px;color:var(--text2);width:10px;">${isOpen ? '▼' : '▶'}</span>
             <span style="font-size:11px;flex:1;">${escHtml(ch.name)}</span>
             ${ch.type === 'llm' && ch.active_sessions ? `<span style="font-size:9px;font-weight:700;color:var(--bg2);background:var(--success);padding:1px 6px;border-radius:8px;min-width:16px;text-align:center;">${ch.active_sessions}</span>` : ''}
@@ -30118,7 +30685,9 @@ function renderStatsData(el, data) {
     el.innerHTML = html;
     // Restore scroll position after DOM update
     if (scrollParent) scrollParent.scrollTop = savedScroll;
-    window.scrollTo(0, pageScroll);
+    // Defensive guard: vm/test sandboxes may not expose scrollTo (browsers
+    // always do) — skip the restore in that case instead of throwing.
+    if (typeof window.scrollTo === 'function') window.scrollTo(0, pageScroll);
     // BL223 — wire RTK copy buttons after innerHTML (avoids inline onclick+JSON.stringify)
     el.querySelectorAll('.rtk-update-badge, .rtk-cmd-copy').forEach(node => {
       node.addEventListener('click', function() {
@@ -30258,7 +30827,7 @@ function loadSchedulesList() {
     const hasMultiple = pageItems.length > 1;
     let html = hasMultiple ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;border-bottom:1px solid var(--border);">
       <label style="font-size:10px;display:flex;align-items:center;gap:4px;color:var(--text2);"><input type="checkbox" id="schedSelectAll" onchange="toggleAllScheduleCheckboxes(this.checked)"> Select all</label>
-      <button class="btn-secondary" style="font-size:10px;padding:2px 8px;" onclick="deleteSelectedSchedules()">Delete selected</button>
+      <button class="btn-secondary obs-tap" style="font-size:10px;padding:2px 8px;" onclick="deleteSelectedSchedules()">Delete selected</button>
     </div>` : '';
     html += pageItems.map(sc => {
       const when = _fmtScheduleTime(sc.run_at);
@@ -30271,13 +30840,13 @@ function loadSchedulesList() {
         : sessionRef + schedRef + ': ' + escHtml(sc.command) + cronBadge;
       const actions = [];
       if (sc.state === 'pending') {
-        actions.push(`<button class="btn-icon" style="font-size:10px;" onclick="editSchedulePrompt('${escJsAttr(sc.id)}','${escJsAttr(sc.command)}','${escJsAttr(sc.run_at||'')}')" title="Edit">&#9998;</button>`);
+        actions.push(`<button class="btn-icon obs-tap" style="font-size:10px;" onclick="editSchedulePrompt('${escJsAttr(sc.id)}','${escJsAttr(sc.command)}','${escJsAttr(sc.run_at||'')}')" title="Edit">&#9998;</button>`);
       }
-      actions.push(`<button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteScheduleEntry('${escJsAttr(sc.id)}')" title="Delete">&#128465;</button>`);
-      return `<div class="settings-row" style="justify-content:space-between;font-size:12px;">
+      actions.push(`<button class="btn-icon obs-tap" style="font-size:10px;color:var(--error);" onclick="deleteScheduleEntry('${escJsAttr(sc.id)}')" title="Delete">&#128465;</button>`);
+      return `<div class="settings-row obs-sched-row" style="justify-content:space-between;font-size:12px;">
         ${hasMultiple ? `<input type="checkbox" class="sched-checkbox" data-id="${sc.id}" style="margin-right:6px;">` : ''}
         <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(sc.command)}">${label}</div>
-        <div style="display:flex;align-items:center;gap:6px;">
+        <div class="obs-sched-meta" style="display:flex;align-items:center;gap:6px;">
           <span style="font-size:10px;color:var(--text2);">${when}</span>
           <span style="font-size:10px;${stateClass};font-weight:600;text-transform:uppercase;">${escHtml(sc.state)}</span>
           ${actions.join('')}
@@ -30286,9 +30855,9 @@ function loadSchedulesList() {
     }).join('');
     if (totalPages > 1) {
       html += `<div style="display:flex;justify-content:center;gap:8px;padding:6px;">
-        ${page > 0 ? `<button class="btn-link" style="font-size:11px;" onclick="settingsPagination.schedules=${page - 1};loadSchedulesList()">&#9664; Prev</button>` : ''}
+        ${page > 0 ? `<button class="btn-link obs-tap" style="font-size:11px;" onclick="settingsPagination.schedules=${page - 1};loadSchedulesList()">&#9664; Prev</button>` : ''}
         <span style="font-size:11px;color:var(--text2);">Page ${page + 1}/${totalPages}</span>
-        ${page < totalPages - 1 ? `<button class="btn-link" style="font-size:11px;" onclick="settingsPagination.schedules=${page + 1};loadSchedulesList()">Next &#9654;</button>` : ''}
+        ${page < totalPages - 1 ? `<button class="btn-link obs-tap" style="font-size:11px;" onclick="settingsPagination.schedules=${page + 1};loadSchedulesList()">Next &#9654;</button>` : ''}
       </div>`;
     }
     el.innerHTML = html;
@@ -33738,9 +34307,9 @@ function renderObserverView() {
           <!-- GH#172 D78 — quick add-memory (Android parity): manual save
                straight from the Observer tab, no separate memory_remember
                call site needed. -->
-          <div style="display:flex;gap:6px;padding:4px 12px;">
-            <input type="text" id="memoryQuickAddInput" class="form-input" style="flex:1;" placeholder="${escHtml(t('obs_add_memory_placeholder')||'Add a memory…')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
-            <button class="btn-primary" style="font-size:11px;" onclick="addMemoryQuick()">${escHtml(t('obs_add_memory')||'Add')}</button>
+          <div class="obs-row obs-row-nowrap">
+            <input type="text" id="memoryQuickAddInput" class="form-input obs-fluid" style="flex:1;" placeholder="${escHtml(t('obs_add_memory_placeholder')||'Add a memory…')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
+            <button class="btn-primary obs-tap" style="font-size:11px;" onclick="addMemoryQuick()">${escHtml(t('obs_add_memory')||'Add')}</button>
           </div>
           <!-- GH#192 D78a — tags, optional, comma-separated. Checked
                server-side first before assuming front-end-only: no tags
@@ -33748,28 +34317,28 @@ function renderObserverView() {
                added end-to-end; this input sends it in the same
                POST /api/memory/save addMemoryQuick already calls. -->
           <div style="padding:0 12px 4px;">
-            <input type="text" id="memoryQuickAddTags" class="form-input" style="width:100%;font-size:11px;" placeholder="${escHtml(t('obs_add_memory_tags_placeholder')||'Tags (comma-separated, optional)')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
+            <input type="text" id="memoryQuickAddTags" class="form-input obs-fluid obs-tap" style="width:100%;font-size:11px;" placeholder="${escHtml(t('obs_add_memory_tags_placeholder')||'Tags (comma-separated, optional)')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
           </div>
-          <div style="display:flex;gap:6px;padding:4px 12px;flex-wrap:wrap;">
-            <input type="text" id="memorySearchInput" class="form-input" style="flex:1;min-width:120px;" placeholder="Search memories…" />
-            <select id="memoryRoleFilter" class="form-select" style="font-size:11px;width:auto;">
+          <div class="obs-row obs-filter-row">
+            <input type="text" id="memorySearchInput" class="form-input obs-fluid obs-search" style="flex:1;" placeholder="Search memories…" />
+            <select id="memoryRoleFilter" class="form-select obs-tap obs-select" style="font-size:11px;">
               <option value="">All roles</option>
               <option value="manual">Manual</option>
               <option value="session">Session</option>
               <option value="learning">Learning</option>
               <option value="output_chunk">Chunks</option>
             </select>
-            <select id="memorySinceFilter" class="form-select" style="font-size:11px;width:auto;">
+            <select id="memorySinceFilter" class="form-select obs-tap obs-select" style="font-size:11px;">
               <option value="">All time</option>
               <option value="7">Last 7 days</option>
               <option value="30">Last 30 days</option>
               <option value="90">Last 90 days</option>
             </select>
-            <button class="btn-secondary" style="font-size:11px;" onclick="searchMemories()">Search</button>
-            <button class="btn-secondary" style="font-size:11px;" onclick="listMemories()">List</button>
-            <button class="btn-secondary" style="font-size:11px;" onclick="exportMemories()" title="Download JSON backup">Export</button>
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="searchMemories()">Search</button>
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="listMemories()">List</button>
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="exportMemories()" title="Download JSON backup">Export</button>
           </div>
-          <div id="memoryBrowserList" style="padding:4px 12px;max-height:400px;overflow-y:auto;"></div>
+          <div id="memoryBrowserList" class="obs-list" style="padding:4px 12px;max-height:400px;overflow-y:auto;"></div>
         </div>
       </div>
 
@@ -33777,9 +34346,9 @@ function renderObserverView() {
         ${settingsSectionHeader('memscopes', 'Memory Scopes', 'memory.md')}
         <div id="settings-sec-memscopes" style="${secContent('memscopes')}">
           <div style="font-size:10px;color:var(--text2);padding:0 12px 6px;">Recall walks every scope layer top-down and merges the hits — the dropdown below isn't a recall filter, it's the default target when you promote an entry. See <a href="/diagrams.html#docs/memory.md" target="_blank" rel="noopener">docs/memory.md</a> for the full model.</div>
-          <div id="memScopeInventory" style="padding:4px 12px;margin-bottom:8px;"><em style="color:var(--text2);">${loadingEyeBlock('Loading inventory…')}</em></div>
-          <div style="display:flex;gap:6px;padding:0 12px 6px;flex-wrap:wrap;align-items:center;">
-            <select id="memScopeSelect" class="form-select" style="font-size:11px;width:auto;">
+          <div id="memScopeInventory" class="obs-table-scroll" style="padding:4px 12px;margin-bottom:8px;"><em style="color:var(--text2);">${loadingEyeBlock('Loading inventory…')}</em></div>
+          <div class="obs-row obs-scope-row">
+            <select id="memScopeSelect" class="form-select obs-tap obs-select" style="font-size:11px;">
               <option value="session-local">session-local</option>
               <option value="story-shared">story-shared</option>
               <option value="prd-shared">prd-shared</option>
@@ -33787,48 +34356,48 @@ function renderObserverView() {
               <option value="persona-in-project">persona-in-project</option>
               <option value="persona-global">persona-global</option>
             </select>
-            <input type="text" id="memScopePRDID" class="form-input" style="width:100px;font-size:11px;" placeholder="prd_id" />
-            <input type="text" id="memScopeStoryID" class="form-input" style="width:100px;font-size:11px;" placeholder="story_id" />
-            <input type="text" id="memScopePersona" class="form-input" style="width:110px;font-size:11px;" placeholder="persona" />
-            <input type="text" id="memScopeProject" class="form-input" style="width:120px;font-size:11px;" placeholder="project dir" onchange="loadMemoryScopeInventory()" />
-            <button class="btn-secondary" style="font-size:11px;" onclick="memoryScopeRecall()">Recall</button>
+            <input type="text" id="memScopePRDID" class="form-input obs-tap obs-scope-input" style="font-size:11px;" placeholder="prd_id" />
+            <input type="text" id="memScopeStoryID" class="form-input obs-tap obs-scope-input" style="font-size:11px;" placeholder="story_id" />
+            <input type="text" id="memScopePersona" class="form-input obs-tap obs-scope-input" style="font-size:11px;" placeholder="persona" />
+            <input type="text" id="memScopeProject" class="form-input obs-tap obs-scope-input" style="font-size:11px;" placeholder="project dir" onchange="loadMemoryScopeInventory()" />
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="memoryScopeRecall()">Recall</button>
           </div>
-          <div id="memScopeRecallList" style="padding:4px 12px;max-height:300px;overflow-y:auto;"></div>
+          <div id="memScopeRecallList" class="obs-list" style="padding:4px 12px;max-height:300px;overflow-y:auto;"></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('memmaint', 'Memory Maintenance', 'memory.md')}
         <div id="settings-sec-memmaint" style="${secContent('memmaint')}">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 12px;">
+          <div class="obs-maint-grid">
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Similarity-stale eviction <span style="color:var(--text2);font-weight:normal;font-size:10px;">(sweeper.py)</span></div>
               <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Drops rows that never surface in any search and are older than the cutoff. Manual + pinned rows exempt.</div>
-              <div style="display:flex;gap:4px;">
-                <input type="number" id="memSweepDays" class="form-input" style="width:80px;font-size:11px;" placeholder="days" value="90" min="1" />
-                <button class="btn-secondary" style="font-size:11px;" onclick="memorySweepStale(true)">Dry-run</button>
-                <button class="btn-secondary" style="font-size:11px;background:rgba(239,68,68,0.18);color:#ef4444;" onclick="memorySweepStale(false)" title="Actually delete eviction candidates">Apply</button>
+              <div class="obs-maint-sweep">
+                <input type="number" id="memSweepDays" class="form-input obs-tap obs-sweep-days" style="font-size:11px;" placeholder="days" value="90" min="1" />
+                <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="memorySweepStale(true)">Dry-run</button>
+                <button class="btn-secondary obs-tap" style="font-size:11px;background:rgba(239,68,68,0.18);color:#ef4444;" onclick="memorySweepStale(false)" title="Actually delete eviction candidates">Apply</button>
               </div>
               <div id="memSweepResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
             </div>
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Spellcheck <span style="color:var(--text2);font-weight:normal;font-size:10px;">(spellcheck.py)</span></div>
               <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Conservative Levenshtein-based suggestions on text. Never rewrites — preview only.</div>
-              <textarea id="memSpellInput" class="form-input" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to check…"></textarea>
-              <button class="btn-secondary" style="font-size:11px;margin-top:4px;" onclick="memorySpellCheck()">Run spellcheck</button>
+              <textarea id="memSpellInput" class="form-input obs-fluid" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to check…"></textarea>
+              <button class="btn-secondary obs-tap" style="font-size:11px;margin-top:4px;" onclick="memorySpellCheck()">Run spellcheck</button>
               <div id="memSpellResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
             </div>
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Extract facts <span style="color:var(--text2);font-weight:normal;font-size:10px;">(general_extractor.py)</span></div>
               <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Heuristic schema-free SVO triple extraction. Useful for KG pre-population.</div>
-              <textarea id="memExtractInput" class="form-input" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to extract triples from…"></textarea>
-              <button class="btn-secondary" style="font-size:11px;margin-top:4px;" onclick="memoryExtractFacts()">Extract triples</button>
+              <textarea id="memExtractInput" class="form-input obs-fluid" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to extract triples from…"></textarea>
+              <button class="btn-secondary obs-tap" style="font-size:11px;margin-top:4px;" onclick="memoryExtractFacts()">Extract triples</button>
               <div id="memExtractResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
             </div>
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Schema version <span style="color:var(--text2);font-weight:normal;font-size:10px;">(migrate.py)</span></div>
               <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Highest schema_version row applied to the active memory backend.</div>
-              <button class="btn-secondary" style="font-size:11px;" onclick="memorySchemaVersion()">Check schema</button>
+              <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="memorySchemaVersion()">Check schema</button>
               <div id="memSchemaResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
             </div>
           </div>
@@ -33838,45 +34407,45 @@ function renderObserverView() {
       <div class="settings-section">
         ${settingsSectionHeader('schedules', 'Scheduled Events')}
         <div id="settings-sec-schedules" style="${secContent('schedules')}">
-          <div id="schedulesList"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="schedulesList" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('cooldown', 'Global Cooldown', 'api/sessions.md')}
         <div id="settings-sec-cooldown" style="${secContent('cooldown')}">
-          <div id="cooldownStatus"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="cooldownStatus" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('analytics', 'Session Analytics', 'api/sessions.md')}
         <div id="settings-sec-analytics" style="${secContent('analytics')}">
-          <div id="analyticsPanel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="analyticsPanel" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('audit', 'Audit Log', 'architecture.md')}
         <div id="settings-sec-audit" style="${secContent('audit')}">
-          <div id="auditPanel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="auditPanel" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('kg', 'Knowledge Graph', 'memory.md')}
         <div id="settings-sec-kg" style="${secContent('kg')}">
-          <div id="kgPanel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="kgPanel" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('daemonlog', 'Daemon Log')}
         <div id="settings-sec-daemonlog" style="${secContent('daemonlog')}">
-          <div id="daemonLogPanel" style="font-size:11px;font-family:monospace;color:var(--text2);max-height:300px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px;">${loadingEyeBlock()}</div>
-          <div style="display:flex;gap:8px;padding:6px 0;align-items:center;">
-            <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog(0)">Newest</button>
-            <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog((state._logOffset||0)+50)">Older</button>
+          <div id="daemonLogPanel" class="obs-log" style="font-size:11px;font-family:monospace;color:var(--text2);max-height:300px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px;">${loadingEyeBlock()}</div>
+          <div class="obs-row obs-log-actions">
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="loadDaemonLog(0)">Newest</button>
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="loadDaemonLog((state._logOffset||0)+50)">Older</button>
             <span id="daemonLogInfo" style="font-size:10px;color:var(--text2);"></span>
           </div>
         </div>
@@ -33887,7 +34456,7 @@ function renderObserverView() {
       <div class="settings-section">
         ${settingsSectionHeader('observer_peers', t('monitor_section_observer_peers') || 'Federated Peers', 'flow/observer-flow.md')}
         <div id="settings-sec-observer_peers" style="${secContent('observer_peers')}">
-          <div id="observerPeersPanel" style="font-size:12px;color:var(--text2);">${loadingEyeBlock()}</div>
+          <div id="observerPeersPanel" class="obs-panel" style="font-size:12px;color:var(--text2);">${loadingEyeBlock()}</div>
         </div>
       </div>
 
@@ -33915,7 +34484,7 @@ window.renderObserverView = renderObserverView;
 function loadCommBackendsStatus() {
   const el = document.getElementById('commBackendsStatus');
   if (!el) return;
-  const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook', 'dns_channel'];
+  const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook', 'dns_channel', 'imap_mcp'];
   // Settings-tab federation pass (2026-10-08): was raw, non-proxy-aware.
   apiFetch('/api/config')
     .then(cfg => {
@@ -34202,7 +34771,7 @@ function renderObserverPeersCard(targetId) {
     const peers = (peersData && peersData.peers) || [];
     const statsRow = stats ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">${
       Object.entries(stats).filter(([,v]) => typeof v !== 'object').map(([k, v]) =>
-        `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;min-width:80px;">
+        `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;">
           <div style="opacity:0.6;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">${escHtml(k)}</div>
           <div style="font-weight:600;">${escHtml(String(v))}</div>
         </div>`).join('')
@@ -34226,14 +34795,14 @@ function renderObserverPeersCard(targetId) {
           const shapeText = ({A:'agent',B:'standalone',C:'cluster'}[(p.shape||'').toUpperCase()]) || (p.shape||'?');
           const ageLabel = lastPush ? observerPeerAgo(ageMs) : 'never';
           const safeName = JSON.stringify(p.name || '');
-          return `<div style="padding:6px 0;border-top:1px solid var(--border);display:flex;align-items:center;flex-wrap:wrap;">
+          return `<div class="obs-peer-row" style="padding:6px 0;border-top:1px solid var(--border);display:flex;align-items:center;flex-wrap:wrap;">
             <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:6px;flex-shrink:0;"></span>
             <strong>${escHtml(p.name)}</strong>
             <span style="opacity:0.55;font-size:10px;border:1px solid var(--text2);border-radius:3px;padding:0 4px;margin-left:4px;">${escHtml(shapeText)}</span>
             <span style="opacity:0.6;font-size:11px;margin-left:6px;">${escHtml(ageLabel)}</span>
             <div style="margin-left:auto;">
-              <button class="btn-icon" style="font-size:11px;padding:1px 6px;" onclick='showObserverPeerSnapshot(${safeName})' title="Snapshot">&#128202;</button>
-              <button class="btn-icon" style="font-size:11px;padding:1px 6px;" onclick='removeObserverPeer(${safeName})' title="Remove">&times;</button>
+              <button class="btn-icon obs-tap" style="font-size:11px;padding:1px 6px;" onclick='showObserverPeerSnapshot(${safeName})' title="Snapshot">&#128202;</button>
+              <button class="btn-icon obs-tap" style="font-size:11px;padding:1px 6px;" onclick='removeObserverPeer(${safeName})' title="Remove">&times;</button>
             </div>
           </div>`;
         }).join('');
@@ -34594,19 +35163,25 @@ window.loadVaultStatusRow = loadVaultStatusRow;
 // active backend AND unreachable. Re-uses the existing peerStaleBadge
 // element shape (red circle, top-right of the nav button).
 function _setVaultBadge(unreachable, errMsg) {
-  const settingsNav = document.querySelector('[data-view="settings"] .nav-icon');
-  if (!settingsNav) return;
+  // Anchor at the settings nav BUTTON (not the .nav-icon span): an
+  // absolutely positioned badge inside the icon span inflates the span's
+  // scrollWidth (clipped-text finding), and the old 17x15 pill is below
+  // the 40px tap-target floor — same root cause as peerStaleBadge,
+  // fixed the same way by the mobile-fit gate 2026-10-22.
+  const settingsBtn = document.querySelector('.nav-btn[data-view="settings"]');
+  if (!settingsBtn) return;
   let badge = document.getElementById('vaultUnreachableBadge');
   if (unreachable) {
     if (!badge) {
       badge = document.createElement('span');
       badge.id = 'vaultUnreachableBadge';
-      badge.style.cssText = 'position:absolute;top:-6px;right:-8px;background:var(--error,#ef4444);color:#fff;font-size:9px;border-radius:8px;padding:1px 4px;line-height:1.4;cursor:pointer;';
+      badge.style.cssText = 'position:absolute;top:0;right:0;width:44px;height:44px;background:var(--error,#ef4444);color:#fff;font-size:14px;border-radius:50%;align-items:center;justify-content:center;line-height:1;cursor:pointer;';
       badge.title = 'Vault unreachable';
       badge.innerHTML = '!';
       badge.onclick = (e) => { e.stopPropagation(); navigate('settings'); };
-      settingsNav.appendChild(badge);
+      settingsBtn.appendChild(badge);
     }
+    badge.style.display = 'flex';
     if (errMsg) badge.title = 'Vault unreachable: ' + errMsg;
   } else if (badge) {
     badge.remove();
@@ -35272,6 +35847,22 @@ function loadAutomataSettingsPanel() {
             <option value="warn" ${(!ac.gate_disagreement||ac.gate_disagreement==='warn')?'selected':''}>${escHtml(t('settings_gate_disagreement_warn')||'warn')}</option>
             <option value="block" ${ac.gate_disagreement==='block'?'selected':''}>${escHtml(t('settings_gate_disagreement_block')||'block')}</option>
           </select>
+        </div>
+        <!-- Failure escalation — the global default; an Automaton or task override wins per field. -->
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label">${escHtml(t('settings_failure_escalation_enabled')||'Failure escalation enabled')}</div>
+          <label class="toggle-switch"><input type="checkbox" ${(ac.failure_escalation || {}).enabled === false ? '' : 'checked'} onchange="saveGeneralField('autonomous.failure_escalation.enabled',this.checked)"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label">${escHtml(t('settings_failure_escalation_max_failures')||'Failed attempts before the task is held for review (minimum 1, default 3)')}</div>
+          <input type="number" min="1" step="1" placeholder="3" value="${(ac.failure_escalation || {}).max_failures || 3}" style="width:80px;font-size:12px;" class="form-input"
+            onchange="saveGeneralField('autonomous.failure_escalation.max_failures',Number(this.value))">
+        </div>
+        <div class="settings-row" style="flex-direction:column;align-items:stretch;">
+          <div class="settings-label">${escHtml(t('settings_failure_escalation_steps')||'Escalation steps (backend:model@attempts, comma separated)')}</div>
+          <input type="text" class="form-input" style="font-size:12px;margin-top:4px;" placeholder="ollama:qwen3.8:27b@2,claude-code:claude-sonnet-5-5" value="${escHtml(_failureEscalationStepsText((ac.failure_escalation || {}).steps))}"
+            onchange="saveGeneralField('autonomous.failure_escalation.steps',this.value)">
+          <div style="font-size:10px;color:var(--text2);margin-top:4px;">${escHtml(t('settings_failure_escalation_steps_hint')||'Each step covers its attempts, and the last step covers the rest.')}</div>
         </div>
         <div class="settings-row" style="justify-content:space-between;">
           <div class="settings-label" title="${escHtml(t('settings_resume_max_age_hint')||'Applies when the daemon restarts: an Automaton left running is resumed only if its newest activity is within this many seconds. 0 = never auto-resume, -1 = no age limit. Automata that do not auto-resume are parked as blocked with a reason and raise an alert.')}">${escHtml(t('settings_resume_max_age')||'Resume stale Automata at startup only if active within (sec; 0 = never, -1 = always)')}</div>
@@ -36408,12 +36999,12 @@ function loadCooldownStatus() {
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
         <span style="font-size:11px;color:var(--text2);white-space:nowrap;">Set for:</span>
         ${[15, 30, 60, 240, 480, 1440].map(m =>
-          `<button class="btn-secondary" style="font-size:11px;" onclick="setCooldown(${m})">${m >= 60 ? (m / 60) + 'h' : m + 'm'}</button>`
+          `<button class="btn-secondary obs-tap" style="font-size:11px;" onclick="setCooldown(${m})">${m >= 60 ? (m / 60) + 'h' : m + 'm'}</button>`
         ).join('')}
       </div>
       <div style="display:flex;gap:6px;align-items:center;">
-        <input type="text" id="cooldownReason" class="form-input" style="flex:1;font-size:11px;" placeholder="Reason (optional)" />
-        ${active ? `<button class="btn-secondary" style="font-size:12px;background:rgba(239,68,68,0.15);color:#ef4444;" onclick="clearCooldown()">Clear</button>` : ''}
+        <input type="text" id="cooldownReason" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" placeholder="Reason (optional)" />
+        ${active ? `<button class="btn-secondary obs-tap" style="font-size:12px;background:rgba(239,68,68,0.15);color:#ef4444;" onclick="clearCooldown()">Clear</button>` : ''}
       </div>`;
   }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load cooldown status.</span>'; });
 }
@@ -36597,9 +37188,9 @@ function loadAnalyticsPanel() {
   if (!el) return;
   const ranges = [7, 14, 30, 90];
   const selId = 'analyticsRange';
-  el.innerHTML = `<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+  el.innerHTML = `<div class="obs-row obs-row-flush" style="margin-bottom:8px;">
     <label style="font-size:11px;">Range:</label>
-    <select id="${selId}" onchange="loadAnalyticsPanel()" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;">
+    <select id="${selId}" class="obs-tap" onchange="loadAnalyticsPanel()" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;">
       ${ranges.map(d => `<option value="${d}"${d===7?' selected':''}>${d}d</option>`).join('')}
     </select>
     <span id="analyticsSuccessRate" style="font-size:11px;color:var(--text2);margin-left:4px;"></span>
@@ -36616,7 +37207,7 @@ function loadAnalyticsPanel() {
     if (buckets.length === 0) { bucketsEl.textContent = t('stats_no_sessions_range') || 'No sessions in range.'; return; }
     // API fields: session_count, completed, failed, killed (not total/errors)
     const maxTotal = Math.max(...buckets.map(b => b.session_count || 0), 1);
-    bucketsEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+    bucketsEl.innerHTML = `<div class="obs-table-scroll"><table style="width:100%;border-collapse:collapse;font-size:11px;">
       <thead><tr style="opacity:0.5;">
         <th style="text-align:left;padding:2px 4px;">Date</th>
         <th style="text-align:right;padding:2px 4px;">Total</th>
@@ -36638,7 +37229,7 @@ function loadAnalyticsPanel() {
           <td style="text-align:right;padding:3px 4px;color:var(--error,#ef4444);">${errors}</td>
           <td style="padding:3px 4px 3px 8px;"><div style="height:8px;width:${pct}%;background:${barColor};border-radius:2px;max-width:120px;"></div></td>
         </tr>`;
-      }).join('')}</tbody></table>`;
+      }).join('')}</tbody></table></div>`;
   }).catch(() => {
     const bucketsEl = document.getElementById('analyticsBuckets');
     if (bucketsEl) bucketsEl.innerHTML = '<span style="color:var(--error);">Failed to load analytics.</span>';
@@ -36658,13 +37249,13 @@ function loadAuditPanel() {
   if (actor) qp.set('actor', actor);
   if (action) qp.set('action', action);
   const loadingHtml = el._filters ? '' : `
-    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;align-items:center;">
-      <input id="auditActorFilter" type="text" placeholder="Actor filter" style="flex:1;min-width:70px;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
-      <input id="auditActionFilter" type="text" placeholder="Action filter" style="flex:1;min-width:70px;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
-      <select id="auditLimitFilter" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 4px;">
+    <div class="obs-row obs-row-flush" style="margin-bottom:8px;">
+      <input id="auditActorFilter" type="text" placeholder="Actor filter" class="obs-tap obs-fluid" style="flex:1;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+      <input id="auditActionFilter" type="text" placeholder="Action filter" class="obs-tap obs-fluid" style="flex:1;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+      <select id="auditLimitFilter" class="obs-tap" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 4px;">
         <option value="5" selected>5</option><option value="20">20</option><option value="50">50</option><option value="100">100</option>
       </select>
-      <button class="btn-secondary" style="font-size:11px;" onclick="loadAuditPanel()">Load</button>
+      <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="loadAuditPanel()">Load</button>
     </div>
     <div id="auditEntries" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>`;
   if (!el._filters) { el.innerHTML = loadingHtml; el._filters = true; }
@@ -36678,12 +37269,12 @@ function loadAuditPanel() {
     target.innerHTML = entries.map(e => {
       const ts = e.ts ? new Date(e.ts).toLocaleString() : '';
       const details = e.details && Object.keys(e.details).length
-        ? `<div style="opacity:0.6;margin-top:1px;font-family:monospace;">${escHtml(JSON.stringify(e.details))}</div>` : '';
+        ? `<div class="obs-audit-details" title="${escHtml(JSON.stringify(e.details))}" style="opacity:0.6;margin-top:1px;font-family:monospace;">${escHtml(JSON.stringify(e.details))}</div>` : '';
       const sessLink = e.session_id
         ? `<span style="opacity:0.5;font-size:10px;font-family:monospace;margin-left:4px;">${escHtml(e.session_id.slice(-8))}</span>` : '';
       return `<div style="padding:4px 0;border-top:1px solid var(--border);">
         <div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;">
-          <span style="opacity:0.5;white-space:nowrap;">${escHtml(ts)}</span>
+          <span style="opacity:0.5;min-width:0;overflow-wrap:anywhere;">${escHtml(ts)}</span>
           <strong>${escHtml(e.action||'')}</strong>
           <span style="opacity:0.7;">${escHtml(e.actor||'')}</span>${sessLink}
         </div>${details}
@@ -36747,17 +37338,17 @@ function loadKgPanel() {
   if (!el._init) {
     el._init = true;
     el.innerHTML = `
-      <div style="display:flex;gap:4px;margin-bottom:8px;align-items:center;">
-        <input id="kgEntityInput" type="text" placeholder="Entity to query…" class="form-input" style="flex:1;font-size:11px;" />
-        <button class="btn-primary" style="font-size:11px;" onclick="kgQuery()">Query</button>
+      <div class="obs-row obs-row-flush" style="margin-bottom:8px;">
+        <input id="kgEntityInput" type="text" placeholder="Entity to query…" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" />
+        <button class="btn-primary obs-tap" style="font-size:11px;" onclick="kgQuery()">Query</button>
       </div>
-      <div style="display:flex;gap:4px;margin-bottom:10px;align-items:center;">
-        <input id="kgSubject" type="text" placeholder="Subject" class="form-input" style="flex:1;font-size:11px;" />
-        <input id="kgPredicate" type="text" placeholder="Predicate" class="form-input" style="flex:1;font-size:11px;" />
-        <input id="kgObject" type="text" placeholder="Object" class="form-input" style="flex:1;font-size:11px;" />
-        <button class="btn-secondary" style="font-size:11px;" onclick="kgAddTriple()">Add triple</button>
+      <div class="obs-row obs-row-flush" style="margin-bottom:10px;">
+        <input id="kgSubject" type="text" placeholder="Subject" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" />
+        <input id="kgPredicate" type="text" placeholder="Predicate" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" />
+        <input id="kgObject" type="text" placeholder="Object" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" />
+        <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="kgAddTriple()">Add triple</button>
       </div>
-      <div id="kgResults" style="font-size:11px;color:var(--text2);"></div>`;
+      <div id="kgResults" class="obs-kg-results" style="font-size:11px;color:var(--text2);"></div>`;
   }
 }
 window.loadKgPanel = loadKgPanel;
@@ -36771,7 +37362,7 @@ window.kgQuery = function() {
     const triples = Array.isArray(data) ? data : (data?.triples || []);
     if (triples.length === 0) { res.textContent = t('kg_no_triples_for_entity') || 'No triples found for this entity.'; return; }
     res.innerHTML = `<div style="font-size:10px;opacity:0.6;margin-bottom:4px;">${triples.length} triple${triples.length===1?'':'s'}</div>`
-      + triples.map(t => `<div style="padding:3px 0;border-top:1px solid var(--border);font-family:monospace;">
+      + triples.map(t => `<div class="obs-kg-triple" style="padding:3px 0;border-top:1px solid var(--border);font-family:monospace;">
         <span style="color:var(--accent);">${escHtml(t.subject||'')}</span>
         <span style="opacity:0.6;margin:0 4px;">${escHtml(t.predicate||'')}</span>
         <span>${escHtml(t.object||'')}</span>

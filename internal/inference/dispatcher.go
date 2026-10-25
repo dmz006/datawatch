@@ -27,6 +27,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -47,6 +48,9 @@ type Request struct {
 	// Consumer names the calling subsystem (council|ask|agent_spawn|
 	// session_spawn|wizard) for ComputeNode RBAC enforcement.
 	Consumer string
+	// Node pins the call to one ComputeNode of the LLM. A judge sends the node
+	// its capacity lease holds. Empty walks the LLM's compute_nodes in order.
+	Node string
 }
 
 // Response from one inference call.
@@ -138,8 +142,15 @@ func (d *Dispatcher) Call(ctx context.Context, llmName string, req Request) (Res
 	if len(llm.ComputeNodes) == 0 {
 		return Response{}, fmt.Errorf("%w: llm %q has no ComputeNodes configured", ErrNoBackend, llmName)
 	}
+	nodes := llm.ComputeNodes
+	if req.Node != "" {
+		if !slices.Contains(nodes, req.Node) {
+			return Response{}, fmt.Errorf("%w: compute node %q is not in llm %q compute_nodes", ErrNoBackend, req.Node, llmName)
+		}
+		nodes = []string{req.Node}
+	}
 	var lastErr error
-	for _, nodeName := range llm.ComputeNodes {
+	for _, nodeName := range nodes {
 		node, err := d.computeFn(nodeName)
 		if err != nil {
 			lastErr = fmt.Errorf("compute node %q: %w", nodeName, err)

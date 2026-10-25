@@ -116,7 +116,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.11.0"
+var Version = "9.15.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3401,6 +3401,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					},
 					NodePinnedModel: c.NodePinnedModel,
 					AllowModelSwap:  c.AllowModelSwap,
+					SessionSlots:    c.SessionSlots,
 				}
 				seed = append(seed, n)
 			}
@@ -4239,6 +4240,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			MaxParallelTasks:                 acfgIn.MaxParallelTasks,
 			MaxConcurrentTasks:               acfgIn.MaxConcurrentTasks,
 			GateDisagreement:                 acfgIn.GateDisagreement,
+			FailureEscalation:                failureEscalationFromConfig(acfgIn.FailureEscalation),
 			PlanningBackend:                  acfgIn.PlanningBackend,
 			VerificationBackend:              acfgIn.VerificationBackend,
 			ExecutionBackend:                 acfgIn.ExecutionBackend,
@@ -4804,16 +4806,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				var idleSince time.Time
 				// Start-confirm bound (autonomous.session_start_confirm_seconds,
 				// default 120): a claude-code session sitting in waiting_input
-				// without ever producing an assistant turn is "session never
-				// started" — e.g. parked on a startup/confirmation dialog that
-				// no one will ever dismiss (see
-				// internal/autonomous/session_start.go). startSilentSince is
-				// the clock moment the wait loop first saw that exact
-				// situation; zero means the session is active or no silent
-				// wait has been observed yet (the bound only bounds such
-				// sessions, nothing else).
+				// without ever producing an assistant turn, and showing no other
+				// evidence of work, is "session never started" — e.g. parked on
+				// a startup/confirmation dialog that no one will ever dismiss
+				// (see internal/autonomous/session_start.go). The silence is
+				// measured from the last evidence of work by startTracker (see
+				// session_start_tracker.go), so the bound only bounds such
+				// sessions, nothing else.
 				sessionStartLimit := time.Duration(config.NormalizeSessionStartConfirmSeconds(cfg.Autonomous.SessionStartConfirmSeconds)) * time.Second
-				var startSilentSince time.Time
 				// Genuine worker-stall bound (see staleWorkerCheck): the log file's own
 				// mtime, not session liveness state, which a cosmetic pane change can
 				// refresh without any real output.
@@ -4822,21 +4822,34 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					staleThreshold = time.Duration(cfg.Session.StaleTimeoutSeconds) * time.Second
 				}
 				var staleLogPath, family string
+				var startTracker *sessionStartTracker
 				if s, ok := mgr.GetSession(task.SessionID); ok {
 					staleLogPath = s.LogFile
 					family = s.BackendFamily
+					if family == "claude-code" && sessionStartLimit > 0 {
+						// An adopted session's bound starts from its last evidence
+						// of life, not from the moment it was adopted.
+						var seedAt time.Time
+						if task.AdoptedSession {
+							seedAt = sessionStartAdoptionSeed(s.UpdatedAt, s.LastChannelEventAt, logFileModTime(s.LogFile))
+						}
+						startTracker = newSessionStartTracker(sessionStartLimit, seedAt, s.LastChannelEventAt)
+					}
 				}
 				// claude-code idle nudge: one nudge after worker_idle_nudge_seconds of
 				// idle, a stall after worker_idle_nudge_stall_seconds more. Both
 				// windows are shorter than the session idle timeout, so the nudge
 				// fires first. Nil for other families.
 				var nudgeTracker *autonomouspkg.WorkerNudgeTracker
-				var nudgeStallAfter time.Duration
+				var nudgeHooks autonomouspkg.WorkerNudgeHooks
 				if family == autonomouspkg.WorkerNudgeFamily {
-					nudgeStallAfter = time.Duration(config.NormalizeWorkerIdleNudgeStallSeconds(liveCfg.WorkerIdleNudgeStallSeconds)) * time.Second
-					nudgeTracker = autonomouspkg.NewWorkerNudgeTracker(
-						time.Duration(config.NormalizeWorkerIdleNudgeSeconds(liveCfg.WorkerIdleNudgeSeconds))*time.Second,
-						nudgeStallAfter)
+					nudgeAfter, nudgeStallAfter := workerNudgeWindows(liveCfg)
+					nudgeTracker = autonomouspkg.NewWorkerNudgeTracker(nudgeAfter, nudgeStallAfter)
+					// A nudge already sent into this session before a daemon restart is
+					// persisted on the task; adopt it so the worker is not nudged twice
+					// and the stall window counts from the original send.
+					nudgeTracker.SeedNudgedAt(task.NudgeTimeForSession(task.SessionID))
+					nudgeHooks = workerNudgeHooks(mgr, autonomousMgrRef, task.SessionID, task.PRDID, task.ID, idleLimit, nudgeStallAfter)
 				}
 				// pi-prompt exit-silence detector. One-shot `pi --print` runs write
 				// nothing to the log until they finish, so the log-mtime stall check
@@ -4866,6 +4879,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							// The session is over: drop its scan-history entry so
 							// the fresh-tracker map cannot grow without bound.
 							sseFreshTracker.forget(s.FullID)
+							if nudgeTracker != nil && s.State == session.StateComplete {
+								// Completion ends an open nudge as answered.
+								autonomouspkg.CloseNudgeWait(nudgeTracker, nudgeHooks)
+							}
 							break waitLoop
 						}
 						// Design §6.ii — await-external: the worker emitted a
@@ -4901,44 +4918,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							}
 						}
 						if nudgeTracker != nil {
-							_, nudgeOutputAge, _ := staleWorkerCheck(staleLogPath, idleLimit, time.Now())
-							nudgeTail, _ := mgr.TailOutput(task.SessionID, 50)
-							nudgeObs := autonomouspkg.WorkerNudgeObservation{
-								State:               string(s.State),
-								OutputAge:           nudgeOutputAge,
-								HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
-								CompletionSeen:      session.ExtractCompletionSummary(nudgeTail) != "",
-							}
-							switch nudgeTracker.Observe(time.Now(), s.BackendFamily, true, nudgeObs) {
-							case autonomouspkg.WorkerNudgeSend:
-								nudgeDelivered, nudgeTask := false, ""
-								if nudgeSess, ok := mgr.GetSession(task.SessionID); ok {
-									nudgeDelivered = mgr.TaskDelivered(nudgeSess.FullID)
-									nudgeTask = nudgeSess.Task
-								}
-								nudgeText, nudgeRedelivery := autonomouspkg.NudgeForDelivery(nudgeDelivered, nudgeTask)
-								nudgeSource := "idle-nudge"
-								if nudgeRedelivery {
-									nudgeSource = "task-redelivery"
-									log.Printf("[autonomous] idle worker %s task %s/%s: task was never delivered — re-sending the task itself",
-										task.SessionID, task.PRDID, task.ID)
-								} else {
-									log.Printf("[autonomous] idle worker %s task %s/%s: sending completion nudge",
-										task.SessionID, task.PRDID, task.ID)
-								}
-								if nerr := mgr.SendInput(task.SessionID, nudgeText, nudgeSource); nerr != nil {
-									log.Printf("[autonomous] idle nudge send failed for %s: %v", task.SessionID, nerr)
-								}
-								if autonomousMgrRef != nil {
-									if rerr := autonomousMgrRef.RecordTaskNudge(task.PRDID, task.ID, time.Now()); rerr != nil {
-										log.Printf("[autonomous] record nudge for %s/%s: %v", task.PRDID, task.ID, rerr)
-									}
-								}
-							case autonomouspkg.WorkerNudgeStall:
-								log.Printf("[autonomous] idle worker %s task %s/%s still silent after nudge; killing for retry",
-									task.SessionID, task.PRDID, task.ID)
-								_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerNudgeStall, Reason: nudgeStallEndReason(nudgeObs, nudgeStallAfter)})
-								stallErr = fmt.Errorf("worker idle after completion nudge (session=%s): %w", task.SessionID, autonomouspkg.ErrWorkerStalled)
+							if werr := autonomouspkg.StepWorkerNudge(nudgeTracker, time.Now(), s.BackendFamily, task.SessionID, task.PRDID+"/"+task.ID, nudgeHooks); werr != nil {
+								stallErr = werr
 								break waitLoop
 							}
 						}
@@ -4983,38 +4964,35 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// Sessions that do show a first assistant turn (or leave
 						// waiting_input) are left exactly as before.
 						startSupersedes := false
-						if s.BackendFamily == "claude-code" && sessionStartLimit > 0 {
-							if s.State != session.StateWaitingInput {
-								startSilentSince = time.Time{}
-							} else if pane, perr := mgr.CapturePaneVisible(s.FullID); perr == nil && pane != "" {
-								if autonomouspkg.HasAssistantOutput(pane) {
-									// First assistant turn rendered: the session
-									// is up and running — clear start tracking and
-									// change nothing else.
-									startSilentSince = time.Time{}
-								} else {
-									startSupersedes = true
-									now := time.Now()
-									if startSilentSince.IsZero() {
-										startSilentSince = now
-									}
-									obs, startStalled := evaluateSessionStart(now, startSilentSince, string(s.State), pane, sessionStartLimit)
-									if startStalled {
-										task.StartFailureTail = autonomouspkg.LastLines(pane, 20)
-										log.Printf("[autonomous] one-shot session %s task %s/%s never started: %s in waiting_input without assistant output for %s (limit %s); killing for retry",
-											task.SessionID, task.PRDID, task.ID, autonomouspkg.SessionStartFailureReason, obs.WaitingFor.Round(time.Second), sessionStartLimit)
-										_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerSessionStart, Reason: sessionStartEndReason(obs)})
-										stallErr = fmt.Errorf("%s: no assistant output after %s (last %d pane line(s) recorded on the task) — %w; %w",
-											autonomouspkg.SessionStartFailureReason, obs.WaitingFor.Round(time.Second), len(task.StartFailureTail),
-											autonomouspkg.ErrSessionNeverStarted, autonomouspkg.ErrWorkerStalled)
-										break waitLoop
-									}
+						if startTracker != nil {
+							// Every tick feeds the tracker, not only waiting_input
+							// ticks, so the evidence clock follows the pane while the
+							// worker runs. A failed capture is observed as an empty
+							// pane: no evidence, and no stall either.
+							startPane, perr := mgr.CapturePaneVisible(s.FullID)
+							if perr != nil {
+								startPane = ""
+							}
+							startObs := startTracker.Observe(sessionStartInput{
+								Now:       time.Now(),
+								State:     s.State,
+								Pane:      startPane,
+								Delivered: mgr.TaskDelivered(s.FullID),
+								ChannelAt: s.LastChannelEventAt,
+								ChildPIDs: runnerDescendantPIDs(s.TmuxSession),
+							})
+							if s.State == session.StateWaitingInput && startPane != "" && !startObs.HasAssistantOutput {
+								startSupersedes = true
+								if startStalled, _ := startObs.Stalled(); startStalled {
+									task.StartFailureTail = autonomouspkg.LastLines(startPane, 20)
+									log.Printf("[autonomous] one-shot session %s task %s/%s never started: %s in waiting_input without assistant output for %s (limit %s); killing for retry",
+										task.SessionID, task.PRDID, task.ID, autonomouspkg.SessionStartFailureReason, startObs.WaitingFor.Round(time.Second), sessionStartLimit)
+									_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerSessionStart, Reason: sessionStartEndReason(startObs)})
+									stallErr = fmt.Errorf("%s: no assistant output after %s (last %d pane line(s) recorded on the task) — %w; %w",
+										autonomouspkg.SessionStartFailureReason, startObs.WaitingFor.Round(time.Second), len(task.StartFailureTail),
+										autonomouspkg.ErrSessionNeverStarted, autonomouspkg.ErrWorkerStalled)
+									break waitLoop
 								}
-							} else {
-								// Pane capture unavailable (or empty) — no
-								// silent-wait evidence; re-arm on the next
-								// observation.
-								startSilentSince = time.Time{}
 							}
 						}
 						var stalled bool
@@ -5049,7 +5027,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									State:               string(s.State),
 									IdleFor:             idleFor,
 									OutputAge:           outputAge,
-									HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
+									HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession, s.ProjectDir),
 									Limit:               idleLimit,
 								}
 								if idleStalled, idleReason := idleObs.Stalled(); idleStalled {
@@ -5073,8 +5051,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// otherwise), and mgr.Kill below is the only kill path — no
 						// tmux kill commands.
 						if exitSilenceTracker != nil {
+							// Runner liveness, not work children, feeds the tracker: the question is
+							// whether the runner has exited. A generating pi run may have no child
+							// process, and the tracker treats a live runner as activity.
 							if stalled, reason := exitSilenceTick(exitSilenceTracker, family, time.Now(),
-								func() bool { return hasLiveChildProcess(s.TmuxSession) },
+								func() bool { return hasLiveRunnerProcess(s.TmuxSession) },
 								func() time.Time {
 									if fst, serr := os.Stat(staleLogPath); serr == nil {
 										return fst.ModTime()
@@ -5115,8 +5096,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									WorkDir:   taskDir,
 									Threshold: staleThreshold,
 									Now:       time.Now(),
+									// Runner liveness, not work children: this check asks whether the
+									// worker is still running at all. An idle claude worker still reads as
+									// alive here, which keeps the pre-existing stall behaviour unchanged.
 									ChildAlive: func() bool {
-										return hasLiveChildProcess(s.TmuxSession)
+										return hasLiveRunnerProcess(s.TmuxSession)
 									},
 									BackendBusy: func() bool {
 										return !s.LastChannelEventAt.IsZero() && time.Since(s.LastChannelEventAt) <= staleThreshold
@@ -5607,9 +5591,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}()
 			explicitEffortCfg := liveCfg
 			explicitEffortCfg.VerificationEffort = ""
-			var verifierTryAdmit func(backend, model string) (func(), bool)
+			var verifierTryAdmit func(backend, model string) (func(), string, bool)
 			if verifierCapacityTryAdmit != nil {
-				verifierTryAdmit = func(backend, model string) (func(), bool) {
+				verifierTryAdmit = func(backend, model string) (func(), string, bool) {
 					return verifierCapacityTryAdmit(ctx, backend, model, task.ID, prd.ID, task.SessionID)
 				}
 			}
@@ -5654,6 +5638,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 			}
 			release := vsel.Release
+			// vnode is the compute node the verifier's lease holds ("" for a
+			// one-node entry): the judge session or ask call runs there.
+			vnode := vsel.Node
 			if release != nil {
 				vGrantedAt = time.Now()
 			}
@@ -5661,7 +5648,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			defer func() { vsel.stamp(&vres) }()
 			if release == nil {
 				if verifierCapacityAdmit != nil {
-					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, task.ID, prd.ID, task.SessionID)
+					r, n, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, task.ID, prd.ID, task.SessionID)
 					if aerr != nil {
 						// BL410 Phase 0 — resource contention/admission
 						// failure, not a content judgment.
@@ -5673,6 +5660,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						}, nil
 					}
 					release = r
+					vnode = n
 					vGrantedAt = time.Now()
 				}
 			}
@@ -5691,7 +5679,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				sessionTask := sessionJudgmentTask(prompt, taskDir, outputFile)
 				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
 					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
-					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg))
+					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), vnode)
 				if serr != nil {
 					// BL410 Phase 0 — the session itself failed; see the
 					// identical fix in autonomousGuardrail's closure above.
@@ -5730,16 +5718,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 			// /api/ask has no effort field — an override effort is only
 			// recorded (VerifierEffort) on this path, not applied.
-			askBody := map[string]any{
-				"question": prompt,
-				"backend":  vkind,
-			}
-			if vbackend != vkind && vbackend != "" {
-				askBody["llm"] = vbackend
-			}
-			if verifyModel != "" {
-				askBody["model"] = verifyModel
-			}
+			askBody := judgeAskBody(prompt, vkind, vbackend, verifyModel, vnode)
 			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/ask",
@@ -5818,18 +5797,22 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// session kill runs before this closure's release, which is the
 			// order we want. A nil judgeCapacityAdmit (unset — e.g. tests)
 			// means no admission, exactly like the verifier's.
+			// judgeNode is the compute node the judge's lease holds ("" for a
+			// one-node entry): the session or ask call runs there.
+			judgeNode := ""
 			if judgeCapacityAdmit != nil {
 				admModel := guardrailModel
 				if admModel == "" {
 					admModel = gmodel
 				}
-				release, aerr := judgeCapacityAdmit(ctx, gbackend, admModel, req.UnitID, req.PRDID)
+				release, node, aerr := judgeCapacityAdmit(ctx, gbackend, admModel, req.UnitID, req.PRDID)
 				if aerr != nil {
 					// Admission failed (wait expired or context cancelled):
 					// resource contention, not a content judgment — the judge
 					// never ran. No session started, so stamp it as text-only.
 					return judgeVerdictWithSession(judgeAdmitFailureVerdict(aerr), "", ""), nil
 				}
+				judgeNode = node
 				defer release()
 			}
 			if !askCompatible(gkind) {
@@ -5868,7 +5851,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
 					content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 						"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
-						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", verificationSessionTimeout(cfg))
+						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", verificationSessionTimeout(cfg), judgeNode)
 					if serr != nil {
 						// BL410 Phase 0 — the SESSION itself failed (timeout,
 						// crash); no judgment ever ran. "infra", not a real
@@ -5916,16 +5899,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			if guardrailModel == "" {
 				guardrailModel = gmodel
 			}
-			askBody := map[string]any{
-				"question": prompt,
-				"backend":  gkind,
-			}
-			if gbackend != gkind && gbackend != "" {
-				askBody["llm"] = gbackend
-			}
-			if guardrailModel != "" {
-				askBody["model"] = guardrailModel
-			}
+			askBody := judgeAskBody(prompt, gkind, gbackend, guardrailModel, judgeNode)
 			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/ask",
@@ -6171,7 +6145,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
-			})
+			}, alertStore)
 			// Resource-fingerprint reconciliation (§3c): match store under the
 			// data dir, exporter + matches wired to the server, slow syncer
 			// over opted-in peers, and the shared-node admission gate composed
@@ -6246,30 +6220,30 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				return out, true
 			})
 			// Wait for an adopted session by its state / completion marker, so it
-			// works for any backend (claude-code, opencode, pi-prompt).
-			amgr.SetSessionWaitFn(func(ctx context.Context, sessionID string) error {
-				tick := time.NewTicker(3 * time.Second)
-				defer tick.Stop()
-				for {
-					s, ok := mgr.GetSession(sessionID)
-					if !ok {
-						return fmt.Errorf("adopted session %s no longer exists", sessionID)
-					}
-					switch s.State {
-					case session.StateComplete:
-						return nil
-					case session.StateFailed, session.StateKilled:
-						return fmt.Errorf("adopted session %s ended %s", sessionID, s.State)
-					}
-					if out, err := mgr.TailOutput(sessionID, 200); err == nil && session.ExtractCompletionSummary(out) != "" {
-						return nil
-					}
-					select {
-					case <-ctx.Done():
-						return ctx.Err()
-					case <-tick.C:
-					}
-				}
+			// works for any backend (claude-code, opencode, pi-prompt). A claude-code
+			// worker also gets the same idle-nudge decision as a fresh one, seeded
+			// from the nudge already on its task (see autonomouspkg.WaitAdopted).
+			amgr.SetSessionWaitFn(func(ctx context.Context, w autonomouspkg.AdoptedWait) error {
+				nudgeAfter, stallAfter := workerNudgeWindows(liveAutonomousConfig())
+				idleLimit := time.Duration(config.NormalizeSessionIdleTimeoutSeconds(cfg.Autonomous.SessionIdleTimeoutSeconds)) * time.Second
+				return autonomouspkg.WaitAdopted(ctx, w, autonomouspkg.AdoptedWaitPorts{
+					NudgeAfter: nudgeAfter,
+					StallAfter: stallAfter,
+					Status: func(sessionID string) (session.State, string, bool) {
+						s, ok := mgr.GetSession(sessionID)
+						if !ok {
+							return "", "", false
+						}
+						return s.State, s.BackendFamily, true
+					},
+					Completed: func(sessionID string) bool {
+						out, err := mgr.TailOutput(sessionID, 200)
+						return err == nil && session.ExtractCompletionSummary(out) != ""
+					},
+					Nudge: func(sessionID string) autonomouspkg.WorkerNudgeHooks {
+						return workerNudgeHooks(mgr, amgr, sessionID, w.PRDID, w.TaskID, idleLimit, stallAfter)
+					},
+				})
 			})
 			// Wire session cleanup so executor sessions are removed from the list
 			// once their task reaches a terminal state (completed/failed).
@@ -17894,25 +17868,4 @@ func scanConfigIsUnset(c config.ScanConfig) bool {
 		c.FailOnSeverity == "" && c.MaxFindings == 0 &&
 		!c.RulesGraderEnabled && !c.FixLoopEnabled && c.FixLoopMaxRetries == 0 &&
 		len(c.ProjectRules) == 0
-}
-
-// evaluateSessionStart is the one-tick start-confirm decision of the
-// claude-code autonomous wait loop: build a
-// autonomous.SessionStartObservation from the pane captured this tick (the
-// pure paneHasAssistantOutput inside the autonomous package does the
-// assistant-turn scan) and report whether the session has exhausted the
-// bound sitting in waiting_input with no assistant output. now and
-// silentSince are the injected clock and the first silent tick; tests drive
-// this with a fake clock (see cmd/datawatch/session_start_wait_test.go).
-func evaluateSessionStart(now time.Time, silentSince time.Time, state, pane string, limit time.Duration) (autonomouspkg.SessionStartObservation, bool) {
-	obs := autonomouspkg.SessionStartObservation{
-		State:              state,
-		HasAssistantOutput: autonomouspkg.HasAssistantOutput(pane),
-		Limit:              limit,
-	}
-	if !obs.HasAssistantOutput && !silentSince.IsZero() && now.After(silentSince) {
-		obs.WaitingFor = now.Sub(silentSince)
-	}
-	stalled, _ := obs.Stalled()
-	return obs, stalled
 }

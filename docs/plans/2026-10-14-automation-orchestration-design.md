@@ -2667,3 +2667,106 @@ These came out of 2026-10-24 incidents, where the human supervisor loop missed t
 8. **Gate on a task that mentions an error phrase.** Stall and failure detectors match the tool's own error line for the backend they were built for, never ordinary output text.
 
 Open for the operator: the default alert times and the retry count for items 1, 3 and 5, and whether item 1 may rerun a hung step without asking.
+
+## Operator decision channel: questions, decisions and design through datawatch (requested 2026-10-25)
+
+**Operator request, quoted (2026-10-25 07:28):** "It would be good if supervisor communicated with datawatch in json or something and questions and decisions and design were through datawatch interface and not in claude terminal, stored up things, track input and quotations, add to design"
+
+**Why now.** On 2026-10-24 a blocking multiple-choice question in the supervisor's terminal stopped the 30-minute ticks for 16 hours because the ticks only run while the session is idle; the lanes sat idle overnight. Decisions given in a terminal are also lost to everything else: they are recorded by hand in plan docs, the exact words of the operator are paraphrased, and nothing links an answer to the PRD, task or proposal that asked for it.
+
+**What exists today (read, not assumed).**
+- The Decision Interview Protocol in AGENT.md (context, options, recommendation, one question, wait): defined for the agent, answered in the terminal.
+- A session that prints `DATAWATCH_NEEDS_INPUT: <question>` is detected and shown as needing input; the operator answers by sending text to the session.
+- PRD records carry a `decisions` list (approve, run, coverage acknowledgements, set LLM, requeue) with actor, time and note.
+- Lifecycle events (notify only) can tell a channel that a PRD needs review or is blocked; they carry no question and take no answer.
+- Memory discussions (`memory_discussion_write`/`recall`, `reply_to_parent`) carry messages between sessions, federation-aware and audited.
+
+**Requirements, as behaviour.**
+1. **A structured question.** A supervisor or a worker raises a question as data, not terminal text: an id, who asked, the context (PRD, task, proposal, or none), the text, the options with their trade-offs, the recommendation, an optional deadline and a default that applies if none is given (never a silent choice), and a state (open, answered, withdrawn, expired).
+2. **A question queue in datawatch.** Open questions are stored by the daemon, listed in the Automation view and the mobile apps, in the CLI, the comm channels and over REST and MCP, and surface as notifications. Many can be open at once; none blocks the asker's other work or the ticks.
+3. **Answers are recorded with the operator's own words.** An answer stores the chosen option and the operator's free text verbatim, who gave it, from which surface and when. Answers are immutable; a changed mind is a new answer that supersedes the old one.
+4. **Return path as data.** The asker receives the answer as structured data (a JSON message to the session, a polled endpoint, or a lifecycle event) and continues; a session that asked is not required to stay idle.
+5. **Decisions link to what they decide.** An answer links to the PRD, task, proposal file or registry row, and a proposal file's `Confirmed:` line can be set from the answer instead of by hand. The PRD `decisions` list references the answer id.
+6. **Design stays in datawatch.** A design question (options, mockups, recommendation) is a record the operator reviews in the interface; the accepted design is written back to the design document with the quotation and a link to the answer, so the design doc, the registry and the decision log agree.
+7. **Search and audit.** All questions and answers are searchable, exported with the audit log, and kept across restarts. Every answer shows its quotation wherever the decision is cited.
+8. **Parity.** Every surface in the Configuration Accessibility Rule and the Mobile-Parity Rule (config, REST, MCP, CLI, comm channel, PWA, mobile apps).
+
+**Open for the operator (not decided here).** Where the queue is shown first (Automation view or a new tab); whether a question may carry a deadline and what happens at expiry; who may answer when several operators exist; whether the supervisor's own tick may keep working with a default for low-risk questions; the retention of answered questions; how the Decision Interview Protocol in AGENT.md changes (ask through the queue first, terminal only as fallback).
+
+**Operator decisions, 2026-10-25 (quoted):** "Queues are a part of automation.  No expiring, unless operator says to slip out use supervisor decision,  low risk would be an option set in automation,  any other questions"
+
+1. **The question queue belongs to Automation.** It is part of the Automation subsystem and its view, not a separate tab or a separate subsystem.
+2. **Questions never expire.** An open question stays open until answered or withdrawn. The one exception is when the operator says to skip it ("slip out": read as skip); then the supervisor decides, and the record shows the answer as a supervisor decision made on the operator's skip, with its reasoning.
+3. **Low-risk handling is an Automation setting.** Whether a low-risk question may be answered by the supervisor's default is an option set in Automation, not a built-in behaviour and not a per-question deadline.
+4. The earlier open points about a deadline and its expiry behaviour are closed by items 2 and 3.
+
+**Operator decisions, 2026-10-25 later (quoted):** "Skip would be specific or all, should be an option. We are not multi operator yet but any operator authorized for the automation.  All comms are parity so valid,  what else?"
+
+5. **Skip is an option with two scopes:** skip one specific question, or skip all open questions. The operator picks when skipping.
+
+**Operator clarification, 2026-10-25 (quoted):** "Skip is based on question,  not entire automation,  unless that was the option enable,  by default it is specific, but can apply wide."
+
+5a. **Skip is per question by default.** A skip applies to the one question it is given on, never to the whole Automation. Skipping wide (all open questions) is available only when that option is enabled in Automation; it is off by default. This replaces the reading of item 5 as a free choice of scope at skip time.
+6. **Who answers:** the system is not multi-operator yet; any operator authorized for the Automation may answer its questions.
+7. **Every communication channel is valid for answering,** by the parity rule: PWA, mobile apps, CLI, REST, MCP and every messaging channel.
+
+
+**Operator answers, one question at a time, 2026-10-25.**
+
+8. **Low risk is defined by both a type list and a per-question level (quoted: "3 both,  sometimes a list is easier,  don't know what will be quantifiable low sometimes and that will help").** The operator keeps a list of question types in Automation that count as low risk, because a list is sometimes easier and not every low-risk case can be defined in advance. Each type gives a default risk level; the asker may raise the level of a single question and never lower it. The Automation setting that lets the supervisor answer by default applies to questions whose resulting level is low.
+
+9. **A low-risk default never covers a design question (quoted: "1, maybe 3, keep track of that for future possibility").** Defaults cover operational questions only (retry counts, ordering, which lane, wording); design questions always wait for the operator or the operator's skip. **Future possibility, tracked and not built:** a repeated design question the operator has already answered may take the earlier answer as its default. The proposal must keep room for it: an answer record that can be matched to a later question by type and subject, with the match shown to the operator and never applied silently.
+
+10. **What stays the operator's on a skip (answer: "1").** Three things stay with the operator even when a question is skipped: the 10.0 tag, releasing something the operator has not reviewed, and spending Claude usage beyond the operator's lane count. On a skip the supervisor decides everything else, and the record shows the answer as a supervisor decision made on the operator's skip, with its reasoning.
+
+11. **Reminders and visibility (answer: "1", updated 2026-10-25: "But if we are putting details in datawatch it should be visible in automation and notifications").** An open question is mentioned once in the next report, with no repeated messages and no expiry. Because the details live in datawatch, an open question is also visible in the Automation view, with its full details and not only a count, and it raises a notification through the existing notification channels when it is asked and when it is answered or skipped.
+12. **While a question is open (answer: "5 answer is 1").** The asker keeps working on everything else. Only the one task or PRD that depends on the answer waits, and it shows which question it is waiting on. The ticks and all other lanes carry on.
+
+13. **Retention (answer: "1").** Answered questions and their quotations are decisions of record and are kept forever in the audit log, never deleted. The Automation view shows recent ones and searches older ones.
+
+14. **Changing an answer (answer: "1").** An answer is never edited. A changed mind is a new answer that supersedes the old one; both stay on the record, each with its quotation, and the decision log shows which one is current.
+
+15. **The AGENT.md Decision Interview Protocol (answer: "2").** The terminal protocol stays and the queue is added beside it. An agent may use either. Answers given in the terminal are copied into the queue afterwards by the supervisor, with the operator's quotation, so the decision record is complete either way. The proposal must say how that copy is made and checked.
+
+16. **Question types (answer: "2 generic since we don't know what users of datawatch will use it for,  but default set based on 1").** There is one generic question record, with options, a recommendation, a risk level and links; the type is a label, not a different structure, because other users will use the queue for purposes we cannot predict. The default set of labels ships as decision, design review, approval and information (the four from the proposal), and a user may add or change labels. The low-risk type list from item 8 uses these labels.
+
+17. **Proposal files (answer: "1").** When the operator answers a proposal's questions through the queue, the answers set the proposal file's `Confirmed:` line to yes and write the operator's quotations into the file's decisions section, automatically. The PRD's gated tasks then proceed without a manual edit. (Done by hand for two proposals on 2026-10-24 and 2026-10-25.)
+
+**Status of the interview, 2026-10-25:** all ten open points are answered and recorded above (items 1 to 17). The proposal PRD (BL610) turns them into the data model, the order of PRD-sized steps and the parity surface; anything it finds that these answers do not cover goes back to the operator as a question.
+
+18. **The question feature works with every LLM (operator, 2026-10-25: "also make sure question feature works with all llm").** Raising a question and receiving its answer must not depend on one backend's features. Every backend datawatch supports (claude-code, opencode, pi and pi-prompt, goose, gemini, aider, ollama, openwebui, shell, and any added later) can ask a question and get the answer back, by whichever route the backend supports. The proposal must give a route for each class of backend (those with MCP tools, those that only print text, and one-shot print-mode backends that have no input once started), and a conformance test with a fake backend of each class that raises a question, leaves it open while other work continues, and resumes with the answer.
+
+19. **Marker route and one-shot backends (answers: "1 marker with options, 2 daemon asks on its behalf").** The text marker route carries options: a small structured block after the marker line gives the options, the recommendation and the risk label, with the same length caps and untrusted-text rules as free text. A one-shot print-mode backend never asks for itself: when its task ends needing a decision, the daemon raises the question on its behalf, with the task and the backend named as the asker, and holds the task until the answer arrives.
+
+20. **Mobile work (proposal 6.g, answer: "1").** The Android and iOS work for questions is tracked as datawatch-app issues that carry the API contract, following the Mobile App Sync Rule. The issues are filed once the first two steps (storage with REST, then notifications and the return path) have shipped, because that is when the contract is stable. No native code is added to this repository.
+
+21. **Secrets in an answer (proposal 6.h, answer: "1, encourage saving secrets on fs and pointing session to it or coordinate with datawatch secrets").** An answer whose text matches a secret pattern is not stored. The operator is told to resend it without the secret, and the refusal is audited without the text, so every stored quotation stays verbatim and no secret is ever stored. The refusal message encourages the two safe routes: put the secret in the datawatch secrets store and refer to it by name (`${secret:name}`), or save it on the filesystem and point the session to the file. The question flow must coordinate with the datawatch secrets store so the asker can be given the secret's name, never its value.
+
+22. **Return path (proposal 6.j, answer: "1").** The answer reaches the asker as a lifecycle event on the existing event queue plus a polled GET endpoint, which needs no change to the asker's session. A question can opt in to a JSON line sent into the asking session, for askers that cannot poll, so answers stay out of the terminal unless asked for.
+
+23. **Replying from a chat channel (proposal 6.k, answer: "1").** Each notification carries the question id and numbered options. A bare reply is accepted only when exactly one question is open for that channel; with several open it is refused and the list is sent back. Free text is accepted with the option, so the operator's exact words are kept as the quotation.
+
+**Status 2026-10-25:** every open point in the decision channel proposal (6.a to 6.k) is now answered, except the proposal's own remaining parts noted in its sections. The next step is to turn it into the first implementation PRD (storage and REST), gated on the proposal's `Confirmed:` line, which the operator flips.
+
+24. **Who writes a decision into the repository documents (proposal 6.i, answer: "2 but others may want to edit by hand so leave that as an option,  keep full editing as a future idea to examine").** The daemon records the link and the operator's exact words, and a docs-only change applies them through the normal repository path (the supervisor or the Automation makes it); the daemon never writes repository files on its own. Editing the document by hand stays available as an option for users who prefer it, and the record is the same either way. **Future idea to examine, not built:** letting the daemon edit and commit the documents itself (full editing), with its safety and review implications to be worked out first.
+
+**Status 2026-10-25:** all points of the decision channel proposal (6.a to 6.k) are decided. The proposal's `Confirmed:` line is still `no` until the operator flips it; the first implementation PRD (storage and REST) can be filed and gated on it.
+
+25. **Default alert times for the Automation duties (supervisor duties proposal Q1, answer: "1, 30 minutes").** One shared default of 30 minutes for CI failures, merge pending and failed or blocked PRDs, the same as the lane-fill idle alert; each value stays configurable.
+
+26. **Retry count for the Automation duties (supervisor duties proposal Q2, answer: "2 existing but leave open for future examination").** The coordinator reuses the existing per-category retry budgets (infra, content, scope, policy) and adds no new count. **Kept open for later examination:** whether the coordinator needs its own retry count once it has run for a while.
+
+27. **Rerunning a hung CI step (supervisor duties proposal Q3, answer: "1").** The coordinator may rerun a hung or infrastructure-classified CI run once without asking, and logs the rerun. It never reruns security workflow runs and never reruns a run whose judge verdict is policy.
+
+28. **Surfaces for the Automation duties (supervisor duties proposal Q4, answer: "2").** Every one of the eight duties gets the full parity set: config, REST, MCP, CLI, comm channel, PWA, and a mobile parity issue wherever a REST or WebSocket contract changes. The proposal's recommended mix is not used.
+
+29. **Security rule changed (2026-10-25, quoted: "The world has changed,  the 3 day goal was to miss or try to exclude malicious account injection but now with ai security let's consume security patches when they are available,  change the rule until i find a better way to monitor upstream,  future project monitoring all upstream but for now consume patches when available").** The 72-hour disclosure-grace rule is withdrawn; security patches are consumed as soon as they are available (AGENT.md Security-failure rule). The supervisor-duties proposal's duty 2 and its question about the 72-hour clock are closed by this. A future project to monitor all upstream is registry row 198.
+30. **Where decisions are recorded (supervisor duties proposal Q6, answer: "1").** In the decision channel's answer records, linked from the PRD decisions list; until the queue exists, the design and decisions documents.
+
+31. **How merge pending compares commits (supervisor duties proposal Q7, answer: "1, git cherry").** `git cherry` against main, comparing patch ids. Caveat from 2026-10-24 measurements: a commit whose patch changed while it was merged (conflict resolution, a renumbered version) shows as not on main although its work landed, so a second content check (subjects on main) accompanies it and a disagreement is shown to the operator as 'needs a look' and not as merge pending.
+
+32. **Deleting superseded failed CI runs (supervisor duties proposal Q8, answer: "1").** Failed runs of a workflow are deleted after a green run of the same workflow on a later commit, and only after the triage record has named them.
+
+**Status 2026-10-25:** every question of the supervisor duties proposal (Q1 to Q8) is answered or closed (items 25 to 32). The proposal's own `Confirmed:` line is still `no` until the operator flips it.
+
+This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.

@@ -286,12 +286,12 @@ func newMarketplaceCmd() *cobra.Command {
 // newComputeNodeAddCmd builds either `add` or `update` (PUT vs POST).
 func newComputeNodeAddCmd(update bool) *cobra.Command {
 	var (
-		kind, address, monitoringEndpoint, gpuVendor, gpuModel string
-		maxModels, gpuMemGB, ramGB, gpus, priority             int
-		costPerHour                                            float64
-		tagsCSV, allowedCSV, deniedCSV                         string
-		pinnedModel                                            string
-		allowModelSwap                                         bool
+		kind, address, monitoringEndpoint, gpuVendor, gpuModel   string
+		maxModels, gpuMemGB, ramGB, gpus, priority, sessionSlots int
+		costPerHour                                              float64
+		tagsCSV, allowedCSV, deniedCSV                           string
+		pinnedModel                                              string
+		allowModelSwap                                           bool
 	)
 	use := "add <name>"
 	short := "Add a new ComputeNode"
@@ -336,6 +336,7 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 				},
 				"node_pinned_model": pinnedModel,
 				"allow_model_swap":  allowModelSwap,
+				"session_slots":     sessionSlots,
 			}
 			if tagsCSV != "" {
 				body["tags"] = splitCSV(tagsCSV)
@@ -366,6 +367,7 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 	cmd.Flags().StringVar(&gpuModel, "gpu-model", "", "free-form model string (e.g. RTX 4090)")
 	cmd.Flags().IntVar(&priority, "priority", 50, "scheduling priority 0-100 (higher = preferred)")
 	cmd.Flags().Float64Var(&costPerHour, "cost-per-hour", 0, "USD/hour cost for scheduler accounting")
+	cmd.Flags().IntVar(&sessionSlots, "session-slots", 0, "worker count for this node (0 = derive from observer GPU data: one slot per GPU, limited by free GPU memory; capped by max_concurrent_sessions). Update replaces the whole node, so omitting this clears the override")
 	cmd.Flags().StringVar(&tagsCSV, "tags", "", "comma-separated tags")
 	cmd.Flags().StringVar(&allowedCSV, "allowed-consumers", "", "comma-separated consumer names (council|ask|agent_spawn|session_spawn|*)")
 	cmd.Flags().StringVar(&deniedCSV, "denied-consumers", "", "comma-separated consumer names; denied always wins")

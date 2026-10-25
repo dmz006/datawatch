@@ -52,3 +52,21 @@ func copyVerifierPolicy(p config.VerifierPolicyConfig) config.VerifierPolicyConf
 	p.Backends = append([]string(nil), p.Backends...)
 	return p
 }
+
+// failureEscalationFromConfig maps the YAML failure_escalation block onto the
+// manager's policy type. The config package cannot import the autonomous
+// package, so the two carry mirror structs; the steps are copied so the
+// manager never aliases the daemon config's slice.
+func failureEscalationFromConfig(c config.FailureEscalationConfig) autonomouspkg.FailureEscalationPolicy {
+	enabled := c.Enabled
+	p := autonomouspkg.FailureEscalationPolicy{Enabled: &enabled, MaxFailures: c.MaxFailures}
+	for _, s := range c.Steps {
+		p.Steps = append(p.Steps, autonomouspkg.FailureEscalationStep{
+			Backend:  s.Backend,
+			Model:    s.Model,
+			Effort:   autonomouspkg.Effort(s.Effort),
+			Attempts: s.Attempts,
+		})
+	}
+	return p
+}

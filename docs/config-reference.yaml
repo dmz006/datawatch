@@ -1196,6 +1196,12 @@ autonomous:
   # opencode-acp). Hosted backends such as claude-code are not gated by this key.
   # Sessions past the cap wait in the node queue (see docs/operations.md →
   # "Compute-node queue").
+  # A compute node that hosts a local engine takes its own count: the node's
+  # session_slots when the operator set one, otherwise one slot per GPU from
+  # observer data (limited by free GPU memory), or with no GPU data its free
+  # system memory against the model size. This key is the count for such a
+  # node with neither. A node that hosts no local engine keeps its
+  # max_concurrent_sessions limit instead.
   max_engines_per_node: 1
   # max_parallel_tasks: DEPRECATED — never had any effect; accepted and ignored
   # with a startup warning for one release, then removed. Use max_concurrent_tasks.
@@ -1218,7 +1224,8 @@ autonomous:
   refuse_dirty_tree_start: false
   # Capacity-aware admission: tasks wait for a free host / compute-node / LLM
   # slot (status waiting_capacity) instead of failing. Default true.
-  # Per-node limit: compute node max_concurrent_sessions; per-LLM: max_inflight
+  # Per-node limit: compute node session_slots (0 = derive from observer GPU
+  # data; hosting nodes only), capped by max_concurrent_sessions; per-LLM: max_inflight
   # (0 = unlimited) or, when an explicit max_inflight is absent, the LLM entry's
   # plan_tier mapped through plan_tier_max_inflight below; per-Automaton queue
   # order: priority (set_priority).
@@ -1444,13 +1451,15 @@ autonomous:
   # Backend used for that one escalated verification. Empty => claude-code.
   fallback_verification_backend: claude-code
   session_idle_timeout_seconds: 900   # bound on one worker/verifier session sitting in waiting_input/idle with no live child process; exceeded => infra failure 'session idle without completion', alert raised, auto_fix_retries budget handles the retry
-  # A claude-code autonomous session must begin producing its first assistant
-  # turn within this many seconds of starting; still in waiting_input with no
-  # assistant output past this => 'session never started' failure (alert
-  # carries the last 20 transcript lines), up to 2 start failures retried
-  # before the task stays failed. 0 or unset falls back to the 120s default
+  # A claude-code autonomous session must show a sign of work within this many
+  # seconds of starting: an assistant turn, a tool call (line or spinner), a
+  # process it started, a pane change or a channel event after delivery. Still
+  # in waiting_input with no sign of work past this => 'session never started'
+  # failure (alert carries the last 20 transcript lines), up to 2 start failures
+  # retried before the task stays failed. The silence is measured from the last
+  # sign of work. 0 or unset falls back to the 120s default
   # (NormalizeSessionStartConfirmSeconds).
-  verifier_no_progress_timeout_seconds: 600   # a verifier session with no output file and no pane activity for this long is ended as an infra failure ('verifier no-progress watchdog'); 0 or negative => 600
+  verifier_no_progress_timeout_seconds: 900   # a verifier session with no output file, no pane activity, no live runner process and no held capacity slot for this long is ended as an infra failure ('verifier no-progress watchdog'); 0 or negative => 900
   session_start_confirm_seconds: 120
   # Orphan sweep grace period, in seconds. A live task worker session
   # (name "autonomous:<title>", with a PRD/task link) that is not the current
@@ -1678,6 +1687,28 @@ autonomous:
   # warns only and never blocks under either value.
   gate_disagreement: warn
 
+  # Failure escalation: what happens when a task keeps failing. Attempts are
+  # counted as failed attempts since the last operator action. Step i covers
+  # `attempts` consecutive failed attempts (default 1) and the last step
+  # covers every remaining attempt. A step with no backend uses the task's
+  # normally resolved worker, and no steps at all means every attempt does.
+  # After max_failures failed attempts the task is held for operator review
+  # (status review_needed) instead of being marked failed. An Automaton or a
+  # single task can override each of enabled, max_failures and steps on its
+  # own (task beats Automaton beats this default).
+  #   enabled      - true (default). false restores the old behaviour: retry
+  #                  up to auto_fix_retries, then mark the task failed.
+  #   max_failures - 3 by default; 4 or more is allowed, the minimum is 1.
+  #   steps        - up to 8 entries of backend, model, effort, attempts.
+  failure_escalation:
+    enabled: true
+    max_failures: 3
+    steps: []
+    # Example ladder: two tries on the local model, then a Claude model.
+    # steps:
+    #   - {backend: pi-prompt, model: "ollama/qwen3.8:27b", attempts: 2}
+    #   - {backend: claude-code, model: claude-opus-5-5, effort: high}
+
   # ── Prompt injection guard (v8.18.0) ──
   # Scans user-supplied PRD/task specs for known prompt injection phrases
   # (role overrides, template boundary markers, instruction-override
@@ -1790,6 +1821,22 @@ orchestrator:
   guardrail_backend: ""
   # Max concurrent PRD nodes per graph.
   max_parallel_prds: 2
+
+# ── Compute node slot override ──
+# Each compute node may set session_slots, a whole number of workers it takes at
+# once. 0 (the default) derives the count from the node's observer data: one slot
+# per GPU, limited by free GPU memory against the served model; with no GPU data,
+# free system memory divided by the model size, at least one slot. A positive value
+# wins over the derived count, and max_concurrent_sessions still caps it. Applies
+# only to a node that hosts a local engine; other nodes keep max_concurrent_sessions.
+# A negative value is rejected when the config loads. Set it in the PWA node form,
+# `datawatch compute node update <name> --session-slots N`, or REST
+# PUT /api/compute/nodes/{name}.
+# compute_nodes:
+#   - name: gpu-1
+#     kind: ollama
+#     address: http://gpu-1:11434
+#     session_slots: 2
 
 # ── Compute pin keeper ──
 # Per-node model pins live on each compute node (compute_nodes[].node_pinned_model

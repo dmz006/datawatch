@@ -1798,6 +1798,30 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_task_llm", "automaton", id, detail) // GH#201 Phase 4
 		prd, _ := updated.(*autonomous.PRD)
 		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
+	// Failure escalation override on the Automaton (empty task_id) or on one
+	// task. Body: {task_id?, policy: {enabled?, max_failures?, steps?} | null,
+	// actor?}; a null policy clears the override at that level.
+	case "set_failure_escalation":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		s.handleSetFailureEscalation(w, r, id)
+	// Operator decision on a task held for review: "retry" (optionally with a
+	// changed spec, worker or file scope) or "cancel". 409 when the task is not
+	// held.
+	case "resolve_task_review":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		s.handleResolveTaskReview(w, r, id)
 	// BL447 — per-task ProjectDir override (task > PRD; empty inherits).
 	case "set_task_project_dir":
 		if r.Method != http.MethodPost {

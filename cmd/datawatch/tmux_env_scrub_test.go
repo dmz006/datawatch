@@ -48,7 +48,7 @@ func TestTmuxEnvScrub_SpawnSites(t *testing.T) {
 				name := site + "-scrub-test"
 				_, _, err := runOneShotJSONSessionWithReader(cfg, "prd1", t.TempDir(), backend, "m", "",
 					name, "task", t.TempDir()+"/out.json", "out.json", 5*time.Second,
-					func(string, string, string, string) (string, bool) { return "", false })
+					func(string, string, string, string) (string, bool) { return "", false }, "")
 				if err == nil || !strings.Contains(err.Error(), "stop") {
 					t.Fatalf("expected the stub server error, got %v", err)
 				}

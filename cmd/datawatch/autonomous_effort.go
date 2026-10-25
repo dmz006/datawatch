@@ -111,6 +111,12 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 	if len(req.WriteScope) > 0 {
 		sessionBody["write_scope"] = req.WriteScope
 	}
+	// Held compute node: the capacity lease granted this task a node, so the
+	// session starts there, with the backend it was admitted on. Absent when
+	// no node was held, and the session resolves its node as before.
+	if req.ComputeNode != "" {
+		sessionBody["compute_node"] = req.ComputeNode
+	}
 	// Bare task title, so the completion commit can use it without
 	// parsing the "autonomous:"-prefixed name.
 	if req.Title != "" {

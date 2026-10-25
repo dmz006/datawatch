@@ -216,11 +216,12 @@ func TestSessionStartBudget_NonStartErrorStillUsesNormalBudget(t *testing.T) {
 	if err := api.Run(prd.ID); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	got := waitForPRDTerminal(t, m, prd.ID)
+	pollEscalationSettled(t, m, prd.ID, 10*time.Second)
+	got, _ := m.Store().GetPRD(prd.ID)
 
 	task := got.Story[0].Tasks[0]
-	if task.Status != TaskFailed {
-		t.Fatalf("want TaskFailed after the normal budget, got %q", task.Status)
+	if task.Status != TaskReviewNeeded {
+		t.Fatalf("want TaskReviewNeeded after the normal budget, got %q", task.Status)
 	}
 	if task.StartFailures != 0 {
 		t.Fatalf("non-start errors must not touch StartFailures, got %d", task.StartFailures)

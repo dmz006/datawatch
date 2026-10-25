@@ -53,20 +53,32 @@ func outputHasCompletionMarker(output string) bool {
 // session when no wait hook is wired.
 const adoptedSessionPollInterval = 5 * time.Second
 
+// AdoptedWait identifies the task whose worker was adopted at boot-resume: the
+// PRD and task its nudges are recorded on, the worker's session, and the nudge
+// time the task already holds for that session (zero when none). The wait
+// seeds its idle-nudge tracker from NudgedAt, so a nudge sent before the
+// restart is neither repeated nor forgotten.
+type AdoptedWait struct {
+	PRDID     string
+	TaskID    string
+	SessionID string
+	NudgedAt  time.Time
+}
+
 // waitForAdoptedSession blocks until an adopted session finishes. It uses the
 // wait hook when wired (which keys on session state and the completion
 // marker, so it is backend-agnostic) and otherwise polls aliveFn until the
 // session is no longer alive. A cancelled context returns ctx.Err().
-func waitForAdoptedSession(ctx context.Context, waitFn func(context.Context, string) error, aliveFn func(string) bool, sessionID string) error {
+func waitForAdoptedSession(ctx context.Context, waitFn func(context.Context, AdoptedWait) error, aliveFn func(string) bool, w AdoptedWait) error {
 	if waitFn != nil {
-		return waitFn(ctx, sessionID)
+		return waitFn(ctx, w)
 	}
 	if aliveFn == nil {
 		return nil
 	}
 	tick := time.NewTicker(adoptedSessionPollInterval)
 	defer tick.Stop()
-	for aliveFn(sessionID) {
+	for aliveFn(w.SessionID) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

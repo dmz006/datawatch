@@ -52,7 +52,8 @@ Example:
 Common kv pairs:
   address=<host:port-or-url>  monitoring_endpoint=<url>
   max_concurrent_models=<N>   gpu_mem_gb=<N>     scheduling_priority=<0..100>
-  tags=<csv>                  cost_per_hour=<usd>`
+  tags=<csv>                  cost_per_hour=<usd>
+  session_slots=<N>           (0 = derive from observer GPU data)`
 
 func (r *Router) handleComputeCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
@@ -314,7 +315,7 @@ func parseKVPairs(s string) map[string]any {
 			out[k] = strings.TrimSpace(v)
 		case "allow_model_swap":
 			out[k] = v == "true" || v == "1" || v == "yes"
-		case "scheduling_priority":
+		case "scheduling_priority", "session_slots":
 			out[k] = atoiOrZero(v)
 		case "cost_per_hour":
 			out[k] = parseFloatOrZero(v)

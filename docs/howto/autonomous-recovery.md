@@ -347,14 +347,25 @@ session idle timeout, datawatch sends the worker one nudge.
 - **What it sends:** one message asking the worker to print its completion
   line, or to continue if it is not finished. Only one nudge is ever sent
   per task attempt.
-- **No nudge while work is running:** if the session has a live child
-  process (a build, a test run, a long command) it is not idle, so no
-  nudge is sent. The idle clock restarts once the child exits.
+- **No nudge while work is running:** only work children block a nudge. A
+  work child is a process the worker's runner started, such as a build, a
+  test run or a long command; while one is alive the worker is not idle, so
+  no nudge is sent, and the idle clock restarts once it exits. The worker's
+  own channel and MCP servers do not count as work, so a worker that has
+  only those running is still nudged. The rule holds after a daemon restart:
+  an adopted worker is nudged and blocked by the same work-child check.
 - **What gets recorded:** each nudge is stored on the task as an event
-  (`nudge_events`: time, count, outcome) and the task's `nudge_count` goes
-  up. Both show in `autonomous_prd_get`.
+  (`nudge_events`: time, count, `session_id` and outcome) and the task's
+  `nudge_count` goes up. Both show in `autonomous_prd_get`. The `session_id`
+  names the session the nudge was typed into, so a retry in a fresh session
+  does not inherit the old nudge state.
+- **Outcome values:** a new event is `sent` once the nudge is typed. It then
+  becomes `answered` when the worker prints its completion marker or fresh
+  output follows, or `stalled` when the worker stays silent past the stall
+  window.
 - **If the worker answers:** a completion marker or fresh output after the
-  nudge ends the wait normally and the task is verified like any other.
+  nudge ends the wait normally (outcome `answered`) and the task is verified
+  like any other.
 - **If it stays silent:** after `autonomous.worker_idle_nudge_stall_seconds`
   (default `600`, counted from the nudge) the worker is treated as stalled.
   It goes through the existing retry path (`auto_fix_retries`), the same as
@@ -372,6 +383,31 @@ autonomous:
   worker_idle_nudge_seconds: 180
   worker_idle_nudge_stall_seconds: 600
 ```
+
+## Task failed with `session never started`
+
+A claude-code worker was handed its task and then sat in `waiting_input`
+with no sign of work for longer than `autonomous.session_start_confirm_seconds`
+(default `120`). The daemon ends that session and retries the task. After two
+such start failures the task stays failed.
+
+- **What counts as started:** an assistant turn; a tool call in progress or
+  finished (a `⏺` tool line, a `⎿` result line or a spinner); a process the
+  worker started; a change in the pane; or a channel event after the task was
+  delivered. Delivering the task alone does not count.
+- **A long silent tool call is not a failure:** a worker that is inside one
+  long command keeps its tool line and spinner on screen, which keeps the clock
+  running. Only silence longer than the bound ends a session.
+- **After a daemon restart:** a worker that was adopted is measured from its
+  last evidence of life, not from the adoption, so a live worker is not ended
+  just because the daemon restarted.
+- **Where the output is:** the last 20 pane lines are stored on the task as
+  `start_failure_tail`. Read them with `autonomous_prd_get` to see where the
+  worker stopped. A dialog nobody answered shows there; a bare shell prompt
+  means the agent never launched.
+- **If the bound is too short for your first step:** raise it with
+  `datawatch config set autonomous.session_start_confirm_seconds 300`. A value
+  of `0` means "use the default".
 
 ## Common pitfalls
 

@@ -1367,3 +1367,24 @@ Run records: `docs/testing/runs/shared-nav-mobile-fit/`. The plan is `docs/plans
 - **Android and iOS.** The repo has no native client source for this surface.
 - **Runner side effect.** `make test-e2e-shared-nav` runs `npm ci` in `scripts/test-stories/pwa`. That replaces the tracked symlink `scripts/test-stories/pwa/node_modules` (it points to `/home/dmz/workspace/datawatch/scripts/test-stories/pwa/node_modules`) with a real directory, which git shows as a deleted file. The symlink was restored with `git checkout` after each run.
 - **Runner `EVIDENCE_DIR`.** `scripts/e2e-pwa.sh` line 41 sets `EVIDENCE_DIR=""`, so an `EVIDENCE_DIR` set in the environment is ignored. In local mode a passing run deletes its report. The record copied the gate reports out during the run (`make-run/gate-reports/`). Fixing the script is a separate change.
+
+## TS-817 — Two pi-prompt workers hold different compute nodes (sandbox daemon)
+
+| Field | Details |
+|-------|---------|
+| **Description** | Two pi-prompt sessions started through the API on a sandbox daemon built from this tree land on different compute nodes. The story registers two loopback Ollama stand-ins as compute nodes (scheduling priority 90 and 50, one session slot each), an ollama-kind LLM entry listing both nodes, and the pi-prompt backend entry the sessions start on. A fake `pi` on the daemon's PATH reads the per-session provider override the launch writes (`PI_CODING_AGENT_DIR/models.json`) and posts one request to that provider's base URL. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR bash scripts/test-stories/TS-817.sh` (needs `bin/datawatch` built with `go build -o bin/datawatch ./cmd/datawatch/`, plus `curl`, `python3` and `tmux`). 1. Start a sandbox daemon from the built binary on free loopback ports, with a config generated from `testdata/datawatch.yaml`. 2. Start the two stand-ins. 3. Register the two nodes, the LLM entry and the backend entry. 4. Start two sessions with `backend: pi-prompt`. 5. Read `GET /api/capacity`. 6. Stop the sessions and remove the entries, nodes, stand-ins, daemon and scratch directory. |
+| **Expected** | Both sessions start. Each node pool shows limit 1 and held 1. The two leases name different nodes, one each. Each stand-in logs exactly one request, `POST /v1/chat/completions`. Cleanup leaves no LLM entry, node or process behind. |
+| **Actual** | PASS on two consecutive runs. Leases: `ts817-alpha` and `ts817-beta`, one each; pools `node:ts817-alpha` 1/1, `node:ts817-beta` 1/1, `llm:pi-prompt` 2/2. Each stand-in's log held one line, `POST /v1/chat/completions`. Cleanup killed the sessions, deleted the entries and nodes, stopped the daemon and stand-ins, and removed the scratch directory. The operator's default tmux session was not touched. |
+| **Result** | PASS |
+
+Notes:
+- The nodes are listed on an ollama-kind LLM entry because the admission gate looks up the model's provider (`ollama`) among entries by kind. The sessions start on a separate `pi-prompt` entry, since the gate reads the backend name from the registry.
+- The story's generated config leaves out the template's legacy `ollama:` block. That block is migrated into an ollama-kind entry linked to a template node, and capacity keeps one entry per kind, so the migrated entry would shadow the story's own.
+- The daemon's tmux calls go through a shim on its PATH that pins them to a socket the story owns. This keeps the sessions off the shared default tmux server, and the shim is removed with the scratch directory.
+- Set `TS817_KEEP=1` to keep the scratch directory for inspection. Set `TMPDIR` to choose where the scratch directory is created.
+
+### Cleanup
+
+- Sandbox daemon, stand-ins, sessions, LLM entries, compute nodes and scratch directory: created and removed by the story.
+- Cleanup done: PASS

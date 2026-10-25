@@ -350,7 +350,7 @@ hostname: hal9000
 
 # Root directory for sessions.json, logs/, and config.
 # Default: ~/.datawatch
-data_dir: /home/user/.datawatch
+data_dir: ~/.datawatch
 
 signal:
   # Your Signal phone number in E.164 format.
@@ -362,7 +362,7 @@ signal:
 
   # signal-cli data directory containing account keys and identity.
   # Default: ~/.local/share/signal-cli
-  config_dir: /home/user/.local/share/signal-cli
+  config_dir: ~/.local/share/signal-cli
 
   # Name shown in Signal's Settings → Linked Devices list.
   # Default: hostname
@@ -554,7 +554,7 @@ signal:
 
 ### Verifier node limit
 
-Verifier runs take a lease on the same node pool as the worker they check, and a node that hosts local engines gets its pool limit from `autonomous.max_engines_per_node` (default 1), capped by the compute node's own `max_concurrent_sessions` when that is smaller (see `syncPools` in `cmd/datawatch/capacity_wiring.go`). In practice a verifier on such a node therefore runs one at a time, and a verification can queue behind another task's lease.
+Verifier runs take a lease on the same node pool as the worker they check, and a compute node that hosts a local engine gets its pool limit from its slot count (see "Compute-node queue" below), which is the node's `session_slots` when set, otherwise one slot per GPU when the observer reports GPU data and `autonomous.max_engines_per_node` (default 1) when it does not, capped by the compute node's own `max_concurrent_sessions` when that is smaller (see `syncPools` in `cmd/datawatch/capacity_wiring.go`). A node that hosts no local engine keeps its `max_concurrent_sessions` limit. A node with one GPU therefore runs one verifier at a time, and a verification can queue behind another task's lease.
 
 Assessment: the limit should not rise on a guess. One slot is the right default while the GPU is the bottleneck, because a second concurrent judge slows both runs. It becomes too tight only when verifiers spend a large share of their time waiting rather than running. This work does **not** change the limit; it adds the counters that decide the question.
 
@@ -564,7 +564,7 @@ Read `verifier` in `GET /api/capacity` (also `capacity_status` over MCP and the 
 
 Verification is the throughput limit of the Automata pipeline, so the verifier path has four guards and a set of counters. Assessment of how many verifiers a node should run is in [Verifier node limit](#verifier-node-limit).
 
-**No-progress watchdog.** A verifier session that shows neither an output file nor any change in its pane output for `autonomous.verifier_no_progress_timeout_seconds` (default 600, ten minutes; unset or non-positive uses the default) is ended instead of waiting out the long verifier timeout. Any output file or pane change resets the timer, the first pane capture is only the baseline. The end is recorded as a failed verification whose summary reads `verifier no-progress watchdog: no output file or pane activity for <limit>`, and it is counted under `watchdog` in the verifier counters below.
+**No-progress watchdog.** A verifier session that shows no output file, no change in its pane output, no live runner process and no held capacity slot for `autonomous.verifier_no_progress_timeout_seconds` (default 900, fifteen minutes; unset or non-positive uses the default) is ended instead of waiting out the long verifier timeout. Any of these — an output file, a pane change, a live runner process, a held capacity slot — resets the timer, the first pane capture is only the baseline, and time spent waiting for a capacity slot never counts against the limit. The end is recorded as a failed verification whose summary reads `verifier no-progress watchdog: no output file or pane activity for <limit>`, and it is counted under `watchdog` in the verifier counters below. Because the trip classifies as an infra failure, repeated hangs on one task escalate that task's next verification to the fallback backend (see the **Infra-failure escalation** paragraph below).
 
 **Lease reaper.** The capacity lease reaper never frees the lease of a verifier that is still running. A verifier lease is judged by the verifier session it started, and while the verifier is registered as running it stays live whatever the bound worker session or the lease age says. Leases whose verifier session has finished, and leaked leases with no live holder, are still reclaimed, so a pool never goes over its limit while verifiers run.
 
@@ -573,6 +573,19 @@ Verification is the throughput limit of the Automata pipeline, so the verifier p
 **Infra-failure escalation.** After `autonomous.verifier_infra_escalation_threshold` consecutive infra verifier failures on one task (default 2), the next verification of that task runs on `autonomous.fallback_verification_backend` (default the Claude backend, `claude-code`). The escalation is per task only: the count lives on the task, a pass or content result resets it, the end of the escalated run resets it, and other tasks keep using the configured verifier. It does nothing when the fallback equals the configured backend. Each escalation is recorded as a `verifier_escalation` decision on the PRD, as an `autonomous.verifier_escalation` entry in the audit log, and under `escalated` in the counters.
 
 All three keys can be read and set through the autonomous config on REST, MCP (`autonomous_config_set`), the CLI and the PWA settings.
+
+**Failure escalation and held tasks.** A failing task moves to the next worker on its ladder after each failed attempt. After `max_failures` failed attempts (default 3) it is held in `review_needed` for operator review instead of failing outright; `enabled: false` restores the retry-then-fail behaviour. Each field resolves task override, then Automaton override, then the daemon default (`autonomous.failure_escalation.{enabled,max_failures,steps}`).
+
+| Method | How |
+|--------|-----|
+| **YAML** | `config.yaml` → `autonomous.failure_escalation:` with `enabled`, `max_failures` and `steps` |
+| **CLI** | `datawatch autonomous failure-escalation show\|set\|clear <automaton> [--task <task>]`; `datawatch autonomous resolve-review <automaton> --task <task> --action retry\|cancel`; `datawatch autonomous status` lists held tasks under `review_needed`; `datawatch config set autonomous.failure_escalation.max_failures 4` |
+| **Web UI** | Settings → Automata → Autonomous block (enable, failures before review, steps); Automaton detail → Overview (override editor); each task row (held badge, attempts, report, and the Retry, Edit spec and retry, Change worker, Narrow scope and Cancel task actions) |
+| **REST API** | `PUT /api/config` with `autonomous.failure_escalation.enabled`, `.max_failures` or `.steps` (a JSON array or `backend:model[@attempts],...`); `POST /api/autonomous/prds/{id}/set_failure_escalation` with `{"task_id","policy"}`; `POST /api/autonomous/prds/{id}/resolve_task_review` with `{"task_id","action","spec","backend","model","effort","files","note"}` |
+| **Comm channel** | `configure autonomous.failure_escalation.max_failures=4`; `autonomous set-failure-escalation <automaton> [task] clear \| enabled=false max_failures=4 steps=...`; `autonomous review-task <automaton> <task> retry\|cancel [key=value ...]`; `autonomous status` names each held task |
+| **MCP** | `autonomous_prd_set_failure_escalation`, `autonomous_prd_resolve_task_review`, `autonomous_status` (`review_needed`), `config_set` |
+
+**Defaults and the retry count.** Escalation is on by default. A task gets `max_failures` failed attempts (default 3) before it is held, where the old behaviour was one attempt plus `autonomous.auto_fix_retries` (default 1, so two attempts) before the task was marked failed. An Automaton with no settings of its own therefore gets one more attempt than before, and a task that uses them up waits for the operator instead of failing. A held task keeps its attempts and its report, and its Automaton shows as blocked until the operator retries or cancels the task. To restore the old behaviour, set `autonomous.failure_escalation.enabled: false` (or `datawatch config set autonomous.failure_escalation.enabled false`); the retry count is then `autonomous.auto_fix_retries` again. The operator guide is [howto/failure-escalation.md](howto/failure-escalation.md).
 
 **Counters.** `GET /api/capacity` carries a `verifier` object (`capacity_status` over MCP returns it too) with `runs`, queue wait and run time totals, averages and maxima in seconds, `categories` (`pass`, `content`, `infra`, `watchdog`, `timeout`, `capacity`, `escalated`), `watchdog_ends`, `escalations` and `since`. The CLI and comm channel status text adds one line, for example `verifiers: 12 runs, avg wait 38s, avg run 6m, infra 3, watchdog 1`, or `verifiers: no runs yet`. Prometheus exposes `datawatch_verifier_runs_total{category}`, `datawatch_verifier_wait_seconds_total` and `datawatch_verifier_run_seconds_total`. The aggregates are kept since the daemon started.
 
@@ -819,7 +832,7 @@ tailscale status
 Option 1 — Set the full path in config:
 ```yaml
 session:
-  claude_code_bin: /home/user/.local/bin/claude
+  claude_code_bin: ~/.local/bin/claude
 ```
 
 Option 2 — Add the PATH to the systemd service:
@@ -827,7 +840,7 @@ Option 2 — Add the PATH to the systemd service:
 systemctl --user edit datawatch
 # Add:
 # [Service]
-# Environment=PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Environment=PATH=~/.local/bin:/usr/local/bin:/usr/bin:/bin
 ```
 
 ### Group ID not found / wrong format
@@ -866,7 +879,7 @@ Short IDs (`a3f2`) work if only one machine has a session with that ID. If both 
 **Symptom:** An automatic commit fails with an error beginning `auto-commit refused:`, prefixed with the repository directory:
 
 ```
-/home/you/project: auto-commit refused: 12504 files staged exceeds the limit of 10000 (MaxStagedFiles). Narrow the write scope (read_dirs/write_dirs) so the commit stages fewer files, or point the project directory at a repository rather than a home directory.
+~/project: auto-commit refused: 12504 files staged exceeds the limit of 10000 (MaxStagedFiles). Narrow the write scope (read_dirs/write_dirs) so the commit stages fewer files, or point the project directory at a repository rather than a home directory.
 ```
 
 **What it means:** The commit would have staged more files than the staged-file limit allows (`MaxStagedFiles`, default 10000). Datawatch refused rather than commit a whole directory tree. The usual cause is a session write scope that covers a directory holding a large number of files, most often caches, dependency trees, or model weights inside the project directory.
@@ -1055,7 +1068,7 @@ Add:
 ```ini
 [Service]
 ExecStart=
-ExecStart=/usr/local/bin/datawatch start --verbose --config /home/user/.datawatch/config.yaml
+ExecStart=/usr/local/bin/datawatch start --verbose --config ~/.datawatch/config.yaml
 ```
 
 Then:
@@ -1567,7 +1580,7 @@ you want this feature allowed to read from:
 
 ```yaml
 webhook:
-  image_dir: "/home/you/datawatch-webhook-images"
+  image_dir: "~/datawatch-webhook-images"
 ```
 
 Only paths resolving inside that directory are accepted; anything else
@@ -2448,14 +2461,23 @@ A claude-code worker that finishes a turn without printing its completion
 marker gets one nudge before the session idle timeout applies.
 
 - **`autonomous.worker_idle_nudge_seconds`** (default 180): how long the
-  worker may sit idle with no output before it is nudged once. No nudge is
-  sent while the session has a live child process.
+  worker may sit idle with no output before it is nudged once. Only work
+  children block a nudge: a process the worker's runner started, such as a
+  build or a test run. The runner itself, and the session's own channel and
+  MCP servers, do not block it, so an idle worker that has only its own
+  servers running is still nudged.
+- **Adopted sessions:** a worker adopted after a daemon restart is nudged on
+  the same schedule and under the same work-child rule as a fresh one.
 - **`autonomous.worker_idle_nudge_stall_seconds`** (default 600): how long,
   counted from the nudge, the worker may stay silent before it is treated as
   stalled and retried through the existing `auto_fix_retries` budget.
 - **Visibility:** each nudge is recorded on the task (`nudge_events`,
-  `nudge_count`); `autonomous_status` reports `nudges_total`, `nudge_tasks`
-  and `nudges_by_backend`.
+  `nudge_count`). Each `nudge_events` entry carries `session_id`, the session
+  the nudge was typed into, and `outcome`: `sent` when it is typed, then
+  `answered` (the worker printed its completion marker or fresh output
+  followed) or `stalled` (the worker stayed silent past the stall window).
+  `autonomous_status` reports `nudges_total`, `nudge_tasks` and
+  `nudges_by_backend`.
 - **Setting them:** `config.yaml`, the web settings card, `PUT /api/config`,
   MCP `autonomous_config_set`, or the `configure` chat command. Hot-applied;
   `0` means "use the default".
@@ -2581,16 +2603,27 @@ tracked in [dmz006/datawatch-app#266](https://github.com/dmz006/datawatch-app/is
 ### Session start confirm timeout (autonomous.session_start_confirm_seconds)
 
 This bounds how long a claude-code autonomous session may sit in
-`waiting_input` with no assistant output after it has started. The default
+`waiting_input` with no sign of work after it has started. The default
 is 120 seconds (2 minutes). It exists because a session whose process is
 alive but that never actually begins working looks healthy to the plain
 idle detector and would otherwise sit there indefinitely.
 
+A sign of work is any of: an assistant turn, a tool call in progress or
+finished (including a spinner), a process the worker started, a change in
+the pane, or a channel event after the task was delivered. Assistant output
+is not the only proof. A worker in one long silent tool call is not ended.
+
 - **What it watches:** a claude-code task session that has started (the
-  process is running) but has produced no assistant output — it is still in
+  process is running) but shows no sign of work — it is still in
   `waiting_input` instead of getting to work.
-- **When it fires:** the session stayed in that state without any assistant
-  output for longer than the bound.
+- **When it fires:** the session stayed in that state with no sign of work
+  for longer than the bound. The clock restarts at each sign of work, so a
+  worker whose tool line or spinner is still on screen is not ended.
+- **After a daemon restart:** an adopted worker is measured from its last
+  evidence of life (its last update, channel event or log write), not from
+  the moment the daemon adopted it.
+- **While a tool call runs:** the session shows as `running` (the busy
+  probe), not `waiting_input`, while the pane shows the agent working.
 - **What you see:**
   - a datawatch alert naming the session, with the last 20 lines of the
     session transcript included so you can see why it never got going;
@@ -3188,10 +3221,32 @@ with no ancestor `CLAUDE.md` files also shows none.
 ## Compute-node queue (max_engines_per_node)
 
 A compute node can only run so many local models at once. Each node has a
-capacity pool named `node:<name>`, and its limit is
-`autonomous.max_engines_per_node` (default `1`; values below `1` are clamped
-to `1`). A node's own `max_concurrent_sessions` still acts as a ceiling when
-it is set and smaller.
+capacity pool named `node:<name>`. For a node that hosts a local engine, the
+limit is its slot count. The operator's `session_slots` on the node wins when it
+is set. Otherwise the count comes from
+the node's observer GPU data: one slot per GPU, limited by the free GPU memory
+against the size of the model it serves. Memory in use by any other program on
+the GPU lowers the count, because it is subtracted from the free memory.
+A node with no observer GPU data divides its free system memory by the size of
+the model it serves, with a floor of one slot. A node with neither GPU data nor
+system memory data falls back to `autonomous.max_engines_per_node` (default
+`1`; values below `1` are clamped to `1`). The node's own
+`max_concurrent_sessions` still acts as a ceiling when it is set and smaller.
+
+A node that hosts no local engine takes its limit from `max_concurrent_sessions`
+alone, as it always has: 0 means unlimited, and no observer count is used.
+`session_slots` has no effect on such a node.
+
+Running workers are not counted out when free memory shrinks. The count never
+falls below the number of workers already holding the node, but that floor is
+capped at the node's GPU count, so a node running more workers than it has GPUs
+reads a limit below the held count. The workers keep running; new work waits
+until the held count falls below the limit.
+
+The count is re-read every 10 seconds, so a change takes effect without a
+restart. The node detail (`GET /api/compute/nodes/{name}/detail`) carries
+`session_slots`, the operator's override (0 = derive), and `derived_slots`, the
+count in effect (the node's pool limit).
 
 ### What is gated
 

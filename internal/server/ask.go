@@ -37,6 +37,9 @@ type AskRequest struct {
 	LLM      string `json:"llm,omitempty"`     // v7 preferred — registry LLM name
 	Backend  string `json:"backend,omitempty"` // legacy: "ollama" | "openwebui"
 	Model    string `json:"model,omitempty"`   // optional override
+	// ComputeNode pins the call to one of the LLM's compute nodes. A judge
+	// sends the node its capacity lease holds; empty keeps the node order.
+	ComputeNode string `json:"compute_node,omitempty"`
 }
 
 // AskResponse is what we emit on success.
@@ -110,6 +113,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 				Prompt:        req.Question,
 				ModelOverride: req.Model,
 				Consumer:      "ask",
+				Node:          req.ComputeNode,
 			})
 			if err != nil {
 				if msg, refused := inference.PinRefusalMessage(err); refused {

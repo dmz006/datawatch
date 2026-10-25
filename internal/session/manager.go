@@ -359,6 +359,7 @@ type Manager struct {
 	workspaceRoot  string // F10: container/PVC base for relative project_dirs
 	store          *Store
 	tmux           TmuxAPI
+	paneChildFn    func(tmuxSession string) bool // busy probe: pane has child processes; nil → paneHasChildProcess
 	idleTimeout    time.Duration
 	autoGitInit    bool   // whether to git init project dir if needed
 	verbose        bool   // enable debug logging
@@ -1806,6 +1807,11 @@ type StartOptions struct {
 	// a compute node. Written to opencode.json at launch.
 	OllamaURL string
 
+	// NodeAddress — the compute node's address for pi-family and opencode
+	// sessions, resolved from the compute registry by the server. Persisted on
+	// the Session (Session.NodeAddress) so a resume or restart reuses the host.
+	NodeAddress string
+
 	// Chrome (v8.8.3) — when non-nil, passes --chrome (true) or --no-chrome (false)
 	// to claude-code at launch. Nil = omit flag (use claude default).
 	Chrome *bool
@@ -2056,6 +2062,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if opt != nil && opt.OllamaURL != "" {
 		sess.OllamaURL = opt.OllamaURL
 	}
+	if opt != nil && opt.NodeAddress != "" {
+		sess.NodeAddress = opt.NodeAddress
+	}
 	if opt != nil && opt.ParentID != "" {
 		sess.ParentID = opt.ParentID
 	}
@@ -2245,6 +2254,13 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 				sm.SetModel(mo)
 			}
 		}
+	}
+
+	// Pi family: point the launch at the session's compute node. The backend
+	// is shared across sessions, so this runs on every launch; a session that
+	// names no node passes an empty address, which clears any earlier node.
+	if nh, ok := backendObj.(interface{ SetNodeHost(string) }); ok {
+		nh.SetNodeHost(sess.NodeAddress)
 	}
 
 	// BL363 T2+T3 — inject Goose provider/model/apikey/channel into goose family backends.
@@ -4048,6 +4064,11 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		nb.SetSessionName(sess.Name)
 	}
 
+	// Pi family: a restart reuses the node the session was started on.
+	if nh, ok := backendObj.(interface{ SetNodeHost(string) }); ok {
+		nh.SetNodeHost(sess.NodeAddress)
+	}
+
 	// BL363 T2+T3 — re-inject goose config on restart (same as initial launch path).
 	switch backendName {
 	case "goose", "goose-prompt":
@@ -5020,6 +5041,9 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 			err := m.SendInput(fullID, input, "channel-task")
 			if err == nil {
 				m.MarkTaskDelivered(fullID)
+				// The worker may already be inside a silent tool call; keep it
+				// Running rather than letting the gap watcher flip it back.
+				m.applyBusyProbe(fullID, time.Time{})
 				return nil
 			}
 			m.debugf("DeliverOneShotTask: send_input for %s attempt %d/%d (window %s): %v", fullID, attempt, maxAttempts, window, err)

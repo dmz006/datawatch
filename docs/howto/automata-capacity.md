@@ -4,7 +4,7 @@ docs:
   topics: [prd, autonomous, capacity, queue, compute, sessions, priority]
 exec_steps:
   - tool: capacity_status
-    description: Show capacity pools, limits, holders and the wait queue
+    description: Show capacity pools, limits, holders, the wait queue and per-node usage (loaded models with memory size and expiry, GPU figures)
     args: {}
     read_only: true
   - tool: autonomous_status
@@ -35,6 +35,9 @@ Automata share the hardware fairly.
   the slots reserved for you), `node:<name>` (autonomous sessions in
   flight on a compute node), `llm:<name>` (autonomous sessions in
   flight on one LLM). A task needs a free slot in every pool it touches.
+  An LLM entry that lists several compute nodes is a pool of nodes; the
+  ledger picks one of them for each worker. See
+  [Compute-node pools and slots](#compute-node-pools-and-slots).
 - **Waiting is not failing.** A waiting task shows why (which pool, who
   holds it), does not use an auto-fix retry, and starts when a slot
   frees. It fails only if it waits longer than
@@ -85,6 +88,12 @@ curl -X PUT https://localhost:8443/api/compute/nodes/gpu-1 \
   -H 'Content-Type: application/json' -d '{"name":"gpu-1", "max_concurrent_sessions": 1, "...": "other fields unchanged"}'
 ```
 
+A node that hosts a local engine takes its worker count from its slot count:
+the operator's `session_slots` when it is set, otherwise a count derived from
+the node's observer data. A node that hosts no local engine keeps its
+`max_concurrent_sessions` limit (0 = unlimited) and ignores `session_slots`.
+The rules are in [Compute-node pools and slots](#compute-node-pools-and-slots).
+
 Other channels:
 
 - **PWA:** Settings > Compute > node edit > *Max concurrent sessions*;
@@ -92,13 +101,20 @@ Other channels:
   fields; the Capacity card on the Automata tab's Automation sub-tab shows the
   machine-wide pools and the queue.
 - **MCP:** `compute_node_update` (`max_concurrent_sessions`),
+- **PWA:** Settings > Compute > node edit > *Max concurrent sessions* and
+  *Session slots*; LLM edit > *Max in flight*; Settings > General > Automata >
+  capacity fields; Automata > Capacity card shows pools and the queue.
+- **MCP:** `compute_node_update` (`session_slots`, `max_concurrent_sessions`),
   `llm_update` (`max_inflight`), `config_set` for
   `autonomous.capacity_*` and `session.reserved_interactive`,
   `capacity_status` to view, `autonomous_prd_set_priority`.
-- **CLI:** `datawatch capacity` (add `--json`), `datawatch config set
+- **CLI:** `datawatch compute node update <name> --session-slots N`,
+  `datawatch capacity` (add `--json`), `datawatch config set
   autonomous.capacity_wait_timeout_seconds 7200`.
 - **Chat channels:** `capacity`, and `configure
-  session.reserved_interactive=2`.
+  session.reserved_interactive=2`, and `compute node update <name> session_slots=N`
+  (0 = derive from observer data; a node update replaces the whole node, so repeat
+  every field you want to keep).
 - **YAML:**
 
 ```yaml
@@ -109,10 +125,75 @@ autonomous:
   capacity_enabled: true
   capacity_wait_timeout_seconds: 14400
   capacity_gpu_util_pct: 0      # 0 = off; e.g. 90 to hold tasks while a GPU is 90% busy
+  plan_tier_max_inflight: {pro: 1, max_5x: 2, max_20x: 4, api: 0}
+compute_nodes:
+  - name: gpu-1
+    kind: ollama
+    address: http://gpu-1:11434
+    session_slots: 2            # 0 = derive from observer data; a negative value is refused
 ```
 
-  plan_tier_max_inflight: {pro: 1, max_5x: 2, max_20x: 4, api: 0}
-```
+## Compute-node pools and slots
+
+An LLM entry can list more than one compute node in its `compute_nodes` list.
+That list is the entry's **pool** of nodes, not a failover order. Each worker
+the entry starts is placed on one node of the pool, and that node's
+`node:<name>` pool carries the worker's lease. An entry with one node behaves
+exactly as before: that node takes the lease and nothing is chosen.
+
+**Which node is picked.** The ledger takes the node with the highest
+scheduling priority that has a free slot. A node's priority is its
+`scheduling_priority` (0 to 100, default 50). Nodes of equal priority are tried
+in the order the list gives them. A node with no free slot is passed over, and
+the next one is tried.
+
+**Slots per node.** A node that hosts a local engine (`pi`, `pi-prompt`,
+`ollama`, `opencode`, `opencode-acp`) has a slot count: how many workers it
+runs at once. The count is the first of these that applies:
+
+1. `session_slots` set by the operator, when it is above `0`.
+2. Derived from GPU data, when the observer reports GPUs. Each GPU takes at most
+   one engine. The free GPU memory is each GPU's total minus its used memory,
+   summed; the count is how many whole copies of the served model fit in it,
+   capped at the number of GPUs. Memory held by any other program lowers it.
+3. Derived from system memory, when the observer reports no GPU data. The free
+   system memory divided by the size of the served model, at least one. The
+   count does not use CPU cores.
+4. `autonomous.max_engines_per_node`, when the observer gives neither. Its
+   default is 1.
+
+When `max_concurrent_sessions` is set on the node and smaller, it caps the
+count. A derived count is read again every 10 seconds, so a change takes effect
+without a restart. A derived count never drops below the workers already running
+on the node, but that floor is capped at the GPU count. Running workers are not
+stopped. A node that hosts no local engine takes no slot count at all; it keeps
+its `max_concurrent_sessions` limit.
+
+**Loading the model.** A worker that lands on a node of a multi-node pool gets
+its model made resident on that node before it starts. The daemon checks the
+node's running models. If the model is absent, it asks Ollama to load it and
+waits up to 10 minutes for the model to show as loaded, checking every 2
+seconds. A node with a pinned model loads its pin. A request for another model
+is refused unless `allow_model_swap` is set, and that refusal counts as a load
+failure. A single-node entry has no load step.
+
+When a load fails, because the node cannot be reached, the load request is
+refused, or the model is not loaded in time, the daemon raises an error alert
+naming the node and the model. It releases the lease and places the worker
+again on another node of the pool, with the failed node left out for that
+attempt. When no other node is left, the start fails with the load error.
+
+**Judges hold node leases.** The verifier and the guardrail judge take a lease
+on a node in the same way. A verifier keeps the node its task's worker holds
+when it can run on the same pools. Otherwise the worker's slot is released and
+the verifier acquires its own. A guardrail judge on an entry with one node
+takes no lease, as before.
+
+**What you see.** When the holders of a pool span two or more nodes, the
+capacity card and `datawatch capacity` print the node name beside each holder.
+A pool whose holders are all on one node is shown as before. The admission
+query names the node a start would be placed on. The
+[capacity API](../api/autonomous.md#holder-nodes) gives the same figures.
 
 ## Per-LLM caps: explicit and plan tier
 
@@ -677,7 +758,9 @@ always included). The card is left out when there is nothing to show.
   LLM pool also shows its effective limit and where that came from
   (`explicit`, `plan_tier` or `kind`). Each pool lists its **holders** (short
   ids of the sessions using it) and, for a compute node, that tasks are
-  waiting for the node. A pool with no limit appears only while something
+  waiting for the node. When a pool's holders span two or more nodes, the
+  node name follows each holder's short id in a small muted label; a pool
+  whose holders are all on one node is unchanged. A pool with no limit appears only while something
   holds it, marked *no limit*. A registered compute node with no cap and no
   activity is listed as *no cap configured*, so real hardware is not hidden.
 - **Usage back-off.** One row per active flag: the backend, `Resets: <time>`
@@ -693,6 +776,50 @@ always included). The card is left out when there is nothing to show.
   anything; only the ceiling does.
 - **Waiting.** The queue of capacity waits, each with the holder, the
   Automaton, how long it has waited and the reason.
+
+## Compute node usage
+
+Next to each node's held slots and limit, the card shows what the node is
+doing right now, one row per compute node:
+
+- **Model.** The models loaded on the node's model server: the name, how
+  much memory they take (`5.0 GiB in memory`) and how long they are meant
+  to stay (`expires in …`). A model that stays resident shows *stays
+  loaded*, a node with none loaded shows *No model loaded*. Only `ollama`
+  nodes report models (an OpenAI-compatible endpoint has no list of
+  loaded models to show).
+- **Slots.** What was already on the card: held slots of the configured
+  limit for the node.
+- **GPU.** For each GPU, the utilization percent and the memory used of
+  the total (`GPU 12.5%`, `GPU memory 10.0 of 40.0 GiB`). These figures
+  come from the node's observer: the node must have an observer peer set
+  on it (Settings > Compute, the node's *observer peer* field) — datawatch
+  does not guess which peer, if any, is the observer. A node without that
+  binding shows *No GPU data from the observer*.
+
+Two states besides the figures:
+
+- ***Unreachable*** — the model server or observer answered neither within
+  the short probe timeout (2 s); the reason is in the chip's tooltip. The
+  node row still shows its slots, and GPU may still be available from the
+  observer when only the model server is down.
+- ***Checking...*** — the first fetch for the node is still in flight; the
+  row shows the checking line and nothing fabricated.
+
+How the figures get there:
+
+- **Refreshed about every 15 seconds, from a cache.** The daemon caches
+  each node's figures and serves them immediately, refreshing in the
+  background at most once per node at a time. The capacity page never waits
+  on a node: a slow or hung model server cannot hold up the card.
+- **No history.** The row shows only the current figures; there is no
+  history graph and no time series for a node.
+
+The same figures are on every surface: `datawatch capacity` prints a
+`model:` line and a `GPU` line under each node, the comm command
+`capacity` replies with the same text, and the `capacity_status` tool
+returns the body with each `node:<name>` pool carrying the `usage` object
+(`state`, `checked_at`, `models`, `gpu`) of `GET /api/capacity`.
 
 ## Audit trail
 
@@ -772,6 +899,23 @@ or cleared a back-off by hand: `datawatch audit --action
 - **Everything queues behind one big model.** That is the node limit
   doing its job. Raise `max_concurrent_sessions` if the server handles
   more than one at a time.
+- **A node has one slot although its GPU has room.** A node with one GPU
+  always takes one slot, and so does a node whose observer reports no GPU or
+  system memory data and gives no model size, which falls back to
+  `autonomous.max_engines_per_node`. A set `session_slots` replaces the derived
+  count, and `max_concurrent_sessions` still caps it. See
+  [Compute-node pools and slots](#compute-node-pools-and-slots).
+- **A worker starts on a node you did not expect.** The ledger picks the node
+  with the highest `scheduling_priority` that has a free slot. Check the
+  priorities in `datawatch compute node get <name>` and the holders in
+  `datawatch capacity`. A pi worker that reaches the wrong host is covered in
+  [LLM backends](../llm-backends.md#which-node-a-pi-worker-uses).
+- **Another program on the GPU lowers the slots.** Derived slots count
+  free memory, so memory held by another program reduces them. The count
+  never drops below the workers already running on the node, but that
+  floor is capped at the GPU count: a node with more workers than GPUs
+  reads a limit below its held count, and new work waits until the held
+  count falls below it. Running workers are not stopped.
 - **Tasks wait although nothing seems to run.** Your own interactive
   sessions count against the `host` pool. Check `datawatch capacity` for
   the holders, or lower `session.reserved_interactive`.

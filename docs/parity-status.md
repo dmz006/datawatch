@@ -21,6 +21,7 @@ Legend:
 - ✅ — Implemented and verified
 - 🔶 — Partial / in progress
 - ❌ — Not yet implemented
+- design only — Design written and on file under `docs/plans/`; no implementation yet
 - N/A — Not applicable to this platform
 
 ## Feature Parity Table
@@ -36,6 +37,7 @@ Legend:
 | Settings — Messaging backends | ✅ | ✅ | ✅ |
 | Settings — Audit & Access Log (v8.74.0) | ✅ | ❌ (tracked: app#241) | ❌ (tracked: app#241) |
 | Settings — Cross-Session Communication Rule (v8.79.0) | ✅ | ❌ (tracked: app#241) | ❌ (tracked: app#241) |
+| Settings — Comms: imap-mcp channel config (BL404) | ✅ | ❌ (tracked: [app#250](https://github.com/dmz006/datawatch-app/issues/250)) | ❌ (tracked: [app#250](https://github.com/dmz006/datawatch-app/issues/250)) |
 | Push notifications (FCM) | ✅ | ✅ | N/A |
 | Push notifications (APNs) | N/A | N/A | ✅ v8.62.x — server-side dispatch shipped (BL397 Phase 4 / BL335); **unit-tested only, not live-verified against real Apple servers** (no Apple Developer account/Auth Key/TestFlight device token available in this environment) |
 | Alert list + mark read | ✅ | ✅ | ✅ |
@@ -50,6 +52,7 @@ Legend:
 | Capacity admission (pools, wait queue, priority, per-node/LLM limits) | ✅ | ✅ (app v1.23.83, 2026-09-29: "Capacity card showing pools, limits and the wait queue") | ✅ |
 | Usage back-off (capacity panel wait-reason chip + `autonomous.usage_backoff` / `autonomous.backoff_max_wait_minutes` settings fields + status display) | ✅ | ❌ — datawatch-app item: mirror the capacity-panel back-off display and the two settings fields | ❌ — datawatch-app item, same scope |
 | Capacity visibility (task wait cause chip, reason, reset time and Holds line; capacity card back-off reset label, budget spend bars with the estimate label; audit query `subject` filter and `action` prefix) | ✅ | ❌ — pending the datawatch-app issue written up in `plans/2026-10-22-datawatch-app-capacity-visibility-note.md` (not filed yet) | ❌ — same issue, same scope |
+| Capacity card — compute node usage rows (per node: loaded model with memory size and expiry or stays-loaded, slots held of limit, GPU utilization and memory from the observer; `usage` object on REST, `capacity_status` MCP, CLI, comm) | ✅ | ❌ pending the datawatch-app issue written up in `plans/2026-10-24-datawatch-app-capacity-node-usage-note.md` (not filed) | ❌ — same issue, same scope (five-locale key set specified in that note) |
 | Compute nodes | ✅ | ✅ | ✅ |
 | Summarize last response | ✅ | ✅ | ✅ |
 | Chrome session flag | ✅ | ✅ | ✅ |
@@ -76,6 +79,8 @@ Legend:
 | Automation tab (list, pipeline strip, controls, create and edit) — a top-level view left of Automata: list of Automations, pipeline strip with fork lanes, joins and expandable nested levels, the control operations, and a create and edit form with fork, join and nested members, default models and budget policy | ✅ built in the development build (node tests; the live browser run is owed) | ⏳ file a `dmz006/datawatch-app` issue on merge — draft issue text in the Automation tab "Mobile-Parity" note in [`testing-tracker.md`](testing-tracker.md) | ⏳ same as Android |
 | Automata tags — nested tag registry (create, rename, recolor, move), tags on an Automaton, browse by tag with an include-sub-tags switch, bulk tag. Server-side on REST, MCP, CLI and comm; `tag_ids` on the PRD JSON | ✅ Tag Registry in Settings → Automata, picker, card chips, browse selector, batch **Tag** action (node tests; the live browser run is owed) | ⏳ file a `dmz006/datawatch-app` issue on merge — spec in [`plans/2026-10-23-datawatch-app-tags-note.md`](plans/2026-10-23-datawatch-app-tags-note.md); view, assign and browse only, registry management stays web-only for now | ⏳ same as Android |
 | Automata progress dashboard — counts by kind, throughput and utilization per active day, work left split into known and estimated, a completion range with its methods and drivers, inactive windows, daily snapshots and a trend; an Automaton kind setter. Server-side on REST, MCP, CLI and comm (`progress`, `progress trend`, `autonomous set-kind`) | ✅ *Progress* card on the Automata tab and a *Kind* select in Automaton settings (node tests; the live browser run is owed) | ❌ not yet: ready-to-file issue text is in `plans/2026-10-14-automation-orchestration-design.md` under *Phase 8 companion apps*; not filed | ❌ not yet: same issue text, iOS section; not filed |
+| Task failure escalation policy: ladder of worker steps, hold for review at a failure count, review actions (retry, changed spec, worker or file scope, cancel), override on the daemon, an Automaton or a task. Server-side on REST, MCP, CLI and comm; PWA settings, override editors and review actions | 🔶 implemented, live run pending | pending (companion-app issue filed at merge) | pending (companion-app issue filed at merge) |
+| Tag browsing and PRD tiles | design only — `docs/plans/2026-10-20-tag-browsing-tile-design.md` (on hold until the tag registry ships) | not started — issue draft `docs/plans/assets/tag-browsing-datawatch-app-issue.md` | not started (same issue draft, iPhone and iPad) |
 
 ## Known PWA gaps (tracked, not yet closed)
 

@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -196,7 +197,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.11.0"
+var Version = "9.15.0"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -329,6 +330,11 @@ type Server struct {
 
 	// v7.0.0 S1 — ComputeNode registry (nil when disabled).
 	computeReg *compute.Registry
+
+	// Per-node usage cache for the node:<name> capacity pools. Lazily
+	// created by (s *Server) nodeUsageCache(); see node_usage.go.
+	nodeUsageCacheOnce sync.Once
+	nodeUsageCacheVal  *nodeUsageCache
 
 	// v7.0.0 S2 — LLM-inference registry + dispatcher (nil when disabled).
 	inferenceReg   *inference.Registry
@@ -4563,6 +4569,36 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }
 
+// nodeHostFor resolves the host a session placed on compute node nodeRef talks
+// to, from the compute registry. ollamaURL is the Ollama base URL that opencode
+// writes into opencode.json (opencode on an Ollama-kind node only). nodeAddress
+// is the node's own address, carried on the session as NodeAddress for the pi
+// family and opencode, so a resume or restart reuses the same host. Both are
+// empty when nodeRef is empty, the registry is not wired, the backend is
+// neither family, or the node has no address.
+func (s *Server) nodeHostFor(nodeRef, backend string) (ollamaURL, nodeAddress string) {
+	if nodeRef == "" || s.computeReg == nil {
+		return "", ""
+	}
+	isOpenCode := backend == string(inference.KindOpenCode) || backend == string(inference.KindOpenCodeACP)
+	isPi := backend == string(inference.KindPi) || backend == string(inference.KindPiPrompt)
+	if !isOpenCode && !isPi {
+		return "", ""
+	}
+	n, err := s.computeReg.Get(nodeRef)
+	if err != nil || n == nil || n.Address == "" {
+		return "", ""
+	}
+	addr := n.Address
+	if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+		addr = "http://" + addr
+	}
+	if isOpenCode && n.Kind == compute.KindOllama {
+		ollamaURL = addr
+	}
+	return ollamaURL, addr
+}
+
 // handleStartSession starts a new session with optional backend and name overrides.
 func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -4697,6 +4733,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	//   - compute_node alone → 400 (operator must pick an LLM too; we
 	//     don't auto-pick because Kind selection is a deliberate choice).
 	var resolvedLLMRef, resolvedComputeNodeRef string
+	// resolvedPoolNodes is how many compute nodes the resolved entry lists.
+	var resolvedPoolNodes int
 	if req.LLM != "" {
 		if s.inferenceReg == nil {
 			http.Error(w, "llm registry not wired (v7.0.0 inference subsystem disabled)", http.StatusBadRequest)
@@ -4712,6 +4750,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		resolvedLLMRef = llm.Name
+		resolvedPoolNodes = len(llm.ComputeNodes)
 		// LLM.Kind becomes the session backend (overrides req.Backend).
 		req.Backend = string(llm.Kind)
 		switch {
@@ -4743,9 +4782,6 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-	} else if req.ComputeNode != "" {
-		http.Error(w, "compute_node requires llm — pick an LLM whose compute_nodes include this node, or omit compute_node", http.StatusBadRequest)
-		return
 	}
 	// v8.19.10 — Named v7 inference-registry LLMs (e.g. "ollama-datawatch")
 	// arrive via req.Backend when the autonomous executor spawns task sessions
@@ -4757,11 +4793,36 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	if req.LLM == "" && req.Backend != "" && s.inferenceReg != nil {
 		if entry, err := s.inferenceReg.Get(req.Backend); err == nil && entry != nil && !entry.Disabled {
 			resolvedLLMRef = entry.Name
+			resolvedPoolNodes = len(entry.ComputeNodes)
 			req.Backend = string(entry.Kind)
-			if len(entry.ComputeNodes) > 0 && resolvedComputeNodeRef == "" {
+			switch {
+			case req.ComputeNode != "":
+				// A held node (the autonomous lease, or an operator pick) decides
+				// where the session runs. It must be one of the entry's
+				// compute_nodes when the entry lists any, and it wins over the
+				// first entry.
+				if len(entry.ComputeNodes) > 0 && !slices.Contains(entry.ComputeNodes, req.ComputeNode) {
+					http.Error(w, "compute_node "+req.ComputeNode+" not in llm "+entry.Name+" compute_nodes list", http.StatusBadRequest)
+					return
+				}
+				if s.computeReg != nil {
+					if _, err := s.computeReg.Get(req.ComputeNode); err != nil {
+						http.Error(w, "compute_node "+req.ComputeNode+" not found in registry", http.StatusBadRequest)
+						return
+					}
+				}
+				resolvedComputeNodeRef = req.ComputeNode
+			case len(entry.ComputeNodes) > 0 && resolvedComputeNodeRef == "":
 				resolvedComputeNodeRef = entry.ComputeNodes[0]
 			}
 		}
+	}
+	// compute_node is accepted with a bare backend only when that backend names
+	// an enabled inference-registry entry (handled above). Anything else keeps
+	// the rule that compute_node needs an llm.
+	if req.LLM == "" && req.ComputeNode != "" && resolvedLLMRef == "" {
+		http.Error(w, "compute_node requires llm — pick an LLM whose compute_nodes include this node, or omit compute_node", http.StatusBadRequest)
+		return
 	}
 	// v8.7.1 — resolve Ollama URL from compute node for opencode sessions
 	// backed by an Ollama-kind node.
@@ -4775,19 +4836,15 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	// how the caller spelled the model), and normalize req.Model so
 	// opencode.json always gets the form it requires, regardless of
 	// which spelling the task override used.
-	var resolvedOllamaURL string
-	isOpenCodeBackend := req.Backend == string(inference.KindOpenCode) || req.Backend == string(inference.KindOpenCodeACP)
-	if resolvedComputeNodeRef != "" && s.computeReg != nil && isOpenCodeBackend {
-		if n, err := s.computeReg.Get(resolvedComputeNodeRef); err == nil && n != nil && n.Kind == compute.KindOllama && n.Address != "" {
-			addr := n.Address
-			if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
-				addr = "http://" + addr
-			}
-			resolvedOllamaURL = addr
-			if req.Model != "" && !strings.HasPrefix(req.Model, "ollama/") {
-				req.Model = "ollama/" + req.Model
-			}
-		}
+	// A pi session binds to its compute node only when the entry is a pool of two
+	// or more nodes. A one-node entry keeps pi's own provider table, as before.
+	hostRef := resolvedComputeNodeRef
+	if resolvedPoolNodes < 2 && (req.Backend == string(inference.KindPi) || req.Backend == string(inference.KindPiPrompt)) {
+		hostRef = ""
+	}
+	resolvedOllamaURL, resolvedNodeAddress := s.nodeHostFor(hostRef, req.Backend)
+	if resolvedOllamaURL != "" && req.Model != "" && !strings.HasPrefix(req.Model, "ollama/") {
+		req.Model = "ollama/" + req.Model
 	}
 	// BL5 — apply template defaults BEFORE per-request overrides.
 	if req.Template != "" {
@@ -4985,6 +5042,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		OneShot:               req.OneShot || (s.cfg != nil && s.cfg.Session.OneShotSessions),
 		LSPLanguage:           req.LSPLanguage,
 		OllamaURL:             resolvedOllamaURL,
+		NodeAddress:           resolvedNodeAddress,
 		Chrome:                req.Chrome,
 		ParentID:              req.ParentID,
 		KillChildren:          req.KillChildren,
@@ -5071,13 +5129,27 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			waitSecs = s.cfg.Session.CapacityWaitSeconds
 		}
 		admitCtx, cancel := context.WithTimeout(r.Context(), time.Duration(waitSecs)*time.Second)
-		aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder, startPriority)
+		grantedNode, aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder, startPriority)
 		cancel()
 		if aerr != nil {
 			jsonError(w, http.StatusServiceUnavailable, "capacity: "+aerr.Error())
 			return
 		}
 		capacityHolder = holder
+		// The ledger placed this start on grantedNode, so the session runs there,
+		// not on the backend's first node. A compute_node the operator named is
+		// kept as named.
+		if grantedNode != "" && req.ComputeNode == "" && grantedNode != resolvedComputeNodeRef {
+			resolvedComputeNodeRef = grantedNode
+			resolvedOllamaURL, resolvedNodeAddress = s.nodeHostFor(grantedNode, req.Backend)
+			if resolvedOllamaURL != "" && req.Model != "" && !strings.HasPrefix(req.Model, "ollama/") {
+				req.Model = "ollama/" + req.Model
+			}
+			opts.ComputeNodeRef = resolvedComputeNodeRef
+			opts.OllamaURL = resolvedOllamaURL
+			opts.NodeAddress = resolvedNodeAddress
+			opts.Model = req.Model
+		}
 	}
 	sess, err := s.manager.Start(context.Background(), req.Task, "", req.ProjectDir, opts)
 	if err != nil {
@@ -5628,6 +5700,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"topic":      s.cfg.Ntfy.Topic,
 			"token":      mask(s.cfg.Ntfy.Token),
 		},
+		"imap_mcp": map[string]interface{}{
+			"enabled":        s.cfg.ImapMcp.Enabled,
+			"url":            s.cfg.ImapMcp.URL,
+			"account":        s.cfg.ImapMcp.Account,
+			"subject_prefix": s.cfg.ImapMcp.SubjectPrefix,
+			"to":             s.cfg.ImapMcp.To,
+			"token":          mask(s.cfg.ImapMcp.Token),
+		},
 		"email": map[string]interface{}{
 			"enabled":  s.cfg.Email.Enabled,
 			"host":     s.cfg.Email.Host,
@@ -5947,6 +6027,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"per_prd_guardrails":                   s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
 			"block_on_file_drift":                  s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
 			"gate_disagreement":                    s.cfg.Autonomous.GateDisagreement, // verifier OK + gate regression: "warn" (default) or "block"
+			"failure_escalation":                   failureEscalationConfigForDisplay(s.cfg.Autonomous.FailureEscalation),
 			"verifier_infra_escalation_threshold":  s.cfg.Autonomous.VerifierInfraEscalationThreshold,
 			"fallback_verification_backend":        s.cfg.Autonomous.FallbackVerificationBackend,
 			"verifier_no_progress_timeout_seconds": s.cfg.Autonomous.VerifierNoProgressTimeoutSeconds,
@@ -6313,6 +6394,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// The failure escalation block is checked as a whole, the same way: a bad
+	// max_failures, steps value or enabled flag refuses the whole PUT.
+	if err := validateFailureEscalationPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	skipped := applyConfigPatch(s.cfg, patch)
 	// BL368 — re-initialize visioner when vision config changes via PUT.
 	for k := range patch {
@@ -6597,6 +6684,23 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "ntfy.token":
 			if s := toString(v); s != "" {
 				cfg.Ntfy.Token = s
+			}
+		// BL404 — imap_mcp config parity.
+		case "imap_mcp.enabled":
+			cfg.ImapMcp.Enabled = toBool(v)
+		case "imap_mcp.url":
+			cfg.ImapMcp.URL = toString(v)
+		case "imap_mcp.account":
+			cfg.ImapMcp.Account = toString(v)
+		case "imap_mcp.subject_prefix":
+			cfg.ImapMcp.SubjectPrefix = toString(v)
+		case "imap_mcp.to":
+			cfg.ImapMcp.To = toString(v)
+		case "imap_mcp.token":
+			// Ignore empty and the GET redaction placeholder so a client
+			// echoing back the masked value never clobbers the real token.
+			if s := toString(v); s != "" && s != "***" {
+				cfg.ImapMcp.Token = s
 			}
 		case "email.enabled":
 			cfg.Email.Enabled = toBool(v)
@@ -8073,6 +8177,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Results.ScheduleHistoryLimit = n
 			}
 		default:
+			// autonomous.failure_escalation.{enabled,max_failures,steps}; the
+			// values were checked by validateFailureEscalationPatch.
+			if applyFailureEscalationPatch(cfg, k, v) {
+				continue
+			}
 			// Single-tier pair form: autonomous.plan_tier_allocation_usd.<tier>
 			// sets one tier and leaves the rest of the table alone.
 			if tier, ok := planTierAllocationPairTier(k); ok {

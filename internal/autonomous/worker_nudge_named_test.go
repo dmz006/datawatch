@@ -117,7 +117,7 @@ func TestWorkerNudge_RecordTaskNudgeCounters(t *testing.T) {
 	id := prd.Story[0].Tasks[0].ID
 	t1, t2 := nudgeT0, nudgeT0.Add(time.Minute)
 	for _, at := range []time.Time{t1, t2} {
-		if err := m.RecordTaskNudge(prd.ID, id, at); err != nil {
+		if err := m.RecordTaskNudge(prd.ID, id, "sess-counters", at); err != nil {
 			t.Fatalf("RecordTaskNudge: %v", err)
 		}
 	}
@@ -129,7 +129,7 @@ func TestWorkerNudge_RecordTaskNudgeCounters(t *testing.T) {
 	if ev := task.NudgeEvents[1]; ev.Count != 2 || !ev.At.Equal(t2) || ev.Outcome != "sent" {
 		t.Fatalf("second event = %+v", ev)
 	}
-	if err := m.RecordTaskNudge(prd.ID, "missing", t1); err == nil {
+	if err := m.RecordTaskNudge(prd.ID, "missing", "sess-counters", t1); err == nil {
 		t.Fatal("expected error for unknown task")
 	}
 }

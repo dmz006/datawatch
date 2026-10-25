@@ -44,9 +44,10 @@ type WorkerNudgeTracker struct {
 	nudgeAfter time.Duration
 	stallAfter time.Duration
 
-	idleSince time.Time // start of the current unbroken idle run
-	nudgedAt  time.Time // when the one nudge was sent (zero before)
-	done      bool      // completion seen: tracking has ended
+	idleSince  time.Time     // start of the current unbroken idle run
+	nudgedAt   time.Time     // when the one nudge was sent (zero before)
+	idleAtSend time.Duration // idle time that earned the nudge, for the log line
+	done       bool          // completion seen: tracking has ended
 }
 
 // NewWorkerNudgeTracker returns a tracker with the given windows. A window
@@ -57,6 +58,17 @@ func NewWorkerNudgeTracker(nudgeAfter, stallAfter time.Duration) *WorkerNudgeTra
 
 // Nudged reports whether the nudge has been sent.
 func (t *WorkerNudgeTracker) Nudged() bool { return !t.nudgedAt.IsZero() }
+
+// SeedNudgedAt adopts a nudge that was already sent at the given time, such as
+// one persisted on the task before a daemon restart. The tracker then reports
+// Nudged, never sends again, and counts the stall window from at. A zero time
+// leaves the tracker unseeded.
+func (t *WorkerNudgeTracker) SeedNudgedAt(at time.Time) {
+	if at.IsZero() {
+		return
+	}
+	t.nudgedAt = at
+}
 
 // Observe feeds one observation and returns the decision. Only claude-code
 // PRD-owned sessions are tracked; family and prdOwned gate everything else to
@@ -97,6 +109,7 @@ func (t *WorkerNudgeTracker) Observe(now time.Time, family string, prdOwned bool
 	}
 	if t.nudgeAfter > 0 && idleFor >= t.nudgeAfter {
 		t.nudgedAt = now
+		t.idleAtSend = idleFor
 		return WorkerNudgeSend
 	}
 	return WorkerNudgeNone

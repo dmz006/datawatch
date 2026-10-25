@@ -497,7 +497,7 @@ go list -m -u all 2>/dev/null | grep '\[' | head -30
 #    - Only upgrade if the new version has been available for >= 72 hours
 #    - This avoids being an early adopter of broken releases
 #    - Exception: if the user explicitly requests an upgrade, do it immediately
-#    - Exception: security patches (CVEs) may be upgraded immediately
+#    - Exception: security patches (CVEs) are upgraded as soon as they are available, with no waiting period (operator, 2026-10-25)
 
 # 3. Upgrade stable dependencies
 go get -u <module>@<version>
@@ -509,7 +509,9 @@ go test ./...
 
 **Rules:**
 - Do NOT upgrade a dependency that was released less than 72 hours ago unless
-  the user specifically asks for it or it fixes a known CVE
+  the user specifically asks for it or it is a security patch (a fix for a known
+  CVE or advisory). Security patches are consumed as soon as they are available,
+  with no waiting period (operator, 2026-10-25, until upstream monitoring exists)
 - Run `go mod tidy` after any upgrade to clean up go.sum
 - If an upgrade breaks tests, revert it and note the incompatibility
 - Document dependency upgrades in the commit message
@@ -946,14 +948,11 @@ The release tag commonly triggers `.github/workflows/containers.yaml` (and simil
 
 **Workflows to check by default:** `containers.yaml`, `ebpf-gen-drift.yaml`, `kind-smoke.yaml`, `security-scan.yaml`, `secret-scan.yaml`, `docs-sync.yaml`, `dependency-review.yaml`, `owasp-zap.yaml`, `ghcr-cleanup.yaml`.
 
-**Security-failure exception (added 2026-05-04):** the standard "investigate → fix or document as environmental → delete" path does NOT apply to dependency / CVE failures from `security-scan.yaml`, `dependency-review.yaml`, `owasp-zap.yaml`, or `secret-scan.yaml` when **all three** of these are true:
-1. The failure is a security issue against a project dependency (not a transient infra flake).
-2. The CVE / advisory was published **more than 72 hours ago** (i.e., outside the disclosure-grace window — actively known, not breaking news).
-3. The project's test setup is currently **excluding** the issue (allowlist entry, ignore rule, severity filter, etc.) — meaning we're knowingly suppressing it.
-
-In that case: **stop, do NOT auto-document or delete.** Surface to the operator with the dependency name, CVE / advisory ID, publication date, current allowlist entry (if any), and an upgrade-or-keep-suppressed recommendation. Operator decides. The failure stays in the run list until they answer.
-
-The reasoning: a fresh CVE is reasonable to triage and route via the existing release workflow. An old CVE that's been silenced is a deliberate-suppression decision the operator owns; CI shouldn't "fix" it by deleting the failure record.
+**Security-failure rule (replaced 2026-10-25 by the operator; the 72-hour disclosure-grace exception of 2026-05-04 is withdrawn):** the world has changed since the 72-hour window was written to avoid early adoption and malicious package injection; with AI-assisted security the better policy is to consume security patches as soon as they are available. This holds until a better way to monitor upstream exists (a future project: monitor all upstream dependencies, base images and advisories). For a dependency / CVE failure from `security-scan.yaml`, `dependency-review.yaml`, `owasp-zap.yaml`, or `secret-scan.yaml`:
+1. **A fixed version is available: upgrade now.** Apply the patch through the normal release path (a PRD, or a direct dependency bump) with the Security-Fix Downstream-Review Rule; there is no waiting period and no operator approval is needed for the upgrade.
+2. **No fixed version is available: keep it suppressed in the registry.** Add or keep the entry in `security/accepted-risks.yml` with a real trace and the real `first_added` date (the generated ignore file is never edited by hand); this is routine and needs no approval. Re-check for a fix on every cycle and consume it the moment one appears.
+3. **Surface to the operator only** when the trace says the vulnerable path is reachable (`impact.reachable` is `yes` on a high or critical finding, the registry's ESCALATE condition), or when a suppression has been renewed past its first expiry window. Give the dependency, advisory ID, publication date, allowlist entry and a recommendation.
+4. The failed runs are deleted after the fix is confirmed green (the standard path above), never before.
 
 ### Cross-compilation on a GH runner (open question, BL255 followup)
 
@@ -1397,7 +1396,7 @@ Write `N/A` for every row whose trigger did not fire.
 | B14 | Security scanner finding patched (ZAP, gosec, govulncheck, CVE) | Security downstream review done: call sites mapped, end-to-end tested | `sec-downstream: reviewed` |
 | B15 | New messaging or LLM backend | Secrets-Store Rule applied: credential fields use `${secret:...}` | `secrets-store: applied` |
 | B16 | New audit-event-emitting code path | JSON-lines round-trip test + CEF format + escape test added | `audit-tests: added` |
-| B17 | New Go module dependency added | Dep noted in CHANGELOG; 72-hour rule verified; `go mod tidy` run | `deps: <module@version>` |
+| B17 | New Go module dependency added | Dep noted in CHANGELOG; dependency age rule verified (security patches exempt); `go mod tidy` run | `deps: <module@version>` |
 | B18 | New `case "..."` block added to `internal/server/autonomous.go` (or new autonomous handler) | Federation-Parity Rule: write/run cases have `fedCap` guard; read cases have `CapAutonomousRead` | `fed-parity: verified` |
 
 ---
@@ -1417,7 +1416,7 @@ Pre-release scans required for every GH release (patch, minor, or major):
 
 | # | Check | Required token |
 |---|---|---|
-| C1 | Pre-release dependency audit: `go list -m -u all 2>/dev/null \| grep '\['` — outdated deps reviewed; no dep upgraded that was released < 72h ago | `dep-audit: clean` or `dep-audit: upgraded <module@ver>` |
+| C1 | Pre-release dependency audit: `go list -m -u all 2>/dev/null \| grep '\['` — outdated deps reviewed; no non-security dep upgraded that was released < 72h ago | `dep-audit: clean` or `dep-audit: upgraded <module@ver>` |
 | C2 | Pre-release gosec scan: `~/go/bin/gosec -exclude="$(grep -v '^#' .gosec-exclude \| tr '\n' ',')' -fmt text -quiet ./...` — HIGH findings reviewed | `gosec: clean` or `gosec: <N> findings reviewed` |
 | C3 | Smoke run (per cadence above) on an isolated sandbox daemon (never production) — record exact Summary line counts | `smoke: <N> sections, <P> passed, <S> skipped, 0 failed` OR `smoke: SMOKE_ONLY=<sections> ok` OR `smoke: skipped (docs-only)` |
 

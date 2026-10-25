@@ -11,6 +11,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/inference"
 )
@@ -28,12 +29,14 @@ func (s *HTTPServer) SetCapacity(l *capacity.Ledger) {
 // CapacityAdmitFn blocks (up to a short, caller-chosen timeout) until an
 // interactive session start may proceed on the given backend+model's
 // node:/llm: pools, or returns an error (typically capacity.ErrWaitTimeout)
-// if it can't. holder is a caller-generated key for this admission attempt;
+// if it can't. On success it also returns the compute node the lease was
+// granted on ("" when the admission names no node), and the session must start
+// there. holder is a caller-generated key for this admission attempt;
 // on success the caller must, once the real session ID is known, bind it via
 // the same ledger (see wireCapacity's admitInteractive closure) so the
 // existing Reap() cycle in capacity_wiring.go's syncPools releases it
 // automatically once the session ends — no separate release call needed.
-type CapacityAdmitFn func(ctx context.Context, backend, model, holder string, priority int) error
+type CapacityAdmitFn func(ctx context.Context, backend, model, holder string, priority int) (node string, err error)
 
 // SetCapacityAdmit wires interactive-session capacity gating (handleStartSession).
 func (s *Server) SetCapacityAdmit(fn CapacityAdmitFn) { s.capacityAdmit = fn }
@@ -85,32 +88,58 @@ func (s *HTTPServer) InferenceRegistry() *inference.Registry {
 	return s.api.inferenceReg
 }
 
-// NodeGPUStats returns the busiest GPU's utilisation (percent) reported for a
-// compute node, and whether any GPU data was available.
-func (s *HTTPServer) NodeGPUStats(name string) (maxUtilPct float64, ok bool) {
+// NodeObservation returns the observer figures a compute node's slot count
+// reads, from the node detail the observer serves: each GPU's memory, the VRAM
+// of every model the node has loaded (the "ollama_model:" envelopes), and the
+// busiest GPU's utilisation. ok is false when the detail could not be read; a
+// node whose detail has no GPUs returns ok with an empty GPU list.
+func (s *HTTPServer) NodeObservation(name string) (obs compute.NodeObservation, ok bool) {
 	if s.api == nil || s.api.computeReg == nil {
-		return 0, false
+		return obs, false
 	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/compute/nodes/"+name+"/detail", nil)
-	s.api.handleComputeNodeDetail(rec, req, name)
+	s.api.serveComputeNodeDetail(rec, req, name)
 	if rec.Code != http.StatusOK {
-		return 0, false
+		return obs, false
 	}
 	var d struct {
 		GPU []struct {
-			UtilPct float64 `json:"util_pct"`
+			UtilPct       float64 `json:"util_pct"`
+			MemUsedBytes  uint64  `json:"mem_used_bytes"`
+			MemTotalBytes uint64  `json:"mem_total_bytes"`
 		} `json:"gpu"`
+		Mem struct {
+			UsedBytes  uint64 `json:"used_bytes"`
+			TotalBytes uint64 `json:"total_bytes"`
+		} `json:"mem"`
+		Envelopes []struct {
+			ID          string `json:"id"`
+			GPUMemBytes uint64 `json:"gpu_mem_bytes"`
+			RSSBytes    uint64 `json:"rss_bytes"`
+		} `json:"envelopes"`
 	}
-	if json.Unmarshal(rec.Body.Bytes(), &d) != nil || len(d.GPU) == 0 {
-		return 0, false
+	if json.Unmarshal(rec.Body.Bytes(), &d) != nil {
+		return obs, false
 	}
 	for _, g := range d.GPU {
-		if g.UtilPct > maxUtilPct {
-			maxUtilPct = g.UtilPct
+		obs.GPUs = append(obs.GPUs, compute.GPUMemory{TotalBytes: g.MemTotalBytes, UsedBytes: g.MemUsedBytes})
+		obs.MaxUtilPct = max(obs.MaxUtilPct, g.UtilPct)
+	}
+	obs.SystemTotalBytes = d.Mem.TotalBytes
+	obs.SystemUsedBytes = d.Mem.UsedBytes
+	for _, e := range d.Envelopes {
+		if !strings.HasPrefix(e.ID, "ollama_model:") {
+			continue
+		}
+		if e.GPUMemBytes > 0 {
+			obs.LoadedModelBytes = append(obs.LoadedModelBytes, e.GPUMemBytes)
+		}
+		if e.RSSBytes > 0 {
+			obs.CPUModelBytes = append(obs.CPUModelBytes, e.RSSBytes)
 		}
 	}
-	return maxUtilPct, true
+	return obs, true
 }
 
 // resolvePoolsForBackend mirrors capacity_wiring.go's keys() closure (which
@@ -128,8 +157,15 @@ func (s *Server) resolvePoolsForBackend(backend string) []string {
 		return nil
 	}
 	pools := []string{"llm:" + l.Name}
-	if len(l.ComputeNodes) > 0 {
-		pools = append(pools, "node:"+l.ComputeNodes[0])
+	// Every node of the entry is listed so a card scoped to it finds each
+	// node a start may land on; a one-node entry lists its one node as before.
+	seen := map[string]bool{}
+	for _, n := range l.ComputeNodes {
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		pools = append(pools, "node:"+n)
 	}
 	return pools
 }
@@ -207,6 +243,10 @@ type capacityPoolJSON struct {
 	// "unlimited by design" (local/API kinds or an explicit operator 0).
 	EffectiveMaxInflight *int    `json:"effective_max_inflight,omitempty"`
 	InflightSource       *string `json:"inflight_source,omitempty"`
+	// Usage carries the per-node usage figures (loaded models, GPU stats;
+	// see the nodeUsage contract in node_usage.go) for node:<name> pools.
+	// Nil — and therefore omitted from JSON — on host: and llm: pools.
+	Usage *nodeUsage `json:"usage,omitempty"`
 }
 
 // capacityResponse is the /api/capacity body.
@@ -438,6 +478,17 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Prune the per-node usage cache once per request, against the full
+	// registered node set and before any ?prd_id= scoping, so scoping to a
+	// PRD's own pools never evicts cache entries for other nodes.
+	if s.computeReg != nil {
+		names := []string{}
+		for _, n := range s.computeReg.List() {
+			names = append(names, n.Name)
+		}
+		s.nodeUsageCache().prune(names)
+	}
+
 	if prdID := r.URL.Query().Get("prd_id"); prdID != "" {
 		relevant, ok := s.prdRelevantPools(prdID)
 		if ok {
@@ -503,6 +554,16 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 			holder := strings.Join(p.Holders, ",")
 			pj.QueueDepth = &depth
 			pj.Holder = &holder
+			if s.computeReg != nil {
+				if n, err := s.computeReg.Get(strings.TrimPrefix(p.Name, "node:")); err == nil && n != nil {
+					// Non-blocking: the cache returns the cached figure (or a
+					// pending placeholder) immediately and starts at most one
+					// background refresh per node — it never waits on the
+					// network probes, so this handler stays fast.
+					u := s.nodeUsageCache().get(s, *n)
+					pj.Usage = &u
+				}
+			}
 			// holder_names: the same holders as readable objects, alongside the
 			// untouched comma-string and the raw holders array.
 			pj.HolderNames = make([]autonomous.HolderNameView, 0, len(p.Holders))

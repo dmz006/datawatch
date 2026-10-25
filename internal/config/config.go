@@ -566,6 +566,9 @@ type ComputeNodeYAML struct {
 	NodePinnedModel string `yaml:"node_pinned_model,omitempty" json:"node_pinned_model,omitempty"`
 	// AllowModelSwap lets an explicit request replace the pinned model.
 	AllowModelSwap bool `yaml:"allow_model_swap,omitempty" json:"allow_model_swap,omitempty"`
+	// SessionSlots is the operator's worker count for this node (0 = derive
+	// from observer GPU data). Must not be negative.
+	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`
 }
 
 // CouncilPersonaOverride allows operators to customize a persona's
@@ -2479,6 +2482,11 @@ type AutonomousConfig struct {
 	// no-disagreement case. Any other value is rejected on write and
 	// treated as "warn" on read.
 	GateDisagreement string `yaml:"gate_disagreement,omitempty" json:"gate_disagreement,omitempty"`
+	// FailureEscalation — global default failure escalation policy: how many
+	// failed attempts a task gets, which workers the later attempts use, and
+	// when it is held for operator review. Automaton and task overrides win
+	// per field. See FailureEscalationConfig.
+	FailureEscalation FailureEscalationConfig `yaml:"failure_escalation" json:"failure_escalation"`
 
 	// BL369 — prompt injection guard. When InjectionGuard is true, user-
 	// supplied PRD/task specs are scanned for known injection phrases at
@@ -3448,6 +3456,7 @@ func DefaultConfig() *Config {
 			ResumeMaxAgeSeconds:     3600,
 			MaxEnginesPerNode:       1,
 			GateDisagreement:        autonomousGateDisagreementWarn,
+			FailureEscalation:       DefaultFailureEscalationConfig(),
 			// Starting plan-tier table — operator policy, see the field
 			// doc on PlanTierMaxInflight. api=0 = unlimited; the dollar
 			// budget is a later phase.
@@ -3874,6 +3883,11 @@ func applyDefaults(cfg *Config) {
 	if cfg.Autonomous.GateDisagreement == "" {
 		cfg.Autonomous.GateDisagreement = autonomousGateDisagreementWarn
 	}
+	// failure_escalation: an unset max_failures reads as 3. Negative values
+	// are rejected by FailureEscalationConfig.Validate on the load paths.
+	if cfg.Autonomous.FailureEscalation.MaxFailures == 0 {
+		cfg.Autonomous.FailureEscalation.MaxFailures = FailureEscalationDefaultMaxFailures
+	}
 	// BL428 §3a — autonomous.project_write_serialization defaults to
 	// "advisory"; "parallel" is reserved-but-disabled (recognized,
 	// still enforced advisory, startup warning). validateLoaded
@@ -3935,6 +3949,11 @@ func validateLoaded(cfg *Config) error {
 	} {
 		if v < 0 {
 			return fmt.Errorf("autonomous.%s: %d must be >= 0", k, v)
+		}
+	}
+	for _, n := range cfg.ComputeNodes {
+		if n.SessionSlots < 0 {
+			return fmt.Errorf("compute_nodes[%s].session_slots: %d must be >= 0", n.Name, n.SessionSlots)
 		}
 	}
 	switch cfg.Autonomous.ProjectWriteSerialization {
@@ -4054,6 +4073,12 @@ func Load(path string) (*Config, error) {
 	if err := validateGateDisagreement(cfg.Autonomous.GateDisagreement); err != nil {
 		return nil, err
 	}
+	if err := cfg.Autonomous.FailureEscalation.Validate(); err != nil {
+		return nil, err
+	}
+	if err := validateFailureEscalationYAML(data); err != nil {
+		return nil, err
+	}
 	normalizeBooleanFields(cfg)
 	return cfg, nil
 }
@@ -4089,6 +4114,12 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, err
 	}
 	if err := validateGateDisagreement(cfg.Autonomous.GateDisagreement); err != nil {
+		return nil, err
+	}
+	if err := cfg.Autonomous.FailureEscalation.Validate(); err != nil {
+		return nil, err
+	}
+	if err := validateFailureEscalationYAML(data); err != nil {
 		return nil, err
 	}
 	normalizeBooleanFields(cfg)

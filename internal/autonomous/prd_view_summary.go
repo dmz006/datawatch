@@ -38,6 +38,9 @@ type SummaryView struct {
 	BlockedReason    string         `json:"blocked_reason,omitempty"`
 	QualityGateState string         `json:"quality_gate_status,omitempty"`
 	TaskStatusCounts map[string]int `json:"task_status_counts"`
+	// ReviewNeeded lists the tasks held for operator review (status
+	// review_needed), in story order. It is omitted when none is held.
+	ReviewNeeded []ReviewNeededEntry `json:"review_needed,omitempty"`
 }
 
 // StorySummary is one story's entry in a SummaryView. TaskStatusCounts maps
@@ -85,6 +88,7 @@ func BuildSummaryView(prd *PRD) SummaryView {
 	for i := range prd.Decisions {
 		view.Cost += prd.Decisions[i].CostUSD
 	}
+	view.ReviewNeeded = reviewNeededEntries(prd)
 
 	for i := range prd.Story {
 		story := &prd.Story[i]

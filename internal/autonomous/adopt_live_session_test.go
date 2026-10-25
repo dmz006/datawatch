@@ -77,7 +77,7 @@ func (f *fakeSessions) outputFn(sessionID string) (string, bool) {
 	return out, ok
 }
 
-func (f *fakeSessions) waitFn(ctx context.Context, sessionID string) error {
+func (f *fakeSessions) waitFn(ctx context.Context, _ AdoptedWait) error {
 	f.mu.Lock()
 	f.waits++
 	err := f.waitErr

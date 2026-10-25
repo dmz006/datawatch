@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +15,14 @@ import (
 // CapacityKeysFn maps a task's backend and model to the capacity pools it
 // needs plus its primary compute node (for model affinity).
 type CapacityKeysFn func(backend, model string) (pools []string, node string)
+
+// CapacityChoicesFn is CapacityKeysFn's sibling: the candidate compute nodes
+// (name and scheduling priority) of the LLM entry a backend and model resolve
+// to. When it returns two or more, CapacityKeysFn leaves node:<name> out of the
+// pools and the caller puts these on its capacity.Request so the ledger picks
+// the node at dispatch time. Fewer than two means the single-node path: pools
+// and node from CapacityKeysFn, no choices.
+type CapacityChoicesFn func(backend, model string) []capacity.NodeChoice
 
 var errCancelledWhileWaiting = errors.New("task cancelled while waiting for capacity")
 
@@ -50,6 +59,26 @@ func (m *Manager) SetCapacity(l *capacity.Ledger, keys CapacityKeysFn) {
 	defer m.mu.Unlock()
 	m.capacity = l
 	m.capacityKeys = keys
+}
+
+// SetCapacityChoices wires the candidate-node resolver that sits beside the
+// CapacityKeysFn given to SetCapacity. Nil (the default) keeps every admission
+// on the single-node path.
+func (m *Manager) SetCapacityChoices(fn CapacityChoicesFn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.capacityChoices = fn
+}
+
+// SetNodeLoad wires the step that makes a worker's model resident on the
+// node its lease was granted on, and the alert sink for a failed load. It
+// runs only for an LLM entry that pools two or more nodes; a nil loader
+// keeps every worker on the spawn path it always took.
+func (m *Manager) SetNodeLoad(loader NodeLoader, alerts NodeLoadAlerts) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.nodeLoad = loader
+	m.nodeAlerts = alerts
 }
 
 // SetCooldownUntilFn wires the BL30 global-cooldown reset time (zero = none
@@ -112,6 +141,27 @@ func (m *Manager) CapacityKeys() CapacityKeysFn {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.capacityKeys
+}
+
+// CapacityChoices returns the candidate-node resolver wired via
+// SetCapacityChoices (nil when not wired), for callers outside the executor
+// loop that build their own capacity.Request next to CapacityKeys.
+func (m *Manager) CapacityChoices() CapacityChoicesFn {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.capacityChoices
+}
+
+// nodeChoicesFor returns the candidate nodes for backend and model, or nil
+// unless there are two or more: the signal to put them on the request.
+func nodeChoicesFor(fn CapacityChoicesFn, backend, model string) []capacity.NodeChoice {
+	if fn == nil {
+		return nil
+	}
+	if choices := fn(backend, model); len(choices) >= 2 {
+		return choices
+	}
+	return nil
 }
 
 // CapacityWaitDuration returns the configured capacity-wait bound (mirrors
@@ -195,22 +245,30 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 			return err
 		}
 	}
+	return m.acquireLease(ctx, prd, t, backend, model, role, nil)
+}
+
+// acquireLease blocks until the task holds a capacity lease, never on a node
+// named in exclude. admit calls it with nil; the node-load failover calls it
+// again with the nodes that failed for this attempt.
+func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, model string, role capacity.Role, exclude []string) error {
 	if !m.capacityOn() {
 		return nil
 	}
 	m.mu.Lock()
-	led, keysFn := m.capacity, m.capacityKeys
+	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
 	m.mu.Unlock()
 	pools, node := keysFn(backend, model)
 	if len(pools) == 0 {
 		return nil
 	}
+	choices := nodeChoicesFor(choicesFn, backend, model)
 	waited := false
 	rec := m.capacityAudit()
 	var waitStart time.Time
 	var lastCause WaitCause
 	err := led.Acquire(ctx, capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, Model: model, Role: role,
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, ExcludeNodes: exclude, Model: model, Role: role,
 	}, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
 		if !waited {
 			waitStart = rec.Now()
@@ -238,6 +296,20 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 	default:
 		return err
 	}
+}
+
+// heldNode returns the compute node the task's worker lease was granted on,
+// or "" when capacity is off or the lease names no node. It is read after
+// admit succeeds, so the spawn runs where the ledger placed the task.
+func (m *Manager) heldNode(taskID string) string {
+	led := m.Capacity()
+	if led == nil {
+		return ""
+	}
+	if ls := led.LeaseOf(taskID); ls != nil {
+		return ls.Node
+	}
+	return ""
 }
 
 // decomposeAdmitted runs one decompose attempt inside a RolePlanner capacity
@@ -272,16 +344,17 @@ func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req Decompo
 		return m.decompose(req)
 	}
 	m.mu.Lock()
-	led, keysFn := m.capacity, m.capacityKeys
+	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
 	m.mu.Unlock()
 	allPools, node := keysFn(backend, model)
 	pools := decomposePools(allPools)
-	if len(pools) == 0 {
+	choices := nodeChoicesFor(choicesFn, backend, model)
+	if len(pools) == 0 && len(choices) == 0 {
 		return m.decompose(req)
 	}
 	holder := "plan:" + prd.ID
 	err := led.Acquire(context.Background(), capacity.Request{
-		Holder: holder, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, Model: model, Role: capacity.RolePlanner,
+		Holder: holder, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, Model: model, Role: capacity.RolePlanner,
 	}, m.capacityWait(), func() bool { return m.plannerCancelled(prd.ID) }, func(reason string) {
 		m.setPRDWaitReason(prd.ID, reason)
 	})
@@ -380,7 +453,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 		return
 	}
 	m.mu.Lock()
-	led, keysFn := m.capacity, m.capacityKeys
+	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
 	fallback := m.cfg.ExecutionBackend
 	m.mu.Unlock()
 	story := findStory(prd, t.StoryID)
@@ -390,7 +463,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 		return
 	}
 	led.Adopt(capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, Model: model,
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), Model: model,
 	}, t.SessionID)
 }
 
@@ -433,20 +506,63 @@ func (m *Manager) HandoffVerifyLease(taskID, verifierBackend, verifierModel stri
 		return false
 	}
 	m.mu.Lock()
-	led, keysFn := m.capacity, m.capacityKeys
+	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
 	m.mu.Unlock()
+	_, ok := judgeHandoff(led, keysFn, choicesFn, taskID, VerifyHolder(taskID), verifierBackend, verifierModel)
+	return ok
+}
+
+// judgeHandoff re-keys the worker lease of taskID to holder when a judge that
+// resolves to backend and model can run on it, and returns the node the judge
+// holds. The node is "" when the judge's entry has fewer than two candidate
+// nodes: a single-node judge keeps the rule it always had, the lease's pool
+// set must equal the judge's pool set exactly.
+//
+// A judge whose entry pools two or more nodes is different. The worker lease
+// names one of those nodes in its pools (node:<name>), and the judge's own
+// pools carry no node pool, so the two are compared without their node pools.
+// The hand-off then needs the worker's node among the judge's candidates, and
+// keeps that node: the lease moves as it is, with no release and no re-wait.
+func judgeHandoff(led *capacity.Ledger, keysFn CapacityKeysFn, choicesFn CapacityChoicesFn, taskID, holder, backend, model string) (string, bool) {
+	if led == nil || keysFn == nil {
+		return "", false
+	}
 	workerLease := led.LeaseOf(taskID)
 	if workerLease == nil {
-		return false
+		return "", false
 	}
-	verifyPools, _ := keysFn(verifierBackend, verifierModel)
+	verifyPools, _ := keysFn(backend, model)
 	if len(verifyPools) == 0 {
-		return false
+		return "", false
 	}
-	if !samePoolSet(workerLease.Pools, verifyPools) {
-		return false
+	choices := nodeChoicesFor(choicesFn, backend, model)
+	if len(choices) == 0 {
+		if !samePoolSet(workerLease.Pools, verifyPools) {
+			return "", false
+		}
+		return "", led.Handoff(taskID, holder)
 	}
-	return led.Handoff(taskID, VerifyHolder(taskID))
+	if workerLease.Node == "" || !slices.ContainsFunc(choices, func(c capacity.NodeChoice) bool { return c.Name == workerLease.Node }) {
+		return "", false
+	}
+	if !samePoolSet(withoutNodePools(workerLease.Pools), withoutNodePools(verifyPools)) {
+		return "", false
+	}
+	if !led.Handoff(taskID, holder) {
+		return "", false
+	}
+	return workerLease.Node, true
+}
+
+// withoutNodePools returns pools minus every node:<name> pool.
+func withoutNodePools(pools []string) []string {
+	out := make([]string, 0, len(pools))
+	for _, p := range pools {
+		if !strings.HasPrefix(p, "node:") {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // samePoolSet reports whether the two pool lists name the same set of pools
