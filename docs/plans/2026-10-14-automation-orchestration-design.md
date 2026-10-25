@@ -2754,4 +2754,6 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 25. **Default alert times for the Automation duties (supervisor duties proposal Q1, answer: "1, 30 minutes").** One shared default of 30 minutes for CI failures, merge pending and failed or blocked PRDs, the same as the lane-fill idle alert; each value stays configurable.
 
+26. **Retry count for the Automation duties (supervisor duties proposal Q2, answer: "2 existing but leave open for future examination").** The coordinator reuses the existing per-category retry budgets (infra, content, scope, policy) and adds no new count. **Kept open for later examination:** whether the coordinator needs its own retry count once it has run for a while.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.

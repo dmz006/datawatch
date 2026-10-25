@@ -166,7 +166,7 @@ None of the following is decided. Each starts a step only when recorded in this 
 
 **Recommendation.** (b): the duty asks for exactly one rerun of a hung step, and the existing infra budget already bounds retries.
 
-**Status.** Open.
+**Status.** **Decided by the operator, 2026-10-25: option (a), reuse the existing per-category budgets** with no new count ("2 existing but leave open for future examination"). Kept open: whether the coordinator should have its own retry count, to be examined once it has run for a while.
 
 ### Q3. Whether a hung CI step may be rerun without asking (duty 1)
 
