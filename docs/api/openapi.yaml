@@ -1293,6 +1293,8 @@ paths:
         current primary while it is still a tag. Empty clears it. Any other value
         must be one of tag_ids, or the call is refused with 400. Removing the
         primary tag from the Automaton clears the primary.
+        A body with primary_tag_id and no tag_ids keeps the current tags and changes
+        only the primary.
       operationId: autonomousPRDSetTags
       tags: [Autonomous]
       parameters:
@@ -1303,14 +1305,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [tag_ids]
               properties:
-                tag_ids: {type: array, items: {type: string}}
+                tag_ids: {type: array, items: {type: string}, description: "Omit with primary_tag_id alone to keep the current tags."}
                 primary_tag_id: {type: string, description: "Optional. One of tag_ids, or empty to clear. Default none."}
       responses:
         "200": {description: "Updated PRD, carries tag_ids and primary_tag_id"}
         "400": {description: "primary_tag_id is not one of tag_ids"}
-        "404": {description: Unknown tag}
+        "404": {description: "Unknown tag, or an unknown Automaton when primary_tag_id is sent without tag_ids"}
 
   /api/autonomous/prds/{id}/set_notify_events:
     post:

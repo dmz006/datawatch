@@ -18,21 +18,41 @@ const autonomousTagsPath = "/api/autonomous/tags"
 func tagPath(id string) string { return autonomousTagsPath + "/" + url.PathEscape(id) }
 
 func newAutonomousTagListCmd() *cobra.Command {
-	var includeSub bool
+	var includeSub, counts bool
 	cmd := &cobra.Command{
-		Use:   "tag-list",
-		Short: "List Automata tags (a tree via parent_id) with the number of Automata carrying each",
-		Args:  cobra.NoArgs,
+		Use:     "tag-list",
+		Aliases: []string{"tags"},
+		Short:   "List Automata tags (a tree via parent_id) with the number of Automata carrying each",
+		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			path := autonomousTagsPath
+			q := url.Values{}
 			if includeSub {
-				path += "?include_sub=true"
+				q.Set("include_sub", "true")
+			}
+			if counts {
+				q.Set("counts", "true")
+			}
+			path := autonomousTagsPath
+			if len(q) > 0 {
+				path += "?" + q.Encode()
 			}
 			return daemonJSON(http.MethodGet, path, nil)
 		},
 	}
 	cmd.Flags().BoolVar(&includeSub, "include-sub", false, "roll each count up to include descendant tags")
+	cmd.Flags().BoolVar(&counts, "counts", false, "add subtree and direct counts (Automata and sessions) per tag, plus an untagged total")
 	return cmd
+}
+
+func newAutonomousAttentionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "attention",
+		Short: "List the Automata that need attention (blocked, needs_review and paused by default, plus any with a task held for review)",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return daemonJSON(http.MethodGet, "/api/autonomous/attention", nil)
+		},
+	}
 }
 
 func newAutonomousTagCreateCmd() *cobra.Command {
@@ -107,25 +127,66 @@ func newAutonomousTagDeleteCmd() *cobra.Command {
 }
 
 func newAutonomousPRDSetTagsCmd() *cobra.Command {
+	var tags, primary string
+	cmd := &cobra.Command{
+		Use:   "prd-set-tags <prd-id> [--tags <id1,id2,...>] [--primary <tag-id>]",
+		Short: "Replace the tags on an Automaton (an empty --tags value clears them) and/or set its primary tag (an empty --primary clears it)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			tagsSet := cmd.Flags().Changed("tags")
+			primarySet := cmd.Flags().Changed("primary")
+			if !tagsSet && !primarySet {
+				return cmd.Usage()
+			}
+			body := map[string]any{}
+			if tagsSet {
+				ids := []string{}
+				for _, s := range strings.Split(tags, ",") {
+					if s = strings.TrimSpace(s); s != "" {
+						ids = append(ids, s)
+					}
+				}
+				body["tag_ids"] = ids
+			}
+			if primarySet {
+				body["primary_tag_id"] = primary
+			}
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+url.PathEscape(args[0])+"/set_tags", body)
+		},
+	}
+	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tag IDs (empty clears)")
+	cmd.Flags().StringVar(&primary, "primary", "", "primary tag ID, one of the Automaton's tags, used for sorting (empty clears)")
+	return cmd
+}
+
+// newSessionTagsCmd sets the tags a session carries itself. Inherited tags
+// come from the owning Automaton and are not set here.
+func newSessionTagsCmd() *cobra.Command {
 	var tags string
 	cmd := &cobra.Command{
-		Use:   "prd-set-tags <prd-id> --tags <id1,id2,...>",
-		Short: "Replace the tags on an Automaton (an empty --tags value clears them)",
+		Use:   "tags <session-id> --tags <id1,id2,...>",
+		Short: "Replace the tags a session carries itself (an empty --tags value clears them)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !cmd.Flags().Changed("tags") {
 				return cmd.Usage()
 			}
-			ids := []string{}
-			for _, s := range strings.Split(tags, ",") {
-				if s = strings.TrimSpace(s); s != "" {
-					ids = append(ids, s)
-				}
-			}
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+url.PathEscape(args[0])+"/set_tags",
-				map[string]any{"tag_ids": ids})
+			return daemonJSON(http.MethodPost, "/api/sessions/tags",
+				map[string]any{"id": args[0], "tag_ids": parseTagIDList(tags)})
 		},
 	}
 	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tag IDs (empty clears)")
 	return cmd
+}
+
+// parseTagIDList splits a comma-separated tag-ID list, dropping blanks. An
+// empty list is returned as a non-nil slice so it serialises as [].
+func parseTagIDList(list string) []string {
+	ids := []string{}
+	for _, s := range strings.Split(list, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			ids = append(ids, s)
+		}
+	}
+	return ids
 }

@@ -54,7 +54,7 @@ POST   /api/autonomous/prds/{id}/set_task_verifier_policy    per-task verifier p
 POST   /api/autonomous/prds/{id}/set_failure_escalation     failure escalation override; body: {[task_id], policy|null, actor} (null clears; see "Failure escalation")
 POST   /api/autonomous/prds/{id}/resolve_task_review        operator decision on a task held for review; body: {task_id, action: retry|cancel, [spec], [backend], [model], [effort], [files[]], [note], actor}
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
-POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {tag_ids[], [primary_tag_id]} ([] clears; primary_tag_id must be one of tag_ids or empty, else 400)
+POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {[tag_ids[]], [primary_tag_id]}; tag_ids may be omitted when primary_tag_id is sent, which keeps the current tags ([] clears; primary_tag_id must be one of the tags or empty, else 400)
 POST   /api/autonomous/prds/{id}/set_kind  Automaton kind; body: {kind} (feature|bug|other; "" derives it again); 400 on an unknown kind, 404 on an unknown id
 POST   /api/autonomous/prds/{id}/set_lane_preference  lane an Automaton may take; body: {lane_preference: gpu|claude|any} ("" means any); 400 on an unknown value, 404 on an unknown id
 POST   /api/autonomous/prds/{id}/set_notify_events  set the lifecycle event kinds the Automaton notifies on; body: {notify_events[]} — absent/null/[] clears (inherit); the reply carries the computed notify_events_effective
@@ -471,9 +471,12 @@ are the same tag IDs. A row also carries `primary_tag_id` when the Automaton has
 a primary tag. The primary tag is set with `POST .../set_tags` and is used only to
 sort an Automaton in a tag browser; it never hides a membership. The primary
 defaults to none, and removing the primary tag from the Automaton clears it.
-The primary tag is set through the REST `set_tags` route only. The CLI, MCP and comm
-channel tag verbs still send `tag_ids` alone, so they keep the current primary while
-its tag stays and clear it when the tag is removed.
+The same route sets it from every surface: `datawatch autonomous prd-set-tags <id> --primary <tag-id>`,
+the MCP `autonomous_prd_set_tags` tool with `primary_tag_id`, and the comm verb
+`autonomous set-primary <prd-id> <tag-id|none>`. A body that sends `primary_tag_id` without
+`tag_ids` keeps the current tag set and changes only the primary. A body that sends
+`tag_ids` alone keeps the current primary while its tag stays and clears it when the
+tag is removed.
 `task_count`, `story_count` and `task_status_counts` are unchanged.
 
 `GET /api/autonomous/tags?counts=true` adds these fields to each tag:
@@ -1556,7 +1559,10 @@ operator-facing AI can drive the autonomous loop end-to-end:
 | `autonomous_prd_cancel`     | cancel + archive |
 | `autonomous_learnings`      | list learnings |
 | `autonomous_tag_list` / `_tag_create` / `_tag_rename` / `_tag_set_parent` / `_tag_set_color` / `_tag_delete` | Automata tag registry; see [howto/automata-tags](../howto/automata-tags.md) |
-| `autonomous_prd_set_tags`   | replace an Automaton's tags (`tag_ids_json`) |
+| `autonomous_prd_set_tags`   | replace an Automaton's tags (`tag_ids_json`) and/or set its primary tag (`primary_tag_id`; alone it keeps the tags) |
+| `autonomous_tag_list` with `counts` | adds the subtree and direct counts (Automata and sessions) and the untagged totals |
+| `autonomous_attention_list` | the attention group: `{statuses, items}` (read) |
+| `session_set_tags`          | replace a session's own tags (`id`, `tag_ids_json`); inherited tags are not set here (write) |
 | `autonomous_prd_set_kind`   | set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again); `autonomous_prd_create` takes the same optional `kind` |
 | `autonomous_progress` / `autonomous_progress_trend` | read the progress metrics object (`automation_id`, `tag_id`, `since`, `until`) / the trend over the saved daily snapshots (`days`); read-only, proxied through the REST routes |
 | `autonomous_prd_set_task_verification_llm` / `_set_story_verification_llm` / `_set_verification_llm` | per-task / per-story / per-Automaton verifier LLM |

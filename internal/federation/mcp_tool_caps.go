@@ -139,6 +139,8 @@ var MCPToolCap = map[string]string{
 	"autonomous_tag_set_color":        CapAutonomousWrite,
 	"autonomous_tag_delete":           CapAutonomousWrite,
 	"autonomous_prd_set_tags":         CapAutonomousWrite,
+	"autonomous_attention_list":       CapAutonomousRead,
+	"session_set_tags":                CapSessionsWrite,
 	"autonomous_type_list":            CapAutonomousList,
 	"autonomous_type_register":        CapAutonomousWrite,
 	"backends_active":                 CapHealthRead,

@@ -1,6 +1,8 @@
-// Comm-channel verbs for the Automata tag registry and per-Automaton tag
-// assignment: autonomous tags|tag-create|tag-rename|tag-move|tag-color|
-// tag-delete|set-tags. Each verb proxies the matching REST endpoint.
+// Comm-channel verbs for the Automata tag registry, per-Automaton and
+// per-session tag assignment, the primary tag and the attention list:
+// autonomous tags [counts]|tag-create|tag-rename|tag-move|tag-color|tag-delete|
+// set-tags|set-primary|session-tags|attention. Each verb proxies the matching
+// REST endpoint.
 
 package router
 
@@ -37,7 +39,39 @@ func buildCommTagRequest(verb string, args []string) (req commTagRequest, usage 
 	const base = "/api/autonomous/tags"
 	switch strings.ReplaceAll(verb, "_", "-") {
 	case "tags":
-		return commTagRequest{method: http.MethodGet, path: base}, ""
+		switch {
+		case len(args) == 1:
+			return commTagRequest{method: http.MethodGet, path: base}, ""
+		case len(args) == 2 && args[1] == "counts":
+			return commTagRequest{method: http.MethodGet, path: base + "?counts=true"}, ""
+		}
+		return req, "usage: autonomous tags [counts]"
+	case "attention":
+		if len(args) != 1 {
+			return req, "usage: autonomous attention"
+		}
+		return commTagRequest{method: http.MethodGet, path: "/api/autonomous/attention"}, ""
+	case "session-tags":
+		if len(args) < 2 || len(args) > 3 {
+			return req, "usage: autonomous session-tags <session-id> <tag-id1,tag-id2,...> (omit the list to clear)"
+		}
+		list := ""
+		if len(args) == 3 {
+			list = args[2]
+		}
+		return commTagRequest{method: http.MethodPost, path: "/api/sessions/tags",
+			body: map[string]any{"id": args[1], "tag_ids": parseCommTagList(list)}}, ""
+	case "set-primary":
+		if len(args) != 3 {
+			return req, "usage: autonomous set-primary <prd-id> <tag-id|none>"
+		}
+		primary := args[2]
+		if strings.EqualFold(primary, "none") {
+			primary = ""
+		}
+		return commTagRequest{method: http.MethodPost,
+			path: "/api/autonomous/prds/" + url.PathEscape(args[1]) + "/set_tags",
+			body: map[string]any{"primary_tag_id": primary}}, ""
 	case "tag-create":
 		usage = "usage: autonomous tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]"
 		if len(args) < 2 {

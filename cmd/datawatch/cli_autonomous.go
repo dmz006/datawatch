@@ -158,6 +158,7 @@ Subcommands:
 		newAutonomousTagMoveCmd(),
 		newAutonomousTagColorCmd(),
 		newAutonomousTagDeleteCmd(),
+		newAutonomousAttentionCmd(),
 		newAutonomousPRDSetTagsCmd(),
 		newAutonomousPRDSetGuidedModeCmd(),
 		newAutonomousPRDSetNotifyEventsCmd(),

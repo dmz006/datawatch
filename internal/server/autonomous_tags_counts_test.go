@@ -266,3 +266,39 @@ func TestTagAttentionEndpointReviewAndCustomStatuses(t *testing.T) {
 		t.Errorf("POST attention = %d, want 405", post.Code)
 	}
 }
+
+// TestTagPrimaryOnlyKeepsTags covers a set_tags body with primary_tag_id and
+// no tag_ids: the Automaton keeps its tag set and only the primary changes.
+// A primary outside that set is still refused.
+func TestTagPrimaryOnlyKeepsTags(t *testing.T) {
+	s, mgr := newTagTestServer(t)
+	a, _ := mgr.CreateTag("a", "", "", "")
+	b, _ := mgr.CreateTag("b", "", "", "")
+	if err := mgr.Store().SavePRD(&autonomous.PRD{ID: "p1"}); err != nil {
+		t.Fatal(err)
+	}
+	setTags := func(body string) *httptest.ResponseRecorder {
+		return tagCall(t, s, http.MethodPost, "/api/autonomous/prds/p1/set_tags", body)
+	}
+	if rec := setTags(`{"tag_ids":["` + a.ID + `","` + b.ID + `"],"primary_tag_id":"` + a.ID + `"}`); rec.Code != http.StatusOK {
+		t.Fatalf("seed: %d %s", rec.Code, rec.Body.String())
+	}
+
+	if rec := setTags(`{"primary_tag_id":"` + b.ID + `"}`); rec.Code != http.StatusOK {
+		t.Fatalf("primary only: %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	item := listPRDItems(t, s, "")["p1"]
+	if item.PrimaryTagID != b.ID {
+		t.Errorf("primary = %q, want %q", item.PrimaryTagID, b.ID)
+	}
+	if len(item.Tags) != 2 {
+		t.Errorf("tags = %v, want both tags kept", item.Tags)
+	}
+
+	if rec := setTags(`{"primary_tag_id":"not-a-member"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("primary outside tags: %d %s, want 400", rec.Code, rec.Body.String())
+	}
+	if got := listPRDItems(t, s, "")["p1"]; got.PrimaryTagID != b.ID || len(got.Tags) != 2 {
+		t.Errorf("refused call changed the Automaton: primary %q, tags %v", got.PrimaryTagID, got.Tags)
+	}
+}

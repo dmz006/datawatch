@@ -1998,6 +1998,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
+			// TagIDs is optional when primary_tag_id is sent: an absent tag_ids
+			// keeps the current tag set and changes only the primary.
 			TagIDs []string `json:"tag_ids"`
 			// PrimaryTagID is optional: absent keeps the current primary while it
 			// is still a tag; empty clears it; any other value must be one of TagIDs.
@@ -2007,7 +2009,16 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		updated, err := api.SetPRDTagsAndPrimary(id, req.TagIDs, req.PrimaryTagID)
+		tagIDs := req.TagIDs
+		if tagIDs == nil && req.PrimaryTagID != nil {
+			current, found := api.AutomatonTagIDs(id)
+			if !found {
+				http.Error(w, "automaton not found", http.StatusNotFound)
+				return
+			}
+			tagIDs = current
+		}
+		updated, err := api.SetPRDTagsAndPrimary(id, tagIDs, req.PrimaryTagID)
 		if err != nil {
 			writeTagError(w, err)
 			return

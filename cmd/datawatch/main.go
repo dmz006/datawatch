@@ -10780,6 +10780,9 @@ func newSessionCmd() *cobra.Command {
 		},
 	})
 
+	// session tags <id> --tags <list> — set the tags a session carries itself
+	sessionCmd.AddCommand(newSessionTagsCmd())
+
 	// session rename <id> <name>
 	sessionCmd.AddCommand(&cobra.Command{
 		Use:   "rename <id> <name>",
