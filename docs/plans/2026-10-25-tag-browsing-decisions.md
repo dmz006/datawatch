@@ -15,6 +15,8 @@ Date started: 2026-10-25. The ten open questions of `docs/plans/2026-10-20-tag-b
 8. **Tags are federated: one shared tag registry across the federated nodes.** (Operator, 2026-10-25: "2, federation works together".) A rename or re-parent on one node reaches the others. The proposal must say how the keeper node is chosen (the same pattern as the shared usage readings), how conflicting edits are resolved, how a peer shows its last copy when the keeper is unreachable, and how a tag created on two nodes while apart is merged without hiding that they were separate.
 9. **Default match mode: ANY.** (Operator, 2026-10-25: "1, ANY as default".) Selecting several tags widens the list, the filter bar shows "match ANY", and a toggle switches to ALL.
 
-## Still open (asked in order)
+10. **Registry source for the tag tools: they are already on main.** (Answered from the code, 2026-10-25.) The MCP tools `autonomous_tag_list`, `_create`, `_rename`, `_set_parent`, `_set_color`, `_delete` are in the federation capability map and the CLI has `tag-create`, `tag-color`, `tag-delete` and `prd-set-tags`; the design document's doubt came from reading an older worktree.
 
-10. The registry source for the MCP tag tools.
+## Status
+
+All ten questions of the tag browsing design are answered (decisions 1 to 10). The implementation PRD is planned from this file.
