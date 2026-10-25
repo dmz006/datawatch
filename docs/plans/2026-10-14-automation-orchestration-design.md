@@ -2728,4 +2728,6 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 15. **The AGENT.md Decision Interview Protocol (answer: "2").** The terminal protocol stays and the queue is added beside it. An agent may use either. Answers given in the terminal are copied into the queue afterwards by the supervisor, with the operator's quotation, so the decision record is complete either way. The proposal must say how that copy is made and checked.
 
+16. **Question types (answer: "2 generic since we don't know what users of datawatch will use it for,  but default set based on 1").** There is one generic question record, with options, a recommendation, a risk level and links; the type is a label, not a different structure, because other users will use the queue for purposes we cannot predict. The default set of labels ships as decision, design review, approval and information (the four from the proposal), and a user may add or change labels. The low-risk type list from item 8 uses these labels.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
