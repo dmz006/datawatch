@@ -2744,4 +2744,8 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 22. **Return path (proposal 6.j, answer: "1").** The answer reaches the asker as a lifecycle event on the existing event queue plus a polled GET endpoint, which needs no change to the asker's session. A question can opt in to a JSON line sent into the asking session, for askers that cannot poll, so answers stay out of the terminal unless asked for.
 
+23. **Replying from a chat channel (proposal 6.k, answer: "1").** Each notification carries the question id and numbered options. A bare reply is accepted only when exactly one question is open for that channel; with several open it is refused and the list is sent back. Free text is accepted with the option, so the operator's exact words are kept as the quotation.
+
+**Status 2026-10-25:** every open point in the decision channel proposal (6.a to 6.k) is now answered, except the proposal's own remaining parts noted in its sections. The next step is to turn it into the first implementation PRD (storage and REST), gated on the proposal's `Confirmed:` line, which the operator flips.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.

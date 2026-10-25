@@ -354,7 +354,7 @@ Options:
 
 Recommendation: option 2, because a reply can never bind to the wrong question silently, and the exact words are still captured.
 
-Status: Not decided.
+Status: **Decided by the operator, 2026-10-25: option 2 of the list as asked** ("1" in the interview): numbered options on each notification, a bare reply accepted only when exactly one question is open for that channel, otherwise refused with the list; free text accepted.
 
 ## 7. Addendum 2026-10-25: the question works with every LLM backend (proposal, not confirmed)
 
