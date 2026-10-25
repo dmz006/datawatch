@@ -208,11 +208,14 @@ func TestMCPQueueSinkNilQueueDropsSilently(t *testing.T) {
 	time.Sleep(50 * time.Millisecond) // nothing to observe; must not panic
 }
 
-func TestMCPQueueSinkWebhookStillRejected(t *testing.T) {
+// TestWebhookSinkWithoutSecretRefIsRejected asserts that a webhook sink is
+// accepted by the pure subscription check only with a signing secret
+// reference; without one, creation is refused.
+func TestWebhookSinkWithoutSecretRefIsRejected(t *testing.T) {
 	sub := queueSub(false)
-	sub.Sink = SubscriptionSink{Type: "webhook", Target: "https://x.example"}
+	sub.Sink = SubscriptionSink{Type: SinkWebhook, Target: "https://x.example"}
 	err := ValidateSubscription(sub, time.Now())
-	if err == nil || !strings.Contains(err.Error(), "not available in this phase") {
+	if err == nil || !strings.Contains(err.Error(), "signing secret reference") {
 		t.Errorf("webhook error = %v", err)
 	}
 }

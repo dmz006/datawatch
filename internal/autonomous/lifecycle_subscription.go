@@ -4,14 +4,18 @@
 // Q4, Follow-up implementation PRD).
 //
 // A Subscription selects lifecycle events (LifecycleFilter) and routes
-// them to one sink. In this phase the sink types comm, session, topic
-// and alert are accepted and validated; topic and alert are stored for
+// them to one sink. The sink types comm, session, topic, alert, mcp_queue
+// and webhook are accepted and validated. topic and alert are stored for
 // the existing Phase 2 sinks, and comm/session execution (including the
 // send_input action) happens when the daemon wires the store to the
 // dispatcher. The mcp_queue sink appends to a named pending-events
-// queue that generic MCP clients poll. The webhook sink type is
-// rejected with a clear error — it arrives in a later phase (outbound
-// webhook delivery).
+// queue that generic MCP clients poll. The webhook sink POSTs a signed
+// JSON envelope to an allow-listed https receiver (lifecycle_webhook_sink.go).
+// A webhook subscription needs a ${secret:name} reference in sink.secret_ref
+// and never carries an action. ValidateSubscription checks the target URL's
+// structure; ValidateWebhookSubscriptionTarget checks it against the live
+// webhook settings. The store runs both on create and update and refuses
+// webhook subscriptions when it has no live check installed.
 
 package autonomous
 
@@ -21,10 +25,11 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/dmz006/datawatch/internal/secrets"
 )
 
-// Sink types. comm/session/topic/alert/mcp_queue are accepted; webhook
-// is rejected until its phase ships.
+// Sink types. comm/session/topic/alert/mcp_queue/webhook are accepted.
 const (
 	SinkComm    = "comm"    // existing comm-router fan-out (routers, ntfy, email)
 	SinkSession = "session" // a datawatch-managed session, via SendInput / channel bridge
@@ -33,6 +38,15 @@ const (
 	// SinkMCPQueue appends to a named pending-events queue (Sink.Target)
 	// that generic MCP clients poll with a cursor.
 	SinkMCPQueue = "mcp_queue"
+	// SinkWebhook POSTs each matching event, signed with the secret named by
+	// Sink.SecretRef, to the URL in Sink.Target. Coalesce is ignored for it:
+	// every matching event is its own delivery.
+	SinkWebhook = "webhook"
+	// SinkPeer forwards each matching event to a registered federation peer.
+	// Sink.Target is the peer's registered name; the forwarder (lifecycle_forward.go)
+	// resolves the address, token and capability from the peer registry.
+	// Coalesce is ignored for it, as for the webhook sink.
+	SinkPeer = "peer"
 )
 
 // MaxQueueNameLen caps an mcp_queue sink's queue name.
@@ -84,6 +98,12 @@ func IsKnownEventKind(k string) bool { return KnownEventKinds[k] }
 type SubscriptionSink struct {
 	Type   string `json:"type"`
 	Target string `json:"target,omitempty"`
+	// SecretRef is a single ${secret:name} vault reference naming the HMAC key
+	// of a webhook sink; a webhook sink requires it and every other sink
+	// refuses it. It is never a literal: the webhook sink resolves it on
+	// every delivery (WebhookSinkConfig.ResolveSecret) and the resolved
+	// value is never stored, logged or audited.
+	SecretRef string `json:"secret_ref,omitempty"`
 }
 
 // SubscriptionAction is the optional follow-up performed when an event
@@ -158,13 +178,25 @@ func ValidateSubscription(sub Subscription, now time.Time) error {
 		if !queueNameRe.MatchString(name) {
 			return fmt.Errorf("mcp_queue name %q may contain only letters, digits and . _ : -", name)
 		}
-	case "webhook":
-		return fmt.Errorf(
-			"sink type %q is not available in this phase: outbound webhook delivery arrives in a later phase",
-			sub.Sink.Type)
+	case SinkWebhook:
+		if err := validateWebhookSecretRef(sub.Sink.SecretRef); err != nil {
+			return err
+		}
+		// The structural URL policy needs no live settings, so a store
+		// without the live check still refuses a bad scheme, userinfo or host.
+		if _, _, _, err := parseWebhookURL(sub.Sink.Target); err != nil {
+			return err
+		}
+	case SinkPeer:
+		if err := ValidatePeerName(sub.Sink.Target); err != nil {
+			return err
+		}
 	default:
-		return fmt.Errorf("unknown sink type %q (want one of %q, %q, %q, %q, %q)",
-			sub.Sink.Type, SinkComm, SinkSession, SinkTopic, SinkAlert, SinkMCPQueue)
+		return fmt.Errorf("unknown sink type %q (want one of %q, %q, %q, %q, %q, %q, %q)",
+			sub.Sink.Type, SinkComm, SinkSession, SinkTopic, SinkAlert, SinkMCPQueue, SinkWebhook, SinkPeer)
+	}
+	if sub.Sink.Type != SinkWebhook && sub.Sink.SecretRef != "" {
+		return fmt.Errorf("sink secret_ref is only valid with a webhook sink (got %q)", sub.Sink.Type)
 	}
 	if strings.TrimSpace(sub.Sink.Target) == "" {
 		return fmt.Errorf("sink target is required")
@@ -188,4 +220,49 @@ func ValidateSubscription(sub Subscription, now time.Time) error {
 		return fmt.Errorf("expires_at must be in the future")
 	}
 	return nil
+}
+
+// validateWebhookSecretRef requires ref to be exactly one ${secret:name}
+// reference. A literal is refused without echoing it into the error.
+func validateWebhookSecretRef(ref string) error {
+	switch {
+	case strings.TrimSpace(ref) == "":
+		return fmt.Errorf("a webhook sink requires a signing secret reference, such as ${secret:name}")
+	case !secrets.IsRef(ref):
+		return fmt.Errorf("the webhook signing secret must be a single ${secret:name} reference; a literal value is refused")
+	}
+	return nil
+}
+
+// ValidateWebhookSubscriptionTarget checks the parts of a webhook sink that
+// depend on the live webhook settings: delivery must be enabled, and the
+// target URL must pass the outbound policy (https, no userinfo, a host on
+// the allow-list). It returns nil for every other sink type. The store runs
+// it on Add and Update (SetSinkValidator), so a subscription is refused at
+// creation rather than at its first event.
+func ValidateWebhookSubscriptionTarget(sub Subscription, set WebhookSettings) error {
+	if sub.Sink.Type != SinkWebhook {
+		return nil
+	}
+	if !set.Enabled {
+		return fmt.Errorf("webhook delivery is disabled; set autonomous.notify.webhook.enabled to true before creating a webhook subscription")
+	}
+	if _, err := ValidateWebhookURL(sub.Sink.Target, set.AllowHosts); err != nil {
+		return fmt.Errorf("webhook target: %w", err)
+	}
+	return nil
+}
+
+// NewLifecycleSinkValidator returns the live check a daemon installs on the
+// subscription store (SetSinkValidator). A webhook sink must pass the webhook
+// settings (delivery enabled, target on the allow-list); a peer sink must pass
+// the forwarding settings and the peer registry. The daemon and the parity
+// tests install this one constructor, so the two cannot drift apart.
+func NewLifecycleSinkValidator(webhook func() WebhookSettings, forward func() ForwardSettings, lookup func(name string) (PeerRef, bool)) func(Subscription) error {
+	return func(sub Subscription) error {
+		if err := ValidateWebhookSubscriptionTarget(sub, webhook()); err != nil {
+			return err
+		}
+		return ValidatePeerSubscriptionTarget(sub, forward(), lookup)
+	}
 }

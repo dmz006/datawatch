@@ -32,13 +32,14 @@ func newAutonomousSubscriptionUpdateCmd() *cobra.Command {
 		taskID     string
 		sinkType   string
 		target     string
+		secretRef  string
 		sendText   string
 		oneShot    bool
 		coalesce   bool
 		expiresSec int
 	)
 	cmd := &cobra.Command{
-		Use:   "subscription-update <id> --on <kind> [--level prd|task] [--prd <id>] [--task <id>] --sink <type> --target <t> [--send <text>] [--one-shot] [--coalesce] [--expires <seconds>]",
+		Use:   "subscription-update <id> --on <kind> [--level prd|task] [--prd <id>] [--task <id>] --sink <type> --target <t> [--secret-ref <ref>] [--send <text>] [--one-shot] [--coalesce] [--expires <seconds>]",
 		Short: "Replace the configuration of a lifecycle event subscription",
 		Long: `Update a persisted lifecycle-event subscription in place. Takes the same
 flags as subscribe and REPLACES the subscription's mutable fields (filter,
@@ -48,7 +49,14 @@ time are kept. Unlike subscribe, --task does not imply --one-shot here;
 pass --one-shot explicitly.
 
 Example — point an existing subscription at a different router:
-  datawatch autonomous subscription-update <id> --on prd.blocked --sink comm --target other-router`,
+  datawatch autonomous subscription-update <id> --on prd.blocked --sink comm --target other-router
+
+Example — switch an existing subscription to a signed webhook:
+  datawatch autonomous subscription-update <id> --on task.completed --sink webhook \
+    --target https://hooks.example.net/datawatch --secret-ref '${secret:lifecycle-hook}'
+
+Sinks: ` + lifecycleSinkTypeList + `. A webhook needs --secret-ref (the ${secret:name}
+reference, never the value); a peer's --target is its registered name.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := strings.TrimSpace(args[0])
@@ -71,17 +79,21 @@ Example — point an existing subscription at a different router:
 				sink = "session" // --send implies a session sink
 			}
 			if sink == "" {
-				return fmt.Errorf("--sink is required (one of: comm, session, topic, alert, mcp_queue)")
+				return fmt.Errorf("--sink is required (one of: %s)", lifecycleSinkTypeList)
 			}
 			if !lifecycleSubscriptionSinkTypes[sink] {
-				return fmt.Errorf("unknown --sink %q (want one of comm, session, topic, alert, mcp_queue)", sink)
+				return fmt.Errorf("unknown --sink %q (want one of %s)", sink, lifecycleSinkTypeList)
 			}
 			tgt := strings.TrimSpace(target)
 			if tgt == "" && sink == "session" {
 				tgt = strings.TrimSpace(os.Getenv("DATAWATCH_SESSION_ID"))
 			}
 			if tgt == "" {
-				return fmt.Errorf("--target is required (the %s sink's target, e.g. a session id, topic, or router name)", sink)
+				return fmt.Errorf("--target is required (the %s sink's target, e.g. a session id, topic, router name, webhook URL or peer name)", sink)
+			}
+			sinkBody := map[string]any{"type": sink, "target": tgt}
+			if err := applyLifecycleSecretRef(sinkBody, sink, secretRef); err != nil {
+				return err
 			}
 			if expiresSec < 0 {
 				return fmt.Errorf("--expires must be positive seconds (got %d)", expiresSec)
@@ -93,7 +105,7 @@ Example — point an existing subscription at a different router:
 					"prd_id":  prdID,
 					"task_id": taskID,
 				},
-				"sink": map[string]any{"type": sink, "target": tgt},
+				"sink": sinkBody,
 			}
 			if sendText != "" {
 				if sink != "session" {
@@ -117,8 +129,9 @@ Example — point an existing subscription at a different router:
 	cmd.Flags().StringVar(&level, "level", "", "event level: prd or task (required with --on omitted)")
 	cmd.Flags().StringVar(&prdID, "prd", "", "only match events for this Automaton (PRD) id")
 	cmd.Flags().StringVar(&taskID, "task", "", "only match events for this task id")
-	cmd.Flags().StringVar(&sinkType, "sink", "", "sink type: comm | session | topic | alert | mcp_queue")
-	cmd.Flags().StringVar(&target, "target", "", "sink target (session id / topic / router or alert name)")
+	cmd.Flags().StringVar(&sinkType, "sink", "", "sink type: "+lifecycleSinkTypeList)
+	cmd.Flags().StringVar(&target, "target", "", "sink target (session id / topic / router or alert name / webhook URL / peer name)")
+	cmd.Flags().StringVar(&secretRef, "secret-ref", "", "webhook sink only: the ${secret:name} vault reference that signs each delivery (a literal value is refused)")
 	cmd.Flags().StringVar(&sendText, "send", "", "text typed into the session sink on every match (requires --sink session)")
 	cmd.Flags().BoolVar(&oneShot, "one-shot", false, "delete the subscription after its first delivery")
 	cmd.Flags().BoolVar(&coalesce, "coalesce", false, "batch human-facing sink deliveries in quiet windows")

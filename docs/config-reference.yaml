@@ -1182,6 +1182,71 @@ autonomous:
     # Values below 1 fall back to 500. Readable and settable as
     # autonomous.notify.pending_events_max; applied at daemon start.
     pending_events_max: 500
+    # Outbound webhook sink: each lifecycle event a webhook subscription
+    # selects is POSTed over HTTPS to the receiver, signed with HMAC-SHA256.
+    # Ships DISABLED. Every key below is readable and settable through the
+    # same names: autonomous.notify.webhook.<key> (REST PUT /api/config, the
+    # Settings card, `datawatch config set`, comm `configure`). A change applies
+    # to the next event, with no restart.
+    #
+    # The retry numbers, the signature wire format and the payload shape are
+    # the recommended defaults in the lifecycle proposal, pending operator
+    # confirmation. A value below 1 (and an empty backoff list) means the
+    # default shown in the comment.
+    #
+    # SECRETS: a webhook subscription's signing secret is never a literal value
+    # in this file or in any subscription. It is a ${secret:name} reference into
+    # the secrets vault, resolved at send time. A literal value is refused.
+    webhook:
+      # autonomous.notify.webhook.enabled — false refuses webhook subscriptions
+      # at creation and makes any already stored deliver nothing.
+      enabled: false
+      # autonomous.notify.webhook.allow_hosts — the only hosts that may receive
+      # an event. Each entry is an exact host or host:port, case-insensitive, with
+      # no scheme, path, wildcard or userinfo. Empty = nothing can receive.
+      # Example: ["hooks.example.net", "hooks.example.net:8443"]
+      allow_hosts: []
+      # autonomous.notify.webhook.max_attempts — total attempts per delivery,
+      # the first included. Default 5.
+      max_attempts: 5
+      # autonomous.notify.webhook.backoff_seconds — delay after each failed
+      # attempt; the last entry repeats. Default [1, 4, 16, 64].
+      backoff_seconds: [1, 4, 16, 64]
+      # autonomous.notify.webhook.jitter_percent — +- spread on each delay.
+      # Default 20 (jitter cannot be turned off).
+      jitter_percent: 20
+      # autonomous.notify.webhook.attempt_timeout_seconds — bound on one attempt
+      # (connect, request and response). Default 10.
+      attempt_timeout_seconds: 10
+      # autonomous.notify.webhook.max_body_bytes — cap on the serialised
+      # envelope, also the size a forwarding receiver accepts. Default 65536.
+      max_body_bytes: 65536
+      # autonomous.notify.webhook.signature_tolerance_seconds — the replay window
+      # a receiver enforces on the signed timestamp. Default 300.
+      signature_tolerance_seconds: 300
+    # Peer forwarding: a lifecycle event a peer subscription selects is sent to a
+    # federated peer (registered in the peer registry, with autonomous:write) and
+    # re-emitted there. Ships DISABLED. Keys: autonomous.notify.forwarding.<key>
+    # (same surfaces and the same live effect as the webhook keys above).
+    forwarding:
+      # autonomous.notify.forwarding.enabled — false refuses peer subscriptions at
+      # creation and makes this daemon refuse to receive forwarded events.
+      enabled: false
+      # autonomous.notify.forwarding.max_hops — hop cap of a forwarded event,
+      # counting the sender. A receiver refuses an event past it. Default 3.
+      max_hops: 3
+      # autonomous.notify.forwarding.max_attempts — total attempts per forwarded
+      # event. Default 5.
+      max_attempts: 5
+      # autonomous.notify.forwarding.backoff_seconds — delay after each failed
+      # attempt; the last entry repeats. Default [1, 4, 16, 64].
+      backoff_seconds: [1, 4, 16, 64]
+      # autonomous.notify.forwarding.jitter_percent — +- spread on each delay.
+      # Default 20.
+      jitter_percent: 20
+      # autonomous.notify.forwarding.attempt_timeout_seconds — bound on one
+      # attempt. Default 10.
+      attempt_timeout_seconds: 10
   # Daemon-wide default for how many independent tasks of one Automaton run
   # at once. An Automaton's own max_concurrent_tasks overrides it. 1 = one
   # task at a time (sequential). Tasks of different Automata are not limited

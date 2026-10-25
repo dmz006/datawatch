@@ -30,7 +30,7 @@ import (
 
 // commSubUpdateUsage is the operator-facing syntax line for
 // "subscription-update".
-const commSubUpdateUsage = "usage: autonomous subscription-update <id> key=value...  (keys: kinds=<k1,k2> level=prd|task prd=<id> task=<id> coalesce=true|false one_shot=true|false expires=<seconds>; prd= / task= / expires=0 clear)"
+const commSubUpdateUsage = "usage: autonomous subscription-update <id> key=value...  (keys: kinds=<k1,k2> level=prd|task prd=<id> task=<id> coalesce=true|false one_shot=true|false expires=<seconds> sink=comm|webhook|peer target=<t> secret_ref=${secret:name}; prd= / task= / expires=0 clear)"
 
 // commSubUpdate is the parsed key=value set of a subscription-update.
 // A nil pointer / false "set" flag means the key was not given.
@@ -49,6 +49,12 @@ type commSubUpdate struct {
 	setOneShot bool
 	expiresSec int
 	setExpires bool
+	sinkType   string
+	setSink    bool
+	target     string
+	setTarget  bool
+	secretRef  string
+	setSecret  bool
 }
 
 // parseCommSubUpdate parses the key=value arguments of subscription-update.
@@ -100,11 +106,20 @@ func parseCommSubUpdate(args []string) (commSubUpdate, error) {
 				return commSubUpdate{}, fmt.Errorf("expires must be a non-negative number of seconds, got %q", val)
 			}
 			u.expiresSec, u.setExpires = n, true
+		case "sink":
+			if !commSubSinkTypes[val] {
+				return commSubUpdate{}, fmt.Errorf("sink must be comm, webhook or peer, got %q", val)
+			}
+			u.sinkType, u.setSink = val, true
+		case "target":
+			u.target, u.setTarget = val, true
+		case "secret_ref":
+			u.secretRef, u.setSecret = val, true
 		default:
 			return commSubUpdate{}, fmt.Errorf("unknown key %q  (%s)", key, commSubUpdateUsage)
 		}
 	}
-	if !u.setKinds && !u.setLevel && !u.setPRD && !u.setTask && !u.setCoal && !u.setOneShot && !u.setExpires {
+	if !u.setKinds && !u.setLevel && !u.setPRD && !u.setTask && !u.setCoal && !u.setOneShot && !u.setExpires && !u.setSink && !u.setTarget && !u.setSecret {
 		return commSubUpdate{}, fmt.Errorf("nothing to change  (%s)", commSubUpdateUsage)
 	}
 	return u, nil
@@ -136,9 +151,14 @@ func commSubNotFound(id, doing string) string {
 }
 
 // applyCommSubUpdate merges u into the stored record rec and returns the
-// PUT body. The sink stays a comm sink targeting this channel and the
-// owner stays this channel.
-func applyCommSubUpdate(rec map[string]any, u commSubUpdate, identity string, now time.Time) map[string]any {
+// PUT body. The sink stays the record's own sink unless sink= changes it; a
+// comm sink always targets this channel, and the owner stays this channel.
+// The secret reference is kept only while the sink stays a webhook.
+func applyCommSubUpdate(rec map[string]any, u commSubUpdate, identity string, now time.Time) (map[string]any, error) {
+	curSink, _ := rec["sink"].(map[string]any)
+	curType, _ := curSink["type"].(string)
+	curTarget, _ := curSink["target"].(string)
+	curSecret, _ := curSink["secret_ref"].(string)
 	filter, _ := rec["filter"].(map[string]any)
 	if filter == nil {
 		filter = map[string]any{}
@@ -155,9 +175,32 @@ func applyCommSubUpdate(rec map[string]any, u commSubUpdate, identity string, no
 	if u.setTask {
 		filter["task_id"] = u.taskID
 	}
+	// Resolve the sink: sink= picks a new one, otherwise the record keeps its own.
+	// Only the fields the new sink needs are carried over.
+	sinkType := curType
+	if u.setSink {
+		sinkType = u.sinkType
+	}
+	target, secretRef := "", ""
+	if sinkType == curType {
+		target, secretRef = curTarget, curSecret
+	}
+	if u.setTarget {
+		target = u.target
+	}
+	if u.setSecret {
+		secretRef = u.secretRef
+	}
+	if sinkType == "comm" && !u.setTarget {
+		target = "" // a comm sink always delivers to this channel; an explicit foreign target is refused
+	}
+	sink, err := commSubSinkBody(sinkType, target, secretRef, identity)
+	if err != nil {
+		return nil, err
+	}
 	body := map[string]any{
 		"filter": filter,
-		"sink":   map[string]any{"type": "comm", "target": identity},
+		"sink":   sink,
 		"owner":  identity,
 	}
 	for _, k := range []string{"action", "coalesce", "one_shot", "expires_at"} {
@@ -178,7 +221,7 @@ func applyCommSubUpdate(rec map[string]any, u commSubUpdate, identity string, no
 			body["expires_at"] = now.UTC().Add(time.Duration(u.expiresSec) * time.Second).Format(time.RFC3339)
 		}
 	}
-	return body
+	return body, nil
 }
 
 // ── subscription-update ────────────────────────────────────────────────────
@@ -207,7 +250,12 @@ func (r *Router) handleAutonomousSubsUpdate(args []string) {
 		return
 	}
 
-	body, err := json.Marshal(applyCommSubUpdate(rec, u, r.commSubIdentity(), time.Now()))
+	next, err := applyCommSubUpdate(rec, u, r.commSubIdentity(), time.Now())
+	if err != nil {
+		r.reply("autonomous subscription-update", err.Error())
+		return
+	}
+	body, err := json.Marshal(next)
 	if err != nil {
 		r.reply("autonomous subscription-update", err.Error())
 		return
@@ -252,17 +300,24 @@ func (r *Router) handleAutonomousSubsTest(args []string) {
 		return
 	}
 	var res struct {
-		OK    bool   `json:"ok"`
-		Sink  string `json:"sink"`
-		Error string `json:"error"`
+		OK       bool   `json:"ok"`
+		Sink     string `json:"sink"`
+		Error    string `json:"error"`
+		Status   int    `json:"status"`
+		Attempts int    `json:"attempts"`
 	}
 	if err := json.Unmarshal([]byte(resp), &res); err != nil {
 		r.reply("autonomous subscription-test", prettyJSON(resp))
 		return
 	}
+	// The webhook and peer sinks report the HTTP status and the attempt count.
+	outcome := ""
+	if res.Attempts > 0 {
+		outcome = fmt.Sprintf(", status %d, attempts %d", res.Status, res.Attempts)
+	}
 	if !res.OK {
-		r.reply("autonomous subscription-test", fmt.Sprintf("test for %s failed: %s", id, res.Error))
+		r.reply("autonomous subscription-test", fmt.Sprintf("test for %s failed (sink %s%s): %s", id, res.Sink, outcome, res.Error))
 		return
 	}
-	r.reply("autonomous subscription-test", fmt.Sprintf("test event delivered for %s (sink %s)", id, res.Sink))
+	r.reply("autonomous subscription-test", fmt.Sprintf("test event delivered for %s (sink %s%s)", id, res.Sink, outcome))
 }

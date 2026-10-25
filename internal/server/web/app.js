@@ -16018,6 +16018,23 @@ const GENERAL_CONFIG_FIELDS = [
     // (current behavior, off by default); the global notify_exclude
     // still applies to the comm fan-out.
     { key: 'autonomous.notify.default_events', label: 'Default notification events', labelKey: 'notify_events_default_label', type: 'text', placeholder: NOTIFY_EVENT_DEFAULTS.join(', '), csv: true },
+    // Outbound webhook sink and peer forwarding (autonomous.notify.webhook.*,
+    // autonomous.notify.forwarding.*). Both ship disabled; a change applies to
+    // the next event, no restart. Values below 1 mean the default shown.
+    { key: 'autonomous.notify.webhook.enabled', label: 'Outbound webhook sink: enabled', labelKey: 'settings_notify_webhook_enabled', helpKey: 'settings_notify_webhook_enabled_help', type: 'toggle' },
+    { key: 'autonomous.notify.webhook.allow_hosts', label: 'Webhook allow-list (host or host:port)', labelKey: 'settings_notify_webhook_allow_hosts', helpKey: 'settings_notify_webhook_allow_hosts_help', type: 'text', placeholder: 'hooks.example.net, hooks.example.net:8443', csv: true },
+    { key: 'autonomous.notify.webhook.max_attempts', label: 'Webhook attempts per event (0 = 5)', labelKey: 'settings_notify_webhook_max_attempts', type: 'number', placeholder: '5' },
+    { key: 'autonomous.notify.webhook.backoff_seconds', label: 'Webhook retry delays (sec, comma-separated)', labelKey: 'settings_notify_webhook_backoff_seconds', type: 'text', placeholder: '1, 4, 16, 64', csv: true },
+    { key: 'autonomous.notify.webhook.jitter_percent', label: 'Webhook retry jitter (%, 0 = 20)', labelKey: 'settings_notify_webhook_jitter_percent', type: 'number', placeholder: '20' },
+    { key: 'autonomous.notify.webhook.attempt_timeout_seconds', label: 'Webhook attempt timeout (sec, 0 = 10)', labelKey: 'settings_notify_webhook_attempt_timeout', type: 'number', placeholder: '10' },
+    { key: 'autonomous.notify.webhook.max_body_bytes', label: 'Webhook payload cap (bytes, 0 = 65536)', labelKey: 'settings_notify_webhook_max_body_bytes', type: 'number', placeholder: '65536' },
+    { key: 'autonomous.notify.webhook.signature_tolerance_seconds', label: 'Webhook replay window for receivers (sec, 0 = 300)', labelKey: 'settings_notify_webhook_signature_tolerance', type: 'number', placeholder: '300' },
+    { key: 'autonomous.notify.forwarding.enabled', label: 'Peer forwarding of lifecycle events: enabled', labelKey: 'settings_notify_forwarding_enabled', helpKey: 'settings_notify_forwarding_enabled_help', type: 'toggle' },
+    { key: 'autonomous.notify.forwarding.max_hops', label: 'Forwarding hop cap (0 = 3)', labelKey: 'settings_notify_forwarding_max_hops', type: 'number', placeholder: '3' },
+    { key: 'autonomous.notify.forwarding.max_attempts', label: 'Forwarding attempts per event (0 = 5)', labelKey: 'settings_notify_forwarding_max_attempts', type: 'number', placeholder: '5' },
+    { key: 'autonomous.notify.forwarding.backoff_seconds', label: 'Forwarding retry delays (sec, comma-separated)', labelKey: 'settings_notify_forwarding_backoff_seconds', type: 'text', placeholder: '1, 4, 16, 64', csv: true },
+    { key: 'autonomous.notify.forwarding.jitter_percent', label: 'Forwarding retry jitter (%, 0 = 20)', labelKey: 'settings_notify_forwarding_jitter_percent', type: 'number', placeholder: '20' },
+    { key: 'autonomous.notify.forwarding.attempt_timeout_seconds', label: 'Forwarding attempt timeout (sec, 0 = 10)', labelKey: 'settings_notify_forwarding_attempt_timeout', type: 'number', placeholder: '10' },
     // BL410 Phase 1 — retry policy. retry_policy itself is a per-category
     // map (infra/content/scope/policy); edited via the Retry Profiles
     // card and the per-Automaton retry-policy setter, not this generic
@@ -25168,7 +25185,11 @@ function _renderLifecycleSubRow(prdId, sub) {
     : '';
   const level = f.level ? `<span style="font-size:11px;color:var(--text2);">${escHtml(t('lifecycle_sub_level', [f.level])||('Level: '+f.level))}</span>` : '';
   const scopeBadge = f.prd_id ? '' : `<span style="background:#7c3aed;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-left:4px;">${escHtml(t('lifecycle_sub_all_automata')||'all automata')}</span>`;
-  const sinkTxt = escHtml(sink.type || '') + (sink.target ? ' → ' + escHtml(sink.target) : '');
+  // The secret is shown as its reference text only (the server never returns a value).
+  const secretTxt = sink.secret_ref
+    ? ` <span style="color:var(--text2);">${escHtml(t('lifecycle_sub_secret_ref', [sink.secret_ref]) || ('secret: ' + sink.secret_ref))}</span>`
+    : '';
+  const sinkTxt = escHtml(sink.type || '') + (sink.target ? ' → ' + escHtml(sink.target) : '') + secretTxt;
   const actionBadge = sub.action && sub.action.type
     ? `<span style="background:#0369a1;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-right:4px;">${escHtml(sub.action.type)}</span>`
     : '';
@@ -25196,9 +25217,10 @@ function _renderLifecycleSubRow(prdId, sub) {
   </div>`;
 }
 
-function _lifecycleSubResult(prdId, text, isError) {
+function _lifecycleSubResult(prdId, text, isError, details) {
   const el = document.getElementById('prdSubsResult_' + prdId);
-  if (el) el.innerHTML = `<div style="color:${isError ? 'var(--error)' : 'var(--success,#16a34a)'};">${escHtml(text)}</div>`;
+  const extra = (details || []).map(d => `<div style="color:var(--text2);font-size:11px;">${escHtml(d)}</div>`).join('');
+  if (el) el.innerHTML = `<div style="color:${isError ? 'var(--error)' : 'var(--success,#16a34a)'};">${escHtml(text)}</div>${extra}`;
   showToast(text, isError ? 'error' : 'success');
 }
 
@@ -25221,11 +25243,12 @@ function _lifecycleSubDelete(prdId, subId) {
 function _lifecycleSubTest(prdId, subId) {
   return apiFetch('/api/autonomous/subscriptions/' + encodeURIComponent(subId) + '/test', { method: 'POST' })
     .then(res => {
+      const details = _lifecycleSubTestDetails(res);
       if (res && res.ok) {
-        _lifecycleSubResult(prdId, t('lifecycle_sub_test_ok', [res.sink || ''])||('Delivered via '+(res.sink || '')), false);
+        _lifecycleSubResult(prdId, t('lifecycle_sub_test_ok', [res.sink || ''])||('Delivered via '+(res.sink || '')), false, details);
       } else {
         const why = (res && res.error) || '';
-        _lifecycleSubResult(prdId, t('lifecycle_sub_test_failed', [why])||('Test failed: '+why), true);
+        _lifecycleSubResult(prdId, t('lifecycle_sub_test_failed', [why])||('Test failed: '+why), true, details);
       }
     })
     .catch(e => {
@@ -25245,8 +25268,9 @@ function _lifecycleSubOpenForm(prdId, subId) {
 // ── Add / edit subscription form ────────────────────────────────────────────
 // One modal for both create (POST) and edit (PUT). The event kinds are the
 // closed set the server accepts (internal/autonomous KnownEventKinds); they
-// are embedded here rather than fetched. The webhook sink is deliberately not
-// offered — the server rejects it.
+// are embedded here rather than fetched. The webhook and peer sinks are
+// offered too; whether they can deliver comes from the live settings
+// (_lifecycleSubLoadSettings), since both ship disabled.
 const _LIFECYCLE_SUB_KIND_GROUPS = [
   ['lifecycle_sub_form_group_prd', 'PRD status', [
     'prd.draft', 'prd.planning', 'prd.needs_review', 'prd.approved', 'prd.revisions_asked',
@@ -25261,13 +25285,15 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
     'task.session_started', 'task.session_cleared', 'prd.updated']],
 ];
 const _LIFECYCLE_SUB_KINDS = _LIFECYCLE_SUB_KIND_GROUPS.reduce((all, g) => all.concat(g[2]), []);
-const _LIFECYCLE_SUB_SINKS = ['comm', 'session', 'topic', 'alert', 'mcp_queue'];
+const _LIFECYCLE_SUB_SINKS = ['comm', 'session', 'topic', 'alert', 'mcp_queue', 'webhook', 'peer'];
 const _LIFECYCLE_SUB_SINK_LABELS = {
   comm: 'lifecycle_sub_form_sink_comm',
   session: 'lifecycle_sub_form_sink_session',
   topic: 'lifecycle_sub_form_sink_topic',
   alert: 'lifecycle_sub_form_sink_alert',
   mcp_queue: 'lifecycle_sub_form_sink_mcp_queue',
+  webhook: 'lifecycle_sub_form_sink_webhook',
+  peer: 'lifecycle_sub_form_sink_peer',
 };
 const _LIFECYCLE_SUB_TARGET_LABELS = {
   comm: ['lifecycle_sub_form_target_comm', 'Channel'],
@@ -25275,9 +25301,14 @@ const _LIFECYCLE_SUB_TARGET_LABELS = {
   topic: ['lifecycle_sub_form_target_topic', 'Topic name'],
   alert: ['lifecycle_sub_form_target_alert', 'Alert label'],
   mcp_queue: ['lifecycle_sub_form_target_mcp_queue', 'Queue name (letters, digits . _ : -; max 64)'],
+  webhook: ['lifecycle_sub_form_target_webhook', 'Webhook URL'],
+  peer: ['lifecycle_sub_form_target_peer', 'Federation peer'],
 };
 const _LIFECYCLE_SUB_MAX_QUEUE_NAME = 64;
 const _LIFECYCLE_SUB_MAX_ACTION_TEXT = 4096;
+// A webhook secret is one vault reference, never a literal value.
+const _LIFECYCLE_SUB_SECRET_REF_RE = /^\$\{secret:[^}]+\}$/;
+const _LIFECYCLE_SUB_SECRET_PLACEHOLDER = '${secret:name}';
 
 let _lifecycleSubFormCtx = null; // {prdId, subId, origExpiresAt, initialExpiry}
 
@@ -25305,7 +25336,18 @@ function _lifecycleSubBuild(v, nowMs) {
   }
   const target = String(v.target || '').trim();
   if (!target) {
+    if (v.sinkType === 'peer') return { error: t('lifecycle_sub_form_err_peer') || 'Choose a federation peer.', field: 'target' };
     return { error: t('lifecycle_sub_form_err_target') || 'A target is required.' };
+  }
+  let secretRef = '';
+  if (v.sinkType === 'webhook') {
+    if (!/^https?:\/\/\S+$/i.test(target)) {
+      return { error: t('lifecycle_sub_form_err_webhook_url') || 'The webhook URL must start with https://.', field: 'target' };
+    }
+    secretRef = String(v.secretRef || '').trim();
+    if (!_LIFECYCLE_SUB_SECRET_REF_RE.test(secretRef)) {
+      return { error: t('lifecycle_sub_form_err_secret_ref') || 'The secret reference must be one vault reference such as ${secret:name}.', field: 'secret' };
+    }
   }
   if (v.sinkType === 'mcp_queue') {
     if (target.length > _LIFECYCLE_SUB_MAX_QUEUE_NAME) {
@@ -25316,6 +25358,8 @@ function _lifecycleSubBuild(v, nowMs) {
     }
   }
   const body = { filter: {}, sink: { type: v.sinkType, target } };
+  // secret_ref is valid only for the webhook sink; it carries the reference text, never a value.
+  if (v.sinkType === 'webhook') body.sink.secret_ref = secretRef;
   if (kinds.length) body.filter.kinds = kinds;
   if (level) body.filter.level = level;
   if (v.scope !== 'all' && v.prdId) body.filter.prd_id = v.prdId;
@@ -25359,7 +25403,10 @@ function _lifecycleSubReadForm() {
     taskId: _lifecycleSubEl('lcSubTaskId').value || '',
     automationId: ctx.automationId || '',
     sinkType: _lifecycleSubEl('lcSubSinkType').value || '',
-    target: _lifecycleSubEl('lcSubTarget').value || '',
+    target: _lifecycleSubEl('lcSubSinkType').value === 'peer'
+      ? (_lifecycleSubEl('lcSubPeer').value || '')
+      : (_lifecycleSubEl('lcSubTarget').value || ''),
+    secretRef: _lifecycleSubEl('lcSubSecretRef').value || '',
     actionText: _lifecycleSubEl('lcSubActionText').value || '',
     oneShot: !!_lifecycleSubEl('lcSubOneShot').checked,
     coalesce: !!_lifecycleSubEl('lcSubCoalesce').checked,
@@ -25369,22 +25416,33 @@ function _lifecycleSubReadForm() {
   };
 }
 
-function _lifecycleSubFormError(text) {
-  const el = document.getElementById('lcSubError');
+// Shows an inline error in the given slot (the general error box by default,
+// or the secret-reference box beneath its field).
+function _lifecycleSubFormError(text, slotId) {
+  const el = document.getElementById(slotId || 'lcSubError');
   if (el) el.innerHTML = text ? `<div style="color:var(--error);font-size:12px;">${escHtml(text)}</div>` : '';
 }
 
 // Re-labels the target field and enables/disables the session-only action
-// text and the comm-only coalesce box whenever the sink type changes.
+// text and the comm-only coalesce box whenever the sink type changes. The
+// peer picker replaces the target text box, and the webhook secret-reference
+// field is shown only for the webhook sink.
 function _lifecycleSubSinkChanged() {
   const type = _lifecycleSubEl('lcSubSinkType').value;
   const lbl = _LIFECYCLE_SUB_TARGET_LABELS[type];
   const labelEl = document.getElementById('lcSubTargetLabel');
   if (labelEl && lbl) labelEl.textContent = t(lbl[0]) || lbl[1];
+  const targetEl = document.getElementById('lcSubTarget');
+  if (targetEl) targetEl.style.display = type === 'peer' ? 'none' : '';
+  const peerEl = document.getElementById('lcSubPeer');
+  if (peerEl) peerEl.style.display = type === 'peer' ? '' : 'none';
+  const webhookBox = document.getElementById('lcSubWebhookBox');
+  if (webhookBox) webhookBox.style.display = type === 'webhook' ? '' : 'none';
   const action = document.getElementById('lcSubActionText');
   if (action) action.disabled = type !== 'session';
   const coalesce = document.getElementById('lcSubCoalesce');
   if (coalesce) coalesce.disabled = type !== 'comm';
+  _lifecycleSubRenderHelp();
 }
 
 function _lifecycleSubCountChanged() {
@@ -25397,11 +25455,14 @@ function _lifecycleSubSubmit() {
   const ctx = _lifecycleSubFormCtx;
   if (!ctx) return Promise.resolve();
   const built = _lifecycleSubBuild(_lifecycleSubReadForm(), Date.now());
+  _lifecycleSubFormError('');
+  _lifecycleSubFormError('', 'lcSubSecretError');
   if (built.error) {
-    _lifecycleSubFormError(built.error);
+    // The server stays authoritative; this only stops an obviously bad value
+    // from being sent, and points at the field it concerns.
+    _lifecycleSubFormError(built.error, built.field === 'secret' ? 'lcSubSecretError' : 'lcSubError');
     return Promise.resolve();
   }
-  _lifecycleSubFormError('');
   const editing = !!ctx.subId;
   const url = '/api/autonomous/subscriptions' + (editing ? '/' + encodeURIComponent(ctx.subId) : '');
   return apiFetch(url, { method: editing ? 'PUT' : 'POST', body: JSON.stringify(built.body) })
@@ -25414,6 +25475,87 @@ function _lifecycleSubSubmit() {
       const msg = String((e && e.message) || '').trim();
       _lifecycleSubFormError(msg || t('lifecycle_sub_form_err_save') || 'Save failed.');
     });
+}
+
+// Live delivery state for the webhook and peer sinks. It is read from the same
+// /api/config the Settings page loads (autonomous.notify.*). Both sinks ship
+// disabled. null until the first read finishes; {failed: true} if it fails.
+let _lifecycleSubSettings = null;
+
+function _lifecycleSubLoadSettings() {
+  return apiFetch('/api/config').then(cfg => {
+    const notify = (cfg && cfg.autonomous && cfg.autonomous.notify) || {};
+    const hosts = Array.isArray(notify.webhook && notify.webhook.allow_hosts) ? notify.webhook.allow_hosts : [];
+    _lifecycleSubSettings = {
+      webhookEnabled: !!(notify.webhook && notify.webhook.enabled),
+      allowHosts: hosts.filter(h => typeof h === 'string' && h.trim()).map(h => h.trim()),
+      forwardingEnabled: !!(notify.forwarding && notify.forwarding.enabled),
+    };
+    _lifecycleSubRenderHelp();
+  }).catch(() => {
+    _lifecycleSubSettings = { failed: true };
+    _lifecycleSubRenderHelp();
+  });
+}
+
+// Plain-sentence help under the webhook and peer fields. It names the setting
+// to turn on, using that setting's own translated label.
+function _lifecycleSubRenderHelp() {
+  const el = document.getElementById('lcSubSinkHelp');
+  if (!el) return;
+  const type = _lifecycleSubEl('lcSubSinkType').value;
+  const s = _lifecycleSubSettings;
+  let lines = [];
+  if (s && (type === 'webhook' || type === 'peer')) {
+    if (s.failed) {
+      lines = [t('lifecycle_sub_help_settings_failed') || 'The delivery settings could not be read, so delivery state is unknown.'];
+    } else if (type === 'webhook') {
+      if (!s.webhookEnabled) {
+        lines = [t('lifecycle_sub_help_webhook_disabled', [t('settings_notify_webhook_enabled')])];
+      } else if (!s.allowHosts.length) {
+        lines = [t('lifecycle_sub_help_webhook_no_hosts', [t('settings_notify_webhook_allow_hosts')])];
+      } else {
+        lines = [t('lifecycle_sub_help_webhook_hosts', [s.allowHosts.join(', ')])];
+      }
+    } else if (!s.forwardingEnabled) {
+      lines = [t('lifecycle_sub_help_peer_disabled', [t('settings_notify_forwarding_enabled')])];
+    } else {
+      lines = [t('lifecycle_sub_help_peer') || 'Events are forwarded only to peers that grant autonomous:write.'];
+    }
+  }
+  el.innerHTML = lines.map(l => `<div>${escHtml(l)}</div>`).join('');
+}
+
+// <option>s for the peer picker: a placeholder, then each peer name. The
+// current target is kept selectable even when it is not in the list.
+function _lifecycleSubPeerOptions(names, current) {
+  const opts = [`<option value=""${current ? '' : ' selected'}>${escHtml(t('lifecycle_sub_form_peer_select') || 'Choose a federation peer')}</option>`];
+  names.forEach(n => opts.push(`<option value="${escHtml(n)}"${n === current ? ' selected' : ''}>${escHtml(n)}</option>`));
+  return opts.join('');
+}
+
+// Fills the peer picker from the federation peers list the Settings page uses.
+function _lifecycleSubLoadPeers(current) {
+  return apiFetch('/api/federation/peers').then(peers => {
+    const sel = document.getElementById('lcSubPeer');
+    const status = document.getElementById('lcSubPeerStatus');
+    const names = (Array.isArray(peers) ? peers : []).map(p => p && p.name).filter(n => typeof n === 'string' && n);
+    if (current && names.indexOf(current) < 0) names.push(current);
+    if (sel) sel.innerHTML = _lifecycleSubPeerOptions(names, current);
+    if (status) status.innerHTML = names.length ? '' : `<div>${escHtml(t('lifecycle_sub_form_peer_none') || 'No federation peers are registered on this server.')}</div>`;
+  }).catch(() => {
+    const status = document.getElementById('lcSubPeerStatus');
+    if (status) status.innerHTML = `<div style="color:var(--error);">${escHtml(t('lifecycle_sub_form_peer_load_failed') || 'Could not load the federation peers.')}</div>`;
+  });
+}
+
+// Extra lines for the Test result: the HTTP status when a response arrived,
+// and the attempt count for the webhook and peer sinks.
+function _lifecycleSubTestDetails(res) {
+  const out = [];
+  if (res && typeof res.status === 'number') out.push(t('lifecycle_sub_test_status', [res.status]));
+  if (res && typeof res.attempts === 'number') out.push(t('lifecycle_sub_test_attempts', [res.attempts]));
+  return out;
 }
 
 function _lifecycleSubKindsHTML(selected) {
@@ -25479,8 +25621,17 @@ function _openLifecycleSubscriptionForm(prd, subOrNull) {
         <div><label style="${small}">${escHtml(t('lifecycle_sub_form_sink_type') || 'Sink type')}</label>
           ${_lifecycleSubSelectHTML('lcSubSinkType', _LIFECYCLE_SUB_SINKS.map(s => [s, t(_LIFECYCLE_SUB_SINK_LABELS[s]) || s]), sinkType, '_lifecycleSubSinkChanged()')}</div>
         <div><label id="lcSubTargetLabel" style="${small}">${escHtml(t(lbl[0]) || lbl[1])}</label>
-          <input id="lcSubTarget" type="text" class="form-input" value="${escHtml(sink.target || '')}" /></div>
+          <input id="lcSubTarget" type="text" class="form-input" value="${escHtml(sinkType === 'peer' ? '' : (sink.target || ''))}"${sinkType === 'peer' ? ' style="display:none;"' : ''} />
+          <select id="lcSubPeer" class="form-input"${sinkType === 'peer' ? '' : ' style="display:none;"'}>${_lifecycleSubPeerOptions(sinkType === 'peer' && sink.target ? [sink.target] : [], sinkType === 'peer' ? (sink.target || '') : '')}</select>
+          <div id="lcSubPeerStatus" style="font-size:11px;color:var(--text2);"></div></div>
       </div>
+      <div id="lcSubWebhookBox" style="${sinkType === 'webhook' ? '' : 'display:none;'}display:flex;flex-direction:column;gap:4px;">
+        <label style="${small}">${escHtml(t('lifecycle_sub_form_secret_ref') || 'Secret reference')}</label>
+        <input id="lcSubSecretRef" type="text" class="form-input" placeholder="${escHtml(_LIFECYCLE_SUB_SECRET_PLACEHOLDER)}" value="${escHtml(sinkType === 'webhook' ? (sink.secret_ref || '') : '')}" autocomplete="off" />
+        <div style="${small}">${escHtml(t('lifecycle_sub_form_secret_help') || 'Enter a vault reference such as ${secret:name}. The secret value itself is never shown here.')}</div>
+        <div id="lcSubSecretError"></div>
+      </div>
+      <div id="lcSubSinkHelp" style="font-size:11px;color:var(--text2);display:flex;flex-direction:column;gap:2px;"></div>
       <label style="${small}display:flex;justify-content:space-between;"><span>${escHtml(t('lifecycle_sub_form_action_text') || 'Send input text (session sink only)')}</span><span id="lcSubActionCount">${Array.from(actionText).length} / ${_LIFECYCLE_SUB_MAX_ACTION_TEXT}</span></label>
       <textarea id="lcSubActionText" class="form-input" rows="3" oninput="_lifecycleSubCountChanged()"${sinkType === 'session' ? '' : ' disabled'} style="resize:vertical;font-family:inherit;">${escHtml(actionText)}</textarea>
       <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;">
@@ -25496,6 +25647,11 @@ function _openLifecycleSubscriptionForm(prd, subOrNull) {
       </div>
     </form>
   `, () => { _lifecycleSubSubmit(); });
+  // Live delivery state and the federation peer list, both read on open.
+  _lifecycleSubSettings = null;
+  _lifecycleSubLoadSettings();
+  _lifecycleSubLoadPeers(sinkType === 'peer' ? (sink.target || '') : '');
+  _lifecycleSubRenderHelp();
 }
 window._lifecycleSubSinkChanged = _lifecycleSubSinkChanged;
 window._lifecycleSubCountChanged = _lifecycleSubCountChanged;

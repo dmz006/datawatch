@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-13 (investigation and writing finished 2026-10-14)
 **Version:** v9.0.75 (`var Version` in `cmd/datawatch/main.go` at time of writing)
-**Status:** Phase 1 Done (v9.0.85, 2026-10-14), Phase 2 Done (v9.3.0), Phase 3 Done (Unreleased, this build), Phase 4 Done (Unreleased, this build — WS payload enrichment and live toasts carved out as follow-up). Phase 5 Planned.
+**Status:** Phase 1 Done (v9.0.85, 2026-10-14), Phase 2 Done (v9.3.0), Phase 3 Done (Unreleased, this build), Phase 4 Done (Unreleased, this build — WS payload enrichment and live toasts carved out as follow-up). Phase 5 Done (Unreleased, this build — the outbound webhook sink and peer forwarding ship disabled until the operator confirms the proposal).
 
 Terminology: this doc says **Automaton / Automata** in prose, per AGENT.md's
 terminology rule. The internal Go type is `PRD` (and identifiers such as
@@ -544,7 +544,7 @@ milliseconds. No polling, no scratchpad script, no 25 s race window.
 
 ## Phases
 
-Phase 1 is **Done** (v9.0.85); Phase 2 is **Done** (v9.3.0); Phase 3 is **Done** (Unreleased, this build); Phase 4 is **Done** (Unreleased, this build, with WS payload enrichment and live toasts carved out as follow-up); Phase 5 is **Planned**. Each phase's own checklist must include
+Phase 1 is **Done** (v9.0.85); Phase 2 is **Done** (v9.3.0); Phase 3 is **Done** (Unreleased, this build); Phase 4 is **Done** (Unreleased, this build, with WS payload enrichment and live toasts carved out as follow-up); Phase 5 is **Done** (Unreleased, this build, shipped disabled until the operator confirms the proposal). Each phase's own checklist must include
 AGENT.md's **Phase Completion Checklist** (functionality, unit tests, live
 smoke against a real daemon, full `go test ./...` + `node --test`, the
 8-item documentation checklist, conditional docs).
@@ -698,9 +698,17 @@ smoke against a real daemon, full `go test ./...` + `node --test`, the
    (`TestMCPQueueSinkWebhookStillRejected`) and no webhook or federation
    forwarding code exists; `docs/config-reference.yaml` documents
    `autonomous.notify.pending_events_max`.
-5. **Phase 5 — Planned.** Outbound webhook URL sink (HMAC, SSRF guard,
-   retry/backoff), federation forwarding. *(Phase Completion Checklist
-   applies.)*
+5. **Phase 5 — Done (Unreleased), shipped disabled pending operator confirmation
+   of the proposal.** Outbound webhook URL sink (HMAC, SSRF guard,
+   retry/backoff), federation forwarding. The open values (retry curve,
+   signature format, payload shape, peer addressing, offline-peer behaviour)
+   are proposed in
+   [2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md](2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md);
+   the sink and the forwarding stay disabled until the operator confirms it.
+   Each open value is one named constant or config default marked "pending
+   operator confirmation". The operator's how-to is
+   [howto/automaton-lifecycle-webhooks.md](../howto/automaton-lifecycle-webhooks.md).
+   *(Phase Completion Checklist applies.)*
 
 ---
 
@@ -823,10 +831,38 @@ shipped in v9.3.0). Current status of each intended surface:
   registration; the app-side UI is likewise tracked in that note, not built
   in this repo.
 
-**Phase 5 (not started):** outbound webhook URL sink (HMAC / SSRF guard /
-retry-backoff) and federation forwarding of the event stream. The `webhook`
-sink type is rejected at creation until then (clear phase error); `mcp_queue`
-is accepted from Phase 4.
+**Phase 5 (Done, Unreleased — shipped disabled pending operator confirmation of
+the proposal):** outbound webhook URL sink (HMAC / SSRF guard /
+retry-backoff) and federation forwarding of the event stream. Proposal:
+[2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md](2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md).
+Both switches (`autonomous.notify.webhook.enabled`,
+`autonomous.notify.forwarding.enabled`) default to off; while off, a `webhook`
+or `peer` subscription is refused at creation and a stored one delivers nothing.
+`mcp_queue` is accepted from Phase 4. Surfaces, now done:
+
+- **REST:** ✅ `sink.type` `webhook` (with `sink.secret_ref`) and `peer` on
+  `POST` and `PUT /api/autonomous/subscriptions`; the `POST /api/autonomous/events/forward`
+  receiving endpoint (`202` accepted, `400`, `401`, `403`, `409` loop refusal,
+  `503` when forwarding is off or the receiver is not wired).
+- **MCP:** ✅ `autonomous_subscribe` and `autonomous_subscription_update` accept
+  `sink_type` `webhook` / `peer` and the `secret_ref` argument.
+- **CLI:** ✅ `datawatch autonomous subscribe|subscription-update` with
+  `--sink webhook|peer` and `--secret-ref`.
+- **Comm channel:** ✅ `autonomous subscribe|subscription-update` with
+  `sink=webhook|peer`, `target=` and `secret_ref=`, owner-scoped as before.
+- **YAML/config:** ✅ `autonomous.notify.webhook.*` and
+  `autonomous.notify.forwarding.*` (documented in `docs/config-reference.yaml`).
+- **Settings card:** ✅ Settings → Comms → Notifications: the webhook and
+  forwarding switches, the allow-list and the retry and limit fields.
+- **PWA:** ✅ Automaton → Subscriptions tab: the webhook and federation-peer sink
+  types, with the secret reference field and the disabled and empty-allow-list
+  hints.
+- **Session delivery:** N/A — the webhook and peer sinks do not type into a session.
+- **Android / iPhone:** ⏳ the apps receive events through the existing push path
+  and the subscription management UI is tracked in
+  [2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](2026-10-21-datawatch-app-lifecycle-subscriptions-note.md)
+  (which now covers the two new sink types and `secret_ref`). The sink reaches
+  mobile clients through the same REST contract.
 
 ---
 
@@ -864,12 +900,32 @@ is accepted from Phase 4.
    stay PWA-only?
 5. **Outbound webhook sink:** wanted at all (Phase 5), and if so, with what
    host allow-list and secret handling?
+   - **Answered by the operator, 2026-10-23:** yes. Outbound webhook sink with an
+     operator-configured host allow-list (only listed hosts can receive events),
+     the signing secret held in the secrets vault and referenced as
+     `${secret:name}`, each POST signed with HMAC, failures retried with backoff
+     and then an alert, and an SSRF guard that refuses private, loopback and
+     link-local targets unless the host is explicitly allow-listed. The details
+     that the operator did not answer (retry count and curve, signature header
+     format, payload shape, the cloud-metadata narrowing of the SSRF rule) are
+     still pending in
+     [the proposal](2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md),
+     section 2 and section 3. The sink ships disabled until they are confirmed.
 6. **Generic MCP clients:** is the pending-events polling tool enough, or
    should datawatch also implement MCP `resources/subscribe` /
    `notifications/resources/updated` (requires handling the method itself,
    or an mcp-go upgrade)?
 7. **Federation:** should Automaton events from one host be deliverable to
    subscribers on another, and through which existing federation path?
+   - **Answered by the operator, 2026-10-23:** yes. Federation forwarding goes
+     through the existing federation path: the peer registry, the peer's bearer
+     token and the hop-chain header. A peer subscription names a registered peer
+     and never carries a credential. Loop prevention uses the origin host, a
+     visited list and a hop cap. The details that are still pending in
+     [the proposal](2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md)
+     are the peer addressing, the offline-peer behaviour (bounded retry, then a
+     dropped event with an alert; no durable outbox), and the hop cap value. The
+     forwarding ships disabled until they are confirmed.
 8. **Sequencing with BL431:** should this PRD's dispatcher implementation
    ship **before**, **with**, or **after** BL431's Automation-coordinator
    implementation, given that BL431 designed the coordinator as an

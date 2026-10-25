@@ -741,6 +741,10 @@ func runWorkerBootstrapTask(mgr *session.Manager, env agentspkg.BootstrapEnv, bo
 }
 
 func runStart(cmd *cobra.Command, _ []string) error {
+	// fedPeerRegistry and fedPeerGroups back the lifecycle peer forwarder's
+	// lookup (lifecycleLookupPeer). Each stays nil when its store fails to open.
+	var fedPeerRegistry *multiserver.Store
+	var fedPeerGroups *federation.GroupStore
 	fg, _ := cmd.Flags().GetBool("foreground")
 	if !fg {
 		if secureMode {
@@ -3433,6 +3437,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 				if msErr == nil {
 					httpServer.SetServerStore(msStore)
+					fedPeerRegistry = msStore
 					// BL316 S2 — wire the live store into the remote
 					// dispatcher so CLI --server and comm-channel
 					// cross-host dispatch see peers added after startup.
@@ -3448,6 +3453,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// JSON store at <data-dir>/federation/groups.json.
 			if fedGS, fgsErr := federation.NewGroupStore(expandHome(cfg.DataDir)); fgsErr == nil {
 				httpServer.SetFedGroupStore(fedGS)
+				fedPeerGroups = fedGS
 			} else {
 				fmt.Printf("[federation] group store init failed: %v\n", fgsErr)
 			}
@@ -5984,10 +5990,15 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 			// Foreign-file drift (and future autonomous audit events) →
 			// operator audit log, so they land in JSON-lines + CEF mirror.
+			// lifecycleAuditFn is the operator audit writer for autonomous
+			// records. The lifecycle webhook sink (BL427 phase 5) shares it
+			// with the subscription engine, so both write the same log.
+			var lifecycleAuditFn func(string, map[string]any)
 			if wiredAuditLog != nil {
-				amgr.SetAuditFn(func(a string, d map[string]any) {
+				lifecycleAuditFn = func(a string, d map[string]any) {
 					_ = wiredAuditLog.Write(auditpkg.Entry{Timestamp: time.Now(), Actor: "autonomous", Action: a, Details: d})
-				})
+				}
+				amgr.SetAuditFn(lifecycleAuditFn)
 			}
 			// v5.26.19 — wire F10 profile resolver so SetPRDProfiles
 			// can validate that named project + cluster profiles
@@ -6005,6 +6016,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// get exactly the same prd_update frames as before;
 			// enriching the WS payload is a later phase.
 			amgr.Subscribe(autonomouspkg.LifecycleFilter{Kinds: []string{autonomouspkg.KindPRDUpdated}}, func(ev autonomouspkg.LifecycleEvent) {
+				if ev.Forward != nil {
+					// A peer-forwarded update names an Automaton this daemon may not
+					// hold: it is not broadcast to the local Autonomous tab.
+					return
+				}
 				httpServer.BroadcastPRDUpdate(autonomouspkg.PRDUpdatePayload(ev))
 			})
 			// Built-in lifecycle-event sinks (alert store + topic push) plus the
@@ -6096,7 +6112,108 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						emailBackend.Send(cfg.Email.To, text) //nolint:errcheck
 					}
 				}
+				// BL427 (phase 5) — outbound webhook sink. It ships disabled
+				// (autonomous.notify.webhook.enabled defaults to false). The
+				// settings are read from cfg on every call, so a PUT
+				// /api/config change takes effect on the next delivery with no
+				// restart. cfg is the same pointer the HTTP server writes to.
+				lifecycleWebhookSettings := func() autonomouspkg.WebhookSettings {
+					return autonomouspkg.WebhookSettingsFromConfig(cfg.Autonomous.Notify)
+				}
+				// BL427 (phase 5) — federation peer forwarding. It ships disabled
+				// (autonomous.notify.forwarding.enabled defaults to false). Read
+				// from cfg on every call, as for the webhook sink.
+				lifecycleForwardSettings := func() autonomouspkg.ForwardSettings {
+					return autonomouspkg.ForwardSettingsFromConfig(cfg.Autonomous.Notify)
+				}
+				// lifecycleLookupPeer resolves a registered federation peer for a peer
+				// subscription. A disabled entry resolves to nothing. The token is read
+				// here and passed only to the forwarder; nothing logs it.
+				lifecycleLookupPeer := func(name string) (autonomouspkg.PeerRef, bool) {
+					if fedPeerRegistry == nil {
+						return autonomouspkg.PeerRef{}, false
+					}
+					e, ok := fedPeerRegistry.Get(name)
+					if !ok || !e.Enabled {
+						return autonomouspkg.PeerRef{}, false
+					}
+					var custom map[string]*federation.CapabilityGroup
+					if fedPeerGroups != nil {
+						custom = fedPeerGroups.AsMap()
+					}
+					caps := federation.Resolve(e.Capabilities, custom)
+					return autonomouspkg.PeerRef{
+						Name:               e.Name,
+						URL:                e.URL,
+						Token:              e.Token,
+						TLSSkipVerify:      e.TLSSkipVerify,
+						Federated:          e.Federated,
+						HasAutonomousWrite: federation.Check(caps, federation.CapAutonomousWrite),
+					}, true
+				}
+				// Creation check: the store refuses a webhook subscription whose
+				// delivery is disabled or whose target fails the URL policy, and a
+				// peer subscription whose peer is not usable. The same constructor
+				// backs the REST, MCP, CLI and comm surfaces' parity test.
+				lifeSubStore.SetSinkValidator(autonomouspkg.NewLifecycleSinkValidator(lifecycleWebhookSettings, lifecycleForwardSettings, lifecycleLookupPeer))
+				webhookSink := autonomouspkg.NewWebhookSink(autonomouspkg.WebhookSinkConfig{
+					Settings: lifecycleWebhookSettings,
+					// The signing key is resolved from the vault on every delivery
+					// and never cached. Nothing here logs the value.
+					ResolveSecret: func(ref string) (string, error) {
+						if secretsStore == nil {
+							return "", fmt.Errorf("no secrets store is configured")
+						}
+						if !secretspkg.IsRef(ref) {
+							return "", fmt.Errorf("the signing secret is not a ${secret:name} reference")
+						}
+						return secretspkg.ResolveRef(ref, secretsStore)
+					},
+					Audit: lifecycleAuditFn,
+					RaiseAlert: func(level, title, body string) {
+						lv := alertspkg.LevelInfo
+						switch level {
+						case "warn":
+							lv = alertspkg.LevelWarn
+						case "error":
+							lv = alertspkg.LevelError
+						}
+						_ = alertStore.AddSystem(lv, title, body)
+					},
+				})
+				// The local name is the federation self-name, the same one the
+				// federation pusher registers under. The forwarder and the receiving
+				// endpoint share it, so a visited list compares like with like.
+				lifecycleLocalHost := func() string { return federationSelfName(cfg.Observer.Federation.PeerName) }
+				peerForwarder := autonomouspkg.NewPeerForwarder(autonomouspkg.PeerForwarderConfig{
+					LookupPeer: lifecycleLookupPeer,
+					LocalHost:  lifecycleLocalHost,
+					Settings:   lifecycleForwardSettings,
+					// The daemon's peer client: a peer's TLS skip-verify setting
+					// behaves as on every other peer call.
+					NewClient: multiserver.HTTPClient,
+					Audit:     lifecycleAuditFn,
+					RaiseAlert: func(level, title, body string) {
+						lv := alertspkg.LevelInfo
+						switch level {
+						case "warn":
+							lv = alertspkg.LevelWarn
+						case "error":
+							lv = alertspkg.LevelError
+						}
+						_ = alertStore.AddSystem(lv, title, body)
+					},
+				})
+				// BL427 (phase 5) — receiving side of peer forwarding. It reads the
+				// same live settings as the forwarder, so one enabled flag governs both
+				// directions. Disabled by default.
+				amgr.SetForwardReceive(autonomouspkg.ForwardReceiveConfig{
+					Settings:  lifecycleForwardSettings,
+					LocalHost: lifecycleLocalHost,
+				})
 				lifeSubEngine := autonomouspkg.NewLifecycleSubscriptionEngine(amgr, lifeSubStore, autonomouspkg.SessionPushConfig{
+					Webhook:   webhookSink,
+					Forwarder: peerForwarder,
 					// Resolve a session name, full ID, or short ID to the
 					// session's full ID and channel-bridge port (0 when the
 					// session has no bridge — then the engine uses SendInput
@@ -6149,6 +6266,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				// store change, so a subscription created or deleted over
 				// REST takes effect without a restart.
 				httpServer.SetAutonomousSubscriptions(lifeSubStore)
+				// BL427 (phase 5) — POST /api/autonomous/events/forward: a peer's
+				// forwarded event is re-emitted into this daemon's dispatcher.
+				httpServer.SetAutonomousForwardedEvents(amgr)
 				// POST /api/autonomous/subscriptions/{id}/test delivers
 				// through the engine's own sink wiring.
 				lifeSubStore.SetTestFirer(lifeSubEngine.FireTest)
@@ -6983,14 +7103,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// PushIntervalSeconds. Loop prevention is enforced by the
 			// receiver via the chain field.
 			if fed := obsCfg.Federation; fed.ParentURL != "" {
-				selfName := fed.PeerName
-				if selfName == "" {
-					if h, err := os.Hostname(); err == nil {
-						selfName = h
-					} else {
-						selfName = "datawatch-primary"
-					}
-				}
+				selfName := federationSelfName(fed.PeerName)
 				httpServer.SetFederationSelfName(selfName)
 				go startFederationPusher(obsCollector, fed, selfName, Version)
 			}
@@ -9306,6 +9419,19 @@ func expandHome(p string) string {
 //
 // Best-effort: registration failures are logged and retried on the
 // next tick. The collector keeps running locally regardless.
+// federationSelfName is the name this daemon is known by in the federation:
+// the configured peer name, else the host name. The federation pusher and the
+// lifecycle peer forwarder both use it, so every hop names this daemon alike.
+func federationSelfName(peerName string) string {
+	if peerName != "" {
+		return peerName
+	}
+	if h, err := os.Hostname(); err == nil {
+		return h
+	}
+	return "datawatch-primary"
+}
+
 func startFederationPusher(coll *observerpkg.Collector, fed observerpkg.FederationCfg, selfName, version string) {
 	tokenPath := fed.TokenPath
 	if tokenPath == "" {

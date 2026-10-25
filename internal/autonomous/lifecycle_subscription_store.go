@@ -24,12 +24,13 @@ import (
 // (nil key falls back to a plaintext file — matches secfile's
 // semantics).
 type SubscriptionStore struct {
-	mu      sync.RWMutex
-	path    string
-	encKey  []byte
-	subs    map[string]Subscription
-	changed func() // resync hook (engine re-attaches sinks after mutations)
-	tester  func(id string) (TestResult, error)
+	mu            sync.RWMutex
+	path          string
+	encKey        []byte
+	subs          map[string]Subscription
+	changed       func() // resync hook (engine re-attaches sinks after mutations)
+	tester        func(id string) (TestResult, error)
+	sinkValidator func(Subscription) error
 }
 
 // ErrSubscriptionNotFound is returned (wrapped) when an operation names
@@ -127,6 +128,33 @@ func (s *SubscriptionStore) mutate(f func(now time.Time) error) error {
 	return mutErr
 }
 
+// SetSinkValidator installs a check that Add and Update run after
+// ValidateSubscription, for rules that depend on live configuration (the
+// webhook settings). A nil fn removes it. The check runs under the store
+// lock, so it must not call back into the store. Without a validator the
+// store refuses webhook subscriptions, because their allow-list check cannot
+// run.
+func (s *SubscriptionStore) SetSinkValidator(fn func(Subscription) error) {
+	s.mu.Lock()
+	s.sinkValidator = fn
+	s.mu.Unlock()
+}
+
+// validateLocked runs the pure subscription checks and then the installed
+// sink validator. The caller holds s.mu.
+func (s *SubscriptionStore) validateLocked(sub Subscription, now time.Time) error {
+	if err := ValidateSubscription(sub, now); err != nil {
+		return err
+	}
+	if s.sinkValidator == nil {
+		if sub.Sink.Type == SinkWebhook {
+			return fmt.Errorf("webhook subscriptions need the live webhook settings check, which this store does not have")
+		}
+		return nil
+	}
+	return s.sinkValidator(sub)
+}
+
 // Add validates sub, assigns an ID (and CreatedAt if unset), persists
 // it and returns the stored record.
 func (s *SubscriptionStore) Add(sub Subscription) (Subscription, error) {
@@ -141,7 +169,7 @@ func (s *SubscriptionStore) Add(sub Subscription) (Subscription, error) {
 		if sub.CreatedAt.IsZero() {
 			sub.CreatedAt = now
 		}
-		if err := ValidateSubscription(sub, now); err != nil {
+		if err := s.validateLocked(sub, now); err != nil {
 			return err
 		}
 		s.subs[sub.ID] = sub
@@ -173,7 +201,7 @@ func (s *SubscriptionStore) Update(id string, sub Subscription) (Subscription, e
 		if sub.Owner != "" {
 			next.Owner = sub.Owner
 		}
-		if err := ValidateSubscription(next, now); err != nil {
+		if err := s.validateLocked(next, now); err != nil {
 			return err
 		}
 		s.subs[id] = next

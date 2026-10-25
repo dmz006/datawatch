@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/audit"
@@ -703,6 +704,9 @@ type Manager struct {
 	lifecycle     *lifecycleDispatcher
 	lifecycleHost string
 	lifecycleOnce sync.Once
+	// BL427 (phase 5) — receiving side of peer forwarding; nil until
+	// SetForwardReceive. Read on every forwarded envelope (lifecycle_forward_receive.go).
+	forwardRecv atomic.Pointer[ForwardReceiveConfig]
 
 	// Holder-name resolver (capacity_titles.go) — lazily created, one shared
 	// title snapshot so a whole capacity response resolves in one store read.

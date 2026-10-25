@@ -2969,6 +2969,12 @@ type AutonomousNotifyConfig struct {
 	// first. Values below 1 fall back to 500. No omitempty, same
 	// reasoning as DefaultEvents.
 	PendingEventsMax int `yaml:"pending_events_max" json:"pending_events_max"`
+	// Webhook configures the outbound webhook sink. It ships disabled.
+	// No omitempty, same reasoning as DefaultEvents.
+	Webhook AutonomousNotifyWebhookConfig `yaml:"webhook" json:"webhook"`
+	// Forwarding configures peer forwarding of lifecycle events. It ships
+	// disabled. No omitempty, same reasoning as DefaultEvents.
+	Forwarding AutonomousNotifyForwardingConfig `yaml:"forwarding" json:"forwarding"`
 }
 
 // DefaultPendingEventsMax is the pending_events_max fallback.
@@ -2981,6 +2987,185 @@ func (n AutonomousNotifyConfig) EffectivePendingEventsMax() int {
 		return DefaultPendingEventsMax
 	}
 	return n.PendingEventsMax
+}
+
+// The defaults below are the recommended values in the outbound-webhook and
+// forwarding proposal (docs/plans/2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md,
+// section 2). Each one is pending operator confirmation. This block is the one
+// place a changed decision is made: every Effective* helper below and the
+// autonomous package read these, never a second copy. A zero or negative value
+// in a config field means "use this default".
+const (
+	// DefaultNotifyMaxAttempts is the total attempts per delivery, the first
+	// included. Pending operator confirmation.
+	DefaultNotifyMaxAttempts = 5
+	// DefaultNotifyJitterPercent is the +- spread applied to each retry delay.
+	// Jitter cannot be turned off: 0 falls back to this value. Pending
+	// operator confirmation.
+	DefaultNotifyJitterPercent = 20
+	// DefaultNotifyAttemptTimeoutSeconds bounds one attempt (connect, request
+	// and response). Pending operator confirmation.
+	DefaultNotifyAttemptTimeoutSeconds = 10
+	// DefaultNotifyMaxBodyBytes caps the serialised event envelope. It is also
+	// the size a forwarding receiver accepts. Pending operator confirmation.
+	DefaultNotifyMaxBodyBytes = 64 * 1024
+	// DefaultNotifySignatureToleranceSeconds is the replay window a receiver
+	// should enforce on the signed timestamp. Pending operator confirmation.
+	DefaultNotifySignatureToleranceSeconds = 300
+	// DefaultNotifyMaxHops is the hop cap of a forwarded event. Pending
+	// operator confirmation.
+	DefaultNotifyMaxHops = 3
+)
+
+// DefaultNotifyBackoffSeconds returns the delay after each failed attempt:
+// 1s, 4s, 16s, 64s. The last entry repeats for later attempts. Pending
+// operator confirmation. A fresh slice each call, so callers cannot change
+// the default.
+func DefaultNotifyBackoffSeconds() []int {
+	return []int{1, 4, 16, 64}
+}
+
+// AutonomousNotifyWebhookConfig is autonomous.notify.webhook, the outbound
+// webhook sink. Every subscription with the webhook sink type is refused while
+// Enabled is false, and any such subscription already stored delivers nothing.
+// AllowHosts is the only list of hosts that may receive an event: an exact host
+// or an exact host:port, and an empty list means nothing can receive.
+// Plain YAML and JSON with no omitempty, so an explicit false or an empty list
+// survives a round trip. A subscription's signing secret is never set here; it
+// is a ${secret:name} reference on the subscription itself.
+type AutonomousNotifyWebhookConfig struct {
+	Enabled    bool     `yaml:"enabled" json:"enabled"`
+	AllowHosts []string `yaml:"allow_hosts" json:"allow_hosts"`
+	// MaxAttempts is the total attempts per delivery. Values below 1 mean the default.
+	MaxAttempts int `yaml:"max_attempts" json:"max_attempts"`
+	// BackoffSeconds is the delay after each failed attempt; the last entry
+	// repeats. An empty list means the default.
+	BackoffSeconds []int `yaml:"backoff_seconds" json:"backoff_seconds"`
+	// JitterPercent is the +- spread on each delay. Values below 1 mean the default.
+	JitterPercent int `yaml:"jitter_percent" json:"jitter_percent"`
+	// AttemptTimeoutSeconds bounds one attempt. Values below 1 mean the default.
+	AttemptTimeoutSeconds int `yaml:"attempt_timeout_seconds" json:"attempt_timeout_seconds"`
+	// MaxBodyBytes caps the serialised envelope. Values below 1 mean the default.
+	MaxBodyBytes int `yaml:"max_body_bytes" json:"max_body_bytes"`
+	// SignatureToleranceSeconds is the replay window a receiver enforces on the
+	// signed timestamp. Values below 1 mean the default.
+	SignatureToleranceSeconds int `yaml:"signature_tolerance_seconds" json:"signature_tolerance_seconds"`
+}
+
+// AutonomousNotifyForwardingConfig is autonomous.notify.forwarding, the peer
+// forwarding of lifecycle events through the federation registry. It ships
+// disabled: while Enabled is false, peer subscriptions are refused at creation
+// and this daemon refuses to receive forwarded events. The retry fields are
+// independent of the webhook sink's, with the same default values.
+type AutonomousNotifyForwardingConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// MaxHops is the hop cap of a forwarded event. Values below 1 mean the default.
+	MaxHops int `yaml:"max_hops" json:"max_hops"`
+	// MaxAttempts is the total attempts per forwarded event. Values below 1 mean the default.
+	MaxAttempts int `yaml:"max_attempts" json:"max_attempts"`
+	// BackoffSeconds is the delay after each failed attempt; the last entry
+	// repeats. An empty list means the default.
+	BackoffSeconds []int `yaml:"backoff_seconds" json:"backoff_seconds"`
+	// JitterPercent is the +- spread on each delay. Values below 1 mean the default.
+	JitterPercent int `yaml:"jitter_percent" json:"jitter_percent"`
+	// AttemptTimeoutSeconds bounds one attempt. Values below 1 mean the default.
+	AttemptTimeoutSeconds int `yaml:"attempt_timeout_seconds" json:"attempt_timeout_seconds"`
+}
+
+// effectiveNotifyInt returns v, or def when v is below 1.
+func effectiveNotifyInt(v, def int) int {
+	if v < 1 {
+		return def
+	}
+	return v
+}
+
+// effectiveNotifyBackoff returns the positive entries of list, or the default
+// schedule when none are positive. A fresh slice either way.
+func effectiveNotifyBackoff(list []int) []int {
+	out := make([]int, 0, len(list))
+	for _, s := range list {
+		if s >= 1 {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return DefaultNotifyBackoffSeconds()
+	}
+	return out
+}
+
+// effectiveNotifyJitter returns v, capped at 100, or the default when v is below 1.
+func effectiveNotifyJitter(v int) int {
+	if v < 1 {
+		return DefaultNotifyJitterPercent
+	}
+	if v > 100 {
+		return 100
+	}
+	return v
+}
+
+// EffectiveMaxAttempts returns MaxAttempts, or the default when it is below 1.
+func (w AutonomousNotifyWebhookConfig) EffectiveMaxAttempts() int {
+	return effectiveNotifyInt(w.MaxAttempts, DefaultNotifyMaxAttempts)
+}
+
+// EffectiveBackoffSeconds returns the positive entries of BackoffSeconds, or
+// the default schedule when there are none.
+func (w AutonomousNotifyWebhookConfig) EffectiveBackoffSeconds() []int {
+	return effectiveNotifyBackoff(w.BackoffSeconds)
+}
+
+// EffectiveJitterPercent returns JitterPercent, capped at 100, or the default
+// when it is below 1.
+func (w AutonomousNotifyWebhookConfig) EffectiveJitterPercent() int {
+	return effectiveNotifyJitter(w.JitterPercent)
+}
+
+// EffectiveAttemptTimeoutSeconds returns AttemptTimeoutSeconds, or the default
+// when it is below 1.
+func (w AutonomousNotifyWebhookConfig) EffectiveAttemptTimeoutSeconds() int {
+	return effectiveNotifyInt(w.AttemptTimeoutSeconds, DefaultNotifyAttemptTimeoutSeconds)
+}
+
+// EffectiveMaxBodyBytes returns MaxBodyBytes, or the default when it is below 1.
+func (w AutonomousNotifyWebhookConfig) EffectiveMaxBodyBytes() int {
+	return effectiveNotifyInt(w.MaxBodyBytes, DefaultNotifyMaxBodyBytes)
+}
+
+// EffectiveSignatureToleranceSeconds returns SignatureToleranceSeconds, or the
+// default when it is below 1.
+func (w AutonomousNotifyWebhookConfig) EffectiveSignatureToleranceSeconds() int {
+	return effectiveNotifyInt(w.SignatureToleranceSeconds, DefaultNotifySignatureToleranceSeconds)
+}
+
+// EffectiveMaxHops returns MaxHops, or the default when it is below 1.
+func (f AutonomousNotifyForwardingConfig) EffectiveMaxHops() int {
+	return effectiveNotifyInt(f.MaxHops, DefaultNotifyMaxHops)
+}
+
+// EffectiveMaxAttempts returns MaxAttempts, or the default when it is below 1.
+func (f AutonomousNotifyForwardingConfig) EffectiveMaxAttempts() int {
+	return effectiveNotifyInt(f.MaxAttempts, DefaultNotifyMaxAttempts)
+}
+
+// EffectiveBackoffSeconds returns the positive entries of BackoffSeconds, or
+// the default schedule when there are none.
+func (f AutonomousNotifyForwardingConfig) EffectiveBackoffSeconds() []int {
+	return effectiveNotifyBackoff(f.BackoffSeconds)
+}
+
+// EffectiveJitterPercent returns JitterPercent, capped at 100, or the default
+// when it is below 1.
+func (f AutonomousNotifyForwardingConfig) EffectiveJitterPercent() int {
+	return effectiveNotifyJitter(f.JitterPercent)
+}
+
+// EffectiveAttemptTimeoutSeconds returns AttemptTimeoutSeconds, or the default
+// when it is below 1.
+func (f AutonomousNotifyForwardingConfig) EffectiveAttemptTimeoutSeconds() int {
+	return effectiveNotifyInt(f.AttemptTimeoutSeconds, DefaultNotifyAttemptTimeoutSeconds)
 }
 
 // ScanConfig — BL221 Phase 3 runtime config, mirrors

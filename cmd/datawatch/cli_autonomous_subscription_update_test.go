@@ -132,7 +132,7 @@ func TestSubscriptionSurface_CLIUpdateArgumentValidation(t *testing.T) {
 		{"blank id", []string{" ", "--on", "prd.blocked", "--sink", "comm", "--target", "r"}, "id must be non-empty"},
 		{"no filter", []string{"a", "--sink", "comm", "--target", "r"}, "at least one of --on"},
 		{"no sink", []string{"a", "--on", "prd.blocked", "--target", "r"}, "--sink is required"},
-		{"bad sink", []string{"a", "--on", "prd.blocked", "--sink", "webhook", "--target", "r"}, "unknown --sink"},
+		{"bad sink", []string{"a", "--on", "prd.blocked", "--sink", "kafka", "--target", "r"}, "unknown --sink"},
 		{"no target", []string{"a", "--on", "prd.blocked", "--sink", "comm"}, "--target is required"},
 		{"send on comm", []string{"a", "--on", "prd.blocked", "--sink", "comm", "--target", "r", "--send", "x"}, "only valid with --sink session"},
 		{"negative expires", []string{"a", "--on", "prd.blocked", "--sink", "comm", "--target", "r", "--expires", "-1"}, "--expires must be positive"},

@@ -250,6 +250,11 @@ func (c *Coordinator) onMemberTerminal(ev LifecycleEvent) {
 	if c == nil {
 		return
 	}
+	if ev.Forward != nil {
+		// A peer-forwarded event (lifecycle_forward_receive.go) is a notification
+		// about another daemon's Automaton. It never drives this coordinator.
+		return
+	}
 	if ev.Level == LevelAutomation {
 		c.onChildTerminal(ev)
 		return

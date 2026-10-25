@@ -100,6 +100,11 @@ type LifecycleEvent struct {
 	// Test marks a synthetic event fired by a subscription test; it is
 	// never emitted by the executor.
 	Test bool `json:"test,omitempty"`
+	// Forward is set only on an event a peer forwarded to this daemon (the
+	// receiving side re-emits it with the chain from the envelope). A non-nil
+	// Forward marks the event as forwarded: a daemon never forwards it on.
+	// Nil on every locally originated event.
+	Forward *ForwardChain `json:"forward,omitempty"`
 }
 
 // PRDUpdatePayload maps a KindPRDUpdated event to the legacy WS

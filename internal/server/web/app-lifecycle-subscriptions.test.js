@@ -6,6 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
+const fs = require('fs');
 const { vm, makeStubElement, buildSandbox, loadScript, flushAsync } = require('./testutil_browser_stub');
 
 const APP_JS = path.join(__dirname, 'app.js');
@@ -14,6 +15,11 @@ const EN = require('./locales/en.json');
 function fakeResponse(status, body) {
   const text = typeof body === 'string' ? body : JSON.stringify(body === undefined ? {} : body);
   return { ok: status >= 200 && status < 300, status, statusText: 'x', text: () => Promise.resolve(text), json: () => Promise.resolve(JSON.parse(text)) };
+}
+
+// The /api/config shape the form reads for the live webhook and peer state.
+function cfgWith({ webhook = false, hosts = [], forwarding = false } = {}) {
+  return { autonomous: { notify: { webhook: { enabled: webhook, allow_hosts: hosts }, forwarding: { enabled: forwarding } } } };
 }
 
 // Loads app.js with a body element for PRD "p1" and a fetch router.
@@ -208,7 +214,7 @@ const kindIdx = (sandbox, kind) => run(sandbox, `_LIFECYCLE_SUB_KINDS.indexOf(${
 function fill(s, vals) {
   const { sandbox, byId } = s;
   for (const k of (vals.kinds || [])) byId['lcSubKind_' + kindIdx(sandbox, k)] = { checked: true };
-  const set = { level: 'lcSubLevel', scope: 'lcSubScope', taskId: 'lcSubTaskId', sinkType: 'lcSubSinkType', target: 'lcSubTarget', actionText: 'lcSubActionText', expiry: 'lcSubExpiry' };
+  const set = { level: 'lcSubLevel', scope: 'lcSubScope', taskId: 'lcSubTaskId', sinkType: 'lcSubSinkType', target: 'lcSubTarget', actionText: 'lcSubActionText', expiry: 'lcSubExpiry', secretRef: 'lcSubSecretRef', peer: 'lcSubPeer' };
   for (const [k, id] of Object.entries(set)) if (vals[k] !== undefined) byId[id] = { value: vals[k] };
   if (vals.oneShot) byId.lcSubOneShot = { checked: true };
   if (vals.coalesce) byId.lcSubCoalesce = { checked: true };
@@ -261,14 +267,15 @@ test('lifecycle subscriptions form: create sends an mcp_queue subscription', asy
   }, 'action text and coalesce belong to other sink types and must be dropped');
 });
 
-test('lifecycle subscriptions form: the webhook sink is not offered and every kind is', () => {
+test('lifecycle subscriptions form: the sink picker offers webhook and peer after the existing sinks, default still comm', () => {
   const s = formSetup([]);
   openForm(s.sandbox, null);
   const html = s.html();
-  assert.ok(!/webhook/i.test(html), 'webhook must not appear in the form');
-  for (const sink of ['comm', 'session', 'topic', 'alert', 'mcp_queue']) {
-    assert.match(html, new RegExp(`<option value="${sink}"`));
-  }
+  const order = ['comm', 'session', 'topic', 'alert', 'mcp_queue', 'webhook', 'peer'];
+  const offered = [...html.matchAll(/<option value="([a-z_]+)"/g)].map(m => m[1]).filter(v => order.indexOf(v) >= 0);
+  assert.deepEqual(offered, order, 'existing sinks keep their order; webhook and peer come last');
+  assert.deepEqual([...run(s.sandbox, `_LIFECYCLE_SUB_SINKS`)], order);
+  assert.match(html, /<option value="comm" selected>/);
   const kinds = run(s.sandbox, `_LIFECYCLE_SUB_KINDS`);
   assert.equal(kinds.length, 29);
   for (const k of ['prd.draft', 'prd.paused', 'task.awaiting_approval', 'task.review_needed', 'task.session_started', 'task.session_cleared', 'prd.updated']) {
@@ -276,6 +283,211 @@ test('lifecycle subscriptions form: the webhook sink is not offered and every ki
     assert.ok(html.includes(k), k);
   }
   assert.match(html, /Add subscription/);
+});
+
+test('lifecycle subscriptions form: the webhook and peer fields belong to their own sink only', () => {
+  const s = formSetup([]);
+  openForm(s.sandbox, null);
+  const target = { style: {} }, peer = { style: {} }, box = { style: {} }, label = { textContent: '' };
+  Object.assign(s.byId, { lcSubTarget: target, lcSubPeer: peer, lcSubWebhookBox: box, lcSubTargetLabel: label, lcSubSinkHelp: makeStubElement() });
+  const type = { value: 'webhook' };
+  s.byId.lcSubSinkType = type;
+  run(s.sandbox, `_lifecycleSubSinkChanged()`);
+  assert.equal(label.textContent, 'Webhook URL');
+  assert.equal(box.style.display, '', 'secret reference shown for webhook');
+  assert.equal(target.style.display, '', 'URL box shown for webhook');
+  assert.equal(peer.style.display, 'none', 'peer picker hidden for webhook');
+
+  type.value = 'peer';
+  run(s.sandbox, `_lifecycleSubSinkChanged()`);
+  assert.equal(label.textContent, 'Federation peer');
+  assert.equal(box.style.display, 'none', 'secret reference hidden for peer');
+  assert.equal(target.style.display, 'none', 'text target hidden for peer');
+  assert.equal(peer.style.display, '', 'peer picker shown for peer');
+
+  type.value = 'comm';
+  run(s.sandbox, `_lifecycleSubSinkChanged()`);
+  assert.equal(box.style.display, 'none');
+  assert.equal(target.style.display, '');
+  assert.equal(peer.style.display, 'none');
+});
+
+test('lifecycle subscriptions form: a webhook subscription sends the URL and the secret reference only', async () => {
+  const s = formSetup([
+    ['POST', /subscriptions$/, () => fakeResponse(201, { id: 'w' })],
+    ['GET', /subscriptions$/, () => fakeResponse(200, [])],
+  ]);
+  openForm(s.sandbox, null);
+  fill(s, { kinds: ['prd.failed'], scope: 'this', sinkType: 'webhook', target: 'https://hooks.example.net/automaton', secretRef: '${secret:hook-token}' });
+  await submit(s.sandbox);
+  const post = s.requests.find(r => r.method === 'POST');
+  assert.deepEqual(JSON.parse(JSON.stringify(post.body)), {
+    filter: { kinds: ['prd.failed'], prd_id: 'p1' },
+    sink: { type: 'webhook', target: 'https://hooks.example.net/automaton', secret_ref: '${secret:hook-token}' },
+  });
+});
+
+test('lifecycle subscriptions form: a peer subscription sends the chosen peer name as the target and no secret', async () => {
+  const s = formSetup([
+    ['POST', /subscriptions$/, () => fakeResponse(201, { id: 'p' })],
+    ['GET', /subscriptions$/, () => fakeResponse(200, [])],
+  ]);
+  openForm(s.sandbox, null);
+  // A stray URL and secret typed before switching to peer must not be sent.
+  fill(s, { kinds: ['prd.completed'], scope: 'this', sinkType: 'peer', target: 'https://ignored.example.net', peer: 'peer-b', secretRef: '${secret:stray}' });
+  await submit(s.sandbox);
+  const post = s.requests.find(r => r.method === 'POST');
+  assert.deepEqual(JSON.parse(JSON.stringify(post.body)), {
+    filter: { kinds: ['prd.completed'], prd_id: 'p1' },
+    sink: { type: 'peer', target: 'peer-b' },
+  });
+  assert.ok(!('secret_ref' in post.body.sink));
+});
+
+test('lifecycle subscriptions form: the webhook secret reference must be exactly one ${secret:...} reference', async () => {
+  const cases = ['', 'sk-live-123456', 'Bearer ${secret:tok}', '${secret:}', '${secret:a}${secret:b}', '${secret:a} extra'];
+  for (const secretRef of cases) {
+    const errBox = makeStubElement();
+    const s = formSetup([], { lcSubSecretError: errBox, lcSubError: makeStubElement() });
+    openForm(s.sandbox, null);
+    fill(s, { kinds: ['prd.failed'], scope: 'this', sinkType: 'webhook', target: 'https://hooks.example.net/x', secretRef });
+    await submit(s.sandbox);
+    assert.match(errBox.innerHTML, /must be one vault reference/, JSON.stringify(secretRef));
+    assert.deepEqual(s.requests.filter(r => r.method !== 'GET'), [], 'no write for ' + JSON.stringify(secretRef));
+  }
+  // A literal value that looks like a secret is refused even with a valid-looking URL.
+  const errBox = makeStubElement();
+  const s = formSetup([], { lcSubSecretError: errBox });
+  openForm(s.sandbox, null);
+  fill(s, { kinds: ['prd.failed'], scope: 'this', sinkType: 'webhook', target: 'https://hooks.example.net/x', secretRef: 'hunter2' });
+  await submit(s.sandbox);
+  assert.match(errBox.innerHTML, /must be one vault reference/);
+  assert.ok(!errBox.innerHTML.includes('hunter2'), 'the typed value is not echoed back');
+});
+
+test('lifecycle subscriptions form: the webhook URL must be http or https, with the server deciding the host rules', async () => {
+  const errBox = makeStubElement();
+  const s = formSetup([], { lcSubError: errBox });
+  openForm(s.sandbox, null);
+  fill(s, { kinds: ['prd.failed'], scope: 'this', sinkType: 'webhook', target: 'ftp://hooks.example.net/x', secretRef: '${secret:tok}' });
+  await submit(s.sandbox);
+  assert.match(errBox.innerHTML, /must start with https:\/\//);
+  assert.deepEqual(s.requests.filter(r => r.method !== 'GET'), []);
+});
+
+test('lifecycle subscriptions form: the peer picker lists the federation peers and selects the current one on edit', async () => {
+  const sel = makeStubElement();
+  const status = makeStubElement();
+  const s = formSetup([
+    ['GET', /\/api\/federation\/peers$/, () => fakeResponse(200, [{ name: 'peer-a', enabled: true }, { name: 'peer-b', enabled: false }])],
+  ], { lcSubPeer: sel, lcSubPeerStatus: status });
+  openForm(s.sandbox, null);
+  await flushAsync();
+  assert.match(sel.innerHTML, /<option value="" selected>Choose a federation peer<\/option>/);
+  assert.match(sel.innerHTML, /<option value="peer-a">peer-a<\/option>/);
+  assert.match(sel.innerHTML, /<option value="peer-b">peer-b<\/option>/);
+  assert.equal(status.innerHTML, '', 'no status line when peers exist');
+
+  const edit = { id: 's-peer', filter: { prd_id: 'p1', level: 'prd' }, sink: { type: 'peer', target: 'peer-z' } };
+  const sel2 = makeStubElement();
+  const s2 = formSetup([
+    ['GET', /\/api\/federation\/peers$/, () => fakeResponse(200, [{ name: 'peer-a' }])],
+  ], { lcSubPeer: sel2, lcSubPeerStatus: makeStubElement() });
+  openForm(s2.sandbox, edit);
+  await flushAsync();
+  assert.match(sel2.innerHTML, /<option value="peer-z" selected>peer-z<\/option>/, 'a peer no longer listed stays selectable so the edit does not drop it');
+});
+
+test('lifecycle subscriptions form: the peer picker says so when no peers are registered or the list cannot be read', async () => {
+  const none = makeStubElement();
+  const s = formSetup([['GET', /\/api\/federation\/peers$/, () => fakeResponse(200, [])]], { lcSubPeer: makeStubElement(), lcSubPeerStatus: none });
+  openForm(s.sandbox, null);
+  await flushAsync();
+  assert.match(none.innerHTML, /No federation peers are registered on this server/);
+
+  const failed = makeStubElement();
+  const s2 = formSetup([['GET', /\/api\/federation\/peers$/, () => fakeResponse(403, 'forbidden')]], { lcSubPeer: makeStubElement(), lcSubPeerStatus: failed });
+  openForm(s2.sandbox, null);
+  await flushAsync();
+  assert.match(failed.innerHTML, /Could not load the federation peers/);
+});
+
+test('lifecycle subscriptions form: a peer submit with no peer chosen is refused without a request', async () => {
+  const errBox = makeStubElement();
+  const s = formSetup([], { lcSubError: errBox });
+  openForm(s.sandbox, null);
+  fill(s, { kinds: ['prd.failed'], scope: 'this', sinkType: 'peer', peer: '' });
+  await submit(s.sandbox);
+  assert.match(errBox.innerHTML, /Choose a federation peer/);
+  assert.deepEqual(s.requests.filter(r => r.method !== 'GET'), []);
+});
+
+test('lifecycle subscriptions form: webhook help says delivery is off and names the setting to turn on', async () => {
+  const help = makeStubElement();
+  const s = formSetup([['GET', /\/api\/config$/, () => fakeResponse(200, cfgWith({ webhook: false }))]], { lcSubSinkHelp: help });
+  openForm(s.sandbox, null);
+  await flushAsync();
+  s.byId.lcSubSinkType = { value: 'webhook' };
+  run(s.sandbox, `_lifecycleSubSinkChanged()`);
+  assert.match(help.innerHTML, /Webhook delivery is off on this server/);
+  assert.match(help.innerHTML, /Turn on &quot;Outbound webhook sink: enabled&quot; in Settings/);
+});
+
+test('lifecycle subscriptions form: webhook help lists the allow-listed hosts, or says the empty list blocks everything', async () => {
+  const help = makeStubElement();
+  const s = formSetup([['GET', /\/api\/config$/, () => fakeResponse(200, cfgWith({ webhook: true, hosts: ['hooks.example.net', 'hooks.example.net:8443'] }))]], { lcSubSinkHelp: help });
+  openForm(s.sandbox, null);
+  await flushAsync();
+  s.byId.lcSubSinkType = { value: 'webhook' };
+  run(s.sandbox, `_lifecycleSubSinkChanged()`);
+  assert.match(help.innerHTML, /Hosts allowed to receive webhook events: hooks\.example\.net, hooks\.example\.net:8443\./);
+
+  const empty = makeStubElement();
+  const s2 = formSetup([['GET', /\/api\/config$/, () => fakeResponse(200, cfgWith({ webhook: true, hosts: [] }))]], { lcSubSinkHelp: empty });
+  openForm(s2.sandbox, null);
+  await flushAsync();
+  s2.byId.lcSubSinkType = { value: 'webhook' };
+  run(s2.sandbox, `_lifecycleSubSinkChanged()`);
+  assert.match(empty.innerHTML, /allow-list is empty, so nothing can receive events/);
+  assert.match(empty.innerHTML, /Webhook allow-list \(host or host:port\)/);
+});
+
+test('lifecycle subscriptions form: peer help says forwarding is off, names the setting, and states the grant rule when on', async () => {
+  const help = makeStubElement();
+  const off = formSetup([['GET', /\/api\/config$/, () => fakeResponse(200, cfgWith({ forwarding: false }))]], { lcSubSinkHelp: help });
+  openForm(off.sandbox, null);
+  await flushAsync();
+  off.byId.lcSubSinkType = { value: 'peer' };
+  run(off.sandbox, `_lifecycleSubSinkChanged()`);
+  assert.match(help.innerHTML, /Peer forwarding is off on this server/);
+  assert.match(help.innerHTML, /Peer forwarding of lifecycle events: enabled/);
+
+  const on = makeStubElement();
+  const s = formSetup([['GET', /\/api\/config$/, () => fakeResponse(200, cfgWith({ forwarding: true }))]], { lcSubSinkHelp: on });
+  openForm(s.sandbox, null);
+  await flushAsync();
+  s.byId.lcSubSinkType = { value: 'peer' };
+  run(s.sandbox, `_lifecycleSubSinkChanged()`);
+  assert.match(on.innerHTML, /grant autonomous:write/);
+  assert.ok(!/is off/.test(on.innerHTML));
+});
+
+test('lifecycle subscriptions form: when the settings cannot be read the help says delivery state is unknown', async () => {
+  const help = makeStubElement();
+  const s = formSetup([['GET', /\/api\/config$/, () => fakeResponse(500, 'boom')]], { lcSubSinkHelp: help });
+  openForm(s.sandbox, null);
+  await flushAsync();
+  s.byId.lcSubSinkType = { value: 'webhook' };
+  run(s.sandbox, `_lifecycleSubSinkChanged()`);
+  assert.match(help.innerHTML, /delivery state is unknown/);
+});
+
+test('lifecycle subscriptions form: editing a webhook subscription prefills the reference text, never a value', () => {
+  const hook = { id: 'w1', filter: { prd_id: 'p1', kinds: ['prd.failed'] }, sink: { type: 'webhook', target: 'https://hooks.example.net/x', secret_ref: '${secret:hook-token}' } };
+  const s = formSetup([]);
+  openForm(s.sandbox, hook);
+  assert.match(s.html(), /id="lcSubSecretRef" type="text" class="form-input" placeholder="\$\{secret:name\}" value="\$\{secret:hook-token\}"/);
+  assert.match(s.html(), /<option value="webhook" selected>/);
 });
 
 test('lifecycle subscriptions form: edit is prefilled and saves with PUT', async () => {
@@ -321,7 +533,8 @@ test('lifecycle subscriptions form: client validation blocks bad input without a
     fill(s, vals);
     await submit(s.sandbox);
     assert.match(errBox.innerHTML, want, JSON.stringify(vals));
-    assert.deepEqual(s.requests, [], 'no request for ' + JSON.stringify(vals));
+    // Opening the form reads the settings and peers (GET); only a write would be a failure.
+    assert.deepEqual(s.requests.filter(r => r.method !== 'GET'), [], 'no write for ' + JSON.stringify(vals));
   }
 });
 
@@ -337,9 +550,10 @@ test('lifecycle subscriptions form: server 400 text is shown inline and the form
   const s = formSetup([['POST', /subscriptions$/, () => fakeResponse(400, 'filter kind "prd.bogus" is not a known event kind\n')]], { lcSubError: errBox });
   openForm(s.sandbox, null);
   fill(s, { level: 'prd', sinkType: 'alert', target: 'lbl' });
+  const before = s.requests.length;
   await submit(s.sandbox);
   assert.match(errBox.innerHTML, /filter kind &quot;prd\.bogus&quot; is not a known event kind/);
-  assert.ok(!s.requests.some(r => r.method === 'GET'), 'the list is not reloaded on failure');
+  assert.ok(!s.requests.slice(before).some(r => r.method === 'GET'), 'the list is not reloaded on failure');
 });
 
 test('lifecycle subscriptions form: send_input and coalesce are only enabled for their sink types', () => {
@@ -424,3 +638,95 @@ test('lifecycle subscriptions form: Add button and edit keep the owning Automato
   assert.equal(post.body.filter.prd_id, 'p1');
   assert.equal(post.body.sink.type, 'topic');
 });
+
+// ── Webhook and peer sinks: rows, test outcome, locales ─────────────────────
+
+test('lifecycle subscriptions: a webhook row shows the secret reference text, never a resolved value', async () => {
+  const hook = [{ id: 'w1', filter: { prd_id: 'p1', kinds: ['prd.failed'] },
+    sink: { type: 'webhook', target: 'https://hooks.example.net/x', secret_ref: '${secret:hook-token}' } }];
+  const { sandbox, body } = setup([['GET', /subscriptions$/, () => fakeResponse(200, hook)]]);
+  await run(sandbox, `_loadPRDSubscriptionsTab({id:'p1'})`);
+  assert.match(body.innerHTML, /webhook → https:\/\/hooks\.example\.net\/x/);
+  assert.match(body.innerHTML, /secret: \$\{secret:hook-token\}/);
+});
+
+test('lifecycle subscriptions: a peer row shows the peer name as the target', async () => {
+  const peer = [{ id: 'p1s', filter: { prd_id: 'p1', kinds: ['task.failed'] }, sink: { type: 'peer', target: 'peer-b' } }];
+  const { sandbox, body } = setup([['GET', /subscriptions$/, () => fakeResponse(200, peer)]]);
+  await run(sandbox, `_loadPRDSubscriptionsTab({id:'p1'})`);
+  assert.match(body.innerHTML, /peer → peer-b/);
+  assert.ok(!/secret:/.test(body.innerHTML));
+});
+
+test('lifecycle subscriptions: a webhook test shows the HTTP status and attempts on failure', async () => {
+  const { sandbox, result, toasts } = setup([['POST', /s-mine\/test$/, () => fakeResponse(200, { ok: false, sink: 'webhook', error: 'receiver returned 500', status: 500, attempts: 3 })]]);
+  await run(sandbox, `_lifecycleSubTest('p1', 's-mine')`);
+  assert.match(result.innerHTML, /Test failed: receiver returned 500/);
+  assert.match(result.innerHTML, /HTTP status: 500/);
+  assert.match(result.innerHTML, /Attempts: 3/);
+  assert.equal(toasts[0][1], 'error');
+});
+
+test('lifecycle subscriptions: a peer test shows attempts, and no HTTP status when no response arrived', async () => {
+  const { sandbox, result, toasts } = setup([['POST', /s-mine\/test$/, () => fakeResponse(200, { ok: true, sink: 'peer', attempts: 1 })]]);
+  await run(sandbox, `_lifecycleSubTest('p1', 's-mine')`);
+  assert.match(result.innerHTML, /Delivered via peer/);
+  assert.match(result.innerHTML, /Attempts: 1/);
+  assert.ok(!/HTTP status/.test(result.innerHTML), 'no status when the test got no HTTP response');
+  assert.equal(toasts[0][1], 'success');
+});
+
+test('lifecycle sink locale keys: present with real translations in all five bundles', () => {
+  const src = fs.readFileSync(APP_JS, 'utf8');
+  for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
+    const b = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    for (const k of LIFECYCLE_SINK_LOCALE_KEYS) {
+      assert.ok(typeof b[k] === 'string' && b[k].trim().length > 0, k + ' missing or empty in ' + locale);
+      assert.ok(!/\bAutomat(a|on)s?\b/.test(b[k]), k + ' carries an untranslated Automaton/Automata word in ' + locale);
+      assert.ok(!/\bPRD\b/.test(b[k]), k + ' uses the internal term PRD in ' + locale);
+      assert.ok(!/\bBL\d+\b/.test(b[k]), k + ' carries a tracker id in ' + locale);
+      if (locale !== 'en' && k !== 'lifecycle_sub_form_sink_webhook') {
+        // "Webhook" is the same word in these languages; every other key needs its own translation.
+        assert.notEqual(b[k], EN[k], k + ' is an English copy in ' + locale);
+      }
+    }
+  }
+  for (const k of LIFECYCLE_SINK_LOCALE_KEYS) {
+    assert.ok(src.includes(`'${k}'`), k + ' is not used by app.js');
+  }
+});
+
+test('lifecycle sink locale keys: the same key set as en.json in every bundle', () => {
+  const enKeys = LIFECYCLE_SINK_LOCALE_KEYS.filter(k => k in EN).sort();
+  assert.equal(enKeys.length, LIFECYCLE_SINK_LOCALE_KEYS.length);
+  for (const locale of ['de', 'es', 'fr', 'ja']) {
+    const b = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    assert.deepEqual(LIFECYCLE_SINK_LOCALE_KEYS.filter(k => k in b).sort(), enKeys, locale);
+  }
+});
+
+// The block added for the webhook and peer sinks. It is grouped in each bundle
+// right after lifecycle_sub_form_err_save.
+const LIFECYCLE_SINK_LOCALE_KEYS = [
+  'lifecycle_sub_form_sink_webhook',
+  'lifecycle_sub_form_sink_peer',
+  'lifecycle_sub_form_target_webhook',
+  'lifecycle_sub_form_target_peer',
+  'lifecycle_sub_form_peer_select',
+  'lifecycle_sub_form_peer_none',
+  'lifecycle_sub_form_peer_load_failed',
+  'lifecycle_sub_form_secret_ref',
+  'lifecycle_sub_form_secret_help',
+  'lifecycle_sub_form_err_webhook_url',
+  'lifecycle_sub_form_err_secret_ref',
+  'lifecycle_sub_form_err_peer',
+  'lifecycle_sub_help_settings_failed',
+  'lifecycle_sub_help_webhook_disabled',
+  'lifecycle_sub_help_webhook_no_hosts',
+  'lifecycle_sub_help_webhook_hosts',
+  'lifecycle_sub_help_peer_disabled',
+  'lifecycle_sub_help_peer',
+  'lifecycle_sub_secret_ref',
+  'lifecycle_sub_test_status',
+  'lifecycle_sub_test_attempts',
+];

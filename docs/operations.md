@@ -4066,13 +4066,51 @@ Queue contents are **in memory only**: they are bounded per queue, cursors resta
 - `datawatch autonomous subscriptions` (+ `--owner`) — the live list is the state of truth.
 - Confirm an injection actually typed text: check the target session's input history for the `lifecycle-sub` source tag.
 - `503` → engine not wired in that context (see above); unknown-kind rejection at creation ("not a known event kind") → use the full kind — e.g. **`prd.updated`**, *not* the `prd_updated` shorthand, which currently maps to `task.prd_updated` and is rejected at validation (known gap — see the design doc's Phase 3 notes).
-- The `webhook` sink is refused by design in this release (a later phase adds outbound webhooks).
+- A `webhook` or `peer` subscription is refused while its switch is off. Both switches ship off; see [Outbound webhook sink and peer forwarding](#outbound-webhook-sink-and-peer-forwarding-ships-disabled).
 - A test-fire that reports `ok:false` names the cause in `error`; check the sink's own prerequisites (a comm router configured, the target session exists, topic publishing wired).
 - A poll that always returns no events: confirm a subscription with sink type `mcp_queue` and the *same queue name* exists (`datawatch autonomous subscriptions`), and that you are not passing a `since` cursor from before a daemon restart (cursors restart at 1).
 
 **Checklist record:** `docs/config-reference.yaml` — `autonomous.notify.pending_events_max` documented; localization — the Subscriptions tab strings are in all five locale bundles; version — Unreleased (final number set at merge); Mobile-Parity — app-side UI tracked in [plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md);
  full checklist outcome recorded in the design doc's Phase 3 and Phase 4 bullets.
 
+
+### Outbound webhook sink and peer forwarding (ships disabled)
+
+Two sinks send Automaton lifecycle events out of this daemon. **Both ship disabled.** `autonomous.notify.webhook.enabled` and `autonomous.notify.forwarding.enabled` default to `false`. While a switch is off, a subscription with that sink is refused at creation, and any such subscription already stored delivers nothing. Subscriptions with the other sinks are not affected. The operator-facing guide is [howto/automaton-lifecycle-webhooks.md](howto/automaton-lifecycle-webhooks.md). The design, and the values still pending confirmation, are in [plans/2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md](plans/2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md).
+
+**Enable and set the allow-list, on any of the five access methods:**
+
+| Method | Enable the webhook sink | Set the webhook allow-list | Enable peer forwarding |
+|---|---|---|---|
+| YAML (`config.yaml`) | `autonomous.notify.webhook.enabled: true` | `autonomous.notify.webhook.allow_hosts: [hooks.example.net, hooks.example.net:8443]` | `autonomous.notify.forwarding.enabled: true` |
+| CLI | `datawatch config set autonomous.notify.webhook.enabled true` | `datawatch config set autonomous.notify.webhook.allow_hosts hooks.example.net,hooks.example.net:8443` | `datawatch config set autonomous.notify.forwarding.enabled true` |
+| Web UI (Settings → Comms → Notifications) | *Outbound webhook sink: enabled* toggle | *Webhook allow-list (host or host:port)* field | *Peer forwarding of lifecycle events: enabled* toggle |
+| REST (`PUT /api/config`) | `{"autonomous.notify.webhook.enabled": true}` | `{"autonomous.notify.webhook.allow_hosts": ["hooks.example.net"]}` | `{"autonomous.notify.forwarding.enabled": true}` |
+| Comm channel | `configure autonomous.notify.webhook.enabled=true` | `configure autonomous.notify.webhook.allow_hosts=hooks.example.net,hooks.example.net:8443` | `configure autonomous.notify.forwarding.enabled=true` |
+
+The allow-list is the only list of hosts that may receive a webhook. Each entry is an exact host or an exact `host:port`, case-insensitive, with no scheme, path, wildcard or user name. It is checked at creation and on every delivery. An empty list means nothing can receive an event. A change applies to the next event with no restart; the YAML file is read when the daemon starts. Every other key (`max_attempts`, `backoff_seconds`, `jitter_percent`, `attempt_timeout_seconds`, `max_body_bytes`, `signature_tolerance_seconds`, and for forwarding `max_hops` and the retry keys) is in [config-reference.yaml](config-reference.yaml). A value below 1 means the default.
+
+**Signing secret.** The signing key lives in the secrets vault: `datawatch secrets set <name> <value>`. A webhook subscription names it as `${secret:name}`. A literal value is refused at creation. The reference is resolved on every delivery, so a rotation applies to the next event. The resolved value is never stored, logged, audited or returned.
+
+**Subscribe.** `datawatch autonomous subscribe --on <kind> --sink webhook --target https://<host>/<path> --secret-ref '${secret:name}'` for a webhook, or `--sink peer --target <registered-peer-name>` for a peer (no secret). The same sink types are accepted by the MCP tools, REST, the comm verb and the PWA Subscriptions tab.
+
+**Delivery.** A webhook is signed with HMAC-SHA256 (`X-Datawatch-Signature: t=<unix>,v1=<hex>`), with `X-Datawatch-Delivery` and `X-Datawatch-Event` headers. A failed attempt is retried: 5 attempts in total, delays of 1, 4, 16 and 64 seconds with ±20 % jitter, a 10-second limit per attempt. Network errors, timeouts, `408`, `429` and `5xx` are retried; other `4xx`, `3xx` (redirects are not followed) and an over-size payload (64 KiB) are not. Peer forwarding uses the same schedule. A delivery that is dropped raises one error-level alert (*Lifecycle webhook delivery failed* or *Lifecycle peer forward failed*) and writes a final audit record. There is no outbox for a peer that stays offline.
+
+**SSRF guard.** A webhook URL must be `https`; `http` is accepted only for an allow-listed host. Loopback, link-local, unspecified, multicast, private (RFC 1918 and unique-local) and Tailscale CGNAT addresses are refused unless their host is on the allow-list. Cloud metadata addresses (`169.254.169.254`, `fd00:ec2::254`) are refused even when allow-listed, pending the operator's confirmation. The resolved address is checked again at connect time, on every attempt.
+
+**Audit actions.** The JSON-lines audit log (`audit.log`) and, when the CEF mirror is enabled, `audit.log.cef` carry these actions:
+
+| JSON-lines action | CEF name | Written |
+|---|---|---|
+| `autonomous_lifecycle_webhook_delivery` | `AutonomousLifecycleWebhookDelivery` | Each webhook attempt, and each refused or skipped delivery |
+| `autonomous_lifecycle_webhook_failed` | `AutonomousLifecycleWebhookFailed` | Once per dropped webhook delivery |
+| `autonomous_lifecycle_forward_delivery` | `AutonomousLifecycleForwardDelivery` | Each peer forward attempt, and the final outcome |
+| `autonomous_lifecycle_forward_receive` | `AutonomousLifecycleForwardReceive` | Each forwarded request this daemon answers, accepted or refused |
+
+**Receiving endpoint.** A peer forwards to `POST /api/autonomous/events/forward` with the peer's bearer token and a signature. The answers are `202` (accepted and re-emitted locally), `400` (malformed or over the size cap), `401` (token or signature missing or wrong), `403` (the sending peer lacks `autonomous:write`), `409` (a loop rule refused it: this host is the origin, is already in the visited list, or the hop cap was reached), and `503` (forwarding is off here or the engine is not wired). The sender retries `5xx` and does not retry `4xx` or `409`. A forwarded event is never forwarded on.
+
+**Checklist record (outbound webhook sink and peer forwarding):**
+`docs/config-reference.yaml` — every `autonomous.notify.webhook.*` and `autonomous.notify.forwarding.*` key is documented, with the defaults and "pending operator confirmation" marked; localization — the Notifications settings and the subscription form strings are in all five locale bundles (en, de, es, fr, ja); version — Unreleased (final number set at merge); Mobile-Parity — the app-side subscription UI stays tracked in [plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md), and the new sink types reach mobile clients through the same REST contract (`POST` and `PUT /api/autonomous/subscriptions` with `sink.type` `webhook` or `peer`, and `sink.secret_ref`). Test coverage is in [testing-tracker.md](testing-tracker.md).
 
 ## Session and PRD storage layout
 

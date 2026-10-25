@@ -75,4 +75,40 @@ const (
 	// source_after, the tier after the change (automaton, profile, or
 	// global).
 	ActionNotifyEventsChanged = "autonomous_notify_events_changed"
+
+	// ActionLifecycleWebhookDelivery — one delivery attempt of a lifecycle
+	// event to an outbound webhook receiver (outcome delivered, retry,
+	// failed, refused or skipped). A successful delivery ends on its
+	// "delivered" record. Details: subscription_id, delivery_id, attempt
+	// (0 when no request was made), max_attempts, host (host:port only,
+	// never userinfo or query string), status_code (0 when none), outcome,
+	// error, duration_ms. Never the secret, the signature or the body.
+	ActionLifecycleWebhookDelivery = "autonomous_lifecycle_webhook_delivery"
+	// ActionLifecycleWebhookFailed — the final outcome of a delivery that
+	// was dropped (retries exhausted, a permanent response, a refused
+	// target or an unresolvable secret). Emitted once per dropped delivery,
+	// after its attempt records, under its own action so it carries a
+	// higher severity. Details: as ActionLifecycleWebhookDelivery, with
+	// attempt the number of attempts made and duration_ms the total.
+	ActionLifecycleWebhookFailed = "autonomous_lifecycle_webhook_failed"
+
+	// ActionLifecycleForwardDelivery — one attempt to forward a lifecycle event
+	// to a federation peer. The last record of a dropped forward carries the
+	// final outcome (failed or refused); a refusal before any request has
+	// attempt 0. Details: subscription_id, delivery_id, peer (the registered
+	// peer name), event_kind, host (host:port only), attempt, max_attempts,
+	// status_code (0 when none), outcome (delivered, retry, failed, refused or
+	// skipped), error, hops, duration_ms. Never the bearer token, the signature
+	// or the body.
+	ActionLifecycleForwardDelivery = "autonomous_lifecycle_forward_delivery"
+
+	// ActionLifecycleForwardReceive — one forwarded lifecycle event that reached
+	// this daemon's receiving endpoint, accepted or refused. Written by the HTTP
+	// layer for every request it answers (not for a request that never reaches
+	// the handler). Details: outcome (accepted or refused), status_code, reason
+	// (fixed text: never the body, the token or the signature), event_id,
+	// event_kind, origin_host, sender_host, hops, peer (the registered peer name,
+	// empty for an admin caller) and the actor. The signature header is never
+	// recorded.
+	ActionLifecycleForwardReceive = "autonomous_lifecycle_forward_receive"
 )

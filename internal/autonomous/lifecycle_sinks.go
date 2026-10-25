@@ -99,6 +99,10 @@ func DescribeLifecycleEvent(ev LifecycleEvent) string {
 	if msg := lifecycleSinkMessage(ev); msg != "" {
 		fmt.Fprintf(&b, " (msg %s)", msg)
 	}
+	if ev.Forward != nil {
+		// A peer-forwarded event names the daemon it originated on.
+		fmt.Fprintf(&b, " (forwarded from %s)", ev.Forward.OriginHost)
+	}
 	return b.String()
 }
 

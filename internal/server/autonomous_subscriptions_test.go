@@ -134,10 +134,10 @@ func TestSubscriptionRESTValidationErrors(t *testing.T) {
 		{"missing sink", map[string]any{
 			"filter": map[string]any{"kinds": []string{"prd.completed"}},
 		}, "sink type is required"},
-		{"webhook sink deferred", map[string]any{
+		{"webhook sink without secret reference", map[string]any{
 			"filter": map[string]any{"kinds": []string{"prd.completed"}},
 			"sink":   map[string]any{"type": "webhook", "target": "https://x"},
-		}, "not available in this phase"},
+		}, "signing secret reference"},
 		{"unknown sink type", map[string]any{
 			"filter": map[string]any{"kinds": []string{"prd.completed"}},
 			"sink":   map[string]any{"type": "carrier-pigeon", "target": "dove"},

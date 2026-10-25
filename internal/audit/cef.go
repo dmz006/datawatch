@@ -180,6 +180,14 @@ func cefSignature(action string) (int, string, int) {
 		return 44, "AutomationImportGraph", 3
 	case ActionNotifyEventsChanged:
 		return 45, "NotifyEventsChanged", 3
+	case ActionLifecycleWebhookDelivery:
+		return 46, "AutonomousLifecycleWebhookDelivery", 2
+	case ActionLifecycleWebhookFailed:
+		return 47, "AutonomousLifecycleWebhookFailed", 6
+	case ActionLifecycleForwardDelivery:
+		return 48, "AutonomousLifecycleForwardDelivery", 3
+	case ActionLifecycleForwardReceive:
+		return 49, "AutonomousLifecycleForwardReceive", 3
 	default:
 		return 0, "AuditEvent", 3
 	}
