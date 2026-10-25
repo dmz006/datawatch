@@ -2756,4 +2756,6 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 26. **Retry count for the Automation duties (supervisor duties proposal Q2, answer: "2 existing but leave open for future examination").** The coordinator reuses the existing per-category retry budgets (infra, content, scope, policy) and adds no new count. **Kept open for later examination:** whether the coordinator needs its own retry count once it has run for a while.
 
+27. **Rerunning a hung CI step (supervisor duties proposal Q3, answer: "1").** The coordinator may rerun a hung or infrastructure-classified CI run once without asking, and logs the rerun. It never reruns security workflow runs and never reruns a run whose judge verdict is policy.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.

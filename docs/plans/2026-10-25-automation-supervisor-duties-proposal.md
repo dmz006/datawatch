@@ -174,7 +174,7 @@ None of the following is decided. Each starts a step only when recorded in this 
 
 **Recommendation.** (a) with its exclusions: a hung run has no verdict yet, and one rerun changes no code.
 
-**Status.** Open.
+**Status.** **Decided by the operator, 2026-10-25: option (a)** ("1"): a hung or infrastructure-classified CI run is rerun once automatically and the rerun is logged; never for security workflow runs, and never for a run whose judge verdict is policy.
 
 ### Q4. Surfaces each duty needs (config, REST, MCP, CLI, comm channel, PWA, mobile)
 
