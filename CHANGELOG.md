@@ -11,6 +11,10 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.16.2 — Shared navigation mobile fit
+
+The shared navigation bar and the other cross-tab elements now fit narrow phone screens. The reusable mobile-fit checker found overflow and clipped controls in the elements every tab shares, and the markup and stylesheet are corrected so the bar and shared controls stay inside the viewport at 320 pixel width and are unchanged on desktop. A browser story and a probe run the checker against every tab at phone and desktop widths, the release smoke gained a shared-navigation section, and a how-to documents the fit rules. Test evidence from the live sandbox run is stored under the testing runs folder.
+
 ## v9.16.1 — Restart during session launch never adopts a dead worker
 
 A daemon restart during a session launch no longer leaves a dead-on-arrival worker adopted as alive. Boot adoption now checks that the session is a really started agent (an agent-started predicate on the session manager) before adopting it, the start-confirm bound applies to adopted sessions and is measured from the session's last evidence of life, launches in flight are tracked and drained on shutdown, and start failures are booked the same way on the adopted and the worker path (including the failure escalation attempt record). The restart matrix has a restart-during-launch state, with fake-backed tests for the four cases and a live sandbox run documented in the operations guide.
