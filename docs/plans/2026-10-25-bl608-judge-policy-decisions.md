@@ -7,9 +7,9 @@ Scope reminder: guardrail and plan-review judges follow the verifier routing pol
 ## Decisions
 
 1. **Default time limit: 30 minutes.** (Operator, 2026-10-25: "1, 30 min".) The limit counts the judge's run only, not time spent waiting for a capacity slot. It is a setting the operator can change.
+2. **Retries: one attempt per backend in the policy.** (Operator, 2026-10-25: "1, one per backend".) Each backend in the judge policy gets one chance; the total number of attempts follows the length of the policy list.
 
 ## Still open (asked in order)
 
-2. How many retries on the next backend before the judge is treated as failed.
 3. What happens after the last backend in the policy has also timed out.
 4. The alert level and wording when a judge times out.
