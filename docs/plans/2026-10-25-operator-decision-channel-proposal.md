@@ -3,7 +3,9 @@
 Date: 2026-10-25
 Status: proposal only. Nothing is decided, and no code, configuration, tracker row or CHANGELOG entry changes with this document.
 
-Confirmed: no
+Confirmed: yes
+
+Confirmation, 2026-10-25 about 19:55, operator, quoted: "Yes, confirm it and file Step 1". Scope of the confirmation: Step 1 only (store and REST first). Steps 2 to 5 are filed one at a time, and Steps 4 and 5 (worker marker, guardrail text, Decision Interview Protocol) are raised with the operator again before they are filed. Mobile app issues are not filed without the operator's word.
 
 ## 1. Request and why now
 
