@@ -5995,6 +5995,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// get exactly the same prd_update frames as before;
 			// enriching the WS payload is a later phase.
 			amgr.Subscribe(autonomouspkg.LifecycleFilter{Kinds: []string{autonomouspkg.KindPRDUpdated}}, func(ev autonomouspkg.LifecycleEvent) {
+				if ev.Forward != nil {
+					// A peer-forwarded update names an Automaton this daemon may not
+					// hold: it is not broadcast to the local Autonomous tab.
+					return
+				}
 				httpServer.BroadcastPRDUpdate(autonomouspkg.PRDUpdatePayload(ev))
 			})
 			// Built-in lifecycle-event sinks (alert store + topic push) plus the
@@ -6158,12 +6163,14 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						_ = alertStore.AddSystem(lv, title, body)
 					},
 				})
+				// The local name is the federation self-name, the same one the
+				// federation pusher registers under. The forwarder and the receiving
+				// endpoint share it, so a visited list compares like with like.
+				lifecycleLocalHost := func() string { return federationSelfName(cfg.Observer.Federation.PeerName) }
 				peerForwarder := autonomouspkg.NewPeerForwarder(autonomouspkg.PeerForwarderConfig{
 					LookupPeer: lifecycleLookupPeer,
-					// The local name is the federation self-name, the same one the
-					// federation pusher registers under.
-					LocalHost: func() string { return federationSelfName(cfg.Observer.Federation.PeerName) },
-					Settings:  lifecycleForwardSettings,
+					LocalHost:  lifecycleLocalHost,
+					Settings:   lifecycleForwardSettings,
 					// The daemon's peer client: a peer's TLS skip-verify setting
 					// behaves as on every other peer call.
 					NewClient: multiserver.HTTPClient,
@@ -6178,6 +6185,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						}
 						_ = alertStore.AddSystem(lv, title, body)
 					},
+				})
+				// BL427 (phase 5) — receiving side of peer forwarding. It reads the
+				// same live settings as the forwarder, so one enabled flag governs both
+				// directions. Disabled by default.
+				amgr.SetForwardReceive(autonomouspkg.ForwardReceiveConfig{
+					Settings:  lifecycleForwardSettings,
+					LocalHost: lifecycleLocalHost,
 				})
 				lifeSubEngine := autonomouspkg.NewLifecycleSubscriptionEngine(amgr, lifeSubStore, autonomouspkg.SessionPushConfig{
 					Webhook: webhookSink,
@@ -6234,6 +6248,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				// store change, so a subscription created or deleted over
 				// REST takes effect without a restart.
 				httpServer.SetAutonomousSubscriptions(lifeSubStore)
+				// BL427 (phase 5) — POST /api/autonomous/events/forward: a peer's
+				// forwarded event is re-emitted into this daemon's dispatcher.
+				httpServer.SetAutonomousForwardedEvents(amgr)
 				// POST /api/autonomous/subscriptions/{id}/test delivers
 				// through the engine's own sink wiring.
 				lifeSubStore.SetTestFirer(lifeSubEngine.FireTest)

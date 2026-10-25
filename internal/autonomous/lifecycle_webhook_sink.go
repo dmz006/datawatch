@@ -337,6 +337,9 @@ func (s *WebhookSink) buildBody(run *webhookRun, sub Subscription, ev LifecycleE
 		Host:           s.hostname(ev),
 		SubscriptionID: sub.ID,
 		Event:          ev,
+		// Forward is set only when the event arrived from a peer; the top-level
+		// block then names the origin host, the hops and the visited list.
+		Forward: ev.Forward,
 	}
 	return marshalWebhookEnvelope(env)
 }

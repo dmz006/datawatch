@@ -91,4 +91,14 @@ const (
 	// skipped), error, hops, duration_ms. Never the bearer token, the signature
 	// or the body.
 	ActionLifecycleForwardDelivery = "autonomous_lifecycle_forward_delivery"
+
+	// ActionLifecycleForwardReceive — one forwarded lifecycle event that reached
+	// this daemon's receiving endpoint, accepted or refused. Written by the HTTP
+	// layer for every request it answers (not for a request that never reaches
+	// the handler). Details: outcome (accepted or refused), status_code, reason
+	// (fixed text: never the body, the token or the signature), event_id,
+	// event_kind, origin_host, sender_host, hops, peer (the registered peer name,
+	// empty for an admin caller) and the actor. The signature header is never
+	// recorded.
+	ActionLifecycleForwardReceive = "autonomous_lifecycle_forward_receive"
 )

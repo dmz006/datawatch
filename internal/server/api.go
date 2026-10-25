@@ -464,6 +464,9 @@ type Server struct {
 	autonomousSubs LifecycleSubscriptionsAPI
 	// mcp_queue sink read side for /api/autonomous/events; nil → 503.
 	autonomousEvents PendingEventsAPI
+	// BL427 phase 5 — receiving side of peer forwarding for
+	// /api/autonomous/events/forward; nil → 503.
+	autonomousFwd ForwardedEventsAPI
 
 	// BL328 — in-flight async decompose jobs. key=prdID (string),
 	// value=*decomposeJob. Jobs are in-memory only; not persisted across

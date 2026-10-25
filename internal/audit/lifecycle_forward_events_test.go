@@ -141,3 +141,120 @@ func TestLifecycleForwardEvents_CEFEscaping(t *testing.T) {
 		t.Errorf("cefExtEscape = %q", got)
 	}
 }
+
+// lifecycleForwardReceiveDetails are the receive record's fields, with the
+// hostile characters in the free-text reason and the peer name.
+func lifecycleForwardReceiveDetails() map[string]any {
+	return map[string]any{
+		"outcome":     "refused",
+		"status_code": 409,
+		"reason":      "boom\nCEF:0|evil|x|1|2|3|9|a=b\\c",
+		"event_id":    "ev|1=x",
+		"event_kind":  "prd.completed",
+		"origin_host": "origin|1=x",
+		"sender_host": "sender.example.net",
+		"hops":        1,
+		"peer":        "peer|1=x",
+	}
+}
+
+func TestLifecycleForwardReceiveEvents_NameAndCEF(t *testing.T) {
+	const (
+		wantAction = "autonomous_lifecycle_forward_receive"
+		wantID     = 48
+		wantName   = "AutonomousLifecycleForwardReceive"
+		wantSev    = 3
+	)
+	if ActionLifecycleForwardReceive != wantAction {
+		t.Errorf("action constant = %q, want %q", ActionLifecycleForwardReceive, wantAction)
+	}
+	id, name, sev := cefSignature(ActionLifecycleForwardReceive)
+	if id != wantID || name != wantName || sev != wantSev {
+		t.Errorf("cefSignature = %d %q %d, want %d %q %d", id, name, sev, wantID, wantName, wantSev)
+	}
+	// The ID must differ from every other lifecycle signature, the send-side ones included.
+	for _, other := range []string{ActionLifecycleWebhookDelivery, ActionLifecycleWebhookFailed, ActionLifecycleForwardDelivery} {
+		if oid, _, _ := cefSignature(other); oid == id {
+			t.Errorf("signature id %d is shared with %q", id, other)
+		}
+	}
+}
+
+func TestLifecycleForwardReceiveEvents_JSONLines(t *testing.T) {
+	dir := t.TempDir()
+	l, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := Entry{
+		Timestamp: time.Now().UTC().Truncate(time.Millisecond),
+		Actor:     "peer:origin",
+		Action:    ActionLifecycleForwardReceive,
+		Details:   lifecycleForwardReceiveDetails(),
+	}
+	if err := l.Write(in); err != nil {
+		t.Fatal(err)
+	}
+	_ = l.Close()
+
+	f, err := os.Open(filepath.Join(dir, "audit.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	sc := bufio.NewScanner(f)
+	var lines []string
+	for sc.Scan() {
+		lines = append(lines, sc.Text())
+	}
+	if len(lines) != 1 {
+		t.Fatalf("want 1 JSON line, got %d: %q", len(lines), lines)
+	}
+	var out Entry
+	if err := json.Unmarshal([]byte(lines[0]), &out); err != nil {
+		t.Fatalf("line is not valid JSON: %v (%q)", err, lines[0])
+	}
+	if out.Action != ActionLifecycleForwardReceive || out.Actor != "peer:origin" || !out.Timestamp.Equal(in.Timestamp) {
+		t.Fatalf("round-trip mismatch: %+v", out)
+	}
+	if out.Details["peer"] != "peer|1=x" || out.Details["event_id"] != "ev|1=x" ||
+		out.Details["reason"] != lifecycleForwardReceiveDetails()["reason"] || out.Details["outcome"] != "refused" ||
+		out.Details["origin_host"] != "origin|1=x" || out.Details["sender_host"] != "sender.example.net" ||
+		out.Details["status_code"] != float64(409) || out.Details["hops"] != float64(1) {
+		t.Fatalf("details lost: %+v", out.Details)
+	}
+}
+
+func TestLifecycleForwardReceiveEvents_CEFEscaping(t *testing.T) {
+	SetCEFVersionFn(func() string { return `9|0\1` })
+	defer SetCEFVersionFn(func() string { return "v?" })
+	e := Entry{
+		Timestamp: time.Now(),
+		Actor:     "peer|to=x",
+		Action:    ActionLifecycleForwardReceive,
+		Details:   lifecycleForwardReceiveDetails(),
+	}
+	line := FormatCEFLine(e)
+
+	wantPrefix := `CEF:0|datawatch|datawatch|9\|0\\1|48|AutonomousLifecycleForwardReceive|3|`
+	if !strings.HasPrefix(line, wantPrefix) {
+		t.Fatalf("line = %q, want header prefix %q", line, wantPrefix)
+	}
+	if strings.ContainsAny(line, "\n\r") {
+		t.Fatalf("raw newline survived into CEF line: %q", line)
+	}
+	if !strings.Contains(line, `suser=peer|to\=x`) {
+		t.Errorf("actor extension not escaped: %q", line)
+	}
+	if !strings.Contains(line, "deviceCustomString1="+ActionLifecycleForwardReceive) {
+		t.Errorf("action extension missing: %q", line)
+	}
+	// The hostile reason lands in a custom string or the msg overflow, escaped.
+	hostile := lifecycleForwardReceiveDetails()["reason"].(string)
+	if !strings.Contains(line, cefExtEscape(hostile)) {
+		t.Errorf("hostile reason not escaped: %q", line)
+	}
+	if got := strings.Count(line, "CEF:0|datawatch|"); got != 1 {
+		t.Errorf("want exactly one real CEF header, found %d in %q", got, line)
+	}
+}

@@ -184,6 +184,8 @@ func cefSignature(action string) (int, string, int) {
 		return 46, "AutonomousLifecycleWebhookFailed", 6
 	case ActionLifecycleForwardDelivery:
 		return 47, "AutonomousLifecycleForwardDelivery", 3
+	case ActionLifecycleForwardReceive:
+		return 48, "AutonomousLifecycleForwardReceive", 3
 	default:
 		return 0, "AuditEvent", 3
 	}

@@ -27,6 +27,7 @@ import (
 	"github.com/dmz006/datawatch/internal/apns"
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/auth"
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/council"
@@ -424,6 +425,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/subscriptions", api.handleAutonomousSubscriptions)
 	apiMux.HandleFunc("/api/autonomous/subscriptions/", api.handleAutonomousSubscriptions)
 	apiMux.HandleFunc("/api/autonomous/events", api.handleAutonomousEvents)
+	// BL427 phase 5 — receiving endpoint for peer-forwarded lifecycle events.
+	apiMux.HandleFunc(autonomous.ForwardedEventsPath, api.handleAutonomousForwardedEvents)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles/", api.handleAutonomousGuardrailProfiles)
 	// BL410 Phase 1 — retry profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/retry_profiles", api.handleAutonomousRetryProfiles)
@@ -1126,6 +1129,13 @@ func (s *HTTPServer) SetAutonomousSubscriptions(api LifecycleSubscriptionsAPI) {
 // (the handler returns 503).
 func (s *HTTPServer) SetAutonomousEvents(api PendingEventsAPI) {
 	s.api.SetAutonomousEvents(api)
+}
+
+// SetAutonomousForwardedEvents (BL427 phase 5) wires the receiving side of peer
+// forwarding for POST /api/autonomous/events/forward. Nil disables the endpoint
+// (the handler returns 503).
+func (s *HTTPServer) SetAutonomousForwardedEvents(api ForwardedEventsAPI) {
+	s.api.SetAutonomousForwardedEvents(api)
 }
 
 // SetGitTokenMinter (v5.26.24) wires the BL113 token broker for
