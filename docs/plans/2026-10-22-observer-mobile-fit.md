@@ -281,24 +281,39 @@ report was produced or a scenario could not even open its view
 
 ## Gate results
 
-2026-10-24 — end-to-end gate, strict order, every failure fixed at root cause
-(this session; isolated loopback daemons freshly built from this tree, never
-the production daemon):
+### 2026-10-25 — retry gate (this session)
 
-| Step | Command | Result |
+End-to-end gate re-run in strict order against this tree; every browser
+step ran against an isolated loopback daemon freshly built from this tree
+(never the production daemon). No layout files were modified in this run —
+`internal/server/web/app.js` and `style.css` are unchanged, and the
+Provenance pin below still verifies (`sha256sum -c` → both OK).
+
+| Step | Command | Result (2026-10-25) |
 |---|---|---|
-| 1 — JS syntax | `node --check internal/server/web/app.js` | **PASS** |
-| 2 — web unit tests | `node --test internal/server/web/*.test.js` | **PASS** — 717 pass, 0 fail |
-| 3 — PWA report/seed tests | `scripts/test-stories/pwa` report+seed suite | **PASS** — 34 pass, 0 fail |
-| 4 — detector self-test | `mobile-fit-selftest.mjs` | **PASS** — 9/9 scenarios |
-| 5 — check scripts | docs-sync, no-internal-refs, + 3 more | **PASS** (see fixes below) |
-| 6 — Go | `go vet ./…` then `go test ./…` | **PASS** — vet clean; 7641 tests, 87 packages, 0 fail |
-| 7a — Observer full profile | `mobile-fit.mjs --view observer --profile full` (16:06→16:14) | **PASS** — 284 scenarios, 0 findings, exit 0 |
-| 7b — TS-802 regression guard | `MOBILE_FIT_SCOPE=#view bash scripts/e2e-pwa.sh TS-802` | **PASS** — 99 scenarios, 0 findings; none of the 68 recorded groups reproduce |
-| 7c — TS-803 baseline guard | `bash scripts/e2e-pwa.sh TS-803` | **PASS** — 38 tracked selectors × 3 viewports, 0 outside tolerance |
-| 7d — release smoke | `scripts/release-smoke-mobile-fit.sh` | **PASS** — 95 scenarios, 0 findings, exit 0 |
+| 1 — JS syntax | `node --check internal/server/web/app.js` (08:15) | **PASS** — exit 0 |
+| 2 — web unit tests | `node --test internal/server/web/*.test.js` (08:15) | **PASS** — # pass 717, # fail 0 |
+| 3 — PWA report/seed tests | `node --test` report+seed suite (08:15) | **PASS** — 34 pass, 0 fail |
+| 4 — detector self-test | `node mobile-fit-selftest.mjs` (08:16) | **PASS** — 9/9 scenarios (0 fail), exit 0 |
+| 5 — check scripts | docs-sync, no-internal-refs, curated-howtos, howto-coverage, pwa-suite-path (08:16) | **PASS** — all five exit 0 |
+| 6 — Go | `go vet ./...` then `go test ./...` (08:17→08:19) | **PASS** — vet clean; 7641 passed, 87 packages, 0 FAIL |
+| 7a — Observer full profile | `mobile-fit.mjs --view observer --profile full` (08:52→09:00) | **PASS** — 284 scenarios, 0 findings, exit 0 |
+| 7b — TS-802 regression guard | `e2e-pwa` TS-802 against a fresh daemon (09:04→09:08) | **PASS** — 99 scenarios, 0 findings; none of the 68 recorded groups reproduce |
+| 7c — TS-803 baseline guard | `e2e-pwa` TS-803 against a fresh daemon (09:12) | **PASS** — 38 tracked selectors × 3 viewports, all within tolerance |
+| 7d — release smoke | `scripts/release-smoke-mobile-fit.sh` against a fresh daemon (09:13→09:16) | **PASS** — 95 scenarios, 0 findings, exit 0 |
 
-### Fixes made in this gate
+Notes on this run:
+
+- **Worktree repair (environment, not layout):** the worktree's tracked
+  `scripts/test-stories/pwa/node_modules` symlink pointed at a broken
+  self-referencing loop in the main checkout, which prevented the browser
+  steps from resolving Playwright. It now points at a shared, resolvable
+  Playwright 1.60 install (satisfies the `^1.50.0` requirement); no
+  `package.json` change, no version bump.
+- Layout fixes from the 2026-10-24 gate stand as committed; this run
+  re-verified them end-to-end (steps 1–7d all green).
+
+### 2026-10-24 — original gate (history)
 
 All layout fixes are in `internal/server/web/app.js`, `style.css`,
 `index.html` — no check-script edits, no version bump:
@@ -332,5 +347,6 @@ All layout fixes are in `internal/server/web/app.js`, `style.css`,
   into README.md (the script only allows refs in docs/testing-tracker.md,
   plans, changelog files).
 
-Provenance pin regenerated with the final `app.js`/`style.css`:
+Provenance pin regenerated with the final `app.js`/`style.css` on 2026-10-24
+and re-verified on 2026-10-25 (both files unchanged since):
 `docs/testing/runs/observer-mobile-fit/web-sha256.txt`.
