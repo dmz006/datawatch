@@ -15285,7 +15285,7 @@ function openPRDSettingsModal(prdID) {
             })
             .catch(err => {
               if (notifyEventsChanged) {
-                showToast((t('notify_events_save_failed')||'Could not save notification events') + ': ' + String(err), 'error', 3000);
+                showToast((t('notify_events_save_failed')||'Could not save notification events') + ': ' + ((err && err.message) || String(err)), 'error', 6000);
               } else {
                 showToast((t('prd_settings_save_failed')||'Save failed') + ': ' + String(err), 'error', 3000);
               }
