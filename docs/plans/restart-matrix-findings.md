@@ -4,6 +4,22 @@ Date: 2026-10-24. Harness: `scripts/restart-matrix.sh` with `scripts/restart-mat
 
 The matrix puts one unit of autonomous work into each of twelve states, restarts the sandbox daemon, and records what became of the work. No real model is involved: planner, worker, verifier and guardrail judge are one fake shell backend that writes the same outputs a real role would, and the fake worker ends on the completion marker a real worker prints. Values below come from the record files the run wrote (`records/<state>.json`, plus before / immediately-after / settled snapshots).
 
+## restart-during-launch (live check, 2026-10-25)
+
+State: the first worker launch is held in the fake backend's launch step, so the daemon's pane is a bare shell with no agent. The restart must end that shell at boot and must not adopt it.
+
+Result: **FAIL, 7 pass, 3 fail** (direct run of `scripts/restart-matrix.sh --strict --keep --only restart-during-launch`, `RM_KILL_MODE=control-group`, sandbox daemon v9.11.0, own config, port and socket dir; the run also passes `prd_completes_unaided`, `no_duplicate_sessions`, `no_lost_output`, `retry_count_unchanged` and `restart_exited_on_term`).
+
+| Check | Result | Classification |
+|---|---|---|
+| `bare_shell_not_adopted` | FAIL, task session `0134` → `0134` | **Product.** The daemon log shows `boot-resume: task 6b650002 kept (was verifying) on live session 0134, capacity lease re-adopted`, and the worker was then delivered into the same pane with `send_input`. The held shell was adopted as live. |
+| `bare_shell_ended_at_boot` | FAIL, launch pid 3169016 alive after the restart | **Product, with a harness part.** The held launch pid survived the restart, consistent with the adoption above. The criterion also needs the pane to be found, which the harness could not do (next row). |
+| `held_pane_is_bare_shell` | FAIL, pane not found, `runs 'nothing'` | **Harness.** `rm_session_rows` matches the task's short id (`0134`) against `.full_id // .id`, but `full_id` is `restart-matrix-0134`, so the tmux session `cs-restart-matrix-0134` is never looked up. The pre-restart precondition is therefore unverified. |
+
+Task status (API view): before the restart `verifying`, session `0134`, retry 0; after the restart `completed`, session `0134` (adopted, `adopted_session: false`), retry 0. Worker starts 0 → 1, verifier starts 0 → 1, planner starts 1 → 1. Duplicate sessions 0, lost output 0 bytes.
+
+Sandbox failure on the first attempts (not a restart result): the sandbox daemon's tmux `new-session` failed with `File name too long`, so planning never started and the PRD stayed `draft` (`state_reached` FAIL). tmux expands a relative `TMUX_TMPDIR` to an absolute path, and the absolute socket path was 114 bytes against the 107-byte limit. The harness's own length check (`scripts/restart-matrix/lib.sh`, `${#sock} > 100`) measures the unexpanded relative string, so it does not catch this. The state fits only when the sandbox base is an absolute path of at most 47 bytes (the run used `<worktree>/.d`).
+
 ## Result
 
 After the two fixes below, ten of twelve rows survive a restart with no reset, no redo of the worker and no duplicate session. One row (verifying through a live verifier session) survives except that the verifier itself runs once more. One row (planning) still fails and is an OPERATOR PICK, left as it was.
