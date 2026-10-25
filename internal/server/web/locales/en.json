@@ -2184,10 +2184,14 @@
   "notify_events_inherit": "Inherit",
   "notify_events_effective": "Effective notification events",
   "notify_events_none": "none",
+  "notify_events_default_label": "Default notification events",
   "notify_events_source_automaton": "this Automaton",
   "notify_events_source_profile": "guardrail profile",
   "notify_events_source_global": "global default",
   "notify_events_saved": "Notification events saved",
   "notify_events_save_failed": "Could not save notification events",
-  "notify_events_default_marker": "default"
+  "notify_events_default_marker": "default",
+  "notify_events_profile_label": "Notification events",
+  "notify_events_profile_edit": "Edit notification events",
+  "notify_events_profile_prompt": "Notification events (comma-separated kinds, blank to inherit)"
 }
