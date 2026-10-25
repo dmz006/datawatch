@@ -7,6 +7,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.16.1 — Restart during session launch never adopts a dead worker
+
+A daemon restart during a session launch no longer leaves a dead-on-arrival worker adopted as alive. Boot adoption now checks that the session is a really started agent (an agent-started predicate on the session manager) before adopting it, the start-confirm bound applies to adopted sessions and is measured from the session's last evidence of life, launches in flight are tracked and drained on shutdown, and start failures are booked the same way on the adopted and the worker path (including the failure escalation attempt record). The restart matrix has a restart-during-launch state, with fake-backed tests for the four cases and a live sandbox run documented in the operations guide.
+
 ## v9.16.0 — Per-Automaton notify events
 
 Each Automaton can set which lifecycle events notify, with the precedence the operator decided: a per-Automaton notify_events list overrides the profile and the profile overrides the global default. The default set is needs_review, blocked, failed, completed and cancelled, and any other kind (including the new task.review_needed) can be added. The effective list is shown in the Automaton detail view, the guardrail profile panel and on every configuration surface (config file, REST, MCP, CLI, comm channel, PWA) with the five locale bundles, with tests for the precedence and the defaults, a how-to and tracker rows.
