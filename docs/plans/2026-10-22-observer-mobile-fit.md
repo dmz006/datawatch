@@ -1,6 +1,45 @@
 # Observer mobile fit — full-profile matrix reproduction (unfixed baseline)
 
-Date: 2026-10-22 · tree: branch `automaton/dbd5000a` (unfixed — `internal/server/web/app.js` and `internal/server/web/style.css` were **not** modified)
+Date: 2026-10-22 · tree: branch `automaton/dbd5000a`
+
+> **Read-me-first:** this document is the *frozen unfixed-baseline* record — the
+> Result / Findings / Fix-plan sections describe the tree **before** the layout
+> fixes, when `internal/server/web/app.js` and `internal/server/web/style.css` were
+> untouched. The branch **does** now ship those fixes (recorded in `## Gate
+> results`, 2026-10-24: the `app.js`/`style.css` in the tree are the fixed files,
+> pinned by `docs/testing/runs/observer-mobile-fit/web-sha256.txt`). See
+> `## Status` for phase status and `## Parity surface` for per-surface intent.
+
+## Status
+
+Planned → Done status per the Planning Rules, with the shipped-version line.
+This branch ships on the `v9.5.98` line (in-tree version at gate time; the gate
+note records "no version bump" on this branch — the fixes land in the next
+release and are called out under `## [Unreleased]` in `CHANGELOG.md`).
+
+| Phase | Status |
+|---|---|
+| 1 — Mobile-fit checker + full-profile matrix harness (`scripts/test-stories/pwa/`) | **Done** 2026-10-22 — harness, detector self-test (9/9) and report/seed unit tests (34/34) in the tree; on branch `dbd5000a` (v9.5.98 line) |
+| 2 — Unfixed-baseline reproduction (284 scenarios, 68 groups, 29,968 findings) | **Done** 2026-10-22/23 — committed reports under `docs/testing/runs/observer-mobile-fit/`; on branch `dbd5000a` |
+| 3 — Observer layout fixes for phone widths (`app.js`, `style.css`, `index.html`) | **Done** 2026-10-24 — full matrix 0 findings, TS-802/TS-803 clean; the fixed files are in this tree (sha256 pin `web-sha256.txt`) and ship in the next release on the v9.5.98 line |
+| 4 — Other-tabs worklist + release-smoke wiring (`scripts/release-smoke-mobile-fit.sh`, `e2e-pwa.sh`) | **Done** 2026-10-24 — report-only pass (19 groups, 185 findings) recorded above; smoke 95 scenarios / exit 0 |
+| 5 — End-to-end gate | **Done** 2026-10-25 — steps 1–7d all PASS (see `## Gate results`) |
+
+## Parity surface
+
+Full set per AGENT.md (Mobile-Parity Rule): `REST`, `MCP`, `CLI`, `comm channel`,
+`YAML/config`, `PWA`, `Android`, `iPhone/iOS`.
+
+| Surface | Intent for this work | Notes / reason |
+|---|---|---|
+| PWA | ✅ **changed** | the target surface: Observer tab (esp. System Statistics) phone-width layout, ≥40px tap targets, clipped-text, overlap and re-render fixes in `app.js` / `style.css` / `index.html` (Phase 3) |
+| REST | N/A — no change | no endpoint, request-body or response-shape change; the matrix consumes the existing `/api/*` state as-is, so mobile clients parse unchanged contracts |
+| MCP | N/A — no change | pure web-layout work; no MCP tool added or altered |
+| CLI | N/A — no change | no CLI surface touched |
+| comm channel | N/A — no change | no comm surface touched |
+| YAML/config | N/A — no change | no config fields added or renamed; no defaults or persisted-state keys changed |
+| Android | tracked — issue filed | operator-visible PWA layout change → Mobile-Parity / Mobile App Sync compliance: **`dmz006/datawatch-app#270`** (filed 2026-10-25) tracks the native phone-width equivalent |
+| iPhone/iOS | tracked — issue filed | same change, same issue: **`dmz006/datawatch-app#270`** |
 
 ## Goal
 

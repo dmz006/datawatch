@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Observer tab (System Statistics in particular) now fits a phone.** No more horizontal scroll at phone widths — the statistics grid drops to a single column under 480px, so the 260px-minimum two-column Ollama card can no longer push the page past the viewport. Buttons, links, filter pills, form controls and header controls gain ≥40px hit areas without changing their visual size; long text lines (memory-browser rows, audit details, peer/cluster hints, statistic values, header title, section titles, card lines) now truncate with ellipsis and a full-text tooltip, or wrap where intended; overlapping inline spans in plugin, memory and diagnostics rows are gone; and statistics re-renders are layout-idempotent, so the 1s session-stats tick no longer stacks `/api/stats` requests (measured 2→44 before). At 200% zoom on phones the header help + fullscreen toggles hide so the title, alert pill and status dot stay on screen, and the peer-stale / vault badges re-anchor as 44×44 rounded badges instead of 17×15 pills inside the nav icon slot. Verified by the full-profile mobile-fit matrix: 29,968 findings in 68 groups before the fixes, **0 findings across 284 scenarios** after, with the desktop/tablet baseline unchanged. Mobile follow-up filed as `dmz006/datawatch-app#270`. Plan: `docs/plans/2026-10-22-observer-mobile-fit.md`; tracker: `docs/testing-tracker.md` § "Observer mobile fit".
+
 ## v9.5.98 — Capacity waits say why; admission and budget events audited
 
 ### Added
