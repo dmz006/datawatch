@@ -224,7 +224,7 @@ Options:
 
 Recommendation: a new top-level tab with a header badge, because design and proposal questions are not Automaton-scoped and the Automation view name is reserved for the chain object.
 
-Status: Not decided.
+Status: **Decided by the operator, 2026-10-25:** the queue is part of Automation and is shown in the Automation view (design document item 1); details are visible there and in notifications (item 11).
 
 ### 6.b Deadlines and expiry
 
@@ -237,7 +237,7 @@ Options:
 
 Recommendation: option 2, because the asker decides what expiry means, and nothing is applied that the asker did not name.
 
-Status: Not decided.
+Status: **Decided by the operator, 2026-10-25:** questions never expire; a skip is per question by default and wide only when that option is enabled, and the supervisor then decides and records it as a supervisor decision on the operator's skip (design document items 2, 5, 5a and 10).
 
 ### 6.c Who may answer when several operators exist
 
@@ -250,7 +250,7 @@ Options:
 
 Recommendation: option 2, with a new answering capability so that a federated peer can read and raise questions but cannot answer unless it is granted that capability.
 
-Status: Not decided.
+Status: **Decided by the operator, 2026-10-25:** not multi-operator yet; any operator authorized for the Automation may answer, from any communication channel (design document items 6 and 7).
 
 ### 6.d Whether the tick may proceed on a default for low-risk questions
 
@@ -263,7 +263,7 @@ Options:
 
 Recommendation: option 2, off by default and in shadow mode first, reusing the decision assistant's shadow pattern, because it keeps lanes busy without a silent choice.
 
-Status: Not decided.
+Status: **Decided by the operator, 2026-10-25:** low-risk defaults are an Automation setting, never for design questions; low risk is a type list plus a per-question level the asker may raise but never lower; reuse of a repeated design answer is tracked as a future option (design document items 3, 8, 9).
 
 ### 6.e Retention of answered questions
 
@@ -276,7 +276,7 @@ Options:
 
 Recommendation: option 1, because the operator's exact words are the point of the record, and any future prune should run only after an export.
 
-Status: Not decided.
+Status: **Decided by the operator, 2026-10-25:** answered questions and quotations are kept forever in the audit log (design document item 13); answers are superseded, never edited (item 14).
 
 ### 6.f How the Decision Interview Protocol changes
 
@@ -289,7 +289,7 @@ Options:
 
 Recommendation: option 2, because it removes the terminal as the normal channel while keeping the agent able to ask when the daemon is unreachable.
 
-Status: Not decided.
+Status: **Decided by the operator, 2026-10-25:** the terminal protocol stays and the queue is added beside it; the supervisor copies terminal answers into the queue with the quotation (design document item 15).
 
 ### 6.g Where the mobile app work lives
 
