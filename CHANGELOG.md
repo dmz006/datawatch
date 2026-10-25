@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.13.0 — Compute node usage on the capacity card
+
+The capacity card on the Automation sub-tab shows live usage for each compute node next to its slot pool: the loaded model with its memory and expiry, slots held of the limit, and GPU utilization and GPU memory from the observer. The figures are cached with short timeouts so a slow node never blanks the card, and a node with no observer shows only the slot figures. The same usage is available over REST, MCP, the CLI and the comm channel, with the five locale bundles.
+
 ## v9.12.0 — Failure escalation policy for repeated task failures
 
 Repeated task failure escalation is configurable. A policy lists the worker backends and models to try in order, and after a configurable failure count (default 3) a task stops retrying and goes to operator review with a summary of every attempt (backend and model, time spent, what changed, the verifier report). Each retry prompt carries what earlier attempts failed on, so a stronger worker gets full context. The operator can retry, change the spec, change the worker, narrow the scope or cancel from the Automaton view, the CLI, REST, MCP and the comm channel. The policy is a global default with per-Automaton and per-task overrides and appears on every configuration surface, with the five locale bundles.
