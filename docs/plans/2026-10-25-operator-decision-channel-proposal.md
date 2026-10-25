@@ -315,7 +315,7 @@ Options:
 
 Recommendation: option 2, because it keeps every stored quote verbatim and never stores a secret.
 
-Status: Not decided.
+Status: **Decided by the operator, 2026-10-25: option 1 of the interview (refuse and ask again)**, with the refusal message encouraging the safe routes ("1, encourage saving secrets on fs and pointing session to it or coordinate with datawatch secrets"): store the secret in the datawatch secrets store and refer to it by `${secret:name}`, or save it on the filesystem and point the session to the file. The asker receives the secret's name, never its value.
 
 ### 6.i Who writes the design and Confirmed lines
 

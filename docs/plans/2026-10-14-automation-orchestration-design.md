@@ -2740,4 +2740,6 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 20. **Mobile work (proposal 6.g, answer: "1").** The Android and iOS work for questions is tracked as datawatch-app issues that carry the API contract, following the Mobile App Sync Rule. The issues are filed once the first two steps (storage with REST, then notifications and the return path) have shipped, because that is when the contract is stable. No native code is added to this repository.
 
+21. **Secrets in an answer (proposal 6.h, answer: "1, encourage saving secrets on fs and pointing session to it or coordinate with datawatch secrets").** An answer whose text matches a secret pattern is not stored. The operator is told to resend it without the secret, and the refusal is audited without the text, so every stored quotation stays verbatim and no secret is ever stored. The refusal message encourages the two safe routes: put the secret in the datawatch secrets store and refer to it by name (`${secret:name}`), or save it on the filesystem and point the session to the file. The question flow must coordinate with the datawatch secrets store so the asker can be given the secret's name, never its value.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
