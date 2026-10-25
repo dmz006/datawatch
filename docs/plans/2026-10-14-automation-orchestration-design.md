@@ -2726,4 +2726,6 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 14. **Changing an answer (answer: "1").** An answer is never edited. A changed mind is a new answer that supersedes the old one; both stay on the record, each with its quotation, and the decision log shows which one is current.
 
+15. **The AGENT.md Decision Interview Protocol (answer: "2").** The terminal protocol stays and the queue is added beside it. An agent may use either. Answers given in the terminal are copied into the queue afterwards by the supervisor, with the operator's quotation, so the decision record is complete either way. The proposal must say how that copy is made and checked.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
