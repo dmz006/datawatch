@@ -3,7 +3,7 @@
 Date: 2026-10-24
 Status: proposal, awaiting operator confirmation
 
-Confirmed: no
+Confirmed: yes
 
 ## Summary
 
@@ -20,6 +20,15 @@ On 2026-10-24 a print-mode pi verifier (task 52970007, BL590 PRD) wrote nothing 
 - Today's rule, docs/operations.md:534: "A verifier session that shows neither an output file nor any change in its pane output for `autonomous.verifier_no_progress_timeout_seconds` (default 600, ten minutes; unset or non-positive uses the default) is ended instead of waiting out the long verifier timeout." docs/implementation.md:1444 adds that the default is 600 seconds (`autonomous.verifier_no_progress_timeout_seconds`) and that a trip "classifies as infra like the timeout".
 
 ## Decisions for the operator
+
+**Operator answers, 2026-10-24 (recorded by the supervisor; these replace the proposals below where they differ):**
+
+1. Progress: a live runner process or a held capacity slot for the verifier's holder counts as progress (options B plus C). Option D is deferred until a per-session request probe exists.
+2. Limit: keep the single setting `autonomous.verifier_no_progress_timeout_seconds` and raise its default to 900 seconds.
+3. Slot wait: time spent waiting for a capacity slot is excluded from the limit, and the docs say so explicitly.
+4. Hung verifier: hand off to the fallback verifier backend at once, under the existing infra escalation threshold (option C). This differs from the proposed option A; the operator chose it.
+
+The proposals and options below are kept for reference.
 
 All answers below are proposals, not decisions.
 
@@ -70,4 +79,4 @@ Only the meaning of the existing `autonomous.verifier_no_progress_timeout_second
 
 ## Status
 
-This proposal is written and awaiting operator confirmation on the four decisions. The Confirmed line above reads "no"; implementation (Phase 2 and beyond) starts only after the operator changes it to "yes".
+Confirmed by the operator on 2026-10-24: the four decisions are recorded above and the Confirmed line reads yes. Implementation (Phase 2 and beyond) may start.
