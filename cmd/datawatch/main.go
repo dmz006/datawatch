@@ -1859,6 +1859,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	pidFilePath := filepath.Join(expandHome(cfg.DataDir), "daemon.pid")
 	defer func() { _ = os.Remove(pidFilePath) }()
 
+	// httpStopped is closed when the PWA server's Start returns, which is after
+	// it has shut its listeners down. It stays nil when no server is started.
+	var httpStopped chan struct{}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -1871,7 +1875,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[warn] kill sessions on exit: %v\n", err)
 			}
 		}
-		_ = mgr.Close() // flush deferred session-store writes before exit
+		// The store is not closed here: the serve path drains in-flight
+		// launches first, and that drain must still be able to save the
+		// sessions it rolls back. The deferred mgr.Close flushes the store.
 		cancel()
 	}()
 
@@ -7668,7 +7674,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		}
 		addr := fmt.Sprintf("%s://%s:%d", scheme, cfg.Server.Host, cfg.Server.Port)
 		fmt.Printf("[%s] PWA server: %s\n", cfg.Hostname, addr)
+		httpStopped = make(chan struct{})
 		go func() {
+			defer close(httpStopped)
 			defer func() {
 				if p := recover(); p != nil {
 					fmt.Printf("[%s] PWA server panic (recovered): %v\n", cfg.Hostname, p)
@@ -8636,6 +8644,18 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// No routers — keep alive for HTTP server / proxy mode
 		<-ctx.Done()
 	}
+
+	// Shutdown tail. A signal cancels ctx, which makes the PWA server shut
+	// down. Wait for that to finish so no new launch arrives over HTTP, then
+	// drain the launches still in flight before the process exits. The wait
+	// applies only after a signal, not when the routers simply finish.
+	if ctx.Err() != nil && httpStopped != nil {
+		select {
+		case <-httpStopped:
+		case <-time.After(shutdownHTTPWait):
+		}
+	}
+	drainLaunchesOnShutdown(mgr, os.Stdout)
 	return nil
 }
 
