@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clean mobile layout</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { font: 16px/1.4 system-ui, sans-serif; background: #f4f5f7; color: #1f2430; }
+  .stack { padding: 12px; max-width: 100%; }
+  .card {
+    background: #fff; border: 1px solid #d9dde5; border-radius: 10px;
+    padding: 14px; margin-bottom: 12px; box-sizing: border-box;
+  }
+  .card h2 { margin: 0 0 6px; font-size: 17px; }
+  .card p { margin: 0 0 10px; }
+  .line {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size: 13px; color: #54607a;
+  }
+  button {
+    width: auto; min-width: 44px; height: 44px; padding: 0 18px;
+    font-size: 15px; border: 1px solid #2b57d0; border-radius: 8px;
+    background: #3462e0; color: #fff;
+  }
+</style>
+</head>
+<body>
+  <div class="stack">
+    <div class="card">
+      <h2>Deployment</h2>
+      <p>This card text wraps naturally inside a narrow mobile viewport without any horizontal overflow.</p>
+      <div class="line" title="deploy-datawatch-canary-2026">deploy-datawatch-canary-2026</div>
+      <button>Deploy again</button>
+    </div>
+    <div class="card">
+      <h2>Incidents</h2>
+      <p>Three incidents resolved in the last hour; the two most recent ones carry their wrapped detail text below.</p>
+      <button>Open dashboard</button>
+    </div>
+  </div>
+</body>
+</html>

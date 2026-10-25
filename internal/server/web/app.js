@@ -1132,6 +1132,29 @@ window.listLoader = listLoader;
 window.listLoaderAll = listLoaderAll;
 window._listLoaders = _listLoaders;
 
+// MOBILE-FIT (plan fix item 5, "coalesce the sub-loaders"): the Observer
+// sub-loaders (loadStatsPanel, loadSystemStatsGrid) each fired their own
+// /api/stats request on every Observer render and on every 8s poll tick —
+// renderObserverView calls them back-to-back and the 8s pollers fire in
+// the same second, so re-render passes (navigating sessions→observer
+// repeatedly) stacked duplicate /api/stats pairs (F-10191: 2 → 44
+// requests in the rerender-timers scenario). Concurrent fetches of the
+// same endpoint now share one in-flight request. The entry is removed as
+// soon as the request settles, so nothing is ever cached past the
+// in-flight window: data is never stale and any repeated call issues a
+// fresh request (the 8s pollers and the one-shot render loaders only
+// coalesce when they actually overlap).
+const _sharedFetchInflight = {};
+function sharedFetch(url) {
+  if (!Object.prototype.hasOwnProperty.call(_sharedFetchInflight, url)) {
+    _sharedFetchInflight[url] = apiFetch(url).then(
+      d => { delete _sharedFetchInflight[url]; return d; },
+      e => { delete _sharedFetchInflight[url]; return Promise.reject(e); });
+  }
+  return _sharedFetchInflight[url];
+}
+window.sharedFetch = sharedFetch;
+
 // ── Message handlers ─────────────────────────────────────────────────────────
 function handleMessage(msg) {
   switch (msg.type) {
@@ -1714,6 +1737,46 @@ function fmtBytes(n) {
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
   return (n / 1024 / 1024).toFixed(1) + ' MB';
 }
+
+// MOBILE-FIT (Observer per-system cards / local system panel):
+// Shared compact formatters for the Observer Statistics view. Previously each render
+// path (the per-system stats grid, the peer resource overview, the local system
+// panel) duplicated its own bytes/count formatter — some capped at MB, some at GB/TB,
+// some counting raw toLocaleString — so large values rendered as e.g. "1073741824 B"
+// and clipped/wrapped at phone widths. These two helpers are the single source of
+// truth for compact byte and count values in that view; every caller must use them
+// (do not add new local copies). Exposed on window for unit tests.
+// fmtBytesCompact: B / KB / MB / GB / TB / PB / EB (base-1024, one decimal from KB
+// up), so each value stays short enough that a "33.5 / 65.5 GB" pair fits a card
+// value row — exabyte-scale machines (10^17+ bytes) stay "x.x EB" instead of
+// "5859375.0 TB". Zero, missing (null / undefined) and non-finite input render as
+// the '—' (em dash) missing-value sentinel — never "0 B".
+// fmtCountCompact: exact integers under 1000, else one-decimal K / M / B / T
+// compact (base-1000; small counts like 7, 6, 4 are unchanged, trillion-scale
+// counts stay "x.xT" instead of thousands of billions). Zero, missing and
+// non-finite input render as the '—' sentinel.
+function fmtBytesCompact(n) {
+  const b = Number(n);
+  if (!Number.isFinite(b) || b <= 0) return '—';
+  if (b < 1024) return Math.round(b) + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
+  if (b < 1024 * 1024 * 1024 * 1024) return (b / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+  if (b < 1024 * 1024 * 1024 * 1024 * 1024) return (b / 1024 / 1024 / 1024 / 1024).toFixed(1) + ' TB';
+  if (b < 1024 * 1024 * 1024 * 1024 * 1024 * 1024) return (b / 1024 / 1024 / 1024 / 1024 / 1024).toFixed(1) + ' PB';
+  return (b / 1024 / 1024 / 1024 / 1024 / 1024 / 1024).toFixed(1) + ' EB';
+}
+function fmtCountCompact(n) {
+  const c = Number(n);
+  if (!Number.isFinite(c) || c <= 0) return '—';
+  if (c < 1000) return String(Math.round(c));
+  if (c < 1000000) return (c / 1000).toFixed(1) + 'K';
+  if (c < 1000000000) return (c / 1000000).toFixed(1) + 'M';
+  if (c < 1000000000000) return (c / 1000000000).toFixed(1) + 'B';
+  return (c / 1000000000000).toFixed(1) + 'T';
+}
+window.fmtBytesCompact = fmtBytesCompact;
+window.fmtCountCompact = fmtCountCompact;
 
 function handleChannelReadyEvent(sessionId) {
   state.channelReady[sessionId] = true;
@@ -2440,6 +2503,15 @@ function navigate(view, sessionId, fromPopstate) {
   const backBtn = document.getElementById('backBtn');
   const nav = document.getElementById('nav');
   const headerTitle = document.getElementById('headerTitle');
+  // mobile-fit gate 2026-10-22: the header title truncates with overflow:
+  // hidden + text-overflow: ellipsis (style.css); keep a title= tooltip
+  // synced to whatever text the view sets so the full label stays
+  // reachable on hover. MutationObserver covers every assignment site
+  // instead of touching each t(...) line.
+  if (headerTitle && typeof MutationObserver !== 'undefined') {
+    new MutationObserver(() => { headerTitle.title = headerTitle.textContent; })
+      .observe(headerTitle, { childList: true, characterData: true, subtree: true });
+  }
 
   // Update nav button active states; scroll active tab into view for overflow nav
   document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -8615,8 +8687,8 @@ function settingsSectionHeader(key, title, docsPath) {
   // as a diagnostic fallback label, no longer the actual target).
   const collapsed = !!settingsCollapsed[key];
   const dl = defsLink(key, title);
-  return `<div class="settings-section-title settings-section-toggle" onclick="toggleSettingsSection('${key}')">
-    <span id="settings-chev-${key}" class="settings-chevron">${collapsed ? '▶' : '▼'}</span>${escHtml(title)}${dl}
+  return `<div class="settings-section-title settings-section-toggle">
+    <span class="settings-section-hit" onclick="toggleSettingsSection('${key}')"><span id="settings-chev-${key}" class="settings-chevron">${collapsed ? '▶' : '▼'}</span>${escHtml(title)}${dl}</span>
   </div>`;
 }
 
@@ -18564,12 +18636,12 @@ function listMemories() {
       const content = (m.content || '').length > 200 ? m.content.slice(0, 200) + '…' : (m.content || '');
       const sim = m.similarity ? ` <span style="color:var(--accent2);">[${Math.round(m.similarity*100)}%]</span>` : '';
       const tags = _renderMemoryTagChips(m.tags); // GH#192 D78a
-      return `<div class="settings-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
+      return `<div class="settings-row obs-mem-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
         <div style="flex:1;min-width:0;">
           <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role} ${date}${sim}</span>${tags}
-          <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
+          <div class="obs-mem-body" title="${escHtml(m.content || '')}">${escHtml(content)}</div>
         </div>
-        <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
+        <button class="btn-icon obs-tap" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
       </div>`;
     }).join('');
   }).catch(() => { if (el) el.textContent = t('memory_failed_load') || 'Failed to load memories'; });
@@ -18581,8 +18653,8 @@ function listMemories() {
 function _renderMemoryTagChips(tagsStr) {
   const tags = (tagsStr || '').split(',').map(t => t.trim()).filter(Boolean);
   if (tags.length === 0) return '';
-  return `<div style="margin-top:2px;">${tags.map(tag =>
-    `<span style="font-size:9px;padding:1px 6px;margin-right:3px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);">${escHtml(tag)}</span>`
+  return `<div class="obs-mem-tags">${tags.map(tag =>
+    `<span style="font-size:9px;padding:1px 6px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);">${escHtml(tag)}</span>`
   ).join('')}</div>`;
 }
 
@@ -18602,12 +18674,12 @@ function searchMemories() {
       const content = (m.content || '').length > 200 ? m.content.slice(0, 200) + '…' : (m.content || '');
       const sim = m.similarity ? ` [${Math.round(m.similarity*100)}%]` : '';
       const tags = _renderMemoryTagChips(m.tags); // GH#192 D78a
-      return `<div class="settings-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
+      return `<div class="settings-row obs-mem-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
         <div style="flex:1;min-width:0;">
           <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role}${sim}</span>${tags}
-          <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
+          <div class="obs-mem-body" title="${escHtml(m.content || '')}">${escHtml(content)}</div>
         </div>
-        <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
+        <button class="btn-icon obs-tap" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
       </div>`;
     }).join('');
   }).catch(() => { if (el) el.textContent = t('memory_search_failed') || 'Search failed'; });
@@ -21168,7 +21240,10 @@ function updatePeerStaleBadge() {
     }
     if (stale > 0) {
       badge.textContent = stale > 99 ? '99+' : String(stale);
-      badge.style.display = 'inline';
+      // 'flex' (not 'inline') so the 44x44 badge centers its count — the
+      // element is a position:absolute 44x44 box (see index.html) and an
+      // inline display would ignore the box sizing.
+      badge.style.display = 'flex';
       badge.title = `${stale} federated peer(s) stale (>60s since last push)`;
     } else {
       badge.style.display = 'none';
@@ -29262,7 +29337,7 @@ function loadStatsPanel() {
   const lkey = 'observer-stats:' + (state.activeServer || 'local');
   const ctl = window._listLoaders[lkey] || listLoader({
     key: lkey, el: 'statsPanel', pollMs: 60000,
-    fetch: () => apiFetch('/api/stats'),
+    fetch: () => sharedFetch('/api/stats'),
     active: () => !!document.getElementById('statsPanel'),
     render: () => '<div id="statsBody"></div>',
     errorText: e => _fedMsg(e, t('stats_unavailable') || 'Stats unavailable.'),
@@ -29317,7 +29392,7 @@ function loadAcmeHealthCard() {
       if (d.issued && daysLeft !== null) {
         dotColor = daysLeft > 14 ? 'var(--success,#10b981)' : 'var(--warning,#f59e0b)';
       }
-      const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dotColor};margin-right:6px;flex-shrink:0;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${dotColor};margin-right:6px;"></span>`;
       const label = d.in_flight ? 'issuing…' : (d.issued ? `expires in ${daysLeft}d` : 'not issued');
       const err = d.last_error ? ` <span style="color:var(--error);">(${escHtml(d.last_error)})</span>` : '';
       return `<div style="display:flex;align-items:center;padding:2px 0;">${dot}<span>${escHtml(d.domain)}</span> <span style="opacity:0.6;">— ${escHtml(label)}</span>${err}</div>`;
@@ -29349,7 +29424,7 @@ function loadBackendHealthCard() {
     el.innerHTML = backends.map(b => {
       const name = typeof b === 'string' ? b : (b.name || '?');
       const available = typeof b === 'string' ? true : !!b.available;
-      const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${available ? 'var(--success,#10b981)' : 'var(--error,#ef4444)'};margin-right:6px;flex-shrink:0;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${available ? 'var(--success,#10b981)' : 'var(--error,#ef4444)'};margin-right:6px;"></span>`;
       const version = (b && b.version) ? ` <span style="opacity:0.6;">${escHtml(b.version)}</span>` : '';
       const nodes = (b && Array.isArray(b.compute_nodes) && b.compute_nodes.length) ? ` <span style="opacity:0.6;">(${b.compute_nodes.map(escHtml).join(', ')})</span>` : '';
       return `<div style="display:flex;align-items:center;padding:2px 0;">${dot}<span>${escHtml(name)}</span>${version}${nodes}</div>`;
@@ -29370,13 +29445,10 @@ function loadObserverEnvelopesCard() {
       el.innerHTML = `<span style="opacity:0.6;">${escHtml(t('obs_envelopes_none')||'no envelopes tracked')}</span>`;
       return;
     }
-    const fmtBytes = b => {
-      if (!b) return '—';
-      if (b >= 1e9) return (b/1e9).toFixed(1)+' GB';
-      if (b >= 1e6) return (b/1e6).toFixed(1)+' MB';
-      if (b >= 1e3) return (b/1e3).toFixed(1)+' KB';
-      return b+' B';
-    };
+    // MOBILE-FIT: shared compact formatter (fmtBytesCompact) replaces the
+    // duplicated base-10 local copy — '—' is the missing-value sentinel,
+    // same as the peer-resources / per-system grid formatters.
+    const fmtBytes = b => (b ? fmtBytesCompact(b) : '—');
     const kindColor = { session: 'var(--accent)', backend: 'var(--accent2)', container: 'var(--warning)' };
     el.innerHTML = envs.slice(0, 20).map(e => {
       const color = kindColor[e.kind] || 'var(--text2)';
@@ -29456,10 +29528,10 @@ function loadChannelDiagnostics() {
         const portStr = sd.channel_port > 0 ? `port ${sd.channel_port}` : 'port –';
         const name = sd.session_name || sd.session_id;
         if (sd.bridge_alive) {
-          html += `<div>✓ <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}</span></div>`;
+          html += `<div class="obs-diag-row">✓ <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}</span></div>`;
         } else {
           const err = sd.probe_error ? ` — ${sd.probe_error}` : '';
-          html += `<div><span style="color:var(--warning);">✗</span> <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}${escHtml(err)}</span></div>`;
+          html += `<div class="obs-diag-row"><span style="color:var(--warning);">✗</span> <span style="font-weight:500;">${escHtml(name)}</span> <span style="opacity:0.7;">${portStr}${escHtml(err)}</span></div>`;
         }
       });
     }
@@ -29502,19 +29574,16 @@ function loadPeerResourceOverview() {
         .then(snap => ({ peer: p, snap }))
         .catch(() => ({ peer: p, snap: null }))
     )).then(results => {
-      const fmtBytes = b => {
-        if (!b) return '—';
-        if (b >= 1e12) return (b/1e12).toFixed(1)+' TB';
-        if (b >= 1e9) return (b/1e9).toFixed(1)+' GB';
-        if (b >= 1e6) return (b/1e6).toFixed(1)+' MB';
-        return b+' B';
-      };
+      // MOBILE-FIT: shared compact formatter (fmtBytesCompact, defined near
+      // the module-level fmtBytes) replaces this duplicated local copy —
+      // same base-1024 output, keeps the '—' missing-value sentinel.
+      const fmtBytes = b => (b ? fmtBytesCompact(b) : '—');
       const now = Date.now();
       const rows = results.map(({ peer, snap }) => {
         const lastPush = peer.last_push_at ? new Date(peer.last_push_at).getTime() : 0;
         const ageMs = lastPush ? (now - lastPush) : Infinity;
         const dotColor = lastPush ? (ageMs < 15000 ? 'var(--success,#10b981)' : ageMs < 60000 ? 'var(--warning,#f59e0b)' : 'var(--error,#ef4444)') : 'var(--text2)';
-        const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:5px;flex-shrink:0;"></span>`;
+        const dot = `<span class="obs-dot" style="background:${dotColor};margin-right:5px;"></span>`;
         const cpu = (snap && snap.cpu) || null;
         const mem = (snap && snap.mem) || null;
         const gpus = (snap && snap.gpu) || [];
@@ -29540,8 +29609,8 @@ function loadPeerResourceOverview() {
         const chips = noData ? '<span style="opacity:0.5;font-size:10px;">no snapshot</span>' : (hostChips + gpuChips);
         const shapeTag = `<span style="opacity:0.45;font-size:10px;border:1px solid var(--text2);border-radius:3px;padding:0 3px;margin-right:4px;">${escHtml((peer.shape||'?').toLowerCase())}</span>`;
         return `<div style="padding:4px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;">
-          <div style="display:flex;align-items:center;min-width:90px;flex-shrink:0;">${dot}${shapeTag}<strong style="font-size:12px;">${escHtml(peer.name)}</strong></div>
-          <div style="display:flex;gap:4px;flex-wrap:wrap;font-size:11px;">${chips}</div>
+          <div class="peer-name-cell">${dot}${shapeTag}<strong style="font-size:12px;" title="${escHtml(peer.name)}">${escHtml(peer.name)}</strong></div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;font-size:11px;min-width:0;">${chips}</div>
         </div>`;
       }).join('');
       el.innerHTML = rows || '<span style="opacity:0.6;">no peer data</span>';
@@ -29562,37 +29631,44 @@ setInterval(() => {
 function loadSystemStatsGrid() {
   const el = document.getElementById('perSystemGrid');
   if (!el) return;
-  const fmtBytes = b => {
-    if (!b) return '—';
-    if (b >= 1e12) return (b/1e12).toFixed(1)+' TB';
-    if (b >= 1e9)  return (b/1e9).toFixed(1)+' GB';
-    if (b >= 1e6)  return (b/1e6).toFixed(1)+' MB';
-    return b+' B';
-  };
+  // MOBILE-FIT: shared compact formatter (fmtBytesCompact, defined near
+  // the module-level fmtBytes) replaces this duplicated local copy — same
+  // base-1024 output, keeps the '—' missing-value sentinel.
+  const fmtBytes = b => (b ? fmtBytesCompact(b) : '—');
+  // MOBILE-FIT: bar layout moved from inline styles to the shared .obs-bar*
+  // rules in style.css — identical look at every width; label/value spans
+  // may wrap at narrow widths instead of clipping.
   const bar = (label, val, max, color, extraLabel) => {
     const p = max > 0 ? Math.min(100, Math.round(100*val/max)) : 0;
-    return `<div style="margin-bottom:4px;">
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-bottom:2px;">
-        <span>${escHtml(label)}</span>
-        <span style="font-variant-numeric:tabular-nums;color:var(--text);">${escHtml(extraLabel||p+'%')}</span>
+    return `<div class="obs-bar">
+      <div class="obs-bar-head">
+        <span class="obs-bar-label">${escHtml(label)}</span>
+        <span class="obs-bar-val" title="${escHtml(extraLabel||p+'%')}">${escHtml(extraLabel||p+'%')}</span>
       </div>
-      <div style="height:5px;background:var(--bg);border-radius:3px;overflow:hidden;">
-        <div style="height:100%;width:${p}%;background:${color||'var(--accent)'};border-radius:3px;transition:width 0.3s;"></div>
+      <div class="obs-bar-track">
+        <div class="obs-bar-fill" style="width:${p}%;background:${color||'var(--accent)'};"></div>
       </div>
     </div>`;
   };
   // GH#194 -- no "local" tag/badge; the card's own name (the real
   // hostname) is label enough, and the word "local" never appears.
-  const sysCard = (name, dot, cpuHtml, memHtml, gpuHtml) => `
-    <div style="background:var(--surface1,var(--bg2));border:1px solid var(--border);border-radius:8px;padding:10px 12px;min-width:0;">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
-        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dot};flex-shrink:0;"></span>
-        <span style="font-size:11px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(name)}</span>
+  // `title` carries the accessibility clip-target: peer cards get their
+  // full hostname (stats-scroll contract: ellipsis clip + full name in
+  // title); the local card keeps the literal "System name" label so the
+  // local hostname renders exactly once (identity-label contract).
+  const sysCard = (name, dot, cpuHtml, memHtml, gpuHtml, title = name) => `
+    <div class="obs-sys-card" style="flex:1 1 200px;min-width:0;">
+      <div class="obs-sys-head">
+        <span class="obs-sys-dot" style="background:${dot};"></span>
+        <span class="obs-sys-name" title="${escHtml(title)}">${escHtml(name)}</span>
       </div>
       ${cpuHtml}${memHtml}${gpuHtml}
     </div>`;
 
-  const localP = apiFetch('/api/stats').then(d => {
+  // MOBILE-FIT: shared in-flight /api/stats request (see sharedFetch) —
+  // coalesces with loadStatsPanel's fetch when both run on the same
+  // Observer render pass (renderObserverView fires them back-to-back).
+  const localP = sharedFetch('/api/stats').then(d => {
     if (!d || !d.timestamp) return null;
     const cpuPct = d.cpu_cores > 0 ? Math.min(100, Math.round(100*d.cpu_load_avg_1/d.cpu_cores)) : 0;
     const cpuColor = cpuPct > 80 ? 'var(--error)' : cpuPct > 50 ? 'var(--warning)' : 'var(--success)';
@@ -29665,7 +29741,7 @@ function loadSystemStatsGrid() {
               gpuHtml += bar(gLabel+' temp', g.temp_c, 100, tc, g.temp_c.toFixed(0)+'°C');
             }
             if (g.power_w != null) {
-              gpuHtml += `<div style="margin-bottom:4px;display:flex;justify-content:space-between;font-size:10px;"><span style="color:var(--text2);">${escHtml(gLabel+' power')}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${g.power_w.toFixed(1)} W</span></div>`;
+              gpuHtml += `<div class="obs-kv"><span class="obs-kv-k">${escHtml(gLabel+' power')}</span><span class="obs-kv-v">${g.power_w.toFixed(1)} W</span></div>`;
             }
             if (g.mem_used_bytes && g.mem_total_bytes) {
               gpuHtml += bar(gLabel+' VRAM', g.mem_used_bytes, g.mem_total_bytes, 'var(--accent2,#60a5fa)',
@@ -29681,13 +29757,13 @@ function loadSystemStatsGrid() {
 
   Promise.all([localP, peersP]).then(([local, peers]) => {
     const cards = [];
-    if (local) cards.push(sysCard(local.name, local.dot, local.cpuHtml, local.memHtml, local.gpuHtml));
+    if (local) cards.push(sysCard(local.name, local.dot, local.cpuHtml, local.memHtml, local.gpuHtml, 'System name'));
     peers.forEach(p => cards.push(sysCard(p.name, p.dot, p.cpuHtml, p.memHtml, p.gpuHtml)));
     if (!cards.length) {
       el.innerHTML = '';
       return;
     }
-    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:4px;">${cards.join('')}</div>`;
+    el.innerHTML = `<div class="obs-sys-grid">${cards.join('')}</div>`;
   });
 }
 window.loadSystemStatsGrid = loadSystemStatsGrid;
@@ -29751,8 +29827,8 @@ function loadEBPFNetworkTraffic() {
       const name = escHtml(p.comm || ('PID ' + p.pid));
       html += `<tr style="border-top:1px solid var(--border);">
         <td style="padding:3px 4px 3px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;" title="${name}">${name}</td>
-        <td style="padding:3px 4px;text-align:right;color:var(--success,#10b981);">${formatBytes(p.rx_bps || 0)}/s</td>
-        <td style="padding:3px 0 3px 4px;text-align:right;color:var(--accent,#60a5fa);">${formatBytes(p.tx_bps || 0)}/s</td>
+        <td style="padding:3px 4px;text-align:right;color:var(--success,#10b981);">${fmtBytesCompact(p.rx_bps || 0)}/s</td>
+        <td style="padding:3px 0 3px 4px;text-align:right;color:var(--accent,#60a5fa);">${fmtBytesCompact(p.tx_bps || 0)}/s</td>
       </tr>`;
     }
     html += '</table>';
@@ -29770,24 +29846,28 @@ function loadPluginsStatus() {
   apiFetch('/api/plugins').then(data => {
     const plugins = (data && data.plugins) || [];
     const native = (data && data.native) || [];
+    // MOBILE-FIT: row is a flex-wrap chip line (.plugin-row in style.css)
+    // instead of inline flow — with inline flow, a chip span that wraps
+    // stays one union bounding box covering the status dot (an
+    // overlapping sibling pair at phone widths). Title attributes carry
+    // the full text when a chip truncates.
     const nativeRows = native.map(p => {
       const on = !!p.enabled;
-      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
-      const tag = ` <span style="opacity:0.55;font-size:11px;border:1px solid var(--text2);border-radius:3px;padding:0 4px;margin-left:4px;">native</span>`;
-      const ver = p.version ? ` <span style="opacity:0.6;">v${escHtml(p.version)}</span>` : '';
-      const desc = p.description ? ` &middot; <span style="opacity:0.7;">${escHtml(p.description)}</span>` : '';
-      const msg = p.message ? ` &middot; <span style="opacity:0.6;font-size:12px;">${escHtml(p.message)}</span>` : '';
-      return `<div style="padding:3px 0;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${msg}</div>`;
+      const dot = `<span class="obs-dot" style="background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
+      const ver = p.version ? `<span class="plugin-note" style="opacity:0.6;" title="v${escHtml(p.version)}">v${escHtml(p.version)}</span>` : '';
+      const desc = p.description ? `<span class="plugin-note" title="${escHtml(p.description)}">${escHtml(p.description)}</span>` : '';
+      const msg = p.message ? `<span class="plugin-note" title="${escHtml(p.message)}">${escHtml(p.message)}</span>` : '';
+      return `<div class="plugin-row">${dot}<strong class="plugin-name" title="${escHtml(p.name)}">${escHtml(p.name)}</strong><span class="plugin-tag">native</span>${ver}${desc}${msg}</div>`;
     }).join('');
     const subRows = plugins.map(p => {
       const on = !!p.enabled;
-      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
       const hooks = Array.isArray(p.hooks) && p.hooks.length
-        ? ` &middot; <span style="opacity:0.7;">${p.hooks.join(', ')}</span>` : '';
+        ? `<span class="plugin-note" title="${escHtml(p.hooks.join(', '))}">${escHtml(p.hooks.join(', '))}</span>` : '';
       const invokes = (typeof p.invoke_count === 'number' && p.invoke_count > 0)
-        ? ` &middot; <span style="opacity:0.7;">${p.invoke_count} invoke${p.invoke_count===1?'':'s'}</span>` : '';
-      const err = p.last_error ? ` &middot; <span style="color:var(--error);" title="${escHtml(p.last_error)}">last-error</span>` : '';
-      return `<div style="padding:3px 0;">${dot}<strong>${escHtml(p.name)}</strong>${p.version?` <span style="opacity:0.6;">v${escHtml(p.version)}</span>`:''} &middot; ${on?'enabled':'disabled'}${hooks}${invokes}${err}</div>`;
+        ? `<span class="plugin-note" title="invokes: ${p.invoke_count}">${p.invoke_count} invoke${p.invoke_count===1?'':'s'}</span>` : '';
+      const err = p.last_error ? `<span class="plugin-err" title="${escHtml(p.last_error)}">last-error</span>` : '';
+      return `<div class="plugin-row">${dot}<strong class="plugin-name" title="${escHtml(p.name)}">${escHtml(p.name)}</strong>${p.version?`<span class="plugin-note" style="opacity:0.6;" title="v${escHtml(p.version)}">v${escHtml(p.version)}</span>`:''}<span class="plugin-state">${on?'enabled':'disabled'}</span>${hooks}${invokes}${err}</div>`;
     }).join('');
     if (!nativeRows && !subRows) {
       list.innerHTML = '<span style="opacity:0.7;">none installed</span> &middot; <a href="/docs/api/plugins.md" style="color:var(--accent2);">plugin docs</a>';
@@ -29859,7 +29939,7 @@ function loadObserverPeers() {
     // existing flat per-peer table.
     const groupByNode = localStorage.getItem('cs_peer_group_by_node') === '1';
     const pills = peers.length > 0
-      ? `<div style="display:flex;gap:4px;padding:0 0 6px;flex-wrap:wrap;align-items:center;">
+      ? `<div class="obs-peer-pills" style="display:flex;gap:4px;padding:0 0 6px;flex-wrap:wrap;align-items:center;">
           ${pillBtn('all','All')}
           ${pillBtn('A','Agents')}
           ${pillBtn('B','Standalone')}
@@ -29894,7 +29974,7 @@ function loadObserverPeers() {
         else dotColor = 'var(--error,#ef4444)';
         ageLabel = 'last push ' + observerPeerAgo(ageMs);
       }
-      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:6px;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${dotColor};margin-right:6px;"></span>`;
       // S13 — friendlier shape labels.
       const shapeLabels = { A: 'agent', B: 'standalone', C: 'cluster' };
       const shapeKey = (p.shape || '?').toUpperCase();
@@ -29910,7 +29990,7 @@ function loadObserverPeers() {
       const attachTag = bound.length > 0
         ? `<span title="${escHtml(t('observer_attached_to')||'attached to ComputeNode')}" style="margin-left:6px;font-size:11px;color:var(--accent2);border:1px solid var(--accent2);border-radius:3px;padding:0 4px;">⇄ ${escHtml(bound.join(', '))}</span>`
         : `<span title="${escHtml(t('observer_free_tooltip')||'no ComputeNode bound to this peer')}" style="margin-left:6px;font-size:11px;color:var(--text2);border:1px dashed var(--text2);border-radius:3px;padding:0 4px;">${escHtml(t('observer_free')||'free')}</span>`;
-      return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${attachTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${actions}</div>`;
+      return `<div class="obs-peer-item" style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${attachTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${actions}</div>`;
     }).join('');
     if (groupByNode) {
       // alpha.24 — render per-CN buckets, fetched from the meta-peers
@@ -30181,7 +30261,7 @@ function loadObserverClusterNodes() {
       const cpuPct = Math.round(n.cpu_pct || 0);
       const memPct = Math.round(n.mem_pct || 0);
       const ready = n.ready !== false;
-      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ready?'var(--success,#10b981)':'var(--error,#ef4444)'};margin-right:6px;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${ready?'var(--success,#10b981)':'var(--error,#ef4444)'};margin-right:6px;"></span>`;
       const pressure = (n.pressure && n.pressure.length)
         ? ` <span style="opacity:0.7;color:var(--warning,#f59e0b);font-size:11px;">[${(n.pressure||[]).join(',')}]</span>` : '';
       const pods = (typeof n.pod_count === 'number') ? ` &middot; <span style="opacity:0.7;">${n.pod_count} pods</span>` : '';
@@ -30193,7 +30273,7 @@ function loadObserverClusterNodes() {
           </span>
           <span style="font-size:11px;opacity:0.7;">${p}%</span>
         </span>`;
-      return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(n.name)}</strong>${pressure}${pods}${bar('cpu', cpuPct, 'var(--accent)')}${bar('mem', memPct, 'var(--accent2)')}</div>`;
+      return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong title="${escHtml(n.name)}">${escHtml(n.name)}</strong>${pressure}${pods}${bar('cpu', cpuPct, 'var(--accent)')}${bar('mem', memPct, 'var(--accent2)')}</div>`;
     }).join('');
   }).catch(e => {
     // GH#194/coordinator-flagged (2026-10-08): same fix as the ACME
@@ -30266,15 +30346,17 @@ function webSearchOpenHistoryView() {
 function renderStatsData(el, data) {
     if (!data || !data.timestamp) { el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${t('stats_not_available')||'Stats not available.'}</div>`; return; }
     // Preserve scroll position to prevent visible jump on real-time updates
-    const scrollParent = el.closest('.settings-section') || el.parentElement;
+    // Defensive guard: vm/test sandboxes may expose a plain stub without
+    // Element.prototype.closest (mirrors the existing el.closest guard in
+    // isConnectionIndicator). Browsers always have it; fallback = parent.
+    const scrollParent = (el.closest && el.closest('.settings-section')) || el.parentElement;
     const savedScroll = scrollParent ? scrollParent.scrollTop : 0;
     const pageScroll = window.scrollY;
-    const fmt = (bytes) => {
-      if (bytes > 1e9) return (bytes/1e9).toFixed(1) + ' GB';
-      if (bytes > 1e6) return (bytes/1e6).toFixed(1) + ' MB';
-      if (bytes > 1e3) return (bytes/1e3).toFixed(1) + ' KB';
-      return bytes + ' B';
-    };
+    // MOBILE-FIT: shared compact formatter (fmtBytesCompact, defined near
+    // the module-level fmtBytes) replaces this duplicated local copy — same
+    // base-1024 output for every byte count the stats payload carries; zero /
+    // missing values render as the '—' missing-value sentinel.
+    const fmt = (bytes) => fmtBytesCompact(bytes);
     const pct = (used, total) => total > 0 ? Math.round(100*used/total) : 0;
     const bar = (label, val, max, color, extra) => {
       const p = max > 0 ? Math.min(100, Math.round(100*val/max)) : 0;
@@ -30285,7 +30367,10 @@ function renderStatsData(el, data) {
         </div>
       </div>`;
     };
-    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;padding:8px;">';
+    // MOBILE-FIT: named class (style.css) instead of the inline grid
+    // declaration — same auto-fit columns on desktop/tablet; style.css
+    // collapses this panel to a single column at ≤600px.
+    let html = '<div class="stats-panel-grid" style="display:grid;gap:8px;padding:8px;">';
     // CPU (load as % of cores)
     const cpuPct = Math.min(100, Math.round(100 * data.cpu_load_avg_1 / data.cpu_cores));
     html += bar('CPU Load', data.cpu_load_avg_1, data.cpu_cores, cpuPct > 80 ? 'var(--error)' : cpuPct > 50 ? 'var(--warning)' : 'var(--success)', data.cpu_load_avg_1.toFixed(2) + ' / ' + data.cpu_cores + ' cores');
@@ -30415,7 +30500,7 @@ function renderStatsData(el, data) {
     // window._webSearchStatsInterval guard (same fix as the BL v8.33.5 "PWA
     // stats poll stacking" bug) ensures only one refresh timer ever exists
     // across repeated renderStatsData calls.
-    html += `<div class="stat-card" style="grid-column:span 2;min-width:260px;">
+    html += `<div class="stat-card stats-panel-wide">
       <div class="stat-label">${t('stats_web_search')||'Search Usage'}</div>
       <div id="websearchStatsCardBody" style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${window._webSearchStatsHTML || ('<span style="color:var(--text2);">'+loadingEyeBlock()+'</span>')}</div>
     </div>`;
@@ -30453,7 +30538,7 @@ function renderStatsData(el, data) {
     const activePct = Math.min(100, Math.round(100 * active / maxSess));
     html += `<div style="display:flex;align-items:center;gap:12px;padding:4px 8px;">
       <div style="width:48px;height:48px;border-radius:50%;background:conic-gradient(var(--success) 0% ${activePct}%, var(--border) ${activePct}% 100%);display:flex;align-items:center;justify-content:center;">
-        <div style="width:32px;height:32px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text);">${active}</div>
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text);">${fmtCountCompact(active)}</div>
       </div>
       <div style="font-size:11px;color:var(--text2);">
         <div><span style="color:var(--success);font-weight:600;">${active}</span> of ${maxSess} max</div>
@@ -30488,7 +30573,7 @@ function renderStatsData(el, data) {
         const isOpen = _expandedSessions.has(sid);
         const memStr = s.rss_bytes > 1e6 ? (s.rss_bytes/1e6).toFixed(0) + ' MB' : Math.round(s.rss_bytes/1024) + ' KB';
         html += `<div style="border-bottom:1px solid var(--border);padding:4px 0;">
-          <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedSessions.has('${sid}')?_expandedSessions.delete('${sid}'):_expandedSessions.add('${sid}');loadStatsPanel()">
+          <div class="stats-taprow" style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedSessions.has('${sid}')?_expandedSessions.delete('${sid}'):_expandedSessions.add('${sid}');loadStatsPanel()">
             <span style="font-size:8px;color:var(--text2);width:10px;">${isOpen ? '▼' : '▶'}</span>
             <span style="font-size:11px;font-weight:${isDaemon?'700':'500'};flex:1;">${escHtml(s.name || sid)}${!isDaemon ? ' <span style="color:var(--text2);font-weight:400;">(#' + escHtml(sid) + ')</span>' : ''}</span>
             <span class="state-badge-${s.state}" style="font-size:9px;padding:1px 5px;border-radius:4px;">${s.state}</span>
@@ -30529,7 +30614,7 @@ function renderStatsData(el, data) {
         const safeCid = escJsAttr(cid);
         const isOpen = _expandedChannels.has(safeCid);
         return `<div style="border-bottom:1px solid var(--border);padding:4px 0;">
-          <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedChannels.has('${safeCid}')?_expandedChannels.delete('${safeCid}'):_expandedChannels.add('${safeCid}');loadStatsPanel()">
+          <div class="stats-taprow" style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedChannels.has('${safeCid}')?_expandedChannels.delete('${safeCid}'):_expandedChannels.add('${safeCid}');loadStatsPanel()">
             <span style="font-size:8px;color:var(--text2);width:10px;">${isOpen ? '▼' : '▶'}</span>
             <span style="font-size:11px;flex:1;">${escHtml(ch.name)}</span>
             ${ch.type === 'llm' && ch.active_sessions ? `<span style="font-size:9px;font-weight:700;color:var(--bg2);background:var(--success);padding:1px 6px;border-radius:8px;min-width:16px;text-align:center;">${ch.active_sessions}</span>` : ''}
@@ -30584,7 +30669,9 @@ function renderStatsData(el, data) {
     el.innerHTML = html;
     // Restore scroll position after DOM update
     if (scrollParent) scrollParent.scrollTop = savedScroll;
-    window.scrollTo(0, pageScroll);
+    // Defensive guard: vm/test sandboxes may not expose scrollTo (browsers
+    // always do) — skip the restore in that case instead of throwing.
+    if (typeof window.scrollTo === 'function') window.scrollTo(0, pageScroll);
     // BL223 — wire RTK copy buttons after innerHTML (avoids inline onclick+JSON.stringify)
     el.querySelectorAll('.rtk-update-badge, .rtk-cmd-copy').forEach(node => {
       node.addEventListener('click', function() {
@@ -30724,7 +30811,7 @@ function loadSchedulesList() {
     const hasMultiple = pageItems.length > 1;
     let html = hasMultiple ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;border-bottom:1px solid var(--border);">
       <label style="font-size:10px;display:flex;align-items:center;gap:4px;color:var(--text2);"><input type="checkbox" id="schedSelectAll" onchange="toggleAllScheduleCheckboxes(this.checked)"> Select all</label>
-      <button class="btn-secondary" style="font-size:10px;padding:2px 8px;" onclick="deleteSelectedSchedules()">Delete selected</button>
+      <button class="btn-secondary obs-tap" style="font-size:10px;padding:2px 8px;" onclick="deleteSelectedSchedules()">Delete selected</button>
     </div>` : '';
     html += pageItems.map(sc => {
       const when = _fmtScheduleTime(sc.run_at);
@@ -30737,13 +30824,13 @@ function loadSchedulesList() {
         : sessionRef + schedRef + ': ' + escHtml(sc.command) + cronBadge;
       const actions = [];
       if (sc.state === 'pending') {
-        actions.push(`<button class="btn-icon" style="font-size:10px;" onclick="editSchedulePrompt('${escJsAttr(sc.id)}','${escJsAttr(sc.command)}','${escJsAttr(sc.run_at||'')}')" title="Edit">&#9998;</button>`);
+        actions.push(`<button class="btn-icon obs-tap" style="font-size:10px;" onclick="editSchedulePrompt('${escJsAttr(sc.id)}','${escJsAttr(sc.command)}','${escJsAttr(sc.run_at||'')}')" title="Edit">&#9998;</button>`);
       }
-      actions.push(`<button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteScheduleEntry('${escJsAttr(sc.id)}')" title="Delete">&#128465;</button>`);
-      return `<div class="settings-row" style="justify-content:space-between;font-size:12px;">
+      actions.push(`<button class="btn-icon obs-tap" style="font-size:10px;color:var(--error);" onclick="deleteScheduleEntry('${escJsAttr(sc.id)}')" title="Delete">&#128465;</button>`);
+      return `<div class="settings-row obs-sched-row" style="justify-content:space-between;font-size:12px;">
         ${hasMultiple ? `<input type="checkbox" class="sched-checkbox" data-id="${sc.id}" style="margin-right:6px;">` : ''}
         <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(sc.command)}">${label}</div>
-        <div style="display:flex;align-items:center;gap:6px;">
+        <div class="obs-sched-meta" style="display:flex;align-items:center;gap:6px;">
           <span style="font-size:10px;color:var(--text2);">${when}</span>
           <span style="font-size:10px;${stateClass};font-weight:600;text-transform:uppercase;">${escHtml(sc.state)}</span>
           ${actions.join('')}
@@ -30752,9 +30839,9 @@ function loadSchedulesList() {
     }).join('');
     if (totalPages > 1) {
       html += `<div style="display:flex;justify-content:center;gap:8px;padding:6px;">
-        ${page > 0 ? `<button class="btn-link" style="font-size:11px;" onclick="settingsPagination.schedules=${page - 1};loadSchedulesList()">&#9664; Prev</button>` : ''}
+        ${page > 0 ? `<button class="btn-link obs-tap" style="font-size:11px;" onclick="settingsPagination.schedules=${page - 1};loadSchedulesList()">&#9664; Prev</button>` : ''}
         <span style="font-size:11px;color:var(--text2);">Page ${page + 1}/${totalPages}</span>
-        ${page < totalPages - 1 ? `<button class="btn-link" style="font-size:11px;" onclick="settingsPagination.schedules=${page + 1};loadSchedulesList()">Next &#9654;</button>` : ''}
+        ${page < totalPages - 1 ? `<button class="btn-link obs-tap" style="font-size:11px;" onclick="settingsPagination.schedules=${page + 1};loadSchedulesList()">Next &#9654;</button>` : ''}
       </div>`;
     }
     el.innerHTML = html;
@@ -34204,9 +34291,9 @@ function renderObserverView() {
           <!-- GH#172 D78 — quick add-memory (Android parity): manual save
                straight from the Observer tab, no separate memory_remember
                call site needed. -->
-          <div style="display:flex;gap:6px;padding:4px 12px;">
-            <input type="text" id="memoryQuickAddInput" class="form-input" style="flex:1;" placeholder="${escHtml(t('obs_add_memory_placeholder')||'Add a memory…')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
-            <button class="btn-primary" style="font-size:11px;" onclick="addMemoryQuick()">${escHtml(t('obs_add_memory')||'Add')}</button>
+          <div class="obs-row obs-row-nowrap">
+            <input type="text" id="memoryQuickAddInput" class="form-input obs-fluid" style="flex:1;" placeholder="${escHtml(t('obs_add_memory_placeholder')||'Add a memory…')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
+            <button class="btn-primary obs-tap" style="font-size:11px;" onclick="addMemoryQuick()">${escHtml(t('obs_add_memory')||'Add')}</button>
           </div>
           <!-- GH#192 D78a — tags, optional, comma-separated. Checked
                server-side first before assuming front-end-only: no tags
@@ -34214,28 +34301,28 @@ function renderObserverView() {
                added end-to-end; this input sends it in the same
                POST /api/memory/save addMemoryQuick already calls. -->
           <div style="padding:0 12px 4px;">
-            <input type="text" id="memoryQuickAddTags" class="form-input" style="width:100%;font-size:11px;" placeholder="${escHtml(t('obs_add_memory_tags_placeholder')||'Tags (comma-separated, optional)')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
+            <input type="text" id="memoryQuickAddTags" class="form-input obs-fluid obs-tap" style="width:100%;font-size:11px;" placeholder="${escHtml(t('obs_add_memory_tags_placeholder')||'Tags (comma-separated, optional)')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
           </div>
-          <div style="display:flex;gap:6px;padding:4px 12px;flex-wrap:wrap;">
-            <input type="text" id="memorySearchInput" class="form-input" style="flex:1;min-width:120px;" placeholder="Search memories…" />
-            <select id="memoryRoleFilter" class="form-select" style="font-size:11px;width:auto;">
+          <div class="obs-row obs-filter-row">
+            <input type="text" id="memorySearchInput" class="form-input obs-fluid obs-search" style="flex:1;" placeholder="Search memories…" />
+            <select id="memoryRoleFilter" class="form-select obs-tap obs-select" style="font-size:11px;">
               <option value="">All roles</option>
               <option value="manual">Manual</option>
               <option value="session">Session</option>
               <option value="learning">Learning</option>
               <option value="output_chunk">Chunks</option>
             </select>
-            <select id="memorySinceFilter" class="form-select" style="font-size:11px;width:auto;">
+            <select id="memorySinceFilter" class="form-select obs-tap obs-select" style="font-size:11px;">
               <option value="">All time</option>
               <option value="7">Last 7 days</option>
               <option value="30">Last 30 days</option>
               <option value="90">Last 90 days</option>
             </select>
-            <button class="btn-secondary" style="font-size:11px;" onclick="searchMemories()">Search</button>
-            <button class="btn-secondary" style="font-size:11px;" onclick="listMemories()">List</button>
-            <button class="btn-secondary" style="font-size:11px;" onclick="exportMemories()" title="Download JSON backup">Export</button>
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="searchMemories()">Search</button>
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="listMemories()">List</button>
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="exportMemories()" title="Download JSON backup">Export</button>
           </div>
-          <div id="memoryBrowserList" style="padding:4px 12px;max-height:400px;overflow-y:auto;"></div>
+          <div id="memoryBrowserList" class="obs-list" style="padding:4px 12px;max-height:400px;overflow-y:auto;"></div>
         </div>
       </div>
 
@@ -34243,9 +34330,9 @@ function renderObserverView() {
         ${settingsSectionHeader('memscopes', 'Memory Scopes', 'memory.md')}
         <div id="settings-sec-memscopes" style="${secContent('memscopes')}">
           <div style="font-size:10px;color:var(--text2);padding:0 12px 6px;">Recall walks every scope layer top-down and merges the hits — the dropdown below isn't a recall filter, it's the default target when you promote an entry. See <a href="/diagrams.html#docs/memory.md" target="_blank" rel="noopener">docs/memory.md</a> for the full model.</div>
-          <div id="memScopeInventory" style="padding:4px 12px;margin-bottom:8px;"><em style="color:var(--text2);">${loadingEyeBlock('Loading inventory…')}</em></div>
-          <div style="display:flex;gap:6px;padding:0 12px 6px;flex-wrap:wrap;align-items:center;">
-            <select id="memScopeSelect" class="form-select" style="font-size:11px;width:auto;">
+          <div id="memScopeInventory" class="obs-table-scroll" style="padding:4px 12px;margin-bottom:8px;"><em style="color:var(--text2);">${loadingEyeBlock('Loading inventory…')}</em></div>
+          <div class="obs-row obs-scope-row">
+            <select id="memScopeSelect" class="form-select obs-tap obs-select" style="font-size:11px;">
               <option value="session-local">session-local</option>
               <option value="story-shared">story-shared</option>
               <option value="prd-shared">prd-shared</option>
@@ -34253,48 +34340,48 @@ function renderObserverView() {
               <option value="persona-in-project">persona-in-project</option>
               <option value="persona-global">persona-global</option>
             </select>
-            <input type="text" id="memScopePRDID" class="form-input" style="width:100px;font-size:11px;" placeholder="prd_id" />
-            <input type="text" id="memScopeStoryID" class="form-input" style="width:100px;font-size:11px;" placeholder="story_id" />
-            <input type="text" id="memScopePersona" class="form-input" style="width:110px;font-size:11px;" placeholder="persona" />
-            <input type="text" id="memScopeProject" class="form-input" style="width:120px;font-size:11px;" placeholder="project dir" onchange="loadMemoryScopeInventory()" />
-            <button class="btn-secondary" style="font-size:11px;" onclick="memoryScopeRecall()">Recall</button>
+            <input type="text" id="memScopePRDID" class="form-input obs-tap obs-scope-input" style="font-size:11px;" placeholder="prd_id" />
+            <input type="text" id="memScopeStoryID" class="form-input obs-tap obs-scope-input" style="font-size:11px;" placeholder="story_id" />
+            <input type="text" id="memScopePersona" class="form-input obs-tap obs-scope-input" style="font-size:11px;" placeholder="persona" />
+            <input type="text" id="memScopeProject" class="form-input obs-tap obs-scope-input" style="font-size:11px;" placeholder="project dir" onchange="loadMemoryScopeInventory()" />
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="memoryScopeRecall()">Recall</button>
           </div>
-          <div id="memScopeRecallList" style="padding:4px 12px;max-height:300px;overflow-y:auto;"></div>
+          <div id="memScopeRecallList" class="obs-list" style="padding:4px 12px;max-height:300px;overflow-y:auto;"></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('memmaint', 'Memory Maintenance', 'memory.md')}
         <div id="settings-sec-memmaint" style="${secContent('memmaint')}">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 12px;">
+          <div class="obs-maint-grid">
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Similarity-stale eviction <span style="color:var(--text2);font-weight:normal;font-size:10px;">(sweeper.py)</span></div>
               <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Drops rows that never surface in any search and are older than the cutoff. Manual + pinned rows exempt.</div>
-              <div style="display:flex;gap:4px;">
-                <input type="number" id="memSweepDays" class="form-input" style="width:80px;font-size:11px;" placeholder="days" value="90" min="1" />
-                <button class="btn-secondary" style="font-size:11px;" onclick="memorySweepStale(true)">Dry-run</button>
-                <button class="btn-secondary" style="font-size:11px;background:rgba(239,68,68,0.18);color:#ef4444;" onclick="memorySweepStale(false)" title="Actually delete eviction candidates">Apply</button>
+              <div class="obs-maint-sweep">
+                <input type="number" id="memSweepDays" class="form-input obs-tap obs-sweep-days" style="font-size:11px;" placeholder="days" value="90" min="1" />
+                <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="memorySweepStale(true)">Dry-run</button>
+                <button class="btn-secondary obs-tap" style="font-size:11px;background:rgba(239,68,68,0.18);color:#ef4444;" onclick="memorySweepStale(false)" title="Actually delete eviction candidates">Apply</button>
               </div>
               <div id="memSweepResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
             </div>
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Spellcheck <span style="color:var(--text2);font-weight:normal;font-size:10px;">(spellcheck.py)</span></div>
               <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Conservative Levenshtein-based suggestions on text. Never rewrites — preview only.</div>
-              <textarea id="memSpellInput" class="form-input" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to check…"></textarea>
-              <button class="btn-secondary" style="font-size:11px;margin-top:4px;" onclick="memorySpellCheck()">Run spellcheck</button>
+              <textarea id="memSpellInput" class="form-input obs-fluid" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to check…"></textarea>
+              <button class="btn-secondary obs-tap" style="font-size:11px;margin-top:4px;" onclick="memorySpellCheck()">Run spellcheck</button>
               <div id="memSpellResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
             </div>
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Extract facts <span style="color:var(--text2);font-weight:normal;font-size:10px;">(general_extractor.py)</span></div>
               <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Heuristic schema-free SVO triple extraction. Useful for KG pre-population.</div>
-              <textarea id="memExtractInput" class="form-input" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to extract triples from…"></textarea>
-              <button class="btn-secondary" style="font-size:11px;margin-top:4px;" onclick="memoryExtractFacts()">Extract triples</button>
+              <textarea id="memExtractInput" class="form-input obs-fluid" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to extract triples from…"></textarea>
+              <button class="btn-secondary obs-tap" style="font-size:11px;margin-top:4px;" onclick="memoryExtractFacts()">Extract triples</button>
               <div id="memExtractResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
             </div>
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Schema version <span style="color:var(--text2);font-weight:normal;font-size:10px;">(migrate.py)</span></div>
               <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Highest schema_version row applied to the active memory backend.</div>
-              <button class="btn-secondary" style="font-size:11px;" onclick="memorySchemaVersion()">Check schema</button>
+              <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="memorySchemaVersion()">Check schema</button>
               <div id="memSchemaResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
             </div>
           </div>
@@ -34304,45 +34391,45 @@ function renderObserverView() {
       <div class="settings-section">
         ${settingsSectionHeader('schedules', 'Scheduled Events')}
         <div id="settings-sec-schedules" style="${secContent('schedules')}">
-          <div id="schedulesList"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="schedulesList" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('cooldown', 'Global Cooldown', 'api/sessions.md')}
         <div id="settings-sec-cooldown" style="${secContent('cooldown')}">
-          <div id="cooldownStatus"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="cooldownStatus" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('analytics', 'Session Analytics', 'api/sessions.md')}
         <div id="settings-sec-analytics" style="${secContent('analytics')}">
-          <div id="analyticsPanel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="analyticsPanel" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('audit', 'Audit Log', 'architecture.md')}
         <div id="settings-sec-audit" style="${secContent('audit')}">
-          <div id="auditPanel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="auditPanel" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('kg', 'Knowledge Graph', 'memory.md')}
         <div id="settings-sec-kg" style="${secContent('kg')}">
-          <div id="kgPanel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="kgPanel" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('daemonlog', 'Daemon Log')}
         <div id="settings-sec-daemonlog" style="${secContent('daemonlog')}">
-          <div id="daemonLogPanel" style="font-size:11px;font-family:monospace;color:var(--text2);max-height:300px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px;">${loadingEyeBlock()}</div>
-          <div style="display:flex;gap:8px;padding:6px 0;align-items:center;">
-            <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog(0)">Newest</button>
-            <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog((state._logOffset||0)+50)">Older</button>
+          <div id="daemonLogPanel" class="obs-log" style="font-size:11px;font-family:monospace;color:var(--text2);max-height:300px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px;">${loadingEyeBlock()}</div>
+          <div class="obs-row obs-log-actions">
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="loadDaemonLog(0)">Newest</button>
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="loadDaemonLog((state._logOffset||0)+50)">Older</button>
             <span id="daemonLogInfo" style="font-size:10px;color:var(--text2);"></span>
           </div>
         </div>
@@ -34353,7 +34440,7 @@ function renderObserverView() {
       <div class="settings-section">
         ${settingsSectionHeader('observer_peers', t('monitor_section_observer_peers') || 'Federated Peers', 'flow/observer-flow.md')}
         <div id="settings-sec-observer_peers" style="${secContent('observer_peers')}">
-          <div id="observerPeersPanel" style="font-size:12px;color:var(--text2);">${loadingEyeBlock()}</div>
+          <div id="observerPeersPanel" class="obs-panel" style="font-size:12px;color:var(--text2);">${loadingEyeBlock()}</div>
         </div>
       </div>
 
@@ -34668,7 +34755,7 @@ function renderObserverPeersCard(targetId) {
     const peers = (peersData && peersData.peers) || [];
     const statsRow = stats ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">${
       Object.entries(stats).filter(([,v]) => typeof v !== 'object').map(([k, v]) =>
-        `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;min-width:80px;">
+        `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;">
           <div style="opacity:0.6;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">${escHtml(k)}</div>
           <div style="font-weight:600;">${escHtml(String(v))}</div>
         </div>`).join('')
@@ -34692,14 +34779,14 @@ function renderObserverPeersCard(targetId) {
           const shapeText = ({A:'agent',B:'standalone',C:'cluster'}[(p.shape||'').toUpperCase()]) || (p.shape||'?');
           const ageLabel = lastPush ? observerPeerAgo(ageMs) : 'never';
           const safeName = JSON.stringify(p.name || '');
-          return `<div style="padding:6px 0;border-top:1px solid var(--border);display:flex;align-items:center;flex-wrap:wrap;">
+          return `<div class="obs-peer-row" style="padding:6px 0;border-top:1px solid var(--border);display:flex;align-items:center;flex-wrap:wrap;">
             <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:6px;flex-shrink:0;"></span>
             <strong>${escHtml(p.name)}</strong>
             <span style="opacity:0.55;font-size:10px;border:1px solid var(--text2);border-radius:3px;padding:0 4px;margin-left:4px;">${escHtml(shapeText)}</span>
             <span style="opacity:0.6;font-size:11px;margin-left:6px;">${escHtml(ageLabel)}</span>
             <div style="margin-left:auto;">
-              <button class="btn-icon" style="font-size:11px;padding:1px 6px;" onclick='showObserverPeerSnapshot(${safeName})' title="Snapshot">&#128202;</button>
-              <button class="btn-icon" style="font-size:11px;padding:1px 6px;" onclick='removeObserverPeer(${safeName})' title="Remove">&times;</button>
+              <button class="btn-icon obs-tap" style="font-size:11px;padding:1px 6px;" onclick='showObserverPeerSnapshot(${safeName})' title="Snapshot">&#128202;</button>
+              <button class="btn-icon obs-tap" style="font-size:11px;padding:1px 6px;" onclick='removeObserverPeer(${safeName})' title="Remove">&times;</button>
             </div>
           </div>`;
         }).join('');
@@ -35060,19 +35147,25 @@ window.loadVaultStatusRow = loadVaultStatusRow;
 // active backend AND unreachable. Re-uses the existing peerStaleBadge
 // element shape (red circle, top-right of the nav button).
 function _setVaultBadge(unreachable, errMsg) {
-  const settingsNav = document.querySelector('[data-view="settings"] .nav-icon');
-  if (!settingsNav) return;
+  // Anchor at the settings nav BUTTON (not the .nav-icon span): an
+  // absolutely positioned badge inside the icon span inflates the span's
+  // scrollWidth (clipped-text finding), and the old 17x15 pill is below
+  // the 40px tap-target floor — same root cause as peerStaleBadge,
+  // fixed the same way by the mobile-fit gate 2026-10-22.
+  const settingsBtn = document.querySelector('.nav-btn[data-view="settings"]');
+  if (!settingsBtn) return;
   let badge = document.getElementById('vaultUnreachableBadge');
   if (unreachable) {
     if (!badge) {
       badge = document.createElement('span');
       badge.id = 'vaultUnreachableBadge';
-      badge.style.cssText = 'position:absolute;top:-6px;right:-8px;background:var(--error,#ef4444);color:#fff;font-size:9px;border-radius:8px;padding:1px 4px;line-height:1.4;cursor:pointer;';
+      badge.style.cssText = 'position:absolute;top:0;right:0;width:44px;height:44px;background:var(--error,#ef4444);color:#fff;font-size:14px;border-radius:50%;align-items:center;justify-content:center;line-height:1;cursor:pointer;';
       badge.title = 'Vault unreachable';
       badge.innerHTML = '!';
       badge.onclick = (e) => { e.stopPropagation(); navigate('settings'); };
-      settingsNav.appendChild(badge);
+      settingsBtn.appendChild(badge);
     }
+    badge.style.display = 'flex';
     if (errMsg) badge.title = 'Vault unreachable: ' + errMsg;
   } else if (badge) {
     badge.remove();
@@ -36890,12 +36983,12 @@ function loadCooldownStatus() {
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
         <span style="font-size:11px;color:var(--text2);white-space:nowrap;">Set for:</span>
         ${[15, 30, 60, 240, 480, 1440].map(m =>
-          `<button class="btn-secondary" style="font-size:11px;" onclick="setCooldown(${m})">${m >= 60 ? (m / 60) + 'h' : m + 'm'}</button>`
+          `<button class="btn-secondary obs-tap" style="font-size:11px;" onclick="setCooldown(${m})">${m >= 60 ? (m / 60) + 'h' : m + 'm'}</button>`
         ).join('')}
       </div>
       <div style="display:flex;gap:6px;align-items:center;">
-        <input type="text" id="cooldownReason" class="form-input" style="flex:1;font-size:11px;" placeholder="Reason (optional)" />
-        ${active ? `<button class="btn-secondary" style="font-size:12px;background:rgba(239,68,68,0.15);color:#ef4444;" onclick="clearCooldown()">Clear</button>` : ''}
+        <input type="text" id="cooldownReason" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" placeholder="Reason (optional)" />
+        ${active ? `<button class="btn-secondary obs-tap" style="font-size:12px;background:rgba(239,68,68,0.15);color:#ef4444;" onclick="clearCooldown()">Clear</button>` : ''}
       </div>`;
   }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load cooldown status.</span>'; });
 }
@@ -37079,9 +37172,9 @@ function loadAnalyticsPanel() {
   if (!el) return;
   const ranges = [7, 14, 30, 90];
   const selId = 'analyticsRange';
-  el.innerHTML = `<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+  el.innerHTML = `<div class="obs-row obs-row-flush" style="margin-bottom:8px;">
     <label style="font-size:11px;">Range:</label>
-    <select id="${selId}" onchange="loadAnalyticsPanel()" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;">
+    <select id="${selId}" class="obs-tap" onchange="loadAnalyticsPanel()" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;">
       ${ranges.map(d => `<option value="${d}"${d===7?' selected':''}>${d}d</option>`).join('')}
     </select>
     <span id="analyticsSuccessRate" style="font-size:11px;color:var(--text2);margin-left:4px;"></span>
@@ -37098,7 +37191,7 @@ function loadAnalyticsPanel() {
     if (buckets.length === 0) { bucketsEl.textContent = t('stats_no_sessions_range') || 'No sessions in range.'; return; }
     // API fields: session_count, completed, failed, killed (not total/errors)
     const maxTotal = Math.max(...buckets.map(b => b.session_count || 0), 1);
-    bucketsEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+    bucketsEl.innerHTML = `<div class="obs-table-scroll"><table style="width:100%;border-collapse:collapse;font-size:11px;">
       <thead><tr style="opacity:0.5;">
         <th style="text-align:left;padding:2px 4px;">Date</th>
         <th style="text-align:right;padding:2px 4px;">Total</th>
@@ -37120,7 +37213,7 @@ function loadAnalyticsPanel() {
           <td style="text-align:right;padding:3px 4px;color:var(--error,#ef4444);">${errors}</td>
           <td style="padding:3px 4px 3px 8px;"><div style="height:8px;width:${pct}%;background:${barColor};border-radius:2px;max-width:120px;"></div></td>
         </tr>`;
-      }).join('')}</tbody></table>`;
+      }).join('')}</tbody></table></div>`;
   }).catch(() => {
     const bucketsEl = document.getElementById('analyticsBuckets');
     if (bucketsEl) bucketsEl.innerHTML = '<span style="color:var(--error);">Failed to load analytics.</span>';
@@ -37140,13 +37233,13 @@ function loadAuditPanel() {
   if (actor) qp.set('actor', actor);
   if (action) qp.set('action', action);
   const loadingHtml = el._filters ? '' : `
-    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;align-items:center;">
-      <input id="auditActorFilter" type="text" placeholder="Actor filter" style="flex:1;min-width:70px;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
-      <input id="auditActionFilter" type="text" placeholder="Action filter" style="flex:1;min-width:70px;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
-      <select id="auditLimitFilter" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 4px;">
+    <div class="obs-row obs-row-flush" style="margin-bottom:8px;">
+      <input id="auditActorFilter" type="text" placeholder="Actor filter" class="obs-tap obs-fluid" style="flex:1;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+      <input id="auditActionFilter" type="text" placeholder="Action filter" class="obs-tap obs-fluid" style="flex:1;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+      <select id="auditLimitFilter" class="obs-tap" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 4px;">
         <option value="5" selected>5</option><option value="20">20</option><option value="50">50</option><option value="100">100</option>
       </select>
-      <button class="btn-secondary" style="font-size:11px;" onclick="loadAuditPanel()">Load</button>
+      <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="loadAuditPanel()">Load</button>
     </div>
     <div id="auditEntries" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>`;
   if (!el._filters) { el.innerHTML = loadingHtml; el._filters = true; }
@@ -37160,12 +37253,12 @@ function loadAuditPanel() {
     target.innerHTML = entries.map(e => {
       const ts = e.ts ? new Date(e.ts).toLocaleString() : '';
       const details = e.details && Object.keys(e.details).length
-        ? `<div style="opacity:0.6;margin-top:1px;font-family:monospace;">${escHtml(JSON.stringify(e.details))}</div>` : '';
+        ? `<div class="obs-audit-details" title="${escHtml(JSON.stringify(e.details))}" style="opacity:0.6;margin-top:1px;font-family:monospace;">${escHtml(JSON.stringify(e.details))}</div>` : '';
       const sessLink = e.session_id
         ? `<span style="opacity:0.5;font-size:10px;font-family:monospace;margin-left:4px;">${escHtml(e.session_id.slice(-8))}</span>` : '';
       return `<div style="padding:4px 0;border-top:1px solid var(--border);">
         <div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;">
-          <span style="opacity:0.5;white-space:nowrap;">${escHtml(ts)}</span>
+          <span style="opacity:0.5;min-width:0;overflow-wrap:anywhere;">${escHtml(ts)}</span>
           <strong>${escHtml(e.action||'')}</strong>
           <span style="opacity:0.7;">${escHtml(e.actor||'')}</span>${sessLink}
         </div>${details}
@@ -37229,17 +37322,17 @@ function loadKgPanel() {
   if (!el._init) {
     el._init = true;
     el.innerHTML = `
-      <div style="display:flex;gap:4px;margin-bottom:8px;align-items:center;">
-        <input id="kgEntityInput" type="text" placeholder="Entity to query…" class="form-input" style="flex:1;font-size:11px;" />
-        <button class="btn-primary" style="font-size:11px;" onclick="kgQuery()">Query</button>
+      <div class="obs-row obs-row-flush" style="margin-bottom:8px;">
+        <input id="kgEntityInput" type="text" placeholder="Entity to query…" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" />
+        <button class="btn-primary obs-tap" style="font-size:11px;" onclick="kgQuery()">Query</button>
       </div>
-      <div style="display:flex;gap:4px;margin-bottom:10px;align-items:center;">
-        <input id="kgSubject" type="text" placeholder="Subject" class="form-input" style="flex:1;font-size:11px;" />
-        <input id="kgPredicate" type="text" placeholder="Predicate" class="form-input" style="flex:1;font-size:11px;" />
-        <input id="kgObject" type="text" placeholder="Object" class="form-input" style="flex:1;font-size:11px;" />
-        <button class="btn-secondary" style="font-size:11px;" onclick="kgAddTriple()">Add triple</button>
+      <div class="obs-row obs-row-flush" style="margin-bottom:10px;">
+        <input id="kgSubject" type="text" placeholder="Subject" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" />
+        <input id="kgPredicate" type="text" placeholder="Predicate" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" />
+        <input id="kgObject" type="text" placeholder="Object" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" />
+        <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="kgAddTriple()">Add triple</button>
       </div>
-      <div id="kgResults" style="font-size:11px;color:var(--text2);"></div>`;
+      <div id="kgResults" class="obs-kg-results" style="font-size:11px;color:var(--text2);"></div>`;
   }
 }
 window.loadKgPanel = loadKgPanel;
@@ -37253,7 +37346,7 @@ window.kgQuery = function() {
     const triples = Array.isArray(data) ? data : (data?.triples || []);
     if (triples.length === 0) { res.textContent = t('kg_no_triples_for_entity') || 'No triples found for this entity.'; return; }
     res.innerHTML = `<div style="font-size:10px;opacity:0.6;margin-bottom:4px;">${triples.length} triple${triples.length===1?'':'s'}</div>`
-      + triples.map(t => `<div style="padding:3px 0;border-top:1px solid var(--border);font-family:monospace;">
+      + triples.map(t => `<div class="obs-kg-triple" style="padding:3px 0;border-top:1px solid var(--border);font-family:monospace;">
         <span style="color:var(--accent);">${escHtml(t.subject||'')}</span>
         <span style="opacity:0.6;margin:0 4px;">${escHtml(t.predicate||'')}</span>
         <span>${escHtml(t.object||'')}</span>

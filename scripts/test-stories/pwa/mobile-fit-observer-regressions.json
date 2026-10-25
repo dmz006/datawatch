@@ -1,0 +1,1034 @@
+{
+  "description": "Observer mobile-fit regression groups recorded from the unfixed tree. TS-817 replays the scenario set and must FAIL while any recorded group_id still produces findings.",
+  "view": "observer",
+  "source": "docs/testing/runs/observer-mobile-fit/repro-report.json",
+  "recorded_at": "2026-10-23T07:05:04.255Z",
+  "source_totals": {
+    "findings": 29968,
+    "groups": 68
+  },
+  "groups": [
+    {
+      "group_id": "G-01a3acda",
+      "check": "tap-target",
+      "selector": "#auditLimitFilter",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-02f98b0e",
+      "check": "overlap",
+      "selector": "#pluginsStatusList > div:nth(*) > strong:nth(*)",
+      "scenario": "three-peers@390x844/dark/z200",
+      "state": "three-peers",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "theme": "dark",
+      "zoom": 200,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-0b199460",
+      "check": "tap-target",
+      "selector": "#statsPanel > div:nth(*) > div:nth(*) > div:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-104e495e",
+      "check": "tap-target",
+      "selector": "#headerFullscreenBtn",
+      "scenario": "no-peers@768x1024/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-12393df6",
+      "check": "tap-target",
+      "selector": "#observerPeersList > div:nth(*) > button.filter-toggle-btn:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-14fdde2f",
+      "check": "tap-target",
+      "selector": "#statsPanel > div:nth(*) > div:nth(*) > a:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-182d37b6",
+      "check": "tap-target",
+      "selector": "#settings-sec-daemonlog > div:nth(*) > button.btn-secondary:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-1a3c6ff1",
+      "check": "tap-target",
+      "selector": "#kgObject",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-1e7b545d",
+      "check": "tap-target",
+      "selector": "#channelBridgeBlock > div:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-20442ed3",
+      "check": "page-scroll",
+      "selector": "html",
+      "scenario": "system-stats-phone",
+      "state": "three-peers",
+      "viewport": {
+        "width": 360,
+        "height": 740
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [
+        "#settings-sec-stats"
+      ],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-20977e3f",
+      "check": "tap-target",
+      "selector": "#settings-sec-memscopes > div:nth(*) > button.btn-secondary:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-25a994a0",
+      "check": "tap-target",
+      "selector": "#headerAlertPill",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-25f58ef5",
+      "check": "tap-target",
+      "selector": "#memoryQuickAddTags",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-26aaef56",
+      "check": "tap-target",
+      "selector": "#auditActionFilter",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-29f76add",
+      "check": "tap-target",
+      "selector": "#memoryBrowserList > div.settings-row:nth(*) > button.btn-icon:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-2b7f2105",
+      "check": "tap-target",
+      "selector": "#observerPeersList > div:nth(*) > button.btn-icon:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-300e55cc",
+      "check": "overlap",
+      "selector": "#memoryBrowserList > div.settings-row:nth(*) > div:nth(*) > div:nth(*) > span:nth(*)",
+      "scenario": "three-peers@320x568/dark/z130",
+      "state": "three-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 130,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-316ddee2",
+      "check": "tap-target",
+      "selector": "#memoryRoleFilter",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-31b381fd",
+      "check": "clipped-text",
+      "selector": "#nav > button.nav-btn:nth(*) > span.nav-icon:nth(*)",
+      "scenario": "interaction:refresh",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-34e9ec29",
+      "check": "tap-target",
+      "selector": "#memScopeSelect",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-3593ef37",
+      "check": "tap-target",
+      "selector": "#channelDiagBlock > div:nth(*) > button:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-37cc0d29",
+      "check": "clipped-text",
+      "selector": "#settings-sec-memscopes > div:nth(*)",
+      "scenario": "three-peers@320x568/dark/z200",
+      "state": "three-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 200,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-3cfa91ba",
+      "check": "tap-target",
+      "selector": "#kgPredicate",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-3f4cac4d",
+      "check": "tap-target",
+      "selector": "#headerHelpLink",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-3fce2c5d",
+      "check": "clipped-text",
+      "selector": "#observerPeersList > div:nth(*)",
+      "scenario": "long-hostname@320x568/dark/z100",
+      "state": "long-hostname",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-4f4b0701",
+      "check": "interaction",
+      "selector": "#perSystemGrid",
+      "scenario": "interaction:rerender-timers",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-506de02c",
+      "check": "tap-target",
+      "selector": "#memScopeStoryID",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-50d22ee3",
+      "check": "tap-target",
+      "selector": "#memSweepDays",
+      "scenario": "no-peers@568x320/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 568,
+        "height": 320
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-5406eafe",
+      "check": "clipped-text",
+      "selector": "#view > div.view-content:nth(*) > div.settings-view:nth(*) > div.settings-section:nth(*) > div.settings-section-title.settings-section-toggle:nth(*)",
+      "scenario": "three-peers@320x568/dark/z200",
+      "state": "three-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 200,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-557470b3",
+      "check": "tap-target",
+      "selector": "#memScopePersona",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-6419b8d1",
+      "check": "overlap",
+      "selector": "#pluginsStatusList > div:nth(*) > span:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-6499cd76",
+      "check": "tap-target",
+      "selector": "#settings-sec-membrowser > div:nth(*) > button.btn-secondary:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-6502e162",
+      "check": "clipped-text",
+      "selector": "#headerTitle",
+      "scenario": "three-peers@320x568/dark/z130",
+      "state": "three-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 130,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-69e806cc",
+      "check": "clipped-text",
+      "selector": "#memoryBrowserList > div.settings-row:nth(*) > div:nth(*) > div:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-6d841193",
+      "check": "tap-target",
+      "selector": "#kgEntityInput",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-756b3686",
+      "check": "clipped-text",
+      "selector": "#commBackendsStatus",
+      "scenario": "three-peers@320x568/dark/z200",
+      "state": "three-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 200,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-7fe448cb",
+      "check": "tap-target",
+      "selector": "#websearchStatsCardBody > button:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-8008e9ca",
+      "check": "tap-target",
+      "selector": "#analyticsRange",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-80adcd2a",
+      "check": "overlap",
+      "selector": "#channelDiagStatus > div:nth(*) > span:nth(*)",
+      "scenario": "interaction:section-collapse-expand",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-84643ef6",
+      "check": "tap-target",
+      "selector": "#kgSubject",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-8c154cfa",
+      "check": "tap-target",
+      "selector": "#auditPanel > div:nth(*) > button.btn-secondary:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-8f68ca67",
+      "check": "clipped-text",
+      "selector": "#statsPanel > div:nth(*) > div:nth(*) > div:nth(*)",
+      "scenario": "sessions-large@320x568/dark/z100",
+      "state": "sessions-large",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-90e1cd98",
+      "check": "tap-target",
+      "selector": "#channelBridgeBlock > div:nth(*) > a:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-92888624",
+      "check": "tap-target",
+      "selector": "#memorySinceFilter",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-929e9bfc",
+      "check": "interaction",
+      "selector": "#settings-sec-stats",
+      "scenario": "interaction:rerender-timers",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-96b178ab",
+      "check": "tap-target",
+      "selector": "#settings-sec-memmaint > div:nth(*) > div:nth(*) > button.btn-secondary:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-980a5fd2",
+      "check": "clipped-text",
+      "selector": "#commBackendsBlock > div:nth(*)",
+      "scenario": "three-peers@320x568/dark/z200",
+      "state": "three-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 200,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-9a2a7095",
+      "check": "clipped-text",
+      "selector": "#observerClusterList > div:nth(*)",
+      "scenario": "long-hostname@320x568/dark/z100",
+      "state": "long-hostname",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-9c1bbe7e",
+      "check": "clipped-text",
+      "selector": "#observerPeersPanel > div:nth(*) > div:nth(*) > div:nth(*)",
+      "scenario": "three-peers@320x568/dark/z200",
+      "state": "three-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 200,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-9d3072a6",
+      "check": "tap-target",
+      "selector": "#kgPanel > div:nth(*) > button.btn-secondary:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-9dddb071",
+      "check": "clipped-text",
+      "selector": "#auditEntries > div:nth(*) > div:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-9f85f18a",
+      "check": "tap-target",
+      "selector": "#channelDiagBlock > div:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-a80c2e92",
+      "check": "clipped-text",
+      "selector": "#perSystemGrid > div:nth(*) > div:nth(*) > div:nth(*) > span:nth(*)",
+      "scenario": "long-hostname@320x568/dark/z100",
+      "state": "long-hostname",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-ab12e474",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth(*) > div.settings-view:nth(*) > div.settings-section:nth(*) > div.settings-section-title.settings-section-toggle:nth(*) > a.docs-link:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-be8b4967",
+      "check": "tap-target",
+      "selector": "#peerStaleBadge",
+      "scenario": "interaction:refresh",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-bf26d4e6",
+      "check": "tap-target",
+      "selector": "#settings-sec-memmaint > div:nth(*) > div:nth(*) > div:nth(*) > button.btn-secondary:nth(*)",
+      "scenario": "no-peers@568x320/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 568,
+        "height": 320
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-c147e779",
+      "check": "tap-target",
+      "selector": "#memScopeProject",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-c6a8ba90",
+      "check": "tap-target",
+      "selector": "#memScopePRDID",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-c9747bf6",
+      "check": "tap-target",
+      "selector": "#cooldownStatus > div:nth(*) > button.btn-secondary:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-cc4d63c1",
+      "check": "tap-target",
+      "selector": "#auditActorFilter",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-cc54d58d",
+      "check": "tap-target",
+      "selector": "#observerPeersPanel > div:nth(*) > div:nth(*) > button.btn-icon:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-ce0f4988",
+      "check": "clipped-text",
+      "selector": "#envelopesBlock > div:nth(*)",
+      "scenario": "three-peers@320x568/dark/z200",
+      "state": "three-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 200,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-e7fd60fd",
+      "check": "tap-target",
+      "selector": "#cooldownReason",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-f14d2c0c",
+      "check": "tap-target",
+      "selector": "#channelDiagStatus > details:nth(*) > summary:nth(*)",
+      "scenario": "interaction:section-collapse-expand",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-faf17635",
+      "check": "clipped-text",
+      "selector": "#pluginsStatusList > div:nth(*)",
+      "scenario": "three-peers@320x568/dark/z200",
+      "state": "three-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 200,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-fb1d37f8",
+      "check": "clipped-text",
+      "selector": "#acmeHealthBlock > div:nth(*)",
+      "scenario": "three-peers@320x568/dark/z200",
+      "state": "three-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 200,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-fe0ab882",
+      "check": "tap-target",
+      "selector": "#view > div.view-content:nth(*) > div.settings-view:nth(*) > div.settings-section:nth(*) > div.settings-section-title.settings-section-toggle:nth(*)",
+      "scenario": "no-peers@320x568/dark/z100",
+      "state": "no-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 100,
+      "scope": [],
+      "failed_before_fix": true
+    },
+    {
+      "group_id": "G-ff3cb8eb",
+      "check": "tap-target",
+      "selector": "#memoryQuickAddInput",
+      "scenario": "three-peers@320x568/dark/z200",
+      "state": "three-peers",
+      "viewport": {
+        "width": 320,
+        "height": 568
+      },
+      "theme": "dark",
+      "zoom": 200,
+      "scope": [],
+      "failed_before_fix": true
+    }
+  ]
+}

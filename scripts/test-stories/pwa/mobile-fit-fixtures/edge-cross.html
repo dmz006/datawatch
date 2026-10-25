@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Element crosses right edge, page itself does not scroll</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { overflow-x: hidden; font: 16px/1.4 system-ui, sans-serif; background: #f4f5f7; color: #fff; }
+  .crosser {
+    width: 420px; margin: 8px 0 8px auto; background: #e0447a;
+    padding: 16px; box-sizing: border-box;
+  }
+</style>
+</head>
+<body>
+  <div class="crosser">This block crosses the right edge of the viewport even though the page itself does not scroll.</div>
+</body>
+</html>

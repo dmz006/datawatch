@@ -1,0 +1,131 @@
+mobile-fit report
+generated_at: 2026-10-24T17:25:26.019Z
+meta.views: ["sessions","autonomous","automation","settings","alerts"]
+meta.profile: quick
+meta.scope: []
+meta.report_only: true
+meta.note: automation tab not measured: the harness VIEWS whitelist rejects it (unknown view, exit 2); recorded here as an open-failed finding so every requested tab appears. Other views measured with the quick profile: default state, dark theme, viewports 320x568, 360x740, 390x844, 768x1024, 740x360 plus 360x740/light and 360x740/z200.
+
+totals: 185 finding(s) in 29 scenario run(s), 19 group(s)
+  clipped-text: 6
+  edge-cross: 5
+  open-failed: 1
+  tap-target: 173
+
+G-6502e162 [clipped-text] #headerTitle - 6 findings
+  viewport 320x568 portrait, dark, zoom100%, default: scrollWidth 84 > clientWidth 70 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/default-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, default: scrollWidth 75 > clientWidth 19 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/default-320x568-dark-z100.png
+  viewport 360x740 portrait, dark, zoom100%, default: scrollWidth 75 > clientWidth 59 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/default-360x740-dark-z100.png
+  viewport 360x740 portrait, light, zoom100%, default: scrollWidth 75 > clientWidth 59 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/default-360x740-light-z100.png
+  viewport 360x740 portrait, dark, zoom200%, default: scrollWidth 75 > clientWidth 17 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/default-360x740-dark-z200.png
+
+G-3f4cac4d [tap-target] #headerHelpLink - 21 findings
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 360x740 portrait, dark, zoom100%, default: tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40) -> screenshots/default-360x740-dark-z100.png
+  viewport 390x844 portrait, dark, zoom100%, default: tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40) -> screenshots/default-390x844-dark-z100.png
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40) -> screenshots/default-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, default: tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40) -> screenshots/default-740x360-dark-z100.png
+
+G-6e692494 [tap-target] #headerSearchBtn - 14 findings
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 360x740 portrait, dark, zoom100%, default: tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40) -> screenshots/default-360x740-dark-z100.png
+  viewport 390x844 portrait, dark, zoom100%, default: tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40) -> screenshots/default-390x844-dark-z100.png
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40) -> screenshots/default-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, default: tap target 35x26 below minimum 40px (width 35 < 40, height 26 < 40) -> screenshots/default-740x360-dark-z100.png
+
+G-f4f80146 [tap-target] div.app:nth(*) > div.toast-container:nth(*) > div.toast.toast-error:nth(*) > div.toast-error-row:nth(*) > button.toast-error-close:nth(*) - 4 findings
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 28x28 below minimum 40px (width 28 < 40, height 28 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 28x28 below minimum 40px (width 28 < 40, height 28 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 28x28 below minimum 40px (width 28 < 40, height 28 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 28x28 below minimum 40px (width 28 < 40, height 28 < 40) -> screenshots/default-320x568-dark-z100.png
+
+G-25a994a0 [tap-target] #headerAlertPill - 28 findings
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 50x21 below minimum 40px (height 21 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 360x740 portrait, dark, zoom100%, default: tap target 50x21 below minimum 40px (height 21 < 40) -> screenshots/default-360x740-dark-z100.png
+  viewport 390x844 portrait, dark, zoom100%, default: tap target 50x21 below minimum 40px (height 21 < 40) -> screenshots/default-390x844-dark-z100.png
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 50x21 below minimum 40px (height 21 < 40) -> screenshots/default-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, default: tap target 50x21 below minimum 40px (height 21 < 40) -> screenshots/default-740x360-dark-z100.png
+
+G-104e495e [tap-target] #headerFullscreenBtn - 8 findings
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40) -> screenshots/default-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, default: tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40) -> screenshots/default-740x360-dark-z100.png
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40) -> screenshots/default-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, default: tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40) -> screenshots/default-740x360-dark-z100.png
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40) -> screenshots/default-768x1024-dark-z100.png
+
+G-4874945e [edge-cross] #headerRefreshSpinner - 2 findings
+  viewport 360x740 portrait, dark, zoom200%, default: element crosses viewport edge: right 185 > viewport 180 -> screenshots/default-360x740-dark-z200.png
+  viewport 360x740 portrait, dark, zoom200%, default: element crosses viewport edge: right 239 > viewport 180 -> screenshots/default-360x740-dark-z200.png
+
+G-5b00d250 [edge-cross] #statusDot - 2 findings
+  viewport 360x740 portrait, dark, zoom200%, default: element crosses viewport edge: right 211 > viewport 180 -> screenshots/default-360x740-dark-z200.png
+  viewport 360x740 portrait, dark, zoom200%, default: element crosses viewport edge: right 261 > viewport 180 -> screenshots/default-360x740-dark-z200.png
+
+G-bd9b90a2 [tap-target] #headerIdentityBtn - 7 findings
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 360x740 portrait, dark, zoom100%, default: tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40) -> screenshots/default-360x740-dark-z100.png
+  viewport 390x844 portrait, dark, zoom100%, default: tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40) -> screenshots/default-390x844-dark-z100.png
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40) -> screenshots/default-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, default: tap target 38x30 below minimum 40px (width 38 < 40, height 30 < 40) -> screenshots/default-740x360-dark-z100.png
+
+G-12200f65 [tap-target] #view > div.view-content:nth(*) > div.output-tabs.automata-tabs-bar:nth(*) > button.output-tab.active:nth(*) - 7 findings
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 89x29 below minimum 40px (height 29 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 360x740 portrait, dark, zoom100%, default: tap target 89x29 below minimum 40px (height 29 < 40) -> screenshots/default-360x740-dark-z100.png
+  viewport 390x844 portrait, dark, zoom100%, default: tap target 89x29 below minimum 40px (height 29 < 40) -> screenshots/default-390x844-dark-z100.png
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 89x29 below minimum 40px (height 29 < 40) -> screenshots/default-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, default: tap target 89x29 below minimum 40px (height 29 < 40) -> screenshots/default-740x360-dark-z100.png
+
+G-d4c8a4fd [tap-target] #view > div.view-content:nth(*) > div.output-tabs.automata-tabs-bar:nth(*) > button.output-tab:nth(*) - 7 findings
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 92x27 below minimum 40px (height 27 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 360x740 portrait, dark, zoom100%, default: tap target 92x27 below minimum 40px (height 27 < 40) -> screenshots/default-360x740-dark-z100.png
+  viewport 390x844 portrait, dark, zoom100%, default: tap target 92x27 below minimum 40px (height 27 < 40) -> screenshots/default-390x844-dark-z100.png
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 92x27 below minimum 40px (height 27 < 40) -> screenshots/default-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, default: tap target 92x27 below minimum 40px (height 27 < 40) -> screenshots/default-740x360-dark-z100.png
+
+G-44afec82 [tap-target] #automataSelectBtn - 7 findings
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 360x740 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-360x740-dark-z100.png
+  viewport 390x844 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-390x844-dark-z100.png
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-740x360-dark-z100.png
+
+G-245b9237 [tap-target] #automataFilterBtn - 7 findings
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 360x740 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-360x740-dark-z100.png
+  viewport 390x844 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-390x844-dark-z100.png
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-740x360-dark-z100.png
+
+G-ef2dc788 [tap-target] #automataHistoryBtn - 7 findings
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 360x740 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-360x740-dark-z100.png
+  viewport 390x844 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-390x844-dark-z100.png
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-740x360-dark-z100.png
+
+G-ea8f5fbd [tap-target] #automataWatchFilterBtn - 7 findings
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 360x740 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-360x740-dark-z100.png
+  viewport 390x844 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-390x844-dark-z100.png
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, default: tap target 32x28 below minimum 40px (width 32 < 40, height 28 < 40) -> screenshots/default-740x360-dark-z100.png
+
+G-ef8b66d8 [edge-cross] #headerAlertPill - 1 finding
+  viewport 360x740 portrait, dark, zoom200%, default: element crosses viewport edge: right 211 > viewport 180 -> screenshots/default-360x740-dark-z200.png
+
+G-65d7a747 [tap-target] #view > div.view-content:nth(*) > div.settings-tabs-bar:nth(*) > button.settings-tab-btn.output-tab:nth(*) - 42 findings
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 79x27 below minimum 40px (height 27 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 77x27 below minimum 40px (height 27 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 78x27 below minimum 40px (height 27 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 86x27 below minimum 40px (height 27 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 89x27 below minimum 40px (height 27 < 40) -> screenshots/default-320x568-dark-z100.png
+
+G-d206c048 [tap-target] #view > div.view-content:nth(*) > div:nth(*) > a:nth(*) - 7 findings
+  viewport 320x568 portrait, dark, zoom100%, default: tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40) -> screenshots/default-320x568-dark-z100.png
+  viewport 360x740 portrait, dark, zoom100%, default: tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40) -> screenshots/default-360x740-dark-z100.png
+  viewport 390x844 portrait, dark, zoom100%, default: tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40) -> screenshots/default-390x844-dark-z100.png
+  viewport 768x1024 portrait, dark, zoom100%, default: tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40) -> screenshots/default-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, default: tap target 16x16 below minimum 40px (width 16 < 40, height 16 < 40) -> screenshots/default-740x360-dark-z100.png
+
+G-a4359a64 [open-failed] [data-view="automation"] - 1 finding
+  viewport 390x844 portrait, dark, zoom100%, default: could not open view automation: unknown view to the mobile-fit harness - add it to the harness VIEWS list (and a provider) so this tab can be measured -> (no screenshot)
