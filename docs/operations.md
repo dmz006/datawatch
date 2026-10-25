@@ -2461,14 +2461,23 @@ A claude-code worker that finishes a turn without printing its completion
 marker gets one nudge before the session idle timeout applies.
 
 - **`autonomous.worker_idle_nudge_seconds`** (default 180): how long the
-  worker may sit idle with no output before it is nudged once. No nudge is
-  sent while the session has a live child process.
+  worker may sit idle with no output before it is nudged once. Only work
+  children block a nudge: a process the worker's runner started, such as a
+  build or a test run. The runner itself, and the session's own channel and
+  MCP servers, do not block it, so an idle worker that has only its own
+  servers running is still nudged.
+- **Adopted sessions:** a worker adopted after a daemon restart is nudged on
+  the same schedule and under the same work-child rule as a fresh one.
 - **`autonomous.worker_idle_nudge_stall_seconds`** (default 600): how long,
   counted from the nudge, the worker may stay silent before it is treated as
   stalled and retried through the existing `auto_fix_retries` budget.
 - **Visibility:** each nudge is recorded on the task (`nudge_events`,
-  `nudge_count`); `autonomous_status` reports `nudges_total`, `nudge_tasks`
-  and `nudges_by_backend`.
+  `nudge_count`). Each `nudge_events` entry carries `session_id`, the session
+  the nudge was typed into, and `outcome`: `sent` when it is typed, then
+  `answered` (the worker printed its completion marker or fresh output
+  followed) or `stalled` (the worker stayed silent past the stall window).
+  `autonomous_status` reports `nudges_total`, `nudge_tasks` and
+  `nudges_by_backend`.
 - **Setting them:** `config.yaml`, the web settings card, `PUT /api/config`,
   MCP `autonomous_config_set`, or the `configure` chat command. Hot-applied;
   `0` means "use the default".
