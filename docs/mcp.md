@@ -326,8 +326,9 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   | `level` | one of `kinds`/`level` | Event level: `prd` or `task` |
   | `prd_id` | no | Scope to one Automaton (PRD) id |
   | `task_id` | no | Scope to one task id |
-  | `sink_type` | yes | `comm`, `session`, `topic`, `alert` or `mcp_queue` |
-  | `sink_target` | yes | The sink's target (session id, topic, router/alert name, or the `mcp_queue` queue name) |
+  | `sink_type` | yes | `comm`, `session`, `topic`, `alert`, `mcp_queue`, `webhook` or `peer` (`webhook` and `peer` ship disabled; see below) |
+  | `sink_target` | yes | The sink's target (session id, topic, router/alert name, or the `mcp_queue` queue name). For `webhook` it is the `https` URL of the receiver; for `peer` it is the registered federation peer name. |
+  | `secret_ref` | yes for `webhook`, refused otherwise | The `${secret:name}` vault reference whose value signs each webhook delivery (HMAC-SHA256). A literal value is refused. The daemon resolves it on every delivery and never returns it. |
   | `action_text` | no | Text typed into the sink session on every match (the `send_input` action — the only action in this phase; requires `sink_type` `session`) |
   | `one_shot` | no | Delete the subscription after its first delivery (default false) |
   | `coalesce` | no | Batch human-facing sink deliveries in quiet windows (default false) |
@@ -346,9 +347,26 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   )
   → the stored subscription record (has an id you can pass to autonomous_unsubscribe)
   ```
+
+  Example — a signed webhook (the `webhook` sink ships disabled: enable `autonomous.notify.webhook.enabled` and add the host to `autonomous.notify.webhook.allow_hosts` first; the signing key is stored in the vault as `lifecycle-hook-prod`):
+  ```
+  autonomous_subscribe(
+    kinds="task.completed,task.failed,prd.blocked",
+    sink_type="webhook",
+    sink_target="https://hooks.example.net/datawatch",
+    secret_ref="${secret:lifecycle-hook-prod}"
+  )
+  ```
+
+  Example — forwarding to a registered federation peer (the `peer` sink ships disabled: enable `autonomous.notify.forwarding.enabled` on both daemons first; a peer subscription carries no secret):
+  ```
+  autonomous_subscribe(kinds="task.failed,prd.blocked", sink_type="peer", sink_target="hub-east")
+  ```
+
+  The webhook and peer rules, the request the receiver gets and the retry rules are in [howto/automaton-lifecycle-webhooks.md](howto/automaton-lifecycle-webhooks.md).
 - **`autonomous_subscription_update` / `autonomous_subscription_test`** — change or check an existing lifecycle-event subscription by id.
 
-  `autonomous_subscription_update(id, ...)` takes `id` (required) plus the same optional fields as `autonomous_subscribe` (`kinds`, `level`, `prd_id`, `task_id`, `sink_type`, `sink_target`, `action_text`, `one_shot`, `coalesce`, `expires_in_seconds`) and **replaces** the subscription's mutable fields with them: a field left out is cleared, so pass the full desired configuration. The id and creation time are kept. `expires_in_seconds` must be positive when given and is converted to an absolute expiry, as for `autonomous_subscribe`. Returns the updated record. Proxies `PUT /api/autonomous/subscriptions/{id}`; the daemon's validation message comes back for a malformed configuration (400) and an unknown id is a 404.
+  `autonomous_subscription_update(id, ...)` takes `id` (required) plus the same optional fields as `autonomous_subscribe` (`kinds`, `level`, `prd_id`, `task_id`, `sink_type`, `sink_target`, `secret_ref`, `action_text`, `one_shot`, `coalesce`, `expires_in_seconds`) and **replaces** the subscription's mutable fields with them: a field left out is cleared, so pass the full desired configuration. The id and creation time are kept. `expires_in_seconds` must be positive when given and is converted to an absolute expiry, as for `autonomous_subscribe`. Returns the updated record. Proxies `PUT /api/autonomous/subscriptions/{id}`; the daemon's validation message comes back for a malformed configuration (400) and an unknown id is a 404.
 
   `autonomous_subscription_test(id)` delivers one labelled test event to the subscription's sink so the route can be checked without waiting for a real event, and returns `{"ok","sink","error"}`. Proxies `POST /api/autonomous/subscriptions/{id}/test`; 404 for unknown ids.
 

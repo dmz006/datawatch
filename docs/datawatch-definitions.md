@@ -59,6 +59,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Automata list](#automata-list)
   - [Launch Automaton form](#launch-automaton-form)
   - [Automaton detail — Overview / Stories / Decisions / Scan](#automaton-detail)
+  - [Lifecycle subscriptions — outbound webhook and peer forwarding](#lifecycle-subscriptions--outbound-webhook-and-peer-forwarding)
 - [Automation](#automation)
   - [Automation list](#automation-list)
   - [Automation detail and pipeline strip](#automation-detail-and-pipeline-strip)
@@ -596,6 +597,21 @@ The header strip carries the **initial spec** (expandable — first 280 characte
 [howto/evals](howto/evals.md) ·
 [howto/council-mode](howto/council-mode.md) ·
 [howto/skills-sync](howto/skills-sync.md)
+
+### Lifecycle subscriptions — outbound webhook and peer forwarding
+
+Two subscription sinks send Automaton lifecycle events out of the daemon. **Both ship disabled** until the operator turns them on. See [`howto/automaton-lifecycle-webhooks.md`](howto/automaton-lifecycle-webhooks.md).
+
+- **Outbound webhook sink** — a subscription sink type that POSTs each matching event, as a signed JSON envelope, over HTTPS to a receiver the operator runs. It is off until `autonomous.notify.webhook.enabled` is `true`.
+- **Webhook allow-list** — the operator's list of hosts (an exact host, or an exact `host:port`) that may receive a webhook. An empty list means nothing can receive one. It is checked when a subscription is created and on every delivery.
+- **Signing secret reference** — the single `${secret:name}` reference on a webhook subscription that names the vault secret used to sign each delivery. A literal secret value is refused, and the resolved value is never stored, logged, audited or returned.
+- **Delivery signature** — the `X-Datawatch-Signature` header, `t=<unix seconds>,v1=<hex>`, where the hex is an HMAC-SHA256 of the timestamp, a full stop and the raw request body. A receiver checks it with the shared secret and rejects a timestamp outside the replay window.
+- **Delivery id** — the `X-Datawatch-Delivery` value that identifies one delivery. It is the same on every retry, so a receiver can drop a duplicate.
+- **Dropped delivery** — a webhook or peer delivery that failed its last attempt. It raises one error-level alert and writes a final audit record. The subscription itself stays armed.
+- **Peer forwarding** — sending a matching lifecycle event to another datawatch daemon that is registered as a federation peer with the `autonomous:write` capability. The subscription names the peer; no address or token is stored in the subscription.
+- **Peer sink** — the subscription sink type that uses peer forwarding. Its target is the registered peer name.
+- **Forwarded event** — a lifecycle event received from another daemon through peer forwarding. It is re-emitted locally with its origin host, is shown as "(forwarded from …)" in human sinks, and is never forwarded on or used to drive an Automaton.
+- **Hop cap and visited list** — the loop guard for forwarding. A forwarded event records the origin host, the number of hops and the hosts it has passed through. A receiving daemon refuses an event that started on its own host, that already visited it, or that has reached the hop cap.
 
 ---
 

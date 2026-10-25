@@ -101,6 +101,10 @@ datawatch autonomous unsubscribe <id>
 - Same offline-queue note (one-shot + expiry are daemon-authoritative, so queued management writes are safe).
 - The `send_input` action text should render as a quoted preview with the 4096-char limit enforced client-side.
 
+## Webhook and peer sinks (added with the outbound sink, Unreleased)
+
+The daemon now accepts two more sink types on the same subscription REST contract (`POST` and `PUT /api/autonomous/subscriptions`): `webhook`, which signs and POSTs each event to an https receiver, and `peer`, which forwards each event to a registered federation peer. A `webhook` sink carries one new optional field, `sink.secret_ref`, a single `${secret:name}` vault reference (never a literal value) that the daemon resolves on every delivery; the app passes it as an opaque string and never resolves it. Both sink types, and the settings that enable them (`autonomous.notify.webhook.enabled` and `autonomous.notify.forwarding.enabled`, with the webhook allow-list), ship disabled, so the daemon refuses a `webhook` or `peer` subscription at creation until the operator turns them on, and the refusal names the setting to change. The app UI should offer the two types only when it can show that state, and otherwise surface the daemon's refusal text as-is. This replaces the "webhook not offered" row in the parity table below. The app UI itself is not built in this repo.
+
 ## Parity surface for this note (app repo)
 
 | Surface | Status |
