@@ -1,96 +1,98 @@
-shared-nav-mobile-fit: report-only run (substitute probe)
-========================================================
+shared-nav-mobile-fit: report-only run (2026-10-25)
+====================================================
 
-Status: RUN, but NOT the named checker. The named story
-scripts/test-stories/pwa/shared-nav-mobile-fit.mjs is absent from branch
-automaton/b54f0001, so the run used a substitute probe. The findings below
-are the substitute's measurements and are not the Observer checker's findings.
+Result: PASS (exit 0). Probe: scripts/test-stories/pwa/shared-nav-mobile-fit-probe.mjs
+Total: 336 occurrences in 26 groups, 6 viewports, 6 tabs, unmodified tree, no fix applied.
+Daemon version: 9.11.0 (cmd/datawatch/main.go:119; `bin/datawatch version` and the daemon log both print v9.11.0).
 
-Daemon version: 9.11.0 (cmd/datawatch/main.go:119; `bin/datawatch version` also reports v9.11.0)
-Tree: unmodified. Branch automaton/b54f0001, HEAD 9c5d6b85 at the start of this run.
-      app.js and style.css are unchanged.
-Run date: 2026-10-25, 12:57 to 12:59 local.
+IMPORTANT: this is NOT the named checker
+----------------------------------------
+scripts/test-stories/pwa/shared-nav-mobile-fit.mjs does not exist on branch
+automaton/b54f0001 or on any git ref (`git log --all -- <path>` is empty). The run used
+the substitute probe above, which measures two things only:
+  tap-target           interactive element under 44x44 CSS px
+  horizontal-overflow  element box extends past the viewport width
+Its findings are not the named checker's findings. The brief's "about 250 nav icon
+findings" and "35 px tap targets" cannot be checked against the checker's own output.
 
-What was attempted
-------------------
-1. Earlier attempt: `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh shared-nav-mobile-fit`
-   exited 1 with "story not found" before starting any daemon. Repeating it cannot help.
-2. Built the sandbox binary from the unmodified tree:
-   `go build -o bin/datawatch ./cmd/datawatch/` (bin/ is gitignored).
-3. Started an isolated sandbox daemon with the config substitutions e2e-pwa.sh uses
-   (free ports, token dw-e2e-pwa-token, data under this run directory).
-   HTTP 60413 redirects to TLS 49991, which answered /api/health. The daemon log is
-   kept at sandbox/daemon.log. The daemon was stopped by SIGTERM to its verified PID
-   (370341) and exited.
-4. Ran scripts/test-stories/pwa/shared-nav-mobile-fit-probe.mjs against the TLS origin.
-   It drives the system google-chrome over the DevTools protocol, because the pwa
-   node_modules is a symlink into the main checkout and was not installed in this worktree.
-   Report files: report-only.json (aggregated) and occurrences.json (every occurrence).
+How the daemon was run (e2e-pwa.sh, local mode)
+-----------------------------------------------
+Command, run with `env -u TMUX` and TMUX_TMPDIR set to a sandbox directory:
+  env -u TMUX TMUX_TMPDIR=<wt>/bin/sandbox/tmux TMPDIR=<wt>/bin/sandbox/tmp \
+    TEST_BINARY=<wt>/bin/sandbox/run-daemon.sh PROBE_OUT_DIR=<wt>/docs/testing/runs/shared-nav-mobile-fit \
+    PROBE_CHROME_PROFILE=<wt>/bin/sandbox/chrome-profile PROBE_DAEMON_VERSION=9.11.0 \
+    PATH=<wt>/bin/sandbox/shim:$PATH bash scripts/e2e-pwa.sh shared-nav-mobile-fit-probe
+(<wt> = /home/dmz/.datawatch/prd-worktrees/b54f0001.) Binary rebuilt from the unmodified
+tree first: `go build -o bin/datawatch ./cmd/datawatch/` (13:03:17).
 
-Scope of the substitute probe
------------------------------
-- Viewports: 320x568, 360x740, 375x667, 390x844, 414x896, 768x1024.
-- Tabs: all six visible nav tabs (sessions, autonomous, alerts, observer, dashboard,
-  settings). The sandbox config showed every tab.
-- Checks:
-  tap-target          interactive element smaller than 44x44 CSS px
-  horizontal-overflow element whose box extends past the layout viewport width
-- Only elements that intersect the viewport vertically are counted.
-- Not checked: contrast, text clipping, icon sizing rules, and anything the Observer checker covers.
+Deviations from the spec, each made so the run stays inside its boundary:
+1. TMUX_TMPDIR is SET to a sandbox directory, not unset. With it unset, the daemon falls
+   back to the production dedicated socket /home/dmz/.datawatch/tmux (the earlier run's
+   log showed exactly that). cmd/datawatch/main.go ensureTmuxTmpdirEnv only falls back
+   when the variable is unset, so the sandbox value keeps the daemon off the production socket.
+   The daemon log has no "TMUX_TMPDIR was unset" line for this run.
+2. npm ci is stubbed by a PATH shim (sandbox/npm-ci-shim.sh). e2e-pwa.sh runs `npm ci`
+   in scripts/test-stories/pwa, and that directory's node_modules is a symlink to
+   /home/dmz/workspace/datawatch, outside the worktree. The probe imports node built-ins
+   only, so the install is not needed. The symlink is unchanged after the run.
+3. TEST_BINARY points at sandbox/run-daemon.sh, which execs the same binary and appends
+   its output to sandbox/daemon.log. e2e-pwa.sh deletes its own run dir, including
+   daemon.log, after a passing run, so without this the daemon log would be lost.
+4. The probe's Chrome profile and temp dirs lived under bin/sandbox (gitignored) and were
+   removed after the run. The first attempt failed only because run-daemon.sh was not
+   executable; the daemon never started in that attempt.
 
-Result
-------
-Total occurrences: 334 in 26 groups (one group per check, selector and region).
-  bottom-nav region: 44 occurrences, all horizontal-overflow, in 5 groups
-  header region:     120 occurrences, all tap-target, in 6 groups
-  tab-content:       170 occurrences, in 15 groups
-Page-level horizontal scroll: none at any viewport or tab.
+Daemon lifecycle (sandbox/daemon.log, 40 lines)
+-----------------------------------------------
+- Started as "datawatch v9.11.0", PWA on a random 127.0.0.1 port, loopback check ok.
+- Fixed ports from testdata/datawatch.yaml that the e2e sed does not remap were already
+  in use on this host, so these listeners failed to bind: webhook 19080, DNS 19053, proxy
+  8444 (remote viewing unavailable). These are not production ports and did not affect
+  the PWA run. Which process holds them was not investigated.
+- Shutdown: e2e-pwa.sh sent SIGTERM to its own daemon PID at 13:05:01. The log shows
+  "Killing active sessions...". The probe creates no sessions (it loads the PWA, clicks
+  nav buttons and measures), so this sweep had nothing of ours to stop. The sweep log
+  names no session.
+- Production daemon: not contacted. The run used random ports and the sandbox token.
 
-Navigation findings (summary, not listed one by one)
-  Total: 44 occurrences, all horizontal-overflow. Zero tap-target and zero
-  inside a nav icon (inNavIcon = false for all).
-  button.nav-btn[data-view=settings]                         25  (320 to 414 px)
-  button#navBtnDashboard.nav-btn[data-view=dashboard]          8  (320, 360 px)
-  button.nav-btn[data-view=sessions]                           7  (320 to 414 px)
-  button#navBtnDashboard.nav-btn.active[data-view=dashboard]   2  (320, 360 px)
-  button#navBtnAutonomous.nav-btn[data-view=autonomous]        2  (320, 360 px)
-  Nav buttons measure 59 px tall, so none fails the 44 px tap-target check.
+Results by check
+----------------
+  tap-target           281 occurrences
+  horizontal-overflow   55 occurrences (44 bottom nav, 11 settings tab)
+  page-level horizontal scroll: none at any viewport or tab
 
-The 35 px finding
------------------
-The only flagged element 35 px tall in the substitute run is
-  div.settings-section-title.settings-section-toggle  (text "System Statistics", Observer tab)
-  Size 260x35 to 420x35 at all six viewports.
-It is a tab-content section toggle, not a nav button and not a badge inside a nav icon.
-The checker's own 35 px finding was not reproduced by name. This match is a candidate only.
+Navigation (bottom nav), summarized by count and selector
+---------------------------------------------------------
+All 44 bottom-nav occurrences are horizontal-overflow. None is a tap-target finding.
+None is inside a `.nav-icon` (the probe's inNavIcon flag is false for every group).
+  button.nav-btn[data-view=settings]                        25  (320x568 to 414x896)
+  button#navBtnDashboard.nav-btn[data-view=dashboard]        8  (320x568, 360x740)
+  button.nav-btn[data-view=sessions]                         7  (320x568 to 414x896)
+  button#navBtnDashboard.nav-btn.active                      2  (320x568, 360x740)
+  button#navBtnAutonomous.nav-btn[data-view=autonomous]      2  (320x568, 360x740)
+Nav buttons are 59 px tall, so they pass the 44 px height check.
 
-Discrepancy with the checker's reported numbers
-  The brief cites roughly 250 navigation-icon findings. The substitute found 0 inside nav
-  icons (44 nav occurrences, all overflow). The checker has not run, so the 250 figure is
-  unverified and may come from a different rule set.
+Limit of the probe: badges inside nav icons are not measured. The probe selects buttons,
+links, inputs and [onclick]/[data-view] elements. #alertBadge (span in the Alerts nav icon,
+no onclick) is never selected, and #peerStaleBadge (Settings nav icon) is hidden at zero
+and so is skipped. "No nav-icon finding" therefore does not show that nav badges are fine.
 
-Classification (used in the plan doc Worklist)
-  one-line shared style   header chrome (6 rows, 120 occurrences) and the toast close
-                          button (36 occurrences, present on all six tabs): 156 total
-  deferred to its tab     tab-content rows (14 rows, 134 occurrences)
-  The classification is by placement only. No selector was checked against style.css,
-  so none of these is a verified one-line fix.
+The 35 px tap-target height finding
+-----------------------------------
+Element: div.settings-section-title.settings-section-toggle, text "▼System Statistics docs",
+Observer tab. Size 260x35 to 420x35 across the six viewports (6 occurrences).
+It is a tab-content section toggle. It is NOT a nav button and NOT a badge inside a nav
+icon. Caveat: the checker's own 35 px finding may name a different element; that cannot
+be checked without the named checker.
 
-Safety notes
-------------
-- Sandbox daemon: TMUX_TMPDIR was unset because the run used env -u TMUX_TMPDIR. The daemon
-  logged "[tmux] TMUX_TMPDIR was unset — using dedicated socket /home/dmz/.datawatch/tmux",
-  which is the operator's dedicated tmux socket directory. The daemon log has no
-  session-kill or cleanup lines. I did not inspect that socket, which is outside the
-  scope, so whether the sandbox touched production tmux sessions is UNVERIFIED. The
-  operator should check the production tmux sessions. Future sandbox runs should set
-  TMUX_TMPDIR to a path inside the project.
-- Nothing was run against the production daemon. Existing sessions were not touched.
+Other-tab findings (non-nav)
+----------------------------
+21 rows, 292 occurrences. Full table, viewports, counts and classification are in
+docs/plans/2026-10-25-shared-nav-mobile-fit.md under "Worklist".
 
-Needed to finish the baseline
------------------------------
-- Operator decision: bring the Observer checker onto this branch, or supply an approved
-  copy of shared-nav-mobile-fit.mjs, then rerun it in report-only mode and replace this
-  substitute's worklist with the checker's findings.
-- Set TMPDIR inside the project before any e2e-pwa.sh run, because the launcher writes
-  its run directory under ${TMPDIR:-/tmp}.
+Raw files
+---------
+  report-only.json    probe report (findings grouped by check, selector and region)
+  occurrences.json    every occurrence, one per element per viewport per tab
+  sandbox/daemon.log  daemon output for this run
+  sandbox/run-daemon.sh, sandbox/npm-ci-shim.sh  the launch helpers used

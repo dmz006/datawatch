@@ -860,6 +860,17 @@
   {
     "viewport": "360x740",
     "tab": "autonomous",
+    "selector": "button#automationEmptyCreateBtn.btn-primary",
+    "text": "＋ Create Automation",
+    "region": "tab-content",
+    "inNavIcon": false,
+    "w": 153.8,
+    "h": 28,
+    "check": "tap-target"
+  },
+  {
+    "viewport": "360x740",
+    "tab": "autonomous",
     "selector": "button#navBtnDashboard.nav-btn[data-view=dashboard]",
     "text": "☷ Dashboard",
     "region": "bottom-nav",
@@ -2087,6 +2098,17 @@
     "inNavIcon": false,
     "w": 141.1,
     "h": 40,
+    "check": "tap-target"
+  },
+  {
+    "viewport": "390x844",
+    "tab": "autonomous",
+    "selector": "button#automationEmptyCreateBtn.btn-primary",
+    "text": "＋ Create Automation",
+    "region": "tab-content",
+    "inNavIcon": false,
+    "w": 153.8,
+    "h": 28,
     "check": "tap-target"
   },
   {

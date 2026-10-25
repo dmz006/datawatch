@@ -66,7 +66,7 @@
       "settings"
     ]
   },
-  "total_occurrences": 334,
+  "total_occurrences": 336,
   "page_horizontal_scroll": [],
   "findings": [
     {
@@ -601,6 +601,25 @@
       "sampleText": "＋ New Automation"
     },
     {
+      "check": "tap-target",
+      "selector": "button#automationEmptyCreateBtn.btn-primary",
+      "region": "tab-content",
+      "inNavIcon": false,
+      "count": 3,
+      "viewports": [
+        "360x740",
+        "390x844",
+        "768x1024"
+      ],
+      "tabs": [
+        "autonomous"
+      ],
+      "sizes": [
+        "153.8x28"
+      ],
+      "sampleText": "＋ Create Automation"
+    },
+    {
       "check": "horizontal-overflow",
       "selector": "button#navBtnDashboard.nav-btn.active[data-view=dashboard]",
       "region": "bottom-nav",
@@ -635,23 +654,6 @@
         "76.8x59"
       ],
       "sampleText": "🤖 Automata"
-    },
-    {
-      "check": "tap-target",
-      "selector": "button#automationEmptyCreateBtn.btn-primary",
-      "region": "tab-content",
-      "inNavIcon": false,
-      "count": 1,
-      "viewports": [
-        "768x1024"
-      ],
-      "tabs": [
-        "autonomous"
-      ],
-      "sizes": [
-        "153.8x28"
-      ],
-      "sampleText": "＋ Create Automation"
     },
     {
       "check": "tap-target",
