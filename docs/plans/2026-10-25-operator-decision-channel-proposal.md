@@ -341,7 +341,7 @@ Options:
 
 Recommendation: option 1 as the default, with the session push opt-in per question, because it keeps answers out of the terminal unless asked for.
 
-Status: Not decided.
+Status: **Decided by the operator, 2026-10-25: option 1** ("1"): event plus polled GET by default, session push opt-in per question.
 
 ### 6.k How a comm reply selects a question
 
