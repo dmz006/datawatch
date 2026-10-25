@@ -29,6 +29,13 @@ func (m *Manager) recordGuardrailVerdict(prd *PRD, unitID string, v GuardrailVer
 	if err := m.savePRDOwn(prd); err != nil {
 		return err
 	}
+	// Opt-in guardrail_warn: emitted only for the warn outcome, right
+	// after the record save succeeded. Informational only — pass and
+	// block outcomes emit nothing and the rest of this function is
+	// untouched.
+	if v.Outcome == "warn" {
+		m.emitGuardrailWarn(prd, unitID, &v, &d)
+	}
 	if v.JudgeOutputPath != "" {
 		if err := RemoveJudgeOutputFile(v.JudgeOutputPath); err != nil {
 			log.Printf("autonomous: remove judge output %s for PRD %s: %v", v.JudgeOutputPath, prd.ID, err)

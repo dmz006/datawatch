@@ -362,13 +362,15 @@ func (m *Manager) checkForeignFileDrift(ctx context.Context, prd *PRD, t *Task) 
 	}
 
 	blockPreExisting := false
+	var preExistingDec Decision
 	if len(preExisting) > 0 {
 		joined := strings.Join(preExisting, ", ")
 		t.ForeignFileDrift = sortedUnion(t.ForeignFileDrift, preExisting)
-		prd.Decisions = append(prd.Decisions, Decision{
+		preExistingDec = Decision{
 			At: time.Now(), Kind: "file_drift_detected", Actor: "autonomous",
 			Note: "task " + t.ID + ": committed pre-existing uncommitted file(s) outside its planned files: " + joined,
-		})
+		}
+		prd.Decisions = append(prd.Decisions, preExistingDec)
 		m.appendDriftAudit(t.ID, prd.ID, "pre_existing", preExisting)
 		log.Printf("[autonomous] WARNING %s/%s foreign file drift: task committed pre-existing uncommitted file(s) outside its planned files: %s", prd.ID, t.ID, joined)
 
@@ -388,6 +390,14 @@ func (m *Manager) checkForeignFileDrift(ctx context.Context, prd *PRD, t *Task) 
 		t.Error = "foreign_file_drift: " + strings.Join(preExisting, ", ")
 	}
 	_ = m.store.SaveTask(t)
+	if len(preExisting) > 0 {
+		// Opt-in scope_warning for the pre-existing (foreign) drift the
+		// PWA surfaces from t.ForeignFileDrift; emitted after both saves
+		// and after the mode handling, so it neither blocks nor alters
+		// the task. The in-run group above stays unemitted (it has no
+		// PWA warning).
+		m.emitScopeWarning(prd, t, preExisting, &preExistingDec)
+	}
 	return blockPreExisting
 }
 
@@ -496,6 +506,10 @@ func (m *Manager) checkUndeclaredEdits(ctx context.Context, prd *PRD, t *Task) (
 		alertFn("warn", "Undeclared edit detected", "prd "+prd.ID+" task "+t.ID+": "+joined)
 	}
 	log.Printf("[autonomous] WARNING %s/%s undeclared edit: task edited file(s) not in its planned or generated files: %s", prd.ID, t.ID, joined)
+	// Opt-in scope_warning at exactly the point the "Undeclared edit
+	// detected" warn alert is raised: informational only, raised in both
+	// warn and block mode, and the mode handling below stays as is.
+	m.emitScopeWarning(prd, t, findings, lastDecision(prd, "undeclared_edit_detected"))
 	if mode == "block" {
 		t.Status = TaskBlocked
 		t.Error = "undeclared_edit: " + joined
