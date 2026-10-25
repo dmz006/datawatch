@@ -158,7 +158,7 @@ None of the following is decided. Each starts a step only when recorded in this 
 
 **Recommendation.** (b): a failure blocks work and should alert at once, while merge pending needs a person and stops no lane; every value stays configurable under either reading.
 
-**Status.** Open.
+**Status.** **Decided by the operator, 2026-10-25: option (a), one shared default of 30 minutes** ("1, 30 minutes"), for CI failures, merge pending and failed or blocked PRDs. It matches the lane-fill idle alert default; every value stays configurable.
 
 ### Q2. Retry count (duties 1 and 5)
 

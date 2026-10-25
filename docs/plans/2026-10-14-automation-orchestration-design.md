@@ -2752,4 +2752,6 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 **Status 2026-10-25:** all points of the decision channel proposal (6.a to 6.k) are decided. The proposal's `Confirmed:` line is still `no` until the operator flips it; the first implementation PRD (storage and REST) can be filed and gated on it.
 
+25. **Default alert times for the Automation duties (supervisor duties proposal Q1, answer: "1, 30 minutes").** One shared default of 30 minutes for CI failures, merge pending and failed or blocked PRDs, the same as the lane-fill idle alert; each value stays configurable.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
