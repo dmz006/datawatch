@@ -2724,4 +2724,6 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 13. **Retention (answer: "1").** Answered questions and their quotations are decisions of record and are kept forever in the audit log, never deleted. The Automation view shows recent ones and searches older ones.
 
+14. **Changing an answer (answer: "1").** An answer is never edited. A changed mind is a new answer that supersedes the old one; both stay on the record, each with its quotation, and the decision log shows which one is current.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
