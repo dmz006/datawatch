@@ -464,7 +464,7 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 				requestState := probeModelServerRequest(cfg.Ollama.Host, model)
 				signals := autonomouspkg.ProgressSignals{
 					Marker:        marker,
-					RunnerAlive:   hasLiveChildProcess(s.TmuxSession),
+					RunnerAlive:   hasLiveChildProcess(s.TmuxSession, s.ProjectDir),
 					ActiveRequest: requestState == modelServerRequestActive,
 				}
 				if taskID, ok := verifierTaskFromSessionName(sessionName); ok {
