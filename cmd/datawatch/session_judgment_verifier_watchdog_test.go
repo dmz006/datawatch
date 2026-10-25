@@ -87,7 +87,7 @@ func TestVerifierWaitLoopSilentEndsAtLimitWhenProbeUnknown(t *testing.T) {
 
 	start := time.Now()
 	_, _, err := runOneShotJSONSessionWithReader(cfg, "prd-1", projectDir, "claude-code", "glm-5:755b", "high",
-		"autonomous:verify:task-1", "verify", outputFile, "judge-1.json", 30*time.Second, noOutputReader)
+		"autonomous:verify:task-1", "verify", outputFile, "judge-1.json", 30*time.Second, noOutputReader, "")
 	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("a silent verifier session must end at the no-progress limit, got success")
@@ -131,7 +131,7 @@ func TestVerifierWaitLoopActiveRequestKeepsSilentSessionAlive(t *testing.T) {
 	cfg := verifierLoopConfig(modelSrv.URL)
 
 	_, _, err := runOneShotJSONSessionWithReader(cfg, "prd-1", projectDir, "claude-code", "ollama/glm-5:755b", "high",
-		"autonomous:verify:task-2", "verify", outputFile, "judge-2.json", 8*time.Second, noOutputReader)
+		"autonomous:verify:task-2", "verify", outputFile, "judge-2.json", 8*time.Second, noOutputReader, "")
 	if err == nil {
 		t.Fatal("the session never wrote output; the loop must not report success")
 	}
@@ -159,7 +159,7 @@ func TestVerifierWaitLoopLeavesDecomposeAndWorkerSessionsAlone(t *testing.T) {
 			cfg := verifierLoopConfig("") // no model server host: probe is unknown everywhere
 
 			_, _, err := runOneShotJSONSessionWithReader(cfg, "prd-1", projectDir, "claude-code", "glm-5:755b", "high",
-				sessionName, "run", outputFile, "judge-3.json", 6*time.Second, noOutputReader)
+				sessionName, "run", outputFile, "judge-3.json", 6*time.Second, noOutputReader, "")
 			if err == nil {
 				t.Fatal("the session never wrote output; the loop must not report success")
 			}

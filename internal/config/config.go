@@ -566,6 +566,9 @@ type ComputeNodeYAML struct {
 	NodePinnedModel string `yaml:"node_pinned_model,omitempty" json:"node_pinned_model,omitempty"`
 	// AllowModelSwap lets an explicit request replace the pinned model.
 	AllowModelSwap bool `yaml:"allow_model_swap,omitempty" json:"allow_model_swap,omitempty"`
+	// SessionSlots is the operator's worker count for this node (0 = derive
+	// from observer GPU data). Must not be negative.
+	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`
 }
 
 // CouncilPersonaOverride allows operators to customize a persona's
@@ -3946,6 +3949,11 @@ func validateLoaded(cfg *Config) error {
 	} {
 		if v < 0 {
 			return fmt.Errorf("autonomous.%s: %d must be >= 0", k, v)
+		}
+	}
+	for _, n := range cfg.ComputeNodes {
+		if n.SessionSlots < 0 {
+			return fmt.Errorf("compute_nodes[%s].session_slots: %d must be >= 0", n.Name, n.SessionSlots)
 		}
 	}
 	switch cfg.Autonomous.ProjectWriteSerialization {

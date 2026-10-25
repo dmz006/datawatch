@@ -1807,6 +1807,11 @@ type StartOptions struct {
 	// a compute node. Written to opencode.json at launch.
 	OllamaURL string
 
+	// NodeAddress — the compute node's address for pi-family and opencode
+	// sessions, resolved from the compute registry by the server. Persisted on
+	// the Session (Session.NodeAddress) so a resume or restart reuses the host.
+	NodeAddress string
+
 	// Chrome (v8.8.3) — when non-nil, passes --chrome (true) or --no-chrome (false)
 	// to claude-code at launch. Nil = omit flag (use claude default).
 	Chrome *bool
@@ -2057,6 +2062,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if opt != nil && opt.OllamaURL != "" {
 		sess.OllamaURL = opt.OllamaURL
 	}
+	if opt != nil && opt.NodeAddress != "" {
+		sess.NodeAddress = opt.NodeAddress
+	}
 	if opt != nil && opt.ParentID != "" {
 		sess.ParentID = opt.ParentID
 	}
@@ -2246,6 +2254,13 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 				sm.SetModel(mo)
 			}
 		}
+	}
+
+	// Pi family: point the launch at the session's compute node. The backend
+	// is shared across sessions, so this runs on every launch; a session that
+	// names no node passes an empty address, which clears any earlier node.
+	if nh, ok := backendObj.(interface{ SetNodeHost(string) }); ok {
+		nh.SetNodeHost(sess.NodeAddress)
 	}
 
 	// BL363 T2+T3 — inject Goose provider/model/apikey/channel into goose family backends.
@@ -4047,6 +4062,11 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	// Set session name on the backend (for --name flag) if it supports it
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
+	}
+
+	// Pi family: a restart reuses the node the session was started on.
+	if nh, ok := backendObj.(interface{ SetNodeHost(string) }); ok {
+		nh.SetNodeHost(sess.NodeAddress)
 	}
 
 	// BL363 T2+T3 — re-inject goose config on restart (same as initial launch path).

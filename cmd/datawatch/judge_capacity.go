@@ -22,7 +22,10 @@ const judgeSessionNamePrefix = "autonomous:guardrail"
 // wireCapacity; nil until then, so callers must check. prdID is required so
 // the lease/wait entry is attributed to the unit's PRD for fairness and for
 // the capacity card.
-var judgeCapacityAdmit func(ctx context.Context, backend, model, unitID, prdID string) (release func(), err error)
+//
+// The second result is the compute node the judge's lease holds, "" for an
+// entry with fewer than two candidate nodes; the judgment starts on it.
+var judgeCapacityAdmit func(ctx context.Context, backend, model, unitID, prdID string) (release func(), node string, err error)
 
 // judgeSessionStarted is called by the one-shot runner as soon as a session
 // is started, with its name and id. wireCapacity points it at the judge
@@ -123,4 +126,24 @@ func judgeAdmitters(led *capacity.Ledger, reg *verifierRegistry, keysFn func(bac
 		}
 	}
 	return
+}
+
+// judgeNodeAdmitter is the production judge admission: the same
+// "judge:<unit id>" holder and registry lifetime as judgeAdmitters' admit, but
+// taken through Manager.AdmitJudge so an entry that pools two or more nodes
+// places the judge on one of them (and loads the model there). The returned
+// node is the one the judge's lease holds, "" for a one-node entry.
+func judgeNodeAdmitter(amgr *autonomouspkg.Manager, reg *verifierRegistry) func(ctx context.Context, backend, model, unitID, prdID string) (func(), string, error) {
+	return func(ctx context.Context, backend, model, unitID, prdID string) (func(), string, error) {
+		holder := autonomouspkg.JudgeHolder(unitID)
+		node, release, err := amgr.AdmitJudge(ctx, autonomouspkg.JudgeAdmit{
+			Holder: holder, PRDID: prdID, Backend: backend, Model: model,
+			Wait: amgr.CapacityWaitDuration(),
+		})
+		if err != nil {
+			return func() {}, "", err
+		}
+		end := reg.begin(holder)
+		return func() { end(); release() }, node, nil
+	}
 }

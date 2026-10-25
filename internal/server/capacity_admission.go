@@ -54,6 +54,14 @@ func (s *Server) admissionRequest(q map[string][]string) (capacity.Request, stri
 		return capacity.Request{}, "role must be worker, verifier, planner or interactive"
 	}
 	req.Pools = append([]string{"host"}, s.resolvePoolsForBackend(backend)...)
+	if req.Node == "" {
+		// An entry that pools two or more known nodes is placed by the ledger
+		// on one of them, so its node pools are choices, not all required.
+		if choices := s.nodeChoicesForBackend(backend); len(choices) >= 2 {
+			req.Pools = dropNodePools(req.Pools)
+			req.NodeChoices = choices
+		}
+	}
 	if req.Node != "" {
 		np := "node:" + req.Node
 		have := false
@@ -97,4 +105,42 @@ func AdmissionHandler(l *capacity.Ledger, reg *inference.Registry) http.Handler 
 	s := &Server{inferenceReg: reg}
 	s.SetCapacity(l)
 	return http.HandlerFunc(s.handleCapacityAdmission)
+}
+
+// nodeChoicesForBackend returns the nodes of the named LLM entry the compute
+// registry knows, with their scheduling priority, in the entry's list order.
+func (s *Server) nodeChoicesForBackend(backend string) []capacity.NodeChoice {
+	if s.inferenceReg == nil || s.computeReg == nil {
+		return nil
+	}
+	l, err := s.inferenceReg.Get(backend)
+	if err != nil || l == nil {
+		return nil
+	}
+	nodes := inference.OrderedPoolNodes(*l, func(name string) (int, bool) {
+		n, err := s.computeReg.Get(name)
+		if err != nil || n == nil {
+			return 0, false
+		}
+		if n.SchedulingPriority == 0 {
+			return 50, true
+		}
+		return n.SchedulingPriority, true
+	})
+	out := make([]capacity.NodeChoice, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, capacity.NodeChoice{Name: n.Name, Priority: n.Priority})
+	}
+	return out
+}
+
+// dropNodePools returns pools without its node:<name> entries.
+func dropNodePools(pools []string) []string {
+	out := make([]string, 0, len(pools))
+	for _, p := range pools {
+		if !strings.HasPrefix(p, "node:") {
+			out = append(out, p)
+		}
+	}
+	return out
 }

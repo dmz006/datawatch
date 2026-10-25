@@ -1193,13 +1193,47 @@ autonomous:
 
 ### Compute-node engine cap (`max_engines_per_node`)
 
-`autonomous.max_engines_per_node` caps how many local-model sessions one
-compute node runs at once. The default is `1`, and a value below `1` is
-clamped to `1`. Only sessions on a local engine on that node count
-(`pi`, `pi-prompt`, `ollama`, `opencode`, `opencode-acp`); hosted backends
-such as `claude-code` are not gated by it. Sessions past the cap wait with
-the reason `waiting for node <name>`. The operator guide, including queue
-priority, is in `docs/operations.md` → "Compute-node queue".
+`autonomous.max_engines_per_node` is the slot count of a compute node that
+hosts a local engine when the node has no operator `session_slots` and its
+observer reports neither GPU data nor system memory with a model size. It is
+the last step of the rule in [Node slots](#node-slots-session_slots). The
+default is `1`, and a value below `1` is clamped to `1`. Only sessions on a
+local engine on that node count (`pi`, `pi-prompt`, `ollama`, `opencode`,
+`opencode-acp`); hosted backends such as `claude-code` are not gated by it.
+Sessions past the count wait with the reason `waiting for node <name>`. The
+operator guide, including queue priority, is in `docs/operations.md` →
+"Compute-node queue".
+
+### Node slots (`session_slots`)
+
+Each compute node that hosts a local engine takes a slot count, the number of
+workers it runs at once. Its `node:<name>` pool limit is that count. The count
+is the first of these that applies:
+
+1. `session_slots` on the node, when above `0`. Set by the operator; `0` (the
+   default) means derive.
+2. One slot per GPU, from the observer's GPU data, limited by the free GPU
+   memory against the size of the served model. A GPU takes at most one engine.
+3. Free system memory divided by the served model's size, at least one, when the
+   observer reports no GPU data.
+4. `autonomous.max_engines_per_node`.
+
+`max_concurrent_sessions` on the node, when set and smaller, caps the count. A
+derived count never falls below the workers already holding the node, but that
+floor is capped at the GPU count. A negative `session_slots` is refused. A node
+that hosts no local engine ignores `session_slots` and keeps its
+`max_concurrent_sessions` limit. The count is re-read every 10 seconds.
+
+- **REST:** `PUT /api/compute/nodes/{name}` with `session_slots`.
+  `GET /api/compute/nodes/{name}/detail` returns `session_slots` (the operator's
+  value, `0` = derive) and `derived_slots` (the count in effect). `derived_slots`
+  is omitted until the node has a pool limit.
+- **MCP:** `compute_node_add` and `compute_node_update` take `session_slots`.
+  Update replaces the whole node, so omitting it clears the override.
+  `compute_node_detail` returns `session_slots` and `derived_slots`.
+- **CLI:** `datawatch compute node add|update <name> --session-slots N`;
+  `datawatch compute node detail <name>`.
+- **Comm channel:** `compute node update <name> session_slots=N`.
 
 - **REST:** `PUT /api/config` with `{"autonomous.max_engines_per_node": N}`;
   `PUT /api/autonomous/config` with `{"max_engines_per_node": N}`. Both
@@ -1303,6 +1337,34 @@ dot — the raw id fields still carry the real id in the body.
   the `(untitled <short id>)` fallback above. The web tests asserting the
   rendering are in `internal/server/web/app-capacity-names.test.js`.
 
+### Holder nodes
+
+Every pool in `GET /api/capacity` carries `hold_nodes`, the node each holder's
+lease sits on. It is a parallel array to `holders` (same length, same order):
+the entry at index `i` is the node of the lease held by `holders[i]`, or `""`
+when that lease names no node. The field is omitted when no holder of the pool
+has a node, so a pool with only node-less leases serialises exactly as before.
+`hold_nodes` is a pure addition; `holders`, `holder` and `holder_names` are
+unchanged.
+
+The same node is printed in the text views, which read the same snapshot. The
+pool line gains ` on <node>` after each holder, so `llm:pi: 2/4 held by
+task-a on gpu-a,task-b on gpu-b`. The node appears only on a pool whose holders
+span two or more nodes; a one-node entry (every holder on one node) renders as
+it did before.
+
+- **REST:** `GET /api/capacity` and `GET /api/capacity?prd_id=<id>` both carry
+  `hold_nodes` on each pool. The Automaton-scoped view keeps the same pool
+  objects, so it carries the field too.
+- **MCP:** `capacity_status` returns the same body, so it carries `hold_nodes`.
+- **CLI:** `datawatch capacity` prints the node after each holder in the pool
+  line; `datawatch capacity --json` carries `hold_nodes`.
+- **Comm channel:** the `capacity` reply prints the node after each holder in
+  the pool line, as the CLI does.
+- **PWA:** the capacity card shows the node name as a small muted label beside
+  each holder's short id, under the same one-node rule. The web tests asserting
+  it are in `internal/server/web/app-capacity-holder-nodes.test.js`.
+
 ### Rate ceilings
 
 A pool can carry a rolling-window rate ceiling (requests and/or tokens per
@@ -1349,7 +1411,10 @@ The response is a Decision:
 `kind` is `admit`, `queued` or `alternate_available`; `queue_position` is
 1-based (0 when admitted); `resets_at` is present only when a rate ceiling is
 the blocker and the time is known; `alternates` lists pools of the same kind
-elsewhere with room. A missing or unknown backend, a non-integer priority or
+elsewhere with room. When the backend's LLM entry pools two or more known nodes
+and no `node` is given, the node pools are not required, and `node` (present
+only with `admit`) names the node the start would be placed on. A missing or
+unknown backend, a non-integer priority or
 an unknown role returns 400. The same query is the MCP tool
 `capacity_admission` (read-only), `datawatch capacity admission --backend <b>`
 and the chat command `capacity admission <backend> [node] [model]`.

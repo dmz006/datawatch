@@ -51,11 +51,84 @@ type Request struct {
 	Priority int      // higher first
 	Pools    []string // all must have room (all-or-nothing)
 	Node     string   // primary compute node, for model affinity
-	Model    string   // model wanted, for model affinity
-	Role     Role     // dispatch rank; zero value means RoleWorker
+	// NodeChoices lists compute nodes that can serve the request. With two or
+	// more entries the ledger picks the node at dispatch time: highest Priority
+	// first (ties keep list order), skipping ExcludeNodes, the first whose
+	// node:<name> pool passes the same checks as every pool in Pools. The lease
+	// then carries node:<name> in Pools and sets Lease.Node. With none or one
+	// entry the field is ignored and the caller keeps node:<name> in Pools and
+	// sets Node as before.
+	NodeChoices []NodeChoice
+	// ExcludeNodes names nodes the ledger must not pick from NodeChoices.
+	ExcludeNodes []string
+	Model        string // model wanted, for model affinity
+	Role         Role   // dispatch rank; zero value means RoleWorker
 	// Interactive marks an operator-started session. Such a request is never
 	// held back by Options.AutonomousBackpressure.
 	Interactive bool
+}
+
+// NodeChoice is one candidate compute node for a request; a higher Priority is
+// tried first.
+type NodeChoice struct {
+	Name     string
+	Priority int
+}
+
+// multiNode reports whether the ledger chooses the node for this request.
+func (r Request) multiNode() bool { return len(r.NodeChoices) >= 2 }
+
+// candidates returns the nodes the ledger may pick, in try order: Priority
+// descending, ties in list order, excluded and duplicate names dropped.
+func (r Request) candidates() []NodeChoice {
+	skip := make(map[string]bool, len(r.ExcludeNodes))
+	for _, n := range r.ExcludeNodes {
+		skip[n] = true
+	}
+	var out []NodeChoice
+	for _, c := range r.NodeChoices {
+		if c.Name == "" || skip[c.Name] {
+			continue
+		}
+		skip[c.Name] = true
+		out = append(out, c)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Priority > out[j].Priority })
+	return out
+}
+
+// withNode returns the request bound to one chosen node: node:<name> joins
+// Pools, Node is set and the choice fields are cleared.
+func (r Request) withNode(name string) Request {
+	r.Pools = append([]string(nil), r.Pools...)
+	if pool := "node:" + name; !sharesPool(r.Pools, []string{pool}) {
+		r.Pools = append(r.Pools, pool)
+	}
+	r.Node = name
+	r.NodeChoices, r.ExcludeNodes = nil, nil
+	return r
+}
+
+// allPools is Pools plus the node pool of every candidate: every pool whose
+// state can affect whether the request is granted.
+func (r Request) allPools() []string {
+	if !r.multiNode() {
+		return r.Pools
+	}
+	out := append([]string(nil), r.Pools...)
+	for _, c := range r.candidates() {
+		out = append(out, "node:"+c.Name)
+	}
+	return out
+}
+
+// candidateNames lists the eligible candidate node names in try order.
+func (r Request) candidateNames() []string {
+	var out []string
+	for _, c := range r.candidates() {
+		out = append(out, c.Name)
+	}
+	return out
 }
 
 // Lease is a held slot set.
@@ -76,6 +149,8 @@ type Waiter struct {
 	Pools  []string  `json:"pools"`
 	Since  time.Time `json:"since"`
 	Reason string    `json:"reason"`
+	// Nodes lists the candidate nodes a waiter with NodeChoices may be placed on.
+	Nodes []string `json:"nodes,omitempty"`
 	// HoldName is the operator-readable form of Holder ("" = unresolved; the
 	// renderer then shows the raw id exactly as before).
 	HoldName string `json:"hold_name,omitempty"`
@@ -94,6 +169,10 @@ type PoolStatus struct {
 	// HoldNames is the operator-readable form of Holders, in the same order
 	// (nil = unresolved; the renderer then shows the raw ids as before).
 	HoldNames []string `json:"hold_names,omitempty"`
+	// HoldNodes is the node each holder's lease names, parallel to Holders
+	// ("" = that lease names no node). Nil when no holder has a node, so a pool
+	// without node-bound leases keeps its existing shape.
+	HoldNodes []string `json:"hold_nodes,omitempty"`
 	// Rate ceiling fields appear only for pools that carry one.
 	RateRequests      int       `json:"rate_requests,omitempty"`
 	RateTokens        int64     `json:"rate_tokens,omitempty"`
@@ -281,6 +360,36 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 	return ""
 }
 
+// resolveLocked decides where req would run now. For an ordinary request it is
+// blockReasonLocked on req itself. For a request with NodeChoices it returns
+// the request bound to the first candidate node that passes every check
+// together with Pools, and an empty reason; when none fits it returns req
+// unchanged and a reason naming every candidate and what blocks it.
+func (l *Ledger) resolveLocked(req Request) (Request, string) {
+	if !req.multiNode() {
+		return req, l.blockReasonLocked(req)
+	}
+	names := req.candidateNames()
+	if len(names) == 0 {
+		var all []string
+		for _, c := range req.NodeChoices {
+			all = append(all, c.Name)
+		}
+		return req, fmt.Sprintf("no eligible node among %s: all excluded", strings.Join(all, ", "))
+	}
+	var parts []string
+	for _, name := range names {
+		bound := req.withNode(name)
+		why := l.blockReasonLocked(bound)
+		if why == "" {
+			return bound, ""
+		}
+		why = strings.TrimPrefix(why, "waiting for node "+name+": ")
+		parts = append(parts, name+": "+why)
+	}
+	return req, fmt.Sprintf("waiting for nodes %s: %s", strings.Join(names, ", "), strings.Join(parts, "; "))
+}
+
 func (l *Ledger) holdersLocked(pool string) string {
 	var hs []string
 	for h, ls := range l.leases {
@@ -298,6 +407,42 @@ func (l *Ledger) holdersLocked(pool string) string {
 	return strings.Join(hs, ",")
 }
 
+// holderNodesLocked returns the node of each holder's lease, parallel to
+// holders ("" when that lease names no node). Nil when no holder has a node.
+func (l *Ledger) holderNodesLocked(holders []string) []string {
+	var nodes []string
+	for i, h := range holders {
+		ls := l.leases[h]
+		if ls == nil || ls.Node == "" {
+			continue
+		}
+		if nodes == nil {
+			nodes = make([]string, len(holders))
+		}
+		nodes[i] = ls.Node
+	}
+	return nodes
+}
+
+// shownHoldNodes returns HoldNodes when the pool's holders span two or more
+// nodes, else nil. A one-node entry (every holder on the same node, or none)
+// renders exactly as it did before the node was carried.
+func (p PoolStatus) shownHoldNodes() []string {
+	if len(p.HoldNodes) != len(p.Holders) {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, n := range p.HoldNodes {
+		if n != "" {
+			seen[n] = true
+		}
+	}
+	if len(seen) < 2 {
+		return nil
+	}
+	return p.HoldNodes
+}
+
 // orderLocked sorts waiters into grant order: role (verifier, worker,
 // planner), priority, aged waiters, model affinity, least-recently-served
 // PRD, then FIFO.
@@ -311,7 +456,18 @@ func (l *Ledger) orderListLocked(list []*waiter, now time.Time) []*waiter {
 	ws := append([]*waiter(nil), list...)
 	aged := func(w *waiter) bool { return now.Sub(w.since) >= l.opt.AgeOverride }
 	affine := func(w *waiter) bool {
-		return w.req.Node != "" && w.req.Model != "" && l.lastModel[w.req.Node] == w.req.Model
+		if w.req.Model == "" {
+			return false
+		}
+		if w.req.multiNode() {
+			for _, n := range w.req.candidateNames() {
+				if l.lastModel[n] == w.req.Model {
+					return true
+				}
+			}
+			return false
+		}
+		return w.req.Node != "" && l.lastModel[w.req.Node] == w.req.Model
 	}
 	sort.SliceStable(ws, func(i, j int) bool {
 		a, b := ws[i], ws[j]
@@ -343,24 +499,26 @@ func (l *Ledger) dispatchLocked() {
 	}
 	now := l.opt.Clock.Now()
 	for _, w := range l.orderLocked(now) {
-		why := l.blockReasonLocked(w.req)
+		bound, why := l.resolveLocked(w.req)
 		w.reason = why
 		if why != "" {
 			continue
 		}
-		l.grantLocked(w, now)
+		l.grantLocked(w, bound, now)
 	}
 }
 
-func (l *Ledger) grantLocked(w *waiter, now time.Time) {
-	l.leases[w.req.Holder] = &Lease{
-		Holder: w.req.Holder, PRDID: w.req.PRDID, Pools: append([]string(nil), w.req.Pools...),
-		Node: w.req.Node, Model: w.req.Model, Acquired: now,
+// grantLocked takes w's lease. req is w.req as resolved by resolveLocked, so
+// for a request with NodeChoices it already names the chosen node.
+func (l *Ledger) grantLocked(w *waiter, req Request, now time.Time) {
+	l.leases[req.Holder] = &Lease{
+		Holder: req.Holder, PRDID: req.PRDID, Pools: append([]string(nil), req.Pools...),
+		Node: req.Node, Model: req.Model, Acquired: now,
 	}
-	l.lastGrant[w.req.PRDID] = now
-	l.recordRequestsLocked(w.req.Pools, now)
-	if w.req.Node != "" && w.req.Model != "" {
-		l.lastModel[w.req.Node] = w.req.Model
+	l.lastGrant[req.PRDID] = now
+	l.recordRequestsLocked(req.Pools, now)
+	if req.Node != "" && req.Model != "" {
+		l.lastModel[req.Node] = req.Model
 	}
 	for i, x := range l.waiters {
 		if x == w {
@@ -446,7 +604,11 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 // less when a rate ceiling blocking the waiter resets sooner.
 func (l *Ledger) pollWaitLocked(w *waiter) time.Duration {
 	d := l.opt.PollInterval
-	if rd, ok := l.rateWakeLocked(w, l.opt.Clock.Now()); ok && rd < d {
+	probe := w
+	if w.req.multiNode() {
+		probe = &waiter{req: Request{Pools: w.req.allPools()}}
+	}
+	if rd, ok := l.rateWakeLocked(probe, l.opt.Clock.Now()); ok && rd < d {
 		d = rd
 	}
 	return d
@@ -473,7 +635,9 @@ func (l *Ledger) remove(w *waiter) {
 // a task whose session survived a daemon restart (BL462). Unlike Acquire it
 // never queues and ignores pool limits, because the session already occupies
 // its slots. Idempotent: an existing lease for the holder is kept and only
-// its session binding is refreshed.
+// its session binding is refreshed. Adopt never picks a node: a request with
+// NodeChoices is recorded on req.Node (its node:<name> pool added) or, when
+// Node is empty, on no node.
 func (l *Ledger) Adopt(req Request, sessionID string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -482,6 +646,13 @@ func (l *Ledger) Adopt(req Request, sessionID string) {
 			ls.SessionID = sessionID
 		}
 		return
+	}
+	if req.multiNode() {
+		if req.Node != "" {
+			req = req.withNode(req.Node)
+		} else {
+			req.NodeChoices, req.ExcludeNodes = nil, nil
+		}
 	}
 	now := time.Now()
 	l.leases[req.Holder] = &Lease{
@@ -615,8 +786,8 @@ func (l *Ledger) Snapshot() Status {
 		}
 	}
 	for _, w := range l.waiters {
-		st.Waiting = append(st.Waiting, Waiter{Holder: w.req.Holder, PRDID: w.req.PRDID, Pools: w.req.Pools, Since: w.since, Reason: w.reason})
-		for _, p := range w.req.Pools {
+		st.Waiting = append(st.Waiting, Waiter{Holder: w.req.Holder, PRDID: w.req.PRDID, Pools: w.req.Pools, Since: w.since, Reason: w.reason, Nodes: w.req.candidateNames()})
+		for _, p := range w.req.allPools() {
 			names[p] = true
 		}
 	}
@@ -639,6 +810,7 @@ func (l *Ledger) Snapshot() Status {
 		if ps.Holders[0] == "" {
 			ps.Holders = nil
 		}
+		ps.HoldNodes = l.holderNodesLocked(ps.Holders)
 		st.Pools = append(st.Pools, ps)
 	}
 	sort.Slice(st.Pools, func(i, j int) bool { return st.Pools[i].Name < st.Pools[j].Name })
@@ -669,7 +841,15 @@ func FormatPools(pools []PoolStatus) string {
 			if len(p.HoldNames) == len(p.Holders) {
 				holders = p.HoldNames
 			}
-			fmt.Fprintf(&b, " held by %s", strings.Join(holders, ","))
+			nodes := p.shownHoldNodes()
+			parts := make([]string, len(holders))
+			for i, h := range holders {
+				parts[i] = h
+				if nodes != nil && nodes[i] != "" {
+					parts[i] += " on " + nodes[i]
+				}
+			}
+			fmt.Fprintf(&b, " held by %s", strings.Join(parts, ","))
 		}
 		if p.RateRequests > 0 || p.RateTokens > 0 {
 			b.WriteString(" rate")

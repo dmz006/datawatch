@@ -3401,6 +3401,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					},
 					NodePinnedModel: c.NodePinnedModel,
 					AllowModelSwap:  c.AllowModelSwap,
+					SessionSlots:    c.SessionSlots,
 				}
 				seed = append(seed, n)
 			}
@@ -5590,9 +5591,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}()
 			explicitEffortCfg := liveCfg
 			explicitEffortCfg.VerificationEffort = ""
-			var verifierTryAdmit func(backend, model string) (func(), bool)
+			var verifierTryAdmit func(backend, model string) (func(), string, bool)
 			if verifierCapacityTryAdmit != nil {
-				verifierTryAdmit = func(backend, model string) (func(), bool) {
+				verifierTryAdmit = func(backend, model string) (func(), string, bool) {
 					return verifierCapacityTryAdmit(ctx, backend, model, task.ID, prd.ID, task.SessionID)
 				}
 			}
@@ -5637,6 +5638,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 			}
 			release := vsel.Release
+			// vnode is the compute node the verifier's lease holds ("" for a
+			// one-node entry): the judge session or ask call runs there.
+			vnode := vsel.Node
 			if release != nil {
 				vGrantedAt = time.Now()
 			}
@@ -5644,7 +5648,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			defer func() { vsel.stamp(&vres) }()
 			if release == nil {
 				if verifierCapacityAdmit != nil {
-					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, task.ID, prd.ID, task.SessionID)
+					r, n, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, task.ID, prd.ID, task.SessionID)
 					if aerr != nil {
 						// BL410 Phase 0 — resource contention/admission
 						// failure, not a content judgment.
@@ -5656,6 +5660,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						}, nil
 					}
 					release = r
+					vnode = n
 					vGrantedAt = time.Now()
 				}
 			}
@@ -5674,7 +5679,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				sessionTask := sessionJudgmentTask(prompt, taskDir, outputFile)
 				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
 					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
-					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg))
+					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), vnode)
 				if serr != nil {
 					// BL410 Phase 0 — the session itself failed; see the
 					// identical fix in autonomousGuardrail's closure above.
@@ -5713,16 +5718,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 			// /api/ask has no effort field — an override effort is only
 			// recorded (VerifierEffort) on this path, not applied.
-			askBody := map[string]any{
-				"question": prompt,
-				"backend":  vkind,
-			}
-			if vbackend != vkind && vbackend != "" {
-				askBody["llm"] = vbackend
-			}
-			if verifyModel != "" {
-				askBody["model"] = verifyModel
-			}
+			askBody := judgeAskBody(prompt, vkind, vbackend, verifyModel, vnode)
 			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/ask",
@@ -5801,18 +5797,22 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// session kill runs before this closure's release, which is the
 			// order we want. A nil judgeCapacityAdmit (unset — e.g. tests)
 			// means no admission, exactly like the verifier's.
+			// judgeNode is the compute node the judge's lease holds ("" for a
+			// one-node entry): the session or ask call runs there.
+			judgeNode := ""
 			if judgeCapacityAdmit != nil {
 				admModel := guardrailModel
 				if admModel == "" {
 					admModel = gmodel
 				}
-				release, aerr := judgeCapacityAdmit(ctx, gbackend, admModel, req.UnitID, req.PRDID)
+				release, node, aerr := judgeCapacityAdmit(ctx, gbackend, admModel, req.UnitID, req.PRDID)
 				if aerr != nil {
 					// Admission failed (wait expired or context cancelled):
 					// resource contention, not a content judgment — the judge
 					// never ran. No session started, so stamp it as text-only.
 					return judgeVerdictWithSession(judgeAdmitFailureVerdict(aerr), "", ""), nil
 				}
+				judgeNode = node
 				defer release()
 			}
 			if !askCompatible(gkind) {
@@ -5851,7 +5851,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
 					content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 						"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
-						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", verificationSessionTimeout(cfg))
+						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", verificationSessionTimeout(cfg), judgeNode)
 					if serr != nil {
 						// BL410 Phase 0 — the SESSION itself failed (timeout,
 						// crash); no judgment ever ran. "infra", not a real
@@ -5899,16 +5899,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			if guardrailModel == "" {
 				guardrailModel = gmodel
 			}
-			askBody := map[string]any{
-				"question": prompt,
-				"backend":  gkind,
-			}
-			if gbackend != gkind && gbackend != "" {
-				askBody["llm"] = gbackend
-			}
-			if guardrailModel != "" {
-				askBody["model"] = guardrailModel
-			}
+			askBody := judgeAskBody(prompt, gkind, gbackend, guardrailModel, judgeNode)
 			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/ask",
@@ -6154,7 +6145,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
-			})
+			}, alertStore)
 			// Resource-fingerprint reconciliation (§3c): match store under the
 			// data dir, exporter + matches wired to the server, slow syncer
 			// over opted-in peers, and the shared-node admission gate composed

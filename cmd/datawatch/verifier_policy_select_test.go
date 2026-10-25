@@ -23,13 +23,13 @@ func newPolicyProbeFake(full ...string) *policyProbeFake {
 	return f
 }
 
-func (f *policyProbeFake) tryAdmit(backend, _ string) (func(), bool) {
+func (f *policyProbeFake) tryAdmit(backend, _ string) (func(), string, bool) {
 	f.probes = append(f.probes, backend)
 	if f.full[backend] {
-		return func() {}, false
+		return func() {}, "", false
 	}
 	f.held[backend]++
-	return func() { f.held[backend]-- }, true
+	return func() { f.held[backend]-- }, "", true
 }
 
 func policyTestResolvers() (func(string) (string, string, error), func(string) bool) {

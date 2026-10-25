@@ -158,8 +158,10 @@ func sessionOneShotTimeoutMessage(sessionName, sessionID, backend, model string,
 	return fmt.Sprintf("%s session %s (backend=%s, model=%s) timed out after %v", sessionName, sessionID, backend, model, timeout)
 }
 
-func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (string, error) {
-	content, _, err := runOneShotJSONSessionCaptureID(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout)
+// node is the compute node the session starts on ("" leaves placement to the
+// session, as it always has); a judge passes the node its lease holds.
+func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, node string) (string, error) {
+	content, _, err := runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile, node)
 	return content, err
 }
 
@@ -170,7 +172,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 // caller can name the session even when the judgment failed. It stays empty
 // only when no session was started.
 func runOneShotJSONSessionCaptureID(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (content string, sessionID string, err error) {
-	return runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile)
+	return runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile, "")
 }
 
 // runOneShotJudgeSessionCaptureID is runOneShotJSONSessionCaptureID for a
@@ -180,8 +182,8 @@ func runOneShotJSONSessionCaptureID(cfg *config.Config, prdID, projectDir, backe
 // to the scratch dir under scratchRelocateName so the durable copy exists. The
 // caller removes the project file with autonomouspkg.RemoveJudgeOutputFile
 // once the verdict is recorded.
-func runOneShotJudgeSessionCaptureID(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (content string, sessionID string, err error) {
-	return runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, peekJudgeOutput)
+func runOneShotJudgeSessionCaptureID(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, node string) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, peekJudgeOutput, node)
 }
 
 // judgeOutputReader reads a one-shot session's output file from projectDir
@@ -204,6 +206,24 @@ func peekJudgeOutput(projectDir, srcName, scratchDir, destName string) (string, 
 		_ = os.WriteFile(dst, []byte(content), 0o600) // #nosec G304 G703 -- scratchDir/destName are built from internal identifiers (data dir + PRD/task IDs), not external input
 	}
 	return content, true
+}
+
+// judgeAskBody is the /api/ask request a judge sends on the ask path. kind is
+// the backend the judgment is routed to, llm the named LLM entry when it
+// differs from kind, and model the explicit model. node pins the call to the
+// compute node the judge's lease holds ("" leaves the entry's node order alone).
+func judgeAskBody(question, kind, llm, model, node string) map[string]any {
+	body := map[string]any{"question": question, "backend": kind}
+	if llm != "" && llm != kind {
+		body["llm"] = llm
+	}
+	if model != "" {
+		body["model"] = model
+	}
+	if node != "" {
+		body["compute_node"] = node
+	}
+	return body
 }
 
 // verifierSessionNamePrefix is the sessionName prefix of the PRD task
@@ -251,7 +271,7 @@ var judgeLiveSession func(sessionName string) string
 // runOneShotJSONSessionCaptureID and runOneShotJudgeSessionCaptureID. readOutput
 // decides how the output file is read, and whether it is removed from the
 // project directory.
-func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader) (content string, sessionID string, err error) {
+func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader, node string) (content string, sessionID string, err error) {
 	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
 	if scratchErr != nil {
 		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
@@ -290,7 +310,6 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 			}
 		}
 	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -311,6 +330,11 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 		}
 		if effort != "" {
 			startReq["effort"] = effort
+		}
+		// A judge holding a node lease starts on that node, the same way a worker
+		// does. Absent when no node is held, so the session places itself as before.
+		if node != "" {
+			startReq["compute_node"] = node
 		}
 		body, _ := json.Marshal(startReq)
 

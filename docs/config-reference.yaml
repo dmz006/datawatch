@@ -1196,6 +1196,12 @@ autonomous:
   # opencode-acp). Hosted backends such as claude-code are not gated by this key.
   # Sessions past the cap wait in the node queue (see docs/operations.md →
   # "Compute-node queue").
+  # A compute node that hosts a local engine takes its own count: the node's
+  # session_slots when the operator set one, otherwise one slot per GPU from
+  # observer data (limited by free GPU memory), or with no GPU data its free
+  # system memory against the model size. This key is the count for such a
+  # node with neither. A node that hosts no local engine keeps its
+  # max_concurrent_sessions limit instead.
   max_engines_per_node: 1
   # max_parallel_tasks: DEPRECATED — never had any effect; accepted and ignored
   # with a startup warning for one release, then removed. Use max_concurrent_tasks.
@@ -1218,7 +1224,8 @@ autonomous:
   refuse_dirty_tree_start: false
   # Capacity-aware admission: tasks wait for a free host / compute-node / LLM
   # slot (status waiting_capacity) instead of failing. Default true.
-  # Per-node limit: compute node max_concurrent_sessions; per-LLM: max_inflight
+  # Per-node limit: compute node session_slots (0 = derive from observer GPU
+  # data; hosting nodes only), capped by max_concurrent_sessions; per-LLM: max_inflight
   # (0 = unlimited) or, when an explicit max_inflight is absent, the LLM entry's
   # plan_tier mapped through plan_tier_max_inflight below; per-Automaton queue
   # order: priority (set_priority).
@@ -1814,6 +1821,22 @@ orchestrator:
   guardrail_backend: ""
   # Max concurrent PRD nodes per graph.
   max_parallel_prds: 2
+
+# ── Compute node slot override ──
+# Each compute node may set session_slots, a whole number of workers it takes at
+# once. 0 (the default) derives the count from the node's observer data: one slot
+# per GPU, limited by free GPU memory against the served model; with no GPU data,
+# free system memory divided by the model size, at least one slot. A positive value
+# wins over the derived count, and max_concurrent_sessions still caps it. Applies
+# only to a node that hosts a local engine; other nodes keep max_concurrent_sessions.
+# A negative value is rejected when the config loads. Set it in the PWA node form,
+# `datawatch compute node update <name> --session-slots N`, or REST
+# PUT /api/compute/nodes/{name}.
+# compute_nodes:
+#   - name: gpu-1
+#     kind: ollama
+#     address: http://gpu-1:11434
+#     session_slots: 2
 
 # ── Compute pin keeper ──
 # Per-node model pins live on each compute node (compute_nodes[].node_pinned_model

@@ -99,6 +99,13 @@ type SpawnRequest struct {
 	// attempt-work restore when set; the executor clears the task's flag once
 	// this spawn has run.
 	CleanRestart bool
+	// ComputeNode — the compute node this task's worker lease was granted on
+	// (capacity.Lease.Node, read after admit succeeds). The local-session
+	// SpawnFn forwards it as compute_node with the backend, so the session
+	// runs on the node the ledger placed the task on. Empty when capacity is
+	// off or the lease names no node; the session then resolves its node as
+	// it always has.
+	ComputeNode string
 }
 
 // prdHasGit reports whether a PRD has git settings: prd.Git populated
@@ -1236,6 +1243,16 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 				return aerr
 			}
+			// A multi-node LLM entry needs its model resident on the leased node
+			// before the spawn; a single-node entry skips this step entirely.
+			if lerr := m.loadWorkerNode(ctx, prd, t, backend, model); lerr != nil {
+				if errors.Is(lerr, errCancelledWhileWaiting) {
+					return nil
+				}
+				return lerr
+			}
+			// The node the lease was granted on decides where the worker runs.
+			heldNode := m.heldNode(t.ID)
 			// BL428 §3a — tree lock after capacity, before spawn: a second
 			// writer on the same canonical tree waits here (visible as a
 			// waiting task with a "tree lock" reason), and is released by
@@ -1277,6 +1294,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				WriteScope:       EffectiveTaskWriteDirs(prd, t), // auto-commit staging scope
 				AttemptRefs:      t.AttemptRefs,                  // preserved attempt work to restore
 				CleanRestart:     t.CleanRestart,                 // operator clean restart: skip the restore once
+				ComputeNode:      heldNode,                       // capacity lease's node: where the worker runs
 			})
 			if err != nil && errors.Is(err, errCancelledWhileWaiting) {
 				return nil

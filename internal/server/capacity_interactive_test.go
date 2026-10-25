@@ -28,9 +28,9 @@ func TestHandleStartSession_CapacityAdmit_Gated(t *testing.T) {
 
 	var admitCalls, bindCalls int
 	var boundHolder, boundSessionID string
-	srv.SetCapacityAdmit(func(_ context.Context, backend, model, holder string, _ int) error {
+	srv.SetCapacityAdmit(func(_ context.Context, backend, model, holder string, _ int) (string, error) {
 		admitCalls++
-		return nil
+		return "", nil
 	})
 	srv.SetCapacityBind(func(holder, sessionID string) {
 		bindCalls++
@@ -79,9 +79,9 @@ func TestHandleStartSession_CapacityAdmit_SkippedForOneShot(t *testing.T) {
 	srv.manager.WithFakeTmux()
 
 	admitCalls := 0
-	srv.SetCapacityAdmit(func(_ context.Context, _, _, _ string, _ int) error {
+	srv.SetCapacityAdmit(func(_ context.Context, _, _, _ string, _ int) (string, error) {
 		admitCalls++
-		return nil
+		return "", nil
 	})
 
 	body, _ := json.Marshal(map[string]any{"task": "hello", "project_dir": t.TempDir(), "one_shot": true})
@@ -106,8 +106,8 @@ func TestHandleStartSession_CapacityAdmit_DeniedReturns503(t *testing.T) {
 	// multiplexer, so nothing real can leak on this host.
 	srv.manager.WithFakeTmux()
 
-	srv.SetCapacityAdmit(func(_ context.Context, _, _, _ string, _ int) error {
-		return errCapacityDenied
+	srv.SetCapacityAdmit(func(_ context.Context, _, _, _ string, _ int) (string, error) {
+		return "", errCapacityDenied
 	})
 	releaseCalls := 0
 	srv.SetCapacityRelease(func(string) { releaseCalls++ })

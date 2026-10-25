@@ -333,6 +333,11 @@ type Session struct {
 	// Written to <projectDir>/opencode.json as provider.ollama.apiUrl at launch.
 	OllamaURL string `json:"ollama_url,omitempty"`
 
+	// NodeAddress — the address (scheme://host:port) of the compute node the
+	// session was placed on, for pi-family and opencode sessions. Stored so a
+	// resume or restart reuses the same host rather than re-resolving it.
+	NodeAddress string `json:"node_address,omitempty"`
+
 	// BL331 — federation peer that owns or originated this session via channel routing.
 	OwnerPeer string `json:"owner_peer,omitempty"`
 

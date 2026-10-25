@@ -163,12 +163,12 @@ func (k NodeKind) IsDeprecated() bool {
 // Node can run. Real-time capacity comes from the monitoring stub's
 // latest snapshot (live polling lands in S1 too).
 type DeclaredCapacity struct {
-	GPUs                 int    `yaml:"gpus,omitempty" json:"gpus,omitempty"`
-	GPUMemGB             int    `yaml:"gpu_mem_gb,omitempty" json:"gpu_mem_gb,omitempty"`
-	RAMGB                int    `yaml:"ram_gb,omitempty" json:"ram_gb,omitempty"`
-	MaxConcurrentModels  int    `yaml:"max_concurrent_models,omitempty" json:"max_concurrent_models,omitempty"`
-	GPUVendor            string `yaml:"gpu_vendor,omitempty" json:"gpu_vendor,omitempty"`             // "nvidia" / "amd" / "intel" / ""
-	GPUModel             string `yaml:"gpu_model,omitempty" json:"gpu_model,omitempty"`
+	GPUs                int    `yaml:"gpus,omitempty" json:"gpus,omitempty"`
+	GPUMemGB            int    `yaml:"gpu_mem_gb,omitempty" json:"gpu_mem_gb,omitempty"`
+	RAMGB               int    `yaml:"ram_gb,omitempty" json:"ram_gb,omitempty"`
+	MaxConcurrentModels int    `yaml:"max_concurrent_models,omitempty" json:"max_concurrent_models,omitempty"`
+	GPUVendor           string `yaml:"gpu_vendor,omitempty" json:"gpu_vendor,omitempty"` // "nvidia" / "amd" / "intel" / ""
+	GPUModel            string `yaml:"gpu_model,omitempty" json:"gpu_model,omitempty"`
 }
 
 // MaintenanceWindow is one operator-declared blackout. Scheduler
@@ -238,6 +238,11 @@ type Node struct {
 	// (0 = unlimited). Enforced by the capacity ledger.
 	MaxConcurrentSessions int `yaml:"max_concurrent_sessions,omitempty" json:"max_concurrent_sessions,omitempty"`
 
+	// SessionSlots is the operator's worker count for this node (0 = derive
+	// from observer GPU data; see NodeSlots). The effective count is still
+	// capped by MaxConcurrentSessions when that is set.
+	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`
+
 	// Operator-declared blackouts.
 	MaintenanceWindows []MaintenanceWindow `yaml:"maintenance_windows,omitempty" json:"maintenance_windows,omitempty"`
 
@@ -271,8 +276,8 @@ type Node struct {
 
 	// v8.0 BL318 — routing mode + per-mode config.
 	// When empty / "direct", dispatch goes to Address directly (legacy behaviour).
-	Routing              RoutingMode                  `yaml:"routing,omitempty" json:"routing,omitempty"`
-	RoutingDockerNetwork *RoutingDockerNetworkConfig  `yaml:"routing_docker_network,omitempty" json:"routing_docker_network,omitempty"`
+	Routing               RoutingMode                  `yaml:"routing,omitempty" json:"routing,omitempty"`
+	RoutingDockerNetwork  *RoutingDockerNetworkConfig  `yaml:"routing_docker_network,omitempty" json:"routing_docker_network,omitempty"`
 	RoutingDatawatchProxy *RoutingDatawatchProxyConfig `yaml:"routing_datawatch_proxy,omitempty" json:"routing_datawatch_proxy,omitempty"`
 
 	// v7.0.0-alpha.23b — explicit binding to a registered observer peer
@@ -320,8 +325,8 @@ type DockerConfig struct {
 // K8sConfig — kind=k8s connection params. Cluster MUST reference an
 // existing Cluster Profile (operator-spec'd Q2: dropdown only).
 type K8sConfig struct {
-	ClusterProfile string `yaml:"cluster_profile" json:"cluster_profile"`             // ClusterProfile name (required)
-	Namespace      string `yaml:"namespace,omitempty" json:"namespace,omitempty"`     // default "default"
+	ClusterProfile string `yaml:"cluster_profile" json:"cluster_profile"`         // ClusterProfile name (required)
+	Namespace      string `yaml:"namespace,omitempty" json:"namespace,omitempty"` // default "default"
 	ServiceAccount string `yaml:"service_account,omitempty" json:"service_account,omitempty"`
 }
 
@@ -375,6 +380,9 @@ func (n *Node) Validate() error {
 	}
 	if n.MaxConcurrentSessions < 0 {
 		return fmt.Errorf("compute node: max_concurrent_sessions %d must be >= 0", n.MaxConcurrentSessions)
+	}
+	if n.SessionSlots < 0 {
+		return fmt.Errorf("compute node: session_slots %d must be >= 0", n.SessionSlots)
 	}
 	if n.SchedulingPriority < 0 || n.SchedulingPriority > 100 {
 		return fmt.Errorf("compute node: scheduling_priority %d out of range [0,100]", n.SchedulingPriority)
