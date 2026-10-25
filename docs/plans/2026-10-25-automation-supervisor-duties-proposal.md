@@ -4,7 +4,7 @@
 **Version:** none (planning document; plan-document commits are exempt from the version bump)
 **Tracker:** BL609
 
-Confirmed: no — the operator has not confirmed this proposal, and no open point below is decided.
+Confirmed: yes — Q1 to Q8 are decided (see each Status line). Confirmation, 2026-10-25 about 19:55, operator, quoted: "Yes", in answer to "Do you want me to set Confirmed: yes and file its implementation PRD?". Scope of the confirmation: Step 1 only (triage record and poll-time pass). Later steps are filed one at a time. Mobile parity issues are not filed without the operator's word.
 
 This proposal absorbs the eight supervisor duties the 2026-10-24 orchestration design listed under "Supervisor duties the Automation coordinator must absorb" (see `docs/plans/2026-10-14-automation-orchestration-design.md`) into the Automation coordinator. Each duty below keeps that list's number and title, records what Exists today versus what is Missing (verified against the code at this commit), and names the smallest change that closes the gap. Every number (times, counts, surfaces) that the design left to the operator is collected under Open questions for the operator.
 
@@ -245,5 +245,5 @@ This document changes nothing on any surface; it names where future steps would 
 | Item | Value |
 |---|---|
 | Proposal | Planned |
-| Confirmed | no — awaiting operator answers to Q1 through Q8 |
+| Confirmed | yes, Step 1 only (operator, 2026-10-25); Q1 to Q8 decided |
 | Date | 2026-10-25 |
