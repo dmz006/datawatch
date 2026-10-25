@@ -17,7 +17,9 @@ import (
 const sessionIdleProbeMaxDepth = 8
 
 // sessionIdleRunnerNames are the exact process command names of the agent
-// runners. pi's runner surfaces as a bare "pi" process.
+// runners. pi's runner surfaces as a bare "pi" process only for a native
+// install; a node-hosted pi reports the kernel name of its main thread, so
+// runnerNameFromProcess also looks at argv before a process is judged.
 var sessionIdleRunnerNames = map[string]bool{
 	"claude":   true,
 	"pi":       true,
@@ -41,11 +43,13 @@ func hasLiveChildProcess(tmuxSession, projectDir string) bool {
 	if !ok {
 		return false
 	}
-	return len(workChildPIDs(roots, tree, readProcessCommName, readProcessCmdline, sessionOwnMCPServers(projectDir))) > 0
+	return len(workChildPIDs(roots, tree, resolveRunnerName, readProcessCmdline, sessionOwnMCPServers(projectDir))) > 0
 }
 
 // hasLiveRunnerProcess reports whether a runner process (claude, pi or opencode)
-// is alive anywhere under the panes of tmuxSession, whatever it is doing. The
+// is alive anywhere under the panes of tmuxSession, whatever it is doing. A
+// runner hosted by node counts too: its kernel name is MainThread, so it is
+// recognised by the script node runs (see runnerNameFromProcess). The
 // pi-prompt exit-silence detector needs this rather than hasLiveChildProcess: a
 // one-shot run is stalled only once its runner has gone, and a runner that is
 // generating may have no child process at all. Any probe failure reports false.
@@ -54,7 +58,7 @@ func hasLiveRunnerProcess(tmuxSession string) bool {
 	if !ok {
 		return false
 	}
-	return processTreeHasLiveRunner(roots, tree, readProcessCommName)
+	return processTreeHasLiveRunner(roots, tree, resolveRunnerName)
 }
 
 // runnerDescendantPIDs returns the pids of the live processes a runner started
@@ -67,7 +71,7 @@ func runnerDescendantPIDs(tmuxSession string) map[int]bool {
 	if !ok {
 		return nil
 	}
-	return processTreeRunnerDescendants(roots, tree, readProcessCommName)
+	return processTreeRunnerDescendants(roots, tree, resolveRunnerName)
 }
 
 // sessionProcessTree walks down from the pane pids of tmuxSession and returns
@@ -318,6 +322,41 @@ func sessionOwnMCPServers(projectDir string) []channel.MCPServerSpec {
 		specs = append(specs, channel.MCPServerSpec{Command: bin})
 	}
 	return specs
+}
+
+// runnerNameFromProcess returns the runner name for a process given its kernel
+// command name and argv. A comm in sessionIdleRunnerNames is returned as is.
+// For a node process, the first argv entry after node that does not start with
+// a dash is the script; when its base name is a runner name, that name is
+// returned. Anything else returns comm unchanged, so a node process running some
+// other script is not a runner.
+func runnerNameFromProcess(comm string, argv []string) string {
+	if sessionIdleRunnerNames[comm] {
+		return comm
+	}
+	if len(argv) == 0 || filepath.Base(argv[0]) != "node" {
+		return comm
+	}
+	for _, a := range argv[1:] {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		if name := filepath.Base(a); sessionIdleRunnerNames[name] {
+			return name
+		}
+		break
+	}
+	return comm
+}
+
+// resolveRunnerName returns the runner name of pid from its kernel command name
+// and command line, so a node-hosted runner is recognised.
+func resolveRunnerName(pid int) string {
+	comm := readProcessCommName(pid)
+	if sessionIdleRunnerNames[comm] {
+		return comm
+	}
+	return runnerNameFromProcess(comm, readProcessCmdline(pid))
 }
 
 // readProcessCommName returns the kernel command name of pid from

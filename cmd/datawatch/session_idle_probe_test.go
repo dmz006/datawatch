@@ -373,3 +373,25 @@ func TestSessionIdleProbe_RunnerDescendantsCycleTerminates(t *testing.T) {
 		t.Fatalf("got %v, want only 300", got)
 	}
 }
+
+func TestSessionIdleProbe_RunnerNameFromProcess(t *testing.T) {
+	cases := []struct {
+		name string
+		comm string
+		argv []string
+		want string
+	}{
+		{"bare pi comm", "pi", []string{"/usr/local/bin/pi"}, "pi"},
+		{"node-hosted pi", "MainThread", []string{"/usr/bin/node", "/opt/tools/bin/pi"}, "pi"},
+		{"node with option then claude", "MainThread", []string{"node", "--no-warnings", "/opt/tools/bin/claude"}, "claude"},
+		{"node running another script", "MainThread", []string{"node", "server.js"}, "MainThread"},
+		{"empty argv", "MainThread", nil, "MainThread"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := runnerNameFromProcess(tc.comm, tc.argv); got != tc.want {
+				t.Errorf("runnerNameFromProcess(%q, %v) = %q, want %q", tc.comm, tc.argv, got, tc.want)
+			}
+		})
+	}
+}

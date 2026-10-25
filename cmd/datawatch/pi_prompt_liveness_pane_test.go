@@ -190,7 +190,8 @@ func TestPiPromptLivenessPanePlainRunner(t *testing.T) {
 }
 
 // TestPiPromptLivenessPaneNodeRunner: a node-hosted stub holding a timer. The
-// kernel names the process MainThread, which is not in sessionIdleRunnerNames.
+// kernel names the process MainThread, which is not in sessionIdleRunnerNames,
+// so the runner is recognised through argv: node running a script named pi.
 func TestPiPromptLivenessPaneNodeRunner(t *testing.T) {
 	piPromptLivenessPaneIsolate(t, true)
 	const name = "liveness-node"
@@ -198,9 +199,8 @@ func TestPiPromptLivenessPaneNodeRunner(t *testing.T) {
 	piPromptLivenessPaneRun(t, name, "#!/usr/bin/env node\nsetInterval(() => {}, 1000);\n")
 	comms := piPromptLivenessPaneSettle(t, name, piPromptLivenessPaneHasNodeArgv)
 	runner, child := piPromptLivenessPaneMeasure(t, name, comms)
-	// The runner-resolution task flips this assertion to true.
-	if runner {
-		t.Errorf("hasLiveRunnerProcess = true, want false: a node-run pi reports the name MainThread")
+	if !runner {
+		t.Errorf("hasLiveRunnerProcess = false, want true: a node-run pi is recognised through argv")
 	}
 	if child {
 		t.Errorf("hasLiveChildProcess = true, want false for a node runner with no child")
