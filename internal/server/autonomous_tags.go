@@ -13,11 +13,14 @@ import (
 // tagAPI is the optional AutonomousAPI extension that manages tags.
 type tagAPI interface {
 	ListTags(includeSub bool) []any
+	ListTagsWithCounts(includeSub bool) ([]any, autonomous.UntaggedCounts)
 	CreateTag(name, parentID, color, description string) (any, error)
 	UpdateTag(id string, name, parentID, color, description *string) (any, error)
 	DeleteTag(id string) error
 	SetPRDTags(prdID string, tagIDs []string) (any, error)
+	SetPRDTagsAndPrimary(prdID string, tagIDs []string, primary *string) (any, error)
 	ListPRDsByTag(tagID string, includeSub bool) ([]any, error)
+	AttentionAutomata(statuses []string) []any
 	// RequireTag and AutomatonTagIDs back the session tag registry and the
 	// inherited-tag lookup (session_tags.go).
 	RequireTag(id string) error
@@ -64,12 +67,45 @@ func writeTagError(w http.ResponseWriter, err error) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
+// handleAutonomousAttention lists the Automata that need the operator's
+// attention.
+//
+//	GET /api/autonomous/attention  → {statuses, items}
+//
+// statuses are the attention statuses in force. items are the Automata whose
+// status is one of them, plus every Automaton with a task held for operator
+// review, each as its summary view (blocked_reason included).
+func (s *Server) handleAutonomousAttention(w http.ResponseWriter, r *http.Request) {
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	api, ok := s.tagAPI()
+	if !ok {
+		http.Error(w, "tags not supported", http.StatusNotImplemented)
+		return
+	}
+	statuses := autonomous.ResolveAttentionStatuses(s.autonomousSettings)
+	writeJSONOK(w, map[string]any{"statuses": statuses, "items": api.AttentionAutomata(statuses)})
+}
+
 // handleAutonomousTags manages the tag registry.
 //
-//	GET    /api/autonomous/tags[?include_sub=]  — list tags with Automata counts
-//	POST   /api/autonomous/tags                 — create {name,parent_id?,color?,description?}
-//	PATCH  /api/autonomous/tags/{id}            — rename/recolor/reparent/describe
-//	DELETE /api/autonomous/tags/{id}            — delete; 409 on children or assigned Automata
+//	GET    /api/autonomous/tags[?include_sub=&counts=]  — list tags with Automata counts
+//	POST   /api/autonomous/tags                         — create {name,parent_id?,color?,description?}
+//	PATCH  /api/autonomous/tags/{id}                    — rename/recolor/reparent/describe
+//	DELETE /api/autonomous/tags/{id}                    — delete; 409 on children or assigned Automata
+//
+// counts=true adds subtree_count, direct_count, session_subtree_count and
+// session_direct_count to each tag, and an untagged {count, session_count}
+// object to the reply. The count field keeps its include_sub meaning.
 func (s *Server) handleAutonomousTags(w http.ResponseWriter, r *http.Request) {
 	if s.autonomousMgr == nil {
 		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
@@ -87,7 +123,13 @@ func (s *Server) handleAutonomousTags(w http.ResponseWriter, r *http.Request) {
 			if !s.fedCap(w, r, federation.CapAutonomousRead) {
 				return
 			}
-			writeJSONOK(w, map[string]any{"tags": api.ListTags(queryBool(r, "include_sub", false))})
+			includeSub := queryBool(r, "include_sub", false)
+			if queryBool(r, "counts", false) {
+				tags, untagged := api.ListTagsWithCounts(includeSub)
+				writeJSONOK(w, map[string]any{"tags": tags, "untagged": untagged})
+				return
+			}
+			writeJSONOK(w, map[string]any{"tags": api.ListTags(includeSub)})
 		case http.MethodPost:
 			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 				return

@@ -1286,7 +1286,13 @@ paths:
   /api/autonomous/prds/{id}/set_tags:
     post:
       summary: Replace the tags on an Automaton
-      description: Replaces the full list; an empty array clears it. Every ID must be an existing tag.
+      description: |
+        Replaces the full list; an empty array clears it. Every ID must be an
+        existing tag. The optional primary_tag_id picks the tag a tag browser
+        sorts the Automaton under; it never hides a membership. Absent keeps the
+        current primary while it is still a tag. Empty clears it. Any other value
+        must be one of tag_ids, or the call is refused with 400. Removing the
+        primary tag from the Automaton clears the primary.
       operationId: autonomousPRDSetTags
       tags: [Autonomous]
       parameters:
@@ -1300,8 +1306,10 @@ paths:
               required: [tag_ids]
               properties:
                 tag_ids: {type: array, items: {type: string}}
+                primary_tag_id: {type: string, description: "Optional. One of tag_ids, or empty to clear. Default none."}
       responses:
-        "200": {description: Updated PRD, carries tag_ids}
+        "200": {description: "Updated PRD, carries tag_ids and primary_tag_id"}
+        "400": {description: "primary_tag_id is not one of tag_ids"}
         "404": {description: Unknown tag}
 
   /api/autonomous/prds/{id}/set_notify_events:
@@ -1340,12 +1348,21 @@ paths:
   /api/autonomous/tags:
     get:
       summary: List Automata tags
-      description: Returns every tag (a tree via parent_id) with the number of Automata carrying it.
+      description: |
+        Returns every tag (a tree via parent_id) with the number of Automata
+        carrying it. With counts=true each tag also carries subtree_count (distinct
+        Automata carrying the tag or any descendant), direct_count (Automata
+        carrying exactly this tag), session_subtree_count and session_direct_count
+        (the same for sessions, where a session counts through its own tags and
+        through the tags it inherits from its Automaton), and the reply carries an
+        untagged object {count, session_count}. count keeps its include_sub meaning.
       operationId: autonomousTagList
       tags: [Autonomous]
       parameters:
         - {name: include_sub, in: query, required: false, schema: {type: boolean, default: false}, description: "Roll counts up to include descendant tags"}
-      responses: {"200": {description: "{tags:[{id,name,parent_id,color,description,created_at,updated_at,count}]}"}}
+        - {name: counts, in: query, required: false, schema: {type: boolean, default: false}, description: "Add the subtree, direct and session counts and the untagged totals"}
+      responses:
+        "200": {description: "{tags:[{id,name,parent_id,color,description,created_at,updated_at,count}], untagged?:{count,session_count}}; with counts=true each tag also has subtree_count, direct_count, session_subtree_count, session_direct_count"}
     post:
       summary: Create a tag
       operationId: autonomousTagCreate
@@ -1392,6 +1409,22 @@ paths:
         "200": {description: "{deleted: id}"}
         "404": {description: Unknown tag}
         "409": {description: "Has child tags, or assigned to Automata (body carries count)"}
+
+  /api/autonomous/attention:
+    get:
+      summary: List the Automata that need the operator's attention
+      description: |
+        The items are the Automata whose status is one of the attention statuses,
+        plus every Automaton with a task held for operator review. The statuses
+        field names the attention statuses in force: blocked, needs_review and
+        paused by default, so a paused Automaton is in the group. Each item is an
+        Automaton summary view and carries blocked_reason.
+      operationId: autonomousAttention
+      tags: [Autonomous]
+      responses:
+        "200": {description: "{statuses:[string], items:[SummaryView]}"}
+        "405": {description: Only GET is allowed}
+        "503": {description: autonomous disabled}
 
   /api/autonomous/guardrail_profiles:
     get:
@@ -2344,7 +2377,9 @@ paths:
       description: |
         All Automation records, one object each, in store order. A record
         with a budget policy also carries a computed `budget` view; the view
-        is worked out on each read and is never stored.
+        is worked out on each read and is never stored. Each record also carries
+        a computed `tags` array: the union of the tag IDs of its member Automata,
+        sorted. It is read-only and is never stored on the Automation.
       operationId: automationsList
       tags: [Automations]
       responses:

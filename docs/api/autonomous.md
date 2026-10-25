@@ -54,17 +54,18 @@ POST   /api/autonomous/prds/{id}/set_task_verifier_policy    per-task verifier p
 POST   /api/autonomous/prds/{id}/set_failure_escalation     failure escalation override; body: {[task_id], policy|null, actor} (null clears; see "Failure escalation")
 POST   /api/autonomous/prds/{id}/resolve_task_review        operator decision on a task held for review; body: {task_id, action: retry|cancel, [spec], [backend], [model], [effort], [files[]], [note], actor}
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
-POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {tag_ids[]} ([] clears)
+POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {tag_ids[], [primary_tag_id]} ([] clears; primary_tag_id must be one of tag_ids or empty, else 400)
 POST   /api/autonomous/prds/{id}/set_kind  Automaton kind; body: {kind} (feature|bug|other; "" derives it again); 400 on an unknown kind, 404 on an unknown id
 POST   /api/autonomous/prds/{id}/set_lane_preference  lane an Automaton may take; body: {lane_preference: gpu|claude|any} ("" means any); 400 on an unknown value, 404 on an unknown id
 POST   /api/autonomous/prds/{id}/set_notify_events  set the lifecycle event kinds the Automaton notifies on; body: {notify_events[]} — absent/null/[] clears (inherit); the reply carries the computed notify_events_effective
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
 GET    /api/autonomous/prds?tag={id}[&include_sub=false]  Automata carrying a tag (and, by default, any descendant tag)
 
-GET    /api/autonomous/tags[?include_sub=]  tag tree (parent_id) with Automata counts
+GET    /api/autonomous/tags[?include_sub=&counts=]  tag tree (parent_id) with Automata counts; counts=true adds subtree, direct and session counts and an untagged object
 POST   /api/autonomous/tags                 create; body: {name, [parent_id], [color], [description]}
 PATCH  /api/autonomous/tags/{id}            rename / recolor / describe / reparent; 409 if the move makes a cycle
 DELETE /api/autonomous/tags/{id}            409 while the tag has child tags, 409 with {count} while Automata carry it
+GET    /api/autonomous/attention           the attention group: {statuses, items}; see "Attention list" below
 GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD                                      [v5.9.0  / BL191 Q4]
 
 GET    /api/autonomous/learnings           extracted post-task learnings
@@ -82,7 +83,7 @@ DELETE /api/autonomous/guardrail_profiles/{id}     delete profile
 PUT    /api/autonomous/prds/{id}/guardrails        set per-Automaton override; body: {guardrail_profile?, per_task_guardrails[], per_story_guardrails[]}
 
 # Automations — orchestration records (see the Automations section below)
-GET    /api/automations              list Automations
+GET    /api/automations              list Automations (each carries a computed tags array: the member Automata's tag IDs)
 POST   /api/automations              create (returns draft, version 1); body: {name, entry_member_id?, members[], budget_policy?, project_dir?, actor, reason}
 GET    /api/automations/{id}         get one
 PUT    /api/automations/{id}         update; body: create fields + expected_version (required)
@@ -460,6 +461,42 @@ Both routes write an audit entry (`set_failure_escalation` or `resolve_task_revi
 | Automation status | `review_needed_count`, `review_needed_task_ids` | Held tasks of the current member Automaton. Omitted when none is held. |
 
 Daemon default: `GET /api/config` returns `autonomous.failure_escalation` (`enabled`, `max_failures`, `steps`), and `PUT /api/config` takes the keys `autonomous.failure_escalation.enabled`, `.max_failures` and `.steps`. `steps` accepts a JSON array or the compact text `backend:model[@attempts],...`, where `-` means the task's normal worker. A bad value is a 400 naming the key, and nothing in that write is applied.
+
+### Tags on Automata and the tag counts
+
+Every Automaton carries its tags. A summary list row (the default
+`GET /api/autonomous/prds`) carries them as `tags`; the full record
+(`?full=1`, and `GET /api/autonomous/prds/{id}`) carries them as `tag_ids`. Both
+are the same tag IDs. A row also carries `primary_tag_id` when the Automaton has
+a primary tag. The primary tag is set with `POST .../set_tags` and is used only to
+sort an Automaton in a tag browser; it never hides a membership. The primary
+defaults to none, and removing the primary tag from the Automaton clears it.
+The primary tag is set through the REST `set_tags` route only. The CLI, MCP and comm
+channel tag verbs still send `tag_ids` alone, so they keep the current primary while
+its tag stays and clear it when the tag is removed.
+`task_count`, `story_count` and `task_status_counts` are unchanged.
+
+`GET /api/autonomous/tags?counts=true` adds these fields to each tag:
+
+| Field | Meaning |
+|---|---|
+| `count` | Unchanged: Automata carrying the tag, rolled up with `include_sub`. |
+| `subtree_count` | Distinct Automata carrying the tag or any descendant. An Automaton counts once per tag, however many of its tags sit in that subtree. This is the main figure a tag browser shows. |
+| `direct_count` | Automata carrying exactly this tag. |
+| `session_subtree_count` | As `subtree_count`, for sessions. A session counts through its own tags and through the tags it inherits from its Automaton. |
+| `session_direct_count` | As `direct_count`, for sessions, with inherited tags included. |
+
+The reply also carries `untagged: {count, session_count}`: the Automata, and the
+sessions, that carry no tag at all. A session's inherited tags count, so a session
+is untagged only when neither it nor its Automaton has a tag.
+
+### Attention list (`GET /api/autonomous/attention`)
+
+Returns `{"statuses": [...], "items": [...]}`. The items are the Automata whose
+status is one of `statuses`, plus every Automaton with a task held for operator
+review. Each item is the summary view, with `blocked_reason`. `statuses` names the
+statuses in force; they are `blocked`, `needs_review` and `paused`, so a paused
+Automaton is in the group. Read-only; needs the autonomous read capability.
 
 ### Automata list (`GET /api/autonomous/prds`)
 

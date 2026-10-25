@@ -121,6 +121,21 @@ func (m *Manager) CountSessionsWithTag(tagID string) int {
 	return n
 }
 
+// SessionEffectiveTagSets returns one tag-ID list per session, active and
+// archived: the session's own tags followed by the tags it inherits. The
+// autonomous tag registry counts sessions from these lists. A session outside
+// any Automaton contributes only its own tags.
+func (m *Manager) SessionEffectiveTagSets() [][]string {
+	all := append([]*Session(nil), m.store.List()...)
+	all = append(all, m.ListArchivedSessions(SessionFilter{}, func(*Session) bool { return true }, "", time.Time{}, 0)...)
+	out := make([][]string, 0, len(all))
+	for _, sess := range all {
+		set := append(dedupeTagIDs(sess.Tags), m.InheritedTags(sess)...)
+		out = append(out, set)
+	}
+	return out
+}
+
 // sessionHasTag reports whether tagID is among the session's own tags.
 func sessionHasTag(sess *Session, tagID string) bool {
 	for _, t := range sess.Tags {

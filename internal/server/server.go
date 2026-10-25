@@ -419,6 +419,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Tag registry endpoints.
 	apiMux.HandleFunc("/api/autonomous/tags", api.handleAutonomousTags)
 	apiMux.HandleFunc("/api/autonomous/tags/", api.handleAutonomousTags)
+	apiMux.HandleFunc("/api/autonomous/attention", api.handleAutonomousAttention)
 	// BL303 S2 — guardrail library + profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/guardrails", api.handleAutonomousGuardrails)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)

@@ -471,6 +471,11 @@ type Server struct {
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
 
+	// autonomousSettings reads the autonomous settings the tag routes use, by
+	// config key. Nil, or a key it does not set, means the built-in default
+	// (see autonomous.ResolveAttentionStatuses).
+	autonomousSettings autonomous.SettingLookup
+
 	// progressNow is the clock the progress routes read; nil means time.Now.
 	// Tests set it to a fixed time.
 	progressNow func() time.Time

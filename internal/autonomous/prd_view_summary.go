@@ -30,6 +30,7 @@ type SummaryView struct {
 	Type             string         `json:"type,omitempty"`
 	Backend          string         `json:"backend,omitempty"`
 	Tags             []string       `json:"tags,omitempty"`
+	PrimaryTagID     string         `json:"primary_tag_id,omitempty"`
 	Cost             float64        `json:"cost"`
 	ParentPRDID      string         `json:"parent_prd_id,omitempty"`
 	Priority         int            `json:"priority,omitempty"`
@@ -81,6 +82,7 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		Type:             prd.Type,
 		Backend:          prd.Backend,
 		Tags:             prd.TagIDs,
+		PrimaryTagID:     prd.PrimaryTagID,
 		ParentPRDID:      prd.ParentPRDID,
 		Priority:         prd.Priority,
 		IsTemplate:       prd.IsTemplate,
