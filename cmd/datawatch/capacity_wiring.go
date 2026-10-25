@@ -601,6 +601,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// servedModel is the size of the model each node last had loaded. syncPools
 	// is the only writer, and it runs on one goroutine, so no lock is needed.
 	servedModel := map[string]uint64{}
+	servedCPUModel := map[string]uint64{}
 
 	external := hostExternalCount(mgr)
 	backpressure := gpuNodeBackpressure(func() int { return cfg.Autonomous.CapacityGPUUtilPct }, &gpuMu, gpuUtil)
@@ -815,25 +816,33 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		} else {
 			led.SetLimit("host", 0)
 		}
-		// Every compute node's pool limit is its slot count (compute.NodeSlots):
-		// the operator's session_slots wins; otherwise one slot per GPU from
-		// observer data, limited by free GPU memory, falling back to
-		// autonomous.max_engines_per_node when the observer reports no GPU data.
-		// max_concurrent_sessions stays a ceiling. Observer figures are read
-		// only when a derived count or the GPU backpressure gate needs them, in
-		// parallel so one slow monitoring endpoint does not hold up the rest.
+		// A compute node that hosts local engines takes its pool limit from its
+		// slot count (compute.NodeSlots): the operator's session_slots wins;
+		// otherwise one slot per GPU from observer data, limited by free GPU
+		// memory, falling back to autonomous.max_engines_per_node when the
+		// observer reports no GPU data. A node that hosts no local engine keeps
+		// its max_concurrent_sessions limit, 0 meaning unlimited. Observer
+		// figures are read only when a derived count or the GPU backpressure
+		// gate needs them, in parallel so one slow monitoring endpoint does not
+		// hold up the rest.
 		engines := cfg.Autonomous.MaxEnginesPerNode
 		if engines < 1 {
 			engines = 1
 		}
 		if reg := httpServer.ComputeRegistry(); reg != nil {
 			nodes := reg.List()
+			hosting := map[string]bool{}
+			for _, entryNodes := range engineNodes(httpServer.InferenceRegistry()) {
+				for _, node := range entryNodes {
+					hosting[node] = true
+				}
+			}
 			held := map[string]int{}
 			for _, p := range led.Snapshot().Pools {
 				held[p.Name] = p.Held
 			}
 			needsObserver := func(n *compute.Node) bool {
-				return n.SessionSlots == 0 || cfg.Autonomous.CapacityGPUUtilPct > 0
+				return cfg.Autonomous.CapacityGPUUtilPct > 0 || (hosting[n.Name] && n.SessionSlots == 0)
 			}
 			observed := make([]compute.NodeObservation, len(nodes))
 			var wg sync.WaitGroup
@@ -850,19 +859,33 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			wg.Wait()
 			for i, n := range nodes {
 				obs := observed[i]
-				// A model unloads when idle, so the size it last served is kept for
-				// the derived count while none is loaded.
-				var loaded uint64
-				for _, b := range obs.LoadedModelBytes {
-					if b > loaded {
-						loaded = b
+				limit := n.MaxConcurrentSessions
+				if hosting[n.Name] {
+					// A model unloads when idle, so the size it last served is kept for
+					// the derived count while none is loaded.
+					var loaded uint64
+					for _, b := range obs.LoadedModelBytes {
+						if b > loaded {
+							loaded = b
+						}
 					}
+					if loaded > 0 {
+						servedModel[n.Name] = loaded
+					}
+					obs.LastModelBytes = servedModel[n.Name]
+					// The CPU path keeps its own last size, the same way.
+					var cpuLoaded uint64
+					for _, b := range obs.CPUModelBytes {
+						if b > cpuLoaded {
+							cpuLoaded = b
+						}
+					}
+					if cpuLoaded > 0 {
+						servedCPUModel[n.Name] = cpuLoaded
+					}
+					obs.LastCPUModelBytes = servedCPUModel[n.Name]
+					limit = compute.NodeSlots(n.SessionSlots, n.MaxConcurrentSessions, engines, held["node:"+n.Name], obs)
 				}
-				if loaded > 0 {
-					servedModel[n.Name] = loaded
-				}
-				obs.LastModelBytes = servedModel[n.Name]
-				limit := compute.NodeSlots(n.SessionSlots, n.MaxConcurrentSessions, engines, held["node:"+n.Name], obs)
 				led.SetLimit("node:"+n.Name, limit)
 				if cfg.Autonomous.CapacityGPUUtilPct > 0 && len(obs.GPUs) > 0 {
 					gpuMu.Lock()

@@ -19,6 +19,16 @@ type NodeObservation struct {
 	LoadedModelBytes []uint64
 	LastModelBytes   uint64
 	MaxUtilPct       float64
+
+	// SystemTotalBytes and SystemUsedBytes are the node's system memory. A
+	// node with no GPU data takes its slot count from them (see cpuSlots).
+	SystemTotalBytes uint64
+	SystemUsedBytes  uint64
+	// CPUModelBytes holds the total size of each model the node has loaded
+	// on its CPU path; LastCPUModelBytes is the size of the model it last
+	// served, kept by the caller for the same reason as LastModelBytes.
+	CPUModelBytes     []uint64
+	LastCPUModelBytes uint64
 }
 
 // NodeSlots returns how many workers a compute node takes at once.
@@ -26,8 +36,9 @@ type NodeObservation struct {
 // override is the operator's session_slots value; above 0 it wins. Without
 // one, a node with observer GPU data gets one slot per GPU, limited by the
 // free GPU memory against the size of the model the node serves (see
-// derivedSlots). A node with no observer GPU data takes fallback, which is
-// autonomous.max_engines_per_node.
+// derivedSlots). A node with no GPU data but with system memory data gets the
+// free system memory divided by the model size, at least one (see cpuSlots).
+// A node with neither takes fallback, which is autonomous.max_engines_per_node.
 //
 // held is the number of workers holding a lease on the node now. A derived
 // count never falls below it, so workers already running are not counted out
@@ -49,7 +60,11 @@ func NodeSlots(override, ceiling, fallback, held int, obs NodeObservation) int {
 	case override > 0:
 		n = override
 	case len(obs.GPUs) == 0:
-		n = max(fallback, 1)
+		if c, ok := cpuSlots(obs); ok {
+			n = c
+		} else {
+			n = max(fallback, 1)
+		}
 	default:
 		n = max(derivedSlots(obs), min(held, len(obs.GPUs)), 1)
 	}
@@ -57,6 +72,32 @@ func NodeSlots(override, ceiling, fallback, held int, obs NodeObservation) int {
 		n = ceiling
 	}
 	return n
+}
+
+// cpuSlots is the slot count for a node with no GPU data: free system memory
+// divided by the model size, at least one. The model size is the largest
+// model loaded on the CPU path, or the size it last served when none is
+// loaded. ok is false when the observer reported no system memory or no model
+// size, so the caller falls back.
+func cpuSlots(obs NodeObservation) (int, bool) {
+	if obs.SystemTotalBytes == 0 {
+		return 0, false
+	}
+	var model uint64
+	for _, b := range obs.CPUModelBytes {
+		model = max(model, b)
+	}
+	if model == 0 {
+		model = obs.LastCPUModelBytes
+	}
+	if model == 0 {
+		return 0, false
+	}
+	var free uint64
+	if obs.SystemUsedBytes < obs.SystemTotalBytes {
+		free = obs.SystemTotalBytes - obs.SystemUsedBytes
+	}
+	return max(int(free/model), 1), true
 }
 
 // derivedSlots is one slot per GPU, limited by memory. The model size is the

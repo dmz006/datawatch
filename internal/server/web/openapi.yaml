@@ -1171,7 +1171,7 @@ paths:
   /api/compute/nodes/{name}:
     get:
       summary: Fetch one compute node
-      description: The node record. session_slots is the operator's slot override; 0 means the count is derived from observer GPU data.
+      description: The node record. session_slots is the operator's slot override for a node that hosts a local engine; 0 means the count is derived from observer GPU data. Ignored on a node that hosts no local engine.
       operationId: computeNodeGet
       tags: [Compute]
       parameters:

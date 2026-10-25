@@ -85,17 +85,16 @@ curl -X PUT https://localhost:8443/api/compute/nodes/gpu-1 \
   -H 'Content-Type: application/json' -d '{"name":"gpu-1", "max_concurrent_sessions": 1, "...": "other fields unchanged"}'
 ```
 
-A node's worker count can also be set by the operator with `session_slots`.
-When it is `0` (the default), the daemon derives the count from the node's
-observer data: one slot per GPU, limited by the free GPU memory against the
-size of the model the node serves. The count is re-read on every capacity
-tick, so a change takes effect without a restart. A node with no observer GPU
-data takes `autonomous.max_engines_per_node`.
+A node that hosts a local engine can have its worker count set by the operator
+with `session_slots`. When it is `0` (the default), the daemon derives the count
+from the node's observer data: one slot per GPU, limited by the free GPU memory
+against the size of the model the node serves. The count is re-read on every
+capacity tick, so a change takes effect without a restart. A node with no
+observer GPU data divides its free system memory by the model size, with a
+floor of one slot. A node with neither takes `autonomous.max_engines_per_node`.
 
-This applies to every compute node, including one that hosts no local engine.
-A node that hosts no local engine with neither `session_slots` nor
-`max_concurrent_sessions` set used to have no limit; it now takes one slot by
-default. Set one of the two fields on it to choose a different count.
+A node that hosts no local engine keeps its `max_concurrent_sessions` limit
+(0 = unlimited) and ignores `session_slots`.
 
 Other channels:
 
@@ -785,8 +784,10 @@ or cleared a back-off by hand: `datawatch audit --action
   doing its job. Raise `max_concurrent_sessions` if the server handles
   more than one at a time.
 - **A node has one slot although its GPU has room.** A node with one GPU
-  always takes one slot, and so does a node with no observer GPU data
-  (`autonomous.max_engines_per_node`). Set `session_slots` to override.
+  always takes one slot. A node with no observer GPU data takes its free
+  system memory divided by the model size, at least one slot, or
+  `autonomous.max_engines_per_node` when it reports no memory either. Set
+  `session_slots` to override.
 - **Another program on the GPU lowers the slots.** Derived slots count
   free memory, so memory held by another program reduces them. The count
   never drops below the workers already running on the node, but that

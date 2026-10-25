@@ -6,7 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Changed
-- **Compute node slot count** — every compute node's capacity pool limit is now its slot count. The operator can set `session_slots` on a node (config file, MCP, CLI, comm channel, PWA); 0 derives the count from observer GPU data: one slot per GPU, limited by the free GPU memory against the model the node serves, with memory in use by other programs subtracted. A node with no observer GPU data takes `autonomous.max_engines_per_node`. A node that hosts no local engine, with neither `session_slots` nor `max_concurrent_sessions` set, now takes one slot by default; before, it had no limit. The node detail carries `session_slots` and `derived_slots`. The count is re-read on the capacity tick, so no restart is needed.
+- **Compute node slot count** — a compute node that hosts a local engine now takes its capacity pool limit from its slot count. The operator can set `session_slots` on such a node (config file, MCP, CLI, comm channel, PWA); 0 derives the count from observer GPU data: one slot per GPU, limited by the free GPU memory against the model the node serves, with memory in use by other programs subtracted. A node with no observer GPU data takes its free system memory divided by the model size, at least one slot; a node with neither takes `autonomous.max_engines_per_node`. A node that hosts no local engine keeps its `max_concurrent_sessions` limit as before. The node detail carries `session_slots` and `derived_slots`. The count is re-read on the capacity tick, so no restart is needed.
 
 ## v9.9.1 — Orphan sweep no longer ends live workers
 

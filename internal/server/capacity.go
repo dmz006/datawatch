@@ -109,9 +109,14 @@ func (s *HTTPServer) NodeObservation(name string) (obs compute.NodeObservation, 
 			MemUsedBytes  uint64  `json:"mem_used_bytes"`
 			MemTotalBytes uint64  `json:"mem_total_bytes"`
 		} `json:"gpu"`
+		Mem struct {
+			UsedBytes  uint64 `json:"used_bytes"`
+			TotalBytes uint64 `json:"total_bytes"`
+		} `json:"mem"`
 		Envelopes []struct {
 			ID          string `json:"id"`
 			GPUMemBytes uint64 `json:"gpu_mem_bytes"`
+			RSSBytes    uint64 `json:"rss_bytes"`
 		} `json:"envelopes"`
 	}
 	if json.Unmarshal(rec.Body.Bytes(), &d) != nil {
@@ -121,9 +126,17 @@ func (s *HTTPServer) NodeObservation(name string) (obs compute.NodeObservation, 
 		obs.GPUs = append(obs.GPUs, compute.GPUMemory{TotalBytes: g.MemTotalBytes, UsedBytes: g.MemUsedBytes})
 		obs.MaxUtilPct = max(obs.MaxUtilPct, g.UtilPct)
 	}
+	obs.SystemTotalBytes = d.Mem.TotalBytes
+	obs.SystemUsedBytes = d.Mem.UsedBytes
 	for _, e := range d.Envelopes {
-		if strings.HasPrefix(e.ID, "ollama_model:") && e.GPUMemBytes > 0 {
+		if !strings.HasPrefix(e.ID, "ollama_model:") {
+			continue
+		}
+		if e.GPUMemBytes > 0 {
 			obs.LoadedModelBytes = append(obs.LoadedModelBytes, e.GPUMemBytes)
+		}
+		if e.RSSBytes > 0 {
+			obs.CPUModelBytes = append(obs.CPUModelBytes, e.RSSBytes)
 		}
 	}
 	return obs, true

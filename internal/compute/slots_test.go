@@ -200,3 +200,46 @@ func TestSingleGPUNodeStaysAtOneSlot(t *testing.T) {
 		})
 	}
 }
+
+// TestNodeSlotsCPUOnlyFromSystemMemory covers a hosting node with no GPU data:
+// free system memory divided by the loaded model's size, at least one.
+func TestNodeSlotsCPUOnlyFromSystemMemory(t *testing.T) {
+	obs := NodeObservation{
+		SystemTotalBytes: 64 * testGiB,
+		SystemUsedBytes:  16 * testGiB,
+		CPUModelBytes:    []uint64{12 * testGiB},
+	}
+	if got := NodeSlots(0, 0, 1, 0, obs); got != 4 {
+		t.Errorf("48 GiB free, 12 GiB model: got %d, want 4", got)
+	}
+	if got := NodeSlots(0, 2, 1, 0, obs); got != 2 {
+		t.Errorf("4 derived under ceiling 2: got %d, want 2", got)
+	}
+	if got := NodeSlots(6, 0, 1, 0, obs); got != 6 {
+		t.Errorf("override 6 on a CPU-only node: got %d, want 6", got)
+	}
+
+	full := obs
+	full.SystemUsedBytes = 60 * testGiB
+	if got := NodeSlots(0, 0, 3, 0, full); got != 1 {
+		t.Errorf("4 GiB free, 12 GiB model: got %d, want floor 1", got)
+	}
+
+	remembered := NodeObservation{
+		SystemTotalBytes:  64 * testGiB,
+		SystemUsedBytes:   16 * testGiB,
+		LastCPUModelBytes: 16 * testGiB,
+	}
+	if got := NodeSlots(0, 0, 1, 0, remembered); got != 3 {
+		t.Errorf("48 GiB free, remembered 16 GiB model: got %d, want 3", got)
+	}
+
+	noModel := NodeObservation{SystemTotalBytes: 64 * testGiB, SystemUsedBytes: 16 * testGiB}
+	if got := NodeSlots(0, 0, 5, 0, noModel); got != 5 {
+		t.Errorf("no model size: got %d, want fallback 5", got)
+	}
+	noMem := NodeObservation{CPUModelBytes: []uint64{12 * testGiB}}
+	if got := NodeSlots(0, 0, 5, 0, noMem); got != 5 {
+		t.Errorf("no system memory: got %d, want fallback 5", got)
+	}
+}

@@ -1155,10 +1155,12 @@ autonomous:
   # opencode-acp). Hosted backends such as claude-code are not gated by this key.
   # Sessions past the cap wait in the node queue (see docs/operations.md →
   # "Compute-node queue").
-  # Every compute node, including one that hosts no local engine, takes its own
-  # count: the node's session_slots when the operator set one, otherwise one
-  # slot per GPU from observer data (limited by free GPU memory). This key is
-  # the count for a node with no observer data.
+  # A compute node that hosts a local engine takes its own count: the node's
+  # session_slots when the operator set one, otherwise one slot per GPU from
+  # observer data (limited by free GPU memory), or with no GPU data its free
+  # system memory against the model size. This key is the count for such a
+  # node with neither. A node that hosts no local engine keeps its
+  # max_concurrent_sessions limit instead.
   max_engines_per_node: 1
   # max_parallel_tasks: DEPRECATED — never had any effect; accepted and ignored
   # with a startup warning for one release, then removed. Use max_concurrent_tasks.
@@ -1182,7 +1184,7 @@ autonomous:
   # Capacity-aware admission: tasks wait for a free host / compute-node / LLM
   # slot (status waiting_capacity) instead of failing. Default true.
   # Per-node limit: compute node session_slots (0 = derive from observer GPU
-  # data), capped by max_concurrent_sessions; per-LLM: max_inflight
+  # data; hosting nodes only), capped by max_concurrent_sessions; per-LLM: max_inflight
   # (0 = unlimited) or, when an explicit max_inflight is absent, the LLM entry's
   # plan_tier mapped through plan_tier_max_inflight below; per-Automaton queue
   # order: priority (set_priority).
