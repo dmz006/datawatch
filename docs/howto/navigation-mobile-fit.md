@@ -23,7 +23,7 @@ It reports three kinds of finding. Any one of them fails the check.
 | `tap-target` | A navigation button is smaller than 44 by 44 CSS px | 44 x 44 px |
 | `overlap` | A label or a button box intersects another navigation item | none |
 
-A passing run measures six navigation items at each width and theme, finds no problems, and shows no sideways scrolling in the bar. The bar's scroll width equals its visible width.
+A passing run measures six navigation items at each width and theme and finds no problems. The report also prints the bar's `scrollWidth` and `clientWidth` for each combination. The check records those two numbers but does not test them, so sideways scrolling in the bar does not fail the run by itself. Read them yourself: on a bar that fits, the two are equal (after the fix, 320, 360 and 390 px in both themes). A scroll width larger than the client width means the bar scrolls, even when the run passes.
 
 The check does not look at the header or the tabs below the bar. Those are measured by a separate report-only pass, described under [Other modes](#other-modes).
 
@@ -53,7 +53,7 @@ The target runs `scripts/e2e-pwa.sh group:shared-nav`. That script does the foll
 
 1. Picks free loopback ports and writes a daemon config from `testdata/datawatch.yaml`, with the token `dw-e2e-pwa-token` (unless `TEST_TOKEN` is set).
 2. Starts the daemon from `bin/datawatch` in the foreground and waits up to 60 seconds for `/api/health`.
-3. Runs `npm ci` in `scripts/test-stories/pwa`.
+3. Runs `npm ci` in `scripts/test-stories/pwa`. This replaces the tracked symlink `scripts/test-stories/pwa/node_modules` with a real directory, and `git status` then shows the symlink as a deleted file. Restore it after the run with `git checkout -- scripts/test-stories/pwa/node_modules`, and do not commit the deletion.
 4. Runs `run-all.mjs --group shared-nav`, which runs `shared-nav-mobile-fit.mjs`. That file runs the probe `shared-nav-mobile-fit-probe.mjs` in gate mode.
 5. Stops the daemon.
 
@@ -103,7 +103,7 @@ The placeholders above stand for the values the run prints. Read the fields in t
 What to do:
 
 - **`clipped-text`.** The label is wider than the bar can show. The labels now truncate with an ellipsis, so a clipped label means the truncation has stopped working. Check that the label's CSS still sets `text-overflow: ellipsis`, `white-space: nowrap` and `overflow: hidden`, and that the button's `min-width` is still `0` or the flex share is still in place.
-- **`tap-target`.** The button is smaller than 44 by 44 CSS px. Check the button's `min-width` and `min-height` in `internal/server/web/style.css`. The bottom buttons set a 40 px minimum width, so a height or width under 44 px points at a box that a later change shrank.
+- **`tap-target`.** The button is smaller than 44 by 44 CSS px. Check the button's `min-width` and `min-height` in `internal/server/web/style.css`. The stylesheet sets a 40 px minimum width on the bottom buttons, which is 4 px below the check's 44 px line, so the stylesheet alone does not keep a button above the line. What keeps it above is the equal share of the bar: six buttons on a 320 px bar are each more than 44 px wide. A button between 40 and 43 px wide passes the stylesheet but fails the check, and it points at a change that shrank the button's share of the bar (padding, a fixed width, or a seventh item).
 - **`overlap`.** A label or a button's box crosses a neighbour. Look for padding or a fixed width added to the button, or a badge placed over the label.
 
 After a fix, rebuild `bin/datawatch` and run the check again. The report is evidence only for the binary it was run against. Through `make`, the report's `daemon_version` reads `unknown`, so record the version yourself with `bin/datawatch version`.
@@ -113,12 +113,14 @@ After a fix, rebuild `bin/datawatch` and run the check again. The report is evid
 - **Six equal buttons.** The bottom bar gives every button an equal share of its width, so the six buttons fit a 320 px phone without the bar scrolling sideways.
 - **Labels truncate.** A long label ends with an ellipsis (`…`) inside its button and does not wrap onto a second line.
 - **The full name.** Each bottom button carries its full name as a `title` attribute. On a desktop browser, hovering the button shows the name after the browser's usual delay. On a phone, a long press may show the name, depending on the browser. Some phone browsers show nothing, so the truncated label is all you see there.
-- **Tap targets.** The bottom buttons are at least 40 px wide in the stylesheet, and the check's line is 44 by 44 CSS px. In the last run no bottom button fell under that line at 320, 360 or 390 px, in either theme.
+- **Tap targets.** The stylesheet sets a 40 px minimum width on the bottom buttons; the check's line is 44 by 44 CSS px. The equal share of the bar is what keeps the buttons above 44 px. In the last run no bottom button fell under the line at 320, 360 or 390 px, in either theme.
 
 What is not covered yet:
 
 - Buttons in the header and in the tabs below the bar are not gated. Some are still under 44 px. The header search button and the Observer section toggle now reach 40 px.
 - Text zoom above 100 percent is not measured.
+- Sideways scrolling in the bar is recorded in the report, not tested (see above).
+- The ellipsis and the `title` attribute are covered only by a small unit test, `internal/server/web/app-shared-nav.test.js`, which reads the stylesheet and `index.html`. It does not render the bar, and it does not test hover or long press. Run it by hand with `node --test internal/server/web/app-shared-nav.test.js`; `make test-e2e-shared-nav`, the other make targets and CI do not run it.
 - The check runs on the PWA only. Android and iOS are not covered by this check.
 
 ## Other modes

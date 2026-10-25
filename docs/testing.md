@@ -1313,8 +1313,8 @@ Run records: `docs/testing/runs/shared-nav-mobile-fit/`. The plan is `docs/plans
 |-------|---------|
 | **Description** | The bottom bar at 320, 360 and 390 px, light and dark: no clipped label, no bottom button under 44 by 44 CSS px, no overlap. |
 | **Steps** | 1. `go build -o bin/datawatch ./cmd/datawatch/`. 2. `env -u TMUX -u TMUX_TMPDIR TMPDIR=<repo>/bin/tmp make test-e2e-shared-nav` (`TMPDIR` kept short, see N5). 3. Read the summary line and `repro-report.txt`. |
-| **Expected** | Six nav items in each of the six theme and width combinations; 0 findings; the bar's `scrollWidth` equals its `clientWidth`; summary `1 passed, 0 failed, 0 skipped`; make exit 0. |
-| **Actual** | PASS, run 2026-10-25 at 13:51 (`make-run/run.log`, `make-run/gate-reports/repro-report.txt`). 0 findings in all six combinations. Each combination reported 6 nav items, nav bar 320x60, 360x60 or 390x60, `scrollWidth` equal to `clientWidth`. Probe line: `gate pass, 0 nav findings at phone widths`. `make` exit 0. The gate report records `daemon_version` as `unknown` because the runner does not pass `PROBE_DAEMON_VERSION`; the binary reports 9.11.0 (`bin/datawatch version`). |
+| **Expected** | Six nav items in each of the six theme and width combinations; 0 findings; summary `1 passed, 0 failed, 0 skipped`; make exit 0. |
+| **Actual** | PASS, run 2026-10-25 at 13:51 (`make-run/run.log`, `make-run/gate-reports/repro-report.txt`). 0 findings in all six combinations. Each combination reported 6 nav items and nav bar 320x60, 360x60 or 390x60. The report also lists `scrollWidth` equal to `clientWidth` in each combination; that is an observation, because the gate does not assert it and a scroll regression alone would not fail the run. Probe line: `gate pass, 0 nav findings at phone widths`. `make` exit 0. The gate report records `daemon_version` as `unknown` because the runner does not pass `PROBE_DAEMON_VERSION`; the binary reports 9.11.0 (`bin/datawatch version`). |
 | **Result** | PASS |
 
 ### N3 — Desktop and tablet geometry against the baseline
@@ -1342,15 +1342,26 @@ Run records: `docs/testing/runs/shared-nav-mobile-fit/`. The plan is `docs/plans
 | Field | Details |
 |-------|---------|
 | **Description** | An environment trap found while running N2. Chrome keeps a Unix socket under `TMPDIR`, and the socket path must stay under 108 bytes. A long `TMPDIR` stops Chrome from starting. |
-| **Steps** | `env -u TMUX -u TMUX_TMPDIR TMPDIR=/home/dmz/.datawatch/prd-worktrees/b54f0001/docs/testing/runs/shared-nav-mobile-fit/make-run make test-e2e-shared-nav`, twice. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR TMPDIR=<repo>/docs/testing/runs/shared-nav-mobile-fit/make-run make test-e2e-shared-nav`, twice. |
 | **Expected** | PASS, as with the default `/tmp`. |
 | **Actual** | FAIL, both attempts, exit 1 from the probe, `make` exit 2: `chrome DevTools endpoint did not come up`. Chrome's own stderr, `Socket path too long: …/make-run/com.google.Chrome.XXXXXX/SingletonSocket`, is discarded by the probe (`stdio: 'ignore'`), so the message above is the only one the run prints. A debug copy of the probe with Chrome's stderr shown started Chrome in 214 ms with a fresh profile under the default `TMPDIR`. Record: `make-run/failed-attempts.log`. |
 | **Result** | FAIL |
 
+### N6 — Label title and ellipsis rule (node unit test)
+
+| Field | Details |
+|-------|---------|
+| **Description** | Each bottom nav button carries a `title` equal to its translated label, and the `.nav-label` rule clips with an ellipsis and does not wrap. The test reads `index.html`, `locales/en.json` and `style.css`; it does not render the bar. |
+| **Steps** | From the repository root: `env -u TMUX node --test internal/server/web/app-shared-nav.test.js`. |
+| **Expected** | 2 tests, 2 pass, 0 fail. |
+| **Actual** | PASS on 2026-10-25 (about 13:59): `tests 2`, `pass 2`, `fail 0`. Nothing in the Makefile, the scripts or CI runs this file, so it only runs when invoked by hand. |
+| **Result** | PASS |
+
 ### Not covered by these runs
 
-- **Ellipsis on truncated labels.** No check asserts the ellipsis. The gate measures overflow past the bar, not the text shown inside a button. Not run.
-- **Full name on hover or long press.** No check reads the `title` attribute or tests a tooltip. Not run.
+- **Rendered ellipsis on truncated labels.** N6 checks the CSS rule, not the text shown inside a button. No browser check asserts the ellipsis.
+- **Tooltip on hover or long press.** N6 checks the `title` attribute only. No check shows a tooltip or tests a phone long press.
+- **Sideways scrolling in the bar.** The gate prints `scrollWidth` and `clientWidth` but does not assert them, so a scroll regression alone would not fail N2.
 - **Text zoom.** The matrix's zoom levels are not defined in the repo; only 100 percent was measured.
 - **Header and tab buttons in the gate.** The gate covers the bottom bar only. Header and tab findings are in N4.
 - **Android and iOS.** The repo has no native client source for this surface.

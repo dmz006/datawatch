@@ -1,10 +1,13 @@
 // scripts/test-stories/pwa/shared-nav-mobile-fit-probe.mjs — report-only mobile-fit probe
 // for the shared navigation and every visible tab.
 //
-// This is a SUBSTITUTE for scripts/test-stories/pwa/shared-nav-mobile-fit.mjs, which is
-// not on the branch. It measures the rendered PWA directly with two checks:
+// scripts/test-stories/pwa/shared-nav-mobile-fit.mjs is the story that runs this probe in
+// gate mode (make test-e2e-shared-nav). The probe measures the rendered PWA directly. The
+// report-only mode uses two checks:
 //   tap-target          interactive element smaller than 44x44 CSS px
 //   horizontal-overflow element whose box extends past the layout viewport width
+// The gate mode uses clipped-text, tap-target and overlap on the bottom bar. It records the
+// bar's scrollWidth and clientWidth but does not turn them into a finding.
 // Only elements that intersect the viewport vertically at the time of measurement are
 // counted, so off-screen list rows are not reported.
 //
