@@ -2667,3 +2667,37 @@ These came out of 2026-10-24 incidents, where the human supervisor loop missed t
 8. **Gate on a task that mentions an error phrase.** Stall and failure detectors match the tool's own error line for the backend they were built for, never ordinary output text.
 
 Open for the operator: the default alert times and the retry count for items 1, 3 and 5, and whether item 1 may rerun a hung step without asking.
+
+## Operator decision channel: questions, decisions and design through datawatch (requested 2026-10-25)
+
+**Operator request, quoted (2026-10-25 07:28):** "It would be good if supervisor communicated with datawatch in json or something and questions and decisions and design were through datawatch interface and not in claude terminal, stored up things, track input and quotations, add to design"
+
+**Why now.** On 2026-10-24 a blocking multiple-choice question in the supervisor's terminal stopped the 30-minute ticks for 16 hours because the ticks only run while the session is idle; the lanes sat idle overnight. Decisions given in a terminal are also lost to everything else: they are recorded by hand in plan docs, the exact words of the operator are paraphrased, and nothing links an answer to the PRD, task or proposal that asked for it.
+
+**What exists today (read, not assumed).**
+- The Decision Interview Protocol in AGENT.md (context, options, recommendation, one question, wait): defined for the agent, answered in the terminal.
+- A session that prints `DATAWATCH_NEEDS_INPUT: <question>` is detected and shown as needing input; the operator answers by sending text to the session.
+- PRD records carry a `decisions` list (approve, run, coverage acknowledgements, set LLM, requeue) with actor, time and note.
+- Lifecycle events (notify only) can tell a channel that a PRD needs review or is blocked; they carry no question and take no answer.
+- Memory discussions (`memory_discussion_write`/`recall`, `reply_to_parent`) carry messages between sessions, federation-aware and audited.
+
+**Requirements, as behaviour.**
+1. **A structured question.** A supervisor or a worker raises a question as data, not terminal text: an id, who asked, the context (PRD, task, proposal, or none), the text, the options with their trade-offs, the recommendation, an optional deadline and a default that applies if none is given (never a silent choice), and a state (open, answered, withdrawn, expired).
+2. **A question queue in datawatch.** Open questions are stored by the daemon, listed in the Automation view and the mobile apps, in the CLI, the comm channels and over REST and MCP, and surface as notifications. Many can be open at once; none blocks the asker's other work or the ticks.
+3. **Answers are recorded with the operator's own words.** An answer stores the chosen option and the operator's free text verbatim, who gave it, from which surface and when. Answers are immutable; a changed mind is a new answer that supersedes the old one.
+4. **Return path as data.** The asker receives the answer as structured data (a JSON message to the session, a polled endpoint, or a lifecycle event) and continues; a session that asked is not required to stay idle.
+5. **Decisions link to what they decide.** An answer links to the PRD, task, proposal file or registry row, and a proposal file's `Confirmed:` line can be set from the answer instead of by hand. The PRD `decisions` list references the answer id.
+6. **Design stays in datawatch.** A design question (options, mockups, recommendation) is a record the operator reviews in the interface; the accepted design is written back to the design document with the quotation and a link to the answer, so the design doc, the registry and the decision log agree.
+7. **Search and audit.** All questions and answers are searchable, exported with the audit log, and kept across restarts. Every answer shows its quotation wherever the decision is cited.
+8. **Parity.** Every surface in the Configuration Accessibility Rule and the Mobile-Parity Rule (config, REST, MCP, CLI, comm channel, PWA, mobile apps).
+
+**Open for the operator (not decided here).** Where the queue is shown first (Automation view or a new tab); whether a question may carry a deadline and what happens at expiry; who may answer when several operators exist; whether the supervisor's own tick may keep working with a default for low-risk questions; the retention of answered questions; how the Decision Interview Protocol in AGENT.md changes (ask through the queue first, terminal only as fallback).
+
+**Operator decisions, 2026-10-25 (quoted):** "Queues are a part of automation.  No expiring, unless operator says to slip out use supervisor decision,  low risk would be an option set in automation,  any other questions"
+
+1. **The question queue belongs to Automation.** It is part of the Automation subsystem and its view, not a separate tab or a separate subsystem.
+2. **Questions never expire.** An open question stays open until answered or withdrawn. The one exception is when the operator says to skip it ("slip out": read as skip); then the supervisor decides, and the record shows the answer as a supervisor decision made on the operator's skip, with its reasoning.
+3. **Low-risk handling is an Automation setting.** Whether a low-risk question may be answered by the supervisor's default is an option set in Automation, not a built-in behaviour and not a per-question deadline.
+4. The earlier open points about a deadline and its expiry behaviour are closed by items 2 and 3.
+
+This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
