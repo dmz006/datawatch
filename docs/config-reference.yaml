@@ -1477,8 +1477,9 @@ autonomous:
   verification_timeout_seconds: 1800
   # Judge routing (PRD guardrail, plan-review and other autonomous judges).
   # judge_policy is the ordered list of backends the judges try, one attempt
-  # each; the attempts total the list length. Empty (default) = the judges
-  # follow the verifier routing policy (verifier_policy).
+  # each; the attempts total the list length. A judge moves to the next backend
+  # only when its run hits the time limit. Empty (default) = each judge runs on
+  # its unit's guardrail backend, one attempt.
   judge_policy: []
   # Time limit in seconds for one judge run, counted from the judge's start;
   # the wait for a capacity slot does not count. 0 or negative falls back to

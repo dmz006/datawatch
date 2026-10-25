@@ -1,6 +1,6 @@
 // Surface parity and defaults for the judge routing settings:
-// autonomous.judge_policy (ordered backends; empty = follow the verifier
-// policy) and autonomous.judge_timeout_seconds (default 30 minutes). A
+// autonomous.judge_policy (ordered backends; empty = each judge's unit
+// guardrail backend) and autonomous.judge_timeout_seconds (default 30 minutes). A
 // missing surface, a non-English label that is only a copy of the English
 // one, or a default that differs between surfaces fails here.
 
@@ -26,49 +26,51 @@ var judgeLocaleKeys = []string{
 	"settings_judge_timeout", "settings_judge_timeout_help",
 }
 
+// staleJudgeWording is the wording an empty judge policy used to carry. The
+// judges do not follow the verifier routing policy, so no surface may say so.
+var staleJudgeWording = []string{
+	"judges follow the verifier",
+	"follow verifier_policy",
+	"follow the verifier routing policy",
+}
+
 func TestJudgeConfigSurfaceParity(t *testing.T) {
-	// Each surface names the keys it must carry. The comm config-set verb
-	// parses a plain number itself, so only the list key needs naming there.
-	surfaces := map[string]struct {
-		rel  string
-		keys []string
+	// Each surface must carry the needles it names: quoted code keys, colon
+	// config keys or backticked doc names. Prose in a comment does not normally
+	// carry these forms, so a missing surface fails here. Docs surfaces are
+	// included, so a REST or operations page without the keys fails too.
+	surfaces := []struct {
+		name, rel string
+		needles   []string
 	}{
-		"config struct":          {"internal/config/config.go", judgeConfigKeys},
-		"autonomous manager cfg": {"internal/autonomous/manager.go", judgeConfigKeys},
-		"REST":                   {"internal/server/api.go", judgeConfigKeys},
-		"MCP":                    {"internal/mcp/autonomous.go", judgeConfigKeys},
-		"comm help":              {"internal/router/router.go", judgeConfigKeys},
-		"comm config-set":        {"internal/router/sx2_parity.go", judgeConfigKeys[:1]},
-		"CLI":                    {"cmd/datawatch/cli_autonomous.go", judgeConfigKeys},
-		"web app.js":             {"internal/server/web/app.js", judgeConfigKeys},
-		"config-reference.yaml":  {"docs/config-reference.yaml", judgeConfigKeys},
-		"implementation.md":      {"docs/implementation.md", judgeConfigKeys},
+		{"config struct", "internal/config/config.go", []string{`yaml:"judge_policy" json:"judge_policy"`, `yaml:"judge_timeout_seconds" json:"judge_timeout_seconds"`}},
+		{"autonomous manager cfg", "internal/autonomous/manager.go", []string{`json:"judge_policy"`, `json:"judge_timeout_seconds"`}},
+		{"REST", "internal/server/api.go", []string{`"judge_policy":`, `"judge_timeout_seconds":`, `"autonomous.judge_policy"`, `"autonomous.judge_timeout_seconds"`}},
+		{"MCP schema", "internal/mcp/autonomous.go", []string{`"judge_policy"`, `"judge_timeout_seconds"`}},
+		{"comm help", "internal/router/router.go", []string{"autonomous.judge_policy", "autonomous.judge_timeout_seconds"}},
+		{"comm config-set", "internal/router/sx2_parity.go", []string{`"judge_policy"`}},
+		{"CLI", "cmd/datawatch/cli_autonomous.go", []string{`"judge-policy"`, `"judge-timeout-seconds"`}},
+		{"web app.js", "internal/server/web/app.js", []string{"'autonomous.judge_policy'", "'autonomous.judge_timeout_seconds'"}},
+		{"config-reference.yaml", "docs/config-reference.yaml", []string{"judge_policy:", "judge_timeout_seconds:"}},
+		{"implementation.md", "docs/implementation.md", []string{"`autonomous.judge_policy`", "`autonomous.judge_timeout_seconds`"}},
+		{"api/autonomous.md", "docs/api/autonomous.md", []string{"judge_policy:", "judge_timeout_seconds:"}},
+		{"api/openapi.yaml", "docs/api/openapi.yaml", []string{"`judge_policy`", "`judge_timeout_seconds`"}},
+		{"operations.md", "docs/operations.md", []string{"`autonomous.judge_timeout_seconds`", "`judge-timeout`"}},
 	}
-	for name, sf := range surfaces {
+	for _, sf := range surfaces {
 		src := readRepoFile(t, sf.rel)
-		for _, k := range sf.keys {
-			if !strings.Contains(src, k) {
-				t.Errorf("%s (%s) lacks %s", name, sf.rel, k)
+		for _, n := range sf.needles {
+			if !strings.Contains(src, n) {
+				t.Errorf("%s (%s) lacks %s", sf.name, sf.rel, n)
+			}
+		}
+		for _, bad := range staleJudgeWording {
+			if strings.Contains(src, bad) {
+				t.Errorf("%s (%s) still says %q", sf.name, sf.rel, bad)
 			}
 		}
 	}
-	// The PWA, REST and comm surfaces also name the full dotted key.
-	for _, rel := range []string{"internal/server/web/app.js", "internal/server/api.go"} {
-		src := readRepoFile(t, rel)
-		for _, k := range judgeConfigKeys {
-			if !strings.Contains(src, "autonomous."+k) {
-				t.Errorf("%s lacks the dotted key autonomous.%s", rel, k)
-			}
-		}
-	}
-	// CLI flags use dashes.
-	cli := readRepoFile(t, "cmd/datawatch/cli_autonomous.go")
-	for _, k := range judgeConfigKeys {
-		if !strings.Contains(cli, `"`+strings.ReplaceAll(k, "_", "-")+`"`) {
-			t.Errorf("CLI lacks flag --%s", strings.ReplaceAll(k, "_", "-"))
-		}
-	}
-	// YAML tags on the config struct, without omitempty for the list (an
+	// YAML tags on the config struct, without omitempty for either key (an
 	// explicit clear must round-trip).
 	cfg := readRepoFile(t, "internal/config/config.go")
 	if !strings.Contains(cfg, `yaml:"judge_policy" json:"judge_policy"`) {

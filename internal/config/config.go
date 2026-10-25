@@ -2265,8 +2265,8 @@ type AutonomousConfig struct {
 	VerificationTimeoutSeconds int `yaml:"verification_timeout_seconds,omitempty" json:"verification_timeout_seconds,omitempty"`
 	// JudgePolicy is the ordered list of LLM backends the judges (the PRD
 	// guardrail, plan-review and other autonomous judges) try, one attempt
-	// per backend in order. Empty follows the verifier routing policy
-	// (VerifierPolicy), so an unset judge policy changes nothing. No
+	// per backend in order. Empty means each judge runs on its unit's guardrail
+	// backend, one attempt, so an unset judge policy changes nothing. No
 	// omitempty, same round-trip reason as VerificationBackends: an explicit
 	// clear must reach the saved config.
 	JudgePolicy []string `yaml:"judge_policy" json:"judge_policy"`

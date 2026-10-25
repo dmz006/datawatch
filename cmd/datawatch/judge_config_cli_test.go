@@ -19,7 +19,7 @@ func TestJudgeConfigCLI_FlagsBuildBody(t *testing.T) {
 		t.Fatalf("body = %v", body)
 	}
 
-	// An explicit empty --judge-policy clears the list (judges follow the verifier policy).
+	// An explicit empty --judge-policy clears the list (each judge runs on its unit's guardrail backend).
 	cmd = newAutonomousConfigSetCmd()
 	_ = cmd.ParseFlags([]string{"--judge-policy", ""})
 	body = map[string]any{}

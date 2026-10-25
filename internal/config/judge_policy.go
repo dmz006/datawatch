@@ -19,7 +19,7 @@ func NormalizeJudgeTimeoutSeconds(v int) int {
 
 // NormalizeJudgePolicy returns the judge backend list with blank and
 // duplicate entries dropped and the order kept. An empty result means the
-// judges follow the verifier routing policy (autonomous.verifier_policy).
+// judges run on each unit's guardrail backend.
 func NormalizeJudgePolicy(in []string) []string {
 	return NormalizeVerifierPolicyBackends(in)
 }

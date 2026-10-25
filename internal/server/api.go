@@ -6018,8 +6018,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verification_effort":          s.cfg.Autonomous.VerificationEffort,
 			"planning_timeout_seconds":     s.cfg.Autonomous.PlanningTimeoutSeconds,
 			"verification_timeout_seconds": s.cfg.Autonomous.VerificationTimeoutSeconds,
-			// Judge routing: an empty judge_policy means the judges follow the
-			// verifier_policy; the time limit shows its 30-minute default.
+			// Judge routing: an empty judge_policy means each judge runs on its unit's guardrail backend;
+			// the time limit shows its 30-minute default.
 			"judge_policy":                         judgePolicyForDisplay(s.cfg.Autonomous.JudgePolicy),
 			"judge_timeout_seconds":                config.NormalizeJudgeTimeoutSeconds(s.cfg.Autonomous.JudgeTimeoutSeconds),
 			"session_idle_timeout_seconds":         s.cfg.Autonomous.SessionIdleTimeoutSeconds,
@@ -7656,7 +7656,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.VerificationBackends = splitCSV(s)
 			}
 		case "autonomous.judge_policy":
-			// Empty clears it, so the judges follow the verifier policy again.
+			// Empty clears it, so each judge runs on its unit's guardrail backend again.
 			if arr, ok := toStringArray(v); ok {
 				cfg.Autonomous.JudgePolicy = config.NormalizeJudgePolicy(arr)
 			} else if s, ok := v.(string); ok {

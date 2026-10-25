@@ -5796,13 +5796,20 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// configured in autonomous.guardrail_backend (or inherit). Output
 		// JSON shape mirrors the BL117 orchestrator's Verdict so the
 		// downstream UI renders uniformly.
-		autonomousGuardrail := func(ctx context.Context, req autonomouspkg.GuardrailInvocation) (autonomouspkg.GuardrailVerdict, error) {
-			// One live-config snapshot for this invocation (see
-			// liveAutonomousConfig).
-			gcfg := liveAutonomousConfig()
+		// autonomousGuardrailAttempt is one judge attempt on one backend. The
+		// outer autonomousGuardrail below runs it once per backend in the
+		// judge policy (runJudgeAttempts) and sets att.TimedOut when the
+		// session hit its time limit.
+		autonomousGuardrailAttempt := func(ctx context.Context, req autonomouspkg.GuardrailInvocation, gcfg autonomouspkg.Config, backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 			prompt := buildAutonomousGuardrailPrompt(req)
 			// BL416 Phase 3 — per-unit resolved backend/model win over the flat config.
 			gbackend, guardrailModel := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
+			if backend != gbackend {
+				// A judge policy entry replaces the unit's backend. The unit's
+				// model was chosen for that backend, so it is not carried over.
+				gbackend, guardrailModel = backend, ""
+				req.GuardrailModel = ""
+			}
 			gkind, gmodel, _ := resolveAskBackend(gbackend)
 
 			// Capacity admission: the guardrail judge acquires the backend+node
@@ -5867,8 +5874,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
 					content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 						"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
-						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", verificationSessionTimeout(cfg), judgeNode)
+						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeSessionTimeout(gcfg), judgeNode)
 					if serr != nil {
+						att.TimedOut = isOneShotTimeout(serr)
 						// BL410 Phase 0 — the SESSION itself failed (timeout,
 						// crash); no judgment ever ran. "infra", not a real
 						// content finding. See FailureReason's doc comment —
@@ -5970,6 +5978,20 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			parsed.Category = judgedGuardrailCategory(parsed.Category)
 			parsed.VerdictAt = time.Now()
 			return parsed, nil
+		}
+		// autonomousGuardrail routes the judge through autonomous.judge_policy:
+		// one attempt per backend, in order, moving on only when a run hits its
+		// time limit. A unit that pins its own guardrail backend keeps that one.
+		autonomousGuardrail := func(ctx context.Context, req autonomouspkg.GuardrailInvocation) (autonomouspkg.GuardrailVerdict, error) {
+			// One live-config snapshot for the whole judge (see liveAutonomousConfig).
+			gcfg := liveAutonomousConfig()
+			unitBackend, _ := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
+			backends := judgeAttemptBackends(gcfg.JudgePolicy, unitBackend, req.GuardrailBackend != "")
+			alert := func(level, title, body string) { emitJudgeAlert(autonomousMgrRef, level, title, body) }
+			return runJudgeAttempts(req, backends, judgeSessionTimeout(gcfg), alert,
+				func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
+					return autonomousGuardrailAttempt(ctx, req, gcfg, backend, att)
+				})
 		}
 		if amgr, err := autonomouspkg.NewManager(expandHome(cfg.DataDir), amgrCfg, decomposeFn); err != nil {
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
