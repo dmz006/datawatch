@@ -5783,6 +5783,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			}
 			return m
 		}(),
+		// Usage calculator settings — EFFECTIVE values, so an unset config
+		// shows its defaults.
+		"usage": map[string]interface{}{
+			"calculator": usageCalculatorForDisplay(s.cfg.Usage.Calculator),
+		},
 		"mcp": map[string]interface{}{
 			"enabled":           s.cfg.MCP.Enabled,
 			"sse_enabled":       s.cfg.MCP.SSEEnabled,
@@ -6287,6 +6292,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
 			return
 		}
+	}
+	// Usage calculator keys: any invalid value (unknown variant or policy,
+	// out-of-range number, bad clock, unknown or fixed-offset zone) rejects
+	// the whole PUT.
+	if verr := validateUsageCalculatorPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
 	}
 	// Verifier policy: an unknown mode, an empty backend entry or a negative
 	// cap rejects the whole PUT.
@@ -7659,6 +7671,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if validateUsageBackoffMode(v) == nil {
 				cfg.Autonomous.UsageBackoff = strings.ToLower(strings.TrimSpace(toString(v)))
 			}
+		case "usage.calculator.variant", "usage.calculator.policy", "usage.calculator.safety_points", "usage.calculator.cost_per_task_points", "usage.calculator.baseline_per_24h", "usage.calculator.max_lanes", "usage.calculator.reset_weekday", "usage.calculator.reset_time", "usage.calculator.reset_zone", "usage.calculator.keeper":
+			// Validated in handlePutConfig; stored normalized.
+			applyUsageCalculatorPatchKey(&cfg.Usage.Calculator, k, v)
 		case "autonomous.backoff_max_wait_minutes":
 			if n, err := parseBackoffMaxWaitMinutes(v); err == nil {
 				cfg.Autonomous.BackoffMaxWaitMinutes = n

@@ -179,6 +179,21 @@ Config: `autonomous.usage_backoff` (`pause_backend` | `off`, default `pause_back
 `/api/usage-backoff`, `usage_backoff_*` MCP tools, `datawatch usage-backoff`, comm
 `usage_backoff`. See `docs/howto/automata-capacity.md`.
 
+Usage calculator settings (`internal/config/usage_calculator.go`): the `usage.calculator`
+block holds `variant` (`pace-gauge` | `lane-planner` | `burn-ledger` | `all`, default `all`),
+`policy` (`use-all` | `pace` | `finish-early`, default `use-all`), `safety_points` (0 to 50,
+default 5), `cost_per_task_points` (above 0, default 0.1, a starting figure to calibrate
+against readings), `baseline_per_24h` (0 to 20, default 3), `max_lanes` (1 to 8, default 3),
+`reset_weekday` (`sunday`..`saturday`, default `sunday`), `reset_time` (24-hour `HH:MM`,
+default `08:00`), `reset_zone` (IANA zone name, default `UTC`; a fixed offset or an unknown
+name is rejected) and `keeper` (federation peer that keeps the shared readings; empty means
+this daemon). Normalisation, `ValidateUsageCalculator*` and `EffectiveUsageCalculator` follow
+`usage_backoff.go`. A saved value that is no longer allowed falls back to its default, and a
+retired `variant` falls back to `all` with one log line. All keys are settable at runtime:
+`GET`/`PUT /api/config` (`internal/server/usage_calculator_config.go`, a 400 on an invalid
+value), comm `configure usage.calculator.<key>=<value>`, the generic `config_set` tool and
+CLI `datawatch config set`. The PWA Settings fields are a later change.
+
 LLM role tags (`internal/inference/role_resolve.go`, `role_contention.go`): `llms[].roles`
 is an open set of strings (trimmed, lower-cased, de-duplicated; empty rejected). An
 explicit per-call-site backend or model always wins; otherwise the entry claiming the role
