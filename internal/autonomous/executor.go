@@ -1287,6 +1287,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// BL447: cwd, scope block and pre-task capture anchor to the
 			// task's resolved dir (override or PRD.ProjectDir).
 			taskDir := m.resolveTaskProjectDir(prd, t)
+			// Never start a worker in a directory that is not a real worktree.
+			if rerr := m.refuseLaunchOutsideWorktree(prd, t, taskDir); rerr != nil {
+				return rerr
+			}
 			var sr SpawnResult
 			sr, err = spawn(ctx, SpawnRequest{
 				TaskID:           t.ID,

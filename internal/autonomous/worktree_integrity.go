@@ -9,6 +9,7 @@ package autonomous
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -172,4 +173,64 @@ func evalOrClean(p string) string {
 		return r
 	}
 	return filepath.Clean(p)
+}
+
+// refuseLaunchOutsideWorktree is the executor's pre-spawn guard: a
+// worker is never started in a project directory that is not a real
+// worktree. It applies only to worktree-mode Automatons whose task runs
+// in the Automaton's own project directory (a per-task override is not
+// a worktree) and only when a base repository is configured. On a
+// failed check it fails the task, raises one operator alert and
+// returns an error wrapping ErrWorktreeIntegrity; the executor returns
+// it without retrying, so the failure neither consumes the retry budget
+// nor counts toward the failure-escalation hold. It returns nil when
+// the launch may proceed.
+func (m *Manager) refuseLaunchOutsideWorktree(prd *PRD, t *Task, taskDir string) error {
+	if prd.Git.Branch == "" || prd.ClusterProfile != "" || prd.ProjectDir == "" || taskDir != prd.ProjectDir {
+		return nil
+	}
+	m.mu.Lock()
+	baseRepo := m.cfg.WorktreeBaseRepo
+	m.mu.Unlock()
+	if baseRepo == "" {
+		return nil
+	}
+	cerr := CheckProjectWorktree(taskDir, baseRepo)
+	if cerr == nil {
+		return nil
+	}
+	reason := cerr.Error()
+	var ierr *WorktreeIntegrityError
+	if errors.As(cerr, &ierr) {
+		reason = ierr.Reason
+	}
+	refused := fmt.Errorf("worker launch refused: %w", cerr)
+	log.Printf("[autonomous] prd=%s task=%s worker launch refused, not spawning: %v", prd.ID, t.ID, cerr)
+	oldStatus := t.Status
+	m.store.WithLock(func() {
+		t.Status = TaskFailed
+		t.Error = refused.Error()
+	})
+	if m.store.SaveTask(t) == nil {
+		m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+	}
+	m.raiseWorktreeIntegrityAlert(prd, t, taskDir, reason)
+	return refused
+}
+
+// raiseWorktreeIntegrityAlert sends the one operator alert for a
+// refused launch. Nothing is sent when no alert sink is wired.
+func (m *Manager) raiseWorktreeIntegrityAlert(prd *PRD, t *Task, dir, reason string) {
+	m.mu.Lock()
+	alert := m.alertSink
+	m.mu.Unlock()
+	if alert == nil {
+		return
+	}
+	body := fmt.Sprintf(
+		"Automaton: %s (%s)\nTask: %s (%s)\nProject directory: %s\nFailed check: %s\n"+
+			"Ways to act: repair or remove the directory and run the Automaton again, "+
+			"so the next launch recreates the worktree.",
+		prd.ID, prd.Title, t.ID, t.Title, dir, reason)
+	alert("error", "Automaton project directory is not a worktree", body)
 }
