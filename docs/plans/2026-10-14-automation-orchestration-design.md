@@ -2722,4 +2722,6 @@ Open for the operator: the default alert times and the retry count for items 1, 
 11. **Reminders and visibility (answer: "1", updated 2026-10-25: "But if we are putting details in datawatch it should be visible in automation and notifications").** An open question is mentioned once in the next report, with no repeated messages and no expiry. Because the details live in datawatch, an open question is also visible in the Automation view, with its full details and not only a count, and it raises a notification through the existing notification channels when it is asked and when it is answered or skipped.
 12. **While a question is open (answer: "5 answer is 1").** The asker keeps working on everything else. Only the one task or PRD that depends on the answer waits, and it shows which question it is waiting on. The ticks and all other lanes carry on.
 
+13. **Retention (answer: "1").** Answered questions and their quotations are decisions of record and are kept forever in the audit log, never deleted. The Automation view shows recent ones and searches older ones.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
