@@ -303,6 +303,7 @@ body {
   align-items: center;
   justify-content: center;
   margin-right: 8px;
+  min-width: 40px; min-height: 40px; /* 40 px minimum tap target (worklist, shared fix) */
   transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
 .header-search-btn:hover {
@@ -374,11 +375,13 @@ body {
   border-top: 2px solid transparent;
   color: var(--text2);
   cursor: pointer;
-  padding: 6px 14px 8px;
+  padding: 6px 2px 8px;
   border-radius: 0;
   transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-  min-width: 68px;
-  flex-shrink: 0;
+  /* Equal share of the bar at every width, so six buttons fit a 320 px
+     phone without the bar scrolling. 40 px is the minimum tap target. */
+  flex: 1 1 0;
+  min-width: 40px;
   scroll-snap-align: center;
 }
 
@@ -401,6 +404,10 @@ body {
   font-size: 10px;
   font-family: system-ui, sans-serif;
   letter-spacing: 0.3px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Scrollable content area ── */
@@ -4581,11 +4588,6 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
     justify-content: space-around;
   }
 
-  .nav-btn {
-    flex: 1;
-    min-width: 0;
-  }
-
   .view {
     left: 50%;
     transform: translateX(-50%);
@@ -5257,6 +5259,7 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   display: flex;
   align-items: center;
   gap: 6px;
+  min-height: 40px; /* 40 px minimum tap target; the Observer section header was 35 px */
 }
 .settings-section-toggle:hover { color: var(--accent); }
 .settings-chevron {

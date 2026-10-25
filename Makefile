@@ -8,7 +8,7 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
         security-registry-gen security-registry-check \
-        test-e2e-docker test-e2e-pwa test-e2e-pwa-load test-e2e-mobile-fit test-e2e-all test-e2e-clean
+        test-e2e-docker test-e2e-pwa test-e2e-pwa-load test-e2e-mobile-fit test-e2e-shared-nav test-e2e-all test-e2e-clean
 
 # Sync docs/ into internal/server/web/docs/ so the embedded web FS
 # carries the markdown files the in-PWA viewer renders. Run before
@@ -370,6 +370,11 @@ test-e2e-pwa-load:
 test-e2e-mobile-fit:
 	bash scripts/e2e-pwa.sh TS-817
 	bash scripts/e2e-pwa.sh TS-818
+
+# PWA shared navigation phone-width scenario (scripts/test-stories/pwa/shared-nav-mobile-fit.mjs)
+# via run-all.mjs --group shared-nav.
+test-e2e-shared-nav:
+	bash scripts/e2e-pwa.sh group:shared-nav
 
 test-e2e-all: test-e2e-docker test-e2e-pwa
 

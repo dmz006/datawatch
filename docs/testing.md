@@ -1285,6 +1285,89 @@ deterministically with no duplicated or dropped audio.
 
 ---
 
+## Shared navigation mobile fit — phone widths (2026-10-25)
+
+Conditions for every check below, unless a row says otherwise:
+
+- **Daemon:** version 9.11.0 (`Version` in `cmd/datawatch/main.go`, line 119). The binary was built from the tree with `go build -o bin/datawatch ./cmd/datawatch/`. The code under test is the post-fix tree, `a7cc30e4` and later: `git diff --stat a7cc30e4 HEAD -- internal/` is empty, so the post-fix numbers hold for the tree the gate ran on.
+- **Sandbox:** an isolated local daemon that `scripts/e2e-pwa.sh` starts on loopback, with random ports and the `testdata/datawatch.yaml` config. No production daemon was touched. Runs use `env -u TMUX -u TMUX_TMPDIR`.
+- **Browser:** `/usr/bin/google-chrome`, headless, at 100 percent zoom.
+- **Viewports:** gate 320x568, 360x740, 390x844 (light and dark); baseline 768x1024, 1024x768, 1280x800 (light and dark); report-only 320x568, 360x740, 375x667, 390x844, 414x896, 768x1024 (dark).
+- **Named checker:** `scripts/test-stories/pwa/shared-nav-mobile-fit.mjs` now exists (commit `cccbd9f0`). It is a gate wrapper that runs `shared-nav-mobile-fit-probe.mjs`. The probe's measures are not the measures the spec names. The spec's "about 250 nav icon" and "35 px" findings are not verified.
+
+Run records: `docs/testing/runs/shared-nav-mobile-fit/`. The plan is `docs/plans/2026-10-25-shared-nav-mobile-fit.md`.
+
+### N1 — Before the fix (reference, gate on the unmodified tree)
+
+| Field | Details |
+|-------|---------|
+| **Description** | The phone-width gate on the tree before the navigation fix, to show that the gate catches the defect. |
+| **Steps** | Probe gate mode through `scripts/e2e-pwa.sh` (local mode, sandbox daemon) on the unmodified tree. At that time the probe gated the dark theme only; `SHARED_NAV_GATE_THEMES` was added afterwards, so this run did not gate light. |
+| **Expected** | Findings only if the defect is real. This run is the reference the fix is measured against. |
+| **Actual** | FAIL: 4 nav findings, dark theme only. Dashboard and Settings labels clipped; nav `scrollWidth` 440 at 320, 360 and 390 px while `clientWidth` was 320, 360 and 390. Record: `docs/testing/runs/shared-nav-mobile-fit/repro-report.txt`. |
+| **Result** | FAIL (reference) |
+
+### N2 — Phone-width gate after the fix (`make test-e2e-shared-nav`)
+
+| Field | Details |
+|-------|---------|
+| **Description** | The bottom bar at 320, 360 and 390 px, light and dark: no clipped label, no bottom button under 44 by 44 CSS px, no overlap. |
+| **Steps** | 1. `go build -o bin/datawatch ./cmd/datawatch/`. 2. `env -u TMUX -u TMUX_TMPDIR TMPDIR=<repo>/bin/tmp make test-e2e-shared-nav` (`TMPDIR` kept short, see N5). 3. Read the summary line and `repro-report.txt`. |
+| **Expected** | Six nav items in each of the six theme and width combinations; 0 findings; summary `1 passed, 0 failed, 0 skipped`; make exit 0. |
+| **Actual** | PASS, run 2026-10-25 at 13:51 (`make-run/run.log`, `make-run/gate-reports/repro-report.txt`). 0 findings in all six combinations. Each combination reported 6 nav items and nav bar 320x60, 360x60 or 390x60. The report also lists `scrollWidth` equal to `clientWidth` in each combination; that is an observation, because the gate does not assert it and a scroll regression alone would not fail the run. Probe line: `gate pass, 0 nav findings at phone widths`. `make` exit 0. The gate report records `daemon_version` as `unknown` because the runner does not pass `PROBE_DAEMON_VERSION`; the binary reports 9.11.0 (`bin/datawatch version`). |
+| **Result** | PASS |
+
+### N3 — Desktop and tablet geometry against the baseline
+
+| Field | Details |
+|-------|---------|
+| **Description** | The bottom bar's boxes at 768x1024, 1024x768 and 1280x800, light and dark, against `nav-baseline.json` recorded before the fix. The fix must not move them. |
+| **Steps** | Probe in `SHARED_NAV_MODE=baseline` on the post-fix tree; compare the boxes against `post-fix/nav-baseline.json` with the file's tolerance (2 px or 1 percent). |
+| **Expected** | 456 boxes (nav, button, icon, label); maximum delta 0 px; rows with any delta 0; `withinTolerance` true. |
+| **Actual** | PASS on tree `a7cc30e4`: 456 boxes, max absolute delta 0 px, 0 rows with a delta, `baseline.withinTolerance: true`. Record: `post-fix/nav-baseline.json`, `post-fix-report.txt`. The probe writes the baseline but does not compare; the comparison was run as a separate step and is recorded in the report. |
+| **Result** | PASS |
+
+### N4 — Report-only pass on every tab (the open worklist)
+
+| Field | Details |
+|-------|---------|
+| **Description** | Every tab at six phone widths, dark theme. The report is evidence for the open worklist, not a gate. The expectation is that the bottom bar is clean and that no other-tab row is added or removed. |
+| **Steps** | Probe in default `report-only` mode on the post-fix tree; compare with the pre-fix `report-only.json` and `occurrences.json`. |
+| **Expected** | Bottom-nav occurrences 0; no page-level horizontal scroll; the set of other-tab rows unchanged; no new occurrences. |
+| **Actual** | PASS on the expectation. Total occurrences 336 in 26 groups before, 292 in 21 groups after. Bottom-nav occurrences 44 before, 0 after (all were `horizontal-overflow`). Other-tab occurrences 292 before and after. No page-level horizontal scroll before or after. Three rows changed size but are still flagged at the 44 px probe threshold: `button#headerSearchBtn.header-search-btn` (35.5x26 to 40x40), the Observer `div.settings-section-title.settings-section-toggle` (35 to 40 px tall), and one `span#headerAlertPill.header-alert-pill` occurrence (34.8 to 34.2 px wide). Record: `post-fix/report-only/report-only.json`, `post-fix/report-only/occurrences.json`. |
+| **Result** | PASS on the expectation. The 292 other-tab occurrences remain open (Phases 2 and 3 of the plan). |
+
+### N5 — `make test-e2e-shared-nav` with `TMPDIR` inside the worktree
+
+| Field | Details |
+|-------|---------|
+| **Description** | An environment trap found while running N2. Chrome keeps a Unix socket under `TMPDIR`, and the socket path must stay under 108 bytes. A long `TMPDIR` stops Chrome from starting. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR TMPDIR=<repo>/docs/testing/runs/shared-nav-mobile-fit/make-run make test-e2e-shared-nav`, twice. |
+| **Expected** | PASS, as with the default `/tmp`. |
+| **Actual** | FAIL, both attempts, exit 1 from the probe, `make` exit 2: `chrome DevTools endpoint did not come up`. Chrome's own stderr, `Socket path too long: …/make-run/com.google.Chrome.XXXXXX/SingletonSocket`, is discarded by the probe (`stdio: 'ignore'`), so the message above is the only one the run prints. A debug copy of the probe with Chrome's stderr shown started Chrome in 214 ms with a fresh profile under the default `TMPDIR`. Record: `make-run/failed-attempts.log`. |
+| **Result** | FAIL |
+
+### N6 — Label title and ellipsis rule (node unit test)
+
+| Field | Details |
+|-------|---------|
+| **Description** | Each bottom nav button carries a `title` equal to its translated label, and the `.nav-label` rule clips with an ellipsis and does not wrap. The test reads `index.html`, `locales/en.json` and `style.css`; it does not render the bar. |
+| **Steps** | From the repository root: `env -u TMUX node --test internal/server/web/app-shared-nav.test.js`. |
+| **Expected** | 2 tests, 2 pass, 0 fail. |
+| **Actual** | PASS on 2026-10-25 (about 13:59): `tests 2`, `pass 2`, `fail 0`. Nothing in the Makefile, the scripts or CI runs this file, so it only runs when invoked by hand. |
+| **Result** | PASS |
+
+### Not covered by these runs
+
+- **Rendered ellipsis on truncated labels.** N6 checks the CSS rule, not the text shown inside a button. No browser check asserts the ellipsis.
+- **Tooltip on hover or long press.** N6 checks the `title` attribute only. No check shows a tooltip or tests a phone long press.
+- **Sideways scrolling in the bar.** The gate prints `scrollWidth` and `clientWidth` but does not assert them, so a scroll regression alone would not fail N2.
+- **Text zoom.** The matrix's zoom levels are not defined in the repo; only 100 percent was measured.
+- **Header and tab buttons in the gate.** The gate covers the bottom bar only. Header and tab findings are in N4.
+- **Android and iOS.** The repo has no native client source for this surface.
+- **Runner side effect.** `make test-e2e-shared-nav` runs `npm ci` in `scripts/test-stories/pwa`. That replaces the tracked symlink `scripts/test-stories/pwa/node_modules` (it points to `/home/dmz/workspace/datawatch/scripts/test-stories/pwa/node_modules`) with a real directory, which git shows as a deleted file. The symlink was restored with `git checkout` after each run.
+- **Runner `EVIDENCE_DIR`.** `scripts/e2e-pwa.sh` line 41 sets `EVIDENCE_DIR=""`, so an `EVIDENCE_DIR` set in the environment is ignored. In local mode a passing run deletes its report. The record copied the gate reports out during the run (`make-run/gate-reports/`). Fixing the script is a separate change.
+
 ## TS-817 — Two pi-prompt workers hold different compute nodes (sandbox daemon)
 
 | Field | Details |

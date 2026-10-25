@@ -1,0 +1,90 @@
+{
+  "story": "shared-nav-mobile-fit",
+  "mode": "gate",
+  "substitute_for": "scripts/test-stories/pwa/shared-nav-mobile-fit.mjs (absent from this branch)",
+  "daemon_version": "9.11.0",
+  "gate": "fail",
+  "checks": {
+    "clipped-text": "nav label text extends past the visible nav bar, so it is cut off by the nav scroller",
+    "tap-target": "nav button under 44x44 CSS px",
+    "overlap": "nav label text or nav button box intersects another nav item"
+  },
+  "total_findings": 4,
+  "viewports": {
+    "320x568": {
+      "navBox": {
+        "x": 0,
+        "y": 508,
+        "w": 320,
+        "h": 60
+      },
+      "navScrollWidth": 440,
+      "navClientWidth": 320,
+      "navItems": 6,
+      "findings": [
+        {
+          "check": "clipped-text",
+          "selector": "button#navBtnDashboard.nav-btn[data-view=dashboard]",
+          "text": "Dashboard",
+          "w": 82.5,
+          "h": 59,
+          "overflowLeft": 0,
+          "overflowRight": 37.8
+        },
+        {
+          "check": "clipped-text",
+          "selector": "button.nav-btn[data-view=settings]",
+          "text": "Settings",
+          "w": 68.5,
+          "h": 59,
+          "overflowLeft": 0,
+          "overflowRight": 106.3
+        }
+      ]
+    },
+    "360x740": {
+      "navBox": {
+        "x": 0,
+        "y": 680,
+        "w": 360,
+        "h": 60
+      },
+      "navScrollWidth": 440,
+      "navClientWidth": 360,
+      "navItems": 6,
+      "findings": [
+        {
+          "check": "clipped-text",
+          "selector": "button.nav-btn[data-view=settings]",
+          "text": "Settings",
+          "w": 68.5,
+          "h": 59,
+          "overflowLeft": 0,
+          "overflowRight": 66.3
+        }
+      ]
+    },
+    "390x844": {
+      "navBox": {
+        "x": 0,
+        "y": 784,
+        "w": 390,
+        "h": 60
+      },
+      "navScrollWidth": 440,
+      "navClientWidth": 390,
+      "navItems": 6,
+      "findings": [
+        {
+          "check": "clipped-text",
+          "selector": "button.nav-btn[data-view=settings]",
+          "text": "Settings",
+          "w": 68.5,
+          "h": 59,
+          "overflowLeft": 0,
+          "overflowRight": 36.3
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,105 @@
+Shared navigation mobile fit: live smoke test
+Date: 2026-10-25
+Branch: automaton/b54f0001 (worktree /home/dmz/.datawatch/prd-worktrees/b54f0001)
+Daemon under test: sandbox daemon built from this tree by make build, version 9.11.0
+Production daemon (port 8443): not used. Nothing outside this run's own two sandbox daemons was changed or stopped.
+
+COMMANDS RUN (all with env -u TMUX -u TMUX_TMPDIR)
+
+1. make build
+   Ran docs-index-gen and go build. Built bin/datawatch (version 9.11.0). It finished
+   without error. The build left no tracked changes.
+
+2. bash scripts/e2e-pwa.sh group:shared-nav
+   The script started its own sandbox daemon on free 127.0.0.1 ports (PID 1070669),
+   ran the shared-nav group, then stopped that daemon.
+   Output: "shared-nav-mobile-fit-probe: gate pass, 0 nav findings at phone widths",
+   "shared-nav-mobile-fit PASS (exit 0)", "summary: 1 passed, 0 failed, 0 skipped".
+   Exit 0. Log: docs/testing/runs/shared-nav-mobile-fit/live/e2e-group-shared-nav.log
+
+3. bash docs/testing/runs/shared-nav-mobile-fit/live/run-live-smoke.sh
+   The wrapper started a second sandbox daemon on free ports (PID 1086331, TLS origin
+   https://127.0.0.1:46541), drove the PWA with the system google-chrome over the DevTools
+   protocol, then stopped that daemon by PID.
+   Output: "live-smoke: PASS, console errors 0". Exit 0.
+   Records: live/live-smoke.log, live/live-smoke.json, live/screens/*.png
+
+4. Cleanup after the npm ci step inside the e2e script
+   npm ci replaces the tracked symlink scripts/test-stories/pwa/node_modules with a real
+   directory. Removed that directory (created 14:03 by step 2) and restored the symlink
+   with git checkout -- scripts/test-stories/pwa/node_modules, as the how-to directs.
+   The deletion is not in the change.
+
+VIEWPORTS
+
+- 320x568, mobile emulation (touch on, device scale 1)
+- 1280x800, desktop (touch off, device scale 1)
+
+Each viewport logged in to the sandbox PWA, then tapped the tabs in turn with mouse input:
+Sessions, Automata, Alerts, Observer, Settings. Every tap switched the tab, so no DOM-click
+fallback was needed.
+
+CHECKS, for each tab at each viewport
+
+- The bottom bar fits: no scroll overflow and it sits inside the viewport.
+- The page does not scroll sideways.
+- Every visible nav button is at least 40 x 40 CSS px.
+- Every nav button sits inside the bar.
+- A truncated label shows text-overflow: ellipsis and has a title equal to its label.
+- Exactly one nav button is active, it is the tapped tab, and its accent highlight is painted.
+- The tab view renders content.
+- The console shows no errors.
+
+MEASUREMENTS
+
+- 320x568: six visible buttons (Dashboard is visible in this sandbox; the cause was not
+  checked), each 53.3 x 59 px. The bar spans 0 to 320 px, scrollWidth 320 = clientWidth 320. Dashboard
+  is the one truncated label: it shows "Dashbo" with an ellipsis, and its title is "Dashboard".
+- 1280x800: six buttons, each 79.7 x 59 px. The bar spans 400 to 880 px (a centred 480 px
+  bar), scrollWidth 478 = clientWidth 478. No label is truncated.
+- Checks passed at both viewports for all five tabs. Console errors: 0.
+
+OBSERVATIONS, one per tab (both viewports)
+
+- Sessions: At 320 px the bar fits and all six labels are visible apart from Dashboard,
+  which shows "Dashbo" with an ellipsis and the title "Dashboard". Sessions has the accent
+  top border and colour. The body shows the "No active sessions" empty state, and the +
+  button clears the bar. At 1280 px the bar is a centred 480 px pill with no truncation and
+  Sessions highlighted (measured; the screenshot was not reviewed).
+
+- Automata: At 320 px the bar fits and Automata is highlighted. Inside the page the
+  "+ New Automation" button overlaps the tab row, and the Progress table runs past the
+  right edge so its last column is cut off. This is in the tab body, not the nav. The plan
+  defers it to Phase 3. At 1280 px the bar fits, Automata is highlighted, and the tab body
+  fits.
+
+- Alerts: At 320 px the bar fits and Alerts is highlighted, with the accent top border.
+  The body shows "No alerts." At 1280 px the bar is centred, Alerts is highlighted, and
+  the body shows "No alerts." too.
+
+- Observer: At 320 px the bar fits and Observer is highlighted. In the body, the right-hand
+  cards (MEMORY, SWAP, GPU VRAM) run past the view's right edge and are cut off. This is in
+  the tab body, not the nav. The plan defers it (BL572). At 1280 px the bar is centred,
+  Observer is highlighted, and the cards fit.
+
+- Settings: At 320 px the bar fits and Settings is highlighted. Its sub-tab row (General,
+  Plugins, Comms, Co...) is cut off at the right edge. The body area was empty in
+  the screenshot taken 900 ms after the tap, and I did not investigate why. At 1280 px the
+  bar fits and Settings is highlighted, with the same sub-tab row and the same empty body.
+
+SCOPE NOTES
+
+- The bottom bar was the only thing measured. Header controls (the help link, bell,
+  search, install and fullscreen buttons) were not measured in this run. The plan lists
+  them as still under 44 px in Phase 2.
+- scripts/e2e-pwa.sh and run-live-smoke.sh create their sandbox data directory with
+  mktemp under ${TMPDIR:-/tmp}, outside the worktree, and remove it when the run succeeds.
+  I did not change TMPDIR, because a sandbox data directory inside the worktree is the case
+  the sandbox notes warn against. The Chrome profile is under bin/live-smoke-profile
+  (gitignored) and was removed after the run.
+- Only the processes this run started were stopped, each by its PID. No process was
+  stopped by name pattern.
+- The screenshots and the driver (live/live-smoke.mjs, live/run-live-smoke.sh) are kept
+  as evidence in live/.
+
+result: PASS

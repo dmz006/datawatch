@@ -28,6 +28,7 @@ LLM_ONLY=(
     automation-tab      # PWA-only view; nothing callable from MCP (like dashboard) — reference/conceptual doc
     list-endpoints-and-paging  # curl-based API reference + PWA presentation states; running a daemon is in testing-against-a-running-daemon
     automata-tab-loading  # PWA-only view; nothing callable from MCP (like automation-tab) — reference/conceptual doc
+    navigation-mobile-fit  # test-only page: the phone-width check run by make test-e2e-shared-nav; no MCP-callable steps
 )
 
 ERRORS=0

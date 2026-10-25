@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Shared navigation fits phone widths
+
+The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.
+
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
 ## v9.16.1 — Restart during session launch never adopts a dead worker
