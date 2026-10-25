@@ -4851,18 +4851,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// claude-code idle nudge: one nudge after worker_idle_nudge_seconds of
 				// idle, a stall after worker_idle_nudge_stall_seconds more. Both
 				// windows are shorter than the session idle timeout, so the nudge
-				// fires first. Nil for other families.
-				var nudgeTracker *autonomouspkg.WorkerNudgeTracker
-				var nudgeHooks autonomouspkg.WorkerNudgeHooks
-				if family == autonomouspkg.WorkerNudgeFamily {
-					nudgeAfter, nudgeStallAfter := workerNudgeWindows(liveCfg)
-					nudgeTracker = autonomouspkg.NewWorkerNudgeTracker(nudgeAfter, nudgeStallAfter)
-					// A nudge already sent into this session before a daemon restart is
-					// persisted on the task; adopt it so the worker is not nudged twice
-					// and the stall window counts from the original send.
-					nudgeTracker.SeedNudgedAt(task.NudgeTimeForSession(task.SessionID))
-					nudgeHooks = workerNudgeHooks(mgr, autonomousMgrRef, task.SessionID, task.PRDID, task.ID, idleLimit, nudgeStallAfter)
-				}
+				// fires first. Nil for other families. The family is read once, at
+				// wait start (see newPostTurnNudge).
+				nudge := newPostTurnNudge(postTurnDeps{
+					sessions: managerPostTurnSessions{mgr: mgr},
+					recorder: managerPostTurnRecorder{mgr: autonomousMgrRef},
+					probes:   postTurnProbes{hasWork: hasLiveChildProcess, logAge: staleLogAge(idleLimit)},
+				}, liveCfg, task)
 				// pi-prompt exit-silence detector. One-shot `pi --print` runs write
 				// nothing to the log until they finish, so the log-mtime stall check
 				// is (correctly) disabled for this family — see staleWorkerAppliesTo.
@@ -4891,9 +4886,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							// The session is over: drop its scan-history entry so
 							// the fresh-tracker map cannot grow without bound.
 							sseFreshTracker.forget(s.FullID)
-							if nudgeTracker != nil && s.State == session.StateComplete {
+							if s.State == session.StateComplete {
 								// Completion ends an open nudge as answered.
-								autonomouspkg.CloseNudgeWait(nudgeTracker, nudgeHooks)
+								nudge.Close()
 							}
 							break waitLoop
 						}
@@ -4929,11 +4924,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								}
 							}
 						}
-						if nudgeTracker != nil {
-							if werr := autonomouspkg.StepWorkerNudge(nudgeTracker, time.Now(), s.BackendFamily, task.SessionID, task.PRDID+"/"+task.ID, nudgeHooks); werr != nil {
-								stallErr = werr
-								break waitLoop
-							}
+						if werr := nudge.Step(time.Now()); werr != nil {
+							stallErr = werr
+							break waitLoop
 						}
 						// v8.36.1 — every autonomous task session spawns with
 						// one_shot=true (it's expected to run to completion via
@@ -5010,7 +5003,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						var stalled bool
 						// The nudge tracker owns claude-code idleness: the 3-tick
 						// debounce would kill the worker long before the nudge window.
-						if s.BackendFamily == "claude-code" && nudgeTracker == nil {
+						if s.BackendFamily == "claude-code" && !nudge.Active() {
 							waitingInputTicks, stalled = decomposeWaitingInputTick(waitingInputTicks, s.State, time.Since(s.CreatedAt), decomposeDeliveryGrace(cfg))
 						}
 						if stalled && !startSupersedes {
