@@ -2758,4 +2758,6 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 27. **Rerunning a hung CI step (supervisor duties proposal Q3, answer: "1").** The coordinator may rerun a hung or infrastructure-classified CI run once without asking, and logs the rerun. It never reruns security workflow runs and never reruns a run whose judge verdict is policy.
 
+28. **Surfaces for the Automation duties (supervisor duties proposal Q4, answer: "2").** Every one of the eight duties gets the full parity set: config, REST, MCP, CLI, comm channel, PWA, and a mobile parity issue wherever a REST or WebSocket contract changes. The proposal's recommended mix is not used.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.

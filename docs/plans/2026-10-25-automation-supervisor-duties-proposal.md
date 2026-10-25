@@ -193,7 +193,7 @@ None of the following is decided. Each starts a step only when recorded in this 
 | 7. Design-point gate | gate toggle | decision and gate state read | excluded (a) | excluded (a) | excluded (a) | read-only decision line | no new contract if the decision log is reused |
 | 8. Error-line matching | per-backend pattern source | no new surface | excluded (a) | excluded (a) | excluded (a) | unchanged | no change |
 
-**Status.** Open.
+**Status.** **Decided by the operator, 2026-10-25: option (b) for every duty** ("2"): the full parity set (config, REST, MCP, CLI, comm channel, PWA, and a mobile parity issue wherever a REST or WebSocket contract changes) for each of the eight duties. The recommended mix above is superseded; the table shows the minimum each duty needs, and the operator's rule is the full set.
 
 ### Q5. Clock for the 72-hour security rule (duty 2)
 
