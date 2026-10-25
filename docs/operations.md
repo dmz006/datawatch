@@ -317,7 +317,7 @@ hostname: hal9000
 
 # Root directory for sessions.json, logs/, and config.
 # Default: ~/.datawatch
-data_dir: /home/user/.datawatch
+data_dir: ~/.datawatch
 
 signal:
   # Your Signal phone number in E.164 format.
@@ -329,7 +329,7 @@ signal:
 
   # signal-cli data directory containing account keys and identity.
   # Default: ~/.local/share/signal-cli
-  config_dir: /home/user/.local/share/signal-cli
+  config_dir: ~/.local/share/signal-cli
 
   # Name shown in Signal's Settings → Linked Devices list.
   # Default: hostname
@@ -786,7 +786,7 @@ tailscale status
 Option 1 — Set the full path in config:
 ```yaml
 session:
-  claude_code_bin: /home/user/.local/bin/claude
+  claude_code_bin: ~/.local/bin/claude
 ```
 
 Option 2 — Add the PATH to the systemd service:
@@ -794,7 +794,7 @@ Option 2 — Add the PATH to the systemd service:
 systemctl --user edit datawatch
 # Add:
 # [Service]
-# Environment=PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Environment=PATH=~/.local/bin:/usr/local/bin:/usr/bin:/bin
 ```
 
 ### Group ID not found / wrong format
@@ -833,7 +833,7 @@ Short IDs (`a3f2`) work if only one machine has a session with that ID. If both 
 **Symptom:** An automatic commit fails with an error beginning `auto-commit refused:`, prefixed with the repository directory:
 
 ```
-/home/you/project: auto-commit refused: 12504 files staged exceeds the limit of 10000 (MaxStagedFiles). Narrow the write scope (read_dirs/write_dirs) so the commit stages fewer files, or point the project directory at a repository rather than a home directory.
+~/project: auto-commit refused: 12504 files staged exceeds the limit of 10000 (MaxStagedFiles). Narrow the write scope (read_dirs/write_dirs) so the commit stages fewer files, or point the project directory at a repository rather than a home directory.
 ```
 
 **What it means:** The commit would have staged more files than the staged-file limit allows (`MaxStagedFiles`, default 10000). Datawatch refused rather than commit a whole directory tree. The usual cause is a session write scope that covers a directory holding a large number of files, most often caches, dependency trees, or model weights inside the project directory.
@@ -1022,7 +1022,7 @@ Add:
 ```ini
 [Service]
 ExecStart=
-ExecStart=/usr/local/bin/datawatch start --verbose --config /home/user/.datawatch/config.yaml
+ExecStart=/usr/local/bin/datawatch start --verbose --config ~/.datawatch/config.yaml
 ```
 
 Then:
@@ -1534,7 +1534,7 @@ you want this feature allowed to read from:
 
 ```yaml
 webhook:
-  image_dir: "/home/you/datawatch-webhook-images"
+  image_dir: "~/datawatch-webhook-images"
 ```
 
 Only paths resolving inside that directory are accepted; anything else

@@ -1,7 +1,7 @@
 # Verifier progress watchdog: count the verifier's own liveness, not just pane silence
 
 Date: 2026-10-24
-Status: proposal, awaiting operator confirmation
+Status: implemented, pending final gate
 
 Confirmed: yes
 
@@ -72,11 +72,11 @@ Only the meaning of the existing `autonomous.verifier_no_progress_timeout_second
 
 ## Phases
 
-1. This proposal — operator confirms the four decisions above. Status: Planned.
-2. Implement the confirmed rule: extend the watchdog's progress signals (runner process, held slot) in the one-shot runner's wait loop, apply the confirmed default, and unit tests. Status: Planned.
-3. Live smoke: run a print-mode verification on a shared-GPU engine and confirm a legitimately silent run survives while a genuinely dead one is still ended. Status: Planned.
-4. Final gate and docs: re-verify the docs/operations.md and docs/implementation.md paragraphs, and the gate task. Status: Planned.
+1. This proposal — operator confirms the four decisions above. Status: Done — confirmed on 2026-10-24, recorded above.
+2. Implement the confirmed rule: extend the watchdog's progress signals (runner process, held slot) in the one-shot runner's wait loop, apply the confirmed default, and unit tests. Status: Done — decision logic and signal wiring implemented and unit-tested.
+3. Live smoke: run a print-mode verification on a shared-GPU engine and confirm a legitimately silent run survives while a genuinely dead one is still ended. Status: Pending — no live run recorded yet.
+4. Final gate and docs: re-verify the docs/operations.md and docs/implementation.md paragraphs, and the gate task. Status: In progress — docs updated to the confirmed rule; final gate pending live smoke.
 
 ## Status
 
-Confirmed by the operator on 2026-10-24: the four decisions are recorded above and the Confirmed line reads yes. Implementation (Phase 2 and beyond) may start.
+Confirmed by the operator on 2026-10-24: the four decisions are recorded above and the Confirmed line reads yes. The implementation (progress signals, confirmed 900-second default, slot-wait exclusion, fallback-backend escalation) has landed; the live smoke is still pending and the final gate will close out the remaining docs.

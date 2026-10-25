@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **A verifier that is working but quiet is no longer ended by the no-progress watchdog.** Verifier sessions are ended by a watchdog when they appear to have stopped making progress: before this change, "progress" meant only an output file appearing or the session pane changing, so a print-mode verification that writes nothing to the pane until it finishes could be killed mid-run — on a GPU shared by several engines, a legitimately slow verification took longer than the window and the watchdog ended both verification sessions, failing the task. Now the watchdog counts the verifier's own liveness: an output file, a pane change, a live runner process, or a held capacity slot each reset the timer, and time spent waiting for a capacity slot never counts against the limit. A verification is ended only when none of those signals is present for the whole limit.
+- **The no-progress limit default rose from ten minutes to fifteen.** The setting keeps its name, `autonomous.verifier_no_progress_timeout_seconds`, and its default is now 900 seconds (unset or non-positive values use the default). A watchdog end is still recorded as an infra failure counted under `watchdog` in the verifier counters, and repeated infra failures on one task still escalate the next verification to the fallback backend.
+
 ## v9.10.0 — Plugin widget data gated on plugin:read and plugin:write
 
 Plugin widget data endpoints now gate on the new `plugin:read` and `plugin:write` federation capabilities instead of `config:read` and `config:write`. Federation peers must be granted them explicitly; full-control, the operator token (PWA, mobile, CLI) and session-scoped credentials are unaffected. Tests cover the capability checks for every widget route. This finished work from the plugin widgets series sat unmerged on its branch and was found by the content-based branch audit.
