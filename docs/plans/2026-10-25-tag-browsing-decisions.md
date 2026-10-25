@@ -10,10 +10,10 @@ Date started: 2026-10-25. The ten open questions of `docs/plans/2026-10-20-tag-b
 3. **Attention statuses: `blocked`, `needs_review` and `paused`.** (Operator, 2026-10-25: "2".) A paused Automaton joins the attention group so every paused item is visible in one place; the `attention_statuses` setting still lets the operator change the list. **Sub-question answered (operator, 2026-10-25: "Go with your recommendations"):** an Automaton with a task held for operator review (`review_needed`) also appears in the attention group.
 4. **List payload: add `tags` to each Automata list item and keep the existing task counts.** (Operator, 2026-10-25: "Go with your recommendations", for the supervisor's recommendation 1.) The tile shows progress from the counts the list already returns and tag chips from the new `tags` field, with no second request per tile; the three count fields stay as they are.
 5. **Placement: both tabs, built together.** (Operator, 2026-10-25: first "1, Automata tab first", then clarified "Both all was for 37" after "Actually both,  do it now".) The tag browser is built in the Automata tab and in the Automation tab at the same time, as one shared tile component used by both, and the operator wants it built now. This replaces the earlier "Automata tab first" reading and makes the tag browser depend on the Automation tab's phase being in place.
+6. **Multi-tag display: under every tag, with the "also in:" line; plus an optional primary tag for sorting.** (Operator, 2026-10-25: "1 yes both".) An item with several tags appears under every tag's branch with an "also in:" line naming its other tags, counted once per tag subtree. "Both" is read as adding option 2's primary tag as well: the operator can optionally choose a primary tag per item, used for sorting only, and it defaults to none. If "both" meant something else, the operator corrects this line.
 
 ## Still open (asked in order)
 
-6. Whether a tag shown under several branches is acceptable (asked again 2026-10-25: the earlier "both" answer was for question 5, placement, not for this one).
 7. Whether counts refresh on the event stream or on poll.
 8. Whether tags are local to one node or federated.
 9. The default match mode of the tag facet.
