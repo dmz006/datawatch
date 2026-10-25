@@ -687,7 +687,7 @@ if [[ "$FRESH" == 1 ]]; then
 fi
 
 step "step 8: forwarding (in-process Go tests)"
-GO_LOG="$WORK/forwarding-tests.log"
+GO_LOG="$WORK/forwarding-tests.txt"
 (cd "$REPO_ROOT" && go test -count=1 -v -run '^(TestForwardedEvents|TestForward)' \
   ./internal/autonomous/ ./internal/server/ ./cmd/datawatch/) > "$GO_LOG" 2>&1
 go_rc=$?
@@ -699,7 +699,7 @@ if [[ $go_rc -ne 0 || $go_fail -ne 0 || $go_pass -eq 0 ]]; then
 fi
 pass "forwarding tests: $go_pass top-level tests passed"
 if [[ -n "$EVIDENCE_DIR" ]]; then
-  cp "$GO_LOG" "$EVIDENCE_DIR/forwarding-tests.log"
+  cp "$GO_LOG" "$EVIDENCE_DIR/forwarding-tests.txt"
 fi
 
 check clean-requests || die "the secret value leaked into a receiver request"
