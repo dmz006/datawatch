@@ -24,11 +24,20 @@
 // injected as function values (SessionPushConfig), so this package
 // still does not import internal/session or internal/server (see
 // SinkConfig). The daemon wires them next to InstallLifecycleSinks.
+//
+// Webhook-sink subscriptions (SinkWebhook) are delivered by WebhookSink on the
+// same per-subscriber goroutine, so a stalled receiver delays only its own
+// subscription. Each webhook subscription runs its deliveries under a context
+// that survives unrelated store changes but is cancelled when that
+// subscription is deleted, expires, or changes. Coalesce does not apply to
+// webhook sinks. A one-shot webhook subscription is consumed only after a
+// delivery succeeds, and while the webhook sink is disabled it stays armed.
 
 package autonomous
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -102,6 +111,9 @@ type SessionPushConfig struct {
 	// PendingQueue drives mcp_queue-sink subscriptions (nil → matching
 	// events are dropped silently).
 	PendingQueue *PendingEventQueue
+	// Webhook drives webhook-sink subscriptions. Nil, or a sink whose live
+	// settings are disabled, makes matching webhook events a no-op.
+	Webhook *WebhookSink
 }
 
 // DefaultBridgePost POSTs text to the session channel bridge's
@@ -143,6 +155,17 @@ type activeSubscription struct {
 	sub    Subscription // as registered, to detect an in-place update on resync
 }
 
+// deliveryScope is the context a webhook subscription's deliveries run
+// under. Resync re-registers every subscription, so the scope is kept across
+// resyncs while the subscription is unchanged (an unrelated store change must
+// not abort a retry in progress). It is cancelled when the subscription is
+// deleted, expires, or changes, and when the engine closes.
+type deliveryScope struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	sub    Subscription
+}
+
 // LifecycleSubscriptionEngine wires persisted subscriptions from a
 // SubscriptionStore to the dispatcher. Zero-value is not usable; build
 // it with NewLifecycleSubscriptionEngine and call Start (idempotent) /
@@ -155,6 +178,8 @@ type LifecycleSubscriptionEngine struct {
 
 	mu     sync.Mutex
 	active map[string]*activeSubscription
+	// scopes holds the delivery scope of each live webhook subscription.
+	scopes map[string]*deliveryScope
 	// keepQueues names pending queues whose one-shot subscription was
 	// just consumed: the next resync leaves them in place so the client
 	// can still read the event the one-shot delivered.
@@ -185,6 +210,7 @@ func NewLifecycleSubscriptionEngine(m *Manager, store *SubscriptionStore, cfg Se
 		cfg:    cfg,
 		nowFn:  time.Now,
 		active: make(map[string]*activeSubscription),
+		scopes: make(map[string]*deliveryScope),
 		stop:   make(chan struct{}),
 	}
 }
@@ -221,11 +247,16 @@ func (e *LifecycleSubscriptionEngine) Close() {
 	}
 	e.closed = true
 	prevActive := e.active
+	prevScopes := e.scopes
 	e.active = make(map[string]*activeSubscription)
+	e.scopes = make(map[string]*deliveryScope)
 	close(e.stop)
 	e.mu.Unlock()
 
 	e.store.OnChanged(nil)
+	for _, sc := range prevScopes {
+		sc.cancel()
+	}
 	for _, a := range prevActive {
 		if a.comm != nil {
 			a.comm.Close()
@@ -278,6 +309,7 @@ func (e *LifecycleSubscriptionEngine) resync() {
 	}
 
 	next := make(map[string]*activeSubscription, len(subs))
+	liveWebhook := make(map[string]bool)
 	var created, removed, updated []string
 	for _, sub := range subs {
 		if sub.ExpiresAt != nil && !sub.ExpiresAt.After(now) {
@@ -291,6 +323,10 @@ func (e *LifecycleSubscriptionEngine) resync() {
 		} else {
 			created = append(created, sub.ID)
 		}
+		if sub.Sink.Type == SinkWebhook {
+			e.scopeLocked(sub)
+			liveWebhook[sub.ID] = true
+		}
 		subCancel := e.m.Subscribe(sub.Filter, func(ev LifecycleEvent) { e.handle(sub, ev) })
 		var comm *CommFanoutSink
 		if sub.Sink.Type == SinkComm && sub.Coalesce {
@@ -301,6 +337,14 @@ func (e *LifecycleSubscriptionEngine) resync() {
 	for id := range prevIDs {
 		if prevIDs[id] {
 			removed = append(removed, id)
+		}
+	}
+	// A webhook scope whose subscription is gone, expired, or no longer a
+	// webhook sink ends now; an in-flight delivery for it is abandoned.
+	for id, sc := range e.scopes {
+		if !liveWebhook[id] {
+			sc.cancel()
+			delete(e.scopes, id)
 		}
 	}
 	e.active = next
@@ -366,7 +410,7 @@ func subscriptionAuditDetails(sub Subscription) map[string]any {
 	if sub.Action != nil {
 		actionType = sub.Action.Type
 	}
-	return map[string]any{
+	details := map[string]any{
 		"subscription_id": sub.ID,
 		"owner":           sub.Owner,
 		"sink":            sub.Sink.Type,
@@ -374,6 +418,12 @@ func subscriptionAuditDetails(sub Subscription) map[string]any {
 		"one_shot":        sub.OneShot,
 		"kinds":           kinds,
 	}
+	if sub.Sink.Type == SinkWebhook {
+		// The host only: never the URL's userinfo, path or query, and never
+		// the signing secret reference (Sink.Secret is not written at all).
+		details["target_host"] = webhookTargetHost(sub.Sink.Target)
+	}
+	return details
 }
 
 // handle is the subscribe callback for one persisted subscription. It
@@ -455,7 +505,62 @@ func (e *LifecycleSubscriptionEngine) handle(sub Subscription, ev LifecycleEvent
 				log.Printf("[autonomous] lifecycle sub %s: one-shot removal: %v", sub.ID, derr)
 			}
 		}
+
+	case SinkWebhook:
+		e.deliverWebhook(sub, ev)
 	}
+}
+
+// deliverWebhook sends one event to a webhook subscription's receiver. It
+// blocks only this subscription's dispatcher goroutine, which carries the
+// retries (the proposal's retry policy). Coalesce is not applied: each
+// matching event is one delivery. A one-shot subscription is consumed only
+// after a successful delivery; a dropped delivery leaves it armed, and the
+// sink has already raised the alert. While the sink is disabled nothing is
+// sent and the subscription is left untouched.
+func (e *LifecycleSubscriptionEngine) deliverWebhook(sub Subscription, ev LifecycleEvent) {
+	if !e.cfg.Webhook.Enabled() {
+		return
+	}
+	ctx, ok := e.deliveryContext(sub.ID)
+	if !ok {
+		return // removed while this event was queued
+	}
+	if err := e.cfg.Webhook.Deliver(ctx, sub, ev); err != nil {
+		log.Printf("[autonomous] lifecycle sub %s: webhook delivery: %v", sub.ID, err)
+		return
+	}
+	if sub.OneShot {
+		if derr := e.store.Delete(sub.ID); derr != nil {
+			log.Printf("[autonomous] lifecycle sub %s: one-shot removal: %v", sub.ID, derr)
+		}
+	}
+}
+
+// deliveryContext returns the live delivery scope's context for subID.
+func (e *LifecycleSubscriptionEngine) deliveryContext(subID string) (context.Context, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	sc, ok := e.scopes[subID]
+	if !ok {
+		return nil, false
+	}
+	return sc.ctx, true
+}
+
+// scopeLocked returns sub's delivery scope, replacing a scope whose
+// subscription changed. The caller holds e.mu.
+func (e *LifecycleSubscriptionEngine) scopeLocked(sub Subscription) *deliveryScope {
+	if sc, ok := e.scopes[sub.ID]; ok {
+		if reflect.DeepEqual(sc.sub, sub) {
+			return sc
+		}
+		sc.cancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	sc := &deliveryScope{ctx: ctx, cancel: cancel, sub: sub}
+	e.scopes[sub.ID] = sc
+	return sc
 }
 
 // commSink returns the live registration for subID (for its coalescing

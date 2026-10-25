@@ -5963,10 +5963,15 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			amgr.SetGuardrail(autonomousGuardrail)
 			// Foreign-file drift (and future autonomous audit events) →
 			// operator audit log, so they land in JSON-lines + CEF mirror.
+			// lifecycleAuditFn is the operator audit writer for autonomous
+			// records. The lifecycle webhook sink (BL427 phase 5) shares it
+			// with the subscription engine, so both write the same log.
+			var lifecycleAuditFn func(string, map[string]any)
 			if wiredAuditLog != nil {
-				amgr.SetAuditFn(func(a string, d map[string]any) {
+				lifecycleAuditFn = func(a string, d map[string]any) {
 					_ = wiredAuditLog.Write(auditpkg.Entry{Timestamp: time.Now(), Actor: "autonomous", Action: a, Details: d})
-				})
+				}
+				amgr.SetAuditFn(lifecycleAuditFn)
 			}
 			// v5.26.19 — wire F10 profile resolver so SetPRDProfiles
 			// can validate that named project + cluster profiles
@@ -6073,7 +6078,46 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						emailBackend.Send(cfg.Email.To, text) //nolint:errcheck
 					}
 				}
+				// BL427 (phase 5) — outbound webhook sink. It ships disabled.
+				// HOOK: the config task (pending operator confirmation) replaces
+				// this body with the autonomous.notify.webhook.* values read
+				// from cfg on every call. Until then the defaults keep it off, so
+				// webhook subscriptions are refused at creation and deliver nothing.
+				lifecycleWebhookSettings := func() autonomouspkg.WebhookSettings {
+					return autonomouspkg.DefaultWebhookSettings()
+				}
+				// Creation check: the store refuses a webhook subscription whose
+				// delivery is disabled or whose target fails the URL policy.
+				lifeSubStore.SetSinkValidator(func(sub autonomouspkg.Subscription) error {
+					return autonomouspkg.ValidateWebhookSubscriptionTarget(sub, lifecycleWebhookSettings())
+				})
+				webhookSink := autonomouspkg.NewWebhookSink(autonomouspkg.WebhookSinkConfig{
+					Settings: lifecycleWebhookSettings,
+					// The signing key is resolved from the vault on every delivery
+					// and never cached. Nothing here logs the value.
+					ResolveSecret: func(ref string) (string, error) {
+						if secretsStore == nil {
+							return "", fmt.Errorf("no secrets store is configured")
+						}
+						if !secretspkg.IsRef(ref) {
+							return "", fmt.Errorf("the signing secret is not a ${secret:name} reference")
+						}
+						return secretspkg.ResolveRef(ref, secretsStore)
+					},
+					Audit: lifecycleAuditFn,
+					RaiseAlert: func(level, title, body string) {
+						lv := alertspkg.LevelInfo
+						switch level {
+						case "warn":
+							lv = alertspkg.LevelWarn
+						case "error":
+							lv = alertspkg.LevelError
+						}
+						_ = alertStore.AddSystem(lv, title, body)
+					},
+				})
 				lifeSubEngine := autonomouspkg.NewLifecycleSubscriptionEngine(amgr, lifeSubStore, autonomouspkg.SessionPushConfig{
+					Webhook: webhookSink,
 					// Resolve a session name, full ID, or short ID to the
 					// session's full ID and channel-bridge port (0 when the
 					// session has no bridge — then the engine uses SendInput

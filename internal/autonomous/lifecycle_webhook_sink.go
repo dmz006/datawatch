@@ -196,6 +196,13 @@ func NewWebhookSink(cfg WebhookSinkConfig) *WebhookSink {
 	return &WebhookSink{cfg: cfg}
 }
 
+// Enabled reports whether the live settings allow delivery; a nil sink is
+// disabled. Deliver returns nil while disabled (nothing is sent), so the
+// session-push engine asks first and leaves a one-shot subscription armed.
+func (s *WebhookSink) Enabled() bool {
+	return s != nil && s.cfg.Settings != nil && s.cfg.Settings().Enabled
+}
+
 // WebhookEnvelope is the JSON body of one POST. Everything a receiver needs to
 // de-duplicate and attribute the event is inside the signed bytes.
 type WebhookEnvelope struct {
