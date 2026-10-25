@@ -237,18 +237,15 @@ func runnerSubtreePIDs(roots []int, children map[int][]int, nameOf func(int) str
 }
 
 // isOwnMCPServer reports whether argv, a process's command line, is one of the
-// session's own servers. The channel bridge is recognised by its binary name.
-// Any other spec matches when its Command is argv[0], or shares its base name,
-// and every one of its Args appears later in argv. A spec with no args matches
-// only a process started with no arguments at all, so a launcher such as npx
-// cannot claim the unrelated work it starts. An empty argv is never an own
+// session's own servers. Each spec matches when its Command is argv[0], or shares
+// its base name, and every one of its Args appears later in argv. A spec with no
+// args matches only a process started with no arguments at all, so a launcher
+// such as npx cannot claim the unrelated work it starts. The channel bridge's
+// binary name is the fallback when no spec matches. An empty argv is never an own
 // server, so a process that cannot be read counts as work.
 func isOwnMCPServer(argv []string, ownServers []channel.MCPServerSpec) bool {
 	if len(argv) == 0 {
 		return false
-	}
-	if filepath.Base(argv[0]) == channelBinaryName {
-		return true
 	}
 	for _, spec := range ownServers {
 		if spec.Command == "" {
@@ -265,7 +262,7 @@ func isOwnMCPServer(argv []string, ownServers []channel.MCPServerSpec) bool {
 			return true
 		}
 	}
-	return false
+	return filepath.Base(argv[0]) == channelBinaryName
 }
 
 // argsContainAll reports whether every element of want appears in argv.

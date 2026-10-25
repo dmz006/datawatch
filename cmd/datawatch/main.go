@@ -5079,6 +5079,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// otherwise), and mgr.Kill below is the only kill path — no
 						// tmux kill commands.
 						if exitSilenceTracker != nil {
+							// Runner liveness, not work children, feeds the tracker: the question is
+							// whether the runner has exited. A generating pi run may have no child
+							// process, and the tracker treats a live runner as activity.
 							if stalled, reason := exitSilenceTick(exitSilenceTracker, family, time.Now(),
 								func() bool { return hasLiveRunnerProcess(s.TmuxSession) },
 								func() time.Time {
@@ -5122,7 +5125,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									Threshold: staleThreshold,
 									Now:       time.Now(),
 									ChildAlive: func() bool {
-										return hasLiveChildProcess(s.TmuxSession, s.ProjectDir)
+										return hasLiveRunnerProcess(s.TmuxSession)
 									},
 									BackendBusy: func() bool {
 										return !s.LastChannelEventAt.IsZero() && time.Since(s.LastChannelEventAt) <= staleThreshold

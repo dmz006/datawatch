@@ -102,6 +102,8 @@ func TestSessionIdleProbe_OwnServerMatchingRules(t *testing.T) {
 	bridge := channel.MCPServerSpec{Command: "/opt/dw/datawatch-bridge"}
 	search := channel.MCPServerSpec{Command: "/usr/local/bin/datawatch", Args: []string{"mcp-search"}}
 	launcher := channel.MCPServerSpec{Command: "npx"}
+	npxServer := channel.MCPServerSpec{Command: "npx", Args: []string{"-y", "some-tool"}}
+	jsBridge := channel.MCPServerSpec{Command: "/usr/bin/node", Args: []string{"/home/u/.datawatch/channel/channel.js"}}
 	cases := []struct {
 		name  string
 		argv  []string
@@ -115,11 +117,45 @@ func TestSessionIdleProbe_OwnServerMatchingRules(t *testing.T) {
 		{"args spec rejects other args", []string{"datawatch", "serve"}, []channel.MCPServerSpec{search}, false},
 		{"launcher spec does not claim work it starts", []string{"npx", "-y", "some-tool"}, []channel.MCPServerSpec{launcher}, false},
 		{"empty argv is work", nil, []channel.MCPServerSpec{search}, false},
+		{"node channel bridge matches its spec", []string{"/usr/bin/node", "/home/u/.datawatch/channel/channel.js"}, []channel.MCPServerSpec{jsBridge}, true},
+		{"node running another script is work", []string{"/usr/bin/node", "/srv/other.js"}, []channel.MCPServerSpec{jsBridge}, false},
+		{"npx-run server whose argv differs from its spec is work", []string{"node", "/usr/lib/node_modules/npm/bin/npx-cli.js", "-y", "some-tool"}, []channel.MCPServerSpec{npxServer}, false},
 	}
 	for _, tc := range cases {
 		if got := isOwnMCPServer(tc.argv, tc.specs); got != tc.want {
 			t.Errorf("%s: isOwnMCPServer(%v) = %v, want %v", tc.name, tc.argv, got, tc.want)
 		}
+	}
+}
+
+func TestSessionIdleProbe_LauncherServerArgvMismatchCountsAsWork(t *testing.T) {
+	// pane 100 -> bash 200 -> claude 300 -> node 400. The MCP server was started
+	// through npx, so its argv is node running npx-cli.js and does not match the
+	// spec's npx argv. It is not recognised, so it counts as work. That keeps the
+	// idle detector off for this worker, which is the fail-safe direction.
+	roots := []int{100}
+	children := map[int][]int{100: {200}, 200: {300}, 300: {400}}
+	names := map[int]string{100: "bash", 200: "bash", 300: "claude", 400: "node"}
+	argv := map[int][]string{300: {"claude"}, 400: {"node", "/usr/lib/node_modules/npm/bin/npx-cli.js", "-y", "some-tool"}}
+	ownServers := []channel.MCPServerSpec{{Command: "npx", Args: []string{"-y", "some-tool"}}}
+	got := workChildPIDs(roots, children, fakeProcessNames(names), fakeProcessArgv(argv), ownServers)
+	if !got[400] || len(got) != 1 {
+		t.Fatalf("launcher-run server with mismatched argv: got %v, want {400}", got)
+	}
+}
+
+func TestSessionIdleProbe_LauncherServerMatchedSkipsItsSubtree(t *testing.T) {
+	// pane 100 -> bash 200 -> claude 300 -> npx 400 -> node 500. The npx argv
+	// matches its spec, so npx and the node process it started are both the
+	// session's own server and not work.
+	roots := []int{100}
+	children := map[int][]int{100: {200}, 200: {300}, 300: {400}, 400: {500}}
+	names := map[int]string{100: "bash", 200: "bash", 300: "claude", 400: "npx", 500: "node"}
+	argv := map[int][]string{300: {"claude"}, 400: {"npx", "-y", "some-tool"}, 500: {"node", "some-tool.js"}}
+	ownServers := []channel.MCPServerSpec{{Command: "npx", Args: []string{"-y", "some-tool"}}}
+	got := workChildPIDs(roots, children, fakeProcessNames(names), fakeProcessArgv(argv), ownServers)
+	if len(got) != 0 {
+		t.Fatalf("matched launcher server and its subtree: got %v, want none", got)
 	}
 }
 
