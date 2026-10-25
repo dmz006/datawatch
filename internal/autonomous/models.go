@@ -899,6 +899,10 @@ type Task struct {
 	// records for this task (one entry per failed, stalled or cancelled
 	// attempt).
 	Attempts []TaskAttempt `json:"attempts,omitempty"`
+	// RunnerEvidence is set by the worker wait loop just before a pi-prompt
+	// stall and cleared once recordFailedAttempt has copied it into the
+	// attempt record.
+	RunnerEvidence *RunnerEvidence `json:"runner_evidence,omitempty"`
 	// EscalationFailures counts failed attempts since the last operator
 	// action; it indexes the policy's steps and is compared with
 	// max_failures.

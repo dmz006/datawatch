@@ -142,6 +142,21 @@ func formatEscalationAttemptFull(a TaskAttempt) string {
 			fmt.Fprintf(&b, "    - %s\n", f)
 		}
 	}
+	if a.RunnerExitStatus != nil {
+		fmt.Fprintf(&b, "  Runner exit status: %d\n", *a.RunnerExitStatus)
+	}
+	if len(a.RunnerLastOutput) > 0 {
+		b.WriteString("  Runner last output:\n")
+		for _, l := range a.RunnerLastOutput {
+			fmt.Fprintf(&b, "    %s\n", l)
+		}
+	}
+	if len(a.RunnerProcesses) > 0 {
+		b.WriteString("  Runner processes:\n")
+		for _, p := range a.RunnerProcesses {
+			fmt.Fprintf(&b, "    - %s\n", p)
+		}
+	}
 	return b.String()
 }
 

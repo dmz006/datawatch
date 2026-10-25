@@ -114,6 +114,15 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		Escalated:       run.Escalated,
 	}
 	m.store.WithLock(func() {
+		if ev := t.RunnerEvidence; ev != nil {
+			if ev.ExitStatus != nil {
+				status := *ev.ExitStatus
+				rec.RunnerExitStatus = &status
+			}
+			rec.RunnerLastOutput = append([]string(nil), ev.LastOutput...)
+			rec.RunnerProcesses = append([]string(nil), ev.Processes...)
+			t.RunnerEvidence = nil
+		}
 		rec.Number = len(t.Attempts) + 1
 		t.Attempts = append(t.Attempts, rec)
 		if !f.Requeue {

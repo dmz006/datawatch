@@ -95,6 +95,14 @@ type TaskAttempt struct {
 	// Escalated is true when this attempt ran on an escalation step rather
 	// than the task's normally resolved worker.
 	Escalated bool `json:"escalated,omitempty"`
+	// RunnerExitStatus is pi's exit status when the pane showed it; nil when
+	// no pi exit status was seen.
+	RunnerExitStatus *int `json:"runner_exit_status,omitempty"`
+	// RunnerLastOutput is the last non-empty pane lines before the attempt
+	// ended, oldest first.
+	RunnerLastOutput []string `json:"runner_last_output,omitempty"`
+	// RunnerProcesses describes the runner's processes at that time.
+	RunnerProcesses []string `json:"runner_processes,omitempty"`
 }
 
 // ReviewSummary is written when a task is held in TaskReviewNeeded.
