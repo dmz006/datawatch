@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.14.0 — imap_mcp channel config parity
+
+The imap_mcp messaging channel can now be configured everywhere the other messaging channels can: GET /api/config returns an imap_mcp block with the token masked, applyConfigPatch accepts imap_mcp.enabled, url, account, subject_prefix, to and token (an empty value or the masked placeholder never overwrites the stored token, and an explicit empty value clears a field), and the PWA settings page lists imap_mcp with url, account, to, subject prefix and a password-type token field. The messaging backends documentation is updated and tests cover the patch, the masking and the settings page. This finished work from the original imap_mcp parity PRD never reached main and was found by the content-based branch audit.
+
 ## v9.13.0 — Compute node usage on the capacity card
 
 The capacity card on the Automation sub-tab shows live usage for each compute node next to its slot pool: the loaded model with its memory and expiry, slots held of the limit, and GPU utilization and GPU memory from the observer. The figures are cached with short timeouts so a slow node never blanks the card, and a node with no observer shows only the slot figures. The same usage is available over REST, MCP, the CLI and the comm channel, with the five locale bundles.
