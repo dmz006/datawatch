@@ -84,6 +84,11 @@ func IsKnownEventKind(k string) bool { return KnownEventKinds[k] }
 type SubscriptionSink struct {
 	Type   string `json:"type"`
 	Target string `json:"target,omitempty"`
+	// Secret is a single ${secret:name} vault reference naming the HMAC key
+	// of a webhook sink. It is never a literal: the webhook sink resolves
+	// it on every delivery (WebhookSinkConfig.ResolveSecret) and the
+	// resolved value is never stored, logged or audited.
+	Secret string `json:"secret,omitempty"`
 }
 
 // SubscriptionAction is the optional follow-up performed when an event

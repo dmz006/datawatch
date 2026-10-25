@@ -65,4 +65,20 @@ const (
 	// new Automation. A dry run is not audited. Subject: the Automation.
 	// Details: graph_id, automation_id, member_count.
 	ActionAutomationImportGraph = "automation_import_graph"
+
+	// ActionLifecycleWebhookDelivery — one delivery attempt of a lifecycle
+	// event to an outbound webhook receiver (outcome delivered, retry,
+	// failed, refused or skipped). A successful delivery ends on its
+	// "delivered" record. Details: subscription_id, delivery_id, attempt
+	// (0 when no request was made), max_attempts, host (host:port only,
+	// never userinfo or query string), status_code (0 when none), outcome,
+	// error, duration_ms. Never the secret, the signature or the body.
+	ActionLifecycleWebhookDelivery = "autonomous_lifecycle_webhook_delivery"
+	// ActionLifecycleWebhookFailed — the final outcome of a delivery that
+	// was dropped (retries exhausted, a permanent response, a refused
+	// target or an unresolvable secret). Emitted once per dropped delivery,
+	// after its attempt records, under its own action so it carries a
+	// higher severity. Details: as ActionLifecycleWebhookDelivery, with
+	// attempt the number of attempts made and duration_ms the total.
+	ActionLifecycleWebhookFailed = "autonomous_lifecycle_webhook_failed"
 )
