@@ -77,7 +77,7 @@ test('automata: the list, LLMs, tags and capacity are fetched in parallel, the l
   // All four requests are issued before any response is awaited.
   assert.ok(h.calls.some(u => u.startsWith('/api/autonomous/prds?') && u.includes('limit=') && u.includes('active=1')), h.calls.join());
   assert.ok(h.calls.includes('/api/llms'));
-  assert.ok(h.calls.includes('/api/autonomous/tags'));
+  assert.ok(h.calls.includes('/api/autonomous/tags?counts=true'));
   assert.ok(h.calls.includes('/api/capacity'));
   assert.ok(!h.calls.some(u => u.includes('full=1')), 'never the full list');
   await p;
