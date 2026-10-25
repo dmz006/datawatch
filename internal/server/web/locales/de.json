@@ -2414,5 +2414,12 @@
   "tag_attention_review_held": "%1$d task(s) held for review",
   "tag_attention_none": "Nothing needs attention right now.",
   "tag_running_title": "Running",
-  "tag_running_more": "+%1$d more"
+  "tag_running_more": "+%1$d more",
+  "tag_inherited_label": "geerbt",
+  "tag_inherited_tip": "Vom Automaten geerbt; dort ändern",
+  "tag_inherited_note": "Vom Automaten geerbt (schreibgeschützt):",
+  "tag_session_none": "Keine Tags",
+  "tag_session_edit": "Tags bearbeiten",
+  "tag_session_edit_title": "Tags der Sitzung",
+  "tag_session_batch_title": "Tags zu %1$d Sitzungen hinzufügen"
 }

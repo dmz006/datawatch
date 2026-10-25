@@ -2125,6 +2125,7 @@ function updateSession(sess) {
     updateSessionDetailButtons(sess.full_id);
     refreshGeneratingIndicator(sess.full_id); // v5.27.7 BL208/#26
     refreshLastActivityIndicator(held);
+    _renderSessionDetailTagRow(held);
     // BL263 follow-up / v6.11.10 — operator: "Restart seemed better but
     // still had the tmux command window at bottom not return after
     // refresh." During the disconnect window the session may have been
@@ -3250,6 +3251,7 @@ function renderSessionsView() {
     selectBar.innerHTML = `
       <button class="select-bar-btn" onclick="selectAllInactive()">&#9745; ${allSelected ? 'None' : 'All'} <span style="opacity:0.6;">(${inactive.length})</span></button>
       <button class="select-bar-btn select-bar-delete" onclick="deleteSelectedSessions()" ${state.selectedSessions.size === 0 ? 'disabled' : ''}>&#128465; Delete <span style="opacity:0.6;">(${state.selectedSessions.size})</span></button>
+      <button class="select-bar-btn" onclick="batchTagSelectedSessions()" ${state.selectedSessions.size === 0 ? 'disabled' : ''}>&#127991; ${escHtml(_tagT('tag_batch', 'Tag'))} <span style="opacity:0.6;">(${state.selectedSessions.size})</span></button>
       <button class="select-bar-btn" onclick="toggleSelectMode()">Cancel</button>
     `;
   } else if (selectBar) {
@@ -3257,6 +3259,7 @@ function renderSessionsView() {
   }
   // BL312 S3 — prepend server picker bar if remote servers are registered
   _injectServerPickerBar(view, renderSessionsView);
+  _sessionTagsEnsure(renderSessionsView, state.sessions);
 }
 
 function _sessionsLoadMoreHtml() {
@@ -3704,6 +3707,7 @@ function sessionCard(sess, idx, total) {
             ${sess.agent_id ? `<span class="agent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(124,58,237,0.15);font-weight:600;" title="Container worker (agent ${escHtml(sess.agent_id)})">⬡ ${escHtml(sess.agent_id)}</span>` : ''}
             ${sess.chrome_enabled ? `<span class="chrome-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--success,#22c55e);color:var(--success,#22c55e);background:rgba(34,197,94,0.12);font-weight:600;" title="${escHtml(t('session_chrome_badge_tip')||'Chrome DevTools Protocol browser automation enabled')}">${escHtml(t('session_chrome_badge')||'Chrome')}</span>` : ''}
             ${prioBadge}
+            ${_sessionTagChipsHTML(sess)}
             ${sess.parent_id ? `<span class="parent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--text2);color:var(--text2);opacity:0.7;font-weight:500;" title="${t('session_child_of')||'Child of'} ${escHtml(sess.parent_id)}">↳ ${t('session_child_of')||'child of'} [${escHtml(sess.parent_id.split('-')[0])}]</span>` : ''}
             ${(sess.claude_alive === false) ? '<span style="color:#f59e0b;font-size:11px;padding:2px 7px;border-radius:8px;border:1px solid #f59e0b;background:rgba(245,158,11,0.12);font-weight:600;" title="Claude process not running — session may be a zombie">⚠ zombie</span>' : ''}
             <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">
@@ -4201,6 +4205,7 @@ function renderSessionDetail(sessionId) {
           </span>
         </div>
       </div>
+      <div id="sessionDetailTagRow" class="session-tag-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 10px;"></div>
       <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
       <!-- v5.28.5 (datawatch#34) — per-session process stats panel -->
       <div id="statsPanel" class="session-stats-panel" style="display:none;"></div>
@@ -4237,6 +4242,8 @@ function renderSessionDetail(sessionId) {
         ${connReady ? sendBtnHtml : ''}
       </div>` : ''}
     </div>`;
+  _renderSessionDetailTagRow(sess);
+  _sessionTagsEnsure(() => _renderSessionDetailTagRow(_sessionFind(sessionId)), [sess]);
 
   // Show loading splash over the terminal area while waiting for first pane_capture.
   // Only reset terminal state when navigating to a *different* session — re-renders
@@ -7942,6 +7949,10 @@ function renderNewSessionView() {
             <input type="checkbox" id="killChildrenRecursiveToggle" /> ${t('kill_children_recursive_label')||'Kill children recursively'}
           </label>
         </div>
+        <div class="form-group" id="sessTagsRow">
+          <label>${escHtml(_tagT('tag_picker_label', 'Tags (optional)'))}</label>
+          <div id="newSessionTagsWrap"></div>
+        </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
           <button class="btn-secondary" onclick="closeNewSessionModal()">${t('action_cancel')||'Cancel'}</button>
           <button class="btn-primary" onclick="submitNewSession()">${t('new_session_start_btn')||'Start Session'}</button>
@@ -7977,6 +7988,7 @@ function renderNewSessionView() {
     });
   }
 
+  _newSessionTagsMount();
   // Load backends, session backlog, and resume dropdown
   fetchBackends();
   renderSessionBacklog();
@@ -8368,6 +8380,9 @@ function _sessProfileChanged() {
   if (dirRow) dirRow.style.display = usingProfile ? 'none' : '';
   if (clusterRow) clusterRow.style.display = usingProfile ? '' : 'none';
   if (backendRow) backendRow.style.display = usingProfile ? 'none' : '';
+  // A project-profile spawn goes through /api/agents, not the session start, so the row is hidden there.
+  const tagsRow = document.getElementById('sessTagsRow');
+  if (tagsRow) tagsRow.style.display = usingProfile ? 'none' : '';
 }
 window._sessProfileChanged = _sessProfileChanged;
 
@@ -8584,6 +8599,15 @@ function mkdirInBrowser(parent) {
 }
 window.mkdirInBrowser = mkdirInBrowser;
 
+// The tag picker of the new-session form. The picker is drawn once the registry
+// is loaded; the ticks survive nothing else, so they are read at submit time.
+function _newSessionTagsMount() {
+  _tagsLoad().then(() => {
+    const wrap = document.getElementById('newSessionTagsWrap');
+    if (wrap) wrap.innerHTML = _tagPickerHTML('newSessionTags', []);
+  });
+}
+
 function submitNewSession() {
   const taskInput = document.getElementById('taskInput');
   const nameInput = document.getElementById('sessionNameInput');
@@ -8670,6 +8694,9 @@ function submitNewSession() {
     model: document.getElementById('sessOpenCodeModel')?.value || document.getElementById('sessClaudeModel')?.value || '',
     lsp_language: document.getElementById('sessOpenCodeLSP')?.value || '',
   };
+  // Tags: the session's own tag IDs; omitted when none are ticked.
+  const newTagIds = _tagPickerSelected('newSessionTags');
+  if (newTagIds.length) payload.tags = newTagIds;
   // v8.8.3 — Chrome integration: only send chrome:true when checked; omit field otherwise.
   const chromeEl = document.getElementById('newSessionChrome');
   if (chromeEl && chromeEl.checked) payload.chrome = true;
@@ -36393,6 +36420,141 @@ window.openPRDTagsModal = function(prdId) {
   });
 };
 
+// ── Session tags ─────────────────────────────────────────────────────────────
+// A session carries its own tags (`tags`) and shows the tags of the Automaton
+// that spawned it (`inherited_tags`). The own tags are edited on the session;
+// the inherited ones are read-only here and change with the Automaton. Nothing
+// below ever sends an inherited ID: the editor starts from the own tags only.
+
+// _sessionTagChipsHTML draws the own tags as normal chips and the inherited ones
+// as dashed, dimmed chips with a small "inherited" label. IDs the registry does
+// not know are skipped, so nothing renders until the registry has loaded.
+function _sessionTagChipsHTML(sess) {
+  if (!sess) return '';
+  const own = (sess.tags || []).map(id => _tagsState.byId[id]).filter(Boolean);
+  const ownIds = new Set(own.map(tg => tg.id));
+  const inherited = (sess.inherited_tags || []).filter(id => !ownIds.has(id)).map(id => _tagsState.byId[id]).filter(Boolean);
+  if (!own.length && !inherited.length) return '';
+  const label = _tagT('tag_inherited_label', 'inherited');
+  const tip = _tagT('tag_inherited_tip', 'Inherited from the Automaton; change it there');
+  const inheritedChips = inherited.map(tg => {
+    const c = tg.color || 'var(--accent2,#60a5fa)';
+    return `<span class="tag-chip tag-chip-inherited" data-tag-id="${escHtml(tg.id)}" title="${escHtml(tip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;background:transparent;color:${escHtml(c)};border:1px dashed ${escHtml(c)};font-weight:600;opacity:0.8;">${escHtml(tg.name)} <span class="tag-chip-inherited-label" style="font-weight:400;font-size:9px;">${escHtml(label)}</span></span>`;
+  });
+  return own.map(_tagChipHTML).concat(inheritedChips).join('');
+}
+
+// _sessionHasTags is true for a session with tag IDs to name, own or inherited.
+function _sessionHasTags(sess) {
+  return !!sess && ((sess.tags || []).length > 0 || (sess.inherited_tags || []).length > 0);
+}
+
+// _sessionTagsEnsure loads the registry once when a session view shows a session
+// that has tags, then repaints through paint(). A view of untagged sessions
+// fetches nothing. A failed load never repaints, so it cannot loop.
+function _sessionTagsEnsure(paint, sessions) {
+  if (_tagsState.loaded || !(sessions || []).some(_sessionHasTags)) return;
+  _tagsLoad().then(() => { if (_tagsState.loaded) paint(); });
+}
+
+// _sessionSetTags saves a session's own tags. The server replaces the list and
+// answers with the session, inherited_tags included.
+function _sessionSetTags(fullId, tagIds) {
+  return apiFetch('/api/sessions/tags', {
+    method: 'POST', body: JSON.stringify({ id: fullId, tag_ids: tagIds }),
+  });
+}
+
+function _sessionFind(fullId) {
+  return state.sessions.find(s => s.full_id === fullId || s.id === fullId);
+}
+
+// Detail view: label, chips and an edit button that opens the picker.
+function _renderSessionDetailTagRow(sess) {
+  const el = document.getElementById('sessionDetailTagRow');
+  if (!el || !sess) return;
+  const idJ = escHtml(JSON.stringify(sess.full_id || sess.id || ''));
+  const chips = _sessionTagChipsHTML(sess);
+  const none = `<span style="font-size:11px;color:var(--text2);">${escHtml(_tagT('tag_session_none', 'No tags'))}</span>`;
+  el.innerHTML = `<span style="font-size:11px;color:var(--text2);">${escHtml(_tagT('tag_edit', 'Tags'))}</span>${chips || none}<button class="btn-secondary" style="font-size:10px;padding:1px 8px;" onclick="event.stopPropagation();openSessionTagsModal(${idJ})">${escHtml(_tagT('tag_session_edit', 'Edit tags'))}</button>`;
+}
+
+window.openSessionTagsModal = function(fullId) {
+  _tagsLoad().then(() => {
+    const sess = _sessionFind(fullId);
+    if (!sess) return;
+    const inherited = (sess.inherited_tags || []).map(id => _tagsState.byId[id]).filter(Boolean);
+    const note = inherited.length
+      ? `<div style="font-size:11px;color:var(--text2);margin-top:8px;">${escHtml(_tagT('tag_inherited_note', 'Inherited from the Automaton (read-only):'))} ${inherited.map(tg => escHtml(tg.name)).join(', ')}</div>`
+      : '';
+    showModal({
+      title: _tagT('tag_session_edit_title', 'Session tags'),
+      body: _tagPickerHTML('sessionTagsModalPicker', sess.tags || []) + note,
+      confirmLabel: _tagT('tag_save', 'Save'),
+      onConfirm: () => {
+        _sessionSetTags(sess.full_id, _tagPickerSelected('sessionTagsModalPicker'))
+          .then(res => {
+            if (res && res.full_id) updateSession(res);
+            showToast(_tagT('tag_saved', 'Tags saved'), 'success', 1500);
+            _sessionTagsRepaint();
+          })
+          .catch(e => showToast(_tagErrorText(e), 'error', 4000));
+      },
+    });
+  });
+};
+
+// _sessionTagsRefresh answers a tag_update frame while a session view is open:
+// refetch the registry (names, colours and parents may have changed) and the
+// session rows, then repaint the chips.
+function _sessionTagsRefresh() {
+  // The sessions frames carry a session's own tags but not the ones it inherits,
+  // so the rows are read again with the registry.
+  let rows = Promise.resolve();
+  if (state.activeView === 'sessions') rows = loadSessionsList();
+  else if (state.activeSession) {
+    rows = apiFetch('/api/sessions/' + encodeURIComponent(state.activeSession))
+      .then(full => { if (full && full.full_id) { delete full.truncated_fields; applySessionUpdate(full); } })
+      .catch(() => {});
+  }
+  return Promise.all([_tagsLoad(true), rows]).then(() => _sessionTagsRepaint());
+}
+
+// _sessionTagsRepaint redraws whichever session view is on screen from the
+// sessions held in state.
+function _sessionTagsRepaint() {
+  if (state.activeView === 'sessions') renderSessionsView();
+  else if (state.activeView === 'session-detail') _renderSessionDetailTagRow(_sessionFind(state.activeSession));
+}
+
+// Batch bar: pick tags and add them to every selected session (the own tags
+// each session already has are kept).
+window.batchTagSelectedSessions = function() {
+  const ids = [...state.selectedSessions];
+  if (!ids.length) return;
+  _tagsLoad().then(() => {
+    showModal({
+      title: _tagT('tag_session_batch_title', 'Add tags to %1$d sessions', [ids.length]),
+      body: _tagPickerHTML('sessionBatchTagPicker', []),
+      confirmLabel: _tagT('tag_apply', 'Apply'),
+      onConfirm: () => {
+        const add = _tagPickerSelected('sessionBatchTagPicker');
+        if (!add.length) return false;
+        Promise.all(ids.map(id => {
+          const cur = (_sessionFind(id) || {}).tags || [];
+          return _sessionSetTags(id, Array.from(new Set(cur.concat(add))));
+        })).then(results => {
+          results.forEach(res => { if (res && res.full_id) applySessionUpdate(res); });
+          state.selectMode = false;
+          state.selectedSessions.clear();
+          renderSessionsView();
+          showToast(_tagT('tag_batch_done', 'tag: %1$d done', [ids.length]), 'success', 2000);
+        }).catch(e => showToast(_tagErrorText(e), 'error', 4000));
+      },
+    });
+  });
+};
+
 // ── Tag browser (Automata and Automation lists) ──────────────────────────────
 // One browser serves both lists: the [List] [Tags] switch, the tag sections on
 // web and tablet, the single-section drill-down under 720px, and the filter bar
@@ -36906,7 +37068,8 @@ function _tagLiveSchedule() {
 }
 function _tagLiveRefresh() {
   let list;
-  if (_automationTabActive()) list = refreshAutomationView();
+  if (state.activeView === 'sessions' || state.activeView === 'session-detail') list = _sessionTagsRefresh();
+  else if (_automationTabActive()) list = refreshAutomationView();
   else if (document.getElementById('automataPanel')) list = loadAutomataPanel();
   else if (_tagsState.loaded) list = _tagsLoad(true);
   return Promise.resolve(list).then(() => {

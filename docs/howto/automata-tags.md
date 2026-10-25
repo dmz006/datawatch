@@ -98,7 +98,31 @@ Switch the list to select mode, tick several Automata and press **Tag** in
 the action bar. Pick the tags and press **Apply**; they are applied to every
 selected Automaton.
 
-### 5. The two refused deletes
+### 5. Tag a session
+
+A session carries its own tags, and shows the tags of the Automaton that
+started it.
+
+- **On the list.** Each session card, and each node of the session tree,
+  shows its own tags as normal chips. Tags inherited from its Automaton are
+  drawn as dashed chips with a small *inherited* label.
+- **Inherited tags are read-only.** They change when you change the
+  Automaton's tags, not on the session. The session editor never sends them.
+- **Edit a session's own tags.** Open the session; the **Tags** row under
+  the header has an **Edit tags** button. Tick the tags and press **Save**.
+  The editor lists every tag and names the inherited ones below the list. If
+  the server refuses a tag, the toast shows its reason.
+- **Start a session with tags.** The New Session form has a **Tags
+  (optional)** picker; the ticked tags are sent with the start request.
+  The picker is hidden when you start from a project profile.
+- **Bulk tag.** Press the select button on the sessions list, tick finished
+  sessions and press **Tag** in the bar. The picked tags are added to every
+  selected session and the tags each already has are kept.
+
+A tag renamed, recolored, deleted or assigned elsewhere updates the chips
+on its own; no reload is needed.
+
+### 6. The two refused deletes
 
 Deleting a tag is refused, with nothing changed, when:
 

@@ -2414,5 +2414,12 @@
   "tag_attention_review_held": "%1$d task(s) held for review",
   "tag_attention_none": "Nothing needs attention right now.",
   "tag_running_title": "Running",
-  "tag_running_more": "+%1$d more"
+  "tag_running_more": "+%1$d more",
+  "tag_inherited_label": "継承",
+  "tag_inherited_tip": "オートマトンから継承されています。変更はオートマトン側で行ってください",
+  "tag_inherited_note": "オートマトンから継承（読み取り専用）：",
+  "tag_session_none": "タグなし",
+  "tag_session_edit": "タグを編集",
+  "tag_session_edit_title": "セッションのタグ",
+  "tag_session_batch_title": "%1$d 件のセッションにタグを追加"
 }

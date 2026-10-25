@@ -2414,5 +2414,12 @@
   "tag_attention_review_held": "%1$d task(s) held for review",
   "tag_attention_none": "Nothing needs attention right now.",
   "tag_running_title": "Running",
-  "tag_running_more": "+%1$d more"
+  "tag_running_more": "+%1$d more",
+  "tag_inherited_label": "inherited",
+  "tag_inherited_tip": "Inherited from the Automaton; change it there",
+  "tag_inherited_note": "Inherited from the Automaton (read-only):",
+  "tag_session_none": "No tags",
+  "tag_session_edit": "Edit tags",
+  "tag_session_edit_title": "Session tags",
+  "tag_session_batch_title": "Add tags to %1$d sessions"
 }
