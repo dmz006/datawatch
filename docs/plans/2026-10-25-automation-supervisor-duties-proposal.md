@@ -217,7 +217,7 @@ None of the following is decided. Each starts a step only when recorded in this 
 
 **Recommendation.** (a): it compares commit content and still matches after a rebase, where commit ids differ.
 
-**Status.** Open.
+**Status.** **Decided by the operator, 2026-10-25: option (a), `git cherry` against main comparing patch ids** ("1, git cherry"). **Caveat found on 2026-10-24 for the implementation to handle:** a commit whose patch was changed while it was merged (conflict resolution, renumbering a version) shows as not on main even though its work landed, so the coordinator reports the cherry result and, as a second line, whether the branch's commit subjects are on main, and calls a branch merge pending only when the cherry result and the content check agree; a disagreement is shown to the operator as 'needs a look'.
 
 ### Q8. Whether superseded failed CI runs are deleted (duty 1)
 
