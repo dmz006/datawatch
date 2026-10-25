@@ -154,12 +154,20 @@ func webhookRigSettings(maxAttempts int) WebhookSettings {
 	}
 }
 
+// installWebhookLiveCheck gives store the live check a daemon installs: delivery
+// enabled and the engine test host allow-listed.
+func installWebhookLiveCheck(store *SubscriptionStore) {
+	store.SetSinkValidator(func(sub Subscription) error {
+		return ValidateWebhookSubscriptionTarget(sub, WebhookSettings{Enabled: true, AllowHosts: []string{webhookEngineHost}})
+	})
+}
+
 // webhookEngineSub is a webhook subscription on the started-session kind.
 func webhookEngineSub(target string, oneShot bool) Subscription {
 	return Subscription{
 		Owner:   "alice",
 		Filter:  LifecycleFilter{Kinds: []string{KindTaskSessionStarted}},
-		Sink:    SubscriptionSink{Type: SinkWebhook, Target: target, Secret: webhookTestRef},
+		Sink:    SubscriptionSink{Type: SinkWebhook, Target: target, SecretRef: webhookTestRef},
 		OneShot: oneShot,
 	}
 }
@@ -167,6 +175,75 @@ func webhookEngineSub(target string, oneShot bool) Subscription {
 // ---------------------------------------------------------------------------
 // Create-time validation
 // ---------------------------------------------------------------------------
+
+// TestWebhookSubscriptionStructureNeedsNoLiveSettings checks the URL policy
+// that ValidateSubscription applies without any webhook settings, so a store
+// built without the live check still refuses a malformed webhook target. An
+// http target passes here; the allow-list decides it at the live check.
+func TestWebhookSubscriptionStructureNeedsNoLiveSettings(t *testing.T) {
+	cases := []struct {
+		name    string
+		target  string
+		secret  string
+		wantErr string
+	}{
+		{name: "https target", target: webhookEngineTarget, secret: webhookTestRef},
+		{name: "http target is decided by the allow-list", target: "http://hooks.example.net/datawatch", secret: webhookTestRef},
+		{name: "ftp scheme", target: "ftp://hooks.example.net/datawatch", secret: webhookTestRef, wantErr: "scheme must be https"},
+		{name: "userinfo", target: "https://ops:hunter2@hooks.example.net/datawatch", secret: webhookTestRef, wantErr: "user name or password"},
+		{name: "no host", target: "https:///datawatch", secret: webhookTestRef, wantErr: "no host"},
+		{name: "empty target", target: "  ", secret: webhookTestRef, wantErr: "webhook URL is empty"},
+		{name: "port out of range", target: "https://hooks.example.net:70000/datawatch", secret: webhookTestRef, wantErr: "port is not valid"},
+		{name: "obfuscated IP spelling", target: "https://2130706433/datawatch", secret: webhookTestRef, wantErr: "non-canonical IP spelling"},
+		{name: "missing secret reference", target: webhookEngineTarget, secret: "", wantErr: "signing secret reference"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sub := webhookEngineSub(tc.target, false)
+			sub.Sink.SecretRef = tc.secret
+			err := ValidateSubscription(sub, time.Now())
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("ValidateSubscription: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("ValidateSubscription error = %v, want it to contain %q", err, tc.wantErr)
+			}
+			if strings.Contains(err.Error(), "hunter2") {
+				t.Errorf("error echoes the URL userinfo: %v", err)
+			}
+		})
+	}
+}
+
+// TestWebhookSubscriptionStoreWithoutLiveCheckRefused proves a store with no
+// live check installed refuses a webhook subscription on Add and Update, while
+// a non-webhook subscription still goes through.
+func TestWebhookSubscriptionStoreWithoutLiveCheckRefused(t *testing.T) {
+	store, err := NewSubscriptionStore(filepath.Join(t.TempDir(), "subs.json"), nil)
+	if err != nil {
+		t.Fatalf("NewSubscriptionStore: %v", err)
+	}
+	if _, err := store.Add(webhookEngineSub(webhookEngineTarget, false)); err == nil || !strings.Contains(err.Error(), "live webhook settings check") {
+		t.Fatalf("Add without a live check: err = %v, want the live-check refusal", err)
+	}
+	comm := Subscription{
+		Filter: LifecycleFilter{Kinds: []string{KindTaskSessionStarted}},
+		Sink:   SubscriptionSink{Type: SinkComm, Target: "ops"},
+	}
+	added, err := store.Add(comm)
+	if err != nil {
+		t.Fatalf("Add comm without a live check: %v", err)
+	}
+	if _, err := store.Update(added.ID, webhookEngineSub(webhookEngineTarget, false)); err == nil || !strings.Contains(err.Error(), "live webhook settings check") {
+		t.Fatalf("Update to a webhook sink without a live check: err = %v, want the live-check refusal", err)
+	}
+	if n := len(store.List("")); n != 1 {
+		t.Errorf("store holds %d subscriptions, want only the comm one", n)
+	}
+}
 
 func TestWebhookSubscriptionCreateValidation(t *testing.T) {
 	cases := []struct {
@@ -178,17 +255,17 @@ func TestWebhookSubscriptionCreateValidation(t *testing.T) {
 		{name: "https target on an allow-listed host with a secret reference"},
 		{
 			name:    "missing secret reference",
-			mutate:  func(s *Subscription) { s.Sink.Secret = "" },
+			mutate:  func(s *Subscription) { s.Sink.SecretRef = "" },
 			wantErr: "signing secret reference",
 		},
 		{
 			name:    "literal secret refused",
-			mutate:  func(s *Subscription) { s.Sink.Secret = "literal-secret-value" },
+			mutate:  func(s *Subscription) { s.Sink.SecretRef = "literal-secret-value" },
 			wantErr: "single ${secret:name} reference",
 		},
 		{
 			name:    "secret reference with surrounding text refused",
-			mutate:  func(s *Subscription) { s.Sink.Secret = "Bearer " + webhookTestRef },
+			mutate:  func(s *Subscription) { s.Sink.SecretRef = "Bearer " + webhookTestRef },
 			wantErr: "single ${secret:name} reference",
 		},
 		{
@@ -239,7 +316,7 @@ func TestWebhookSubscriptionCreateValidation(t *testing.T) {
 		{
 			name: "secret on a comm sink refused",
 			mutate: func(s *Subscription) {
-				s.Sink = SubscriptionSink{Type: SinkComm, Target: "ops", Secret: webhookTestRef}
+				s.Sink = SubscriptionSink{Type: SinkComm, Target: "ops", SecretRef: webhookTestRef}
 			},
 			set:     func(s *WebhookSettings) { s.Enabled = false },
 			wantErr: "only valid with a webhook sink",
@@ -514,6 +591,7 @@ func TestWebhookSubscriptionDisabledSinkLeavesOneShotArmed(t *testing.T) {
 // sink accepts webhook subscriptions and never delivers or panics.
 func TestWebhookSubscriptionWithoutSinkIsInert(t *testing.T) {
 	_, store, _ := newEngineForTest(t, &sessionPushRecorder{}, sessionTable{}, 0)
+	installWebhookLiveCheck(store)
 	sub, err := store.Add(webhookEngineSub("https://hooks.example.net/datawatch", true))
 	if err != nil {
 		t.Fatalf("Add: %v", err)
@@ -579,9 +657,12 @@ func TestWebhookDeliveryScopeFollowsSubscription(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestWebhookSubscriptionCreateAuditShowsHostOnly: the create record names the
-// host and port, and nothing else from the URL, nor any secret value.
+// host and port, and nothing else from the URL, nor any secret value. A URL
+// with userinfo is refused at creation (see the structure test), so the
+// credential-like part here is the query string and the path.
 func TestWebhookSubscriptionCreateAuditShowsHostOnly(t *testing.T) {
 	_, store, e := newEngineForTest(t, &sessionPushRecorder{}, sessionTable{}, 0)
+	installWebhookLiveCheck(store)
 	var mu sync.Mutex
 	var created []map[string]any
 	e.auditHook = func(action string, details map[string]any) {
@@ -592,7 +673,7 @@ func TestWebhookSubscriptionCreateAuditShowsHostOnly(t *testing.T) {
 		}
 	}
 
-	target := "https://ops-user:pw-ABC@hooks.example.net:8443/datawatch/hook?token=QUERYTOKEN42"
+	target := "https://hooks.example.net:8443/datawatch/hook?token=QUERYTOKEN42"
 	if _, err := store.Add(webhookEngineSub(target, false)); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -611,7 +692,7 @@ func TestWebhookSubscriptionCreateAuditShowsHostOnly(t *testing.T) {
 	}
 	for k, v := range d {
 		text := fmt.Sprint(v)
-		for _, leak := range []string{"ops-user", "pw-ABC", "QUERYTOKEN42", "/datawatch", webhookTestRef, webhookTestSecret} {
+		for _, leak := range []string{"QUERYTOKEN42", "/datawatch", webhookTestRef, webhookTestSecret} {
 			if strings.Contains(text, leak) {
 				t.Errorf("audit field %s leaks %q", k, leak)
 			}
@@ -659,6 +740,7 @@ func TestWebhookSubscriptionStorePersistsSecretRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSubscriptionStore: %v", err)
 	}
+	installWebhookLiveCheck(first)
 	sub, err := first.Add(webhookEngineSub(webhookEngineTarget, false))
 	if err != nil {
 		t.Fatalf("Add: %v", err)
@@ -668,8 +750,8 @@ func TestWebhookSubscriptionStorePersistsSecretRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read store file: %v", err)
 	}
-	if !strings.Contains(string(raw), webhookTestRef) {
-		t.Errorf("store file does not hold the secret reference")
+	if !strings.Contains(string(raw), `"secret_ref": "`+webhookTestRef+`"`) {
+		t.Errorf("store file does not persist the secret reference under secret_ref")
 	}
 	if strings.Contains(string(raw), webhookTestSecret) {
 		t.Errorf("store file holds the resolved secret")
@@ -683,7 +765,7 @@ func TestWebhookSubscriptionStorePersistsSecretRef(t *testing.T) {
 	if !ok {
 		t.Fatal("subscription missing after reopen")
 	}
-	if got.Sink.Secret != webhookTestRef || got.Sink.Type != SinkWebhook || got.Sink.Target != webhookEngineTarget {
+	if got.Sink.SecretRef != webhookTestRef || got.Sink.Type != SinkWebhook || got.Sink.Target != webhookEngineTarget {
 		t.Errorf("round-tripped sink = %+v", got.Sink)
 	}
 
@@ -701,7 +783,7 @@ func TestWebhookSubscriptionStorePersistsSecretRef(t *testing.T) {
 	if !ok {
 		t.Fatal("legacy subscription not loaded")
 	}
-	if loaded.Sink.Type != SinkSession || loaded.Sink.Secret != "" {
+	if loaded.Sink.Type != SinkSession || loaded.Sink.SecretRef != "" {
 		t.Errorf("legacy sink = %+v, want a session sink with no secret", loaded.Sink)
 	}
 }

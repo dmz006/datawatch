@@ -293,38 +293,41 @@ func WebhookHostAllowed(host string, allow []string) bool {
 	return false
 }
 
-// ValidateWebhookURL parses raw and applies the URL policy: https only (http
-// only when the host is explicitly allow-listed), no userinfo, a non-empty
-// host in a canonical spelling, and the host (with its effective port) on
-// the allow-list. The returned URL has its host in canonical form. Errors
-// never echo raw (it may carry credentials in userinfo or the query).
-func ValidateWebhookURL(raw string, allow []string) (*url.URL, error) {
+// parseWebhookURL applies the URL policy that needs no live settings: a
+// parseable https or http URL, no userinfo, no opaque form, a host in a
+// canonical spelling and a valid port. http is admitted here; the allow-list
+// decides whether it is used. It returns the parsed URL, the canonical host
+// and the effective port (443, or 80 for http, when the URL names none).
+// ValidateSubscription runs it at creation; ValidateWebhookURL adds the
+// allow-list and address checks. Errors never echo raw (it may carry
+// credentials in userinfo or the query).
+func parseWebhookURL(raw string) (*url.URL, string, string, error) {
 	if strings.TrimSpace(raw) == "" {
-		return nil, webhookGuardErr("the webhook URL is empty")
+		return nil, "", "", webhookGuardErr("the webhook URL is empty")
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return nil, webhookGuardErr("the webhook URL could not be parsed")
+		return nil, "", "", webhookGuardErr("the webhook URL could not be parsed")
 	}
 	scheme := strings.ToLower(u.Scheme)
 	if scheme != "https" && scheme != "http" {
-		return nil, webhookGuardErr("the URL scheme must be https (http only for an allow-listed host)")
+		return nil, "", "", webhookGuardErr("the URL scheme must be https (http only for an allow-listed host)")
 	}
 	if u.User != nil {
-		return nil, webhookGuardErr("the URL must not contain a user name or password")
+		return nil, "", "", webhookGuardErr("the URL must not contain a user name or password")
 	}
 	if u.Opaque != "" {
-		return nil, webhookGuardErr("the URL must have the form %s://host/path", scheme)
+		return nil, "", "", webhookGuardErr("the URL must have the form %s://host/path", scheme)
 	}
 	if u.Hostname() == "" {
-		return nil, webhookGuardErr("the URL has no host")
+		return nil, "", "", webhookGuardErr("the URL has no host")
 	}
 	host, obfuscated, err := normaliseWebhookHost(u.Hostname())
 	if err != nil {
-		return nil, webhookGuardErr("the URL host is not valid: %v", err)
+		return nil, "", "", webhookGuardErr("the URL host is not valid: %v", err)
 	}
 	if obfuscated {
-		return nil, webhookGuardErr("the URL host %q is a non-canonical IP spelling; write the address as %q", u.Hostname(), host)
+		return nil, "", "", webhookGuardErr("the URL host %q is a non-canonical IP spelling; write the address as %q", u.Hostname(), host)
 	}
 	port := u.Port()
 	if port == "" {
@@ -333,8 +336,21 @@ func ValidateWebhookURL(raw string, allow []string) (*url.URL, error) {
 			port = "80"
 		}
 	} else if n, perr := strconv.Atoi(port); perr != nil || n < 1 || n > 65535 {
-		return nil, webhookGuardErr("the URL port is not valid")
+		return nil, "", "", webhookGuardErr("the URL port is not valid")
 	}
+	return u, host, port, nil
+}
+
+// ValidateWebhookURL parses raw and applies the full URL policy: the
+// structural checks of parseWebhookURL, then the host (with its effective
+// port) on the allow-list and not a blocked address. The returned URL has its
+// host in canonical form. Errors never echo raw.
+func ValidateWebhookURL(raw string, allow []string) (*url.URL, error) {
+	u, host, port, err := parseWebhookURL(raw)
+	if err != nil {
+		return nil, err
+	}
+	scheme := strings.ToLower(u.Scheme)
 	hostPort := net.JoinHostPort(host, port)
 	if len(allow) == 0 {
 		return nil, webhookGuardErr("the webhook host allow-list is empty, so no host can receive events")

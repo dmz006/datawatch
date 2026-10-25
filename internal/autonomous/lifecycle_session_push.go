@@ -420,7 +420,7 @@ func subscriptionAuditDetails(sub Subscription) map[string]any {
 	}
 	if sub.Sink.Type == SinkWebhook {
 		// The host only: never the URL's userinfo, path or query, and never
-		// the signing secret reference (Sink.Secret is not written at all).
+		// the signing secret reference (Sink.SecretRef is not written at all).
 		details["target_host"] = webhookTargetHost(sub.Sink.Target)
 	}
 	return details

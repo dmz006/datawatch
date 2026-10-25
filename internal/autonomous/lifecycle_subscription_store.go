@@ -131,7 +131,9 @@ func (s *SubscriptionStore) mutate(f func(now time.Time) error) error {
 // SetSinkValidator installs a check that Add and Update run after
 // ValidateSubscription, for rules that depend on live configuration (the
 // webhook settings). A nil fn removes it. The check runs under the store
-// lock, so it must not call back into the store.
+// lock, so it must not call back into the store. Without a validator the
+// store refuses webhook subscriptions, because their allow-list check cannot
+// run.
 func (s *SubscriptionStore) SetSinkValidator(fn func(Subscription) error) {
 	s.mu.Lock()
 	s.sinkValidator = fn
@@ -144,10 +146,13 @@ func (s *SubscriptionStore) validateLocked(sub Subscription, now time.Time) erro
 	if err := ValidateSubscription(sub, now); err != nil {
 		return err
 	}
-	if s.sinkValidator != nil {
-		return s.sinkValidator(sub)
+	if s.sinkValidator == nil {
+		if sub.Sink.Type == SinkWebhook {
+			return fmt.Errorf("webhook subscriptions need the live webhook settings check, which this store does not have")
+		}
+		return nil
 	}
-	return nil
+	return s.sinkValidator(sub)
 }
 
 // Add validates sub, assigns an ID (and CreatedAt if unset), persists

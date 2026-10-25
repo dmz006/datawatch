@@ -270,7 +270,7 @@ func (s *WebhookSink) Deliver(ctx context.Context, sub Subscription, ev Lifecycl
 
 	// Whatever the resolver returned is remembered before the error check, so
 	// an error that echoes the value is scrubbed like any other text.
-	secret, err := s.resolveSecret(sub.Sink.Secret)
+	secret, err := s.resolveSecret(sub.Sink.SecretRef)
 	run.secret = secret
 	if err != nil {
 		return s.dropBeforeSend(run, WebhookOutcomeFailed, err)

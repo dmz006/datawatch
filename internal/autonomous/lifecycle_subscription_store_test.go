@@ -236,17 +236,17 @@ func TestSubscriptionAddValidation(t *testing.T) {
 		{"missing sink type", func(su *Subscription) { su.Sink = SubscriptionSink{Target: "x"} }, "sink type is required"},
 		{"webhook sink without secret ref rejected", func(su *Subscription) { su.Sink = SubscriptionSink{Type: SinkWebhook, Target: "https://x.example"} }, "signing secret reference"},
 		{"webhook sink with literal secret rejected", func(su *Subscription) {
-			su.Sink = SubscriptionSink{Type: SinkWebhook, Target: "https://x.example", Secret: "literal-value"}
+			su.Sink = SubscriptionSink{Type: SinkWebhook, Target: "https://x.example", SecretRef: "literal-value"}
 		}, "single ${secret:name} reference"},
 		{"webhook sink with action rejected", func(su *Subscription) {
-			su.Sink = SubscriptionSink{Type: SinkWebhook, Target: "https://x.example", Secret: webhookTestRef}
+			su.Sink = SubscriptionSink{Type: SinkWebhook, Target: "https://x.example", SecretRef: webhookTestRef}
 			su.Action = inject("hi")
 		}, "session sink"},
 		{"secret on comm sink rejected", func(su *Subscription) {
-			su.Sink = SubscriptionSink{Type: SinkComm, Target: "ops", Secret: webhookTestRef}
+			su.Sink = SubscriptionSink{Type: SinkComm, Target: "ops", SecretRef: webhookTestRef}
 		}, "only valid with a webhook sink"},
 		{"valid webhook sink with secret ref", func(su *Subscription) {
-			su.Sink = SubscriptionSink{Type: SinkWebhook, Target: "https://x.example", Secret: webhookTestRef}
+			su.Sink = SubscriptionSink{Type: SinkWebhook, Target: "https://x.example", SecretRef: webhookTestRef}
 		}, ""},
 		{"mcp_queue empty target", func(su *Subscription) { su.Sink = SubscriptionSink{Type: SinkMCPQueue, Target: "  "} }, "sink target is required"},
 		{"mcp_queue bad chars", func(su *Subscription) { su.Sink = SubscriptionSink{Type: SinkMCPQueue, Target: "my queue!"} }, "may contain only"},

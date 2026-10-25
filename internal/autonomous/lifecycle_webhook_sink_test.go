@@ -150,7 +150,7 @@ func webhookTestSub(target string) Subscription {
 		ID:     "sub-1",
 		Owner:  "operator",
 		Filter: LifecycleFilter{Kinds: []string{"prd.completed"}},
-		Sink:   SubscriptionSink{Type: "webhook", Target: target, Secret: webhookTestRef},
+		Sink:   SubscriptionSink{Type: "webhook", Target: target, SecretRef: webhookTestRef},
 	}
 }
 
@@ -775,7 +775,7 @@ func TestWebhookSinkSecretResolutionFailureMakesNoRequest(t *testing.T) {
 				c.setup(h)
 			}
 			sub := webhookTestSub(srv.target())
-			sub.Sink.Secret = c.ref
+			sub.Sink.SecretRef = c.ref
 
 			err := h.sink.Deliver(context.Background(), sub, webhookTestEvent())
 			if !errors.Is(err, ErrWebhookDelivery) || !strings.Contains(err.Error(), c.want) {

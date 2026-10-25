@@ -4,16 +4,18 @@
 // Q4, Follow-up implementation PRD).
 //
 // A Subscription selects lifecycle events (LifecycleFilter) and routes
-// them to one sink. In this phase the sink types comm, session, topic
-// and alert are accepted and validated; topic and alert are stored for
+// them to one sink. The sink types comm, session, topic, alert, mcp_queue
+// and webhook are accepted and validated. topic and alert are stored for
 // the existing Phase 2 sinks, and comm/session execution (including the
 // send_input action) happens when the daemon wires the store to the
 // dispatcher. The mcp_queue sink appends to a named pending-events
 // queue that generic MCP clients poll. The webhook sink POSTs a signed
 // JSON envelope to an allow-listed https receiver (lifecycle_webhook_sink.go).
-// A webhook subscription needs a ${secret:name} reference and never carries
-// an action; ValidateWebhookSubscriptionTarget checks it against the live
-// webhook settings when the store creates or updates it.
+// A webhook subscription needs a ${secret:name} reference in sink.secret_ref
+// and never carries an action. ValidateSubscription checks the target URL's
+// structure; ValidateWebhookSubscriptionTarget checks it against the live
+// webhook settings. The store runs both on create and update and refuses
+// webhook subscriptions when it has no live check installed.
 
 package autonomous
 
@@ -37,7 +39,7 @@ const (
 	// that generic MCP clients poll with a cursor.
 	SinkMCPQueue = "mcp_queue"
 	// SinkWebhook POSTs each matching event, signed with the secret named by
-	// Sink.Secret, to the https URL in Sink.Target. Coalesce is ignored for it:
+	// Sink.SecretRef, to the URL in Sink.Target. Coalesce is ignored for it:
 	// every matching event is its own delivery.
 	SinkWebhook = "webhook"
 )
@@ -91,12 +93,12 @@ func IsKnownEventKind(k string) bool { return KnownEventKinds[k] }
 type SubscriptionSink struct {
 	Type   string `json:"type"`
 	Target string `json:"target,omitempty"`
-	// Secret is a single ${secret:name} vault reference naming the HMAC key
+	// SecretRef is a single ${secret:name} vault reference naming the HMAC key
 	// of a webhook sink; a webhook sink requires it and every other sink
 	// refuses it. It is never a literal: the webhook sink resolves it on
 	// every delivery (WebhookSinkConfig.ResolveSecret) and the resolved
 	// value is never stored, logged or audited.
-	Secret string `json:"secret,omitempty"`
+	SecretRef string `json:"secret_ref,omitempty"`
 }
 
 // SubscriptionAction is the optional follow-up performed when an event
@@ -163,15 +165,20 @@ func ValidateSubscription(sub Subscription, now time.Time) error {
 			return fmt.Errorf("mcp_queue name %q may contain only letters, digits and . _ : -", name)
 		}
 	case SinkWebhook:
-		if err := validateWebhookSecretRef(sub.Sink.Secret); err != nil {
+		if err := validateWebhookSecretRef(sub.Sink.SecretRef); err != nil {
+			return err
+		}
+		// The structural URL policy needs no live settings, so a store
+		// without the live check still refuses a bad scheme, userinfo or host.
+		if _, _, _, err := parseWebhookURL(sub.Sink.Target); err != nil {
 			return err
 		}
 	default:
 		return fmt.Errorf("unknown sink type %q (want one of %q, %q, %q, %q, %q, %q)",
 			sub.Sink.Type, SinkComm, SinkSession, SinkTopic, SinkAlert, SinkMCPQueue, SinkWebhook)
 	}
-	if sub.Sink.Type != SinkWebhook && sub.Sink.Secret != "" {
-		return fmt.Errorf("sink secret is only valid with a webhook sink (got %q)", sub.Sink.Type)
+	if sub.Sink.Type != SinkWebhook && sub.Sink.SecretRef != "" {
+		return fmt.Errorf("sink secret_ref is only valid with a webhook sink (got %q)", sub.Sink.Type)
 	}
 	if strings.TrimSpace(sub.Sink.Target) == "" {
 		return fmt.Errorf("sink target is required")
