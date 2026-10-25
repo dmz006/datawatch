@@ -216,3 +216,50 @@ Reply with the box ticked, or with the changed value.
 - [ ] DNS rebinding defence: re-check the resolved IP at dial time on every attempt
 - [ ] Redirects are not followed
 - [ ] Audit fields as listed, never the secret, URL userinfo or query string
+
+## Implementation status
+
+Verification run on the finished branch (2026-10-25). Nothing needed changing in code, so this section
+carries the result.
+
+**Ran clean, each under an environment with the multiplexer variables unset:**
+
+- named-output build of `./cmd/datawatch/` into a temporary directory, and `go vet ./...`
+- `go test ./...` (all packages passed) and `node --test internal/server/web/*.test.js` (all passed)
+- `check-no-unscoped-tmux`, `check-no-internal-refs`, `check-howto-coverage`, `check-curated-howtos`,
+  `check-no-production-service-control`: all pass
+- `check-docs-sync`: first reported drift in the embedded docs copy (a generated, git-ignored
+  directory that was stale on this machine). `make sync-docs` regenerated it and the check then passed;
+  no tracked file was involved.
+
+**Confirmed from the diff against the merge base with main:**
+
+- (a) No version variable changed in `cmd/datawatch/main.go` or `internal/server/api.go`; the new
+  CHANGELOG entry carries no version number.
+- (b) No tracker ID or version number in any new file name, function, type, test or scenario name, or in
+  the new locale strings, the how-to or the `app.js` additions. The digits in test names are HTTP status
+  codes.
+- (c) Both switches default to `false` in the config defaults, `docs/config-reference.yaml` and the
+  Settings card. `TestWebhookSinkDisabledDoesNothing` and `TestForwardDisabledMakesNoRequest` pass.
+- (d) This proposal still lists every unconfirmed detail in section 2 and the checklist in section 5, and
+  Phase 5 in the lifecycle events plan says it ships disabled pending confirmation.
+- (e) No secret value, token or credential in the added lines. The matches for `Bearer`, `secret:` and long
+  hex strings are placeholders (`$TOKEN`, `<peer token>`), `${secret:name}` references, dummy test
+  fixtures, delivery ids and a commit hash.
+- (f) Each of the four new audit actions has a JSON-lines test and a CEF signature test; all pass.
+
+**Residual risks and what the operator must still confirm:**
+
+- Every box in section 5 is unticked. Until the operator confirms or changes (a) to (e), the loop
+  prevention rule, the URL scheme rule, the allow-list rule, the cloud metadata narrowing, the DNS
+  rebinding defence, the redirect rule and the audit fields, the retry curve, signature format, payload
+  shape, peer addressing and offline-peer behaviour are proposals. Each lives in one named constant or
+  config default marked "pending operator confirmation".
+- The sink and the forwarding stay disabled by default; enabling them is the operator's decision after
+  that confirmation.
+- Peer forwarding between two real daemons has not been run live. The in-process tests use fake HTTP
+  peers; the tracker row stays not validated until a two-daemon run is done.
+- The branch is far behind main. The release number is taken at merge, and the merge needs a rebase and a
+  conflict check on the shared files (config, router, server, the app script, the locale bundles, the
+  tracker and the CHANGELOG).
+- The `go.mod` change only moves `golang.org/x/net` from an indirect to a direct requirement.
