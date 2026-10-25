@@ -15629,7 +15629,7 @@ const GENERAL_CONFIG_FIELDS = [
     // topic push, comm fan-out) act on. Empty list = nothing new is sent
     // (current behavior, off by default); the global notify_exclude
     // still applies to the comm fan-out.
-    { key: 'autonomous.notify.default_events', label: 'Lifecycle event sinks: kinds', type: 'text', placeholder: 'prd.completed, task.failed', csv: true },
+    { key: 'autonomous.notify.default_events', label: 'Default notification events', labelKey: 'notify_events_default_label', type: 'text', placeholder: NOTIFY_EVENT_DEFAULTS.join(', '), csv: true },
     // BL410 Phase 1 — retry policy. retry_policy itself is a per-category
     // map (infra/content/scope/policy); edited via the Retry Profiles
     // card and the per-Automaton retry-policy setter, not this generic
@@ -34995,6 +34995,10 @@ function loadGuardrailProfilesPanel() {
   if (libEl) loadGuardrailLibraryPanel(libEl);
 
   apiFetch('/api/autonomous/guardrail_profiles').then(profiles => {
+    // Keep the last fetched list on window so an inline edit action can
+    // send the profile's current name/description/guardrails along with
+    // notify_events (the server PUT would otherwise wipe them).
+    window._guardrailProfiles = profiles || [];
     const addBtn = `<button class="btn-primary" style="font-size:12px;padding:4px 10px;" onclick="guardrailProfileOpenCreate()">${escHtml(t('guardrail_profile_create')||'New Profile')}</button>`;
     if (!profiles || profiles.length === 0) {
       panel.innerHTML = `<div style="padding:6px 12px;"><div style="text-align:center;padding:16px 8px;color:var(--text2);font-size:12px;">
@@ -35006,12 +35010,21 @@ function loadGuardrailProfilesPanel() {
     const rows = profiles.map(p => {
       const tags = (p.guardrails||[]).map(g => `<span style="background:var(--card-bg);border:1px solid var(--border);border-radius:4px;font-size:10px;padding:1px 5px;margin-right:3px;">${escHtml(g)}</span>`).join('');
       const idJ = escHtml(JSON.stringify(p.id));
+      // Notification events: the profile's own kinds when set, or the
+      // inherit wording when it stores none (falls back to the global
+      // default).
+      const pEvents = p.notify_events || [];
+      const notifyText = pEvents.length
+        ? (t('notify_events_profile_label')||'Notification events') + ': ' + pEvents.join(', ')
+        : (t('notify_events_profile_label')||'Notification events') + ': ' + (t('notify_events_inherit')||'Inherit');
       return `<div style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);font-size:12px;">
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;">${escHtml(p.name)}</div>
           ${p.description ? `<div style="color:var(--text2);font-size:11px;">${escHtml(p.description)}</div>` : ''}
           <div style="margin-top:3px;">${tags||'<span style="color:var(--text2);font-size:11px;">(no guardrails)</span>'}</div>
+          <div style="color:var(--text2);font-size:11px;margin-top:2px;" title="${escHtml(notifyText)}">${escHtml(notifyText)}</div>
         </div>
+        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;" title="${escHtml(t('notify_events_profile_edit')||'Edit notification events')}" onclick="guardrailProfileEditNotify(${idJ})">${escHtml(t('notify_events_profile_edit')||'Edit notification events')}</button>
         <button class="btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="guardrailProfileDelete(${idJ})">&times;</button>
       </div>`;
     }).join('');
@@ -35028,15 +35041,44 @@ function guardrailProfileOpenCreate() {
   if (!name) return;
   const csv = prompt(t('guardrail_profile_guardrails')||'Guardrails (comma-separated)', '');
   const guardrails = (csv||'').split(',').map(s=>s.trim()).filter(Boolean);
+  // Third prompt: the profile's notification-event kinds (blank =
+  // inherit the global default).
+  const eventsCsv = prompt(t('notify_events_profile_prompt')||'Notification events (comma-separated kinds, blank to inherit)', '');
+  const notifyEvents = (eventsCsv||'').split(',').map(s=>s.trim()).filter(Boolean);
   apiFetch('/api/autonomous/guardrail_profiles', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({name, guardrails})
+    body: JSON.stringify({name, guardrails, notify_events: notifyEvents})
   }).then(() => {
     loadGuardrailProfilesPanel();
-  }).catch(e => showError('Create profile failed: ' + e));
+  }).catch(e => showToast('Create profile failed: ' + ((e && e.message) || String(e)), 'error', 6000));
 }
 window.guardrailProfileOpenCreate = guardrailProfileOpenCreate;
+
+// Edit a profile's notification events. Blanks the inherit (sends []).
+// The server PUT would wipe name/description/guardrails when they are
+// omitted, so the profile's current values travel along.
+function guardrailProfileEditNotify(id) {
+  const p = (window._guardrailProfiles||[]).find(x => x.id === id);
+  if (!p) return;
+  const csv = prompt(t('notify_events_profile_prompt')||'Notification events (comma-separated kinds, blank to inherit)', (p.notify_events||[]).join(', '));
+  if (csv === null) return; // cancelled
+  const notifyEvents = csv.split(',').map(s=>s.trim()).filter(Boolean);
+  apiFetch('/api/autonomous/guardrail_profiles/' + encodeURIComponent(id), {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name: p.name || '',
+      description: p.description || '',
+      guardrails: (p.guardrails||[]).slice(),
+      notify_events: notifyEvents
+    })
+  }).then(() => {
+    showToast(t('notify_events_saved')||'Notification events saved', 'success', 1500);
+    loadGuardrailProfilesPanel();
+  }).catch(e => showToast((t('notify_events_save_failed')||'Could not save notification events') + ': ' + ((e && e.message) || String(e)), 'error', 8000));
+}
+window.guardrailProfileEditNotify = guardrailProfileEditNotify;
 
 function guardrailProfileDelete(id) {
   if (!confirm(t('guardrail_profile_delete_confirm')||'Delete this guardrail profile?')) return;
