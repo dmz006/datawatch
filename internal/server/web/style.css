@@ -850,6 +850,34 @@ body {
 .tag-section-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tag-section-count { font-family: var(--mono, monospace); font-size: 11px; color: var(--text2); font-weight: 400; }
 .tag-section-body { display: flex; flex-direction: column; gap: 8px; padding: 0 10px 10px 10px; }
+
+/* Pinned groups above the tag browser: Needs attention and the Running strip. An
+   empty group is never drawn, so it takes no height. */
+.tag-pinned { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }
+.tag-pinned-attention { border-color: var(--warning, var(--border)); }
+.tag-pinned-rows { gap: 2px; }
+.tag-pinned-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  width: 100%;
+  padding: 6px 4px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.tag-pinned-row:first-child { border-top: 0; }
+.tag-pinned-title { flex: 1 1 8em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-pinned-status { flex: 0 0 auto; cursor: pointer; }
+.tag-pinned-reason { flex: 1 1 100%; color: var(--text2); font-size: 11px; }
+.tag-pinned-running .tag-pinned-row { flex-wrap: nowrap; }
+.tag-pinned-more { padding: 4px; font-size: 11px; color: var(--text2); font-family: var(--mono, monospace); }
+.tag-attention-none { padding: 16px 4px; }
 .work-tile-grid.tag-section-items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (min-width: 1024px) {
   .work-tile-grid.tag-section-items { grid-template-columns: repeat(3, minmax(0, 1fr)); }

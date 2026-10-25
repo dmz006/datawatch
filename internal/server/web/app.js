@@ -1473,36 +1473,29 @@ function handleMessage(msg) {
       // mutates dozens of tasks per second doesn't reload the panel
       // dozens of times.
       if (state.activeView === 'autonomous') {
-        clearTimeout(state._prdReloadTimer);
-        state._prdReloadTimer = setTimeout(() => {
-          if (_automataDetailId) {
+        if (_automataDetailId) {
+          clearTimeout(state._prdReloadTimer);
+          state._prdReloadTimer = setTimeout(() => {
             // B103 — incremental live update; falls back to full render if off-tab
             apiFetch('/api/autonomous/prds/' + encodeURIComponent(_automataDetailId))
               .then(prd => { if (prd && prd.id) _liveUpdateDetail(prd); })
               .catch(() => {});
-          } else if (_automationTabActive()) {
-            refreshAutomationView();
-          } else {
-            loadAutomataPanel();
-          }
-        }, 250);
+          }, 250);
+        } else {
+          // A status change moves the attention group, the running strip and the
+          // tag counts; the list views refresh them through the shared debounce.
+          _tagLiveSchedule();
+        }
       }
       break;
     case 'tag_update':
       // A tag was created, renamed, moved, recolored, deleted or assigned
       // (to an Automaton or a session). The frame is id-only, so refetch the
       // tag registry and redraw the counts it feeds. Nothing is fetched until
-      // the registry has loaded once; the tag browser and registry panel
-      // redraw from the fresh list. Debounced like prd_update.
-      if (_tagsState.loaded) {
-        clearTimeout(window._tagUpdateTimer);
-        window._tagUpdateTimer = setTimeout(() => {
-          _tagsLoad(true).then(() => {
-            _tagBrowseRepaintVisible();
-            if (document.getElementById('automataTagRegistryPanel')) loadAutomataTagRegistryPanel();
-          });
-        }, 250);
-      }
+      // the registry has loaded once; the tag browser, the pinned groups and the
+      // registry panel redraw from the fresh reads. One debounce serves this
+      // frame and prd_update, so a burst of both refetches once.
+      if (_tagsState.loaded) _tagLiveSchedule();
       break;
     case 'hook_update':
       // BL303 S3 T12 / S4 T14 — real-time Status tab + dashboard refresh.
@@ -22087,6 +22080,7 @@ function _automataFetchAll(url, o) {
     _tagsLoad(true).catch(() => null),
     apiFetch('/api/capacity', opts).catch(() => null),
     _tagBrowseConfigLoad(),
+    _tagPinnedLoad(),
   ]).then(([data, llms, , cap]) => {
     const prds = Array.isArray(data) ? data : ((data && data.prds) || []);
     return {
@@ -26221,7 +26215,7 @@ window.automationEmptyStateHtml = automationEmptyStateHtml;
 
 function _automationFetchAll() {
   const request = automationRequest('GET', '/api/automations');
-  return Promise.all([request, loadAutomationPrdInfo(), _tagsLoad(true), _tagBrowseConfigLoad()]).then(([data, info]) => ({
+  return Promise.all([request, loadAutomationPrdInfo(), _tagsLoad(true), _tagBrowseConfigLoad(), _tagPinnedLoad()]).then(([data, info]) => ({
     list: Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : []),
     titles: info.titles,
   })).then(d => {
@@ -36653,10 +36647,12 @@ function _tagBrowseRootOpen(rootCount) {
 }
 
 // _tagBrowseState holds each scope's browse state: the view, the tag selection and
-// its mode (persisted per viewer), and the backend chips (session only). cfg holds
-// the two autonomous.tags settings the browser reads from GET /api/config.
+// its mode (persisted per viewer), and the backend chips (session only). attn is
+// true while the Attention view is shown (never persisted here; the landing rule
+// and the viewer's override decide it). cfg holds the autonomous.tags settings the
+// browser reads from GET /api/config.
 function _tagBrowseLoad(scope) {
-  const sc = { view: 'list', sel: [], mode: '', backends: new Set() };
+  const sc = { view: 'list', attn: false, sel: [], mode: '', backends: new Set() };
   try {
     const v = JSON.parse(localStorage.getItem('cs_tag_browse_' + scope) || 'null');
     if (v && typeof v === 'object') {
@@ -36674,7 +36670,7 @@ function _tagBrowseSave(scope) {
 const _tagBrowse = {
   automata: _tagBrowseLoad('automata'),
   automation: _tagBrowseLoad('automation'),
-  cfg: { defaultMode: 'any', directCounts: false, loaded: false },
+  cfg: { defaultMode: 'any', directCounts: false, defaultView: 'auto', attentionStatuses: ['blocked', 'needs_review', 'paused'], loaded: false },
   layout: '',
 };
 
@@ -36706,7 +36702,7 @@ function _tagBrowseLocationHash() {
 // deep link lands in the browser.
 function _tagBrowseViewOf(scope) {
   const h = _tagHashParse(_tagBrowseLocationHash());
-  if (h && h.scope === scope) _tagBrowse[scope].view = 'tags';
+  if (h && h.scope === scope) { _tagBrowse[scope].view = 'tags'; _tagBrowse[scope].attn = false; }
   return _tagBrowse[scope].view;
 }
 
@@ -36720,7 +36716,10 @@ function _tagBrowseConfigLoad() {
   if (_tagBrowse.cfg.loaded) return Promise.resolve(_tagBrowse.cfg);
   return apiFetch('/api/config').then(cfg => {
     const tg = (cfg && cfg.autonomous && cfg.autonomous.tags) || {};
-    _tagBrowse.cfg = { defaultMode: _tagBrowseDefaultMode(tg), directCounts: _tagBrowseDirectVisible(tg), loaded: true };
+    _tagBrowse.cfg = {
+      defaultMode: _tagBrowseDefaultMode(tg), directCounts: _tagBrowseDirectVisible(tg),
+      defaultView: String(tg.default_view || 'auto').toLowerCase(), attentionStatuses: _tagAttentionStatusList(tg.attention_statuses), loaded: true,
+    };
     return _tagBrowse.cfg;
   }).catch(() => _tagBrowse.cfg);
 }
@@ -36780,11 +36779,189 @@ function _tagBrowseShown(scope, id, clientCount, field) {
   return clientCount;
 }
 
+// ── Pinned groups: Needs attention and Running ───────────────────────────────
+// Two groups sit above the tag browser in both tabs. They are views, not moves: an
+// item in a group still appears in its tag sections. An empty group takes no
+// height, and with both empty the pinned area is not drawn. The header's
+// Attention (N) button opens the Attention view, which shows only these groups.
+
+const _TAG_ATTENTION_DEFAULT = ['blocked', 'needs_review', 'paused'];
+const _TAG_RUNNING_MAX = 5;        // running lines shown before "+N more"
+const _TAG_LIVE_DEBOUNCE_MS = 250; // an event burst waits this long, then refetches once
+
+// _tagAttentionStatusList reads autonomous.tags.attention_statuses (an array or a
+// comma-separated string). An empty or missing value is the default list.
+function _tagAttentionStatusList(raw) {
+  const parts = Array.isArray(raw) ? raw : String(raw == null ? '' : raw).split(',');
+  const out = parts.map(s => String(s).trim().toLowerCase()).filter(Boolean);
+  return out.length ? [...new Set(out)] : _TAG_ATTENTION_DEFAULT.slice();
+}
+
+// _tagHeldForReview: an Automaton with a task held for operator review carries a
+// non-empty review_needed.
+function _tagHeldForReview(item) {
+  const r = item && item.review_needed;
+  return Array.isArray(r) ? r.length > 0 : !!r;
+}
+
+// _tagAttentionMembers picks the Automata that need attention: a status in the
+// list, or a task held for review. Each Automaton is listed once; templates never.
+function _tagAttentionMembers(items, statuses) {
+  const set = new Set(_tagAttentionStatusList(statuses));
+  const seen = new Set();
+  return (items || []).filter(it => {
+    if (!it || !it.id || it.is_template || seen.has(it.id)) return false;
+    if (!(set.has(String(it.status || '').toLowerCase()) || _tagHeldForReview(it))) return false;
+    seen.add(it.id);
+    return true;
+  });
+}
+
+// _tagRunningStrip picks the running Automata for the strip: at most max lines,
+// and the number left over for "+N more". total is the server's running count
+// when the fetched page is shorter than the whole set.
+function _tagRunningStrip(items, total, max) {
+  const running = (items || []).filter(it => it && it.id && !it.is_template && it.status === 'running');
+  const cap = max > 0 ? max : _TAG_RUNNING_MAX;
+  const shown = running.slice(0, cap);
+  return { shown, more: Math.max(0, Math.max(Number(total) || 0, running.length) - shown.length) };
+}
+
+// _tagLandingDecide picks the view a page opens on. A viewer's remembered choice
+// wins, then a forced default_view, then auto: attention when something needs it.
+function _tagLandingDecide(defaultView, override, attentionCount) {
+  if (override === 'attention' || override === 'tags') return override;
+  const d = String(defaultView || '').toLowerCase();
+  if (d === 'attention' || d === 'tags') return d;
+  return attentionCount >= 1 ? 'attention' : 'tags';
+}
+
+function _tagLandingOverride() {
+  try {
+    const v = localStorage.getItem('cs_tag_landing');
+    return v === 'attention' || v === 'tags' ? v : '';
+  } catch (_) { return ''; }
+}
+function _tagLandingSave(view) {
+  try { localStorage.setItem('cs_tag_landing', view === 'attention' ? 'attention' : 'tags'); } catch (_) { /* not kept */ }
+}
+
+// _tagLanding holds the landing decision. It is made once, when the first list
+// paints, and never changes while the page is open.
+const _tagLanding = { view: '' };
+function _tagLandingEnsure(attentionCount) {
+  if (_tagLanding.view) return _tagLanding.view;
+  _tagLanding.view = _tagLandingDecide(_tagBrowse.cfg.defaultView, _tagLandingOverride(), attentionCount);
+  const on = _tagLanding.view === 'attention';
+  _tagBrowse.automata.attn = on;
+  _tagBrowse.automation.attn = on;
+  return _tagLanding.view;
+}
+
+// _tagPinned holds the last attention and running reads. null means that read
+// failed (or the all-servers view is on), and the group is built from the loaded list.
+const _tagPinned = { attention: null, running: null };
+function _tagPinnedLoad() {
+  if (state.activeServer === 'all') {
+    _tagPinned.attention = null;
+    _tagPinned.running = null;
+    return Promise.resolve(_tagPinned);
+  }
+  return Promise.all([
+    apiFetch('/api/autonomous/attention').catch(() => null),
+    apiFetch('/api/autonomous/prds?status=running&limit=' + _TAG_RUNNING_MAX).catch(() => null),
+  ]).then(([att, run]) => {
+    _tagPinned.attention = att && Array.isArray(att.items) ? att : null;
+    _tagPinned.running = run && Array.isArray(run.prds) ? { items: run.prds, total: run.total || run.prds.length } : null;
+    return _tagPinned;
+  });
+}
+
+function _tagLoadedAutomata() {
+  return (_automataState.allPrds || []).filter(p => !p.is_template);
+}
+function _tagAttentionGroup() {
+  const att = _tagPinned.attention;
+  if (att) return _tagAttentionMembers(att.items, att.statuses);
+  return _tagAttentionMembers(_tagLoadedAutomata(), _tagBrowse.cfg.attentionStatuses);
+}
+function _tagRunningGroup() {
+  const run = _tagPinned.running;
+  if (run) return _tagRunningStrip(run.items, run.total, _TAG_RUNNING_MAX);
+  return _tagRunningStrip(_tagLoadedAutomata(), 0, _TAG_RUNNING_MAX);
+}
+
+// The live refresh. tag_update and prd_update frames both land here; a burst of
+// them waits for one quiet window and then refetches once: the tag counts, the
+// attention and running reads, and the list, all through the tab's own loader.
+// The timer lives on window and is cleared before it is set, so repeated frames
+// and re-renders never stack timers. With the stream down no frame arrives, and
+// the loaders' own poll does the same refetch.
+function _tagLiveSchedule() {
+  clearTimeout(window._tagLiveTimer);
+  window._tagLiveTimer = setTimeout(() => {
+    window._tagLiveTimer = 0;
+    _tagLiveRefresh();
+  }, _TAG_LIVE_DEBOUNCE_MS);
+}
+function _tagLiveRefresh() {
+  let list;
+  if (_automationTabActive()) list = refreshAutomationView();
+  else if (document.getElementById('automataPanel')) list = loadAutomataPanel();
+  else if (_tagsState.loaded) list = _tagsLoad(true);
+  return Promise.resolve(list).then(() => {
+    if (document.getElementById('automataTagRegistryPanel')) loadAutomataTagRegistryPanel();
+  });
+}
+
 // ── Drawing ──────────────────────────────────────────────────────────────────
 
 function _tagViewSwitchHTML(scope, view) {
   const btn = (v, label) => `<button type="button" class="tag-view-btn${view === v ? ' active' : ''}" aria-pressed="${view === v}" onclick="tagBrowseSetView('${scope}','${v}')">${escHtml(label)}</button>`;
-  return `<div class="tag-view-switch" role="group">${btn('list', t('tag_view_list'))}${btn('tags', t('tag_view_tags'))}</div>`;
+  // The Attention (N) header is always drawn, so the count is visible at zero.
+  const attention = btn('attention', t('tag_view_attention', [_tagAttentionGroup().length]));
+  return `<div class="tag-view-switch" role="group">${attention}${btn('list', t('tag_view_list'))}${btn('tags', t('tag_view_tags'))}</div>`;
+}
+
+// _tagPinnedRowHTML is one Automaton line in a pinned group; a tap opens it.
+function _tagPinnedRowHTML(it, reason) {
+  const status = String(it.status || 'draft');
+  const label = t('automata_status_' + status) || status;
+  const open = `renderPRDDetailView(${escHtml(JSON.stringify(it.id))})`;
+  const why = reason ? `<span class="tag-pinned-reason">${escHtml(reason)}</span>` : '';
+  return `<button type="button" class="tag-pinned-row" onclick="${open}"><span class="tag-pinned-title">${escHtml(it.title || it.id)}</span><span class="tag-pinned-status automata-filter-badge status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${escHtml(label)}</span>${why}</button>`;
+}
+
+// _tagPinnedReason: the blocked reason where one exists, else how many tasks are
+// held for review.
+function _tagPinnedReason(it) {
+  if (it.blocked_reason) return it.blocked_reason;
+  if (_tagHeldForReview(it)) return t('tag_attention_review_held', [Array.isArray(it.review_needed) ? it.review_needed.length : 1]);
+  return '';
+}
+
+function _tagPinnedGroupHTML(key, title, count, rowsHtml, open, footHtml) {
+  return `<details class="tag-section tag-pinned-group tag-pinned-${key}" data-tag-section="pinned:${key}"${open ? ' open' : ''} ontoggle="tagBrowseSectionToggle(this,'pinned','${key}')"><summary class="tag-section-head"><span class="tag-section-name">${escHtml(title)}</span><span class="tag-section-count">${count}</span></summary><div class="tag-section-body tag-pinned-rows">${rowsHtml}${footHtml || ''}</div></details>`;
+}
+
+// _tagPinnedHTML draws the Needs attention group (expanded) and the Running strip
+// (one line each, at most five, then "+N more"; closed on a phone). An empty group
+// is not drawn, and with both empty the whole area is hidden.
+function _tagPinnedHTML() {
+  const att = _tagAttentionGroup();
+  const run = _tagRunningGroup();
+  if (!att.length && !run.shown.length) return '';
+  const stored = _tagSectionsStored();
+  const isOpen = (key, dflt) => Object.prototype.hasOwnProperty.call(stored, 'pinned:' + key) ? !!stored['pinned:' + key] : dflt;
+  const attHtml = att.length
+    ? _tagPinnedGroupHTML('attention', t('tag_attention_title'), att.length, att.map(it => _tagPinnedRowHTML(it, _tagPinnedReason(it))).join(''), isOpen('attention', true))
+    : '';
+  const more = run.more ? `<div class="tag-pinned-more">${escHtml(t('tag_running_more', [run.more]))}</div>` : '';
+  const phone = _tagBrowseLayout(_tileViewportWidth()) === 'drill';
+  const runHtml = run.shown.length
+    ? _tagPinnedGroupHTML('running', t('tag_running_title'), run.shown.length + run.more, run.shown.map(it => _tagPinnedRowHTML(it, '')).join(''), isOpen('running', !phone), more)
+    : '';
+  return `<div class="tag-pinned">${attHtml}${runHtml}</div>`;
 }
 
 function _tagNoMatchesHTML(scope, base) {
@@ -36875,11 +37052,19 @@ function _tagDrillHTML(scope, items, tree, renderTile) {
 //   renderTile(item, alsoInHtml) returns the tile markup
 //   emptyHtml  the message for an empty tab
 // The List view, and any active filter, draw one flat tile grid. The Tags view
-// draws the sections on web and tablet and the drill-down under 720px.
+// draws the sections on web and tablet and the drill-down under 720px. The pinned
+// groups sit above all of them; the Attention view draws only the pinned groups.
 function _tagBrowseMountHTML(scope, items, base, renderTile, emptyHtml) {
-  if (!base) return emptyHtml;
+  _tagLandingEnsure(_tagAttentionGroup().length);
   const view = _tagBrowseViewOf(scope);
-  const sw = _tagViewSwitchHTML(scope, view);
+  const attn = _tagBrowse[scope].attn;
+  const pinned = _tagPinnedHTML();
+  if (attn) {
+    const none = pinned ? '' : `<div class="tag-showing tag-attention-none">${escHtml(t('tag_attention_none'))}</div>`;
+    return _tagViewSwitchHTML(scope, 'attention') + pinned + none;
+  }
+  if (!base) return pinned + emptyHtml;
+  const sw = _tagViewSwitchHTML(scope, view) + pinned;
   if (!items.length) return sw + _tagNoMatchesHTML(scope, base);
   const active = _tagBrowseActiveCount(scope);
   if (view === 'list' || active) {
@@ -36975,6 +37160,7 @@ function _tagBrowseHref(hash) {
 }
 function _tagBrowseNavigate(scope, path) {
   _tagBrowse[scope].view = 'tags';
+  _tagBrowse[scope].attn = false;
   _tagBrowseSave(scope);
   const hash = _tagHashBuild(scope, path);
   if (_tagBrowseLocationHash() !== hash) {
@@ -36989,6 +37175,10 @@ function _tagBrowseClearHash(scope) {
 }
 
 window.tagBrowseSetView = function(scope, view) {
+  // Choosing a view is the viewer's override of the landing rule.
+  _tagBrowse[scope].attn = view === 'attention';
+  _tagLandingSave(view);
+  if (view === 'attention') { _tagBrowseClearHash(scope); _tagBrowseRepaint(scope); return; }
   _tagBrowse[scope].view = view === 'tags' ? 'tags' : 'list';
   if (_tagBrowse[scope].view === 'list') _tagBrowseClearHash(scope);
   _tagBrowseSave(scope);
@@ -37004,6 +37194,7 @@ window.tagBrowseGo = function(scope, tagId) {
   if (_tagBrowseLayout(_tileViewportWidth()) === 'drill') { _tagBrowseNavigate(scope, path); return; }
   path.forEach(id => _tagSectionSave(scope + ':' + id, true));
   _tagBrowse[scope].view = 'tags';
+  _tagBrowse[scope].attn = false;
   _tagBrowseSave(scope);
   _tagBrowseRepaint(scope);
   setTimeout(() => {
