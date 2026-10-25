@@ -377,3 +377,7 @@ Common rules for all classes:
 Conformance test: for each class a fake backend raises a question, the test asserts the question appears in the queue with the right links, that other work proceeds while it is open, that a skip and an answer both resume the asker, and that no retry or failure is counted.
 
 Open points for the operator: whether the marker route may carry options (a small structured block after the marker line) or only free text; and whether a one-shot print backend should be allowed to ask at all, or the daemon should ask on its behalf when its task ends needing a decision.
+
+Operator answers to the two open points above, 2026-10-25 (quoted: "1 marker with options, 2 daemon asks on its behalf"):
+1. The marker route carries options: a small structured block after the marker line (options, recommendation, risk label), with the same caps and untrusted-text handling as free text.
+2. A one-shot print-mode backend does not ask for itself. When its task ends needing a decision, the daemon raises the question on its behalf, names the task and backend as the asker, and holds the task (not failed, no retry counted) until the answer arrives.
