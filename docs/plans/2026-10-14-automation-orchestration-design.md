@@ -2710,4 +2710,9 @@ Open for the operator: the default alert times and the retry count for items 1, 
 6. **Who answers:** the system is not multi-operator yet; any operator authorized for the Automation may answer its questions.
 7. **Every communication channel is valid for answering,** by the parity rule: PWA, mobile apps, CLI, REST, MCP and every messaging channel.
 
+
+**Operator answers, one question at a time, 2026-10-25.**
+
+8. **Low risk is defined by both a type list and a per-question level (quoted: "3 both,  sometimes a list is easier,  don't know what will be quantifiable low sometimes and that will help").** The operator keeps a list of question types in Automation that count as low risk, because a list is sometimes easier and not every low-risk case can be defined in advance. Each type gives a default risk level; the asker may raise the level of a single question and never lower it. The Automation setting that lets the supervisor answer by default applies to questions whose resulting level is low.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
