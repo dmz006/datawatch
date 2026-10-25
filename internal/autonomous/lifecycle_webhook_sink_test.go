@@ -218,7 +218,7 @@ func newHookServer(t *testing.T, statuses ...int) *hookServer {
 	}
 	s := &hookServer{statuses: statuses, release: make(chan struct{})}
 	s.Server = httptest.NewServer(http.HandlerFunc(s.serve))
-	t.Cleanup(s.Server.Close)
+	t.Cleanup(s.Close)
 	// Registered after Close, so it runs first and frees any blocked handler.
 	t.Cleanup(func() {
 		select {
@@ -1313,7 +1313,7 @@ func TestWebhookSinkNilAuditAndAlertAreSafe(t *testing.T) {
 func TestWebhookSinkHostnameSources(t *testing.T) {
 	s := NewWebhookSink(WebhookSinkConfig{})
 	osHost, _ := os.Hostname()
-	if got := s.hostname(LifecycleEvent{Host: "ev"}); got != osHost && !(osHost == "" && got == "ev") {
+	if got := s.hostname(LifecycleEvent{Host: "ev"}); got != osHost && (osHost != "" || got != "ev") {
 		t.Errorf("default hostname = %q, want os hostname %q", got, osHost)
 	}
 	s.cfg.Hostname = func() string { return "cfg" }

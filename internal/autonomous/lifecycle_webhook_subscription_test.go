@@ -47,6 +47,11 @@ func newWebhookRig(t *testing.T, set WebhookSettings, sessions sessionTable) *we
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	// The notify-events resolver gates every subscription sink: opt prd-1 into
+	// task.session_started (an opt-in kind) so the delivery tests reach the sink.
+	if err := m.Store().SavePRD(&PRD{ID: "prd-1", NotifyEvents: []string{KindTaskSessionStarted}}); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
 	store, err := NewSubscriptionStore(filepath.Join(t.TempDir(), "subs.json"), nil)
 	if err != nil {
 		t.Fatalf("NewSubscriptionStore: %v", err)

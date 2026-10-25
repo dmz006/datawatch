@@ -22,8 +22,8 @@ var lifecycleWebhookEvents = []struct {
 	name   string
 	sev    int
 }{
-	{ActionLifecycleWebhookDelivery, "autonomous_lifecycle_webhook_delivery", 45, "AutonomousLifecycleWebhookDelivery", 2},
-	{ActionLifecycleWebhookFailed, "autonomous_lifecycle_webhook_failed", 46, "AutonomousLifecycleWebhookFailed", 6},
+	{ActionLifecycleWebhookDelivery, "autonomous_lifecycle_webhook_delivery", 46, "AutonomousLifecycleWebhookDelivery", 2},
+	{ActionLifecycleWebhookFailed, "autonomous_lifecycle_webhook_failed", 47, "AutonomousLifecycleWebhookFailed", 6},
 }
 
 const lifecycleWebhookHostileError = "boom\nCEF:0|evil|x|1|2|3|9|a=b\\c"

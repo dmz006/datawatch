@@ -38,7 +38,7 @@ func lifecycleForwardDetails() map[string]any {
 func TestLifecycleForwardEvents_NameAndCEF(t *testing.T) {
 	const (
 		wantAction = "autonomous_lifecycle_forward_delivery"
-		wantID     = 47
+		wantID     = 48
 		wantName   = "AutonomousLifecycleForwardDelivery"
 		wantSev    = 3
 	)
@@ -115,7 +115,7 @@ func TestLifecycleForwardEvents_CEFEscaping(t *testing.T) {
 	line := FormatCEFLine(e)
 
 	// The header triple, with the version's pipe and backslash escaped.
-	wantPrefix := `CEF:0|datawatch|datawatch|9\|0\\1|47|AutonomousLifecycleForwardDelivery|3|`
+	wantPrefix := `CEF:0|datawatch|datawatch|9\|0\\1|48|AutonomousLifecycleForwardDelivery|3|`
 	if !strings.HasPrefix(line, wantPrefix) {
 		t.Fatalf("line = %q, want header prefix %q", line, wantPrefix)
 	}
@@ -161,7 +161,7 @@ func lifecycleForwardReceiveDetails() map[string]any {
 func TestLifecycleForwardReceiveEvents_NameAndCEF(t *testing.T) {
 	const (
 		wantAction = "autonomous_lifecycle_forward_receive"
-		wantID     = 48
+		wantID     = 49
 		wantName   = "AutonomousLifecycleForwardReceive"
 		wantSev    = 3
 	)
@@ -236,7 +236,7 @@ func TestLifecycleForwardReceiveEvents_CEFEscaping(t *testing.T) {
 	}
 	line := FormatCEFLine(e)
 
-	wantPrefix := `CEF:0|datawatch|datawatch|9\|0\\1|48|AutonomousLifecycleForwardReceive|3|`
+	wantPrefix := `CEF:0|datawatch|datawatch|9\|0\\1|49|AutonomousLifecycleForwardReceive|3|`
 	if !strings.HasPrefix(line, wantPrefix) {
 		t.Fatalf("line = %q, want header prefix %q", line, wantPrefix)
 	}

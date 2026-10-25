@@ -743,7 +743,7 @@ func TestForwardTokenNeverInAuditOrAlert(t *testing.T) {
 			var all strings.Builder
 			all.WriteString(err.Error())
 			for _, a := range r.auditRecs() {
-				all.WriteString(fmt.Sprint(a.action, a.details))
+				fmt.Fprint(&all, a.action, a.details)
 			}
 			for _, a := range r.alertRecs() {
 				all.WriteString(a.title + " " + a.body)
