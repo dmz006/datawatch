@@ -201,7 +201,7 @@ None of the following is decided. Each starts a step only when recorded in this 
 
 **Recommendation.** (a): the duty speaks of advisory age, and `first_added` records the project's own first suppression of it.
 
-**Status.** Open.
+**Status.** **Closed by the operator, 2026-10-25:** the 72-hour security rule is withdrawn ("consume security patches when they are available"), so there is no clock to choose. See AGENT.md, Security-failure rule, and registry row 198.
 
 ### Q6. Where operator decisions are recorded (duty 7)
 
@@ -209,7 +209,7 @@ None of the following is decided. Each starts a step only when recorded in this 
 
 **Recommendation.** (a): the verifier and retry paths already write to the Automaton decision log, and the gate only needs an id to reference.
 
-**Status.** Open.
+**Status.** **Decided by the operator, 2026-10-25: option 1** ("1"): decisions are recorded in the decision channel's answer records, linked from the PRD decisions list; until the queue exists the design and decisions documents carry them.
 
 ### Q7. How merge pending compares commits (duty 3)
 

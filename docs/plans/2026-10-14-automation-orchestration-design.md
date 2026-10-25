@@ -2760,4 +2760,7 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 28. **Surfaces for the Automation duties (supervisor duties proposal Q4, answer: "2").** Every one of the eight duties gets the full parity set: config, REST, MCP, CLI, comm channel, PWA, and a mobile parity issue wherever a REST or WebSocket contract changes. The proposal's recommended mix is not used.
 
+29. **Security rule changed (2026-10-25, quoted: "The world has changed,  the 3 day goal was to miss or try to exclude malicious account injection but now with ai security let's consume security patches when they are available,  change the rule until i find a better way to monitor upstream,  future project monitoring all upstream but for now consume patches when available").** The 72-hour disclosure-grace rule is withdrawn; security patches are consumed as soon as they are available (AGENT.md Security-failure rule). The supervisor-duties proposal's duty 2 and its question about the 72-hour clock are closed by this. A future project to monitor all upstream is registry row 198.
+30. **Where decisions are recorded (supervisor duties proposal Q6, answer: "1").** In the decision channel's answer records, linked from the PRD decisions list; until the queue exists, the design and decisions documents.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
