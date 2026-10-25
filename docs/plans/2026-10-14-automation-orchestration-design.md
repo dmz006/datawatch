@@ -2719,4 +2719,6 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 10. **What stays the operator's on a skip (answer: "1").** Three things stay with the operator even when a question is skipped: the 10.0 tag, releasing something the operator has not reviewed, and spending Claude usage beyond the operator's lane count. On a skip the supervisor decides everything else, and the record shows the answer as a supervisor decision made on the operator's skip, with its reasoning.
 
+11. **Reminders (answer: "1").** An open question is mentioned once in the next report and shown as a count on the Automation view; there are no repeated messages and no expiry.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
