@@ -4780,6 +4780,7 @@ else
     skip "restart matrix ${RM_P%%|*}: ${RM_P#*|}"
   done
   rm -rf "$RM_BASE"
+fi
 H "81. Mobile-fit view runner (release smoke)"
 # Runs the mobile-fit view harness (observer view, quick profile, Playwright)
 # via release-smoke-mobile-fit.sh, which derives TEST_HTTP / TEST_TLS /
@@ -4804,6 +4805,103 @@ if [[ -f "$MOBILE_FIT_SCRIPT" ]]; then
   fi
 else
   skip "release-smoke-mobile-fit.sh missing; mobile-fit probe deferred"
+fi
+
+# ---------------------------------------------------------------------------
+H "82. notify_events — resolved notify set (Automaton > guardrail profile > global)"
+# REST-only round-trip, no LLM work: the Automaton is a draft that is never
+# approved or run. Every throwaway is registered for cleanup on creation
+# and also deleted explicitly below. A missing autonomous surface (503) is
+# a skip that names the reason, never a fail.
+NE_TAG="$$-$(date +%s)"
+NE_PROBE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/autonomous/prds" 2>/dev/null)
+if [[ "$NE_PROBE" == "503" ]]; then
+  skip "notify_events: autonomous subsystem disabled (GET /api/autonomous/prds 503)"
+else
+  NE_PRD=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"spec\":\"smoke probe — notify_events $NE_TAG\",\"project_dir\":\"/tmp\",\"actor\":\"smoke\"}" \
+    "$BASE/api/autonomous/prds" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || echo "")
+  if [[ -z "$NE_PRD" ]]; then
+    skip "notify_events: POST /api/autonomous/prds returned no id (HTTP $NE_PROBE)"
+  else
+    add_cleanup prd "$NE_PRD"
+
+    # 82.1 explicit Automaton list wins — source=automaton, opt-in kind present
+    NE_BODY=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d '{"notify_events":["prd.blocked","prd.completed","task.session_started"]}' \
+      "$BASE/api/autonomous/prds/$NE_PRD/set_notify_events" 2>/dev/null || echo "")
+    NE_SET_OK=false
+    grep -q '"source":"automaton"' <<<"$NE_BODY" && NE_SET_OK=true
+    if [[ "$NE_SET_OK" == "true" ]]; then
+      ok "set_notify_events: explicit list resolves (source=automaton)"
+    else
+      ko "set_notify_events: explicit list (body: ${NE_BODY:0:120})"
+    fi
+
+    # 82.2 GET shows the resolved set with the opt-in task kind
+    NE_GET=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$NE_PRD" 2>/dev/null | grep -c '"task.session_started"' || true)
+    if [[ "${NE_GET:-0}" -ge 1 ]]; then
+      ok "GET prd: task.session_started (opt-in kind) present in notify_events_effective"
+    else
+      ko "GET prd: resolved set missing task.session_started"
+    fi
+
+    # 82.3 unknown kind is rejected with 400
+    NE_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: application/json" \
+      -d '{"notify_events":["bogus.kind"]}' "$BASE/api/autonomous/prds/$NE_PRD/set_notify_events" 2>/dev/null || echo 000)
+    if [[ "$NE_BAD" == "400" ]]; then
+      ok "set_notify_events: unknown kind rejected (400)"
+    else
+      ko "set_notify_events: unknown kind not rejected (HTTP $NE_BAD)"
+    fi
+
+    # 82.4 clear (empty list) — the Automaton inherits the profile/global tier
+    NE_CLR=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d '{"notify_events":[]}' "$BASE/api/autonomous/prds/$NE_PRD/set_notify_events" 2>/dev/null || echo "")
+    if [[ "$(<<<"$NE_CLR" grep -c '"source":"automaton"')" -eq 0 ]] && [[ "$(<<<"$NE_CLR" grep -c '"source":"global"')" -ge 1 ]]; then
+      ok "set_notify_events: [] clears to inherit (source=global)"
+    else
+      ko "set_notify_events: clear did not return to the global tier (body: ${NE_CLR:0:120})"
+    fi
+
+    # 82.5 guardrail profile tier: create with notify_events, assign, resolved
+    NE_PROFILE_NAME="smoke-notify-events-$NE_TAG"
+    NE_PROFILE=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d "{\"name\":\"$NE_PROFILE_NAME\",\"guardrails\":[],\"notify_events\":[\"prd.failed\",\"prd.completed\"]}" \
+      "$BASE/api/autonomous/guardrail_profiles" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || echo "")
+    if [[ -z "$NE_PROFILE" ]]; then
+      ko "guardrail profile notify_events: POST /api/autonomous/guardrail_profiles returned no id"
+    else
+      # Explicit delete at the end of the section (cleanup kind not registered).
+      NE_ASSIGN=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" \
+        -d "{\"guardrail_profile\":\"$NE_PROFILE_NAME\"}" "$BASE/api/autonomous/prds/$NE_PRD/guardrails" 2>/dev/null || echo 000)
+      NE_EFF=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$NE_PRD" 2>/dev/null || echo "")
+      if [[ "$NE_ASSIGN" == "200" ]] && grep -q '"source":"profile"' <<<"$NE_EFF"; then
+        ok "profile tier: assigned profile resolves (source=profile)"
+      else
+        ko "profile tier: assign=$NE_ASSIGN; $(grep -o '"source":"[a-z]*"' <<<"$NE_EFF" | head -1)"
+      fi
+      # Clear the profile list — the Automaton falls back to the global tier.
+      NE_PCLR=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" \
+        -d "{\"name\":\"$NE_PROFILE_NAME\",\"notify_events\":[]}" "$BASE/api/autonomous/guardrail_profiles/$NE_PROFILE" 2>/dev/null || echo 000)
+      NE_EFF2=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$NE_PRD" 2>/dev/null || echo "")
+      if [[ "$NE_PCLR" == "200" ]] && grep -q '"source":"global"' <<<"$NE_EFF2"; then
+        ok "profile tier: cleared profile falls back to global tier"
+      else
+        ko "profile tier: clear=$NE_PCLR; $(grep -o '"source":"[a-z]*"' <<<"$NE_EFF2" | head -1)"
+      fi
+      curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/guardrail_profiles/$NE_PROFILE" >/dev/null 2>&1
+    fi
+
+    # 82.6 set/clear left an audit entry for the round-trip
+    NE_AUDIT=$(curl "${curl_args[@]}" "$BASE/api/audit?action=autonomous_notify_events_changed&limit=500" 2>/dev/null | grep -c 'autonomous_notify_events_changed' || true)
+    curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$NE_PRD?hard=true" >/dev/null 2>&1
+    if [[ "${NE_AUDIT:-0}" -ge 1 ]]; then
+      ok "audit: autonomous_notify_events_changed entries present ($NE_AUDIT)"
+    else
+      skip "audit: autonomous_notify_events_changed not visible via /api/audit (may need higher privilege)"
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------

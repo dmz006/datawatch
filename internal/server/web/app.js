@@ -10,6 +10,49 @@ window._splashStart = Date.now();
   if (c && window.DWSplashArt) window._splashStopFn = window.DWSplashArt.startScene(c, { compact: false });
 })();
 
+// Per-Automaton notification-event overrides. The closed set of valid
+// lifecycle event kinds (sorted; every prd.<status> kind, every
+// task.<status> kind, plus task.session_started / task.session_cleared)
+// and the default set an effective list falls back to when an Automaton
+// stores an empty (= inherit) list. Ground truth: the lifecycle
+// subscription known event kinds, minus the generic "persisted" kind.
+const NOTIFY_EVENT_KINDS = ['prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.completed', 'task.failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
+const NOTIFY_EVENT_DEFAULTS = ['prd.needs_review', 'prd.blocked', 'prd.failed', 'prd.completed', 'prd.cancelled'];
+
+// One checkbox row per kind, grouped Automaton (prd.*) / Task
+// (task.<status>) / Session (task.session_*); the default set is marked
+// with the 'default' tag. Rows are disabled while inherit is checked.
+function _renderNotifyKindOptions(current, inheritOn) {
+  const curSet = new Set(current || []);
+  const defaultSet = new Set(NOTIFY_EVENT_DEFAULTS);
+  const row = k => {
+    const mark = defaultSet.has(k)
+      ? ` <span style="color:var(--text2);font-size:10px;">(${escHtml(t('notify_events_default_marker')||'default')})</span>`
+      : '';
+    return `<label class="wizard-checkbox-row" style="margin:2px 0;cursor:pointer;">
+      <input type="checkbox" data-notify-kind value="${escHtml(k)}" ${curSet.has(k) ? 'checked' : ''} ${inheritOn ? 'disabled' : ''}>
+      <span style="font-family:var(--mono,monospace);font-size:11px;">${escHtml(k)}</span>${mark}
+    </label>`;
+  };
+  const header = txt => `<div style="font-size:10px;font-weight:700;letter-spacing:0.4px;color:var(--text2);margin:6px 0 2px;">${escHtml(txt)}</div>`;
+  const prdKinds     = NOTIFY_EVENT_KINDS.filter(k => k.startsWith('prd.'));
+  const taskKinds    = NOTIFY_EVENT_KINDS.filter(k => k.startsWith('task.') && !k.startsWith('task.session_'));
+  const sessionKinds = NOTIFY_EVENT_KINDS.filter(k => k.startsWith('task.session_'));
+  return header('Automaton') + prdKinds.map(row).join('')
+    + header('Task')    + taskKinds.map(row).join('')
+    + header('Session') + sessionKinds.map(row).join('');
+}
+
+// Inherit checkbox toggle: disables the kind checkboxes and shows the
+// effective set as text while inherit is checked.
+function _prdNotifyInheritToggle(inherit) {
+  const effEl = document.getElementById('prdSettingsNotifyEffective');
+  if (effEl) effEl.style.display = inherit ? 'block' : 'none';
+  document.querySelectorAll('input[data-notify-kind]').forEach(el => { el.disabled = !!inherit; });
+}
+window._renderNotifyKindOptions = _renderNotifyKindOptions;
+window._prdNotifyInheritToggle = _prdNotifyInheritToggle;
+
 // ── i18n (BL214 / v5.28.0) ────────────────────────────────────────────────
 // Lightweight zero-dep translation layer. Locale JSON files are served from
 // /locales/{en,de,es,fr,ja}.json (see internal/server/web/locales). Strings
@@ -15350,6 +15393,9 @@ function openPRDSettingsModal(prdID) {
         skills:               (prd.skills || []).join(', '),
         guided_mode:          !!prd.guided_mode,
         continue_on_story_failure: !!prd.continue_on_story_failure,
+        // Per-Automaton notification events: empty list = inherit the
+        // guardrail profile, then the global default.
+        notify_events:          (prd.notify_events || []).slice(),
         // BL407 Phase 5 — Git.AutoPR/BaseBranch are operator-settable;
         // branch/pr_url are runtime state the executor owns, shown
         // read-only below once set.
@@ -15363,6 +15409,13 @@ function openPRDSettingsModal(prdID) {
         write_dirs:           (prd.write_dirs || []).join(', '),
       };
       ensureLLMModelLists().then(() => {
+        const notifyInherit = !(prd.notify_events || []).length;
+        const neffEvents = (prd.notify_events_effective && Array.isArray(prd.notify_events_effective.events))
+          ? prd.notify_events_effective.events : [];
+        const notifyEffectiveText = neffEvents.length
+          ? neffEvents.map(k => escHtml(k)).join(', ')
+          : escHtml(t('notify_events_none')||'none');
+        const notifyKindOptions = _renderNotifyKindOptions(prd.notify_events || [], notifyInherit);
         _prdMountModal(`
           <div class="response-modal-header">
             <strong>${escHtml(t('prd_settings_modal_title')||'Automaton settings')}</strong>
@@ -15476,6 +15529,23 @@ function openPRDSettingsModal(prdID) {
               ${cur.git_branch ? `<div style="font-size:10px;color:var(--text2);margin-top:6px;">${escHtml(t('prd_settings_git_branch_label')||'Branch')}: <code>${escHtml(cur.git_branch)}</code></div>` : ''}
               ${cur.git_pr_url ? `<div style="font-size:10px;margin-top:2px;">${escHtml(t('prd_settings_git_pr_label')||'PR')}: <a href="${escHtml(cur.git_pr_url)}" target="_blank" rel="noopener">${escHtml(cur.git_pr_url)}</a></div>` : ''}
             </div>
+            <!-- Per-Automaton notification events: closed kind set in
+                 NOTIFY_EVENT_KINDS; an empty stored list means inherit
+                 (guardrail profile, then the global default). -->
+            <div class="wizard-field" style="margin-top:4px;padding-top:8px;border-top:1px solid var(--border);">
+              <label class="wizard-label">${escHtml(t('notify_events_label')||'Notification events')}</label>
+              <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${escHtml(t('notify_events_help')||'Choose which lifecycle events notify. Inherit uses the guardrail profile, then the global default.')}</div>
+              <label class="wizard-checkbox-row" style="margin:0 0 4px;">
+                <input type="checkbox" id="prdSettingsNotifyInherit" ${notifyInherit?'checked':''} onchange="_prdNotifyInheritToggle(this.checked);return true;">
+                <span>${escHtml(t('notify_events_inherit')||'Inherit')}</span>
+              </label>
+              <div id="prdSettingsNotifyEffective" style="font-size:11px;color:var(--text2);margin:0 0 6px;display:${notifyInherit?'block':'none'};">
+                <strong>${escHtml(t('notify_events_effective')||'Effective notification events')}:</strong> <span>${notifyEffectiveText}</span>
+              </div>
+              <div style="max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:4px;padding:6px 8px;background:var(--bg2);">
+                ${notifyKindOptions}
+              </div>
+            </div>
             <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px;padding-top:8px;border-top:1px solid var(--border);">
               <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${escHtml(t('btn_cancel')||'Cancel')}</button>
               <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${escHtml(t('btn_save')||'Save')}</button>
@@ -15576,10 +15646,38 @@ function openPRDSettingsModal(prdID) {
               body: JSON.stringify({ priority: newPriority }),
             }));
           }
+          // Per-Automaton notification events: with inherit checked the
+          // posted list is empty (profile, then global, wins); compare
+          // order-insensitively so reordering stored kinds is not a save.
+          const notifyInheritOn = !!document.getElementById('prdSettingsNotifyInherit')?.checked;
+          const newNotifyEvents = notifyInheritOn
+            ? []
+            : Array.from(document.querySelectorAll('input[data-notify-kind]:checked')).map(el => el.value);
+          const curNotifySorted = (cur.notify_events || []).slice().sort();
+          const newNotifySorted = newNotifyEvents.slice().sort();
+          const notifyEventsChanged = JSON.stringify(curNotifySorted) !== JSON.stringify(newNotifySorted);
+          if (notifyEventsChanged) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_notify_events', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ notify_events: newNotifyEvents }),
+            }));
+          }
           if (calls.length === 0) { _prdCloseModal(); return; }
           Promise.all(calls)
-            .then(() => { showToast(t('prd_settings_saved')||'Settings saved', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
-            .catch(err => showToast((t('prd_settings_save_failed')||'Save failed') + ': ' + String(err), 'error', 3000));
+            .then(() => {
+              if (notifyEventsChanged) {
+                showToast(t('notify_events_saved')||'Notification events saved', 'success', 1500);
+              }
+              showToast(t('prd_settings_saved')||'Settings saved', 'success', 1500);
+              _prdCloseModal(); _refreshAutomataOrPRD();
+            })
+            .catch(err => {
+              if (notifyEventsChanged) {
+                showToast((t('notify_events_save_failed')||'Could not save notification events') + ': ' + ((err && err.message) || String(err)), 'error', 6000);
+              } else {
+                showToast((t('prd_settings_save_failed')||'Save failed') + ': ' + String(err), 'error', 3000);
+              }
+            });
         });
         // Populate model dropdowns for the current backends now that the modal is mounted.
         refreshLLMModelField('prdSettingsModelWrap', 'prdSettingsModelInner', 'prdSettingsBackend', cur.model);
@@ -15919,7 +16017,7 @@ const GENERAL_CONFIG_FIELDS = [
     // topic push, comm fan-out) act on. Empty list = nothing new is sent
     // (current behavior, off by default); the global notify_exclude
     // still applies to the comm fan-out.
-    { key: 'autonomous.notify.default_events', label: 'Lifecycle event sinks: kinds', type: 'text', placeholder: 'prd.completed, task.failed', csv: true },
+    { key: 'autonomous.notify.default_events', label: 'Default notification events', labelKey: 'notify_events_default_label', type: 'text', placeholder: NOTIFY_EVENT_DEFAULTS.join(', '), csv: true },
     // BL410 Phase 1 — retry policy. retry_policy itself is a per-category
     // map (infra/content/scope/policy); edited via the Retry Profiles
     // card and the per-Automaton retry-policy setter, not this generic
@@ -24925,6 +25023,28 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
   //   Row 6: optional Run Scan / Run Rules pills
   const lastActivity = prd.updated_at ? _fmtDate(prd.updated_at) : '';
   const specSnippet = (prd.spec || '').trim();
+  // Per-Automaton notification events: "label: kinds (source)" from
+  // notify_events_effective. 'none' when the effective list is empty;
+  // no line at all when the field is missing (older daemons don't send
+  // it yet) so nothing stale is implied.
+  const notifyLine = (prd.notify_events_effective && Array.isArray(prd.notify_events_effective.events)) ? (() => {
+    const neff = prd.notify_events_effective;
+    const kindsText = neff.events.length
+      ? neff.events.map(k => escHtml(k)).join(', ')
+      : escHtml(t('notify_events_none')||'none');
+    const srcKeys = {
+      automaton: 'notify_events_source_automaton',
+      profile:   'notify_events_source_profile',
+      global:    'notify_events_source_global',
+    };
+    const srcFallbacks = {
+      automaton: 'this Automaton',
+      profile:   'guardrail profile',
+      global:    'global default',
+    };
+    const srcLabel = t(srcKeys[neff.source] || srcKeys.automaton) || srcFallbacks[neff.source] || srcFallbacks.automaton;
+    return `<div style="font-size:11px;color:var(--text2);margin-bottom:6px;"><strong>${escHtml(t('notify_events_label')||'Notification events')}</strong>: ${kindsText} (<span>${escHtml(srcLabel)}</span>)</div>`;
+  })() : '';
   const titleClickable = `<h2 style="margin:0;font-size:16px;font-weight:700;color:var(--text);cursor:pointer;flex:1;min-width:0;" title="${escHtml(t('prd_edit_title_tip')||'Click to edit title')}" onclick="openPRDEditModal(${escHtml(idJ)},${escHtml(JSON.stringify(title))},${escHtml(JSON.stringify(prd.spec || ''))})">${escHtml(title)}</h2>`;
   return `
     <div class="prd-detail-header-v2">
@@ -24945,6 +25065,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
         <span id="prdSpecCollapsed" style="white-space:pre-wrap;">${escHtml(specSnippet.length > 280 ? specSnippet.slice(0, 280) : specSnippet)}${specSnippet.length > 280 ? `<span id="prdSpecEllipsis">… <button onclick="document.getElementById('prdSpecCollapsed').style.display='none';document.getElementById('prdSpecFull').style.display='';return false;" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0;">${escHtml(t('automata_spec_show_full')||'show full')}</button></span>` : ''}</span>
         ${specSnippet.length > 280 ? `<span id="prdSpecFull" style="white-space:pre-wrap;display:none;">${escHtml(specSnippet)} <button onclick="document.getElementById('prdSpecCollapsed').style.display='';document.getElementById('prdSpecFull').style.display='none';return false;" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0;">${escHtml(t('automata_spec_hide')||'collapse')}</button></span>` : ''}
       </div>` : ''}
+      ${notifyLine}
       <div class="prd-detail-actions-row lifecycle-compact">${renderLifecycleStrip(prd)}</div>
       <div id="prdActiveSessionCard" class="prd-active-session-card" style="display:none;margin-top:8px;"></div>
       <div id="prdCapacityCard" class="prd-capacity-slot" style="display:none;margin-top:8px;"></div>
@@ -36370,6 +36491,10 @@ function loadGuardrailProfilesPanel() {
   if (libEl) loadGuardrailLibraryPanel(libEl);
 
   apiFetch('/api/autonomous/guardrail_profiles').then(profiles => {
+    // Keep the last fetched list on window so an inline edit action can
+    // send the profile's current name/description/guardrails along with
+    // notify_events (the server PUT would otherwise wipe them).
+    window._guardrailProfiles = profiles || [];
     const addBtn = `<button class="btn-primary" style="font-size:12px;padding:4px 10px;" onclick="guardrailProfileOpenCreate()">${escHtml(t('guardrail_profile_create')||'New Profile')}</button>`;
     if (!profiles || profiles.length === 0) {
       panel.innerHTML = `<div style="padding:6px 12px;"><div style="text-align:center;padding:16px 8px;color:var(--text2);font-size:12px;">
@@ -36381,12 +36506,21 @@ function loadGuardrailProfilesPanel() {
     const rows = profiles.map(p => {
       const tags = (p.guardrails||[]).map(g => `<span style="background:var(--card-bg);border:1px solid var(--border);border-radius:4px;font-size:10px;padding:1px 5px;margin-right:3px;">${escHtml(g)}</span>`).join('');
       const idJ = escHtml(JSON.stringify(p.id));
+      // Notification events: the profile's own kinds when set, or the
+      // inherit wording when it stores none (falls back to the global
+      // default).
+      const pEvents = p.notify_events || [];
+      const notifyText = pEvents.length
+        ? (t('notify_events_profile_label')||'Notification events') + ': ' + pEvents.join(', ')
+        : (t('notify_events_profile_label')||'Notification events') + ': ' + (t('notify_events_inherit')||'Inherit');
       return `<div style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);font-size:12px;">
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;">${escHtml(p.name)}</div>
           ${p.description ? `<div style="color:var(--text2);font-size:11px;">${escHtml(p.description)}</div>` : ''}
           <div style="margin-top:3px;">${tags||'<span style="color:var(--text2);font-size:11px;">(no guardrails)</span>'}</div>
+          <div style="color:var(--text2);font-size:11px;margin-top:2px;" title="${escHtml(notifyText)}">${escHtml(notifyText)}</div>
         </div>
+        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;" title="${escHtml(t('notify_events_profile_edit')||'Edit notification events')}" onclick="guardrailProfileEditNotify(${idJ})">${escHtml(t('notify_events_profile_edit')||'Edit notification events')}</button>
         <button class="btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="guardrailProfileDelete(${idJ})">&times;</button>
       </div>`;
     }).join('');
@@ -36403,15 +36537,44 @@ function guardrailProfileOpenCreate() {
   if (!name) return;
   const csv = prompt(t('guardrail_profile_guardrails')||'Guardrails (comma-separated)', '');
   const guardrails = (csv||'').split(',').map(s=>s.trim()).filter(Boolean);
+  // Third prompt: the profile's notification-event kinds (blank =
+  // inherit the global default).
+  const eventsCsv = prompt(t('notify_events_profile_prompt')||'Notification events (comma-separated kinds, blank to inherit)', '');
+  const notifyEvents = (eventsCsv||'').split(',').map(s=>s.trim()).filter(Boolean);
   apiFetch('/api/autonomous/guardrail_profiles', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({name, guardrails})
+    body: JSON.stringify({name, guardrails, notify_events: notifyEvents})
   }).then(() => {
     loadGuardrailProfilesPanel();
-  }).catch(e => showError('Create profile failed: ' + e));
+  }).catch(e => showToast('Create profile failed: ' + ((e && e.message) || String(e)), 'error', 6000));
 }
 window.guardrailProfileOpenCreate = guardrailProfileOpenCreate;
+
+// Edit a profile's notification events. Blanks the inherit (sends []).
+// The server PUT would wipe name/description/guardrails when they are
+// omitted, so the profile's current values travel along.
+function guardrailProfileEditNotify(id) {
+  const p = (window._guardrailProfiles||[]).find(x => x.id === id);
+  if (!p) return;
+  const csv = prompt(t('notify_events_profile_prompt')||'Notification events (comma-separated kinds, blank to inherit)', (p.notify_events||[]).join(', '));
+  if (csv === null) return; // cancelled
+  const notifyEvents = csv.split(',').map(s=>s.trim()).filter(Boolean);
+  apiFetch('/api/autonomous/guardrail_profiles/' + encodeURIComponent(id), {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name: p.name || '',
+      description: p.description || '',
+      guardrails: (p.guardrails||[]).slice(),
+      notify_events: notifyEvents
+    })
+  }).then(() => {
+    showToast(t('notify_events_saved')||'Notification events saved', 'success', 1500);
+    loadGuardrailProfilesPanel();
+  }).catch(e => showToast((t('notify_events_save_failed')||'Could not save notification events') + ': ' + ((e && e.message) || String(e)), 'error', 8000));
+}
+window.guardrailProfileEditNotify = guardrailProfileEditNotify;
 
 function guardrailProfileDelete(id) {
   if (!confirm(t('guardrail_profile_delete_confirm')||'Delete this guardrail profile?')) return;

@@ -21,6 +21,26 @@ import (
 
 const commFanoutTestWindow = 150 * time.Millisecond
 
+// newCommFanoutManager builds a real Manager (store + bus) whose Automata
+// opt into task.in_progress — a kind the global (default) tier does NOT
+// deliver — so these tests exercise the resolver's Automaton tier: the
+// comm fan-out subscribes to every notify kind and delivers only what
+// each event's Automaton resolved set allows.
+func newCommFanoutManager(t *testing.T, prdIDs ...string) *Manager {
+	t.Helper()
+	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	t.Cleanup(func() { m.lifecycleBus().Close() })
+	for _, id := range prdIDs {
+		if err := m.Store().SavePRD(&PRD{ID: id, NotifyEvents: []string{TaskStatusKind(TaskInProgress)}}); err != nil {
+			t.Fatalf("SavePRD(%s): %v", id, err)
+		}
+	}
+	return m
+}
+
 // textCapture records every comm send() argument so tests can assert
 // an exact send count AND the exact lines inside each send.
 type textCapture struct {
@@ -72,12 +92,10 @@ func mustNotContain(t *testing.T, where, text string, banned ...string) {
 // one quiet window must produce exactly ONE comm send whose text is the
 // shared header plus all 5 distinct lines.
 func TestCommFanoutCoalesces(t *testing.T) {
-	m := &Manager{}
-	defer m.lifecycleBus().Close()
+	m := newCommFanoutManager(t, "prd-fanout")
 
 	capSink := &textCapture{}
 	cancel := InstallLifecycleSinks(m, SinkConfig{
-		Kinds:      []string{TaskStatusKind(TaskInProgress)},
 		CommSink:   capSink.record,
 		CommWindow: commFanoutTestWindow,
 	})
@@ -121,12 +139,10 @@ func TestCommFanoutCoalesces(t *testing.T) {
 // send must contain only its own Automaton's lines (per-Automaton
 // isolation: one burst must not coalesce into the other's message).
 func TestCommFanoutSeparateAutomata(t *testing.T) {
-	m := &Manager{}
-	defer m.lifecycleBus().Close()
+	m := newCommFanoutManager(t, "prd-fanout-a", "prd-fanout-b")
 
 	capSink := &textCapture{}
 	cancel := InstallLifecycleSinks(m, SinkConfig{
-		Kinds:      []string{TaskStatusKind(TaskInProgress)},
 		CommSink:   capSink.record,
 		CommWindow: commFanoutTestWindow,
 	})
@@ -176,8 +192,7 @@ func TestCommFanoutSeparateAutomata(t *testing.T) {
 // one message is lost, but the process and the sink must keep working,
 // and later events are delivered normally.
 func TestCommFanoutPanickingSinkRecoveredAndSinkStaysUsable(t *testing.T) {
-	m := &Manager{}
-	defer m.lifecycleBus().Close()
+	m := newCommFanoutManager(t, "prd-flaky")
 
 	capSink := &textCapture{}
 	var panics int32
@@ -188,7 +203,6 @@ func TestCommFanoutPanickingSinkRecoveredAndSinkStaysUsable(t *testing.T) {
 		capSink.record(text)
 	}
 	cancel := InstallLifecycleSinks(m, SinkConfig{
-		Kinds:      []string{TaskStatusKind(TaskInProgress)},
 		CommSink:   flakySink,
 		CommWindow: commFanoutTestWindow,
 	})

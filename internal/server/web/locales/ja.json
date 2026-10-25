@@ -2354,5 +2354,20 @@
   "review_override_save": "上書きを保存",
   "review_override_clear": "上書きを解除",
   "review_override_saved": "失敗エスカレーションの上書きを保存しました",
-  "review_override_invalid": "手順は backend:model@試行回数 の形式でカンマ区切りに入力してください。"
+  "review_override_invalid": "手順は backend:model@試行回数 の形式でカンマ区切りに入力してください。",
+  "notify_events_label": "Notification events",
+  "notify_events_help": "Choose which lifecycle events notify. Inherit uses the guardrail profile, then the global default.",
+  "notify_events_inherit": "Inherit",
+  "notify_events_effective": "Effective notification events",
+  "notify_events_none": "none",
+  "notify_events_default_label": "Default notification events",
+  "notify_events_source_automaton": "このオートマトン",
+  "notify_events_source_profile": "guardrail profile",
+  "notify_events_source_global": "global default",
+  "notify_events_saved": "Notification events saved",
+  "notify_events_save_failed": "Could not save notification events",
+  "notify_events_default_marker": "default",
+  "notify_events_profile_label": "Notification events",
+  "notify_events_profile_edit": "Edit notification events",
+  "notify_events_profile_prompt": "Notification events (comma-separated kinds, blank to inherit)"
 }

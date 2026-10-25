@@ -251,6 +251,11 @@ restarts:
   updated record.
 - `autonomous_subscription_test(id)` — test-fire; returns
   `{"ok","sink","error"}`.
+- `autonomous_prd_set_notify_events(id, notify_events)` — set the
+  Automaton's own notify-event kinds (a non-empty list), or clear them
+  (empty/omitted — the Automaton then inherits its guardrail profile or
+  the global default set). See *Choosing which events notify* below; the
+  response carries the resolved set with its source tier.
 - `autonomous_events_pending(queue, since_cursor?, limit?)` — poll an
   `mcp_queue` queue (see above).
 
@@ -265,7 +270,12 @@ autonomous subscription-update <id> kinds=prd.blocked,prd.failed coalesce=true
 autonomous subscription-test <id>
 autonomous events [queue=<name>] [since=<cursor>]
 autonomous unsubscribe <id>
+autonomous set-notify-events <prd-id> <kind,kind,...|inherit>
 ```
+
+A guardrail profile's own list travels under the `guardrail` verb
+namespace: `guardrail profile notify-events <id> <kind,kind,...|inherit>`
+(`inherit` clears it).
 
 In `subscription-update`, fields you do not name keep their stored value
 (keys: `kinds`, `level`, `prd`, `task`, `coalesce`, `one_shot`, `expires`;
@@ -286,6 +296,7 @@ PUT    /api/autonomous/subscriptions/{id}               (autonomous:write) → 2
 POST   /api/autonomous/subscriptions/{id}/test          (autonomous:write) → 200 {"ok","sink","error"}
 DELETE /api/autonomous/subscriptions/{id}               (autonomous:write)
 GET    /api/autonomous/events?queue=<name>[&since=<cursor>][&limit=<n>]   (autonomous:read)
+POST   /api/autonomous/prds/{id}/set_notify_events      (autonomous:write) → 200 + record (with notify_events_effective)
 ```
 
 `503` when the lifecycle engine is not wired (bare daemon / unit test
@@ -331,6 +342,87 @@ holds a one-shot hostage to a dead target).
 - **`coalesce`** — for human-facing sinks (comm/alert) deliveries are
   batched within a quiet window instead of firing one message per
   event.
+
+## Choosing which events notify
+
+A subscription filter decides which *matching* events a subscriber gets;
+the **notify set** decides which event kinds an Automaton notifies for at
+all. A subscription for a kind that is not in its Automaton's resolved
+set never fires — the filter can only *narrow* what the set already
+allows, a subscription can never *widen* it.
+
+The resolved set has three tiers, highest first:
+
+1. the Automaton's own `notify_events` list;
+2. the `notify_events` list of its assigned guardrail profile;
+3. the global default `autonomous.notify.default_events` — unset means
+   the shipped five-kind baseline:
+   `prd.needs_review, prd.blocked, prd.failed, prd.completed,
+   prd.cancelled`.
+
+The first **non-empty** tier wins. At tiers 1–2 an empty (or missing)
+list means *inherit*, never *off*; only the global tier can resolve to
+"no kinds" (explicit `default_events: []`). Each resolved answer also
+names its **source**: `automaton`, `profile` or `global` — that is
+what the surfaces show as `notify_events_effective`.
+
+`task.session_started` and `task.session_cleared` are **opt-in** kinds
+and are not in the default set: a session lifecycle subscription fires
+only on Automata whose resolved set includes that kind (add it to the
+per-Automaton or profile list). The usable closed set is every known
+lifecycle event kind except `prd.updated`, which is deliberately not a
+notify kind. Unknown or blank kinds are rejected (400 / a tool error).
+
+**Per-Automaton** (one Automaton, everything else unchanged):
+
+```sh
+# CLI — list wins; `inherit` (or omitting the kinds) clears the list
+datawatch autonomous prd-set-notify-events <id> prd.blocked,task.session_started
+datawatch autonomous prd-set-notify-events <id> inherit
+
+# Comm
+autonomous set-notify-events <prd-id> prd.blocked,prd.failed
+```
+
+plus MCP `autonomous_prd_set_notify_events(id, notify_events)`, REST
+`POST /api/autonomous/prds/{id}/set_notify_events` with a
+`{"notify_events": [...]}` body (an absent key, `null` or `[]` is a
+clear), and the PWA settings on the Automaton view — the
+"Notification events" panel with an inherit toggle, grouped
+kind checkboxes and the resolved set + source shown after save.
+
+**Per guardrail profile** (every Automaton assigned to it):
+
+```sh
+# CLI
+datawatch guardrail profile create --name ops-watch \
+  --guardrails ci-watch --notify-events prd.blocked,prd.failed
+datawatch guardrail profile update <id> --notify-events prd.failed,task.session_started
+
+datawatch guardrail automaton set <automaton-id> --profile ops-watch
+
+# Comm
+guardrail profile notify-events <id> prd.blocked,prd.failed
+guardrail profile notify-events <id> inherit
+```
+
+plus the `notify_events` field in the profile create/update body on
+REST, the `guardrail_profile_create` / `guardrail_profile_update` MCP
+tools, and the profile editor in PWA **Settings → Automate → Guardrail
+Profiles**.
+
+Check where an Automaton stands at any tier with
+`datawatch autonomous prd-get <id>` (`notify_events`,
+`notify_events_effective`) or the `notify` block of
+`GET /api/autonomous/status` (the global `default_events` plus the
+per-Automaton overrides, capped at 100, each with its source). Turning notifications off for one Automaton,
+replacing the global baseline, or restoring a cleared list is covered
+in `operations.md` under *Managing Automata lifecycle event
+subscriptions*.
+
+Every set/clear is audit-logged (action `autonomous_notify_events_changed`)
+with the old and new lists; the Automaton entry also records which tier
+the resolved set came from after the change.
 
 ## Storage, audit & restart behavior
 

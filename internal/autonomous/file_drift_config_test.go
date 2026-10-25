@@ -42,7 +42,7 @@ func TestResolveBlockOnFileDrift_ProfileOverridesGlobal(t *testing.T) {
 		cfg := DefaultConfig()
 		cfg.BlockOnFileDrift = tc.global
 		m, _ := NewManager(t.TempDir(), cfg, nil)
-		p, err := m.CreateGuardrailProfile("strict", "", nil, boolPtr(tc.profile))
+		p, err := m.CreateGuardrailProfile("strict", "", nil, boolPtr(tc.profile), nil)
 		if err != nil {
 			t.Fatalf("CreateGuardrailProfile: %v", err)
 		}
@@ -61,7 +61,7 @@ func TestResolveBlockOnFileDrift_ProfileUnsetFallsThroughToGlobal(t *testing.T) 
 	cfg := DefaultConfig()
 	cfg.BlockOnFileDrift = true
 	m, _ := NewManager(t.TempDir(), cfg, nil)
-	p, _ := m.CreateGuardrailProfile("plain", "", nil, nil)
+	p, _ := m.CreateGuardrailProfile("plain", "", nil, nil, nil)
 	prd := newBlockOnFileDriftPRD(t, m)
 	prd, _ = m.SetPRDGuardrails(prd.ID, p.ID, nil, nil, nil, nil)
 	if !m.resolveBlockOnFileDrift(prd) {
@@ -76,7 +76,7 @@ func TestResolveBlockOnFileDrift_PRDOverrideBeatsProfile(t *testing.T) {
 		cfg := DefaultConfig()
 		cfg.BlockOnFileDrift = tc.profile
 		m, _ := NewManager(t.TempDir(), cfg, nil)
-		p, _ := m.CreateGuardrailProfile("p", "", nil, boolPtr(tc.profile))
+		p, _ := m.CreateGuardrailProfile("p", "", nil, boolPtr(tc.profile), nil)
 		prd := newBlockOnFileDriftPRD(t, m)
 		prd, err := m.SetPRDGuardrails(prd.ID, p.ID, nil, nil, nil, boolPtr(tc.prd))
 		if err != nil {
@@ -90,15 +90,15 @@ func TestResolveBlockOnFileDrift_PRDOverrideBeatsProfile(t *testing.T) {
 
 func TestUpdateGuardrailProfile_BlockOnFileDriftNilLeavesUnchanged(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	p, _ := m.CreateGuardrailProfile("p", "", nil, boolPtr(true))
-	updated, err := m.UpdateGuardrailProfile(p.ID, "p2", "", nil, nil)
+	p, _ := m.CreateGuardrailProfile("p", "", nil, boolPtr(true), nil)
+	updated, err := m.UpdateGuardrailProfile(p.ID, "p2", "", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("UpdateGuardrailProfile: %v", err)
 	}
 	if updated.BlockOnFileDrift == nil || !*updated.BlockOnFileDrift {
 		t.Error("nil blockOnFileDrift on update must leave the existing value unchanged")
 	}
-	updated, _ = m.UpdateGuardrailProfile(p.ID, "p2", "", nil, boolPtr(false))
+	updated, _ = m.UpdateGuardrailProfile(p.ID, "p2", "", nil, boolPtr(false), nil)
 	if updated.BlockOnFileDrift == nil || *updated.BlockOnFileDrift {
 		t.Error("explicit false on update must be applied")
 	}

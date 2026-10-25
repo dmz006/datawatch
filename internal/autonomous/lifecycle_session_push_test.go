@@ -96,6 +96,12 @@ func newEngineForTest(t *testing.T, rec *sessionPushRecorder, table sessionTable
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	// All events below belong to "prd-1": opt that Automaton into
+	// task.session_started and prd.completed (both opt-in / status kinds)
+	// so these delivery tests exercise the resolver's Automaton tier.
+	if err := m.Store().SavePRD(&PRD{ID: "prd-1", NotifyEvents: []string{KindTaskSessionStarted, PRDStatusKind(PRDCompleted)}}); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
 	store, err := NewSubscriptionStore(t.TempDir()+"/subs.json", nil)
 	if err != nil {
 		t.Fatalf("NewSubscriptionStore: %v", err)

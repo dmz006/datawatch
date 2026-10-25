@@ -101,6 +101,7 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_set_llm":                       CapAutonomousWrite,
 	"autonomous_prd_set_memory_harvest":            CapAutonomousWrite,
 	"autonomous_prd_set_memory_seed":               CapAutonomousWrite,
+	"autonomous_prd_set_notify_events":             CapAutonomousWrite,
 	"autonomous_prd_set_priority":                  CapAutonomousWrite,
 	"autonomous_prd_set_kind":                      CapAutonomousWrite,
 	"autonomous_prd_set_lane_preference":           CapAutonomousWrite,

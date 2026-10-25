@@ -2245,6 +2245,32 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_continue_on_story_failure", "automaton", id, map[string]any{"continue_on_story_failure": req.ContinueOnStoryFailure}) // GH#201 Phase 4
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
+	// Per-Automaton notify_events list: the lifecycle event kinds that
+	// produce notifications for this Automaton. A missing key, null or
+	// empty list clears the field (inherit from the next tier). The
+	// manager writes the audit entry; no s.audit call here.
+	case "set_notify_events":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			NotifyEvents []string `json:"notify_events"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDNotifyEvents(id, req.NotifyEvents)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+
 	// BL407 Phase 5 — per-PRD Git.AutoPR/BaseBranch overrides.
 	case "set_git":
 		if r.Method != http.MethodPost {
@@ -2977,12 +3003,13 @@ func (s *Server) handleAutonomousGuardrailProfiles(w http.ResponseWriter, r *htt
 				Description      string   `json:"description"`
 				Guardrails       []string `json:"guardrails"`
 				BlockOnFileDrift *bool    `json:"block_on_file_drift"`
+				NotifyEvents     []string `json:"notify_events"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 				return
 			}
-			p, err := s.autonomousMgr.CreateGuardrailProfile(req.Name, req.Description, req.Guardrails, req.BlockOnFileDrift)
+			p, err := s.autonomousMgr.CreateGuardrailProfile(req.Name, req.Description, req.Guardrails, req.BlockOnFileDrift, req.NotifyEvents)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -3011,12 +3038,19 @@ func (s *Server) handleAutonomousGuardrailProfiles(w http.ResponseWriter, r *htt
 			Description      string   `json:"description"`
 			Guardrails       []string `json:"guardrails"`
 			BlockOnFileDrift *bool    `json:"block_on_file_drift"`
+			// A pointer distinguishes an absent key (nil → field
+			// unchanged) from a present one (possibly empty, which clears).
+			NotifyEvents *[]string `json:"notify_events"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		p, err := s.autonomousMgr.UpdateGuardrailProfile(id, req.Name, req.Description, req.Guardrails, req.BlockOnFileDrift)
+		var notifyEvents []string
+		if req.NotifyEvents != nil {
+			notifyEvents = *req.NotifyEvents
+		}
+		p, err := s.autonomousMgr.UpdateGuardrailProfile(id, req.Name, req.Description, req.Guardrails, req.BlockOnFileDrift, notifyEvents)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

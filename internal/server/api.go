@@ -848,12 +848,16 @@ type AutonomousAPI interface {
 	// Per-PRD override for whether a story failure halts the PRD (default)
 	// or the executor continues into later, independent stories.
 	SetPRDContinueOnStoryFailure(prdID string, continueOnFailure bool) (any, error)
+	// Per-Automaton notify_events list (lifecycle event kinds that produce
+	// notifications for this Automaton). A nil or empty list clears the
+	// field (inherit from the next tier: profile, then global default set).
+	SetPRDNotifyEvents(prdID string, kinds []string) (any, error)
 	SetPRDGit(prdID string, autoPR bool, baseBranch string) (any, error)
 
 	// BL303 S2 — guardrail library + profiles + per-Automaton override.
 	GuardrailLibrary() []any
-	CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool) (any, error)
-	UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool) (any, error)
+	CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool, notifyEvents []string) (any, error)
+	UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool, notifyEvents []string) (any, error)
 	DeleteGuardrailProfile(id string) error
 	ListGuardrailProfiles() []any
 	GetGuardrailProfile(id string) (any, bool)

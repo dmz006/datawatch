@@ -362,6 +362,19 @@ type PRD struct {
 	// rules review). Same explicit > profile > global Config precedence
 	// as the task/story lists above.
 	PerPRDGuardrails []string `json:"per_prd_guardrails,omitempty"`
+	// NotifyEvents lists the lifecycle event kinds (see
+	// ValidNotifyEventKinds) that produce notifications for this
+	// Automaton. Empty = inherit from the next tier (profile, then
+	// global default set).
+	NotifyEvents []string `json:"notify_events,omitempty"`
+	// NotifyEventsEffective is a computed, never-persisted read-time
+	// view: the effective notification event kinds for this Automaton
+	// (Manager.ResolveNotifyEvents) and the tier that supplied them.
+	// The API fills it on the copy it returns for reads (GetPRD,
+	// ListPRDs and the notify-events setter response) — never on the
+	// stored object — and the store clears it before persisting, so a
+	// saved row never carries it. Nil on stored objects.
+	NotifyEventsEffective *NotifyEventSet `json:"notify_events_effective,omitempty"`
 
 	// BL410 Phase 1 — per-Automaton retry-policy overrides. Priority:
 	// explicit RetryPolicy > named RetryProfile > global Config,
@@ -1224,9 +1237,14 @@ type GuardrailProfile struct {
 	// BlockOnFileDrift uses a pointer so a profile can explicitly
 	// express "disabled" rather than merely "not set" (nil = fall
 	// through to global Config.BlockOnFileDrift).
-	BlockOnFileDrift *bool     `json:"block_on_file_drift,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	BlockOnFileDrift *bool `json:"block_on_file_drift,omitempty"`
+	// NotifyEvents lists the lifecycle event kinds (see
+	// ValidNotifyEventKinds) that produce notifications for Automata on
+	// this profile. Empty = inherit from the next tier (global default
+	// set).
+	NotifyEvents []string  `json:"notify_events,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // RetryProfile (BL410 Phase 1) is a named, reusable retry policy — the
@@ -1336,7 +1354,36 @@ type LoopStatus struct {
 	// ReviewNeeded lists every task held for operator review across all
 	// Automata, oldest hold first. Omitted when none is held.
 	ReviewNeeded []HeldTaskStatus `json:"review_needed,omitempty"`
+	// Notify reports the notify-events resolution state: the effective
+	// global default tier and which non-finished Automata override it
+	// with an automaton- or profile-tier event list. Always present, with
+	// both keys as lists (empty, never null).
+	Notify *NotifyStatus `json:"notify"`
 }
+
+// NotifyStatus is the notify-events block of LoopStatus. DefaultEvents is
+// the resolved global tier — the events every Automaton without an
+// override falls back to. Overrides lists each non-finished Automaton
+// whose effective set came from its own list or its guardrail profile
+// (anything sourced from the global tier is not an override and is
+// omitted), sorted by Automaton ID and capped at NotifyStatusMaxOverrides
+// entries. Both lists are never nil, so they marshal as [] rather than null.
+type NotifyStatus struct {
+	DefaultEvents []string         `json:"default_events"`
+	Overrides     []NotifyOverride `json:"overrides"`
+}
+
+// NotifyOverride is one Automaton in NotifyStatus.Overrides whose effective
+// notification event kinds came from the automaton or profile tier.
+type NotifyOverride struct {
+	ID     string   `json:"id"`
+	Source string   `json:"source"` // NotifySourceAutomaton or NotifySourceProfile
+	Events []string `json:"events"` // the effective event kinds
+}
+
+// NotifyStatusMaxOverrides caps the number of per-Automaton overrides the
+// status loop reports, so a store with a large fleet cannot bloat it.
+const NotifyStatusMaxOverrides = 100
 
 // AutomationStatusSummary is one Automation's row in LoopStatus. SpentUSD,
 // CeilingDisplay and Budget are filled when the Automation has a budget policy.

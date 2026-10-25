@@ -464,6 +464,29 @@ func decodeAnyMap(t *testing.T, b []byte) map[string]any {
 // query, the PRD GET route and the reset_task POST route must return the PRD
 // exactly as the manager holds it. It also checks that the spec text reaches
 // the default GET body.
+//
+// The one allowed divergence from the stored PRD is notify_events_effective —
+// the computed read-time field that is filled on the API response copy and
+// must never be persisted. The subtests strip it (and assert it is present
+// and well-formed) before comparing the rest of the body.
+func stripNotifyEffective(t *testing.T, got map[string]any) {
+	t.Helper()
+	eff, present := got["notify_events_effective"]
+	if !present {
+		t.Fatalf("body is missing notify_events_effective: %v", got)
+	}
+	m, ok := eff.(map[string]any)
+	if !ok {
+		t.Fatalf("notify_events_effective is not an object: %v", eff)
+	}
+	src, _ := m["source"].(string)
+	ev, ok := m["events"].([]any)
+	if !ok || src == "" || len(ev) == 0 {
+		t.Fatalf("notify_events_effective is not well-formed: %v", eff)
+	}
+	delete(got, "notify_events_effective")
+}
+
 func TestPRDRESTDefaultUnchanged(t *testing.T) {
 	const specText = "task spec text"
 
@@ -484,8 +507,12 @@ func TestPRDRESTDefaultUnchanged(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshal stored PRD: %v", err)
 		}
-		if got := decodeAnyMap(t, rec.Body.Bytes()); !reflect.DeepEqual(got, decodeAnyMap(t, want)) {
-			t.Errorf("default GET body differs from stored PRD\n got: %s\nwant: %s", rec.Body.String(), want)
+		got := decodeAnyMap(t, rec.Body.Bytes())
+		wantMap := decodeAnyMap(t, want)
+		stripNotifyEffective(t, got)
+		stripNotifyEffective(t, wantMap)
+		if !reflect.DeepEqual(got, wantMap) {
+			t.Errorf("default GET body differs from stored PRD (notify_events_effective aside)\n got: %s\nwant: %s", rec.Body.String(), want)
 		}
 		if !strings.Contains(rec.Body.String(), specText) {
 			t.Errorf("default GET body does not contain task spec text %q; body %s", specText, rec.Body.String())
@@ -509,8 +536,17 @@ func TestPRDRESTDefaultUnchanged(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshal stored PRD: %v", err)
 		}
-		if got := decodeAnyMap(t, rec.Body.Bytes()); !reflect.DeepEqual(got, decodeAnyMap(t, want)) {
-			t.Errorf("default reset_task body differs from stored PRD\n got: %s\nwant: %s", rec.Body.String(), want)
+		got := decodeAnyMap(t, rec.Body.Bytes())
+		wantMap := decodeAnyMap(t, want)
+		// The reset_task write path returns the stored (unfilled) PRD, so the
+		// body is the stored PRD verbatim; only the API-copied side carries
+		// the computed field, which is stripped from the comparison.
+		if _, ok := got["notify_events_effective"]; ok {
+			t.Fatalf("reset_task body must not carry notify_events_effective (never-persisted field): %v", got["notify_events_effective"])
+		}
+		stripNotifyEffective(t, wantMap)
+		if !reflect.DeepEqual(got, wantMap) {
+			t.Errorf("default reset_task body differs from stored PRD (notify_events_effective aside)\n got: %s\nwant: %s", rec.Body.String(), want)
 		}
 	})
 }

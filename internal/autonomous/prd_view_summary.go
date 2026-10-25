@@ -41,6 +41,10 @@ type SummaryView struct {
 	// ReviewNeeded lists the tasks held for operator review (status
 	// review_needed), in story order. It is omitted when none is held.
 	ReviewNeeded []ReviewNeededEntry `json:"review_needed,omitempty"`
+	// NotifyEventsEffective is the Automaton's effective notify-events
+	// view (the tier that wins for it), copied from the PRD's read-time
+	// copy when the API fill is present.
+	NotifyEventsEffective *NotifyEventSet `json:"notify_events_effective,omitempty"`
 }
 
 // StorySummary is one story's entry in a SummaryView. TaskStatusCounts maps
@@ -84,6 +88,11 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		BlockedReason:    prd.BlockedReason,
 		QualityGateState: prd.QualityGateStatus,
 		TaskStatusCounts: make(map[string]int),
+
+		// The Automaton's effective notify-events view, set by the API
+		// fill on the copy this summary was built from. Nil (omitted) when
+		// the input PRD never carried the read-time fill.
+		NotifyEventsEffective: prd.NotifyEventsEffective,
 	}
 	for i := range prd.Decisions {
 		view.Cost += prd.Decisions[i].CostUSD

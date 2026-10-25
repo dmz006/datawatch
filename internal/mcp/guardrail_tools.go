@@ -62,6 +62,7 @@ func (s *Server) toolGuardrailProfileCreate() mcpsdk.Tool {
 		mcpsdk.WithString("description", mcpsdk.Description("Optional description.")),
 		mcpsdk.WithString("guardrails_json", mcpsdk.Description(`JSON array of guardrail names, e.g. ["sast-scan","secrets-scan"]`)),
 		mcpsdk.WithBoolean("block_on_file_drift", mcpsdk.Description("Optional foreign-file-drift enforcement for automata using this profile: true blocks a task whose own commit swept in files that were already uncommitted before it started and were not in its planned files; false keeps it warn-only. Omit to inherit the daemon-wide autonomous.block_on_file_drift.")),
+		mcpsdk.WithString("notify_events_json", mcpsdk.Description(`Optional notification event set as a JSON array of event kinds, e.g. ["prd.blocked","task.session_started"]. Omit to leave the profile at its default; an empty array means the profile tier notifies on no kinds.`)),
 	)
 }
 
@@ -72,6 +73,9 @@ func (s *Server) handleGuardrailProfileCreate(_ context.Context, req mcpsdk.Call
 	_ = json.Unmarshal([]byte(req.GetString("guardrails_json", "[]")), &guardrails)
 	body := map[string]any{"name": name, "description": desc, "guardrails": guardrails}
 	addBlockOnFileDrift(req, body)
+	if errMsg := addProfileNotifyEvents(req, body); errMsg != "" {
+		return mcpsdk.NewToolResultText(errMsg), nil
+	}
 	data, err := s.proxyJSON(http.MethodPost, "/api/autonomous/guardrail_profiles", body)
 	if err != nil {
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
@@ -107,6 +111,7 @@ func (s *Server) toolGuardrailProfileUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("description", mcpsdk.Description("New description.")),
 		mcpsdk.WithString("guardrails_json", mcpsdk.Description(`New guardrail list as JSON array, e.g. ["sast-scan","deps-scan"]`)),
 		mcpsdk.WithBoolean("block_on_file_drift", mcpsdk.Description("Optional foreign-file-drift enforcement for automata using this profile: true blocks a task whose own commit swept in files that were already uncommitted before it started and were not in its planned files; false keeps it warn-only. Omit to leave the profile's current value unchanged.")),
+		mcpsdk.WithString("notify_events_json", mcpsdk.Description(`Optional notification event set as a JSON array of event kinds, e.g. ["prd.blocked","task.session_started"]. Omit to leave the profile's current list unchanged; "[]" clears it.`)),
 	)
 }
 
@@ -118,6 +123,9 @@ func (s *Server) handleGuardrailProfileUpdate(_ context.Context, req mcpsdk.Call
 	_ = json.Unmarshal([]byte(req.GetString("guardrails_json", "[]")), &guardrails)
 	body := map[string]any{"name": name, "description": desc, "guardrails": guardrails}
 	addBlockOnFileDrift(req, body)
+	if errMsg := addProfileNotifyEvents(req, body); errMsg != "" {
+		return mcpsdk.NewToolResultText(errMsg), nil
+	}
 	data, err := s.proxyJSON(http.MethodPut, "/api/autonomous/guardrail_profiles/"+id, body)
 	if err != nil {
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
@@ -187,6 +195,39 @@ func addBlockOnFileDrift(req mcpsdk.CallToolRequest, body map[string]any) {
 			body["block_on_file_drift"] = req.GetBool("block_on_file_drift", false)
 		}
 	}
+}
+
+// addProfileNotifyEvents forwards the notify_events_json argument only when
+// the caller passed it: on create an absent argument keeps the profile at its
+// default, and on update it leaves the profile's current list unchanged. A
+// present-but-invalid argument returns an error string instead of "", which
+// the caller surfaces as the tool result.
+func addProfileNotifyEvents(req mcpsdk.CallToolRequest, body map[string]any) string {
+	args := req.GetArguments()
+	if args == nil {
+		return ""
+	}
+	raw, ok := args["notify_events_json"]
+	if !ok {
+		return ""
+	}
+	s, ok := raw.(string)
+	if !ok {
+		if b, err := json.Marshal(raw); err == nil {
+			s = string(b)
+		} else {
+			return "error: notify_events_json must be a JSON array of event kind strings, e.g. [\"prd.blocked\",\"task.session_started\"]"
+		}
+	}
+	var events []string
+	if err := json.Unmarshal([]byte(s), &events); err != nil {
+		return "error: notify_events_json must be a JSON array of event kind strings, e.g. [\"prd.blocked\",\"task.session_started\"]; got: " + err.Error()
+	}
+	if events == nil {
+		events = []string{}
+	}
+	body["notify_events"] = events
+	return ""
 }
 
 // ── session_guardrail_run (BL303 S3 T15) ─────────────────────────────────

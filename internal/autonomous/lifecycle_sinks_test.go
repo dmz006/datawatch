@@ -66,8 +66,10 @@ func (r *topicRecorder) snapshot() (topics []string, title, message string) {
 }
 
 // TestSinksAlertWrites — the alert sink records exactly one alert per
-// matched event (kind in Kinds), with title == event kind and body
-// naming the PRD; statuses NOT in Kinds deliver nothing.
+// event whose kind is in the resolved set (no Automaton here, so the
+// global tier — the shipped five-kind baseline), with title == event
+// kind and body naming the Automaton; a status kind OUTSIDE the
+// resolved set (prd.rejected is no default) delivers nothing.
 func TestSinksAlertWrites(t *testing.T) {
 	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
 	if err != nil {
@@ -76,32 +78,32 @@ func TestSinksAlertWrites(t *testing.T) {
 	defer m.lifecycleBus().Close()
 
 	rec := &alertRecorder{}
-	kinds := []string{KindPRDUpdated, PRDStatusKind(PRDCompleted)}
-	cancel := InstallLifecycleSinks(m, SinkConfig{Kinds: kinds, RecordAlert: rec.Record})
+	cancel := InstallLifecycleSinks(m, SinkConfig{RecordAlert: rec.Record})
 	defer cancel()
 
 	const prdID = "prd-sink-alert"
-	m.emit(LifecycleEvent{Kind: KindPRDUpdated, Level: LevelPRD, PRDID: prdID, NewStatus: string(PRDCompleted)})
+	m.emit(LifecycleEvent{Kind: PRDStatusKind(PRDCompleted), Level: LevelPRD, PRDID: prdID, NewStatus: string(PRDCompleted)})
 
 	waitFor(t, "alert sink delivery", func() bool { return rec.count() == 1 })
 	if rec.count() != 1 {
 		t.Fatalf("RecordAlert called %d times after one matched event, want 1", rec.count())
 	}
 	level, title, body := rec.get(0)
-	if title != KindPRDUpdated {
-		t.Errorf("alert title = %q, want %q (the event kind)", title, KindPRDUpdated)
+	if title != PRDStatusKind(PRDCompleted) {
+		t.Errorf("alert title = %q, want %q (the event kind)", title, PRDStatusKind(PRDCompleted))
 	}
 	if !strings.Contains(body, prdID) {
-		t.Errorf("alert body %q does not contain PRD id %q", body, prdID)
+		t.Errorf("alert body %q does not contain Automaton ID %q", body, prdID)
 	}
 	_ = level // level mapping is a daemon concern; just check it was non-empty
 	if level == "" {
 		t.Errorf("alert level is empty; want info/warn/error")
 	}
 
-	// Filtering the other way: a status kind NOT in Kinds must not
+	// Filtering the other way: a status kind NOT in the resolved set
+	// (prd.rejected is not one of the five shipped defaults) must not
 	// reach the sink either.
-	m.emit(LifecycleEvent{Kind: PRDStatusKind(PRDCancelled), Level: LevelPRD, PRDID: "prd-other", NewStatus: string(PRDCancelled)})
+	m.emit(LifecycleEvent{Kind: PRDStatusKind(PRDRejected), Level: LevelPRD, PRDID: "prd-other", NewStatus: string(PRDRejected)})
 	time.Sleep(300 * time.Millisecond)
 	if got := rec.count(); got != 1 {
 		t.Errorf("RecordAlert called %d times after an unmatched status event, want still 1 (filtering must work both ways)", got)
@@ -119,11 +121,11 @@ func TestSinksTopicPublish(t *testing.T) {
 	defer m.lifecycleBus().Close()
 
 	rec := &topicRecorder{}
-	cancel := InstallLifecycleSinks(m, SinkConfig{Kinds: []string{KindPRDUpdated}, PublishTopics: rec.Publish})
+	cancel := InstallLifecycleSinks(m, SinkConfig{PublishTopics: rec.Publish})
 	defer cancel()
 
 	const prdID = "prd-sink-topic"
-	m.emit(LifecycleEvent{Kind: KindPRDUpdated, Level: LevelPRD, PRDID: prdID, NewStatus: string(PRDCompleted)})
+	m.emit(LifecycleEvent{Kind: PRDStatusKind(PRDCompleted), Level: LevelPRD, PRDID: prdID, NewStatus: string(PRDCompleted)})
 
 	waitFor(t, "topic sink delivery", func() bool { return rec.count() >= 1 })
 	topics, title, message := rec.snapshot()
@@ -146,43 +148,49 @@ func TestSinksTopicPublish(t *testing.T) {
 	if !hasPRD {
 		t.Errorf("topics %v do not contain %q (per-PRD feed)", topics, "automaton-"+prdID)
 	}
-	if title != KindPRDUpdated {
-		t.Errorf("publish title = %q, want %q (the event kind)", title, KindPRDUpdated)
+	if title != PRDStatusKind(PRDCompleted) {
+		t.Errorf("publish title = %q, want %q (the event kind)", title, PRDStatusKind(PRDCompleted))
 	}
 	if message == "" {
 		t.Error("publish message is empty; want non-empty")
 	}
 	if !strings.Contains(message, prdID) {
-		t.Errorf("publish message %q does not contain PRD id %q", message, prdID)
+		t.Errorf("publish message %q does not contain Automaton ID %q", message, prdID)
 	}
 }
 
-// TestSinksEmptyKindsDeliverNothing — the default-config guarantee:
-// an empty Kinds list subscribes NOTHING, so no lifecycle event ever
-// reaches either sink. This is exactly the pre-sink behavior: empty
-// default event set = zero new comm messages.
-func TestSinksEmptyKindsDeliverNothing(t *testing.T) {
-	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+// TestSinksGlobalOffDeliversNothing — the `default_events: []` opt-out:
+// with the global tier turned OFF (non-nil, empty — distinct from the
+// unset/nil case) and no Automaton persisted, a status event that the
+// shipped default WOULD deliver (prd.completed) is gated out — yet a
+// SYNTHETIC test event (Test: true, i.e. a subscription test-fire) is
+// never gated and still delivers.
+func TestSinksGlobalOffDeliversNothing(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.NotifyDefaultEvents = []string{} // explicit global-tier opt-out
+	m, err := NewManager(t.TempDir(), cfg, nil)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
 	defer m.lifecycleBus().Close()
 
 	alerts := &alertRecorder{}
-	topics := &topicRecorder{}
-	cancel := InstallLifecycleSinks(m, SinkConfig{RecordAlert: alerts.Record, PublishTopics: topics.Publish})
+	cancel := InstallLifecycleSinks(m, SinkConfig{RecordAlert: alerts.Record})
 	defer cancel()
 
-	// Both a bare prd.updated and a couple of statuses that a fully
-	// enabled sink would match — none may get through with empty Kinds.
-	m.emit(LifecycleEvent{Kind: KindPRDUpdated, Level: LevelPRD, PRDID: "prd-empty", NewStatus: string(PRDCompleted)})
-	m.emit(LifecycleEvent{Kind: PRDStatusKind(PRDCompleted), Level: LevelPRD, PRDID: "prd-empty", NewStatus: string(PRDCompleted)})
+	// Neither event may get through with the global tier off.
+	m.emit(LifecycleEvent{Kind: PRDStatusKind(PRDCompleted), Level: LevelPRD, PRDID: "prd-off", NewStatus: string(PRDCompleted)})
+	m.emit(LifecycleEvent{Kind: KindPRDUpdated, Level: LevelPRD, PRDID: "prd-off", NewStatus: string(PRDCompleted)})
 	time.Sleep(300 * time.Millisecond)
 
 	if got := alerts.count(); got != 0 {
-		t.Errorf("RecordAlert called %d times with empty Kinds, want 0", got)
+		t.Errorf("RecordAlert called %d times with the global tier off, want 0", got)
 	}
-	if got := topics.count(); got != 0 {
-		t.Errorf("PublishTopics called %d times with empty Kinds, want 0", got)
+
+	// A synthetic test event is never gated — delivery still works.
+	m.emit(LifecycleEvent{Kind: PRDStatusKind(PRDCompleted), Level: LevelPRD, PRDID: "prd-off", NewStatus: string(PRDCompleted), Test: true})
+	waitFor(t, "test-event delivery with global tier off", func() bool { return alerts.count() == 1 })
+	if got := alerts.count(); got != 1 {
+		t.Errorf("RecordAlert called %d times after the synthetic test event, want 1", got)
 	}
 }

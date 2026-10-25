@@ -169,6 +169,10 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		// The Automation tab keys.
 		"nav_automation",
 		"automation_new",
+		// Notify-events surfaces (PRD settings + detail line + guardrail
+		// profile panel): the two keys the panel/detail copy depends on.
+		"notify_events_label",
+		"notify_events_effective",
 		"automation_pause",
 		"automation_resume",
 		"automation_cancel",

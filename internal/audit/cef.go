@@ -178,6 +178,8 @@ func cefSignature(action string) (int, string, int) {
 		return 43, "FingerprintMatchRejected", 2
 	case ActionAutomationImportGraph:
 		return 44, "AutomationImportGraph", 3
+	case ActionNotifyEventsChanged:
+		return 45, "NotifyEventsChanged", 3
 	default:
 		return 0, "AuditEvent", 3
 	}

@@ -198,6 +198,43 @@ guardrails:
 
 The daemon registers these at startup for each loaded skill.
 
+## Notify events on a profile
+
+Beyond the guardrail checks, a profile can also carry the Automaton
+**lifecycle event kinds that produce notifications** — the `notify_events`
+field. A profile's list is the middle tier of the notify-event
+resolution, between an Automaton's own `notify_events` list and the
+global `autonomous.notify.default_events` (unset: the five-kind baseline
+`prd.needs_review, prd.blocked, prd.failed, prd.completed,
+prd.cancelled`). An empty list on a profile means *inherit* — only the
+global tier can express "no kinds". Subscription filters can still
+narrow what actually reaches a sink, but they cannot widen the
+determined set: session-lifecycle kinds such as `task.session_started`
+and `task.session_cleared` are opt-in and need to be listed here (or on
+the Automaton) to fire.
+
+```sh
+# Carry a list on a profile (applies to every Automaton assigned to it)
+datawatch guardrail profile create --name ops-watch \
+  --guardrails ci-watch \
+  --notify-events prd.blocked,prd.failed,task.session_started
+
+# Change it later; `inherit` clears it back to the global tier
+datawatch guardrail profile update <id> --notify-events prd.failed
+datawatch guardrail profile update <id> --notify-events inherit
+datawatch guardrail automaton set <automaton-id> --profile ops-watch
+```
+
+The field is also in the profile create/update body on REST
+(`"notify_events": [...]`; `null`/`[]` clears), in the
+`guardrail_profile_create` / `guardrail_profile_update` MCP tools, and
+in the PWA profile editor under **Settings → Automate → Guardrail
+Profiles** (comma-separated kinds prompt).
+
+See [automaton-lifecycle-subscriptions.md](automaton-lifecycle-subscriptions.md)
+for the full resolved-set rules, the per-Automaton surface, and how to
+turn notifications off.
+
 ## See also
 
 - [autonomous-planning.md](autonomous-planning.md) — Automaton lifecycle

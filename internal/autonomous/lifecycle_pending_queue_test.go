@@ -119,6 +119,12 @@ func newQueueEngine(t *testing.T, pq *PendingEventQueue) (*Manager, *Subscriptio
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	// startedEvent() (shared with the session-push tests) belongs to "prd-1":
+	// opt that Automaton into task.session_started so the queue tests see
+	// events the resolver permits.
+	if err := m.Store().SavePRD(&PRD{ID: "prd-1", NotifyEvents: []string{KindTaskSessionStarted}}); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
 	store, err := NewSubscriptionStore(t.TempDir()+"/subs.json", nil)
 	if err != nil {
 		t.Fatalf("NewSubscriptionStore: %v", err)

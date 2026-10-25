@@ -322,6 +322,28 @@ func (a *API) SetConfig(v any) error {
 				changed = true
 			}
 		}
+		// autonomous.notify — the REST partial write (PUT /api/config
+		// autonomous.notify.*) sends the global notify default as a nested
+		// "notify" object, but the Manager carries the flat
+		// NotifyDefaultEvents field, so lift default_events out of the
+		// object into its field key before the merge below. An explicit
+		// empty default_events list (notifications off) must survive as [] —
+		// the merge unmarshal preserves it against NotifyDefaultEvents,
+		// which is deliberately not omitempty.
+		if rawNotify, hasNotify := m["notify"]; hasNotify {
+			var notifySub map[string]json.RawMessage
+			if json.Unmarshal(rawNotify, &notifySub) == nil {
+				if de, okK := notifySub["default_events"]; okK {
+					if _, exists := m["notify_default_events"]; !exists {
+						m["notify_default_events"] = de
+					}
+					changed = true
+				}
+			}
+			// Drop the nested object either way: it has no flat field to
+			// merge into and must not leak into the config as an unknown key.
+			delete(m, "notify")
+		}
 		if changed {
 			if b, err := json.Marshal(m); err == nil {
 				raw = b
@@ -434,7 +456,7 @@ func (a *API) GetPRD(id string) (any, bool) {
 	if !ok {
 		return nil, false
 	}
-	return p, true
+	return a.M.PRDWithNotifyEffective(p), true
 }
 
 // FindTaskBySessionID maps a datawatch session id to its (prd_id,
@@ -470,12 +492,7 @@ func (a *API) SessionIDsForPRD(prdID string) []string {
 }
 
 func (a *API) ListPRDs() []any {
-	src := a.M.Store().ListPRDs()
-	out := make([]any, len(src))
-	for i, p := range src {
-		out[i] = p
-	}
-	return out
+	return a.M.PRDsWithNotifyEffective(a.M.Store().ListPRDs())
 }
 
 func (a *API) Decompose(id string) (any, error) {
@@ -1438,6 +1455,22 @@ func (a *API) SetPRDContinueOnStoryFailure(prdID string, continueOnFailure bool)
 	return prd, nil
 }
 
+// SetPRDNotifyEvents sets the per-Automaton notify_events list (the
+// lifecycle event kinds that produce notifications for this Automaton).
+// A nil or empty list clears the field (inherit from the next tier).
+// An invalid entry returns the validation error unchanged so the caller
+// can show the operator the valid kinds.
+func (a *API) SetPRDNotifyEvents(prdID string, kinds []string) (any, error) {
+	prd, err := a.M.SetPRDNotifyEvents(prdID, kinds)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	// Return the updated Automaton with its effective notify-events view
+	// filled (the stored object itself never carries it).
+	return a.M.PRDWithNotifyEffective(prd), nil
+}
+
 // SetPRDGit (BL407 Phase 5) sets the per-PRD Git.AutoPR/BaseBranch overrides.
 func (a *API) SetPRDGit(prdID string, autoPR bool, baseBranch string) (any, error) {
 	prd, err := a.M.SetPRDGit(prdID, autoPR, baseBranch)
@@ -1459,12 +1492,12 @@ func (a *API) GuardrailLibrary() []any {
 	return out
 }
 
-func (a *API) CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool) (any, error) {
-	return a.M.CreateGuardrailProfile(name, description, guardrails, blockOnFileDrift)
+func (a *API) CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool, notifyEvents []string) (any, error) {
+	return a.M.CreateGuardrailProfile(name, description, guardrails, blockOnFileDrift, notifyEvents)
 }
 
-func (a *API) UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool) (any, error) {
-	return a.M.UpdateGuardrailProfile(id, name, description, guardrails, blockOnFileDrift)
+func (a *API) UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool, notifyEvents []string) (any, error) {
+	return a.M.UpdateGuardrailProfile(id, name, description, guardrails, blockOnFileDrift, notifyEvents)
 }
 
 func (a *API) DeleteGuardrailProfile(id string) error {

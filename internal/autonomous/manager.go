@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous/scan"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/git"
@@ -470,6 +472,25 @@ type Config struct {
 
 	// LaneFill holds the autonomous.lane_fill.* knobs.
 	LaneFill LaneFillConfig `json:"lane_fill"`
+
+	// NotifyDefaultEvents — the most general (global) tier of notify
+	// event-kind resolution (ResolveNotifyEvents): the Automaton's own
+	// notify_events list wins, then the assigned guardrail profile's list,
+	// then this list. Sourced from the autonomous.notify.default_events
+	// config key: the daemon bridge (cmd/datawatch) copies it here at boot
+	// and the live PUT /api/config path (API.SetConfig merge) lands it
+	// here on change, so no restart is needed.
+	//
+	// Nil vs empty matters and is preserved on purpose:
+	//   nil            = unset → ResolveNotifyEvents uses the built-in
+	//                    DefaultNotifyEvents set (the five default kinds)
+	//   non-nil, empty = operator explicitly turned notifications off;
+	//                    ResolveNotifyEvents returns no events
+	// In either case Source stays "global". Not omitempty: an explicit
+	// empty list must survive the merge-based partial unmarshals
+	// (API.SetConfig) and manager↔config round-trips without collapsing
+	// back to nil.
+	NotifyDefaultEvents []string `json:"notify_default_events"`
 }
 
 // AutomationConfig carries the Automation coordination knobs
@@ -4486,6 +4507,20 @@ func (m *Manager) Status() LoopStatus {
 	st.UsageBackoff = usageBackoff
 	st.Running = m.ctx != nil && m.ctx.Err() == nil
 	verdictCounts := map[string]int{}
+	// Notify block (notify-events): the effective global default plus the
+	// non-finished Automata whose own (or profile) list overrides it.
+	// defNotify is captured under m.mu like every other Config read; the
+	// tier resolution itself is the lock-free core (store calls may run
+	// under m.mu — same nesting as the ListPRDs loop below).
+	defNotify := m.cfg.NotifyDefaultEvents
+	if defNotify == nil {
+		defNotify = DefaultNotifyEvents()
+	}
+	notifyDefault := copyStrings(defNotify)
+	if notifyDefault == nil {
+		notifyDefault = []string{}
+	}
+	var notifyOverrides []NotifyOverride
 	for _, p := range m.store.ListPRDs() {
 		if p.Status == PRDActive || p.Status == PRDRunning {
 			st.ActivePRDs++
@@ -4498,6 +4533,18 @@ func (m *Manager) Status() LoopStatus {
 		}
 		if p.Status == PRDBlocked {
 			st.BlockedPRDs++
+		}
+		// The Automaton overrides the global notify tier when its resolved
+		// set comes from the automaton or profile tier; finished Automata
+		// no longer running and never count as overrides.
+		if !finishedPRDStatus(p.Status) {
+			if set := m.resolveNotifyTier(p, defNotify); set.Source != NotifySourceGlobal {
+				notifyOverrides = append(notifyOverrides, NotifyOverride{
+					ID:     p.ID,
+					Source: set.Source,
+					Events: set.Events,
+				})
+			}
 		}
 		for _, s := range p.Story {
 			for _, v := range s.Verdicts {
@@ -4560,6 +4607,23 @@ func (m *Manager) Status() LoopStatus {
 	}
 	if len(verdictCounts) > 0 {
 		st.VerdictCounts = verdictCounts
+	}
+	// Notify block — the resolved global tier and the per-Automaton
+	// overrides, sorted by ID and capped. Both lists are never nil, so
+	// the block always emits both keys as lists (empty, never null).
+	if len(notifyOverrides) > 0 {
+		sort.Slice(notifyOverrides, func(i, j int) bool {
+			return notifyOverrides[i].ID < notifyOverrides[j].ID
+		})
+		if len(notifyOverrides) > NotifyStatusMaxOverrides {
+			notifyOverrides = notifyOverrides[:NotifyStatusMaxOverrides]
+		}
+	} else {
+		notifyOverrides = []NotifyOverride{}
+	}
+	st.Notify = &NotifyStatus{
+		DefaultEvents: notifyDefault,
+		Overrides:     notifyOverrides,
 	}
 	st.Warnings = PairingWarnings(m.cfg, m.pairingDecomposeRefs(m.cfg))
 	st.Automations = automations
@@ -5031,6 +5095,44 @@ func (m *Manager) SetPRDContinueOnStoryFailure(prdID string, continueOnFailure b
 	return prd, m.store.SavePRD(prd)
 }
 
+// SetPRDNotifyEvents sets the per-Automaton notify_events list — the
+// lifecycle event kinds that produce notifications for this Automaton.
+// A nil or empty list clears the field (inherit from the next tier:
+// the assigned guardrail profile, then the global default set).
+// An invalid entry returns ValidateNotifyEvents' error unchanged so
+// callers can show the operator the valid kinds. A stored value that
+// actually changed writes one autonomous_notify_events_changed audit
+// entry (the single record for this setting); a no-change write writes
+// none.
+func (m *Manager) SetPRDNotifyEvents(prdID string, kinds []string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if err := ValidateNotifyEvents(kinds); err != nil {
+		return nil, err
+	}
+	oldList := prd.NotifyEvents
+	next := NormalizeNotifyEvents(kinds)
+	changed := strings.Join(oldList, ",") != strings.Join(next, ",")
+	prd.NotifyEvents = next
+	prd.UpdatedAt = time.Now()
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	if changed && m.auditFn != nil {
+		sourceAfter := m.ResolveNotifyEvents(prd).Source
+		m.auditFn(audit.ActionNotifyEventsChanged, map[string]any{
+			"scope":        "automaton",
+			"prd_id":       prd.ID,
+			"old":          strings.Join(oldList, ","),
+			"new":          strings.Join(next, ","),
+			"source_after": sourceAfter,
+		})
+	}
+	return prd, nil
+}
+
 // SetPRDGit (BL407 Phase 5) sets the per-PRD Git.AutoPR/BaseBranch
 // overrides. Both fields are set unconditionally on every call (same
 // shape as SetPRDGuardrails' multi-field replace) — a caller wanting
@@ -5178,9 +5280,15 @@ func (m *Manager) SetPRDGuardrails(prdID, profile string, perTask, perStory, per
 }
 
 // CreateGuardrailProfile (BL303 S2 T05) creates a new guardrail profile.
-func (m *Manager) CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool) (*GuardrailProfile, error) {
+// notifyEvents is validated (an invalid list returns the validation error
+// and creates nothing) and normalized; a nil or empty list clears the
+// field (inherit from the global default set).
+func (m *Manager) CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool, notifyEvents []string) (*GuardrailProfile, error) {
 	if name == "" {
 		return nil, fmt.Errorf("profile name is required")
+	}
+	if err := ValidateNotifyEvents(notifyEvents); err != nil {
+		return nil, err
 	}
 	p := &GuardrailProfile{
 		ID:               newProfileID(),
@@ -5188,6 +5296,7 @@ func (m *Manager) CreateGuardrailProfile(name, description string, guardrails []
 		Description:      description,
 		Guardrails:       guardrails,
 		BlockOnFileDrift: blockOnFileDrift,
+		NotifyEvents:     NormalizeNotifyEvents(notifyEvents),
 		CreatedAt:        time.Now(),
 		UpdatedAt:        time.Now(),
 	}
@@ -5196,10 +5305,26 @@ func (m *Manager) CreateGuardrailProfile(name, description string, guardrails []
 
 // UpdateGuardrailProfile (BL303 S2 T05) updates an existing profile.
 // A nil blockOnFileDrift leaves the profile's current value unchanged.
-func (m *Manager) UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool) (*GuardrailProfile, error) {
+// notifyEvents nil means "leave unchanged"; any non-nil slice (even
+// empty) replaces the stored list, where empty clears it to inherit.
+// An invalid list returns the validation error and changes nothing.
+// A change to the stored list writes one autonomous_notify_events_changed
+// audit entry with scope "profile"; a no-change write writes none.
+func (m *Manager) UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool, notifyEvents []string) (*GuardrailProfile, error) {
 	p, ok := m.store.GetGuardrailProfile(id)
 	if !ok {
 		return nil, fmt.Errorf("guardrail profile %q not found", id)
+	}
+	eventsChanged := false
+	oldEvents := p.NotifyEvents
+	newEvents := p.NotifyEvents
+	if notifyEvents != nil {
+		if err := ValidateNotifyEvents(notifyEvents); err != nil {
+			return nil, err
+		}
+		newEvents = NormalizeNotifyEvents(notifyEvents)
+		eventsChanged = strings.Join(oldEvents, ",") != strings.Join(newEvents, ",")
+		p.NotifyEvents = newEvents
 	}
 	if name != "" {
 		p.Name = name
@@ -5210,7 +5335,18 @@ func (m *Manager) UpdateGuardrailProfile(id, name, description string, guardrail
 		p.BlockOnFileDrift = blockOnFileDrift
 	}
 	p.UpdatedAt = time.Now()
-	return p, m.store.SaveGuardrailProfile(p)
+	if err := m.store.SaveGuardrailProfile(p); err != nil {
+		return nil, err
+	}
+	if eventsChanged && m.auditFn != nil {
+		m.auditFn(audit.ActionNotifyEventsChanged, map[string]any{
+			"scope":      "profile",
+			"profile_id": id,
+			"old":        strings.Join(oldEvents, ","),
+			"new":        strings.Join(newEvents, ","),
+		})
+	}
+	return p, nil
 }
 
 // DeleteGuardrailProfile (BL303 S2 T05) removes a profile.

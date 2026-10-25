@@ -1161,12 +1161,21 @@ autonomous:
     #    "reset_weekday": "monday", "reset_time": "09:00",
     #    "reset_zone": "America/New_York", "peer_window": ["edge"]}
   notify:
-    # Built-in sinks (alert store, topic push, comm fan-out) act on the
-    # lifecycle event kinds listed here. Empty list (the default) = nothing
-    # new is sent — current behavior. Enable selectively, e.g.:
-    #   [prd.updated, prd.completed, prd.failed, task.session_started,
+    # Global default set of lifecycle event kinds — the third, lowest
+    # tier of the notify-event resolution (an Automaton's own
+    # notify_events list, then its guardrail profile's notify_events
+    # list, then this list; an Automaton or profile with its own list
+    # uses that instead). The shipped default is the five baseline
+    # kinds below (see internal/autonomous.DefaultNotifyEvents);
+    # set an explicit empty list (`default_events: []`) to turn the
+    # global tier off (no kinds from it). Custom replacement example:
+    #   [prd.needs_review, prd.completed, prd.failed, task.session_started,
     #    task.completed, task.failed]
-    default_events: []
+    # Note: task.session_started and task.session_cleared are opt-in kinds
+    # (not in the five-kind baseline) — list them wherever a session
+    # lifecycle notification should fire. `prd.updated` is never a valid
+    # notify kind.
+    default_events: [prd.needs_review, prd.blocked, prd.failed, prd.completed, prd.cancelled]
     # Per-queue retention for the mcp_queue subscription sink: each named
     # pending-events queue keeps at most this many events in memory and
     # evicts the oldest first (a polling client then sees dropped=true).

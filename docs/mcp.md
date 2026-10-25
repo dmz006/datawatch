@@ -375,6 +375,19 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   ```
 
   Returns the write reply described above (a small summary, not the whole Automaton); the guardrail verdict and the `guardrail_rejudge` Decision are in the Automaton's decision log, readable with `autonomous_prd_get`. The REST body `actor` (default `operator`) is fixed to `operator` here, as with the other PRD write tools.
+- **`autonomous_prd_set_notify_events`** — set the lifecycle event kinds that produce notifications **for this Automaton**, independent of who is subscribed. Parameters:
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `id` | yes | Automaton ID |
+  | `notify_events` | no | Array of event kinds (e.g. `["prd.completed","task.session_started"]`). Empty or omitted clears the Automaton-level set and inherits from the next tier |
+
+  ```
+  autonomous_prd_set_notify_events(id="a1b2c3d4", notify_events=["prd.blocked","task.session_started"])
+  autonomous_prd_set_notify_events(id="a1b2c3d4")   # clear the Automaton-level set (inherit)
+  ```
+
+  Default set (when unset at this tier): `prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`, `prd.cancelled`. The session lifecycle kinds `task.session_started` and `task.session_cleared` (the session-end kind) are **opt-in** — add them to the list to be notified. Precedence: **Automaton > guardrail profile > global default**. A subscription's own event filter can only **narrow** this resolved set, never widen it. Returns the write reply described above (a small summary, not the whole Automaton).
 - **`autonomous_subscribe` / `autonomous_unsubscribe` / `autonomous_subscriptions`** (BL427) — persisted Automaton lifecycle-event subscriptions (design: [plans/2026-10-13-prd-lifecycle-events.md](plans/2026-10-13-prd-lifecycle-events.md)). Register, list and remove subscriptions so matching lifecycle events (e.g. `task.session_started`, `task.completed`, `prd.blocked`) are delivered to a sink when they fire.
 
   `autonomous_subscribe` parameters:
@@ -449,7 +462,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
 - **`channel_diagnostics`** (BL362) — per-session bridge ports, live `/health` probe results, and actionable remediation hints. Use when sessions fail to connect or MCP errors appear with no clear cause.
 - **`get_my_scope`** (BL463) — self-scope confirmation for the session calling over its MCP bridge. Read-only (`health:read`), no session argument required — resolution order is `hint` (optional session ID or name) → the in-band caller scope carried by the session's MCP bridge token (HLLM-004) → the first channel-ready session (flagged as such in `resolved_via`). Returns the session's identity and mode ("host" vs "container(agent=<id>)" — F10 sessions), its per-session MCP server name (`datawatch-<FullID>`; the exact `<mcpServers>` key it was registered under in `~/.claude.json` / `.mcp.json`), `shared_entry_name` (the common `datawatch` entry in the per-project `.mcp.json` every host-mode session shares), its project dir + tmux identity, channel readiness, and `peers[]` — every other session's name, state, and MCP server name, so the caller can confirm its own name is distinct from each peer's. Use it to answer "which MCP server is actually mine, and which of these are peers I must not be using?" (the BL467 first-come bridge race, see [plans/2026-10-16-mcp-bridge-registration-race.md](plans/2026-10-16-mcp-bridge-registration-race.md); audit in [plans/2026-10-20-bl463-mcp-drop-findings.md](plans/2026-10-20-bl463-mcp-drop-findings.md)). Same data over REST: `GET /api/sessions/self/scope` (optional `?hint=<id>`).
 - **`guardrail_library_list`** (BL303 S2) — list all registered guardrails (built-in scan guardrails + skill-contributed).
-- **`guardrail_profile_list/create/get/update/delete`** (BL303 S2) — manage named guardrail profiles (named sets of guardrails that can be applied to sessions or PRDs).
+- **`guardrail_profile_list/create/get/update/delete`** (BL303 S2) — manage named guardrail profiles (named sets of guardrails that can be applied to sessions or PRDs). `create` and `update` take an optional `notify_events_json` (a JSON array of event kinds, e.g. `["prd.blocked","task.session_started"]`) setting the profile tier's notification event set — the middle tier of the notify_events precedence chain (Automaton > guardrail profile > global default). On create: omitted = default; on update: omitted = unchanged, `"[]"` = clears the profile's list. Invalid JSON is reported as an error before any request is sent.
 - **`per_automaton_guardrails_set`** (BL303 S2) — override guardrail profile and per-task/per-story guardrails for a specific PRD, plus the Automaton-completion list (`per_prd_guardrails_json`, e.g. `["rules-review","ci-watch"]`). The call replaces the profile and all three lists, so pass the ones you want to keep.
 - **`session_guardrail_run`** (BL303 S3) — run a named guardrail against a session's project directory; appends the verdict to the session's telemetry. Parameters: `session_id`, `name` (guardrail library name, e.g. `sast-scan`).
 - **`session_guardrail_approve`** (v8.27.5, GH#153) — approve a single blocked guardrail verdict so the session can proceed. Parameters: `session_id`, `guardrail` (guardrail name in telemetry, required), `note` (optional). Returns `{guardrail, approved, session_unblocked, telemetry}`. Use when a block verdict was a false positive; approval is scoped to the current session run (in-memory only). See also `POST /api/sessions/{id}/guardrail/{name}/approve`.

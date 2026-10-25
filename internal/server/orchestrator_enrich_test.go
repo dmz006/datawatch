@@ -173,10 +173,10 @@ func (f *fakeOrchAutonomous) SetPRDSkills(string, []string) (any, error) { retur
 
 // BL303 S2 — guardrail library + profile stubs.
 func (f *fakeOrchAutonomous) GuardrailLibrary() []any { return nil }
-func (f *fakeOrchAutonomous) CreateGuardrailProfile(string, string, []string, *bool) (any, error) {
+func (f *fakeOrchAutonomous) CreateGuardrailProfile(string, string, []string, *bool, []string) (any, error) {
 	return nil, nil
 }
-func (f *fakeOrchAutonomous) UpdateGuardrailProfile(string, string, string, []string, *bool) (any, error) {
+func (f *fakeOrchAutonomous) UpdateGuardrailProfile(string, string, string, []string, *bool, []string) (any, error) {
 	return nil, nil
 }
 func (f *fakeOrchAutonomous) DeleteGuardrailProfile(string) error    { return nil }
@@ -220,6 +220,10 @@ func (f *fakeOrchAutonomous) SetPRDQualityGates(string, bool, string, int, bool)
 }
 
 func (f *fakeOrchAutonomous) SetPRDContinueOnStoryFailure(string, bool) (any, error) {
+	return nil, nil
+}
+
+func (f *fakeOrchAutonomous) SetPRDNotifyEvents(string, []string) (any, error) {
 	return nil, nil
 }
 

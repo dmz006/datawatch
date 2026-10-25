@@ -2354,5 +2354,20 @@
   "review_override_save": "Guardar anulación",
   "review_override_clear": "Quitar anulación",
   "review_override_saved": "Anulación del escalado de fallos guardada",
-  "review_override_invalid": "Escriba los pasos como backend:model@intentos, separados por comas."
+  "review_override_invalid": "Escriba los pasos como backend:model@intentos, separados por comas.",
+  "notify_events_label": "Notification events",
+  "notify_events_help": "Choose which lifecycle events notify. Inherit uses the guardrail profile, then the global default.",
+  "notify_events_inherit": "Inherit",
+  "notify_events_effective": "Effective notification events",
+  "notify_events_none": "none",
+  "notify_events_default_label": "Default notification events",
+  "notify_events_source_automaton": "este autómata",
+  "notify_events_source_profile": "guardrail profile",
+  "notify_events_source_global": "global default",
+  "notify_events_saved": "Notification events saved",
+  "notify_events_save_failed": "Could not save notification events",
+  "notify_events_default_marker": "default",
+  "notify_events_profile_label": "Notification events",
+  "notify_events_profile_edit": "Edit notification events",
+  "notify_events_profile_prompt": "Notification events (comma-separated kinds, blank to inherit)"
 }
