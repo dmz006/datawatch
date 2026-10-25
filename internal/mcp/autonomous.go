@@ -108,6 +108,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("smoke_verification_model", mcpsdk.Description("Smoke verification — reviewer model; use a different model than the task for cross-model independence")),
 		mcpsdk.WithNumber("planning_timeout_seconds", mcpsdk.Description("Override effort-scaled decompose timeout (0 = default: 5 min normal, 15 min high/max, 2 min quick/low)")),
 		mcpsdk.WithNumber("verification_timeout_seconds", mcpsdk.Description("Bound for one verifier/guardrail judgment session in seconds (default 1800 = 30m; use 0 or a negative value to mean \"leave unset\"); local models need more time than the old hard-coded 10m")),
+		mcpsdk.WithArray("judge_policy", mcpsdk.Description("Ordered list of LLM backends the judges (Automaton guardrail, plan review and other autonomous judges) try, one attempt per backend in order. Empty list = follow the verifier routing policy (verifier_policy); the total attempts equal the list length.")),
+		mcpsdk.WithNumber("judge_timeout_seconds", mcpsdk.Description("Time limit in seconds for one judge run (default 1800 = 30m). It counts the judge run only, not the wait for a capacity slot. 0 or a negative value means the default.")),
 		mcpsdk.WithNumber("verifier_no_progress_timeout_seconds", mcpsdk.Description("Bound in seconds for a verifier session that shows no output file, no pane activity, no live runner process and no held capacity slot before it is ended as an infra failure (default 900 = 15m; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("session_idle_timeout_seconds", mcpsdk.Description("Bound for one autonomous worker/verifier session in seconds — a session sitting in waiting_input/idle with no live child process longer than this is treated as an infra failure and retried through the auto_fix_retries budget (default 900 = 15m; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("verifier_infra_escalation_threshold", mcpsdk.Description("Consecutive infra verifier failures on one task after which its next verification runs on fallback_verification_backend (default 2; 0 = default)")),
@@ -320,6 +322,16 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if v := req.GetFloat("verification_timeout_seconds", -1); v >= 0 {
 		body["verification_timeout_seconds"] = int(v)
+	}
+	// Presence-aware like verification_backends: an explicit [] clears the
+	// judge policy so the judges follow the verifier policy again.
+	if args := req.GetArguments(); args != nil {
+		if _, ok := args["judge_policy"]; ok {
+			body["judge_policy"] = req.GetStringSlice("judge_policy", []string{})
+		}
+	}
+	if v := req.GetFloat("judge_timeout_seconds", -1); v >= 0 {
+		body["judge_timeout_seconds"] = int(v)
 	}
 	if v := req.GetFloat("session_idle_timeout_seconds", -1); v >= 0 {
 		body["session_idle_timeout_seconds"] = int(v)

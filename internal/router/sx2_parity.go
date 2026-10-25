@@ -462,6 +462,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 		listKeys := map[string]bool{
 			"verification_backends": true, "per_task_guardrails": true, "per_story_guardrails": true,
 			"per_prd_guardrails": true, // BL418
+			"judge_policy":       true,
 		}
 		for _, kv := range args[1:] {
 			i := strings.IndexByte(kv, '=')

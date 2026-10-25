@@ -6013,11 +6013,15 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"plan_tier_allocation_usd": planTierAllocationForDisplay(s.cfg.Autonomous.PlanTierAllocationUSD),
 			"execution_backend":        s.cfg.Autonomous.ExecutionBackend,
 			// BL304: new key + legacy alias.
-			"planning_effort":                      s.cfg.Autonomous.PlanningEffort,
-			"decomposition_effort":                 s.cfg.Autonomous.PlanningEffort,
-			"verification_effort":                  s.cfg.Autonomous.VerificationEffort,
-			"planning_timeout_seconds":             s.cfg.Autonomous.PlanningTimeoutSeconds,
-			"verification_timeout_seconds":         s.cfg.Autonomous.VerificationTimeoutSeconds,
+			"planning_effort":              s.cfg.Autonomous.PlanningEffort,
+			"decomposition_effort":         s.cfg.Autonomous.PlanningEffort,
+			"verification_effort":          s.cfg.Autonomous.VerificationEffort,
+			"planning_timeout_seconds":     s.cfg.Autonomous.PlanningTimeoutSeconds,
+			"verification_timeout_seconds": s.cfg.Autonomous.VerificationTimeoutSeconds,
+			// Judge routing: an empty judge_policy means the judges follow the
+			// verifier_policy; the time limit shows its 30-minute default.
+			"judge_policy":                         judgePolicyForDisplay(s.cfg.Autonomous.JudgePolicy),
+			"judge_timeout_seconds":                config.NormalizeJudgeTimeoutSeconds(s.cfg.Autonomous.JudgeTimeoutSeconds),
 			"session_idle_timeout_seconds":         s.cfg.Autonomous.SessionIdleTimeoutSeconds,
 			"session_start_confirm_seconds":        s.cfg.Autonomous.SessionStartConfirmSeconds,
 			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
@@ -7651,6 +7655,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.VerificationBackends = splitCSV(s)
 			}
+		case "autonomous.judge_policy":
+			// Empty clears it, so the judges follow the verifier policy again.
+			if arr, ok := toStringArray(v); ok {
+				cfg.Autonomous.JudgePolicy = config.NormalizeJudgePolicy(arr)
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.JudgePolicy = config.NormalizeJudgePolicy(splitCSV(s))
+			}
 		case "autonomous.task_override_statuses":
 			if arr, ok := toStringArray(v); ok {
 				cfg.Autonomous.TaskOverrideStatuses = arr
@@ -7809,6 +7820,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// config.NormalizeVerificationTimeoutSeconds at read time.
 			if n, ok := toInt(v); ok {
 				cfg.Autonomous.VerificationTimeoutSeconds = n
+			}
+		case "autonomous.judge_timeout_seconds":
+			// Stored as-is; zero/negative fall back to the 30m default via
+			// config.NormalizeJudgeTimeoutSeconds at read time.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.JudgeTimeoutSeconds = n
 			}
 		case "autonomous.session_idle_timeout_seconds":
 			// Stored as-is; zero falls back to the default via
@@ -8320,6 +8337,13 @@ func effectivePlanCoverageCheckForDisplay(raw string) string {
 		return raw
 	}
 	return mode
+}
+
+// judgePolicyForDisplay renders autonomous.judge_policy as a list even when
+// unset, so the field reads as an empty array (follow the verifier policy)
+// rather than null.
+func judgePolicyForDisplay(backends []string) []string {
+	return config.NormalizeJudgePolicy(append([]string{}, backends...))
 }
 
 // configPatchFloat coerces a /api/config patch value for

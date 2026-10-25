@@ -36,6 +36,7 @@ Subcommands:
                                   config-set '{"gate_disagreement":"block"}'
                                   config-set --capacity-rate-requests 60 --capacity-rate-tokens 2000000 --capacity-rate-window-seconds 3600
                                   config-set --verifier-policy-mode prefer-free --verifier-policy-backends qwen,claude-code
+                                  config-set --judge-policy qwen,claude-code --judge-timeout-seconds 1800
                                   config-set '{"resume_max_age_seconds":1800}'
                                   config-set '{"plan_tier_max_inflight":{"pro":1,"max_5x":2,"max_20x":4,"api":0}}' (tier inflight caps; 0 = unlimited; unknown tiers rejected)
   verifier-policy                 Show the global verifier routing policy
@@ -241,6 +242,25 @@ func applyAutonomousRateFlags(cmd *cobra.Command, body map[string]any) error {
 			return fmt.Errorf("--%s must be >= 0", flag)
 		}
 		body[key] = n
+	}
+	return nil
+}
+
+// applyAutonomousJudgeFlags copies the judge flags that were set onto body:
+// --judge-policy (an ordered comma list; an explicit empty value clears it so
+// the judges follow the verifier policy) and --judge-timeout-seconds (the
+// time limit; a negative value is rejected before anything is sent).
+func applyAutonomousJudgeFlags(cmd *cobra.Command, body map[string]any) error {
+	if cmd.Flags().Changed("judge-policy") {
+		s, _ := cmd.Flags().GetString("judge-policy")
+		body["judge_policy"] = splitVerifierBackends(s)
+	}
+	if cmd.Flags().Changed("judge-timeout-seconds") {
+		n, _ := cmd.Flags().GetInt("judge-timeout-seconds")
+		if n < 0 {
+			return fmt.Errorf("--judge-timeout-seconds must be >= 0")
+		}
+		body["judge_timeout_seconds"] = n
 	}
 	return nil
 }
@@ -470,6 +490,18 @@ tier inflight-cap table (see "datawatch llm add|update --help" for --plan-tier/-
       inflight cap (0 = unlimited). An explicit per-LLM max_inflight > 0 wins
       over the tier cap; clear the table with {}.
 
+Judge routing, which chooses the backends the judges (Automaton guardrail,
+plan review and other autonomous judges) try. --judge-policy is an ordered comma
+list, one attempt per backend; an empty value clears it, and the judges then
+follow the verifier routing policy. --judge-timeout-seconds is the time limit
+for one judge run (default 1800 = 30 minutes; 0 = default; the wait for a
+capacity slot does not count):
+
+  datawatch autonomous config-set --judge-policy qwen,claude-code --judge-timeout-seconds 1800
+
+  judge_policy                    ordered judge backends (empty = follow verifier_policy)
+  judge_timeout_seconds           time limit for one judge run (default 1800)
+
 Rate ceiling on each LLM's pool, by flag or by JSON key (0 = no ceiling,
 the default; negative values are rejected):
 
@@ -515,6 +547,9 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 			if err := applyAutonomousRateFlags(cmd, body); err != nil {
 				return err
 			}
+			if err := applyAutonomousJudgeFlags(cmd, body); err != nil {
+				return err
+			}
 			if err := applyVerifierPolicyFlags(cmd, body); err != nil {
 				return err
 			}
@@ -533,6 +568,8 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 	cmd.Flags().Int("capacity-rate-requests", 0, "Most task/verifier starts per LLM pool per rolling window (0 = no requests ceiling)")
 	cmd.Flags().Int("capacity-rate-tokens", 0, "Most tokens per LLM pool per rolling window (0 = no tokens ceiling)")
 	cmd.Flags().Int("capacity-rate-window-seconds", 0, "Rolling window length in seconds for the rate ceilings (0 = default 3600)")
+	cmd.Flags().String("judge-policy", "", "Ordered comma list of judge backends, one attempt each (empty = follow the verifier routing policy)")
+	cmd.Flags().Int("judge-timeout-seconds", 0, "Time limit in seconds for one judge run (0 = default 1800 = 30m)")
 	addVerifierPolicyFlags(cmd)
 	return cmd
 }

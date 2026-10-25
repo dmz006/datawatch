@@ -156,6 +156,13 @@ type Config struct {
 	// VerificationBackends omitempty bug described in the config.go comment
 	// dropped its value.
 	VerificationTimeoutSeconds int `json:"verification_timeout_seconds,omitempty"`
+	// JudgePolicy and JudgeTimeoutSeconds mirror autonomous.judge_policy and
+	// autonomous.judge_timeout_seconds in config (see config.AutonomousConfig).
+	// No omitempty on either, for the same round-trip reason as
+	// VerificationBackends: handleAutonomousConfig marshals this struct and
+	// unmarshals the result onto config.AutonomousConfig before persisting.
+	JudgePolicy         []string `json:"judge_policy"`
+	JudgeTimeoutSeconds int      `json:"judge_timeout_seconds"`
 	// SessionIdleTimeoutSeconds mirrors autonomous.session_idle_timeout_seconds
 	// in config. The manager does not consume it: the daemon's autonomous
 	// worker/verifier wait loops in cmd/datawatch/main.go and

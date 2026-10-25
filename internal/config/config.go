@@ -2263,6 +2263,19 @@ type AutonomousConfig struct {
 	// values fall back to the default. Raise for slow local (Ollama /
 	// OpenWebUI) models.
 	VerificationTimeoutSeconds int `yaml:"verification_timeout_seconds,omitempty" json:"verification_timeout_seconds,omitempty"`
+	// JudgePolicy is the ordered list of LLM backends the judges (the PRD
+	// guardrail, plan-review and other autonomous judges) try, one attempt
+	// per backend in order. Empty follows the verifier routing policy
+	// (VerifierPolicy), so an unset judge policy changes nothing. No
+	// omitempty, same round-trip reason as VerificationBackends: an explicit
+	// clear must reach the saved config.
+	JudgePolicy []string `yaml:"judge_policy" json:"judge_policy"`
+	// JudgeTimeoutSeconds bounds one judge run, counted from its start and
+	// not from any wait for a capacity slot. Default 1800 seconds (30
+	// minutes); zero or negative values fall back to the default (see
+	// NormalizeJudgeTimeoutSeconds). No omitempty, for the same round-trip
+	// reason as JudgePolicy.
+	JudgeTimeoutSeconds int `yaml:"judge_timeout_seconds" json:"judge_timeout_seconds"`
 	// SessionIdleTimeoutSeconds bounds one autonomous worker or verifier
 	// session: a session sitting in waiting_input/idle with no live child
 	// process for longer than this is an infra failure. 0 or unset => 900
