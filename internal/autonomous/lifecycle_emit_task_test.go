@@ -112,7 +112,7 @@ func TestLifecycleEmitTask_Transitions(t *testing.T) {
 			seq:  []string{kInProgress, KindTaskSessionStarted, kVerifying, kFailed},
 			old:  TaskVerifying,
 			setup: func(t *testing.T) (emitTaskFixture, func(emitTaskFixture) error) {
-				return newEmitTaskFixture(t, DefaultConfig(), PRDApproved, nil), func(f emitTaskFixture) error {
+				return newEmitTaskFixture(t, legacyFailureConfig(), PRDApproved, nil), func(f emitTaskFixture) error {
 					return f.m.Run(context.Background(), f.prdID, fakeSpawn, failingVerify)
 				}
 			},
@@ -288,7 +288,7 @@ func TestLifecycleEmitTask_SessionStartedCarriesSessionID(t *testing.T) {
 // A verify-fail retry clears the previous attempt's session before the
 // respawn and starts a fresh one.
 func TestLifecycleEmitTask_RetryClearsSession(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := legacyFailureConfig()
 	cfg.AutoFixRetries = 1
 	f := newEmitTaskFixture(t, cfg, PRDApproved, nil)
 	c := &collector{}

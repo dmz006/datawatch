@@ -351,6 +351,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// Sequential path (default) — tasks run in dependency order.
 		// failedIDs tracks tasks that failed so dependents can be skipped.
 		failedIDs := make(map[string]bool)
+		// heldIDs holds the tasks held for operator review, and the tasks
+		// waiting behind one. Neither runs nor counts as failed.
+		heldIDs := make(map[string]bool)
 		for _, tid := range order {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -374,6 +377,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if t.Status == TaskFailed || t.Status == TaskCancelled {
 					failedIDs[tid] = true
 				}
+				continue
+			}
+			// A held task, or one waiting behind a held task, stays pending.
+			if m.taskOnReview(t) || m.waitsOnReview(prd, t, heldIDs) {
+				heldIDs[tid] = true
 				continue
 			}
 			// Skip tasks whose dependencies failed — propagate failure forward.
@@ -428,6 +436,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					if lt.Status == TaskFailed {
 						failedIDs[tid] = true
 					}
+					if lt.Status == TaskReviewNeeded {
+						heldIDs[tid] = true
+					}
 					// BL191 Q6 (v5.10.0) — when a task lands in TaskBlocked from a
 					// per-task guardrail block verdict, halt the walk so the
 					// operator can review before more tasks run.
@@ -477,6 +488,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		completedIDs := make(map[string]bool, len(order))
 		failedIDs := make(map[string]bool, len(order))
 		inFlight := make(map[string]bool, concurrency)
+		// heldIDs holds the tasks held for operator review. They are never
+		// completed, so their dependents never become ready.
+		heldIDs := make(map[string]bool, len(order))
 		remaining := len(order)
 
 		// v8.36.5 — seed tracking for tasks that are already terminal before
@@ -504,7 +518,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 
 		isReady := func(tid string) bool {
 			t := lookupTask(prd, tid)
-			if t == nil || completedIDs[tid] || inFlight[tid] {
+			if t == nil || completedIDs[tid] || inFlight[tid] || heldIDs[tid] {
 				return false
 			}
 			for _, dep := range t.DependsOn {
@@ -645,8 +659,14 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					}
 					failedIDs[r.tid] = true
 				}
-				completedIDs[r.tid] = true
 				latest, _ := m.store.GetPRD(prdID)
+				// A task held for operator review is neither completed nor
+				// failed, so its dependents stay unready behind it.
+				if latest != nil && m.taskHeldIn(latest, r.tid) {
+					heldIDs[r.tid] = true
+				} else {
+					completedIDs[r.tid] = true
+				}
 				if latest != nil {
 					// GH#172 D52 — operator paused this PRD while tasks were
 					// in flight. Let already-launched goroutines finish
@@ -745,6 +765,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			_ = m.store.SavePRD(prd)
 			return m.Run(ctx, prd.ID, spawn, verify)
 		}
+	}
+	// A task held for operator review keeps the Automaton open. Every task that
+	// can run has run by now, so the Automaton blocks until the operator acts,
+	// and the roll-up below neither completes nor fails it.
+	if held := m.reviewHeldTaskID(prd); held != "" {
+		m.blockForTaskReview(prd, held)
+		return nil
 	}
 	// Roll up PRD status: completed/failed once every task is in a terminal state.
 	//
@@ -1018,8 +1045,18 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		return nil
 	}
 	spawn = m.capacityRetrySpawn(t, spawn)
-	for attempt := 0; attempt <= retries; attempt++ {
+	// Attempt budget. With failure escalation on, the task gets MaxFailures
+	// failed attempts counted from the last operator action. With it off, the
+	// legacy bound applies: one attempt plus auto_fix_retries.
+	esc := m.resolveFailureEscalation(prd, t)
+	budget := retries + 1
+	if esc.Enabled {
+		budget = esc.MaxFailures - m.escalationFailureCount(t)
+	}
+	var run attemptRun
+	for attempt := 0; attempt < budget; attempt++ {
 		var err error
+		run = attemptRun{RefsBefore: len(t.AttemptRefs)}
 
 		// On daemon restart the task may already be in TaskVerifying with a
 		// session that survived the restart. Skip the spawn so we don't create
@@ -1054,6 +1091,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					lastFailureCategory = "infra"
 					m.releaseCapacity(t.ID)
 					hint = werr.Error()
+					m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeForError(werr), Category: lastFailureCategory, Summary: hint})
 					m.store.WithLock(func() { t.Error = hint; t.AdoptedSession = false })
 					_ = m.store.SaveTask(t)
 					continue
@@ -1113,7 +1151,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				m.store.WithLock(func() { recordEndedSessions(prd, t, ended, "replacement session launching") })
 				_ = m.store.SavePRD(prd)
 			}
-			now := time.Now()
+			now := m.attemptNow()
 			m.store.WithLock(func() {
 				t.StartedAt = &now
 				t.Status = TaskInProgress
@@ -1135,6 +1173,25 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			story := findStory(prd, t.StoryID)
 			auto := m.AutomationForPRD(prd)
 			backend, model, execSource := resolveTaskExecutionLLM(t, story, prd, auto, m.cfg.ExecutionBackend)
+			effort := resolveTaskEffort(t, story, prd, auto)
+			// Failure escalation: the ladder step that the failed attempts so
+			// far select replaces the worker for this attempt only. Backend,
+			// model and effort come from the same step (a model never cascades
+			// from another level), and t.Backend/t.Model are not written. A
+			// worker the operator chose in a review retry is kept instead.
+			escalated, stepIdx := false, -1
+			if esc.Enabled && !t.OperatorWorkerSet {
+				if step, idx, ok := selectEscalationStep(esc, m.escalationFailureCount(t)); ok {
+					backend, model, execSource = step.Backend, step.Model, ExecutorSourceEscalation
+					if step.Effort != "" {
+						effort = step.Effort
+					}
+					escalated, stepIdx = true, idx
+				}
+				if note := m.escalationWorkerChangeNote(t, backend, model, stepIdx); note != "" {
+					m.recordFailureEscalationDecision(prd.ID, t.ID, note, backend, model)
+				}
+			}
 			// Backstop for the Run preflight: never spawn an invalid pair.
 			if merr := validateModelForBackend(backend, model); merr != nil {
 				mismatch := fmt.Errorf("task %s not spawned: %w", t.ID, merr)
@@ -1154,7 +1211,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// overwrites it.
 			m.store.WithLock(func() { t.ExecutorSource = execSource })
 			_ = m.store.SaveTask(t)
-			effort := resolveTaskEffort(t, story, prd, auto)
+			run.Backend, run.Model, run.Effort, run.StartedAt = backend, model, effort, now
+			run.Escalated = escalated
 			// v5.27.5 — most-specific permission-mode wins: per-task →
 			// per-PRD → SpawnFn falls through to session default.
 			permMode := t.PermissionMode
@@ -1206,7 +1264,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				Effort:           effort,
 				Model:            model,
 				PermissionMode:   permMode,
-				RetryHint:        hint,
+				RetryHint:        m.escalationRetryHint(prd, t, hint),
 				ProjectProfile:   prd.ProjectProfile,  // v5.26.19
 				ClusterProfile:   prd.ClusterProfile,  // v5.26.19
 				Branch:           prd.Git.Branch,      // BL407 Phase 4
@@ -1317,6 +1375,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 						}
 						log.Printf("[autonomous] task %s failed: %s after %d consecutive start failures",
 							t.ID, SessionStartFailureReason, t.StartFailures)
+						m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: err.Error()})
 						m.recordFailureLearning(prd, t.ID, "infra", t.FailureReason.Detail)
 						m.relocateCheckpoint(prd, t)
 						if serr := m.store.SaveTask(t); serr != nil {
@@ -1333,6 +1392,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					log.Printf("[autonomous] task %s start failure %d/%d — re-queueing without consuming the normal retry budget",
 						t.ID, t.StartFailures, SessionStartRetryBudget)
 					t.Error = err.Error()
+					m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: err.Error(), Requeue: true})
 					_ = m.store.SaveTask(t)
 					attempt-- // offset the loop's post-iteration attempt++
 					continue
@@ -1347,6 +1407,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					// the normal queue like any other waiting task.
 					m.releaseCapacity(t.ID)
 					hint = err.Error()
+					m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeStalled, Category: lastFailureCategory, Summary: hint})
 					if cp := m.relocateCheckpoint(prd, t); cp != "" {
 						hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
 					}
@@ -1453,6 +1514,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 						// Fold regression summary into retry hint so the next attempt
 						// knows what broke.
 						hint = "quality gate regression: " + cmp.Summary
+						m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: hint, Verification: vr})
 						if cp := m.relocateCheckpoint(prd, t); cp != "" {
 							hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
 						}
@@ -1504,6 +1566,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				// quality-gate regression already does above.
 				lastFailureCategory = "" // BL410 Phase 3 — content
 				hint = contentHint
+				m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: hint, Verification: vr})
 				m.store.WithLock(func() {
 					t.Error = hint
 				})
@@ -1578,6 +1641,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			return nil
 		}
 		lastFailureCategory = vr.Category // BL410 Phase 3
+		m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: vr.Summary, Verification: vr})
 		hint = vr.Summary
 		if len(vr.Issues) > 0 {
 			hint += "\nIssues:\n- " + joinLines(vr.Issues)
@@ -1585,6 +1649,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if cp := m.relocateCheckpoint(prd, t); cp != "" {
 			hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
 		}
+	}
+	// Failure escalation: with the policy on, the task is held for operator
+	// review rather than marked failed. Disabled, the legacy path below runs.
+	if esc.Enabled {
+		// No more attempts are coming, so sweep any leftover CHECKPOINT.md,
+		// as the legacy exhaustion path does.
+		m.relocateCheckpoint(prd, t)
+		return m.holdTaskForReview(prd, t, lastFailureCategory, hint)
 	}
 	exhaustedOld := t.Status
 	m.store.WithLock(func() {
@@ -1663,6 +1735,11 @@ func flattenTasks(prd *PRD) []*Task {
 			// re-entered when ApproveTask transitions it back to
 			// pending (see ApproveTask).
 			if prd.Story[i].Tasks[j].Status == TaskAwaitingApproval {
+				continue
+			}
+			// A task held for operator review does not run again until the
+			// operator resolves it (see ResolveTaskReview).
+			if prd.Story[i].Tasks[j].Status == TaskReviewNeeded {
 				continue
 			}
 			out = append(out, &prd.Story[i].Tasks[j])
@@ -2273,6 +2350,9 @@ const (
 	ExecutorSourcePRD        = "prd"
 	ExecutorSourceAutomation = "automation"
 	ExecutorSourceGlobal     = "global"
+	// ExecutorSourceEscalation marks an attempt whose worker was chosen by a
+	// failure escalation step rather than by the levels above.
+	ExecutorSourceEscalation = "escalation"
 )
 
 // resolveTaskBackendModel resolves a task's effective backend and model.

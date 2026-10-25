@@ -733,6 +733,10 @@ paths:
         claude-code). A bad lane fill value rejects the whole PUT with 400 and nothing
         is written. GET returns the values in effect and the running planner picks up
         changes without a restart.
+        `autonomous.failure_escalation.enabled` (true|false, default true),
+        `autonomous.failure_escalation.max_failures` (whole number of 1 or more, default 3),
+        `autonomous.failure_escalation.steps` (a JSON array of step objects, or the text
+        `backend:model[@attempts],...`; empty clears the ladder).
       operationId: updateConfig
       tags: [System]
       requestBody:
@@ -1755,6 +1759,81 @@ paths:
                 guardrail_model: {type: string, description: "Optional; omitted = unchanged; empty string = cleared"}
       responses:
         "200": {description: Updated PRD}
+  /api/autonomous/prds/{id}/set_failure_escalation:
+    post:
+      summary: Set or clear the failure escalation override on an Automaton or one task
+      description: |
+        Sets the failure escalation policy for one Automaton, or for one of its
+        tasks when `task_id` is given. Each field of the policy (enabled,
+        max_failures, steps) resolves on its own: a task's value beats the
+        Automaton's, which beats the daemon default. Send `"policy": null` to
+        remove the override at that level. Each failed attempt moves the task to
+        the next worker on its ladder; after max_failures failed attempts the
+        task is held for operator review. Applied changes are audit-logged and
+        appended to the Automaton's decision log. Requires the `autonomous:write`
+        capability for federation peers.
+      operationId: autonomousPRDSetFailureEscalation
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [policy]
+              properties:
+                task_id: {type: string, description: "Optional. Omitted or empty sets the override on the Automaton; a task ID sets it on that task."}
+                policy:
+                  nullable: true
+                  description: "The override, or null to clear it at this level."
+                  allOf:
+                    - $ref: "#/components/schemas/FailureEscalationPolicy"
+                actor: {type: string, description: "Who made the change; defaults to operator."}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: "The policy is not valid, or the body could not be read"}
+        "403": {description: "Caller lacks the autonomous:write capability"}
+        "404": {description: "No Automaton, or no task with that ID in it"}
+        "501": {description: "The daemon does not offer failure escalation operations"}
+  /api/autonomous/prds/{id}/resolve_task_review:
+    post:
+      summary: Retry or cancel a task held for operator review
+      description: |
+        The operator's decision on a task whose status is review_needed. A
+        retry requeues the task; it may carry a replaced spec, a worker (backend,
+        model and effort for this task) and a narrowed list of files it may
+        change. The held attempt report is cleared, and the operator's note is
+        given to the next attempt. A cancel cancels the task. A task that is not
+        held answers 409. Requires the `autonomous:write` capability for
+        federation peers.
+      operationId: autonomousPRDResolveTaskReview
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_id, action]
+              properties:
+                task_id: {type: string, description: "The held task"}
+                action: {type: string, enum: [retry, cancel]}
+                spec: {type: string, description: "Retry only. A replacement task spec."}
+                backend: {type: string, description: "Retry only. Worker backend for this task."}
+                model: {type: string, description: "Retry only. Worker model for this task."}
+                effort: {type: string, description: "Retry only. Worker effort for this task."}
+                files: {type: array, items: {type: string}, description: "Retry only. The narrowed list of files the task may change."}
+                note: {type: string, description: "Recorded on the decision log and given to the next attempt."}
+                actor: {type: string, description: "Who made the decision; defaults to operator."}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: "The action or a change is not valid, or the body could not be read"}
+        "403": {description: "Caller lacks the autonomous:write capability"}
+        "404": {description: "No Automaton, or no task with that ID in it"}
+        "409": {description: "The task is not held for review"}
+        "501": {description: "The daemon does not offer failure escalation operations"}
   /api/autonomous/learnings:
     get:
       summary: List extracted post-task learnings
@@ -5237,3 +5316,35 @@ components:
           required: [expected_version]
           properties:
             expected_version: {type: integer, description: "The `version` you last observed; the write is rejected with 409 if it is stale"}
+
+    FailureEscalationPolicy:
+      description: "One level of the failure escalation policy. A missing or null field inherits from the next level up (task, then Automaton, then the daemon default)."
+      type: object
+      properties:
+        enabled: {type: boolean, description: "Turns failure escalation on. False restores the older retry-then-fail behaviour."}
+        max_failures: {type: integer, minimum: 1, description: "Failed attempts after which the task is held for review. Default 3."}
+        steps:
+          type: array
+          maxItems: 8
+          description: "The ladder of workers to try, in order. An empty list inherits."
+          items: {$ref: "#/components/schemas/FailureEscalationStep"}
+    FailureEscalationStep:
+      description: "One rung of the ladder. The step covers its attempts failed attempts; the last step covers every remaining attempt."
+      type: object
+      properties:
+        backend: {type: string, description: "Worker backend. Empty means the task's normally resolved worker."}
+        model: {type: string, description: "Worker model. Needs a backend."}
+        effort: {type: string, description: "Effort level: low, medium, high, max, quick, normal or thorough. Empty inherits the task's effort."}
+        attempts: {type: integer, minimum: 1, description: "Failed attempts this step covers. Default 1."}
+    ReviewNeededEntry:
+      description: "A task held for operator review, as listed in an Automaton summary. Only the identity, the failure count and the last worker are included, never the spec or the attempt report."
+      type: object
+      required: [task_id, story_id, failure_count, held_at]
+      properties:
+        task_id: {type: string}
+        task_title: {type: string}
+        story_id: {type: string}
+        failure_count: {type: integer, description: "Failed attempts since the last operator action."}
+        last_backend: {type: string, description: "Worker backend of the last attempt."}
+        last_model: {type: string, description: "Worker model of the last attempt."}
+        held_at: {type: string, format: date-time}

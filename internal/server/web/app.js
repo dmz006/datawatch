@@ -13660,7 +13660,7 @@ function renderTask(prd, story, task, editable) {
   state._prdTaskExpanded = state._prdTaskExpanded || {};
   // Default expansion: active/running tasks open so progress is visible without a click.
   if (!(taskID in state._prdTaskExpanded)) {
-    const activeTaskStatuses = ['running','in_progress','verifying','running_tests','waiting_capacity','blocked','failed','awaiting_approval'];
+    const activeTaskStatuses = ['running','in_progress','verifying','running_tests','waiting_capacity','blocked','failed','awaiting_approval','review_needed'];
     state._prdTaskExpanded[taskID] = activeTaskStatuses.includes(task.status || '');
   }
   const isExpanded = !!state._prdTaskExpanded[taskID];
@@ -13710,6 +13710,11 @@ function renderTask(prd, story, task, editable) {
   const smokeVkBadge = (task.kind === 'smoke' || task.kind === 'final_gate') && (task.verification_backend || task.verification_model)
     ? `<span class="prd-task-llm-badge" title="${escHtml(t('prd_task_smoke_verifier_tip') || 'Smoke verification LLM override for this task')}">vfy: ${escHtml(task.verification_backend || 'inherit')}${task.verification_model ? ' / ' + escHtml(task.verification_model) : ''}</span>`
     : '';
+  // Held for operator review: the status chip and the actions live in the
+  // expanded body (_taskReviewPanelHTML).
+  const heldBadge = task.status === 'review_needed'
+    ? `<span class="prd-task-review-badge" title="${escHtml(t('review_held_help'))}">&#9873; ${escHtml(t('task_status_review_needed'))}</span>`
+    : '';
   const spawnBadge = task.spawn_prd
     ? `<span class="prd-task-spawn-badge" title="this task spec is a child automaton spec; executor will Plan + Approve + Run">&#8627; spawn</span>`
     : '';
@@ -13752,7 +13757,7 @@ function renderTask(prd, story, task, editable) {
     : '';
 
   // Status glyph for the collapsed header row.
-  const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○', verifying: '⟳', running_tests: '🧪', blocked: '⛔', waiting_capacity: '⏳', awaiting_approval: '⏸'})[task.status] || '';
+  const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○', verifying: '⟳', running_tests: '🧪', blocked: '⛔', waiting_capacity: '⏳', awaiting_approval: '⏸', review_needed: '⚑'})[task.status] || '';
   const _waitTitle = task.status === 'waiting_capacity'
     ? (t('prd_task_waiting_capacity')||'Waiting for capacity') + (task.wait_reason ? ': ' + task.wait_reason : '')
     : '';
@@ -13814,6 +13819,7 @@ function renderTask(prd, story, task, editable) {
     ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
     ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason" style="min-width:0;overflow-wrap:anywhere;">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + window.taskWaitHtml(task) : ''}</div>` : ''}
     ${window.taskHoldsHtml(task)}
+    ${_taskReviewPanelHTML(prd, task)}
     ${errRow}${verifRow}
     ${task.executor_source ? `<div style="font-size:10px;color:var(--text2);">${escHtml(t('status_executor_label')||'Executor')}: ${escHtml(task.executor_source)}</div>` : ''}
     ${renderTaskFileDrift(task)}
@@ -13826,7 +13832,7 @@ function renderTask(prd, story, task, editable) {
   return `<div class="prd-task-row${isExpanded ? ' expanded' : ''}" data-task-id="${escHtml(taskID)}">
     <div class="prd-task-header" onclick="_prdToggleTask('${escHtml(taskID)}')" title="${isExpanded ? 'Collapse' : 'Expand'}">
       <span class="prd-task-chevron">${chevron}</span>
-      ${statusGlyphSpan}
+      ${statusGlyphSpan}${heldBadge}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
       ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
@@ -15865,6 +15871,12 @@ const GENERAL_CONFIG_FIELDS = [
     // a regression: warn records both results and the task still finishes,
     // block fails the task. An invalid gate never blocks.
     { key: 'autonomous.gate_disagreement', label: 'When the gate disagrees with a passing verifier', labelKey: 'settings_gate_disagreement', type: 'select', options: ['warn', 'block'] },
+    // Failure escalation — a failed attempt moves to the next ladder step; at
+    // max_failures the task is held for operator review. Disabled restores the
+    // retry-then-fail behaviour. Steps use the compact text form.
+    { key: 'autonomous.failure_escalation.enabled', label: 'Failure escalation enabled', labelKey: 'settings_failure_escalation_enabled', type: 'toggle' },
+    { key: 'autonomous.failure_escalation.max_failures', label: 'Failed attempts before the task is held for review (minimum 1, default 3)', labelKey: 'settings_failure_escalation_max_failures', type: 'number', placeholder: '3', min: 1, step: 1, default: '3' },
+    { key: 'autonomous.failure_escalation.steps', label: 'Escalation steps (backend:model@attempts, comma separated)', labelKey: 'settings_failure_escalation_steps', type: 'failure_escalation_steps', placeholder: 'ollama:qwen3.8:27b@2,claude-code:claude-sonnet-5-5', hintKey: 'settings_failure_escalation_steps_hint' },
     { key: 'autonomous.injection_guard', label: 'Prompt injection guard (warn on suspicious PRD/task specs)', labelKey: 'settings_injection_guard', type: 'toggle' },
     { key: 'autonomous.block_on_injection', label: 'Block PRD/task create when injection phrases detected', labelKey: 'settings_block_on_injection', type: 'toggle' },
     // Plan-coverage gate — how strictly decompose must cover the spec's
@@ -16934,6 +16946,17 @@ function loadGeneralConfig() {
                   });
               };
             }, 0);
+          } else if (f.type === 'failure_escalation_steps') {
+            // The config GET returns the steps as a JSON array; the field edits
+            // the compact text form, which the server parses on save.
+            const _hint = f.hintKey ? t(f.hintKey) : '';
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label">${escHtml(fLabel)}</div>
+              <input type="text" class="form-input general-cfg-input" value="${escHtml(_failureEscalationStepsText(val))}"
+                ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
+                onchange="saveGeneralField('${f.key}', this.value)" />
+              ${_hint && _hint !== f.hintKey ? `<div style="font-size:10px;color:var(--text2);margin-top:4px;">${escHtml(_hint)}</div>` : ''}
+            </div>`;
           } else if (f.type === 'textarea') {
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label">${escHtml(fLabel)}</div>
@@ -17093,6 +17116,326 @@ const RESTART_FIELDS = new Set([
   'mcp.enabled', 'mcp.sse_enabled', 'mcp.sse_host', 'mcp.sse_port', 'mcp.public_url', 'mcp.tls_enabled',
   'dns_channel.enabled', 'dns_channel.listen', 'dns_channel.domain',
 ]);
+
+// ── Failure escalation: policy codec, override editor and held-task review ──
+// The server stores a step ladder as a JSON array; the operator edits the
+// compact text form backend:model[@attempts], comma separated. A "-" item is a
+// step on the normally resolved worker. The parser below mirrors the server's
+// so a value typed here reads back as the same policy.
+
+// _failureEscalationStepsText renders a steps array in the compact text form.
+// Effort has no text form and is not shown.
+function _failureEscalationStepsText(steps) {
+  if (!Array.isArray(steps)) return '';
+  return steps.map(s => {
+    let item = s && s.backend ? s.backend + ':' + (s.model || '') : '-';
+    if (s && s.attempts > 0) item += '@' + s.attempts;
+    return item;
+  }).join(',');
+}
+
+// _parseFailureEscalationSteps reads the compact text form into a steps array.
+// Empty text yields []. It throws on an item the server would refuse.
+function _parseFailureEscalationSteps(text) {
+  const src = String(text || '').trim();
+  if (!src) return [];
+  return src.split(',').map((raw, i) => {
+    let item = raw.trim();
+    if (!item) throw new Error('step ' + (i + 1) + ' is empty');
+    let attempts = 0;
+    const at = item.lastIndexOf('@');
+    if (at >= 0) {
+      const n = Number(item.slice(at + 1));
+      if (!Number.isInteger(n) || n < 1) throw new Error('step ' + (i + 1) + ' has an invalid @attempts suffix');
+      attempts = n;
+      item = item.slice(0, at).trim();
+    }
+    const step = {};
+    if (item !== '-') {
+      const colon = item.indexOf(':');
+      if (colon < 0) throw new Error('step ' + (i + 1) + ' needs the form backend:model, or - for the normal worker');
+      step.backend = item.slice(0, colon).trim();
+      if (!step.backend) throw new Error('step ' + (i + 1) + ' has no backend');
+      const model = item.slice(colon + 1).trim();
+      if (model) step.model = model;
+    }
+    if (attempts) step.attempts = attempts;
+    return step;
+  });
+}
+
+// _fmtDurationSeconds renders an attempt or review duration as 45s or 3m 5s.
+function _fmtDurationSeconds(s) {
+  const n = Math.max(0, Math.round(Number(s) || 0));
+  if (n < 60) return n + 's';
+  return Math.floor(n / 60) + 'm ' + (n % 60) + 's';
+}
+
+// _prdHeldTaskCount counts the tasks of an Automaton held for operator review.
+// A summary row carries only the task_status_counts map, so it is read from there.
+function _prdHeldTaskCount(prd) {
+  const stories = prd.stories || prd.Story || [];
+  if (!stories.length) return (prd.task_status_counts || {}).review_needed || 0;
+  let n = 0;
+  stories.forEach(st => (st.tasks || st.Tasks || []).forEach(tk => {
+    if ((tk.status || tk.Status) === 'review_needed') n++;
+  }));
+  return n;
+}
+
+// _prdHeldBadgeHTML is the held-task badge for an Automaton header or list row.
+// It is empty when no task is held.
+function _prdHeldBadgeHTML(prd) {
+  const n = _prdHeldTaskCount(prd);
+  if (!n) return '';
+  return `<span class="prd-held-badge" title="${escHtml(t('review_held_help'))}">&#9873; ${n} ${escHtml(t('review_held_badge'))}</span>`;
+}
+
+// _findPRDTask returns the cached Automaton's task with taskID, or null.
+function _findPRDTask(prdID, taskID) {
+  const prd = _automataDetailPRD;
+  if (!prd || prd.id !== prdID) return null;
+  let found = null;
+  (prd.stories || prd.Story || []).forEach(st => (st.tasks || st.Tasks || []).forEach(tk => {
+    if (!found && tk.id === taskID) found = tk;
+  }));
+  return found;
+}
+
+// _failureEscalationScope names the form fields of one override editor. The
+// Automaton has the scope "prd"; a task has "task-<id>" with unsafe characters
+// replaced, so the id is safe to use in an element id.
+function _failureEscalationScope(taskID) {
+  return taskID ? 'task-' + String(taskID).replace(/[^A-Za-z0-9_-]/g, '_') : 'prd';
+}
+
+// _failureEscalationEditorHTML draws the override editor for the Automaton
+// (taskID empty) or one task. policy is the stored override, if any; an empty
+// field inherits the next level up.
+function _failureEscalationEditorHTML(prdID, taskID, policy) {
+  const scope = _failureEscalationScope(taskID);
+  const p = policy || {};
+  const enabledVal = p.enabled === true ? 'on' : p.enabled === false ? 'off' : '';
+  const opt = (v, label) => `<option value="${v}" ${enabledVal === v ? 'selected' : ''}>${escHtml(label)}</option>`;
+  const pid = escHtml(JSON.stringify(prdID || ''));
+  const tid = escHtml(JSON.stringify(taskID || ''));
+  return `<div class="prd-fe-editor" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border,#333);">
+    <div style="font-size:11px;font-weight:600;color:var(--text2);">${escHtml(t('review_override_title'))}</div>
+    <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${escHtml(t('review_override_hint'))}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">
+      <label style="font-size:11px;color:var(--text2);">${escHtml(t('review_override_enabled'))}<br>
+        <select id="feEnabled-${scope}" class="form-input" style="font-size:12px;width:auto;">${opt('', t('review_override_inherit'))}${opt('on', t('review_override_on'))}${opt('off', t('review_override_off'))}</select></label>
+      <label style="font-size:11px;color:var(--text2);">${escHtml(t('review_override_max_failures'))}<br>
+        <input id="feMax-${scope}" type="number" min="1" step="1" class="form-input" style="width:90px;font-size:12px;" value="${p.max_failures ? escHtml(String(p.max_failures)) : ''}" /></label>
+      <label style="font-size:11px;color:var(--text2);flex:1;min-width:220px;">${escHtml(t('review_override_steps'))}<br>
+        <input id="feSteps-${scope}" type="text" class="form-input" style="font-size:12px;width:100%;" value="${escHtml(_failureEscalationStepsText(p.steps))}" placeholder="${escHtml('ollama:qwen3.8:27b@2,claude-code:claude-sonnet-5-5')}" /></label>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <button type="button" class="btn-secondary" onclick="event.stopPropagation();prdSaveFailureEscalation(${pid},${tid},'${scope}',false)">${escHtml(t('review_override_save'))}</button>
+      <button type="button" class="btn-secondary" onclick="event.stopPropagation();prdSaveFailureEscalation(${pid},${tid},'${scope}',true)">${escHtml(t('review_override_clear'))}</button>
+    </div>
+  </div>`;
+}
+
+// _readFailureEscalationPolicy builds the policy from one editor. Empty fields
+// are left out, so an editor with nothing set reads as null (clear).
+function _readFailureEscalationPolicy(scope) {
+  const field = name => {
+    const el = document.getElementById(name + '-' + scope);
+    return el ? String(el.value || '').trim() : '';
+  };
+  const policy = {};
+  const enabled = field('feEnabled');
+  if (enabled === 'on') policy.enabled = true;
+  else if (enabled === 'off') policy.enabled = false;
+  const max = field('feMax');
+  if (max !== '') {
+    const n = Number(max);
+    if (!Number.isInteger(n) || n < 1) throw new Error('max_failures');
+    policy.max_failures = n;
+  }
+  const steps = field('feSteps');
+  if (steps !== '') policy.steps = _parseFailureEscalationSteps(steps);
+  return Object.keys(policy).length ? policy : null;
+}
+
+// setFailureEscalationPolicy posts the override for the Automaton (taskID
+// empty) or one task. A null policy clears it.
+function setFailureEscalationPolicy(prdID, taskID, policy) {
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_failure_escalation', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_id: taskID || '', policy: policy, actor: 'operator' }),
+  });
+}
+
+// prdSaveFailureEscalation saves one override editor, or clears it.
+function prdSaveFailureEscalation(prdID, taskID, scope, clear) {
+  let policy = null;
+  if (!clear) {
+    try { policy = _readFailureEscalationPolicy(scope); } catch (e) {
+      showToast(t('review_override_invalid'), 'error', 3000);
+      return Promise.resolve(null);
+    }
+  }
+  return setFailureEscalationPolicy(prdID, taskID, policy)
+    .then(() => { showToast(t('review_override_saved'), 'success', 1500); _refreshAutomataOrPRD(); })
+    .catch(err => showToast(String(err), 'error', 3000));
+}
+window.prdSaveFailureEscalation = prdSaveFailureEscalation;
+
+// prdResolveTaskReview posts an operator decision on a task held for review.
+// review is {action, ...} with the fields the chosen action carries.
+function prdResolveTaskReview(prdID, taskID, review) {
+  const body = Object.assign({ task_id: taskID, actor: 'operator' }, review);
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/resolve_task_review', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+    .then(() => { showToast(t('review_done'), 'success', 1500); _refreshAutomataOrPRD(); })
+    .catch(err => showToast(t('review_failed') + ': ' + String(err), 'error', 3000));
+}
+window.prdResolveTaskReview = prdResolveTaskReview;
+
+// prdReviewRetry sends a held task back to its normally resolved worker.
+function prdReviewRetry(prdID, taskID) {
+  return prdResolveTaskReview(prdID, taskID, { action: 'retry' });
+}
+
+// prdReviewCancel cancels a held task after the operator confirms.
+function prdReviewCancel(prdID, taskID) {
+  if (!confirm(t('review_cancel_confirm'))) return Promise.resolve();
+  return prdResolveTaskReview(prdID, taskID, { action: 'cancel' });
+}
+window.prdReviewRetry = prdReviewRetry;
+window.prdReviewCancel = prdReviewCancel;
+
+// _prdReviewBody builds the retry body for one of the three retry forms. A
+// field the form does not change is left out, so the server keeps it.
+function _prdReviewBody(mode, v) {
+  const body = { action: 'retry' };
+  if (mode === 'spec') body.spec = v.spec || '';
+  if (mode === 'worker') {
+    if (v.backend) body.backend = v.backend;
+    if (v.model) body.model = v.model;
+    if (v.effort) body.effort = v.effort;
+  }
+  if (mode === 'scope') body.files = (v.files || '').split(/[\n,]/).map(s => s.trim()).filter(Boolean);
+  if (v.note) body.note = v.note;
+  return body;
+}
+
+// openPRDTaskReviewModal opens the form for one retry mode: spec, worker or
+// scope. The form is prefilled from the cached Automaton's task.
+function openPRDTaskReviewModal(prdID, taskID, mode) {
+  const task = _findPRDTask(prdID, taskID) || {};
+  const titleKey = { spec: 'review_action_edit_retry', worker: 'review_action_change_worker', scope: 'review_action_narrow_scope' }[mode];
+  const head = `<div class="response-modal-header">
+      <strong>${escHtml(t(titleKey))} · ${escHtml(taskID)}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close') || 'Close'}">&#10005;</button>
+    </div>`;
+  const note = `<label style="font-size:11px;color:var(--text2);">${escHtml(t('review_form_note'))}
+      <input id="prdReviewNote" type="text" class="form-input" style="width:100%;" /></label>`;
+  const actions = `<div style="display:flex;gap:6px;justify-content:flex-end;">
+      <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel') || 'Cancel'}</button>
+      <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${escHtml(t('review_form_retry_submit'))}</button>
+    </div>`;
+  const val = id => { const el = document.getElementById(id); return el ? String(el.value || '') : ''; };
+  const submit = fields => () => {
+    const body = _prdReviewBody(mode, Object.assign({ note: val('prdReviewNote').trim() }, fields()));
+    if ((mode === 'spec' && !body.spec.trim()) || (mode === 'scope' && !(body.files || []).length)) {
+      showToast(t('review_failed'), 'error', 3000);
+      return;
+    }
+    _prdCloseModal();
+    return prdResolveTaskReview(prdID, taskID, body);
+  };
+  if (mode === 'worker') {
+    ensureLLMModelLists().then(() => {
+      _prdMountModal(`${head}
+        <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+            <div><label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_new_backend_label'))}</label>${renderBackendSelect('prdReviewBackend', task.backend || '', `refreshLLMModelField('prdReviewModelWrap','prdReviewModelInner','prdReviewBackend','')`)}</div>
+            <div><label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_new_effort_label'))}</label>${renderEffortSelect('prdReviewEffort', String(task.effort || ''), '')}</div>
+            <div id="prdReviewModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_new_model_label'))}</label><div id="prdReviewModelInner"></div></div>
+          </div>
+          ${note}
+          ${actions}
+        </form>`, submit(() => {
+        const modelEl = document.getElementById('prdReviewModelInner')?.querySelector('input,select');
+        return { backend: val('prdReviewBackend'), model: modelEl ? modelEl.value.trim() : '', effort: val('prdReviewEffort') };
+      }));
+      refreshLLMModelField('prdReviewModelWrap', 'prdReviewModelInner', 'prdReviewBackend', task.model || '');
+    });
+    return;
+  }
+  const field = mode === 'spec'
+    ? `<label style="font-size:11px;color:var(--text2);">${escHtml(t('review_form_spec'))}
+         <textarea id="prdReviewSpec" class="form-input" rows="6" style="resize:vertical;width:100%;">${escHtml(task.spec || '')}</textarea></label>`
+    : `<label style="font-size:11px;color:var(--text2);">${escHtml(t('review_form_files'))}
+         <textarea id="prdReviewFiles" class="form-input" rows="6" style="resize:vertical;width:100%;">${escHtml((task.files || []).join('\n'))}</textarea></label>`;
+  _prdMountModal(`${head}
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+      ${field}
+      ${note}
+      ${actions}
+    </form>`, submit(() => (mode === 'spec' ? { spec: val('prdReviewSpec') } : { files: val('prdReviewFiles') })));
+}
+window.openPRDTaskReviewModal = openPRDTaskReviewModal;
+
+// _taskAttemptsHTML draws the per-attempt summary of a task: the worker, the
+// time spent, the outcome, the files changed and the verifier report, plus the
+// review report text when the task is held.
+function _taskAttemptsHTML(task) {
+  const attempts = Array.isArray(task.attempts) ? task.attempts : [];
+  const summary = task.review_summary || null;
+  if (!attempts.length && !summary) return '';
+  const total = summary && summary.total_seconds
+    ? summary.total_seconds
+    : attempts.reduce((n, a) => n + (a.duration_seconds || 0), 0);
+  const rows = attempts.map(a => {
+    const worker = a.backend ? a.backend + (a.model ? ' / ' + a.model : '') : '—';
+    const esc = a.escalated ? ` <span class="prd-task-llm-badge">${escHtml(t('review_attempt_escalated'))}</span>` : '';
+    const files = (a.changed_files || []).map(f => `<li><code>${escHtml(f)}</code></li>`).join('');
+    const issues = (a.verifier_issues || []).map(i => `<li>${escHtml(i)}</li>`).join('');
+    const verifier = a.verifier_summary || issues
+      ? `<div>${escHtml(t('review_attempt_verifier'))}: ${escHtml(a.verifier_summary || '')}</div>${issues ? `<ul>${issues}</ul>` : ''}`
+      : '';
+    return `<div class="prd-task-attempt" style="margin-top:6px;">
+      <div><strong>#${escHtml(String(a.number || ''))}</strong> ${escHtml(worker)}${esc}
+        <span style="color:var(--text2);font-size:11px;"> · ${escHtml(_fmtDurationSeconds(a.duration_seconds))}</span></div>
+      <div style="font-size:11px;color:var(--text2);">${escHtml(t('review_attempt_outcome'))}: ${escHtml(a.outcome || '—')}${a.failure_category ? ' (' + escHtml(a.failure_category) + ')' : ''}</div>
+      ${a.failure_summary ? `<div style="font-size:11px;">${escHtml(a.failure_summary)}</div>` : ''}
+      ${files ? `<div style="font-size:11px;">${escHtml(t('review_attempt_files'))}:</div><ul class="prd-task-attempt-files">${files}</ul>` : ''}
+      ${verifier ? `<div style="font-size:11px;">${verifier}</div>` : ''}
+    </div>`;
+  }).join('');
+  const body = rows || `<em style="color:var(--text2);font-size:11px;">${escHtml(t('review_attempt_none'))}</em>`;
+  const report = summary && summary.text
+    ? `<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;">${escHtml(t('review_report_title'))}</summary><pre style="white-space:pre-wrap;font-size:11px;">${escHtml(summary.text)}</pre></details>`
+    : '';
+  return `<details class="prd-task-attempts" style="margin-top:6px;">
+    <summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--text2);">${escHtml(t('review_attempts_title'))} (${attempts.length}) · ${escHtml(t('review_attempts_total'))}: ${escHtml(_fmtDurationSeconds(total))}</summary>
+    ${body}${report}
+  </details>`;
+}
+
+// _taskReviewPanelHTML is the expanded body for a task's review state: the
+// operator actions when the task is held, the attempt summary, and the task's
+// own failure escalation override.
+function _taskReviewPanelHTML(prd, task) {
+  const pid = escHtml(JSON.stringify(prd.id || ''));
+  const tid = escHtml(JSON.stringify(task.id || ''));
+  const actions = task.status === 'review_needed'
+    ? `<div class="prd-task-review-actions" onclick="event.stopPropagation()" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;">
+        <button class="prd-task-retry-btn" onclick="event.stopPropagation();prdReviewRetry(${pid},${tid})">&#8635; ${escHtml(t('review_action_retry'))}</button>
+        <button class="prd-task-retry-btn" onclick="event.stopPropagation();openPRDTaskReviewModal(${pid},${tid},'spec')">${escHtml(t('review_action_edit_retry'))}</button>
+        <button class="prd-task-retry-btn" onclick="event.stopPropagation();openPRDTaskReviewModal(${pid},${tid},'worker')">${escHtml(t('review_action_change_worker'))}</button>
+        <button class="prd-task-retry-btn" onclick="event.stopPropagation();openPRDTaskReviewModal(${pid},${tid},'scope')">${escHtml(t('review_action_narrow_scope'))}</button>
+        <button class="prd-task-cancel-btn" onclick="event.stopPropagation();prdReviewCancel(${pid},${tid})">${escHtml(t('review_action_cancel'))}</button>
+      </div>`
+    : '';
+  return actions + _taskAttemptsHTML(task) + _failureEscalationEditorHTML(prd.id, task.id, task.failure_escalation);
+}
 
 function saveGeneralField(key, value) {
   fetch('/api/config', {
@@ -21231,7 +21574,7 @@ function renderProgressBar(prd) {
   const pct = Math.round((done / total) * 100);
   const fillClass = pct === 100 ? 'automata-progress-fill complete' : 'automata-progress-fill';
   return `<div class="automata-progress-wrap"><div class="${fillClass}" style="width:${pct}%;"></div></div>
-          <div style="font-size:10px;color:var(--text2);">${done}/${total} tasks · ${pct}%</div>`;
+          <div style="font-size:10px;color:var(--text2);">${done}/${total} tasks · ${pct}%${_prdHeldBadgeHTML(prd) ? ' ' + _prdHeldBadgeHTML(prd) : ''}</div>`;
 }
 
 function renderCurrentPosition(prd) {
@@ -21380,7 +21723,7 @@ function renderDependencyGraph(prd) {
   const width = padLeft * 2 + stories.length * colWidth;
   const height = padTop + headerH + maxRows * rowHeight + padTop;
 
-  const statusColor = { completed: 'var(--success,#22c55e)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', failed: 'var(--error,#ef4444)', blocked: 'var(--error,#ef4444)' };
+  const statusColor = { completed: 'var(--success,#22c55e)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', failed: 'var(--error,#ef4444)', blocked: 'var(--error,#ef4444)', review_needed: 'var(--warning,#f59e0b)' };
   const colorFor = sts => statusColor[sts] || 'var(--text2)';
 
   // id -> {x, y, w, h, title, status} for every task, so edges (which
@@ -22651,7 +22994,7 @@ function _liveUpdateDetail(prd) {
 }
 
 function _taskStatusIcon(status) {
-  const icons = { completed: '✓', in_progress: '▶', running: '▶', verifying: '⟳', running_tests: '🧪', waiting_capacity: '⏳', failed: '✗', blocked: '✗', cancelled: '○', pending: '○' };
+  const icons = { completed: '✓', in_progress: '▶', running: '▶', verifying: '⟳', running_tests: '🧪', waiting_capacity: '⏳', failed: '✗', blocked: '✗', review_needed: '⚑', cancelled: '○', pending: '○' };
   return icons[status] || '○';
 }
 
@@ -22678,7 +23021,7 @@ function renderDetailStoriesTree(prd) {
     const taskRows = tasks.map((t, ti) => {
       const sts = t.status || t.Status || 'pending';
       const icon = _taskStatusIcon(sts);
-      const iconColor = { completed: 'var(--success)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', failed: 'var(--error)', blocked: 'var(--error)' }[sts] || 'var(--text2)';
+      const iconColor = { completed: 'var(--success)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', failed: 'var(--error)', blocked: 'var(--error)', review_needed: 'var(--warning,#f59e0b)' }[sts] || 'var(--text2)';
       const sessionLink = t.session_id
         ? `<span class="prd-task-session" onclick="event.stopPropagation();navigate('session-detail','${escHtml(t.session_id)}')" title="Go to session">→ session</span>`
         : '';
@@ -22878,7 +23221,7 @@ function _renderDetailContent(prd) {
 
   // BL246 v6.6.0 — persistent header toolbar across all sub-tabs.
   const tab = _automataDetailTab || 'overview';
-  const header = _renderDetailHeader(prd, typeBadge, tplBadge + `<span id="prdDetailTagRow" data-prd="${escHtml(prd.id)}" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;"></span>`);
+  const header = _renderDetailHeader(prd, typeBadge + _prdHeldBadgeHTML(prd), tplBadge +`<span id="prdDetailTagRow" data-prd="${escHtml(prd.id)}" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;"></span>`);
   const tabStrip = _renderDetailTabStrip(prd, tab);
   let tabBody = '';
   if (tab === 'overview') tabBody = _renderDetailOverview(prd);
@@ -24607,7 +24950,8 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
   ['lifecycle_sub_form_group_task', 'Task status', [
     'task.pending', 'task.queued', 'task.in_progress', 'task.running_tests',
     'task.verifying', 'task.completed', 'task.failed', 'task.blocked',
-    'task.cancelled', 'task.waiting_capacity', 'task.awaiting_approval']],
+    'task.cancelled', 'task.waiting_capacity', 'task.awaiting_approval',
+    'task.review_needed']],
   ['lifecycle_sub_form_group_other', 'Other', [
     'task.session_started', 'task.session_cleared', 'prd.updated']],
 ];
@@ -24893,6 +25237,7 @@ function _renderDetailOverview(prd) {
     </div>` : ''}
     ${renderDetailVerdicts(prd)}
     ${renderDetailCIWatch(prd)}
+    <div style="margin-top:12px;">${_failureEscalationEditorHTML(prd.id, '', prd.failure_escalation)}</div>
     ${prd.spec ? `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);">${escHtml(t('prd_view_spec')||'View spec')}</summary>
       <pre style="font-size:11px;background:var(--bg2);padding:8px;border-radius:4px;white-space:pre-wrap;margin-top:6px;max-height:300px;overflow:auto;">${escHtml(prd.spec)}</pre>
     </details>` : ''}
@@ -26016,6 +26361,13 @@ function _automationMemberActionsHTML(m, status, actions) {
   return `<span class="automation-member-actions" role="group" aria-label="${escHtml(t('automation_member_actions'))}">${buttons}</span>`;
 }
 
+// _automationHeldFor returns how many tasks of a member's Automaton are held for
+// operator review, or 0 for a member with no Automaton.
+function _automationHeldFor(m, c) {
+  const held = (c && c.reviewByPrd) || {};
+  return m && m.prd_id ? (held[m.prd_id] || 0) : 0;
+}
+
 function _automationMemberCardHTML(m, c, active, actions) {
   const kind = String(m.kind || 'prd');
   const status = automationMemberDisplayStatus(m, c.prdStatuses) || 'pending';
@@ -26027,6 +26379,12 @@ function _automationMemberCardHTML(m, c, active, actions) {
   const isActive = active.has(m.id);
   const clickable = kind === 'prd' && !!m.prd_id;
   const edgeCount = _AUTOMATION_OUTCOME_EDGES.filter(e => m[e]).length;
+  // Tasks of this member's Automaton held for operator review (the review_needed_count
+  // of the running Automation's status row).
+  const held = _automationHeldFor(m, c);
+  const heldBadge = held
+    ? `<span class="automation-held-badge" title="${escHtml(t('review_held_help'))}">&#9873; ${held} ${escHtml(t('review_held_badge'))}</span>`
+    : '';
 
   let cls = 'automation-member automation-member-' + statusClass;
   if (isActive) cls += ' automation-member-active';
@@ -26060,7 +26418,7 @@ function _automationMemberCardHTML(m, c, active, actions) {
     + `<span class="automation-member-title">${escHtml(_automationMemberTitle(m, c, chip))}</span>`
     + `<span class="automation-chip">${escHtml(chip)}</span>`
     + `<span class="automation-member-status">${escHtml(shownLabel)}</span>`
-    + extra + marker + fork + details + _automationMemberActionsHTML(m, status, actions) + '</div>';
+    + heldBadge + extra + marker + fork + details + _automationMemberActionsHTML(m, status, actions) + '</div>';
 }
 
 // _automationNestedHTML draws the expanded body of a nested member below its
@@ -26163,7 +26521,13 @@ function _automationStripBody(a, c, seen, depth) {
   if (unlinked.length) rows.push({ key: 'unlinked', linked: false, items: unlinked.map(m => ({ member: m, ref: false })) });
 
   const body = rows.filter(r => r.items.length).map(r => _automationRowHTML(r, env)).join('');
-  return `<div class="automation-strip" data-automation-id="${escHtml(a.id)}">${body}</div>`;
+  // The strip header counts the held tasks of every member Automaton, shown once
+  // at the top level so a nested strip does not repeat it.
+  const heldTotal = depth === 0 ? members.reduce((n, m) => n + _automationHeldFor(m, c), 0) : 0;
+  const heldStrip = heldTotal
+    ? `<div class="automation-held-strip">&#9873; ${heldTotal} ${escHtml(t('review_held_badge'))}</div>`
+    : '';
+  return `<div class="automation-strip" data-automation-id="${escHtml(a.id)}">${heldStrip}${body}</div>`;
 }
 
 // buildAutomationStripHTML returns the strip markup for one Automation.
@@ -26195,24 +26559,31 @@ window.toggleAutomationNested = toggleAutomationNested;
 const _AUTOMATION_DECISION_LIMIT = 20;
 let _automationDetailSeq = 0;
 
-// loadAutomationPrdInfo fetches the Automaton list once and resolves
-// {titles, statuses, flags}, all keyed by Automaton id; flags is
-// {template, child} and feeds the insert picker. It never rejects: a failed
-// or oddly shaped response leaves both maps empty.
+// loadAutomationPrdInfo fetches the Automaton list and the loop status once and
+// resolves {titles, statuses, flags, review}. titles, statuses and flags are
+// keyed by Automaton id; flags is {template, child} and feeds the insert
+// picker. review maps the Automaton a running Automation is on to its
+// review_needed_count, the tasks held for operator review. It never rejects: a
+// failed or oddly shaped response leaves the maps empty.
 function loadAutomationPrdInfo() {
-  return automationRequest('GET', '/api/autonomous/prds')
-    .then(data => {
+  const loop = automationRequest('GET', '/api/autonomous/status').catch(() => null);
+  return Promise.all([automationRequest('GET', '/api/autonomous/prds'), loop])
+    .then(([data, status]) => {
       const prds = Array.isArray(data) ? data : (data && Array.isArray(data.prds) ? data.prds : []);
-      const titles = {}, statuses = {}, flags = {};
+      const titles = {}, statuses = {}, flags = {}, review = {};
       prds.forEach(p => {
         if (!p || !p.id) return;
         if (p.title) titles[p.id] = String(p.title);
         if (p.status) statuses[p.id] = String(p.status);
         flags[p.id] = { template: !!p.is_template, child: !!p.parent_prd_id };
       });
-      return { titles, statuses, flags };
+      const rows = status && Array.isArray(status.automations) ? status.automations : [];
+      rows.forEach(r => {
+        if (r && r.current_prd_id && r.review_needed_count > 0) review[r.current_prd_id] = r.review_needed_count;
+      });
+      return { titles, statuses, flags, review };
     })
-    .catch(() => ({ titles: {}, statuses: {}, flags: {} }));
+    .catch(() => ({ titles: {}, statuses: {}, flags: {}, review: {} }));
 }
 window.loadAutomationPrdInfo = loadAutomationPrdInfo;
 
@@ -26222,7 +26593,7 @@ function _automationStripContext() {
   const st = _automationState;
   const automationsById = {};
   (Array.isArray(st.list) ? st.list : []).forEach(a => { if (a && a.id) automationsById[a.id] = a; });
-  return { prdTitles: st.prdTitles, prdStatuses: st.prdStatuses, expanded: st.expanded, automationsById };
+  return { prdTitles: st.prdTitles, prdStatuses: st.prdStatuses, reviewByPrd: st.reviewByPrd, expanded: st.expanded, automationsById };
 }
 
 // _automationJoinWait describes the join the chain is waiting on: the first
@@ -26456,6 +26827,7 @@ function renderAutomationDetail(id, opts) {
     st.prdTitles = info.titles;
     st.prdStatuses = info.statuses;
     st.prdFlags = info.flags;
+    st.reviewByPrd = info.review;
     if (res.error || !res.data || typeof res.data !== 'object') {
       if (quiet) return;
       st.detail = null;
@@ -26970,6 +27342,7 @@ function openAutomationInsertDialog(anchorMemberId, position) {
     st.prdTitles = info.titles;
     st.prdStatuses = info.statuses;
     st.prdFlags = info.flags;
+    st.reviewByPrd = info.review;
     _automationInsert.picked = '';
     _automationInsert.rows = _automationPickerRows(list);
     const field = (labelKey, input) =>
@@ -35272,6 +35645,22 @@ function loadAutomataSettingsPanel() {
             <option value="warn" ${(!ac.gate_disagreement||ac.gate_disagreement==='warn')?'selected':''}>${escHtml(t('settings_gate_disagreement_warn')||'warn')}</option>
             <option value="block" ${ac.gate_disagreement==='block'?'selected':''}>${escHtml(t('settings_gate_disagreement_block')||'block')}</option>
           </select>
+        </div>
+        <!-- Failure escalation — the global default; an Automaton or task override wins per field. -->
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label">${escHtml(t('settings_failure_escalation_enabled')||'Failure escalation enabled')}</div>
+          <label class="toggle-switch"><input type="checkbox" ${(ac.failure_escalation || {}).enabled === false ? '' : 'checked'} onchange="saveGeneralField('autonomous.failure_escalation.enabled',this.checked)"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label">${escHtml(t('settings_failure_escalation_max_failures')||'Failed attempts before the task is held for review (minimum 1, default 3)')}</div>
+          <input type="number" min="1" step="1" placeholder="3" value="${(ac.failure_escalation || {}).max_failures || 3}" style="width:80px;font-size:12px;" class="form-input"
+            onchange="saveGeneralField('autonomous.failure_escalation.max_failures',Number(this.value))">
+        </div>
+        <div class="settings-row" style="flex-direction:column;align-items:stretch;">
+          <div class="settings-label">${escHtml(t('settings_failure_escalation_steps')||'Escalation steps (backend:model@attempts, comma separated)')}</div>
+          <input type="text" class="form-input" style="font-size:12px;margin-top:4px;" placeholder="ollama:qwen3.8:27b@2,claude-code:claude-sonnet-5-5" value="${escHtml(_failureEscalationStepsText((ac.failure_escalation || {}).steps))}"
+            onchange="saveGeneralField('autonomous.failure_escalation.steps',this.value)">
+          <div style="font-size:10px;color:var(--text2);margin-top:4px;">${escHtml(t('settings_failure_escalation_steps_hint')||'Each step covers its attempts, and the last step covers the rest.')}</div>
         </div>
         <div class="settings-row" style="justify-content:space-between;">
           <div class="settings-label" title="${escHtml(t('settings_resume_max_age_hint')||'Applies when the daemon restarts: an Automaton left running is resumed only if its newest activity is within this many seconds. 0 = never auto-resume, -1 = no age limit. Automata that do not auto-resume are parked as blocked with a reason and raise an alert.')}">${escHtml(t('settings_resume_max_age')||'Resume stale Automata at startup only if active within (sec; 0 = never, -1 = always)')}</div>

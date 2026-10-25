@@ -182,6 +182,9 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"federation_fingerprint_reject_btn",
 		"federation_fingerprint_kind_node",
 		"federation_fingerprint_kind_billing",
+		// Failure escalation — the held-task status chip shown in the Automaton
+		// task rows and the Automation strip.
+		"task_status_review_needed",
 		"llm_billing_group_label",
 	}
 	for _, lang := range requiredLocales {

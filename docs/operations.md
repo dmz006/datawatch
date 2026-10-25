@@ -574,6 +574,19 @@ Verification is the throughput limit of the Automata pipeline, so the verifier p
 
 All three keys can be read and set through the autonomous config on REST, MCP (`autonomous_config_set`), the CLI and the PWA settings.
 
+**Failure escalation and held tasks.** A failing task moves to the next worker on its ladder after each failed attempt. After `max_failures` failed attempts (default 3) it is held in `review_needed` for operator review instead of failing outright; `enabled: false` restores the retry-then-fail behaviour. Each field resolves task override, then Automaton override, then the daemon default (`autonomous.failure_escalation.{enabled,max_failures,steps}`).
+
+| Method | How |
+|--------|-----|
+| **YAML** | `config.yaml` → `autonomous.failure_escalation:` with `enabled`, `max_failures` and `steps` |
+| **CLI** | `datawatch autonomous failure-escalation show\|set\|clear <automaton> [--task <task>]`; `datawatch autonomous resolve-review <automaton> --task <task> --action retry\|cancel`; `datawatch autonomous status` lists held tasks under `review_needed`; `datawatch config set autonomous.failure_escalation.max_failures 4` |
+| **Web UI** | Settings → Automata → Autonomous block (enable, failures before review, steps); Automaton detail → Overview (override editor); each task row (held badge, attempts, report, and the Retry, Edit spec and retry, Change worker, Narrow scope and Cancel task actions) |
+| **REST API** | `PUT /api/config` with `autonomous.failure_escalation.enabled`, `.max_failures` or `.steps` (a JSON array or `backend:model[@attempts],...`); `POST /api/autonomous/prds/{id}/set_failure_escalation` with `{"task_id","policy"}`; `POST /api/autonomous/prds/{id}/resolve_task_review` with `{"task_id","action","spec","backend","model","effort","files","note"}` |
+| **Comm channel** | `configure autonomous.failure_escalation.max_failures=4`; `autonomous set-failure-escalation <automaton> [task] clear \| enabled=false max_failures=4 steps=...`; `autonomous review-task <automaton> <task> retry\|cancel [key=value ...]`; `autonomous status` names each held task |
+| **MCP** | `autonomous_prd_set_failure_escalation`, `autonomous_prd_resolve_task_review`, `autonomous_status` (`review_needed`), `config_set` |
+
+**Defaults and the retry count.** Escalation is on by default. A task gets `max_failures` failed attempts (default 3) before it is held, where the old behaviour was one attempt plus `autonomous.auto_fix_retries` (default 1, so two attempts) before the task was marked failed. An Automaton with no settings of its own therefore gets one more attempt than before, and a task that uses them up waits for the operator instead of failing. A held task keeps its attempts and its report, and its Automaton shows as blocked until the operator retries or cancels the task. To restore the old behaviour, set `autonomous.failure_escalation.enabled: false` (or `datawatch config set autonomous.failure_escalation.enabled false`); the retry count is then `autonomous.auto_fix_retries` again. The operator guide is [howto/failure-escalation.md](howto/failure-escalation.md).
+
 **Counters.** `GET /api/capacity` carries a `verifier` object (`capacity_status` over MCP returns it too) with `runs`, queue wait and run time totals, averages and maxima in seconds, `categories` (`pass`, `content`, `infra`, `watchdog`, `timeout`, `capacity`, `escalated`), `watchdog_ends`, `escalations` and `since`. The CLI and comm channel status text adds one line, for example `verifiers: 12 runs, avg wait 38s, avg run 6m, infra 3, watchdog 1`, or `verifiers: no runs yet`. Prometheus exposes `datawatch_verifier_runs_total{category}`, `datawatch_verifier_wait_seconds_total` and `datawatch_verifier_run_seconds_total`. The aggregates are kept since the daemon started.
 
 ---

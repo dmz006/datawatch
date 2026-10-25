@@ -109,14 +109,14 @@ func TestFailureReason_TaskExhausted_VerificationFailure_Populated(t *testing.T)
 	}
 	final, _ := m.Store().GetPRD(prd.ID)
 	tk := final.Story[0].Tasks[0]
-	if tk.Status != TaskFailed {
-		t.Fatalf("task status = %s, want failed", tk.Status)
+	if tk.Status != TaskReviewNeeded {
+		t.Fatalf("task status = %s, want review_needed", tk.Status)
 	}
 	if tk.FailureReason == nil {
 		t.Fatal("Task.FailureReason is nil, want populated")
 	}
-	if tk.FailureReason.Source != "task-exhausted" {
-		t.Errorf("FailureReason.Source = %q, want task-exhausted", tk.FailureReason.Source)
+	if tk.FailureReason.Source != "failure-escalation-hold" {
+		t.Errorf("FailureReason.Source = %q, want failure-escalation-hold", tk.FailureReason.Source)
 	}
 	// vr.Category is empty on VerificationResult{OK:false} with no
 	// explicit Category set, so orContentCategory normalizes it to

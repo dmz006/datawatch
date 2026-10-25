@@ -10,7 +10,8 @@ type TasksView struct {
 }
 
 // TaskEntry is one task's row in a TasksView. Error, Verification,
-// FailureCategory and SessionID are omitted when empty.
+// FailureCategory, SessionID and the failure escalation fields are omitted when
+// empty. ReviewSummary is the plain-text report of a task held for review.
 type TaskEntry struct {
 	ID              string            `json:"id"`
 	Title           string            `json:"title"`
@@ -19,6 +20,11 @@ type TaskEntry struct {
 	Verification    *TaskVerification `json:"verification,omitempty"`
 	FailureCategory string            `json:"failure_category,omitempty"`
 	SessionID       string            `json:"session_id,omitempty"`
+	// EscalationFailures counts failed attempts since the last operator action.
+	EscalationFailures int `json:"escalation_failures,omitempty"`
+	// AttemptCount is the number of recorded attempts of the task.
+	AttemptCount  int    `json:"attempt_count,omitempty"`
+	ReviewSummary string `json:"review_summary,omitempty"`
 }
 
 // TaskVerification is the outcome of a task's verification. It deliberately
@@ -64,6 +70,11 @@ func buildTaskEntry(task *Task) TaskEntry {
 	}
 	if task.FailureReason != nil {
 		entry.FailureCategory = task.FailureReason.Category
+	}
+	entry.EscalationFailures = task.EscalationFailures
+	entry.AttemptCount = len(task.Attempts)
+	if task.ReviewSummary != nil {
+		entry.ReviewSummary = task.ReviewSummary.Text
 	}
 	return entry
 }

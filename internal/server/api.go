@@ -5947,6 +5947,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"per_prd_guardrails":                   s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
 			"block_on_file_drift":                  s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
 			"gate_disagreement":                    s.cfg.Autonomous.GateDisagreement, // verifier OK + gate regression: "warn" (default) or "block"
+			"failure_escalation":                   failureEscalationConfigForDisplay(s.cfg.Autonomous.FailureEscalation),
 			"verifier_infra_escalation_threshold":  s.cfg.Autonomous.VerifierInfraEscalationThreshold,
 			"fallback_verification_backend":        s.cfg.Autonomous.FallbackVerificationBackend,
 			"verifier_no_progress_timeout_seconds": s.cfg.Autonomous.VerifierNoProgressTimeoutSeconds,
@@ -6312,6 +6313,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `autonomous.gate_disagreement: must be "warn" or "block"`, http.StatusBadRequest)
 			return
 		}
+	}
+	// The failure escalation block is checked as a whole, the same way: a bad
+	// max_failures, steps value or enabled flag refuses the whole PUT.
+	if err := validateFailureEscalationPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	skipped := applyConfigPatch(s.cfg, patch)
 	// BL368 — re-initialize visioner when vision config changes via PUT.
@@ -8073,6 +8080,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Results.ScheduleHistoryLimit = n
 			}
 		default:
+			// autonomous.failure_escalation.{enabled,max_failures,steps}; the
+			// values were checked by validateFailureEscalationPatch.
+			if applyFailureEscalationPatch(cfg, k, v) {
+				continue
+			}
 			// Single-tier pair form: autonomous.plan_tier_allocation_usd.<tier>
 			// sets one tier and leaves the rest of the table alone.
 			if tier, ok := planTierAllocationPairTier(k); ok {

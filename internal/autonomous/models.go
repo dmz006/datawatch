@@ -49,7 +49,7 @@ func NormalizePRDStatus(s PRDStatus) PRDStatus {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -143,6 +143,11 @@ const (
 	// this state (same mechanism StoryAwaitingApproval already uses at
 	// story granularity); ApproveTask transitions it back to pending.
 	TaskAwaitingApproval TaskStatus = "awaiting_approval"
+	// TaskReviewNeeded: the task failed enough attempts (the failure
+	// escalation policy's max_failures) that it is held for the operator to
+	// retry or cancel it. It is not terminal and not a failure; see
+	// failure_escalation.go and ResolveTaskReview.
+	TaskReviewNeeded TaskStatus = "review_needed"
 )
 
 // Effort mirrors session.EffortLevels (BL41) but kept separate so
@@ -218,6 +223,11 @@ type PRD struct {
 	// list for this Automaton. Precedence: task → Automaton (here) → global
 	// autonomous.verifier_policy. Nil = inherit. See ResolveVerifierPolicy.
 	VerifierPolicy *VerifierPolicyOverride `json:"verifier_policy,omitempty"`
+	// FailureEscalation overrides the global failure escalation policy for
+	// every task of this Automaton. Precedence per field: task → Automaton
+	// (here) → global autonomous.failure_escalation. Nil = inherit. See
+	// resolveFailureEscalation.
+	FailureEscalation *FailureEscalationPolicy `json:"failure_escalation,omitempty"`
 	// LSPLanguage (v8.7.1) — language server preset for OpenCode-backed workers.
 	// Applies to all tasks unless overridden at the task level.
 	LSPLanguage string `json:"lsp_language,omitempty"`
@@ -855,9 +865,30 @@ type Task struct {
 	// and backend list for this task — the most specific level. Nil =
 	// inherit. See ResolveVerifierPolicy.
 	VerifierPolicy *VerifierPolicyOverride `json:"verifier_policy,omitempty"`
+	// FailureEscalation overrides the Automaton and global failure
+	// escalation policy for this task, per field. Nil = inherit. See
+	// resolveFailureEscalation.
+	FailureEscalation *FailureEscalationPolicy `json:"failure_escalation,omitempty"`
+	// Attempts is the per-attempt history the failure escalation policy
+	// records for this task (one entry per failed, stalled or cancelled
+	// attempt).
+	Attempts []TaskAttempt `json:"attempts,omitempty"`
+	// EscalationFailures counts failed attempts since the last operator
+	// action; it indexes the policy's steps and is compared with
+	// max_failures.
+	EscalationFailures int `json:"escalation_failures,omitempty"`
+	// ReviewSummary is the plain-text report written when the task is held
+	// in TaskReviewNeeded.
+	ReviewSummary *ReviewSummary `json:"review_summary,omitempty"`
+	// OperatorWorkerSet is true when the operator's last review retry chose
+	// the task's worker. The failure escalation ladder then does not replace
+	// that worker for the attempts that follow; a retry without a worker
+	// change clears it, and the ladder applies again.
+	OperatorWorkerSet bool `json:"operator_worker_set,omitempty"`
 	// ExecutorSource is the level that supplied the execution backend for
-	// the most recent run attempt: "task", "story", "prd", "automation" or
-	// "global" (no level set one, so the fallback backend was used). Set by
+	// the most recent run attempt: "task", "story", "prd", "automation",
+	// "global" (no level set one, so the fallback backend was used) or
+	// "escalation" (a failure escalation step chose the worker). Set by
 	// the dispatch loop before the session spawns and overwritten by each
 	// later attempt.
 	ExecutorSource string `json:"executor_source,omitempty"`
@@ -1272,6 +1303,10 @@ type LoopStatus struct {
 	// Automations summarises each non-terminal Automation (draft, active,
 	// paused or blocked): where its cursor is and how long it has sat idle.
 	Automations []AutomationStatusSummary `json:"automations,omitempty"`
+
+	// ReviewNeeded lists every task held for operator review across all
+	// Automata, oldest hold first. Omitted when none is held.
+	ReviewNeeded []HeldTaskStatus `json:"review_needed,omitempty"`
 }
 
 // AutomationStatusSummary is one Automation's row in LoopStatus. SpentUSD,
@@ -1302,6 +1337,12 @@ type AutomationStatusSummary struct {
 	// the Automation waits on a join.
 	ActiveCursors []ActiveCursorSummary `json:"active_cursors"`
 	JoinWait      *JoinWaitSummary      `json:"join_wait,omitempty"`
+
+	// ReviewNeededCount and ReviewNeededTaskIDs report the tasks of the current
+	// member Automaton held for operator review. Both are omitted when none is
+	// held.
+	ReviewNeededCount   int      `json:"review_needed_count,omitempty"`
+	ReviewNeededTaskIDs []string `json:"review_needed_task_ids,omitempty"`
 }
 
 // ActiveCursorSummary is one live cursor of an Automation in LoopStatus. PRDID

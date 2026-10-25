@@ -60,7 +60,11 @@ func (m *Manager) automationStatusSummaries(now time.Time) []AutomationStatusSum
 			s.CurrentMemberID = mem.ID
 			s.CurrentPRDID = mem.PRDID
 			if prd, ok := m.store.GetPRD(mem.PRDID); ok {
-				m.readLocked(func() { s.CurrentPRDTitle = prd.Title })
+				m.readLocked(func() {
+					s.CurrentPRDTitle = prd.Title
+					s.ReviewNeededTaskIDs = heldTaskIDs(prd)
+					s.ReviewNeededCount = len(s.ReviewNeededTaskIDs)
+				})
 			}
 		}
 		if a.IdleSince != nil {

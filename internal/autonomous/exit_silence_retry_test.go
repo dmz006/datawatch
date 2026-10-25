@@ -74,19 +74,20 @@ func TestExitSilenceRetry_ExhaustsRetriesAndFailsInfra(t *testing.T) {
 	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) {
 		return VerificationResult{}, ExitSilenceError(exitSilenceReason)
 	}
-	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
-	if got.Status != PRDFailed {
-		t.Fatalf("a persistently exit-silent task must fail once the budget is spent, got PRD %s", got.Status)
+	got := runToTerminalOrBlocked(t, m, api, prd.ID, spawn, verify)
+	if got.Status != PRDBlocked {
+		t.Fatalf("a persistently exit-silent task must hold once the budget is spent, got PRD %s", got.Status)
 	}
 	tk := got.Story[0].Tasks[0]
 	if tk.Status == TaskVerifying {
 		t.Fatal("task is stuck in verifying instead of a terminal status")
 	}
-	if tk.Status != TaskFailed {
-		t.Fatalf("task must end failed, got %s", tk.Status)
+	if tk.Status != TaskReviewNeeded {
+		t.Fatalf("task must be held for review, got %s", tk.Status)
 	}
-	if !strings.Contains(tk.Error, exitSilenceReason) {
-		t.Fatalf("task Error should contain %q, got %q", exitSilenceReason, tk.Error)
+	// The held task's Error is the one-line hold note; the cause is in the failure detail.
+	if tk.FailureReason == nil || !strings.Contains(tk.FailureReason.Detail, exitSilenceReason) {
+		t.Fatalf("failure detail should contain %q, got %+v", exitSilenceReason, tk.FailureReason)
 	}
 	if tk.FailureReason == nil {
 		t.Fatal("task has no FailureReason")

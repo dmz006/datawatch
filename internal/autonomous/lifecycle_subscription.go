@@ -69,7 +69,7 @@ var KnownEventKinds = func() map[string]bool {
 	for _, s := range []TaskStatus{
 		TaskPending, TaskQueued, TaskInProgress, TaskRunningTests,
 		TaskVerifying, TaskCompleted, TaskFailed, TaskBlocked,
-		TaskCancelled, TaskWaitingCapacity, TaskAwaitingApproval,
+		TaskCancelled, TaskWaitingCapacity, TaskAwaitingApproval, TaskReviewNeeded,
 	} {
 		m[TaskStatusKind(s)] = true
 	}

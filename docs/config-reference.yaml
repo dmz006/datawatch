@@ -1680,6 +1680,28 @@ autonomous:
   # warns only and never blocks under either value.
   gate_disagreement: warn
 
+  # Failure escalation: what happens when a task keeps failing. Attempts are
+  # counted as failed attempts since the last operator action. Step i covers
+  # `attempts` consecutive failed attempts (default 1) and the last step
+  # covers every remaining attempt. A step with no backend uses the task's
+  # normally resolved worker, and no steps at all means every attempt does.
+  # After max_failures failed attempts the task is held for operator review
+  # (status review_needed) instead of being marked failed. An Automaton or a
+  # single task can override each of enabled, max_failures and steps on its
+  # own (task beats Automaton beats this default).
+  #   enabled      - true (default). false restores the old behaviour: retry
+  #                  up to auto_fix_retries, then mark the task failed.
+  #   max_failures - 3 by default; 4 or more is allowed, the minimum is 1.
+  #   steps        - up to 8 entries of backend, model, effort, attempts.
+  failure_escalation:
+    enabled: true
+    max_failures: 3
+    steps: []
+    # Example ladder: two tries on the local model, then a Claude model.
+    # steps:
+    #   - {backend: pi-prompt, model: "ollama/qwen3.8:27b", attempts: 2}
+    #   - {backend: claude-code, model: claude-opus-5-5, effort: high}
+
   # ── Prompt injection guard (v8.18.0) ──
   # Scans user-supplied PRD/task specs for known prompt injection phrases
   # (role overrides, template boundary markers, instruction-override

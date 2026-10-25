@@ -323,9 +323,9 @@ func TestExecutor_WorkerStallExhaustsRetriesLikeNormalFailure(t *testing.T) {
 	verify := func(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
 		return VerificationResult{}, fmt.Errorf("stall: %w", ErrWorkerStalled)
 	}
-	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
-	if got.Status != PRDFailed {
-		t.Fatalf("repeated stalls must still fail once retries are exhausted, got %s", got.Status)
+	got := runToTerminalOrBlocked(t, m, api, prd.ID, spawn, verify)
+	if got.Status != PRDBlocked || got.Story[0].Tasks[0].Status != TaskReviewNeeded {
+		t.Fatalf("repeated stalls must hold the task once retries are exhausted, got PRD %s task %s", got.Status, got.Story[0].Tasks[0].Status)
 	}
 }
 

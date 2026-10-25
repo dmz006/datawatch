@@ -67,6 +67,20 @@ func (m *Manager) preflightModelBackend(prdID string, prd *PRD) error {
 			if err := validateModelForBackend(backend, model); err != nil {
 				bad = append(bad, fmt.Sprintf("task %s (backend %q, model %q): %v", t.ID, backend, model, err))
 			}
+			// Every step of the task's effective failure escalation ladder
+			// must pair too, because a later attempt may run on any of them.
+			// m.mu is held here, so the global default is passed in rather
+			// than read through resolveFailureEscalation.
+			esc := resolveFailureEscalationFrom(m.cfg.FailureEscalation, prd, t)
+			for si, step := range esc.Steps {
+				if step.Backend == "" && step.Model != "" {
+					bad = append(bad, fmt.Sprintf("task %s failure escalation step %d (model %q): a model needs a backend; leave both empty to use the normal worker", t.ID, si+1, step.Model))
+					continue
+				}
+				if err := validateModelForBackend(step.Backend, step.Model); err != nil {
+					bad = append(bad, fmt.Sprintf("task %s failure escalation step %d (backend %q, model %q): %v", t.ID, si+1, step.Backend, step.Model, err))
+				}
+			}
 		}
 	}
 	if len(bad) == 0 {

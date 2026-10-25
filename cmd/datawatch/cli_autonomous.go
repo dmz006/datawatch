@@ -49,6 +49,8 @@ Subcommands:
   prd-decompose <id>              Run the LLM planning phase for a PRD (alias: prd-plan)
   prd-run <id>                    Kick the executor for a PRD
   prd-cancel <id>                 Cancel + archive a PRD
+  failure-escalation show|set|clear|global  Show, set or clear the failure escalation policy (per Automaton, per task, or the daemon default)
+  resolve-review <id> --task T --action retry|cancel  Retry or cancel a task held for operator review (status lists held tasks under review_needed)
   prd-delete <id>                 Hard-delete a PRD + descendants
   prd-edit <id>                   Edit PRD title + spec
   prd-approve <id>                Approve planned PRD
@@ -124,6 +126,8 @@ Subcommands:
 		newAutonomousPRDSetLLMCmd(),
 		newAutonomousPRDSetStoryLLMCmd(),
 		newAutonomousPRDSetTaskLLMCmd(),
+		newAutonomousFailureEscalationCmd(),
+		newAutonomousResolveReviewCmd(),
 		newAutonomousPRDSetTaskProjectDirCmd(),
 		newAutonomousPRDSetTaskVerificationLLMCmd(),
 		newAutonomousPRDSetStoryVerificationLLMCmd(),
@@ -182,7 +186,13 @@ func newAutonomousStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Loop status snapshot",
-		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/status") },
+		Long: `Loop status snapshot as JSON.
+
+The review_needed array lists every task held for operator review across all
+Automata, oldest hold first: automaton_id, automaton_title, task_id, task_title,
+failure_count, last_backend, last_model and held_at. It is omitted when no task
+is held. Decide a held task with: datawatch autonomous resolve-review <id> --task <task-id> --action retry|cancel`,
+		RunE: func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/status") },
 	}
 }
 

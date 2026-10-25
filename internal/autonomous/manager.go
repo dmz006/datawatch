@@ -402,6 +402,11 @@ type Config struct {
 	// regression from a VALID baseline (an invalid gate never blocks
 	// under any policy). Unset or unrecognized values read as "warn".
 	GateDisagreement string `json:"gate_disagreement,omitempty"`
+	// FailureEscalation — the global default failure escalation policy
+	// (mirrors autonomous.failure_escalation). Automaton and task overrides
+	// win per field; see resolveFailureEscalation. An unset MaxFailures reads
+	// as 3 and a nil Enabled reads as true.
+	FailureEscalation FailureEscalationPolicy `json:"failure_escalation"`
 	// MaxEnginesPerNode is how many local-model engine sessions one
 	// compute node may run at once. 1 = one per node (default). Mirrors
 	// config.AutonomousConfig.MaxEnginesPerNode; the runtime copy is what
@@ -488,6 +493,7 @@ func DefaultConfig() Config {
 		MaxConcurrentTasks:  1,
 		MaxEnginesPerNode:   1,
 		GateDisagreement:    "warn",
+		FailureEscalation:   defaultFailureEscalationPolicy(),
 		AutoFixRetries:      1,
 		SecurityScan:        true,
 		MaxRecursionDepth:   5,
@@ -857,6 +863,11 @@ type Manager struct {
 	// alertSink — operator-facing alert callback (level, title, body).
 	// Guarded by mu. Nil = alerts silently skipped.
 	alertSink func(level, title, body string)
+
+	// attemptClock — the time source for failure escalation attempt records
+	// and review holds (attemptNow). Nil reads the wall clock; tests inject a
+	// fake so attempt durations are exact. Set before the Manager runs.
+	attemptClock func() time.Time
 
 	// driftGit — git runner for checkForeignFileDrift's committed-file
 	// lookup. nil means defaultDriftGitRunner; tests inject a counting
@@ -1556,6 +1567,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	}
 	types := make([]AutomatonType, len(builtinTypes))
 	copy(types, builtinTypes)
+	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
 	m := &Manager{
 		cfg:         cfg,
 		store:       st,
@@ -1583,6 +1595,9 @@ func (m *Manager) SetConfig(cfg Config) {
 	if cfg.GateDisagreement != "warn" && cfg.GateDisagreement != "block" {
 		cfg.GateDisagreement = "warn"
 	}
+	// failure_escalation: an unset max_failures reads as 3 and a nil enabled
+	// reads as true.
+	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
 	m.cfg = cfg
 }
 
@@ -2605,6 +2620,14 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 // true makes the next attempt skip the restore of preserved attempt work
 // (Task.CleanRestart); false keeps the restore on, as ResetTask always did.
 func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, cleanRestart bool) (*PRD, error) {
+	return m.resetTask(prdID, taskID, actor, force, cleanRestart, nil)
+}
+
+// resetTask is ResetTaskWithOptions with an optional operator review. A nil
+// review is a plain reset. A non-nil review (ResolveTaskReview's retry) also
+// accepts a task held for review and applies the operator's changes in the
+// same save as the requeue, so the changes and the requeue land together.
+func (m *Manager) resetTask(prdID, taskID, actor string, force, cleanRestart bool, review *reviewRequeue) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -2651,7 +2674,7 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
 			if t.ID == taskID {
-				isRetryable := t.Status == TaskFailed || t.Status == TaskBlocked
+				isRetryable := t.Status == TaskFailed || t.Status == TaskBlocked || (review != nil && t.Status == TaskReviewNeeded)
 				isRequeue := force && (t.Status == TaskCompleted || t.Status == TaskCancelled)
 				if !isRetryable && !isRequeue {
 					if force {
@@ -2705,6 +2728,9 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 				emitReset = func(dec *Decision) { m.emitPendingTaskEvents(prd, []pendingTaskEvent{resetEv}, dec) }
 				t.Verification = nil
 				t.RetryCount = 0
+				// A human reset starts a new count of failed attempts for the
+				// failure escalation policy, so the ladder restarts at step 1.
+				t.EscalationFailures = 0
 				// v9.2.1 — a manual (operator) reset is the strongest "this is a
 				// retry" signal: to reach this block the task already reached a
 				// terminal-ish status (failed/blocked, or completed/cancelled
@@ -2720,6 +2746,11 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 				// the flag false, so an unconsumed clean restart never carries
 				// over into a later reset.
 				t.CleanRestart = cleanRestart
+				// An operator review's changes go on last, so the hint they
+				// set replaces the generic one built above.
+				if review != nil {
+					review.apply(t, time.Now())
+				}
 				t.StartedAt = nil
 				t.CompletedAt = nil
 				t.UpdatedAt = time.Now()
@@ -2763,11 +2794,19 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 	}
 	kind := "reset_task"
 	note := fmt.Sprintf("task=%s reset to pending for retry", taskID)
+	decActor := actor
 	if force {
 		kind = "requeue_task"
 		note = fmt.Sprintf("task=%s requeued (force=true)", taskID)
 	}
-	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: actor, Note: note})
+	if review != nil {
+		kind = reviewDecisionKind
+		note = review.decisionNote(taskID, actor)
+		decActor = reviewDecisionActor
+		// The block reason named the held task, which is no longer held.
+		prd.BlockedReason = ""
+	}
+	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: decActor, Note: note})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -4368,9 +4407,14 @@ func (m *Manager) Status() LoopStatus {
 	budgets := m.budgetsSummary()
 	// Same rule for the task views: they read the PRD store and the ledger.
 	queue, holdings := m.buildTaskVisibility(budgets)
+	// Held tasks are read under the store lock (the lock is not re-entrant, so
+	// this runs before m.mu is taken, as the PRD reads above do).
+	var held []HeldTaskStatus
+	m.store.WithLock(func() { held = heldTasksAcrossPRDs(m.store.prds) })
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st := m.status
+	st.ReviewNeeded = held
 	st.Budgets = budgets
 	st.Queue, st.Holdings = queue, holdings
 	st.BootResume = append([]BootResumeEntry(nil), m.bootResumeReport...)

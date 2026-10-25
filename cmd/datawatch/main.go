@@ -4239,6 +4239,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			MaxParallelTasks:                 acfgIn.MaxParallelTasks,
 			MaxConcurrentTasks:               acfgIn.MaxConcurrentTasks,
 			GateDisagreement:                 acfgIn.GateDisagreement,
+			FailureEscalation:                failureEscalationFromConfig(acfgIn.FailureEscalation),
 			PlanningBackend:                  acfgIn.PlanningBackend,
 			VerificationBackend:              acfgIn.VerificationBackend,
 			ExecutionBackend:                 acfgIn.ExecutionBackend,
