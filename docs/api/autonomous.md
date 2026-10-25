@@ -1237,7 +1237,7 @@ autonomous:
     final_gate_stronger:  false       # final verification gate goes to the stronger verifier
     stronger_backend:     ""          # empty = claude-code
     stronger_model:       ""          # empty = the default Sonnet model
-  judge_policy:           []          # ordered judge backends, one attempt each; empty = each judge runs on its unit's guardrail backend
+  judge_policy:           []          # ordered judge backends, one attempt each; empty = follow the verifier routing policy
   judge_timeout_seconds:  1800        # time limit for one judge run; the capacity-slot wait does not count
 ```
 

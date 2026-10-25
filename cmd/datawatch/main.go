@@ -5979,16 +5979,17 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			parsed.VerdictAt = time.Now()
 			return parsed, nil
 		}
-		// autonomousGuardrail routes the judge through autonomous.judge_policy:
-		// one attempt per backend, in order, moving on only when a run hits its
-		// time limit. A unit that pins its own guardrail backend keeps that one.
+		// autonomousGuardrail routes the judge: one attempt per backend, moving
+		// on only when a run hits its time limit. The backends come from
+		// autonomous.judge_policy, or from the verifier routing policy when that
+		// list is empty. A unit that pins its own guardrail backend keeps that one.
 		autonomousGuardrail := func(ctx context.Context, req autonomouspkg.GuardrailInvocation) (autonomouspkg.GuardrailVerdict, error) {
 			// One live-config snapshot for the whole judge (see liveAutonomousConfig).
 			gcfg := liveAutonomousConfig()
 			unitBackend, _ := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
-			backends := judgeAttemptBackends(gcfg.JudgePolicy, unitBackend, req.GuardrailBackend != "")
+			choose := judgeBackendChooserFor(ctx, autonomousMgrRef, req, gcfg, unitBackend)
 			alert := func(level, title, body string) { emitJudgeAlert(autonomousMgrRef, level, title, body) }
-			return runJudgeAttempts(req, backends, judgeSessionTimeout(gcfg), alert,
+			return runJudgeAttempts(req, choose, judgeSessionTimeout(gcfg), alert,
 				func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 					return autonomousGuardrailAttempt(ctx, req, gcfg, backend, att)
 				})

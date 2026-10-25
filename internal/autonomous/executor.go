@@ -846,7 +846,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// see rules_review.go's own doc comment for why this is a
 		// judgment review against whatever rules file the operator
 		// configured, not a second hardcoded checklist.
-		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "rules_review_block", blockedReasonFromVerdicts(prd.Verdicts)); ok {
+		// A judge that timed out on every backend holds the PRD in
+		// needs_review instead: the operator decides, nothing is
+		// blocked or passed silently.
+		status, reason := rulesReviewBlockStatus(prd)
+		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), status, reason, blockedReasonFromVerdicts(prd.Verdicts)); ok {
 			m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
 		}
 		return nil

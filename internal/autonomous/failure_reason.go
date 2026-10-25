@@ -56,11 +56,13 @@ type FailureReason struct {
 	//               the identical spec unchanged reproduces the
 	//               identical violation.
 	//   "judge-timeout" — a judge run hit its time limit on every
-	//               backend in autonomous.judge_policy, one attempt
-	//               each. The PRD is blocked for operator review with a line per
-	//               attempt. Not infra-retried and not content
-	//               auto-fixed: nothing is approved, passed or
-	//               blocked silently.
+	//               backend it tried, one attempt each: the judge
+	//               policy list, or the verifier routing policy when
+	//               autonomous.judge_policy is empty. A PRD-level
+	//               rules-review judge holds the PRD in needs_review
+	//               with one line per attempt. Not infra-retried and
+	//               not content auto-fixed: nothing is approved,
+	//               passed or blocked silently.
 	//   "policy"  — an operator-configured gate deliberately
 	//               intervened by design (e.g. a quality-gate
 	//               regression) — working as configured, not

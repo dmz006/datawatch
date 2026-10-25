@@ -248,7 +248,7 @@ func applyAutonomousRateFlags(cmd *cobra.Command, body map[string]any) error {
 
 // applyAutonomousJudgeFlags copies the judge flags that were set onto body:
 // --judge-policy (an ordered comma list; an explicit empty value clears it so
-// each judge runs on its unit's guardrail backend) and --judge-timeout-seconds (the
+// the judges follow the verifier routing policy) and --judge-timeout-seconds (the
 // time limit; a negative value is rejected before anything is sent).
 func applyAutonomousJudgeFlags(cmd *cobra.Command, body map[string]any) error {
 	if cmd.Flags().Changed("judge-policy") {
@@ -492,14 +492,14 @@ tier inflight-cap table (see "datawatch llm add|update --help" for --plan-tier/-
 
 Judge routing, which chooses the backends the judges (Automaton guardrail,
 plan review and other autonomous judges) try. --judge-policy is an ordered comma
-list, one attempt per backend; an empty value clears it, and each judge then
-runs on its unit's guardrail backend. --judge-timeout-seconds is the time limit
+list, one attempt per backend; an empty value clears it, and the judges then
+follow the verifier routing policy. --judge-timeout-seconds is the time limit
 for one judge run (default 1800 = 30 minutes; 0 = default; the wait for a
 capacity slot does not count):
 
   datawatch autonomous config-set --judge-policy qwen,claude-code --judge-timeout-seconds 1800
 
-  judge_policy                    ordered judge backends (empty = each judge's unit guardrail backend)
+  judge_policy                    ordered judge backends (empty = follow the verifier routing policy)
   judge_timeout_seconds           time limit for one judge run (default 1800)
 
 Rate ceiling on each LLM's pool, by flag or by JSON key (0 = no ceiling,
@@ -568,7 +568,7 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 	cmd.Flags().Int("capacity-rate-requests", 0, "Most task/verifier starts per LLM pool per rolling window (0 = no requests ceiling)")
 	cmd.Flags().Int("capacity-rate-tokens", 0, "Most tokens per LLM pool per rolling window (0 = no tokens ceiling)")
 	cmd.Flags().Int("capacity-rate-window-seconds", 0, "Rolling window length in seconds for the rate ceilings (0 = default 3600)")
-	cmd.Flags().String("judge-policy", "", "Ordered comma list of judge backends, one attempt each (empty = each judge runs on its unit's guardrail backend)")
+	cmd.Flags().String("judge-policy", "", "Ordered comma list of judge backends, one attempt each (empty = follow the verifier routing policy)")
 	cmd.Flags().Int("judge-timeout-seconds", 0, "Time limit in seconds for one judge run (0 = default 1800 = 30m)")
 	addVerifierPolicyFlags(cmd)
 	return cmd

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -10,18 +11,17 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 )
 
-// judgeTimeoutCategory is the verdict category of a judge that hit its time
-// limit on every backend in its policy. It is neither "infra" (the judge is
-// not re-run as a whole) nor "content" (no content auto-fix is attempted), so
-// the PRD stops visibly with every attempt listed and nothing is passed.
-const judgeTimeoutCategory = "judge-timeout"
-
 // judgeAlertFn raises one operator alert. level is "warn" or "error".
 type judgeAlertFn func(level, title, body string)
 
 // judgeAttemptFn runs one judge attempt on backend. It sets att.TimedOut when
 // the attempt hit its time limit.
 type judgeAttemptFn func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error)
+
+// judgeBackendChooser picks the backend of the next judge attempt. tried lists
+// the backends whose attempt already timed out on this judge call, so each
+// backend is tried at most once. ok is false when no backend is left.
+type judgeBackendChooser func(tried []string) (backend string, ok bool)
 
 // judgeAttempt is one attempt of a judge on one backend.
 type judgeAttempt struct {
@@ -46,29 +46,31 @@ func judgeSessionTimeout(gcfg autonomouspkg.Config) time.Duration {
 	return time.Duration(config.NormalizeJudgeTimeoutSeconds(gcfg.JudgeTimeoutSeconds)) * time.Second
 }
 
-// judgeAttemptBackends returns the backends one judge call tries, in order,
-// one attempt each. A unit that pins its own guardrail backend keeps that one
-// backend. Otherwise the judge policy list applies. An empty policy means the
-// unit's resolved backend alone.
-func judgeAttemptBackends(policy []string, unitBackend string, pinned bool) []string {
-	if pinned {
-		return []string{unitBackend}
+// judgeChooserFromList returns a chooser that tries the backends of an
+// explicit judge policy list in order, skipping any that already timed out.
+func judgeChooserFromList(backends []string) judgeBackendChooser {
+	return func(tried []string) (string, bool) {
+		for _, b := range backends {
+			if !slices.Contains(tried, b) {
+				return b, true
+			}
+		}
+		return "", false
 	}
-	if backends := config.NormalizeJudgePolicy(policy); len(backends) > 0 {
-		return backends
-	}
-	return []string{unitBackend}
 }
 
-// runJudgeAttempts runs the judge on each backend in order, one attempt each.
-// An attempt that returns, or fails for any reason other than its time limit,
-// is final. An attempt that hit its time limit raises a warning and the next
-// backend is tried. When every backend has timed out, the PRD is blocked for operator review: the
-// verdict is a judge-timeout block that lists every attempt, and an error alert
-// is raised. Nothing is approved, passed or blocked silently on that path.
-func runJudgeAttempts(req autonomouspkg.GuardrailInvocation, backends []string, limit time.Duration, alert judgeAlertFn, run judgeAttemptFn) (autonomouspkg.GuardrailVerdict, error) {
+// runJudgeAttempts runs the judge on the backends choose returns, one attempt
+// each. An attempt that returns, or fails for any reason other than its time
+// limit, is final. An attempt that hit its time limit raises a warning and the
+// next backend is tried. When every backend has timed out, the verdict is a
+// judge-timeout block that lists every attempt and an error alert is raised.
+// The PRD then needs review: nothing is approved, passed or blocked silently.
+// The chooser must offer at least one backend on the first call.
+func runJudgeAttempts(req autonomouspkg.GuardrailInvocation, choose judgeBackendChooser, limit time.Duration, alert judgeAlertFn, run judgeAttemptFn) (autonomouspkg.GuardrailVerdict, error) {
 	var attempts []judgeAttempt
-	for i, backend := range backends {
+	var tried []string
+	backend, ok := choose(tried)
+	for ok {
 		att := judgeAttempt{Backend: backend, Limit: limit}
 		started := time.Now()
 		verdict, err := run(backend, &att)
@@ -76,45 +78,49 @@ func runJudgeAttempts(req autonomouspkg.GuardrailInvocation, backends []string, 
 		if !att.TimedOut {
 			return verdict, err
 		}
+		tried = append(tried, backend)
 		attempts = append(attempts, att)
-		alert("warn", judgeTimeoutTitle(req.PRDID), judgeTimeoutBody(req.PRDID, att, i < len(backends)-1))
+		backend, ok = choose(tried)
+		alert("warn", judgeTimeoutTitle(req.PRDID), judgeTimeoutBody(req.PRDID, att, backend, ok))
 	}
 	alert("error", judgeHoldTitle(req.PRDID), judgeHoldBody(req.PRDID, attempts))
 	return judgeHoldVerdict(req, attempts), nil
 }
 
 func judgeTimeoutTitle(prdID string) string {
-	return fmt.Sprintf("judge timed out for PRD %s", prdID)
+	return fmt.Sprintf("judge timed out for Automaton %s", prdID)
 }
 
-func judgeTimeoutBody(prdID string, att judgeAttempt, more bool) string {
-	next := "no backend is left in the judge policy"
+// judgeTimeoutBody words the warning for one timed-out attempt. next is the
+// backend the judge moves to, and more is false when none is left.
+func judgeTimeoutBody(prdID string, att judgeAttempt, next string, more bool) string {
+	after := "no backend is left in the judge policy, so the Automaton needs review"
 	if more {
-		next = "retrying on the next backend in the judge policy"
+		after = "retrying on backend " + next + ", the next one in the judge policy"
 	}
-	return fmt.Sprintf("judge for PRD %s timed out on backend %s after %s (limit %s); %s",
-		prdID, att.Backend, att.Elapsed.Round(time.Second), att.Limit, next)
+	return fmt.Sprintf("judge for Automaton %s timed out on backend %s after %s (limit %s); %s",
+		prdID, att.Backend, att.Elapsed.Round(time.Second), att.Limit, after)
 }
 
 func judgeHoldTitle(prdID string) string {
-	return fmt.Sprintf("PRD %s blocked for operator review: judge timed out on every backend", prdID)
+	return fmt.Sprintf("Automaton %s needs review: judge timed out on every backend", prdID)
 }
 
 func judgeHoldBody(prdID string, attempts []judgeAttempt) string {
-	return fmt.Sprintf("PRD %s is blocked for operator review because the judge timed out on every backend tried (%s), %s in total. Nothing was approved or passed. Attempts: %s",
+	return fmt.Sprintf("Automaton %s needs review: the judge timed out on every backend tried (%s), %s in total. Nothing was approved or passed. Attempts: %s",
 		prdID, judgeBackendList(attempts), judgeTotalElapsed(attempts), strings.Join(judgeAttemptLines(attempts), "; "))
 }
 
-// judgeHoldVerdict is the block the PRD records when every backend has timed out. It carries
-// a line per
-// attempt, so the review shows every backend that was tried and the time spent.
+// judgeHoldVerdict is the block the PRD records when every backend has timed
+// out. It carries one line per attempt, so the review shows every backend
+// that was tried and the time spent on each.
 func judgeHoldVerdict(req autonomouspkg.GuardrailInvocation, attempts []judgeAttempt) autonomouspkg.GuardrailVerdict {
 	return autonomouspkg.GuardrailVerdict{
 		Guardrail: req.Guardrail,
 		Outcome:   "block",
 		Severity:  "high",
-		Category:  judgeTimeoutCategory,
-		Summary: fmt.Sprintf("judge for PRD %s timed out on every backend tried (%s), %s in total; the PRD is blocked for operator review",
+		Category:  autonomouspkg.JudgeTimeoutCategory,
+		Summary: fmt.Sprintf("judge for Automaton %s timed out on every backend tried (%s), %s in total; the Automaton needs review",
 			req.PRDID, judgeBackendList(attempts), judgeTotalElapsed(attempts)),
 		Issues:    judgeAttemptLines(attempts),
 		VerdictAt: time.Now(),

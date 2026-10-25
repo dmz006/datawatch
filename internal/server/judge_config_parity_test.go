@@ -1,8 +1,9 @@
 // Surface parity and defaults for the judge routing settings:
-// autonomous.judge_policy (ordered backends; empty = each judge's unit
-// guardrail backend) and autonomous.judge_timeout_seconds (default 30 minutes). A
-// missing surface, a non-English label that is only a copy of the English
-// one, or a default that differs between surfaces fails here.
+// autonomous.judge_policy (ordered backends; empty = the verifier routing
+// policy) and autonomous.judge_timeout_seconds (default 30 minutes). A missing
+// surface, a non-English label that is only a copy of the English one, a
+// default that differs between surfaces, or wording that describes the old
+// behaviour fails here.
 
 package server
 
@@ -26,13 +27,21 @@ var judgeLocaleKeys = []string{
 	"settings_judge_timeout", "settings_judge_timeout_help",
 }
 
-// staleJudgeWording is the wording an empty judge policy used to carry. The
-// judges do not follow the verifier routing policy, so no surface may say so.
+// staleJudgeWording is the wording an empty judge policy and a judge hold
+// used to carry: each judge on its unit's guardrail backend, and a PRD blocked
+// by a judge-timeout block. An empty judge policy follows the verifier routing
+// policy and a judge hold needs review, so no surface may say the old thing.
 var staleJudgeWording = []string{
-	"judges follow the verifier",
-	"follow verifier_policy",
-	"follow the verifier routing policy",
+	"each judge runs on its unit",
+	"each judge's unit",
+	"unit guardrail backend",
+	"judge-timeout block",
+	"judge timed out on every backend and blocked",
 }
+
+// judgeRoutingWording is the default every surface that names the judge policy
+// must state: an empty list follows the verifier routing policy.
+const judgeRoutingWording = "verifier routing policy"
 
 func TestJudgeConfigSurfaceParity(t *testing.T) {
 	// Each surface must carry the needles it names: quoted code keys, colon
@@ -43,19 +52,20 @@ func TestJudgeConfigSurfaceParity(t *testing.T) {
 		name, rel string
 		needles   []string
 	}{
-		{"config struct", "internal/config/config.go", []string{`yaml:"judge_policy" json:"judge_policy"`, `yaml:"judge_timeout_seconds" json:"judge_timeout_seconds"`}},
+		{"config struct", "internal/config/config.go", []string{`yaml:"judge_policy" json:"judge_policy"`, `yaml:"judge_timeout_seconds" json:"judge_timeout_seconds"`, judgeRoutingWording}},
 		{"autonomous manager cfg", "internal/autonomous/manager.go", []string{`json:"judge_policy"`, `json:"judge_timeout_seconds"`}},
-		{"REST", "internal/server/api.go", []string{`"judge_policy":`, `"judge_timeout_seconds":`, `"autonomous.judge_policy"`, `"autonomous.judge_timeout_seconds"`}},
-		{"MCP schema", "internal/mcp/autonomous.go", []string{`"judge_policy"`, `"judge_timeout_seconds"`}},
-		{"comm help", "internal/router/router.go", []string{"autonomous.judge_policy", "autonomous.judge_timeout_seconds"}},
-		{"comm config-set", "internal/router/sx2_parity.go", []string{`"judge_policy"`}},
-		{"CLI", "cmd/datawatch/cli_autonomous.go", []string{`"judge-policy"`, `"judge-timeout-seconds"`}},
-		{"web app.js", "internal/server/web/app.js", []string{"'autonomous.judge_policy'", "'autonomous.judge_timeout_seconds'"}},
-		{"config-reference.yaml", "docs/config-reference.yaml", []string{"judge_policy:", "judge_timeout_seconds:"}},
-		{"implementation.md", "docs/implementation.md", []string{"`autonomous.judge_policy`", "`autonomous.judge_timeout_seconds`"}},
-		{"api/autonomous.md", "docs/api/autonomous.md", []string{"judge_policy:", "judge_timeout_seconds:"}},
-		{"api/openapi.yaml", "docs/api/openapi.yaml", []string{"`judge_policy`", "`judge_timeout_seconds`"}},
-		{"operations.md", "docs/operations.md", []string{"`autonomous.judge_timeout_seconds`", "`judge-timeout`"}},
+		{"REST", "internal/server/api.go", []string{`"judge_policy":`, `"judge_timeout_seconds":`, `"autonomous.judge_policy"`, `"autonomous.judge_timeout_seconds"`, judgeRoutingWording}},
+		{"MCP schema", "internal/mcp/autonomous.go", []string{`"judge_policy"`, `"judge_timeout_seconds"`, judgeRoutingWording}},
+		{"comm help", "internal/router/router.go", []string{"autonomous.judge_policy", "autonomous.judge_timeout_seconds", judgeRoutingWording}},
+		{"comm config-set", "internal/router/sx2_parity.go", []string{`"judge_policy"`, `"judge-policy-set"`}},
+		{"comm judge verbs", "internal/router/judge_policy_cmd.go", []string{`"judge-policy"`, `"judge-policy-set"`, `"judge_timeout_seconds"`, judgeRoutingWording}},
+		{"CLI", "cmd/datawatch/cli_autonomous.go", []string{`"judge-policy"`, `"judge-timeout-seconds"`, judgeRoutingWording}},
+		{"web app.js", "internal/server/web/app.js", []string{"'autonomous.judge_policy'", "'autonomous.judge_timeout_seconds'", judgeRoutingWording}},
+		{"config-reference.yaml", "docs/config-reference.yaml", []string{"judge_policy:", "judge_timeout_seconds:", judgeRoutingWording}},
+		{"implementation.md", "docs/implementation.md", []string{"`autonomous.judge_policy`", "`autonomous.judge_timeout_seconds`", judgeRoutingWording, "`needs_review`"}},
+		{"api/autonomous.md", "docs/api/autonomous.md", []string{"judge_policy:", "judge_timeout_seconds:", judgeRoutingWording}},
+		{"api/openapi.yaml", "docs/api/openapi.yaml", []string{"`judge_policy`", "`judge_timeout_seconds`", judgeRoutingWording}},
+		{"operations.md", "docs/operations.md", []string{"`autonomous.judge_timeout_seconds`", "`judge-timeout`", "`needs_review`"}},
 	}
 	for _, sf := range surfaces {
 		src := readRepoFile(t, sf.rel)
@@ -104,6 +114,11 @@ func TestJudgeConfigLocaleParity(t *testing.T) {
 			}
 			if strings.Contains(s, "BL") && strings.ContainsAny(s, "0123456789") {
 				t.Errorf("%s.json %s carries a tracker id: %q", lang, k, s)
+			}
+			for _, bad := range staleJudgeWording {
+				if strings.Contains(s, bad) || strings.Contains(s, "operator review") {
+					t.Errorf("%s.json %s still describes the old judge behaviour: %q", lang, k, s)
+				}
 			}
 			if lang != "en" && s == en[k] {
 				t.Errorf("%s.json %s is the English text, not a translation", lang, k)

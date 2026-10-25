@@ -1676,7 +1676,7 @@ paths:
         `backends`, `claude_session_cap`, `claude_cap_window_minutes`,
         `force_stronger_on_retry`, `final_gate_stronger`, `stronger_backend` and
         `stronger_model`. The judge settings are `judge_policy` (ordered backends,
-        one attempt each; empty = each judge runs on its unit's guardrail backend)
+        one attempt each; empty = the judges follow the verifier routing policy)
         and `judge_timeout_seconds` (time limit for one judge run, default 1800).
       operationId: autonomousConfigGet
       tags: [Autonomous]

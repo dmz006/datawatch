@@ -719,6 +719,20 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	judges := newVerifierRegistry()
 	_, _, judgeStartedFn := judgeAdmitters(led, judges, keys, amgr.CapacityWaitDuration())
 	judgeCapacityAdmit = judgeNodeAdmitter(amgr, judges)
+	// The judge's non-blocking probe for the verifier routing policy. It takes
+	// the same judge lease as judgeCapacityAdmit with a short wait, then lets
+	// go at once, so the attempt that follows admits for real.
+	judgeCapacityTryAdmit = func(ctx context.Context, backend, model, unitID, prdID string) bool {
+		_, release, err := amgr.AdmitJudge(ctx, autonomous.JudgeAdmit{
+			Holder: autonomous.JudgeHolder(unitID), PRDID: prdID, Backend: backend, Model: model,
+			Wait: 150 * time.Millisecond,
+		})
+		if err != nil {
+			return false
+		}
+		release()
+		return true
+	}
 	judgeSessionStarted = judgeStartedFn
 	// Adopt, never double-spawn: on a daemon restart a guardrail-judge
 	// session may still be live while the capacity ledger is empty, so the

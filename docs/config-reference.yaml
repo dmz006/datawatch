@@ -1478,8 +1478,10 @@ autonomous:
   # Judge routing (PRD guardrail, plan-review and other autonomous judges).
   # judge_policy is the ordered list of backends the judges try, one attempt
   # each; the attempts total the list length. A judge moves to the next backend
-  # only when its run hits the time limit. Empty (default) = each judge runs on
-  # its unit's guardrail backend, one attempt.
+  # only when its run hits the time limit. Empty (default) = the judges follow
+  # the verifier routing policy (the same modes and backends the verifiers use),
+  # one attempt per backend it offers. A unit that pins its own guardrail
+  # backend keeps that one backend.
   judge_policy: []
   # Time limit in seconds for one judge run, counted from the judge's start;
   # the wait for a capacity slot does not count. 0 or negative falls back to
