@@ -31,6 +31,6 @@ type launchDrainer interface {
 // to out and nothing when every launch finished inside the grace.
 func drainLaunchesOnShutdown(d launchDrainer, out io.Writer) {
 	for _, id := range d.DrainLaunches(shutdownLaunchGrace) {
-		fmt.Fprintf(out, "[session] rolled back launch %s: still running at shutdown\n", id)
+		_, _ = fmt.Fprintf(out, "[session] rolled back launch %s: still running at shutdown\n", id)
 	}
 }
