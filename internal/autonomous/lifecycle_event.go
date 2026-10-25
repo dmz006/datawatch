@@ -105,8 +105,13 @@ type LifecycleEvent struct {
 	Host         string            `json:"host,omitempty"`
 	// Files, Guardrail and Link are the payload of the opt-in warning
 	// kinds (KindScopeWarning, KindGuardrailWarn): the files outside the
-	// declared scope, the guardrail name, and a PWA deep-link target (the
-	// existing "?alert=<id>" query form the PWA opens on load).
+	// declared scope, the guardrail name, and an optional PWA deep-link
+	// target. The only deep-link forms the PWA handles today are
+	// "?alert=<id>" (opens one alert) and "?automation=<id>" (opens one
+	// chain Automation); there is no route for an Automaton or task
+	// detail page, and none is invented here. Emitters therefore set Link
+	// to "?alert=<id>" for the alert they raise alongside the warning, or
+	// leave it empty.
 	Files     []string `json:"files,omitempty"`
 	Guardrail string   `json:"guardrail,omitempty"`
 	Link      string   `json:"link,omitempty"`

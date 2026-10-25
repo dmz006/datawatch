@@ -12,15 +12,17 @@ window._splashStart = Date.now();
 
 // Per-Automaton notification-event overrides. The closed set of valid
 // lifecycle event kinds (sorted; every prd.<status> kind, every
-// task.<status> kind, plus task.session_started / task.session_cleared)
+// task.<status> kind, task.session_started / task.session_cleared, plus the
+// bare opt-in warning kinds scope_warning / guardrail_warn)
 // and the default set an effective list falls back to when an Automaton
 // stores an empty (= inherit) list. Ground truth: the lifecycle
 // subscription known event kinds, minus the generic "persisted" kind.
-const NOTIFY_EVENT_KINDS = ['prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.completed', 'task.failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
+const NOTIFY_EVENT_KINDS = ['guardrail_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.completed', 'task.failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
 const NOTIFY_EVENT_DEFAULTS = ['prd.needs_review', 'prd.blocked', 'prd.failed', 'prd.completed', 'prd.cancelled'];
 
 // One checkbox row per kind, grouped Automaton (prd.*) / Task
-// (task.<status>) / Session (task.session_*); the default set is marked
+// (task.<status>) / Session (task.session_*) / Warnings (scope_warning,
+// guardrail_warn); the default set is marked
 // with the 'default' tag. Rows are disabled while inherit is checked.
 function _renderNotifyKindOptions(current, inheritOn) {
   const curSet = new Set(current || []);
@@ -38,9 +40,11 @@ function _renderNotifyKindOptions(current, inheritOn) {
   const prdKinds     = NOTIFY_EVENT_KINDS.filter(k => k.startsWith('prd.'));
   const taskKinds    = NOTIFY_EVENT_KINDS.filter(k => k.startsWith('task.') && !k.startsWith('task.session_'));
   const sessionKinds = NOTIFY_EVENT_KINDS.filter(k => k.startsWith('task.session_'));
+  const warningKinds = NOTIFY_EVENT_KINDS.filter(k => !k.startsWith('prd.') && !k.startsWith('task.'));
   return header('Automaton') + prdKinds.map(row).join('')
     + header('Task')    + taskKinds.map(row).join('')
-    + header('Session') + sessionKinds.map(row).join('');
+    + header('Session') + sessionKinds.map(row).join('')
+    + header('Warnings') + warningKinds.map(row).join('');
 }
 
 // Inherit checkbox toggle: disables the kind checkboxes and shows the
@@ -25258,7 +25262,8 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
     'task.cancelled', 'task.waiting_capacity', 'task.awaiting_approval',
     'task.review_needed']],
   ['lifecycle_sub_form_group_other', 'Other', [
-    'task.session_started', 'task.session_cleared', 'prd.updated']],
+    'task.session_started', 'task.session_cleared', 'scope_warning',
+    'guardrail_warn', 'prd.updated']],
 ];
 const _LIFECYCLE_SUB_KINDS = _LIFECYCLE_SUB_KIND_GROUPS.reduce((all, g) => all.concat(g[2]), []);
 const _LIFECYCLE_SUB_SINKS = ['comm', 'session', 'topic', 'alert', 'mcp_queue'];

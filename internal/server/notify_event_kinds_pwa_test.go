@@ -8,7 +8,9 @@
 // ground truth, so the PWA cannot drift from:
 //   - valid kinds: every autonomous.PRDStatus / autonomous.TaskStatus
 //     lifecycle kind ("prd."/"task." + status) plus the two
-//     task session kinds (KindTaskSessionStarted / KindTaskSessionCleared);
+//     task session kinds (KindTaskSessionStarted / KindTaskSessionCleared)
+//     and the two bare opt-in warning kinds (KindScopeWarning /
+//     KindGuardrailWarn);
 //   - defaults: config.DefaultConfig().Autonomous.Notify.DefaultEvents
 //     (the global notify baseline).
 package server
@@ -65,6 +67,8 @@ func TestNotifyEventKinds_MatchPWA(t *testing.T) {
 	valid := toSet([]string{
 		autonomous.KindTaskSessionStarted,
 		autonomous.KindTaskSessionCleared,
+		autonomous.KindScopeWarning,
+		autonomous.KindGuardrailWarn,
 	})
 	for _, st := range []autonomous.PRDStatus{
 		autonomous.PRDDraft, autonomous.PRDPlanning, autonomous.PRDNeedsReview,

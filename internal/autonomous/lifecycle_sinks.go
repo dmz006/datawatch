@@ -87,16 +87,16 @@ func flattenSinkText(s string) string {
 // describeWarningEvent renders the opt-in warning kinds, which carry no
 // status transition:
 //
-//	PRD <id> (task <id>): scope warning - files: a, b
-//	PRD <id> (task <id>): guardrail <name> warn - <verdict summary>
+//	Automaton <id> (task <id>): scope warning - files: a, b
+//	Automaton <id> (task <id>): guardrail <name> warn - <verdict summary>
 //
-// The link target is appended when set. The PRD/task prefix matches
-// DescribeLifecycleEvent's other renderings.
+// The link target is appended when set. Operator-facing text says
+// Automaton, never PRD.
 func describeWarningEvent(ev LifecycleEvent) string {
 	var b strings.Builder
 	switch {
 	case ev.PRDID != "":
-		fmt.Fprintf(&b, "PRD %s", ev.PRDID)
+		fmt.Fprintf(&b, "Automaton %s", ev.PRDID)
 		if ev.TaskID != "" {
 			fmt.Fprintf(&b, " (task %s)", ev.TaskID)
 		}

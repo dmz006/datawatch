@@ -57,14 +57,14 @@ func TestDescribeLifecycleEventWarnings(t *testing.T) {
 		want string
 	}{
 		{"scope warning", LifecycleEvent{Kind: KindScopeWarning, Level: LevelTask, PRDID: "p1", TaskID: "t1", Files: []string{"a.go", "b.go"}},
-			"PRD p1 (task t1): scope warning - files: a.go, b.go"},
+			"Automaton p1 (task t1): scope warning - files: a.go, b.go"},
 		{"scope warning no files", LifecycleEvent{Kind: KindScopeWarning, Level: LevelPRD, PRDID: "p1"},
-			"PRD p1: scope warning"},
+			"Automaton p1: scope warning"},
 		{"guardrail warn", LifecycleEvent{Kind: KindGuardrailWarn, Level: LevelTask, PRDID: "p1", TaskID: "t1", Guardrail: "rules",
 			Verdict: &GuardrailVerdict{Summary: "two issues\nfound"}},
-			"PRD p1 (task t1): guardrail rules warn - two issues found"},
+			"Automaton p1 (task t1): guardrail rules warn - two issues found"},
 		{"guardrail warn with link", LifecycleEvent{Kind: KindGuardrailWarn, Level: LevelPRD, PRDID: "p1", Guardrail: "rules", Link: "?alert=a1"},
-			"PRD p1: guardrail rules warn (link ?alert=a1)"},
+			"Automaton p1: guardrail rules warn (link ?alert=a1)"},
 	}
 	for _, tc := range cases {
 		if got := DescribeLifecycleEvent(tc.ev); got != tc.want {

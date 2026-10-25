@@ -270,8 +270,8 @@ test('lifecycle subscriptions form: the webhook sink is not offered and every ki
     assert.match(html, new RegExp(`<option value="${sink}"`));
   }
   const kinds = run(s.sandbox, `_LIFECYCLE_SUB_KINDS`);
-  assert.equal(kinds.length, 29);
-  for (const k of ['prd.draft', 'prd.paused', 'task.awaiting_approval', 'task.review_needed', 'task.session_started', 'task.session_cleared', 'prd.updated']) {
+  assert.equal(kinds.length, 31);
+  for (const k of ['prd.draft', 'prd.paused', 'task.awaiting_approval', 'task.review_needed', 'task.session_started', 'task.session_cleared', 'scope_warning', 'guardrail_warn', 'prd.updated']) {
     assert.ok(kinds.includes(k), k);
     assert.ok(html.includes(k), k);
   }
