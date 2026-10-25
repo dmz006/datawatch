@@ -905,7 +905,10 @@ func (s *Server) applyStoreConfig() {
 }
 
 // SetAutonomousAPI is the wiring entry point used by main.go.
-func (s *Server) SetAutonomousAPI(a AutonomousAPI) { s.autonomousMgr = a }
+func (s *Server) SetAutonomousAPI(a AutonomousAPI) {
+	s.autonomousMgr = a
+	s.wireSessionTags()
+}
 
 // SummarizerSvc is the interface for the response summarizer.
 // The summarizer package implements this with Service.Summarize.
@@ -1836,13 +1839,15 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 				orphans = append(orphans, sess)
 			}
 		}
-		_ = json.NewEncoder(w).Encode(orphans)
+		_ = json.NewEncoder(w).Encode(s.sessionViews(orphans))
 		return
 	}
 
 	// BL347 — ?tree=1 returns the lineage tree instead of a flat list.
 	if q.Get("tree") == "1" {
-		_ = json.NewEncoder(w).Encode(buildSessionTree(sessions))
+		tree := buildSessionTree(sessions)
+		s.fillTreeInheritedTags(tree)
+		_ = json.NewEncoder(w).Encode(tree)
 		return
 	}
 
@@ -1859,18 +1864,20 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.schedStore == nil {
-		_ = json.NewEncoder(w).Encode(sessions)
+		_ = json.NewEncoder(w).Encode(s.sessionViews(sessions))
 		return
 	}
 	type sessionWithCounts struct {
 		*session.Session
-		ScheduledCount int `json:"scheduled_count"`
+		ScheduledCount int      `json:"scheduled_count"`
+		InheritedTags  []string `json:"inherited_tags"`
 	}
 	enriched := make([]sessionWithCounts, 0, len(sessions))
 	for _, sess := range sessions {
 		enriched = append(enriched, sessionWithCounts{
 			Session:        sess,
 			ScheduledCount: s.schedStore.CountForSession(sess.FullID),
+			InheritedTags:  s.manager.InheritedTags(sess),
 		})
 	}
 	_ = json.NewEncoder(w).Encode(enriched)
@@ -1879,7 +1886,16 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 // SessionTreeNode is one node in the BL347 lineage tree.
 type SessionTreeNode struct {
 	*session.Session
-	Children []*SessionTreeNode `json:"children,omitempty"`
+	Children      []*SessionTreeNode `json:"children,omitempty"`
+	InheritedTags []string           `json:"inherited_tags"`
+}
+
+// fillTreeInheritedTags sets inherited_tags on every node of a lineage tree.
+func (s *Server) fillTreeInheritedTags(nodes []*SessionTreeNode) {
+	for _, n := range nodes {
+		n.InheritedTags = s.manager.InheritedTags(n.Session)
+		s.fillTreeInheritedTags(n.Children)
+	}
 }
 
 // buildSessionTree converts a flat session list to a forest of trees.
@@ -3926,7 +3942,7 @@ func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		writeJSONOK(w, sess)
+		writeJSONOK(w, s.sessionView(sess))
 		return
 	}
 	if strings.HasSuffix(path, "/last-summary") {
@@ -4711,9 +4727,17 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// higher first, default 0). Kept untyped so a non-integer value is
 		// rejected with a priority-specific error.
 		Priority any `json:"priority,omitempty"`
+		// Tags (BL461) — the session's own tag IDs. Each must exist in the
+		// tag registry; an unknown ID refuses the start.
+		Tags []string `json:"tags,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	startTags, tagErr := s.manager.ValidateTagIDs(req.Tags)
+	if tagErr != nil {
+		writeTagError(w, tagErr)
 		return
 	}
 	startPriority := 0
@@ -5061,6 +5085,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		ScrubTmuxEnv:          req.ScrubTmuxEnv,
 		Git:                   gitFlag,
 		Priority:              startPriority,
+		Tags:                  startTags,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {

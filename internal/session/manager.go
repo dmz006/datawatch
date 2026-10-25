@@ -479,6 +479,12 @@ type Manager struct {
 	// record is persisted and before the task text is delivered into it.
 	onSessionCreated func(sess *Session)
 
+	// tagRegistry validates session tag IDs and tagOwners resolves the tags
+	// inherited from an owning Automaton (BL461). Both are wired by the
+	// server; nil until then.
+	tagRegistry TagRegistry
+	tagOwners   TagOwnerLookup
+
 	// onPreLaunch is called just before the LLM backend is launched (for per-session setup like MCP registration).
 	onPreLaunch func(sess *Session)
 
@@ -1847,6 +1853,10 @@ type StartOptions struct {
 	// TaskTitle is the PRD task's title, used for the automatic task commit subject.
 	TaskTitle string
 
+	// Tags (BL461) are the session's own tag IDs, validated against the tag
+	// registry before the session is created. Duplicates are dropped.
+	Tags []string
+
 	// Git — when true, Start opts the session into git activity in its
 	// project dir: `git init` (if the dir is not yet a repo), the
 	// pre-session snapshot commit (PRD task sessions) and the
@@ -1887,6 +1897,15 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	var opt *StartOptions
 	if len(opts) > 0 && opts[0] != nil {
 		opt = opts[0]
+	}
+	// BL461 — refuse the start before any work when a requested tag is unknown.
+	var startTags []string
+	if opt != nil && len(opt.Tags) > 0 {
+		tags, err := m.ValidateTagIDs(opt.Tags)
+		if err != nil {
+			return nil, err
+		}
+		startTags = tags
 	}
 	// BL30 — refuse new sessions while a global cooldown is active
 	// AND the operator has opted in via session.rate_limit_global_pause.
@@ -2103,6 +2122,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.TaskTitle != "" {
 		sess.TaskTitle = opt.TaskTitle
+	}
+	if len(startTags) > 0 {
+		sess.Tags = startTags
 	}
 	if opt != nil && len(opt.WriteScope) > 0 {
 		sess.WriteScope = opt.WriteScope

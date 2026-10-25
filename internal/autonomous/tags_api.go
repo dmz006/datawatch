@@ -91,3 +91,26 @@ func (a *API) ListPRDsByTag(tagID string, includeSub bool) ([]any, error) {
 	}
 	return a.M.PRDsWithNotifyEffective(a.M.PRDsWithTag(tagID, includeSub)), nil
 }
+
+// RequireTag reports whether a tag exists. A missing tag returns an error
+// matching ErrTagNotFound; the session side uses it to validate its tags.
+func (a *API) RequireTag(id string) error {
+	_, err := a.M.requireTag(id)
+	return err
+}
+
+// AutomatonTagIDs returns a copy of an Automaton's tag IDs, and false when no
+// Automaton has the given PRD ID. A session spawned by the Automaton inherits
+// these tags.
+func (a *API) AutomatonTagIDs(prdID string) ([]string, bool) {
+	prd, ok := a.M.Store().GetPRD(prdID)
+	if !ok {
+		return nil, false
+	}
+	return append([]string(nil), prd.TagIDs...), true
+}
+
+// SetSessionTagCounter wires the session-side tag counter used by DeleteTag.
+func (a *API) SetSessionTagCounter(c SessionTagCounter) {
+	a.M.SetSessionTagCounter(c)
+}

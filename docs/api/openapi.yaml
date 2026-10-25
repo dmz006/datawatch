@@ -565,6 +565,51 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/sessions/tags:
+    post:
+      summary: Replace a session's own tags
+      description: |
+        Replace the tags a session carries itself. `id` is the full or short
+        session ID. Duplicate tag IDs are dropped (first wins). An unknown tag
+        ID is refused with 404 and nothing is written. The response is the
+        updated session with `tags` and `inherited_tags`; inherited tags come
+        from the owning Automaton and are read-only here.
+      operationId: setSessionTags
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, tag_ids]
+              properties:
+                id:
+                  type: string
+                  description: Session ID (short or full)
+                  example: "a3f2"
+                tag_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: Tag IDs the session carries itself (replaces the current list)
+                  example: ["5e6f7a8b", "1a2b3c4d"]
+      responses:
+        "200":
+          description: Tags replaced; the updated session is returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: Bad request, or the tag registry is not available
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The federation peer lacks the sessions write capability
+        "404":
+          description: Session not found, or a tag ID is unknown
+
   /api/config:
     get:
       summary: Get configuration
@@ -4541,6 +4586,16 @@ components:
     Session:
       type: object
       properties:
+        tags:
+          type: array
+          items:
+            type: string
+          description: Tag IDs the session carries itself
+        inherited_tags:
+          type: array
+          items:
+            type: string
+          description: Tag IDs inherited from the owning Automaton; computed on read, read-only, empty outside an Automaton
         id:
           type: string
           description: Short 4-character hex ID
@@ -4651,6 +4706,12 @@ components:
       type: object
       required: [task]
       properties:
+        tags:
+          type: array
+          items:
+            type: string
+          description: Tag IDs the session carries from the start; an unknown ID refuses the start
+          example: ["5e6f7a8b"]
         task:
           type: string
           description: Task description passed to the LLM

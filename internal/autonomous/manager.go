@@ -681,6 +681,9 @@ type Manager struct {
 	decompose   DecomposeFn
 	guardrail   GuardrailFn
 	planReview  PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
+	// sessionTags counts the sessions carrying a tag, for the delete-in-use
+	// check (tags.go). Wired by the server; nil = Automata only.
+	sessionTags SessionTagCounter
 
 	coordinator *Coordinator // set by Coordinator.Start; nil until then
 

@@ -13,22 +13,49 @@ var (
 	ErrTagNotFound    = errors.New("tag not found")
 	ErrTagInvalid     = errors.New("invalid tag")
 	ErrTagHasChildren = errors.New("tag has child tags")
-	ErrTagInUse       = errors.New("tag is assigned to automata")
+	ErrTagInUse       = errors.New("tag is assigned to automata or sessions")
 	ErrTagCycle       = errors.New("tag parent change would create a cycle")
 )
 
-// TagInUseError reports how many Automata still carry a tag. It matches
-// ErrTagInUse via errors.Is.
+// TagInUseError reports how many Automata and sessions still carry a tag.
+// It matches ErrTagInUse via errors.Is.
 type TagInUseError struct {
 	TagID string
 	Count int
 }
 
 func (e *TagInUseError) Error() string {
-	return fmt.Sprintf("tag %q is assigned to %d automata", e.TagID, e.Count)
+	return fmt.Sprintf("tag %q is assigned to %d automata or sessions", e.TagID, e.Count)
 }
 
 func (e *TagInUseError) Is(target error) bool { return target == ErrTagInUse }
+
+// SessionTagCounter counts the sessions that carry a tag as one of their own
+// tags (inherited tags are not counted). The session manager implements it,
+// and the server wires it in so DeleteTag also refuses a tag that a session
+// still carries.
+type SessionTagCounter interface {
+	CountSessionsWithTag(tagID string) int
+}
+
+// SetSessionTagCounter wires the session-side counter used by DeleteTag.
+func (m *Manager) SetSessionTagCounter(c SessionTagCounter) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionTags = c
+}
+
+// tagInUseCount is the number of Automata plus sessions carrying a tag.
+func (m *Manager) tagInUseCount(id string) int {
+	n := m.tagUseCounts(false)[id]
+	m.mu.Lock()
+	counter := m.sessionTags
+	m.mu.Unlock()
+	if counter != nil {
+		n += counter.CountSessionsWithTag(id)
+	}
+	return n
+}
 
 func (m *Manager) requireTag(id string) (*Tag, error) {
 	t, ok := m.store.GetTag(id)
@@ -127,7 +154,7 @@ func (m *Manager) SetTagColor(id, color string) (*Tag, error) {
 }
 
 // DeleteTag removes a tag. Refused while it has child tags or is still
-// assigned to any automaton.
+// assigned to any automaton or session.
 func (m *Manager) DeleteTag(id string) error {
 	if _, err := m.requireTag(id); err != nil {
 		return err
@@ -137,7 +164,7 @@ func (m *Manager) DeleteTag(id string) error {
 			return fmt.Errorf("%w: %q has child tag %q", ErrTagHasChildren, id, t.ID)
 		}
 	}
-	if n := m.tagUseCounts(false)[id]; n > 0 {
+	if n := m.tagInUseCount(id); n > 0 {
 		return &TagInUseError{TagID: id, Count: n}
 	}
 	return m.store.DeleteTag(id)

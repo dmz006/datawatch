@@ -18,6 +18,10 @@ type tagAPI interface {
 	DeleteTag(id string) error
 	SetPRDTags(prdID string, tagIDs []string) (any, error)
 	ListPRDsByTag(tagID string, includeSub bool) ([]any, error)
+	// RequireTag and AutomatonTagIDs back the session tag registry and the
+	// inherited-tag lookup (session_tags.go).
+	RequireTag(id string) error
+	AutomatonTagIDs(prdID string) ([]string, bool)
 }
 
 func (s *Server) tagAPI() (tagAPI, bool) {

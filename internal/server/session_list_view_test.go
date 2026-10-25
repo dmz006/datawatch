@@ -341,21 +341,24 @@ func TestHandleSessions_SinceStatesWithoutSummaryKeepsFullText(t *testing.T) {
 }
 
 // legacySessionsBody is what handleSessions encoded before the summary
-// view existed, for the single-session case (map order is then fixed).
+// view existed, for the single-session case (map order is then fixed). Every
+// session object also carries inherited_tags (BL461, additive): the rest of
+// the shape is unchanged.
 func legacySessionsBody(t *testing.T, s *Server, sessions []*session.Session) string {
 	t.Helper()
 	var buf bytes.Buffer
 	if s.schedStore == nil {
-		_ = json.NewEncoder(&buf).Encode(sessions)
+		_ = json.NewEncoder(&buf).Encode(s.sessionViews(sessions))
 		return buf.String()
 	}
 	type sessionWithCounts struct {
 		*session.Session
-		ScheduledCount int `json:"scheduled_count"`
+		ScheduledCount int      `json:"scheduled_count"`
+		InheritedTags  []string `json:"inherited_tags"`
 	}
 	var enriched []sessionWithCounts
 	for _, sess := range sessions {
-		enriched = append(enriched, sessionWithCounts{sess, s.schedStore.CountForSession(sess.FullID)})
+		enriched = append(enriched, sessionWithCounts{sess, s.schedStore.CountForSession(sess.FullID), s.manager.InheritedTags(sess)})
 	}
 	_ = json.NewEncoder(&buf).Encode(enriched)
 	return buf.String()
@@ -384,14 +387,16 @@ func TestHandleSessions_DefaultTreeOrphanedUnchanged(t *testing.T) {
 			t.Error("default body must not carry truncated_fields")
 		}
 
+		wantTree := buildSessionTree(live)
+		s.fillTreeInheritedTags(wantTree)
 		var tree bytes.Buffer
-		_ = json.NewEncoder(&tree).Encode(buildSessionTree(live))
+		_ = json.NewEncoder(&tree).Encode(wantTree)
 		if got := getSessions(t, s, "tree=1").Body.String(); got != tree.String() {
 			t.Errorf("tree body changed:\n got %s\nwant %s", got, tree.String())
 		}
 
 		var orphans bytes.Buffer
-		_ = json.NewEncoder(&orphans).Encode(live)
+		_ = json.NewEncoder(&orphans).Encode(s.sessionViews(live))
 		if got := getSessions(t, s, "orphaned=1").Body.String(); got != orphans.String() {
 			t.Errorf("orphaned body changed:\n got %s\nwant %s", got, orphans.String())
 		}

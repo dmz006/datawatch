@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+**Sessions carry tags** — a session can carry its own managed tags, set when it is started (`tags` on the start request) or afterwards with the new `POST /api/sessions/tags` route (`{id, tag_ids}`, short or full session ID). The tags are stored with the session and survive a daemon restart; a duplicate tag is dropped and an unknown tag is refused with 404 before anything is written. A session spawned by an Automaton also shows the Automaton's tags as read-only `inherited_tags`, computed on each read and never stored, so changing the Automaton's tags changes what its sessions show. Session list and detail responses gain `tags` and `inherited_tags` (additive; no existing field changed). Deleting a tag is refused with 409 while an Automaton or a session still carries it, and the count covers both. The route needs the federation sessions-write capability.
+
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
 ## v9.16.1 — Restart during session launch never adopts a dead worker
