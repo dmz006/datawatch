@@ -3797,7 +3797,25 @@ The PWA draws each `pane_capture` frame at most every 33 ms. A frame that arrive
 
 ## Managing Automata lifecycle event subscriptions (Unreleased — Phases 3–4 of [plans/2026-10-13-prd-lifecycle-events.md](plans/2026-10-13-prd-lifecycle-events.md))
 
-**Operator workflow: no config, no restart.** Subscriptions are *data*, not config: create them from any surface, change them at any time, and the daemon's subscription engine re-attaches to the store immediately (`OnChanged`) — there is nothing to restart and nothing to restart-safe. The only lifecycle-related config is the v9.3.0 `autonomous.notify.default_events` default-set key and `autonomous.notify.pending_events_max` (the per-queue size of the pending-events queue, below).
+**Operator workflow: no config, no restart.** Subscriptions are *data*, not config: create them from any surface, change them at any time, and the daemon's subscription engine re-attaches to the store immediately (`OnChanged`) — there is nothing to restart and nothing to restart-safe. The same is true of the *notify set* (below): changing which event kinds notify is data on the Automaton and its profile, not config. The only lifecycle-related *config* is `autonomous.notify.default_events` (the global set, below — changed once, applies at daemon start) and `autonomous.notify.pending_events_max` (the per-queue size of the pending-events queue, below).
+
+### Default change: which kinds notify now (and how to turn it off)
+
+This release lands the **notify set**: three tiers, an Automaton's own `notify_events` list, its guardrail profile's `notify_events` list, and finally the global `autonomous.notify.default_events`. The first non-empty tier decides the kinds; a subscription's filter can only narrow that set, never widen it. Two behaviour changes:
+
+1. **The global default is now the five-kind baseline** — `prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`, `prd.cancelled` — instead of an empty set. Automata and profiles without their own list will now notify on those five kinds (where before nothing fired from the global tier).
+2. **Opt-in kinds are gated** — `task.session_started` / `task.session_cleared` (and every task-level kind) fire only when the Automaton's resolved set includes them. A subscription on `task.session_started` for an Automaton that was not given that kind does nothing until the kind is added.
+
+**Turning it off — by scope:**
+
+- **One Automaton (keep everything else).** Give it an explicit list that excludes the unwanted kinds — the list *replaces* the inherited one, it does not delete from it: `datawatch autonomous prd-set-notify-events <id> prd.blocked` (from now on only `prd.blocked` notifies for this Automaton). Note: at the Automaton tier and the profile tier, an empty list (or `inherit`) means *inherit the next tier*, not off — only the global tier can express "no kinds" (`default_events: []`).
+- **One profile (every Automaton that uses it).** `datawatch guardrail profile update <id> --notify-events prd.blocked,prd.failed` (or `--notify-events inherit` to return the profile to the global tier).
+- **The whole daemon.** Set the global tier to an explicit empty list — in `~/.datawatch/config.yaml` under `autonomous.notify`, `default_events: []`, or `PUT /api/config` with the JSON body `{"autonomous.notify.default_events": []}` (a JSON-array value; a comma-separated string value with nothing after the comma also clears, but the empty array is the explicit form). Unsetting the key restores the five-kind baseline.
+- **One sink.** Delete the subscription (`datawatch autonomous unsubscribe <id>`), or filter it down to kinds the resolved set still allows — the filter is applied *after* the gate, so narrowing a subscription never restores a kind that is not in the resolved set.
+
+Check where any Automaton stands with `datawatch autonomous prd-get <id>` — `notify_events` (its own list), `notify_events_effective` (the resolved kinds) and `notify_events_effective.source` (`automaton` | `profile` | `global`). `datawatch autonomous status` shows the global tier plus the per-Automaton overrides (capped at 100, first in ID order when there are more). Every change is audit-logged as `autonomous_notify_events_changed` with the old and new list.
+
+Full walkthrough with examples for CLI, comm, MCP, REST and PWA: the how-to [howto/automaton-lifecycle-subscriptions.md](howto/automaton-lifecycle-subscriptions.md) (§ *Choosing which events notify*) and [howto/guardrail-library.md](howto/guardrail-library.md) (§ *Notify events on a profile*).
 
 ### What is where
 

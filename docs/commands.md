@@ -1060,6 +1060,7 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `prd children` | List child PRDs spawned via SpawnPRD (v5.9.0, BL191 Q4) |
 | `prd set-llm/set-task-llm` | Pin LLM backend/effort/model at PRD or task scope (v5.4.0, BL203) |
 | `prd-set-task-verification-llm <id> --task <task>` / `prd-set-story-verification-llm <id> --story <story>` / `prd-set-verification-llm <id>` | Pick the LLM that verifies one task / every task in a story / the whole Automaton. Flags `--backend` / `--model` / `--effort`; omitted flags are unchanged, `--backend ""` clears. Precedence task > story > Automaton > global `autonomous.verification_*` (v9.0.70) |
+| `prd-set-notify-events <prd-id> <kind,kind,...|inherit>` | Replace the Automaton's notify set — the list of lifecycle event kinds that produce notifications for it (Unreleased). Kinds are comma-separated; `inherit` (or an omitted/empty list) clears it back to the guardrail-profile tier, then the global `autonomous.notify.default_events`. Validates against the known kinds (`prd.updated` is not a valid kind). `POST /api/autonomous/prds/{id}/set_notify_events`; audit action `autonomous_notify_events_changed` |
 | `tag-list [--include-sub]` | List Automata tags as a tree (`parent_id`) with the number of Automata carrying each; `GET /api/autonomous/tags` |
 | `tag-create <name> [--parent <id>] [--color <hex>] [--description <text>]` | Create a tag, optionally nested under a parent; `POST /api/autonomous/tags` |
 | `tag-rename <id> <new-name>`, `tag-color <id> <color>`, `tag-move <id> --parent <new-parent-id\|root>` | Edit a tag; `PATCH /api/autonomous/tags/{id}`. A move that would make a tag its own ancestor is refused |
@@ -1069,6 +1070,9 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 Comm channels: `autonomous tags`, `tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]`,
 `tag-rename <id> <new-name>`, `tag-move <id> <parent-id|root>`, `tag-color <id> <color>`,
 `tag-delete <id>`, and `set-tags <prd-id> <tag-id1,tag-id2,...>` (omit the list to clear).
+`set-notify-events <prd-id> [kind,kind,...|]` likewise sets the Automaton's notify set (omit the list to clear back to inherit); `status` includes the global notify tier and every Automaton's override.
+
+The guardrail-profile notify tier is the same story one level up: `datawatch guardrail profile create --name <name> [--guardrails <list>] --notify-events kind,kind,...` / `datawatch guardrail profile update <id> --notify-events kind,kind,...` (`inherit` or an omitted value clears the tier back to the global default; on `update`, omitting leaves it unchanged), and comm `guardrail profile notify-events <id> <kind,kind,...|inherit>` (or an omitted list). See the how-to [howto/guardrail-library.md](howto/guardrail-library.md), section *Notify events on a profile*.
 
 ### `datawatch automation <subcommand>`
 

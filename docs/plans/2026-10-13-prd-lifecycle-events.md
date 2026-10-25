@@ -807,8 +807,10 @@ shipped in v9.3.0). Current status of each intended surface:
 - **YAML/config:** ✅ Phase 2's `autonomous.notify.default_events`
   (v9.3.0). **No new keys in Phase 3** — subscriptions are data. ✅ Phase 4
   adds `autonomous.notify.pending_events_max` (per-queue retention, default
-  500). Per-Automaton `notify_events` remains "only if approved" (open
-  question 2).
+  500). ✅ Per-Automaton and per-profile `notify_events` — open question 2 is
+  **resolved in this build** (see the two items above): the two data fields
+  plus the global tier are live on CLI, comm, MCP, REST and PWA, and the
+  five-kind default is the baseline (opt-out: `default_events: []`).
 - **PWA:** ✅ subscription list/editor on the Automaton detail view
   (Subscriptions tab: list, add, edit, delete, test; Phase 4). ❌ live
   toasts off an enriched WS frame (follow-up, explicitly out of scope for
@@ -830,13 +832,30 @@ is accepted from Phase 4.
 
 ## Open questions for the operator
 
-1. **Default event set:** is `needs_review / blocked / failed / completed /
+1. ~~**Default event set:** is `needs_review / blocked / failed / completed /
    cancelled` the right Automaton-level default? Should
    `task.session_started` / `task.session_ended` be on by default or only
-   opt-in?
-2. **Configurability shape:** global default + per-subscription filters only
+   opt-in?~~ **Resolved (shipped in this build):** the five kinds
+   `prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`,
+   `prd.cancelled` are the global default (`autonomous.notify.default_events`
+   unset); the two session kinds are opt-in, and the opt-in check was
+   enforced at the dispatcher gate — a subscription for an opt-in kind
+   fires only when the Automaton's resolved set includes that kind.
+   `prd.updated` is never a valid kind.
+2. ~~**Configurability shape:** global default + per-subscription filters only
    (recommended), or also a per-Automaton `notify_events` with
-   per-Automaton > profile > global precedence mirroring `resolveGuardrails`?
+   per-Automaton > profile > global precedence mirroring `resolveGuardrails`?~~
+   **Resolved (shipped in this build):** three tiers — the Automaton's own
+   `notify_events` list, its guardrail profile's `notify_events` list, then the
+   global `autonomous.notify.default_events`; the first non-empty tier wins
+   (`ResolveNotifyEvents` in `internal/autonomous/notify_events_resolve.go`),
+   mirroring `resolveGuardrails`. On every surface — REST
+   `POST …/set_notify_events`, profile create/update, MCP
+   `autonomous_prd_set_notify_events`, CLI `autonomous prd-set-notify-events` /
+   `guardrail profile create|update --notify-events`, comm
+   `set-notify-events` / `guardrail profile notify-events`, and the PWA
+   "Notification events" panel. Changes are audit-logged as
+   `autonomous_notify_events_changed`.
 3. **Action subscriptions:** may a subscription carry an action
    (`send_input` text into the newly started session, as in example 1), or
    should subscriptions only notify, with the subscriber acting itself?

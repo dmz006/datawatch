@@ -1124,6 +1124,37 @@ still applies to the comm fan-out: a channel named there skips the
 lifecycle message broadcast even when the event kind is enabled, and
 still handles inbound commands normally.
 
+#### The `notify_events` fields (per-Automaton and per profile)
+
+The resolution above is implemented on two data-level fields — the
+**notify set** — rather than config alone:
+
+- `prd.notify_events` — the Automaton's own list (`internal/autonomous/manager.go`, persisted with the PRD record; an empty/missing list inherits the next tier, it can never mean "none").
+- `guardrail_profile.notify_events` (struct in internal/autonomous/models.go, persisted by the manager) — the profile tier; every Automaton assigned to the profile inherits it unless it has its own list.
+- `autonomous.notify.default_events` — the global tier (above); unset = the five-kind baseline, explicit `[]` = "no kinds".
+
+`ResolveNotifyEvents` / `ResolveNotifyEventsFor`
+(internal/autonomous/notify_events_resolve.go) walk those tiers in order,
+returning the first **non-empty** list plus its `source`
+(`automaton` | `profile` | `global`). All writes go through
+`ValidateNotifyEvents` (internal/autonomous/notify_events.go), which
+validates against the closed set `ValidNotifyEventKinds()` — every known
+lifecycle kind except `prd.updated` (which is deliberately not a notify
+kind) — and rejects blank or unknown entries with the valid list in the
+error. `task.session_started` and `task.session_cleared` are opt-in:
+they fire only when present in the resolved set.
+
+The same rule gates the subscription delivery path (`Manager.NotifyEventAllowed` in internal/autonomous/notify_events_resolve.go, enforced in lifecycle_sinks.go and lifecycle_session_push.go): a subscription for a kind that is not in its Automaton's resolved set is never enqueued or fanned out — filters can only narrow, never widen. Set and clear are audited with action `autonomous_notify_events_changed` (CEF `NotifyEventsChanged`, id 45; internal/audit/events.go + internal/audit/cef.go), carrying the old and new lists and, for Automaton-tier changes, the resolved `source` ("automaton"/"profile"/"global") after the change.
+
+Surfaces (all delegate to those two manager methods / the profile
+store): REST `POST /api/autonomous/prds/{id}/set_notify_events`
+(internal/server/api.go) and the profile create/update body field; MCP
+`autonomous_prd_set_notify_events` and the `notify_events` argument on
+`guardrail_profile_create`/`guardrail_profile_update`
+(internal/mcp/notify_events_tools.go, internal/mcp/guardrail_tools.go);
+CLI `autonomous prd-set-notify-events` and `guardrail profile
+create/update --notify-events` (cmd/datawatch/main.go, cmd/datawatch/cli_guardrail.go); comm `autonomous set-notify-events` and `guardrail profile notify-events` (internal/router/sx2_parity.go, internal/router/guardrails.go); the PWA "Notification events" settings panel and the Guardrail Profiles editor (internal/server/web, locales `notify_events_*`).
+
 ### Dependencies
 
 - **fsnotify** — used for interrupt-driven log file monitoring (replaces polling). Each session's `monitorOutput` goroutine watches the log file via fsnotify and reads new lines on write events, reducing CPU usage and improving latency.

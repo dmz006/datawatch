@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added — choose which Automaton lifecycle events notify (notify set)
+
+- **Per-Automaton and per-guardrail-profile notify sets.** Every Automaton and guardrail profile now carries a `notify_events` list — the set of lifecycle event kinds that produce notifications. Resolution is Automaton list > guardrail-profile list > global `autonomous.notify.default_events`; the first non-empty list wins (`automaton` | `profile` | `global` is reported back in the response and on every surface).
+- **The global default is now the five-kind baseline** — `prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`, `prd.cancelled` — instead of an empty set. Automata and profiles without their own list now notify on those five kinds. `autonomous.notify.default_events: []` (an explicit empty list) is the operator opt-out: the global tier then contributes no kinds. `prd.updated` is never a valid notify kind.
+- **Opt-in kinds are gated.** `task.session_started` and `task.session_cleared` (and every other task-level kind) fire only when the Automaton's resolved set includes them, and a subscription's kind filter can only narrow the resolved set — never widen it.
+- **Surfaces:** REST `POST /api/autonomous/prds/{id}/set_notify_events` (empty/null/missing list = inherit) and the `notify_events` field on profile create/update; MCP `autonomous_prd_set_notify_events` and the `notify_events` argument on `guardrail_profile_create` / `guardrail_profile_update`; CLI `datawatch autonomous prd-set-notify-events` and `datawatch guardrail profile create|update --notify-events`; comm `autonomous set-notify-events` and `guardrail profile notify-events`; PWA "Notification events" panel on the Automaton detail and the Guardrail Profiles editor (new locale strings in all five bundles). `datawatch autonomous prd-get` shows `notify_events` / `notify_events_effective` / source and `autonomous status` shows the global tier plus the per-Automaton overrides (capped at 100).
+- **Audit:** set and clear are logged as `autonomous_notify_events_changed` (CEF `NotifyEventsChanged`, id 45, severity 3) with the old and new list and, for Automaton changes, the resolved source after the change.
+- **Docs & tests:** how-tos (`automaton-lifecycle-subscriptions.md` § *Choosing which events notify*, `guardrail-library.md` § *Notify events on a profile*), config reference, implementation, operations (default-change note and every level of turning it off), commands, parity status, testing tracker, release-smoke check 80, and the app parity note `docs/plans/2026-10-23-datawatch-app-notify-events-note.md`.
+- Design: `docs/plans/2026-10-13-prd-lifecycle-events.md` (open question 2 — configurability shape — resolved in this change).
+
 ## v9.6.0 — mcp.public_url for the MCP SSE endpoint behind a reverse proxy
 
 Adds `mcp.public_url` so the MCP SSE endpoint works behind a reverse proxy. Contributed by Cairn Viktor (external pull request 208, fixing issue 207).
