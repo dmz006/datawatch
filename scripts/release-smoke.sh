@@ -4732,45 +4732,38 @@ H "Shared navigation bar fits phone widths in light and dark"
 # ($BASE/$TOK), TMUX scrubbed, bounded by SMOKE_SHARED_NAV_TIMEOUT (default 600s)
 # through `timeout` when available. Unlike the load section, a navigation layout
 # finding at phone widths is a failure (ko), never a skip. The section SKIPs only
-# when it cannot run at all: no node, no Playwright install, or the scenario
-# reports that no browser or daemon is available (it exits 2, which the runner
-# counts as skipped).
+# when the scenario reports that no browser or daemon is available: it exits 2,
+# which the runner counts as skipped, so the run ends with 0 passed and 0 failed.
 PWA_DIR="$REPO_DIR/scripts/test-stories/pwa"
-if ! command -v node >/dev/null 2>&1; then
-  skip "shared navigation: node not found on PATH - cannot run scripts/test-stories/pwa"
-elif [[ ! -d "$PWA_DIR/node_modules" ]]; then
-  skip "shared navigation: Playwright install missing (scripts/test-stories/pwa/node_modules) - run: (cd scripts/test-stories/pwa && npm ci)"
+NAV_EVD="$TMPD/shared-nav-evidence.$$"
+rm -rf "$NAV_EVD"
+mkdir -p "$NAV_EVD"
+NAV_OUT_FILE="$TMPD/shared-nav-out.$$"
+NAV_TO_BIN="$(command -v timeout 2>/dev/null || true)"
+if [[ -n "$NAV_TO_BIN" ]]; then
+  env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$NAV_EVD" \
+    "$NAV_TO_BIN" "${SMOKE_SHARED_NAV_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
 else
-  NAV_EVD="$TMPD/shared-nav-evidence.$$"
-  rm -rf "$NAV_EVD"
-  mkdir -p "$NAV_EVD"
-  NAV_OUT_FILE="$TMPD/shared-nav-out.$$"
-  NAV_TO_BIN="$(command -v timeout 2>/dev/null || true)"
-  if [[ -n "$NAV_TO_BIN" ]]; then
-    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$NAV_EVD" \
-      "$NAV_TO_BIN" "${SMOKE_SHARED_NAV_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
-  else
-    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$NAV_EVD" \
-      node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
-  fi
-  NAV_RC=$?
-  tail -20 "$NAV_OUT_FILE"
-  NAV_SUMMARY="$(grep -E '^summary: ' "$NAV_OUT_FILE" | tail -1)"
-  NAV_PASSED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $2}')"
-  NAV_FAILED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $4}')"
-  if [[ "$NAV_RC" -eq 0 ]]; then
-    if [[ "${NAV_PASSED:-""}" == "0" && "${NAV_FAILED:-0}" == "0" ]]; then
-      skip "shared navigation: scenario skipped, no browser or daemon available ($NAV_SUMMARY)"
-    else
-      ok "shared navigation fits phone widths: ${NAV_SUMMARY#summary: }"
-    fi
-  elif [[ "$NAV_RC" -eq 124 ]]; then
-    ko "shared navigation timed out after ${SMOKE_SHARED_NAV_TIMEOUT:-600}s: $(tail -1 "$NAV_OUT_FILE")"
-  else
-    ko "shared navigation layout findings at phone widths (run-all.mjs rc=$NAV_RC): $(tail -5 "$NAV_OUT_FILE" | tr '\n' ' ' | head -c 400)"
-  fi
-  rm -rf "$NAV_EVD"
+  env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$NAV_EVD" \
+    node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
 fi
+NAV_RC=$?
+tail -20 "$NAV_OUT_FILE"
+NAV_SUMMARY="$(grep -E '^summary: ' "$NAV_OUT_FILE" | tail -1)"
+NAV_PASSED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $2}')"
+NAV_FAILED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $4}')"
+if [[ "$NAV_RC" -eq 0 ]]; then
+  if [[ "${NAV_PASSED:-""}" == "0" && "${NAV_FAILED:-0}" == "0" ]]; then
+    skip "shared navigation: scenario skipped, no browser or daemon available ($NAV_SUMMARY)"
+  else
+    ok "shared navigation fits phone widths: ${NAV_SUMMARY#summary: }"
+  fi
+elif [[ "$NAV_RC" -eq 124 ]]; then
+  ko "shared navigation timed out after ${SMOKE_SHARED_NAV_TIMEOUT:-600}s: $(tail -1 "$NAV_OUT_FILE")"
+else
+  ko "shared navigation layout findings at phone widths (run-all.mjs rc=$NAV_RC): $(tail -5 "$NAV_OUT_FILE" | tr '\n' ' ' | head -c 400)"
+fi
+rm -rf "$NAV_EVD"
 
 # ---------------------------------------------------------------------------
 H "80. Daemon restart matrix - in-flight work survives a restart (strict)"
