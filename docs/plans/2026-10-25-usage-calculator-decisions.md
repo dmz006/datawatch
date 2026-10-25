@@ -13,7 +13,8 @@ Date started: 2026-10-25. The ten open questions of `docs/plans/2026-10-23-usage
 7. **Reset moment: a weekday, a local clock time and a time zone name.** (Operator, 2026-10-25: "1, zone name".) For example Sunday 08:00 in the America/New_York zone; the calculator follows the zone's own rules and stays correct across a daylight saving change. A fixed UTC offset is not used.
 8. **Readings belong to the account, shared across federated daemons.** (Operator, 2026-10-25: "1, shared across daemons".) A weekly allowance is an account fact, so the series is shared: one daemon is the keeper of an account's series, and peer daemons read it over REST with a federation capability. The proposal must say how the keeper is chosen and what a peer does when the keeper is unreachable (show its last copy, marked as such).
 9. **Bought extra credit: a separate extra-credit figure, entered by the operator, added to the ceiling.** (Operator, 2026-10-25: "1 for both".) The ceiling becomes 100 plus the extra points; the verdict and run-out figures use that ceiling, and the screen shows the extra-credit line separately.
+10. **The older 22:08 reading entry is corrected in place, with a note.** (Operator, 2026-10-25: "1 for both".) The entry in the concurrency design doc now gives 1.41 days, 106.0 percent and a run-out around 02:02, with an italic line saying it was corrected on 2026-10-25 and why.
 
-## Still open (asked in order)
+## Status
 
-10. Whether the older 22:08 reading entry should be corrected.
+All ten questions of the usage calculator design are answered (decisions 1 to 10). The implementation PRD can be planned from this file.
