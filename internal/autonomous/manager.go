@@ -765,6 +765,10 @@ type Manager struct {
 	// sessionOutputFn — when set, boot-resume reads a dead session's recorded
 	// output to find a completion marker written while the daemon was down.
 	sessionOutputFn func(sessionID string) (output string, ok bool)
+	// sessionAgentStartedFn — when set, boot-resume adopts a live session only
+	// if its agent has started; a live bare shell is ended and its task reset.
+	// Nil = adopt on alive (the pre-gate behaviour).
+	sessionAgentStartedFn func(sessionID string) bool
 	// sessionWaitFn — when set, executeOne waits on an adopted session through
 	// it; nil falls back to polling sessionAliveFn.
 	sessionWaitFn func(ctx context.Context, sessionID string) error
@@ -1023,6 +1027,16 @@ func (m *Manager) SetSessionOutputFn(fn func(sessionID string) (output string, o
 	m.sessionOutputFn = fn
 }
 
+// SetSessionAgentStartedFn wires the agent-started check used at boot-resume.
+// fn returns true when the agent behind sessionID has started; a live session
+// whose agent has not started (a bare shell from a failed launch) is not
+// adopted. Nil keeps the old behaviour: a live session is adopted.
+func (m *Manager) SetSessionAgentStartedFn(fn func(sessionID string) bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionAgentStartedFn = fn
+}
+
 // SetSessionWaitFn wires the wait used for a session adopted at boot-resume.
 // fn blocks until the session reaches its completion marker (nil error) or
 // fails/stalls (non-nil error, wrapping ErrWorkerStalled for a stall). Nil
@@ -1231,6 +1245,7 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 	killerFn := m.sessionKillerFn
 	aliveFn := m.sessionAliveFn
 	outputFn := m.sessionOutputFn
+	agentStartedFn := m.sessionAgentStartedFn
 	m.mu.Unlock()
 	if prd == nil {
 		return
@@ -1273,7 +1288,7 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 					log.Printf("[autonomous] boot-resume: await-external task %s for prd=%s has no live session; re-queueing a fresh attempt", t.ID, prd.ID)
 				}
 			case TaskInProgress:
-				switch decideInProgressResume(aliveFn, outputFn, t.SessionID) {
+				switch decideInProgressResume(aliveFn, agentStartedFn, outputFn, t.SessionID) {
 				case resumeAdopt:
 					// The worker's session outlived the daemon: keep it. Re-take
 					// its lease and mark it adopted so executeOne waits instead
@@ -1292,6 +1307,26 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 					t.UpdatedAt = time.Now()
 					reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
 					log.Printf("[autonomous] boot-resume: task %s (in_progress) finished while daemon was down (session %s), moved to verifying for prd=%s", t.ID, t.SessionID, prd.ID)
+					continue
+				case resumeStartFailed:
+					// Live bare shell: the agent never launched, so the session is a
+					// boot-time launch failure, not work. End it and reset the task
+					// with the start-failure reason. No retry counter is touched.
+					if killerFn != nil {
+						why := fmt.Sprintf("boot-resume: task %s was in_progress on session %s whose agent never started (boot-time launch failure: bare shell, no agent process); the session is ended and the task is requeued", t.ID, t.SessionID)
+						if err := killerFn(t.SessionID, "autonomous.boot-resume.start-failed", why); err != nil {
+							log.Printf("[autonomous] boot-resume: kill start-failed session %s: %v", t.SessionID, err)
+						}
+					}
+					m.releaseCapacity(t.ID)
+					oldSession := t.SessionID
+					t.SessionID = ""
+					t.AdoptedSession = false
+					t.Status = TaskPending
+					t.Error = SessionStartFailureReason
+					t.UpdatedAt = time.Now()
+					reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: oldSession})
+					log.Printf("[autonomous] boot-resume: task %s (was in_progress) reset with %q for prd=%s; session %s never started its agent", t.ID, SessionStartFailureReason, prd.ID, oldSession)
 					continue
 				}
 				// Empty or dead session without a marker: orphaned, reset below.

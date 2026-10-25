@@ -6245,6 +6245,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 				return out, true
 			})
+			// Boot-resume: adopt a live session only once its agent has started. A
+			// live bare shell from a boot-time launch failure is ended and requeued.
+			amgr.SetSessionAgentStartedFn(mgr.AgentStarted)
 			// Wait for an adopted session by its state / completion marker, so it
 			// works for any backend (claude-code, opencode, pi-prompt).
 			amgr.SetSessionWaitFn(func(ctx context.Context, sessionID string) error {

@@ -20,19 +20,28 @@ const (
 	// resumeFinished — the session ended while the daemon was down but its
 	// recorded output carries the completion marker: go straight to verifying.
 	resumeFinished
+	// resumeStartFailed — the session is alive but its agent never started (a
+	// bare shell left by a boot-time launch failure): end it and reset the task
+	// with SessionStartFailureReason. No retry is counted.
+	resumeStartFailed
 )
 
 // decideInProgressResume classifies an in_progress task at boot-resume. A live
-// session is adopted. A dead session whose recorded output holds the
-// completion marker is finished work. Anything else (no session id, dead
-// session without a marker, no hooks wired) is reset. Pure: it reads only
-// through the supplied hooks.
-func decideInProgressResume(aliveFn func(string) bool, outputFn func(string) (string, bool), sessionID string) resumeAction {
+// session is adopted only when its agent has started; a live bare shell is
+// resumeStartFailed. A nil agentStartedFn keeps the old behaviour and adopts
+// on alive. A dead session whose recorded output holds the completion marker
+// is finished work. Anything else (no session id, dead session without a
+// marker, no hooks wired) is reset. Pure: it reads only through the supplied
+// hooks.
+func decideInProgressResume(aliveFn func(string) bool, agentStartedFn func(string) bool, outputFn func(string) (string, bool), sessionID string) resumeAction {
 	if sessionID == "" {
 		return resumeReset
 	}
 	if aliveFn != nil && aliveFn(sessionID) {
-		return resumeAdopt
+		if agentStartedFn == nil || agentStartedFn(sessionID) {
+			return resumeAdopt
+		}
+		return resumeStartFailed
 	}
 	if outputFn != nil {
 		if out, ok := outputFn(sessionID); ok && outputHasCompletionMarker(out) {
