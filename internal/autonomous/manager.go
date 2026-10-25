@@ -3682,6 +3682,24 @@ func (m *Manager) TaskNudgeCount(prdID, taskID string) int {
 	return 0
 }
 
+// NudgeEventForSession returns the latest nudge the task recorded for the given
+// session, with its outcome, and false when the task is unknown or the session
+// has no nudge. Callers read it at the moment they judge the worker.
+func (m *Manager) NudgeEventForSession(prdID, taskID, sessionID string) (NudgeEvent, bool) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return NudgeEvent{}, false
+	}
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if t := &prd.Story[si].Tasks[ti]; t.ID == taskID {
+				return t.NudgeEventForSession(sessionID)
+			}
+		}
+	}
+	return NudgeEvent{}, false
+}
+
 // RecordTaskNudgeOutcome sets the outcome of the latest nudge sent into the
 // given session on the task. It returns an error when the outcome is not one
 // of the NudgeOutcome constants, the task is unknown, or the session has no

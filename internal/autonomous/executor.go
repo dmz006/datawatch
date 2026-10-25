@@ -1408,7 +1408,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					// free its capacity lease now; the retry re-admits through
 					// the normal queue like any other waiting task.
 					m.releaseCapacity(t.ID)
-					log.Printf("[autonomous] task %s/%s: stall retry %d of %d after session %s", prd.ID, t.ID, attempt+1, budget-attempt-1, t.SessionID)
+					log.Printf("[autonomous] task %s/%s: stall retry %d of %d after session %s (%s)", prd.ID, t.ID, attempt+1, budget-attempt-1, t.SessionID, StallRetryReason(err))
 					hint = err.Error()
 					m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeStalled, Category: lastFailureCategory, Summary: hint})
 					if cp := m.relocateCheckpoint(prd, t); cp != "" {

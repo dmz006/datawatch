@@ -6035,6 +6035,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verifier_infra_escalation_threshold":  s.cfg.Autonomous.VerifierInfraEscalationThreshold,
 			"fallback_verification_backend":        s.cfg.Autonomous.FallbackVerificationBackend,
 			"verifier_no_progress_timeout_seconds": s.cfg.Autonomous.VerifierNoProgressTimeoutSeconds,
+
+			// Read-only: the idle-nudge windows the daemon applies after the
+			// unset or non-positive fallback (180s nudge, 600s stall).
+			"worker_idle_nudge_effective_seconds":       config.NormalizeWorkerIdleNudgeSeconds(s.cfg.Autonomous.WorkerIdleNudgeSeconds),
+			"worker_idle_nudge_stall_effective_seconds": config.NormalizeWorkerIdleNudgeStallSeconds(s.cfg.Autonomous.WorkerIdleNudgeStallSeconds),
+
 			// Plan review gate + smoke verification settings.
 			"plan_review_backend":        s.cfg.Autonomous.PlanReviewBackend,
 			"plan_review_model":          s.cfg.Autonomous.PlanReviewModel,

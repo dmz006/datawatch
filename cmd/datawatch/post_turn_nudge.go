@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"time"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
@@ -128,9 +129,32 @@ func (r managerPostTurnRecorder) RecordTaskNudgeOutcome(prdID, taskID, sessionID
 
 // postTurnDeps are the collaborators of one post-turn nudge.
 type postTurnDeps struct {
-	sessions postTurnSessions
-	recorder postTurnRecorder
-	probes   postTurnProbes
+	sessions  postTurnSessions
+	recorder  postTurnRecorder
+	probes    postTurnProbes
+	idleLimit time.Duration // the session idle detector's limit; 0 when the detector is off
+}
+
+// familyLabel names a backend family for log lines, "unknown" until it is read.
+func familyLabel(family string) string {
+	if family == "" {
+		return "unknown"
+	}
+	return family
+}
+
+// nudgeApplies says, for log lines, whether the nudge applies to a family:
+// "pending" until the family is read, then "yes" for claude-code and "no" for
+// every other family.
+func nudgeApplies(family string) string {
+	switch family {
+	case "":
+		return "pending"
+	case autonomouspkg.WorkerNudgeFamily:
+		return "yes"
+	default:
+		return "no"
+	}
 }
 
 // postTurnNudge owns the claude-code idle nudge of one task's wait: the
@@ -148,6 +172,7 @@ type postTurnNudge struct {
 	fullID    string                            // identity of the session the tracker was built for
 	tracker   *autonomouspkg.WorkerNudgeTracker // set only while the family is claude-code
 	hooks     autonomouspkg.WorkerNudgeHooks
+	ticks     int // Step calls so far; the family is logged as unknown after the first
 }
 
 // newPostTurnNudge starts the nudge for one task's wait. It binds to the session
@@ -166,7 +191,33 @@ func newPostTurnNudge(deps postTurnDeps, cfg autonomouspkg.Config, task *autonom
 	if snap, ok := deps.sessions.Snapshot(n.sessionID); ok {
 		n.bind(snap)
 	}
+	n.logWaitStart()
 	return n
+}
+
+// logWaitStart writes the one line that says how this wait will nudge: the
+// session and task, the backend family as far as it is known, whether the nudge
+// applies, the windows in force, the session idle limit, and whether a persisted
+// nudge for this session seeds the tracker. When the nudge window is not shorter
+// than the idle limit the idle detector can end the worker before the nudge is
+// sent, so that is warned once here.
+func (n *postTurnNudge) logWaitStart() {
+	nudgeAfter, stallAfter := workerNudgeWindows(n.cfg)
+	persisted := !n.task.NudgeTimeForSession(n.sessionID).IsZero()
+	log.Printf("[autonomous] post-turn wait start: session %s task %s: backend family %s, nudge applies=%s, nudge window %s, stall window %s, session idle limit %s, persisted nudge=%t",
+		n.sessionID, n.label, familyLabel(n.family), nudgeApplies(n.family), nudgeAfter, stallAfter, n.deps.idleLimit, persisted)
+	if n.deps.idleLimit > 0 && nudgeAfter >= n.deps.idleLimit {
+		log.Printf("[autonomous] post-turn wait warning: session %s task %s: nudge window %s is not smaller than session idle limit %s; the idle detector can end the worker before the nudge is sent",
+			n.sessionID, n.label, nudgeAfter, n.deps.idleLimit)
+	}
+}
+
+// logFamilyResolved writes the line that follows a family read after it was
+// unknown: the family, whether the nudge applies, and whether the tracker it
+// built was seeded from a nudge already sent into this session.
+func (n *postTurnNudge) logFamilyResolved() {
+	log.Printf("[autonomous] post-turn wait: session %s task %s: backend family resolved to %s; nudge applies=%s, tracker seeded=%t",
+		n.sessionID, n.label, n.family, nudgeApplies(n.family), n.tracker != nil && n.tracker.Nudged())
 }
 
 // wire builds the hooks for the current session id. The hooks close over the id,
@@ -214,16 +265,26 @@ func (n *postTurnNudge) Step(now time.Time) error {
 	if n == nil {
 		return nil
 	}
+	n.ticks++
 	if sid := n.task.SessionID; sid != n.sessionID {
 		n.sessionID = sid
 		n.family, n.fullID, n.tracker = "", "", nil
 		n.wire()
 	}
 	snap, ok := n.deps.sessions.Snapshot(n.sessionID)
+	if ok {
+		wasUnknown := n.family == ""
+		n.bind(snap)
+		if wasUnknown && n.family != "" {
+			n.logFamilyResolved()
+		}
+	}
+	if n.ticks == 1 && n.family == "" {
+		log.Printf("[autonomous] post-turn wait: session %s task %s: backend family still unknown after the first tick; nudge applies=pending", n.sessionID, n.label)
+	}
 	if !ok {
 		return nil
 	}
-	n.bind(snap)
 	return autonomouspkg.StepWorkerNudge(n.tracker, now, n.family, n.sessionID, n.label, n.hooks)
 }
 
@@ -233,5 +294,5 @@ func (n *postTurnNudge) Close() {
 	if n == nil {
 		return
 	}
-	autonomouspkg.CloseNudgeWait(n.tracker, n.hooks)
+	autonomouspkg.CloseNudgeWait(n.tracker, n.hooks, n.sessionID, n.label)
 }

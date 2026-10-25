@@ -207,7 +207,7 @@ func TestNudgeRetry_StallEndsSessionAndRetriesInFreshSession(t *testing.T) {
 	for _, want := range []string{
 		fmt.Sprintf("[autonomous] idle worker s-1 task %s: nudge 1 sent after ", label),
 		fmt.Sprintf("[autonomous] idle worker s-1 task %s: still silent for %s after nudge; ending session for retry", label, nudgeTestStall),
-		fmt.Sprintf("[autonomous] task %s: stall retry 1 of 2 after session s-1", label),
+		fmt.Sprintf("[autonomous] task %s: stall retry 1 of 2 after session s-1 (after completion nudge)", label),
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("log is missing %q\nlog:\n%s", want, out)

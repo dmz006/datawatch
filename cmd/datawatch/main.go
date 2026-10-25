@@ -4855,9 +4855,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// tick until the session is visible (see postTurnNudge.Step), so a
 				// session that appears after wait start is nudged from its first tick.
 				nudge := newPostTurnNudge(postTurnDeps{
-					sessions: managerPostTurnSessions{mgr: mgr},
-					recorder: managerPostTurnRecorder{mgr: autonomousMgrRef},
-					probes:   postTurnProbes{hasWork: hasLiveChildProcess, logAge: staleLogAge(idleLimit)},
+					sessions:  managerPostTurnSessions{mgr: mgr},
+					recorder:  managerPostTurnRecorder{mgr: autonomousMgrRef},
+					probes:    postTurnProbes{hasWork: hasLiveChildProcess, logAge: staleLogAge(idleLimit)},
+					idleLimit: idleLimit,
 				}, liveCfg, task)
 				// pi-prompt exit-silence detector. One-shot `pi --print` runs write
 				// nothing to the log until they finish, so the log-mtime stall check
@@ -5035,6 +5036,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									OutputAge:           outputAge,
 									HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession, s.ProjectDir),
 									Limit:               idleLimit,
+									Nudge:               sessionNudgeNote(autonomousMgrRef, prd.ID, task.ID, task.SessionID),
 								}
 								if idleStalled, idleReason := idleObs.Stalled(); idleStalled {
 									log.Printf("[autonomous] session idle detector fired for %s task %s/%s: %s; killing for retry",
