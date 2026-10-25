@@ -649,6 +649,146 @@ body {
 }
 .automata-progress-fill.complete { background: var(--success); }
 
+/* Shared work tile: the Automata and Automation lists draw each item as a
+   tile. The layout follows data-tile-mode on .work-tile-grid, which the
+   viewport width sets: tile (720px and up), compact (420px to 719px, two-line
+   rows) and line (under 420px, one-line rows). Colours are the existing
+   .prd-card-status-* left borders and the automata progress bar; no new palette. */
+.work-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.work-tile { margin: 0; padding: 12px 14px; cursor: pointer; min-width: 0; }
+.work-tile-head { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.work-tile-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.work-tile-status { flex-shrink: 0; }
+.work-tile-count-head,
+.work-tile-dot,
+.work-tile-tagcount,
+.work-tile-menu .work-tile-primary-copy { display: none; }
+.work-tile-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text2); flex-shrink: 0; margin-top: 6px; }
+.work-tile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text2);
+  font-family: var(--mono, monospace);
+}
+.work-tile-badges { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-left: auto; }
+.work-tile-progress { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.work-tile-progress .automata-progress-wrap { flex: 1; min-width: 0; margin: 0; }
+.work-tile-count { font-size: 11px; color: var(--text2); white-space: nowrap; font-family: var(--mono, monospace); }
+.work-tile-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; }
+.work-tile-tags-more-chip {
+  list-style: none;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  font-weight: 600;
+}
+.work-tile-tags-more-chip::-webkit-details-marker { display: none; }
+.work-tile-tags-all { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.work-tile-body { margin-top: 6px; font-size: 12px; color: var(--text2); }
+.work-tile-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.work-tile-activity { font-size: 11px; color: var(--text2); margin-right: auto; }
+.work-tile-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.work-tile-more { position: relative; flex-shrink: 0; }
+.work-tile-more-btn {
+  list-style: none;
+  cursor: pointer;
+  padding: 0 8px;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--text2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.work-tile-more-btn::-webkit-details-marker { display: none; }
+.work-tile-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  margin-top: 4px;
+  padding: 6px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.work-tile-menu-item { font-size: 12px; text-align: left; padding: 4px 8px; white-space: nowrap; }
+.work-tile-more.is-narrow-only { display: none; }
+.work-tile.prd-card-status-running .work-tile-dot,
+.work-tile.prd-card-status-active .work-tile-dot { background: var(--success); }
+.work-tile.prd-card-status-blocked .work-tile-dot,
+.work-tile.prd-card-status-rejected .work-tile-dot { background: var(--error); }
+.work-tile.prd-card-status-needs_review .work-tile-dot,
+.work-tile.prd-card-status-paused .work-tile-dot,
+.work-tile.prd-card-status-revisions_asked .work-tile-dot { background: var(--warning); }
+.work-tile.prd-card-status-approved .work-tile-dot { background: var(--accent); }
+
+/* compact: one column of two-line rows (420px to 719px). Line one is the title,
+   the status chip and the count; line two is the backend, the tag count and the
+   last activity. Actions move into the overflow menu. */
+.work-tile-grid[data-tile-mode="compact"],
+.work-tile-grid[data-tile-mode="line"] { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.work-tile-grid[data-tile-mode="compact"] .work-tile,
+.work-tile-grid[data-tile-mode="line"] .work-tile { padding: 9px 12px; }
+.work-tile-grid[data-tile-mode="compact"] .work-tile-progress,
+.work-tile-grid[data-tile-mode="compact"] .work-tile-tags,
+.work-tile-grid[data-tile-mode="compact"] .work-tile-body,
+.work-tile-grid[data-tile-mode="compact"] .work-tile-primary,
+.work-tile-grid[data-tile-mode="line"] .work-tile-progress,
+.work-tile-grid[data-tile-mode="line"] .work-tile-tags,
+.work-tile-grid[data-tile-mode="line"] .work-tile-body,
+.work-tile-grid[data-tile-mode="line"] .work-tile-primary { display: none; }
+.work-tile-grid[data-tile-mode="compact"] .work-tile-count-head,
+.work-tile-grid[data-tile-mode="line"] .work-tile-count-head,
+.work-tile-grid[data-tile-mode="compact"] .work-tile-tagcount { display: inline; }
+.work-tile-grid[data-tile-mode="compact"] .work-tile-more.is-narrow-only,
+.work-tile-grid[data-tile-mode="line"] .work-tile-more.is-narrow-only { display: block; }
+.work-tile-grid[data-tile-mode="compact"] .work-tile-menu .work-tile-primary-copy,
+.work-tile-grid[data-tile-mode="line"] .work-tile-menu .work-tile-primary-copy { display: flex; flex-direction: column; gap: 4px; }
+.work-tile-grid[data-tile-mode="compact"] .work-tile-title,
+.work-tile-grid[data-tile-mode="line"] .work-tile-title { -webkit-line-clamp: 1; }
+
+/* line: one line per item (under 420px). Title, status dot and count; the
+   status chip, meta line, bar, tags and foot are dropped. */
+.work-tile-grid[data-tile-mode="line"] .work-tile-status,
+.work-tile-grid[data-tile-mode="line"] .work-tile-meta,
+.work-tile-grid[data-tile-mode="line"] .work-tile-foot { display: none; }
+.work-tile-grid[data-tile-mode="line"] .work-tile-dot { display: inline-block; order: -1; }
+
 /* Batch action bar (sticky below filter) */
 .automata-batch-bar {
   display: flex;

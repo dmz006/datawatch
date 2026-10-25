@@ -21837,27 +21837,14 @@ function renderAutomataCard(prd) {
   const gateInvalidBadge = prd.quality_gate_status === 'invalid'
     ? `<span class="gate-invalid-badge" style="font-size:11px;padding:2px 8px;border-radius:8px;font-weight:700;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid #f59e0b;" title="${escHtml(prd.quality_gate_invalid_reason || t('prd_gate_invalid_reason') || '')}">${escHtml(t('prd_gate_invalid') || 'Quality gate invalid')}${prd.quality_gate_invalid_reason ? ' · ' + escHtml(prd.quality_gate_invalid_reason) : ''}</span>`
     : '';
-  const progress = renderProgressBar(prd);
   const position = renderCurrentPosition(prd);
   const escId = escHtml(JSON.stringify(id));
   const checkboxCell = _automataState.selectMode
-    ? `<input type="checkbox" class="automata-card-check" data-prd-id="${escHtml(id)}" ${isChecked?'checked':''} style="margin-top:3px;flex-shrink:0;" onchange="updateAutomataSelection(${escId},this.checked)" onclick="event.stopPropagation();" aria-label="Select">`
+    ? `<input type="checkbox" class="automata-card-check" data-prd-id="${escHtml(id)}" ${isChecked?'checked':''} onchange="updateAutomataSelection(${escId},this.checked)" onclick="event.stopPropagation();" aria-label="Select">`
     : '';
-  // GATE alpha.36 (operator 2026-05-10):
-  // - Open button removed: clicking the title (or any non-button area
-  //   of the card) opens detail; explicit Open was redundant
-  // - Pin button moved out of the title row to the bottom-right of the
-  //   action row (right of Cancel/Approve), so it's clearly a "card-
-  //   level" affordance and not part of the title group
-  // - lifecycle strip shrunk via .lifecycle-compact modifier so all 5
-  //   steps fit on one line
-  // - Status pill now right-justified (margin-left:auto) on title row
-  // - ID + last-activity moved to their own meta row, right-justified,
-  //   single line below title
-  // - Stories & tasks summary now shows count
-  const lastActivity = prd.updated_at ? new Date(prd.updated_at).toLocaleString('en-GB', { hour12: false }) : '';
   const isApprovalState = ['needs_review', 'revisions_asked', 'waiting_input'].includes(status);
   const isCancelable = !['completed','cancelled','rejected','archived'].includes(status);
+  const openBtn = `<button class="btn-primary work-tile-open" onclick="event.stopPropagation();renderPRDDetailView(${escId})">${escHtml(t('work_tile_open') || 'Open')}</button>`;
   const approveBtn = isApprovalState
     ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;background:var(--warning,#f59e0b);color:var(--bg);font-weight:700;" title="${escHtml(t('automata_action_approve_tip')||'Approve next story / unblock')}" onclick="event.stopPropagation();renderPRDDetailView(${escId})">✓ ${escHtml(t('automata_action_approve')||'Approve')}</button>`
     : '';
@@ -21881,10 +21868,13 @@ function renderAutomataCard(prd) {
   const resumeBtn = status === 'paused'
     ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_resume_tip')||'Resume this automaton')}" onclick="event.stopPropagation();automataResume(${escId})">▶ ${escHtml(t('automata_action_resume')||'Resume')}</button>`
     : '';
-  const pinBtn = `<button class="btn-icon" style="font-size:14px;padding:2px 8px;background:transparent;border:none;cursor:pointer;${isPinned?'color:var(--warning,#f59e0b);':'opacity:0.4;'}" title="${escHtml(t('automata_action_pin')||'Pin to top')}" onclick="event.stopPropagation();toggleAutomataPin('${escHtml(id)}')">${isPinned?'📌':'📍'}</button>`;
-  // GH#172 D61 — watch sessions/automata + watched-badge filter.
+  // Pin and watch sit in the tile's overflow menu; the marks show their state
+  // in the header while the menu is closed.
   const isWatched = _automataState.watched.has(id);
-  const watchBtn = `<button class="btn-icon" style="font-size:14px;padding:2px 8px;background:transparent;border:none;cursor:pointer;${isWatched?'color:var(--accent2,#60a5fa);':'opacity:0.4;'}" title="${escHtml(isWatched ? (t('automata_action_unwatch')||'Stop watching') : (t('automata_action_watch')||'Watch for updates'))}" onclick="event.stopPropagation();toggleAutomataWatch('${escHtml(id)}')">👁</button>`;
+  const pinItem = _tileMenuItem(isPinned ? '📌' : '📍', t('automata_action_pin') || 'Pin to top', `toggleAutomataPin('${escJsAttr(id)}')`);
+  const watchItem = _tileMenuItem('👁', isWatched ? (t('automata_action_unwatch') || 'Stop watching') : (t('automata_action_watch') || 'Watch for updates'), `toggleAutomataWatch('${escJsAttr(id)}')`);
+  const pinMark = isPinned ? `<span class="work-tile-mark" title="${escHtml(t('automata_action_pin')||'Pin to top')}">📌</span>` : '';
+  const watchMark = isWatched ? `<span class="work-tile-mark" title="${escHtml(t('automata_action_watch')||'Watch for updates')}">👁</span>` : '';
   // GH#172 D71 — parent-PRD ↗ link on an Automaton card (Android already
   // has this). parent_prd_id is already in the JSON (BL191 Q4 recursion).
   const parentLink = prd.parent_prd_id
@@ -21892,39 +21882,38 @@ function renderAutomataCard(prd) {
     : '';
   const storyCount = (prd.stories || []).length || prd.story_count || 0;
   const full = _automataFullPrd(prd);
-  return `<div class="prd-row prd-card ${statusClass}" id="prd-${escHtml(id)}" style="padding:14px;margin-bottom:14px;cursor:pointer;" onclick="renderPRDDetailView(${escId})">
-    <div style="display:flex;align-items:flex-start;gap:10px;">
-      ${checkboxCell}
-      <div style="flex:1;min-width:0;">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          ${typeBadge}${window.automatonKindChipHtml(prd)}${_tagChipsHTML(prd)}${tplBadge}${gateInvalidBadge}
-          <span style="font-weight:700;font-size:15px;color:var(--text);flex:1;min-width:0;">${escHtml(title)}</span>
-          <span style="margin-left:auto;flex-shrink:0;">${statusPill(status)}</span>
-        </div>
-        <div style="display:flex;justify-content:flex-end;gap:10px;font-size:11px;color:var(--text2);margin-top:4px;font-family:var(--mono,monospace);">
-          ${parentLink}
-          <code>${escHtml(id)}</code>
-          ${lastActivity ? `<span>${escHtml(lastActivity)}</span>` : ''}
-        </div>
-        ${progress}
-        ${position}
-        <div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);" onclick="event.stopPropagation()">
-          ${cancelBtn}${rejectBtn}${reviseBtn}${pauseBtn}${resumeBtn}
-          <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${approveBtn}${watchBtn}${pinBtn}</span>
-        </div>
-      </div>
-    </div>
-    <details style="margin-top:8px;" onclick="event.stopPropagation()" ontoggle="_automataCardToggle(${escId},this)"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'} (${storyCount})</summary>
+  const counts = _tileAutomataCounts(prd);
+  const held = _prdHeldBadgeHTML(prd);
+  const storiesDetail = `<details style="margin-top:8px;" onclick="event.stopPropagation()" ontoggle="_automataCardToggle(${escId},this)"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'} (${storyCount})</summary>
       <div class="prd-card-detail" data-prd-detail="${escHtml(id)}" style="margin-top:6px;" onclick="event.stopPropagation()">${_automataCardDetailHtml(prd)}</div>
-    </details>
-    <!-- GH#182 — Automaton dependency graph (DAG) card. No graph library
-         in this repo (zero-heavy-dependency footprint); hand-rolled SVG
-         is plenty for the handful of stories/tasks a real Automaton has. -->
-    ${(storyCount > 0 && full) ? `<details style="margin-top:8px;" onclick="event.stopPropagation()"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_dependency_graph')||'Dependency graph'}</summary>
+    </details>`;
+  // GH#182 — Automaton dependency graph (DAG) card. No graph library
+  // in this repo (zero-heavy-dependency footprint); hand-rolled SVG
+  // is plenty for the handful of stories/tasks a real Automaton has.
+  const graphDetail = (storyCount > 0 && full) ? `<details style="margin-top:8px;" onclick="event.stopPropagation()"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_dependency_graph')||'Dependency graph'}</summary>
       <div style="margin-top:6px;overflow-x:auto;" onclick="event.stopPropagation()">${renderDependencyGraph(full)}</div>
-    </details>` : ''}
-  </div>`;
+    </details>` : '';
+  return renderWorkTile({
+    id,
+    rootId: 'prd-' + id,
+    onOpen: `renderPRDDetailView(${escId})`,
+    statusClass,
+    statusHtml: statusPill(status),
+    title: title,
+    checkHtml: checkboxCell,
+    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${parentLink}${pinMark}${watchMark}`,
+    backend: [prd.backend, prd.model].filter(Boolean).join(' · '),
+    progress: counts,
+    progressLabel: t('work_tile_progress', [counts.done, counts.total]),
+    tagIds: _tileTagIds(prd),
+    tagsById: _tagsState.byId,
+    updatedAt: prd.updated_at,
+    nowMs: Date.now(),
+    primaryHtml: `${openBtn}${cancelBtn}${rejectBtn}${reviseBtn}${pauseBtn}${resumeBtn}${approveBtn}`,
+    menuHtml: `${watchItem}${pinItem}`,
+    bodyHtml: `${position}${held ? `<div>${held}</div>` : ''}<div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>`,
+    afterHtml: storiesDetail + graphDetail,
+  });
 }
 
 // GH#182 — hand-rolled SVG DAG: stories as columns, tasks as rows within
@@ -22140,7 +22129,7 @@ function _automataCardsHtml() {
     const key = _automataState.historyOn ? 'automata_empty_history' : 'automata_empty_active';
     return `<div class="list-state-empty" style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t(key))}</div>` + _automataLoadMoreHtml();
   }
-  return filtered.map(renderAutomataCard).join('') + _automataLoadMoreHtml();
+  return _tileGridHTML(filtered.map(renderAutomataCard).join('')) + _automataLoadMoreHtml();
 }
 function _automataAfterPaint(panel, openIds) {
   if (openIds && openIds.size) {
@@ -26245,7 +26234,7 @@ window.automationEmptyStateHtml = automationEmptyStateHtml;
 
 function _automationFetchAll() {
   const request = automationRequest('GET', '/api/automations');
-  return Promise.all([request, loadAutomationPrdInfo()]).then(([data, info]) => ({
+  return Promise.all([request, loadAutomationPrdInfo(), _tagsLoad(true)]).then(([data, info]) => ({
     list: Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : []),
     titles: info.titles,
   })).then(d => {
@@ -26270,7 +26259,7 @@ function _automationLoader() {
       if (!d.list.length) return _automationEmptyAllowed() ? automationEmptyStateHtml() : '';
       if (!items.length) return `<div class="list-state-empty" style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('automation_list_empty'))}</div>`;
       const ctx = { prdTitles: d.titles, now: Date.now() };
-      return items.map(a => buildAutomationCardHTML(a, ctx)).join('');
+      return _tileGridHTML(items.map(a => buildAutomationCardHTML(a, ctx)).join(''));
     },
     afterPaint: () => {
       if (_automationState.detailId) renderAutomationStrip();
@@ -26401,7 +26390,7 @@ function _automationRenderCards() {
     return;
   }
   const ctx = { prdTitles: st.prdTitles, now: Date.now() };
-  panel.innerHTML = items.map(a => buildAutomationCardHTML(a, ctx)).join('');
+  panel.innerHTML = _tileGridHTML(items.map(a => buildAutomationCardHTML(a, ctx)).join(''));
 }
 
 // _automationActiveMembers returns the work members in flight: those named in
@@ -26462,15 +26451,27 @@ function buildAutomationCardHTML(automation, ctx) {
     ? `<div class="automation-card-blocked" style="${meta}color:var(--error);">${escHtml(t('automation_blocked_reason', [reason]))}</div>`
     : '';
 
+  // An Automation has no per-item actions of its own: the tile opens its
+  // detail, so Open is the only action and it moves into the menu on a narrow screen.
   const open = `if (typeof openAutomationDetail === 'function') openAutomationDetail('${escJsAttr(a.id)}')`;
-  return `<div class="prd-row prd-card ${statusClass} automation-card" data-automation-id="${escHtml(a.id)}" style="padding:14px;margin-bottom:14px;cursor:pointer;" onclick="${open}">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-      <span class="automation-card-title" style="font-weight:700;font-size:15px;flex:1;min-width:0;">${escHtml(a.name)}</span>
-      <span class="automation-card-status" style="font-size:11px;color:var(--text2);flex-shrink:0;">${escHtml(t('automation_status_' + status))}</span>
-    </div>
-    <div class="automation-card-progress" style="${meta}">${escHtml(t('automation_members_progress', [done, total]))}</div>
-    ${memberLines}${idle}${blocked}${_automationBudgetHTML(a)}
-  </div>`;
+  return renderWorkTile({
+    id: a.id,
+    rootAttrs: `data-automation-id="${escHtml(a.id)}"`,
+    extraClass: 'automation-card',
+    onOpen: open,
+    statusClass,
+    statusHtml: `<span class="automation-card-status">${escHtml(t('automation_status_' + status))}</span>`,
+    title: a.name,
+    titleClass: 'automation-card-title',
+    progress: { done, total },
+    progressLabel: t('automation_members_progress', [done, total]),
+    tagIds: _tileTagIds(a),
+    tagsById: _tagsState.byId,
+    updatedAt: a.updated_at,
+    nowMs: now,
+    primaryHtml: `<button class="btn-secondary work-tile-open" onclick="event.stopPropagation();${open}">${escHtml(t('work_tile_open') || 'Open')}</button>`,
+    bodyHtml: `${memberLines}${idle}${blocked}${_automationBudgetHTML(a)}`,
+  });
 }
 window.buildAutomationCardHTML = buildAutomationCardHTML;
 
@@ -38853,3 +38854,162 @@ function pushQueueItem() {
     })
     .catch(() => alert('Failed to push queue item.'));
 }
+
+// ── Shared work tile (Automata and Automation lists) ─────────────────────────
+// One tile renderer serves both lists. The pure helpers hold the progress maths,
+// the tag-chip overflow, the relative age and the layout thresholds, so node
+// tests load them without a DOM. renderWorkTile builds the shape of a tile from
+// the pieces its caller hands over: the caller keeps the item's own actions and
+// detail, the tile keeps the layout. The layout follows data-tile-mode on
+// .work-tile-grid, which _tileRowMode picks from the viewport width.
+
+// _tileProgress turns done and total into a bar fill and its percentage. A zero
+// total draws an empty bar. done is clamped to total, so the bar never overflows.
+function _tileProgress(done, total) {
+  const count = Math.max(0, Number(total) || 0);
+  const finished = Math.min(count, Math.max(0, Number(done) || 0));
+  const pct = count > 0 ? Math.round((finished / count) * 100) : 0;
+  return { done: finished, total: count, pct };
+}
+
+// _tileAutomataCounts returns the task progress of an Automaton. A record whose
+// stories carry their tasks is counted task by task. A list summary, whose
+// stories hold only counts, uses task_count and task_status_counts.
+function _tileAutomataCounts(prd) {
+  const stories = (prd && prd.stories) || [];
+  if (stories.some(s => Array.isArray(s.tasks))) {
+    let total = 0, done = 0;
+    stories.forEach(s => (s.tasks || []).forEach(tk => { total++; if (tk.status === 'completed') done++; }));
+    return _tileProgress(done, total);
+  }
+  const counts = (prd && prd.task_status_counts) || {};
+  return _tileProgress(counts.completed || 0, (prd && prd.task_count) || 0);
+}
+
+// _tileTagIds reads the tag IDs an item carries: the list payload's tags, or
+// tag_ids on a full record.
+function _tileTagIds(item) {
+  if (!item) return [];
+  if (Array.isArray(item.tags)) return item.tags;
+  return Array.isArray(item.tag_ids) ? item.tag_ids : [];
+}
+
+// _tileResolveTags maps tag IDs to registry entries. An ID the registry does not
+// hold (not loaded yet, or deleted) is dropped rather than drawn as a blank chip.
+function _tileResolveTags(ids, byId) {
+  const registry = byId || {};
+  return (Array.isArray(ids) ? ids : [])
+    .filter(id => Object.prototype.hasOwnProperty.call(registry, id))
+    .map(id => registry[id])
+    .filter(Boolean);
+}
+
+// _tileTagOverflow splits a tile's tags into the chips it shows and the count
+// folded into the +N chip. The default limit is three chips.
+function _tileTagOverflow(tags, max) {
+  const list = Array.isArray(tags) ? tags : [];
+  const limit = max == null ? 3 : Math.max(0, max);
+  return { shown: list.slice(0, limit), more: Math.max(0, list.length - limit) };
+}
+
+// _tileAge splits the time since ts into a unit and a count. Under a minute, or
+// a timestamp in the future, is 'now'. An empty or unparsable ts gives null.
+function _tileAge(ts, nowMs) {
+  const at = ts ? Date.parse(ts) : NaN;
+  if (isNaN(at)) return null;
+  const secs = Math.floor((nowMs - at) / 1000);
+  if (secs < 60) return { unit: 'now', n: 0 };
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return { unit: 'minutes', n: mins };
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return { unit: 'hours', n: hours };
+  return { unit: 'days', n: Math.floor(hours / 24) };
+}
+
+// _tileAgeText renders the relative age through the locale bundle.
+function _tileAgeText(ts, nowMs) {
+  const age = _tileAge(ts, nowMs);
+  if (!age) return '';
+  if (age.unit === 'now') return t('work_tile_age_now');
+  if (age.unit === 'minutes') return t('work_tile_age_minutes', [age.n]);
+  if (age.unit === 'hours') return t('work_tile_age_hours', [age.n]);
+  return t('work_tile_age_days', [age.n]);
+}
+
+// _tileRowMode picks the tile layout for a viewport width: tiles from 720px,
+// two-line rows from 420px, one-line rows below that. A width that is not known
+// yet reads as a wide screen.
+function _tileRowMode(width) {
+  const w = Number(width);
+  if (!(w > 0)) return 'tile';
+  if (w >= 720) return 'tile';
+  if (w >= 420) return 'compact';
+  return 'line';
+}
+
+function _tileViewportWidth() {
+  return (typeof window !== 'undefined' && window.innerWidth) || 0;
+}
+
+// _tileGridHTML wraps tile markup in the grid for the current viewport.
+function _tileGridHTML(innerHTML) {
+  return `<div class="work-tile-grid" data-tile-mode="${_tileRowMode(_tileViewportWidth())}">${innerHTML}</div>`;
+}
+
+// _tileSyncModes re-applies the row mode to every grid on screen after a
+// resize, so the layout follows the window without a re-render.
+function _tileSyncModes() {
+  const mode = _tileRowMode(_tileViewportWidth());
+  document.querySelectorAll('.work-tile-grid').forEach(el => { el.dataset.tileMode = mode; });
+}
+if (typeof window !== 'undefined' && !window._tileResizeBound) {
+  window._tileResizeBound = true;
+  window.addEventListener('resize', _tileSyncModes);
+}
+
+// _tileMenuItem is one entry in a tile's overflow menu. onclick is markup the
+// caller has already escaped for a JS string inside the attribute.
+function _tileMenuItem(icon, label, onclick) {
+  return `<button class="btn-secondary work-tile-menu-item" onclick="event.stopPropagation();${onclick}">${icon} ${escHtml(label)}</button>`;
+}
+
+// renderWorkTile draws one Automaton or Automation tile. o carries:
+//   id, rootId, rootAttrs, extraClass   the item id, root DOM id, extra root
+//                                       attributes and class (rootAttrs is escaped by the caller)
+//   onOpen                              JS run on a tile click, escaped for an attribute
+//   statusClass, statusHtml             the prd-card-status-* class and the status chip markup
+//   title, titleClass, checkHtml        the title text, its class and the select checkbox
+//   badgesHtml, backend                 badge markup and the backend/model text
+//   progress {done,total}, progressLabel the bar and its label text
+//   tagIds, tagsById                    tag IDs, and the registry they resolve through
+//   updatedAt, nowMs                    last activity, and the clock it is measured against
+//   primaryHtml, menuHtml               actions shown on a wide tile; actions only in the menu
+//   bodyHtml, afterHtml                 body markup, and detail blocks that sit at the root
+function renderWorkTile(o) {
+  const prog = _tileProgress(o.progress && o.progress.done, o.progress && o.progress.total);
+  const tags = _tileResolveTags(o.tagIds, o.tagsById);
+  const chips = _tileTagOverflow(tags, 3);
+  const id = String(o.id || '');
+  const title = String(o.title || '');
+  const primary = o.primaryHtml || '';
+  const count = escHtml(o.progressLabel || '');
+  const tagMore = chips.more
+    ? `<details class="work-tile-tags-more" onclick="event.stopPropagation()"><summary class="work-tile-tags-more-chip">${escHtml(t('work_tile_tags_more', [chips.more]))}</summary><div class="work-tile-tags-all">${tags.map(_tagChipHTML).join('')}</div></details>`
+    : '';
+  // On a narrow tile the primary actions move into the menu as copies; the
+  // menu is hidden on a wide tile when it holds nothing else.
+  const menuCopies = primary ? `<div class="work-tile-primary-copy">${primary}</div>` : '';
+  const more = `<details class="work-tile-more${o.menuHtml ? '' : ' is-narrow-only'}" onclick="event.stopPropagation()"><summary class="work-tile-more-btn" title="${escHtml(t('work_tile_more'))}" aria-label="${escHtml(t('work_tile_more'))}">⋯</summary><div class="work-tile-menu">${menuCopies}${o.menuHtml || ''}</div></details>`;
+  const head = `<div class="work-tile-head">${o.checkHtml || ''}<span class="work-tile-title${o.titleClass ? ' ' + o.titleClass : ''}" title="${escHtml(title)}">${escHtml(title)}</span><span class="work-tile-status">${o.statusHtml || ''}</span><span class="work-tile-count-head">${count}</span><span class="work-tile-dot" aria-hidden="true"></span>${more}</div>`;
+  const meta = `<div class="work-tile-meta"><code class="work-tile-id" title="${escHtml(id)}">${escHtml(id.slice(0, 8))}</code>${o.backend ? `<span class="work-tile-backend">${escHtml(o.backend)}</span>` : ''}${tags.length ? `<span class="work-tile-tagcount">${escHtml(t('work_tile_tags_count', [tags.length]))}</span>` : ''}${o.badgesHtml ? `<span class="work-tile-badges">${o.badgesHtml}</span>` : ''}</div>`;
+  const fill = prog.pct === 100 ? 'automata-progress-fill complete' : 'automata-progress-fill';
+  const progress = `<div class="work-tile-progress"><div class="automata-progress-wrap"><div class="${fill}" style="width:${prog.pct}%;"></div></div><span class="work-tile-count">${count}</span></div>`;
+  const tagRow = tags.length ? `<div class="work-tile-tags">${chips.shown.map(_tagChipHTML).join('')}${tagMore}</div>` : '';
+  const body = o.bodyHtml ? `<div class="work-tile-body">${o.bodyHtml}</div>` : '';
+  const foot = `<div class="work-tile-foot"><span class="work-tile-activity">${escHtml(_tileAgeText(o.updatedAt, o.nowMs))}</span><span class="work-tile-primary work-tile-actions" onclick="event.stopPropagation()">${primary}</span></div>`;
+  const classes = ['prd-row', 'prd-card', o.statusClass || 'prd-card-status-draft', 'work-tile', o.extraClass || ''].filter(Boolean).join(' ');
+  const idAttr = o.rootId ? ` id="${escHtml(o.rootId)}"` : '';
+  const rootAttrs = o.rootAttrs ? ` ${o.rootAttrs}` : '';
+  return `<div class="${classes}"${idAttr}${rootAttrs} onclick="${o.onOpen || ''}">${head}${meta}${progress}${tagRow}${body}${foot}${o.afterHtml || ''}</div>`;
+}
+window.renderWorkTile = renderWorkTile;
