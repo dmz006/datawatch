@@ -1388,3 +1388,62 @@ Notes:
 
 - Sandbox daemon, stand-ins, sessions, LLM entries, compute nodes and scratch directory: created and removed by the story.
 - Cleanup done: PASS
+
+## pi-prompt early exit and process name measurement
+
+Read-only measurement of a real pi print run. No Go source was changed. Scratch output (stdout, stderr, samples, exit status) lives under `.datawatch/pi-measure/`, which is ignored by git.
+
+### Commands used
+
+All commands ran under `env -u TMUX -u TMUX_TMPDIR` from the project root.
+
+- Model list: `curl -s http://localhost:11434/api/tags` (read-only GET).
+- Launcher: `command -v pi`, then `head -1` on the resolved file.
+- Measured run: `timeout 600 pi --print --mode text --approve --model ollama/qwen3:8b 'Reply with the single word ok.'`, started in the background with stdin from `/dev/null`. A sampler walked the process tree under the PID it started every 2 s and read `/proc/<pid>/comm` and `/proc/<pid>/cmdline`, the same values `readProcessCommName` and `readProcessCmdline` in `cmd/datawatch/session_idle_probe.go` read.
+- Missing-model run: the same command with `--model ollama/no-such-model-xyz`.
+
+### Model choice
+
+The endpoint listed 13 models. `qwen3:8b` was chosen: an 8B chat model that is a tool-capable family, small enough to answer the one-word task in seconds and not the large 27B models the operator's lanes use. pi takes `provider/model`, so the model was passed as `ollama/qwen3:8b`.
+
+### Launcher
+
+`command -v pi` resolves to a node script: the file's first line is `#!/usr/bin/env node`. The real file is `dist/bundle/cli.js` inside the pi-coding-agent package under the node version manager's `lib/node_modules`.
+
+### Run with a real model
+
+- Exit status: 0. Elapsed: 14 s.
+- stdout (1 line): `ok`
+- stderr (1 line): `Warning: Model "qwen3:8b" not found for provider "ollama". Using custom model id.` (pi has no built-in entry for the model, so it uses the id as given and still runs.)
+- First and last five output lines: stdout and stderr each held fewer than five lines, shown in full above.
+
+Sampled process tree (7 samples, t=0 s to t=12 s):
+
+| t | pid role | kernel name (comm) | argv |
+|---|----------|--------------------|------|
+| 0 s | wrapper | `timeout` | `timeout 600 pi --print --mode text --approve --model ollama/qwen3:8b Reply with the single word ok.` |
+| 0 s | pi | `MainThread` | `node <node-bin>/pi --print --mode text --approve --model ollama/qwen3:8b Reply with the single word ok.` |
+| 2 s to 12 s | wrapper | `timeout` | unchanged |
+| 2 s to 12 s | pi | `pi` | `pi` followed by padding spaces (the process rewrote its own title) |
+
+Observations:
+- The pi process is the direct child of the wrapper and has no child processes at any sample while it generates. The model call is an HTTP request from inside the process.
+- Right after exec the kernel name is `MainThread` and argv is the full node command line. From the second sample on, the kernel name is `pi` and argv is the single element `pi`, so a probe that matches on the original node argv sees it only briefly.
+
+### Run with a model that does not exist
+
+- Exit status: 1. Elapsed: 2 s.
+- stdout: empty.
+- stderr (2 lines):
+  1. `Warning: Model "no-such-model-xyz" not found for provider "ollama". Using custom model id.`
+  2. `404: {"message":"model 'no-such-model-xyz' not found","type":"not_found_error","param":null,"code":null}`
+- Samples: one (t=0 s), with the same `timeout` and `MainThread` rows as above. The process ended before the second sample.
+
+### Elapsed times
+
+| Run | Exit status | Elapsed |
+|-----|-------------|---------|
+| Real model | 0 | 14 s |
+| Missing model | 1 | 2 s |
+
+Verdict: pi runs to completion — with a real model it stayed alive for the whole generation, printed the reply on stdout and exited 0; it exited early only when the endpoint rejected the model (status 1 with a 404 message on stderr), and it never exited on its own before producing output.
