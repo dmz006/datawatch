@@ -4915,7 +4915,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							nudgeObs := autonomouspkg.WorkerNudgeObservation{
 								State:               string(s.State),
 								OutputAge:           nudgeOutputAge,
-								HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
+								HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession, s.ProjectDir),
 								CompletionSeen:      session.ExtractCompletionSummary(nudgeTail) != "",
 							}
 							switch nudgeTracker.Observe(time.Now(), s.BackendFamily, true, nudgeObs) {
@@ -5055,7 +5055,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									State:               string(s.State),
 									IdleFor:             idleFor,
 									OutputAge:           outputAge,
-									HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
+									HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession, s.ProjectDir),
 									Limit:               idleLimit,
 								}
 								if idleStalled, idleReason := idleObs.Stalled(); idleStalled {
@@ -5080,7 +5080,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// tmux kill commands.
 						if exitSilenceTracker != nil {
 							if stalled, reason := exitSilenceTick(exitSilenceTracker, family, time.Now(),
-								func() bool { return hasLiveChildProcess(s.TmuxSession) },
+								func() bool { return hasLiveRunnerProcess(s.TmuxSession) },
 								func() time.Time {
 									if fst, serr := os.Stat(staleLogPath); serr == nil {
 										return fst.ModTime()
@@ -5122,7 +5122,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									Threshold: staleThreshold,
 									Now:       time.Now(),
 									ChildAlive: func() bool {
-										return hasLiveChildProcess(s.TmuxSession)
+										return hasLiveChildProcess(s.TmuxSession, s.ProjectDir)
 									},
 									BackendBusy: func() bool {
 										return !s.LastChannelEventAt.IsZero() && time.Since(s.LastChannelEventAt) <= staleThreshold

@@ -1,10 +1,147 @@
 package main
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/dmz006/datawatch/internal/channel"
+)
 
 // fakeProcessNames builds a nameOf func over a fixed pid -> command map.
 func fakeProcessNames(names map[int]string) func(int) string {
 	return func(pid int) string { return names[pid] }
+}
+
+// fakeProcessArgv builds a cmdlineOf func over a fixed pid -> argv map.
+func fakeProcessArgv(argv map[int][]string) func(int) []string {
+	return func(pid int) []string { return argv[pid] }
+}
+
+func TestSessionIdleProbe_IdleClaudeWithOwnServersReportsNoWork(t *testing.T) {
+	// pane 100 -> bash 200 -> claude 300 -> { channel 400, mcp-search 500 }.
+	// The session is idle at an empty prompt: its runner and its own servers are
+	// alive, and nothing else. The session's own mcp-search spec is known; the
+	// channel is recognised by its binary name alone.
+	roots := []int{100}
+	children := map[int][]int{100: {200}, 200: {300}, 300: {400, 500}}
+	names := map[int]string{100: "bash", 200: "bash", 300: "claude", 400: "datawatch-chann", 500: "datawatch"}
+	argv := map[int][]string{
+		100: {"bash"},
+		200: {"bash"},
+		300: {"claude"},
+		400: {"/home/dmz/.datawatch/channel/datawatch-channel"},
+		500: {"/usr/local/bin/datawatch", "mcp-search"},
+	}
+	ownServers := []channel.MCPServerSpec{{Command: "/usr/local/bin/datawatch", Args: []string{"mcp-search"}}}
+	got := workChildPIDs(roots, children, fakeProcessNames(names), fakeProcessArgv(argv), ownServers)
+	if len(got) != 0 {
+		t.Fatalf("idle claude with only its own servers: got work children %v, want none", got)
+	}
+}
+
+func TestSessionIdleProbe_BashChildUnderRunnerIsWork(t *testing.T) {
+	// pane 100 -> bash 200 -> claude 300 -> bash 400 -> sleep 500.
+	// The runner started a command that is still running: both are work.
+	roots := []int{100}
+	children := map[int][]int{100: {200}, 200: {300}, 300: {400}, 400: {500}}
+	names := map[int]string{100: "bash", 200: "bash", 300: "claude", 400: "bash", 500: "sleep"}
+	argv := map[int][]string{400: {"bash", "-c", "sleep 600"}, 500: {"sleep", "600"}}
+	ownServers := []channel.MCPServerSpec{{Command: "/usr/local/bin/datawatch", Args: []string{"mcp-search"}}}
+	got := workChildPIDs(roots, children, fakeProcessNames(names), fakeProcessArgv(argv), ownServers)
+	if !got[400] || !got[500] || len(got) != 2 {
+		t.Fatalf("bash child with sleep grandchild under runner: got %v, want {400, 500}", got)
+	}
+}
+
+func TestSessionIdleProbe_GrandchildUnderMCPServerIsNotWork(t *testing.T) {
+	// pane 100 -> bash 200 -> claude 300 -> mcp-search 500 -> node 600.
+	// The MCP server and everything it started belong to the session, not to work.
+	roots := []int{100}
+	children := map[int][]int{100: {200}, 200: {300}, 300: {500}, 500: {600}}
+	names := map[int]string{100: "bash", 200: "bash", 300: "claude", 500: "datawatch", 600: "node"}
+	argv := map[int][]string{
+		300: {"claude"},
+		500: {"/usr/local/bin/datawatch", "mcp-search"},
+		600: {"node", "helper.js"},
+	}
+	ownServers := []channel.MCPServerSpec{{Command: "/usr/local/bin/datawatch", Args: []string{"mcp-search"}}}
+	got := workChildPIDs(roots, children, fakeProcessNames(names), fakeProcessArgv(argv), ownServers)
+	if len(got) != 0 {
+		t.Fatalf("grandchild under own MCP server: got %v, want none", got)
+	}
+}
+
+func TestSessionIdleProbe_NoRunnerReportsNoWork(t *testing.T) {
+	// pane 100 -> bash 200 -> bash 300 -> sleep 400, and no runner anywhere.
+	// Work is only counted below a runner, so none is reported.
+	roots := []int{100}
+	children := map[int][]int{100: {200}, 200: {300}, 300: {400}}
+	names := map[int]string{100: "bash", 200: "bash", 300: "bash", 400: "sleep"}
+	argv := map[int][]string{300: {"bash"}, 400: {"sleep", "600"}}
+	got := workChildPIDs(roots, children, fakeProcessNames(names), fakeProcessArgv(argv), nil)
+	if len(got) != 0 {
+		t.Fatalf("no runner: got %v, want none", got)
+	}
+}
+
+func TestSessionIdleProbe_WorkChildTreeCycleTerminates(t *testing.T) {
+	// claude 200 -> bash 300 -> bash 400 -> bash 300 cycle under the runner.
+	roots := []int{100}
+	children := map[int][]int{100: {200}, 200: {300}, 300: {400}, 400: {300}}
+	names := map[int]string{100: "bash", 200: "claude", 300: "bash", 400: "bash"}
+	argv := map[int][]string{300: {"bash"}, 400: {"bash"}}
+	got := workChildPIDs(roots, children, fakeProcessNames(names), fakeProcessArgv(argv), nil)
+	if !got[300] || !got[400] || len(got) != 2 {
+		t.Fatalf("cyclic tree under runner: got %v, want {300, 400}", got)
+	}
+}
+
+func TestSessionIdleProbe_OwnServerMatchingRules(t *testing.T) {
+	bridge := channel.MCPServerSpec{Command: "/opt/dw/datawatch-bridge"}
+	search := channel.MCPServerSpec{Command: "/usr/local/bin/datawatch", Args: []string{"mcp-search"}}
+	launcher := channel.MCPServerSpec{Command: "npx"}
+	cases := []struct {
+		name  string
+		argv  []string
+		specs []channel.MCPServerSpec
+		want  bool
+	}{
+		{"channel by binary name alone", []string{"/home/u/.datawatch/channel/datawatch-channel"}, nil, true},
+		{"bare bridge spec matches its exact path", []string{"/opt/dw/datawatch-bridge"}, []channel.MCPServerSpec{bridge}, true},
+		{"bare bridge spec ignores a launch with args", []string{"/opt/dw/datawatch-bridge", "x"}, []channel.MCPServerSpec{bridge}, false},
+		{"args spec matches by base name and args", []string{"datawatch", "mcp-search"}, []channel.MCPServerSpec{search}, true},
+		{"args spec rejects other args", []string{"datawatch", "serve"}, []channel.MCPServerSpec{search}, false},
+		{"launcher spec does not claim work it starts", []string{"npx", "-y", "some-tool"}, []channel.MCPServerSpec{launcher}, false},
+		{"empty argv is work", nil, []channel.MCPServerSpec{search}, false},
+	}
+	for _, tc := range cases {
+		if got := isOwnMCPServer(tc.argv, tc.specs); got != tc.want {
+			t.Errorf("%s: isOwnMCPServer(%v) = %v, want %v", tc.name, tc.argv, got, tc.want)
+		}
+	}
+}
+
+func TestSessionIdleProbe_OwnServersReadFromProjectMCPConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfg := channel.MCPProjectConfig{MCPServers: map[string]channel.MCPServerSpec{
+		"web_search": {Command: "/usr/local/bin/datawatch", Args: []string{"mcp-search"}},
+	}}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".mcp.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	specs := sessionOwnMCPServers(dir)
+	if len(specs) != 1 || specs[0].Command != "/usr/local/bin/datawatch" || len(specs[0].Args) != 1 || specs[0].Args[0] != "mcp-search" {
+		t.Fatalf("sessionOwnMCPServers(project with .mcp.json) = %+v, want the web_search spec", specs)
+	}
+	if got := sessionOwnMCPServers(filepath.Join(dir, "missing")); len(got) != 0 {
+		t.Fatalf("sessionOwnMCPServers(missing dir) = %+v, want none", got)
+	}
 }
 
 func TestSessionIdleProbe_RunnerUnderShellIsLive(t *testing.T) {
