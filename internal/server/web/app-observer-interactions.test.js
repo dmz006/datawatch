@@ -21,6 +21,24 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const { vm, makeStubElement, buildSandbox, loadScript, flushAsync } = require('./testutil_browser_stub');
 
+// The Observer stats panel renders through the shared list loader: the loader
+// owns #statsPanel and the stats land in its #statsBody child. This stub gives
+// the panel that child, and reads of innerHTML see both, so assertions about
+// what the operator sees keep working.
+function makeStatsPanel() {
+  const body = makeStubElement();
+  const panel = makeStubElement();
+  return new Proxy(panel, {
+    get(target, prop) {
+      if (prop === 'innerHTML') return target.innerHTML + body.innerHTML;
+      if (prop === 'querySelector') return (sel) => (sel === '#statsBody' ? body : null);
+      const v = Reflect.get(target, prop, target);
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+    set(target, prop, value) { target[prop] = value; return true; },
+  });
+}
+
 const APP_JS = path.join(__dirname, 'app.js');
 
 const LONG_HOST = 'host-abcdefghij-klmnopqrst-uvwxyz-long-0123456789';
@@ -82,7 +100,7 @@ function fakeResponse(status, body) {
 // count how many distinct network requests that pass produced.
 function makeEnv() {
   const grid = makeStubElement();
-  const panel = makeStubElement();
+  const panel = makeStatsPanel();
   const peerList = makeStubElement();
   const sandbox = buildSandbox();
   let calls = 0;
