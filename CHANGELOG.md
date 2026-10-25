@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Automaton workers no longer launch in an unregistered worktree
+
+An Automaton worker is no longer launched in a project directory that is not a registered worktree of the repository holding the repository root marker files. When the directory is not registered, the launch is refused and an alert naming the Automaton is raised instead of the worker starting. A worktree directory that has gone missing is also no longer recreated as an empty repository when a session starts, so a worker can no longer run against a blank repository that has none of the project's history. To recover after the alert, repair or remove the directory and run the Automaton again; the worktree is then recreated from the repository.
+
 ### Shared navigation fits phone widths
 
 The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.
