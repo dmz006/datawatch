@@ -457,8 +457,7 @@ cd <project_dir> && GOOSE_CLI_THEME=plain GOOSE_PROVIDER=anthropic ... goose run
 [pi](https://pi.dev) ([earendil-works/pi](https://github.com/earendil-works/pi)) is a
 minimal open-source coding agent harness that calls provider SDKs (Anthropic,
 OpenAI, Google, Ollama, and more) directly rather than through a compatibility
-shim. Added 2026-10-16 (BL466) as a lower-risk alternative to opencode for
-open-model execution.
+shim. It is a lower-risk alternative to opencode for open-model execution.
 
 ### Prerequisites
 
@@ -502,6 +501,58 @@ cd <project_dir> && pi --approve --session-id '<id>' '<task>'
 cd <project_dir> && pi --print --mode text --approve '<task>'
 ```
 
+### Which node a pi worker uses
+
+A pi or pi-prompt worker runs on the compute node its capacity lease holds.
+When the node is known, the daemon points pi at that node for the launch. The
+node is the one the entry's pool chose, or the entry's only node (see
+[Compute-node pools and slots](howto/automata-capacity.md#compute-node-pools-and-slots)).
+
+- The daemon writes a per-session pi configuration directory. Every entry of
+  the source directory is linked into it, so credentials and sessions stay the
+  source's own. Only `models.json` is rewritten: the `baseUrl` of the model's
+  provider becomes the node's address with `/v1` appended. An address with no
+  `http://` or `https://` scheme gets `http://` first.
+- The launch command sets `PI_CODING_AGENT_DIR` to that directory for the pi
+  process alone. The directory is removed when pi exits, or at once when the
+  launch fails.
+- The source directory is the daemon's own `PI_CODING_AGENT_DIR` when that is
+  set, otherwise `~/.pi/agent`. Every other provider keeps the value the source
+  wrote.
+- A session keeps the node address it started on, so a resume reuses the same
+  host.
+
+The provider is the part of the model name before the first `/`; for
+`ollama/qwen3.8:27b` it is `ollama`. The launch fails with an error, and nothing
+starts, when the model has no provider prefix, or when the source `models.json`
+has no entry for that provider or the entry is not a full provider object. A
+bare `baseUrl` is not enough: pi needs the entry's api, key and models. A node
+with an empty address gets no override at all.
+
+#### When a worker connects to the wrong host
+
+Check these in order:
+
+1. **The node it holds.** `datawatch capacity` prints the node beside each
+   holder when the pool spans two or more nodes. If that node is not the one
+   you expect, the problem is placement, not pi. See
+   [automata capacity](howto/automata-capacity.md).
+2. **The node's address.** `datawatch compute node get <name>` must show the
+   address the daemon can reach. An empty address means no override, and pi
+   uses its own provider table, which is usually the local host.
+3. **The provider entry.** The model must be written `<provider>/<model>`, and
+   that provider must be a full entry in the source `models.json`. Look at the
+   source the daemon reads: its own `PI_CODING_AGENT_DIR`, or `~/.pi/agent`. A
+   daemon started by a service manager may not have the variable you set in an
+   interactive shell.
+4. **The node answers at the override address.** The provider's `baseUrl` is
+   `<address>/v1`. The node must answer there; an Ollama node serves its model
+   list at `/v1/models`, so `curl http://<address>/v1/models` should list the
+   models it holds.
+5. **The directory was not left behind.** The per-session directory is removed
+   when pi exits, so check the source table and the node address rather than
+   looking for the directory.
+
 ### Notes
 
 - `pi` backend is interactive (real TUI, stays open for follow-up input);
@@ -513,9 +564,9 @@ cd <project_dir> && pi --print --mode text --approve '<task>'
   datawatch's session IDs and pi's.
 - A third variant analogous to `opencode-acp` (pi's own `--mode rpc`) is
   planned but not yet implemented — see
-  `docs/plans/2026-10-16-pi-opencode-evaluation.md` (BL466). Building it now
-  would reintroduce the exact async completion-detection race class fixed in
-  `opencode-acp` the same night this backend was added (v9.1.20).
+  `docs/plans/2026-10-16-pi-opencode-evaluation.md`. Building it now would
+  reintroduce the async completion-detection race class that `opencode-acp`
+  had to fix when it was added.
 - Known upstream caveat: pi issue [#9216](https://github.com/earendil-works/pi/issues/9216)
   describes Ollama + `qwen3.8:27b` stream-termination errors under heavy
   tool use — confirmed on datawatch's own exact model/stack. Live-tested
