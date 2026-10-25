@@ -281,42 +281,67 @@ report was produced or a scenario could not even open its view
 
 ## Gate results
 
-### 2026-10-25 — retry gate (this session)
+### 2026-10-25 — end-to-end gate (fresh run, strict order)
 
-End-to-end gate re-run in strict order against this tree; every browser
-step ran against an isolated loopback daemon freshly built from this tree
-(never the production daemon). No layout files were modified in this run —
+Full end-to-end gate re-run in strict order against this tree
+(`/home/dmz/.datawatch/prd-worktrees/dbd5000a`; the only file this gate
+writes is this plan doc). Every
+browser step ran against an isolated loopback daemon freshly built from
+this tree (`go build ./cmd/datawatch` to a temp dir, `.datawatch/verify/_daemon.sh`) —
+never the production daemon. No layout files were modified in this run:
 `internal/server/web/app.js` and `style.css` are unchanged, and the
-Provenance pin below still verifies (`sha256sum -c` → both OK).
+Provenance pin still verifies (`sha256sum -c` → both OK).
 
 | Step | Command | Result (2026-10-25) |
 |---|---|---|
-| 1 — JS syntax | `node --check internal/server/web/app.js` (08:15) | **PASS** — exit 0 |
-| 2 — web unit tests | `node --test internal/server/web/*.test.js` (08:15) | **PASS** — # pass 717, # fail 0 |
-| 3 — PWA report/seed tests | `node --test` report+seed suite (08:15) | **PASS** — 34 pass, 0 fail |
-| 4 — detector self-test | `node mobile-fit-selftest.mjs` (08:16) | **PASS** — 9/9 scenarios (0 fail), exit 0 |
-| 5 — check scripts | docs-sync, no-internal-refs, curated-howtos, howto-coverage, pwa-suite-path (08:16) | **PASS** — all five exit 0 |
-| 6 — Go | `go vet ./...` then `go test ./...` (08:17→08:19) | **PASS** — vet clean; 7641 passed, 87 packages, 0 FAIL |
-| 7a — Observer full profile | `mobile-fit.mjs --view observer --profile full` (08:52→09:00) | **PASS** — 284 scenarios, 0 findings, exit 0 |
-| 7b — TS-802 regression guard | `e2e-pwa` TS-802 against a fresh daemon (09:04→09:08) | **PASS** — 99 scenarios, 0 findings; none of the 68 recorded groups reproduce |
-| 7c — TS-803 baseline guard | `e2e-pwa` TS-803 against a fresh daemon (09:12) | **PASS** — 38 tracked selectors × 3 viewports, all within tolerance |
-| 7d — release smoke | `scripts/release-smoke-mobile-fit.sh` against a fresh daemon (09:13→09:16) | **PASS** — 95 scenarios, 0 findings, exit 0 |
+| 1 — JS syntax | `node --check internal/server/web/app.js` (09:54) | **PASS** — exit 0 |
+| 2 — web unit tests | `node --test internal/server/web/*.test.js` (09:55) | **PASS** — # pass 717, # fail 0 |
+| 3 — PWA report/seed tests | `node --test` report+seed suite (09:55) | **PASS** — 34 pass, 0 fail |
+| 4 — detector self-test | `node mobile-fit-selftest.mjs` (09:55) | **PASS** — 9/9 scenarios (0 fail), exit 0 |
+| 5 — check scripts | docs-sync, no-internal-refs, curated-howtos, howto-coverage, pwa-suite-path (09:55) | **PASS** — all five exit 0 |
+| 6 — Go | `go vet ./...` then `go test ./...` (09:55→09:59) | **PASS** — vet clean; 7641 tests passed, 87 packages, 0 FAIL |
+| 7a — Observer full profile | `mobile-fit.mjs --view observer --profile full` (10:09→10:16) | **PASS** — 284 scenarios (≥ 250), 0 findings, exit 0 |
+| 7b — TS-802 regression guard | `MOBILE_FIT_SCOPE=#view` TS-802 against a fresh daemon (10:19→10:23) | **PASS** — 99 scenarios, 0 findings; none of the 68 recorded groups reproduce |
+| 7c — TS-803 baseline guard | TS-803 against a fresh daemon (10:24) | **PASS** — 38 tracked selectors × 3 viewports, all within tolerance |
+| 7d — release smoke | `scripts/release-smoke-mobile-fit.sh` against a fresh daemon (10:28→10:32) | **PASS** — 95 scenarios, 0 findings, exit 0 |
 
 Notes on this run:
 
-- **Worktree repair (environment, not layout):** the worktree's tracked
-  `scripts/test-stories/pwa/node_modules` symlink pointed at a broken
-  self-referencing loop in the main checkout, which prevented the browser
-  steps from resolving Playwright. It now points at a shared, resolvable
-  Playwright 1.60 install (satisfies the `^1.50.0` requirement); no
-  `package.json` change, no version bump.
-- Layout fixes from the 2026-10-24 gate stand as committed; this run
-  re-verified them end-to-end (steps 1–7d all green).
+- The tree is byte-for-byte the committed one: no `package.json`, CHANGELOG
+  or README changes, no version bump; the tracked
+  `scripts/test-stories/pwa/node_modules` symlink was left exactly as
+  committed (it points at a looped node_modules in the main checkout, so a
+  bare `import 'playwright'` from the suite dir cannot resolve here).
+- To run the browser steps without writing any tracked file, Playwright was
+  resolved purely by environment: `NODE_PATH` for the CJS dependency
+  pre-checks and a `--import` resolve hook (scratch files only, under the
+  git-ignored `.datawatch/` dir) mapping `playwright` / `playwright-core`
+  onto a resolvable Playwright 1.60.0 install on this machine (satisfies the
+  `^1.50.0` requirement). With that environment removed the same scripts
+  SKIP (exit 2) exactly as designed.
+- Steps 1–7d all green: the 2026-10-24 layout fixes hold end-to-end on this
+  tree (Observer full 284 scenarios, 0 findings; TS-802 / TS-803 / release
+  smoke all clean).
 
-### 2026-10-24 — original gate (history)
+### 2026-10-24 — end-to-end gate (original run, history)
 
-All layout fixes are in `internal/server/web/app.js`, `style.css`,
-`index.html` — no check-script edits, no version bump:
+All steps in `## Acceptance criteria` passed on this tree (Observer layout
+fixes: 3 files in `internal/server/web/`).
+
+| Step | Command | Result (2026-10-24) |
+|---|---|---|
+| 1 — JS syntax check | `node --check internal/server/web/app.js` | **PASS** — exit 0 |
+| 2 — web unit tests | `node --test internal/server/web/*.test.js` | **PASS** — # pass 717, # fail 0 |
+| 3 — PWA report + seed unit tests | `node --test` report+seed suite | **PASS** — 34 pass, 0 fail |
+| 4 — self-test | `node mobile-fit-selftest.mjs` | **PASS** — 9/9 scenarios (0 fail), exit 0 |
+| 5 — check scripts | docs-sync, no-internal-refs, curated-howtos, howto-coverage, pwa-suite-path | **PASS** — all five exit 0 |
+| 6 — Go | `go vet ./...` then `go test ./...` | **PASS** — vet clean; 7641 passed, 87 packages, 0 FAIL |
+| 7 — Observer (full profile) | via `e2e-pwa.sh` against a fresh daemon | **PASS** — 284 scenarios, 0 findings, exit 0 |
+| 8 — TS-802 | `MOBILE_FIT_SCOPE=#view bash scripts/e2e-pwa.sh TS-802` | **PASS** — 99 scenarios, 0 findings; none of the 68 recorded groups reproduce |
+| 9 — TS-803 | `bash scripts/e2e-pwa.sh TS-803` | **PASS** — all 38 tracked selectors × 3 viewports within tolerance |
+| 10 — release smoke | `bash scripts/release-smoke-mobile-fit.sh` | **PASS** — 95 scenarios, 0 findings |
+
+### Fixes made in this gate
 
 - **`#peerStaleBadge` / `#vaultUnreachableBadge` (tap-target + clipped-text)** —
   both badges lived inside `.nav-icon` as `position:absolute` 17×15 pills; an
