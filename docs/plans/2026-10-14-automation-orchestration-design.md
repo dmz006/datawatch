@@ -2700,4 +2700,10 @@ Open for the operator: the default alert times and the retry count for items 1, 
 3. **Low-risk handling is an Automation setting.** Whether a low-risk question may be answered by the supervisor's default is an option set in Automation, not a built-in behaviour and not a per-question deadline.
 4. The earlier open points about a deadline and its expiry behaviour are closed by items 2 and 3.
 
+**Operator decisions, 2026-10-25 later (quoted):** "Skip would be specific or all, should be an option. We are not multi operator yet but any operator authorized for the automation.  All comms are parity so valid,  what else?"
+
+5. **Skip is an option with two scopes:** skip one specific question, or skip all open questions. The operator picks when skipping.
+6. **Who answers:** the system is not multi-operator yet; any operator authorized for the Automation may answer its questions.
+7. **Every communication channel is valid for answering,** by the parity rule: PWA, mobile apps, CLI, REST, MCP and every messaging channel.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
