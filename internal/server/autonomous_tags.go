@@ -4,11 +4,53 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 )
+
+// tagSettingLookup reads a tag setting for the tag routes from the live config.
+// It answers only the attention statuses key, the one the routes need.
+func (s *Server) tagSettingLookup(key string) ([]string, bool) {
+	if key == autonomous.AttentionStatusesKey && s.cfg != nil {
+		return s.cfg.Autonomous.Tags.Effective().AttentionStatuses, true
+	}
+	return nil, false
+}
+
+// tagSettingsForDisplay renders the effective autonomous.tags block for
+// GET /api/config, so an unset value shows its default rather than a blank.
+func tagSettingsForDisplay(t config.TagsConfig) map[string]interface{} {
+	e := t.Effective()
+	return map[string]interface{}{
+		"default_view":          e.DefaultView,
+		"attention_statuses":    e.AttentionStatuses,
+		"default_match_mode":    e.DefaultMatchMode,
+		"direct_counts_visible": e.DirectCountsVisible,
+		"registry_keeper":       e.RegistryKeeper,
+		"registry_sync_seconds": e.RegistrySyncSeconds,
+	}
+}
+
+// firstTagSettingError returns the first refusal among the autonomous.tags keys
+// of a PUT /api/config patch, checked in key order so the reported error is
+// stable. It returns nil when every tag key is valid or none is present.
+func firstTagSettingError(patch map[string]interface{}) error {
+	keys := make([]string, 0, len(patch))
+	for k := range patch {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if err := config.ValidateTagSetting(k, patch[k]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // tagAPI is the optional AutonomousAPI extension that manages tags.
 type tagAPI interface {

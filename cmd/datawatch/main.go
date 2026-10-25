@@ -2938,6 +2938,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			defer resp.Body.Close() //nolint:errcheck
 			if resp.StatusCode != 200 {
+				// Show the daemon's refusal text as-is, so comm carries the same
+				// message as REST (e.g. a bad autonomous.tags value).
+				if msg, _ := io.ReadAll(resp.Body); len(strings.TrimSpace(string(msg))) > 0 {
+					return errors.New(strings.TrimSpace(string(msg)))
+				}
 				return fmt.Errorf("API returned %d", resp.StatusCode)
 			}
 			return nil
@@ -10343,7 +10348,9 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 	if err := putConfig(url, cfg.Server.Token, body); err != nil {
 		bodyQuoted := fmt.Sprintf(`{"%s": "%s"}`, key, value)
 		if err2 := putConfig(url, cfg.Server.Token, bodyQuoted); err2 != nil {
-			return fmt.Errorf("config set: %w (also tried quoted: %v)", err, err2)
+			// The quoted attempt is the one that carries a value refusal, so its
+			// message is the daemon's text as every other surface shows it.
+			return fmt.Errorf("config set: %w", err2)
 		}
 	}
 	fmt.Printf("Set %s = %s\n", key, value)

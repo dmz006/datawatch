@@ -939,6 +939,7 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 		channelHist:       make(map[string][]channelHistEntry),
 		nonces:            newNonceStore(),
 	}
+	s.autonomousSettings = s.tagSettingLookup // attention statuses come from autonomous.tags
 	if cfg != nil {
 		setPushConfig(cfg.Push) // BL394 -- initial push-SSRF-guard config
 	}
@@ -6027,6 +6028,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// defaults ("block", 1.0) rather than blanks.
 			"plan_coverage_check":     effectivePlanCoverageCheckForDisplay(s.cfg.Autonomous.PlanCoverageCheck),
 			"plan_coverage_min_ratio": config.NormalizePlanCoverageRatio(s.cfg.Autonomous.PlanCoverageMinRatio),
+			// Tag browser settings (autonomous.tags) — the effective values, so an
+			// unset block shows its defaults. Validated by ValidateTagSetting.
+			"tags": tagSettingsForDisplay(s.cfg.Autonomous.Tags),
 			// Per-backend usage back-off — render the EFFECTIVE values so an
 			// unset config shows its defaults (pause_backend, 60).
 			"usage_backoff":            usageBackoffModeForDisplay(s.cfg.Autonomous.UsageBackoff),
@@ -6264,6 +6268,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	var patch map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Tag browser settings (autonomous.tags.*): every key goes through the
+	// shared validator before anything is applied, so a bad value rejects the
+	// whole PUT and the comm, MCP and CLI surfaces show the same message.
+	if verr := firstTagSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
 	// v9.5.5 — validate task_override_statuses before anything is applied,
@@ -7671,6 +7682,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.TaskOverrideStatuses = splitCSV(s)
 			}
+		case "autonomous.tags.default_view", "autonomous.tags.attention_statuses",
+			"autonomous.tags.default_match_mode", "autonomous.tags.direct_counts_visible",
+			"autonomous.tags.registry_keeper", "autonomous.tags.registry_sync_seconds":
+			// Validated in handlePutConfig before this runs; Set stores the
+			// normalized value and leaves the block unchanged on a refusal.
+			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
 		case "autonomous.plan_coverage_check":
 			// off|warn|block plan-coverage gate (empty normalizes to
 			// "block"). handlePutConfig rejects invalid modes loudly; this

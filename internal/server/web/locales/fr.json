@@ -2369,5 +2369,13 @@
   "notify_events_default_marker": "default",
   "notify_events_profile_label": "Notification events",
   "notify_events_profile_edit": "Edit notification events",
-  "notify_events_profile_prompt": "Notification events (comma-separated kinds, blank to inherit)"
+  "notify_events_profile_prompt": "Notification events (comma-separated kinds, blank to inherit)",
+  "settings_tags_group": "Tag browser",
+  "settings_tags_group_help": "Quelle vue s'ouvre sur la liste des automates, comment les filtres d'étiquettes se combinent et comment le registre partagé des étiquettes reste synchronisé entre les démons fédérés.",
+  "settings_tags_default_view": "Default view (auto opens attention when an item needs it, otherwise tags; attention or tags always opens that view)",
+  "settings_tags_attention_statuses": "Statuts d'attention (statuts d'automate séparés par des virgules qui affichent la vue d'attention)",
+  "settings_tags_default_match_mode": "Default tag match mode (any widens the list when several tags are selected; all narrows it)",
+  "settings_tags_direct_counts_visible": "Show the direct count as a tooltip beside the subtree count",
+  "settings_tags_registry_keeper": "Tag registry keeper (federation peer name; empty = this daemon keeps it and nothing syncs)",
+  "settings_tags_registry_sync_seconds": "Tag registry sync interval (seconds, minimum 5, default 30)"
 }

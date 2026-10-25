@@ -16117,6 +16117,16 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.plan_review_mode', label: 'Plan review mode — block holds approval on a failing verdict', labelKey: 'settings_plan_review_mode', type: 'select', options: ['', 'off', 'warn', 'block'] },
     { key: 'autonomous.smoke_verification_backend', label: 'Smoke verification backend (optional)', labelKey: 'settings_smoke_verification_backend', type: 'llm_backend', pairedModelKey: 'autonomous.smoke_verification_model' },
     { key: 'autonomous.smoke_verification_model', label: 'Smoke verification model', labelKey: 'settings_smoke_verification_model', type: 'llm_model', backendKey: 'autonomous.smoke_verification_backend' },
+    // Tag browser — which view the Automata list opens on, how tag filters
+    // combine, and how the shared tag registry is kept in step. The group
+    // row is a sub-heading (type 'group'); it stores no config value.
+    { label: 'Tag browser', labelKey: 'settings_tags_group', type: 'group', hintKey: 'settings_tags_group_help' },
+    { key: 'autonomous.tags.default_view', label: 'Default view (auto opens attention when an item needs it, otherwise tags; attention or tags always opens that view)', labelKey: 'settings_tags_default_view', type: 'select', options: ['auto', 'attention', 'tags'], default: 'auto' },
+    { key: 'autonomous.tags.attention_statuses', label: 'Attention statuses (comma-separated Automaton statuses that raise the attention view)', labelKey: 'settings_tags_attention_statuses', type: 'text', placeholder: 'blocked, needs_review, paused', csv: true, default: 'blocked, needs_review, paused' },
+    { key: 'autonomous.tags.default_match_mode', label: 'Default tag match mode (any widens the list when several tags are selected; all narrows it)', labelKey: 'settings_tags_default_match_mode', type: 'select', options: ['any', 'all'], default: 'any' },
+    { key: 'autonomous.tags.direct_counts_visible', label: 'Show the direct count as a tooltip beside the subtree count', labelKey: 'settings_tags_direct_counts_visible', type: 'toggle' },
+    { key: 'autonomous.tags.registry_keeper', label: 'Tag registry keeper (federation peer name; empty = this daemon keeps it and nothing syncs)', labelKey: 'settings_tags_registry_keeper', type: 'text', placeholder: '' },
+    { key: 'autonomous.tags.registry_sync_seconds', label: 'Tag registry sync interval (seconds, minimum 5, default 30)', labelKey: 'settings_tags_registry_sync_seconds', type: 'number', placeholder: '30', min: 5, step: 1, default: '30' },
   ]},
   // v5.26.16 — operator-reported: PRD-DAG orchestrator section
   // belongs above Plugin framework. Orchestrator is a workflow-level
@@ -16874,7 +16884,7 @@ function loadGeneralConfig() {
         if (!el) continue;
         let html = '';
         for (const f of sec.fields) {
-          const parts = f.key.split('.');
+          const parts = (f.key || '').split('.');
           const val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
           // Resolve label at render time so t() runs after locale loads.
           // GENERAL_CONFIG_FIELDS is a static const (init-time), so any t()
@@ -16886,7 +16896,14 @@ function loadGeneralConfig() {
           // t() returning the key unchanged and fall back to f.label instead.
           const _tl = f.labelKey ? t(f.labelKey) : null;
           const fLabel = (_tl && _tl !== f.labelKey) ? _tl : f.label;
-          if (f.type === 'llm_select') {
+          if (f.type === 'group') {
+            // Sub-heading row inside a card. Optional hintKey adds a one-line note.
+            const _ghint = f.hintKey ? t(f.hintKey) : '';
+            html += `<div style="margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--border);">
+              <div style="font-weight:700;font-size:12px;color:var(--text);">${escHtml(fLabel)}</div>
+              ${_ghint && _ghint !== f.hintKey ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(_ghint)}</div>` : ''}
+            </div>`;
+          } else if (f.type === 'llm_select') {
             const opts = enabledBackends.map(n =>
               `<option value="${escHtml(n)}" ${String(val) === n ? 'selected' : ''}>${escHtml(n)}</option>`
             ).join('');

@@ -1137,6 +1137,46 @@ autonomous:
     since: ""
     snapshot_retention_days: 0
 
+  # Tag browser for the Automata list: the attention view and the tag tree.
+  # Every key below is settable on every configuration channel: PUT /api/config {"autonomous.tags.<name>": <value>}
+  # (GET /api/config shows them under autonomous.tags), CLI `datawatch config
+  # set autonomous.tags.<name> <value>` (read with `datawatch config get
+  # autonomous.tags.<name>`), MCP `config_set` with key autonomous.tags.<name>
+  # (requires mcp.allow_self_config=true), comm `configure
+  # autonomous.tags.<name>=<value>`, and Settings -> General -> Automata ->
+  # "Tag browser" group in the web app. An invalid value is refused on every
+  # surface with the same message (for example "autonomous.tags.default_match_mode:
+  # must be any or all") and nothing is written.
+  tags:
+    # Which view the Automata list opens on. auto (default): the attention view
+    # when at least one Automaton needs attention, otherwise the tag browser.
+    # attention: always the attention view. tags: always the tag browser.
+    # Valid values: auto, attention, tags.
+    default_view: auto
+    # Automaton statuses that place an Automaton in the attention group. Valid
+    # statuses: draft, planning, needs_review, approved, revisions_asked,
+    # running, completed, rejected, cancelled, archived, blocked, failed,
+    # paused. Any other entry is refused; an empty list takes the defaults.
+    # Also, a paused Automaton is in the attention group, and an Automaton
+    # with a task held for operator review also appears in the attention group.
+    # Default: [blocked, needs_review, paused].
+    attention_statuses: [blocked, needs_review, paused]
+    # How selecting several tags in the tag browser combines. any (default):
+    # an Automaton matches when it carries at least one selected tag, which
+    # widens the list. all: it must carry every selected tag, which narrows it.
+    # Valid values: any, all.
+    default_match_mode: any
+    # When true, each tag shows its direct count (Automata tagged with that tag
+    # itself) as a tooltip beside its subtree count. false (default) hides the
+    # tooltip.
+    direct_counts_visible: false
+    # Federation peer name of the daemon that keeps the shared tag registry.
+    # Empty (default) means this daemon is its own keeper and nothing syncs.
+    registry_keeper: ""
+    # How often, in whole seconds, the shared tag registry syncs with the
+    # keeper peer named in registry_keeper. Minimum 5; default 30.
+    registry_sync_seconds: 30
+
   # The LLM registry entry's `billing_group` field (set in PWA Settings →
   # Compute → LLM edit, comm `llm add|update ... billing_group=<label>`, REST
   # `PUT /api/llms/{name}`, MCP `llm_add`/`llm_update`, or `datawatch llm
