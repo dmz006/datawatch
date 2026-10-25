@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -509,5 +510,161 @@ func TestPostTurnNudge_NudgeWindowIsShorterThanDefaultIdleLimit(t *testing.T) {
 	idleLimit := time.Duration(config.NormalizeSessionIdleTimeoutSeconds(0)) * time.Second
 	if nudgeAfter >= idleLimit {
 		t.Fatalf("nudge window %s is not shorter than the default session idle limit %s; the idle detector would end the session before the nudge", nudgeAfter, idleLimit)
+	}
+}
+
+// postTurnWaitTicks is 900s of wait: past a nudge persisted 99s before the wait
+// starts and its stall, and past a fresh nudge plus its stall.
+const postTurnWaitTicks = 300
+
+// TestPostTurnNudge_VerifyingLabelAndWorkerLeaseOnlyIsNudged is the unit half of
+// TestNudgeScenario_VerifyingWorkerWithOnlyWorkerLease. The unit takes the task's
+// identity and nudge events. The task's status label and the capacity ledger are
+// not inputs, so a verifying task that holds only its worker lease is nudged at
+// the same moment as an in-progress one.
+func TestPostTurnNudge_VerifyingLabelAndWorkerLeaseOnlyIsNudged(t *testing.T) {
+	nudgedAt := func(status autonomouspkg.TaskStatus) time.Time {
+		logBuf := capturePostTurnLog(t)
+		clock := &fakeClock{now: postTurnT0}
+		f := newFakeClaudeSession(clock, "claude-code")
+		nudge := newPostTurnNudge(f.deps(), autonomouspkg.Config{}, postTurnTaskFor(status))
+		if err := runPostTurnWait(clock, f, nudge, postTurnTicks, nil); err != nil {
+			t.Fatalf("unexpected stall: %v", err)
+		}
+		assertNudgedOnce(t, f, logBuf)
+		if len(f.recorder.nudges) != 1 {
+			t.Fatalf("recorded nudges = %d, want 1", len(f.recorder.nudges))
+		}
+		return f.recorder.nudges[0]
+	}
+	verifying := nudgedAt(autonomouspkg.TaskVerifying)
+	inProgress := nudgedAt(autonomouspkg.TaskInProgress)
+	if !verifying.Equal(inProgress) {
+		t.Fatalf("verifying task nudged at %s, in-progress task at %s: the status label changed the decision", verifying, inProgress)
+	}
+}
+
+// TestPostTurnNudge_AdoptedSessionSeededFromPersistedNudge is the unit half of
+// TestNudgeScenario_AdoptedSessionAfterRestartIsNudged. An adopted in-progress
+// task and a verifying task on a live session both wait through the post-turn
+// nudge, which seeds its tracker from the nudge persisted for that session only.
+func TestPostTurnNudge_AdoptedSessionSeededFromPersistedNudge(t *testing.T) {
+	// The wait starts at postTurnT0 and the earlier nudge was sent 99s before it,
+	// so the stall window closes at persisted+600s = postTurnT0+501s, on a tick.
+	persistedAt := postTurnT0.Add(-99 * time.Second)
+	stallAfterPersisted := persistedAt.Add(600 * time.Second)
+	// The first tick that sees the idle worker is postTurnT0+3s; a fresh nudge
+	// lands one nudge window later.
+	freshNudgeAt := postTurnT0.Add(postTurnTick + 180*time.Second)
+	freshStallAt := freshNudgeAt.Add(600 * time.Second)
+
+	for _, shape := range []struct {
+		name    string
+		status  autonomouspkg.TaskStatus
+		adopted bool
+	}{
+		{"adopted in-progress task", autonomouspkg.TaskInProgress, true},
+		{"verifying task on its live session", autonomouspkg.TaskVerifying, false},
+	} {
+		t.Run(shape.name+": nudge persisted for this session", func(t *testing.T) {
+			logBuf := capturePostTurnLog(t)
+			clock := &fakeClock{now: postTurnT0}
+			f := newFakeClaudeSession(clock, "claude-code")
+			task := postTurnTaskFor(shape.status)
+			task.AdoptedSession = shape.adopted
+			task.NudgeCount = 1
+			task.NudgeEvents = []autonomouspkg.NudgeEvent{{At: persistedAt, Count: 1, SessionID: postTurnSessionID, Outcome: autonomouspkg.NudgeOutcomeSent}}
+			nudge := newPostTurnNudge(f.deps(), autonomouspkg.Config{}, task)
+			err := runPostTurnWait(clock, f, nudge, postTurnWaitTicks, nil)
+			if !errors.Is(err, autonomouspkg.ErrWorkerStalled) {
+				t.Fatalf("wait ended with %v, want a stall; log:\n%s", err, logBuf.String())
+			}
+			if !clock.now.Equal(stallAfterPersisted) {
+				t.Fatalf("stalled at %s, want the persisted nudge plus the stall window, %s", clock.now, stallAfterPersisted)
+			}
+			if len(f.sent) != 0 || len(f.recorder.nudges) != 0 {
+				t.Fatalf("persisted nudge sent again: typed %q, recorded %d; log:\n%s", f.sent, len(f.recorder.nudges), logBuf.String())
+			}
+		})
+
+		t.Run(shape.name+": nudge persisted for another session", func(t *testing.T) {
+			logBuf := capturePostTurnLog(t)
+			clock := &fakeClock{now: postTurnT0}
+			f := newFakeClaudeSession(clock, "claude-code")
+			task := postTurnTaskFor(shape.status)
+			task.AdoptedSession = shape.adopted
+			task.NudgeCount = 1
+			task.NudgeEvents = []autonomouspkg.NudgeEvent{{At: persistedAt, Count: 1, SessionID: "sess-earlier", Outcome: autonomouspkg.NudgeOutcomeSent}}
+			nudge := newPostTurnNudge(f.deps(), autonomouspkg.Config{}, task)
+			err := runPostTurnWait(clock, f, nudge, postTurnWaitTicks, nil)
+			if !errors.Is(err, autonomouspkg.ErrWorkerStalled) {
+				t.Fatalf("wait ended with %v, want a stall; log:\n%s", err, logBuf.String())
+			}
+			if len(f.sent) != 1 || len(f.recorder.nudges) != 1 {
+				t.Fatalf("typed %d nudges and recorded %d, want one of each; log:\n%s", len(f.sent), len(f.recorder.nudges), logBuf.String())
+			}
+			if !f.recorder.nudges[0].Equal(freshNudgeAt) {
+				t.Fatalf("nudged at %s, want %s: another session's nudge must not seed the tracker", f.recorder.nudges[0], freshNudgeAt)
+			}
+			if !clock.now.Equal(freshStallAt) {
+				t.Fatalf("stalled at %s, want the fresh nudge plus the stall window, %s", clock.now, freshStallAt)
+			}
+		})
+	}
+}
+
+// TestPostTurnNudge_NudgeThenStallLogsAndNamesTheNudgeInEndReason is the unit half
+// of TestNudgeScenario_NudgeThenStallThenRetry for the first session. It runs the
+// wait against a real autonomous manager's nudge record and checks the wait-start,
+// nudge and stall lines name the session and the task, and that the idle detector
+// end reason for the session says a nudge was sent first. The retry line is
+// written by the executor, which the internal/autonomous scenario covers.
+func TestPostTurnNudge_NudgeThenStallLogsAndNamesTheNudgeInEndReason(t *testing.T) {
+	logBuf := capturePostTurnLog(t)
+	m, err := autonomouspkg.NewManager(t.TempDir(), autonomouspkg.DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	prd, err := m.CreatePRD("spec", t.TempDir(), "claude-code", "", autonomouspkg.EffortNormal)
+	if err != nil {
+		t.Fatalf("CreatePRD: %v", err)
+	}
+	_ = m.Store().SetStories(prd.ID, []autonomouspkg.Story{{Title: "S", Tasks: []autonomouspkg.Task{{Title: "T", Spec: "write docs/x.md"}}}})
+	cur, _ := m.Store().GetPRD(prd.ID)
+	task := cur.Story[0].Tasks[0]
+	task.SessionID = postTurnSessionID
+
+	clock := &fakeClock{now: postTurnT0}
+	f := newFakeClaudeSession(clock, "claude-code")
+	deps := f.deps()
+	deps.recorder = managerPostTurnRecorder{mgr: m}
+	nudge := newPostTurnNudge(deps, autonomouspkg.Config{}, &task)
+	if err := runPostTurnWait(clock, f, nudge, postTurnWaitTicks, nil); !errors.Is(err, autonomouspkg.ErrWorkerStalled) {
+		t.Fatalf("wait ended with %v, want a stall; log:\n%s", err, logBuf.String())
+	}
+	if len(f.sent) != 1 || len(f.ended) != 1 {
+		t.Fatalf("typed %d inputs and ended the session %d times, want 1 and 1", len(f.sent), len(f.ended))
+	}
+
+	label := prd.ID + "/" + task.ID
+	for _, want := range []string{
+		fmt.Sprintf("post-turn wait start: session %s task %s:", postTurnSessionID, label),
+		fmt.Sprintf("idle worker %s task %s: nudge 1 sent after 3m0s idle", postTurnSessionID, label),
+		fmt.Sprintf("idle worker %s task %s: still silent for 10m0s after nudge; ending session for retry", postTurnSessionID, label),
+	} {
+		if !strings.Contains(logBuf.String(), want) {
+			t.Errorf("log is missing %q\nlog:\n%s", want, logBuf.String())
+		}
+	}
+
+	obs := autonomouspkg.SessionIdleObservation{
+		State:     "waiting_input",
+		IdleFor:   912 * time.Second,
+		OutputAge: 905 * time.Second,
+		Limit:     900 * time.Second,
+		Nudge:     sessionNudgeNote(m, prd.ID, task.ID, postTurnSessionID),
+	}
+	if reason := idleDetectorEndReason(obs); !strings.Contains(reason, "nudge 1 sent at ") || !strings.Contains(reason, ", outcome stalled") {
+		t.Fatalf("idle detector end reason = %q, want it to say the nudge was sent first and stalled", reason)
 	}
 }
