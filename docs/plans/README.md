@@ -144,7 +144,7 @@ advances it without hand sequencing.
 | 33 | BL448 Voice transcription times out on long recordings | draft (PRD `6bded76a`) | - |
 | 34 | BL450 Startup-dialog auto-dismiss for one-shot tasks | draft (PRD `8272882d`); overlaps BL493 (row 75): fold into one PRD | - |
 | 35 | BL393 Nested tags for Automata and PRDs | not started (previously held pending explicit authorization — operator folded it back into the queue 2026-10-15) | - |
-| 36 | BL461 Tag-based browsing + tile redesign for PRD/session lists at scale (design) | not started (PRD `c46f6df9`, draft) | 35 |
+| 36 | [BL461](2026-10-20-tag-browsing-tile-design.md) Tag-based browsing + tile redesign for PRD/session lists at scale (design) | design doc written (design only, implementation on hold until nested tags ship); datawatch-app issue draft in docs/plans/assets/tag-browsing-datawatch-app-issue.md | 35 |
 | 37 | [BL437](2026-10-14-recurring-model-eval-design.md) Recurring hardware-aware model and effort eval | failed (PRD `fea73c82` failed; design done) | 14, 15 |
 | 38 | BL414 PRD cost rollup and token usage guardrails | not started (needs scoping against BL405) | BL405 |
 | 39 | [BL405](2026-10-10-llm-enhancements.md) LLM enhancements, phases 0-10 | not started (design complete) | 10 |
