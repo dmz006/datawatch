@@ -238,11 +238,12 @@ func runnerSubtreePIDs(roots []int, children map[int][]int, nameOf func(int) str
 
 // isOwnMCPServer reports whether argv, a process's command line, is one of the
 // session's own servers. Each spec matches when its Command is argv[0], or shares
-// its base name, and every one of its Args appears later in argv. A spec with no
-// args matches only a process started with no arguments at all, so a launcher
-// such as npx cannot claim the unrelated work it starts. The channel bridge's
-// binary name is the fallback when no spec matches. An empty argv is never an own
-// server, so a process that cannot be read counts as work.
+// its base name, or npm's launcher script for it runs (see npmCLIRunsProgram),
+// and every one of its Args appears later in argv. A spec with no args matches
+// only a process started with no arguments at all, so a launcher such as npx
+// cannot claim the unrelated work it starts. The channel bridge's binary name is
+// the fallback when no spec matches. An empty argv is never an own server, so a
+// process that cannot be read counts as work.
 func isOwnMCPServer(argv []string, ownServers []channel.MCPServerSpec) bool {
 	if len(argv) == 0 {
 		return false
@@ -257,12 +258,25 @@ func isOwnMCPServer(argv []string, ownServers []channel.MCPServerSpec) bool {
 			}
 			continue
 		}
-		sameProgram := argv[0] == spec.Command || filepath.Base(argv[0]) == filepath.Base(spec.Command)
+		sameProgram := argv[0] == spec.Command ||
+			filepath.Base(argv[0]) == filepath.Base(spec.Command) ||
+			npmCLIRunsProgram(argv, spec.Command)
 		if sameProgram && argsContainAll(argv[1:], spec.Args) {
 			return true
 		}
 	}
 	return filepath.Base(argv[0]) == channelBinaryName
+}
+
+// npmCLIRunsProgram reports whether argv is node running npm's launcher script
+// for program, such as npx-cli.js for npx. npx does not exec the server it
+// starts: the node process running npx-cli.js keeps npx's args and stays alive
+// as the parent of the server, so that process is what the spec's argv matches.
+func npmCLIRunsProgram(argv []string, program string) bool {
+	if len(argv) < 2 {
+		return false
+	}
+	return filepath.Base(argv[1]) == filepath.Base(program)+"-cli.js"
 }
 
 // argsContainAll reports whether every element of want appears in argv.
@@ -284,9 +298,10 @@ func argsContainAll(argv, want []string) bool {
 
 // sessionOwnMCPServers returns the MCP server specs a session was launched with:
 // the entries in <projectDir>/.mcp.json, plus the native channel bridge when it
-// is in use. A missing or unreadable file yields no entries. The channel is then
-// still recognised by its binary name, and any other server counts as work, which
-// keeps the probe on the side of not killing a session.
+// is in use. A missing or unreadable file yields no entries. The native channel
+// is then still recognised by its binary name, but a node-run channel.js bridge
+// has no name to match and counts as work. Any other server counts as work too,
+// which keeps the probe on the side of not killing a session.
 func sessionOwnMCPServers(projectDir string) []channel.MCPServerSpec {
 	var specs []channel.MCPServerSpec
 	if projectDir != "" {

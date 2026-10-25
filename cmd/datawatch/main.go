@@ -5124,6 +5124,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									WorkDir:   taskDir,
 									Threshold: staleThreshold,
 									Now:       time.Now(),
+									// Runner liveness, not work children: this check asks whether the
+									// worker is still running at all. An idle claude worker still reads as
+									// alive here, which keeps the pre-existing stall behaviour unchanged.
 									ChildAlive: func() bool {
 										return hasLiveRunnerProcess(s.TmuxSession)
 									},

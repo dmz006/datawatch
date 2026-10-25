@@ -119,7 +119,9 @@ func TestSessionIdleProbe_OwnServerMatchingRules(t *testing.T) {
 		{"empty argv is work", nil, []channel.MCPServerSpec{search}, false},
 		{"node channel bridge matches its spec", []string{"/usr/bin/node", "/home/u/.datawatch/channel/channel.js"}, []channel.MCPServerSpec{jsBridge}, true},
 		{"node running another script is work", []string{"/usr/bin/node", "/srv/other.js"}, []channel.MCPServerSpec{jsBridge}, false},
-		{"npx-run server whose argv differs from its spec is work", []string{"node", "/usr/lib/node_modules/npm/bin/npx-cli.js", "-y", "some-tool"}, []channel.MCPServerSpec{npxServer}, false},
+		{"npx-cli run of the spec's package matches", []string{"node", "/usr/lib/node_modules/npm/bin/npx-cli.js", "-y", "some-tool"}, []channel.MCPServerSpec{npxServer}, true},
+		{"npx-cli run of another package is work", []string{"node", "/usr/lib/node_modules/npm/bin/npx-cli.js", "-y", "other-tool"}, []channel.MCPServerSpec{npxServer}, false},
+		{"npx-cli run without the spec's args is work", []string{"node", "/usr/lib/node_modules/npm/bin/npx-cli.js"}, []channel.MCPServerSpec{npxServer}, false},
 	}
 	for _, tc := range cases {
 		if got := isOwnMCPServer(tc.argv, tc.specs); got != tc.want {
@@ -128,19 +130,58 @@ func TestSessionIdleProbe_OwnServerMatchingRules(t *testing.T) {
 	}
 }
 
-func TestSessionIdleProbe_LauncherServerArgvMismatchCountsAsWork(t *testing.T) {
-	// pane 100 -> bash 200 -> claude 300 -> node 400. The MCP server was started
-	// through npx, so its argv is node running npx-cli.js and does not match the
-	// spec's npx argv. It is not recognised, so it counts as work. That keeps the
-	// idle detector off for this worker, which is the fail-safe direction.
+func TestSessionIdleProbe_NpxLaunchedServerIsNotWork(t *testing.T) {
+	// pane 100 -> bash 200 -> claude 300 -> node 400 (npx-cli.js) -> node 500.
+	// npx started the session's own MCP server. The node process running
+	// npx-cli.js matches the spec's npx argv, and the server it started sits in
+	// that subtree, so an idle worker reports no work.
 	roots := []int{100}
-	children := map[int][]int{100: {200}, 200: {300}, 300: {400}}
-	names := map[int]string{100: "bash", 200: "bash", 300: "claude", 400: "node"}
-	argv := map[int][]string{300: {"claude"}, 400: {"node", "/usr/lib/node_modules/npm/bin/npx-cli.js", "-y", "some-tool"}}
+	children := map[int][]int{100: {200}, 200: {300}, 300: {400}, 400: {500}}
+	names := map[int]string{100: "bash", 200: "bash", 300: "claude", 400: "node", 500: "node"}
+	argv := map[int][]string{
+		300: {"claude"},
+		400: {"node", "/usr/lib/node_modules/npm/bin/npx-cli.js", "-y", "some-tool"},
+		500: {"node", "/home/u/.npm/_npx/some-tool/index.js"},
+	}
 	ownServers := []channel.MCPServerSpec{{Command: "npx", Args: []string{"-y", "some-tool"}}}
 	got := workChildPIDs(roots, children, fakeProcessNames(names), fakeProcessArgv(argv), ownServers)
-	if !got[400] || len(got) != 1 {
-		t.Fatalf("launcher-run server with mismatched argv: got %v, want {400}", got)
+	if len(got) != 0 {
+		t.Fatalf("npx-launched own server and its subtree: got %v, want none", got)
+	}
+}
+
+func TestSessionIdleProbe_IdleClaudeWithOnlyMCPChildReportsNoWork(t *testing.T) {
+	// pane 100 -> bash 200 -> claude 300 -> datawatch mcp-search 400.
+	roots := []int{100}
+	children := map[int][]int{100: {200}, 200: {300}, 300: {400}}
+	names := map[int]string{100: "bash", 200: "bash", 300: "claude", 400: "datawatch"}
+	argv := map[int][]string{300: {"claude"}, 400: {"/usr/local/bin/datawatch", "mcp-search"}}
+	ownServers := []channel.MCPServerSpec{{Command: "/usr/local/bin/datawatch", Args: []string{"mcp-search"}}}
+	got := workChildPIDs(roots, children, fakeProcessNames(names), fakeProcessArgv(argv), ownServers)
+	if len(got) != 0 {
+		t.Fatalf("idle claude with only its own MCP child: got %v, want none", got)
+	}
+}
+
+func TestSessionIdleProbe_WorkBeyondDepthCapNotReported(t *testing.T) {
+	// pane 100 -> claude 101 -> a chain of bash processes longer than the cap.
+	// The walk stops at the cap, so the first link under the runner is reported
+	// as work and the last link of the chain is not reached.
+	roots := []int{100}
+	names := map[int]string{100: "bash", 101: "claude"}
+	children := map[int][]int{100: {101}}
+	last := 101
+	for pid := 102; pid < 102+sessionIdleProbeMaxDepth+4; pid++ {
+		children[last] = []int{pid}
+		names[pid] = "bash"
+		last = pid
+	}
+	got := workChildPIDs(roots, children, fakeProcessNames(names), fakeProcessArgv(nil), nil)
+	if !got[102] {
+		t.Fatalf("first work child under runner not reported: got %v", got)
+	}
+	if got[last] {
+		t.Fatalf("work child %d beyond the depth cap was reported", last)
 	}
 }
 
