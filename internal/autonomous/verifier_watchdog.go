@@ -41,10 +41,12 @@ type ProgressSignals struct {
 	// opencode) is still alive under the session. A live runner counts as
 	// progress.
 	RunnerAlive bool
-	// ActiveRequest is true when the model server reports an active
-	// request for this session. The signal is accepted for plumbing but
-	// not yet counted as progress: the confirmed rule defers it until a
-	// reliable per-session request probe exists.
+	// ActiveRequest is true when a model-server probe confirms the
+	// session's model is loaded and serving (an active request for the
+	// session's model); it counts as progress. The loop must pass false
+	// when the probe is unknown (error, unreachable, host not set): that is
+	// "no evidence either way" and must never end a session on its own or
+	// be treated as evidence of inactivity.
 	ActiveRequest bool
 	// Slot is the verifier's capacity-slot state (none, waiting, held).
 	Slot SlotState
@@ -79,13 +81,16 @@ func NewVerifierWatchdog(start time.Time, limit time.Duration) *VerifierWatchdog
 // capacity slot — resets the silence baseline. While the verifier waits
 // for a capacity slot the decision is always "not exceeded" and the time
 // spent waiting is excluded from the limit once the slot is acquired.
-// ActiveRequest is not counted as progress yet (deferred signal). A
-// non-positive limit disables the watchdog.
+// A confirmed active model-server request (ActiveRequest) counts as
+// progress exactly like output or pane activity; the loop must pass
+// false when the probe is unknown, so a probe failure neither ends a
+// session on its own nor saves one. A non-positive limit disables the
+// watchdog.
 func (w *VerifierWatchdog) Decide(now time.Time, s ProgressSignals) bool {
 	paneChanged := w.seenMarker && s.Marker != w.lastMarker
 	w.lastMarker, w.seenMarker = s.Marker, true
 
-	if s.OutputPresent || s.RunnerAlive || s.Slot == SlotHeld || paneChanged {
+	if s.OutputPresent || s.RunnerAlive || s.ActiveRequest || s.Slot == SlotHeld || paneChanged {
 		w.lastActivity = now
 	}
 

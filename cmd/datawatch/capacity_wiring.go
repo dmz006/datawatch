@@ -589,6 +589,25 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		}
 	}
 
+	// Read-only slot-state view for the one-shot verifier wait loop: it
+	// reports whether the verifier's holder holds a lease, is queued, or
+	// is off the ledger; it never acquires or releases (admission
+	// happens daemon-side before the session spawns).
+	verifierCapacitySlotState = func(holder string) autonomous.SlotState {
+		if holder == "" {
+			return autonomous.SlotNone
+		}
+		if led.Held(holder) {
+			return autonomous.SlotHeld
+		}
+		for _, w := range led.Snapshot().Waiting {
+			if w.Holder == holder {
+				return autonomous.SlotWaiting
+			}
+		}
+		return autonomous.SlotNone
+	}
+
 	amgr.SetVerifierHost(&verifierReconcileHost{mgr: mgr, led: led, reg: verifiers})
 
 	verifierCapacityAdmit = func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (func(), error) {

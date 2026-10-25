@@ -154,6 +154,7 @@ func TestVerifierWatchdogDecideRules(t *testing.T) {
 		{"pane-change", ProgressSignals{Marker: "b"}},
 		{"live-runner", ProgressSignals{RunnerAlive: true, Marker: "a"}},
 		{"held-slot", ProgressSignals{Slot: SlotHeld, Marker: "a"}},
+		{"active-request", ProgressSignals{ActiveRequest: true, Marker: "a"}},
 	}
 	for _, rs := range resetSignals {
 		cases = append(cases, struct {
@@ -187,17 +188,37 @@ func TestVerifierWatchdogDecideRules(t *testing.T) {
 	}
 }
 
-// TestVerifierWatchdogActiveRequestNotProgressYet pins the deferred signal
-// (confirmed answer 1 defers an active model-server request until a
-// per-session probe exists): ActiveRequest alone must not count as
-// progress, so a dead-runner session still ends at the limit.
-func TestVerifierWatchdogActiveRequestNotProgressYet(t *testing.T) {
+// TestVerifierWatchdogActiveRequestKeepsSilentSessionAlive pins the
+// resolved deferred signal: the per-session model-server probe now exists
+// (the cmd/datawatch request probe), so a confirmed active request for the
+// session's model counts as progress, exactly like a live runner or a held
+// slot. An unknown probe result is passed as ActiveRequest=false by the
+// loop and must not end a session on its own; once the active reports
+// stop, silence ends the session at the limit.
+func TestVerifierWatchdogActiveRequestKeepsSilentSessionAlive(t *testing.T) {
 	limit := 10 * time.Minute
 	start := time.Unix(1000, 0)
 	w := NewVerifierWatchdog(start, limit)
 	w.Decide(start, ProgressSignals{Marker: "a"})
-	if got := w.Decide(start.Add(limit), ProgressSignals{Marker: "a", ActiveRequest: true}); !got {
-		t.Fatal("active request alone must not spare the session until the probe exists")
+
+	// A confirmed active request keeps a silent session (no output, no
+	// pane change, dead runner, no slot) alive past the limit.
+	active := ProgressSignals{Marker: "a", ActiveRequest: true}
+	if got := w.Decide(start.Add(limit), active); got {
+		t.Fatal("a confirmed active model-server request must keep a silent session alive")
+	}
+	if got := w.Decide(start.Add(25*time.Minute), active); got {
+		t.Fatal("continuously confirmed active model-server requests must keep a silent session alive")
+	}
+
+	// The active reports stop: the silence clock restarts from the last
+	// active report, and a full limit of silence ends the session.
+	silent := ProgressSignals{Marker: "a"}
+	if got := w.Decide(start.Add(34*time.Minute), silent); got {
+		t.Fatal("silence shorter than the limit after the active reports stop must not end the session")
+	}
+	if got := w.Decide(start.Add(36*time.Minute), silent); !got {
+		t.Fatal("silence longer than the limit after the active reports stop must end the session")
 	}
 }
 

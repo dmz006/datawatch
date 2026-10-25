@@ -112,6 +112,16 @@ func sessionRunning(mgr *session.Manager, id string) bool {
 // verifier registry so the verifier's lease follows the verifier session.
 var verifierSessionStarted func(sessionName, sessionID string)
 
+// verifierCapacitySlotState is the read-only view of the daemon's capacity
+// ledger used by the one-shot verifier wait loop for its slot-state signal:
+// SlotHeld when the verifier's holder holds a lease, SlotWaiting when its
+// request is queued, otherwise SlotNone. wireCapacity points it at the live
+// ledger; nil until wired (which the loop treats as SlotNone — no slot
+// signal). Read-only by contract: it never acquires, releases, or otherwise
+// touches admission — that happens daemon-side, before the verifier session
+// is spawned.
+var verifierCapacitySlotState func(holder string) autonomous.SlotState
+
 // verifierTaskFromSessionName extracts the task id from
 // "autonomous:verify:<task id>"; ok is false for any other name.
 func verifierTaskFromSessionName(name string) (string, bool) {
