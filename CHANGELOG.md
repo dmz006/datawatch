@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.11.1 — Start detector survives long silent first actions
+
+The session start detector no longer ends a worker whose first action is a long silent tool call. Start is measured from the last evidence of life (pane change, process activity, output file) instead of from adoption after a restart, so a restart no longer ends adopted workers after the grace period. The busy worker state after task delivery is fixed and its cause documented, the restart matrix covers these states, and four scenario tests with fakes lock the behaviour.
+
 ## v9.11.0 — Automatic lane fill in shadow mode
 
 Automatic lane fill in the Automation coordinator, in shadow mode first. Each poll the coordinator computes, for every idle lane (two local GPU channels as one pool and a configurable number of Claude channels), which eligible PRD it would start and why, and what blocks each idle lane. In shadow mode it records every decision as an audit entry and starts nothing; the operator compares that log with what was actually done before switching it on. Eligibility respects holds, sequencing and the operator's lane count and usage policy; an idle lane with eligible work raises an alert after a configurable time. Configuration is on every surface (config file, REST, MCP, CLI, comm channel, web settings with the five locales), with a lane fill card on the Automation sub-tab and a how-to.
