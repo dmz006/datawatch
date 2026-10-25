@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.10.3 — fix(security): remove stale CVE suppressions now fixed upstream
+
+### Fixed
+- **Removed 6 .trivyignore suppression(s) with a fix now available in Debian bookworm** — found by the daily `image-refresh` recheck, which rebuilds every shipped image fresh and scans without `.trivyignore` applied. See the PR for exactly which CVEs and which images.
+
+
 ## v9.10.4 — Judges obey the capacity limits
 
 Guardrail and plan-review judge sessions now take capacity leases like verifiers and workers. A judge waits when its pool is full, releases its lease when it ends or fails, and a restart mid-judge neither leaks the lease nor starts a second judge. The lease reaper treats a judge lease by the same rule as a verifier lease, and the capacity view lists queued and running judges by a readable name. Judge routing through the verifier policy and the time limit with retry are follow-up work.
