@@ -50,6 +50,7 @@
 # for the full reference (both mechanisms, side by side).
 #
 # §79 runs the eleven PWA slow-network load scenarios (TS-802..TS-812) against this smoke daemon itself (never a second daemon).
+# The shared navigation section after it runs the phone-width navigation scenario the same way.
 #
 # Returns 0 on success, non-zero on first failure.
 
@@ -4721,6 +4722,54 @@ else
     ko "load scenarios failed (run-all.mjs rc=$LOAD_RC): $(tail -5 "$LOAD_OUT_FILE" | tr '\n' ' ' | head -c 400)"
   fi
   rm -rf "$LOAD_EVD"
+fi
+
+# ---------------------------------------------------------------------------
+H "Shared navigation bar fits phone widths in light and dark"
+# Runs the shared-nav scenario (scripts/test-stories/pwa/shared-nav-mobile-fit.mjs)
+# through the PWA runner's shared-nav group (`node run-all.mjs --group shared-nav`),
+# same helper pattern as the load section above: this smoke daemon only
+# ($BASE/$TOK), TMUX scrubbed, bounded by SMOKE_SHARED_NAV_TIMEOUT (default 600s)
+# through `timeout` when available. Unlike the load section, a navigation layout
+# finding at phone widths is a failure (ko), never a skip. The section SKIPs only
+# when it cannot run at all: no node, no Playwright install, or the scenario
+# reports that no browser or daemon is available (it exits 2, which the runner
+# counts as skipped).
+PWA_DIR="$REPO_DIR/scripts/test-stories/pwa"
+if ! command -v node >/dev/null 2>&1; then
+  skip "shared navigation: node not found on PATH - cannot run scripts/test-stories/pwa"
+elif [[ ! -d "$PWA_DIR/node_modules" ]]; then
+  skip "shared navigation: Playwright install missing (scripts/test-stories/pwa/node_modules) - run: (cd scripts/test-stories/pwa && npm ci)"
+else
+  NAV_EVD="$TMPD/shared-nav-evidence.$$"
+  rm -rf "$NAV_EVD"
+  mkdir -p "$NAV_EVD"
+  NAV_OUT_FILE="$TMPD/shared-nav-out.$$"
+  NAV_TO_BIN="$(command -v timeout 2>/dev/null || true)"
+  if [[ -n "$NAV_TO_BIN" ]]; then
+    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$NAV_EVD" \
+      "$NAV_TO_BIN" "${SMOKE_SHARED_NAV_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
+  else
+    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$NAV_EVD" \
+      node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
+  fi
+  NAV_RC=$?
+  tail -20 "$NAV_OUT_FILE"
+  NAV_SUMMARY="$(grep -E '^summary: ' "$NAV_OUT_FILE" | tail -1)"
+  NAV_PASSED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $2}')"
+  NAV_FAILED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $4}')"
+  if [[ "$NAV_RC" -eq 0 ]]; then
+    if [[ "${NAV_PASSED:-""}" == "0" && "${NAV_FAILED:-0}" == "0" ]]; then
+      skip "shared navigation: scenario skipped, no browser or daemon available ($NAV_SUMMARY)"
+    else
+      ok "shared navigation fits phone widths: ${NAV_SUMMARY#summary: }"
+    fi
+  elif [[ "$NAV_RC" -eq 124 ]]; then
+    ko "shared navigation timed out after ${SMOKE_SHARED_NAV_TIMEOUT:-600}s: $(tail -1 "$NAV_OUT_FILE")"
+  else
+    ko "shared navigation layout findings at phone widths (run-all.mjs rc=$NAV_RC): $(tail -5 "$NAV_OUT_FILE" | tr '\n' ' ' | head -c 400)"
+  fi
+  rm -rf "$NAV_EVD"
 fi
 
 # ---------------------------------------------------------------------------

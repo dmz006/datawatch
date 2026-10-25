@@ -1,5 +1,5 @@
-// scripts/test-stories/pwa/run-all.mjs — run every TS-*.mjs PWA story in this directory
-// (or a named group of them).
+// scripts/test-stories/pwa/run-all.mjs — run every TS-*.mjs PWA story in this directory,
+// plus the shared-nav-mobile-fit.mjs navigation scenario (or a named group of them).
 //
 // Each story runs as a child node process with CURRENT_STORY set to its id (e.g. TS-149).
 // Exit 0 when no story fails; exit 1 on any failure, when no stories are found,
@@ -13,6 +13,7 @@
 //   node run-all.mjs --group load             — run a named group (load = TS-802..TS-812)
 //   node run-all.mjs --dry-run --group load   — list the load group's stories, then exit
 //   node run-all.mjs --group wire             — run the websocket byte-budget group (TS-816)
+//   node run-all.mjs --group shared-nav       — run the shared navigation phone-width scenario
 
 import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
@@ -23,11 +24,16 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
 const dryRun = argv.includes('--dry-run');
 
-// Named groups: fixed lists of story ids, run in this order.
+// Named groups: fixed lists of scenario names (a TS id, or a file basename for
+// scenarios that have no TS id), run in this order.
 const GROUPS = {
   load: ['TS-802', 'TS-803', 'TS-804', 'TS-805', 'TS-806', 'TS-807', 'TS-808', 'TS-809', 'TS-810', 'TS-811', 'TS-812'],
   wire: ['TS-816'],
+  'shared-nav': ['shared-nav-mobile-fit'],
 };
+
+// Scenarios outside the TS-*.mjs naming that the default run also discovers.
+const EXTRA_SCENARIOS = ['shared-nav-mobile-fit.mjs'];
 
 let groupName = null;
 const groupIndex = argv.indexOf('--group');
@@ -46,11 +52,11 @@ if (groupIndex !== -1) {
 // --- discovery --------------------------------------------------------------
 
 const stories = readdirSync(dir)
-  .filter((f) => /^TS-.*\.mjs$/.test(f))
+  .filter((f) => /^TS-.*\.mjs$/.test(f) || EXTRA_SCENARIOS.includes(f))
   .sort();
 
 if (stories.length === 0) {
-  console.error(`no TS-*.mjs stories found in ${dir}`);
+  console.error(`no TS-*.mjs stories or named scenarios found in ${dir}`);
   process.exit(1);
 }
 
