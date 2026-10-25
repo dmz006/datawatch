@@ -2485,6 +2485,29 @@ marker gets one nudge before the session idle timeout applies.
   followed) or `stalled` (the worker stayed silent past the stall window).
   `autonomous_status` reports `nudges_total`, `nudge_tasks` and
   `nudges_by_backend`.
+- **Wait-start line:** when a claude-code worker finishes its turn, the
+  journal gets one `post-turn wait start` line with the session, the task,
+  the backend family, `nudge applies=yes|no|pending` (`pending` while the
+  session is not yet visible), the nudge and stall windows, the session idle
+  limit and `persisted nudge=true|false`. Example:
+  `[autonomous] post-turn wait start: session <session> task <automaton>/<task>: backend family claude-code, nudge applies=yes, nudge window 3m0s, stall window 10m0s, session idle limit 15m0s, persisted nudge=false`.
+- **Nudge and outcome lines:** `idle worker <session> task <automaton>/<task>: nudge N sent after D idle`
+  when the nudge is typed, then `nudge answered by completion marker`, `nudge answered by new output`
+  or `nudge answered by session completion`. A stall logs `still silent for D after nudge; ending session for retry`.
+- **Idle-detector end reason:** when the session idle detector ends a worker,
+  the end reason finishes with the nudge history of that session: `no nudge sent`,
+  or `nudge N sent at <time>, outcome <sent|answered|stalled>`. An event with no
+  outcome yet reads as `sent`.
+- **Nudge window not shorter than the idle limit:** while the session idle
+  detector is on, if `worker_idle_nudge_seconds` is not smaller than the
+  session idle limit, each wait logs one `post-turn wait warning` line at its start. The idle
+  detector can then end the worker before the nudge is sent. Lower the nudge
+  window, or raise the idle limit, to clear it.
+- **Effective values on the config read:** `GET /api/config` (the `autonomous`
+  section, also MCP `get_config` with `section: autonomous`) returns two
+  read-only keys, `worker_idle_nudge_effective_seconds` and
+  `worker_idle_nudge_stall_effective_seconds`, the windows the daemon applies.
+  Unset or non-positive settings read as the defaults (180 and 600).
 - **Setting them:** `config.yaml`, the web settings card, `PUT /api/config`,
   MCP `autonomous_config_set`, or the `configure` chat command. Hot-applied;
   `0` means "use the default".

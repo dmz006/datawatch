@@ -1449,9 +1449,13 @@ autonomous:
   # Idle nudge for PRD-owned claude-code workers: after this many seconds idle the
   # worker is sent one message asking it to print its completion line or continue.
   # 0 or unset => 180.
+  # Read-only effective value: GET /api/config (autonomous section) returns
+  # worker_idle_nudge_effective_seconds, the window the daemon applies (180 when unset).
   worker_idle_nudge_seconds: 180
   # Seconds, counted from the nudge, a nudged worker may stay silent before it is
   # stopped and retried. 0 or unset => 600.
+  # Read-only effective value: GET /api/config (autonomous section) returns
+  # worker_idle_nudge_stall_effective_seconds, the window the daemon applies (600 when unset).
   worker_idle_nudge_stall_seconds: 600
   # Consecutive infra verifier failures on one task after which that task's next
   # verification runs on fallback_verification_backend (then the count resets).

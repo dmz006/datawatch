@@ -419,6 +419,68 @@ autonomous:
   worker_idle_nudge_stall_seconds: 600
 ```
 
+### Confirming a nudge fired
+
+Three places show what the daemon did with a worker's nudge: the journal,
+the task record and the config read.
+
+1. **The wait-start line.** When a claude-code worker finishes its turn, the
+   daemon logs one line as the wait for the completion marker begins:
+
+   ```
+   [autonomous] post-turn wait start: session <session> task <automaton>/<task>: backend family claude-code, nudge applies=yes, nudge window 3m0s, stall window 10m0s, session idle limit 15m0s, persisted nudge=false
+   ```
+
+   The second part of `task <automaton>/<task>` is the Automaton ID and the
+   task ID. `nudge applies=yes` means the nudge owns this worker's idle clock.
+   `pending` means the session was not visible yet; the daemon reads the
+   backend family on each tick until it is, then logs
+   `backend family resolved to claude-code; nudge applies=yes`. `no` means the
+   worker is not claude-code and is never nudged. `persisted nudge=true` means
+   a nudge for this session is already recorded on the task, so it is not sent
+   again.
+
+   If the nudge window is not shorter than the session idle limit, a
+   `post-turn wait warning` line follows, once for that wait. The idle detector
+   can then end the worker before the nudge is sent.
+
+2. **The nudge and its outcome.** When the nudge is typed, the journal gets:
+
+   ```
+   [autonomous] idle worker <session> task <automaton>/<task>: nudge 1 sent after 3m0s idle
+   ```
+
+   The answer is logged the same way: `nudge answered by completion marker`,
+   `nudge answered by new output` or `nudge answered by session completion`.
+   A worker still silent after the stall window logs
+   `still silent for <duration> after nudge; ending session for retry`.
+
+3. **The task record.** `autonomous_prd_get` shows the task's `nudge_count`
+   and `nudge_events`. Each event has `at`, `count`, `session_id` and
+   `outcome`. Find the event whose `session_id` is the worker's session: its
+   `outcome` is `sent` (typed, no answer yet), `answered` or `stalled`.
+
+**Reading the effective windows.** Unset settings are not shown in
+`config.yaml`, so read the windows the daemon actually applies. `GET /api/config`
+has an `autonomous` section with two read-only keys:
+`worker_idle_nudge_effective_seconds` (the nudge window) and
+`worker_idle_nudge_stall_effective_seconds` (the stall window). With both
+settings unset they read `180` and `600`. A setting of `0` or less also reads
+as the default. The same section is returned by MCP `get_config` with
+`section: autonomous`. The keys cannot be set; change the settings themselves.
+
+**What the idle detector says now.** If the session idle detector ends a
+worker, its end reason finishes with the nudge history for that session:
+
+- `..., no nudge sent`: no nudge was recorded for the session.
+- `..., nudge 1 sent at 2026-10-25T16:20:00Z, outcome answered`: the nudge
+  came first. The outcome is `sent` when no answer was recorded.
+
+**Which workers are nudged.** The nudge applies to every claude-code worker
+waiting after its turn, whatever status the task shows, including a task in
+`verifying` whose only lease is the worker's. A worker whose session was not
+yet visible when its wait began is nudged from its first visible tick.
+
 ## Task failed with `session never started`
 
 A claude-code worker was handed its task and then sat in `waiting_input`
