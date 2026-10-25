@@ -366,10 +366,16 @@ list means *inherit*, never *off*; only the global tier can resolve to
 names its **source**: `automaton`, `profile` or `global` — that is
 what the surfaces show as `notify_events_effective`.
 
-`task.session_started` and `task.session_cleared` are **opt-in** kinds
-and are not in the default set: a session lifecycle subscription fires
-only on Automata whose resolved set includes that kind (add it to the
-per-Automaton or profile list). The usable closed set is every known
+`task.session_started`, `task.session_cleared`, `scope_warning` and
+`guardrail_warn` are **opt-in** kinds and are not in the default set: a
+subscription on one of them fires only on Automata whose resolved set
+includes that kind (add it to the per-Automaton, profile or global
+default list). `scope_warning` (a task touched files outside its declared
+scope; the event lists the files) and `guardrail_warn` (a guardrail
+returned a warn outcome; the event names the guardrail and carries the
+level: task, story or Automaton) are bare kind names with no `prd.` or
+`task.` prefix. They are informational only and never block or change any
+task, story or Automaton. The usable closed set is every known
 lifecycle event kind except `prd.updated`, which is deliberately not a
 notify kind. Unknown or blank kinds are rejected (400 / a tool error).
 

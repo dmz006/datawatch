@@ -15,7 +15,7 @@ import (
 
 func (s *Server) toolAutonomousPRDSetNotifyEvents() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_notify_events",
-		mcpsdk.WithDescription("Set the lifecycle event kinds that produce notifications for this Automaton, independent of who is subscribed. Default set (when unset at this tier): prd.needs_review, prd.blocked, prd.failed, prd.completed, prd.cancelled. The session lifecycle kinds task.session_started and task.session_cleared (the session-end kind) are opt-in — add them to the list to be notified. Precedence: Automaton > guardrail profile > global default; an empty or omitted list here clears the Automaton-level set and inherits from the next tier. A subscription's own event filter can only narrow this resolved set, never widen it."),
+		mcpsdk.WithDescription("Set the lifecycle event kinds that produce notifications for this Automaton, independent of who is subscribed. Default set (when unset at this tier): prd.needs_review, prd.blocked, prd.failed, prd.completed, prd.cancelled. The opt-in kinds task.session_started, task.session_cleared (the session-end kind), scope_warning and guardrail_warn are off by default — add them to the list to be notified. Warnings never block or change any work. Precedence: Automaton > guardrail profile > global default; an empty or omitted list here clears the Automaton-level set and inherits from the next tier. A subscription's own event filter can only narrow this resolved set, never widen it."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
 		mcpsdk.WithArray("notify_events",
 			mcpsdk.WithStringItems(),

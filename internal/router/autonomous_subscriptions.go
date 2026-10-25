@@ -75,6 +75,9 @@ var commSubShortKinds = map[string]string{
 	"session_started": "task.session_started",
 	"session_cleared": "task.session_cleared",
 	"prd_updated":     "task.prd_updated",
+	// The warning kinds are bare lifecycle kinds, not task statuses.
+	"scope_warning":  "scope_warning",
+	"guardrail_warn": "guardrail_warn",
 }
 
 // commSubUsage is the operator-facing syntax line for "subscribe".

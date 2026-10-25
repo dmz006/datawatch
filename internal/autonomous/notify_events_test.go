@@ -127,9 +127,9 @@ func TestValidNotifyEventKinds(t *testing.T) {
 			t.Errorf("kinds are missing default kind %q", k)
 		}
 	}
-	for _, k := range []string{KindTaskSessionStarted, KindTaskSessionCleared} {
+	for _, k := range OptInNotifyEvents() {
 		if !contains(k) {
-			t.Errorf("kinds are missing opt-in session kind %q", k)
+			t.Errorf("kinds are missing opt-in kind %q", k)
 		}
 	}
 	if contains(KindPRDUpdated) {
@@ -150,8 +150,10 @@ func TestDefaultNotifyEvents(t *testing.T) {
 		t.Fatalf("DefaultNotifyEvents() = %v; want exactly %v in this order", got, want)
 	}
 	for _, k := range got {
-		if k == KindTaskSessionStarted || k == KindTaskSessionCleared {
-			t.Errorf("session kinds must be opt-in only, not in the default set: %q", k)
+		for _, o := range OptInNotifyEvents() {
+			if k == o {
+				t.Errorf("opt-in kinds must not be in the default set: %q", k)
+			}
 		}
 	}
 
