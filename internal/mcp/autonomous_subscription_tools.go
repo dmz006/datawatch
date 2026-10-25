@@ -35,13 +35,38 @@ import (
 // autonomousSubscribePath is the REST route all three tools proxy.
 const autonomousSubscribePath = "/api/autonomous/subscriptions"
 
+// Argument descriptions shared by autonomous_subscribe and
+// autonomous_subscription_update, so the two tools describe the sink the same way.
+const (
+	subscriptionSinkTypeDesc = "Sink type: \"comm\", \"session\", \"topic\", \"alert\", \"mcp_queue\", \"webhook\" or \"peer\". " +
+		"mcp_queue appends matching events to the named pending-events queue (sink_target = queue name; letters, digits and . _ : - only) for a client that cannot receive pushes to poll with autonomous_events_pending. " +
+		"webhook POSTs each matching event, signed with the secret named by secret_ref, to the https URL in sink_target; the URL's host must be on the operator's webhook allow-list. " +
+		"peer forwards each matching event to the federation peer named in sink_target; the peer must be a federated peer that grants autonomous:write."
+	subscriptionSinkTargetDesc = "Sink target: a session id / topic / router or alert name / mcp_queue queue name / the https URL of a webhook receiver / the registered federation peer name for a peer sink."
+	subscriptionSecretRefDesc  = "Webhook sinks only: the ${secret:name} vault reference whose value signs each delivery. Send the reference, never the value; a literal is refused. Listings show the reference text only."
+)
+
+// subscriptionSinkBody builds the "sink" object of a subscription body from the
+// tool arguments. secret_ref is sent only when given; the daemon refuses it on
+// every sink type but webhook.
+func subscriptionSinkBody(req mcpsdk.CallToolRequest) map[string]any {
+	sink := map[string]any{
+		"type":   req.GetString("sink_type", ""),
+		"target": req.GetString("sink_target", ""),
+	}
+	if ref := req.GetString("secret_ref", ""); ref != "" {
+		sink["secret_ref"] = ref
+	}
+	return sink
+}
+
 // --- Tool definitions ------------------------------------------------------
 
 // toolAutonomousSubscribe registers a persisted lifecycle-event
 // subscription on the daemon.
 func (s *Server) toolAutonomousSubscribe() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_subscribe",
-		mcpsdk.WithDescription("Register a persisted subscription to Automaton (PRD/task) lifecycle events on this daemon so matching events (task.session_started, task.completed, prd.blocked, ...) are delivered to a chosen sink when they fire. kinds: comma-separated event kinds (at least one of kinds or level is required). level: \"prd\" or \"task\". prd_id/task_id: scope to one Automaton/task (omitted = any). sink_type + sink_target: comm|session|topic|alert|mcp_queue plus its target (session id, topic, router/alert name, or for mcp_queue the name of a pending-events queue that autonomous_events_pending polls). action_text (optional, requires sink_type \"session\"): text typed into the target session on every match (the send_input action — the only action in this phase). one_shot: delete after the first delivery. coalesce: batch human-facing sinks in quiet windows. expires_in_seconds: optional TTL. Returns the stored subscription record (with its id) as JSON. The CLI equivalent is `datawatch autonomous subscribe`."),
+		mcpsdk.WithDescription("Register a persisted subscription to Automaton (PRD/task) lifecycle events on this daemon so matching events (task.session_started, task.completed, prd.blocked, ...) are delivered to a chosen sink when they fire. kinds: comma-separated event kinds (at least one of kinds or level is required). level: \"prd\" or \"task\". prd_id/task_id: scope to one Automaton/task (omitted = any). sink_type + sink_target: comm|session|topic|alert|mcp_queue|webhook|peer plus its target (session id, topic, router/alert name, the pending-events queue that autonomous_events_pending polls for mcp_queue, the https URL for webhook, or the federation peer name for peer). webhook also takes secret_ref. webhook and peer ship disabled until the operator enables them. action_text (optional, requires sink_type \"session\"): text typed into the target session on every match (the send_input action — the only action in this phase). one_shot: delete after the first delivery. coalesce: batch human-facing sinks in quiet windows. expires_in_seconds: optional TTL. Returns the stored subscription record (with its id) as JSON. The CLI equivalent is `datawatch autonomous subscribe`."),
 		mcpsdk.WithString("kinds",
 			mcpsdk.Description("Comma-separated event kinds, e.g. \"task.session_started,prd.blocked\". A kind may also be passed as a JSON string array. At least one of kinds or level is required."),
 		),
@@ -56,11 +81,14 @@ func (s *Server) toolAutonomousSubscribe() mcpsdk.Tool {
 		),
 		mcpsdk.WithString("sink_type",
 			mcpsdk.Required(),
-			mcpsdk.Description("Sink type: \"comm\", \"session\", \"topic\", \"alert\" or \"mcp_queue\". mcp_queue appends matching events to the named pending-events queue (sink_target = queue name; letters, digits and . _ : - only) for a client that cannot receive pushes to poll with autonomous_events_pending."),
+			mcpsdk.Description(subscriptionSinkTypeDesc),
 		),
 		mcpsdk.WithString("sink_target",
 			mcpsdk.Required(),
-			mcpsdk.Description("Sink target (session id / topic / router or alert name / mcp_queue queue name)."),
+			mcpsdk.Description(subscriptionSinkTargetDesc),
+		),
+		mcpsdk.WithString("secret_ref",
+			mcpsdk.Description(subscriptionSecretRefDesc),
 		),
 		mcpsdk.WithString("action_text",
 			mcpsdk.Description("Optional text typed into the sink session when the event fires (requires sink_type \"session\"); the only action supported in this phase is the send_input action."),
@@ -156,10 +184,7 @@ func (s *Server) handleAutonomousSubscribe(ctx context.Context, req mcpsdk.CallT
 
 	body := map[string]any{
 		"filter": filter,
-		"sink": map[string]any{
-			"type":   req.GetString("sink_type", ""),
-			"target": req.GetString("sink_target", ""),
-		},
+		"sink":   subscriptionSinkBody(req),
 	}
 	if actionText := req.GetString("action_text", ""); actionText != "" {
 		body["action"] = map[string]any{"type": "send_input", "text": actionText}

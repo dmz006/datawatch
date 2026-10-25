@@ -94,7 +94,12 @@ func TestPendingEventsCLIRegisteredAndSinkAccepted(t *testing.T) {
 	if !lifecycleSubscriptionSinkTypes["mcp_queue"] {
 		t.Error("subscribe does not accept the mcp_queue sink")
 	}
-	if lifecycleSubscriptionSinkTypes["webhook"] {
-		t.Error("the webhook sink must stay rejected")
+	for _, sink := range []string{"webhook", "peer"} {
+		if !lifecycleSubscriptionSinkTypes[sink] {
+			t.Errorf("subscribe does not accept the %s sink", sink)
+		}
+	}
+	if lifecycleSubscriptionSinkTypes["kafka"] {
+		t.Error("an unknown sink must stay rejected")
 	}
 }

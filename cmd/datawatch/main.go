@@ -54,6 +54,7 @@ import (
 	"github.com/dmz006/datawatch/internal/evals"
 	"github.com/dmz006/datawatch/internal/federation"
 	gitpkg "github.com/dmz006/datawatch/internal/git"
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/hookinstaller"
 	"github.com/dmz006/datawatch/internal/identity"
 	"github.com/dmz006/datawatch/internal/inference"
@@ -97,7 +98,6 @@ import (
 	secretspkg "github.com/dmz006/datawatch/internal/secrets"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
-	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/session"
 	shutdowncause "github.com/dmz006/datawatch/internal/shutdowncause"
 	signalpkg "github.com/dmz006/datawatch/internal/signal"
@@ -6129,13 +6129,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					}, true
 				}
 				// Creation check: the store refuses a webhook subscription whose
-				// delivery is disabled or whose target fails the URL policy.
-				lifeSubStore.SetSinkValidator(func(sub autonomouspkg.Subscription) error {
-					if err := autonomouspkg.ValidateWebhookSubscriptionTarget(sub, lifecycleWebhookSettings()); err != nil {
-						return err
-					}
-					return autonomouspkg.ValidatePeerSubscriptionTarget(sub, lifecycleForwardSettings(), lifecycleLookupPeer)
-				})
+				// delivery is disabled or whose target fails the URL policy, and a
+				// peer subscription whose peer is not usable. The same constructor
+				// backs the REST, MCP, CLI and comm surfaces' parity test.
+				lifeSubStore.SetSinkValidator(autonomouspkg.NewLifecycleSinkValidator(lifecycleWebhookSettings, lifecycleForwardSettings, lifecycleLookupPeer))
 				webhookSink := autonomouspkg.NewWebhookSink(autonomouspkg.WebhookSinkConfig{
 					Settings: lifecycleWebhookSettings,
 					// The signing key is resolved from the vault on every delivery
@@ -6192,8 +6189,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					LocalHost: lifecycleLocalHost,
 				})
 				lifeSubEngine := autonomouspkg.NewLifecycleSubscriptionEngine(amgr, lifeSubStore, autonomouspkg.SessionPushConfig{
-					Webhook: webhookSink,
-						Forwarder: peerForwarder,
+					Webhook:   webhookSink,
+					Forwarder: peerForwarder,
 					// Resolve a session name, full ID, or short ID to the
 					// session's full ID and channel-bridge port (0 when the
 					// session has no bridge — then the engine uses SendInput

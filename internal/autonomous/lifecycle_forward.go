@@ -244,7 +244,8 @@ func ValidatePeerName(name string) error {
 		return fmt.Errorf("peer name is %d characters; limit is %d", len(name), MaxPeerNameLen)
 	}
 	if !peerNameRe.MatchString(name) {
-		return fmt.Errorf("peer name %q may contain only letters, digits and . _ -", name)
+		// The name is not echoed: a pasted credential in the target field must not come back in the answer.
+		return fmt.Errorf("peer name may contain only letters, digits and . _ -")
 	}
 	return nil
 }
@@ -355,6 +356,8 @@ type forwardRun struct {
 	start      time.Time
 	rawTarget  string
 	secret     string
+	attempts   int // POSTs made so far
+	status     int // status of the last response, 0 when none arrived
 }
 
 // Forward sends ev to the federation peer sub names. It returns nil when the
@@ -364,12 +367,19 @@ type forwardRun struct {
 // write the final audit record. An error wrapping ctx.Err() means the context
 // ended first (no alert: the forward was abandoned, not refused).
 func (f *PeerForwarder) Forward(ctx context.Context, sub Subscription, ev LifecycleEvent) error {
+	_, err := f.ForwardReport(ctx, sub, ev)
+	return err
+}
+
+// ForwardReport is Forward that also reports the attempt count and the last
+// response status. Disabled forwarding returns the zero report and nil.
+func (f *PeerForwarder) ForwardReport(ctx context.Context, sub Subscription, ev LifecycleEvent) (DeliveryReport, error) {
 	if f == nil || f.cfg.Settings == nil {
-		return nil
+		return DeliveryReport{}, nil
 	}
 	set := f.cfg.Settings().withDefaults()
 	if !set.Enabled {
-		return nil
+		return DeliveryReport{}, nil
 	}
 
 	run := &forwardRun{
@@ -381,6 +391,13 @@ func (f *PeerForwarder) Forward(ctx context.Context, sub Subscription, ev Lifecy
 		maxAttempt: set.MaxAttempts,
 		start:      f.cfg.Now(),
 	}
+	err := f.forward(ctx, sub, ev, set, run)
+	return DeliveryReport{Attempts: run.attempts, Status: run.status}, err
+}
+
+// forward runs the refusal checks and the attempt loop for one forward; run
+// carries its state.
+func (f *PeerForwarder) forward(ctx context.Context, sub Subscription, ev LifecycleEvent, set ForwardSettings, run *forwardRun) error {
 	if f.cfg.LocalHost != nil {
 		run.local = strings.TrimSpace(f.cfg.LocalHost())
 	}
@@ -442,7 +459,9 @@ func (f *PeerForwarder) Forward(ctx context.Context, sub Subscription, ev Lifecy
 		if cerr := ctx.Err(); cerr != nil {
 			return f.abandon(run, attempt-1, cerr)
 		}
+		run.attempts = attempt
 		res := f.post(ctx, client, endpoint, peer.Token, actor, set, run, body)
+		run.status = res.status
 		switch {
 		case res.ok:
 			f.attemptRecord(run, attempt, res.status, WebhookOutcomeDelivered, "")

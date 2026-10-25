@@ -139,7 +139,8 @@ func TestSubscriptionSurface_ParseCommSubUpdate(t *testing.T) {
 		want string
 	}{
 		{"bare word", []string{"prd.blocked"}, "not key=value"},
-		{"unknown key", []string{"sink=topic"}, "unknown key"},
+		{"unknown key", []string{"colour=blue"}, "unknown key"},
+		{"sink outside the channel set", []string{"sink=topic"}, "sink must be comm, webhook or peer"},
 		{"bad level", []string{"level=story"}, "level must be prd or task"},
 		{"bad bool", []string{"coalesce=maybe"}, "must be true or false"},
 		{"bad expires", []string{"expires=-5"}, "non-negative"},

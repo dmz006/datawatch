@@ -34,6 +34,31 @@ var lifecycleSubscriptionSinkTypes = map[string]bool{
 	"topic":     true,
 	"alert":     true,
 	"mcp_queue": true,
+	"webhook":   true,
+	"peer":      true,
+}
+
+// lifecycleSinkTypeList is the operator-facing list of --sink values, used by
+// the help text and the validation messages.
+const lifecycleSinkTypeList = "comm, session, topic, alert, mcp_queue, webhook, peer"
+
+// applyLifecycleSecretRef sets the webhook signing reference on a subscription
+// body's sink. --secret-ref is valid only with --sink webhook, and a webhook
+// sink needs it. The daemon enforces the same rule; this check gives the
+// operator the message before the request is sent.
+func applyLifecycleSecretRef(sink map[string]any, sinkName, secretRef string) error {
+	ref := strings.TrimSpace(secretRef)
+	if sinkName == "webhook" && ref == "" {
+		return fmt.Errorf("--sink webhook requires --secret-ref, the ${secret:name} vault reference that signs each delivery")
+	}
+	if ref == "" {
+		return nil
+	}
+	if sinkName != "webhook" {
+		return fmt.Errorf("--secret-ref is only valid with --sink webhook (got %q)", sinkName)
+	}
+	sink["secret_ref"] = ref
+	return nil
 }
 
 // shortKindToTask maps the --on shorthand kinds (bare words like
@@ -71,13 +96,14 @@ func newAutonomousSubscribeCmd() *cobra.Command {
 		taskID     string
 		sinkType   string
 		target     string
+		secretRef  string
 		sendText   string
 		oneShot    bool
 		coalesce   bool
 		expiresSec int
 	)
 	cmd := &cobra.Command{
-		Use:   "subscribe --on <kind> [--level prd|task] [--prd <id>] [--task <id>] --sink <type> --target <t> [--send <text> [--one-shot] [--coalesce] [--expires <seconds>]]",
+		Use:   "subscribe --on <kind> [--level prd|task] [--prd <id>] [--task <id>] --sink <type> --target <t> [--secret-ref <ref>] [--send <text> [--one-shot] [--coalesce] [--expires <seconds>]]",
 		Short: "Subscribe to Automaton lifecycle events and route them to a sink (BL427)",
 		Long: `Subscribe to Automaton (PRD/task) lifecycle events. When a matching event
 fires the daemon delivers it to the chosen sink:
@@ -86,6 +112,14 @@ fires the daemon delivers it to the chosen sink:
   --sink topic    SSE / mobile push topic
   --sink alert    the in-app alert store
   --sink mcp_queue  a named pending-events queue; read it with autonomous events
+  --sink webhook  a signed POST to an https receiver; --target is the URL and
+                  --secret-ref is the ${secret:name} vault reference that signs it
+  --sink peer     a registered federation peer; --target is its registered name
+
+The webhook and peer sinks ship disabled. The daemon refuses a webhook whose
+host is not on the operator's allow-list, and a peer that is not a federated
+peer granting autonomous:write, while delivery is disabled. A literal secret
+is refused: --secret-ref takes the reference, never the value.
 
 --on <kind> is repeatable and takes event kinds; shorthand words map to
 task kinds (session_started = task.session_started) and full kinds pass
@@ -124,17 +158,21 @@ Example — notify a comm router whenever any PRD reaches blocked:
 				sink = "session" // --send implies a session sink
 			}
 			if sink == "" {
-				return fmt.Errorf("--sink is required (one of: comm, session, topic, alert, mcp_queue)")
+				return fmt.Errorf("--sink is required (one of: %s)", lifecycleSinkTypeList)
 			}
 			if !lifecycleSubscriptionSinkTypes[sink] {
-				return fmt.Errorf("unknown --sink %q (want one of comm, session, topic, alert, mcp_queue)", sink)
+				return fmt.Errorf("unknown --sink %q (want one of %s)", sink, lifecycleSinkTypeList)
 			}
 			tgt := strings.TrimSpace(target)
 			if tgt == "" && sink == "session" {
 				tgt = strings.TrimSpace(os.Getenv("DATAWATCH_SESSION_ID"))
 			}
 			if tgt == "" {
-				return fmt.Errorf("--target is required (the %s sink's target, e.g. a session id, topic, or router name)", sink)
+				return fmt.Errorf("--target is required (the %s sink's target, e.g. a session id, topic, router name, webhook URL or peer name)", sink)
+			}
+			sinkBody := map[string]any{"type": sink, "target": tgt}
+			if err := applyLifecycleSecretRef(sinkBody, sink, secretRef); err != nil {
+				return err
 			}
 			body := map[string]any{
 				"filter": map[string]any{
@@ -143,7 +181,7 @@ Example — notify a comm router whenever any PRD reaches blocked:
 					"prd_id":  prdID,
 					"task_id": taskID,
 				},
-				"sink": map[string]any{"type": sink, "target": tgt},
+				"sink": sinkBody,
 			}
 			if sendText != "" {
 				if sink != "session" {
@@ -174,8 +212,9 @@ Example — notify a comm router whenever any PRD reaches blocked:
 	cmd.Flags().StringVar(&level, "level", "", "event level: prd or task (required with --on omitted)")
 	cmd.Flags().StringVar(&prdID, "prd", "", "only match events for this Automaton (PRD) id")
 	cmd.Flags().StringVar(&taskID, "task", "", "only match events for this task id (also implies --one-shot unless set explicitly)")
-	cmd.Flags().StringVar(&sinkType, "sink", "", "sink type: comm | session | topic | alert | mcp_queue")
-	cmd.Flags().StringVar(&target, "target", "", "sink target (session id / topic / router or alert name)")
+	cmd.Flags().StringVar(&sinkType, "sink", "", "sink type: "+lifecycleSinkTypeList)
+	cmd.Flags().StringVar(&target, "target", "", "sink target (session id / topic / router or alert name / webhook URL / peer name)")
+	cmd.Flags().StringVar(&secretRef, "secret-ref", "", "webhook sink only: the ${secret:name} vault reference that signs each delivery (a literal value is refused)")
 	cmd.Flags().StringVar(&sendText, "send", "", "text typed into the session sink on every match (requires --sink session)")
 	cmd.Flags().BoolVar(&oneShot, "one-shot", false, "delete the subscription after its first delivery (on by default when --task is given)")
 	cmd.Flags().BoolVar(&coalesce, "coalesce", false, "batch human-facing sink deliveries in quiet windows")

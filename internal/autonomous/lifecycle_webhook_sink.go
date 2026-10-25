@@ -264,6 +264,16 @@ type webhookRun struct {
 	start      time.Time
 	rawTarget  string
 	secret     string
+	attempts   int // POSTs made so far
+	status     int // status of the last response, 0 when none arrived
+}
+
+// DeliveryReport is the outcome of a delivery that reached the attempt loop:
+// how many POSTs were made and the status of the last response (0 when the
+// last attempt got no HTTP response). The subscription test reports both.
+type DeliveryReport struct {
+	Attempts int
+	Status   int
 }
 
 // webhookAttempt is the result of one POST.
@@ -283,12 +293,19 @@ type webhookAttempt struct {
 // error wrapping ctx.Err() when ctx ended first (no alert: the delivery was
 // abandoned, not refused by the receiver).
 func (s *WebhookSink) Deliver(ctx context.Context, sub Subscription, ev LifecycleEvent) error {
+	_, err := s.DeliverReport(ctx, sub, ev)
+	return err
+}
+
+// DeliverReport is Deliver that also reports the attempt count and the last
+// response status. A disabled sink returns the zero report and nil.
+func (s *WebhookSink) DeliverReport(ctx context.Context, sub Subscription, ev LifecycleEvent) (DeliveryReport, error) {
 	if s.cfg.Settings == nil {
-		return nil
+		return DeliveryReport{}, nil
 	}
 	set := s.cfg.Settings().withDefaults()
 	if !set.Enabled {
-		return nil
+		return DeliveryReport{}, nil
 	}
 
 	run := &webhookRun{
@@ -299,7 +316,12 @@ func (s *WebhookSink) Deliver(ctx context.Context, sub Subscription, ev Lifecycl
 		start:      s.cfg.Now(),
 		rawTarget:  sub.Sink.Target,
 	}
+	err := s.deliverRun(ctx, sub, ev, set, run)
+	return DeliveryReport{Attempts: run.attempts, Status: run.status}, err
+}
 
+// deliverRun runs the attempt loop for one delivery; run carries its state.
+func (s *WebhookSink) deliverRun(ctx context.Context, sub Subscription, ev LifecycleEvent, set WebhookSettings, run *webhookRun) error {
 	u, err := ValidateWebhookURL(sub.Sink.Target, set.AllowHosts)
 	if err != nil {
 		return s.dropBeforeSend(run, WebhookOutcomeRefused, err)
@@ -324,7 +346,9 @@ func (s *WebhookSink) Deliver(ctx context.Context, sub Subscription, ev Lifecycl
 		if cerr := ctx.Err(); cerr != nil {
 			return s.abandon(run, attempt-1, cerr)
 		}
+		run.attempts = attempt
 		res := s.post(ctx, client, u, set, run, body, ev.Kind)
+		run.status = res.status
 		switch {
 		case res.ok:
 			s.attemptRecord(run, attempt, res.status, WebhookOutcomeDelivered, "")

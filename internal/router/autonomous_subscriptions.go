@@ -78,13 +78,60 @@ var commSubShortKinds = map[string]string{
 }
 
 // commSubUsage is the operator-facing syntax line for "subscribe".
-const commSubUsage = "usage: autonomous subscribe <kinds|short-names> [prd=<id>] [task=<id>]  (e.g. autonomous subscribe session_started,prd.blocked prd=prd_a3f9)"
+const commSubUsage = "usage: autonomous subscribe <kinds|short-names> [prd=<id>] [task=<id>] [sink=comm|webhook|peer] [target=<t>] [secret_ref=${secret:name}]  (e.g. autonomous subscribe session_started,prd.blocked prd=prd_a3f9)"
 
-// commSubArgs is the parsed form of "subscribe <kinds…> [prd=<id>] [task=<id>]".
+// commSubArgs is the parsed form of "subscribe <kinds…> [prd=<id>] [task=<id>] [sink=…] [target=…] [secret_ref=…]".
 type commSubArgs struct {
-	kinds  []string
-	prdID  string
-	taskID string
+	kinds     []string
+	prdID     string
+	taskID    string
+	sinkType  string // "" means comm
+	target    string
+	secretRef string
+}
+
+// commSubSinkTypes are the sinks a channel may subscribe with: its own comm
+// sink, or the webhook and peer sinks, each still gated by the operator's
+// live settings (allow-list, federation registry) on the daemon.
+var commSubSinkTypes = map[string]bool{"comm": true, "webhook": true, "peer": true}
+
+// commSubSinkBody builds the "sink" object of a channel subscription. A comm
+// sink always delivers to the calling channel (identity), so it takes no
+// target of its own and no secret reference. A webhook needs its URL and its
+// ${secret:name} reference; a peer needs its registered name. The daemon checks
+// the same rules again and remains authoritative.
+func commSubSinkBody(sinkType, target, secretRef, identity string) (map[string]any, error) {
+	if sinkType == "" {
+		sinkType = "comm"
+	}
+	if !commSubSinkTypes[sinkType] {
+		return nil, fmt.Errorf("sink must be comm, webhook or peer, got %q", sinkType)
+	}
+	target = strings.TrimSpace(target)
+	secretRef = strings.TrimSpace(secretRef)
+	if sinkType != "webhook" && secretRef != "" {
+		return nil, fmt.Errorf("secret_ref is only valid with sink=webhook (got sink=%s)", sinkType)
+	}
+	switch sinkType {
+	case "comm":
+		if target != "" && target != identity {
+			return nil, fmt.Errorf("a comm subscription always delivers to this channel; omit target=")
+		}
+		return map[string]any{"type": "comm", "target": identity}, nil
+	case "webhook":
+		if target == "" {
+			return nil, fmt.Errorf("sink=webhook needs target=<https URL>  (%s)", commSubUsage)
+		}
+		if secretRef == "" {
+			return nil, fmt.Errorf("sink=webhook needs secret_ref=${secret:name}, the vault reference that signs each delivery")
+		}
+		return map[string]any{"type": "webhook", "target": target, "secret_ref": secretRef}, nil
+	default: // peer
+		if target == "" {
+			return nil, fmt.Errorf("sink=peer needs target=<registered peer name>")
+		}
+		return map[string]any{"type": "peer", "target": target}, nil
+	}
 }
 
 // resolveCommSubKind normalizes one kind token: full kinds (containing
@@ -134,6 +181,18 @@ func parseCommSubscribe(args []string) (commSubArgs, error) {
 			out.taskID = strings.TrimSpace(v)
 			continue
 		}
+		if v, ok := strings.CutPrefix(a, "sink="); ok {
+			out.sinkType = strings.TrimSpace(v)
+			continue
+		}
+		if v, ok := strings.CutPrefix(a, "target="); ok {
+			out.target = strings.TrimSpace(v)
+			continue
+		}
+		if v, ok := strings.CutPrefix(a, "secret_ref="); ok {
+			out.secretRef = strings.TrimSpace(v)
+			continue
+		}
 		// Kind token(s): one or more, comma-separated.
 		for _, p := range strings.Split(a, ",") {
 			if p = strings.TrimSpace(p); p == "" {
@@ -156,14 +215,15 @@ func parseCommSubscribe(args []string) (commSubArgs, error) {
 // commSubRecord is one persisted subscription in the shape these verbs
 // need (a projection of autonomous.Subscription's JSON).
 type commSubRecord struct {
-	id       string
-	kindList []string
-	PRDID    string
-	TaskID   string
-	SinkType string
-	Target   string
-	Owner    string
-	Coalesce bool
+	id        string
+	kindList  []string
+	PRDID     string
+	TaskID    string
+	SinkType  string
+	Target    string
+	SecretRef string // the reference text only; the daemon never returns a value
+	Owner     string
+	Coalesce  bool
 }
 
 // decodeCommSubRecord parses one record from the daemon (the 201 body of
@@ -179,8 +239,9 @@ func decodeCommSubRecord(body string) (commSubRecord, error) {
 			TaskID string   `json:"task_id"`
 		} `json:"filter"`
 		Sink struct {
-			Type   string `json:"type"`
-			Target string `json:"target"`
+			Type      string `json:"type"`
+			Target    string `json:"target"`
+			SecretRef string `json:"secret_ref"`
 		} `json:"sink"`
 	}
 	if err := json.Unmarshal([]byte(body), &raw); err != nil {
@@ -190,14 +251,15 @@ func decodeCommSubRecord(body string) (commSubRecord, error) {
 		return commSubRecord{}, fmt.Errorf("record has no id")
 	}
 	return commSubRecord{
-		id:       raw.ID,
-		kindList: raw.Filter.Kinds,
-		PRDID:    raw.Filter.PRDID,
-		TaskID:   raw.Filter.TaskID,
-		SinkType: raw.Sink.Type,
-		Target:   raw.Sink.Target,
-		Owner:    raw.Owner,
-		Coalesce: raw.Coalesce,
+		id:        raw.ID,
+		kindList:  raw.Filter.Kinds,
+		PRDID:     raw.Filter.PRDID,
+		TaskID:    raw.Filter.TaskID,
+		SinkType:  raw.Sink.Type,
+		Target:    raw.Sink.Target,
+		SecretRef: raw.Sink.SecretRef,
+		Owner:     raw.Owner,
+		Coalesce:  raw.Coalesce,
 	}, nil
 }
 
@@ -213,9 +275,11 @@ func renderCommSubLine(rec commSubRecord) string {
 	if rec.TaskID != "" {
 		parts = append(parts, "task="+rec.TaskID)
 	}
-	parts = append(parts,
-		fmt.Sprintf("sink=%s -> %s", rec.SinkType, rec.Target),
-		fmt.Sprintf("coalesce=%t", rec.Coalesce))
+	parts = append(parts, fmt.Sprintf("sink=%s -> %s", rec.SinkType, rec.Target))
+	if rec.SecretRef != "" {
+		parts = append(parts, "secret_ref="+rec.SecretRef)
+	}
+	parts = append(parts, fmt.Sprintf("coalesce=%t", rec.Coalesce))
 	return strings.Join(parts, " ")
 }
 
@@ -253,15 +317,23 @@ func (r *Router) handleAutonomousSubsSubscribe(args []string) {
 	}
 
 	identity := r.commSubIdentity()
+	sink, err := commSubSinkBody(p.sinkType, p.target, p.secretRef, identity)
+	if err != nil {
+		r.reply("autonomous subscribe", err.Error())
+		return
+	}
+	// Comm channels batch per Automaton during the quiet window; the other
+	// sinks deliver each matching event as it fires.
+	coalesce := sink["type"] == "comm"
 	body, err := json.Marshal(map[string]any{
 		"filter": map[string]any{
 			"kinds":   p.kinds,
 			"prd_id":  p.prdID,
 			"task_id": p.taskID,
 		},
-		"sink":     map[string]any{"type": "comm", "target": identity},
+		"sink":     sink,
 		"owner":    identity,
-		"coalesce": true, // comm channels batch per Automaton during the quiet window
+		"coalesce": coalesce,
 	})
 	if err != nil {
 		r.reply("autonomous subscribe", err.Error())
@@ -279,19 +351,7 @@ func (r *Router) handleAutonomousSubsSubscribe(args []string) {
 		r.reply("autonomous subscribe", prettyJSON(resp))
 		return
 	}
-	r.reply("autonomous subscribe", fmt.Sprintf(
-		"subscribed %s  kinds=%s%s%s  sink=comm -> %s  coalesce=yes  (owner %s)",
-		rec.id, strings.Join(rec.kindList, ","),
-		scopePart("prd=", rec.PRDID), scopePart("task=", rec.TaskID),
-		rec.Target, rec.Owner))
-}
-
-// scopePart renders " <k>v" when v is non-empty, else "".
-func scopePart(k, v string) string {
-	if v == "" {
-		return ""
-	}
-	return " " + k + v
+	r.reply("autonomous subscribe", fmt.Sprintf("subscribed %s  (owner %s)", renderCommSubLine(rec), rec.Owner))
 }
 
 // ── unsubscribe ────────────────────────────────────────────────────────────

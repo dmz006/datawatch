@@ -243,3 +243,17 @@ func ValidateWebhookSubscriptionTarget(sub Subscription, set WebhookSettings) er
 	}
 	return nil
 }
+
+// NewLifecycleSinkValidator returns the live check a daemon installs on the
+// subscription store (SetSinkValidator). A webhook sink must pass the webhook
+// settings (delivery enabled, target on the allow-list); a peer sink must pass
+// the forwarding settings and the peer registry. The daemon and the parity
+// tests install this one constructor, so the two cannot drift apart.
+func NewLifecycleSinkValidator(webhook func() WebhookSettings, forward func() ForwardSettings, lookup func(name string) (PeerRef, bool)) func(Subscription) error {
+	return func(sub Subscription) error {
+		if err := ValidateWebhookSubscriptionTarget(sub, webhook()); err != nil {
+			return err
+		}
+		return ValidatePeerSubscriptionTarget(sub, forward(), lookup)
+	}
+}

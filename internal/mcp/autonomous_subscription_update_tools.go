@@ -45,10 +45,13 @@ func (s *Server) toolAutonomousSubscriptionUpdate() mcpsdk.Tool {
 			mcpsdk.Description("Only match events for this task id; omitted = any task."),
 		),
 		mcpsdk.WithString("sink_type",
-			mcpsdk.Description("Sink type: \"comm\", \"session\", \"topic\", \"alert\" or \"mcp_queue\"."),
+			mcpsdk.Description(subscriptionSinkTypeDesc),
 		),
 		mcpsdk.WithString("sink_target",
-			mcpsdk.Description("Sink target (session id / topic / router or alert name / mcp_queue queue name)."),
+			mcpsdk.Description(subscriptionSinkTargetDesc),
+		),
+		mcpsdk.WithString("secret_ref",
+			mcpsdk.Description(subscriptionSecretRefDesc),
 		),
 		mcpsdk.WithString("action_text",
 			mcpsdk.Description("Optional text typed into the sink session when the event fires (requires sink_type \"session\")."),
@@ -99,10 +102,7 @@ func subscriptionPutBody(req mcpsdk.CallToolRequest) (body map[string]any, reaso
 
 	body = map[string]any{
 		"filter": filter,
-		"sink": map[string]any{
-			"type":   req.GetString("sink_type", ""),
-			"target": req.GetString("sink_target", ""),
-		},
+		"sink":   subscriptionSinkBody(req),
 	}
 	if actionText := req.GetString("action_text", ""); actionText != "" {
 		body["action"] = map[string]any{"type": "send_input", "text": actionText}
