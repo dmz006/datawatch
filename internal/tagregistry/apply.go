@@ -80,8 +80,15 @@ func (r *Registry) createLocked(w Write) (WriteResult, error) {
 }
 
 // mergeLocked folds a pending create into the keeper tag at index kept. It
-// records a merge note naming both nodes and returns the kept tag.
+// records a merge note naming both nodes and returns the kept tag. A retried
+// push of the same pending tag returns the note it already recorded, so a push
+// that failed after the keeper committed does not add a second note.
 func (r *Registry) mergeLocked(w Write, kept int) WriteResult {
+	if n, ok := r.mergeNoteLocked(w.TagID); ok {
+		res := r.resultLocked(kept)
+		res.Merge = &n
+		return res
+	}
 	k := r.st.Tags[kept]
 	note := Note{
 		ID:         r.newID(),
@@ -98,6 +105,17 @@ func (r *Registry) mergeLocked(w Write, kept int) WriteResult {
 	res := r.resultLocked(kept)
 	res.Merge = &note
 	return res
+}
+
+// mergeNoteLocked returns the merge note that recorded the merge of replacedID,
+// if the registry holds one. Callers hold mu.
+func (r *Registry) mergeNoteLocked(replacedID string) (Note, bool) {
+	for _, n := range r.st.Notes {
+		if n.Kind == NoteMerged && n.ReplacedID == replacedID {
+			return n, true
+		}
+	}
+	return Note{}, false
 }
 
 // editLocked changes one field of a tag: its name, color or description.

@@ -6,7 +6,9 @@ import (
 )
 
 // Store is the local tag store on this daemon. The autonomous manager adapts
-// its own tag and assignment records to it.
+// its own tag and assignment records to it. Each method should either apply its
+// whole change or leave the store as it was, because the registry cannot undo a
+// store call that succeeded.
 type Store interface {
 	// ListTags returns every tag record the store holds.
 	ListTags() ([]Tag, error)

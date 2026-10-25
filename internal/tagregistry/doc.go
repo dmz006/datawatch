@@ -26,9 +26,33 @@
 // dropped from the peer's assignments with a note saying it was removed on the
 // keeper.
 //
-// The package has no network code and does not touch the autonomous manager
-// directly. The caller supplies a Store (the local tag store), a KeeperClient
-// (the federation client that talks to the keeper), an optional Cache and a
-// Clock. Tests use fakes for all of them. A standalone daemon never syncs, so
-// its registry does no network work and its writes are plain local writes.
+// The package has no network code. The caller supplies a Store (the local tag
+// store), a KeeperClient (the federation client that talks to the keeper), an
+// optional Cache and a Clock. Tests use fakes for all of them. A standalone
+// daemon never syncs, so its registry does no network work and its writes are
+// plain local writes.
+//
+// The tag errors (ErrTagCycle, ErrTagInUse, InUseError and the others) are the
+// autonomous package's own values, so one errors.Is check matches a refusal
+// from either. That makes this package import autonomous. For that reason the
+// store adapter that wraps the autonomous tag records must live outside
+// autonomous, or the import would cycle.
+//
+// Commit order. A change to the registry is first made in memory, then the
+// cache is saved, then the store is changed. The cache save is the commit point:
+// when it fails, the registry goes back to its previous state and the store is
+// not touched. A store step that fails restores the registry and writes the
+// previous copy back to the cache. A store step that fails after an earlier
+// step already changed the store is not undone, because the Store interface has
+// no inverse operations; the error reports it.
+//
+// Roles. An empty autonomous.tags.registry_keeper gives RoleStandalone: the
+// daemon keeps its own tags and nothing syncs. A value equal to the daemon's own
+// name gives RoleKeeper, and any other value gives RolePeer.
+//
+// Not wired yet. This package is the core only. The autonomous store adapter,
+// the federation KeeperClient, the REST, MCP and CLI handlers that call
+// Registry, the tag event hook that calls Notify, and the Run goroutine in daemon
+// startup are follow-up work. Until they land, autonomous.tags.registry_keeper
+// and registry_sync_seconds do not change behaviour.
 package tagregistry

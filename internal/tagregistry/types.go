@@ -2,8 +2,9 @@ package tagregistry
 
 import (
 	"errors"
-	"fmt"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/autonomous"
 )
 
 // Role is what a daemon does for the shared tag registry.
@@ -157,30 +158,26 @@ var (
 	ErrKeeperUnreachable = errors.New("tag registry keeper is unreachable")
 	// ErrNotKeeper is returned when a keeper-only operation is asked of a peer.
 	ErrNotKeeper = errors.New("this daemon does not keep the tag registry")
-	// ErrTagNotFound matches a tag that does not exist.
-	ErrTagNotFound = errors.New("tag not found")
-	// ErrTagInvalid matches a rejected tag value, such as an empty name.
-	ErrTagInvalid = errors.New("invalid tag")
-	// ErrTagHasChildren matches a delete refused because child tags remain.
-	ErrTagHasChildren = errors.New("tag has child tags")
-	// ErrTagInUse matches a delete refused because the tag is still assigned.
-	ErrTagInUse = errors.New("tag is assigned to automata or sessions")
-	// ErrTagCycle matches a re-parent that would make a tag its own ancestor.
-	ErrTagCycle = errors.New("tag parent change would create a cycle")
 	// ErrNoteNotFound matches a dismissal of a note that does not exist.
 	ErrNoteNotFound = errors.New("merge note not found")
 )
 
-// InUseError reports how many items still carry a tag. It matches ErrTagInUse
-// via errors.Is.
-type InUseError struct {
-	TagID string
-	Count int
-}
+// The tag errors are the autonomous package's own values. A refusal by the
+// registry therefore matches the same errors.Is checks as a refusal by the tag
+// store, and the REST layer maps both the same way.
+var (
+	// ErrTagNotFound matches a tag that does not exist.
+	ErrTagNotFound = autonomous.ErrTagNotFound
+	// ErrTagInvalid matches a rejected tag value, such as an empty name.
+	ErrTagInvalid = autonomous.ErrTagInvalid
+	// ErrTagHasChildren matches a delete refused because child tags remain.
+	ErrTagHasChildren = autonomous.ErrTagHasChildren
+	// ErrTagInUse matches a delete refused because the tag is still assigned.
+	ErrTagInUse = autonomous.ErrTagInUse
+	// ErrTagCycle matches a re-parent that would make a tag its own ancestor.
+	ErrTagCycle = autonomous.ErrTagCycle
+)
 
-func (e *InUseError) Error() string {
-	return fmt.Sprintf("tag %q is assigned to %d automata or sessions", e.TagID, e.Count)
-}
-
-// Is makes an InUseError match ErrTagInUse.
-func (e *InUseError) Is(target error) bool { return target == ErrTagInUse }
+// InUseError reports how many items still carry a tag. It is the autonomous
+// package's TagInUseError, and it matches ErrTagInUse via errors.Is.
+type InUseError = autonomous.TagInUseError

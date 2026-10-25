@@ -178,18 +178,61 @@ func (r *Registry) Run(ctx context.Context) {
 	}
 }
 
-// mutateLocked runs change against the state and saves the result. When the
-// change or the save fails, the state goes back to what it was, so a failed
-// write leaves no trace in this daemon's copy. Callers hold mu.
+// storeStep is one change to the local store that a committed state needs,
+// such as removing the assignments of a tag the keeper deleted.
+type storeStep func() error
+
+// mutateLocked runs change against the state and commits the result. It is
+// mutateWithStoreLocked for a change that needs no store step beyond mirroring
+// the tags. Callers hold mu.
 func (r *Registry) mutateLocked(change func() error) error {
+	return r.mutateWithStoreLocked(func(*[]storeStep) error { return change() })
+}
+
+// mutateWithStoreLocked runs change against the state and commits the result.
+// change edits r.st in memory, validates everything it can, and appends the
+// store steps the new state needs. The commit runs in this order:
+//
+//  1. The cache is saved. This is the commit point. A failed save restores the
+//     state and returns before any store step, so the store is never changed
+//     for a write that did not commit.
+//  2. The store steps run, then the tags are mirrored to the store. A failed
+//     step restores the state and writes the previous copy back to the cache.
+//
+// A store step that fails after an earlier step changed the store cannot be
+// undone by this package, because the Store interface has no inverse
+// operations. The error says so. Callers hold mu.
+func (r *Registry) mutateWithStoreLocked(change func(steps *[]storeStep) error) error {
 	prev := r.st.clone()
-	if err := change(); err != nil {
+	var steps []storeStep
+	if err := change(&steps); err != nil {
 		r.st = prev
 		return err
 	}
-	if err := r.commitLocked(); err != nil {
+	if err := r.saveLocked(); err != nil {
 		r.st = prev
 		return err
+	}
+	if err := r.runStoreStepsLocked(steps); err != nil {
+		r.st = prev
+		if serr := r.saveStateLocked(prev); serr != nil {
+			return errors.Join(err, fmt.Errorf("tag registry: restore cache: %w", serr))
+		}
+		return err
+	}
+	return nil
+}
+
+// runStoreStepsLocked runs the store steps of a committed change and then
+// mirrors the tags to the store. Callers hold mu.
+func (r *Registry) runStoreStepsLocked(steps []storeStep) error {
+	for _, step := range steps {
+		if err := step(); err != nil {
+			return err
+		}
+	}
+	if err := r.store.ApplySnapshot(copyTags(r.st.Tags)); err != nil {
+		return fmt.Errorf("tag registry: apply tags to store: %w", err)
 	}
 	return nil
 }
@@ -213,20 +256,17 @@ func (s state) clone() state {
 	return out
 }
 
-// commitLocked mirrors the tags to the store and saves the state. Callers hold mu.
-func (r *Registry) commitLocked() error {
-	if err := r.store.ApplySnapshot(copyTags(r.st.Tags)); err != nil {
-		return fmt.Errorf("tag registry: apply tags to store: %w", err)
-	}
-	return r.saveLocked()
-}
-
 // saveLocked writes the state to the cache, if there is one. Callers hold mu.
 func (r *Registry) saveLocked() error {
+	return r.saveStateLocked(r.st)
+}
+
+// saveStateLocked writes s to the cache, if there is one. Callers hold mu.
+func (r *Registry) saveStateLocked(s state) error {
 	if r.cache == nil {
 		return nil
 	}
-	data, err := json.Marshal(r.st)
+	data, err := json.Marshal(s)
 	if err != nil {
 		return fmt.Errorf("tag registry: encode cache: %w", err)
 	}

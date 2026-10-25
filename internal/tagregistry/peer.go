@@ -299,15 +299,18 @@ func (r *Registry) pendingWrite(id string) (Write, bool) {
 func (r *Registry) adoptPush(pendingID string, res WriteResult) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.mutateLocked(func() error {
+	return r.mutateWithStoreLocked(func(steps *[]storeStep) error {
 		if res.Merge == nil {
 			r.upsertLocked(res.Tag)
 			return nil
 		}
 		kept := res.Tag
-		if _, err := r.store.RewriteAssignments(pendingID, kept.ID); err != nil {
-			return fmt.Errorf("tag registry: rewrite assignments of %q: %w", pendingID, err)
-		}
+		*steps = append(*steps, func() error {
+			if _, err := r.store.RewriteAssignments(pendingID, kept.ID); err != nil {
+				return fmt.Errorf("tag registry: rewrite assignments of %q: %w", pendingID, err)
+			}
+			return nil
+		})
 		r.dropTagLocked(pendingID, kept.ID)
 		r.upsertLocked(kept)
 		r.addNoteLocked(*res.Merge)
@@ -322,39 +325,50 @@ func (r *Registry) adoptPush(pendingID string, res WriteResult) error {
 func (r *Registry) applySnapshot(snap Snapshot) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.mutateLocked(func() error { return r.applySnapshotLocked(snap) })
+	return r.mutateWithStoreLocked(func(steps *[]storeStep) error {
+		return r.applySnapshotLocked(snap, steps)
+	})
 }
 
-// applySnapshotLocked is applySnapshot's change. Callers hold mu through mutateLocked.
-func (r *Registry) applySnapshotLocked(snap Snapshot) error {
+// applySnapshotLocked is applySnapshot's change. A tag the keeper no longer has
+// is counted in the store before anything changes. When it has assignments, the
+// removed-on-keeper note goes into the state and the removal goes into steps,
+// so both commit together or neither does. Callers hold mu through
+// mutateWithStoreLocked.
+func (r *Registry) applySnapshotLocked(snap Snapshot, steps *[]storeStep) error {
 	known := map[string]bool{}
 	for _, t := range snap.Tags {
 		known[t.ID] = true
 	}
 	before := copyTags(r.st.Tags)
-	var removed []Tag
-	for _, t := range before {
-		if !t.PendingSync && !known[t.ID] {
-			removed = append(removed, t)
-		}
-	}
 	gone := map[string]bool{}
-	for _, t := range removed {
+	for _, t := range before {
+		if t.PendingSync || known[t.ID] {
+			continue
+		}
 		gone[t.ID] = true
-		n, err := r.store.RemoveAssignments(t.ID)
+		n, err := r.store.AssignmentCount(t.ID)
 		if err != nil {
-			return fmt.Errorf("tag registry: drop assignments of %q: %w", t.ID, err)
+			return fmt.Errorf("tag registry: count assignments of %q: %w", t.ID, err)
 		}
-		if n > 0 {
-			r.addNoteLocked(Note{
-				ID:         r.newID(),
-				Kind:       NoteRemovedOnKeeper,
-				Name:       t.Name,
-				ParentPath: pathOf(before, t.ParentID),
-				TagID:      t.ID,
-				MergedAt:   r.clock.Now(),
-			})
+		if n == 0 {
+			continue
 		}
+		id := t.ID
+		*steps = append(*steps, func() error {
+			if _, err := r.store.RemoveAssignments(id); err != nil {
+				return fmt.Errorf("tag registry: drop assignments of %q: %w", id, err)
+			}
+			return nil
+		})
+		r.addNoteLocked(Note{
+			ID:         r.newID(),
+			Kind:       NoteRemovedOnKeeper,
+			Name:       t.Name,
+			ParentPath: pathOf(before, t.ParentID),
+			TagID:      t.ID,
+			MergedAt:   r.clock.Now(),
+		})
 	}
 	tags := make([]Tag, 0, len(snap.Tags))
 	for _, t := range snap.Tags {
