@@ -328,7 +328,7 @@ Options:
 
 Recommendation: option 2, because the repository keeps its normal review path and the daemon never writes files on its own.
 
-Status: Not decided.
+Status: **Decided by the operator, 2026-10-25: option 2**, with hand editing kept as an option and full editing by the daemon kept as a future idea to examine ("2 but others may want to edit by hand so leave that as an option,  keep full editing as a future idea to examine").
 
 ### 6.j The form of the return path
 

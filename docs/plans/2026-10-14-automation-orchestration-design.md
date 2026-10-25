@@ -2748,4 +2748,8 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 **Status 2026-10-25:** every open point in the decision channel proposal (6.a to 6.k) is now answered, except the proposal's own remaining parts noted in its sections. The next step is to turn it into the first implementation PRD (storage and REST), gated on the proposal's `Confirmed:` line, which the operator flips.
 
+24. **Who writes a decision into the repository documents (proposal 6.i, answer: "2 but others may want to edit by hand so leave that as an option,  keep full editing as a future idea to examine").** The daemon records the link and the operator's exact words, and a docs-only change applies them through the normal repository path (the supervisor or the Automation makes it); the daemon never writes repository files on its own. Editing the document by hand stays available as an option for users who prefer it, and the record is the same either way. **Future idea to examine, not built:** letting the daemon edit and commit the documents itself (full editing), with its safety and review implications to be worked out first.
+
+**Status 2026-10-25:** all points of the decision channel proposal (6.a to 6.k) are decided. The proposal's `Confirmed:` line is still `no` until the operator flips it; the first implementation PRD (storage and REST) can be filed and gated on it.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
