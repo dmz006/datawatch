@@ -3775,6 +3775,11 @@ func validateLoaded(cfg *Config) error {
 			return fmt.Errorf("autonomous.%s: %d must be >= 0", k, v)
 		}
 	}
+	for _, n := range cfg.ComputeNodes {
+		if n.SessionSlots < 0 {
+			return fmt.Errorf("compute_nodes[%s].session_slots: %d must be >= 0", n.Name, n.SessionSlots)
+		}
+	}
 	switch cfg.Autonomous.ProjectWriteSerialization {
 	case autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel:
 		// ok

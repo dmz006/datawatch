@@ -109,7 +109,9 @@ Other channels:
   `datawatch capacity` (add `--json`), `datawatch config set
   autonomous.capacity_wait_timeout_seconds 7200`.
 - **Chat channels:** `capacity`, and `configure
-  session.reserved_interactive=2`.
+  session.reserved_interactive=2`, and `compute node update <name> session_slots=N`
+  (0 = derive from observer data; a node update replaces the whole node, so repeat
+  every field you want to keep).
 - **YAML:**
 
 ```yaml
@@ -120,6 +122,11 @@ autonomous:
   capacity_enabled: true
   capacity_wait_timeout_seconds: 14400
   capacity_gpu_util_pct: 0      # 0 = off; e.g. 90 to hold tasks while a GPU is 90% busy
+compute_nodes:
+  - name: gpu-1
+    kind: ollama
+    address: http://gpu-1:11434
+    session_slots: 2            # 0 = derive from observer data; a negative value is refused
 ```
 
   plan_tier_max_inflight: {pro: 1, max_5x: 2, max_20x: 4, api: 0}

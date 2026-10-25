@@ -1757,6 +1757,22 @@ orchestrator:
   # Max concurrent PRD nodes per graph.
   max_parallel_prds: 2
 
+# ── Compute node slot override ──
+# Each compute node may set session_slots, a whole number of workers it takes at
+# once. 0 (the default) derives the count from the node's observer data: one slot
+# per GPU, limited by free GPU memory against the served model; with no GPU data,
+# free system memory divided by the model size, at least one slot. A positive value
+# wins over the derived count, and max_concurrent_sessions still caps it. Applies
+# only to a node that hosts a local engine; other nodes keep max_concurrent_sessions.
+# A negative value is rejected when the config loads. Set it in the PWA node form,
+# `datawatch compute node update <name> --session-slots N`, or REST
+# PUT /api/compute/nodes/{name}.
+# compute_nodes:
+#   - name: gpu-1
+#     kind: ollama
+#     address: http://gpu-1:11434
+#     session_slots: 2
+
 # ── Compute pin keeper ──
 # Per-node model pins live on each compute node (compute_nodes[].node_pinned_model
 # and allow_model_swap; set with `datawatch compute node add|update`). The
