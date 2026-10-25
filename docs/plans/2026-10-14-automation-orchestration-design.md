@@ -2765,4 +2765,8 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 31. **How merge pending compares commits (supervisor duties proposal Q7, answer: "1, git cherry").** `git cherry` against main, comparing patch ids. Caveat from 2026-10-24 measurements: a commit whose patch changed while it was merged (conflict resolution, a renumbered version) shows as not on main although its work landed, so a second content check (subjects on main) accompanies it and a disagreement is shown to the operator as 'needs a look' and not as merge pending.
 
+32. **Deleting superseded failed CI runs (supervisor duties proposal Q8, answer: "1").** Failed runs of a workflow are deleted after a green run of the same workflow on a later commit, and only after the triage record has named them.
+
+**Status 2026-10-25:** every question of the supervisor duties proposal (Q1 to Q8) is answered or closed (items 25 to 32). The proposal's own `Confirmed:` line is still `no` until the operator flips it.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.

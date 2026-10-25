@@ -225,7 +225,7 @@ None of the following is decided. Each starts a step only when recorded in this 
 
 **Recommendation.** (a), restricted to failed runs superseded by a green run of the same workflow, and only after the triage record has named them.
 
-**Status.** Open.
+**Status.** **Decided by the operator, 2026-10-25: option (a)** ("1"): superseded failed runs of the same workflow are deleted after a green run of that workflow on a later commit, and only after the triage record has named them. The security-failure exception for suppressed CVEs no longer holds them back (see the 2026-10-25 security rule change).
 
 ## Parity surface
 
