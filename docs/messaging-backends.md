@@ -34,6 +34,7 @@ See [setup.md](setup.md) for full installation walkthrough.
 | [Twilio SMS](#twilio-sms) | Bidirectional | SMS via Twilio |
 | [ntfy](#ntfy) | Outbound only | Push notifications to phone via ntfy.sh |
 | [Email (SMTP)](#email-smtp) | Outbound only | Email notifications on session events |
+| [imap-mcp (email)](#imap-mcp-email) | Bidirectional | Email commands + replies via an imap-mcp server |
 | [GitHub Webhook](#github-webhook) | Inbound only | GitHub issue/PR/workflow events trigger sessions |
 | [Generic Webhook](#generic-webhook) | Inbound only | HTTP POST from any system triggers sessions |
 | [DNS Channel (Covert)](#dns-channel-covert) | Bidirectional | Encoded over DNS TXT queries — see [docs/covert-channels.md](covert-channels.md) |
@@ -51,26 +52,28 @@ See [setup.md](setup.md) for full installation walkthrough.
 The table below shows which datawatch commands are available through each backend.
 Full command syntax is in [docs/commands.md](commands.md).
 
-| Command | Signal | Telegram | Discord | Slack | Matrix | Twilio | ntfy | Email | GitHub WH | Generic WH |
-|---|---|---|---|---|---|---|---|---|---|---|
-| `new: <task>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ (event) | ✓ (POST) |
-| `list` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
-| `status <id>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
-| `tail <id> [n]` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
-| `send <id>: <msg>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
-| `kill <id>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
-| `attach <id>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
-| `alerts [n]` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
-| `setup <service>` | ✓* | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
-| `version` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
-| `update check` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
-| `schedule <id>:` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
-| `help` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
-| Implicit reply | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
-| Alert broadcast | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| State notifications | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| Command | Signal | Telegram | Discord | Slack | Matrix | Twilio | ntfy | Email | imap-mcp | GitHub WH | Generic WH |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `new: <task>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ (event) | ✓ (POST) |
+| `list` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
+| `status <id>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
+| `tail <id> [n]` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
+| `send <id>: <msg>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
+| `kill <id>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
+| `attach <id>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
+| `alerts [n]` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
+| `setup <service>` | ✓* | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — | — |
+| `version` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
+| `update check` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
+| `schedule <id>:` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
+| `help` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — | — |
+| Implicit reply | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — | — |
+| Alert broadcast | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| State notifications | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
 
 **✓*** Signal `setup signal` requires CLI (QR scan); all other setup wizards work via Signal messages.
+
+**imap-mcp** commands arrive only as imap-mcp-verified `inbound.command` events (verb + args), so free-text implicit replies and interactive setup wizards are not available; which verbs and senders are accepted is governed by imap-mcp's trust configuration.
 
 **GitHub Webhook** and **Generic Webhook** only start sessions — they do not accept commands or send notifications directly. Use a bidirectional backend alongside them for full control.
 
@@ -78,13 +81,13 @@ Full command syntax is in [docs/commands.md](commands.md).
 
 Rich messaging features are implemented via optional interfaces. Backends without a feature fall back to plain text.
 
-| Feature | Signal | Telegram | Discord | Slack | Matrix | Twilio | ntfy | Email |
-|---------|--------|----------|---------|-------|--------|--------|------|-------|
-| **Threading** | — | ✓ (reply_to) | ✓ (threads) | ✓ (thread_ts) | — | — | — | — |
-| **Rich markdown** | — | ✓ (Markdown) | ✓ (native) | ✓ (mrkdwn) | — | — | — | — |
-| **Interactive buttons** | — | — | ✓ (components) | ✓ (Block Kit) | — | — | — | — |
-| **File upload** | — | — | ✓ | ✓ | — | — | — | — |
-| **Voice input** | ✓ (attachments) | ✓ (Voice/Audio) | — | — | — | — | — | — |
+| Feature | Signal | Telegram | Discord | Slack | Matrix | Twilio | ntfy | Email | imap-mcp |
+|---------|--------|----------|---------|-------|--------|--------|------|-------|----------|
+| **Threading** | — | ✓ (reply_to) | ✓ (threads) | ✓ (thread_ts) | — | — | — | — | — |
+| **Rich markdown** | — | ✓ (Markdown) | ✓ (native) | ✓ (mrkdwn) | — | — | — | — | — |
+| **Interactive buttons** | — | — | ✓ (components) | ✓ (Block Kit) | — | — | — | — | — |
+| **File upload** | — | — | ✓ | ✓ | — | — | — | — | — |
+| **Voice input** | ✓ (attachments) | ✓ (Voice/Audio) | — | — | — | — | — | — | — |
 
 **Threading:** Per-session alerts are grouped in threads, keeping channels clean when managing multiple sessions. Thread IDs are stored on the session for follow-up replies.
 
@@ -565,6 +568,109 @@ if you use 2-factor authentication:
 - Email is notification-only; combine with a bidirectional backend for full control
 - Notifications are sent for: session started, session complete, waiting for input, session failed
 - Long session output is truncated in email notifications; use the PWA for full output
+
+---
+
+## imap-mcp (email)
+
+Control datawatch by email through a running imap-mcp
+server. imap-mcp owns the mailbox and the trust boundary (sender verification, command
+parsing); datawatch only acts on commands imap-mcp has already verified.
+
+### Prerequisites
+
+- A running imap-mcp server reachable from the datawatch host (e.g. `http://localhost:8765`)
+- At least one email account configured in imap-mcp
+- imap-mcp >= 0.5.3: an API bearer token with the **read** and **send** scopes
+  (older imap-mcp releases, or imap-mcp with auth disabled, need no token)
+
+### Setup
+
+**1. Create a token in imap-mcp** with the `read` and `send` scopes.
+
+**2. Store the token in the datawatch secrets vault** (never in `config.yaml`):
+
+```bash
+datawatch secrets set imap_mcp_token <token>
+```
+
+**3. Configure** — via the web UI (Settings → Comms → imap mcp) or any channel below.
+
+### Configuration
+
+YAML reference:
+
+```yaml
+imap_mcp:
+  enabled: true
+  url: "http://localhost:8765"          # imap-mcp API base URL
+  account: ""                           # imap-mcp account name; empty = imap-mcp's default account
+  subject_prefix: "datawatch"           # prefix for outbound subjects (default "datawatch")
+  token: "${secret:imap_mcp_token}"     # bearer token for imap-mcp >= 0.5.3 (read + send scopes)
+  to: "you@example.com"                 # fixed outbound recipient — required for replies/notifications
+```
+
+| Field | Meaning |
+|---|---|
+| `enabled` | Turn the imap-mcp channel on/off |
+| `url` | imap-mcp API base URL |
+| `account` | Which imap-mcp account to receive from and send as; empty = imap-mcp's default account |
+| `subject_prefix` | Prepended to outbound subjects (`<prefix> response`); default `datawatch` |
+| `token` | Bearer token sent on every request; imap-mcp >= 0.5.3 requires it, with `read` + `send` scopes. Empty = no `Authorization` header |
+| `to` | Fixed recipient address for every outbound reply and notification. **Required for delivery** — without it, outbound mail is addressed to the internal channel label `imap_mcp` and bounces |
+
+Every config channel accepts the same `imap_mcp.*` keys:
+
+| Channel | Example |
+|---|---|
+| **YAML** | `~/.datawatch/config.yaml` block above |
+| **Web UI** | Settings → Comms → **imap mcp** card (token is a password field) |
+| **REST** | `PUT /api/config` with `{"imap_mcp.url":"http://localhost:8765"}`; `GET /api/config` returns the block with `token` shown as `"***"` |
+| **CLI** | `datawatch config set imap_mcp.to you@example.com` |
+| **Comm channel** | `configure imap_mcp.to=you@example.com` from any active channel |
+| **MCP** | `config_set` tool with key `imap_mcp.to`, value `you@example.com` |
+
+> **⚠ Operator caveat — token handling**
+>
+> - `imap_mcp.token` accepts a `${secret:name}` reference, resolved from the secrets vault
+>   at startup. Store the token with `datawatch secrets set imap_mcp_token <token>` (or the
+>   PWA secrets panel / MCP `secret_set`), then set `imap_mcp.token: ${secret:imap_mcp_token}`.
+> - **Never store the token in `config.yaml` as plaintext.**
+> - `GET /api/config` always masks the token as `"***"`.
+> - Writing `""` or `"***"` to `imap_mcp.token` (any channel) leaves the existing value
+>   unchanged, so a client echoing back the masked value never clobbers the real token.
+
+To keep this channel for commands but stop it receiving session-lifecycle notifications,
+add it to the top-level `notify_exclude` list (Settings → Comms → Notifications):
+
+```yaml
+notify_exclude: [imap_mcp]
+```
+
+### Supported Commands
+
+Commands arrive as verified `inbound.command` events and are routed through the same
+command router as the other bidirectional backends (`new:`, `list`, `status`, `tail`,
+`send`, `kill`, `alerts`, `schedule`, `configure`, `version`, `help`, ...). Which senders
+and verbs are accepted is decided by imap-mcp's trust configuration, not by datawatch.
+
+### How it works
+
+- **Receive:** datawatch subscribes to imap-mcp's SSE stream (`GET <url>/api/events`) and
+  acts only on `inbound.command` events — every other event type is ignored. The command
+  text is the event's verb plus its arguments. The stream reconnects with exponential
+  backoff (2s → 60s); a 401/403 is treated as a configuration problem (missing/wrong token
+  or missing `read` scope) and retries at the 60s ceiling with a single log line.
+- **Send:** replies and notifications are posted to imap-mcp's REST endpoint
+  (`POST <url>/api/accounts/{account}/messages/send`, `_default` when `account` is empty)
+  with recipient `imap_mcp.to` and subject `<subject_prefix> response`.
+
+### Notes
+
+- datawatch never re-validates commands — the trust boundary lives in imap-mcp
+- Set `to`; without it outbound mail bounces (5.1.1 user unknown)
+- A 401/403 on send means the token is missing, wrong, or lacks the `send` scope
+- Mailbox credentials live in imap-mcp, not in datawatch
 
 ---
 
