@@ -1516,3 +1516,35 @@ Two checks for this change:
 | **Expected** | All six tests pass. |
 | **Actual** | PASS. Six `--- PASS` lines, then `ok  github.com/dmz006/datawatch/internal/autonomous  0.039s` |
 | **Result** | PASS |
+
+## Live pi-prompt run with a node-hosted runner
+
+`TestPiPromptLiveRunWithNodeRunner` in `cmd/datawatch/pi_prompt_live_run_test.go` runs a real pi print command in a private tmux pane and watches it with `hasLiveRunnerProcess`, the probe the pi-prompt exit-silence detector uses. It is gated: it skips unless `DATAWATCH_LIVE_PI` is `1` and `pi`, `tmux` and `pgrep` are on PATH. It sets `TMUX_TMPDIR` to a temporary directory and `TMUX` to empty, starts a bash pane in a scratch project directory, and types a command in the shape of the pi-prompt launch (`pi --print --mode text --approve --model <model> '<task>'`, output teed to a file, status written to a second file, one outcome marker printed at the end). The marker words are split across two shell words in the typed command, so the pane echo of the command never matches. The test then samples every 2 s until the pane shows a `DATAWATCH_COMPLETE` or `DATAWATCH_PI_FAILED` line or 300 s pass. It asserts that the runner was seen alive at least once and that the final pane shows one of the two markers. Every command ran from the project root under `env -u TMUX -u TMUX_TMPDIR`. The test reaps only the processes it started, and a check afterwards found no pi process and no tmux server of its own left.
+
+The earlier measurement (section "pi-prompt early exit and process name measurement") recorded that a node-hosted pi reports the kernel name `MainThread`, has no child process while it generates, and finished in 14 s with the same model. That is the case the runner probe was changed for.
+
+| Field | Details |
+|-------|---------|
+| **Description** | One real pi print run against a local Ollama model, sampled through `hasLiveRunnerProcess`. |
+| **Model** | `ollama/qwen3:8b`, the model chosen in the measurement section. Task: `Reply with the single word ok.` |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR DATAWATCH_LIVE_PI=1 go test -count=1 -v -timeout 400s -run TestPiPromptLiveRunWithNodeRunner ./cmd/datawatch` |
+| **Expected** | The runner is seen alive in at least one sample while pi generates, and the pane ends with a `DATAWATCH_COMPLETE` or `DATAWATCH_PI_FAILED` line within 300 s. |
+| **Marker seen** | `DATAWATCH_COMPLETE: pi done` |
+| **Elapsed** | 12.5 s (7 samples, 5 with the runner alive) |
+| **Actual** | `ok  github.com/dmz006/datawatch/cmd/datawatch  12.549s` |
+
+Samples (time since the command was typed, runner alive by `hasLiveRunnerProcess`, marker on the pane):
+
+| Sample | Time | Runner alive | Marker |
+|--------|------|--------------|--------|
+| 1 | 0.0 s | false | none |
+| 2 | 2.1 s | true | none |
+| 3 | 4.1 s | true | none |
+| 4 | 6.2 s | true | none |
+| 5 | 8.3 s | true | none |
+| 6 | 10.5 s | true | none |
+| 7 | 12.5 s | false | `DATAWATCH_COMPLETE: pi done` |
+
+Sample 1 was taken before the shell had started pi. The runner stayed visible from the second sample until the run ended, with no child process of its own, and was gone once the marker printed. With the earlier probe, which looked only for a child process, every one of those samples would have read as no work.
+
+Result: PASS. The runner was seen alive in 5 of 7 samples while pi generated, and the pane ended with `DATAWATCH_COMPLETE: pi done` after 12.5 s.
