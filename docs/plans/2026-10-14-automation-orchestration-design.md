@@ -2703,7 +2703,20 @@ Open for the operator: the default alert times and the retry count for items 1, 
 **Operator decisions, 2026-10-25 later (quoted):** "Skip would be specific or all, should be an option. We are not multi operator yet but any operator authorized for the automation.  All comms are parity so valid,  what else?"
 
 5. **Skip is an option with two scopes:** skip one specific question, or skip all open questions. The operator picks when skipping.
+
+**Operator clarification, 2026-10-25 (quoted):** "Skip is based on question,  not entire automation,  unless that was the option enable,  by default it is specific, but can apply wide."
+
+5a. **Skip is per question by default.** A skip applies to the one question it is given on, never to the whole Automation. Skipping wide (all open questions) is available only when that option is enabled in Automation; it is off by default. This replaces the reading of item 5 as a free choice of scope at skip time.
 6. **Who answers:** the system is not multi-operator yet; any operator authorized for the Automation may answer its questions.
 7. **Every communication channel is valid for answering,** by the parity rule: PWA, mobile apps, CLI, REST, MCP and every messaging channel.
+
+
+**Operator answers, one question at a time, 2026-10-25.**
+
+8. **Low risk is defined by both a type list and a per-question level (quoted: "3 both,  sometimes a list is easier,  don't know what will be quantifiable low sometimes and that will help").** The operator keeps a list of question types in Automation that count as low risk, because a list is sometimes easier and not every low-risk case can be defined in advance. Each type gives a default risk level; the asker may raise the level of a single question and never lower it. The Automation setting that lets the supervisor answer by default applies to questions whose resulting level is low.
+
+9. **A low-risk default never covers a design question (quoted: "1, maybe 3, keep track of that for future possibility").** Defaults cover operational questions only (retry counts, ordering, which lane, wording); design questions always wait for the operator or the operator's skip. **Future possibility, tracked and not built:** a repeated design question the operator has already answered may take the earlier answer as its default. The proposal must keep room for it: an answer record that can be matched to a later question by type and subject, with the match shown to the operator and never applied silently.
+
+10. **What stays the operator's on a skip (answer: "1").** Three things stay with the operator even when a question is skipped: the 10.0 tag, releasing something the operator has not reviewed, and spending Claude usage beyond the operator's lane count. On a skip the supervisor decides everything else, and the record shows the answer as a supervisor decision made on the operator's skip, with its reasoning.
 
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
