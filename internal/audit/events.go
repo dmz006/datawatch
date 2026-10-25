@@ -81,4 +81,14 @@ const (
 	// higher severity. Details: as ActionLifecycleWebhookDelivery, with
 	// attempt the number of attempts made and duration_ms the total.
 	ActionLifecycleWebhookFailed = "autonomous_lifecycle_webhook_failed"
+
+	// ActionLifecycleForwardDelivery — one attempt to forward a lifecycle event
+	// to a federation peer. The last record of a dropped forward carries the
+	// final outcome (failed or refused); a refusal before any request has
+	// attempt 0. Details: subscription_id, delivery_id, peer (the registered
+	// peer name), event_kind, host (host:port only), attempt, max_attempts,
+	// status_code (0 when none), outcome (delivered, retry, failed, refused or
+	// skipped), error, hops, duration_ms. Never the bearer token, the signature
+	// or the body.
+	ActionLifecycleForwardDelivery = "autonomous_lifecycle_forward_delivery"
 )

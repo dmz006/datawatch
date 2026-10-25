@@ -215,6 +215,9 @@ type WebhookEnvelope struct {
 	// Truncated is true only when the event's decision and verdict were
 	// removed to fit WebhookMaxBodyBytes.
 	Truncated bool `json:"truncated,omitempty"`
+	// Forward is present only on a peer-forwarded envelope (lifecycle_forward.go):
+	// the origin host, the hop count and the hosts the event has visited.
+	Forward *ForwardChain `json:"forward,omitempty"`
 }
 
 // webhookRun is the state of one Deliver call.
@@ -335,6 +338,13 @@ func (s *WebhookSink) buildBody(run *webhookRun, sub Subscription, ev LifecycleE
 		SubscriptionID: sub.ID,
 		Event:          ev,
 	}
+	return marshalWebhookEnvelope(env)
+}
+
+// marshalWebhookEnvelope serialises env for either sink. Over WebhookMaxBodyBytes
+// the event's decision and verdict are dropped and the envelope is marked
+// truncated; still over, it is an error.
+func marshalWebhookEnvelope(env WebhookEnvelope) ([]byte, error) {
 	body, err := json.Marshal(env)
 	if err != nil {
 		return nil, fmt.Errorf("the event could not be encoded: %w", err)
@@ -394,19 +404,31 @@ func (s *WebhookSink) post(ctx context.Context, client *http.Client, u *url.URL,
 
 	resp, err := client.Do(req)
 	if err != nil {
-		res := webhookAttempt{err: err, retry: true}
-		switch {
-		case errors.Is(err, ErrWebhookGuard):
-			res.retry, res.guard = false, true
-		case ctx.Err() != nil:
-			res.retry = false
-		}
-		return res
+		return webhookTransportAttempt(err, ctx.Err() != nil)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, webhookMaxResponseBytes))
+	return classifyWebhookStatus(resp.StatusCode, resp.Header.Get("Retry-After"), s.cfg.Now())
+}
 
-	code := resp.StatusCode
+// webhookTransportAttempt classifies a request that never got a response. A
+// guard refusal is permanent; so is an attempt whose context ended; anything
+// else is retried.
+func webhookTransportAttempt(err error, ctxEnded bool) webhookAttempt {
+	res := webhookAttempt{err: err, retry: true}
+	switch {
+	case errors.Is(err, ErrWebhookGuard):
+		res.retry, res.guard = false, true
+	case ctxEnded:
+		res.retry = false
+	}
+	return res
+}
+
+// classifyWebhookStatus maps a receiver's status to an attempt result: 2xx is
+// delivered; 408, 429 and 5xx are retried (a 429 Retry-After is honoured); every
+// other status, redirects included, is permanent.
+func classifyWebhookStatus(code int, retryAfter string, now time.Time) webhookAttempt {
 	res := webhookAttempt{status: code}
 	switch {
 	case code >= 200 && code <= 299:
@@ -415,7 +437,7 @@ func (s *WebhookSink) post(ctx context.Context, client *http.Client, u *url.URL,
 		res.retry = true
 		res.err = fmt.Errorf("receiver answered %d", code)
 		if code == http.StatusTooManyRequests {
-			res.retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"), s.cfg.Now())
+			res.retryAfter = parseRetryAfter(retryAfter, now)
 		}
 	case code >= 300 && code <= 399:
 		res.err = fmt.Errorf("receiver answered %d; redirects are not followed", code)
@@ -455,14 +477,21 @@ func parseRetryAfter(v string, now time.Time) time.Duration {
 // base * factor^(n-1), capped at BackoffMax, spread by the jitter, and raised
 // to a Retry-After (itself capped) when that is longer.
 func (s *WebhookSink) backoff(set WebhookSettings, n int, retryAfter time.Duration) time.Duration {
-	d := set.BackoffBase
-	for i := 1; i < n && d < set.BackoffMax; i++ {
+	return webhookBackoff(set.BackoffBase, set.BackoffMax, n, retryAfter, s.cfg.Jitter())
+}
+
+// webhookBackoff is the shared delay curve of the webhook and peer senders:
+// base * factor^(n-1) capped at max, spread by jitter in [0,1), raised to a
+// Retry-After when that is longer.
+func webhookBackoff(base, ceiling time.Duration, n int, retryAfter time.Duration, jitter float64) time.Duration {
+	d := base
+	for i := 1; i < n && d < ceiling; i++ {
 		d *= webhookBackoffFactor
 	}
-	if d > set.BackoffMax {
-		d = set.BackoffMax
+	if d > ceiling {
+		d = ceiling
 	}
-	j := s.cfg.Jitter()
+	j := jitter
 	if j < 0 {
 		j = 0
 	} else if j > 1 {
@@ -477,8 +506,14 @@ func (s *WebhookSink) backoff(set WebhookSettings, n int, retryAfter time.Durati
 
 // wait sleeps d, returning ctx's error when ctx ended first.
 func (s *WebhookSink) wait(ctx context.Context, d time.Duration) error {
-	if s.cfg.Sleep != nil {
-		s.cfg.Sleep(d)
+	return waitForRetry(ctx, s.cfg.Sleep, d)
+}
+
+// waitForRetry sleeps d through sleep when it is set, else on a timer that a
+// cancelled context interrupts. It returns ctx's error when ctx ended first.
+func waitForRetry(ctx context.Context, sleep func(time.Duration), d time.Duration) error {
+	if sleep != nil {
+		sleep(d)
 		return ctx.Err()
 	}
 	t := time.NewTimer(d)
@@ -557,6 +592,12 @@ func (s *WebhookSink) abandon(run *webhookRun, attempts int, cause error) error 
 // HTTP stack's own wrapper (which embeds the full URL) is removed and then the
 // secret, the raw target and its query string are scrubbed from what is left.
 func (s *WebhookSink) errText(run *webhookRun, err error) string {
+	return webhookErrText(err, run.rawTarget, run.secret)
+}
+
+// webhookErrText renders err for a record, an alert or a returned error. The
+// HTTP stack's own wrapper is removed; then rawTarget and secret are scrubbed.
+func webhookErrText(err error, rawTarget, secret string) string {
 	if err == nil {
 		return ""
 	}
@@ -571,7 +612,7 @@ func (s *WebhookSink) errText(run *webhookRun, err error) string {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "timeout"
 	}
-	return scrubWebhookText(err.Error(), run.rawTarget, run.secret)
+	return scrubWebhookText(err.Error(), rawTarget, secret)
 }
 
 // scrubWebhookText removes the secret, the raw target URL and the target's

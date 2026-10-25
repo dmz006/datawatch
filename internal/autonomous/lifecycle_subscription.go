@@ -42,6 +42,11 @@ const (
 	// Sink.SecretRef, to the URL in Sink.Target. Coalesce is ignored for it:
 	// every matching event is its own delivery.
 	SinkWebhook = "webhook"
+	// SinkPeer forwards each matching event to a registered federation peer.
+	// Sink.Target is the peer's registered name; the forwarder (lifecycle_forward.go)
+	// resolves the address, token and capability from the peer registry.
+	// Coalesce is ignored for it, as for the webhook sink.
+	SinkPeer = "peer"
 )
 
 // MaxQueueNameLen caps an mcp_queue sink's queue name.
@@ -173,9 +178,13 @@ func ValidateSubscription(sub Subscription, now time.Time) error {
 		if _, _, _, err := parseWebhookURL(sub.Sink.Target); err != nil {
 			return err
 		}
+	case SinkPeer:
+		if err := ValidatePeerName(sub.Sink.Target); err != nil {
+			return err
+		}
 	default:
-		return fmt.Errorf("unknown sink type %q (want one of %q, %q, %q, %q, %q, %q)",
-			sub.Sink.Type, SinkComm, SinkSession, SinkTopic, SinkAlert, SinkMCPQueue, SinkWebhook)
+		return fmt.Errorf("unknown sink type %q (want one of %q, %q, %q, %q, %q, %q, %q)",
+			sub.Sink.Type, SinkComm, SinkSession, SinkTopic, SinkAlert, SinkMCPQueue, SinkWebhook, SinkPeer)
 	}
 	if sub.Sink.Type != SinkWebhook && sub.Sink.SecretRef != "" {
 		return fmt.Errorf("sink secret_ref is only valid with a webhook sink (got %q)", sub.Sink.Type)

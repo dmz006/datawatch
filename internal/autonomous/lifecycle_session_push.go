@@ -32,6 +32,10 @@
 // subscription is deleted, expires, or changes. Coalesce does not apply to
 // webhook sinks. A one-shot webhook subscription is consumed only after a
 // delivery succeeds, and while the webhook sink is disabled it stays armed.
+//
+// Peer-sink subscriptions (SinkPeer) are forwarded by PeerForwarder on the same
+// per-subscriber goroutine and follow the same scope and one-shot rules. An event
+// that arrived forwarded is never forwarded on.
 
 package autonomous
 
@@ -114,6 +118,10 @@ type SessionPushConfig struct {
 	// Webhook drives webhook-sink subscriptions. Nil, or a sink whose live
 	// settings are disabled, makes matching webhook events a no-op.
 	Webhook *WebhookSink
+	// Forwarder drives peer-sink subscriptions (SinkPeer). Nil, or a forwarder
+	// whose live settings are disabled, leaves a matching peer event undelivered
+	// and its one-shot subscription armed.
+	Forwarder *PeerForwarder
 }
 
 // DefaultBridgePost POSTs text to the session channel bridge's
@@ -309,7 +317,7 @@ func (e *LifecycleSubscriptionEngine) resync() {
 	}
 
 	next := make(map[string]*activeSubscription, len(subs))
-	liveWebhook := make(map[string]bool)
+	liveScoped := make(map[string]bool)
 	var created, removed, updated []string
 	for _, sub := range subs {
 		if sub.ExpiresAt != nil && !sub.ExpiresAt.After(now) {
@@ -323,9 +331,9 @@ func (e *LifecycleSubscriptionEngine) resync() {
 		} else {
 			created = append(created, sub.ID)
 		}
-		if sub.Sink.Type == SinkWebhook {
+		if isDeliverySink(sub.Sink.Type) {
 			e.scopeLocked(sub)
-			liveWebhook[sub.ID] = true
+			liveScoped[sub.ID] = true
 		}
 		subCancel := e.m.Subscribe(sub.Filter, func(ev LifecycleEvent) { e.handle(sub, ev) })
 		var comm *CommFanoutSink
@@ -342,7 +350,7 @@ func (e *LifecycleSubscriptionEngine) resync() {
 	// A webhook scope whose subscription is gone, expired, or no longer a
 	// webhook sink ends now; an in-flight delivery for it is abandoned.
 	for id, sc := range e.scopes {
-		if !liveWebhook[id] {
+		if !liveScoped[id] {
 			sc.cancel()
 			delete(e.scopes, id)
 		}
@@ -423,7 +431,18 @@ func subscriptionAuditDetails(sub Subscription) map[string]any {
 		// the signing secret reference (Sink.SecretRef is not written at all).
 		details["target_host"] = webhookTargetHost(sub.Sink.Target)
 	}
+	if sub.Sink.Type == SinkPeer {
+		// The registered peer name: never the peer's address or bearer token.
+		details["peer"] = sub.Sink.Target
+	}
 	return details
+}
+
+// isDeliverySink reports whether a sink type delivers on its own scope, a
+// context that outlives unrelated store changes and is cancelled when the
+// subscription changes or ends.
+func isDeliverySink(sinkType string) bool {
+	return sinkType == SinkWebhook || sinkType == SinkPeer
 }
 
 // handle is the subscribe callback for one persisted subscription. It
@@ -508,6 +527,32 @@ func (e *LifecycleSubscriptionEngine) handle(sub Subscription, ev LifecycleEvent
 
 	case SinkWebhook:
 		e.deliverWebhook(sub, ev)
+
+	case SinkPeer:
+		e.deliverPeer(sub, ev)
+	}
+}
+
+// deliverPeer forwards one event to a federation peer. A forwarded event is
+// never forwarded on, so it is skipped here (the forwarder would refuse it too).
+// While forwarding is disabled nothing is sent and a one-shot subscription stays
+// armed. A one-shot subscription is consumed only after a successful forward.
+func (e *LifecycleSubscriptionEngine) deliverPeer(sub Subscription, ev LifecycleEvent) {
+	if ev.Forward != nil || !e.cfg.Forwarder.Enabled() {
+		return
+	}
+	ctx, ok := e.deliveryContext(sub.ID)
+	if !ok {
+		return // removed while this event was queued
+	}
+	if err := e.cfg.Forwarder.Forward(ctx, sub, ev); err != nil {
+		log.Printf("[autonomous] lifecycle sub %s: peer forward: %v", sub.ID, err)
+		return
+	}
+	if sub.OneShot {
+		if derr := e.store.Delete(sub.ID); derr != nil {
+			log.Printf("[autonomous] lifecycle sub %s: one-shot removal: %v", sub.ID, derr)
+		}
 	}
 }
 
