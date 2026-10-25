@@ -1447,3 +1447,72 @@ Observations:
 | Missing model | 1 | 2 s |
 
 Verdict: pi runs to completion — with a real model it stayed alive for the whole generation, printed the reply on stdout and exited 0; it exited early only when the endpoint rejected the model (status 1 with a 404 message on stderr), and it never exited on its own before producing output.
+
+## Node-hosted pi runner liveness fix
+
+A pi runner that node hosts reports the kernel name `MainThread`, so the idle probes did not see it, and a one-shot pi print run has no child process while it generates. The fix has three parts: the probes resolve a node-hosted runner through the script node runs, the pi-prompt idle check counts a live runner as work, and a stalled pi-prompt task records the pi exit status, the last pane output and the process list. Every command ran from the project root under `env -u TMUX -u TMUX_TMPDIR`. The pane tests start a private tmux server on a temporary socket directory and reap only the processes they started.
+
+Two checks for this change:
+
+- `config-reference.yaml`: N/A, no config fields added.
+- `datawatch-app`: no issue needed, additive optional JSON fields only.
+
+### R1 — Characterization test before the resolver change
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestPiPromptLivenessPane*` runs a stub named `pi` in a private tmux pane and records what `hasLiveChildProcess` and `hasLiveRunnerProcess` report. Before the resolver change it records the defect: a node-hosted runner is not seen. |
+| **Steps** | Check out commit `97bcf5d5` (the characterization test, before the resolver change) in a scratch worktree under the ignored `.datawatch/` directory, then run `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestPiPromptLivenessPane' -count=1 -v`. |
+| **Expected** | Plain runner: `hasLiveRunnerProcess=true`. Node-hosted runner: process name `MainThread`, `hasLiveRunnerProcess=false`. Runner with a child: both true. Finished run: both false. |
+| **Actual** | PASS. `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestPiPromptLivenessPane' -count=1 -v` printed `ok  github.com/dmz006/datawatch/cmd/datawatch  1.290s`. The node case logged `process names under the pane: [MainThread]` and `hasLiveChildProcess=false hasLiveRunnerProcess=false`. |
+| **Result** | PASS |
+
+### R2 — Characterization test after the resolver change
+
+| Field | Details |
+|-------|---------|
+| **Description** | The same four tests on the current tree, where the node-hosted case asserts the runner is recognised through argv. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestPiPromptLivenessPane' -count=1 -v` |
+| **Expected** | Only the node-hosted case changes: process name still `MainThread`, `hasLiveRunnerProcess=true`, `hasLiveChildProcess=false`. The other three cases are unchanged. |
+| **Actual** | PASS. `ok  github.com/dmz006/datawatch/cmd/datawatch  1.256s`. The node case logged `process names under the pane: [MainThread]` and `hasLiveChildProcess=false hasLiveRunnerProcess=true`. |
+| **Result** | PASS |
+
+### R3 — Resolver table tests
+
+| Field | Details |
+|-------|---------|
+| **Description** | The `TestSessionIdleProbe*` tests in `cmd/datawatch/session_idle_probe_test.go`, including `TestSessionIdleProbe_RunnerNameFromProcess`, the table for `runnerNameFromProcess`: a kernel name that is a runner name is returned as is; `node` followed by a script named after a runner resolves to that runner; leading dash options are skipped; any other script or an empty argv leaves the name unchanged. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestSessionIdleProbe' -count=1` |
+| **Expected** | All tests pass; a node process running some other script is not a runner. |
+| **Actual** | PASS. `ok  github.com/dmz006/datawatch/cmd/datawatch  0.007s` |
+| **Result** | PASS |
+
+### R4 — Idle liveness tests
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestIdleLivenessProbe` checks that the pi-prompt family uses the runner probe and every other family (claude-code, opencode, an unknown family, an empty family) uses the work-child probe. `TestIdleLivenessProbe_LiveRunnerNoChildNotStalled` checks that a live runner with no child is not reported as stalled by the idle observation. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestIdleLivenessProbe' -count=1 -v` |
+| **Expected** | Both tests and all five subtests pass. |
+| **Actual** | PASS. `--- PASS: TestIdleLivenessProbe (0.00s)` with five passing subtests, `--- PASS: TestIdleLivenessProbe_LiveRunnerNoChildNotStalled (0.00s)`, then `ok  github.com/dmz006/datawatch/cmd/datawatch  0.007s` |
+| **Result** | PASS |
+
+### R5 — Evidence tests in the daemon command package
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestFormatRunnerProcessLine_NodeHostedPi` and `TestFormatRunnerProcessLine_EmptyArgv` check the process line (pid, kernel name, first two argv entries). `TestRunnerProcessLines_MissingSessionIsNil` checks that a missing session gives no lines and no error. `TestWithRunnerExitStatus_KeepsStalledMatch` and `TestWithRunnerExitStatus_NoStatusLeavesErrorAlone` check that the exit status is appended to a stall error while `errors.Is(err, ErrWorkerStalled)` still holds, and that an error without a status is unchanged. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestFormatRunnerProcessLine|TestRunnerProcessLines|TestWithRunnerExitStatus' -count=1 -v` |
+| **Expected** | All five tests pass. |
+| **Actual** | PASS. Five `--- PASS` lines, then `ok  github.com/dmz006/datawatch/cmd/datawatch  0.014s` |
+| **Result** | PASS |
+
+### R6 — Evidence tests in the autonomous package
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestParsePiPromptExitStatus` and `TestPiExitMarkerPrefixMatchesBackend` check the exit marker parser and that its prefix matches the backend launch command. `TestRunnerEvidenceFromCapsTailAndDropsEmptyLines` and `TestRunnerEvidenceFromStatusAndProcessCap` check the 20-line tail and the 40-process cap. `TestRecordFailedAttemptCopiesAndClearsRunnerEvidence` checks that the attempt record gets a copy and the task's `runner_evidence` is cleared. `TestFormatEscalationAttemptFullRunnerEvidence` checks that the review report and next-attempt prompt print the exit status, last output and processes. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous/ -run 'TestParsePiPromptExitStatus|TestPiExitMarkerPrefixMatchesBackend|TestRunnerEvidence|TestRecordFailedAttemptCopiesAndClearsRunnerEvidence|TestFormatEscalationAttemptFullRunnerEvidence' -count=1 -v` |
+| **Expected** | All six tests pass. |
+| **Actual** | PASS. Six `--- PASS` lines, then `ok  github.com/dmz006/datawatch/internal/autonomous  0.039s` |
+| **Result** | PASS |
