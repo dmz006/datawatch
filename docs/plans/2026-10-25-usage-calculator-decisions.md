@@ -8,10 +8,10 @@ Date started: 2026-10-25. The ten open questions of `docs/plans/2026-10-23-usage
 2. **Hourly session window: no verdict of its own; it stays a secondary line.** (Operator, 2026-10-25: "1, keep it secondary".) The weekly verdict is what sets lane counts. The design leaves room for a session verdict if session readings are ever entered.
 3. **Burn per lane: one figure for now, with room for per-model later.** (Operator, 2026-10-25: "1, one figure for now".) The design keeps a place to split the figure by model once a lane record per model exists.
 4. **No previous reading within 2 hours: fall back to the week average and say so on the screen.** (Operator, 2026-10-25: "1, fall back and say so".) The screen shows a line that no reading exists in the last 2 hours and the week average is used, so the figure is understood to be smoother than the recent burn.
+5. **Readings: typed by hand for now, with a paste path later, and the design must plan for API users and for reading usage from the account.** (Operator, 2026-10-25: "1, but plan for api users and reading from account for some users,  but me but plan for it".) For this operator the reading is typed by hand. The reading source is a pluggable input: typed, pasted usage text, and an account or API source for users who can read usage from the account or an API, each producing the same reading record. Only the typed source is built first; the others are planned for, not built. An API user's usage may be spend and tokens and not a weekly percentage, so the reading record must be able to carry either a percentage or a spend figure.
 
 ## Still open (asked in order)
 
-5. Whether readings are typed by hand only or also pasted from the usage screen text.
 6. Where the remaining work for "Run flat out" comes from.
 7. How the reset moment is stored across a daylight saving change.
 8. Whether a reading belongs to one daemon or to the shared account across federated daemons.
