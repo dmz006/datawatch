@@ -519,3 +519,8 @@ Two earlier commits (the libbrotli1 and openjdk suppressions) edited `.trivyigno
 ## Lesson: a blocking question stopped the ticks and the lanes sat idle for 16 hours (2026-10-24)
 
 The ticks are session crons and fire only while the session is idle. At 15:10 on 2026-10-24 the supervisor asked a blocking multiple-choice question (BL607 decisions) and the operator answered at 07:21 the next day, 16 hours later. No tick ran in between, so the lanes sat idle, 4 PRDs finished unmerged, 3 more failed or blocked and nothing was triaged. Rule: before asking any blocking question, first put every lane on work that does not depend on the answer, merge what is finished, and start the merges and deploys that take time; ask the question only when the next tick is not due within the next hour, and prefer a plain-text question at the end of the report (which does not block the crons) for anything that can wait. Do not use the blocking question tool when the operator may be away.
+
+
+## Lesson: a stale draft PRD was run and duplicated shipped work (2026-10-25)
+
+PRD 85d00001 (BL431 Phase 3) was a draft from 2026-10-22 that asked for pause, resume, cancel, skip, insert, remove and reorder on an Automation, on REST, MCP, CLI and the comm channel. Phases 2 and 3a had already shipped all of it. The supervisor decomposed and approved it on 2026-10-25 without grepping main, and it ran 8 tasks (about 4,500 lines) before the merge attempt showed 22 conflicts in files that already contained the same functions. Rule: before running any decomposed or draft PRD, grep main for the names it asks for (check 4a), and when the PRD is older than the last release, read the registry rows of the work it depends on.
