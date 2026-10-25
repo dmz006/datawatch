@@ -77,6 +77,18 @@ func (w *reviewWakes) takePending(id string) bool {
 	return was
 }
 
+// reviewWakeNudged reports, without blocking, whether a review decision has
+// nudged the wake channel since the last check, and consumes the nudge. A nil
+// channel never reports one, so a Run without a live executor is unaffected.
+func reviewWakeNudged(wake <-chan struct{}) bool {
+	select {
+	case <-wake:
+		return true
+	default:
+		return false
+	}
+}
+
 // withReviewWake returns ctx carrying the Automaton's wake channel.
 func withReviewWake(ctx context.Context, c <-chan struct{}) context.Context {
 	return context.WithValue(ctx, reviewWakeKey{}, c)

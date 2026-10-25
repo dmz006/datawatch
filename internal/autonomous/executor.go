@@ -354,6 +354,22 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	globalConc := m.cfg.MaxConcurrentTasks
 	m.mu.Unlock()
 	concurrency := effectiveTaskConcurrency(prd.MaxConcurrentTasks, globalConc)
+	// wake is nil outside a live executor. An operator review decision
+	// nudges it (see reviewWakes), and the pass then rebuilds its order.
+	wake := reviewWakeFrom(ctx)
+	// reorder rebuilds the run order from the Automaton as it stands now.
+	// A pass starts with the tasks that are not held for review, so a task
+	// requeued by a decision since then is found only by rebuilding.
+	reorder := func() {
+		var tasks []*Task
+		m.store.WithLock(func() { tasks = flattenTasks(prd) })
+		o, err := topoSort(tasks)
+		if err != nil {
+			log.Printf("[autonomous] %s: rebuild run order after review decision: %v", prdID, err)
+			return
+		}
+		order = o
+	}
 	if concurrency <= 1 {
 		// Sequential path (default) — tasks run in dependency order.
 		// failedIDs tracks tasks that failed so dependents can be skipped.
@@ -361,10 +377,25 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// heldIDs holds the tasks held for operator review, and the tasks
 		// waiting behind one. Neither runs nor counts as failed.
 		heldIDs := make(map[string]bool)
-		for _, tid := range order {
+		for i := 0; ; i++ {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
+			// A decision restarts the walk over the rebuilt order, so the
+			// task it requeued runs in its place. The check also runs after
+			// the last task, so a decision made during it is not left for
+			// the next Run.
+			if reviewWakeNudged(wake) {
+				reorder()
+				failedIDs = make(map[string]bool)
+				heldIDs = make(map[string]bool)
+				i = -1
+				continue
+			}
+			if i >= len(order) {
+				break
+			}
+			tid := order[i]
 			t := lookupTask(prd, tid)
 			if t == nil {
 				continue
@@ -498,7 +529,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// heldIDs holds the tasks held for operator review. They are never
 		// completed, so their dependents never become ready.
 		heldIDs := make(map[string]bool, len(order))
-		remaining := len(order)
+		remaining := 0
 
 		// v8.36.5 — seed tracking for tasks that are already terminal before
 		// this Run() call even starts (a prior attempt, or — found live on
@@ -510,18 +541,25 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// (the "no ready tasks, nothing in-flight" safety below breaks the
 		// loop, but the dependent is left stuck pending, not visibly failed
 		// or blocked). Match the sequential path: completed tasks satisfy
-		// deps, failed/cancelled ones propagate as unmet.
-		for _, tid := range order {
-			t := lookupTask(prd, tid)
-			if t == nil || !m.taskTerminal(t) {
-				continue
+		// deps, failed/cancelled ones propagate as unmet. The wake case
+		// below seeds again after a review decision.
+		seed := func() {
+			remaining = len(inFlight)
+			for _, tid := range order {
+				if completedIDs[tid] || inFlight[tid] {
+					continue
+				}
+				if t := lookupTask(prd, tid); t != nil && m.taskTerminal(t) {
+					completedIDs[tid] = true
+					if t.Status == TaskFailed || t.Status == TaskCancelled {
+						failedIDs[tid] = true
+					}
+					continue
+				}
+				remaining++
 			}
-			completedIDs[tid] = true
-			if t.Status == TaskFailed || t.Status == TaskCancelled {
-				failedIDs[tid] = true
-			}
-			remaining--
 		}
+		seed()
 
 		isReady := func(tid string) bool {
 			t := lookupTask(prd, tid)
@@ -649,6 +687,15 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					delete(inFlight, r.tid)
 				}
 				return ctx.Err()
+			case <-wake:
+				// An operator decision landed while tasks were running. Rebuild
+				// the order and the counts from the store and launch what the
+				// decision made ready. Tasks still in flight keep running, and
+				// nothing waits for them.
+				reorder()
+				seed()
+				autoFailDeps()
+				launch()
 			case r := <-results:
 				delete(inFlight, r.tid)
 				remaining--

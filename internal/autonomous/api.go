@@ -40,9 +40,9 @@ type API struct {
 	runCancels map[string]context.CancelFunc
 
 	// reviewWake carries operator review decisions to the live executor of
-	// a PRD. Its pending flags are read and written under runMu together
-	// with runCancels, so a decision cannot slip in between the executor's
-	// final check and its release of the slot.
+	// a PRD. It has its own mutex. ResolveTaskReview signals under runMu, and
+	// the executor's final check and its release of the slot also run under
+	// runMu, so a decision cannot slip in between that check and the release.
 	reviewWake reviewWakes
 
 	// execWG counts live executor goroutines (and the boot-resume
@@ -667,7 +667,7 @@ func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 					}
 				}
 			}
-			// v5.24.0 — emit a final update so the PWA reflects the
+			// Emit a final update so the PWA reflects the
 			// terminal state (completed / blocked / approved-on-error).
 			a.M.EmitPRDUpdate(id)
 			// An operator review decision that arrived while Run was
