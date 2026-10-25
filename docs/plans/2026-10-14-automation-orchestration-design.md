@@ -2738,4 +2738,6 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 19. **Marker route and one-shot backends (answers: "1 marker with options, 2 daemon asks on its behalf").** The text marker route carries options: a small structured block after the marker line gives the options, the recommendation and the risk label, with the same length caps and untrusted-text rules as free text. A one-shot print-mode backend never asks for itself: when its task ends needing a decision, the daemon raises the question on its behalf, with the task and the backend named as the asker, and holds the task until the answer arrives.
 
+20. **Mobile work (proposal 6.g, answer: "1").** The Android and iOS work for questions is tracked as datawatch-app issues that carry the API contract, following the Mobile App Sync Rule. The issues are filed once the first two steps (storage with REST, then notifications and the return path) have shipped, because that is when the contract is stable. No native code is added to this repository.
+
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.

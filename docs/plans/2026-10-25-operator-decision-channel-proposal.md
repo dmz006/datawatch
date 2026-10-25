@@ -302,7 +302,7 @@ Options:
 
 Recommendation: option 1, once the Step 1 and Step 2 contract ships, because it matches how the existing Android and iOS work is already tracked.
 
-Status: Not decided.
+Status: **Decided by the operator, 2026-10-25: option 1** ("1").
 
 ### 6.h Secrets inside a verbatim quotation
 
