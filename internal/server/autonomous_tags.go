@@ -32,6 +32,23 @@ func (s *Server) tagAPI() (tagAPI, bool) {
 	return t, ok
 }
 
+// BroadcastTagUpdate sends a tag_update frame to every connected client. The
+// frame carries the id-only TagEvent, so a client refetches the counts it
+// shows. The autonomous Manager's tag callback (main.go) and the session tags
+// route call it.
+func (h *Hub) BroadcastTagUpdate(ev autonomous.TagEvent) {
+	h.Broadcast(MsgTagUpdate, ev)
+}
+
+// BroadcastTagUpdate is the HTTPServer entry point for tag_update frames. A
+// server without a hub drops the frame.
+func (s *HTTPServer) BroadcastTagUpdate(ev autonomous.TagEvent) {
+	if s.hub == nil {
+		return
+	}
+	s.hub.BroadcastTagUpdate(ev)
+}
+
 // queryBool reads a boolean query parameter, falling back to def when absent
 // or unparseable.
 func queryBool(r *http.Request, key string, def bool) bool {

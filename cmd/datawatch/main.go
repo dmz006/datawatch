@@ -6007,6 +6007,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			amgr.Subscribe(autonomouspkg.LifecycleFilter{Kinds: []string{autonomouspkg.KindPRDUpdated}}, func(ev autonomouspkg.LifecycleEvent) {
 				httpServer.BroadcastPRDUpdate(autonomouspkg.PRDUpdatePayload(ev))
 			})
+			// Tag registry and assignment changes reach every client as
+			// tag_update frames (id-only), so open tag browsers refresh
+			// their counts. A callback rather than a lifecycle subscriber:
+			// tag events are not Automaton lifecycle transitions.
+			amgr.SetTagEventFn(func(ev autonomouspkg.TagEvent) {
+				httpServer.BroadcastTagUpdate(ev)
+			})
 			// Built-in lifecycle-event sinks (alert store + topic push) plus the
 			// comm fan-out. They subscribe to every notify event kind; which
 			// of those actually deliver is decided per Automaton by the resolver

@@ -1488,6 +1488,22 @@ function handleMessage(msg) {
         }, 250);
       }
       break;
+    case 'tag_update':
+      // A tag was created, renamed, moved, recolored, deleted or assigned
+      // (to an Automaton or a session). The frame is id-only, so refetch the
+      // tag registry and redraw the counts it feeds. Nothing is fetched until
+      // the registry has loaded once; the tag filter and registry panel
+      // redraw from the fresh list. Debounced like prd_update.
+      if (_tagsState.loaded) {
+        clearTimeout(window._tagUpdateTimer);
+        window._tagUpdateTimer = setTimeout(() => {
+          _tagsLoad(true).then(() => {
+            _automataRenderTagFilter();
+            if (document.getElementById('automataTagRegistryPanel')) loadAutomataTagRegistryPanel();
+          });
+        }, 250);
+      }
+      break;
     case 'hook_update':
       // BL303 S3 T12 / S4 T14 — real-time Status tab + dashboard refresh.
       if (msg.data && msg.data.session_id && msg.data.board) {

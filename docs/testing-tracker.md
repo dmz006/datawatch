@@ -9,6 +9,17 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Tag change events — `tag_update` WebSocket message
+
+| Item | Status |
+|---|---|
+| Tested | Yes — `TestTagEvent*` in `internal/autonomous` (one event per registry or assignment operation, refused operations emit nothing, id-only payload, not a lifecycle event, `prd_update` once per blocked / needs_review / paused transition) and `internal/server` (frame shape for every kind, delivery to every client, session route emits `session_assigned` and a refused tag emits nothing) |
+| Validated | No — not yet checked against a running daemon with a WebSocket client |
+
+Contract change: new WebSocket message `tag_update` (`{kind, tag_id?, prd_id?, session_id?}`), documented in `docs/api/autonomous.md`. Every Automaton status change now also sends `prd_update`, which previously only some status paths did.
+
+---
+
 ## Lane fill — shadow mode first (automatic lane filling)
 
 Lane fill runs the planner on every coordinator poll and records what it would start on each idle lane. In `shadow` mode (the default) it starts nothing; in `on` mode it starts work through the existing admission path; in `off` it does nothing. The rules are in `docs/plans/2026-10-24-lane-fill-shadow-mode.md` and the operator procedure is in `docs/howto/automation-lane-fill.md`.

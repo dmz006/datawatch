@@ -118,5 +118,8 @@ func (s *Server) handleSessionTags(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r.Context(), "set_tags", "session", sess.FullID, map[string]any{"tag_ids": sess.Tags})
 	s.broadcastSessionsAsync()
+	if s.hub != nil {
+		s.hub.BroadcastTagUpdate(autonomous.TagEvent{Kind: autonomous.TagEventSessionAssigned, SessionID: sess.FullID})
+	}
 	writeJSONOK(w, s.sessionView(sess))
 }

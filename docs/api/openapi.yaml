@@ -1626,6 +1626,8 @@ paths:
         | `alerts_read` | Alerts were marked read: `{"ids": ["..."], "unread_count": N}` or `{"all": true, "unread_count": 0}` |
         | `hello_ack` | Reply to `hello`: `{"session_list": "full"\|"delta", "session_view": "full"\|"summary", "output": "all"\|"subscribed", "capabilities": [...]}` — the modes now in effect |
         | `session_removed` | `session_list=delta` clients only: `{"session_id": "..."}` — a session left the list |
+        | `prd_update` | An Automaton was saved or changed status: `{"prd_id": "...", "status": "..."}`, or `{"prd_id": "...", "deleted": true}` |
+        | `tag_update` | A tag or tag assignment changed: `{"kind": "created"\|"renamed"\|"reparented"\|"recolored"\|"deleted"\|"assigned"\|"session_assigned", "tag_id"?: "...", "prd_id"?: "...", "session_id"?: "..."}`. IDs only; refetch `GET /api/autonomous/tags?counts=true`. Sent to every client |
 
         ### Client to Server messages
 

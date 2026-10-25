@@ -131,6 +131,7 @@ func (m *Manager) CreateTag(name, parentID, color, description string) (*Tag, er
 	if err := m.store.SaveTag(t); err != nil {
 		return nil, err
 	}
+	m.emitTagEvent(TagEvent{Kind: TagEventCreated, TagID: t.ID})
 	return t, nil
 }
 
@@ -149,6 +150,7 @@ func (m *Manager) RenameTag(id, name string) (*Tag, error) {
 	if err := m.store.SaveTag(t); err != nil {
 		return nil, err
 	}
+	m.emitTagEvent(TagEvent{Kind: TagEventRenamed, TagID: id})
 	return t, nil
 }
 
@@ -185,6 +187,7 @@ func (m *Manager) SetTagParent(id, parentID string) (*Tag, error) {
 	if err := m.store.SaveTag(t); err != nil {
 		return nil, err
 	}
+	m.emitTagEvent(TagEvent{Kind: TagEventReparented, TagID: id})
 	return t, nil
 }
 
@@ -199,6 +202,7 @@ func (m *Manager) SetTagColor(id, color string) (*Tag, error) {
 	if err := m.store.SaveTag(t); err != nil {
 		return nil, err
 	}
+	m.emitTagEvent(TagEvent{Kind: TagEventRecolored, TagID: id})
 	return t, nil
 }
 
@@ -216,7 +220,11 @@ func (m *Manager) DeleteTag(id string) error {
 	if n := m.tagInUseCount(id); n > 0 {
 		return &TagInUseError{TagID: id, Count: n}
 	}
-	return m.store.DeleteTag(id)
+	if err := m.store.DeleteTag(id); err != nil {
+		return err
+	}
+	m.emitTagEvent(TagEvent{Kind: TagEventDeleted, TagID: id})
+	return nil
 }
 
 // ListTags returns all tags.
@@ -263,7 +271,11 @@ func (m *Manager) SetPRDTagsAndPrimary(prdID string, tagIDs []string, primary *s
 	prd.TagIDs = out
 	prd.PrimaryTagID = primaryID
 	prd.UpdatedAt = time.Now()
-	return m.store.SavePRD(prd)
+	if err := m.store.SavePRD(prd); err != nil {
+		return err
+	}
+	m.emitTagEvent(TagEvent{Kind: TagEventAssigned, PRDID: prdID})
+	return nil
 }
 
 // TagDescendants returns the IDs of every tag below id (not including id).

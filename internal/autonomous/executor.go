@@ -457,6 +457,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 						latest.BlockedReason = blockedReasonFromVerdicts(lt.Verdicts)
 						if m.store.SavePRD(latest) == nil {
 							m.emitPRDStatus(latest, old, nil, lastBlockVerdict(lt.Verdicts))
+							m.EmitPRDUpdate(latest.ID)
 						}
 						return nil
 					}
@@ -475,6 +476,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 						})
 						if m.store.SavePRD(latest) == nil {
 							m.emitPRDStatus(latest, old, nil, nil)
+							m.EmitPRDUpdate(latest.ID)
 						}
 						return nil
 					}
@@ -702,6 +704,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 							latest.BlockedReason = blockedReasonFromVerdicts(lt.Verdicts)
 							if m.store.SavePRD(latest) == nil {
 								m.emitPRDStatus(latest, old, nil, lastBlockVerdict(lt.Verdicts))
+								m.EmitPRDUpdate(latest.ID)
 							}
 							// Drain remaining goroutines.
 							for len(inFlight) > 0 {
@@ -721,6 +724,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 							})
 							if m.store.SavePRD(latest) == nil {
 								m.emitPRDStatus(latest, old, nil, nil)
+								m.EmitPRDUpdate(latest.ID)
 							}
 							// Drain remaining goroutines already in flight — they were
 							// launched before this failure was known, so let them
@@ -757,6 +761,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			prd.BlockedReason = blockedReasonFromVerdicts(s.Verdicts)
 			if m.store.SavePRD(prd) == nil {
 				m.emitPRDStatus(prd, old, nil, lastBlockVerdict(s.Verdicts))
+				m.EmitPRDUpdate(prd.ID)
 			}
 			return nil
 		} else if contentFixVerdict != nil {

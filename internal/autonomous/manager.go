@@ -684,6 +684,9 @@ type Manager struct {
 	// sessionTags counts the sessions carrying a tag, for the delete-in-use
 	// check (tags.go). Wired by the server; nil = Automata only.
 	sessionTags SessionTagCounter
+	// tagEventFn receives tag registry and assignment changes (tags_events.go).
+	// Wired by the server; nil = no tag events. Guarded by mu.
+	tagEventFn func(TagEvent)
 
 	coordinator *Coordinator // set by Coordinator.Start; nil until then
 

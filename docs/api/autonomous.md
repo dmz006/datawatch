@@ -493,6 +493,38 @@ The reply also carries `untagged: {count, session_count}`: the Automata, and the
 sessions, that carry no tag at all. A session's inherited tags count, so a session
 is untagged only when neither it nor its Automaton has a tag.
 
+### Tag change events (WebSocket `tag_update`)
+
+Every change to the tag registry and to tag assignments sends one `tag_update`
+frame to every connected WebSocket client, so an open tag browser refreshes its
+counts without polling. The frame is sent after the change is saved, and a refused
+change (a cycle, a tag still in use, a tag with children, an unknown tag) sends nothing.
+
+The data carries IDs only. A client that needs names or counts refetches
+`GET /api/autonomous/tags?counts=true`.
+
+| `kind` | Sent when | Fields |
+|---|---|---|
+| `created` | A tag is created | `tag_id` |
+| `renamed` | A tag is renamed | `tag_id` |
+| `reparented` | A tag's parent changes | `tag_id` |
+| `recolored` | A tag's color changes | `tag_id` |
+| `deleted` | A tag is deleted | `tag_id` |
+| `assigned` | An Automaton's tag list or primary tag is saved | `prd_id` |
+| `session_assigned` | A session's own tags are saved | `session_id` (the full ID) |
+
+A tag description change sends nothing, because a description never changes a count.
+A rename or a re-parent sends exactly one frame. An Automaton's tag change is also
+reported by its `prd_update` frame, which the Automata list already uses.
+
+A status change (for example `blocked`, `needs_review` or `paused`) sends one `prd_update`
+frame for the Automaton, with its `prd_id` and `status`. Attention lists refresh from that frame.
+
+Surfaces: `tag_update` is a WebSocket event only; it has no REST, MCP, CLI or comm-channel
+form. The PWA refreshes its tag counts from it. The Android and iPhone clients have not
+been given a handler for it yet. Tag changes made through REST, MCP, CLI or the comm channel
+go through the same registry methods, so they send the same frames.
+
 ### Attention list (`GET /api/autonomous/attention`)
 
 Returns `{"statuses": [...], "items": [...]}`. The items are the Automata whose
