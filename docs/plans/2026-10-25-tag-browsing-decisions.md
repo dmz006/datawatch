@@ -4,9 +4,8 @@ Date started: 2026-10-25. The ten open questions of `docs/plans/2026-10-20-tag-b
 
 ## Decisions
 
-1. **Session tags: inherited read-only from the Automaton that spawned the session.** (Operator, 2026-10-25: "1, inherit read-only".) A session started by an Automaton appears under that Automaton's tags; a session started by hand has no tags and shows as untagged. No new session data and no session tag editing.
+1. **Session tags: both.** (Operator, 2026-10-25: first "1, inherit read-only", then "sessions may run outside of automation and have their own tag", then "1, both, set from the session detail and all surfaces".) A session spawned by an Automaton inherits that Automaton's tags. Any session, including one that runs outside any Automation, can also carry tags of its own. The session gets a new tags field. A session's own tags are set from the session detail page and from every surface that sets tags on Automata today: PWA, mobile apps, CLI, REST, MCP, the comm channel and the config surfaces that apply. Inherited tags are shown as inherited and are not edited on the session; they change with the Automaton.
 
-   **Revised the same day, pending confirmation:** the operator then said "sessions may run outside of automation and have their own tag", which means sessions that run outside any Automation need tags of their own. That points to option 3 (a session inherits its Automaton's tags and may also carry its own). Confirmation question asked; until it is answered, treat decision 1 as superseded by the statement and do not build read-only-only inheritance.
 2. **Counts: subtree counts as the main figure.** (Operator, 2026-10-25: "Q33 1 subtree counts".) Each tag shows the number of distinct items under it including its children, an item under two children counted once; the API may still return direct counts for views that want them.
 
 ## Still open (asked in order)
