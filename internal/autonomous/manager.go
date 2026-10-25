@@ -772,6 +772,17 @@ type Manager struct {
 	// sessionWaitFn — when set, executeOne waits on an adopted session through
 	// it; nil falls back to polling sessionAliveFn.
 	sessionWaitFn func(ctx context.Context, sessionID string) error
+	// sessionPaneFn — when set, the wait on an adopted session is held to the
+	// start-confirm bound (sessionStartLimit): a session that never shows a
+	// first assistant turn is ended and fails the attempt as a start failure.
+	// Nil keeps the plain adopted wait.
+	sessionPaneFn func(sessionID string) (string, error)
+	// sessionStateFn — the session state the start-confirm bound reads; "" means
+	// the bound does not apply to that session. Used only with sessionPaneFn.
+	sessionStateFn func(sessionID string) string
+	// sessionStartLimit — the start-confirm bound, the same value the worker
+	// wait loop uses. <= 0 disables the bound.
+	sessionStartLimit time.Duration
 	// decomposeSessionsFn lists live planning sessions linked to a PRD.
 	decomposeSessionsFn func(prdID string) []string
 
@@ -1045,6 +1056,49 @@ func (m *Manager) SetSessionWaitFn(fn func(ctx context.Context, sessionID string
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessionWaitFn = fn
+}
+
+// SetSessionPaneFn wires the pane reader that holds a session adopted at
+// boot-resume to the start-confirm bound. Nil keeps the plain adopted wait.
+// The daemon wires the session manager's CapturePaneVisible.
+func (m *Manager) SetSessionPaneFn(fn func(sessionID string) (string, error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionPaneFn = fn
+}
+
+// SetSessionStateFn wires the state reader for the adopted start-confirm bound.
+// It returns "" for a session the bound does not apply to.
+func (m *Manager) SetSessionStateFn(fn func(sessionID string) string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionStateFn = fn
+}
+
+// SetSessionStartLimit sets the start-confirm bound for adopted sessions, the
+// same limit the daemon's worker wait loop applies. <= 0 disables it.
+func (m *Manager) SetSessionStartLimit(limit time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionStartLimit = limit
+}
+
+// adoptedStartConfirmFor builds the start-confirm watch for a task's adopted
+// session. It returns nil when no pane hook is wired, which keeps the plain
+// adopted wait.
+func (m *Manager) adoptedStartConfirmFor(t *Task) *adoptedStartConfirm {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.sessionPaneFn == nil {
+		return nil
+	}
+	return &adoptedStartConfirm{
+		paneFn:    m.sessionPaneFn,
+		stateFn:   m.sessionStateFn,
+		killFn:    m.sessionKillerFn,
+		limit:     m.sessionStartLimit,
+		startedAt: t.StartedAt,
+	}
 }
 
 // SetSessionDeleteFn wires the post-completion session cleanup callback.

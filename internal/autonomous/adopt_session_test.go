@@ -59,15 +59,15 @@ func TestResetInProgressAdoptsSurvivingSession(t *testing.T) {
 
 func TestWaitForAdoptedSession(t *testing.T) {
 	boom := errors.New("boom")
-	if err := waitForAdoptedSession(context.Background(), func(context.Context, string) error { return boom }, nil, "s"); !errors.Is(err, boom) {
+	if err := waitForAdoptedSession(context.Background(), func(context.Context, string) error { return boom }, nil, "s", nil); !errors.Is(err, boom) {
 		t.Fatalf("wait hook error not propagated: %v", err)
 	}
-	if err := waitForAdoptedSession(context.Background(), nil, func(string) bool { return false }, "s"); err != nil {
+	if err := waitForAdoptedSession(context.Background(), nil, func(string) bool { return false }, "s", nil); err != nil {
 		t.Fatalf("dead session fallback: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := waitForAdoptedSession(ctx, nil, func(string) bool { return true }, "s"); !errors.Is(err, context.Canceled) {
+	if err := waitForAdoptedSession(ctx, nil, func(string) bool { return true }, "s", nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled ctx: %v", err)
 	}
 }

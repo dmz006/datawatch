@@ -6248,6 +6248,19 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// Boot-resume: adopt a live session only once its agent has started. A
 			// live bare shell from a boot-time launch failure is ended and requeued.
 			amgr.SetSessionAgentStartedFn(mgr.AgentStarted)
+			// Start-confirm bound for an adopted worker: the same limit the worker
+			// wait loop applies. Only claude-code sessions are held to it, since the
+			// assistant-turn marker is claude-code's; other families report no state
+			// and are never failed by it.
+			amgr.SetSessionPaneFn(mgr.CapturePaneVisible)
+			amgr.SetSessionStateFn(func(sessionID string) string {
+				s, ok := mgr.GetSession(sessionID)
+				if !ok || s.BackendFamily != "claude-code" {
+					return ""
+				}
+				return string(s.State)
+			})
+			amgr.SetSessionStartLimit(time.Duration(config.NormalizeSessionStartConfirmSeconds(cfg.Autonomous.SessionStartConfirmSeconds)) * time.Second)
 			// Wait for an adopted session by its state / completion marker, so it
 			// works for any backend (claude-code, opencode, pi-prompt).
 			amgr.SetSessionWaitFn(func(ctx context.Context, sessionID string) error {
