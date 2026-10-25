@@ -178,6 +178,7 @@ The restart matrix (`scripts/restart-matrix.sh`, see [The restart matrix](#the-r
 | Scheduled job that came due while the daemon was down | Verified on a sandbox daemon. The job fires once after boot and is marked done. | Restart matrix state `scheduled-due` |
 | Open WebSocket clients | Verified on a sandbox daemon. Clients reconnect on their own and get a full session snapshot first. Events emitted while the daemon was down are not replayed, so clients must not assume gap-free delivery. | Restart matrix state `websocket-clients` |
 | Git commit in flight | Verified for the task-start snapshot commit only. Git removes its own index lock on TERM, the task is reset to pending, and the commit is made once by the new run. A merge, a push and the commit of a worker's output are not measured. | Restart matrix state `git-operation` |
+| Task whose first worker launch was held, so its pane holds only a bare shell | **Not working.** The live check fails: at boot the bare shell is kept as the task's live session instead of being ended, so the task completes on a pane where the agent never started. The restart does not duplicate or lose output, but the adoption is the defect. Open: the boot pass needs a fix, then a passing live run. | Restart matrix state `restart-during-launch` (fails; see `docs/plans/restart-matrix-findings.md`) |
 
 **What does not survive.** Two things, both listed as open choices in `docs/plans/restart-matrix-findings.md` and neither changed:
 
