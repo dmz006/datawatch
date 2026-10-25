@@ -12,6 +12,9 @@
 #   verify-script     the worker finished; the daemon is running a verification script
 #   verify-script-mid the same, with the script already half done (start marker
 #                     written, now sleeping)
+#   restart-during-launch  the first worker launch is held in the fake backend's
+#                     launch step: the pane holds only a bare shell, no agent.
+#                     The restart must end that shell at boot, not adopt it.
 #
 # Usage:
 #   scripts/restart-matrix/states-session.sh [--strict] [--only NAME[,NAME]] [--list] [--keep]
@@ -30,7 +33,7 @@ SC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 . "$SC_DIR/lib.sh"
 
-SC_ALL_STATES=(planning worker-running verify-session verify-script verify-script-mid)
+SC_ALL_STATES=(planning worker-running verify-session verify-script verify-script-mid restart-during-launch)
 
 sc_usage() {
   sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed -E 's/^# ?//'
@@ -328,6 +331,53 @@ state_verify_script() {
 
 state_verify_script_mid() {
   sc_script_state verify-script-mid "verifying through a daemon-run script that is half done: start marker written, now sleeping" 1
+}
+
+# The first worker launch holds in the fake backend before its agent starts, so
+# the daemon's pane is a bare shell with no agent (AgentStarted reports false).
+# The restart must end that shell at boot: adopting it as live would leave the
+# task waiting on a session that never ran, and a fresh launch would then be a
+# duplicate. The relaunch runs unheld and the PRD completes unaided.
+state_restart_during_launch() {
+  local name=restart-during-launch ticks=3
+  rm_state_begin "$name" "restart while the first worker launch is held in the fake backend's launch step: the pane holds only a bare shell, no agent"
+  sc_boot "$name"
+  echo 1 >"$RM_CTRL/planner_delay"
+  echo "$ticks" >"$RM_CTRL/worker_ticks"
+  echo 90 >"$RM_CTRL/launch_delay" # backstop: the hold lasts this long unless launch.release appears
+  sc_prd_new verify/quick.sh || { sc_abort_state "$name" "could not create the PRD"; return; }
+  sc_plan_start
+  sc_approve_and_run || { sc_abort_state "$name" "plan never became runnable (PRD status: $(rm_prd_status "$SC_PRD"))"; return; }
+  if ! rm_wait_until 120 sc_ctrl_at_least worker.held 1; then
+    sc_abort_state "$name" "the first worker launch never reached its hold (task status: $(rm_task_field "$SC_PRD" status))"
+    return
+  fi
+  local held_pid held_session held_tmux held_cmd bare=1
+  held_pid="$(rm_last_pid "$RM_CTRL/worker.held")"
+  held_session="$(rm_task_field "$SC_PRD" session_id)"
+  held_tmux="$(rm_session_rows | jq -r --arg id "$held_session" '[.[]? | select(.id == $id or .full_id == $id) | .tmux_session][0] // empty')"
+  # list-panes, not display-message: display-message prints nothing for a session target.
+  held_cmd="$(rm_tmux list-panes -t "=$held_tmux" -F '#{pane_current_command}' 2>/dev/null | head -n 1)"
+  case "$held_cmd" in bash | sh | zsh | dash | fish | ksh) bare=0 ;; esac
+  rm_check "held_pane_is_bare_shell" "$bare" "pane ${held_tmux:-?} runs '${held_cmd:-nothing}' before the restart"
+
+  sc_restart_with_snapshots "$name" || { sc_abort_state "$name" "sandbox daemon did not come back"; return; }
+  rm_wait_until 30 bash -c "! kill -0 $held_pid 2>/dev/null" || true
+  local ended=1
+  if [[ -n "$held_tmux" ]] && ! rm_tmux has-session -t "=$held_tmux" 2>/dev/null && ! rm_pid_alive "$held_pid"; then ended=0; fi
+  rm_check "bare_shell_ended_at_boot" "$ended" "launch pid ${held_pid:-?} alive: $(rm_pid_alive "$held_pid" && echo yes || echo no); pane ${held_tmux:-?} present: $(rm_tmux has-session -t "=$held_tmux" 2>/dev/null && echo yes || echo no)"
+
+  sc_wait_settled "$SC_PRD" worker.done 240
+  rm_wait_until 60 sc_prd_status_in "$SC_PRD" completed || true
+  sc_finish "$name"
+
+  sc_common_criteria "$SC_BEFORE" "$SC_AFTER_RESTART" "$SC_FINAL"
+  local final_session
+  final_session="$(sc_json_get "$SC_FINAL" '.task.session_id')"
+  rm_check "bare_shell_not_adopted" "$([[ -n "$held_session" && "$final_session" != "$held_session" ]] && echo 0 || echo 1)" "task session $held_session -> $final_session"
+  rm_check "task_not_left_in_progress" "$(sc_task_status_in "$SC_PRD" completed && echo 0 || echo 1)" "task status: $(rm_task_field "$SC_PRD" status)"
+  rm_check "prd_completes_unaided" "$(sc_prd_status_in "$SC_PRD" completed && echo 0 || echo 1)" "PRD status: $(rm_prd_status "$SC_PRD")"
+  rm_state_end "$SC_BEFORE" "$SC_FINAL"
 }
 
 # --------------------------------------------------------------------- main ----

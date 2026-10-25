@@ -62,6 +62,66 @@ func TestResolveVerifyingTask(t *testing.T) {
 	}
 }
 
+func TestResolveVerifyingResumeStartFailed(t *testing.T) {
+	okVerdict := &VerificationResult{OK: true, Summary: "all checks passed", VerifiedAt: time.Now()}
+
+	live := func(string) bool { return true }
+	dead := func(string) bool { return false }
+	started := func(string) bool { return true }
+	notStarted := func(string) bool { return false }
+
+	tests := []struct {
+		name         string
+		alive        func(string) bool
+		agentStarted func(string) bool
+		task         *Task
+		want         VerifyingResume
+	}{
+		{"live bare shell with no worker result is a start failure", live, notStarted, &Task{SessionID: "s"}, VerifyingResumeStartFailed},
+		{"live session whose agent started is kept", live, started, &Task{SessionID: "s"}, VerifyingResumeKeepLive},
+		{"nil agent hook keeps the live session", live, nil, &Task{SessionID: "s"}, VerifyingResumeKeepLive},
+		{"live bare shell with a recorded worker result is kept", live, notStarted, &Task{SessionID: "s", AttemptCommitSHAs: []string{"abc123"}}, VerifyingResumeKeepLive},
+		{"live bare shell with a recorded verdict is kept", live, notStarted, &Task{SessionID: "s", Verification: okVerdict}, VerifyingResumeKeepLive},
+		{"dead session is not a start failure", dead, notStarted, &Task{SessionID: "s"}, VerifyingResumeReset},
+		{"no session is not a start failure", live, notStarted, &Task{}, VerifyingResumeReset},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ResolveVerifyingResume(tt.alive, tt.agentStarted, nil, tt.task); got != tt.want {
+				t.Errorf("ResolveVerifyingResume() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStableAgentStarted(t *testing.T) {
+	old := agentStartSampleGap
+	agentStartSampleGap = 0
+	defer func() { agentStartSampleGap = old }()
+
+	// A held launch reads not-started on every sample: not started.
+	calls := 0
+	never := stableAgentStarted(func(string) bool { calls++; return false })
+	if never("s") {
+		t.Fatal("a session that never started on any sample reported started")
+	}
+	if calls != agentStartSamples {
+		t.Fatalf("calls = %d, want %d samples", calls, agentStartSamples)
+	}
+
+	// A worker caught between its ticks on the first sample is started on a later one.
+	seq := []bool{false, false, true}
+	i := 0
+	between := stableAgentStarted(func(string) bool { v := seq[i]; i++; return v })
+	if !between("s") {
+		t.Fatal("a worker started on a later sample reported not started")
+	}
+
+	if stableAgentStarted(nil) != nil {
+		t.Fatal("a nil check must stay nil so the start gate is skipped")
+	}
+}
+
 func TestResolveVerifyingResume(t *testing.T) {
 	okVerdict := &VerificationResult{OK: true, Summary: "all checks passed", VerifiedAt: time.Now()}
 
@@ -86,7 +146,7 @@ func TestResolveVerifyingResume(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ResolveVerifyingResume(tt.alive, tt.output, tt.task); got != tt.want {
+			if got := ResolveVerifyingResume(tt.alive, nil, tt.output, tt.task); got != tt.want {
 				t.Errorf("ResolveVerifyingResume() = %d, want %d", got, tt.want)
 			}
 		})

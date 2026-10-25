@@ -213,7 +213,7 @@ with a live worker session. On boot, the resumed run looks at each
 `in_progress` task and does one of three things:
 
 - **Adopts the live worker** (the common case, when the worker's session
-  survived the restart). The task stays `in_progress` on the *same* session
+  survived the restart and its agent had started). The task stays `in_progress` on the *same* session
   id, keeps holding its capacity slot, and the resumed run simply waits for
   the worker to finish and then verifies its result. No second worker is
   spawned and no duplicate session appears for the same task.
@@ -222,7 +222,8 @@ with a live worker session. On boot, the resumed run looks at each
   finished in the shutdown window, so verifying the existing output is
   faster than re-running it.
 - **Resets the task to `pending`** only when the session is dead *and* no
-  completion marker exists. The old behavior was to reset unconditionally
+  completion marker exists, or when the live session is a bare shell whose
+  agent never started (see the next section). The old behavior was to reset unconditionally
   and kill the worker; that is no longer the case.
 
 This applies to every worker backend (`claude-code`, `opencode` and
@@ -240,6 +241,40 @@ surfaces an `adopted_session` marker, and the session list shows the same
 worker session continuing to run. A reset task is the one to question —
 check the session's log for why it died (crash, OOM, operator kill) before
 resetting it again.
+
+### A launch that was held at restart
+
+If the daemon restarts while a worker's first launch is still held, the pane
+holds only a bare shell with no agent in it. The daemon does not adopt that
+shell as the task's session:
+
+- At boot the shell is ended and the task goes back to `pending` with the
+  error `session never started`. No retry is counted, and the task is launched
+  once more on a new session. A task that was `verifying` on such a session is
+  requeued the same way.
+- An adopted claude-code worker that sits in `waiting_input` with no assistant
+  output for longer than `autonomous.session_start_confirm_seconds` (default
+  120 seconds, measured from the task's launch time) is ended as a start
+  failure. The first two such failures requeue the task and the third fails
+  it. A bare shell found at boot does not count toward that budget, and neither
+  does the normal retry budget.
+
+What you see: after a restart the task's error reads `session never started`
+and it runs again on a new session id. If a task fails on its start budget, its
+last pane lines are kept on the task. Check the agent install and any startup
+dialog in that pane before you retry the task.
+
+### Launches still running at shutdown
+
+On a stop the daemon waits up to 6 seconds for the HTTP server to finish, so
+no new launch arrives over HTTP. It then refuses new session launches and
+gives each launch still in progress a fixed 15 seconds to finish. A launch that
+finishes inside that time is adopted by the next boot like any other live
+session. A launch still running after it is rolled back: its session is ended,
+the next boot does not adopt it, and the daemon logs
+`[session] rolled back launch <id>: still running at shutdown` for each one.
+When every launch finishes in time, nothing is logged. The 15 seconds is a
+fixed value, not a config key.
 
 ### How a task stays tied to its worker session
 

@@ -175,6 +175,10 @@ rm_find_binary() {
 #
 # Behaviour is steered by files in the control dir, read when the script starts:
 #   planner_delay / verifier_delay / worker_ticks   seconds or tick counts
+#   launch_delay                                    seconds the FIRST worker launch
+#                                                   holds before its agent starts
+#                                                   (a bare shell); launch.release
+#                                                   ends the hold early
 #   plan.json                                       the plan the planner returns
 # Every role appends a line "<epoch> pid=<pid>" to <role>.starts so a scenario
 # can count how many times a role ran and probe whether that process survived.
@@ -193,6 +197,21 @@ case "\$task" in
   *guardrail-output*) role=guardrail ;;
   *)                  role=worker ;;
 esac
+if [[ "\$role" == worker ]]; then
+  # launch-delay: the first worker launch holds, before its agent starts, until
+  # launch.release exists or launch_delay seconds pass. The wait uses bash
+  # builtins only: a sleep child on the pane's tty would make AgentStarted see
+  # an agent in a session that is really a bare shell.
+  echo "pid=\$\$" >>"\$ctrl/worker.launches"
+  delay="\$(num launch_delay 0)"
+  if ((delay > 0)) && ((\$(grep -c '' "\$ctrl/worker.launches") == 1)); then
+    echo "pid=\$\$" >>"\$ctrl/worker.held"
+    hold_until=\$((SECONDS + delay))
+    while ((SECONDS < hold_until)) && [[ ! -e "\$ctrl/launch.release" ]]; do
+      read -r -t 1 -u 9 _ 9<>"\$ctrl/launch-hold.fifo" || true
+    done
+  fi
+fi
 echo "\$(date +%s) pid=\$\$" >>"\$ctrl/\$role.starts"
 case "\$role" in
   planner)
@@ -235,6 +254,9 @@ case "\$role" in
 esac
 EOF
   chmod +x "$RM_CTRL/fake-backend.sh"
+  # the launch hold waits on this FIFO with a builtin read timeout; nothing is written to it
+  rm -f "$RM_CTRL/launch-hold.fifo"
+  mkfifo -m 600 "$RM_CTRL/launch-hold.fifo" || rm_die "could not create the launch-hold fifo"
 }
 
 # rm_write_config — sandbox config: own data_dir, free ports, TLS off, fake backends.

@@ -1859,6 +1859,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	pidFilePath := filepath.Join(expandHome(cfg.DataDir), "daemon.pid")
 	defer func() { _ = os.Remove(pidFilePath) }()
 
+	// httpStopped is closed when the PWA server's Start returns, which is after
+	// it has shut its listeners down. It stays nil when no server is started.
+	var httpStopped chan struct{}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -1871,7 +1875,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[warn] kill sessions on exit: %v\n", err)
 			}
 		}
-		_ = mgr.Close() // flush deferred session-store writes before exit
+		// The store is not closed here: the serve path drains in-flight
+		// launches first, and that drain must still be able to save the
+		// sessions it rolls back. The deferred mgr.Close flushes the store.
 		cancel()
 	}()
 
@@ -6227,6 +6233,31 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 				return out, true
 			})
+			// Boot-resume: adopt a live session only once its agent has started. A
+			// live bare shell from a boot-time launch failure is ended and requeued.
+			amgr.SetSessionAgentStartedFn(mgr.AgentStarted)
+			// Start-confirm bound for an adopted worker: the same limit the worker
+			// wait loop applies. Only claude-code sessions are held to it, since the
+			// assistant-turn marker is claude-code's; other families report no state
+			// and are never failed by it.
+			amgr.SetSessionPaneFn(mgr.CapturePaneVisible)
+			amgr.SetSessionStateFn(func(sessionID string) string {
+				s, ok := mgr.GetSession(sessionID)
+				if !ok || s.BackendFamily != "claude-code" {
+					return ""
+				}
+				return string(s.State)
+			})
+			amgr.SetSessionStartLimit(time.Duration(config.NormalizeSessionStartConfirmSeconds(cfg.Autonomous.SessionStartConfirmSeconds)) * time.Second)
+			// The window is measured from the adopted worker's last evidence of life
+			// (update, channel event, log write), as the worker wait loop does.
+			amgr.SetSessionLastLifeFn(func(sessionID string) time.Time {
+				s, ok := mgr.GetSession(sessionID)
+				if !ok {
+					return time.Time{}
+				}
+				return sessionStartAdoptionSeed(s.UpdatedAt, s.LastChannelEventAt, logFileModTime(s.LogFile))
+			})
 			// Wait for an adopted session by its state / completion marker, so it
 			// works for any backend (claude-code, opencode, pi-prompt). A claude-code
 			// worker also gets the same idle-nudge decision as a fresh one, seeded
@@ -7634,7 +7665,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		}
 		addr := fmt.Sprintf("%s://%s:%d", scheme, cfg.Server.Host, cfg.Server.Port)
 		fmt.Printf("[%s] PWA server: %s\n", cfg.Hostname, addr)
+		httpStopped = make(chan struct{})
 		go func() {
+			defer close(httpStopped)
 			defer func() {
 				if p := recover(); p != nil {
 					fmt.Printf("[%s] PWA server panic (recovered): %v\n", cfg.Hostname, p)
@@ -8602,6 +8635,18 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// No routers — keep alive for HTTP server / proxy mode
 		<-ctx.Done()
 	}
+
+	// Shutdown tail. A signal cancels ctx, which makes the PWA server shut
+	// down. Wait for that to finish so no new launch arrives over HTTP, then
+	// drain the launches still in flight before the process exits. The wait
+	// applies only after a signal, not when the routers simply finish.
+	if ctx.Err() != nil && httpStopped != nil {
+		select {
+		case <-httpStopped:
+		case <-time.After(shutdownHTTPWait):
+		}
+	}
+	drainLaunchesOnShutdown(mgr, os.Stdout)
 	return nil
 }
 

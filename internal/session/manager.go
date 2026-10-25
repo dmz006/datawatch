@@ -580,6 +580,15 @@ type Manager struct {
 	monitors map[string]context.CancelFunc // fullID -> cancel func for monitor goroutine
 	trackers map[string]*Tracker           // fullID -> Tracker
 
+	// launching holds the cancel func of every Start that has registered its
+	// launch (launch_registry.go), keyed by session full ID. launchSessions
+	// holds the same launches' sessions so DrainLaunches can roll them back.
+	// draining is set when DrainLaunches begins and refuses every new launch.
+	// All three are guarded by mu.
+	launching      map[string]context.CancelFunc
+	launchSessions map[string]*Session
+	draining       bool
+
 	// claudeDialogDismiss tracks the accept-keystroke record per
 	// (session, dialog) for claude-code startup dialogs (workspace trust,
 	// dev-channels consent). Key: fullID + ":" + dialog name.
@@ -1885,6 +1894,12 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		return nil, ErrGlobalCooldown
 	}
 
+	// Refuse before any filesystem or git work once the daemon is draining.
+	// registerLaunch repeats the check under mu, where it is race-free.
+	if m.launchesDraining() {
+		return nil, ErrDaemonDraining
+	}
+
 	// Check max sessions (count only running/waiting sessions on this host)
 	if m.maxSessions > 0 {
 		all := m.store.List()
@@ -2157,6 +2172,15 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		return sess, nil
 	}
 
+	// Register the launch before the tmux session exists so DrainLaunches can
+	// find it. Every return path below deregisters it.
+	launchCtx, cancelLaunch := context.WithCancel(ctx)
+	if err := m.registerLaunch(sess, cancelLaunch); err != nil {
+		cancelLaunch()
+		return nil, err
+	}
+	defer m.deregisterLaunch(fullID)
+
 	// Create tmux session with per-LLM console size.
 	// LLM registry values (via opts) take precedence over cfg defaults.
 	cols, rows := 80, 24
@@ -2407,14 +2431,14 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 				} else {
 					m.debugf("launching %q with resume=%q", backendName, resumeID)
 				}
-				launchErr = rb.LaunchResume(ctx, launchTask, tmuxSession, projectDir, logFile, resumeID)
+				launchErr = rb.LaunchResume(launchCtx, launchTask, tmuxSession, projectDir, logFile, resumeID)
 			} else {
 				m.debugf("launching %q (no resume support, ignoring resumeID)", backendName)
-				launchErr = launchFn(ctx, launchTask, tmuxSession, projectDir, logFile)
+				launchErr = launchFn(launchCtx, launchTask, tmuxSession, projectDir, logFile)
 			}
 		} else {
 			m.debugf("launching %q", backendName)
-			launchErr = launchFn(ctx, launchTask, tmuxSession, projectDir, logFile)
+			launchErr = launchFn(launchCtx, launchTask, tmuxSession, projectDir, logFile)
 		}
 		if launchErr != nil {
 			m.killPane(sess.FullID, tmuxSession, "spawn aborted: LLM backend launch failed")
@@ -2472,7 +2496,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 
 	// Start monitoring the session output
-	monCtx, cancel := context.WithCancel(ctx)
+	monCtx, cancel := context.WithCancel(launchCtx)
 	m.mu.Lock()
 	m.monitors[fullID] = cancel
 	m.mu.Unlock()

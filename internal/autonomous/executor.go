@@ -1089,15 +1089,32 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				m.adoptCapacity(prd, t)
 				skipSpawn = true
 				adopted := AdoptedWait{PRDID: prd.ID, TaskID: t.ID, SessionID: t.SessionID, NudgedAt: t.NudgeTimeForSession(t.SessionID)}
-				if werr := waitForAdoptedSession(ctx, waitFn, aliveFn, adopted); werr != nil {
+				startConfirm := m.adoptedStartConfirmFor(t)
+				if werr := waitForAdoptedSession(ctx, waitFn, aliveFn, adopted, startConfirm); werr != nil {
 					if ctx.Err() != nil {
 						return nil
+					}
+					m.releaseCapacity(t.ID)
+					if errors.Is(werr, ErrSessionNeverStarted) {
+						// The adopted session never produced its first assistant turn:
+						// a START failure, counted against SessionStartRetryBudget the
+						// same way as the worker path below. The normal retry budget is
+						// left untouched.
+						m.store.WithLock(func() {
+							t.AdoptedSession = false
+							t.StartFailureTail = startConfirm.failureTail
+						})
+						exhausted, serr := m.countSessionStartFailure(ctx, prd, t, run, werr)
+						if serr != nil || exhausted {
+							return serr
+						}
+						attempt-- // offset the loop's post-iteration attempt++
+						continue
 					}
 					// A stall or a failed/killed session takes the normal retry path:
 					// free the lease; the retry kills the leftover session and
 					// re-admits a fresh spawn like any other failed attempt.
 					lastFailureCategory = "infra"
-					m.releaseCapacity(t.ID)
 					hint = werr.Error()
 					m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeForError(werr), Category: lastFailureCategory, Summary: hint})
 					m.store.WithLock(func() { t.Error = hint; t.AdoptedSession = false })
@@ -1375,44 +1392,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				// branch because the daemon's wait loop wraps BOTH sentinels in
 				// the same stall error (ErrSessionNeverStarted must win).
 				if errors.Is(err, ErrSessionNeverStarted) {
-					t.StartFailures++
-					if t.StartFailures > SessionStartRetryBudget {
-						// Start-failure budget exhausted: fail the task with the
-						// standard exhaustion shape, keeping StartFailureTail so
-						// the last 20 pane lines stay visible for post-mortem
-						// (the daemon's wait loop sets it on the task before the
-						// kill). Consuming no normal retry budget here either.
-						oldStatus := t.Status
-						t.Status = TaskFailed
-						t.Error = SessionStartFailureReason
-						t.FailureReason = &FailureReason{
-							Category:   "infra",
-							Detail:     fmt.Sprintf("%s (%d consecutive start failures)", SessionStartFailureReason, t.StartFailures),
-							Source:     "session-start",
-							Retryable:  false,
-							OccurredAt: time.Now(),
-						}
-						log.Printf("[autonomous] task %s failed: %s after %d consecutive start failures",
-							t.ID, SessionStartFailureReason, t.StartFailures)
-						m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: err.Error()})
-						m.recordFailureLearning(prd, t.ID, "infra", t.FailureReason.Detail)
-						m.relocateCheckpoint(prd, t)
-						if serr := m.store.SaveTask(t); serr != nil {
-							return serr
-						}
-						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
-						m.deleteTaskSession(t.SessionID)
-						return nil
+					exhausted, serr := m.countSessionStartFailure(ctx, prd, t, run, err)
+					if serr != nil || exhausted {
+						return serr
 					}
-					// Below budget: re-queue the SAME attempt. The normal retry
-					// budget is left untouched — the attempt offset below cancels
-					// the loop's post-iteration increment so the retry counter is
-					// not consumed, and no RetryPolicy category is recorded.
-					log.Printf("[autonomous] task %s start failure %d/%d — re-queueing without consuming the normal retry budget",
-						t.ID, t.StartFailures, SessionStartRetryBudget)
-					t.Error = err.Error()
-					m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: err.Error(), Requeue: true})
-					_ = m.store.SaveTask(t)
 					attempt-- // offset the loop's post-iteration attempt++
 					continue
 				}
@@ -1723,6 +1706,47 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 
 // deleteTaskSession calls sessionDeleteFn (if wired) to remove an ephemeral
 // executor session from the session list after its task reaches terminal state.
+// countSessionStartFailure books one session start failure of t against
+// SessionStartRetryBudget. Below the budget the task keeps cause as its error
+// and the caller re-queues the same attempt. Past the budget the task fails
+// with the standard exhaustion shape, keeping its StartFailureTail for
+// post-mortem, and its session is deleted; exhausted reports that. The normal
+// PRD retry budget is never touched here.
+func (m *Manager) countSessionStartFailure(ctx context.Context, prd *PRD, t *Task, run attemptRun, cause error) (exhausted bool, err error) {
+	t.StartFailures++
+	if t.StartFailures > SessionStartRetryBudget {
+		oldStatus := t.Status
+		t.Status = TaskFailed
+		t.Error = SessionStartFailureReason
+		t.FailureReason = &FailureReason{
+			Category:   "infra",
+			Detail:     fmt.Sprintf("%s (%d consecutive start failures)", SessionStartFailureReason, t.StartFailures),
+			Source:     "session-start",
+			Retryable:  false,
+			OccurredAt: time.Now(),
+		}
+		log.Printf("[autonomous] task %s failed: %s after %d consecutive start failures",
+			t.ID, SessionStartFailureReason, t.StartFailures)
+		m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error()})
+		m.recordFailureLearning(prd, t.ID, "infra", t.FailureReason.Detail)
+		m.relocateCheckpoint(prd, t)
+		if serr := m.store.SaveTask(t); serr != nil {
+			return true, serr
+		}
+		m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+		m.deleteTaskSession(t.SessionID)
+		return true, nil
+	}
+	// Below budget: re-queue the SAME attempt. The normal retry budget is left
+	// untouched and no RetryPolicy category is recorded.
+	log.Printf("[autonomous] task %s start failure %d/%d — re-queueing without consuming the normal retry budget",
+		t.ID, t.StartFailures, SessionStartRetryBudget)
+	t.Error = cause.Error()
+	m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error(), Requeue: true})
+	_ = m.store.SaveTask(t)
+	return false, nil
+}
+
 func (m *Manager) deleteTaskSession(sessionID string) {
 	if sessionID == "" {
 		return

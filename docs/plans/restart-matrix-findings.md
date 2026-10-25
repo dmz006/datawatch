@@ -4,6 +4,22 @@ Date: 2026-10-24. Harness: `scripts/restart-matrix.sh` with `scripts/restart-mat
 
 The matrix puts one unit of autonomous work into each of twelve states, restarts the sandbox daemon, and records what became of the work. No real model is involved: planner, worker, verifier and guardrail judge are one fake shell backend that writes the same outputs a real role would, and the fake worker ends on the completion marker a real worker prints. Values below come from the record files the run wrote (`records/<state>.json`, plus before / immediately-after / settled snapshots).
 
+## restart-during-launch (live check, 2026-10-25)
+
+State: the first worker launch is held in the fake backend's launch step, so the daemon's pane is a bare shell with no agent. The restart must end that shell at boot and must not adopt it.
+
+Result: **FAIL, 7 pass, 3 fail** (direct run of `scripts/restart-matrix.sh --strict --keep --only restart-during-launch`, `RM_KILL_MODE=control-group`, sandbox daemon v9.11.0, own config, port and socket dir; the run also passes `prd_completes_unaided`, `no_duplicate_sessions`, `no_lost_output`, `retry_count_unchanged` and `restart_exited_on_term`).
+
+| Check | Result | Classification |
+|---|---|---|
+| `bare_shell_not_adopted` | FAIL, task session `0134` → `0134` | **Product.** The daemon log shows `boot-resume: task 6b650002 kept (was verifying) on live session 0134, capacity lease re-adopted`, and the worker was then delivered into the same pane with `send_input`. The held shell was adopted as live. |
+| `bare_shell_ended_at_boot` | FAIL, launch pid 3169016 alive after the restart | **Product, with a harness part.** The held launch pid survived the restart, consistent with the adoption above. The criterion also needs the pane to be found, which the harness could not do (next row). |
+| `held_pane_is_bare_shell` | FAIL, pane not found, `runs 'nothing'` | **Harness.** `rm_session_rows` matches the task's short id (`0134`) against `.full_id // .id`, but `full_id` is `restart-matrix-0134`, so the tmux session `cs-restart-matrix-0134` is never looked up. The pre-restart precondition is therefore unverified. |
+
+Task status (API view): before the restart `verifying`, session `0134`, retry 0; after the restart `completed`, session `0134` (adopted, `adopted_session: false`), retry 0. Worker starts 0 → 1, verifier starts 0 → 1, planner starts 1 → 1. Duplicate sessions 0, lost output 0 bytes.
+
+Sandbox failure on the first attempts (not a restart result): the sandbox daemon's tmux `new-session` failed with `File name too long`, so planning never started and the PRD stayed `draft` (`state_reached` FAIL). tmux expands a relative `TMUX_TMPDIR` to an absolute path, and the absolute socket path was 114 bytes against the 107-byte limit. The harness's own length check (`scripts/restart-matrix/lib.sh`, `${#sock} > 100`) measures the unexpanded relative string, so it does not catch this. The state fits only when the sandbox base is an absolute path of at most 47 bytes (the run used `<worktree>/.d`).
+
 ## Result
 
 After the two fixes below, ten of twelve rows survive a restart with no reset, no redo of the worker and no duplicate session. One row (verifying through a live verifier session) survives except that the verifier itself runs once more. One row (planning) still fails and is an OPERATOR PICK, left as it was.
@@ -15,6 +31,7 @@ Latest strict run (this pass, control-group, all twelve states, `scripts/restart
 | yes | worker running, waiting for capacity, waiting on an external condition, merge or git operation in progress (see its limit), scheduled job due during restart, open WebSocket clients, verifying through a daemon-run script (the script runs again, see the pick), verifying with the script half done (same), final gate script running (same), Automation with active branches |
 | partly | verifying through a live verifier session: worker, retry count and session count are kept; the verifier runs once more |
 | no | planning (OPERATOR PICK, not changed) |
+| no at the recorded live run (before the fix), yes on one run after it | restart during launch: first worker launch held, bare shell at restart (see the fix section below) |
 
 Two causes explained every failing row. Both were fixed; the first one needed two changes:
 
@@ -22,6 +39,19 @@ Two causes explained every failing row. Both were fixed; the first one needed tw
 2. A planning PRD is reset to draft and its live decompose session is killed (`internal/autonomous/api.go` planning case and `killOrphanDecomposeSessions` in `internal/autonomous/manager.go`), because the goroutine that would read the plan is gone. The PRD then waits for the operator. Not changed: OPERATOR PICK.
 
 The daemon-run verification script is still a direct child of the daemon (`runVerificationScript` in `internal/autonomous/verification_script_exec.go`, `exec.Command("bash", …)`) with no durable record, so a restart either ends it (control group) or orphans it (process), and the verification runs the script again from the start. That is the second OPERATOR PICK below and is unchanged. What changed is that the worker is no longer run again beside it.
+
+## restart-during-launch: the fix and its live results
+
+The state holds a worker's first launch in the fake backend's launch step, so the pane is a bare shell when the daemon restarts. Two changes address it:
+
+- **Bare-shell adoption gate** (`internal/autonomous/adopt_session.go`, `internal/session/agent_started.go`; commits cba24a1d, d7cb4f96, 379f896c). A live session is adopted at boot only once its agent has started. A live bare shell is ended and the task is requeued with the start-failure reason, with no retry counted. The agent check is sampled three times, a second apart, so a snapshot between a worker's ticks is not read as a bare shell. The same commit fixes the harness's held-pane lookup, which now matches the short session id.
+- **Start-confirm bound for adopted sessions** (`internal/autonomous/adopt_session.go`, commit cb9c2c71). An adopted claude-code session that sits in `waiting_input` with no assistant turn for longer than `autonomous.session_start_confirm_seconds` (default 120 s, measured from the task's launch time) is ended and counted as a start failure against the start retry budget. Other backends are not held to this bound.
+
+Live results:
+
+- **Recorded live run, before the fixes** (`scripts/restart-matrix.sh --strict --keep --only restart-during-launch`, `RM_KILL_MODE=control-group`, sandbox daemon v9.11.0, 2026-10-25 10:48): **FAIL, 7 pass, 3 fail**. The checks are in the section above. The held shell was adopted as live (session `0134` kept), and the launch pid survived the restart.
+- **Run after the fixes** (commit 379f896c, sandbox daemon, same harness, 2026-10-25 13:59, `restart-during-launch` and `worker-running` only, in measure mode, not `--strict`): restart-during-launch **10 of 10 checks pass**. The held launch pid was gone after the restart and the pane was absent. The task completed on a new session (`7c5b` → `2c00`), retry count 0 → 0, no duplicate sessions, no lost output.
+- The record of the post-fix run is in the worktree under `.rm/`, which is git-ignored, so it is not in the commit. It is one run on one machine with a fake backend. The state is not in the release smoke's strict list, and a `--strict` rerun is still owed.
 
 ## The matrix
 
@@ -43,6 +73,7 @@ Measured with `RM_KILL_MODE=control-group` (the mode that matches the unit; see 
 | Automation with active branches | yes | the Automation: `active` → `active` → `completed`; both branch PRDs `completed` | kept branch worker f9b5 → f9b5; the finished branch worker d522 kept (not redone); verifiers ca0a, 5396 and 2373 | daemon 3528440 → 3541166; worker pane shells 3535420 and 3538904 | 0 → 0 | 0 | 0 bytes | worker no (starts 3 → 3); verifier 1 → 3 | Both cursors came back (2 → 2), status `active`. The branch whose worker was alive was kept; the branch whose worker had finished while verifying is kept `verifying` and verified once, so the join is released and the Automation completes. Before the fixes: worker starts 3 → 5, one branch `failed`, Automation `blocked`. | Fixed by the shared boot-pass change. Nothing Automation-specific. |
 | Scheduled job due during the restart | yes | none (no PRD): schedule `pending` → fired once → `done` | none → d7d0 (spawned after boot) | daemon 3031576 → 3036999, down 33 s across the due time | 0 → 0 | 0 | 0 bytes | no (the spawn ran once; fire count 1 after a 25 s grace) | The due time passed while the daemon was down; the scheduler fired the missed job once after boot and marked it done. | none needed |
 | Open WebSocket clients | yes (limit below) | `verifying` → `verifying` → `verifying` (worker running throughout) | worker 46d5 → 46d5 | daemon 3041208 → 3045565; pane shell 3042607 unchanged | 0 → 0 | 0 | 0 bytes | no | Both clients saw the drop and reconnected 9.0 s after it (a 5 s outage, the boot, and the client's own retry), neither gave up, and messages flowed again (5 before, 5 after). The first message on reconnect is a full session snapshot, so state resyncs. Events emitted while the daemon was down are not replayed. | none needed; clients must not assume gap-free delivery |
+| Restart during launch: first worker launch held, pane is a bare shell (`restart-during-launch`) | **no** at the recorded live run (FAIL, 7 pass, 3 fail, before the fix); **yes** on one run after the fix (10 of 10) | `verifying` → `verifying` → `completed` (recorded run). After the fix: `verifying` → `verifying` → `completed` | recorded run: held session `0134` kept as live. After the fix: `7c5b` → `2c00` (new) | recorded run: held launch pid 3169016 alive after the restart. After the fix: launch pid 1018243 gone | 0 → 0 | 0 | 0 bytes | recorded run: the worker was delivered into the adopted shell, no relaunch. After the fix: the held launch is ended, the relaunch is the one run (not counted) | A bare shell was adopted as the task's live session at boot, so the task waited on a session whose agent never ran. Fixed by the bare-shell adoption gate and, for a verifying task, by ending the bare shell and requeuing it (`ResolveVerifyingResume` → `VerifyingResumeStartFailed`). The start-confirm bound for adopted sessions covers an adopted claude-code session that never reaches its first turn. | Fixed in code by the bare-shell adoption gate and the start-confirm bound (see the fix section above). One run after the fix; strict rerun owed |
 
 ## OPERATOR PICK
 

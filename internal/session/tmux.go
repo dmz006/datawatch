@@ -30,6 +30,7 @@ type TmuxAPI interface {
 	KillSession(name string) error
 	SetEnvironment(session string, env map[string]string) error
 	PaneTTY(session string) string
+	PaneCommand(session string) string // foreground command of the pane — "" when unknown
 	ListSessions(prefix string) ([]string, error)
 	DisableAlternateScreen(session string) error
 	SendTrustPromptAccept(session string) error
@@ -493,5 +494,16 @@ func (t *TmuxManager) PaneTTY(session string) string {
 	if len(lines) == 0 {
 		return ""
 	}
+	return strings.TrimSpace(lines[0])
+}
+
+// PaneCommand returns the foreground command name of the first pane of the
+// given tmux session (e.g. "claude", "bash"). Returns "" on any error.
+func (t *TmuxManager) PaneCommand(session string) string {
+	out, err := exec.Command("tmux", "list-panes", "-t", session, "-F", "#{pane_current_command}").Output()
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	return strings.TrimSpace(lines[0])
 }

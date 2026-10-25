@@ -31,6 +31,10 @@ type FakeTmux struct {
 	// Pane simulates visible pane content returned by CapturePane*.
 	Pane map[string]string
 
+	// PaneCmd simulates each pane's foreground command (PaneCommand). Unset
+	// panes report "", as a pane that cannot be queried does.
+	PaneCmd map[string]string
+
 	// FailNextOp maps a FakeTmuxCall.Op name (e.g. "SendTrustPromptAccept")
 	// to the number of upcoming calls under that op that should fail with
 	// ErrInjected before succeeding again. Unlike the global FailNext queue
@@ -58,6 +62,7 @@ func NewFakeTmux() *FakeTmux {
 	return &FakeTmux{
 		sessions: map[string]bool{},
 		Pane:     map[string]string{},
+		PaneCmd:  map[string]string{},
 	}
 }
 
@@ -233,6 +238,13 @@ func (f *FakeTmux) SetEnvironment(session string, env map[string]string) error {
 
 // PaneTTY returns "" so WaitTypingIdle is a no-op in tests.
 func (f *FakeTmux) PaneTTY(session string) string { return "" }
+
+// PaneCommand returns the foreground command a test seeded in PaneCmd.
+func (f *FakeTmux) PaneCommand(session string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.PaneCmd[session]
+}
 
 // ListSessions returns all fake session names that match the given prefix.
 func (f *FakeTmux) ListSessions(prefix string) ([]string, error) {
