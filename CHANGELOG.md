@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Shared navigation fits phone widths
+
+The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.
+
 ## v9.11.0 — Automatic lane fill in shadow mode
 
 Automatic lane fill in the Automation coordinator, in shadow mode first. Each poll the coordinator computes, for every idle lane (two local GPU channels as one pool and a configurable number of Claude channels), which eligible PRD it would start and why, and what blocks each idle lane. In shadow mode it records every decision as an audit entry and starts nothing; the operator compares that log with what was actually done before switching it on. Eligibility respects holds, sequencing and the operator's lane count and usage policy; an idle lane with eligible work raises an alert after a configurable time. Configuration is on every surface (config file, REST, MCP, CLI, comm channel, web settings with the five locales), with a lane fill card on the Automation sub-tab and a how-to.

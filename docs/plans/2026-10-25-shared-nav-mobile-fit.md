@@ -1,24 +1,29 @@
 # Shared navigation mobile fit
 
 Status (2026-10-25): The report-only run is complete for the substitute probe, and the
-named checker remains unrun. `scripts/test-stories/pwa/shared-nav-mobile-fit.mjs` does not
-exist on branch `automaton/b54f0001` or on any git ref, so the measurement was taken with
+named checker's own measures are still unverified. `scripts/test-stories/pwa/shared-nav-mobile-fit.mjs`
+was absent from the branch when the report-only run was taken (it now exists, see below), so that measurement was taken with
 `scripts/test-stories/pwa/shared-nav-mobile-fit-probe.mjs`. That probe ran through
 `scripts/e2e-pwa.sh` in local mode against an isolated sandbox daemon on the unmodified
 tree: exit 0, 336 occurrences in 26 groups. Its findings are not the checker's findings.
 Daemon version, from the Version line in `cmd/datawatch/main.go:119`: 9.11.0. Run record:
 `docs/testing/runs/shared-nav-mobile-fit/report-only.txt`.
 
-Spec issue: the spec names a checker that is not on any ref. Its findings (the "about 250
-nav icon" count and the "35 px" nav finding) cannot be verified until the file is
-supplied or the operator confirms the probe is the intended measure.
+Spec issue: the spec names a checker. Its findings (the "about 250 nav icon" count and the
+"35 px" nav finding) cannot be verified until the original checker is supplied or the
+operator confirms the probe is the intended measure.
+
+Update (2026-10-25, after commit `cccbd9f0`): `scripts/test-stories/pwa/shared-nav-mobile-fit.mjs` now exists. It is a gate wrapper that runs the probe in gate mode; it is not the spec's checker. `make test-e2e-shared-nav` ran it on the fixed tree at 13:51 and it PASSED (0 findings at 320, 360 and 390 px, light and dark, `make` exit 0). The same gate on the unmodified tree FAILED with 4 findings. The run record is `docs/testing/runs/shared-nav-mobile-fit/make-run/`. Its first two attempts failed because a long `TMPDIR` stopped Chrome from starting (record in `failed-attempts.log`).
+
+Release numbers: main was 9.15.0 on 2026-10-25, not 9.14.2 as the Phases below first stated. The 9.14.x numbers are superseded: each phase's release is the next patch above main at its merge time.
 
 ## Phases
 
-- Phase 1, baseline report-only run on the unmodified tree: In Progress. The substitute probe is done through e2e-pwa.sh (336 occurrences, 26 groups, daemon 9.11.0). The named checker run is still outstanding because the file is absent. Release: none, this phase produces evidence only.
+- Phase 1, baseline report-only run on the unmodified tree: In Progress. The substitute probe is done through e2e-pwa.sh (336 occurrences, 26 groups, daemon 9.11.0). The named file now exists as a wrapper around the probe (commit `cccbd9f0`). Its gate ran on 2026-10-25: PASS on the fixed tree, FAIL on the unmodified tree. The spec's own measures are still unverified. Release: none, this phase produces evidence only.
 - Shared navigation bar root-cause fix (commits ae73b0ff and a7cc30e4): Done, proven 2026-10-25 on the fixed tree. Gate pass in light and dark at 320, 360 and 390 px (0 findings, was 4), and report-only nav occurrences 44 to 0. The nav no longer scrolls: scrollWidth equals clientWidth at every phone width. Desktop and tablet nav geometry matches nav-baseline.json (456 boxes, zero delta). Evidence: `docs/testing/runs/shared-nav-mobile-fit/post-fix-report.json` and `post-fix-report.txt`. Text zoom was not measured, because the matrix's zoom levels are not defined in the repo.
-- Phase 2, fix the one-line shared style findings (header chrome and the toast close button, 156 occurrences in 7 rows): In Progress, not Done. The fix commits raised the header search button and the Observer section toggle to 40 px, but all seven header rows are still flagged at the 44 px probe threshold. Release: 9.14.3, the next patch above main 9.14.2.
-- Phase 3, fix the per-tab findings (136 occurrences in 14 rows, deferred to each tab): Planned. Release: 9.14.4, the next patch above main after Phase 2 (9.14.3). The Observer rows here overlap BL572; see Worklist.
+- Phase 2, fix the one-line shared style findings (header chrome and the toast close button, 156 occurrences in 7 rows): In Progress, not Done. The fix commits raised the header search button and the Observer section toggle to 40 px, but all seven header rows are still flagged at the 44 px probe threshold. Release: the next patch above main at merge time (main was 9.15.0 on 2026-10-25).
+- Phase 3, fix the per-tab findings (136 occurrences in 14 rows, deferred to each tab): Planned. Release: the next patch above main after Phase 2, at merge time. The Observer rows here overlap BL572; see Worklist.
+- Phase 4, operator docs, testing tracker rows and the sync issue: Done (2026-10-25). How-to `docs/howto/navigation-mobile-fit.md` (listed in `docs/howto/README.md`, with its reason for the LLM-only list in `scripts/check-howto-coverage.sh`); the run in `docs/testing.md`; the section "Shared navigation mobile fit" in `docs/testing-tracker.md`; a CHANGELOG entry under [Unreleased] only. Mobile App Sync: filed `dmz006/datawatch-app#271`, titled "[sync] shared navigation fit at phone widths" (`mobile-parity: datawatch-app#271`). Release: none; the merge helper takes the next patch above main.
 
 Open decision, now resolved by the shared nav fix: the 44 bottom-nav horizontal-overflow findings. The fix replaced the scroller with equal flex sizing, so the six buttons fit 320 to 414 px without scrolling, and the 44 findings are gone (scrollWidth equals clientWidth). The operator's earlier question about whether they were by design no longer applies to the phone widths measured here.
 
