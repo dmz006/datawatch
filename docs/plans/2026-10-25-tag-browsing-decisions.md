@@ -13,8 +13,8 @@ Date started: 2026-10-25. The ten open questions of `docs/plans/2026-10-20-tag-b
 6. **Multi-tag display: under every tag, with the "also in:" line; plus an optional primary tag for sorting.** (Operator, 2026-10-25: "1 yes both".) An item with several tags appears under every tag's branch with an "also in:" line naming its other tags, counted once per tag subtree. "Both" is read as adding option 2's primary tag as well: the operator can optionally choose a primary tag per item, used for sorting only, and it defaults to none. If "both" meant something else, the operator corrects this line.
 7. **Live counts: event stream with a poll fallback.** (Operator, 2026-10-25: "1, event stream with poll fallback".) Tag counts refresh from the event stream when an Automaton's status or tags change or a tag is renamed or re-parented, and the existing poll catches up if the stream drops.
 8. **Tags are federated: one shared tag registry across the federated nodes.** (Operator, 2026-10-25: "2, federation works together".) A rename or re-parent on one node reaches the others. The proposal must say how the keeper node is chosen (the same pattern as the shared usage readings), how conflicting edits are resolved, how a peer shows its last copy when the keeper is unreachable, and how a tag created on two nodes while apart is merged without hiding that they were separate.
+9. **Default match mode: ANY.** (Operator, 2026-10-25: "1, ANY as default".) Selecting several tags widens the list, the filter bar shows "match ANY", and a toggle switches to ALL.
 
 ## Still open (asked in order)
 
-9. The default match mode of the tag facet.
 10. The registry source for the MCP tag tools.
