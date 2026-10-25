@@ -27,29 +27,52 @@ var sessionIdleRunnerNames = map[string]bool{
 // pgrep, session gone) reports false, so the detector never kills a session
 // on a probe error alone.
 func hasLiveChildProcess(tmuxSession string) bool {
-	if tmuxSession == "" {
+	roots, tree, ok := sessionProcessTree(tmuxSession)
+	if !ok {
 		return false
+	}
+	return processTreeHasLiveRunner(roots, tree, readProcessCommName)
+}
+
+// runnerDescendantPIDs returns the pids of the live processes a runner started
+// under the panes of tmuxSession. The runner itself is never included: a worker
+// parked at a startup dialog keeps its runner alive, and that alone is not
+// work. It returns nil when the process tree cannot be read, which callers must
+// treat as no observation rather than as an empty set.
+func runnerDescendantPIDs(tmuxSession string) map[int]bool {
+	roots, tree, ok := sessionProcessTree(tmuxSession)
+	if !ok {
+		return nil
+	}
+	return processTreeRunnerDescendants(roots, tree, readProcessCommName)
+}
+
+// sessionProcessTree walks down from the pane pids of tmuxSession and returns
+// those roots with the child lists it discovered. ok is false when the tree
+// cannot be read: no tmux, no pgrep, the session is gone, or it has no panes.
+func sessionProcessTree(tmuxSession string) (roots []int, tree map[int][]int, ok bool) {
+	if tmuxSession == "" {
+		return nil, nil, false
 	}
 	tmuxBin, err := exec.LookPath("tmux")
 	if err != nil {
-		return false
+		return nil, nil, false
 	}
 	pgrepBin, err := exec.LookPath("pgrep")
 	if err != nil {
-		return false
+		return nil, nil, false
 	}
 	out, err := exec.Command(tmuxBin, "list-panes", "-t", tmuxSession, "-F", "#{pane_pid}").Output()
 	if err != nil {
-		return false
+		return nil, nil, false
 	}
-	var roots []int
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		if pid, convErr := strconv.Atoi(strings.TrimSpace(line)); convErr == nil && pid > 0 {
 			roots = append(roots, pid)
 		}
 	}
 	if len(roots) == 0 {
-		return false
+		return nil, nil, false
 	}
 	childrenOf := func(pid int) []int {
 		kids, pgrepErr := exec.Command(pgrepBin, "-P", strconv.Itoa(pid)).Output()
@@ -65,8 +88,7 @@ func hasLiveChildProcess(tmuxSession string) bool {
 		}
 		return pids
 	}
-	tree := buildSessionIdleProcessTree(roots, childrenOf)
-	return processTreeHasLiveRunner(roots, tree, readProcessCommName)
+	return roots, buildSessionIdleProcessTree(roots, childrenOf), true
 }
 
 // buildSessionIdleProcessTree walks down from roots using childrenOf and
@@ -133,6 +155,38 @@ func processTreeHasLiveRunner(roots []int, children map[int][]int, nameOf func(i
 		}
 	}
 	return false
+}
+
+// processTreeRunnerDescendants is the pure walker behind runnerDescendantPIDs.
+// It returns every pid that sits below a runner within the depth cap, and never
+// a runner itself. A root whose own name is a runner counts as one, so the
+// processes it started are included.
+func processTreeRunnerDescendants(roots []int, children map[int][]int, nameOf func(int) string) map[int]bool {
+	out := make(map[int]bool)
+	visited := make(map[int]bool, len(roots))
+	var walk func(pid, depth int, underRunner bool)
+	walk = func(pid, depth int, underRunner bool) {
+		if depth >= sessionIdleProbeMaxDepth {
+			return
+		}
+		for _, c := range children[pid] {
+			if visited[c] {
+				continue
+			}
+			visited[c] = true
+			if underRunner {
+				out[c] = true
+			}
+			walk(c, depth+1, underRunner || sessionIdleRunnerNames[nameOf(c)])
+		}
+	}
+	for _, r := range roots {
+		if !visited[r] {
+			visited[r] = true
+			walk(r, 0, sessionIdleRunnerNames[nameOf(r)])
+		}
+	}
+	return out
 }
 
 // readProcessCommName returns the kernel command name of pid from

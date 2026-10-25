@@ -42,16 +42,18 @@ const claudeCodePromptSelector = "❯"
 // simply stalled before ever doing so.
 type SessionStartObservation struct {
 	State              string        // session state string ("waiting_input", "running", ...)
-	WaitingFor         time.Duration // how long the session has sat waiting_input with no assistant output
+	WaitingFor         time.Duration // how long the session has sat waiting_input with no evidence of work
 	HasAssistantOutput bool          // true when a Claude Code assistant response bullet appeared after the prompt
 	Limit              time.Duration // effective start-confirm bound (0 disables the check)
+	Evidence           StartEvidence // other signs of work (tool calls, child processes, output after delivery); any one rules out a stall
 }
 
 // Stalled reports whether the session has never started: it is still parked
-// in waiting_input, has produced no assistant output, and the wait has
-// STRICTLY exceeded the limit (WaitingFor exactly equal to Limit does not
-// stall — the bound is a bound, not a deadline hit at equality). The reason
-// is non-empty only when it stalls.
+// in waiting_input, shows no evidence of work (no assistant output and no
+// other StartEvidence), and the wait has STRICTLY exceeded the limit
+// (WaitingFor exactly equal to Limit does not stall — the bound is a bound,
+// not a deadline hit at equality). The reason is non-empty only when it
+// stalls.
 func (o SessionStartObservation) Stalled() (bool, string) {
 	if o.Limit <= 0 {
 		return false, ""
@@ -63,6 +65,9 @@ func (o SessionStartObservation) Stalled() (bool, string) {
 		return false, ""
 	}
 	if o.HasAssistantOutput {
+		return false, ""
+	}
+	if present, _ := o.Evidence.Latest(); present {
 		return false, ""
 	}
 	if o.WaitingFor <= o.Limit {

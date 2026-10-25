@@ -2581,16 +2581,27 @@ tracked in [dmz006/datawatch-app#266](https://github.com/dmz006/datawatch-app/is
 ### Session start confirm timeout (autonomous.session_start_confirm_seconds)
 
 This bounds how long a claude-code autonomous session may sit in
-`waiting_input` with no assistant output after it has started. The default
+`waiting_input` with no sign of work after it has started. The default
 is 120 seconds (2 minutes). It exists because a session whose process is
 alive but that never actually begins working looks healthy to the plain
 idle detector and would otherwise sit there indefinitely.
 
+A sign of work is any of: an assistant turn, a tool call in progress or
+finished (including a spinner), a process the worker started, a change in
+the pane, or a channel event after the task was delivered. Assistant output
+is not the only proof. A worker in one long silent tool call is not ended.
+
 - **What it watches:** a claude-code task session that has started (the
-  process is running) but has produced no assistant output — it is still in
+  process is running) but shows no sign of work — it is still in
   `waiting_input` instead of getting to work.
-- **When it fires:** the session stayed in that state without any assistant
-  output for longer than the bound.
+- **When it fires:** the session stayed in that state with no sign of work
+  for longer than the bound. The clock restarts at each sign of work, so a
+  worker whose tool line or spinner is still on screen is not ended.
+- **After a daemon restart:** an adopted worker is measured from its last
+  evidence of life (its last update, channel event or log write), not from
+  the moment the daemon adopted it.
+- **While a tool call runs:** the session shows as `running` (the busy
+  probe), not `waiting_input`, while the pane shows the agent working.
 - **What you see:**
   - a datawatch alert naming the session, with the last 20 lines of the
     session transcript included so you can see why it never got going;

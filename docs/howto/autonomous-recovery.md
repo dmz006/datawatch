@@ -373,6 +373,31 @@ autonomous:
   worker_idle_nudge_stall_seconds: 600
 ```
 
+## Task failed with `session never started`
+
+A claude-code worker was handed its task and then sat in `waiting_input`
+with no sign of work for longer than `autonomous.session_start_confirm_seconds`
+(default `120`). The daemon ends that session and retries the task. After two
+such start failures the task stays failed.
+
+- **What counts as started:** an assistant turn; a tool call in progress or
+  finished (a `⏺` tool line, a `⎿` result line or a spinner); a process the
+  worker started; a change in the pane; or a channel event after the task was
+  delivered. Delivering the task alone does not count.
+- **A long silent tool call is not a failure:** a worker that is inside one
+  long command keeps its tool line and spinner on screen, which keeps the clock
+  running. Only silence longer than the bound ends a session.
+- **After a daemon restart:** a worker that was adopted is measured from its
+  last evidence of life, not from the adoption, so a live worker is not ended
+  just because the daemon restarted.
+- **Where the output is:** the last 20 pane lines are stored on the task as
+  `start_failure_tail`. Read them with `autonomous_prd_get` to see where the
+  worker stopped. A dialog nobody answered shows there; a bare shell prompt
+  means the agent never launched.
+- **If the bound is too short for your first step:** raise it with
+  `datawatch config set autonomous.session_start_confirm_seconds 300`. A value
+  of `0` means "use the default".
+
 ## Common pitfalls
 
 - **Cancelling a story mid-run and not restarting it.** The rest of the

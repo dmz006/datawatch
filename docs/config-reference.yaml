@@ -1444,11 +1444,13 @@ autonomous:
   # Backend used for that one escalated verification. Empty => claude-code.
   fallback_verification_backend: claude-code
   session_idle_timeout_seconds: 900   # bound on one worker/verifier session sitting in waiting_input/idle with no live child process; exceeded => infra failure 'session idle without completion', alert raised, auto_fix_retries budget handles the retry
-  # A claude-code autonomous session must begin producing its first assistant
-  # turn within this many seconds of starting; still in waiting_input with no
-  # assistant output past this => 'session never started' failure (alert
-  # carries the last 20 transcript lines), up to 2 start failures retried
-  # before the task stays failed. 0 or unset falls back to the 120s default
+  # A claude-code autonomous session must show a sign of work within this many
+  # seconds of starting: an assistant turn, a tool call (line or spinner), a
+  # process it started, a pane change or a channel event after delivery. Still
+  # in waiting_input with no sign of work past this => 'session never started'
+  # failure (alert carries the last 20 transcript lines), up to 2 start failures
+  # retried before the task stays failed. The silence is measured from the last
+  # sign of work. 0 or unset falls back to the 120s default
   # (NormalizeSessionStartConfirmSeconds).
   verifier_no_progress_timeout_seconds: 600   # a verifier session with no output file and no pane activity for this long is ended as an infra failure ('verifier no-progress watchdog'); 0 or negative => 600
   session_start_confirm_seconds: 120
