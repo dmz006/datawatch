@@ -1366,26 +1366,24 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 					// Live bare shell: the agent never launched, so the session is a
 					// boot-time launch failure, not work. End it and reset the task
 					// with the start-failure reason. No retry counter is touched.
-					if killerFn != nil {
-						why := fmt.Sprintf("boot-resume: task %s was in_progress on session %s whose agent never started (boot-time launch failure: bare shell, no agent process); the session is ended and the task is requeued", t.ID, t.SessionID)
-						if err := killerFn(t.SessionID, "autonomous.boot-resume.start-failed", why); err != nil {
-							log.Printf("[autonomous] boot-resume: kill start-failed session %s: %v", t.SessionID, err)
-						}
-					}
-					m.releaseCapacity(t.ID)
-					oldSession := t.SessionID
-					t.SessionID = ""
-					t.AdoptedSession = false
-					t.Status = TaskPending
-					t.Error = SessionStartFailureReason
-					t.UpdatedAt = time.Now()
+					why := fmt.Sprintf("boot-resume: task %s was in_progress on session %s whose agent never started (boot-time launch failure: bare shell, no agent process); the session is ended and the task is requeued", t.ID, t.SessionID)
+					oldSession := m.resetStartFailedAtBoot(t, killerFn, "autonomous.boot-resume.start-failed", why)
 					reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: oldSession})
 					log.Printf("[autonomous] boot-resume: task %s (was in_progress) reset with %q for prd=%s; session %s never started its agent", t.ID, SessionStartFailureReason, prd.ID, oldSession)
 					continue
 				}
 				// Empty or dead session without a marker: orphaned, reset below.
 			case TaskVerifying, TaskRunningTests:
-				switch ResolveVerifyingResume(aliveFn, outputFn, t) {
+				switch ResolveVerifyingResume(aliveFn, stableAgentStarted(agentStartedFn), outputFn, t) {
+				case VerifyingResumeStartFailed:
+					// Live bare shell: the worker's agent never launched, so the session is a
+					// boot-time launch failure. End it and requeue the task with the
+					// start-failure reason. No retry is counted.
+					why := fmt.Sprintf("boot-resume: task %s was verifying on session %s whose agent never started (boot-time launch failure: bare shell, no agent process); the session is ended and the task is requeued", t.ID, t.SessionID)
+					oldSession := m.resetStartFailedAtBoot(t, killerFn, "autonomous.boot-resume.start-failed", why)
+					reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: oldSession})
+					log.Printf("[autonomous] boot-resume: task %s (was %s) reset with %q for prd=%s; session %s never started its agent", t.ID, prevStatus, SessionStartFailureReason, prd.ID, oldSession)
+					continue
 				case VerifyingResumeReverify:
 					// Worker finished, no verdict recorded: keep the task verifying
 					// with its session, result and SHAs untouched. No kill, no
@@ -4588,6 +4586,7 @@ func (m *Manager) reconcileStuckTasks() {
 	aliveFn := m.sessionAliveFn
 	killerFn := m.sessionKillerFn
 	listFn := m.sessionListerFn
+	agentStartedFn := m.sessionAgentStartedFn
 	outputFn := m.sessionOutputFn
 	m.mu.Unlock()
 
@@ -4607,8 +4606,13 @@ func (m *Manager) reconcileStuckTasks() {
 					continue
 				}
 				completing := false
+				startFailed := false
 				if t.Status == TaskVerifying || t.Status == TaskRunningTests {
-					switch ResolveVerifyingResume(aliveFn, outputFn, t) {
+					switch ResolveVerifyingResume(aliveFn, stableAgentStarted(agentStartedFn), outputFn, t) {
+					case VerifyingResumeStartFailed:
+						// Live bare shell whose agent never started: never adopted. The reset
+						// below ends the session and requeues the task.
+						startFailed = true
 					case VerifyingResumeKeepLive:
 						continue // session still live; leave it
 					case VerifyingResumeReverify:
@@ -4633,7 +4637,7 @@ func (m *Manager) reconcileStuckTasks() {
 				// empty or dead (created just before the restart): adopt it
 				// instead of resetting. Extra live matches are left to the
 				// reset-cleanup path.
-				if !completing {
+				if !completing && !startFailed {
 					if id, _ := m.adoptUnlinkedSession(prd, t, listFn); id != "" {
 						// Older live matches would run beside the adopted session.
 						recordEndedSessions(prd, t, m.endLiveSessionsOfTask(prd, t, id, "autonomous.boot-reconcile.duplicate", "older duplicate of the session adopted on daemon restart"), "older duplicate of the session adopted on daemon restart")

@@ -355,8 +355,9 @@ state_restart_during_launch() {
   local held_pid held_session held_tmux held_cmd bare=1
   held_pid="$(rm_last_pid "$RM_CTRL/worker.held")"
   held_session="$(rm_task_field "$SC_PRD" session_id)"
-  held_tmux="$(rm_session_rows | jq -r --arg id "$held_session" '[.[]? | select((.full_id // .id) == $id) | .tmux_session][0] // empty')"
-  held_cmd="$(rm_tmux display-message -p -t "=$held_tmux" '#{pane_current_command}' 2>/dev/null)"
+  held_tmux="$(rm_session_rows | jq -r --arg id "$held_session" '[.[]? | select(.id == $id or .full_id == $id) | .tmux_session][0] // empty')"
+  # list-panes, not display-message: display-message prints nothing for a session target.
+  held_cmd="$(rm_tmux list-panes -t "=$held_tmux" -F '#{pane_current_command}' 2>/dev/null | head -n 1)"
   case "$held_cmd" in bash | sh | zsh | dash | fish | ksh) bare=0 ;; esac
   rm_check "held_pane_is_bare_shell" "$bare" "pane ${held_tmux:-?} runs '${held_cmd:-nothing}' before the restart"
 

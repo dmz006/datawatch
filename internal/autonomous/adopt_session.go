@@ -226,3 +226,49 @@ func sessionStartKillReason(obs SessionStartObservation) string {
 	return fmt.Sprintf("adopted session never started: waiting_input without assistant output for %s (limit %s)",
 		obs.WaitingFor.Round(time.Second), obs.Limit)
 }
+
+// resetStartFailedAtBoot ends the bare-shell session of a task whose agent never
+// started, and resets the task to pending with SessionStartFailureReason. No
+// retry is counted. It returns the ended session id for the event record.
+func (m *Manager) resetStartFailedAtBoot(t *Task, killerFn func(sessionID, caller, reason string) error, caller, why string) string {
+	if killerFn != nil {
+		if err := killerFn(t.SessionID, caller, why); err != nil {
+			log.Printf("[autonomous] boot-resume: kill start-failed session %s: %v", t.SessionID, err)
+		}
+	}
+	m.releaseCapacity(t.ID)
+	oldSession := t.SessionID
+	t.SessionID = ""
+	t.AdoptedSession = false
+	t.Status = TaskPending
+	t.Error = SessionStartFailureReason
+	t.UpdatedAt = time.Now()
+	return oldSession
+}
+
+// agentStartSamples and agentStartSampleGap bound the stable start check. A
+// session is read as never started only when every sample says so.
+var agentStartSampleGap = time.Second
+
+const agentStartSamples = 3
+
+// stableAgentStarted wraps an agent-started check so a boot-time decision does
+// not rest on one snapshot. A bare shell (a launch that never started) reads
+// not-started on every sample. A running worker is read started on at least
+// one sample, even when a snapshot lands between its own ticks.
+func stableAgentStarted(fn func(string) bool) func(string) bool {
+	if fn == nil {
+		return nil
+	}
+	return func(sessionID string) bool {
+		for i := 0; i < agentStartSamples; i++ {
+			if i > 0 {
+				time.Sleep(agentStartSampleGap)
+			}
+			if fn(sessionID) {
+				return true
+			}
+		}
+		return false
+	}
+}

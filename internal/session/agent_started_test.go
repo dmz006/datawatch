@@ -161,3 +161,18 @@ func TestAgentStarted_OutputShowsAssistantTurn(t *testing.T) {
 		}
 	}
 }
+
+// A task records the short session id. AgentStarted must resolve it the way
+// GetSession does, or a live worker reads as a bare shell at boot.
+func TestAgentStarted_ShortIDResolves(t *testing.T) {
+	mgr, fake := newTestManagerWithFake(t)
+	sess := newAgentStartedSession(t, mgr)
+	fake.PaneCmd[sess.TmuxSession] = "claude"
+
+	if sess.ID == "" || sess.ID == sess.FullID {
+		t.Fatalf("test needs a distinct short id; got id=%q full=%q", sess.ID, sess.FullID)
+	}
+	if !mgr.AgentStarted(sess.ID) {
+		t.Error("agent running under the short session id reported as not started")
+	}
+}

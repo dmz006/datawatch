@@ -35,12 +35,16 @@ var plainShells = map[string]bool{
 // (channel-ready, delivered task), then the recorded output, then the pane's
 // process.
 func (m *Manager) AgentStarted(fullID string) bool {
+	// Resolve the id the way GetSession does: a task records the short id, which
+	// the store does not key on. A miss here reads as "never started" and would
+	// end a live worker at boot.
 	m.mu.Lock()
-	sess, ok := m.store.Get(fullID)
+	sess, ok := m.GetSession(fullID)
 	if !ok {
 		m.mu.Unlock()
 		return false
 	}
+	fullID = sess.FullID
 	tmuxSession, logFile, channelReady := sess.TmuxSession, sess.LogFile, sess.ChannelReady
 	m.mu.Unlock()
 
