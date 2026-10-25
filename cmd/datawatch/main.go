@@ -4846,6 +4846,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					nudgeTracker = autonomouspkg.NewWorkerNudgeTracker(
 						time.Duration(config.NormalizeWorkerIdleNudgeSeconds(liveCfg.WorkerIdleNudgeSeconds))*time.Second,
 						nudgeStallAfter)
+					// A nudge already sent into this session before a daemon restart is
+					// persisted on the task; adopt it so the worker is not nudged twice
+					// and the stall window counts from the original send.
+					nudgeTracker.SeedNudgedAt(task.NudgeTimeForSession(task.SessionID))
 				}
 				// pi-prompt exit-silence detector. One-shot `pi --print` runs write
 				// nothing to the log until they finish, so the log-mtime stall check
@@ -4939,7 +4943,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									log.Printf("[autonomous] idle nudge send failed for %s: %v", task.SessionID, nerr)
 								}
 								if autonomousMgrRef != nil {
-									if rerr := autonomousMgrRef.RecordTaskNudge(task.PRDID, task.ID, time.Now()); rerr != nil {
+									if rerr := autonomousMgrRef.RecordTaskNudge(task.PRDID, task.ID, task.SessionID, time.Now()); rerr != nil {
 										log.Printf("[autonomous] record nudge for %s/%s: %v", task.PRDID, task.ID, rerr)
 									}
 								}

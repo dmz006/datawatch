@@ -721,11 +721,24 @@ type VerifierPolicyChoice struct {
 	At      time.Time `json:"at"`
 }
 
-// NudgeEvent records one idle-worker nudge sent to a task's session.
+// Nudge outcomes recorded on a NudgeEvent. sent: the nudge was typed into the
+// session; answered: the worker printed the completion marker or fresh output
+// followed the nudge; stalled: the worker stayed silent past the stall window.
+const (
+	NudgeOutcomeSent     = "sent"
+	NudgeOutcomeAnswered = "answered"
+	NudgeOutcomeStalled  = "stalled"
+)
+
+// NudgeEvent records one idle-worker nudge sent to a task's session. SessionID
+// names the session the nudge was typed into: a retry runs in a fresh session,
+// so the nudge state of a new session is read only from events that match it.
+// Events written before SessionID existed decode with it empty.
 type NudgeEvent struct {
-	At      time.Time `json:"at"`
-	Count   int       `json:"count"`
-	Outcome string    `json:"outcome,omitempty"`
+	At        time.Time `json:"at"`
+	Count     int       `json:"count"`
+	SessionID string    `json:"session_id,omitempty"`
+	Outcome   string    `json:"outcome,omitempty"`
 }
 
 // DeliveryFailureEvent records one task delivery that failed because the
@@ -1060,6 +1073,22 @@ type Task struct {
 type UndeclaredEdit struct {
 	Path         string `json:"path"`
 	LinesChanged int    `json:"lines_changed"`
+}
+
+// NudgeTimeForSession returns the time of the latest nudge recorded for the
+// given session, or the zero time when that session has none. Nudges from
+// other sessions, including earlier attempts of this task, are ignored, and an
+// empty sessionID matches nothing.
+func (t *Task) NudgeTimeForSession(sessionID string) time.Time {
+	if sessionID == "" {
+		return time.Time{}
+	}
+	for i := len(t.NudgeEvents) - 1; i >= 0; i-- {
+		if t.NudgeEvents[i].SessionID == sessionID {
+			return t.NudgeEvents[i].At
+		}
+	}
+	return time.Time{}
 }
 
 // RecordAttemptCommit appends the deterministic commit sha recorded for a

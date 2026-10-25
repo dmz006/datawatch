@@ -3504,9 +3504,10 @@ func (m *Manager) RecordTaskAttemptCommit(prdID, taskID, sha string) error {
 }
 
 // RecordTaskNudge records one idle-worker nudge on the task: bumps NudgeCount
-// and appends a NudgeEvent. Like RecordTaskAttemptCommit it fires from the
-// daemon while the worker runs, so there is no lock-after-approve gate.
-func (m *Manager) RecordTaskNudge(prdID, taskID string, at time.Time) error {
+// and appends a NudgeEvent tagged with the session it was typed into. Like
+// RecordTaskAttemptCommit it fires from the daemon while the worker runs, so
+// there is no lock-after-approve gate.
+func (m *Manager) RecordTaskNudge(prdID, taskID, sessionID string, at time.Time) error {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
@@ -3517,7 +3518,7 @@ func (m *Manager) RecordTaskNudge(prdID, taskID string, at time.Time) error {
 			t := &prd.Story[si].Tasks[ti]
 			if t.ID == taskID {
 				t.NudgeCount++
-				t.NudgeEvents = append(t.NudgeEvents, NudgeEvent{At: at, Count: t.NudgeCount, Outcome: "sent"})
+				t.NudgeEvents = append(t.NudgeEvents, NudgeEvent{At: at, Count: t.NudgeCount, SessionID: sessionID, Outcome: NudgeOutcomeSent})
 				t.UpdatedAt = at
 				found = true
 				break
@@ -3532,6 +3533,43 @@ func (m *Manager) RecordTaskNudge(prdID, taskID string, at time.Time) error {
 	}
 	prd.UpdatedAt = at
 	return m.store.SavePRD(prd)
+}
+
+// RecordTaskNudgeOutcome sets the outcome of the latest nudge sent into the
+// given session on the task. It returns an error when the outcome is not one
+// of the NudgeOutcome constants, the task is unknown, or the session has no
+// recorded nudge.
+func (m *Manager) RecordTaskNudgeOutcome(prdID, taskID, sessionID, outcome string) error {
+	switch outcome {
+	case NudgeOutcomeSent, NudgeOutcomeAnswered, NudgeOutcomeStalled:
+	default:
+		return fmt.Errorf("unknown nudge outcome %q", outcome)
+	}
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			t := &prd.Story[si].Tasks[ti]
+			if t.ID != taskID {
+				continue
+			}
+			for ei := len(t.NudgeEvents) - 1; ei >= 0; ei-- {
+				ev := &t.NudgeEvents[ei]
+				if sessionID == "" || ev.SessionID != sessionID {
+					continue
+				}
+				ev.Outcome = outcome
+				now := time.Now()
+				t.UpdatedAt = now
+				prd.UpdatedAt = now
+				return m.store.SavePRD(prd)
+			}
+			return fmt.Errorf("no nudge recorded for session %q on task %q", sessionID, taskID)
+		}
+	}
+	return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 }
 
 // RecordTaskDeliveryFailure records one task delivery failure on the task: it

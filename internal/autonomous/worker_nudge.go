@@ -58,6 +58,17 @@ func NewWorkerNudgeTracker(nudgeAfter, stallAfter time.Duration) *WorkerNudgeTra
 // Nudged reports whether the nudge has been sent.
 func (t *WorkerNudgeTracker) Nudged() bool { return !t.nudgedAt.IsZero() }
 
+// SeedNudgedAt adopts a nudge that was already sent at the given time, such as
+// one persisted on the task before a daemon restart. The tracker then reports
+// Nudged, never sends again, and counts the stall window from at. A zero time
+// leaves the tracker unseeded.
+func (t *WorkerNudgeTracker) SeedNudgedAt(at time.Time) {
+	if at.IsZero() {
+		return
+	}
+	t.nudgedAt = at
+}
+
 // Observe feeds one observation and returns the decision. Only claude-code
 // PRD-owned sessions are tracked; family and prdOwned gate everything else to
 // none.
