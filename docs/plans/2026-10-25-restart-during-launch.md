@@ -1,6 +1,8 @@
-# Plan: restart during launch (restart-matrix state)
+# Plan: restart during launch
 
-Status: the state is specified and wired into the restart matrix. Its live check has run and **fails** (7 pass, 3 fail). The failure is a product defect, not a harness result: the bare shell that holds a worker's launch is adopted as live at boot instead of being ended. This plan does not claim the state is validated. The fix and a passing live run are open.
+Date: 2026-10-25. Version: the next patch above main (the merge helper sets the number; this document does not bump a version).
+
+Status: the fix is in code on this branch, and its unit tests pass. The restart-matrix state `restart-during-launch` was run live twice: once before the fix (FAIL, 7 pass, 3 fail), and once after it (10 of 10 checks pass, one run, measure mode). A `--strict` rerun is still owed, so the state is not validated and is not in the release smoke's strict list.
 
 ## Context
 
@@ -9,45 +11,80 @@ A worker's launch can be held after its tmux pane has been created but before th
 - If it adopts the shell as the task's live session, the task waits on a session that never ran.
 - If it ends the shell and relaunches the worker, the relaunch runs unheld and the PRD completes unaided.
 
-The restart-during-launch state exists to check the second behaviour. The matrix holds the first worker launch in the fake backend's launch step, restarts the sandbox daemon, and checks what became of the task.
+The restart-during-launch state checks the second behaviour. The matrix holds the first worker launch in the fake backend's launch step, restarts the sandbox daemon, and checks what became of the task.
+
+## Scope
+
+In scope:
+
+- Boot adoption of a live session only once its agent has started, and ending a live bare shell at boot (including a task that was `verifying` on one).
+- The start-confirm bound (`autonomous.session_start_confirm_seconds`, default 120 s) applied to an adopted claude-code session.
+- Tracking launches in flight and draining them on shutdown with a fixed 15 s grace.
+- The restart-matrix state, its held-pane lookup, and the unit tests for all of the above.
+- Operator documentation: `docs/operations.md` (Restart safety), `docs/howto/autonomous-recovery.md`, `docs/testing-tracker.md`, `docs/plans/restart-matrix-findings.md`.
+
+Out of scope, unchanged, and still open in the findings document:
+
+- Planning PRDs on boot (an OPERATOR PICK).
+- Where a daemon-run verification script runs (an OPERATOR PICK).
+- The sandbox socket path limit: the state runs only with an absolute sandbox base of 47 bytes or less.
 
 ## Intended behaviour
 
-1. At boot, the bare shell that held the launch is ended. Its launch process is ended with it.
-2. The task keeps its retry count (no retry is counted for the restart).
+1. At boot, a live session is adopted only once its agent has started. A live bare shell is ended, and its launch process with it.
+2. The task keeps its retry count. A bare shell found at boot is requeued with the reason `session never started`, and no retry is counted.
 3. The task is relaunched once and runs unheld.
-4. No duplicate session is created, no output is lost, and the PRD completes without operator action.
+4. An adopted claude-code session that never reaches its first assistant turn is ended after the start-confirm bound and counted against the start-failure budget.
+5. No duplicate session is created, no output is lost, and the PRD completes without operator action.
 
-## Live result (2026-10-25)
+## Phases
 
-Run: `scripts/restart-matrix.sh --strict --keep --only restart-during-launch`, `RM_KILL_MODE=control-group`, sandbox daemon built from this tree (v9.11.0), own config, data dir, port and socket dir. The full write-up is in `docs/plans/restart-matrix-findings.md`, section "restart-during-launch (live check, 2026-10-25)".
+| Phase | What | Commits | Status |
+|---|---|---|---|
+| 1. Agent-started predicate | `Manager.AgentStarted`: the agent process in the pane, channel-ready, a delivered task, or a first assistant turn; a short session id resolves | cba24a1d | Done. Unit tests `TestAgentStarted*` pass. |
+| 2. Boot adoption gate | Live sessions are adopted only once the agent has started; a live bare shell is ended and the task reset with the start-failure reason; the check is sampled three times | d7cb4f96, 379f896c | Done. Unit tests `TestBootAdoptionGate*` pass. |
+| 3. Start-confirm bound for adopted sessions | An adopted claude-code session in `waiting_input` with no assistant turn past the limit is ended and counted as a start failure | cb9c2c71 | Done. Unit tests `TestAdoptedSession*` and `TestAdoptedStartFailure*` pass. |
+| 4. Launch registry and shutdown drain | Launches in flight are tracked; shutdown refuses new launches and rolls back those still running after 15 s | 27892a93, 06262306 | Done. Unit tests `TestLaunchRegistry*` and `TestShutdownLaunch*` pass. |
+| 5. Restart-matrix state and fake-backed cases | The `restart-during-launch` state with a launch-hold control; five fake-backed cases | aa644777, 3aedeb57 | Done. `TestRestartLaunchCases` passes. |
+| 6. Live check, before the fix | `--strict --keep --only restart-during-launch`, sandbox daemon v9.11.0, 2026-10-25 10:48 | bb1f0bf6 | Done as a record: FAIL, 7 pass, 3 fail. The held shell was kept as live. |
+| 7. Fix for a verifying task on a bare shell, and harness lookup | A verifying task on a bare shell is ended and requeued; the held-pane lookup matches the short id and reads the pane with `list-panes` | 379f896c | Done in code. |
+| 8. Live check, after the fix | Same harness, 2026-10-25 13:59, measure mode, `restart-during-launch` and `worker-running` only | none (record under `.rm/`, git-ignored) | Done as a record: 10 of 10 pass for `restart-during-launch`. One run. |
+| 9. Strict live rerun and smoke decision | Run `--strict` on the state, record the result in the findings and the tracker, then decide whether to add it to the release smoke's strict list | none | Owed. |
+| 10. Documentation | Findings, operations, tracker, how-to, this plan, CHANGELOG | this change | Done in this change. |
 
-| Check | Result | What it shows |
-|---|---|---|
-| `bare_shell_not_adopted` | FAIL | Session `0134` is kept across the restart. The boot log reads `task 6b650002 kept (was verifying) on live session 0134`, and the worker is delivered into that pane. |
-| `bare_shell_ended_at_boot` | FAIL | The held launch pid is still alive after the restart. |
-| `held_pane_is_bare_shell` | FAIL | Harness defect: the pane lookup matches the short session id against `full_id`, so the pane is never found and the precondition is not checked. |
-| `restart_exited_on_term`, `daemon_replaced`, `no_duplicate_sessions`, `no_lost_output`, `retry_count_unchanged`, `task_not_left_in_progress`, `prd_completes_unaided` | PASS | The task completes, but on the adopted pane. |
+## Live results
 
-Task status as the API reports it: before the restart `verifying` on session `0134`; after the restart `completed` on session `0134`, with `adopted_session` false and retry count 0.
+Recorded run before the fix (`scripts/restart-matrix.sh --strict --keep --only restart-during-launch`, `RM_KILL_MODE=control-group`, sandbox daemon v9.11.0, own config, port and socket dir): **FAIL, 7 pass, 3 fail**.
 
-## Open items
+- `bare_shell_not_adopted` FAIL: session `0134` was kept as live at boot, and the worker was delivered into the held pane.
+- `bare_shell_ended_at_boot` FAIL: the held launch pid was still alive after the restart.
+- `held_pane_is_bare_shell` FAIL: a harness defect. The pane lookup matched the short id against `full_id`.
+- The other seven checks passed, including no duplicate sessions, no lost output and retry count unchanged. The task completed on the adopted pane.
 
-1. **Product fix (open).** Stop the boot pass from adopting a session whose launch never started the agent, and end that shell. Changes belong in the boot-reconcile and launch-tracking code. Blocked on an operator decision: this reopens work recorded as earlier tasks.
-2. **Harness fix (open).** `held_pane_is_bare_shell` and `bare_shell_ended_at_boot` must look the pane up by `id` as well as `full_id` (`scripts/restart-matrix/states-session.sh`, `rm_session_rows`). Until this is fixed, those two checks do not measure what they are named for.
-3. **Sandbox path length (open).** The sandbox socket path must be under the tmux limit. tmux expands a relative `TMUX_TMPDIR`, and the harness length check measures the unexpanded string. The smoke wrapper cannot run from inside this worktree (its `mktemp` layer adds 15 bytes to a 43-byte project root). The state runs with an absolute sandbox base of 47 bytes or less.
-4. **Live rerun (owed).** After items 1 and 2, rerun the state with `--strict` and record the result here and in the findings.
+Run after the fix (sandbox daemon, same harness, 2026-10-25 13:59, measure mode, `restart-during-launch` and `worker-running` only): **restart-during-launch 10 of 10 checks pass**. The held launch pid was gone and its pane was absent before the new session began. The task completed on a new session (`7c5b` → `2c00`), with retry count 0 → 0, no duplicate sessions and no lost output. `worker-running` also passed 10 of 10.
+
+Limits: one run after the fix, on one machine, with a fake backend and no real terminal UI. The record is under `.rm/`, which is git-ignored, so it is not in the commit. The run was not `--strict`, so it does not satisfy phase 9.
 
 ## Parity surface
 
-This state adds no new user-facing surface. It is a verification state in the restart matrix.
+This change adds no new user-facing surface. No PWA or REST contract changed.
 
-- **REST, MCP, CLI, comm channel, PWA**: no new endpoint, tool, command or screen. The behaviour under test is the daemon's boot pass, which these surfaces read only through existing task and session status.
-- **Task status**: the boot pass changes which session a task keeps. The status values it reports (`verifying`, `completed`) are unchanged.
-- **Documentation surfaces**: `docs/operations.md` (Restart safety table) and `docs/testing-tracker.md` (daemon restart matrix section) name the state and its current failing result.
-- **Harness**: `scripts/restart-matrix.sh --only restart-during-launch`. The release smoke does not run this state yet, and it should not be added to the strict list until open items 1 and 2 are closed.
+Checked against the branch diff (`git diff main...HEAD`):
+
+- The diff touches only `internal/autonomous`, `internal/session`, `cmd/datawatch`, `scripts` and `docs`. Nothing under `internal/server`, `internal/mcp`, `internal/router` or the web assets changed.
+- No route, no MCP tool, no CLI command and no comm-channel command was added or changed.
+- No JSON or YAML struct tag was added or changed.
+- The config key `autonomous.session_start_confirm_seconds` already existed. This change extends its bound to adopted sessions. No new config key was added on any surface.
+- Task status values are unchanged (`pending`, `verifying`, `completed`, `failed`). A task reset at boot reuses the existing `session never started` error text.
+
+What an operator sees differently is behaviour, not contract: after a restart, a held launch is relaunched instead of adopted, and the shutdown log may contain `[session] rolled back launch <id>: still running at shutdown`.
+
+Documentation surfaces updated: `docs/operations.md` (Restart safety), `docs/testing-tracker.md` (restart matrix and unit rows), `docs/plans/restart-matrix-findings.md` (result and matrix tables, fix section) and `docs/howto/autonomous-recovery.md`.
+
+Harness: `scripts/restart-matrix.sh --only restart-during-launch`. The release smoke does not run this state. It stays out of the strict list until phase 9 is recorded.
 
 ## Verification
 
-- Docs: `bash .datawatch/verify/restart-launch-docs.sh` checks the internal-reference and how-to coverage audits, the whitespace of the change, that `docs/operations.md`, `docs/testing-tracker.md` and `docs/plans/restart-matrix-findings.md` name the state, and that this plan has a Parity surface section.
-- Live: `DATAWATCH_BIN=<sandbox binary> RM_TMP_BASE=<absolute base, 47 bytes or less> RM_KILL_MODE=control-group scripts/restart-matrix.sh --strict --keep --only restart-during-launch`. The result is FAIL until open items 1 and 2 are closed.
+- Unit tests, run from the worktree with `env -u TMUX -u TMUX_TMPDIR go test ./internal/session/ ./internal/autonomous/ ./cmd/datawatch/ -count=1 -run '^(TestAgentStarted|TestBootAdoptionGate|TestAdoptedSession|TestAdoptedStartFailure|TestLaunchRegistry|TestShutdownLaunch|TestRestartLaunchCases)'`: all pass: 15 test functions in `internal/session` (11 `TestAgentStarted*`, 4 `TestLaunchRegistry*`), 12 in `internal/autonomous` (7 `TestAdoptedSession*` and `TestAdoptedStartFailure*`, 4 `TestBootAdoptionGate*`, `TestRestartLaunchCases` with five subtests) and 3 `TestShutdownLaunch*` in `cmd/datawatch`.
+- Docs: `bash .datawatch/verify/restart-launch-docs.sh` checks the internal-reference and how-to coverage audits, the whitespace of the change, that the operations, tracker and findings documents name the state, and that this plan has a Parity surface section.
+- Live, still owed: `DATAWATCH_BIN=<sandbox binary> RM_TMP_BASE=<absolute base, 47 bytes or less> RM_KILL_MODE=control-group scripts/restart-matrix.sh --strict --keep --only restart-during-launch`, recorded in the findings and the tracker.

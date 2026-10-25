@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Restart no longer adopts a launch that never started
+
+A worker whose launch was held when the daemon restarted is no longer adopted as the task's live session. At boot its bare shell is ended and the task is requeued with the reason `session never started`, and no retry is counted. A live session is adopted only once its agent has started. An adopted claude-code worker that never reaches its first assistant turn is held to `autonomous.session_start_confirm_seconds`, the same bound a new worker gets. A daemon stop gives in-flight launches a fixed 15-second grace before it rolls back the rest. The restart matrix gained a `restart-during-launch` state. Its live run after the fix passed 10 of 10 checks; a strict live rerun is still owed. Documented in the operator docs (Restart safety) and the autonomous recovery how-to.
+
 ## v9.11.0 — Automatic lane fill in shadow mode
 
 Automatic lane fill in the Automation coordinator, in shadow mode first. Each poll the coordinator computes, for every idle lane (two local GPU channels as one pool and a configurable number of Claude channels), which eligible PRD it would start and why, and what blocks each idle lane. In shadow mode it records every decision as an audit entry and starts nothing; the operator compares that log with what was actually done before switching it on. Eligibility respects holds, sequencing and the operator's lane count and usage policy; an idle lane with eligible work raises an alert after a configurable time. Configuration is on every surface (config file, REST, MCP, CLI, comm channel, web settings with the five locales), with a lane fill card on the Automation sub-tab and a how-to.
