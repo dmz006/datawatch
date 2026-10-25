@@ -51,7 +51,7 @@ func StepWorkerNudge(tr *WorkerNudgeTracker, now time.Time, family, sessionID, l
 			log.Printf("[autonomous] idle worker %s task %s: task was never delivered — re-sending the task itself", sessionID, label)
 		}
 		if err := hooks.SendInput(text, source); err != nil {
-			log.Printf("[autonomous] idle nudge send failed for %s: %v", sessionID, err)
+			log.Printf("[autonomous] idle nudge send failed for %s task %s: %v", sessionID, label, err)
 		}
 		count, rerr := 0, error(nil)
 		if hooks.Record != nil {
