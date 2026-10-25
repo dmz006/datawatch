@@ -205,6 +205,22 @@ func nodeLoader(nodes func() *compute.Registry) autonomous.NodeLoader {
 	}
 }
 
+// capacityManagerKeys splits a resolver into the two closures the autonomous
+// manager is wired with: the pool keys (SetCapacity) and the candidate nodes
+// (SetCapacityChoices). Both read the same resolver call, so they agree on
+// one backend and model.
+func capacityManagerKeys(resolve func(backend, model string) (pools []string, node string, choices []capacity.NodeChoice)) (autonomous.CapacityKeysFn, autonomous.CapacityChoicesFn) {
+	keys := func(backend, model string) ([]string, string) {
+		pools, node, _ := resolve(backend, model)
+		return pools, node
+	}
+	choices := func(backend, model string) []capacity.NodeChoice {
+		_, _, c := resolve(backend, model)
+		return c
+	}
+	return keys, choices
+}
+
 // withNodeChoices puts the candidate nodes on a request; fewer than two leaves
 // it unchanged.
 func withNodeChoices(req capacity.Request, choices []capacity.NodeChoice) capacity.Request {
@@ -635,14 +651,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	mgr.SetUsageEventHook(recordUsage(autonomousBudget, registry, led))
 
 	resolve := capacityResolver(httpServer.InferenceRegistry, httpServer.ComputeRegistry)
-	keys := func(backend, model string) ([]string, string) {
-		pools, node, _ := resolve(backend, model)
-		return pools, node
-	}
-	choices := func(backend, model string) []capacity.NodeChoice {
-		_, _, c := resolve(backend, model)
-		return c
-	}
+	keys, choices := capacityManagerKeys(resolve)
 	amgr.SetCapacity(led, keys)
 	amgr.SetCapacityChoices(choices)
 	amgr.SetNodeLoad(nodeLoader(httpServer.ComputeRegistry), nodeAlerts)
