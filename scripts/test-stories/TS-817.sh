@@ -443,9 +443,14 @@ ts817_cleanup() {
   [[ -n "$TS817_FAKE_A_PID" ]] && kill "$TS817_FAKE_A_PID" 2>/dev/null
   [[ -n "$TS817_FAKE_B_PID" ]] && kill "$TS817_FAKE_B_PID" 2>/dev/null
   wait "$TS817_FAKE_A_PID" "$TS817_FAKE_B_PID" 2>/dev/null || true
-  local sock="$TS817_SOCK"
+  # Only the story's own socket is probed. A stale socket file is harmless, so
+  # the check is whether any session is still listed on it after cleanup.
+  local sock="$TS817_SOCK" left
   if [[ -S "$sock" ]]; then
-    "$(command -v tmux)" -S "$sock" kill-server 2>/dev/null || true
+    left="$("$(command -v tmux)" -S "$sock" list-sessions 2>/dev/null)"
+    if [[ -n "$left" ]]; then
+      ts817_fail "tmux sessions still listed on the story socket after cleanup"
+    fi
   fi
   if [[ -z "${TS817_KEEP:-}" ]]; then
     rm -rf "$TS817_TMP"

@@ -4723,6 +4723,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	//   - compute_node alone → 400 (operator must pick an LLM too; we
 	//     don't auto-pick because Kind selection is a deliberate choice).
 	var resolvedLLMRef, resolvedComputeNodeRef string
+	// resolvedPoolNodes is how many compute nodes the resolved entry lists.
+	var resolvedPoolNodes int
 	if req.LLM != "" {
 		if s.inferenceReg == nil {
 			http.Error(w, "llm registry not wired (v7.0.0 inference subsystem disabled)", http.StatusBadRequest)
@@ -4738,6 +4740,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		resolvedLLMRef = llm.Name
+		resolvedPoolNodes = len(llm.ComputeNodes)
 		// LLM.Kind becomes the session backend (overrides req.Backend).
 		req.Backend = string(llm.Kind)
 		switch {
@@ -4780,6 +4783,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	if req.LLM == "" && req.Backend != "" && s.inferenceReg != nil {
 		if entry, err := s.inferenceReg.Get(req.Backend); err == nil && entry != nil && !entry.Disabled {
 			resolvedLLMRef = entry.Name
+			resolvedPoolNodes = len(entry.ComputeNodes)
 			req.Backend = string(entry.Kind)
 			switch {
 			case req.ComputeNode != "":
@@ -4822,7 +4826,13 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	// how the caller spelled the model), and normalize req.Model so
 	// opencode.json always gets the form it requires, regardless of
 	// which spelling the task override used.
-	resolvedOllamaURL, resolvedNodeAddress := s.nodeHostFor(resolvedComputeNodeRef, req.Backend)
+	// A pi session binds to its compute node only when the entry is a pool of two
+	// or more nodes. A one-node entry keeps pi's own provider table, as before.
+	hostRef := resolvedComputeNodeRef
+	if resolvedPoolNodes < 2 && (req.Backend == string(inference.KindPi) || req.Backend == string(inference.KindPiPrompt)) {
+		hostRef = ""
+	}
+	resolvedOllamaURL, resolvedNodeAddress := s.nodeHostFor(hostRef, req.Backend)
 	if resolvedOllamaURL != "" && req.Model != "" && !strings.HasPrefix(req.Model, "ollama/") {
 		req.Model = "ollama/" + req.Model
 	}
