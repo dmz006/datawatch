@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.12.0 — Failure escalation policy for repeated task failures
+
+Repeated task failure escalation is configurable. A policy lists the worker backends and models to try in order, and after a configurable failure count (default 3) a task stops retrying and goes to operator review with a summary of every attempt (backend and model, time spent, what changed, the verifier report). Each retry prompt carries what earlier attempts failed on, so a stronger worker gets full context. The operator can retry, change the spec, change the worker, narrow the scope or cancel from the Automaton view, the CLI, REST, MCP and the comm channel. The policy is a global default with per-Automaton and per-task overrides and appears on every configuration surface, with the five locale bundles.
+
 ## v9.11.1 — Start detector survives long silent first actions
 
 The session start detector no longer ends a worker whose first action is a long silent tool call. Start is measured from the last evidence of life (pane change, process activity, output file) instead of from adoption after a restart, so a restart no longer ends adopted workers after the grace period. The busy worker state after task delivery is fixed and its cause documented, the restart matrix covers these states, and four scenario tests with fakes lock the behaviour.
