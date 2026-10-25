@@ -447,7 +447,7 @@ func TestForwardReceive_WebhookEnvelopeCarriesForwardBlock(t *testing.T) {
 
 	forwarded := recvPRDEvent()
 	forwarded.Forward = &ForwardChain{OriginHost: "daemon-a", Hops: 1, Visited: []string{"daemon-a"}}
-	body, err := sink.buildBody(run, Subscription{ID: "sub-w"}, forwarded)
+	body, err := sink.buildBody(run, Subscription{ID: "sub-w"}, forwarded, WebhookMaxBodyBytes)
 	if err != nil {
 		t.Fatalf("buildBody: %v", err)
 	}
@@ -461,7 +461,7 @@ func TestForwardReceive_WebhookEnvelopeCarriesForwardBlock(t *testing.T) {
 		t.Fatalf("top-level forward block missing on a forwarded event: %s", body)
 	}
 
-	body, err = sink.buildBody(run, Subscription{ID: "sub-w"}, recvPRDEvent())
+	body, err = sink.buildBody(run, Subscription{ID: "sub-w"}, recvPRDEvent(), WebhookMaxBodyBytes)
 	if err != nil {
 		t.Fatalf("buildBody: %v", err)
 	}

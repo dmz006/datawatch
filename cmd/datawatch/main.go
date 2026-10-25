@@ -6089,21 +6089,19 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						emailBackend.Send(cfg.Email.To, text) //nolint:errcheck
 					}
 				}
-				// BL427 (phase 5) — outbound webhook sink. It ships disabled.
-				// HOOK: the config task (pending operator confirmation) replaces
-				// this body with the autonomous.notify.webhook.* values read
-				// from cfg on every call. Until then the defaults keep it off, so
-				// webhook subscriptions are refused at creation and deliver nothing.
+				// BL427 (phase 5) — outbound webhook sink. It ships disabled
+				// (autonomous.notify.webhook.enabled defaults to false). The
+				// settings are read from cfg on every call, so a PUT
+				// /api/config change takes effect on the next delivery with no
+				// restart. cfg is the same pointer the HTTP server writes to.
 				lifecycleWebhookSettings := func() autonomouspkg.WebhookSettings {
-					return autonomouspkg.DefaultWebhookSettings()
+					return autonomouspkg.WebhookSettingsFromConfig(cfg.Autonomous.Notify)
 				}
-				// BL427 (phase 5) — federation peer forwarding. It ships disabled.
-				// HOOK: the config task (pending operator confirmation) replaces this
-				// body with the autonomous.notify.forwarding.* values read from cfg on
-				// every call. Until then peer subscriptions are refused at creation
-				// and forward nothing.
+				// BL427 (phase 5) — federation peer forwarding. It ships disabled
+				// (autonomous.notify.forwarding.enabled defaults to false). Read
+				// from cfg on every call, as for the webhook sink.
 				lifecycleForwardSettings := func() autonomouspkg.ForwardSettings {
-					return autonomouspkg.DefaultForwardSettings()
+					return autonomouspkg.ForwardSettingsFromConfig(cfg.Autonomous.Notify)
 				}
 				// lifecycleLookupPeer resolves a registered federation peer for a peer
 				// subscription. A disabled entry resolves to nothing. The token is read

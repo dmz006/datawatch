@@ -103,7 +103,7 @@ func (m *Manager) ReceiveForwardedEvent(env ForwardedEnvelope) error {
 	if !ok {
 		return ErrForwardReceiveDisabled
 	}
-	if err := checkForwardedEnvelope(env); err != nil {
+	if err := checkForwardedEnvelope(env, set.MaxBodyBytes); err != nil {
 		return err
 	}
 	chain := *env.Forward
@@ -133,8 +133,9 @@ func (m *Manager) ReceiveForwardedEvent(env ForwardedEnvelope) error {
 }
 
 // checkForwardedEnvelope validates the envelope's shape and size, with no regard
-// to the loop rules. Every failure wraps ErrForwardReceiveInvalid.
-func checkForwardedEnvelope(env ForwardedEnvelope) error {
+// to the loop rules. maxBytes is the live envelope cap; below 1 it is the
+// default. Every failure wraps ErrForwardReceiveInvalid.
+func checkForwardedEnvelope(env ForwardedEnvelope, maxBytes int) error {
 	invalid := func(reason string) error {
 		return fmt.Errorf("%w: %s", ErrForwardReceiveInvalid, reason)
 	}
@@ -172,7 +173,10 @@ func checkForwardedEnvelope(env ForwardedEnvelope) error {
 	if err != nil {
 		return invalid("the envelope cannot be encoded")
 	}
-	if len(raw) > WebhookMaxBodyBytes {
+	if maxBytes < 1 {
+		maxBytes = WebhookMaxBodyBytes
+	}
+	if len(raw) > maxBytes {
 		return invalid("the envelope exceeds the size cap")
 	}
 	return nil

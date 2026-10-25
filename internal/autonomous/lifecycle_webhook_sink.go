@@ -50,23 +50,23 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
-// Defaults for the retry policy. Pending operator confirmation: these are the
-// proposal's recommended values (5 attempts, 1s / 4s / 16s / 64s between them
-// with +-20% jitter, 10s per attempt). A changed decision is an edit here.
+// Defaults for the retry policy. The recommended values live in the config
+// package (config.DefaultNotify*, pending operator confirmation); these names
+// re-export them so the sender and its tests read one source. The configured
+// backoff schedule is the default; the geometric curve below is only the
+// fallback for a settings value with no explicit schedule.
 const (
-	DefaultWebhookMaxAttempts = 5
+	DefaultWebhookMaxAttempts = config.DefaultNotifyMaxAttempts
 	DefaultWebhookBackoffBase = 1 * time.Second
 	DefaultWebhookBackoffMax  = 64 * time.Second
-	DefaultWebhookTimeout     = 10 * time.Second
+	DefaultWebhookTimeout     = config.DefaultNotifyAttemptTimeoutSeconds * time.Second
 
-	// webhookBackoffFactor multiplies the delay after each failed attempt
-	// (1s, 4s, 16s, 64s). Pending operator confirmation.
+	// webhookBackoffFactor multiplies the delay after each failed attempt in
+	// the geometric fallback (1s, 4s, 16s, 64s). Pending operator confirmation.
 	webhookBackoffFactor = 4
-	// webhookJitterFraction is the +- spread applied to each delay.
-	// Pending operator confirmation.
-	webhookJitterFraction = 0.2
 	// webhookRetryAfterCap caps a 429 Retry-After the sink will honour.
 	// Pending operator confirmation.
 	webhookRetryAfterCap = 120 * time.Second
@@ -77,10 +77,11 @@ const (
 const (
 	// WebhookEnvelopeVersion is the version of the JSON envelope.
 	WebhookEnvelopeVersion = 1
-	// WebhookMaxBodyBytes caps the serialised envelope. Over the cap the
-	// event's decision and verdict are dropped and the envelope is marked
-	// truncated; still over, the delivery fails without being sent.
-	WebhookMaxBodyBytes = 64 * 1024
+	// WebhookMaxBodyBytes is the default envelope cap (the live value comes
+	// from WebhookSettings.MaxBodyBytes). Over the cap the event's decision and
+	// verdict are dropped and the envelope is marked truncated; still over, the
+	// delivery fails without being sent.
+	WebhookMaxBodyBytes = config.DefaultNotifyMaxBodyBytes
 
 	webhookContentType = "application/json"
 	webhookUserAgent   = "datawatch-lifecycle/1"
@@ -104,27 +105,42 @@ var ErrWebhookDelivery = errors.New("webhook delivery failed")
 
 const redactedText = "[redacted]"
 
-// WebhookSettings is the live configuration of the webhook sink. A zero
-// MaxAttempts, BackoffBase, BackoffMax or Timeout falls back to its default.
-// Enabled defaults to false: the sink ships disabled until the operator
-// confirms the proposal.
+// WebhookSettings is the live configuration of the webhook sink. Enabled
+// defaults to false: the sink ships disabled until the operator confirms the
+// proposal. A zero value for any other field falls back to its default (see
+// withDefaults). WebhookSettingsFromConfig builds it from the config keys.
 type WebhookSettings struct {
 	Enabled     bool
 	AllowHosts  []string
 	MaxAttempts int
+	// Backoff is the explicit delay after each failed attempt; the last entry
+	// repeats. When empty, the geometric curve from BackoffBase to BackoffMax
+	// applies.
+	Backoff     []time.Duration
 	BackoffBase time.Duration
 	BackoffMax  time.Duration
-	Timeout     time.Duration
+	// JitterPercent is the +- spread on each delay, in percent.
+	JitterPercent int
+	Timeout       time.Duration
+	// MaxBodyBytes is the envelope cap, shared with peer forwarding.
+	MaxBodyBytes int
+	// SignatureTolerance is the replay window a receiver enforces on the
+	// signed timestamp (see VerifyWebhookSignature).
+	SignatureTolerance time.Duration
 }
 
 // DefaultWebhookSettings returns the disabled-by-default settings with the
-// proposal's recommended retry policy.
+// proposal's recommended values.
 func DefaultWebhookSettings() WebhookSettings {
 	return WebhookSettings{
-		MaxAttempts: DefaultWebhookMaxAttempts,
-		BackoffBase: DefaultWebhookBackoffBase,
-		BackoffMax:  DefaultWebhookBackoffMax,
-		Timeout:     DefaultWebhookTimeout,
+		MaxAttempts:        DefaultWebhookMaxAttempts,
+		Backoff:            secondsToDurations(config.DefaultNotifyBackoffSeconds()),
+		BackoffBase:        DefaultWebhookBackoffBase,
+		BackoffMax:         DefaultWebhookBackoffMax,
+		JitterPercent:      config.DefaultNotifyJitterPercent,
+		Timeout:            DefaultWebhookTimeout,
+		MaxBodyBytes:       config.DefaultNotifyMaxBodyBytes,
+		SignatureTolerance: time.Duration(config.DefaultNotifySignatureToleranceSeconds) * time.Second,
 	}
 }
 
@@ -138,10 +154,29 @@ func (s WebhookSettings) withDefaults() WebhookSettings {
 	if s.BackoffMax <= 0 {
 		s.BackoffMax = DefaultWebhookBackoffMax
 	}
+	if s.JitterPercent <= 0 {
+		s.JitterPercent = config.DefaultNotifyJitterPercent
+	}
 	if s.Timeout <= 0 {
 		s.Timeout = DefaultWebhookTimeout
 	}
+	if s.MaxBodyBytes <= 0 {
+		s.MaxBodyBytes = config.DefaultNotifyMaxBodyBytes
+	}
+	if s.SignatureTolerance <= 0 {
+		s.SignatureTolerance = time.Duration(config.DefaultNotifySignatureToleranceSeconds) * time.Second
+	}
 	return s
+}
+
+// curve is the delay policy the webhook sender uses.
+func (s WebhookSettings) curve() retryCurve {
+	return retryCurve{
+		schedule:      s.Backoff,
+		base:          s.BackoffBase,
+		ceiling:       s.BackoffMax,
+		jitterPercent: s.JitterPercent,
+	}
 }
 
 // WebhookSinkConfig is the dependency set of the webhook sink. Every entry is
@@ -166,7 +201,7 @@ type WebhookSinkConfig struct {
 	// Now is the clock. Nil is time.Now.
 	Now func() time.Time
 	// Jitter returns a value in [0,1) that spreads each delay by
-	// +-webhookJitterFraction. Nil is math/rand.
+	// +- the settings' JitterPercent. Nil is math/rand.
 	Jitter func() float64
 	// NewClient builds the HTTP client for one delivery from the live
 	// allow-list and the per-attempt timeout. Nil is NewWebhookHTTPClient.
@@ -279,7 +314,7 @@ func (s *WebhookSink) Deliver(ctx context.Context, sub Subscription, ev Lifecycl
 		return s.dropBeforeSend(run, WebhookOutcomeFailed, err)
 	}
 
-	body, err := s.buildBody(run, sub, ev)
+	body, err := s.buildBody(run, sub, ev, set.MaxBodyBytes)
 	if err != nil {
 		return s.dropBeforeSend(run, WebhookOutcomeFailed, err)
 	}
@@ -329,7 +364,7 @@ func (s *WebhookSink) resolveSecret(ref string) (string, error) {
 
 // buildBody marshals the envelope once per delivery. Over the size cap the
 // event's decision and verdict are dropped first; still over, it is an error.
-func (s *WebhookSink) buildBody(run *webhookRun, sub Subscription, ev LifecycleEvent) ([]byte, error) {
+func (s *WebhookSink) buildBody(run *webhookRun, sub Subscription, ev LifecycleEvent, maxBytes int) ([]byte, error) {
 	env := WebhookEnvelope{
 		Version:        WebhookEnvelopeVersion,
 		DeliveryID:     run.deliveryID,
@@ -341,18 +376,21 @@ func (s *WebhookSink) buildBody(run *webhookRun, sub Subscription, ev LifecycleE
 		// block then names the origin host, the hops and the visited list.
 		Forward: ev.Forward,
 	}
-	return marshalWebhookEnvelope(env)
+	return marshalWebhookEnvelope(env, maxBytes)
 }
 
-// marshalWebhookEnvelope serialises env for either sink. Over WebhookMaxBodyBytes
-// the event's decision and verdict are dropped and the envelope is marked
-// truncated; still over, it is an error.
-func marshalWebhookEnvelope(env WebhookEnvelope) ([]byte, error) {
+// marshalWebhookEnvelope serialises env for either sink. Over maxBytes the
+// event's decision and verdict are dropped and the envelope is marked
+// truncated; still over, it is an error. A maxBytes below 1 means the default cap.
+func marshalWebhookEnvelope(env WebhookEnvelope, maxBytes int) ([]byte, error) {
+	if maxBytes < 1 {
+		maxBytes = WebhookMaxBodyBytes
+	}
 	body, err := json.Marshal(env)
 	if err != nil {
 		return nil, fmt.Errorf("the event could not be encoded: %w", err)
 	}
-	if len(body) <= WebhookMaxBodyBytes {
+	if len(body) <= maxBytes {
 		return body, nil
 	}
 	env.Event.Decision, env.Event.Verdict, env.Truncated = nil, nil, true
@@ -360,8 +398,8 @@ func marshalWebhookEnvelope(env WebhookEnvelope) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("the event could not be encoded: %w", err)
 	}
-	if len(body) > WebhookMaxBodyBytes {
-		return nil, fmt.Errorf("the payload is %d bytes, over the %d byte cap", len(body), WebhookMaxBodyBytes)
+	if len(body) > maxBytes {
+		return nil, fmt.Errorf("the payload is %d bytes, over the %d byte cap", len(body), maxBytes)
 	}
 	return body, nil
 }
@@ -480,19 +518,46 @@ func parseRetryAfter(v string, now time.Time) time.Duration {
 // base * factor^(n-1), capped at BackoffMax, spread by the jitter, and raised
 // to a Retry-After (itself capped) when that is longer.
 func (s *WebhookSink) backoff(set WebhookSettings, n int, retryAfter time.Duration) time.Duration {
-	return webhookBackoff(set.BackoffBase, set.BackoffMax, n, retryAfter, s.cfg.Jitter())
+	return webhookBackoff(set.curve(), n, retryAfter, s.cfg.Jitter())
+}
+
+// retryCurve is the delay policy both senders share. An explicit schedule wins
+// when one is set (its last entry repeats); otherwise the geometric curve
+// base * factor^(n-1) applies, capped at ceiling. jitterPercent spreads each
+// delay by +- that percentage (a value below 1 means the default).
+type retryCurve struct {
+	schedule      []time.Duration
+	base          time.Duration
+	ceiling       time.Duration
+	jitterPercent int
 }
 
 // webhookBackoff is the shared delay curve of the webhook and peer senders:
-// base * factor^(n-1) capped at max, spread by jitter in [0,1), raised to a
-// Retry-After when that is longer.
-func webhookBackoff(base, ceiling time.Duration, n int, retryAfter time.Duration, jitter float64) time.Duration {
-	d := base
-	for i := 1; i < n && d < ceiling; i++ {
-		d *= webhookBackoffFactor
+// the delay for the failed attempt n (1-based) from c, spread by jitter in
+// [0,1), raised to a Retry-After when that is longer.
+func webhookBackoff(c retryCurve, n int, retryAfter time.Duration, jitter float64) time.Duration {
+	var d time.Duration
+	if len(c.schedule) > 0 {
+		i := n - 1
+		if i < 0 {
+			i = 0
+		}
+		if i >= len(c.schedule) {
+			i = len(c.schedule) - 1
+		}
+		d = c.schedule[i]
+	} else {
+		d = c.base
+		for i := 1; i < n && d < c.ceiling; i++ {
+			d *= webhookBackoffFactor
+		}
+		if d > c.ceiling {
+			d = c.ceiling
+		}
 	}
-	if d > ceiling {
-		d = ceiling
+	spread := float64(c.jitterPercent) / 100
+	if c.jitterPercent < 1 {
+		spread = float64(config.DefaultNotifyJitterPercent) / 100
 	}
 	j := jitter
 	if j < 0 {
@@ -500,7 +565,7 @@ func webhookBackoff(base, ceiling time.Duration, n int, retryAfter time.Duration
 	} else if j > 1 {
 		j = 1
 	}
-	d = time.Duration(float64(d) * (1 + webhookJitterFraction*(2*j-1)))
+	d = time.Duration(float64(d) * (1 + spread*(2*j-1)))
 	if retryAfter > d {
 		d = retryAfter
 	}

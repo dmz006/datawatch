@@ -47,6 +47,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
@@ -58,7 +59,7 @@ const ForwardedEventsPath = "/api/autonomous/events/forward"
 // DefaultForwardMaxHops is the hop cap of a forwarded event: the number of
 // daemons an event may pass through, counting the sender. Pending operator
 // confirmation (the proposal's recommended value, section 3).
-const DefaultForwardMaxHops = 3
+const DefaultForwardMaxHops = config.DefaultNotifyMaxHops
 
 // MaxPeerNameLen caps the registered peer name a peer subscription names.
 const MaxPeerNameLen = 64
@@ -90,20 +91,32 @@ type ForwardSettings struct {
 	Enabled     bool
 	MaxHops     int
 	MaxAttempts int
+	// Backoff is the explicit delay after each failed attempt; the last entry
+	// repeats. When empty, the geometric curve from BackoffBase to BackoffMax
+	// applies.
+	Backoff     []time.Duration
 	BackoffBase time.Duration
 	BackoffMax  time.Duration
-	Timeout     time.Duration
+	// JitterPercent is the +- spread on each delay, in percent.
+	JitterPercent int
+	Timeout       time.Duration
+	// MaxBodyBytes is the envelope cap: a forwarded envelope over it is
+	// refused by the receiver. It is the same cap the webhook sink uses.
+	MaxBodyBytes int
 }
 
 // DefaultForwardSettings returns the disabled-by-default settings with the
 // proposal's recommended retry policy (the webhook values, section 2(e)).
 func DefaultForwardSettings() ForwardSettings {
 	return ForwardSettings{
-		MaxHops:     DefaultForwardMaxHops,
-		MaxAttempts: DefaultWebhookMaxAttempts,
-		BackoffBase: DefaultWebhookBackoffBase,
-		BackoffMax:  DefaultWebhookBackoffMax,
-		Timeout:     DefaultWebhookTimeout,
+		MaxHops:       DefaultForwardMaxHops,
+		MaxAttempts:   DefaultWebhookMaxAttempts,
+		Backoff:       secondsToDurations(config.DefaultNotifyBackoffSeconds()),
+		BackoffBase:   DefaultWebhookBackoffBase,
+		BackoffMax:    DefaultWebhookBackoffMax,
+		JitterPercent: config.DefaultNotifyJitterPercent,
+		Timeout:       DefaultWebhookTimeout,
+		MaxBodyBytes:  config.DefaultNotifyMaxBodyBytes,
 	}
 }
 
@@ -120,10 +133,26 @@ func (s ForwardSettings) withDefaults() ForwardSettings {
 	if s.BackoffMax <= 0 {
 		s.BackoffMax = DefaultWebhookBackoffMax
 	}
+	if s.JitterPercent <= 0 {
+		s.JitterPercent = config.DefaultNotifyJitterPercent
+	}
 	if s.Timeout <= 0 {
 		s.Timeout = DefaultWebhookTimeout
 	}
+	if s.MaxBodyBytes <= 0 {
+		s.MaxBodyBytes = config.DefaultNotifyMaxBodyBytes
+	}
 	return s
+}
+
+// curve is the delay policy the peer forwarder uses.
+func (s ForwardSettings) curve() retryCurve {
+	return retryCurve{
+		schedule:      s.Backoff,
+		base:          s.BackoffBase,
+		ceiling:       s.BackoffMax,
+		jitterPercent: s.JitterPercent,
+	}
 }
 
 // PeerRef is the part of a federation peer registry entry the forwarder needs.
@@ -399,7 +428,7 @@ func (f *PeerForwarder) Forward(ctx context.Context, sub Subscription, ev Lifecy
 		Event:          ev,
 		Forward:        &chain,
 	}
-	body, err := marshalWebhookEnvelope(env)
+	body, err := marshalWebhookEnvelope(env, set.MaxBodyBytes)
 	if err != nil {
 		return f.dropBeforeSend(run, WebhookOutcomeFailed, err)
 	}
@@ -427,7 +456,7 @@ func (f *PeerForwarder) Forward(ctx context.Context, sub Subscription, ev Lifecy
 			return f.dropAfterAttempt(run, attempt, res, WebhookOutcomeFailed)
 		}
 		f.attemptRecord(run, attempt, res.status, WebhookOutcomeRetry, f.errText(run, res.err))
-		delay := webhookBackoff(set.BackoffBase, set.BackoffMax, attempt, res.retryAfter, f.cfg.Jitter())
+		delay := webhookBackoff(set.curve(), attempt, res.retryAfter, f.cfg.Jitter())
 		if werr := waitForRetry(ctx, f.cfg.Sleep, delay); werr != nil {
 			return f.abandon(run, attempt, werr)
 		}

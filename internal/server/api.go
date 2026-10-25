@@ -6171,6 +6171,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
 		return
 	}
+	// Outbound webhook sink and peer forwarding (autonomous.notify.webhook.*,
+	// autonomous.notify.forwarding.*). A bad host, a non-numeric number or a
+	// bad delay schedule rejects the whole PUT before anything is applied.
+	if verr := validateLifecycleNotifyPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
 	// Automation idle-alert threshold: whole minutes, 0 = off. A negative or
 	// non-integer value rejects the whole PUT rather than being skipped.
 	if v, ok := patch["autonomous.automation.idle_alert_minutes"]; ok {
@@ -7556,6 +7563,17 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				}
 				cfg.Autonomous.Notify.PendingEventsMax = n
 			}
+		case "autonomous.notify.webhook.enabled", "autonomous.notify.webhook.allow_hosts",
+			"autonomous.notify.webhook.max_attempts", "autonomous.notify.webhook.backoff_seconds",
+			"autonomous.notify.webhook.jitter_percent", "autonomous.notify.webhook.attempt_timeout_seconds",
+			"autonomous.notify.webhook.max_body_bytes", "autonomous.notify.webhook.signature_tolerance_seconds",
+			"autonomous.notify.forwarding.enabled", "autonomous.notify.forwarding.max_hops",
+			"autonomous.notify.forwarding.max_attempts", "autonomous.notify.forwarding.backoff_seconds",
+			"autonomous.notify.forwarding.jitter_percent", "autonomous.notify.forwarding.attempt_timeout_seconds":
+			// Validated in handlePutConfig (validateLifecycleNotifyPatch). The
+			// webhook sink and peer forwarding read these live on every call,
+			// so no restart is needed.
+			applyLifecycleNotifyKey(&cfg.Autonomous.Notify, k, v)
 		case "autonomous.planning_effort", "autonomous.decomposition_effort":
 			cfg.Autonomous.PlanningEffort = toString(v)
 		case "autonomous.verification_effort":
@@ -8556,6 +8574,8 @@ func defaultEventsNotifySurface(n config.AutonomousNotifyConfig) map[string]inte
 	return map[string]interface{}{
 		"default_events":     ev,
 		"pending_events_max": n.EffectivePendingEventsMax(),
+		"webhook":            webhookNotifySurface(n.Webhook),
+		"forwarding":         forwardingNotifySurface(n.Forwarding),
 	}
 }
 

@@ -15531,6 +15531,23 @@ const GENERAL_CONFIG_FIELDS = [
     // (current behavior, off by default); the global notify_exclude
     // still applies to the comm fan-out.
     { key: 'autonomous.notify.default_events', label: 'Lifecycle event sinks: kinds', type: 'text', placeholder: 'prd.completed, task.failed', csv: true },
+    // Outbound webhook sink and peer forwarding (autonomous.notify.webhook.*,
+    // autonomous.notify.forwarding.*). Both ship disabled; a change applies to
+    // the next event, no restart. Values below 1 mean the default shown.
+    { key: 'autonomous.notify.webhook.enabled', label: 'Outbound webhook sink: enabled', labelKey: 'settings_notify_webhook_enabled', helpKey: 'settings_notify_webhook_enabled_help', type: 'toggle' },
+    { key: 'autonomous.notify.webhook.allow_hosts', label: 'Webhook allow-list (host or host:port)', labelKey: 'settings_notify_webhook_allow_hosts', helpKey: 'settings_notify_webhook_allow_hosts_help', type: 'text', placeholder: 'hooks.example.net, hooks.example.net:8443', csv: true },
+    { key: 'autonomous.notify.webhook.max_attempts', label: 'Webhook attempts per event (0 = 5)', labelKey: 'settings_notify_webhook_max_attempts', type: 'number', placeholder: '5' },
+    { key: 'autonomous.notify.webhook.backoff_seconds', label: 'Webhook retry delays (sec, comma-separated)', labelKey: 'settings_notify_webhook_backoff_seconds', type: 'text', placeholder: '1, 4, 16, 64', csv: true },
+    { key: 'autonomous.notify.webhook.jitter_percent', label: 'Webhook retry jitter (%, 0 = 20)', labelKey: 'settings_notify_webhook_jitter_percent', type: 'number', placeholder: '20' },
+    { key: 'autonomous.notify.webhook.attempt_timeout_seconds', label: 'Webhook attempt timeout (sec, 0 = 10)', labelKey: 'settings_notify_webhook_attempt_timeout', type: 'number', placeholder: '10' },
+    { key: 'autonomous.notify.webhook.max_body_bytes', label: 'Webhook payload cap (bytes, 0 = 65536)', labelKey: 'settings_notify_webhook_max_body_bytes', type: 'number', placeholder: '65536' },
+    { key: 'autonomous.notify.webhook.signature_tolerance_seconds', label: 'Webhook replay window for receivers (sec, 0 = 300)', labelKey: 'settings_notify_webhook_signature_tolerance', type: 'number', placeholder: '300' },
+    { key: 'autonomous.notify.forwarding.enabled', label: 'Peer forwarding of lifecycle events: enabled', labelKey: 'settings_notify_forwarding_enabled', helpKey: 'settings_notify_forwarding_enabled_help', type: 'toggle' },
+    { key: 'autonomous.notify.forwarding.max_hops', label: 'Forwarding hop cap (0 = 3)', labelKey: 'settings_notify_forwarding_max_hops', type: 'number', placeholder: '3' },
+    { key: 'autonomous.notify.forwarding.max_attempts', label: 'Forwarding attempts per event (0 = 5)', labelKey: 'settings_notify_forwarding_max_attempts', type: 'number', placeholder: '5' },
+    { key: 'autonomous.notify.forwarding.backoff_seconds', label: 'Forwarding retry delays (sec, comma-separated)', labelKey: 'settings_notify_forwarding_backoff_seconds', type: 'text', placeholder: '1, 4, 16, 64', csv: true },
+    { key: 'autonomous.notify.forwarding.jitter_percent', label: 'Forwarding retry jitter (%, 0 = 20)', labelKey: 'settings_notify_forwarding_jitter_percent', type: 'number', placeholder: '20' },
+    { key: 'autonomous.notify.forwarding.attempt_timeout_seconds', label: 'Forwarding attempt timeout (sec, 0 = 10)', labelKey: 'settings_notify_forwarding_attempt_timeout', type: 'number', placeholder: '10' },
     // BL410 Phase 1 — retry policy. retry_policy itself is a per-category
     // map (infra/content/scope/policy); edited via the Retry Profiles
     // card and the per-Automaton retry-policy setter, not this generic

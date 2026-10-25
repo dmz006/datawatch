@@ -1116,6 +1116,72 @@ still applies to the comm fan-out: a channel named there skips the
 lifecycle message broadcast even when the event kind is enabled, and
 still handles inbound commands normally.
 
+### Outbound webhook sink and peer forwarding settings
+
+Two lifecycle delivery paths send events beyond this daemon. Both **ship
+disabled** and stay off until the operator enables them.
+
+- **Outbound webhook sink.** A webhook subscription POSTs each selected
+  lifecycle event to a receiver over HTTPS, signed with HMAC-SHA256. Only hosts
+  in `autonomous.notify.webhook.allow_hosts` can receive an event.
+- **Peer forwarding.** A peer subscription sends each selected event to a
+  federated peer that grants `autonomous:write`. The receiving daemon re-emits
+  it locally, marked as forwarded. Loop prevention uses the origin host, the
+  hop count and a visited list.
+
+The design and the recommended values are in
+`docs/plans/2026-10-23-lifecycle-outbound-webhook-and-forwarding-proposal.md`.
+The retry numbers, the signature header format, the payload shape and the
+peer addressing are pending operator confirmation. Each one is a named constant
+or config default, so a changed decision is a one-place edit.
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous.notify.webhook` and `autonomous.notify.forwarding` (see `docs/config-reference.yaml`) |
+| **CLI** | `datawatch config set <key> <value>`, e.g. `datawatch config set autonomous.notify.webhook.allow_hosts hooks.example.net,hooks.example.net:8443` |
+| **Web UI** | Settings → General → **Autonomous Automata planning** card → the **Outbound webhook sink** and **Peer forwarding of lifecycle events** fields, with the allow-list and tunables listed beside them |
+| **REST API** | `PUT /api/config` with `{"autonomous.notify.webhook.enabled": true}`; `GET /api/config` returns the same keys under `autonomous.notify.webhook` and `autonomous.notify.forwarding` |
+| **Comm channel** | `configure autonomous.notify.webhook.enabled=true` (also listed in the `configure` help) |
+
+**Keys (webhook sink).**
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `autonomous.notify.webhook.enabled` | bool | `false` | Master switch. Off refuses webhook subscriptions and delivers nothing from ones already stored. |
+| `autonomous.notify.webhook.allow_hosts` | list of `host` or `host:port` | `[]` | The only hosts that may receive. Exact match, case-insensitive; no scheme, path, wildcard or userinfo. Empty means nothing receives. |
+| `autonomous.notify.webhook.max_attempts` | integer | `5` | Total attempts per delivery, the first included. A value below 1 means the default. |
+| `autonomous.notify.webhook.backoff_seconds` | list of integers | `[1, 4, 16, 64]` | Delay after each failed attempt; the last entry repeats. |
+| `autonomous.notify.webhook.jitter_percent` | integer 1-100 | `20` | +- spread on each delay. A value below 1 means the default. |
+| `autonomous.notify.webhook.attempt_timeout_seconds` | integer | `10` | Bound on one attempt. |
+| `autonomous.notify.webhook.max_body_bytes` | integer | `65536` | Cap on the serialised envelope. Also the size a forwarding receiver accepts. |
+| `autonomous.notify.webhook.signature_tolerance_seconds` | integer | `300` | Replay window a receiver enforces on the signed timestamp. |
+
+**Keys (peer forwarding).**
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `autonomous.notify.forwarding.enabled` | bool | `false` | Master switch. Off refuses peer subscriptions and makes this daemon refuse forwarded events. |
+| `autonomous.notify.forwarding.max_hops` | integer | `3` | Hop cap of a forwarded event, counting the sender. |
+| `autonomous.notify.forwarding.max_attempts` | integer | `5` | Total attempts per forwarded event. |
+| `autonomous.notify.forwarding.backoff_seconds` | list of integers | `[1, 4, 16, 64]` | Delay after each failed attempt; the last entry repeats. |
+| `autonomous.notify.forwarding.jitter_percent` | integer 1-100 | `20` | +- spread on each delay. |
+| `autonomous.notify.forwarding.attempt_timeout_seconds` | integer | `10` | Bound on one attempt. |
+
+**Secrets.** A webhook subscription's signing secret is never a literal value in
+this config file or in a subscription. The subscription carries a
+`${secret:name}` reference into the secrets vault, resolved on each delivery. A
+literal value is refused at creation.
+
+**Validation.** A `PUT /api/config` that sets one of these keys with an invalid
+value is rejected with HTTP 400 before anything is applied. The rejections are:
+an allow-list entry with a scheme, path, query, wildcard or userinfo, or one
+that is not a host or `host:port`; a non-numeric or fractional number; a
+`jitter_percent` above 100; or a delay that is not a whole number of seconds
+of at least 1.
+
+**Live effect.** The sink and the forwarder read these settings on every call,
+so a change applies to the next event with no daemon restart.
+
 ### Dependencies
 
 - **fsnotify** — used for interrupt-driven log file monitoring (replaces polling). Each session's `monitorOutput` goroutine watches the log file via fsnotify and reads new lines on write events, reducing CPU usage and improving latency.

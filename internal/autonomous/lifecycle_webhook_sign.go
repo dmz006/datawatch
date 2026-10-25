@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // The wire details below are pending operator confirmation. They live here,
@@ -45,10 +47,10 @@ const (
 	webhookSigSeparator    = "."
 )
 
-// WebhookSignatureTolerance is the replay window the receiver recipe uses
-// (5 minutes). Pending operator confirmation; the config key
+// WebhookSignatureTolerance is the default replay window the receiver recipe
+// uses (5 minutes, from config). Pending operator confirmation; the config key
 // autonomous.notify.webhook.signature_tolerance_seconds overrides it.
-const WebhookSignatureTolerance = 300 * time.Second
+const WebhookSignatureTolerance = config.DefaultNotifySignatureToleranceSeconds * time.Second
 
 // Verification failures. The messages are fixed text: they never contain the
 // header value, the body or the secret.
