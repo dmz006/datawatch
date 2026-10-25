@@ -5033,6 +5033,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							}
 							if idleFor := time.Since(idleSince); idleFor > idleLimit {
 								_, outputAge, _ := staleWorkerCheck(staleLogPath, idleLimit, time.Now())
+								// HasLiveChildProcess carries runner liveness for pi-prompt (a one-shot
+								// print run has no child), work children for every other family.
 								idleObs := autonomouspkg.SessionIdleObservation{
 									SessionID:           task.SessionID,
 									Backend:             s.BackendFamily,
@@ -5040,7 +5042,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									State:               string(s.State),
 									IdleFor:             idleFor,
 									OutputAge:           outputAge,
-									HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession, s.ProjectDir),
+									HasLiveChildProcess: idleLivenessProbe(s.BackendFamily)(s.TmuxSession, s.ProjectDir),
 									Limit:               idleLimit,
 									Nudge:               sessionNudgeNote(autonomousMgrRef, prd.ID, task.ID, task.SessionID),
 								}

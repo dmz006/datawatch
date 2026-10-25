@@ -20,3 +20,22 @@ func exitSilenceTick(tr *autonomouspkg.ExitSilenceTracker, backendFamily string,
 	}
 	return tr.Observe(now, runnerAlive(), logModTime())
 }
+
+// idleLivenessProbe returns the liveness probe that feeds the idle observation
+// for a backend family. A one-shot pi print run generates with no child
+// process, so for the pi-prompt family the question is whether the runner is
+// alive; for every other family it stays whether the runner has a work child.
+func idleLivenessProbe(backendFamily string) func(tmuxSession, projectDir string) bool {
+	return selectIdleLivenessProbe(backendFamily,
+		func(tmuxSession, _ string) bool { return hasLiveRunnerProcess(tmuxSession) },
+		hasLiveChildProcess)
+}
+
+// selectIdleLivenessProbe is the pure choice behind idleLivenessProbe, with the
+// two probes injected.
+func selectIdleLivenessProbe(backendFamily string, runnerProbe, childProbe func(tmuxSession, projectDir string) bool) func(tmuxSession, projectDir string) bool {
+	if backendFamily == "pi-prompt" {
+		return runnerProbe
+	}
+	return childProbe
+}
