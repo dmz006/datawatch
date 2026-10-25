@@ -3537,6 +3537,23 @@ func (m *Manager) RecordTaskNudge(prdID, taskID, sessionID string, at time.Time)
 	return m.store.SavePRD(prd)
 }
 
+// TaskNudgeCount returns how many idle-worker nudges the task has recorded
+// across all its sessions, or 0 when the task is unknown.
+func (m *Manager) TaskNudgeCount(prdID, taskID string) int {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return 0
+	}
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if t := &prd.Story[si].Tasks[ti]; t.ID == taskID {
+				return t.NudgeCount
+			}
+		}
+	}
+	return 0
+}
+
 // RecordTaskNudgeOutcome sets the outcome of the latest nudge sent into the
 // given session on the task. It returns an error when the outcome is not one
 // of the NudgeOutcome constants, the task is unknown, or the session has no

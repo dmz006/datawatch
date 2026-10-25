@@ -44,9 +44,10 @@ type WorkerNudgeTracker struct {
 	nudgeAfter time.Duration
 	stallAfter time.Duration
 
-	idleSince time.Time // start of the current unbroken idle run
-	nudgedAt  time.Time // when the one nudge was sent (zero before)
-	done      bool      // completion seen: tracking has ended
+	idleSince  time.Time     // start of the current unbroken idle run
+	nudgedAt   time.Time     // when the one nudge was sent (zero before)
+	idleAtSend time.Duration // idle time that earned the nudge, for the log line
+	done       bool          // completion seen: tracking has ended
 }
 
 // NewWorkerNudgeTracker returns a tracker with the given windows. A window
@@ -108,6 +109,7 @@ func (t *WorkerNudgeTracker) Observe(now time.Time, family string, prdOwned bool
 	}
 	if t.nudgeAfter > 0 && idleFor >= t.nudgeAfter {
 		t.nudgedAt = now
+		t.idleAtSend = idleFor
 		return WorkerNudgeSend
 	}
 	return WorkerNudgeNone

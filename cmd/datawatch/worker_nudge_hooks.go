@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"time"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
@@ -49,11 +50,22 @@ func workerNudgeHooks(mgr *session.Manager, recorder *autonomouspkg.Manager, ses
 		SendInput: func(text, source string) error {
 			return mgr.SendInput(sessionID, text, source)
 		},
-		Record: func(at time.Time) error {
+		Record: func(at time.Time) (int, error) {
 			if recorder == nil {
-				return nil
+				return 0, nil
 			}
-			return recorder.RecordTaskNudge(prdID, taskID, sessionID, at)
+			if err := recorder.RecordTaskNudge(prdID, taskID, sessionID, at); err != nil {
+				return 0, err
+			}
+			return recorder.TaskNudgeCount(prdID, taskID), nil
+		},
+		Outcome: func(outcome string) {
+			if recorder == nil {
+				return
+			}
+			if err := recorder.RecordTaskNudgeOutcome(prdID, taskID, sessionID, outcome); err != nil {
+				log.Printf("[autonomous] record nudge outcome %s for session %s task %s/%s: %v", outcome, sessionID, prdID, taskID, err)
+			}
 		},
 		End: func(obs autonomouspkg.WorkerNudgeObservation) {
 			_ = mgr.EndSession(sessionID, session.EndReason{Caller: endCallerNudgeStall, Reason: nudgeStallEndReason(obs, stallAfter)})

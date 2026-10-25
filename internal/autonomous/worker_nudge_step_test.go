@@ -33,9 +33,9 @@ func (w *fakeNudgeWorker) hooks() WorkerNudgeHooks {
 			}
 			return nil
 		},
-		Record: func(at time.Time) error {
+		Record: func(at time.Time) (int, error) {
 			w.recorded = append(w.recorded, at)
-			return nil
+			return len(w.recorded), nil
 		},
 		End: func(obs WorkerNudgeObservation) {
 			w.ended = append(w.ended, obs)
@@ -131,7 +131,7 @@ func TestStepWorkerNudge_StallEndsWorkerAndWrapsErrWorkerStalled(t *testing.T) {
 func TestStepWorkerNudge_RecordFailureDoesNotFailTheWait(t *testing.T) {
 	w := &fakeNudgeWorker{obs: nudgeObs(time.Hour), delivered: true}
 	hooks := w.hooks()
-	hooks.Record = func(time.Time) error { return errors.New("store unavailable") }
+	hooks.Record = func(time.Time) (int, error) { return 0, errors.New("store unavailable") }
 	tr := NewWorkerNudgeTracker(nudgeTestWindow, nudgeTestStall)
 	for _, at := range []time.Duration{0, nudgeTestWindow} {
 		if err := StepWorkerNudge(tr, nudgeT0.Add(at), WorkerNudgeFamily, "sess", "prd/task", hooks); err != nil {

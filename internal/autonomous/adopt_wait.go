@@ -60,6 +60,12 @@ func WaitAdopted(ctx context.Context, w AdoptedWait, p AdoptedWaitPorts) error {
 	tr := NewWorkerNudgeTracker(p.NudgeAfter, p.StallAfter)
 	tr.SeedNudgedAt(w.NudgedAt)
 	label := w.PRDID + "/" + w.TaskID
+	// finish closes nudge tracking when the wait ends on completion.
+	finish := func() {
+		if tr.Nudged() {
+			CloseNudgeWait(tr, p.Nudge(w.SessionID))
+		}
+	}
 	for {
 		state, family, ok := p.Status(w.SessionID)
 		if !ok {
@@ -67,11 +73,13 @@ func WaitAdopted(ctx context.Context, w AdoptedWait, p AdoptedWaitPorts) error {
 		}
 		switch state {
 		case session.StateComplete:
+			finish()
 			return nil
 		case session.StateFailed, session.StateKilled:
 			return fmt.Errorf("adopted session %s ended %s", w.SessionID, state)
 		}
 		if p.Completed(w.SessionID) {
+			finish()
 			return nil
 		}
 		if err := StepWorkerNudge(tr, now(), family, w.SessionID, label, p.Nudge(w.SessionID)); err != nil {

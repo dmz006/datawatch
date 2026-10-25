@@ -4878,6 +4878,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							// The session is over: drop its scan-history entry so
 							// the fresh-tracker map cannot grow without bound.
 							sseFreshTracker.forget(s.FullID)
+							if nudgeTracker != nil && s.State == session.StateComplete {
+								// Completion ends an open nudge as answered.
+								autonomouspkg.CloseNudgeWait(nudgeTracker, nudgeHooks)
+							}
 							break waitLoop
 						}
 						// Design §6.ii — await-external: the worker emitted a
