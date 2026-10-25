@@ -246,6 +246,7 @@ body {
   align-items: center;
   justify-content: center;
   margin-right: 8px;
+  min-width: 40px; min-height: 40px; /* 40 px minimum tap target (worklist, shared fix) */
   transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
 .header-search-btn:hover {
@@ -5193,6 +5194,7 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   display: flex;
   align-items: center;
   gap: 6px;
+  min-height: 40px; /* 40 px minimum tap target; the Observer section header was 35 px */
 }
 .settings-section-toggle:hover { color: var(--accent); }
 .settings-chevron {
