@@ -1,7 +1,7 @@
 mode: fresh-sandbox
-base: https://127.0.0.1:58793
-tree commit: bfed9b8a53d059c403c6b9df9462e035f7b6cbf9
-uncommitted paths: 3
+base: https://127.0.0.1:53421
+tree commit: 48436b6851c945664ae99fc2dd1813fa3099811d
+uncommitted paths: 1
 health status: ok
 go: go version go1.27.2 linux/amd64
 os: Linux 7.0.0-34-generic
