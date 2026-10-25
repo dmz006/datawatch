@@ -21,6 +21,7 @@ Legend:
 - ✅ — Implemented and verified
 - 🔶 — Partial / in progress
 - ❌ — Not yet implemented
+- design only — Design written and on file under `docs/plans/`; no implementation yet
 - N/A — Not applicable to this platform
 
 ## Feature Parity Table
@@ -65,6 +66,7 @@ Legend:
 | Council markdown rendering | 🔶 v8.46.0 — completed-run modal only; the live in-progress run log is still plain text (GH#181, left open) | ✅ | ✅ |
 | Animated "eye" loading state (replacing plain "Loading…" / shimmer bars) | ❌ — tracked, `dmz006/datawatch#186`, not started | ✅ | ✅ |
 | Native ACME / Let's Encrypt cert management — HTTP-01 + DNS-01 (Cloudflare) + zero-downtime hot-swap (BL397) | ✅ v8.62.x | N/A (server-side feature; apps just consume whatever cert the daemon serves) | N/A |
+| Tag browsing and PRD tiles | design only — `docs/plans/2026-10-20-tag-browsing-tile-design.md` (on hold until the tag registry ships) | not started — issue draft `docs/plans/assets/tag-browsing-datawatch-app-issue.md` | not started (same issue draft, iPhone and iPad) |
 
 ## Known PWA gaps (tracked, not yet closed)
 
