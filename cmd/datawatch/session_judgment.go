@@ -452,8 +452,47 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 			}
 			if verifierWatchdog != nil {
 				marker := sessionPaneMarker(cfg, startOut.ID)
-				if verifierWatchdog.Observe(time.Now(), false, marker) {
-					fmt.Printf("[%s] %s no output file or pane activity for %v — ending session\n", sessionName, startOut.ID, watchdogLimit)
+				// v9.10.0 (BL419 D.1) + phase 1 (BL432): the watchdog now
+				// decides on the full liveness signal set. The runner-side
+				// probes all fail safe: no live runner process → not-alive
+				// (never ends on that alone), unknown probe result or unset
+				// server host → ActiveRequest=false (a probe failure is
+				// "no evidence either way", never a kill or a save), and no
+				// ledger view → SlotNone. When the watchdog ends the session
+				// the log must identify exactly which signals it saw.
+				now := time.Now()
+				requestState := probeModelServerRequest(cfg.Ollama.Host, model)
+				signals := autonomouspkg.ProgressSignals{
+					Marker:        marker,
+					RunnerAlive:   hasLiveChildProcess(s.TmuxSession),
+					ActiveRequest: requestState == modelServerRequestActive,
+				}
+				if taskID, ok := verifierTaskFromSessionName(sessionName); ok {
+					if slotFn := verifierCapacitySlotState; slotFn != nil {
+						signals.Slot = slotFn(autonomouspkg.VerifyHolder(taskID))
+					}
+				}
+				if verifierWatchdog.Decide(now, signals) {
+					runner := "not alive"
+					if signals.RunnerAlive {
+						runner = "alive"
+					}
+					request := "unknown"
+					switch requestState {
+					case modelServerRequestActive:
+						request = "active"
+					case modelServerRequestIdle:
+						request = "idle"
+					}
+					slot := "none"
+					switch signals.Slot {
+					case autonomouspkg.SlotHeld:
+						slot = "held"
+					case autonomouspkg.SlotWaiting:
+						slot = "waiting"
+					}
+					fmt.Printf("[%s] %s no progress for %v — no-progress watchdog ending session (runner: %v; model-server request: %v; capacity slot: %v; no output file, no pane change)\n",
+						sessionName, startOut.ID, watchdogLimit, runner, request, slot)
 					return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: autonomouspkg.VerifierWatchdogMessage(watchdogLimit)}
 				}
 			}
