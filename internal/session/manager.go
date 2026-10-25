@@ -1878,6 +1878,46 @@ type StartOptions struct {
 	// completion commit entirely. Task-execution (executor) sessions leave
 	// this false and keep their current commit behaviour.
 	SkipSnapshot bool
+
+	// RequireExistingWorktree — set for sessions whose project directory is
+	// an Automaton-owned linked worktree. When true, Start must fail
+	// instead of creating or initialising the project directory: the
+	// directory has to exist already and its .git entry has to be the
+	// gitlink file of a linked worktree. A missing worktree is therefore
+	// reported, never replaced by an empty directory or a fresh
+	// repository. False (the default) keeps the historical behaviour of
+	// creating the directory and, for git one-shots, initialising a repo.
+	RequireExistingWorktree bool
+}
+
+// ErrProjectDirNotWorktree is returned (wrapped) by Start when
+// StartOptions.RequireExistingWorktree is set and the project directory is
+// missing, is not a directory, or is not a linked worktree.
+var ErrProjectDirNotWorktree = errors.New("project directory is not a linked worktree")
+
+// checkExistingWorktree verifies that dir is an existing linked worktree:
+// a directory whose .git entry is a regular file (the gitlink a linked
+// worktree carries), not a directory (a standalone repository) and not
+// absent. It never creates or modifies anything.
+func checkExistingWorktree(dir string) error {
+	fi, err := os.Stat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%w: %s does not exist; the worktree is missing", ErrProjectDirNotWorktree, dir)
+		}
+		return fmt.Errorf("%w: cannot inspect %s: %v", ErrProjectDirNotWorktree, dir, err)
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("%w: %s is not a directory", ErrProjectDirNotWorktree, dir)
+	}
+	gi, err := os.Lstat(filepath.Join(dir, ".git"))
+	if err != nil {
+		return fmt.Errorf("%w: %s has no .git entry; the worktree is missing or was replaced", ErrProjectDirNotWorktree, dir)
+	}
+	if !gi.Mode().IsRegular() {
+		return fmt.Errorf("%w: %s has a .git directory, not a worktree link file; it is a standalone repository", ErrProjectDirNotWorktree, dir)
+	}
+	return nil
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1935,6 +1975,14 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 	} else if !filepath.IsAbs(projectDir) && m.workspaceRoot != "" {
 		projectDir = filepath.Join(m.workspaceRoot, projectDir)
+	}
+
+	// An Automaton-owned worktree must already exist: never recreate it as
+	// an empty directory (and never git-init it below).
+	if opt != nil && opt.RequireExistingWorktree {
+		if err := checkExistingWorktree(projectDir); err != nil {
+			return nil, err
+		}
 	}
 
 	// Ensure project dir exists

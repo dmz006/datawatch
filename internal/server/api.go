@@ -4691,6 +4691,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// commit the repo. When true, the pre-session snapshot commit and
 		// the completion commit are both skipped.
 		SkipSnapshot bool `json:"skip_snapshot,omitempty"`
+		// RequireExistingWorktree — the project dir is an Automaton-owned
+		// linked worktree; the session must fail rather than create or
+		// initialise it.
+		RequireExistingWorktree bool `json:"require_existing_worktree,omitempty"`
 		// ScrubTmuxEnv: PRD-owned launchers ask the pane shell to unset
 		// TMUX and TMUX_TMPDIR before the LLM starts, so tmux commands the
 		// LLM runs cannot reach the production tmux server.
@@ -5065,6 +5069,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		Git:                   gitFlag,
 		Priority:              startPriority,
 	}
+	opts.RequireExistingWorktree = req.RequireExistingWorktree
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {
 		if cl, err := s.inferenceReg.Get("claude-code"); err == nil && cl != nil && cl.PermissionMode != "" {
