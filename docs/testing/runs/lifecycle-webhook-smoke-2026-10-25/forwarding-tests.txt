@@ -197,23 +197,23 @@
 === RUN   TestForwardEngineRoutesPeerSinkAndSkipsForwarded
 --- PASS: TestForwardEngineRoutesPeerSinkAndSkipsForwarded (0.00s)
 === RUN   TestForwardEngineOneShotConsumedOnlyAfterSuccess
-2026/10/25 13:59:21 [autonomous] lifecycle sub sub-1: peer forward: peer forwarding failed: peer peer-b: receiver answered 500
+2026/10/25 15:03:15 [autonomous] lifecycle sub sub-1: peer forward: peer forwarding failed: peer peer-b: receiver answered 500
 --- PASS: TestForwardEngineOneShotConsumedOnlyAfterSuccess (0.00s)
 === RUN   TestForwardEngineDisabledLeavesOneShotArmed
 --- PASS: TestForwardEngineDisabledLeavesOneShotArmed (0.00s)
 === RUN   TestForwardEngineRetryDoesNotBlockEmit
-2026/10/25 13:59:21 [autonomous] lifecycle sub sub-1: peer forward: peer forwarding failed: peer peer-b: receiver answered 500
+2026/10/25 15:03:15 [autonomous] lifecycle sub sub-1: peer forward: peer forwarding failed: peer peer-b: receiver answered 500
 --- PASS: TestForwardEngineRetryDoesNotBlockEmit (0.00s)
 === RUN   TestForwardDefaultTimerWaitsBetweenAttempts
 === RUN   TestForwardDefaultTimerWaitsBetweenAttempts/timer_fires_then_delivers
 === RUN   TestForwardDefaultTimerWaitsBetweenAttempts/context_ends_during_the_wait
---- PASS: TestForwardDefaultTimerWaitsBetweenAttempts (1.25s)
-    --- PASS: TestForwardDefaultTimerWaitsBetweenAttempts/timer_fires_then_delivers (1.10s)
+--- PASS: TestForwardDefaultTimerWaitsBetweenAttempts (0.98s)
+    --- PASS: TestForwardDefaultTimerWaitsBetweenAttempts/timer_fires_then_delivers (0.83s)
     --- PASS: TestForwardDefaultTimerWaitsBetweenAttempts/context_ends_during_the_wait (0.15s)
 === RUN   TestForwardNilClientFactoryResultFallsBack
 --- PASS: TestForwardNilClientFactoryResultFallsBack (0.00s)
 PASS
-ok  	github.com/dmz006/datawatch/internal/autonomous	1.689s
+ok  	github.com/dmz006/datawatch/internal/autonomous	1.419s
 === RUN   TestForwardedEvents_AcceptReachesMCPQueueAndTopicWithOrigin
 --- PASS: TestForwardedEvents_AcceptReachesMCPQueueAndTopicWithOrigin (0.01s)
 === RUN   TestForwardedEvents_CapabilityMissing403
@@ -240,18 +240,18 @@ ok  	github.com/dmz006/datawatch/internal/autonomous	1.689s
 === RUN   TestForwardedEvents_LoopsAre409/visited_list_already_holds_this_host
 === RUN   TestForwardedEvents_LoopsAre409/origin_is_this_host
 === RUN   TestForwardedEvents_LoopsAre409/hop_cap_reached
---- PASS: TestForwardedEvents_LoopsAre409 (3.00s)
+--- PASS: TestForwardedEvents_LoopsAre409 (3.01s)
     --- PASS: TestForwardedEvents_LoopsAre409/visited_list_already_holds_this_host (0.00s)
     --- PASS: TestForwardedEvents_LoopsAre409/origin_is_this_host (0.00s)
     --- PASS: TestForwardedEvents_LoopsAre409/hop_cap_reached (0.00s)
 === RUN   TestForwardedEvents_ForwardedEventNotForwardedAgain
---- PASS: TestForwardedEvents_ForwardedEventNotForwardedAgain (0.20s)
+--- PASS: TestForwardedEvents_ForwardedEventNotForwardedAgain (0.21s)
 === RUN   TestForwardedEvents_ExecutorStateUntouched
 --- PASS: TestForwardedEvents_ExecutorStateUntouched (0.01s)
 === RUN   TestForwardedEvents_TwoDaemonRoundTrip
 --- PASS: TestForwardedEvents_TwoDaemonRoundTrip (0.40s)
 PASS
-ok  	github.com/dmz006/datawatch/internal/server	9.646s
+ok  	github.com/dmz006/datawatch/internal/server	9.660s
 testing: warning: no tests to run
 PASS
-ok  	github.com/dmz006/datawatch/cmd/datawatch	0.007s [no tests to run]
+ok  	github.com/dmz006/datawatch/cmd/datawatch	0.006s [no tests to run]
