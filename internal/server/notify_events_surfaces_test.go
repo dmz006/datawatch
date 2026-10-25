@@ -153,7 +153,7 @@ func TestNotifyEvents_SetAndClear(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("POST %s: want 200, got %d (%s)", body, rec.Code, rec.Body.String())
 		}
-		if spy.setKinds != nil && len(spy.setKinds) != 0 {
+		if len(spy.setKinds) != 0 {
 			t.Errorf("POST %s: manager got %v, want a clear (nil/empty)", body, spy.setKinds)
 		}
 	}
