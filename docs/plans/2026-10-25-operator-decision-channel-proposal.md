@@ -355,3 +355,25 @@ Options:
 Recommendation: option 2, because a reply can never bind to the wrong question silently, and the exact words are still captured.
 
 Status: Not decided.
+
+## 7. Addendum 2026-10-25: the question works with every LLM backend (proposal, not confirmed)
+
+The operator added the requirement: "also make sure question feature works with all llm". The routes below are a proposal for the first confirmed step; the operator confirms or changes them.
+
+Classes of backend, read from `internal/llm/backends` and the session manager:
+
+| Class | Backends | How it asks | How it gets the answer |
+|---|---|---|---|
+| MCP-capable | claude-code, goose (MCP extension), opencode | calls a `question_ask` tool of the datawatch MCP server, with the session id, PRD and task ids it already receives | the tool result carries the answer when it is ready, or the session polls `question_get`; the session may keep working on other things meanwhile |
+| Text-only interactive | aider, gemini, ollama chat, openwebui, shell | prints the existing `DATAWATCH_NEEDS_INPUT: <text>` line; the daemon turns that detected line into a queue question automatically (same record, source = marker) | the daemon sends the answer back as text to the session input, as it does for needs-input today |
+| One-shot print mode | pi-prompt and the other `-prompt` backends | has no input once started; the run ends with the marker line | the daemon holds that task as "waiting for a decision" (not failed, no retry counted), and the answer is injected into the task's next prompt as context when it resumes |
+
+Common rules for all classes:
+- One record and one queue. The source field says how it was raised (tool, marker, supervisor, system).
+- A question raised by a worker never counts as a task failure and never consumes a retry.
+- The task or PRD that depends on the answer waits; everything else continues (design doc item 12).
+- The text a worker prints is untrusted: the marker line is parsed with a length cap, options come only from the tool route or a structured block, and the free text is stored as a quotation of the asker, never executed.
+
+Conformance test: for each class a fake backend raises a question, the test asserts the question appears in the queue with the right links, that other work proceeds while it is open, that a skip and an answer both resume the asker, and that no retry or failure is counted.
+
+Open points for the operator: whether the marker route may carry options (a small structured block after the marker line) or only free text; and whether a one-shot print backend should be allowed to ask at all, or the daemon should ask on its behalf when its task ends needing a decision.
