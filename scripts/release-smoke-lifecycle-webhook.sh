@@ -24,7 +24,8 @@
 #   DATAWATCH_TOKEN             bearer token (default: the sandbox test token)
 #   DATAWATCH_SMOKE_KEEP_WORK=1 keep the scratch directory for inspection
 #
-# Exit code: 0 = pass, 1 = real failure, 2 = skip (sandbox daemon unreachable).
+# Exit code: 0 = pass, 1 = real failure, 2 = skip (sandbox daemon unreachable,
+# or it was built before the webhook feature and has no webhook settings).
 # The daemon is reached over HTTPS only (the sandbox certificate is
 # self-signed, so curl runs with -k). The webhook sink and the forwarding ship
 # disabled; this smoke enables the webhook sink on the sandbox for its run and
@@ -352,6 +353,24 @@ elif MODE == "audit":
             fail("audit %s for delivery %s: want %s=%s, got %s" % (action, delivery, k, v, got))
     print("PASS: audit %s for delivery %s: %s" % (action, delivery, got))
 
+elif MODE == "clean":
+    # The throwaway secret value must not appear in the API response on stdin.
+    if os.environ["SMOKE_SECRET"] in sys.stdin.read():
+        fail("the throwaway secret value appears in an API response")
+    print("PASS: the throwaway secret value is absent from the API response")
+
+elif MODE == "clean-requests":
+    # Every request the receiver got (body and headers) must lack the secret value.
+    secret = os.environ["SMOKE_SECRET"].encode()
+    names = sorted(n for n in os.listdir(WORK) if n.startswith("req-"))
+    if not names:
+        fail("the receiver captured no requests to inspect")
+    for name in names:
+        with open(os.path.join(WORK, name), "rb") as f:
+            if secret in f.read():
+                fail("the throwaway secret value appears in receiver file %s" % name)
+    print("PASS: the throwaway secret value is absent from %d receiver file(s)" % len(names))
+
 elif MODE == "alert":
     sub_id, attempts = sys.argv[3], sys.argv[4]
     data = json.load(sys.stdin)
@@ -380,6 +399,28 @@ fi
 
 api GET /api/config
 [[ "$HTTP_CODE" == 200 ]] || die "GET /api/config returned $HTTP_CODE: check DATAWATCH_TOKEN"
+# A daemon built before the webhook feature has no autonomous.notify.webhook
+# section. It cannot run this smoke, so skip with a message rather than fail
+# with a traceback; a daemon that is not JSON at all is a real failure.
+WEBHOOK_CONFIG=$(printf '%s' "$API_BODY" | python3 -I -c '
+import json, sys
+try:
+    w = json.load(sys.stdin)
+except ValueError:
+    print("invalid")
+    sys.exit(0)
+w = (((w.get("autonomous") or {}).get("notify") or {}).get("webhook"))
+keys = ("enabled", "allow_hosts", "backoff_seconds")
+print("present" if isinstance(w, dict) and all(k in w for k in keys) else "missing")
+') || die "could not inspect GET /api/config"
+case "$WEBHOOK_CONFIG" in
+  present) ;;
+  missing)
+    echo "SKIP: the daemon at $BASE predates the lifecycle webhook feature (GET /api/config has no autonomous.notify.webhook settings); point DATAWATCH_BASE at a sandbox started from this build"
+    exit 2
+    ;;
+  *) die "GET /api/config did not return JSON";;
+esac
 ORIG_JSON=$(printf '%s' "$API_BODY" | python3 -I -c '
 import json, sys
 w = json.load(sys.stdin)["autonomous"]["notify"]["webhook"]
@@ -425,6 +466,8 @@ check signature "$after" "$SUB_ID" || die "signature check failed"
 api GET "/api/audit?action=autonomous_lifecycle_webhook_delivery&limit=200"
 DELIVERY=$(printf '%s' "$API_BODY" | check latest-delivery autonomous_lifecycle_webhook_delivery "$SUB_ID") || die "no delivery audit record"
 printf '%s' "$API_BODY" | check audit "$DELIVERY" autonomous_lifecycle_webhook_delivery "delivered=1" || die "delivery audit record missing"
+printf '%s' "$API_BODY" | check clean || die "the secret value leaked into the delivery audit records"
+check clean-requests || die "the secret value leaked into the receiver's request"
 
 step "step 5: negative checks"
 count_subscriptions
@@ -474,8 +517,10 @@ DELIVERY=$(printf '%s' "$API_BODY" | check latest-delivery autonomous_lifecycle_
 printf '%s' "$API_BODY" | check audit "$DELIVERY" autonomous_lifecycle_webhook_delivery "retry=4,failed=1" || die "attempt audit records missing"
 api GET "/api/audit?action=autonomous_lifecycle_webhook_failed&limit=200"
 printf '%s' "$API_BODY" | check audit "$DELIVERY" autonomous_lifecycle_webhook_failed "failed=1" || die "final failure audit record missing"
+printf '%s' "$API_BODY" | check clean || die "the secret value leaked into the failure audit records"
 api GET /api/alerts
 printf '%s' "$API_BODY" | check alert "$SUB_ID" 5 || die "failure alert missing"
+printf '%s' "$API_BODY" | check clean || die "the secret value leaked into the alert list"
 
 step "step 8: forwarding (in-process Go tests)"
 GO_LOG="$WORK/forwarding-tests.log"
@@ -490,5 +535,6 @@ if [[ $go_rc -ne 0 || $go_fail -ne 0 || $go_pass -eq 0 ]]; then
 fi
 pass "forwarding tests: $go_pass top-level tests passed"
 
+check clean-requests || die "the secret value leaked into a receiver request"
 echo "OK: lifecycle webhook smoke passed"
 exit 0
