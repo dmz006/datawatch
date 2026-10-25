@@ -1409,7 +1409,7 @@ autonomous:
   # carries the last 20 transcript lines), up to 2 start failures retried
   # before the task stays failed. 0 or unset falls back to the 120s default
   # (NormalizeSessionStartConfirmSeconds).
-  verifier_no_progress_timeout_seconds: 600   # a verifier session with no output file and no pane activity for this long is ended as an infra failure ('verifier no-progress watchdog'); 0 or negative => 600
+  verifier_no_progress_timeout_seconds: 900   # a verifier session with no output file, no pane activity, no live runner process and no held capacity slot for this long is ended as an infra failure ('verifier no-progress watchdog'); 0 or negative => 900
   session_start_confirm_seconds: 120
   # Orphan sweep grace period, in seconds. A live task worker session
   # (name "autonomous:<title>", with a PRD/task link) that is not the current
