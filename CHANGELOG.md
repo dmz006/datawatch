@@ -11,6 +11,15 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.17.0 — Lifecycle events to a webhook or a federation peer
+
+- A new `webhook` subscription sink POSTs each matching Automaton lifecycle event over HTTPS to a receiver the operator runs. Each request is signed with HMAC-SHA256 and carries a delivery id and an event kind header.
+- Webhooks are only sent to hosts on an operator-set allow-list. The signing secret is held in the secrets vault and referenced as `${secret:name}`; a literal value is refused, and the resolved value is never stored, logged or audited.
+- A failed delivery is retried with backoff. A delivery that is still failing after the last attempt raises one alert and writes an audit record. Redirects are not followed, and a private or loopback address is refused unless its host is on the allow-list.
+- A new `peer` subscription sink forwards each matching event to a registered federation peer. A forwarded event is never forwarded on again, and a loop is refused by origin host, visited list and hop cap.
+- Both sinks are disabled by default. Until the operator turns on `autonomous.notify.webhook.enabled` or `autonomous.notify.forwarding.enabled`, a subscription with that sink is refused at creation, and a stored one delivers nothing. The settings are available in YAML, the CLI, the Settings card, REST and the comm channel.
+- The subscription surfaces (REST, MCP, CLI, comm channel and the PWA Subscriptions tab) accept the new sink types. The retry counts, signature format and payload shape are the proposed defaults, pending the operator's confirmation.
+
 ## v9.16.2 — Shared navigation mobile fit
 
 The shared navigation bar and the other cross-tab elements now fit narrow phone screens. The reusable mobile-fit checker found overflow and clipped controls in the elements every tab shares, and the markup and stylesheet are corrected so the bar and shared controls stay inside the viewport at 320 pixel width and are unchanged on desktop. A browser story and a probe run the checker against every tab at phone and desktop widths, the release smoke gained a shared-navigation section, and a how-to documents the fit rules. Test evidence from the live sandbox run is stored under the testing runs folder.
