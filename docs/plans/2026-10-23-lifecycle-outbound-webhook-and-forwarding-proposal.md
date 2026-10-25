@@ -219,37 +219,47 @@ Reply with the box ticked, or with the changed value.
 
 ## Implementation status
 
-Verification run on the finished branch (2026-10-25). Nothing needed changing in code, so this section
-carries the result.
+Verification run on the finished branch (2026-10-25). No code was changed by this run, so this section
+carries the result. The feature diff is taken against the merge base with main (`f6584cd5`), because the
+branch is 460 commits behind main.
 
 **Ran clean, each under an environment with the multiplexer variables unset:**
 
 - named-output build of `./cmd/datawatch/` into a temporary directory, and `go vet ./...`
-- `go test ./...` (all packages passed) and `node --test internal/server/web/*.test.js` (all passed)
-- `check-no-unscoped-tmux`, `check-no-internal-refs`, `check-howto-coverage`, `check-curated-howtos`,
-  `check-no-production-service-control`: all pass
-- `check-docs-sync`: first reported drift in the embedded docs copy (a generated, git-ignored
-  directory that was stale on this machine). `make sync-docs` regenerated it and the check then passed;
-  no tracked file was involved.
+- `go test ./...` (all 79 packages passed) and `node --test internal/server/web/*.test.js` (846 passed,
+  0 failed)
+- `check-no-unscoped-tmux`, `check-no-internal-refs`, `check-docs-sync`, `check-howto-coverage`,
+  `check-curated-howtos`, `check-no-production-service-control`: all exit 0
+- the unit's verification script, `.datawatch/verify/lifecycle-webhook-smoke.sh`: exit 0. It built a fresh
+  sandbox daemon from this tree and ran all eight steps (28 PASS lines, no FAIL, no SKIP).
 
 **Confirmed from the diff against the merge base with main:**
 
-- (a) No version variable changed in `cmd/datawatch/main.go` or `internal/server/api.go`; the new
-  CHANGELOG entry carries no version number.
-- (b) No tracker ID or version number in any new file name, function, type, test or scenario name, or in
-  the new locale strings, the how-to or the `app.js` additions. The digits in test names are HTTP status
-  codes.
+- (a) No version variable changed in `cmd/datawatch/main.go` or `internal/server/api.go` (both still read
+  9.5.125 at the base and on the branch). The new CHANGELOG entry sits under Unreleased and carries no
+  version number.
+- (b) Not clean. The new file `scripts/test-stories/TS-819.sh` carries a story number in its name, and its
+  `CURRENT_STORY` literal repeats it. The unit's verification script requires that exact file name, and
+  its tracker check rejects only BL, GH and SEC patterns, so the two requirements conflict. The file was
+  left as the verification script expects. The rest of (b) is clean: the tracker IDs in the code are in
+  comments only, the new locale strings, the how-to and the `app.js` additions carry no tracker ID or
+  version number, and the digits in test names are HTTP status codes.
 - (c) Both switches default to `false` in the config defaults, `docs/config-reference.yaml` and the
   Settings card. `TestWebhookSinkDisabledDoesNothing` and `TestForwardDisabledMakesNoRequest` pass.
 - (d) This proposal still lists every unconfirmed detail in section 2 and the checklist in section 5, and
   Phase 5 in the lifecycle events plan says it ships disabled pending confirmation.
 - (e) No secret value, token or credential in the added lines. The matches for `Bearer`, `secret:` and long
   hex strings are placeholders (`$TOKEN`, `<peer token>`), `${secret:name}` references, dummy test
-  fixtures, delivery ids and a commit hash.
-- (f) Each of the four new audit actions has a JSON-lines test and a CEF signature test; all pass.
+  fixtures (`test-signing-secret-not-real`), an example delivery id in the how-to, and a commit hash. The
+  smoke script falls back to the obviously fake token `dw-test-token-12345` for its own throwaway daemon.
+- (f) Each of the four new audit actions (webhook delivery, webhook failed, forward delivery, forward
+  receive) has a name and CEF signature test, a JSON-lines test and a CEF escaping test; all pass.
 
 **Residual risks and what the operator must still confirm:**
 
+- The story-number file name in (b) above. Renaming `scripts/test-stories/TS-819.sh` would make the unit's
+  verification script fail, and keeping it breaks the tracker-ID-in-names rule. The operator decides which
+  rule wins, and then the verification script or the file name changes.
 - Every box in section 5 is unticked. Until the operator confirms or changes (a) to (e), the loop
   prevention rule, the URL scheme rule, the allow-list rule, the cloud metadata narrowing, the DNS
   rebinding defence, the redirect rule and the audit fields, the retry curve, signature format, payload
@@ -259,7 +269,8 @@ carries the result.
   that confirmation.
 - Peer forwarding between two real daemons has not been run live. The in-process tests use fake HTTP
   peers; the tracker row stays not validated until a two-daemon run is done.
-- The branch is far behind main. The release number is taken at merge, and the merge needs a rebase and a
+- The branch is 460 commits behind main (main tip 8d12d4e3 at this run; the branch base is f6584cd5). The
+  release number is taken at merge, and the merge needs a rebase and a
   conflict check on the shared files (config, router, server, the app script, the locale bundles, the
   tracker and the CHANGELOG).
 - The `go.mod` change only moves `golang.org/x/net` from an indirect to a direct requirement.
