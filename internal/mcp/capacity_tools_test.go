@@ -49,6 +49,26 @@ func TestCapacityStatus_ProxiesGET(t *testing.T) {
 	}
 }
 
+func TestCapacityStatus_PassesNodeUsageObjectThrough(t *testing.T) {
+	body := `{"pools":[
+{"name":"node:a","limit":1,"held":1,
+ "usage":{"state":"ok","checked_at":"2026-10-22T16:59:00Z","models_supported":true,
+ "models":[{"name":"qwen3:8b","size_bytes":5368709120,"size_vram_bytes":5162643968,"expires_at":"2026-10-22T17:29:00Z","no_expiry":false}],
+ "gpu":[{"name":"NVIDIA A100","util_pct":12.5,"mem_used_bytes":10737418240,"mem_total_bytes":42949672960}]}},
+{"name":"host","limit":9}],"leases":[],"waiting":[]}`
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	})
+	res, err := s.handleCapacityStatus(context.Background(), callReq(nil))
+	if err != nil || res == nil {
+		t.Fatalf("err=%v res=%v", err, res)
+	}
+	text := res.Content[0].(mcpsdk.TextContent).Text
+	if text != body {
+		t.Fatalf("capacity_status must pass the usage object through unchanged\ngot:\n%s\nwant:\n%s", text, body)
+	}
+}
+
 func TestSetPriority_ProxiesPOSTWithBody(t *testing.T) {
 	var path string
 	var got map[string]int

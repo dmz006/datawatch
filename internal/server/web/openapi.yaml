@@ -1228,7 +1228,24 @@ paths:
               schema:
                 type: object
                 properties:
-                  pools: {type: array, items: {type: object}}
+                  pools:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        limit: {type: integer}
+                        held: {type: integer}
+                        holders: {type: array, items: {type: string}}
+                        holder_names:
+                          type: array
+                          items: {type: object, additionalProperties: true}
+                          description: Resolved readable holder rows for a node pool; absent on older daemons.
+                        usage:
+                          allOf:
+                            - {$ref: "#/components/schemas/NodeUsage"}
+                          nullable: true
+                          description: The node_usage object. Present on a node:<name> pool when the daemon reports per-node usage; the daemon prints a short line here per loaded model and GPU. Absent on host and llm pools and on older daemons.
                   leases: {type: array, items: {type: object}}
                   waiting: {type: array, items: {type: object}}
                   backoff:
@@ -4377,6 +4394,60 @@ components:
         at: {type: string, format: date-time}
         lane_id: {type: string}
         work: {type: string, description: Title of the work waiting for the lane}
+    NodeUsage:
+      type: object
+      description: |
+        The node_usage object carried on a node:<name> pool in the GET /api/capacity
+        response, when the daemon reports per-node usage. It shows the state of the
+        node's model probe, the models loaded in memory (with their memory footprint
+        and eviction time), and the GPU figures. A node of type ollama with an
+        address has models_supported true.
+      properties:
+        state:
+          type: string
+          enum: [ok, unreachable, pending, no_data]
+          description: |
+            ok = the model server answered (or the node kind has no model probe);
+            unreachable = the model server probe failed (timeout, connection error,
+            non-200 response, or a response body that could not be read);
+            pending = no cached figure yet and a refresh has been started;
+            no_data = the node has no address and no observer data.
+        checked_at:
+          type: string
+          format: date-time
+          description: When the probe last ran.
+        error:
+          type: string
+          description: Short reason for a failed probe; omitted when empty.
+        models_supported:
+          type: boolean
+          description: True only for nodes of ollama kind that have an address.
+        models:
+          type: array
+          description: Models currently loaded in memory. Always an array (empty when none).
+          items:
+            type: object
+            properties:
+              name: {type: string, description: The model name}
+              size_bytes: {type: integer, description: Total memory the loaded model uses}
+              size_vram_bytes: {type: integer, description: The part of that footprint in GPU memory}
+              expires_at:
+                type: string
+                format: date-time
+                description: When an eviction is scheduled; omitted when no_expiry.
+              no_expiry:
+                type: boolean
+                description: True when the model stays loaded indefinitely (no eviction scheduled).
+        gpu:
+          type: array
+          description: GPU figures from the node observer, filled whenever available - even when the model server is unreachable. Always an array (empty when none).
+          items:
+            type: object
+            properties:
+              name: {type: string}
+              util_pct: {type: number, description: GPU utilization in percent}
+              mem_used_bytes: {type: integer, description: GPU memory in use}
+              mem_total_bytes: {type: integer, description: Total GPU memory}
     PendingEventsPage:
       type: object
       required: [events, next_cursor, dropped]

@@ -889,6 +889,7 @@ datawatch-stats --print-once --debug-connections
 
 ## See also
 
+- [`automata-capacity.md`](automata-capacity.md) — the *Compute node usage* section: the loaded model, memory size and expiry plus GPU utilization and memory shown per node on the capacity card
 - [`v7-compute-migration.md`](v7-compute-migration.md) — migrating v6 backend config blocks to the v7 LLM registry
 - [`federated-observer.md`](federated-observer.md) — multi-host stats + observer peer federation
 - [`council-mode.md`](council-mode.md) — how Council Mode selects Compute Nodes via the LLM registry

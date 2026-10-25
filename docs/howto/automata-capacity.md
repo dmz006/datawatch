@@ -4,7 +4,7 @@ docs:
   topics: [prd, autonomous, capacity, queue, compute, sessions, priority]
 exec_steps:
   - tool: capacity_status
-    description: Show capacity pools, limits, holders and the wait queue
+    description: Show capacity pools, limits, holders, the wait queue and per-node usage (loaded models with memory size and expiry, GPU figures)
     args: {}
     read_only: true
   - tool: autonomous_status
@@ -693,6 +693,50 @@ always included). The card is left out when there is nothing to show.
   anything; only the ceiling does.
 - **Waiting.** The queue of capacity waits, each with the holder, the
   Automaton, how long it has waited and the reason.
+
+## Compute node usage
+
+Next to each node's held slots and limit, the card shows what the node is
+doing right now, one row per compute node:
+
+- **Model.** The models loaded on the node's model server: the name, how
+  much memory they take (`5.0 GiB in memory`) and how long they are meant
+  to stay (`expires in …`). A model that stays resident shows *stays
+  loaded*, a node with none loaded shows *No model loaded*. Only `ollama`
+  nodes report models (an OpenAI-compatible endpoint has no list of
+  loaded models to show).
+- **Slots.** What was already on the card: held slots of the configured
+  limit for the node.
+- **GPU.** For each GPU, the utilization percent and the memory used of
+  the total (`GPU 12.5%`, `GPU memory 10.0 of 40.0 GiB`). These figures
+  come from the node's observer: the node must have an observer peer set
+  on it (Settings > Compute, the node's *observer peer* field) — datawatch
+  does not guess which peer, if any, is the observer. A node without that
+  binding shows *No GPU data from the observer*.
+
+Two states besides the figures:
+
+- ***Unreachable*** — the model server or observer answered neither within
+  the short probe timeout (2 s); the reason is in the chip's tooltip. The
+  node row still shows its slots, and GPU may still be available from the
+  observer when only the model server is down.
+- ***Checking...*** — the first fetch for the node is still in flight; the
+  row shows the checking line and nothing fabricated.
+
+How the figures get there:
+
+- **Refreshed about every 15 seconds, from a cache.** The daemon caches
+  each node's figures and serves them immediately, refreshing in the
+  background at most once per node at a time. The capacity page never waits
+  on a node: a slow or hung model server cannot hold up the card.
+- **No history.** The row shows only the current figures; there is no
+  history graph and no time series for a node.
+
+The same figures are on every surface: `datawatch capacity` prints a
+`model:` line and a `GPU` line under each node, the comm command
+`capacity` replies with the same text, and the `capacity_status` tool
+returns the body with each `node:<name>` pool carrying the `usage` object
+(`state`, `checked_at`, `models`, `gpu`) of `GET /api/capacity`.
 
 ## Audit trail
 

@@ -186,6 +186,11 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		// task rows and the Automation strip.
 		"task_status_review_needed",
 		"llm_billing_group_label",
+		// 2026-10-24 — capacity card compute-node rows: model line, status
+		// chip and GPU readout (high-visibility keys on the node rows).
+		"capacity_node_model",
+		"capacity_node_unreachable",
+		"capacity_node_gpu_util",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
