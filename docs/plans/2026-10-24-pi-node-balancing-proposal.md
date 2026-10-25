@@ -188,6 +188,7 @@ Recorded 2026-10-24 from the operator's answers in the supervisor session. Confi
    stays a hard cap on top and keeps its meaning. The field goes on every surface listed under
    Configuration surfaces and Parity surface, including the config file node record, the seed
    conversion, MCP add and update, the CLI flags, the comm channel and the PWA add and edit forms.
+5. **Nodes that host no local engine (operator, 2026-10-25: "1, but all remote nodes will most likely have an observer anyway plus we may use cpu llm too").** Automatic slot counting and `session_slots` apply only to nodes that host a local engine. A node that hosts no local engine keeps the existing `max_concurrent_sessions` ceiling exactly as today. The operator expects most remote nodes to have an observer and expects CPU-only LLM nodes too, so the slot function must not assume a GPU: it takes the node's accelerators and memory as input, may have none, and counts CPU memory and cores for a CPU-only engine node when no GPU is reported. Extending automatic counting to nodes with no local engine is a later decision and is not part of this work.
 4. **Pi routing mechanism:** approved. Each pi session gets its own provider table in a per-session
    configuration directory selected through `PI_CODING_AGENT_DIR` on the launch command. If pi
    cannot be repointed this way, stop and bring the fallback to the operator before any code is
