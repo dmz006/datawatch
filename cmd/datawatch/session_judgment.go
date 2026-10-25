@@ -438,6 +438,7 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 			var s struct {
 				State       string `json:"state"`
 				TmuxSession string `json:"tmux_session"`
+				ProjectDir  string `json:"project_dir"`
 			}
 			if err := json.Unmarshal(pollBody, &s); err != nil {
 				continue
@@ -482,7 +483,7 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 				return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: fmt.Sprintf("one-shot %s session %s ended with state waiting_input without producing output (backend=%s, model=%q)", role, startOut.ID, backend, model)}
 			}
 			// Session idle detector: a one-shot verifier parked in
-			// waiting_input with no live runner child past the budget
+			// waiting_input with no work child of its runner past the budget
 			// will never write its output. Returning here fires the
 			// deferred kill above, and the infra error feeds the retry budget.
 			if s.State != "waiting_input" {
@@ -500,7 +501,7 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 						State:               s.State,
 						IdleFor:             idleFor,
 						OutputAge:           outputAge,
-						HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
+						HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession, s.ProjectDir),
 						Limit:               idleLimit,
 					}
 					if idleStalled, idleReason := idleObs.Stalled(); idleStalled {

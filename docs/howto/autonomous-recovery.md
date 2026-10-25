@@ -347,14 +347,25 @@ session idle timeout, datawatch sends the worker one nudge.
 - **What it sends:** one message asking the worker to print its completion
   line, or to continue if it is not finished. Only one nudge is ever sent
   per task attempt.
-- **No nudge while work is running:** if the session has a live child
-  process (a build, a test run, a long command) it is not idle, so no
-  nudge is sent. The idle clock restarts once the child exits.
+- **No nudge while work is running:** only work children block a nudge. A
+  work child is a process the worker's runner started, such as a build, a
+  test run or a long command; while one is alive the worker is not idle, so
+  no nudge is sent, and the idle clock restarts once it exits. The worker's
+  own channel and MCP servers do not count as work, so a worker that has
+  only those running is still nudged. The rule holds after a daemon restart:
+  an adopted worker is nudged and blocked by the same work-child check.
 - **What gets recorded:** each nudge is stored on the task as an event
-  (`nudge_events`: time, count, outcome) and the task's `nudge_count` goes
-  up. Both show in `autonomous_prd_get`.
+  (`nudge_events`: time, count, `session_id` and outcome) and the task's
+  `nudge_count` goes up. Both show in `autonomous_prd_get`. The `session_id`
+  names the session the nudge was typed into, so a retry in a fresh session
+  does not inherit the old nudge state.
+- **Outcome values:** a new event is `sent` once the nudge is typed. It then
+  becomes `answered` when the worker prints its completion marker or fresh
+  output follows, or `stalled` when the worker stays silent past the stall
+  window.
 - **If the worker answers:** a completion marker or fresh output after the
-  nudge ends the wait normally and the task is verified like any other.
+  nudge ends the wait normally (outcome `answered`) and the task is verified
+  like any other.
 - **If it stays silent:** after `autonomous.worker_idle_nudge_stall_seconds`
   (default `600`, counted from the nudge) the worker is treated as stalled.
   It goes through the existing retry path (`auto_fix_retries`), the same as

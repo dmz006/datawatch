@@ -4840,12 +4840,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// windows are shorter than the session idle timeout, so the nudge
 				// fires first. Nil for other families.
 				var nudgeTracker *autonomouspkg.WorkerNudgeTracker
-				var nudgeStallAfter time.Duration
+				var nudgeHooks autonomouspkg.WorkerNudgeHooks
 				if family == autonomouspkg.WorkerNudgeFamily {
-					nudgeStallAfter = time.Duration(config.NormalizeWorkerIdleNudgeStallSeconds(liveCfg.WorkerIdleNudgeStallSeconds)) * time.Second
-					nudgeTracker = autonomouspkg.NewWorkerNudgeTracker(
-						time.Duration(config.NormalizeWorkerIdleNudgeSeconds(liveCfg.WorkerIdleNudgeSeconds))*time.Second,
-						nudgeStallAfter)
+					nudgeAfter, nudgeStallAfter := workerNudgeWindows(liveCfg)
+					nudgeTracker = autonomouspkg.NewWorkerNudgeTracker(nudgeAfter, nudgeStallAfter)
+					// A nudge already sent into this session before a daemon restart is
+					// persisted on the task; adopt it so the worker is not nudged twice
+					// and the stall window counts from the original send.
+					nudgeTracker.SeedNudgedAt(task.NudgeTimeForSession(task.SessionID))
+					nudgeHooks = workerNudgeHooks(mgr, autonomousMgrRef, task.SessionID, task.PRDID, task.ID, idleLimit, nudgeStallAfter)
 				}
 				// pi-prompt exit-silence detector. One-shot `pi --print` runs write
 				// nothing to the log until they finish, so the log-mtime stall check
@@ -4875,6 +4878,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							// The session is over: drop its scan-history entry so
 							// the fresh-tracker map cannot grow without bound.
 							sseFreshTracker.forget(s.FullID)
+							if nudgeTracker != nil && s.State == session.StateComplete {
+								// Completion ends an open nudge as answered.
+								autonomouspkg.CloseNudgeWait(nudgeTracker, nudgeHooks)
+							}
 							break waitLoop
 						}
 						// Design §6.ii — await-external: the worker emitted a
@@ -4910,44 +4917,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							}
 						}
 						if nudgeTracker != nil {
-							_, nudgeOutputAge, _ := staleWorkerCheck(staleLogPath, idleLimit, time.Now())
-							nudgeTail, _ := mgr.TailOutput(task.SessionID, 50)
-							nudgeObs := autonomouspkg.WorkerNudgeObservation{
-								State:               string(s.State),
-								OutputAge:           nudgeOutputAge,
-								HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
-								CompletionSeen:      session.ExtractCompletionSummary(nudgeTail) != "",
-							}
-							switch nudgeTracker.Observe(time.Now(), s.BackendFamily, true, nudgeObs) {
-							case autonomouspkg.WorkerNudgeSend:
-								nudgeDelivered, nudgeTask := false, ""
-								if nudgeSess, ok := mgr.GetSession(task.SessionID); ok {
-									nudgeDelivered = mgr.TaskDelivered(nudgeSess.FullID)
-									nudgeTask = nudgeSess.Task
-								}
-								nudgeText, nudgeRedelivery := autonomouspkg.NudgeForDelivery(nudgeDelivered, nudgeTask)
-								nudgeSource := "idle-nudge"
-								if nudgeRedelivery {
-									nudgeSource = "task-redelivery"
-									log.Printf("[autonomous] idle worker %s task %s/%s: task was never delivered — re-sending the task itself",
-										task.SessionID, task.PRDID, task.ID)
-								} else {
-									log.Printf("[autonomous] idle worker %s task %s/%s: sending completion nudge",
-										task.SessionID, task.PRDID, task.ID)
-								}
-								if nerr := mgr.SendInput(task.SessionID, nudgeText, nudgeSource); nerr != nil {
-									log.Printf("[autonomous] idle nudge send failed for %s: %v", task.SessionID, nerr)
-								}
-								if autonomousMgrRef != nil {
-									if rerr := autonomousMgrRef.RecordTaskNudge(task.PRDID, task.ID, time.Now()); rerr != nil {
-										log.Printf("[autonomous] record nudge for %s/%s: %v", task.PRDID, task.ID, rerr)
-									}
-								}
-							case autonomouspkg.WorkerNudgeStall:
-								log.Printf("[autonomous] idle worker %s task %s/%s still silent after nudge; killing for retry",
-									task.SessionID, task.PRDID, task.ID)
-								_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerNudgeStall, Reason: nudgeStallEndReason(nudgeObs, nudgeStallAfter)})
-								stallErr = fmt.Errorf("worker idle after completion nudge (session=%s): %w", task.SessionID, autonomouspkg.ErrWorkerStalled)
+							if werr := autonomouspkg.StepWorkerNudge(nudgeTracker, time.Now(), s.BackendFamily, task.SessionID, task.PRDID+"/"+task.ID, nudgeHooks); werr != nil {
+								stallErr = werr
 								break waitLoop
 							}
 						}
@@ -5055,7 +5026,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									State:               string(s.State),
 									IdleFor:             idleFor,
 									OutputAge:           outputAge,
-									HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
+									HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession, s.ProjectDir),
 									Limit:               idleLimit,
 								}
 								if idleStalled, idleReason := idleObs.Stalled(); idleStalled {
@@ -5079,8 +5050,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// otherwise), and mgr.Kill below is the only kill path — no
 						// tmux kill commands.
 						if exitSilenceTracker != nil {
+							// Runner liveness, not work children, feeds the tracker: the question is
+							// whether the runner has exited. A generating pi run may have no child
+							// process, and the tracker treats a live runner as activity.
 							if stalled, reason := exitSilenceTick(exitSilenceTracker, family, time.Now(),
-								func() bool { return hasLiveChildProcess(s.TmuxSession) },
+								func() bool { return hasLiveRunnerProcess(s.TmuxSession) },
 								func() time.Time {
 									if fst, serr := os.Stat(staleLogPath); serr == nil {
 										return fst.ModTime()
@@ -5121,8 +5095,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									WorkDir:   taskDir,
 									Threshold: staleThreshold,
 									Now:       time.Now(),
+									// Runner liveness, not work children: this check asks whether the
+									// worker is still running at all. An idle claude worker still reads as
+									// alive here, which keeps the pre-existing stall behaviour unchanged.
 									ChildAlive: func() bool {
-										return hasLiveChildProcess(s.TmuxSession)
+										return hasLiveRunnerProcess(s.TmuxSession)
 									},
 									BackendBusy: func() bool {
 										return !s.LastChannelEventAt.IsZero() && time.Since(s.LastChannelEventAt) <= staleThreshold
@@ -6252,30 +6229,30 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				return out, true
 			})
 			// Wait for an adopted session by its state / completion marker, so it
-			// works for any backend (claude-code, opencode, pi-prompt).
-			amgr.SetSessionWaitFn(func(ctx context.Context, sessionID string) error {
-				tick := time.NewTicker(3 * time.Second)
-				defer tick.Stop()
-				for {
-					s, ok := mgr.GetSession(sessionID)
-					if !ok {
-						return fmt.Errorf("adopted session %s no longer exists", sessionID)
-					}
-					switch s.State {
-					case session.StateComplete:
-						return nil
-					case session.StateFailed, session.StateKilled:
-						return fmt.Errorf("adopted session %s ended %s", sessionID, s.State)
-					}
-					if out, err := mgr.TailOutput(sessionID, 200); err == nil && session.ExtractCompletionSummary(out) != "" {
-						return nil
-					}
-					select {
-					case <-ctx.Done():
-						return ctx.Err()
-					case <-tick.C:
-					}
-				}
+			// works for any backend (claude-code, opencode, pi-prompt). A claude-code
+			// worker also gets the same idle-nudge decision as a fresh one, seeded
+			// from the nudge already on its task (see autonomouspkg.WaitAdopted).
+			amgr.SetSessionWaitFn(func(ctx context.Context, w autonomouspkg.AdoptedWait) error {
+				nudgeAfter, stallAfter := workerNudgeWindows(liveAutonomousConfig())
+				idleLimit := time.Duration(config.NormalizeSessionIdleTimeoutSeconds(cfg.Autonomous.SessionIdleTimeoutSeconds)) * time.Second
+				return autonomouspkg.WaitAdopted(ctx, w, autonomouspkg.AdoptedWaitPorts{
+					NudgeAfter: nudgeAfter,
+					StallAfter: stallAfter,
+					Status: func(sessionID string) (session.State, string, bool) {
+						s, ok := mgr.GetSession(sessionID)
+						if !ok {
+							return "", "", false
+						}
+						return s.State, s.BackendFamily, true
+					},
+					Completed: func(sessionID string) bool {
+						out, err := mgr.TailOutput(sessionID, 200)
+						return err == nil && session.ExtractCompletionSummary(out) != ""
+					},
+					Nudge: func(sessionID string) autonomouspkg.WorkerNudgeHooks {
+						return workerNudgeHooks(mgr, amgr, sessionID, w.PRDID, w.TaskID, idleLimit, stallAfter)
+					},
+				})
 			})
 			// Wire session cleanup so executor sessions are removed from the list
 			// once their task reaches a terminal state (completed/failed).

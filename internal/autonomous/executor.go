@@ -1081,7 +1081,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				log.Printf("[autonomous] executeOne: task %s waiting on adopted session %s (daemon restart)", t.ID, t.SessionID)
 				m.adoptCapacity(prd, t)
 				skipSpawn = true
-				if werr := waitForAdoptedSession(ctx, waitFn, aliveFn, t.SessionID); werr != nil {
+				adopted := AdoptedWait{PRDID: prd.ID, TaskID: t.ID, SessionID: t.SessionID, NudgedAt: t.NudgeTimeForSession(t.SessionID)}
+				if werr := waitForAdoptedSession(ctx, waitFn, aliveFn, adopted); werr != nil {
 					if ctx.Err() != nil {
 						return nil
 					}
@@ -1406,6 +1407,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					// free its capacity lease now; the retry re-admits through
 					// the normal queue like any other waiting task.
 					m.releaseCapacity(t.ID)
+					log.Printf("[autonomous] task %s/%s: stall retry %d of %d after session %s", prd.ID, t.ID, attempt+1, budget-attempt-1, t.SessionID)
 					hint = err.Error()
 					m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeStalled, Category: lastFailureCategory, Summary: hint})
 					if cp := m.relocateCheckpoint(prd, t); cp != "" {

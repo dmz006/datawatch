@@ -32,7 +32,7 @@ func TestStatus_NudgeCountsPerTaskAndBackend(t *testing.T) {
 	a, b := prd.Story[0].Tasks[0].ID, prd.Story[0].Tasks[1].ID
 	now := time.Now()
 	for _, id := range []string{a, a, b} {
-		if err := m.RecordTaskNudge(prd.ID, id, now); err != nil {
+		if err := m.RecordTaskNudge(prd.ID, id, "sess-status", now); err != nil {
 			t.Fatalf("RecordTaskNudge: %v", err)
 		}
 	}
