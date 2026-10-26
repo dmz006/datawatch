@@ -78,3 +78,38 @@ func TestResolveWithin_MissingBase(t *testing.T) {
 		t.Fatal("empty base must fail")
 	}
 }
+
+func TestResolveWithin_DanglingSymlink(t *testing.T) {
+	base := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(filepath.Join(outside, "missing"), filepath.Join(base, "dangle")); err != nil {
+		t.Skip(err)
+	}
+	if err := os.Symlink("../escape-missing", filepath.Join(base, "reldangle")); err != nil {
+		t.Skip(err)
+	}
+	if err := os.Symlink("inner-missing", filepath.Join(base, "okdangle")); err != nil {
+		t.Skip(err)
+	}
+	for _, rel := range []string{"dangle", "dangle/sub", "reldangle"} {
+		if _, err := ResolveWithin(base, rel); !errors.Is(err, ErrPathEscapes) {
+			t.Fatalf("%q: want ErrPathEscapes, got %v", rel, err)
+		}
+	}
+	if _, err := ResolveWithin(base, "okdangle"); err != nil {
+		t.Fatalf("dangling link that stays inside base refused: %v", err)
+	}
+}
+
+func TestResolveWithin_SymlinkLoop(t *testing.T) {
+	base := t.TempDir()
+	if err := os.Symlink("b", filepath.Join(base, "a")); err != nil {
+		t.Skip(err)
+	}
+	if err := os.Symlink("a", filepath.Join(base, "b")); err != nil {
+		t.Skip(err)
+	}
+	if _, err := ResolveWithin(base, "a"); err == nil {
+		t.Fatal("symlink loop accepted")
+	}
+}

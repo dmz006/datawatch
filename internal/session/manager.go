@@ -1992,8 +1992,18 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			}
 			projectDir = d
 		}
-	} else if !filepath.IsAbs(projectDir) && m.workspaceRoot != "" {
-		resolved, rerr := resolveWorkspaceDir(m.workspaceRoot, projectDir)
+	} else if !filepath.IsAbs(projectDir) {
+		// A relative value is contained under the workspace root, or under
+		// the process working directory when no root is configured.
+		root := m.workspaceRoot
+		if root == "" {
+			cwd, werr := os.Getwd()
+			if werr != nil {
+				return nil, fmt.Errorf("resolve relative project dir: %w", werr)
+			}
+			root = cwd
+		}
+		resolved, rerr := resolveWorkspaceDir(root, projectDir)
 		if rerr != nil {
 			return nil, rerr
 		}

@@ -49,3 +49,14 @@ func TestResolveWorkspaceDir_RejectsSymlinkEscape(t *testing.T) {
 		t.Fatalf("want ErrPathEscapes, got %v", err)
 	}
 }
+
+func TestResolveWorkspaceDir_DanglingSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(filepath.Join(outside, "missing"), filepath.Join(root, "dangle")); err != nil {
+		t.Skip(err)
+	}
+	if _, err := resolveWorkspaceDir(root, "dangle"); err == nil {
+		t.Fatal("dangling symlink escape accepted")
+	}
+}

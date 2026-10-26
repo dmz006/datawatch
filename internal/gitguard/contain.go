@@ -16,7 +16,8 @@ var ErrPathEscapes = errors.New("path escapes its base directory")
 // base. rel must be relative: an empty, absolute, NUL-bearing or '..'-bearing
 // value is refused. The check then resolves symlinks in base and in the
 // deepest existing part of the joined path, so a link that points out of base
-// is refused even though the lexical path looks contained. Nothing is created.
+// is refused even though the lexical path looks contained; a dangling link
+// is followed to its missing target and judged by where that target lies. Nothing is created.
 // The returned path is the lexical join of base and the cleaned rel.
 func ResolveWithin(base, rel string) (string, error) {
 	if base == "" {
@@ -49,24 +50,48 @@ func ResolveWithin(base, rel string) (string, error) {
 	return joined, nil
 }
 
+// maxLinkHops bounds how many dangling links evalDeepest follows.
+const maxLinkHops = 40
+
 // evalDeepest resolves symlinks in the longest existing prefix of p and
-// appends the not-yet-existing remainder unchanged.
+// appends the not-yet-existing remainder unchanged. A dangling symlink met on
+// the way is followed to its (missing) target so the caller sees where the
+// link really points.
 func evalDeepest(p string) (string, error) {
-	rest := ""
-	cur := p
-	for {
-		real, err := filepath.EvalSymlinks(cur)
-		if err == nil {
-			return filepath.Join(real, rest), nil
+	for hops := 0; hops <= maxLinkHops; hops++ {
+		rest := ""
+		cur := p
+		redirected := false
+		for {
+			real, err := filepath.EvalSymlinks(cur)
+			if err == nil {
+				return filepath.Join(real, rest), nil
+			}
+			if !errors.Is(err, os.ErrNotExist) {
+				return "", err
+			}
+			if fi, lerr := os.Lstat(cur); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
+				target, rerr := os.Readlink(cur)
+				if rerr != nil {
+					return "", rerr
+				}
+				if !filepath.IsAbs(target) {
+					target = filepath.Join(filepath.Dir(cur), target)
+				}
+				p = filepath.Join(target, rest)
+				redirected = true
+				break
+			}
+			parent := filepath.Dir(cur)
+			if parent == cur {
+				return "", err
+			}
+			rest = filepath.Join(filepath.Base(cur), rest)
+			cur = parent
 		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return "", err
+		if !redirected {
+			break
 		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			return "", err
-		}
-		rest = filepath.Join(filepath.Base(cur), rest)
-		cur = parent
 	}
+	return "", fmt.Errorf("%w: too many levels of symbolic links", ErrPathEscapes)
 }
