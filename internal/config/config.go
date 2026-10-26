@@ -2539,6 +2539,11 @@ type AutonomousConfig struct {
 	// sinks (comm fanout / alert paging).
 	Notify AutonomousNotifyConfig `yaml:"notify" json:"notify"`
 
+	// Questions — gate for the /api/questions endpoints (the Automaton
+	// operator-question REST API). Ships off. See AutonomousQuestionsConfig
+	// below.
+	Questions AutonomousQuestionsConfig `yaml:"questions" json:"questions"`
+
 	// Automation — knobs for Automation (multi-Automaton orchestration)
 	// coordination. See AutonomousAutomationConfig.
 	Automation AutonomousAutomationConfig `yaml:"automation" json:"automation"`
@@ -2975,6 +2980,18 @@ type AutonomousNotifyConfig struct {
 	// Forwarding configures peer forwarding of lifecycle events. It ships
 	// disabled. No omitempty, same reasoning as DefaultEvents.
 	Forwarding AutonomousNotifyForwardingConfig `yaml:"forwarding" json:"forwarding"`
+}
+
+// AutonomousQuestionsConfig is autonomous.questions, the switch that
+// gates the /api/questions endpoints (the Automaton operator-question
+// REST API). It ships off (Enabled false): while it is false the
+// questions endpoints refuse service. The field has NO omitempty on
+// either tag, same reasoning as the AutonomousNotifyConfig fields above:
+// an operator's explicit false must survive a YAML/JSON round trip and a
+// PUT /api/config write instead of being elided on marshal and leaving
+// the previous value untouched on unmarshal.
+type AutonomousQuestionsConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
 }
 
 // DefaultPendingEventsMax is the pending_events_max fallback.

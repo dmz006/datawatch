@@ -1247,6 +1247,23 @@ autonomous:
       # autonomous.notify.forwarding.attempt_timeout_seconds — bound on one
       # attempt. Default 10.
       attempt_timeout_seconds: 10
+  # ── Automaton operator-question endpoints ──
+  # Gate for the /api/questions REST endpoints (raise, list, answer,
+  # withdraw). While false the questions endpoints refuse service.
+  # Default false (off): the daemon ships with the question API closed.
+  # The REST endpoints exist now; the MCP tool, the dedicated CLI
+  # command, the comm verb and the question queues in the PWA and the
+  # mobile apps follow in a later step.
+  # Settable through every config surface:
+  #   config file:                              this file
+  #   datawatch config set autonomous.questions.enabled true|false
+  #   PUT /api/config {"autonomous.questions.enabled": true}
+  #   comm channel:                             configure autonomous.questions.enabled=true
+  #   PWA:                                      Settings → General → questions card
+  # A change takes effect immediately, no restart needed.
+  questions:
+    # autonomous.questions.enabled — gate for the /api/questions endpoints.
+    enabled: false
   # Daemon-wide default for how many independent tasks of one Automaton run
   # at once. An Automaton's own max_concurrent_tasks overrides it. 1 = one
   # task at a time (sequential). Tasks of different Automata are not limited
