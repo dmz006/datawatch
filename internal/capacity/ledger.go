@@ -700,7 +700,7 @@ func (l *Ledger) remove(w *waiter) {
 // a task whose session survived a daemon restart (BL462). Unlike Acquire it
 // never queues and ignores pool limits, because the session already occupies
 // its slots. Idempotent: an existing lease for the holder is kept and only
-// its session binding is refreshed. Adopt never picks a node: a request with
+// its session binding is refreshed, and a lease holding no node gains req.Node. Adopt never picks a node: a request with
 // NodeChoices is recorded on req.Node (its node:<name> pool added) or, when
 // Node is empty, on no node.
 //
@@ -716,6 +716,12 @@ func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 		if sessionID != "" {
 			ls.SessionID = sessionID
 		}
+		if ls.Node == "" && req.Node != "" {
+			ls.Node = req.Node
+			if pool := "node:" + req.Node; !sharesPool(ls.Pools, []string{pool}) {
+				ls.Pools = append(ls.Pools, pool)
+			}
+		}
 		return
 	}
 	for _, s := range successors {
@@ -723,8 +729,10 @@ func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 			return
 		}
 	}
-	if req.multiNode() {
+	if req.multiNode() || req.Node != "" {
 		if req.Node != "" {
+			// The session occupies this node whether or not it is still among
+			// the current choices, so the lease is recorded on it regardless.
 			req = req.withNode(req.Node)
 		} else {
 			req.NodeChoices, req.ExcludeNodes = nil, nil

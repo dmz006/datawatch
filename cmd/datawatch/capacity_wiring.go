@@ -696,6 +696,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	keys, choices := capacityManagerKeys(resolve)
 	amgr.SetCapacity(led, keys)
 	amgr.SetCapacityChoices(choices)
+	amgr.SetSessionNode(sessionComputeNode(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }, httpServer.ComputeRegistry))
 	amgr.SetPiDefaultModel(piDefaultModel(cfg))
 	amgr.SetNodeLoad(nodeLoader(httpServer.ComputeRegistry), nodeAlerts)
 	amgr.SetCapacityAudit(capacityAudit)
@@ -1103,4 +1104,55 @@ func interactiveAdmitRequest(holder string, pools []string, node, model string, 
 
 func councilAdmitRequest(holder, prdID string, pools []string, node, model string, priority int) capacity.Request {
 	return capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model, Priority: priority}
+}
+
+// sessionComputeNode builds the resolver that names the compute node a session
+// runs on: its explicit ComputeNodeRef first, and only when that is empty the
+// node whose address matches the host the session was placed on. It returns ""
+// for a session that is unknown or runs on no registered node.
+func sessionComputeNode(lookup func(id string) (*session.Session, bool), nodes func() *compute.Registry) autonomous.SessionNodeFn {
+	return func(sessionID string) string {
+		if lookup == nil {
+			return ""
+		}
+		s, ok := lookup(sessionID)
+		if !ok || s == nil {
+			return ""
+		}
+		if s.ComputeNodeRef != "" {
+			return s.ComputeNodeRef
+		}
+		var reg *compute.Registry
+		if nodes != nil {
+			reg = nodes()
+		}
+		if reg == nil {
+			return ""
+		}
+		for _, addr := range []string{s.NodeAddress, s.OllamaURL} {
+			if want := addressHost(addr); want != "" {
+				for _, n := range reg.List() {
+					if addressHost(n.Address) == want {
+						return n.Name
+					}
+				}
+			}
+		}
+		return ""
+	}
+}
+
+// addressHost reduces an address (with or without scheme and path) to its
+// lowercase host:port so a session's recorded endpoint and a node's address
+// compare equal however each was written.
+func addressHost(addr string) string {
+	addr = strings.ToLower(strings.TrimSpace(addr))
+	if addr == "" {
+		return ""
+	}
+	if _, rest, ok := strings.Cut(addr, "://"); ok {
+		addr = rest
+	}
+	host, _, _ := strings.Cut(addr, "/")
+	return host
 }

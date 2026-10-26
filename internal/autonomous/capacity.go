@@ -70,6 +70,18 @@ func (m *Manager) SetCapacityChoices(fn CapacityChoicesFn) {
 	m.capacityChoices = fn
 }
 
+// SessionNodeFn names the compute node a session runs on ("" when it runs on
+// none or the node is unknown).
+type SessionNodeFn func(sessionID string) string
+
+// SetSessionNode wires the resolver that tells adoptCapacity which compute
+// node a surviving session occupies. Nil leaves adopted leases without a node.
+func (m *Manager) SetSessionNode(fn SessionNodeFn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionNode = fn
+}
+
 // SetNodeLoad wires the step that makes a worker's model resident on the
 // node its lease was granted on, and the alert sink for a failed load. It
 // runs only for an LLM entry that pools two or more nodes; a nil loader
@@ -486,12 +498,20 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	m.mu.Lock()
 	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
 	fallback := m.cfg.ExecutionBackend
+	sessionNode := m.sessionNode
 	m.mu.Unlock()
 	story := findStory(prd, t.StoryID)
 	backend, model := resolveTaskBackendModel(t, story, prd, m.AutomationForPRD(prd), fallback)
 	pools, node := keysFn(backend, model)
 	if len(pools) == 0 {
 		return
+	}
+	// A multi-node entry resolves no single node; the session itself says
+	// where it runs.
+	if sessionNode != nil && t.SessionID != "" {
+		if n := sessionNode(t.SessionID); n != "" {
+			node = n
+		}
 	}
 	led.Adopt(capacity.Request{
 		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), Model: model,

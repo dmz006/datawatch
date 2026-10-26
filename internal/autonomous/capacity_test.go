@@ -666,3 +666,50 @@ func TestCapacity_CancelTaskReleasesLease(t *testing.T) {
 		t.Fatal("cancelled task still holds its capacity lease")
 	}
 }
+
+func TestCapacity_AdoptRecordsNodeOfSurvivingSession(t *testing.T) {
+	m, _, led := capFixture(t, 1)
+	m.SetCapacity(led, func(backend, model string) ([]string, string) { return []string{"host"}, "" })
+	m.SetSessionNode(func(id string) string {
+		if id == "live-sess" {
+			return "gpu-b"
+		}
+		return ""
+	})
+	prd := newPRDWithTasks(t, m, 1)
+	cur, _ := m.Store().GetPRD(prd.ID)
+	live := &cur.Story[0].Tasks[0]
+	live.SessionID = "live-sess"
+
+	m.adoptCapacity(cur, live)
+	m.adoptCapacity(cur, live)
+
+	ls := led.LeaseOf(live.ID)
+	if ls == nil || ls.Node != "gpu-b" {
+		t.Fatalf("adopted lease should record the session's node, got %+v", ls)
+	}
+	found := false
+	for _, p := range ls.Pools {
+		found = found || p == "node:gpu-b"
+	}
+	if !found {
+		t.Fatalf("adopted lease pools should include node:gpu-b, got %v", ls.Pools)
+	}
+	if n := len(led.Snapshot().Leases); n != 1 {
+		t.Fatalf("want one lease, got %d", n)
+	}
+}
+
+func TestCapacity_AdoptWithUnknownSessionNodeKeepsResolvedNode(t *testing.T) {
+	m, _, led := capFixture(t, 1)
+	m.SetSessionNode(func(string) string { return "" })
+	prd := newPRDWithTasks(t, m, 1)
+	cur, _ := m.Store().GetPRD(prd.ID)
+	live := &cur.Story[0].Tasks[0]
+	live.SessionID = "live-sess"
+
+	m.adoptCapacity(cur, live)
+	if ls := led.LeaseOf(live.ID); ls == nil || ls.Node != "n1" {
+		t.Fatalf("resolver node should be kept when the session names none, got %+v", ls)
+	}
+}
