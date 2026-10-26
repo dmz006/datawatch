@@ -28,6 +28,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -403,6 +404,10 @@ type Registry struct {
 	// persistFn is called after every mutation; nil = no persistence
 	// (test stores). Real registries set it to a JSON-write closure.
 	persistFn func() error
+	// onChange is called after a successful Add, Update or Delete, with no
+	// registry lock held. It lets a consumer react to an edit at once instead
+	// of waiting for its next poll.
+	onChange atomic.Pointer[func()]
 }
 
 // NewRegistry returns an empty in-memory registry. Wire persistence
@@ -413,6 +418,28 @@ func NewRegistry() *Registry {
 
 // SetPersistFn wires the after-mutate persistence callback.
 func (r *Registry) SetPersistFn(fn func() error) { r.persistFn = fn }
+
+// SetChangeFn registers fn to run after every successful Add, Update or
+// Delete. fn runs on the caller's goroutine after the registry lock is
+// released, so it may read the registry. nil clears it.
+func (r *Registry) SetChangeFn(fn func()) {
+	if fn == nil {
+		r.onChange.Store(nil)
+		return
+	}
+	r.onChange.Store(&fn)
+}
+
+// notifyChange runs the change callback when err is nil. Deferred ahead of the
+// registry lock's Unlock so it runs once the lock is released.
+func (r *Registry) notifyChange(err *error) {
+	if *err != nil {
+		return
+	}
+	if fn := r.onChange.Load(); fn != nil {
+		(*fn)()
+	}
+}
 
 // historicalAutoTags lists tag values the daemon has historically
 // auto-applied to LLM entries. v7.0.0-alpha.23 Q7 — these move from
@@ -548,10 +575,11 @@ func (r *Registry) Exists(name string) bool {
 }
 
 // Add registers a new LLM. Returns ErrConflict if name exists.
-func (r *Registry) Add(l *LLM) error {
+func (r *Registry) Add(l *LLM) (err error) {
 	if err := l.Validate(); err != nil {
 		return err
 	}
+	defer r.notifyChange(&err)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.llms[l.Name]; exists {
@@ -568,10 +596,11 @@ func (r *Registry) Add(l *LLM) error {
 }
 
 // Update replaces the named LLM. Returns ErrNotFound if absent.
-func (r *Registry) Update(l *LLM) error {
+func (r *Registry) Update(l *LLM) (err error) {
 	if err := l.Validate(); err != nil {
 		return err
 	}
+	defer r.notifyChange(&err)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	old, ok := r.llms[l.Name]
@@ -592,7 +621,8 @@ func (r *Registry) Update(l *LLM) error {
 // Auto-created entries are tombstoned (soft-deleted) instead of
 // hard-deleted so that MigrateAllLegacyBackends skips re-creating
 // them on the next daemon restart.
-func (r *Registry) Delete(name string) error {
+func (r *Registry) Delete(name string) (err error) {
+	defer r.notifyChange(&err)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	l, ok := r.llms[name]
@@ -633,6 +663,8 @@ func (r *Registry) snapshotLocked() []*LLM {
 // LoadSnapshot replaces the registry contents wholesale. Used at
 // startup by the JSON loader.
 func (r *Registry) LoadSnapshot(snap []LLM) {
+	var none error
+	defer r.notifyChange(&none)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.llms = make(map[string]*LLM, len(snap))

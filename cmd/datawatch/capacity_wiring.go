@@ -93,6 +93,53 @@ func engineNodes(reg *inference.Registry) map[string][]string {
 	return nodes
 }
 
+// placementSignature summarises what decides where a queued request may run:
+// each LLM kind's compute_nodes list and, per listed node, whether the compute
+// registry knows it and at what priority. Two equal signatures mean the
+// resolver would return the same candidates, so waiters need no re-plan.
+func placementSignature(registry func() *inference.Registry, nodes func() *compute.Registry) string {
+	var reg *inference.Registry
+	if registry != nil {
+		reg = registry()
+	}
+	priority := computePriority(nodes)
+	byKind := engineNodes(reg)
+	kinds := make([]string, 0, len(byKind))
+	for k := range byKind {
+		kinds = append(kinds, k)
+	}
+	sort.Strings(kinds)
+	var b strings.Builder
+	for _, k := range kinds {
+		b.WriteString(k)
+		b.WriteByte(':')
+		for _, n := range byKind[k] {
+			p, ok := priority(n)
+			fmt.Fprintf(&b, "%s/%d/%t,", n, p, ok)
+		}
+		b.WriteByte(';')
+	}
+	return b.String()
+}
+
+// replanOnPlacementChange returns a function that re-plans the ledger's
+// waiters when placementSignature differs from the last call's. The first call
+// only records the signature.
+func replanOnPlacementChange(led *capacity.Ledger, registry func() *inference.Registry, nodes func() *compute.Registry) func() {
+	var mu sync.Mutex
+	last := placementSignature(registry, nodes)
+	return func() {
+		sig := placementSignature(registry, nodes)
+		mu.Lock()
+		changed := sig != last
+		last = sig
+		mu.Unlock()
+		if changed {
+			led.Replan()
+		}
+	}
+}
+
 // piDefaultModel returns the lookup the autonomous manager uses to qualify a
 // pi-family model that names no provider. It reads the model each pi backend
 // launches on when a session names none, the same configured value the
@@ -695,6 +742,12 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	resolve := capacityResolver(httpServer.InferenceRegistry, httpServer.ComputeRegistry)
 	keys, choices := capacityManagerKeys(resolve)
 	amgr.SetCapacity(led, keys)
+	// An LLM entry edit (API, MCP, CLI or config reload) re-plans the waiters
+	// at once; the pool sync ticker covers compute registry changes.
+	replan := replanOnPlacementChange(led, httpServer.InferenceRegistry, httpServer.ComputeRegistry)
+	if reg := httpServer.InferenceRegistry(); reg != nil {
+		reg.SetChangeFn(replan)
+	}
 	amgr.SetCapacityChoices(choices)
 	amgr.SetSessionNode(sessionComputeNode(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }, httpServer.ComputeRegistry))
 	amgr.SetPiDefaultModel(piDefaultModel(cfg))
@@ -1059,6 +1112,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 				return
 			case <-t.C:
 				syncPools()
+				replan()
 				// Peer spend is fetched off the tick so a slow peer never
 				// delays pool syncing; admission reads only the cache.
 				go peerBudget.Refresh(ctx)

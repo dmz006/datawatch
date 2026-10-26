@@ -601,6 +601,17 @@ func (l *Ledger) dispatchLocked() {
 	}
 }
 
+// Replan re-runs every waiter's Request.Refresh and dispatches at once. The
+// poll tick and every Release do this already; Replan is for a change the
+// ledger cannot see, such as an LLM entry's compute_nodes list being edited,
+// so waiters move to the new list now instead of on their next tick. A waiter
+// with no Refresh keeps the placement it queued with.
+func (l *Ledger) Replan() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.dispatchLocked()
+}
+
 // grantLocked takes w's lease. req is w.req as resolved by resolveLocked, so
 // for a request with NodeChoices it already names the chosen node.
 func (l *Ledger) grantLocked(w *waiter, req Request, now time.Time) {
