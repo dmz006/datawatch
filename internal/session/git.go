@@ -543,6 +543,9 @@ func (g *ProjectGit) TagCheckpoint(kind, sessionID, task string) error {
 		return fmt.Errorf("invalid checkpoint kind %q (want pre|post)", kind)
 	}
 	tag := fmt.Sprintf("datawatch-%s-%s", kind, sessionID)
+	if err := validateGitRef("tag", tag); err != nil {
+		return err
+	}
 	msg := fmt.Sprintf("datawatch %s-session checkpoint for %s: %s",
 		kind, sessionID, truncateStr(task, 60))
 	return runGit(g.dir, "tag", "-f", "-a", tag, "-m", msg)
@@ -557,6 +560,9 @@ func (g *ProjectGit) Rollback(sessionID string, force bool) error {
 		return fmt.Errorf("not a git repo: %s", g.dir)
 	}
 	tag := "datawatch-pre-" + sessionID
+	if err := validateGitRef("tag", tag); err != nil {
+		return err
+	}
 	if _, err := gitOutput(g.dir, "rev-parse", "--verify", tag); err != nil {
 		return fmt.Errorf("pre-session tag not found: %s", tag)
 	}
@@ -760,6 +766,17 @@ func (g *ProjectGit) PushBranch(remoteName, branch, originURL, token string) err
 	}
 	if branch == "" {
 		return fmt.Errorf("PushBranch: branch required")
+	}
+	if err := validateGitRemoteName(remoteName); err != nil {
+		return err
+	}
+	if err := validateGitRef("branch", branch); err != nil {
+		return err
+	}
+	if originURL != "" {
+		if err := validateGitURL(originURL); err != nil {
+			return err
+		}
 	}
 	if originURL == "" {
 		// Fall back to the configured origin (no token injection — caller
