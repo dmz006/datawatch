@@ -28,6 +28,18 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.18.0 — Judge routing policy and time limit
+
+The judges (the Automaton guardrail, plan review and other autonomous judges) now have their own role in the verifier routing policy, a time limit, one attempt per backend and a visible hold when they cannot finish.
+
+- **The judge role defaults to the verifier policy.** `autonomous.judge_policy` is an ordered list of backends for the judges. Empty, the judges follow the verifier routing policy, so a later change to the verifier policy reaches them too. A unit that pins its own guardrail backend keeps that backend as its only choice.
+- **Three modes for judges.** `fixed`, `prefer-free` and `balance` apply to judges as they do to verifiers. Under `prefer-free`, a judge whose local slots are full runs on a Claude backend in the list when that backend has a free slot and the Claude session cap allows it.
+- **A time limit for each judge run.** `autonomous.judge_timeout_seconds` defaults to 30 minutes. It counts the judge run only, not the wait for a capacity slot. The judge uses the same capacity leases as verifier sessions.
+- **One attempt per backend.** A judge that times out on a backend moves to the next one. Timed-out attempts are kept across a daemon restart, so a backend is not tried twice.
+- **Alerts.** Each timeout raises a warning that names the Automaton, the backend, the time spent and the next backend. When every backend has timed out, the Automaton is held in `needs_review` with a judge-timeout verdict, and an error alert lists every attempt. Nothing is approved, passed or blocked silently.
+- **Settings on every surface.** YAML, REST, MCP, the CLI (`autonomous config-set --judge-policy --judge-timeout-seconds`), the comm channel (`autonomous judge-policy` and `judge-policy-set`) and the PWA Settings autonomous card.
+- **Docs.** A new how-to, [howto/judge-policy.md](docs/howto/judge-policy.md), covers the role, the modes, the time limit, the alerts and how to resolve a hold. The API reference and the testing tracker are updated to match.
+
 ## v9.17.6 — Pi-prompt workers lease the compute node they run on
 
 ### Pi workers are placed on the least-loaded healthy node and launched on the node they leased
