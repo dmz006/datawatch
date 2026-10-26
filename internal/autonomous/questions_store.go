@@ -267,7 +267,7 @@ func (s *QuestionStore) Raise(q Question) (Question, error) {
 	}
 	s.mu.Lock()
 	now := s.now()
-	q.ID = s.newQuestionID(now)
+	q.ID = s.newUniqueQuestionID(now)
 	q.CreatedAt = &now
 	q.State = QuestionOpen
 	rec := questionStoreRecord{Type: storeLineQuestionRaised, Question: &q}
@@ -336,8 +336,13 @@ func (s *QuestionStore) Answer(questionID string, a Answer) (Answer, error) {
 	}
 	now := s.now()
 	a.QuestionID = questionID
-	a.ID = s.newAnswerID(now)
+	a.ID = s.newUniqueAnswerID(now)
 	a.CreatedAt = &now
+	// QuoteSHA256 is the hash of the bytes in the quote. An option-only
+	// answer has no quote, so there are no bytes to hash and the field is left
+	// empty (its omitempty tag omits it when absent): the spec defines it as
+	// "a hash of the bytes in quote", so no quote means no hash — not the hash
+	// of the empty string.
 	if a.Quote != "" {
 		a.QuoteSHA256 = QuoteSHA256(a.Quote)
 	}
@@ -444,8 +449,15 @@ func (s *QuestionStore) mutateState(id, lineType, actor, reason string, nextStat
 	return nil
 }
 
-// view returns a copy of the in-memory question. The caller holds s.mu.
+// view returns a copy of the in-memory question. It takes and releases the
+// store lock itself, so it is safe to call from any context — including from
+// Withdraw and Expire, which read the question after mutateState has already
+// released the lock. Reading the questions map while another goroutine is
+// writing it (a concurrent Raise storing a new question) is a data race the
+// Go runtime can treat as fatal, so the read must happen under the lock.
 func (s *QuestionStore) view(id string) Question {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if q := s.questions[id]; q != nil {
 		return *q
 	}
@@ -621,4 +633,31 @@ func randomHex(n int) string {
 		return strings.Repeat("0", n*2)
 	}
 	return hex.EncodeToString(b)
+}
+
+// newUniqueQuestionID returns a question id that no raised question already
+// holds, so a raise never overwrites an existing question and an id is never
+// reused. The first candidate keeps the documented id format (prefix, then 20
+// hex characters); only if that candidate already exists does the store append
+// fresh disambiguating entropy until one is free. Each appended byte is a
+// fresh random draw, so the loop terminates even if the id generator itself
+// is degenerate. Time-sortability is preserved because the collision suffix
+// is appended after the time prefix. The caller holds s.mu.
+func (s *QuestionStore) newUniqueQuestionID(now time.Time) string {
+	id := s.newQuestionID(now)
+	for s.questions[id] != nil {
+		id += randomHex(1)
+	}
+	return id
+}
+
+// newUniqueAnswerID is the answer-id analogue of newUniqueQuestionID: it
+// resolves a collision against the stored answers so no answer id is reused.
+// The caller holds s.mu.
+func (s *QuestionStore) newUniqueAnswerID(now time.Time) string {
+	id := s.newAnswerID(now)
+	for s.answers[id] != nil {
+		id += randomHex(1)
+	}
+	return id
 }

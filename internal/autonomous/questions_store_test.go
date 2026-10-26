@@ -927,3 +927,124 @@ func TestQuestionStore_IDFormatAndOrder(t *testing.T) {
 		t.Fatalf("default answer id = %q; want a- plus 20 hex characters", got2.ID)
 	}
 }
+
+// TestQuestionStore_ConcurrentWithdrawRaise is the regression guard for the
+// lock discipline on the Withdraw and Expire read-back. It drives a Withdraw
+// that reads the questions map in parallel with a batch of Raises that write
+// to that same map. Run with -race, the race detector flags an unlocked
+// questions-map read that happens while a raise is writing one, so this test
+// is the probe that exercises that path. The old code read the question via a
+// helper that assumed the caller held the store lock; Withdraw and Expire
+// called it after releasing the lock, which raced these raises.
+func TestQuestionStore_ConcurrentWithdrawRaise(t *testing.T) {
+	_, s, _, advance := newQuestionStoreTest(t)
+
+	target := mustRaise(t, s, sampleQuestion("Withdraw me while raising?"))
+	advance(time.Millisecond)
+	mustRaise(t, s, sampleQuestion("A second seed question?"))
+
+	const n = 16
+	raisedIDs := make([]string, n)
+	errIdx := make([]error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			q, err := s.Raise(sampleQuestion(fmt.Sprintf("Concurrent raise %d?", i)))
+			if err != nil {
+				errIdx[i] = err
+				return
+			}
+			raisedIDs[i] = q.ID
+		}(i)
+		go func() {
+			defer wg.Done()
+			// Several goroutines contend for the open->withdrawn move; only
+			// one wins and the rest see a terminal state. The point is that
+			// the read-back is race-free against the parallel Raises.
+			_, _ = s.Withdraw(target, "operator", "concurrent probe")
+		}()
+	}
+	wg.Wait()
+
+	for i, err := range errIdx {
+		if err != nil {
+			t.Errorf("concurrent raise %d: %v", i, err)
+			continue
+		}
+		if raisedIDs[i] == "" {
+			t.Errorf("concurrent raise %d returned an empty id", i)
+		}
+	}
+	seen := map[string]bool{}
+	for _, id := range raisedIDs {
+		if id == "" {
+			continue
+		}
+		if seen[id] {
+			t.Errorf("concurrent raises produced a duplicate id %q", id)
+		}
+		seen[id] = true
+	}
+
+	q, ok := s.Get(target)
+	if !ok || q.State != QuestionWithdrawn {
+		t.Errorf("target state = %q (ok=%v); want withdrawn", q.State, ok)
+	}
+	if got := len(s.List(QuestionFilter{Limit: 1000})); got != n+2 {
+		t.Errorf("store holds %d questions; want %d (no raise was lost to a collision)", got, n+2)
+	}
+}
+
+// TestQuestionStore_RaiseIDNeverReusedOnCollision pins the id-uniqueness
+// guard. The real generator draws fresh random bytes each call, so a repeat
+// is vanishingly rare, but the invariant to test is deterministic: if the
+// generator hands the store an id it already holds, Raise must take a
+// distinct id instead of overwriting the existing question.
+func TestQuestionStore_RaiseIDNeverReusedOnCollision(t *testing.T) {
+	path, s, _, _ := newQuestionStoreTest(t)
+
+	first := mustRaise(t, s, sampleQuestion("First, id already used?"))
+
+	// The degenerate case: a generator that keeps handing back an id the store
+	// already holds. A raise must never reuse that id, so the store resolves
+	// a unique one instead of clobbering the existing question — and the
+	// resolution must terminate rather than loop forever.
+	s.newQuestionID = func(time.Time) string { return first }
+
+	second, err := s.Raise(sampleQuestion("Second, must not collide?"))
+	if err != nil {
+		t.Fatalf("raise the colliding question: %v", err)
+	}
+	if second.ID == first {
+		t.Fatalf("Raise reused id %q; question ids must never be reused", first)
+	}
+	if !strings.HasPrefix(second.ID, first) {
+		t.Errorf("second id %q does not extend the colliding base %q; want a disambiguated id, not a reuse", second.ID, first)
+	}
+	if q, ok := s.Get(first); !ok || q.Text != "First, id already used?" {
+		t.Errorf("the first question = %+v (ok=%v); a collision must not clobber it", q, ok)
+	}
+	if q, ok := s.Get(second.ID); !ok || q.Text != "Second, must not collide?" {
+		t.Errorf("the second question = %+v (ok=%v); want it under its distinct id", q, ok)
+	}
+	if got := len(s.List(QuestionFilter{Limit: 1000})); got != 2 {
+		t.Errorf("store holds %d questions; want 2", got)
+	}
+
+	// Both survive a reopen: the file holds two distinct raise records.
+	reopened, err := NewQuestionStore(path)
+	if err != nil {
+		t.Fatalf("reopen the store: %v", err)
+	}
+	if got := len(reopened.List(QuestionFilter{Limit: 1000})); got != 2 {
+		t.Errorf("reopened store holds %d questions; want 2", got)
+	}
+	if _, ok := reopened.Get(first); !ok {
+		t.Errorf("reopened store lost the first question %s", first)
+	}
+	if _, ok := reopened.Get(second.ID); !ok {
+		t.Errorf("reopened store lost the second question %s", second.ID)
+	}
+}
