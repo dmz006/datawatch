@@ -39,6 +39,12 @@ type API struct {
 	runMu      sync.Mutex
 	runCancels map[string]context.CancelFunc
 
+	// reviewWake carries operator review decisions to the live executor of
+	// a PRD. It has its own mutex. ResolveTaskReview signals under runMu, and
+	// the executor's final check and its release of the slot also run under
+	// runMu, so a decision cannot slip in between that check and the release.
+	reviewWake reviewWakes
+
 	// execWG counts live executor goroutines (and the boot-resume
 	// scan that may launch them) so WaitIdle can block until they have
 	// all exited.
@@ -539,6 +545,12 @@ func (a *API) prdStatus(id string) (PRDStatus, bool) {
 	return p.Status, true
 }
 
+// runnableStatus reports whether the PRD is in a state Manager.Run accepts.
+func (a *API) runnableStatus(id string) bool {
+	st, ok := a.prdStatus(id)
+	return ok && (st == PRDApproved || st == PRDActive || st == PRDRunning)
+}
+
 // claimRun atomically registers an executor slot for the PRD in runCancels.
 // It returns false when an executor is already live (B98: the live goroutine
 // is never cancelled; it picks up newly-pending tasks on its next poll).
@@ -560,11 +572,17 @@ func (a *API) claimRun(id string) (context.Context, bool) {
 // releaseRun drops a claimed slot (early-error path or goroutine exit).
 func (a *API) releaseRun(id string) {
 	a.runMu.Lock()
+	a.releaseRunLocked(id)
+	a.runMu.Unlock()
+}
+
+// releaseRunLocked is releaseRun for a caller already holding runMu.
+func (a *API) releaseRunLocked(id string) {
 	if cancel := a.runCancels[id]; cancel != nil {
 		cancel()
 		delete(a.runCancels, id)
 	}
-	a.runMu.Unlock()
+	a.reviewWake.disarm(id)
 }
 
 // runLocked is the shared body of Run and boot-resume. When executors are
@@ -633,22 +651,40 @@ func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 	go func() {
 		defer a.execWG.Done()
 		defer a.releaseRun(id)
-		if err := a.M.Run(ctx, id, a.spawnFn, a.verify); err != nil {
-			if p, ok := a.M.Store().GetPRD(id); ok {
-				// If cancelled by operator, leave status as cancelled.
-				// Otherwise revert to PRDApproved so they can retry.
-				if p.Status != PRDCancelled {
-					old := p.Status
-					p.Status = PRDApproved
-					if a.M.Store().SavePRD(p) == nil {
-						a.M.emitPRDStatus(p, old, nil, nil)
+		// The wake is armed here, before the first Run. A decision that
+		// lands before the arm is already in the store, which Run reads
+		// after it, so no decision is lost.
+		runCtx := withReviewWake(ctx, a.reviewWake.arm(id))
+		for {
+			if err := a.M.Run(runCtx, id, a.spawnFn, a.verify); err != nil {
+				if p, ok := a.M.Store().GetPRD(id); ok {
+					// If cancelled by operator, leave status as cancelled.
+					// Otherwise revert to PRDApproved so they can retry.
+					if p.Status != PRDCancelled {
+						old := p.Status
+						p.Status = PRDApproved
+						if a.M.Store().SavePRD(p) == nil {
+							a.M.emitPRDStatus(p, old, nil, nil)
+						}
 					}
 				}
 			}
+			// Emit a final update so the PWA reflects the
+			// terminal state (completed / blocked / approved-on-error).
+			a.M.EmitPRDUpdate(id)
+			// An operator review decision that arrived while Run was
+			// finishing is picked up by running again under the same
+			// slot. The check and the release share one critical
+			// section, so a decision cannot land between them.
+			a.runMu.Lock()
+			if a.reviewWake.takePending(id) && ctx.Err() == nil && a.runnableStatus(id) {
+				a.runMu.Unlock()
+				continue
+			}
+			a.releaseRunLocked(id)
+			a.runMu.Unlock()
+			return
 		}
-		// v5.24.0 — emit a final update so the PWA reflects the
-		// terminal state (completed / blocked / approved-on-error).
-		a.M.EmitPRDUpdate(id)
 	}()
 	return true, nil
 }
@@ -976,25 +1012,24 @@ func (a *API) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (a
 	return out, err
 }
 
-// reviewSlotWait bounds how long ResolveTaskReview waits for a held Automaton's
-// executor to exit before it changes anything.
-const reviewSlotWait = 5 * time.Second
-
 // ResolveTaskReview is the operator's decision on a task held for review (see
-// Manager.ResolveTaskReview). A held Automaton's executor exits right after it
-// blocks, so the call first waits briefly for that exit: a run launched while
-// the old executor still holds its slot would be dropped. Then the change is
-// made, and the run is relaunched the way Resume relaunches it.
+// Manager.ResolveTaskReview). The executor of a held Automaton keeps running
+// while other tasks are in flight, so the decision never waits for it: when an
+// executor is live it is woken to re-scan and no second one is started;
+// otherwise the run is relaunched the way Resume relaunches it.
 func (a *API) ResolveTaskReview(prdID, taskID string, req ReviewResolution, actor string) (any, error) {
-	if !a.waitRunSlotFree(prdID, reviewSlotWait) {
-		return nil, fmt.Errorf("prd %q: its executor is still finishing; try again shortly", prdID)
-	}
 	out, err := a.M.ResolveTaskReview(prdID, taskID, req, actor)
 	if err != nil {
 		return nil, err
 	}
 	a.M.EmitPRDUpdate(prdID)
-	if out.Status == PRDRunning {
+	a.runMu.Lock()
+	_, live := a.runCancels[prdID]
+	if live {
+		a.reviewWake.signal(prdID)
+	}
+	a.runMu.Unlock()
+	if !live && out.Status == PRDRunning {
 		if err := a.Run(prdID); err != nil {
 			return nil, err
 		}
@@ -1012,23 +1047,6 @@ func (a *API) SetFailureEscalation(prdID, taskID string, policy *FailureEscalati
 	return out, err
 }
 
-// waitRunSlotFree reports whether id has no live executor slot, polling for up
-// to wait. It returns false when the slot is still held at the deadline.
-func (a *API) waitRunSlotFree(id string, wait time.Duration) bool {
-	deadline := time.Now().Add(wait)
-	for {
-		a.runMu.Lock()
-		_, alive := a.runCancels[id]
-		a.runMu.Unlock()
-		if !alive {
-			return true
-		}
-		if time.Now().After(deadline) {
-			return false
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
 func (a *API) SetTaskProjectDir(prdID, taskID, dir, actor string) (any, error) {
 	out, err := a.M.SetTaskProjectDir(prdID, taskID, dir, actor)
 	if err == nil {

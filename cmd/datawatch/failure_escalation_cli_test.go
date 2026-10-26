@@ -1,6 +1,10 @@
 package main
 
 import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
@@ -95,5 +99,44 @@ func TestFailureEscalationCLISplitReviewFiles(t *testing.T) {
 	}
 	if splitReviewFiles("") != nil {
 		t.Fatal("an empty list must be nil")
+	}
+}
+
+// TestFailureEscalationCLIResolveReviewWhileAutomatonRunning: resolve-review
+// retry is sent and reported as done when another task of the Automaton is
+// running, the same as for an idle Automaton. The stand-in daemon answers with
+// the updated Automaton, and that is what the command prints.
+func TestFailureEscalationCLIResolveReviewWhileAutomatonRunning(t *testing.T) {
+	var hit string
+	var sent map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit = r.Method + " " + r.URL.Path
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &sent)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"p1","status":"running","stories":[{"id":"s1","tasks":[{"id":"t1","status":"pending"},{"id":"t2","status":"in_progress"}]}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	prev := serverURL
+	serverURL = srv.URL
+	t.Cleanup(func() { serverURL = prev })
+
+	out, err := runEscalationCmd(t, newAutonomousResolveReviewCmd(), "p1",
+		"--task", "t1", "--action", "retry", "--note", "go again")
+	if err != nil {
+		t.Fatalf("resolve-review while another task runs: %v", err)
+	}
+	if want := "POST /api/autonomous/prds/p1/resolve_task_review"; hit != want {
+		t.Fatalf("request = %q, want %q", hit, want)
+	}
+	if sent["task_id"] != "t1" || sent["action"] != "retry" || sent["note"] != "go again" || sent["actor"] != "operator" {
+		t.Errorf("body = %#v", sent)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output is not the Automaton: %v: %s", err, out)
+	}
+	if got["id"] != "p1" || got["status"] != "running" {
+		t.Errorf("printed Automaton = %v", got)
 	}
 }

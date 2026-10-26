@@ -60,6 +60,27 @@ func runEscalationPRD(t *testing.T, m *Manager, api *API, prd *PRD, log *escalat
 		t.Fatalf("Run: %v", err)
 	}
 	pollEscalationSettled(t, m, prd.ID, 10*time.Second)
+	waitExecutorGone(t, api, prd.ID, 10*time.Second)
+}
+
+// waitExecutorGone waits until the Automaton's executor goroutine has exited
+// and given up its slot, so a test that then acts as the operator does not
+// race the executor's final status broadcast.
+func waitExecutorGone(t *testing.T, api *API, id string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		api.runMu.Lock()
+		_, live := api.runCancels[id]
+		api.runMu.Unlock()
+		if !live {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("executor for %s still live after %s", id, timeout)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 // pollEscalationSettled waits until the Automaton is terminal, or blocked

@@ -5,8 +5,11 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
+
+	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
 
 func TestFailureEscalationToolsNames(t *testing.T) {
@@ -117,5 +120,51 @@ func TestFailureEscalationToolsResolveNotHeldIsAnError(t *testing.T) {
 	})
 	if _, err := s.handleAutonomousPRDResolveTaskReview(context.Background(), req); err == nil {
 		t.Fatal("a 409 from the daemon must reach the caller as an error")
+	}
+}
+
+// TestFailureEscalationToolsResolveWhileAutomatonRunning: a retry on a held
+// task goes through when another task of the Automaton is running, and the
+// updated Automaton the daemon answers with reaches the caller as it is.
+func TestFailureEscalationToolsResolveWhileAutomatonRunning(t *testing.T) {
+	var c subUpdateCapture
+	reply := `{"id":"p1","status":"running","stories":[{"id":"s1","tasks":[{"id":"t1","status":"pending"},{"id":"t2","status":"in_progress"}]}]}`
+	s := subUpdateServer(t, &c, http.StatusOK, reply)
+	req := subUpdateReq("autonomous_prd_resolve_task_review", map[string]any{
+		"id": "p1", "task_id": "t1", "action": "retry", "note": "go again",
+	})
+	res, err := s.handleAutonomousPRDResolveTaskReview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("retry while another task runs: %v", err)
+	}
+	if c.calls != 1 || c.path != "/api/autonomous/prds/p1/resolve_task_review" {
+		t.Fatalf("daemon calls = %d, path = %s", c.calls, c.path)
+	}
+	if c.body["task_id"] != "t1" || c.body["action"] != "retry" || c.body["note"] != "go again" {
+		t.Errorf("body = %v", c.body)
+	}
+	if res == nil || res.IsError || len(res.Content) != 1 {
+		t.Fatalf("result = %+v, want one non-error content item", res)
+	}
+	text, ok := res.Content[0].(mcpsdk.TextContent)
+	if !ok {
+		t.Fatalf("content = %T, want text", res.Content[0])
+	}
+	var got struct {
+		ID      string `json:"id"`
+		Status  string `json:"status"`
+		Stories []struct {
+			Tasks []struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+			} `json:"tasks"`
+		} `json:"stories"`
+	}
+	if err := json.Unmarshal([]byte(text.Text), &got); err != nil {
+		t.Fatalf("result is not the Automaton: %v: %s", err, text.Text)
+	}
+	if got.ID != "p1" || got.Status != "running" || len(got.Stories) != 1 || len(got.Stories[0].Tasks) != 2 ||
+		got.Stories[0].Tasks[0].Status != "pending" || got.Stories[0].Tasks[1].Status != "in_progress" {
+		t.Errorf("result Automaton = %+v", got)
 	}
 }

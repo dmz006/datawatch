@@ -1978,8 +1978,10 @@ paths:
         retry requeues the task; it may carry a replaced spec, a worker (backend,
         model and effort for this task) and a narrowed list of files it may
         change. The held attempt report is cleared, and the operator's note is
-        given to the next attempt. A cancel cancels the task. A task that is not
-        held answers 409. Requires the `autonomous:write` capability for
+        given to the next attempt. A cancel cancels the task. The call works
+        while the Automaton is running other tasks: it answers at once and starts
+        no second executor, because the running executor picks the decision up.
+        A task that is not held answers 409. Requires the `autonomous:write` capability for
         federation peers.
       operationId: autonomousPRDResolveTaskReview
       tags: [Autonomous]

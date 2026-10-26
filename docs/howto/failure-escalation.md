@@ -184,6 +184,9 @@ A task reaching `max_failures` is **held**, not failed. What you see:
   per failed attempt.
 - **The Automaton.** Other tasks that do not depend on the held one keep running.
   Tasks that depend on it wait. The Automaton shows as blocked until you act.
+  You do not have to wait for the Automaton to go idle before you act. Retry
+  and cancel work while it keeps running other tasks, and no second executor is
+  started: the one that is running picks up your decision.
 - **The report.** The task keeps every attempt, and its review report is a plain
   text summary of each one, with the total time spent.
 
@@ -201,6 +204,16 @@ Every action is available on every surface. The table gives the way in on each.
 
 Notes on the actions:
 
+- Retry and cancel work while the Automaton keeps running other tasks. The
+  answer comes back at once, with no wait and no "try again shortly" error. No
+  second executor is started. The executor that is already running is told about
+  your decision and reads the Automaton again. A retried task runs next: when
+  the Automaton runs one task at a time, right after the task now running
+  finishes; when it runs tasks side by side, at once if a slot is free. A
+  cancelled task is marked finished and the tasks that depend on it fail. Tasks
+  already running are not interrupted. If the
+  Automaton has no executor running at the moment, the decision starts one, as
+  before.
 - A retry can carry a spec, a worker and a file list in one go. Each change is
   checked before anything is written, so a refused change leaves the task held.
 - A `--note` (REST and MCP `note`, comm `note=…`) is recorded on the decision log
