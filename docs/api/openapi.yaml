@@ -1309,7 +1309,7 @@ paths:
                 tag_ids: {type: array, items: {type: string}, description: "Omit with primary_tag_id alone to keep the current tags."}
                 primary_tag_id: {type: string, description: "Optional. One of tag_ids, or empty to clear. Default none."}
       responses:
-        "200": {description: "Updated PRD, carries tag_ids and primary_tag_id"}
+        "200": {description: "The updated Automaton, carrying tag_ids and primary_tag_id"}
         "400": {description: "primary_tag_id is not one of tag_ids"}
         "404": {description: "Unknown tag, or an unknown Automaton when primary_tag_id is sent without tag_ids"}
 

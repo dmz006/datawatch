@@ -70,6 +70,14 @@ Subcommands:
   prd-set-kind <id> <kind>        Set the Automaton kind: feature, bug or other
   prd-set-lane-preference <id> gpu|claude|any  Set which lane an Automaton may take
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
+  tag-list [--counts]             List the tag tree (--counts adds the Automata and session totals per tag)
+  tag-create <name>               Create a tag (--parent, --color, --description)
+  tag-rename <id> <new-name>      Rename a tag
+  tag-move <id> --parent <id|root>  Move a tag under another parent
+  tag-color <id> <color>          Set a tag's color
+  tag-delete <id>                 Delete a tag
+  prd-set-tags <id> [--tags a,b] [--primary <tag-id>]  Set an Automaton's tags and its primary tag
+  attention                       List the Automata that need attention (blocked, needs review, paused)
   prd-set-notify-events <id> [kinds]  Set the event kinds that produce notifications for an Automaton (inherit or omit to clear)
   prd-set-git <id> on|off         Set AutoPR (+--base-branch override) for a PRD (BL407 Phase 5)
   prd-set-skills <id> <csv>       Assign skills to PRD (BL221 Phase 4)
