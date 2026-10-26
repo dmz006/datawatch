@@ -2337,14 +2337,16 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 	// Plan review gate (2026-10-17): in "block" mode a negative verdict
 	// recorded by runPlanReview refuses approval until it is replaced
 	// (review re-run or re-decompose with ok:true). A degraded verdict
-	// (reviewer outage / unparseable / skipped) never blocks.
-	if normalizePlanReviewMode(m.cfg.PlanReviewMode) == PlanReviewModeBlock {
-		if v := prd.PlanReview; v != nil && !v.Ok && !v.ReviewerFailed {
+	// (reviewer outage / unparseable / skipped) never blocks. A plan review the
+	// judge held (it timed out on every backend) refuses approval in every mode,
+	// since no judge checked the plan.
+	if mode := normalizePlanReviewMode(m.cfg.PlanReviewMode); mode != PlanReviewModeOff {
+		if v := prd.PlanReview; v != nil && !v.Ok && !v.ReviewerFailed && (mode == PlanReviewModeBlock || v.Held) {
 			msg := v.Summary
 			if cats := planReviewCategories(v.Findings); len(cats) > 0 {
 				msg = strings.Join(cats, ", ") + ": " + msg
 			}
-			return nil, fmt.Errorf("plan review blocks approval of prd %q (mode block): %s", prdID, msg)
+			return nil, fmt.Errorf("plan review blocks approval of prd %q (mode %s): %s", prdID, mode, msg)
 		}
 	}
 	now := time.Now()

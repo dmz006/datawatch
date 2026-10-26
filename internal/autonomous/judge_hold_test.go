@@ -110,3 +110,27 @@ func TestPlanReviewHeldVerdictBlocksApprovalInBlockModeUntilRerun(t *testing.T) 
 		t.Fatalf("Approve after a clearing re-run: %v", err)
 	}
 }
+
+func TestPlanReviewHeldVerdictBlocksApprovalInWarnModeUntilRerun(t *testing.T) {
+	held := true
+	m := newPlanReviewManager(t, planReviewConfig("warn"), func(ctx context.Context, req PlanReviewRequest) (PlanReviewVerdict, error) {
+		if held {
+			return *heldPlanReviewVerdict(), nil
+		}
+		return PlanReviewVerdict{Ok: true, Summary: "looks fine"}, nil
+	})
+	prd, _ := m.CreatePRD("spec", "", "", "", "")
+	if _, err := m.Decompose(prd.ID); err != nil {
+		t.Fatalf("Decompose: %v", err)
+	}
+	if _, err := m.Approve(prd.ID, "op", ""); err == nil || !strings.Contains(err.Error(), JudgeTimeoutCategory) {
+		t.Fatalf("Approve err = %v, want a held plan review to refuse approval in warn mode too", err)
+	}
+	held = false
+	if _, err := m.ReviewPlan(prd.ID, "operator"); err != nil {
+		t.Fatalf("ReviewPlan: %v", err)
+	}
+	if _, err := m.Approve(prd.ID, "op", ""); err != nil {
+		t.Fatalf("Approve after a clearing re-run: %v", err)
+	}
+}
