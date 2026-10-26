@@ -684,7 +684,13 @@ func (l *Ledger) remove(w *waiter) {
 // its session binding is refreshed. Adopt never picks a node: a request with
 // NodeChoices is recorded on req.Node (its node:<name> pool added) or, when
 // Node is empty, on no node.
-func (l *Ledger) Adopt(req Request, sessionID string) {
+//
+// successors names the holders the work's lease may since have been re-keyed
+// to by Handoff. When one of them holds a lease the work already occupies its
+// slot under that name, so Adopt adds nothing: a second lease under
+// req.Holder would count one session twice. The check and the insert share
+// one lock hold, so a hand-off cannot slip between them.
+func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if ls, ok := l.leases[req.Holder]; ok {
@@ -692,6 +698,11 @@ func (l *Ledger) Adopt(req Request, sessionID string) {
 			ls.SessionID = sessionID
 		}
 		return
+	}
+	for _, s := range successors {
+		if _, ok := l.leases[s]; ok {
+			return
+		}
 	}
 	if req.multiNode() {
 		if req.Node != "" {
