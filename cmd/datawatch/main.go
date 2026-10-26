@@ -3394,30 +3394,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if computeInitErr == nil {
 			seed := make([]compute.Node, 0, len(cfg.ComputeNodes))
 			for _, c := range cfg.ComputeNodes {
-				n := compute.Node{
-					Name:               c.Name,
-					Kind:               compute.NodeKind(c.Kind),
-					Address:            c.Address,
-					MonitoringEndpoint: c.MonitoringEndpoint,
-					Tags:               c.Tags,
-					CostPerHour:        c.CostPerHour,
-					SchedulingPriority: c.SchedulingPriority,
-					DeclaredCapacity: compute.DeclaredCapacity{
-						GPUs:                c.DeclaredCapacity.GPUs,
-						GPUMemGB:            c.DeclaredCapacity.GPUMemGB,
-						RAMGB:               c.DeclaredCapacity.RAMGB,
-						MaxConcurrentModels: c.DeclaredCapacity.MaxConcurrentModels,
-						GPUVendor:           c.DeclaredCapacity.GPUVendor,
-						GPUModel:            c.DeclaredCapacity.GPUModel,
-					},
-					Permissions: compute.Permissions{
-						AllowedConsumers: c.Permissions.AllowedConsumers,
-						DeniedConsumers:  c.Permissions.DeniedConsumers,
-					},
-					NodePinnedModel: c.NodePinnedModel,
-					AllowModelSwap:  c.AllowModelSwap,
-					SessionSlots:    c.SessionSlots,
-				}
+				n := computeNodeFromConfig(c)
 				seed = append(seed, n)
 			}
 			computeReg.Seed(seed)
@@ -18110,4 +18087,33 @@ func scanConfigIsUnset(c config.ScanConfig) bool {
 		c.FailOnSeverity == "" && c.MaxFindings == 0 &&
 		!c.RulesGraderEnabled && !c.FixLoopEnabled && c.FixLoopMaxRetries == 0 &&
 		len(c.ProjectRules) == 0
+}
+
+// computeNodeFromConfig maps a config.yaml compute node onto a registry node.
+func computeNodeFromConfig(c config.ComputeNodeYAML) compute.Node {
+	return compute.Node{
+		Name:               c.Name,
+		Kind:               compute.NodeKind(c.Kind),
+		Address:            c.Address,
+		MonitoringEndpoint: c.MonitoringEndpoint,
+		Tags:               c.Tags,
+		CostPerHour:        c.CostPerHour,
+		SchedulingPriority: c.SchedulingPriority,
+		DeclaredCapacity: compute.DeclaredCapacity{
+			GPUs:                c.DeclaredCapacity.GPUs,
+			GPUMemGB:            c.DeclaredCapacity.GPUMemGB,
+			RAMGB:               c.DeclaredCapacity.RAMGB,
+			MaxConcurrentModels: c.DeclaredCapacity.MaxConcurrentModels,
+			GPUVendor:           c.DeclaredCapacity.GPUVendor,
+			GPUModel:            c.DeclaredCapacity.GPUModel,
+		},
+		Permissions: compute.Permissions{
+			AllowedConsumers: c.Permissions.AllowedConsumers,
+			DeniedConsumers:  c.Permissions.DeniedConsumers,
+		},
+		NodePinnedModel:       c.NodePinnedModel,
+		AllowModelSwap:        c.AllowModelSwap,
+		SessionSlots:          c.SessionSlots,
+		TLSInsecureSkipVerify: c.TLSInsecureSkipVerify,
+	}
 }
