@@ -710,6 +710,9 @@ paths:
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
         `autonomous.automation.idle_alert_minutes` (whole minutes >= 0, default 0 =
         off; a negative or non-integer value is rejected with 400),
+        `autonomous.automation.triage_alert_minutes` (whole minutes >= 0; an unset
+        key reads as 30 and an explicit `0` turns triage alerts off; a negative or
+        non-integer value is rejected with 400),
         `autonomous.progress.lanes` (whole number >= 0, default 0 = 5),
         `autonomous.progress.inactive_gap_hours` (number >= 0, default 0 = 3),
         `autonomous.progress.backlog_path` (string, default docs/plans/README.md; a

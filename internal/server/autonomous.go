@@ -124,11 +124,15 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					return
 				}
 			}
-			// automation.idle_alert_minutes: whole minutes >= 0 (0 = off).
+			// automation.idle_alert_minutes: whole minutes >= 0 (0 = off);
+			// automation.triage_alert_minutes: whole minutes >= 0 (unset
+			// reads the 30-minute default, an explicit 0 turns the triage
+			// alert off and is preserved by the pointer below).
 			if rawAuto, ok := top["automation"]; ok {
 				var auto struct {
-					IdleAlertMinutes  *float64 `json:"idle_alert_minutes"`
-					AgentInsertPolicy *string  `json:"agent_insert_policy"`
+					IdleAlertMinutes   *float64 `json:"idle_alert_minutes"`
+					TriageAlertMinutes *float64 `json:"triage_alert_minutes"`
+					AgentInsertPolicy  *string  `json:"agent_insert_policy"`
 				}
 				if json.Unmarshal(rawAuto, &auto) != nil {
 					http.Error(w, "automation: must be an object", http.StatusBadRequest)
@@ -136,6 +140,12 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				}
 				if auto.IdleAlertMinutes != nil {
 					if verr := validateIdleAlertMinutes(*auto.IdleAlertMinutes); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if auto.TriageAlertMinutes != nil {
+					if verr := validateTriageAlertMinutes(*auto.TriageAlertMinutes); verr != nil {
 						http.Error(w, verr.Error(), http.StatusBadRequest)
 						return
 					}

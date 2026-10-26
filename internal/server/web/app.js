@@ -16084,6 +16084,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.usage_backoff', label: 'Usage back-off (pause_backend | off, default pause_backend)', labelKey: 'settings_usage_backoff', type: 'select', options: ['pause_backend', 'off'], default: 'pause_backend' },
     { key: 'autonomous.backoff_max_wait_minutes', label: 'Usage back-off max wait (minutes when a rate limit has no reset time, default 60)', labelKey: 'settings_backoff_max_wait_minutes', type: 'number', placeholder: '60', min: 1, step: 1, default: '60' },
     { key: 'autonomous.automation.idle_alert_minutes', label: 'Automation idle alert (minutes idle before one alert, 0 = off)', labelKey: 'settings_automation_idle_alert_minutes', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
+    { key: 'autonomous.automation.triage_alert_minutes', label: 'Automation triage alert (minutes an Automation may sit waiting before a triage alert, 0 = off, default 30)', labelKey: 'settings_automation_triage_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
     // Lane fill — shadow (default) computes and records every decision and starts nothing.
     { key: 'autonomous.lane_fill.mode', label: 'Lane fill mode (off, shadow or on; default shadow)', labelKey: 'settings_lane_fill_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.lane_fill.gpu_lanes', label: 'Lane fill GPU lanes (whole number, default 2)', labelKey: 'settings_lane_fill_gpu_lanes', type: 'number', placeholder: '2', min: 0, step: 1, default: '2' },

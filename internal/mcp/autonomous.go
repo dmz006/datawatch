@@ -70,6 +70,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithArray("task_override_statuses", mcpsdk.Description("PRD statuses that accept task/story-level LLM overrides; names: draft, planning, needs_review, approved, revisions_asked, active, running, completed, rejected, cancelled, archived, blocked, failed, paused; empty array restores the defaults (needs_review, revisions_asked, cancelled, blocked)")),
 		mcpsdk.WithString("plan_coverage_check", mcpsdk.Description("Plan requirement-coverage gate mode: off (no gate), warn (failing coverage is reported on the PRD but approval proceeds), block (the default: approving a PRD with a failing plan-coverage report is blocked until the operator acknowledges that exact failing surface with autonomous_prd_plan_coverage_acknowledge)")),
 		mcpsdk.WithNumber("automation_idle_alert_minutes", mcpsdk.Description("Minutes an active Automation may sit idle (a member finished and no next member started) before one idle alert is raised. Whole number >= 0; 0 turns the alert off.")),
+		mcpsdk.WithNumber("automation_triage_alert_minutes", mcpsdk.Description("Minutes an Automation may sit waiting before a triage alert is raised. Whole number >= 0; 0 turns the triage alert off, unset keeps the 30-minute default.")),
 		mcpsdk.WithString("lane_fill_mode", mcpsdk.Enum("off", "shadow", "on"), mcpsdk.Description("Lane fill mode: off (no planning), shadow (plans and records every decision but starts nothing) or on (starts the planned work). Empty is shadow.")),
 		mcpsdk.WithNumber("lane_fill_gpu_lanes", mcpsdk.Description("Number of GPU lanes lane fill plans for. Whole number >= 0.")),
 		mcpsdk.WithNumber("lane_fill_claude_lanes", mcpsdk.Description("Number of Claude lanes lane fill plans for. Whole number >= 0; 0 means no Claude lane.")),
@@ -227,13 +228,16 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 			body["backoff_max_wait_minutes"] = req.GetFloat("backoff_max_wait_minutes", 0)
 		}
 	}
-	// Automation idle-alert threshold (autonomous.automation.idle_alert_minutes);
+	// Automation idle-alert + triage-alert thresholds (autonomous.automation.*);
 	// presence-aware so an explicit 0 (off) is sent. The agent insert policy
 	// (autonomous.automation.agent_insert_policy) rides in the same object.
 	auto := map[string]any{}
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["automation_idle_alert_minutes"]; ok {
 			auto["idle_alert_minutes"] = req.GetFloat("automation_idle_alert_minutes", 0)
+		}
+		if _, ok := args["automation_triage_alert_minutes"]; ok {
+			auto["triage_alert_minutes"] = req.GetFloat("automation_triage_alert_minutes", 0)
 		}
 	}
 	if v := req.GetString("automation_agent_insert_policy", ""); v != "" {

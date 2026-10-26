@@ -6094,8 +6094,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// same reason (see config.AutonomousNotifyConfig).
 			"notify": defaultEventsNotifySurface(s.cfg.Autonomous.Notify),
 			"automation": map[string]interface{}{
-				"idle_alert_minutes":  s.cfg.Autonomous.Automation.IdleAlertMinutes,
-				"agent_insert_policy": s.cfg.Autonomous.Automation.EffectiveAgentInsertPolicy(),
+				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
+				// Effective, not raw: an unset (nil) value reads the 30-minute
+				// default, an explicit 0 stays 0 (the triage alert off).
+				"triage_alert_minutes": s.cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(),
+				"agent_insert_policy":  s.cfg.Autonomous.Automation.EffectiveAgentInsertPolicy(),
 			},
 			"lane_fill": laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
 			"progress": map[string]interface{}{
@@ -6318,6 +6321,16 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// non-integer value rejects the whole PUT rather than being skipped.
 	if v, ok := patch["autonomous.automation.idle_alert_minutes"]; ok {
 		if verr := validateIdleAlertMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Automation triage-alert threshold: whole minutes >= 0. Unset reads the
+	// 30-minute default; an explicit 0 turns the triage alert off and is
+	// preserved. A negative, fractional or non-numeric value rejects the
+	// whole PUT rather than being skipped.
+	if v, ok := patch["autonomous.automation.triage_alert_minutes"]; ok {
+		if verr := validateTriageAlertMinutes(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -7695,6 +7708,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.Automation.IdleAlertMinutes = n
 			}
+		case "autonomous.automation.triage_alert_minutes":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged. n >= 0 is re-checked for safety;
+			// an explicit 0 (0 = triage alert off) is preserved.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.Automation.TriageAlertMinutes = &n
+			}
 		case "autonomous.automation.agent_insert_policy":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
@@ -8506,6 +8526,20 @@ func validateIdleAlertMinutes(v interface{}) error {
 	}
 	if !ok || f != math.Trunc(f) || f < 0 {
 		return fmt.Errorf("autonomous.automation.idle_alert_minutes: must be a whole number >= 0 (0 = off)")
+	}
+	return nil
+}
+
+// validateTriageAlertMinutes checks autonomous.automation.triage_alert_minutes:
+// a whole number >= 0 (an unset key reads the 30-minute default;
+// an explicit 0 turns the triage alert off).
+func validateTriageAlertMinutes(v interface{}) error {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) || f < 0 {
+		return fmt.Errorf("autonomous.automation.triage_alert_minutes: must be a whole number >= 0 (0 = off, default %d)", config.DefaultAutomationTriageAlertMinutes)
 	}
 	return nil
 }

@@ -4332,8 +4332,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			WorktreeDir:      acfgIn.WorktreeDir,
 			// BL407 Phase 5 — daemon-wide default-AutoPR config bridge.
 			DefaultAutoPR: acfgIn.DefaultAutoPR,
-			// Automation idle-alert threshold (autonomous.automation.*).
-			Automation: autonomouspkg.AutomationConfig{IdleAlertMinutes: acfgIn.Automation.IdleAlertMinutes},
+			// Automation idle-alert + triage-alert thresholds
+			// (autonomous.automation.*). TriageAlertMinutes is a pointer: nil
+			// (unset) resolves to the 30-minute default in the manager, and 0
+			// keeps off.
+			Automation: autonomouspkg.AutomationConfig{
+				IdleAlertMinutes:   acfgIn.Automation.IdleAlertMinutes,
+				TriageAlertMinutes: acfgIn.Automation.TriageAlertMinutes,
+			},
 			// Lane fill (autonomous.lane_fill.*).
 			LaneFill: autonomouspkg.LaneFillConfigFromYAML(acfgIn.LaneFill),
 			// Global tier of the notify event kinds

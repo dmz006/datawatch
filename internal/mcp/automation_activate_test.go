@@ -128,3 +128,44 @@ func configSetArgNames() string {
 	b, _ := json.Marshal((&Server{}).toolAutonomousConfigSet().InputSchema.Properties)
 	return string(b)
 }
+
+func TestAutomationTriageAlertConfigSetForwardsNestedValue(t *testing.T) {
+	s, rec := activateServer(t, http.StatusOK, `{}`)
+	// An explicit 0 (off) must be sent, not dropped — presence-aware, not
+	// value-aware.
+	for _, v := range []float64{45, 0} {
+		if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{
+			"automation_triage_alert_minutes": v,
+		})); err != nil {
+			t.Fatalf("config set: %v", err)
+		}
+		if rec.method != http.MethodPut || rec.path != "/api/autonomous/config" {
+			t.Errorf("proxied %s %s", rec.method, rec.path)
+		}
+		auto, _ := rec.body["automation"].(map[string]any)
+		if got, ok := auto["triage_alert_minutes"].(float64); !ok || got != v {
+			t.Errorf("automation = %v, want triage_alert_minutes %v", rec.body["automation"], v)
+		}
+	}
+	// Absent argument sends no automation key at all, and an idle-only PUT
+	// does not smuggle in a triage key.
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"poll_interval_seconds": 5})); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := rec.body["automation"]; ok {
+		t.Errorf("automation key sent without the argument: %v", rec.body)
+	}
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{
+		"automation_idle_alert_minutes": 0,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if auto, _ := rec.body["automation"].(map[string]any); auto == nil {
+		t.Fatalf("idle PUT lost the automation object: %v", rec.body)
+	} else if _, ok := auto["triage_alert_minutes"]; ok {
+		t.Errorf("triage key leaked into an idle-only PUT: %v", rec.body)
+	}
+	if name := configSetArgNames(); !strings.Contains(name, "automation_triage_alert_minutes") || !strings.Contains(name, "triage alert") {
+		t.Error("autonomous_config_set does not declare automation_triage_alert_minutes (triage alert)")
+	}
+}

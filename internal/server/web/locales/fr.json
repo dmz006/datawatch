@@ -1290,6 +1290,7 @@
   "settings_plan_coverage": "Contrôle de couverture du plan (off | warn | block, par défaut : block)",
   "settings_plan_coverage_min_ratio": "Ratio minimal de couverture du plan (couverture des exigences 0–1, par défaut 1.0)",
   "settings_automation_idle_alert_minutes": "Alerte d'inactivité d'Automation (minutes d'inactivité avant une alerte, 0 = désactivée)",
+  "settings_automation_triage_alert_minutes": "Alerte de triage Automation (minutes d'attente maximale avant une alerte de triage, 0 = désactivée, par défaut 30)",
   "settings_automation_agent_insert_policy": "Politique d'insertion par les agents dans Automation (allow | require_operator, par défaut allow)",
   "settings_progress_lanes": "Voies de progression (voies parallèles d'automates pour l'utilisation, 0 = 5)",
   "settings_progress_inactive_gap_hours": "Écart d'inactivité de la progression (heures sans activité comptant comme fenêtre inactive, 0 = 3)",

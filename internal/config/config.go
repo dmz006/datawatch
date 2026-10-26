@@ -2617,9 +2617,19 @@ func ValidateUndeclaredEditMode(mode string) error {
 // into an Automation: "allow" (the default) lets the insert land directly and
 // "require_operator" holds it as a pending insert until an operator approves it.
 // An empty value means "allow".
+//
+// TriageAlertMinutes is how long (whole minutes) an Automation may sit waiting
+// before a triage alert is raised. It is a pointer on purpose: an unset key
+// (nil) reads the default of DefaultAutomationTriageAlertMinutes (30), while an
+// explicit 0 (a pointer to zero) turns the triage alert off and must survive a
+// round trip. Negative and non-integer values are rejected with a 400 on every
+// write path.
+const DefaultAutomationTriageAlertMinutes = 30
+
 type AutonomousAutomationConfig struct {
-	IdleAlertMinutes  int    `yaml:"idle_alert_minutes" json:"idle_alert_minutes"`
-	AgentInsertPolicy string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
+	IdleAlertMinutes   int    `yaml:"idle_alert_minutes" json:"idle_alert_minutes"`
+	TriageAlertMinutes *int   `yaml:"triage_alert_minutes,omitempty" json:"triage_alert_minutes,omitempty"`
+	AgentInsertPolicy  string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
 }
 
 // autonomous.lane_fill.mode values and defaults.
@@ -2911,6 +2921,9 @@ func (c AutonomousProgressConfig) validate() error {
 	return ValidateProgressSince(c.Since)
 }
 
+// intPtr is the tiny pointer helper for pointer-to-int config fields.
+func intPtr(v int) *int { return &v }
+
 // autonomous.automation.agent_insert_policy values.
 const (
 	AgentInsertPolicyAllow           = "allow"
@@ -2936,6 +2949,18 @@ func (c AutonomousAutomationConfig) EffectiveAgentInsertPolicy() string {
 		return AgentInsertPolicyAllow
 	}
 	return c.AgentInsertPolicy
+}
+
+// EffectiveTriageAlertMinutes returns the triage alert threshold in effect:
+// an unset value (nil pointer) reads the default of
+// DefaultAutomationTriageAlertMinutes (30), while an explicit 0 turns the
+// triage alert off. Negative values are rejected on the write paths, so this
+// never has to guess for them.
+func (c AutonomousAutomationConfig) EffectiveTriageAlertMinutes() int {
+	if c.TriageAlertMinutes == nil {
+		return DefaultAutomationTriageAlertMinutes
+	}
+	return *c.TriageAlertMinutes
 }
 
 // AutonomousNotifyConfig —autonomous.notify sub-config. DefaultEvents
@@ -3674,7 +3699,7 @@ func DefaultConfig() *Config {
 			BlockOnFileDrift:        false,   // opt-in strict drift enforcement
 			DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
 			UndeclaredEditMode:      "warn",
-			Automation:              AutonomousAutomationConfig{AgentInsertPolicy: AgentInsertPolicyAllow},
+			Automation:              AutonomousAutomationConfig{AgentInsertPolicy: AgentInsertPolicyAllow, TriageAlertMinutes: intPtr(DefaultAutomationTriageAlertMinutes)},
 			LaneFill:                DefaultAutonomousLaneFill(),
 			Progress:                AutonomousProgressConfig{BacklogPath: DefaultProgressBacklogPath},
 			// Notify — global baseline for the notify event kinds
