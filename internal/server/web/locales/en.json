@@ -1691,6 +1691,8 @@
   "prd_settings_priority_hint": "Used when tasks wait for free capacity.",
   "settings_reserved_interactive": "Slots reserved for interactive sessions",
   "settings_mcp_public_url": "SSE public URL (reverse proxy)",
+  "settings_acknowledge_unauthenticated": "Acknowledge unauthenticated listeners",
+  "settings_acknowledge_unauthenticated_help": "Silences the startup warning for listeners reachable without authentication; changes no listener.",
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",
   "settings_session_task_delivery_window": "Task delivery wait per attempt (sec)",
   "settings_session_task_delivery_attempts": "Task delivery attempts",

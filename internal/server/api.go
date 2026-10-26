@@ -5701,6 +5701,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"channel_port":                   s.cfg.Server.ChannelPort,
 			"tls_port":                       s.cfg.Server.TLSPort,
 			"proxy_sandbox_port":             s.proxySandboxPortFor(""),
+			"acknowledge_unauthenticated":    s.cfg.Server.AcknowledgeUnauthenticated,
 			"auto_restart_on_config":         s.cfg.Server.AutoRestartOnConfig,
 			"recent_session_minutes":         s.cfg.Server.RecentSessionMinutes,
 			"session_summary_terminal_limit": s.cfg.Server.SessionSummaryTerminalLimit,
@@ -7011,6 +7012,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok {
 				cfg.Server.ProxySandboxPort = n
 			}
+		case "server.acknowledge_unauthenticated":
+			cfg.Server.AcknowledgeUnauthenticated = toBool(v)
 		case "server.auto_restart_on_config":
 			cfg.Server.AutoRestartOnConfig = toBool(v)
 		case "server.recent_session_minutes":

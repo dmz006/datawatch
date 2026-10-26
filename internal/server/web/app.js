@@ -15883,6 +15883,7 @@ const COMMS_CONFIG_FIELDS = [
       </div>` },
     { key: 'server.channel_port', label: 'Channel port (0=random)', type: 'number' },
     { key: 'server.proxy_sandbox_port', label: 'Remote-PWA proxy sandbox port (0=disabled)', type: 'number', placeholder: '8444' },
+    { key: 'server.acknowledge_unauthenticated', label: 'Acknowledge unauthenticated listeners', labelKey: 'settings_acknowledge_unauthenticated', helpKey: 'settings_acknowledge_unauthenticated_help', type: 'toggle' },
   ]},
   { id: 'mcpsrv', section: 'MCP Server', docs: 'mcp.md', fields: [
     { key: 'mcp.enabled', label: 'Enabled (stdio)', type: 'toggle' },
