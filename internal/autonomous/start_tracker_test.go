@@ -26,7 +26,7 @@ const trackerToolPane = "❯ run the task\n⏺ Bash(go test ./...)\n  ⎿  Runni
 const trackerFirstTurnPane = "❯ run the task\n• Reading the spec now.\n"
 
 func TestStartTrackerLaunchStallsOnlyPastLimit(t *testing.T) {
-	tr := NewStartTracker(60*time.Second, time.Time{}, time.Time{})
+	tr := NewStartTracker(60*time.Second, time.Time{}, time.Time{}, time.Time{})
 	var stalledAt int
 	for k := 1; k <= 10; k++ {
 		obs := tr.Observe(StartInput{Now: trackerTickAt(k), State: sessionStateWaitingInput, Pane: trackerSilentPane})
@@ -45,7 +45,7 @@ func TestStartTrackerLaunchStallsOnlyPastLimit(t *testing.T) {
 }
 
 func TestStartTrackerLaunchToolCallKeepsClockRunning(t *testing.T) {
-	tr := NewStartTracker(60*time.Second, time.Time{}, time.Time{})
+	tr := NewStartTracker(60*time.Second, time.Time{}, time.Time{}, time.Time{})
 	for k := 1; k <= 20; k++ {
 		pane := trackerSilentPane
 		if k%5 == 0 {
@@ -118,10 +118,15 @@ func TestStartTrackerAdoptedSeedAnchorsWindow(t *testing.T) {
 	}
 }
 
+// trackerStartAt is a fixture time the given number of seconds from the origin.
+func trackerStartAt(sec int) time.Time {
+	return startTrackerOrigin.Add(time.Duration(sec) * time.Second)
+}
+
 func TestSessionStartAdoptionSeedUsesLatestEvidence(t *testing.T) {
-	updated := trackerTickAt(-30)
-	channel := trackerTickAt(-12)
-	logMtime := trackerTickAt(-20)
+	updated := trackerStartAt(-300)
+	channel := trackerStartAt(-120)
+	logMtime := trackerStartAt(-200)
 	tests := []struct {
 		name                           string
 		updatedAt, channelAt, logMtime time.Time
@@ -130,7 +135,7 @@ func TestSessionStartAdoptionSeedUsesLatestEvidence(t *testing.T) {
 		{name: "nothing known", want: time.Time{}},
 		{name: "only the update time", updatedAt: updated, want: updated},
 		{name: "channel event is newest", updatedAt: updated, channelAt: channel, logMtime: logMtime, want: channel},
-		{name: "log mtime is newest", updatedAt: updated, channelAt: channel, logMtime: trackerTickAt(-1), want: trackerTickAt(-1)},
+		{name: "log mtime is newest", updatedAt: updated, channelAt: channel, logMtime: trackerStartAt(-10), want: trackerStartAt(-10)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -147,7 +152,7 @@ func TestLogFileModTimeReadsTheLogMtime(t *testing.T) {
 	if err := os.WriteFile(path, []byte("out\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	mtime := trackerTickAt(-5)
+	mtime := trackerStartAt(-45)
 	if err := os.Chtimes(path, mtime, mtime); err != nil {
 		t.Fatal(err)
 	}

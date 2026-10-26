@@ -77,13 +77,13 @@ type AdoptedWait struct {
 	NudgedAt  time.Time
 }
 
-// adoptedStartProbe is how the start-confirm wait reads an adopted session on
+// adoptedStartWatch is how the start-confirm wait reads an adopted session on
 // each tick, and the bound it applies: the same bound the worker wait loop
 // applies to a freshly spawned claude-code session, where a session parked in
 // waiting_input with no assistant turn past the limit never started and is
 // ended. The bookkeeping lives in the StartTracker the wait builds from the
 // limit, the launch time and the last evidence of life when it starts.
-type adoptedStartProbe struct {
+type adoptedStartWatch struct {
 	// paneFn captures the session's visible pane (the session manager's
 	// CapturePaneVisible in the daemon).
 	paneFn func(sessionID string) (string, error)
@@ -116,7 +116,7 @@ type adoptedStartProbe struct {
 
 // failureTail returns the last pane lines captured when the bound fired, for
 // the task's StartFailureTail. It is nil when the bound has not fired.
-func (sc *adoptedStartProbe) failureTail() []string {
+func (sc *adoptedStartWatch) failureTail() []string {
 	if sc == nil || sc.tracker == nil {
 		return nil
 	}
@@ -134,7 +134,7 @@ func (sc *adoptedStartProbe) failureTail() []string {
 // is unset) is ended and the wait returns ErrSessionNeverStarted wrapped with
 // ErrWorkerStalled. A session that shows a first assistant turn, or leaves
 // waiting_input, is never failed by the bound. A nil sc keeps the plain wait.
-func waitForAdoptedSession(ctx context.Context, waitFn func(context.Context, AdoptedWait) error, aliveFn func(string) bool, w AdoptedWait, sc *adoptedStartProbe) error {
+func waitForAdoptedSession(ctx context.Context, waitFn func(context.Context, AdoptedWait) error, aliveFn func(string) bool, w AdoptedWait, sc *adoptedStartWatch) error {
 	if sc == nil || sc.paneFn == nil {
 		return waitAdoptedSessionToEnd(ctx, waitFn, aliveFn, w)
 	}
@@ -166,7 +166,7 @@ func waitAdoptedSessionToEnd(ctx context.Context, waitFn func(context.Context, A
 // waitAdoptedSessionStartConfirmed runs the unbounded wait in a goroutine and
 // probes the session on each tick until either the wait returns or the start
 // bound fires.
-func waitAdoptedSessionStartConfirmed(ctx context.Context, waitFn func(context.Context, AdoptedWait) error, aliveFn func(string) bool, w AdoptedWait, sc *adoptedStartProbe) error {
+func waitAdoptedSessionStartConfirmed(ctx context.Context, waitFn func(context.Context, AdoptedWait) error, aliveFn func(string) bool, w AdoptedWait, sc *adoptedStartWatch) error {
 	sessionID := w.SessionID
 	waitCtx, cancelWait := context.WithCancel(ctx)
 	defer cancelWait()
@@ -180,10 +180,7 @@ func waitAdoptedSessionStartConfirmed(ctx context.Context, waitFn func(context.C
 	// The silent window starts at the task's launch time, or at adoption when no
 	// launch time is recorded, and moves to the last evidence of life when the
 	// session reports one.
-	launchedAt := clock()
-	if sc.startedAt != nil {
-		launchedAt = *sc.startedAt
-	}
+	launchedAt := StartAnchor(sc.startedAt, clock())
 	var lastLife time.Time
 	if sc.lastLifeFn != nil {
 		lastLife = sc.lastLifeFn(sessionID)

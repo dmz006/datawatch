@@ -15,7 +15,7 @@ recorded here and verified by scenario tests in
 fake clock with fixed panes and a fixed process tree. Nothing touches tmux and
 nothing sleeps. No daemon was restarted and no live worker was run to produce
 these results. The adoption seed is modelled by passing the seed time to the
-tracker, which is what the wait loop does with `sessionStartAdoptionSeed`.
+tracker, which is what the wait loop does with `SessionLastLifeAt`.
 
 Tick cadence: 30 s steps unless a state says otherwise. Bound (limit): 120 s,
 and the 300 s variant for state (a).

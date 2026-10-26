@@ -1133,23 +1133,23 @@ func (m *Manager) SetSessionStartLimit(limit time.Duration) {
 }
 
 // SetSessionLastLifeFn wires the last-evidence-of-life reader that anchors the
-// adopted start-confirm window (see adoptedStartProbe.lastLifeFn).
+// adopted start-confirm window (see adoptedStartWatch.lastLifeFn).
 func (m *Manager) SetSessionLastLifeFn(fn func(sessionID string) time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessionLastLifeFn = fn
 }
 
-// adoptedStartConfirmFor builds the start-confirm watch for a task's adopted
+// adoptedStartWatchFor builds the start-confirm watch for a task's adopted
 // session. It returns nil when no pane hook is wired, which keeps the plain
 // adopted wait.
-func (m *Manager) adoptedStartConfirmFor(t *Task) *adoptedStartProbe {
+func (m *Manager) adoptedStartWatchFor(t *Task) *adoptedStartWatch {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.sessionPaneFn == nil {
 		return nil
 	}
-	return &adoptedStartProbe{
+	return &adoptedStartWatch{
 		paneFn:     m.sessionPaneFn,
 		stateFn:    m.sessionStateFn,
 		killFn:     m.sessionKillerFn,

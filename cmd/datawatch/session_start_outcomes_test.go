@@ -64,10 +64,10 @@ func TestStartOutcomeLaunchedWorkerStartsInTime(t *testing.T) {
 			for sec := 180; sec <= 1200; sec += 60 {
 				steps = append(steps, startStep{sec: sec, state: w, pane: tc.other, delivered: true})
 			}
-			runStartSteps(t, autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{}), steps)
+			runStartSteps(t, autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{}, time.Time{}), steps)
 		})
 		t.Run(tc.name+" from the first tick", func(t *testing.T) {
-			runStartSteps(t, autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{}), startOutcomeSteps(30, 1200, tc.pane))
+			runStartSteps(t, autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{}, time.Time{}), startOutcomeSteps(30, 1200, tc.pane))
 		})
 	}
 }
@@ -85,7 +85,7 @@ func TestStartOutcomeWorkerThatWorkedInTimeIsReportedAsEvidence(t *testing.T) {
 		{name: "tool call", pane: startToolPane, wantToolCall: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tr := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{})
+			tr := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{}, time.Time{})
 			var obs autonomouspkg.SessionStartObservation
 			for sec := 0; sec <= 600; sec += 60 {
 				obs = tr.Observe(autonomouspkg.StartInput{Now: startAt(sec), State: string(session.StateWaitingInput), Pane: tc.pane})
@@ -105,7 +105,7 @@ func TestStartOutcomeWorkerThatWorkedInTimeIsReportedAsEvidence(t *testing.T) {
 
 func TestStartOutcomeParkedWorkerWithNoEvidenceStallsPastTheLimit(t *testing.T) {
 	w := session.StateWaitingInput
-	tr := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{})
+	tr := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{}, time.Time{})
 	runStartSteps(t, tr, []startStep{
 		{sec: 0, state: w, pane: startSilentPane, delivered: true},
 		{sec: 60, state: w, pane: startSilentPane, delivered: true},
@@ -127,7 +127,7 @@ func TestStartOutcomeStallIsStrictlyPastTheLimit(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			tr := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{})
+			tr := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{}, time.Time{})
 			first := tr.Observe(autonomouspkg.StartInput{Now: startAt(0), State: string(session.StateWaitingInput), Pane: startSilentPane, Delivered: true})
 			if stalled, _ := first.Stalled(); stalled {
 				t.Fatalf("first silent tick stalled (WaitingFor %s)", first.WaitingFor)
@@ -155,7 +155,7 @@ func TestStartOutcomeStallIsStrictlyPastTheLimit(t *testing.T) {
 }
 
 func TestStartOutcomeStalledWorkerEndReasonNamesTheSilence(t *testing.T) {
-	tr := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{})
+	tr := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{}, time.Time{})
 	tr.Observe(autonomouspkg.StartInput{Now: startAt(0), State: string(session.StateWaitingInput), Pane: startSilentPane, Delivered: true})
 	obs := tr.Observe(autonomouspkg.StartInput{Now: startAt(121), State: string(session.StateWaitingInput), Pane: startSilentPane, Delivered: true})
 	want := "session start detector: waiting_input without assistant output for 121s since its last evidence of work (or first silent tick), limit 120s"
@@ -173,7 +173,7 @@ func TestStartOutcomeNeverStartedWorkerStallsAtTheSameTickWhateverTheSpacing(t *
 			// first tick strictly past the limit is the first multiple of the
 			// spacing above 120s, and no earlier tick ends the worker.
 			wantStallAt := (limit/spacing + 1) * spacing
-			tr := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{})
+			tr := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{}, time.Time{})
 			stalledAt := -1
 			for sec := 0; sec <= wantStallAt+spacing; sec += spacing {
 				obs := tr.Observe(autonomouspkg.StartInput{Now: startAt(sec), State: string(w), Pane: startSilentPane, Delivered: true})
@@ -202,11 +202,11 @@ func TestStartOutcomeDenseAndSparseTickingEndTheSameWorkerAtTheSameMoment(t *tes
 	// Ticking every second and ticking once at 0s and once at 121s reach the
 	// same verdict on the same silence.
 	w := session.StateWaitingInput
-	dense := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{})
+	dense := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{}, time.Time{})
 	runStartSteps(t, dense, append(startOutcomeSteps(1, 120, startSilentPane),
 		startStep{sec: 121, state: w, pane: startSilentPane, delivered: true, wantStall: true}))
 
-	sparse := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{})
+	sparse := autonomouspkg.NewStartTracker(startOutcomeLimit, time.Time{}, time.Time{}, time.Time{})
 	runStartSteps(t, sparse, []startStep{
 		{sec: 0, state: w, pane: startSilentPane, delivered: true},
 		{sec: 121, state: w, pane: startSilentPane, delivered: true, wantStall: true},
@@ -222,7 +222,7 @@ func TestStartOutcomeAdoptedWorkerBusyUpToTheRestartIsNotChargedForTheDowntime(t
 	if !seed.Equal(startAt(0)) {
 		t.Fatalf("adoption seed = %v, want %v", seed, startAt(0))
 	}
-	tr := autonomouspkg.NewStartTracker(startOutcomeLimit, seed, startAt(-600))
+	tr := autonomouspkg.NewAdoptedStartTracker(startOutcomeLimit, time.Time{}, seed)
 	runStartSteps(t, tr, []startStep{
 		{sec: 0, state: w, pane: startSilentPane},
 		{sec: 60, state: w, pane: startSilentPane},
@@ -233,7 +233,7 @@ func TestStartOutcomeAdoptedWorkerBusyUpToTheRestartIsNotChargedForTheDowntime(t
 
 func TestStartOutcomeAdoptedWorkerBusyUpToTheRestartHasTheFullLimitAtTheFirstTick(t *testing.T) {
 	seed := autonomouspkg.SessionStartAdoptionSeed(startAt(-900), startAt(-600), startAt(0))
-	tr := autonomouspkg.NewStartTracker(startOutcomeLimit, seed, time.Time{})
+	tr := autonomouspkg.NewAdoptedStartTracker(startOutcomeLimit, time.Time{}, seed)
 	obs := tr.Observe(autonomouspkg.StartInput{Now: startAt(0), State: string(session.StateWaitingInput), Pane: startSilentPane})
 	if obs.WaitingFor != 0 {
 		t.Fatalf("WaitingFor at the restart = %s, want 0s", obs.WaitingFor)
@@ -251,7 +251,7 @@ func TestStartOutcomeAdoptedWorkerWithOldEvidenceIsJudgedAtOnce(t *testing.T) {
 	if !seed.Equal(startAt(-600)) {
 		t.Fatalf("adoption seed = %v, want %v", seed, startAt(-600))
 	}
-	tr := autonomouspkg.NewStartTracker(startOutcomeLimit, seed, startAt(-600))
+	tr := autonomouspkg.NewAdoptedStartTracker(startOutcomeLimit, time.Time{}, seed)
 	obs := tr.Observe(autonomouspkg.StartInput{Now: startAt(0), State: string(w), Pane: startSilentPane})
 	if obs.WaitingFor != 600*time.Second {
 		t.Fatalf("WaitingFor = %s, want 10m0s", obs.WaitingFor)
@@ -267,7 +267,7 @@ func TestStartOutcomeAdoptedWorkerWithOldEvidenceAndNoLogIsJudgedAtOnce(t *testi
 	// age of the other evidence.
 	w := session.StateWaitingInput
 	seed := autonomouspkg.SessionStartAdoptionSeed(startAt(-300), time.Time{}, time.Time{})
-	runStartSteps(t, autonomouspkg.NewStartTracker(startOutcomeLimit, seed, time.Time{}), []startStep{
+	runStartSteps(t, autonomouspkg.NewAdoptedStartTracker(startOutcomeLimit, time.Time{}, seed), []startStep{
 		{sec: 0, state: w, pane: startSilentPane, wantStall: true},
 	})
 }
@@ -275,5 +275,5 @@ func TestStartOutcomeAdoptedWorkerWithOldEvidenceAndNoLogIsJudgedAtOnce(t *testi
 func TestStartOutcomeAdoptedWorkerStaysAliveWhileItKeepsWorkingAfterTheRestart(t *testing.T) {
 	// Old evidence, but the pane shows a tool call from the first tick on.
 	seed := autonomouspkg.SessionStartAdoptionSeed(startAt(-900), startAt(-600), startAt(-700))
-	runStartSteps(t, autonomouspkg.NewStartTracker(startOutcomeLimit, seed, time.Time{}), startOutcomeSteps(60, 1200, startToolPane))
+	runStartSteps(t, autonomouspkg.NewAdoptedStartTracker(startOutcomeLimit, time.Time{}, seed), startOutcomeSteps(60, 1200, startToolPane))
 }

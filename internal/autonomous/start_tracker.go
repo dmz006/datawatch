@@ -3,6 +3,8 @@ package autonomous
 import (
 	"os"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // startFailureTailLines is how many pane lines a failed start keeps for the
@@ -50,14 +52,15 @@ type StartInput struct {
 	ChildPIDs map[int]bool
 }
 
-// NewStartTracker starts a launch-mode tracker with the given bound. The silent
-// window has no anchor until evidence is seen or the first silent waiting_input
-// tick arrives. lastLifeSeed is the session's last evidence of life (zero when
-// none is known), which becomes the anchor. channelAt is the session's
-// LastChannelEventAt when the wait begins: only channel events newer than it
-// count as evidence.
-func NewStartTracker(limit time.Duration, lastLifeSeed, channelAt time.Time) *StartTracker {
-	return &StartTracker{limit: limit, lastEvidenceAt: lastLifeSeed, lastChannelAt: channelAt}
+// NewStartTracker starts a launch-mode tracker with the given bound. launchedAt
+// is the launch time of the session's attempt (see StartAnchor); it anchors the
+// silent window until evidence is seen. Zero leaves the window to start at the
+// first silent waiting_input tick. lastLifeSeed is the session's last evidence
+// of life (zero when none is known), which becomes the anchor. channelAt is the
+// session's LastChannelEventAt when the wait begins: only channel events newer
+// than it count as evidence.
+func NewStartTracker(limit time.Duration, launchedAt, lastLifeSeed, channelAt time.Time) *StartTracker {
+	return &StartTracker{limit: limit, silentSince: launchedAt, lastEvidenceAt: lastLifeSeed, lastChannelAt: channelAt}
 }
 
 // NewAdoptedStartTracker starts an adopted-mode tracker. launchedAt anchors the
@@ -221,6 +224,21 @@ func SessionStartAdoptionSeed(updatedAt, channelAt, logMtime time.Time) time.Tim
 		}
 	}
 	return seed
+}
+
+// SessionLastLifeAt is the last evidence of life of a session, the seed an
+// adopted wait starts from. Zero when none is known.
+func SessionLastLifeAt(s *session.Session) time.Time {
+	return SessionStartAdoptionSeed(s.UpdatedAt, s.LastChannelEventAt, LogFileModTime(s.LogFile))
+}
+
+// StartAnchor is the launch time a start-confirm wait measures its silent
+// window from: the task's recorded launch time, or now when none is recorded.
+func StartAnchor(startedAt *time.Time, now time.Time) time.Time {
+	if startedAt != nil {
+		return *startedAt
+	}
+	return now
 }
 
 // LogFileModTime returns the mtime of the session log, or zero when the log

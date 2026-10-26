@@ -28,7 +28,7 @@ func TestAdoptedStartEmptyCaptureIsNotJudged(t *testing.T) {
 			defer cancel()
 			probes := 0
 			var killed []string
-			sc := &adoptedStartProbe{
+			sc := &adoptedStartWatch{
 				paneFn: tc.pane,
 				stateFn: func(string) string {
 					// Thirty probes at a 10s step span 290s, far past the 60s limit.

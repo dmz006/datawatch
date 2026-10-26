@@ -58,7 +58,7 @@ func TestAdoptedSessionWaitHealthyRunsToCompletion(t *testing.T) {
 			finished := make(chan struct{})
 			probes := 0
 			var killed []string
-			sc := &adoptedStartProbe{
+			sc := &adoptedStartWatch{
 				paneFn: func(string) (string, error) { return tc.pane, nil },
 				stateFn: func(string) string {
 					probes++
@@ -97,7 +97,7 @@ func TestAdoptedSessionWaitWithoutPaneHookUnchanged(t *testing.T) {
 	// No pane hook: the wait is the plain adopted wait, so a session parked in
 	// waiting_input with no turn is not ended by any bound.
 	var killed []string
-	sc := &adoptedStartProbe{
+	sc := &adoptedStartWatch{
 		stateFn: func(string) string { return "waiting_input" },
 		killFn:  func(id, _, _ string) error { killed = append(killed, id); return nil },
 		limit:   time.Nanosecond,
@@ -119,7 +119,7 @@ func TestAdoptedStartFailureFromAdoption(t *testing.T) {
 	// against a 60s limit).
 	clock := &adoptStepClock{at: time.Date(2026, 10, 25, 8, 0, 0, 0, time.UTC), step: adoptedTestStep}
 	var killed []string
-	sc := &adoptedStartProbe{
+	sc := &adoptedStartWatch{
 		paneFn:   func(string) (string, error) { return adoptedTestPaneSilent, nil },
 		stateFn:  func(string) string { return "waiting_input" },
 		killFn:   func(id, _, _ string) error { killed = append(killed, id); return nil },
@@ -159,7 +159,7 @@ func TestAdoptedStartFailureMeasuresFromLaunchTime(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			clock := &adoptStepClock{at: base, step: adoptedTestStep}
-			sc := &adoptedStartProbe{
+			sc := &adoptedStartWatch{
 				paneFn:    func(string) (string, error) { return adoptedTestPaneSilent, nil },
 				stateFn:   func(string) string { return "waiting_input" },
 				limit:     adoptedTestLimit,
@@ -187,7 +187,7 @@ func TestAdoptedStartFailureNotFailedAfterFirstTurn(t *testing.T) {
 	defer cancel()
 	probes, paneCalls := 0, 0
 	var killed []string
-	sc := &adoptedStartProbe{
+	sc := &adoptedStartWatch{
 		paneFn: func(string) (string, error) {
 			paneCalls++
 			if paneCalls == 1 {
@@ -228,7 +228,7 @@ func TestAdoptedStartFailureLeavingWaitingInputNotFailed(t *testing.T) {
 	defer cancel()
 	probes := 0
 	var killed []string
-	sc := &adoptedStartProbe{
+	sc := &adoptedStartWatch{
 		paneFn: func(string) (string, error) { return adoptedTestPaneSilent, nil },
 		stateFn: func(string) string {
 			probes++

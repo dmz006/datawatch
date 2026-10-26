@@ -4845,19 +4845,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					staleLogPath = s.LogFile
 					family = s.BackendFamily
 					if family == "claude-code" && sessionStartLimit > 0 {
+						// Both modes anchor the silent window at the attempt's launch (see
+						// autonomouspkg.StartAnchor). An adopted session is judged in the adopted
+						// mode and seeded from its last evidence of life, so the bound does not
+						// charge the time the daemon was down.
+						launchedAt := autonomouspkg.StartAnchor(task.StartedAt, time.Now())
 						if task.AdoptedSession {
-							// An adopted session is judged in the adopted mode, anchored
-							// at the task's launch (or now when none is recorded) and
-							// seeded from its last evidence of life, so the bound does
-							// not charge the time the daemon was down.
-							launchedAt := time.Now()
-							if task.StartedAt != nil {
-								launchedAt = *task.StartedAt
-							}
-							seedAt := autonomouspkg.SessionStartAdoptionSeed(s.UpdatedAt, s.LastChannelEventAt, autonomouspkg.LogFileModTime(s.LogFile))
-							startTracker = autonomouspkg.NewAdoptedStartTracker(sessionStartLimit, launchedAt, seedAt)
+							startTracker = autonomouspkg.NewAdoptedStartTracker(sessionStartLimit, launchedAt, autonomouspkg.SessionLastLifeAt(s))
 						} else {
-							startTracker = autonomouspkg.NewStartTracker(sessionStartLimit, time.Time{}, s.LastChannelEventAt)
+							startTracker = autonomouspkg.NewStartTracker(sessionStartLimit, launchedAt, time.Time{}, s.LastChannelEventAt)
 						}
 					}
 				}
@@ -6379,7 +6375,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				if !ok {
 					return time.Time{}
 				}
-				return autonomouspkg.SessionStartAdoptionSeed(s.UpdatedAt, s.LastChannelEventAt, autonomouspkg.LogFileModTime(s.LogFile))
+				return autonomouspkg.SessionLastLifeAt(s)
 			})
 			// Wait for an adopted session by its state / completion marker, so it
 			// works for any backend (claude-code, opencode, pi-prompt). A claude-code
