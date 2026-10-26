@@ -1210,6 +1210,59 @@ file is ignored with a warning at SSE start, so the bind address is advertised.
 | REST API | `PUT /api/config` with `{"mcp.public_url": "https://host.example.ts.net:8081"}`; read it from `GET /api/config` (`mcp.public_url`). MCP `config_set` uses the same path. |
 | Comm channel | `configure mcp.public_url=https://host.example.ts.net:8081` |
 
+### Unauthenticated listener startup warning
+
+At every start, the daemon checks every listener it is about to serve and
+logs one warning line per listener that is **enabled, not token-protected,
+and bound to a non-loopback address**. Covered listeners and their tokens:
+
+| Listener | Token / secret that silences the warning |
+|---|---|
+| `rest` (Web UI + REST API, `server.host:server.port`) | `server.token` |
+| `rest_tls` (`server.host:<TLS port>` when `server.tls_enabled`) | `server.ttls` |
+| `mcp_sse` (`mcp.sse_host:mcp.sse_port`) | `mcp.token` (or `server.token` when `mcp.token` is empty) |
+| `proxy_sandbox` (`server.proxy_sandbox_port`) | per-session tokens — always protected, never warned |
+| `webhook` | `webhook.token` |
+| `github_webhook` | `github_webhook.secret` |
+
+The `twilio_webhook` listener has no built-in authentication, so the daemon
+never warns for it.
+
+**Preferred fixes — protect or un-expose the listener:**
+
+- Set the listener's token (`server.token`, `server.ttls`, `mcp.token`,
+  `webhook.token`, `github_webhook.secret`).
+- Bind the listener to loopback (`server.host: "127.0.0.1"`,
+  `mcp.sse_host: "127.0.0.1"`) and expose it through a reverse proxy, as
+  in the Recommended deployment above. A listener bound only to
+  `127.0.0.1` (or `::1` / `localhost`) never produces the warning, with or
+  without a token.
+
+**Or acknowledge it** — if exposing the listener open is deliberate (for
+example an air-gapped LAN dashboard), set
+`server.acknowledge_unauthenticated: true`. That silences the warning and
+sets the `acknowledged` flag on the matching entries of the `/api/health`
+`listeners` array and the `listener_*` diagnose checks. It does **not**
+change the bind address, the token, or the warning condition itself: with
+it set, an exposed, unauthenticated listener is still exposed — the flag
+only records that you reviewed it. Default is `false`.
+
+| Access method | How to set `server.acknowledge_unauthenticated` |
+|---|---|
+| YAML | `server.acknowledge_unauthenticated: true` in `~/.datawatch/config.yaml` |
+| CLI | `datawatch config set server.acknowledge_unauthenticated true` |
+| Web UI | Settings → General → Web Server → “Acknowledge unauthenticated listeners” |
+| REST API | `PUT /api/config` with `{"server.acknowledge_unauthenticated": true}`; read it back from `GET /api/config` (`server.acknowledge_unauthenticated`) |
+| Comm channel | `configure server.acknowledge_unauthenticated=true` |
+
+The per-listener posture is inspectable without logging in: `GET
+/api/health` (no auth) returns a `listeners` array of
+`{name, enabled, auth_required, loopback, acknowledged}` — posture only,
+never bind addresses or token values — and `GET /api/diagnose` (auth
+required) carries one informational `listener_<name>` check per listener
+with detail `address=… enabled=… auth_required=… loopback=…
+acknowledged=… exposed=…`.
+
 ### DNS Channel (Public-Facing)
 
 The DNS service is designed to be the **only publicly exposed** listener. All other services should be bound to localhost or behind a VPN.

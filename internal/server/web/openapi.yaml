@@ -4229,6 +4229,20 @@ paths:
   /api/diagnose:
     get:
       summary: Diagnostic snapshot — backend reachability, config validity, recent errors
+      description: |
+        In addition to the snapshot, the response carries one informational
+        `listener_<name>` check per daemon listener: listener_rest,
+        listener_rest_tls, listener_mcp_sse, listener_proxy_sandbox,
+        listener_webhook, listener_github_webhook, listener_twilio_webhook.
+        Each is posture reporting, not a failure: `ok` is always `true` and
+        the overall `ok` flag is unaffected by listener auth posture (an
+        exposed, unauthenticated listener still reports every other check
+        normally).
+        Each check's detail string has the form
+        `address=… enabled=… auth_required=… loopback=… acknowledged=… exposed=…`.
+        `exposed` is true exactly when the listener is enabled, bound to a
+        non-loopback address, and not token-protected. `acknowledged`
+        reflects `server.acknowledge_unauthenticated` (default false).
       operationId: diagnose
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -4991,12 +5005,14 @@ components:
             addr: { type: string }
         server:
           type: object
+          description: Web server section. `acknowledge_unauthenticated` (default false) silences the startup warning for enabled, token-unprotected, non-loopback listeners and sets their `acknowledged` flag in the /api/health `listeners` array and the listener_* diagnose checks; see "Unauthenticated listener startup warning" in the operations doc.
           properties:
             enabled: { type: boolean }
             host: { type: string }
             port: { type: integer }
             tls_enabled: { type: boolean }
             token: { type: string, example: "***" }
+            acknowledge_unauthenticated: { type: boolean, description: "Operator ack for enabled, non-loopback, token-unprotected listeners. Default false. Silences the startup warning and sets the `acknowledged` flag in /api/health `listeners` and the listener_* diagnose detail; never changes bind address or tokens." }
 
     InfoResponse:
       type: object

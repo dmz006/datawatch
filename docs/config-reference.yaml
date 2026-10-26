@@ -262,6 +262,25 @@ server:
   # Hide toast notifications for the currently viewed session
   suppress_active_toasts: true
 
+  # All existing server.* defaults are unchanged. At every start the daemon
+  # also warns, one line per affected listener, for any of these listeners
+  # that is enabled, not token-protected, and bound to a non-loopback
+  # address:
+  #   rest           (server.token)
+  #   rest_tls       (server.ttls)
+  #   mcp_sse        (mcp.token, or server.token when mcp.token is empty)
+  #   proxy_sandbox  (always token-protected, so it is never warned)
+  #   webhook        (webhook.token)
+  #   github_webhook (github_webhook.secret)
+  # The twilio_webhook listener has no built-in auth and is never warned.
+  # Set to true only after you have deliberately reviewed each of those
+  # listeners. It silences that warning for them and sets the
+  # `acknowledged` flag on the matching entries of the /api/health
+  # `listeners` array and the listener_* diagnose checks. It does not
+  # change the bind address, the token, or the warning condition itself.
+  # Default: false (the warning is active).
+  acknowledge_unauthenticated: false
+
 # ── MCP Server ──
 # Model Context Protocol server for IDE and AI agent integrations.
 mcp:

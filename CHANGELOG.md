@@ -10370,6 +10370,15 @@ Downstream-Review Rule.
 | `feedback_per_release_smoke` | ✓ — section 32 all 4 sub-tests verified |
 | `feedback_phase_release_pattern` | ✓ |
 
+### Daemon warns at startup about exposed, unauthenticated listeners (BL062); operator can acknowledge
+
+- At every start, the daemon logs one warning line per listener that is enabled, not token-protected, and bound to a non-loopback address. Covered: `rest` (server.token), `rest_tls` (server.ttls), `mcp_sse` (mcp.token, or server.token when mcp.token is empty), `proxy_sandbox` (always token-protected, never warned), `webhook` (webhook.token), `github_webhook` (github_webhook.secret); `twilio_webhook` has no built-in auth and is never warned.
+- New config setting `server.acknowledge_unauthenticated` (bool). Set it after deliberately reviewing those listeners: it silences the warning and sets the `acknowledged` flag on the matching entries of the `/api/health` `listeners` array and the `listener_*` diagnose checks. It does not change the bind address, the token, or the warning condition itself.
+- `GET /api/health` (no auth) now returns a `listeners` array — one entry per listener with `name`, `enabled`, `auth_required`, `loopback`, `acknowledged`; posture only, never bind addresses or token/secret values.
+- `GET /api/diagnose` now carries one informational `listener_<name>` check per listener, always `ok` (posture reporting, not a failure), with detail `address=… enabled=… auth_required=… loopback=… acknowledged=… exposed=…`; the overall diagnose `ok` flag is unchanged by listener auth posture.
+- No default changed: `server.acknowledge_unauthenticated` defaults to `false`, so every daemon start warns for exposed, unauthenticated, unacknowledged listeners.
+- Docs: config-reference (setting + covered-listener comment + mcp token fallback), operations (startup warning, fixes, acknowledge, five-row access table), openapi (both files: health `listeners`, diagnose `listener_*` checks, config key), mobile-surface (health `listeners` array + config key for Android/iPhone clients).
+
 ## [7.0.0-alpha.36] - 2026-05-10
 
 ### Summary — #183 items 4/5/6 — Sessions filter UX (LLM + State collapsibles + wider input)
