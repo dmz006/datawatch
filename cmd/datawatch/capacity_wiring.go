@@ -63,61 +63,121 @@ var verifierCapacityTryAdmit func(ctx context.Context, backend, model, taskID, p
 // this var at call time, not at wiring time).
 var councilCapacityAdmit func(ctx context.Context, backend, model, holder, prdID string) (release func(), err error)
 
-// engineEntries maps each inference LLM kind (the provider prefix of a model
-// such as "ollama/qwen3.8:27b") to the LLM entry that hosts it: the first LLM
-// of that kind that lists any compute node. Kinds with no such entry are
-// absent, so autonomous.LocalEngineGate leaves them ungated. A nil registry
-// yields an empty map.
-func engineEntries(reg *inference.Registry) map[string]inference.LLM {
-	entries := map[string]inference.LLM{}
+// engineEntry returns the LLM entry that hosts model for the inference LLM
+// kind (the provider prefix of a model such as "ollama/qwen3.8:27b"): the first
+// entry of that kind that lists any compute node and names the model in its
+// models list, else the first entry of that kind that lists any compute node.
+// The second result is false when no entry of the kind lists a compute node, so
+// autonomous.LocalEngineGate leaves the kind ungated. A nil registry has none.
+func engineEntry(reg *inference.Registry, kind, model string) (inference.LLM, bool) {
 	if reg == nil {
-		return entries
+		return inference.LLM{}, false
 	}
+	var fallback *inference.LLM
 	for _, l := range reg.List() {
-		kind := string(l.Kind)
-		if _, seen := entries[kind]; seen || len(l.ComputeNodes) == 0 {
+		if string(l.Kind) != kind || len(l.ComputeNodes) == 0 {
 			continue
 		}
-		entries[kind] = *l
+		if listsModel(*l, model) {
+			return *l, true
+		}
+		if fallback == nil {
+			fallback = l
+		}
 	}
-	return entries
+	if fallback == nil {
+		return inference.LLM{}, false
+	}
+	return *fallback, true
 }
 
-// engineNodes maps each inference LLM kind to every compute node of the LLM
-// entry engineEntries picks for it, in the entry's list order.
+// listsModel reports whether l's models list names model on any node. model is
+// matched as written and without its provider prefix.
+func listsModel(l inference.LLM, model string) bool {
+	name := nodeModelName(model)
+	for _, m := range l.Models {
+		if m.Model != "" && (m.Model == name || m.Model == model) {
+			return true
+		}
+	}
+	return false
+}
+
+// nodeServes reports whether the entry's models list leaves node a candidate
+// for model. A node the list pairs with at least one model serves model only if
+// one of those is model; a node the list says nothing about is unknown and
+// stays a candidate rather than being dropped.
+func nodeServes(l inference.LLM, node, model string) bool {
+	name := nodeModelName(model)
+	listed := false
+	for _, m := range l.Models {
+		if m.Node != node || m.Model == "" {
+			continue
+		}
+		listed = true
+		if m.Model == name || m.Model == model {
+			return true
+		}
+	}
+	return !listed
+}
+
+// engineNodes maps each inference LLM kind to every compute node of every LLM
+// entry of that kind, in entry order and list order with repeats dropped. It
+// names the nodes that host an engine at all, whichever entry owns a model.
 func engineNodes(reg *inference.Registry) map[string][]string {
 	nodes := map[string][]string{}
-	for kind, l := range engineEntries(reg) {
-		nodes[kind] = append([]string(nil), l.ComputeNodes...)
+	if reg == nil {
+		return nodes
+	}
+	seen := map[string]map[string]bool{}
+	for _, l := range reg.List() {
+		kind := string(l.Kind)
+		for _, n := range l.ComputeNodes {
+			if n == "" || seen[kind][n] {
+				continue
+			}
+			if seen[kind] == nil {
+				seen[kind] = map[string]bool{}
+			}
+			seen[kind][n] = true
+			nodes[kind] = append(nodes[kind], n)
+		}
 	}
 	return nodes
 }
 
 // placementSignature summarises what decides where a queued request may run:
-// each LLM kind's compute_nodes list and, per listed node, whether the compute
-// registry knows it and at what priority. Two equal signatures mean the
-// resolver would return the same candidates, so waiters need no re-plan.
+// for each LLM entry that lists compute nodes, its kind, its compute_nodes list
+// and models list and, per listed node, whether the compute registry knows it
+// and at what priority. Two equal signatures mean the resolver would return the
+// same candidates, so waiters need no re-plan.
 func placementSignature(registry func() *inference.Registry, nodes func() *compute.Registry) string {
 	var reg *inference.Registry
 	if registry != nil {
 		reg = registry()
 	}
 	priority := computePriority(nodes)
-	byKind := engineNodes(reg)
-	kinds := make([]string, 0, len(byKind))
-	for k := range byKind {
-		kinds = append(kinds, k)
-	}
-	sort.Strings(kinds)
 	var b strings.Builder
-	for _, k := range kinds {
-		b.WriteString(k)
-		b.WriteByte(':')
-		for _, n := range byKind[k] {
-			p, ok := priority(n)
-			fmt.Fprintf(&b, "%s/%d/%t,", n, p, ok)
+	if reg != nil {
+		for _, l := range reg.List() {
+			if len(l.ComputeNodes) == 0 {
+				continue
+			}
+			b.WriteString(l.Name)
+			b.WriteByte('/')
+			b.WriteString(string(l.Kind))
+			b.WriteByte(':')
+			for _, n := range l.ComputeNodes {
+				p, ok := priority(n)
+				fmt.Fprintf(&b, "%s/%d/%t,", n, p, ok)
+			}
+			b.WriteByte('|')
+			for _, m := range l.Models {
+				fmt.Fprintf(&b, "%s=%s,", m.Node, m.Model)
+			}
+			b.WriteByte(';')
 		}
-		b.WriteByte(';')
 	}
 	return b.String()
 }
@@ -187,14 +247,22 @@ func computePriority(nodes func() *compute.Registry) func(string) (int, bool) {
 
 // capacityResolver builds the pool resolver the admission paths share. For a
 // backend and model it returns the capacity pools, the primary compute node
-// and, when the LLM entry pools two or more known nodes, those candidates.
+// and, when the hosting LLM entry has two or more candidate nodes, those
+// candidates.
 //
-// A session on a local engine whose entry yields one node (or one known node)
-// gets that node's pool and node exactly as before. When two or more nodes are
-// candidates the pools carry no node:<name> pool and node is empty: the caller
-// puts the candidates on its capacity.Request and the ledger picks the node.
-// An entry none of whose nodes the compute registry knows keeps its first node,
-// as it always did.
+// For a local engine the hosting entry is the one engineEntry picks for the
+// model's provider: the entry that lists the model, not merely the first entry
+// of that kind. Its compute_nodes are the candidates, each kept only if the
+// compute registry knows it and the entry's models list does not exclude it for
+// this model (a node the list says nothing about stays a candidate). If that
+// filter would leave no node, the known nodes are used unfiltered.
+//
+// A session whose entry yields one node (or one candidate) gets that node's pool
+// and node exactly as before. When two or more nodes are candidates the pools
+// carry no node:<name> pool and node is empty: the caller puts the candidates on
+// its capacity.Request and the ledger picks the node, one engine per node. An
+// entry none of whose nodes the compute registry knows keeps its first node, as
+// it always did. A hosted backend gets no node pool and no node affinity.
 func capacityResolver(registry func() *inference.Registry, nodes func() *compute.Registry) func(backend, model string) (pools []string, node string, choices []capacity.NodeChoice) {
 	priority := computePriority(nodes)
 	return func(backend, model string) ([]string, string, []capacity.NodeChoice) {
@@ -208,12 +276,10 @@ func capacityResolver(registry func() *inference.Registry, nodes func() *compute
 				pools = append(pools, "llm:"+l.Name)
 			}
 		}
-		// Only a local-engine session takes a compute node's pool. A
-		// hosted-backend session gets no node pool and no node affinity.
-		entries := engineEntries(reg)
+		// Only a local-engine session takes a compute node's pool.
 		var entry inference.LLM
 		node, gated := autonomous.LocalEngineGate(backend, model, func(provider string) (string, bool) {
-			l, ok := entries[provider]
+			l, ok := engineEntry(reg, provider, model)
 			if !ok {
 				return "", false
 			}
@@ -225,6 +291,15 @@ func capacityResolver(registry func() *inference.Registry, nodes func() *compute
 		}
 		if len(entry.ComputeNodes) > 1 {
 			ordered := inference.OrderedPoolNodes(entry, priority)
+			serving := make([]inference.PoolNode, 0, len(ordered))
+			for _, n := range ordered {
+				if nodeServes(entry, n.Name, model) {
+					serving = append(serving, n)
+				}
+			}
+			if len(serving) > 0 {
+				ordered = serving
+			}
 			if len(ordered) >= 2 {
 				choices := make([]capacity.NodeChoice, 0, len(ordered))
 				for _, n := range ordered {

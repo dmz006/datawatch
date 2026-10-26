@@ -222,3 +222,16 @@ func TestLeaseRecordsChosenNode(t *testing.T) {
 		t.Fatalf("adopted lease = %+v, want node a and session sess-3", got)
 	}
 }
+
+// With equal load and equal priority the node listed first wins, in either
+// list order.
+func TestAcquireEqualLoadEqualPriorityTakesListOrder(t *testing.T) {
+	for _, order := range [][]string{{"a", "b"}, {"b", "a"}} {
+		l := ncLedger(newFakeClock())
+		req := ncRequest("t1")
+		req.NodeChoices = []NodeChoice{{Name: order[0], Priority: 3}, {Name: order[1], Priority: 3}}
+		if ls := ncAcquire(t, l, req); ls.Node != order[0] {
+			t.Fatalf("order %v: Node = %q, want %q", order, ls.Node, order[0])
+		}
+	}
+}

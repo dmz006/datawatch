@@ -279,7 +279,7 @@ llms:
 
 ## 6. Routing fallback chain
 
-Nodes with different routing modes can co-exist in a single LLM's failover chain:
+Nodes with different routing modes can co-exist in a single LLM's `compute_nodes` list:
 
 ```yaml
 llms:
@@ -289,7 +289,7 @@ llms:
     # full or unhealthy is passed over; docker-network nodes auto-start their container
 ```
 
-For `pi` and `pi-prompt` workers the node is not simply the first one listed: the least-loaded healthy node wins, `scheduling_priority` breaks a tie between equally loaded nodes, and list order breaks a remaining tie. See [How a pi-family worker picks its node](compute-nodes.md#how-a-pi-family-worker-picks-its-node).
+For local-model workers, verifiers and judges the list decides which nodes may run the work, and the node is not simply the first one listed: each listed node that is known and serves the model is a candidate, the least-loaded healthy candidate wins, `scheduling_priority` breaks a tie between equally loaded nodes, and list order breaks a remaining tie. See [How a pi-family worker picks its node](compute-nodes.md#how-a-pi-family-worker-picks-its-node).
 
 ---
 

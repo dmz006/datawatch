@@ -153,3 +153,61 @@ func TestKeysSingleNodeMatchesPreviousPools(t *testing.T) {
 		t.Fatalf("nil registry = %v %q %v", p, n, c)
 	}
 }
+
+func TestResolverUsesEntryHostingTheModel(t *testing.T) {
+	reg, creg := nodeTestRegistries(t,
+		[]*inference.LLM{
+			{Name: "ollama-a", Kind: "ollama", ComputeNodes: []string{"alpha"}},
+			{Name: "ollama-b", Kind: "ollama", ComputeNodes: []string{"alpha", "beta"},
+				Models: []inference.EnabledModel{{Node: "alpha", Model: "qwen"}, {Node: "beta", Model: "qwen"}}},
+		},
+		map[string]int{"alpha": 50, "beta": 50})
+	resolve := capacityResolver(func() *inference.Registry { return reg }, func() *compute.Registry { return creg })
+
+	pools, node, choices := resolve("pi-prompt", "ollama/qwen")
+	if node != "" || len(choices) != 2 || !reflect.DeepEqual(pools, []string{"host"}) {
+		t.Fatalf("hosting entry = %v %q %v, want both nodes as choices", pools, node, choices)
+	}
+	// A model no entry lists falls back to the first entry with nodes.
+	if p, n, c := resolve("pi-prompt", "ollama/other"); n != "alpha" || c != nil || !reflect.DeepEqual(p, []string{"host", "node:alpha"}) {
+		t.Fatalf("unlisted model = %v %q %v", p, n, c)
+	}
+}
+
+func TestResolverDropsNodeNotServingModel(t *testing.T) {
+	reg, creg := nodeTestRegistries(t,
+		[]*inference.LLM{{Name: "ollama", Kind: "ollama", ComputeNodes: []string{"alpha", "beta", "gamma"},
+			Models: []inference.EnabledModel{{Node: "alpha", Model: "qwen"}, {Node: "beta", Model: "llama"}}}},
+		map[string]int{"alpha": 50, "beta": 50, "gamma": 50})
+	resolve := capacityResolver(func() *inference.Registry { return reg }, func() *compute.Registry { return creg })
+
+	// beta lists only another model; gamma lists none and stays a candidate.
+	_, node, choices := resolve("pi", "ollama/qwen")
+	want := []capacity.NodeChoice{{Name: "alpha", Priority: 50}, {Name: "gamma", Priority: 50}}
+	if node != "" || !reflect.DeepEqual(choices, want) {
+		t.Fatalf("choices = %q %+v, want %+v", node, choices, want)
+	}
+	// alpha lists only qwen, so llama is offered on beta and unlisted gamma.
+	_, _, choices = resolve("pi", "ollama/llama")
+	want = []capacity.NodeChoice{{Name: "beta", Priority: 50}, {Name: "gamma", Priority: 50}}
+	if !reflect.DeepEqual(choices, want) {
+		t.Fatalf("llama choices = %+v, want %+v", choices, want)
+	}
+}
+
+func TestPlacementSignatureTracksModelsList(t *testing.T) {
+	reg, creg := nodeTestRegistries(t,
+		[]*inference.LLM{{Name: "ollama", Kind: "ollama", ComputeNodes: []string{"alpha", "beta"}}},
+		map[string]int{"alpha": 50, "beta": 50})
+	regFn := func() *inference.Registry { return reg }
+	nodesFn := func() *compute.Registry { return creg }
+	base := placementSignature(regFn, nodesFn)
+	l, _ := reg.Get("ollama")
+	l.Models = []inference.EnabledModel{{Node: "alpha", Model: "qwen"}}
+	if err := reg.Update(l); err != nil {
+		t.Fatal(err)
+	}
+	if placementSignature(regFn, nodesFn) == base {
+		t.Fatal("signature unchanged after the models list changed")
+	}
+}

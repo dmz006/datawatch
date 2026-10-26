@@ -529,6 +529,12 @@ node it first tried. A change to an LLM entry's `compute_nodes` list reaches
 waiting work without a daemon restart. The limit of one engine per node still
 applies.
 
+The entry's `compute_nodes` list decides which nodes a local-model worker,
+verifier and judge may run on. Each listed node that is known and serves the
+model is a candidate. The request goes to the least loaded candidate;
+`scheduling_priority` only breaks a tie, then list order. A node that does not
+serve the model is skipped, and a one-entry list behaves as before.
+
 The provider is the part of the model name before the first `/`; for
 `ollama/qwen3.8:27b` it is `ollama`. The launch fails with an error, and nothing
 starts, when the model has no provider prefix, or when the source `models.json`
