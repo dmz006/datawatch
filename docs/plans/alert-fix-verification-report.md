@@ -23,7 +23,7 @@ Every alert in `docs/plans/path-injection-alert-decisions.md` (path-injection 65
 - 676, 677: `TestCleanTempPacksRefusesSymlinkEscape` in `internal/gitguard/policy_test.go`
 - 681: `TestRunTestsRefusesUnsafeProjectDir` in `internal/pipeline/quality_test.go`
 - Go disabled certificate check: `internal/server/node_usage_tls_test.go`, `cmd/datawatch/compute_node_config_test.go`
-- 697, 698: the story scripts `TS-821.mjs` and `TS-824.mjs` are themselves the tests; the fix is in them. No separate unit test exists.
+- 697, 698: `TestStoryScriptsDoNotDisableTLSVerificationGlobally` in `internal/server/story_scripts_tls_test.go` fails if any PWA story script sets `NODE_TLS_REJECT_UNAUTHORIZED` or if `TS-821.mjs`/`TS-824.mjs` lose their scoped agent.
 
 ## Tracker IDs and versions in the diff
 
