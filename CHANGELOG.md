@@ -17,6 +17,18 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.17.3 — Workers are not launched in an unregistered worktree
+
+### Automaton workers no longer launch in an unregistered worktree
+
+An Automaton worker is no longer launched in a project directory that is not a registered worktree of the repository holding the repository root marker files. When the directory is not registered, the launch is refused and an alert naming the Automaton is raised instead of the worker starting. A worktree directory that has gone missing is also no longer recreated as an empty repository when a session starts, so a worker can no longer run against a blank repository that has none of the project's history. To recover after the alert, repair the directory, for example by re-adding it with `git worktree add`, and run the Automaton again.
+
+### Shared navigation fits phone widths
+
+The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.
+
+**Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
+
 ## v9.17.2 — Pi-prompt workers are no longer closed while still running
 
 ### Node-hosted pi runners are seen as alive
