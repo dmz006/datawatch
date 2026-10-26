@@ -72,6 +72,19 @@ func NewAdoptedStartTracker(limit time.Duration, launchedAt, lastLifeSeed time.T
 	return &StartTracker{adopted: true, limit: limit, silentSince: launchedAt, lastEvidenceAt: lastLifeSeed}
 }
 
+// NewWaitStartTracker builds the tracker the executor wait loop uses for a
+// claude-code worker. A launched worker gets a launch-mode tracker with no
+// anchor, so its silent window starts at the first silent waiting_input tick
+// the wait sees. An adopted worker gets an adopted-mode tracker anchored at
+// the attempt's launch (see StartAnchor) and seeded from its last evidence of
+// life, so the time the daemon was down is not charged to it.
+func NewWaitStartTracker(limit time.Duration, adopted bool, s *session.Session, startedAt *time.Time, now time.Time) *StartTracker {
+	if adopted {
+		return NewAdoptedStartTracker(limit, StartAnchor(startedAt, now), SessionLastLifeAt(s))
+	}
+	return NewStartTracker(limit, time.Time{}, time.Time{}, s.LastChannelEventAt)
+}
+
 // Observe folds one tick into the tracker and returns the start observation
 // for it. WaitingFor is the silence since the anchor, so Stalled ends the
 // session only once that silence exceeds the limit. In launch mode any

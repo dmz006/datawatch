@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // Direct tests of StartTracker.Observe on a fake clock. Each tick is ten
@@ -61,21 +63,32 @@ func TestStartTrackerLaunchWindowStartsAtFirstSilentTick(t *testing.T) {
 	}
 }
 
-func TestStartTrackerLaunchSeedAnchorsWindowAtLastLife(t *testing.T) {
-	// A launch tracker seeded with an adopted task's last evidence of life
-	// (the wait loop's adopted-task case) judges silence from that seed, not
-	// from launch and not from the first silent tick.
-	seed := trackerTickAt(5)
-	tr := NewStartTracker(60*time.Second, time.Time{}, seed, time.Time{})
+func TestWaitStartTrackerLaunchedWorkerIgnoresLaunchTime(t *testing.T) {
+	// The task was launched long before the wait loop first sees the worker
+	// silent at tick 5. A launched worker is judged from that first silent
+	// tick, not from launch, so the bound fires at tick 12 (70s after tick 5).
+	launched := trackerTickAt(-100)
+	tr := NewWaitStartTracker(60*time.Second, false, &session.Session{}, &launched, trackerTickAt(5))
 	var stalledAt int
-	for k := 6; k <= 20; k++ {
+	for k := 5; k <= 14; k++ {
 		obs := tr.Observe(StartInput{Now: trackerTickAt(k), State: sessionStateWaitingInput, Pane: trackerSilentPane})
 		if stalled, _ := obs.Stalled(); stalled && stalledAt == 0 {
 			stalledAt = k
 		}
 	}
 	if stalledAt != 12 {
-		t.Fatalf("seeded launch tracker stalled at tick %d, want 12 (70s after the seed at tick 5)", stalledAt)
+		t.Fatalf("launched worker first silent at tick 5 stalled at tick %d, want 12", stalledAt)
+	}
+}
+
+func TestWaitStartTrackerAdoptedWorkerKeepsLaunchAnchor(t *testing.T) {
+	// An adopted worker with no evidence of life is measured from the task's
+	// launch time, so a launch long ago is judged at the first silent tick.
+	launched := trackerTickAt(-100)
+	tr := NewWaitStartTracker(60*time.Second, true, &session.Session{}, &launched, trackerTickAt(5))
+	obs := tr.Observe(StartInput{Now: trackerTickAt(5), State: sessionStateWaitingInput, Pane: trackerSilentPane})
+	if stalled, _ := obs.Stalled(); !stalled {
+		t.Fatal("adopted worker launched long ago was not judged at its first silent tick")
 	}
 }
 

@@ -4845,16 +4845,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					staleLogPath = s.LogFile
 					family = s.BackendFamily
 					if family == "claude-code" && sessionStartLimit > 0 {
-						// Both launched and adopted tasks are judged by the launch rules, as
-						// before the shared tracker. An adopted session is seeded from its last
-						// evidence of life, so the bound does not charge the time the daemon was
-						// down. A launched session has no evidence of life yet, so its silent
-						// window starts at the first silent waiting_input tick.
-						var lifeSeed time.Time
-						if task.AdoptedSession {
-							lifeSeed = autonomouspkg.SessionLastLifeAt(s)
-						}
-						startTracker = autonomouspkg.NewStartTracker(sessionStartLimit, time.Time{}, lifeSeed, s.LastChannelEventAt)
+						// A launched session's silent window starts at the first silent
+						// waiting_input tick. An adopted session is judged in the adopted mode,
+						// anchored at the attempt's launch and seeded from its last evidence of
+						// life, so the bound does not charge the time the daemon was down.
+						startTracker = autonomouspkg.NewWaitStartTracker(sessionStartLimit, task.AdoptedSession, s, task.StartedAt, time.Now())
 					}
 				}
 				// claude-code idle nudge: one nudge after worker_idle_nudge_seconds of
