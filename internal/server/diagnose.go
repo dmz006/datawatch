@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
@@ -125,6 +126,22 @@ func (s *Server) runDiagnose() DiagnoseResult {
 		Name: "mcp_sse_auth", OK: true,
 		Detail: fmt.Sprintf("auth_required=%v", mcpAuth),
 	})
+
+	// 8. Per-listener auth posture, derived from config (SEC-002 /
+	// SEC-003). Informational like the checks above: OK stays true for
+	// every posture so an open listener never flips the composite
+	// signal — monitors key off the detail string instead (one
+	// space-separated key=value pair per field, address= first).
+	if s.cfg != nil {
+		for _, st := range config.ListenerAuthStates(s.cfg) {
+			out.Checks = append(out.Checks, DiagnoseCheck{
+				Name: "listener_" + st.Name,
+				OK:   true,
+				Detail: fmt.Sprintf("address=%s enabled=%v auth_required=%v loopback=%v acknowledged=%v exposed=%v",
+					st.Address, st.Enabled, st.AuthRequired, st.Loopback, st.Acknowledged, st.Exposed()),
+			})
+		}
+	}
 
 	out.OK = allOK(out.Checks)
 	return out
