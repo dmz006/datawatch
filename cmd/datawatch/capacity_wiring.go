@@ -64,31 +64,46 @@ var verifierCapacityTryAdmit func(ctx context.Context, backend, model, taskID, p
 var councilCapacityAdmit func(ctx context.Context, backend, model, holder, prdID string) (release func(), err error)
 
 // engineEntry returns the LLM entry that hosts model for the inference LLM
-// kind (the provider prefix of a model such as "ollama/qwen3.8:27b"): the first
-// entry of that kind that lists any compute node and names the model in its
-// models list, else the first entry of that kind that lists any compute node.
-// The second result is false when no entry of the kind lists a compute node, so
-// autonomous.LocalEngineGate leaves the kind ungated. A nil registry has none.
+// kind (the provider prefix of a model such as "ollama/qwen3.8:27b"). Only
+// entries of that kind that list a compute node are considered. One that names
+// the model in its models list beats one that does not; among equals the entry
+// whose name sorts first wins, so the answer never depends on registry
+// iteration order. The second result is false when no entry of the kind lists a
+// compute node, so autonomous.LocalEngineGate leaves the kind ungated. A nil
+// registry has none.
 func engineEntry(reg *inference.Registry, kind, model string) (inference.LLM, bool) {
 	if reg == nil {
 		return inference.LLM{}, false
 	}
-	var fallback *inference.LLM
+	var best *inference.LLM
+	bestListed := false
 	for _, l := range reg.List() {
 		if string(l.Kind) != kind || len(l.ComputeNodes) == 0 {
 			continue
 		}
-		if listsModel(*l, model) {
-			return *l, true
-		}
-		if fallback == nil {
-			fallback = l
+		listed := listsModel(*l, model)
+		if best == nil || (listed && !bestListed) || (listed == bestListed && l.Name < best.Name) {
+			best, bestListed = l, listed
 		}
 	}
-	if fallback == nil {
+	if best == nil {
 		return inference.LLM{}, false
 	}
-	return *fallback, true
+	return *best, true
+}
+
+// piOwnEntry returns the registry entry of a pi backend (pi or pi-prompt) when
+// it lists compute nodes of its own, so placement uses that list rather than
+// the node list of the provider's engine entry.
+func piOwnEntry(reg *inference.Registry, backend string) (inference.LLM, bool) {
+	if reg == nil || (backend != "pi" && backend != "pi-prompt") {
+		return inference.LLM{}, false
+	}
+	l, err := reg.Get(backend)
+	if err != nil || l == nil || len(l.ComputeNodes) == 0 {
+		return inference.LLM{}, false
+	}
+	return *l, true
 }
 
 // listsModel reports whether l's models list names model on any node. model is
@@ -250,9 +265,12 @@ func computePriority(nodes func() *compute.Registry) func(string) (int, bool) {
 // and, when the hosting LLM entry has two or more candidate nodes, those
 // candidates.
 //
-// For a local engine the hosting entry is the one engineEntry picks for the
-// model's provider: the entry that lists the model, not merely the first entry
-// of that kind. Its compute_nodes are the candidates, each kept only if the
+// For a local engine the hosting entry is, for a pi backend (pi or pi-prompt)
+// whose own entry lists compute_nodes, that backend entry, so its own node list
+// is the pool. Any other backend, and a pi backend with no node list of its own,
+// uses the entry engineEntry picks for the model's provider: the entry that
+// lists the model, ties broken by entry name. Whichever entry is chosen, its
+// compute_nodes are the candidates, each kept only if the
 // compute registry knows it and the entry's models list does not exclude it for
 // this model (a node the list says nothing about stays a candidate). If that
 // filter would leave no node, the known nodes are used unfiltered.
@@ -260,7 +278,9 @@ func computePriority(nodes func() *compute.Registry) func(string) (int, bool) {
 // A session whose entry yields one node (or one candidate) gets that node's pool
 // and node exactly as before. When two or more nodes are candidates the pools
 // carry no node:<name> pool and node is empty: the caller puts the candidates on
-// its capacity.Request and the ledger picks the node, one engine per node. An
+// its capacity.Request and the ledger picks the node, one engine per node, least
+// loaded first with the node's scheduling priority as the tiebreak (the
+// candidates carry that priority; the ledger does the ordering). An
 // entry none of whose nodes the compute registry knows keeps its first node, as
 // it always did. A hosted backend gets no node pool and no node affinity.
 func capacityResolver(registry func() *inference.Registry, nodes func() *compute.Registry) func(backend, model string) (pools []string, node string, choices []capacity.NodeChoice) {
@@ -288,6 +308,12 @@ func capacityResolver(registry func() *inference.Registry, nodes func() *compute
 		})
 		if !gated {
 			return pools, node, nil
+		}
+		// A pi backend that lists compute nodes of its own places on that
+		// list; the gate above only decided that the session is local.
+		if own, ok := piOwnEntry(reg, backend); ok {
+			entry = own
+			node = own.ComputeNodes[0]
 		}
 		if len(entry.ComputeNodes) > 1 {
 			ordered := inference.OrderedPoolNodes(entry, priority)
