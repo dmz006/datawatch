@@ -59,6 +59,13 @@ DOCKEREOF
   DOCKER_SIM_PID=$(cat "$DOCKER_SIM_DATA/container.id")
   DOCKER_SIM_CONTAINER="$container_name"
   DOCKER_SIM_IMAGE="$image_tag"
+  # Record the container in the shared daemon-library state so the traps of
+  # whichever shell started it end it — docker stop, then docker rm, by the
+  # recorded id only — on normal exit, failure and interrupt: the e2e
+  # runner's shared traps (its stop_docker_sim is the second safety net),
+  # or this script's own traps when run standalone.
+  story_daemon_lifecycle
+  td_track_container "$container_name" || echo "  [cleanup] WARN: could not record $container_name for trap cleanup" >&2
   # Persist names so stop_docker_sim() can recover them after a SIGKILL.
   echo "$container_name" > "$DOCKER_SIM_DATA/container.name"
   echo "$image_tag"      > "$DOCKER_SIM_DATA/image.name"

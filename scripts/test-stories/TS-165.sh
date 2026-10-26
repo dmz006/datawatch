@@ -37,9 +37,13 @@ MEMYAML
   fi
   ok "memory saved before restart: id=$mem_id"
 
-  # Stop the docker container — end only a PID this story recorded, routed
-  # through the shared library when the daemon was tracked there.
-  dw_terminate_pid "$DOCKER_SIM_PID" "${DOCKER_SIM_DATA}/config.yaml"
+  # Stop the docker-sim daemon by the id this run recorded. Whatever shape it
+  # has — a 12-hex Docker container id from TS-160 (dw_terminate_pid routes
+  # it straight to docker stop/rm by that id; a /proc signal for a container
+  # id is a no-op, and the container actually has to go so the restart below
+  # can bind its ports) or a numeric host PID from an earlier restart (ended
+  # through the shared library, marker-checked) — the same call ends it.
+  dw_terminate_pid "$DOCKER_SIM_PID" ""
   DOCKER_SIM_PID=""
   sleep 1
 

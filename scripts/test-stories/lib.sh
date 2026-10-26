@@ -452,6 +452,13 @@ dw_terminate_pid() {
   if declare -F td_stop_one >/dev/null 2>&1 \
     && [[ -n "${TD_STATE_DIR:-}" && -f "${TD_STATE_DIR}/${pid}.rec" ]]; then
     td_stop_one "$pid" || true
+  elif [[ "$pid" =~ ^[a-f0-9]{12}$ ]]; then
+    # A Docker container id, not a host PID. A signal for it is a no-op, so
+    # end the container by the id this run passed (and any record for it),
+    # the same shape the shared library's td_stop_one takes for a container
+    # record. No name search of any kind.
+    docker stop "$pid" >/dev/null 2>&1 || true
+    docker rm -f "$pid" >/dev/null 2>&1 || true
   elif [[ "$pid" =~ ^[0-9]+$ ]] && [[ -r "/proc/$pid/cmdline" ]]; then
     cmd=$({ tr '\0' ' ' < "/proc/$pid/cmdline"; } 2>/dev/null || true)
     if [[ -n "$cmd" && "$cmd" == *"$marker"* ]]; then
@@ -488,6 +495,21 @@ _dw_channel_cleanup() {
   return 0
 }
 
+# _dw_all_cleanup — exit-path cleanup for one shell: first the story's own
+# hook when one is named (a story that owns extra processes or scratch, e.g.
+# TS-820's stand-ins, registers its cleanup as DW_STORY_CLEANUP), then the
+# shared-channel helpers. Runs after the daemon-library traps have ended
+# every recorded daemon; also the TD_EXTRA_CLEANUP hook standalone stories
+# install (see story_daemon_lifecycle).
+_dw_all_cleanup() {
+  local hook="${DW_STORY_CLEANUP:-}"
+  if [[ -n "$hook" ]] && declare -F "$hook" >/dev/null 2>&1; then
+    "$hook" || true
+  fi
+  _dw_channel_cleanup
+  return 0
+}
+
 # story_daemon_lifecycle — make the shared daemon-library traps active for
 # this shell. No-op when the e2e runner has already sourced the library
 # (td_start exists in that case, the runner's EXIT/INT/TERM/HUP traps and
@@ -502,7 +524,7 @@ story_daemon_lifecycle() {
   [[ -f "$lib" ]] || { echo "  [lifecycle] test-daemon-lib.sh not found at $lib" >&2; return 1; }
   # shellcheck source=/dev/null
   source "$lib"
-  TD_EXTRA_CLEANUP="${TD_EXTRA_CLEANUP:-_dw_channel_cleanup}"
+  TD_EXTRA_CLEANUP="${TD_EXTRA_CLEANUP:-_dw_all_cleanup}"
   td_install_traps
   return 0
 }
@@ -542,11 +564,17 @@ start_channel_server() {
     skip "start_channel_server: SESSION_ID not set; call ensure_test_session first"
     return 1
   fi
+  # Shared lifecycle first: standalone, this installs the EXIT/INT/TERM/HUP
+  # traps before any helper below starts, so a failure or Ctrl-C still ends
+  # them; under the e2e runner it is a no-op and the td_track records below
+  # are covered by the runner's traps.
+  story_daemon_lifecycle
 
   _CHAN_PIPE=$(mktemp -u /tmp/dw-chan-pipe-XXXXXX)
   mkfifo "$_CHAN_PIPE"
   tail -f /dev/null >"$_CHAN_PIPE" &
   _CHAN_TAIL_PID=$!
+  declare -F td_track_pid >/dev/null 2>&1 && td_track_pid "$_CHAN_TAIL_PID" "tail -f /dev/null" || true
 
   DATAWATCH_API_URL="https://127.0.0.1:${TEST_TLS_PORT:-18443}" \
   DATAWATCH_TOKEN="$TEST_TOKEN" \
@@ -554,6 +582,7 @@ start_channel_server() {
   CLAUDE_SESSION_ID="$SESSION_ID" \
   "$chan_bin" <"$_CHAN_PIPE" 2>/dev/null &
   _CHAN_PID=$!
+  declare -F td_track_pid >/dev/null 2>&1 && td_track_pid "$_CHAN_PID" "$chan_bin" || true
 
   local i
   for i in $(seq 1 20); do

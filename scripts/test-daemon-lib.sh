@@ -9,6 +9,7 @@
 #   td_start <binary> <config> <logfile>   start a daemon in the background,
 #                                          record it, set TD_LAST_PID
 #   td_track_pid <pid> <marker>            record a daemon started elsewhere
+#   td_track_container <id>                record a Docker container started here
 #   td_set_api <pid> <base_url> <token>    record its API so sessions end first
 #   td_stop_one <pid>                      end one recorded daemon
 #   td_stop_all                            end every recorded daemon, newest first
@@ -32,6 +33,7 @@ TD_STATE_DIR="${TD_STATE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/test-daemon.XXXXXX")}
 export TD_STATE_DIR
 TD_STOP_TIMEOUT="${TD_STOP_TIMEOUT:-15}"
 TD_LAST_PID=""
+TD_LAST_CONTAINER=""
 
 # _td_rec <pid> — path of the record file for a PID.
 _td_rec() { printf '%s/%s.rec' "$TD_STATE_DIR" "$1"; }
@@ -65,7 +67,7 @@ _td_alive() {
   local stat
   kill -0 "$1" 2>/dev/null || return 1
   [[ -r "/proc/$1/stat" ]] || return 1
-  stat="$(< "/proc/$1/stat")"
+  stat=$(< "/proc/$1/stat") 2>/dev/null || return 1
   stat="${stat##*) }"
   [[ "${stat%% *}" != Z ]]
 }
@@ -83,6 +85,23 @@ td_track_pid() {
   local pid="${1:-}" marker="${2:-}"
   [[ -n "$pid" && -n "$marker" ]] || return 1
   _td_put "$pid" "$marker" "" ""
+}
+
+# td_track_container <id> — record a Docker container this script started so
+# the shared EXIT/INT/TERM/HUP traps end it (docker stop, then docker rm, by
+# the recorded id only) on every exit path, the same as a recorded daemon.
+# <id> may be the container name used with docker run; when docker can
+# resolve it, the canonical 12-character id becomes the record key instead.
+td_track_container() {
+  local cid="${1:-}" id12
+  [[ -n "$cid" ]] || return 1
+  id12="$(docker inspect --format '{{.Id}}' "$cid" 2>/dev/null)"
+  [[ "$id12" =~ ^[a-f0-9]{12}$ ]] || id12=""
+  [[ -n "$id12" ]] || { echo "test-daemon: cannot resolve container id for '$cid'" >&2; return 1; }
+  _td_put "$id12" "$cid" "" ""
+  printf 'kind=container\n' >> "$( _td_rec "$id12")"
+  TD_LAST_CONTAINER="$id12"
+  return 0
 }
 
 td_set_api() {
@@ -140,9 +159,25 @@ _td_wait_dead() {
 }
 
 td_stop_one() {
-  local pid="${1:-}" marker
+  local pid="${1:-}" marker kind
   [[ -n "$pid" && -f "$(_td_rec "$pid")" ]] || return 0
+  kind="$(_td_get "$pid" kind)"
   marker="$(_td_get "$pid" marker)"
+  if [[ "$kind" == "container" ]]; then
+    # Container record (td_track_container): the marker field holds the
+    # container name the stop was recorded with. docker stop, then docker rm,
+    # by that id only — no name search, no other containers, no tmux.
+    if docker stop "$marker" >/dev/null 2>&1; then
+      echo "stopped recorded container $marker"
+    elif docker rm "$marker" >/dev/null 2>&1; then
+      echo "removed recorded container $marker (already exiting)"
+    else
+      echo "FAILED: could not stop recorded container $marker" >&2
+      return 1
+    fi
+    rm -f "$(_td_rec "$pid")"
+    return 0
+  fi
   _td_end_sessions "$pid"
   if _td_alive "$pid"; then
     if ! _td_marker_ok "$pid" "$marker"; then

@@ -477,9 +477,28 @@ stop_docker_sim() {
   [[ -n "${DOCKER_SIM_DATA:-}" ]] && rm -rf "$DOCKER_SIM_DATA" 2>/dev/null || true
 }
 
+# dw_runner_cleanup_hooks — runner-shell cleanup for anything a story shell
+# tracked but only the story itself can name: the story hook registered in
+# DW_STORY_CLEANUP (TS-820: its sessions, LLM entries, Ollama stand-ins and
+# scratch) and the channel-server helpers when lib.sh's own cleanup is
+# visible (serial stories run in this shell). No-ops when nothing is
+# registered; every step is guarded, so it is safe to run again after the
+# shared td_stop_all of the traps has already ended the recorded daemons.
+dw_runner_cleanup_hooks() {
+  local hook="${DW_STORY_CLEANUP:-}"
+  if [[ -n "$hook" ]] && declare -F "$hook" >/dev/null 2>&1; then
+    "$hook" || true
+  fi
+  if declare -F _dw_channel_cleanup >/dev/null 2>&1; then
+    _dw_channel_cleanup || true
+  fi
+  return 0
+}
+
 cleanup() {
   stop_test_daemon
   stop_second_test_daemon
+  dw_runner_cleanup_hooks
   stop_docker_sim
   destroy_pool
   if [[ $FAILED -ne 0 || -n "${KEEP_TEST_DIR:-}" ]]; then
@@ -739,13 +758,30 @@ launch_parallel() {
     mkdir -p "$EVIDENCE_DIR/$story_id"
     # Trap ensures result file and semaphore release run even when the story
     # calls `exit 0` directly instead of `return` (TS-750/751/752 pattern).
-    trap 'flush_story_cleanup; printf "%s" "${RESULT:-fail}" > "$result_file"; release_worker' EXIT
+    trap 'flush_story_cleanup; dw_runner_worker_cleanup; printf "%s" "${RESULT:-fail}" > "$result_file"; release_worker' EXIT
     # shellcheck source=/dev/null
     source "$script"
   ) &
   local pid=$!
   PAR_PIDS+=("$pid")
   PAR_STORY[$pid]="$story_id"
+}
+
+# dw_runner_worker_cleanup — exit path of a parallel story subshell, besides
+# what the shared library traps already stopped by recorded PID: the story
+# hook that the story shell registered in DW_STORY_CLEANUP (TS-820: its
+# sessions, LLM entries, Ollama stand-ins and scratch) and the channel
+# helpers recorded by lib.sh in this subshell. No-ops when nothing is
+# registered; guarded steps, so safe to run twice.
+dw_runner_worker_cleanup() {
+  local hook="${DW_STORY_CLEANUP:-}"
+  if [[ -n "$hook" ]] && declare -F "$hook" >/dev/null 2>&1; then
+    "$hook" || true
+  fi
+  if declare -F _dw_channel_cleanup >/dev/null 2>&1; then
+    _dw_channel_cleanup || true
+  fi
+  return 0
 }
 
 # Wait for all parallel jobs and collect results

@@ -6,70 +6,24 @@ CURRENT_STORY="TS-016"
 story_preflight "surface:api feature:sessions" || return 0
 
 _story_ts_016() {
-  # Locate the datawatch-channel binary.
-  local chan_bin
-  chan_bin=$(command -v datawatch-channel 2>/dev/null || echo "$HOME/.local/bin/datawatch-channel")
-  if [[ ! -x "$chan_bin" ]]; then
-    skip "datawatch-channel binary not found at $chan_bin"
-    return
-  fi
-
   ensure_test_session || return
 
-  # Use a named FIFO to keep the channel server's stdin open (it exits on stdin EOF).
-  # tail -f /dev/null holds the FIFO write end open without sending data;
-  # killing it later closes the write end → channel server's stdin → EOF → exit.
-  local chan_pipe chan_pid tail_pid
-  chan_pipe=$(mktemp -u /tmp/ts016-pipe-XXXXXX)
-  mkfifo "$chan_pipe"
-
-  _cleanup() {
-    [[ -n "$tail_pid" ]] && kill "$tail_pid" 2>/dev/null || true
-    [[ -n "$chan_pid" ]] && kill "$chan_pid" 2>/dev/null || true
-    wait "$tail_pid" "$chan_pid" 2>/dev/null || true
-    rm -f "$chan_pipe"
-    api POST /api/sessions/state "{\"id\":\"$SESSION_ID\",\"state\":\"killed\"}" >/dev/null 2>&1 || true
-  }
-
-  # Start helper that holds the FIFO write end (no data is ever written).
-  tail -f /dev/null >"$chan_pipe" &
-  tail_pid=$!
-
-  # Start channel server: its stdin O_RDONLY open will not block because tail_pid
-  # already holds the write end. CLAUDE_SESSION_ID binds it to our test session so
-  # the daemon stores the port on that session (enabling per-session routing).
-  DATAWATCH_API_URL="https://127.0.0.1:${TEST_TLS_PORT:-18443}" \
-  DATAWATCH_TOKEN="$TEST_TOKEN" \
-  DATAWATCH_CHANNEL_PORT=0 \
-  CLAUDE_SESSION_ID="$SESSION_ID" \
-  "$chan_bin" <"$chan_pipe" 2>/dev/null &
-  chan_pid=$!
-
-  # Wait up to 10s for the channel server to register (session gains channel_ready=true).
-  local i channel_ready=false
-  for i in $(seq 1 20); do
-    sleep 0.5
-    kill -0 "$chan_pid" 2>/dev/null || break  # exit early if process died
-    local sess_json
-    sess_json=$(api GET "/api/sessions/$SESSION_ID" 2>/dev/null || echo "{}")
-    if echo "$sess_json" | python3 -c 'import json,sys;d=json.load(sys.stdin);exit(0 if d.get("channel_ready") else 1)' 2>/dev/null; then
-      channel_ready=true
-      break
-    fi
-  done
-
-  if [[ "$channel_ready" != "true" ]]; then
-    _cleanup
-    skip "datawatch-channel did not register with sandbox daemon within 10s"
-    return
-  fi
+  # Start the channel server against this session via the shared helper
+  # (lib.sh): it opens the FIFO, runs the tail holder and the channel bound
+  # to SESSION_ID, waits for channel_ready, and records both helper PIDs in
+  # the shared daemon-library state (installing its own EXIT/INT/TERM/HUP
+  # cleanups when run standalone), so failure or interrupt ends them by the
+  # PIDs this story started — no bare kill, no name lookup.
+  start_channel_server || { api POST /api/sessions/state "{\"id\":\"$SESSION_ID\",\"state\":\"killed\"}" >/dev/null 2>&1 || true; return; }
 
   # Send a message through the registered channel.
   local resp
   resp=$(api POST /api/channel/send '{"session_id":"'"$SESSION_ID"'","text":"test channel message e2e"}')
   save_evidence TS-016 "channel_send.json" "$resp"
 
-  _cleanup
+  # End the channel helpers (recorded PIDs, marker-checked) and the session.
+  stop_channel_server
+  api POST /api/sessions/state "{\"id\":\"$SESSION_ID\",\"state\":\"killed\"}" >/dev/null 2>&1 || true
 
   if assert_json "$resp" 'isinstance(d, dict) and d.get("status") == "ok"' 2>/dev/null; then
     ok "channel send accepted (status=ok)"
@@ -88,4 +42,3 @@ RESULT=fail
 _story_ts_016
 : "${RESULT:=fail}"
 unset -f _story_ts_016
-unset -f _cleanup 2>/dev/null || true

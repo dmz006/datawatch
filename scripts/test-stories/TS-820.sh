@@ -285,6 +285,13 @@ ts817_start_daemon() {
   # place before the daemon forks (a no-op under the e2e runner, which has
   # already loaded the library and its traps with shared TD_STATE_DIR).
   story_daemon_lifecycle
+  # Register this story's own cleanup — its sessions, LLM entries, Ollama
+  # stand-ins and scratch — as the hook the shared traps run after they end
+  # the recorded daemons, on failure and interrupt exits. The body's
+  # ts817_cleanup is idempotent, so running it a second time from a trap is
+  # a no-op (its steps check for what they remove; the PIDs are cleared
+  # after first use).
+  export DW_STORY_CLEANUP=ts817_cleanup
   # The daemon's own temp files (tooling directories, per-session pi agent
   # directories) land in the story's scratch area, so cleanup removes them too.
   mkdir -p "$TS817_TMP/daemon-tmp"
@@ -346,6 +353,14 @@ ts817_run() {
   TS817_FAKE_A_PID=$!
   env -u TMUX -u TMUX_TMPDIR python3 -I "$TS817_TMP/fake_ollama.py" "$port_b" "$TS817_NODE_B" "$TS817_LOG_B" >/dev/null 2>&1 &
   TS817_FAKE_B_PID=$!
+  # Record the stand-ins in the shared library state so the shared
+  # EXIT/INT/TERM/HUP traps end them (their recorded PID, marker-checked
+  # against the fake_ollama.py path still in their live cmdline) on every
+  # exit path — not only the body's ts817_cleanup.
+  declare -F td_track_pid >/dev/null 2>&1 && {
+    td_track_pid "$TS817_FAKE_A_PID" "$TS817_TMP/fake_ollama.py"
+    td_track_pid "$TS817_FAKE_B_PID" "$TS817_TMP/fake_ollama.py"
+  } || true
   if ! ts817_wait_until 20 ts817_fake_ready "$port_a" || ! ts817_wait_until 20 ts817_fake_ready "$port_b"; then
     ts817_fail "loopback Ollama stand-ins did not start on $port_a / $port_b"
     return 0
@@ -450,6 +465,8 @@ ts817_cleanup() {
   # checked against their live cmdline, before the scratch tree is removed.
   dw_terminate_pid "${TS817_FAKE_A_PID}" "$TS817_TMP/fake_ollama.py"
   dw_terminate_pid "${TS817_FAKE_B_PID}" "$TS817_TMP/fake_ollama.py"
+  TS817_FAKE_A_PID=""
+  TS817_FAKE_B_PID=""
   # Only the story's own socket is probed. A stale socket file is harmless, so
   # the check is whether any session is still listed on it after cleanup.
   local sock="$TS817_SOCK" left
