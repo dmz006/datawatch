@@ -24,6 +24,7 @@ func (c *Coordinator) idleLoop(stop <-chan struct{}, tick time.Duration) {
 		case <-t.C:
 			c.checkIdle()
 			c.checkBudget()
+			c.triagePass()
 		}
 	}
 }
