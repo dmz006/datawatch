@@ -171,6 +171,9 @@ type VerifyFn func(ctx context.Context, prd *PRD, task *Task) (VerificationResul
 // cfg.MaxConcurrentTasks) is > 1, independent tasks are fanned out with
 // a semaphore-bounded goroutine pool.
 func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify VerifyFn) error {
+	// wake carries operator review decisions to a live executor. It is nil
+	// outside one, and a nil channel never delivers a decision.
+	wake := reviewWakeFrom(ctx)
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
@@ -354,22 +357,6 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	globalConc := m.cfg.MaxConcurrentTasks
 	m.mu.Unlock()
 	concurrency := effectiveTaskConcurrency(prd.MaxConcurrentTasks, globalConc)
-	// wake is nil outside a live executor. An operator review decision
-	// nudges it (see reviewWakes), and the pass then rebuilds its order.
-	wake := reviewWakeFrom(ctx)
-	// reorder rebuilds the run order from the Automaton as it stands now.
-	// A pass starts with the tasks that are not held for review, so a task
-	// requeued by a decision since then is found only by rebuilding.
-	reorder := func() {
-		var tasks []*Task
-		m.store.WithLock(func() { tasks = flattenTasks(prd) })
-		o, err := topoSort(tasks)
-		if err != nil {
-			log.Printf("[autonomous] %s: rebuild run order after review decision: %v", prdID, err)
-			return
-		}
-		order = o
-	}
 	if concurrency <= 1 {
 		// Sequential path (default) — tasks run in dependency order.
 		// failedIDs tracks tasks that failed so dependents can be skipped.
@@ -381,12 +368,23 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			// A decision restarts the walk over the rebuilt order, so the
-			// task it requeued runs in its place. The check also runs after
-			// the last task, so a decision made during it is not left for
-			// the next Run.
+			// An operator review decision (a retry or a cancel) landed while
+			// a task ran. Re-read the Automaton and rebuild the order, then
+			// walk it again from the top. Terminal tasks are skipped, held
+			// tasks stay pending, and the first task that is neither runs
+			// next. The check also runs after the last task, so a decision
+			// made during it is not lost before the walk returns.
 			if reviewWakeNudged(wake) {
-				reorder()
+				if latest, _ := m.store.GetPRD(prdID); latest != nil {
+					prd = latest
+				}
+				var tasks []*Task
+				m.store.WithLock(func() { tasks = flattenTasks(prd) })
+				if o, err := topoSort(tasks); err != nil {
+					log.Printf("[autonomous] %s: rebuild run order after review decision: %v", prdID, err)
+				} else {
+					order = o
+				}
 				failedIDs = make(map[string]bool)
 				heldIDs = make(map[string]bool)
 				i = -1
@@ -529,7 +527,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// heldIDs holds the tasks held for operator review. They are never
 		// completed, so their dependents never become ready.
 		heldIDs := make(map[string]bool, len(order))
-		remaining := 0
+		remaining := len(order)
 
 		// v8.36.5 — seed tracking for tasks that are already terminal before
 		// this Run() call even starts (a prior attempt, or — found live on
@@ -541,25 +539,18 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// (the "no ready tasks, nothing in-flight" safety below breaks the
 		// loop, but the dependent is left stuck pending, not visibly failed
 		// or blocked). Match the sequential path: completed tasks satisfy
-		// deps, failed/cancelled ones propagate as unmet. The wake case
-		// below seeds again after a review decision.
-		seed := func() {
-			remaining = len(inFlight)
-			for _, tid := range order {
-				if completedIDs[tid] || inFlight[tid] {
-					continue
-				}
-				if t := lookupTask(prd, tid); t != nil && m.taskTerminal(t) {
-					completedIDs[tid] = true
-					if t.Status == TaskFailed || t.Status == TaskCancelled {
-						failedIDs[tid] = true
-					}
-					continue
-				}
-				remaining++
+		// deps, failed/cancelled ones propagate as unmet.
+		for _, tid := range order {
+			t := lookupTask(prd, tid)
+			if t == nil || !m.taskTerminal(t) {
+				continue
 			}
+			completedIDs[tid] = true
+			if t.Status == TaskFailed || t.Status == TaskCancelled {
+				failedIDs[tid] = true
+			}
+			remaining--
 		}
-		seed()
 
 		isReady := func(tid string) bool {
 			t := lookupTask(prd, tid)
@@ -637,6 +628,73 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			}
 		}
 
+		// reviewDecisions brings the coordinator in line with an operator
+		// review decision made while tasks were running. The order is fixed
+		// when the pass starts, so a task the operator retried, or cancelled,
+		// is found here by re-reading the Automaton. remaining is recounted
+		// rather than adjusted, because a task held when the pass started was
+		// never in the order and never took a slot in remaining. The decision
+		// never starts a second executor: launch() stays the only place a task
+		// starts.
+		reviewDecisions := func() {
+			latest, _ := m.store.GetPRD(prdID)
+			if latest == nil || latest.Status == PRDPaused {
+				// A paused Automaton launches nothing. The result path drains
+				// the tasks in flight and returns.
+				return
+			}
+			prd = latest
+			// The order leaves out tasks held for review, so a task the
+			// operator has since retried is not in it. Rebuild the order from
+			// the Automaton as it stands now. A cycle keeps the old order.
+			var tasks []*Task
+			m.store.WithLock(func() { tasks = flattenTasks(latest) })
+			if o, err := topoSort(tasks); err != nil {
+				log.Printf("[autonomous] %s: rebuild run order after review decision: %v", prdID, err)
+			} else {
+				order = o
+			}
+			for _, tid := range order {
+				if inFlight[tid] {
+					continue
+				}
+				lt := lookupTask(latest, tid)
+				if lt == nil {
+					continue
+				}
+				switch {
+				case lt.Status == TaskReviewNeeded:
+					// Still held for review; the operator has not acted yet.
+				case m.taskTerminal(lt):
+					// Cancelled or otherwise finished by the operator. Mark it
+					// finished so its dependents resolve, and fail them when it
+					// did not succeed.
+					delete(heldIDs, tid)
+					completedIDs[tid] = true
+					if lt.Status == TaskFailed || lt.Status == TaskCancelled {
+						failedIDs[tid] = true
+					}
+				case normTaskStatus(lt.Status) == TaskPending:
+					// Retried by the operator. It runs again, so it is no
+					// longer finished or held. An empty status reads as pending.
+					delete(heldIDs, tid)
+					delete(completedIDs, tid)
+					delete(failedIDs, tid)
+				}
+			}
+			// Every task in flight, and every task in the order that is not
+			// finished or held, still owes a result. Only results and
+			// autoFailDeps move remaining, so it is set from that count.
+			remaining = len(inFlight)
+			for _, tid := range order {
+				if !completedIDs[tid] && !heldIDs[tid] && !inFlight[tid] {
+					remaining++
+				}
+			}
+			autoFailDeps()
+			launch()
+		}
+
 		// Propagate failure from any task whose only dependency is one of
 		// the already-terminal failed/cancelled tasks seeded above, before
 		// the first launch — otherwise it's merely "not ready" (never
@@ -675,6 +733,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 
 		for remaining > 0 {
 			if len(inFlight) == 0 {
+				// A decision can land just before the coordinator would exit.
+				// Process it, so a task it made ready is not left behind.
+				if reviewWakeNudged(wake) {
+					reviewDecisions()
+					continue
+				}
 				// No ready tasks and nothing in-flight — dependency deadlock
 				// should not happen with a valid topo sort.
 				break
@@ -688,21 +752,10 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				}
 				return ctx.Err()
 			case <-wake:
-				// An operator decision landed while tasks were running. Rebuild
-				// the order and the counts from the store and launch what the
-				// decision made ready. A task this pass held that the decision
-				// released is no longer held, so its hold is dropped here and
-				// launch can start it. Tasks still in flight keep running, and
-				// nothing waits for them.
-				reorder()
-				for tid := range heldIDs {
-					if !m.taskHeldIn(prd, tid) {
-						delete(heldIDs, tid)
-					}
-				}
-				seed()
-				autoFailDeps()
-				launch()
+				// An operator review decision landed while tasks were running.
+				// Re-read the Automaton and launch what it made ready. Tasks
+				// still in flight keep running and report through results.
+				reviewDecisions()
 			case r := <-results:
 				delete(inFlight, r.tid)
 				remaining--

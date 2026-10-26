@@ -91,8 +91,9 @@ func (s *Server) handleSetFailureEscalation(w http.ResponseWriter, r *http.Reque
 	s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
 }
 
-// handleResolveTaskReview serves POST resolve_task_review. A task that is not
-// held for review answers 409; an unknown Automaton or task answers 404.
+// handleResolveTaskReview serves POST resolve_task_review. It works while the
+// Automaton is running and other tasks are live. A task that is not held for
+// review answers 409; an unknown Automaton or task answers 404.
 func (s *Server) handleResolveTaskReview(w http.ResponseWriter, r *http.Request, id string) {
 	var req resolveTaskReviewReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

@@ -73,3 +73,44 @@ func TestResolveTaskReview_LiveExecutorIsSignalledNotRelaunched(t *testing.T) {
 		t.Fatalf("worker spawns went from %d to %d; a second executor ran", before, got)
 	}
 }
+
+// The cancel action signals a live executor the same way retry does.
+func TestResolveTaskReview_LiveExecutorIsSignalledOnCancel(t *testing.T) {
+	m, api := newFailureEscalationFixture(t, t.TempDir())
+	prd := newFailureEscalationPRD(t, m, t.TempDir(), nil)
+	task, spawns := heldTaskOf(t, m, api, prd)
+	before := len(spawns.workers())
+
+	if _, ok := api.claimRun(prd.ID); !ok {
+		t.Fatal("could not claim the executor slot")
+	}
+	api.reviewWake.arm(prd.ID)
+	defer api.releaseRun(prd.ID)
+
+	if _, err := api.ResolveTaskReview(prd.ID, task.ID, ReviewResolution{Action: reviewActionCancel}, "operator-test"); err != nil {
+		t.Fatalf("ResolveTaskReview cancel with a live executor: %v", err)
+	}
+	if !api.reviewWake.takePending(prd.ID) {
+		t.Fatal("live executor was not signalled on cancel")
+	}
+	if got := len(spawns.workers()); got != before {
+		t.Fatalf("worker spawns went from %d to %d; a second executor ran", before, got)
+	}
+}
+
+// With no executor slot live, a retry still relaunches the run.
+func TestResolveTaskReview_NoExecutorRelaunches(t *testing.T) {
+	m, api := newFailureEscalationFixture(t, t.TempDir())
+	prd := newFailureEscalationPRD(t, m, t.TempDir(), nil)
+	task, spawns := heldTaskOf(t, m, api, prd)
+	before := len(spawns.workers())
+
+	if _, err := api.ResolveTaskReview(prd.ID, task.ID, ReviewResolution{Action: reviewActionRetry}, "operator-test"); err != nil {
+		t.Fatalf("ResolveTaskReview without an executor: %v", err)
+	}
+	pollEscalationSettled(t, m, prd.ID, 10*time.Second)
+	waitExecutorGone(t, api, prd.ID, 10*time.Second)
+	if got := len(spawns.workers()); got <= before {
+		t.Fatalf("worker spawns stayed at %d; the run was not relaunched", got)
+	}
+}

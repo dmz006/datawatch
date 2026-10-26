@@ -425,6 +425,7 @@ POST /api/autonomous/prds/{id}/resolve_task_review
 - `action` is `retry` or `cancel`. The other fields apply to `retry` only.
 - Each change in a retry is checked before anything is written, so a refused change leaves the task held.
 - `note` is recorded on the Automaton's decision log and given to the next attempt.
+- The call works while the Automaton is running and other tasks are live. It answers at once, does not wait for the executor, and starts no second executor: a running executor is woken to read the Automaton again and launch the retried task (or fail the dependents of a cancelled one). An Automaton with no running executor is relaunched, as Resume does.
 - The response is the updated Automaton.
 
 Status codes for both routes:

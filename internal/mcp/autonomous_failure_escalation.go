@@ -50,7 +50,7 @@ func (s *Server) handleAutonomousPRDSetFailureEscalation(_ context.Context, req 
 
 func (s *Server) toolAutonomousPRDResolveTaskReview() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_resolve_task_review",
-		mcpsdk.WithDescription("The operator's decision on a task held for review (status review_needed). action=retry requeues it, optionally with a changed spec, worker (backend, model, effort) or narrowed file scope (files). action=cancel cancels it. A task that is not held answers 409."),
+		mcpsdk.WithDescription("The operator's decision on a task held for review (status review_needed). action=retry requeues it, optionally with a changed spec, worker (backend, model, effort) or narrowed file scope (files). action=cancel cancels it. It works while the Automaton is running and other tasks are live. A task that is not held answers 409."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID held for review")),
 		mcpsdk.WithString("action", mcpsdk.Required(), mcpsdk.Description("retry or cancel")),

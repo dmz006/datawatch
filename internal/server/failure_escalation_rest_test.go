@@ -9,6 +9,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -299,6 +300,98 @@ func TestFailureEscalationRESTResolveErrors(t *testing.T) {
 	}
 	if rr := postAutomaton(t, s, "a1", "resolve_task_review", `{"action":"retry"}`); rr.Code != http.StatusBadRequest {
 		t.Errorf("missing task_id: want 400, got %d", rr.Code)
+	}
+	if rr := postAutomaton(t, s, "a1", "resolve_task_review", `{"task_id":"ghost","action":"retry"}`); rr.Code != http.StatusNotFound {
+		t.Errorf("unknown task: want 404, got %d", rr.Code)
+	}
+	if rr := postAutomaton(t, s, "nope", "resolve_task_review", `{"task_id":"t-held","action":"retry"}`); rr.Code != http.StatusNotFound {
+		t.Errorf("unknown automaton: want 404, got %d", rr.Code)
+	}
+}
+
+// liveReviewAPI is an Automaton manager double for resolve_task_review. Its
+// Automaton has one task running (t-live) next to the held one (t-held), so the
+// route is exercised with the Automaton live. A retry answers with the updated
+// Automaton, the held task requeued, and the call is recorded.
+type liveReviewAPI struct {
+	fakeOrchAutonomous
+	prd   *autonomous.PRD
+	calls []liveReviewCall
+}
+
+type liveReviewCall struct {
+	prdID, taskID, actor string
+	req                  autonomous.ReviewResolution
+}
+
+func (a *liveReviewAPI) GetPRD(id string) (any, bool) {
+	if id != a.prd.ID {
+		return nil, false
+	}
+	return a.prd, true
+}
+
+func (a *liveReviewAPI) SetFailureEscalation(string, string, *autonomous.FailureEscalationPolicy, string) (any, error) {
+	return a.prd, nil
+}
+
+func (a *liveReviewAPI) ResolveTaskReview(prdID, taskID string, req autonomous.ReviewResolution, actor string) (any, error) {
+	a.calls = append(a.calls, liveReviewCall{prdID, taskID, actor, req})
+	if taskID != "t-held" {
+		return nil, autonomous.ErrTaskNotInReview
+	}
+	a.prd.Story[0].Tasks[0].Status = autonomous.TaskPending
+	a.prd.Story[0].Tasks[0].ReviewSummary = nil
+	return a.prd, nil
+}
+
+// TestFailureEscalationRESTResolveWhileAutomatonRunning: a retry is accepted
+// while another task of the Automaton is running. It answers 200 with the
+// updated Automaton, hands the decision to the manager and writes the audit
+// entry. A task that is not held still answers 409 and an unknown task 404.
+func TestFailureEscalationRESTResolveWhileAutomatonRunning(t *testing.T) {
+	prd := heldRESTPRD("a1")
+	prd.Status = autonomous.PRDRunning
+	prd.Story[0].Tasks[1].Status = autonomous.TaskInProgress
+	api := &liveReviewAPI{prd: prd}
+
+	s, _, auditPath := newFailureEscalationRESTServer(t)
+	s.autonomousMgr = api
+
+	rr := postAutomaton(t, s, "a1", "resolve_task_review",
+		`{"task_id":"t-held","action":"retry","note":"go again"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("retry while another task runs: want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var got autonomous.PRD
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("response is not an Automaton: %v: %s", err, rr.Body.String())
+	}
+	if got.ID != "a1" || got.Status != autonomous.PRDRunning {
+		t.Errorf("response Automaton = %s/%s, want a1/running", got.ID, got.Status)
+	}
+	tasks := got.Story[0].Tasks
+	if tasks[0].ID != "t-held" || (tasks[0].Status != "" && tasks[0].Status != autonomous.TaskPending) {
+		t.Errorf("held task in the response = %s/%q, want requeued", tasks[0].ID, tasks[0].Status)
+	}
+	if tasks[1].ID != "t-pending" || tasks[1].Status != autonomous.TaskInProgress {
+		t.Errorf("live task in the response = %s/%q, want in_progress", tasks[1].ID, tasks[1].Status)
+	}
+	if len(api.calls) != 1 {
+		t.Fatalf("manager called %d times, want 1", len(api.calls))
+	}
+	call := api.calls[0]
+	if call.prdID != "a1" || call.taskID != "t-held" || call.actor != "operator" ||
+		call.req.Action != "retry" || call.req.Note != "go again" {
+		t.Errorf("manager call = %+v", call)
+	}
+	if actions := auditActions(t, auditPath); !hasAuditAction(actions, "resolve_task_review") {
+		t.Errorf("no resolve_task_review audit entry; actions = %v", actions)
+	}
+
+	// The existing refusals hold with the Automaton live.
+	if rr := postAutomaton(t, s, "a1", "resolve_task_review", `{"task_id":"t-pending","action":"retry"}`); rr.Code != http.StatusConflict {
+		t.Errorf("task not held: want 409, got %d: %s", rr.Code, rr.Body.String())
 	}
 	if rr := postAutomaton(t, s, "a1", "resolve_task_review", `{"task_id":"ghost","action":"retry"}`); rr.Code != http.StatusNotFound {
 		t.Errorf("unknown task: want 404, got %d", rr.Code)

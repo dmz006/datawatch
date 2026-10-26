@@ -285,7 +285,8 @@ func newAutonomousResolveReviewCmd() *cobra.Command {
 		Long: `The operator's decision on a task held for review (status review_needed).
 retry requeues the task. It may carry a replaced spec, a worker (backend,
 model, effort) for the task, and a narrowed file scope (--files). cancel
-cancels the task. A task that is not held answers 409.`,
+cancels the task. It works while the Automaton is running and other tasks are
+live. A task that is not held answers 409.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if action != "retry" && action != "cancel" {

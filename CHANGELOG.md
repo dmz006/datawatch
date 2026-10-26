@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- A task held for review can now be retried or cancelled while its Automaton is still running other tasks. The decision no longer needs the Automaton to be idle, and no second executor is started: the running executor is woken, re-reads the Automaton and launches the retried task, or fails the dependents of a cancelled one. This holds for both the one-task-at-a-time executor and the concurrent one.
+- The five second wait, and the "executor still finishing" error it ended in, are gone from the held-task decision. The REST, MCP and CLI `resolve_task_review` calls no longer answer 400 for this reason while the Automaton runs.
+
 ### Shared navigation fits phone widths
 
 The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.
