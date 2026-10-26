@@ -17,6 +17,13 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.17.4 — A held task can be resolved while its Automaton keeps running
+
+### Fixed
+
+- A task held for review can now be retried or cancelled while its Automaton is still running other tasks. The decision no longer needs the Automaton to be idle, and no second executor is started: the running executor is woken, re-reads the Automaton and launches the retried task, or fails the dependents of a cancelled one. This holds for both the one-task-at-a-time executor and the concurrent one.
+- The five second wait, and the "executor still finishing" error it ended in, are gone from the held-task decision. The REST, MCP and CLI `resolve_task_review` calls no longer answer 400 for this reason while the Automaton runs.
+
 ## v9.17.3 — Workers are not launched in an unregistered worktree
 
 ### Automaton workers no longer launch in an unregistered worktree
