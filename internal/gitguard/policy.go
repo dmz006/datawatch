@@ -154,7 +154,13 @@ func (p Policy) RefuseReason(n int) string {
 // touched. A missing pack directory is not an error, and repeated calls are
 // safe. It returns the paths removed.
 func CleanTempPacks(repoDir string) (removed []string, err error) {
-	dir := filepath.Join(repoDir, ".git", "objects", "pack")
+	dir, err := ResolveWithin(repoDir, filepath.Join(".git", "objects", "pack"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil

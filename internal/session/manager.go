@@ -1993,7 +1993,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			projectDir = d
 		}
 	} else if !filepath.IsAbs(projectDir) && m.workspaceRoot != "" {
-		projectDir = filepath.Join(m.workspaceRoot, projectDir)
+		resolved, rerr := resolveWorkspaceDir(m.workspaceRoot, projectDir)
+		if rerr != nil {
+			return nil, rerr
+		}
+		projectDir = resolved
 	}
 
 	// An Automaton-owned worktree must already exist: never recreate it as
