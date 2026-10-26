@@ -469,6 +469,10 @@ budget estimate. Deliberately held PRDs are listed in `IGNORE` in the script wit
 4. Worktree check: each running PRD's directory under `~/.datawatch/prd-worktrees/<id>` has `go.mod`, is a
    registered worktree, and its `.datawatch/verify/*.sh` scripts are executable (a missing exec bit failed a final
    gate three times on 2026-10-26; a rebuilt worktree must carry the verify folder over).
+   Claude lanes: the standing cap is 1. Operator, 2026-10-26: "Stay at 1 but use 2nd for special". Raise the cap to 2
+   (`datawatch llm update claude-code --max-inflight 2`) only for a special item (a defect that blocks other work or
+   throughput, a security finding that needs triage, a merge that cannot wait), return it to 1 when that item's Claude
+   work is done, and state the use, its reason and open and close times in the next report.
 5. Lane fill (GPU rule: GPU lanes cost no Claude usage, so Claude limits never hold GPU work). For every idle lane:
    a. decomposed PRDs: read the spec first (never run HOLD or sequenced-after-unshipped work), 4a grep main for what
       it asks for (a stale PRD is dropped and reported), validate (section 4, read tasks touching tmux, pkill,
