@@ -36,7 +36,7 @@ func newResetTaskTestServer(t *testing.T) (*Server, string) {
 	if err := mgr.Store().SavePRD(prd); err != nil {
 		t.Fatalf("SavePRD: %v", err)
 	}
-	return &Server{autonomousMgr: autonomous.NewAPI(mgr)}, prd.ID
+	return &Server{autonomousMgr: newTestAPI(mgr)}, prd.ID
 }
 
 func TestResetTaskCompactReply(t *testing.T) {
@@ -111,7 +111,7 @@ func newWriteCasesTestServer(t *testing.T, status autonomous.PRDStatus) (*Server
 	if err := mgr.Store().SavePRD(prd); err != nil {
 		t.Fatalf("SavePRD: %v", err)
 	}
-	return &Server{autonomousMgr: autonomous.NewAPI(mgr)}, prd.ID
+	return &Server{autonomousMgr: newTestAPI(mgr)}, prd.ID
 }
 
 // TestWriteCasesCompactTaskLevel checks that each task- or story-scoped write
@@ -347,7 +347,7 @@ func newPRDDetailTestServer(t *testing.T) (*Server, string) {
 	if err := mgr.Store().SavePRD(prd); err != nil {
 		t.Fatalf("SavePRD: %v", err)
 	}
-	return &Server{autonomousMgr: autonomous.NewAPI(mgr)}, prd.ID
+	return &Server{autonomousMgr: newTestAPI(mgr)}, prd.ID
 }
 
 // TestGetPRDDetailLevels checks the detail query parameter on the PRD GET route.

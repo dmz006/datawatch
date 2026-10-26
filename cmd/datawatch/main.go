@@ -1350,6 +1350,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetAutoGitInit(cfg.Session.AutoGitInit)
 	mgr.SetSecureTracking(cfg.Session.SecureTracking)
 	mgr.SetWorkspaceRoot(cfg.Session.WorkspaceRoot)
+	// The automatic-commit guard enforces the same project roots as session
+	// start. session.default_project_dir is daemon configuration, so a session
+	// that runs there (no project_dir in its request) may commit.
+	gitguard.SetProjectRoots(func() []string {
+		roots := cfg.AllowedProjectRoots()
+		if d := strings.TrimSpace(cfg.Session.DefaultProjectDir); d != "" {
+			roots = append(roots, expandHome(d))
+		}
+		return roots
+	})
 	mgr.BackfillOutputMode()
 
 	// BL93 — startup session reconciler.
@@ -2873,6 +2883,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// Pipeline executor (F15)
 		pipeManagerAdapter = pipelinePkg.NewManagerAdapter(mgr, cfg.Session.LLMBackend)
 		pipeExec = pipelinePkg.NewExecutor(pipeManagerAdapter, cfg.Session.LLMBackend)
+		pipeExec.SetProjectRoots(cfg.AllowedProjectRoots)
 		// BL28 — wire quality-gate config into executor.
 		pipeExec.SetQualityGates(pipelinePkg.QualityGateConfig{
 			Enabled:           cfg.Pipeline.QualityGates.Enabled,
@@ -3271,6 +3282,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if pipeAdapter == nil {
 		pipeManagerAdapter = pipelinePkg.NewManagerAdapter(mgr, cfg.Session.LLMBackend)
 		pipeExec = pipelinePkg.NewExecutor(pipeManagerAdapter, cfg.Session.LLMBackend)
+		pipeExec.SetProjectRoots(cfg.AllowedProjectRoots)
 		pipeExec.SetQualityGates(pipelinePkg.QualityGateConfig{
 			Enabled:           cfg.Pipeline.QualityGates.Enabled,
 			TestCommand:       cfg.Pipeline.QualityGates.TestCommand,
@@ -5992,6 +6004,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// written to the daemon log once; the status endpoint keeps them.
 			amgr.ReportPairingWarnings()
 			amgr.SetGuardrail(autonomousGuardrail)
+			amgr.SetProjectRoots(cfg.AllowedProjectRoots)
 			// The plan-review judge goes through the same routed, leased and
 			// time-limited judge path as the guardrail judge.
 			amgr.SetPlanReview(planReviewViaJudge(autonomousGuardrail, func(prdID string) string {
@@ -7228,6 +7241,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				pipelinePkg.NewManagerAdapter(mgr, cfg.Session.LLMBackend),
 				cfg.Session.LLMBackend,
 			)
+			testPipeExec.SetProjectRoots(cfg.AllowedProjectRoots)
 			testRouter.SetPipelineExecutor(pipelinePkg.NewRouterAdapter(testPipeExec))
 		}
 		httpServer.SetTestMessageHandler(testRouter.HandleTestMessage)

@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Project directories must lie under an allowed root
+
+- A project directory that comes from a request or a stored record is now refused unless it lies under an allowed root. This applies to a session start (REST, MCP, chat, CLI and PRD tasks), an Automaton created with an explicit `project_dir` or a per-task `project_dir`, and the working directory of the pipeline and quality-gate test runner. The rule is always on, whether or not an API token is set.
+- The allowed roots are the PRD worktree base (`autonomous.worktree_dir`, default `~/.datawatch/prd-worktrees`) and the workspace root (`session.workspace_root`), plus any folders listed in the new setting `server.allowed_project_roots`. Nothing else widens the set.
+- `..` segments and symlinks, including dangling links, are resolved before the check. A refused directory returns an error that names the allowed roots (REST answers 400).
+- `server.allowed_project_roots` is available in `config.yaml`, `PUT /api/config`, MCP `config_set`, `datawatch config set`, chat `configure` and the Settings card (with strings in all five locale bundles). It takes absolute paths only and applies without a restart.
+- Upgrade note: a session or Automaton whose project directory is outside these roots (for example a checkout under `~/workspace`) is refused until its folder is added to `server.allowed_project_roots` or set as `session.workspace_root`. `session.default_project_dir` is daemon configuration and is still used as is.
+- Docs: [`operations.md`](docs/operations.md) "Allowed project roots".
+
 ### The LLM entry's compute node list decides where local-model work runs
 
 - The `compute_nodes` list on an LLM entry now decides which nodes a local-model worker, verifier and judge may run on. Each listed node that is known and serves the model is a candidate.

@@ -80,7 +80,8 @@ func (m *Manager) SetTaskProjectDir(prdID, taskID, dir, actor string) (*PRD, err
 }
 
 // runQualityGateTests is pipeline.RunTests; a var so tests can observe the
-// directory each quality-gate run happens in.
+// directory each quality-gate run happens in. The last argument is the
+// allowed project roots the run's directory is checked against.
 var runQualityGateTests = pipeline.RunTests
 
 // qualityGateBaselines caches BL367 quality-gate baselines per directory
@@ -98,11 +99,14 @@ type qualityGateBaselines struct {
 	// marking and warning. nil is a no-op.
 	onInvalid func(dir, reason string)
 	enabled   bool
+	// roots are the allowed project roots a lazily captured baseline's
+	// directory is checked against.
+	roots []string
 }
 
-func newQualityGateBaselines(cfg pipeline.QualityGateConfig, prdDir string, prdBaseline *pipeline.TestResult) *qualityGateBaselines {
+func newQualityGateBaselines(cfg pipeline.QualityGateConfig, prdDir string, prdBaseline *pipeline.TestResult, roots []string) *qualityGateBaselines {
 	b := &qualityGateBaselines{cfg: cfg, prdDir: prdDir, byDir: map[string]pipeline.TestResult{},
-		enabled: cfg.Enabled && cfg.TestCommand != ""}
+		enabled: cfg.Enabled && cfg.TestCommand != "", roots: roots}
 	if prdBaseline != nil {
 		b.byDir[prdDir] = *prdBaseline
 	}
@@ -125,7 +129,7 @@ func (b *qualityGateBaselines) forDir(dir string) (pipeline.TestResult, bool) {
 	if dir == b.prdDir {
 		return pipeline.TestResult{}, false
 	}
-	r := runQualityGateTests(b.cfg.TestCommand, dir, b.cfg.EffectiveTimeout())
+	r := runQualityGateTests(b.cfg.TestCommand, dir, b.cfg.EffectiveTimeout(), b.roots)
 	log.Printf("[autonomous] quality-gate baseline for task dir %s: %d pass / %d fail", dir, r.PassCount, r.FailCount)
 	b.byDir[dir] = r
 	if valid, reason := pipeline.ClassifyBaseline(r); !valid && b.onInvalid != nil {

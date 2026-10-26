@@ -79,7 +79,7 @@ func newFailureEscalationRESTServer(t *testing.T, prds ...*autonomous.PRD) (*Ser
 	s := &Server{
 		cfg:           config.DefaultConfig(),
 		cfgPath:       filepath.Join(dir, "config.yaml"),
-		autonomousMgr: autonomous.NewAPI(mgr),
+		autonomousMgr: newTestAPI(mgr),
 		auditLog:      al,
 	}
 	return s, mgr, filepath.Join(dir, "audit.log")

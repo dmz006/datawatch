@@ -62,11 +62,11 @@ func TestEvaluateGate_FlakeNotReportedAsRegression(t *testing.T) {
 	script, state := writeFakeTestCmd(t, 1)
 	dir := filepath.Dir(script)
 
-	current := RunTests(script, dir, 30)
+	current := RunTests(script, dir, 30, testRoots)
 	if !CompareResults(cleanBaseline(), current).Regression {
 		t.Fatal("precondition: first run must look like a regression")
 	}
-	got := EvaluateGate(cleanBaseline(), current, dir, 30)
+	got := EvaluateGate(cleanBaseline(), current, dir, 30, testRoots)
 	if got.Regression {
 		t.Fatalf("flake reported as regression: %s", got.Summary)
 	}
@@ -86,8 +86,8 @@ func TestEvaluateGate_ConfirmedRegressionNamesTests(t *testing.T) {
 	script, state := writeFakeTestCmd(t, 1, 2, 3)
 	dir := filepath.Dir(script)
 
-	current := RunTests(script, dir, 30)
-	got := EvaluateGate(cleanBaseline(), current, dir, 30)
+	current := RunTests(script, dir, 30, testRoots)
+	got := EvaluateGate(cleanBaseline(), current, dir, 30, testRoots)
 	if !got.Regression {
 		t.Fatalf("persistent failure not reported: %s", got.Summary)
 	}
@@ -107,8 +107,8 @@ func TestEvaluateGate_CleanRunDoesNotRerun(t *testing.T) {
 	script, state := writeFakeTestCmd(t)
 	dir := filepath.Dir(script)
 
-	current := RunTests(script, dir, 30)
-	got := EvaluateGate(cleanBaseline(), current, dir, 30)
+	current := RunTests(script, dir, 30, testRoots)
+	got := EvaluateGate(cleanBaseline(), current, dir, 30, testRoots)
 	if got.Regression || got.NewFailures != 0 {
 		t.Fatalf("clean run flagged: %+v", got)
 	}
@@ -159,11 +159,11 @@ func TestEvaluateGate_CompoundCommandRerunsWholeCommand(t *testing.T) {
 	dir := filepath.Dir(script)
 	command := script + " && true"
 
-	current := RunTests(command, dir, 30)
+	current := RunTests(command, dir, 30, testRoots)
 	if len(current.FailedTests) != 1 {
 		t.Fatalf("precondition: want one failing test, got %v", current.FailedTests)
 	}
-	got := EvaluateGate(cleanBaseline(), current, dir, 30)
+	got := EvaluateGate(cleanBaseline(), current, dir, 30, testRoots)
 	if got.Regression || got.Invalid {
 		t.Fatalf("flake in a compound command flagged: %+v", got)
 	}
@@ -180,9 +180,9 @@ func TestEvaluateGate_InvalidRunIsNotRerun(t *testing.T) {
 	t.Run("invalid baseline", func(t *testing.T) {
 		script, state := writeFakeTestCmd(t, 1, 2)
 		dir := filepath.Dir(script)
-		current := RunTests(script, dir, 30)
+		current := RunTests(script, dir, 30, testRoots)
 
-		got := EvaluateGate(TestResult{Command: "baseline", ExitCode: 2}, current, dir, 30)
+		got := EvaluateGate(TestResult{Command: "baseline", ExitCode: 2}, current, dir, 30, testRoots)
 		if !got.Invalid || got.Regression || got.InvalidReason == "" {
 			t.Fatalf("want invalid, not regression: %+v", got)
 		}
@@ -195,7 +195,7 @@ func TestEvaluateGate_InvalidRunIsNotRerun(t *testing.T) {
 		dir := filepath.Dir(script)
 		current := TestResult{Command: script, ExitCode: -1, TimedOut: true}
 
-		got := EvaluateGate(cleanBaseline(), current, dir, 30)
+		got := EvaluateGate(cleanBaseline(), current, dir, 30, testRoots)
 		if !got.Invalid || got.Regression || got.InvalidReason == "" {
 			t.Fatalf("want invalid, not regression: %+v", got)
 		}
@@ -214,11 +214,11 @@ func TestEvaluateGate_NodeFailureNameRegression(t *testing.T) {
 	baseline := TestResult{Command: script, ExitCode: 1, PassCount: 4, FailCount: 1, TestsFound: 5,
 		FailedTests: []string{"gadget works"}}
 
-	current := RunTests(script, dir, 30)
+	current := RunTests(script, dir, 30, testRoots)
 	if current.FailCount != baseline.FailCount {
 		t.Fatalf("precondition: failure count must be unchanged, got %d", current.FailCount)
 	}
-	got := EvaluateGate(baseline, current, dir, 30)
+	got := EvaluateGate(baseline, current, dir, 30, testRoots)
 	if !got.Regression {
 		t.Fatalf("new failing name not reported: %s", got.Summary)
 	}
@@ -245,8 +245,8 @@ exit 3
 `)
 	dir := filepath.Dir(script)
 
-	current := RunTests(script, dir, 30)
-	got := EvaluateGate(cleanBaseline(), current, dir, 30)
+	current := RunTests(script, dir, 30, testRoots)
+	got := EvaluateGate(cleanBaseline(), current, dir, 30, testRoots)
 	if !got.Invalid || got.Regression {
 		t.Fatalf("want invalid, not regression: %+v", got)
 	}

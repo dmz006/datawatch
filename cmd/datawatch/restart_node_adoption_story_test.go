@@ -59,7 +59,7 @@ func newRestartRig(t *testing.T, sessions map[string]*session.Session) *restartR
 	mgr.SetSessionAliveFn(func(id string) bool { _, ok := sessions[id]; return ok })
 	reg.SetChangeFn(replanOnPlacementChange(led, regFn, nodesFn))
 
-	api := autonomous.NewAPI(mgr)
+	api := newTestAPI(mgr)
 	t.Cleanup(func() {
 		if err := api.WaitIdle(storyWait); err != nil {
 			t.Errorf("executors did not stop: %v", err)

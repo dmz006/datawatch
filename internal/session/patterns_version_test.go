@@ -15,6 +15,7 @@ func newPatternsManager(t *testing.T) *Manager {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(m)
 	// Inject a canned claude version so no test depends on a real claude
 	// binary being on this machine's PATH.
 	m.SetClaudeCLIVersionRunner(func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -129,6 +130,7 @@ func TestPatternsRecheck_PersistsAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(m1)
 	m1.SetClaudeCLIVersionRunner(fake)
 	if _, err := m1.RecheckRateLimitPatterns(); err != nil {
 		t.Fatal(err)
@@ -137,6 +139,7 @@ func TestPatternsRecheck_PersistsAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(m2)
 	m2.SetClaudeCLIVersionRunner(fake)
 	if _, stale := m2.RateLimitPatternsStatus(); stale {
 		t.Error("recheck must survive a restart (same data dir)")

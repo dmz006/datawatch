@@ -80,7 +80,11 @@ type QualityGateResult struct {
 // output into pass/fail counts and failing test names. timeout is in
 // seconds; <= 0 means no limit. A run that could not be started or was
 // killed by the deadline has ExitCode -1.
-func RunTests(command, projectDir string, timeout int) TestResult {
+//
+// projectDir must lie under one of roots (gitguard.ResolveProjectDir): the
+// directory comes from a PRD record, so it is checked before anything runs in
+// it, and a directory outside every root is reported as an unusable run.
+func RunTests(command, projectDir string, timeout int, roots []string) TestResult {
 	start := time.Now()
 	result := TestResult{Command: command, RunAt: start}
 
@@ -95,7 +99,7 @@ func RunTests(command, projectDir string, timeout int) TestResult {
 	if trimmed == "" {
 		return unusable("empty test command")
 	}
-	cleanDir, derr := gitguard.CleanProjectDir(projectDir)
+	cleanDir, derr := gitguard.ResolveProjectDir(projectDir, roots)
 	if derr != nil {
 		return unusable("project directory refused: " + derr.Error())
 	}
@@ -415,9 +419,9 @@ func commandPackages(command string) []string {
 // is a plain go test invocation and every candidate is a named go test, only
 // those tests (in their packages) are re-run; any other command, and any
 // package-level candidate, re-runs the whole command through RunTests.
-func rerunCandidates(current TestResult, candidates []string, projectDir string, timeout int) TestResult {
+func rerunCandidates(current TestResult, candidates []string, projectDir string, timeout int, roots []string) TestResult {
 	if !isPlainGoTest(current.Command) {
-		return RunTests(current.Command, projectDir, timeout)
+		return RunTests(current.Command, projectDir, timeout, roots)
 	}
 	want := make(map[string]bool, len(candidates))
 	for _, c := range candidates {
@@ -432,7 +436,7 @@ func rerunCandidates(current TestResult, candidates []string, projectDir string,
 		}
 		matched++
 		if f.test == "" { // package-level failure: nothing to narrow to
-			return RunTests(current.Command, projectDir, timeout)
+			return RunTests(current.Command, projectDir, timeout, roots)
 		}
 		tops[regexp.QuoteMeta(strings.SplitN(f.test, "/", 2)[0])] = true
 		if f.pkg != "" {
@@ -440,7 +444,7 @@ func rerunCandidates(current TestResult, candidates []string, projectDir string,
 		}
 	}
 	if matched < len(want) || len(tops) == 0 {
-		return RunTests(current.Command, projectDir, timeout)
+		return RunTests(current.Command, projectDir, timeout, roots)
 	}
 	var pkgs []string
 	for p := range pkgSet {
@@ -463,7 +467,7 @@ func rerunCandidates(current TestResult, candidates []string, projectDir string,
 	for i, p := range parts {
 		quoted[i] = shellQuote(p)
 	}
-	return RunTests(strings.Join(quoted, " "), projectDir, timeout)
+	return RunTests(strings.Join(quoted, " "), projectDir, timeout, roots)
 }
 
 // shellQuote wraps s in single quotes for sh, escaping embedded single quotes.
@@ -476,14 +480,14 @@ func shellQuote(s string) string {
 // re-run, once, and only the new failing names are candidates. A candidate
 // that fails again is confirmed; a candidate that does not is reported
 // STABLE. An unusable re-run makes the gate invalid, never a regression.
-func EvaluateGate(baseline, current TestResult, projectDir string, timeout int) QualityGateResult {
+func EvaluateGate(baseline, current TestResult, projectDir string, timeout int, roots []string) QualityGateResult {
 	result := CompareResults(baseline, current)
 	if result.Invalid || !result.Regression {
 		return result
 	}
 
 	candidates := result.NewFailureNames
-	rerun := rerunCandidates(current, candidates, projectDir, timeout)
+	rerun := rerunCandidates(current, candidates, projectDir, timeout, roots)
 	if valid, reason := ClassifyBaseline(rerun); !valid {
 		return invalidGate(result, "confirming re-run unusable: "+reason,
 			"confirming re-run unusable: "+reason)

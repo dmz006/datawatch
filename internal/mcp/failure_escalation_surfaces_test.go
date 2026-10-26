@@ -253,6 +253,7 @@ func TestFailureEscalationMCPToolsRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("session.NewManager: %v", err)
 	}
+	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 	s := New("testhost", mgr, &config.MCPConfig{Enabled: true}, dir, Options{Version: "test"})
 	tools, err := s.ListTools()

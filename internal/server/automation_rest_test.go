@@ -25,7 +25,7 @@ func newAutomationRESTServer(t *testing.T, dataDir string) (*Server, *autonomous
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	return &Server{cfg: config.DefaultConfig(), autonomousMgr: autonomous.NewAPI(mgr)}, mgr
+	return &Server{cfg: config.DefaultConfig(), autonomousMgr: newTestAPI(mgr)}, mgr
 }
 
 // makeMemberPRD creates one PRD in the manager usable as an Automation

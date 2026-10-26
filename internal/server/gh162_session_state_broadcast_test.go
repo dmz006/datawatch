@@ -52,6 +52,7 @@ func TestGH162_NotifyStateChange_EmitsBothMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTestTemp(mgr)
 	// In-memory tmux fake: these tests never need a live multiplexer.
 	mgr.WithFakeTmux()
 	t.Cleanup(mgr.WaitBackground)

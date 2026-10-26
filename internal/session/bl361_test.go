@@ -14,6 +14,7 @@ func bl361MakeManager(t *testing.T) *Manager {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTestTemp(mgr)
 
 	alive := true
 	dead := false

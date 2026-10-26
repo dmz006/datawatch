@@ -43,8 +43,7 @@ func ResolveWithin(base, rel string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	back, err := filepath.Rel(baseReal, real)
-	if err != nil || back == ".." || strings.HasPrefix(back, ".."+string(filepath.Separator)) {
+	if !isWithin(baseReal, real) {
 		return "", fmt.Errorf("%w: %q resolves outside %s", ErrPathEscapes, rel, base)
 	}
 	return joined, nil

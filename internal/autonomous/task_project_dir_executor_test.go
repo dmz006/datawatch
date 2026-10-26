@@ -285,7 +285,7 @@ func stubQualityGates(t *testing.T) (*[]string, *sync.Mutex) {
 	var dirs []string
 	var mu sync.Mutex
 	orig := runQualityGateTests
-	runQualityGateTests = func(_ string, dir string, _ int) pipeline.TestResult {
+	runQualityGateTests = func(_ string, dir string, _ int, _ []string) pipeline.TestResult {
 		mu.Lock()
 		dirs = append(dirs, dir)
 		mu.Unlock()
@@ -334,7 +334,7 @@ func TestBL447_QualityGateTestDir(t *testing.T) {
 
 func TestBL447_QualityGateBaselineCachedPerDir(t *testing.T) {
 	dirs, _ := stubQualityGates(t)
-	b := newQualityGateBaselines(pipeline.QualityGateConfig{Enabled: true, TestCommand: "x"}, "/p", nil)
+	b := newQualityGateBaselines(pipeline.QualityGateConfig{Enabled: true, TestCommand: "x"}, "/p", nil, nil)
 	if _, ok := b.forDir("/p"); ok {
 		t.Fatal("PRD dir without a captured baseline must report none (pre-BL447 behaviour)")
 	}

@@ -997,6 +997,40 @@ curl -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8080/api/sessions?view=summary&states=active" | jq '.[] | {id,state,task}'
 ```
 
+### Allowed project roots
+
+A project directory that comes from a request or a stored record is only
+used when it lies under an allowed root. This covers a session start (REST,
+MCP, chat, the CLI and a PRD task), an Automaton created with an explicit
+`project_dir` (and a per-task `project_dir`), the pipeline and quality-gate
+test runner's working directory, and the git guard's own path handling. The
+rule is always on, with or without an API token.
+
+Allowed roots are:
+
+1. the PRD worktree base, `autonomous.worktree_dir` (default
+   `~/.datawatch/prd-worktrees`), the folder the daemon creates PRD worktrees in;
+2. the daemon's workspace root, `session.workspace_root`, when set;
+3. every folder listed in `server.allowed_project_roots` (absolute paths, a
+   leading `~` is allowed, no filesystem root). Nothing else widens the set.
+
+`..` segments and symlinks, including a dangling link, are resolved before
+the check, so a link inside a root that points outside it is refused, as is a
+missing path that a dangling link would create outside the roots. A refused
+directory returns an error that names the roots (REST answers 400). A
+relative `project_dir` is joined under the workspace root (or the daemon's
+working directory when no root is set) and checked the same way. The daemon's
+own `session.default_project_dir` is configuration, not request input, so it
+is used as is.
+
+Changes apply live; no restart is needed.
+
+| Key | YAML (`server:` block) | CLI | Web UI (Settings → General → Sessions) | REST | Chat |
+|---|---|---|---|---|---|
+| `server.allowed_project_roots` | `allowed_project_roots: [/srv/projects, ~/work]` | `datawatch config set server.allowed_project_roots /srv/projects,~/work` | *Extra allowed project roots (comma-separated)* | `PUT /api/config` `{"server.allowed_project_roots": ["/srv/projects", "~/work"]}` | `configure server.allowed_project_roots=/srv/projects,~/work` |
+
+MCP agents can use `config_set` with the same key and a comma-separated value.
+
 ### Payload settings for low-bandwidth clients
 
 These `server.*` settings tune the compact session list, the WebSocket

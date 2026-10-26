@@ -43,7 +43,7 @@ func newActivateServer(t *testing.T, withCoordinator bool) (*Server, *autonomous
 	s := &Server{
 		cfg:           config.DefaultConfig(),
 		cfgPath:       filepath.Join(dir, "config.yaml"),
-		autonomousMgr: autonomous.NewAPI(mgr),
+		autonomousMgr: newTestAPI(mgr),
 		auditLog:      al,
 	}
 	return s, mgr, al

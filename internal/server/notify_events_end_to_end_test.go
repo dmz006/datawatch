@@ -94,7 +94,7 @@ func TestNotifyEventsEndToEnd(t *testing.T) {
 	aud := &auditRecorder{}
 	m.SetAuditFn(aud.fn)
 
-	s := &Server{autonomousMgr: autonomous.NewAPI(m)}
+	s := &Server{autonomousMgr: newTestAPI(m)}
 	call := func(method, path, body string) *httptest.ResponseRecorder {
 		t.Helper()
 		var rd io.Reader

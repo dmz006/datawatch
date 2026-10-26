@@ -192,6 +192,7 @@ func TestSetTaskProjectDir(t *testing.T) {
 
 func TestAPISetTaskProjectDir(t *testing.T) {
 	m, prd := newTaskDirManager(t)
+	m.SetProjectRoots(func() []string { return []string{"/srv"} })
 	a := &API{M: m}
 	if _, err := a.SetTaskProjectDir(prd.ID, "t1", "/srv/a", "api"); err != nil {
 		t.Fatalf("api set: %v", err)

@@ -35,7 +35,7 @@ func newAutomationAuditServer(t *testing.T) (*Server, *autonomous.Manager, *audi
 		t.Fatalf("audit.New: %v", err)
 	}
 	t.Cleanup(func() { _ = al.Close() })
-	return &Server{cfg: config.DefaultConfig(), autonomousMgr: autonomous.NewAPI(mgr), auditLog: al}, mgr, al
+	return &Server{cfg: config.DefaultConfig(), autonomousMgr: newTestAPI(mgr), auditLog: al}, mgr, al
 }
 
 // doAutomation runs one /api/automations request and fails unless it

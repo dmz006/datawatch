@@ -20,6 +20,7 @@ func newSessionTestManager(t *testing.T) *session.Manager {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	return mgr
 }
 

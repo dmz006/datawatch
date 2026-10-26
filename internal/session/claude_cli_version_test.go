@@ -34,6 +34,7 @@ func newGuardTestManager(t *testing.T, fake *fakeCLIRunner) *Manager {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(m)
 	m.SetClaudeCLIVersionRunner(fake.Run)
 	return m
 }

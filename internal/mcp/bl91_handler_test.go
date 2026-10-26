@@ -22,6 +22,7 @@ func bl91Server(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 	return &Server{
 		hostname: "testhost",

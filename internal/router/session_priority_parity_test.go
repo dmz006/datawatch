@@ -14,6 +14,7 @@ func priorityRouter(t *testing.T) *Router {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(sm)
 	sm.WithFakeTmux()
 	return &Router{
 		hostname: "h",

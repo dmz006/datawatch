@@ -261,6 +261,11 @@ server:
   auto_restart_on_config: false
   # Hide toast notifications for the currently viewed session
   suppress_active_toasts: true
+  # Extra directories a project directory may lie under, besides the PRD worktree
+  # base (autonomous.worktree_dir) and session.workspace_root, which are always
+  # allowed. A session, automaton or test run whose project directory is outside
+  # every root is refused. Symlinks and '..' are resolved before the check.
+  allowed_project_roots: []
 
 # ── MCP Server ──
 # Model Context Protocol server for IDE and AI agent integrations.

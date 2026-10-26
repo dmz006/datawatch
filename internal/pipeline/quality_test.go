@@ -20,13 +20,17 @@ func containsName(names []string, want string) bool {
 // TestRunTests_ShellCompounds verifies the command is run through a real
 // shell so compound commands work end to end: both halves of an
 // `&&`-chained command execute, creating their marker files.
+// testRoots is the allowed project root the tests configure: every test
+// directory comes from t.TempDir, which lies under the system temp directory.
+var testRoots = []string{os.TempDir()}
+
 func TestRunTests_ShellCompounds(t *testing.T) {
 	dir := t.TempDir()
 	m1 := filepath.Join(dir, "part-a")
 	m2 := filepath.Join(dir, "part-b")
 
 	cmd := "printf a > " + m1 + " && printf b > " + m2
-	r := RunTests(cmd, dir, 0)
+	r := RunTests(cmd, dir, 0, testRoots)
 	if r.ExitCode != 0 {
 		t.Fatalf("exit=%d output=%q", r.ExitCode, r.Output)
 	}
@@ -41,7 +45,7 @@ func TestRunTests_ShellCompounds(t *testing.T) {
 // TestRunTests_MissingProjectDir verifies a non-existent project dir yields
 // an invalid-looking result (exit -1) with a plain reason, not a panic.
 func TestRunTests_MissingProjectDir(t *testing.T) {
-	r := RunTests("echo hi", t.TempDir()+"/no-such-dir", 0)
+	r := RunTests("echo hi", t.TempDir()+"/no-such-dir", 0, testRoots)
 	if r.ExitCode != -1 {
 		t.Errorf("exit=%d want -1", r.ExitCode)
 	}
@@ -54,7 +58,7 @@ func TestRunTests_MissingProjectDir(t *testing.T) {
 // the result as timed out.
 func TestRunTests_Timeout(t *testing.T) {
 	dir := t.TempDir()
-	r := RunTests("sleep 5", dir, 1)
+	r := RunTests("sleep 5", dir, 1, testRoots)
 	if !r.TimedOut {
 		t.Error("expected TimedOut=true")
 	}
@@ -84,7 +88,7 @@ func TestRunTests_GoOutputParsing(t *testing.T) {
 	if err := os.WriteFile(path, []byte(out.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r := RunTests("cat "+path, dir, 0)
+	r := RunTests("cat "+path, dir, 0, testRoots)
 	if len(r.FailedTests) != 1 || r.FailedTests[0] != "example.com/ex.TestBroken" {
 		t.Errorf("FailedTests=%v want [example.com/ex.TestBroken]", r.FailedTests)
 	}
@@ -122,7 +126,7 @@ func TestBroken(t *testing.T) { t.Fatal("boom") }
 		t.Fatal(err)
 	}
 
-	r := RunTests("go test ./...", dir, 180)
+	r := RunTests("go test ./...", dir, 180, testRoots)
 	if r.ExitCode == 0 {
 		t.Fatal("expected non-zero exit with a failing test")
 	}
@@ -154,7 +158,7 @@ test('breaks', () => { throw new Error('boom'); });
 		if err := os.WriteFile(filepath.Join(dir, "x.test.js"), []byte(js), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		nr := RunTests("node --test x.test.js", dir, 60)
+		nr := RunTests("node --test x.test.js", dir, 60, testRoots)
 		if nr.ExitCode == 0 {
 			t.Fatalf("expected non-zero exit (output=%q)", nr.Output)
 		}
@@ -172,7 +176,7 @@ test('breaks', () => { throw new Error('boom'); });
 // "no required module") is not a usable baseline.
 func TestClassifyBaseline_ExitNonZeroNoTests(t *testing.T) {
 	dir := t.TempDir()
-	r := RunTests("exit 2", dir, 0)
+	r := RunTests("exit 2", dir, 0, testRoots)
 	if r.ExitCode != 2 {
 		t.Fatalf("exit=%d want 2", r.ExitCode)
 	}
@@ -189,7 +193,7 @@ func TestClassifyBaseline_ExitNonZeroNoTests(t *testing.T) {
 // reports no tests at all is not a usable baseline.
 func TestClassifyBaseline_ZeroTestsFound(t *testing.T) {
 	dir := t.TempDir()
-	r := RunTests("echo hello", dir, 0)
+	r := RunTests("echo hello", dir, 0, testRoots)
 	valid, reason := ClassifyBaseline(r)
 	if valid {
 		t.Fatal("expected invalid baseline with zero tests found")
@@ -228,7 +232,7 @@ func TestRunTests_NodeOutputParsing(t *testing.T) {
 	if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r := RunTests("cat "+path+"; exit 1", dir, 0)
+	r := RunTests("cat "+path+"; exit 1", dir, 0, testRoots)
 	if len(r.FailedTests) != 1 || r.FailedTests[0] != "broken" {
 		t.Errorf("FailedTests=%v want [broken]", r.FailedTests)
 	}
@@ -243,7 +247,7 @@ func TestRunTests_NodeOutputParsing(t *testing.T) {
 // TestShellQuote verifies arguments with shell metacharacters survive sh.
 func TestShellQuote(t *testing.T) {
 	arg := `^(A|B)$ it's`
-	r := RunTests("printf %s "+shellQuote(arg), t.TempDir(), 0)
+	r := RunTests("printf %s "+shellQuote(arg), t.TempDir(), 0, testRoots)
 	if r.Output != arg {
 		t.Errorf("output=%q want %q", r.Output, arg)
 	}
@@ -383,12 +387,75 @@ func TestIsPlainGoTest(t *testing.T) {
 
 func TestRunTestsRefusesUnsafeProjectDir(t *testing.T) {
 	for _, dir := range []string{"/", "/tmp/x\x00y", ""} {
-		res := RunTests("true", dir, 5)
+		res := RunTests("true", dir, 5, testRoots)
 		if res.ExitCode != -1 {
 			t.Errorf("RunTests in %q ran: %+v", dir, res)
 		}
 	}
-	if res := RunTests("true", t.TempDir()+"/./", 5); res.ExitCode != 0 {
+	if res := RunTests("true", t.TempDir()+"/./", 5, testRoots); res.ExitCode != 0 {
 		t.Errorf("valid dir refused: %+v", res)
+	}
+}
+
+// refused reports whether RunTests declined to start (ExitCode -1 with the
+// guard's reason) instead of running the command.
+func refused(res TestResult) bool {
+	return res.ExitCode == -1 && strings.Contains(res.Output, "project directory refused")
+}
+
+func TestRunTestsEnforcesProjectRoots(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	extra := t.TempDir()
+	inside := filepath.Join(root, "proj")
+	extraDir := filepath.Join(extra, "proj")
+	for _, d := range []string{inside, extraDir, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	roots := []string{root}
+
+	if res := RunTests("true", inside, 5, roots); res.ExitCode != 0 {
+		t.Errorf("path inside the root refused: %+v", res)
+	}
+	if res := RunTests("true", extraDir, 5, roots); !refused(res) {
+		t.Errorf("path in an unconfigured root ran: %+v", res)
+	}
+	if res := RunTests("true", extraDir, 5, []string{root, extra}); res.ExitCode != 0 {
+		t.Errorf("path inside a configured extra root refused: %+v", res)
+	}
+	if res := RunTests("true", outside, 5, roots); !refused(res) {
+		t.Errorf("path outside every root ran: %+v", res)
+	}
+	if res := RunTests("true", inside, 5, nil); !refused(res) {
+		t.Errorf("no configured root must refuse everything: %+v", res)
+	}
+
+	// Traversal strings.
+	for _, dir := range []string{
+		filepath.Join(inside, "..", "..", filepath.Base(outside)),
+		inside + "/../../" + filepath.Base(outside),
+		root + "/..",
+	} {
+		if res := RunTests("true", dir, 5, roots); !refused(res) {
+			t.Errorf("traversal %q ran: %+v", dir, res)
+		}
+	}
+
+	// Symlink escape, and a dangling link whose target is outside.
+	escape := filepath.Join(root, "escape")
+	if err := os.Symlink(outside, escape); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if res := RunTests("true", escape, 5, roots); !refused(res) {
+		t.Errorf("symlink escape ran: %+v", res)
+	}
+	dangling := filepath.Join(root, "dangling")
+	if err := os.Symlink(filepath.Join(outside, "not-there"), dangling); err != nil {
+		t.Fatal(err)
+	}
+	if res := RunTests("true", dangling, 5, roots); !refused(res) {
+		t.Errorf("dangling link escape ran: %+v", res)
 	}
 }

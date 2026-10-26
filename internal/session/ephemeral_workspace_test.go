@@ -17,6 +17,7 @@ func TestDelete_ReapsEphemeralWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 
 	// Simulate a daemon-cloned workspace under <data_dir>/workspaces/
@@ -59,6 +60,7 @@ func TestDelete_LeavesOperatorProjectDirAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 
 	// Operator-supplied dir outside <data_dir>/workspaces/. Reaper
@@ -100,6 +102,7 @@ func TestReapOrphanWorkspaces_RemovesUnreferencedDirs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 
 	wsRoot := filepath.Join(dataDir, "workspaces")
@@ -153,6 +156,7 @@ func TestReapOrphanWorkspaces_NoRootDirIsHarmless(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 
 	removed, err := mgr.ReapOrphanWorkspaces()
@@ -172,6 +176,7 @@ func TestDelete_RefusesReapOutsideWorkspaceRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 
 	// Outside-root dir (an attacker-set ProjectDir, or stored-state

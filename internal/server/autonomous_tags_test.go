@@ -16,7 +16,7 @@ func newTagTestServer(t *testing.T) (*Server, *autonomous.Manager) {
 	if err != nil {
 		t.Fatalf("autonomous.NewManager: %v", err)
 	}
-	return &Server{autonomousMgr: autonomous.NewAPI(mgr)}, mgr
+	return &Server{autonomousMgr: newTestAPI(mgr)}, mgr
 }
 
 // tagCall issues a request through the matching handler and returns the
