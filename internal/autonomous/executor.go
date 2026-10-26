@@ -1338,6 +1338,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 				return mismatch
 			}
+			// One model value from here on. The pairing check above judged the
+			// model as written; a pi-family model with no provider now takes the
+			// launch's provider, so admission picks the node the session runs on
+			// and the spawn, the lease and the session start all agree.
+			model = m.qualifyPiFamilyModel(backend, model)
 			// Record which level supplied the backend before the session is
 			// spawned, so it is visible while the task runs; a later attempt
 			// overwrites it.

@@ -93,6 +93,24 @@ func engineNodes(reg *inference.Registry) map[string][]string {
 	return nodes
 }
 
+// piDefaultModel returns the lookup the autonomous manager uses to qualify a
+// pi-family model that names no provider. It reads the model each pi backend
+// launches on when a session names none, the same configured value the
+// session manager applies, so the provider chosen for admission is the one
+// the launch uses. The config is read on each call, so a config change takes
+// effect without a restart. Any other backend, and an unset model, report "".
+func piDefaultModel(cfg *config.Config) autonomous.PiDefaultModelFn {
+	return func(backend string) string {
+		switch backend {
+		case "pi-prompt":
+			return cfg.PiPrompt.Model
+		case "pi":
+			return cfg.Pi.Model
+		}
+		return ""
+	}
+}
+
 // defaultNodePriority is the scheduling priority of a compute node whose
 // record leaves it unset (the compute registry applies the same default).
 const defaultNodePriority = 50
@@ -648,6 +666,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	keys, choices := capacityManagerKeys(resolve)
 	amgr.SetCapacity(led, keys)
 	amgr.SetCapacityChoices(choices)
+	amgr.SetPiDefaultModel(piDefaultModel(cfg))
 	amgr.SetNodeLoad(nodeLoader(httpServer.ComputeRegistry), nodeAlerts)
 	amgr.SetCapacityAudit(capacityAudit)
 	amgr.SetBackoff(autonomousBackoff)
