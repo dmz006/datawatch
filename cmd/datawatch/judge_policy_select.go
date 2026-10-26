@@ -14,6 +14,15 @@ import (
 // count is kept apart from the verifier's.
 var judgeClaudeWindow = autonomouspkg.NewVerifierPolicyWindow(nil)
 
+// judgeRecordClaudeSession counts a judge session on a Claude backend against
+// the per-window cap. runJudgeLeased calls it once the judge's lease is granted,
+// so a pick whose lease never came through does not use up the cap.
+func judgeRecordClaudeSession(backend string) {
+	if config.IsClaudeVerifierBackend(backend) {
+		judgeClaudeWindow.Record()
+	}
+}
+
 // judgeCapacityTryAdmit is the judge's non-blocking admission probe, set by
 // wireCapacity. It reports whether a judge on backend+model would be admitted
 // now, through the same judge lease code as judgeCapacityAdmit, and holds no
@@ -152,28 +161,25 @@ func judgeVerifierChooser(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Conf
 		if sel.Backend == "" {
 			return fallback(sel.Reason)
 		}
-		if config.IsClaudeVerifierBackend(sel.Backend) {
-			judgeClaudeWindow.Record()
-		}
 		pick(sel.Backend, sel.Model, sel.Reason)
 		return sel.Backend, true
 	}
 }
 
-// judgeBackendChooserFor picks how one judge call chooses its backends. A unit
-// that pins its own guardrail backend keeps that one backend, as a per-unit
-// override does for the verifier, and the pick is still logged. Otherwise every
-// judge call goes through the judge role's selector (judgeVerifierChooser).
+// judgeBackendChooserFor picks how one judge call chooses its backends. Every
+// judge call goes through the judge role's selector (judgeVerifierChooser). A
+// unit that pins its own guardrail backend makes that backend the judge policy
+// list, so the selector still picks it (waiting for its slot or admitting it),
+// the probe and the decision log apply, and the judge never moves to another
+// backend.
 func judgeBackendChooserFor(ctx context.Context, mgr *autonomouspkg.Manager, req autonomouspkg.GuardrailInvocation, gcfg autonomouspkg.Config, unitBackend string) judgeBackendChooser {
 	pick := judgeDecisionLog(mgr, req)
-	if req.GuardrailBackend != "" {
-		choose := judgeChooserFromList([]string{unitBackend})
-		return func(tried []string) (string, bool) {
-			backend, ok := choose(tried)
-			if ok {
-				pick(backend, "", "pinned unit backend "+backend)
-			}
-			return backend, ok
+	if pin := req.GuardrailBackend; pin != "" {
+		gcfg.JudgePolicy = []string{pin}
+		unitBackend = pin
+		logged := pick
+		pick = func(backend, model, reason string) {
+			logged(backend, model, "pinned unit backend; "+reason)
 		}
 	}
 	var probe func(backend, model string) bool

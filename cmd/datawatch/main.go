@@ -5828,7 +5828,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			if admModel == "" {
 				admModel = gmodel
 			}
-			return runJudgeLeased(ctx, judgeCapacityAdmit, gbackend, admModel, req.UnitID, req.PRDID,
+			return runJudgeLeased(ctx, judgeCapacityAdmit, att, admModel, req.UnitID, req.PRDID,
 				func(judgeNode string) (autonomouspkg.GuardrailVerdict, error) {
 					if !askCompatible(gkind) {
 						// B124 — a real tool-using backend with somewhere to run
@@ -5917,23 +5917,18 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					}
 					askBody := judgeAskBody(prompt, gkind, gbackend, guardrailModel, judgeNode)
 					body, _ := json.Marshal(askBody)
-					httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-						loopbackBaseURL(cfg)+"/api/ask",
-						bytes.NewReader(body))
+					// The ask call runs under the judge's time limit, which starts
+					// now that the lease is granted; a run that hits it is a timeout.
+					status, rb, timedOut, err := judgeAskRun(ctx, att.Limit,
+						loopbackBaseURL(cfg)+"/api/ask", cfg.Server.Token, body)
+					if timedOut {
+						att.TimedOut = true
+						return judgeAskTimeoutVerdict(att.Limit), nil
+					}
 					if err != nil {
 						return autonomouspkg.GuardrailVerdict{}, err
 					}
-					httpReq.Header.Set("Content-Type", "application/json")
-					if cfg.Server.Token != "" {
-						httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
-					}
-					resp, err := http.DefaultClient.Do(httpReq)
-					if err != nil {
-						return autonomouspkg.GuardrailVerdict{}, err
-					}
-					defer resp.Body.Close() //nolint:errcheck
-					rb, _ := io.ReadAll(resp.Body)
-					if reason, failed := askFailureReason(resp.StatusCode, rb); failed {
+					if reason, failed := askFailureReason(status, rb); failed {
 						// BL410 Phase 0 — the /api/ask call itself failed; no
 						// judgment ever ran.
 						return autonomouspkg.GuardrailVerdict{

@@ -62,7 +62,7 @@ func TestJudgeWaitsForFreeSlotBeforeTheJudgeRuns(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		v, err := runJudgeLeased(context.Background(), admit, backend, "", "u1", "p1",
+		v, err := runJudgeLeased(context.Background(), admit, &judgeAttempt{Backend: backend}, "", "u1", "p1",
 			func(node string) (autonomouspkg.GuardrailVerdict, error) {
 				ran <- node
 				return autonomouspkg.GuardrailVerdict{Outcome: "pass"}, nil
@@ -102,7 +102,7 @@ func TestJudgeFallsBackToTheNextBackendWhenPreferredPoolIsFull(t *testing.T) {
 func TestJudgeLeaseIsReleasedWhenTheJudgeFails(t *testing.T) {
 	var releases atomic.Int32
 	boom := errors.New("judge session crashed")
-	_, err := runJudgeLeased(context.Background(), grantingLease(&releases, "alpha"), "qwen", "", "u1", "p1",
+	_, err := runJudgeLeased(context.Background(), grantingLease(&releases, "alpha"), &judgeAttempt{Backend: "qwen"}, "", "u1", "p1",
 		func(string) (autonomouspkg.GuardrailVerdict, error) {
 			return autonomouspkg.GuardrailVerdict{}, boom
 		})
@@ -116,7 +116,7 @@ func TestJudgeLeaseIsReleasedWhenTheJudgeFails(t *testing.T) {
 
 func TestJudgeLeaseIsReleasedOnSuccessAndOnCancel(t *testing.T) {
 	var releases atomic.Int32
-	if _, err := runJudgeLeased(context.Background(), grantingLease(&releases, ""), "qwen", "", "u1", "p1",
+	if _, err := runJudgeLeased(context.Background(), grantingLease(&releases, ""), &judgeAttempt{Backend: "qwen"}, "", "u1", "p1",
 		func(string) (autonomouspkg.GuardrailVerdict, error) {
 			return autonomouspkg.GuardrailVerdict{Outcome: "pass"}, nil
 		}); err != nil {
@@ -127,7 +127,7 @@ func TestJudgeLeaseIsReleasedOnSuccessAndOnCancel(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	_, err := runJudgeLeased(ctx, grantingLease(&releases, ""), "qwen", "", "u1", "p1",
+	_, err := runJudgeLeased(ctx, grantingLease(&releases, ""), &judgeAttempt{Backend: "qwen"}, "", "u1", "p1",
 		func(string) (autonomouspkg.GuardrailVerdict, error) {
 			cancel()
 			return autonomouspkg.GuardrailVerdict{}, ctx.Err()
@@ -145,7 +145,7 @@ func TestJudgeBodyNeverRunsWhenTheLeaseIsNotGranted(t *testing.T) {
 		return nil, "", errors.New("wait expired")
 	}
 	ran := false
-	v, err := runJudgeLeased(context.Background(), admit, "qwen", "", "u1", "p1",
+	v, err := runJudgeLeased(context.Background(), admit, &judgeAttempt{Backend: "qwen"}, "", "u1", "p1",
 		func(string) (autonomouspkg.GuardrailVerdict, error) {
 			ran = true
 			return autonomouspkg.GuardrailVerdict{Outcome: "pass"}, nil
