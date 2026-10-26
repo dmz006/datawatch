@@ -54,7 +54,7 @@ func TestJudgeVerifierChooserFollowsVerifierPolicy(t *testing.T) {
 	// An empty judge policy follows the verifier policy: a fixed policy with a
 	// backend list tries the list in order, one attempt each.
 	cfg := autonomouspkg.Config{VerifierPolicy: config.VerifierPolicyConfig{Mode: "fixed", Backends: []string{"claude-code", "qwen"}}}
-	choose := judgeVerifierChooser(nil, cfg, "ollama", nil)
+	choose := judgeVerifierChooser(nil, cfg, "ollama", nil, nopPick)
 	if b, ok := choose(nil); !ok || b != "claude-code" {
 		t.Fatalf("first = %q %v, want claude-code", b, ok)
 	}
@@ -76,7 +76,7 @@ func TestJudgeVerifierChooserBalanceUsesLoadNotListOrder(t *testing.T) {
 		return 0.1
 	}
 	cfg := autonomouspkg.Config{VerifierPolicy: config.VerifierPolicyConfig{Mode: "balance", Backends: []string{"claude-code", "qwen"}}}
-	choose := judgeVerifierChooser(nil, cfg, "ollama", nil)
+	choose := judgeVerifierChooser(nil, cfg, "ollama", nil, nopPick)
 	if b, _ := choose(nil); b != "qwen" {
 		t.Fatalf("balance picked %q, want the lower-loaded qwen", b)
 	}
@@ -85,7 +85,7 @@ func TestJudgeVerifierChooserBalanceUsesLoadNotListOrder(t *testing.T) {
 func TestJudgeVerifierChooserSkipsBackendsThatDoNotAdmit(t *testing.T) {
 	cfg := autonomouspkg.Config{VerifierPolicy: config.VerifierPolicyConfig{Mode: "prefer-free", Backends: []string{"claude-code", "qwen"}}}
 	probe := func(backend, _ string) bool { return backend == "qwen" }
-	choose := judgeVerifierChooser(nil, cfg, "ollama", probe)
+	choose := judgeVerifierChooser(nil, cfg, "ollama", probe, nopPick)
 	if b, _ := choose(nil); b != "qwen" {
 		t.Fatalf("prefer-free picked %q, want the backend with a free slot", b)
 	}
@@ -95,7 +95,7 @@ func TestJudgeVerifierChooserFallsBackToUnitBackendOnFirstAttemptOnly(t *testing
 	// A fixed policy with no backend list does not apply: the unit's backend
 	// is tried once, as before the policy existed.
 	cfg := autonomouspkg.Config{VerifierPolicy: config.VerifierPolicyConfig{Mode: "fixed"}}
-	choose := judgeVerifierChooser(nil, cfg, "ollama", nil)
+	choose := judgeVerifierChooser(nil, cfg, "ollama", nil, nopPick)
 	if b, ok := choose(nil); !ok || b != "ollama" {
 		t.Fatalf("unit fallback = %q %v, want ollama", b, ok)
 	}

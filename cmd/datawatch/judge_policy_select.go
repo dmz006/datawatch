@@ -73,15 +73,43 @@ func containsString(list []string, s string) bool {
 	return false
 }
 
-// judgeVerifierChooser routes the judges of one call through the verifier
-// routing policy, the judge role's default when autonomous.judge_policy is
-// empty. The policy's own mode (prefer-free, fixed, balance and the presets)
-// picks among the backends not yet tried, so each backend is tried at most
-// once. A policy that does not apply (fixed, with no backend list and no
-// Claude cap) and a policy with no eligible backend both fall back to the
-// unit's own guardrail backend, but only on the first attempt.
-func judgeVerifierChooser(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Config, unitBackend string, probe func(backend, model string) bool) judgeBackendChooser {
-	policy := effectiveVerifierPolicy(liveCfg)
+// judgePickFn writes one judge backend pick to the decision log: the backend,
+// the model it runs on ("" for the backend's default) and why it was picked.
+type judgePickFn func(backend, model, reason string)
+
+// judgeDecisionLog returns the judgePickFn for one judge call. Each pick is
+// written to the PRD's decision log tagged with the judge role, through the
+// same store as the verifier's picks. A nil manager (tests) or a failed write
+// is logged, never fatal: the judge still runs on the backend it picked.
+func judgeDecisionLog(mgr *autonomouspkg.Manager, req autonomouspkg.GuardrailInvocation) judgePickFn {
+	return func(backend, model, reason string) {
+		log.Printf("[autonomous] judge: policy: %s (prd %s, unit %s)", reason, req.PRDID, req.UnitID)
+		if mgr == nil {
+			return
+		}
+		if err := mgr.RecordJudgePolicyChoice(req.PRDID, req.UnitID, backend, model, reason); err != nil {
+			log.Printf("[autonomous] judge: RecordJudgePolicyChoice(%s/%s): %v", req.PRDID, req.UnitID, err)
+		}
+	}
+}
+
+// judgeVerifierChooser routes the judges of one call through the routing
+// policy with the judge role. The judge's backend list is autonomous.judge_policy
+// when set, else the verifier policy's own list; the policy's mode (prefer-free,
+// fixed, balance and the presets) comes from the verifier policy either way.
+// Each call goes through autonomouspkg.SelectBackendForRole, so a judge whose
+// preferred backend has no free slot takes the next admitting one, exactly as a
+// verifier does, and the pick is written through pick. Backends already tried
+// are excluded, so each is tried at most once. A policy that does not apply
+// (fixed, with no backend list and no Claude cap) and a policy with no eligible
+// backend both fall back to the unit's own guardrail backend, but only on the
+// first attempt.
+func judgeVerifierChooser(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Config, unitBackend string, probe func(backend, model string) bool, pick judgePickFn) judgeBackendChooser {
+	verifier := effectiveVerifierPolicy(liveCfg)
+	listed := config.NormalizeJudgePolicy(liveCfg.JudgePolicy)
+	if len(listed) == 0 {
+		listed = config.NormalizeVerifierPolicyBackends(verifier.Backends)
+	}
 	pool, global, _ := effectiveVerifierSelection(liveCfg)
 	candidates := pool
 	if len(candidates) == 0 {
@@ -91,26 +119,28 @@ func judgeVerifierChooser(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Conf
 		}
 	}
 	return func(tried []string) (string, bool) {
-		fallback := func() (string, bool) {
+		fallback := func(reason string) (string, bool) {
 			if len(tried) == 0 {
+				pick(unitBackend, "", reason+"; using the unit backend "+unitBackend)
 				return unitBackend, true
 			}
 			return "", false
 		}
-		if !verifierPolicyApplies(policy, autonomouspkg.VerifierSelectFlags{}) {
-			return fallback()
-		}
-		p := policy
-		if listed := config.NormalizeVerifierPolicyBackends(policy.Backends); len(listed) > 0 {
-			p.Backends = excludeBackends(listed, tried)
-			if len(p.Backends) == 0 {
+		backends := listed
+		if len(listed) > 0 {
+			backends = excludeBackends(listed, tried)
+			if len(backends) == 0 {
 				return "", false
 			}
+		}
+		policy := autonomouspkg.ResolvePolicyForRole(autonomouspkg.PolicyRoleJudge, verifier, backends)
+		if !verifierPolicyApplies(policy, autonomouspkg.VerifierSelectFlags{}) {
+			return fallback("judge policy does not apply")
 		}
 		left := excludeBackends(candidates, tried)
 		flags := autonomouspkg.VerifierSelectFlags{}
 		if mgr != nil {
-			flags.ClaudeHold = mgr.HeldBackends(verifierPolicyBackends(p, left))
+			flags.ClaudeHold = mgr.HeldBackends(verifierPolicyBackends(policy, left))
 		}
 		window := time.Duration(config.NormalizeVerifierPolicyClaudeCapWindow(policy.ClaudeCapWindowMinutes)) * time.Minute
 		flags.ClaudeSessionsInWindow = judgeClaudeWindow.Count(window)
@@ -118,29 +148,33 @@ func judgeVerifierChooser(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Conf
 		if probe != nil {
 			load.admit = func(backend string) bool { return probe(backend, "") }
 		}
-		backend, _, reason := autonomouspkg.SelectVerifierBackend(p, left, load, flags)
-		if backend == "" {
-			log.Printf("[autonomous] judge: policy: %s; using the unit backend %s", reason, unitBackend)
-			return fallback()
+		sel := autonomouspkg.SelectBackendForRole(autonomouspkg.PolicyRoleJudge, verifier, backends, left, load, flags)
+		if sel.Backend == "" {
+			return fallback(sel.Reason)
 		}
-		if config.IsClaudeVerifierBackend(backend) {
+		if config.IsClaudeVerifierBackend(sel.Backend) {
 			judgeClaudeWindow.Record()
 		}
-		log.Printf("[autonomous] judge: policy: %s (unit backend %s)", reason, unitBackend)
-		return backend, true
+		pick(sel.Backend, sel.Model, sel.Reason)
+		return sel.Backend, true
 	}
 }
 
 // judgeBackendChooserFor picks how one judge call chooses its backends. A unit
 // that pins its own guardrail backend keeps that one backend, as a per-unit
-// override does for the verifier. Otherwise an explicit autonomous.judge_policy
-// list is tried in order; an empty list follows the verifier routing policy.
+// override does for the verifier, and the pick is still logged. Otherwise every
+// judge call goes through the judge role's selector (judgeVerifierChooser).
 func judgeBackendChooserFor(ctx context.Context, mgr *autonomouspkg.Manager, req autonomouspkg.GuardrailInvocation, gcfg autonomouspkg.Config, unitBackend string) judgeBackendChooser {
+	pick := judgeDecisionLog(mgr, req)
 	if req.GuardrailBackend != "" {
-		return judgeChooserFromList([]string{unitBackend})
-	}
-	if backends := config.NormalizeJudgePolicy(gcfg.JudgePolicy); len(backends) > 0 {
-		return judgeChooserFromList(backends)
+		choose := judgeChooserFromList([]string{unitBackend})
+		return func(tried []string) (string, bool) {
+			backend, ok := choose(tried)
+			if ok {
+				pick(backend, "", "pinned unit backend "+backend)
+			}
+			return backend, ok
+		}
 	}
 	var probe func(backend, model string) bool
 	if judgeCapacityTryAdmit != nil {
@@ -148,5 +182,5 @@ func judgeBackendChooserFor(ctx context.Context, mgr *autonomouspkg.Manager, req
 			return judgeCapacityTryAdmit(ctx, backend, model, req.UnitID, req.PRDID)
 		}
 	}
-	return judgeVerifierChooser(mgr, gcfg, unitBackend, probe)
+	return judgeVerifierChooser(mgr, gcfg, unitBackend, probe, pick)
 }

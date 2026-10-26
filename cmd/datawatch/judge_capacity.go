@@ -64,6 +64,30 @@ func judgeAdmitFailureVerdict(err error) autonomouspkg.GuardrailVerdict {
 	}
 }
 
+// judgeLeaseAdmit is judgeCapacityAdmit's shape, named so runJudgeLeased can
+// be driven by a fake in tests.
+type judgeLeaseAdmit func(ctx context.Context, backend, model, unitID, prdID string) (release func(), node string, err error)
+
+// runJudgeLeased runs one judge body under the judge's capacity lease. The
+// lease is taken before body runs, so the wait for a slot happens before the
+// judge's time limit starts (the session applies that limit once it starts).
+// The release is deferred, so the lease is released on every exit path:
+// success, error, cancellation and panic. A lease that cannot be granted (the
+// wait expired or the context was cancelled) is an infra verdict and body
+// never runs. A nil admit (no ledger, e.g. in tests) runs body with no lease
+// and no node.
+func runJudgeLeased(ctx context.Context, admit judgeLeaseAdmit, backend, model, unitID, prdID string, body func(node string) (autonomouspkg.GuardrailVerdict, error)) (autonomouspkg.GuardrailVerdict, error) {
+	if admit == nil {
+		return body("")
+	}
+	release, node, err := admit(ctx, backend, model, unitID, prdID)
+	if err != nil {
+		return judgeAdmitFailureVerdict(err), nil
+	}
+	defer release()
+	return body(node)
+}
+
 // judgeUnitFromSessionName extracts the unit id from a
 // "autonomous:guardrail:<unit id>" session name; ok is false for any other
 // name (including the bare prefix).
