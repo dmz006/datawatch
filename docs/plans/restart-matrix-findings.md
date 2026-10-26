@@ -170,3 +170,11 @@ scripts/restart-matrix.sh --list                           # state names
 ```
 
 A full control-group run takes about 25 minutes. Records land under `<work root>/records` (one JSON per state, `summary.json`, and `snapshots/`). `--keep` keeps each state's sandbox dir (daemon log, `data/daemon-crash.log` which holds the structured `[autonomous]` lines quoted above). `--strict` exits 1 when any row fails.
+
+## Single start tracker smoke (2026-10-25)
+
+- **Run:** `scripts/restart-matrix.sh --strict --only restart-during-launch` against a sandbox daemon built from this tree (`go build` into a `mktemp -d` directory under the git-ignored `.rm/` directory, not into tracked files). `RM_TMP_BASE` was the same `.rm/` directory as an absolute path, 47 bytes, so the multiplexer socket path stayed within the length limit. Kill mode was the default, `control-group`.
+- **Result:** 10 PASS, 0 FAIL. The `--strict` run was clean and exited 0. No check failed.
+- **Checks:** `held_pane_is_bare_shell`, `bare_shell_ended_at_boot`, `restart_exited_on_term`, `daemon_replaced`, `no_duplicate_sessions`, `no_lost_output`, `retry_count_unchanged`, `bare_shell_not_adopted`, `task_not_left_in_progress`, `prd_completes_unaided`. The task completed on a new session, and the sandbox daemon's recorded pid had exited when the run ended.
+- **Record:** `.rm/rm.75a5Gf/records/restart-during-launch.json`. The sandbox directory was removed after the state, as the run has no `--keep`.
+- **Harness note:** the `summary.json` written by the entry script has `"mode": "measure"`, although the state ran in strict mode (its header printed `strict mode`, and the exit status followed `--strict`). The entry script does not read the mode the state script set. This was not changed in this run.
