@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.19.2 — fix(security): remove stale CVE suppressions now fixed upstream
+
+### Fixed
+- **Removed 6 .trivyignore suppression(s) with a fix now available in Debian bookworm** — found by the daily `image-refresh` recheck, which rebuilds every shipped image fresh and scans without `.trivyignore` applied. See the PR for exactly which CVEs and which images.
+
+
 ### Queued requests move to a node that frees an engine
 
 - A queued request now picks its compute node again on each admission pass and whenever any node frees an engine. A request that was waiting on a busy node moves to a node with a free engine, least loaded first and then by node priority. This applies to workers and to the judge. Before, a request kept waiting on the node it first tried while other nodes sat idle.
