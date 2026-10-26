@@ -60,6 +60,13 @@ _story_ts_785() {
   "$TEST_BINARY" start --foreground --config "$FED_PEER_DATA/config.yaml" >> "$FED_PEER_DATA/daemon.log" 2>&1 &
   FED_PEER_PID=$!
   echo "$FED_PEER_PID" > "${TEST_DIR:-$FED_PEER_DATA}/fed-peer-daemon.pid"
+  # Under the e2e runner (which sources test-daemon-lib) record this daemon in
+  # the shared state so the runner's traps end it -- sessions first, via its
+  # own API -- on every exit path. Standalone runs keep the pidfile only.
+  if declare -F td_track_pid > /dev/null 2>&1; then
+    td_track_pid "$FED_PEER_PID" "$FED_PEER_DATA/config.yaml"
+    td_set_api "$FED_PEER_PID" "http://127.0.0.1:$FED_PEER_HTTP" "$FED_PEER_TOKEN"
+  fi
 
   local deadline=$(( $(date +%s) + 20 )) healthy=0
   while [[ $(date +%s) -lt $deadline ]]; do
