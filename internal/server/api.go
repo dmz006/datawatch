@@ -4683,6 +4683,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// path runs unchanged.
 		LLM         string `json:"llm,omitempty"`
 		ComputeNode string `json:"compute_node,omitempty"`
+		// ComputeNodeAdvisory marks ComputeNode as the scheduler's placement
+		// rather than an operator pick. An advisory node outside the entry's
+		// compute_nodes list is dropped and placement chooses again.
+		ComputeNodeAdvisory bool `json:"compute_node_advisory,omitempty"`
 		// OneShot — when true, DATAWATCH_COMPLETE: in pane output terminates
 		// the session (StateComplete). Default false keeps sessions alive for
 		// interactive use. Autonomous task runners set this to true.
@@ -4801,6 +4805,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		resolvedPoolNodes = len(llm.ComputeNodes)
 		// LLM.Kind becomes the session backend (overrides req.Backend).
 		req.Backend = string(llm.Kind)
+		if req.ComputeNodeAdvisory && len(llm.ComputeNodes) > 0 && !slices.Contains(llm.ComputeNodes, req.ComputeNode) {
+			req.ComputeNode = ""
+		}
 		switch {
 		case req.ComputeNode != "":
 			// Validate against LLM's compute_nodes list when set.
@@ -4843,6 +4850,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			resolvedLLMRef = entry.Name
 			resolvedPoolNodes = len(entry.ComputeNodes)
 			req.Backend = string(entry.Kind)
+			if req.ComputeNodeAdvisory && len(entry.ComputeNodes) > 0 && !slices.Contains(entry.ComputeNodes, req.ComputeNode) {
+				req.ComputeNode = ""
+			}
 			switch {
 			case req.ComputeNode != "":
 				// A held node (the autonomous lease, or an operator pick) decides

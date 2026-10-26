@@ -123,6 +123,33 @@ func (r Request) withNode(name string) Request {
 	return r
 }
 
+// withoutStaleNode treats a recorded Node as advisory. When the request lists
+// candidate nodes and Node is not one of them, Node and its node:<name> pool
+// are dropped so placement chooses again from the current list. A request
+// with fewer than two candidates keeps its Node: callers bind a single-node
+// entry through Node and Pools themselves.
+func (r Request) withoutStaleNode() Request {
+	if !r.multiNode() {
+		return r
+	}
+	if r.Node != "" {
+		for _, c := range r.NodeChoices {
+			if c.Name == r.Node {
+				return r
+			}
+		}
+		stale := "node:" + r.Node
+		pools := make([]string, 0, len(r.Pools))
+		for _, p := range r.Pools {
+			if p != stale {
+				pools = append(pools, p)
+			}
+		}
+		r.Pools, r.Node = pools, ""
+	}
+	return r
+}
+
 // allPools is Pools plus the node pool of every candidate: every pool whose
 // state can affect whether the request is granted.
 func (r Request) allPools() []string {
@@ -562,6 +589,7 @@ func (l *Ledger) dispatchLocked() {
 			w.req.Pools, w.req.Node = cur.Pools, cur.Node
 			w.req.NodeChoices, w.req.ExcludeNodes = cur.NodeChoices, cur.ExcludeNodes
 		}
+		w.req = w.req.withoutStaleNode()
 	}
 	for _, w := range l.orderLocked(now) {
 		bound, why := l.resolveLocked(w.req)
@@ -571,6 +599,17 @@ func (l *Ledger) dispatchLocked() {
 		}
 		l.grantLocked(w, bound, now)
 	}
+}
+
+// Replan re-runs every waiter's Request.Refresh and dispatches at once. The
+// poll tick and every Release do this already; Replan is for a change the
+// ledger cannot see, such as an LLM entry's compute_nodes list being edited,
+// so waiters move to the new list now instead of on their next tick. A waiter
+// with no Refresh keeps the placement it queued with.
+func (l *Ledger) Replan() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.dispatchLocked()
 }
 
 // grantLocked takes w's lease. req is w.req as resolved by resolveLocked, so
@@ -700,7 +739,7 @@ func (l *Ledger) remove(w *waiter) {
 // a task whose session survived a daemon restart (BL462). Unlike Acquire it
 // never queues and ignores pool limits, because the session already occupies
 // its slots. Idempotent: an existing lease for the holder is kept and only
-// its session binding is refreshed. Adopt never picks a node: a request with
+// its session binding is refreshed, and a lease holding no node gains req.Node. Adopt never picks a node: a request with
 // NodeChoices is recorded on req.Node (its node:<name> pool added) or, when
 // Node is empty, on no node.
 //
@@ -716,6 +755,12 @@ func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 		if sessionID != "" {
 			ls.SessionID = sessionID
 		}
+		if ls.Node == "" && req.Node != "" {
+			ls.Node = req.Node
+			if pool := "node:" + req.Node; !sharesPool(ls.Pools, []string{pool}) {
+				ls.Pools = append(ls.Pools, pool)
+			}
+		}
 		return
 	}
 	for _, s := range successors {
@@ -723,8 +768,10 @@ func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 			return
 		}
 	}
-	if req.multiNode() {
+	if req.multiNode() || req.Node != "" {
 		if req.Node != "" {
+			// The session occupies this node whether or not it is still among
+			// the current choices, so the lease is recorded on it regardless.
 			req = req.withNode(req.Node)
 		} else {
 			req.NodeChoices, req.ExcludeNodes = nil, nil

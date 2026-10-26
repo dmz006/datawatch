@@ -858,6 +858,8 @@ type Manager struct {
 	// capacityChoices lists the candidate compute nodes of a backend+model
 	// when its LLM entry pools two or more (nil = single-node behaviour).
 	capacityChoices CapacityChoicesFn
+	// sessionNode names the compute node an adopted session runs on.
+	sessionNode SessionNodeFn
 	// piDefaultModel reports the provider-qualified model a pi-family launch
 	// of a backend falls back to (nil = no provider known). See model_qualify.go.
 	piDefaultModel PiDefaultModelFn
