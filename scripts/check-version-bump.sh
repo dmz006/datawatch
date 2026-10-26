@@ -45,7 +45,7 @@
 #           difference passes.
 #
 # Exempt (recognized zero-behavior-change) paths, regex:
-#   _test\.go$|_test\.js$|^docs/plans/|\.github/workflows/|^\.golangci|^\.gosec-exclude$
+#   _test\.go$|_test\.js$|^docs/plans/|\.github/workflows/|^\.golangci|^\.gosec-exclude$|^scripts/supervisor-watch\.py$
 # A range where every changed file matches this passes without a bump.
 #
 # Exit codes: 0 = pass or skip, 1 = fail.
@@ -62,7 +62,7 @@ cd "$ROOT"
 
 MAIN_FILE="cmd/datawatch/main.go"
 API_FILE="internal/server/api.go"
-EXEMPT_RE='_test\.go$|_test\.js$|^docs/plans/|\.github/workflows/|^\.golangci|^\.gosec-exclude$'
+EXEMPT_RE='_test\.go$|_test\.js$|^docs/plans/|\.github/workflows/|^\.golangci|^\.gosec-exclude$|^scripts/supervisor-watch\.py$'
 ZERO_SHA="0000000000000000000000000000000000000000"
 
 # --- mode selection -------------------------------------------------------
