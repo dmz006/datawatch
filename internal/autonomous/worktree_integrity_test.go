@@ -43,7 +43,9 @@ func isolateGitEnv(t *testing.T) {
 	for _, k := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY"} {
 		if v, ok := os.LookupEnv(k); ok {
 			t.Setenv(k, v)
-			os.Unsetenv(k)
+			if err := os.Unsetenv(k); err != nil {
+				t.Fatalf("unset %s: %v", k, err)
+			}
 		}
 	}
 }
