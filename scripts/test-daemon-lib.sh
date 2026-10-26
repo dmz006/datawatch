@@ -45,40 +45,48 @@ _td_api_url() {
   printf '%s%s' "${1%/}" "$2"
 }
 
+# _td_extract_ids BODY — print one session id per line. The sessions endpoint
+# returns a bare JSON array of session objects (the server encodes the list
+# directly); tolerate a dict wrapper with a "sessions" or "rows" list too.
+# With python3 the body is passed via the environment (no stdin pipe, and the
+# body is never re-quoted by bash); without python3 the "id" values are
+# extracted textually — safe because session ids carry neither quotes nor
+# backslashes, so a quote-free match cannot bleed into another field.
+_td_extract_ids() {
+  local body="$1"
+  if command -v python3 >/dev/null 2>&1; then
+    TD_BODY="$body" python3 -I -c 'import json, os
+try:
+    d = json.loads(os.environ.get("TD_BODY", ""))
+except Exception:
+    d = None
+if isinstance(d, dict):
+    d = d.get("sessions", d.get("rows"))
+if isinstance(d, list):
+    for s in d:
+        if isinstance(s, dict):
+            i = s.get("id")
+            if isinstance(i, str) and i and "\n" not in i and "\r" not in i:
+                print(i)
+' 2>/dev/null
+  else
+    grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"\\]*"' <<<"$body" \
+      | sed -E 's/^"id"[[:space:]]*:[[:space:]]*"//; s/"$//'
+  fi
+  return 0
+}
+
 # _td_end_sessions_via_api BASE TOKEN — list the daemon's sessions and end each
 # one by id through the daemon's own API before the daemon goes down.
 # Short timeouts, every failure ignored: cleanup must never hang.
 _td_end_sessions_via_api() {
-  local base="$1" token="$2" body id
+  local base="$1" token="$2" body id ids
   command -v curl >/dev/null 2>&1 || return 0
   body=$(env -u TMUX -u TMUX_TMPDIR curl -sk --max-time 5 \
     -H "Authorization: Bearer $token" \
     "$(_td_api_url "$base" /api/sessions)" 2>/dev/null) || return 0
   [[ -n "$body" ]] || return 0
-
-  # Collect session ids. python3 when available (proper JSON); otherwise a
-  # conservative quote-safe extraction of "id":"..." fields.
-  local ids
-  if command -v python3 >/dev/null 2>&1; then
-    ids=$(python3 -c '
-import json, sys
-try:
-    d = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
-sessions = d.get("sessions") if isinstance(d, dict) else None
-for s in sessions or []:
-    if isinstance(s, dict):
-        i = s.get("id")
-        bad = set('"\\n\\')
-        if isinstance(i, str) and i and not (set(i) & bad):
-            print(i)
-' <<<"$body" 2>/dev/null) || ids=""
-  else
-    ids=$(grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"\\]*"' <<<"$body" \
-      | sed -E 's/^"id"[[:space:]]*:[[:space:]]*"//; s/"$/' 2>/dev/null) || ids=""
-  fi
-
+  ids=$(_td_extract_ids "$body") || ids=""
   while IFS= read -r id; do
     [[ -n "$id" ]] || continue
     env -u TMUX -u TMUX_TMPDIR curl -sk --max-time 5 -X POST \
@@ -115,7 +123,7 @@ td_set_api() {
   mkdir -p "$TD_STATE_DIR" 2>/dev/null || return 1
   local f="$TD_STATE_DIR/$pid" head
   if [[ -f "$f" ]]; then
-    head=$(grep -v '^api_base=' "$f" 2>/dev/null | grep -v '^api_token=' 2>/dev/null)
+    head=$(grep -vE '^(api_base|api_token)=' "$f" 2>/dev/null) || head=""
   else
     head="pid=$pid
 marker="
@@ -239,12 +247,16 @@ _td_on_exit() {
 #   INT   -> td_stop_all, exit 130
 #   TERM  -> td_stop_all, exit 143
 #   HUP   -> td_stop_all, exit 129
+# The signal traps run td_stop_all inline: the parent shell (still alive in
+# the trap) signals the daemons, waits them out and reaps them, then exits
+# with the signal's conventional status. The EXIT trap then sees the state
+# files already gone and finishes as a no-op.
 # Install this before the first td_start so an early failure still cleans up.
 td_install_traps() {
   trap '_td_on_exit' EXIT
-  trap 'td_stop_all >/dev/null 2>&1; exit 130' INT
-  trap 'td_stop_all >/dev/null 2>&1; exit 143' TERM
-  trap 'td_stop_all >/dev/null 2>&1; exit 129' HUP
+  trap 'td_stop_all >/dev/null 2>&1; trap - INT; kill -INT $$ 2>/dev/null; exit 130' INT
+  trap 'td_stop_all >/dev/null 2>&1; trap - TERM; kill -TERM $$ 2>/dev/null; exit 143' TERM
+  trap 'td_stop_all >/dev/null 2>&1; trap - HUP; kill -HUP $$ 2>/dev/null; exit 129' HUP
 }
 
 # ----------------------------------------------------------------- port wait:
