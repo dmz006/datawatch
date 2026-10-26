@@ -17,9 +17,6 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 )
 
-// judgeConfigKeys are the two key names every operator surface must carry.
-var judgeConfigKeys = []string{"judge_policy", "judge_timeout_seconds"}
-
 // judgeLocaleKeys are the label and help keys for both settings, in all five
 // locale bundles.
 var judgeLocaleKeys = []string{
