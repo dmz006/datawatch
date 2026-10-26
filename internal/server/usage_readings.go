@@ -8,13 +8,24 @@
 //	GET    /api/usage/readings           usage:read   the record; hop-marked requests
 //	                                                        (X-Usage-Hop: 1, sent by a peer's
 //	                                                        fetch) always see the local store
-//	POST   /api/usage/readings           usage:write  append one reading
-//	DELETE /api/usage/readings/{id}      usage:write  delete one reading
+//	POST   /api/usage/readings           usage:write  append one reading (source: typed is
+//	                                                        built; pasted and account answer 501;
+//	                                                        an unknown source answers 400)
+//	DELETE /api/usage/readings?id=<id>   usage:write  delete one reading (operator form);
+//	                                                        /api/usage/readings/{id} is the same
+//	                                                        operation in the peer's wire form
 //	PUT    /api/usage/extra-credit       usage:write  set the bought extra credit
 //
-// Reads served from the last on-disk copy because the keeper could not be reached are
-// flagged with the X-Usage-Stale / X-Usage-Copied-At response headers; the body always
-// stays the bare account record so a peer and a local operator see the same shape.
+// Reads served from the last on-disk copy because the keeper could not be
+// reached are flagged with the X-Usage-Stale / X-Usage-Copied-At response
+// headers and carry is_keeper / stale / stale_reason / copied_at in the body;
+// the hop-marked (peer fetch) body stays the bare account record so a peer
+// and the keeper see the same wire shape.
+//
+// Record mutations audit per AGENT.md's Audit Logging Rule: one entry per
+// request, emitted by the daemon that stores the write — the keeper for the
+// shared series, the local daemon for its remaining-work figure (see the
+// emitters in usage_calculator.go).
 package server
 
 import (
@@ -100,15 +111,18 @@ func (s *Server) usagePeerLookup(name string) (string, string, bool) {
 	return s.serverStore.GetByName(name)
 }
 
-// handleUsageReadings serves the shared series record (GET) and appends a reading (POST).
+// handleUsageReadings serves the shared series record (GET), appends a reading (POST)
+// and deletes one (DELETE, ?id=<id>; the path form is routed separately).
 func (s *Server) handleUsageReadings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		s.handleUsageSeriesRead(w, r)
 	case http.MethodPost:
 		s.handleUsageReadingAdd(w, r)
+	case http.MethodDelete:
+		s.deleteUsageReading(w, r, "")
 	default:
-		w.Header().Set("Allow", "GET, POST")
+		w.Header().Set("Allow", "GET, POST, DELETE")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
@@ -144,17 +158,17 @@ func (s *Server) handleUsageSeriesRead(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Usage-Copied-At", snap.CopiedAt.UTC().Format(time.RFC3339))
 		}
 	}
+	view := usageReadingsView{AccountRecord: snap.Record, IsKeeper: snap.IsKeeper, Stale: snap.Stale, StaleReason: snap.StaleReason}
+	if !snap.CopiedAt.IsZero() {
+		copiedAt := snap.CopiedAt
+		view.CopiedAt = &copiedAt
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(snap.Record)
+	_ = json.NewEncoder(w).Encode(view)
 }
 
 func (s *Server) handleUsageReadingAdd(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapUsageWrite) {
-		return
-	}
-	series, err := s.usageSeries()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	var in usagecalc.Reading
@@ -162,9 +176,37 @@ func (s *Server) handleUsageReadingAdd(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid reading: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	err = series.AddReading(r.Context(), in)
+	if status, msg := usageSourceGate(in.Source); status != http.StatusOK {
+		http.Error(w, msg, status)
+		return
+	}
+	series, err := s.usageSeries()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	// As keeper the store appends directly and hands back the stored reading
+	// (with its final time and id) for the audit entry; as a peer the read is
+	// forwarded and the keeper's handler emits the single entry.
+	var stored *usagecalc.Reading
+	if series.Keeper() == "" {
+		cache := s.usageSeriesCache()
+		cache.mu.Lock()
+		store := cache.store
+		cache.mu.Unlock()
+		rec, aerr := store.Append(in)
+		err = aerr
+		if aerr == nil {
+			stored = &rec
+		}
+	} else {
+		err = series.AddReading(r.Context(), in)
+	}
 	switch {
 	case err == nil:
+		if stored != nil {
+			s.auditUsageReadingAdded(r, *stored)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	case errors.Is(err, usagecalc.ErrKeeperUnreachable):
@@ -172,18 +214,16 @@ func (s *Server) handleUsageReadingAdd(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, usagecalc.ErrInvalidReading), errors.Is(err, usagecalc.ErrInvalidValue):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 	}
 }
 
-// handleUsageReadingDelete serves DELETE /api/usage/readings/{id}.
+// handleUsageReadingDelete serves DELETE /api/usage/readings/{id}, the peer's
+// wire form the shared series forwards to its keeper.
 func (s *Server) handleUsageReadingDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		w.Header().Set("Allow", "DELETE")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !s.fedCap(w, r, federation.CapUsageWrite) {
 		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/api/usage/readings/")
@@ -191,8 +231,24 @@ func (s *Server) handleUsageReadingDelete(w http.ResponseWriter, r *http.Request
 	if unescaped, err := url.PathUnescape(id); err == nil {
 		id = unescaped
 	}
+	s.deleteUsageReading(w, r, id)
+}
+
+// deleteUsageReading is the shared delete flow for both wire forms (design 8):
+// the operator's /api/usage/readings?id=<id> and the peer's
+// /api/usage/readings/{id}. Either form is served at the keeper and any peer;
+// a peer forwards to its keeper. The keeper — the daemon that stores the write
+// — emits the single audit entry (AGENT.md's Audit Logging Rule).
+func (s *Server) deleteUsageReading(w http.ResponseWriter, r *http.Request, idFromPath string) {
+	id := strings.TrimSpace(idFromPath)
 	if id == "" {
-		http.Error(w, "a reading id is required", http.StatusBadRequest)
+		id = strings.TrimSpace(r.URL.Query().Get("id"))
+	}
+	if !s.fedCap(w, r, federation.CapUsageWrite) {
+		return
+	}
+	if id == "" {
+		http.Error(w, "a reading id is required: /api/usage/readings?id=<id>", http.StatusBadRequest)
 		return
 	}
 	series, err := s.usageSeries()
@@ -203,6 +259,9 @@ func (s *Server) handleUsageReadingDelete(w http.ResponseWriter, r *http.Request
 	err = series.DeleteReading(r.Context(), id)
 	switch {
 	case err == nil:
+		if series.Keeper() == "" {
+			s.auditUsageReadingDeleted(r, id)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	case errors.Is(err, usagecalc.ErrReadingNotFound):
@@ -239,6 +298,9 @@ func (s *Server) handleUsageExtraCredit(w http.ResponseWriter, r *http.Request) 
 	err = series.SetExtraCredit(r.Context(), in.Points)
 	switch {
 	case err == nil:
+		if series.Keeper() == "" {
+			s.auditUsageExtraCreditSet(r, in.Points)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	case errors.Is(err, usagecalc.ErrKeeperUnreachable):

@@ -231,6 +231,9 @@ func (s *Server) handleUsageRemainingWork(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// The figure is daemon-local (decision 6): the daemon that stores the write is
+	// this one, so it emits its own audit entry per the Audit Logging Rule.
+	s.auditUsageRemainingWorkSet(r, points)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
