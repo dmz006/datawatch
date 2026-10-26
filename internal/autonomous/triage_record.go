@@ -402,3 +402,14 @@ func (m *Manager) ListTriageRecords() []*TriageRecord {
 	}
 	return out
 }
+
+// TriageAlertMinutes is the triage alert threshold currently in effect
+// (whole minutes an Automation may sit in a waiting state before a
+// triage alert is raised): unset reads the default of 30, an explicit
+// 0 has the alert off. The triage read route reports it beside the
+// records so a reader never has to open the config to learn it.
+// The poll pass itself reads the threshold through the same accessor,
+// so the reported value is the value being enforced.
+func (m *Manager) TriageAlertMinutes() int {
+	return m.Config().Automation.EffectiveTriageAlertMinutes()
+}

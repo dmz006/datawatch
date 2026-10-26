@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Autonomous triage records become readable
+
+The triage records for failed and blocked Automata can now be read through the daemon itself. A new read route, `GET /api/autonomous/triage`, and an MCP tool, `autonomous_triage`, list the records newest first, optionally filtered by `automation_id`, `prd_id` or `status` (only `failed` or `blocked`; anything else is refused). The response lists the records and also states the triage alert threshold currently in force (`alert_minutes`) in the same body.
+
+It is a read-only sibling of the lane-fill read, under the same access rules. A read that matches nothing is an empty list, not an error.
+
 ### Shared navigation fits phone widths
 
 The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.

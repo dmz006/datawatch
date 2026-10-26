@@ -148,6 +148,7 @@ var MCPToolCap = map[string]string{
 	"autonomous_progress":             CapAutonomousRead,
 	"autonomous_progress_trend":       CapAutonomousRead,
 	"autonomous_lane_fill_status":     CapAutonomousRead,
+	"autonomous_triage":               CapAutonomousRead,
 	"channel_diagnostics":             CapCommRead,
 	"channel_info":                    CapCommRead,
 	"channel_routing_config_get":      CapConfigRead,

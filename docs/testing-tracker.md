@@ -9,6 +9,34 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Autonomous triage records — read route
+
+The triage records for failed and blocked Automata are readable through one route, `GET /api/autonomous/triage`, and one MCP tool, `autonomous_triage`, both siblings of the lane-fill read. The rules are in `docs/plans/2026-10-26-autonomous-triage-read-route.md`.
+
+Every Tested row below was run on 2026-10-26 with Go 1.27.2 (linux/amd64), from the repository root, with `env -u TMUX -u TMUX_TMPDIR` in front of each command. All tests use fakes only: a spy that answers the read with a fixed set of records and a fixed alert threshold, and a fake HTTP server that records what the tool proxied. No test starts a live daemon or a real worker; nothing here touches the alert clock.
+
+Run everything at once:
+
+```sh
+env -u TMUX -u TMUX_TMPDIR go test ./internal/server/ ./internal/mcp/ -run 'Triage' -count=1
+```
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Route shape and defaults | `TestTriageReadShape` | `internal/server/triage_rest_test.go`, spy store with three records | 200, JSON, all stored records, and `alert_minutes` at the 30-minute default. Records carry `prd_id`, `status`, `automation_id`, `first_seen_at`, `updated_at` and `retry_budget`. | Unit | **Yes** | Pass, 2026-10-26 | **No** — no live daemon run yet | Newest record is back first. |
+| Newest first | `TestTriageReadNewestFirst` | Same file | Store order is irrelevant; the list comes back by `updated_at`, newest first. | Unit | **Yes** | Pass, 2026-10-26 | **No** | — |
+| Filters | `TestTriageReadFilters` | Same file | `automation_id`, `prd_id` and `status` each work and combine. An empty `status` is ignored, other parameters are ignored. | Unit | **Yes** | Pass, 2026-10-26 | **No** | — |
+| A wrong status is refused | `TestTriageReadBadStatusIsRefused` | Same file | `pending`, `Failed` and `FAILED` are all 400, the refusal names the two allowed values, and the manager is not asked. | Unit | **Yes** | Pass, 2026-10-26 | **No** | Case-sensitive, by design. |
+| A read that matches nothing | `TestTriageReadMatchesNothingListsNothing` | Same file | No 404: an empty `records` list, with the alert threshold beside it. An empty store lists empty too. | Unit | **Yes** | Pass, 2026-10-26 | **No** | — |
+| `alert_minutes` follows the setting | `TestTriageReadAlertMinutesFollowsConfig` (with the existing `TestTriageAlertUnsetDefaultsToThirtyOnConfigSurface` and `TestAutomationTriageAlertConfigRoundTrip`) | Same file and `internal/server/automation_set_llm_rest_test.go` | Unset reports 30; an explicit 0 (alert off) reports 0; 45 reports 45. | Unit | **Yes** | Pass, 2026-10-26 | **No** | Uses the existing `autonomous.automation.triage_alert_minutes`; no new setting. |
+| Method guard | `TestTriageReadMethodGuard` | Same file | Post, put, delete and patch are 405 and never reach the manager. | Unit | **Yes** | Pass, 2026-10-26 | **No** | — |
+| Capability | `TestTriageReadDeniedWithoutCapability` | Same file | Without the autonomous read capability: 403 naming it. With it: 200. | Unit | **Yes** | Pass, 2026-10-26 | **No** | Structurally also covered by `TestA2_EveryRegisteredRouteHandlerIsCapabilityGated` (pass, 2026-10-26). |
+| Manager down | `TestTriageReadAutonomousDisabled` | Same file | A daemon without the autonomous manager answers 503. | Unit | **Yes** | Pass, 2026-10-26 | **No** | — |
+| Tool is listed | `TestTriageToolIsListed` | `internal/mcp/triage_tools_test.go`, real server construction | `autonomous_triage` is in the tool catalog. | Unit | **Yes** | Pass, 2026-10-26 | **No** | Also covered by `TestEveryUnconditionallyRegisteredToolHasAnMCPToolCapEntry` (pass, 2026-10-26). |
+| Tool schema | `TestTriageToolSchema` | Same file | Read-only annotation; `automation_id`, `prd_id` and `status` all optional; the description names the two statuses and the `alert_minutes` field. | Unit | **Yes** | Pass, 2026-10-26 | **No** | — |
+| Tool proxies the read | `TestTriageProxiesGETAndPassesFiltersThrough`, `TestTriageSendsNoQueryWhenAbsent`, `TestTriageSurfacesValidationError` | Same file, fake HTTP server | A GET to `/api/autonomous/triage` with exactly the supplied filters (and none when none are given); the daemon body comes back inside the tool result; a 400 comes back as a tool error with its text. | Unit | **Yes** | Pass, 2026-10-26 | **No** | — |
+| Capability mapping | `TestTriageCapabilityMapping` | Same file | `autonomous_triage` maps to the autonomous read capability. | Unit | **Yes** | Pass, 2026-10-26 | **No** | — |
+
 ## Shared navigation mobile fit
 
 The bottom navigation bar of the PWA now fits 320 to 414 px phones: six equal buttons, labels that truncate with an ellipsis, and a 40 px minimum tap width. The how-to is `docs/howto/navigation-mobile-fit.md`, the plan is `docs/plans/2026-10-25-shared-nav-mobile-fit.md`, and the run records are in `docs/testing/runs/shared-nav-mobile-fit/`. The detailed check steps are in `docs/testing.md` under "Shared navigation mobile fit — phone widths".
