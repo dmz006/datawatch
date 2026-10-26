@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 )
@@ -191,10 +192,16 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 
 	variant := strings.ToLower(strings.TrimSpace(o.Variant))
 	if variant == "" {
-		variant = cfg.Variant
-	}
-	if variant == "" {
-		variant = VariantAll
+		if variant = cfg.Variant; variant == "" {
+			variant = VariantAll
+		}
+		if !validVariant(variant) {
+			// The design's retiring rule: a saved setting that names a value removed
+			// from the allowed list falls back to the full form; the numbers never
+			// change, and one log line says so.
+			log.Printf("usage calculator: stored variant %q is retired; serving %q", variant, VariantAll)
+			variant = VariantAll
+		}
 	}
 	if !validVariant(variant) {
 		return nil, fmt.Errorf("unknown usage calculator variant %q: use one of %s", variant, strings.Join(Variants(), ", "))

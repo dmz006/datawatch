@@ -3,6 +3,7 @@ package usagecalc
 import (
 	"context"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -115,11 +116,12 @@ func TestServiceAdviceBasics(t *testing.T) {
 	}
 }
 
-func TestServiceVariants(t *testing.T) {
+func TestServiceVariantNeverChangesNumbers(t *testing.T) {
 	f := newServiceFixture(t, Settings{Reset: serviceReset, Variant: VariantLanePlanner}, nil)
 	f.seedReading(t)
+	ctx := context.Background()
 
-	res, err := f.svc.Advice(context.Background(), Options{})
+	res, err := f.svc.Advice(ctx, Options{})
 	if err != nil {
 		t.Fatalf("Advice: %v", err)
 	}
@@ -127,15 +129,26 @@ func TestServiceVariants(t *testing.T) {
 		t.Errorf("stored variant: got %q; want %q", res.Variant, VariantLanePlanner)
 	}
 
-	res, err = f.svc.Advice(context.Background(), Options{Variant: VariantBurnLedger})
-	if err != nil {
-		t.Fatalf("Advice with override: %v", err)
-	}
-	if res.Variant != VariantBurnLedger {
-		t.Errorf("override variant: got %q; want %q", res.Variant, VariantBurnLedger)
+	// The variant picks the rendering, nothing else: all four variant values serve the
+	// same reading, the same lane table and the same day totals, so every variant must
+	// carry the same numbers.
+	variants := []string{VariantPaceGauge, VariantLanePlanner, VariantBurnLedger, VariantAll}
+	for _, v := range variants {
+		got, err := f.svc.Advice(ctx, Options{Variant: v})
+		if err != nil {
+			t.Fatalf("Advice with %s: %v", v, err)
+		}
+		if got.Variant != v {
+			t.Errorf("variant %s: the response names %q instead", v, got.Variant)
+		}
+		if !reflect.DeepEqual(got.Advice, res.Advice) {
+			t.Errorf("variant %s changed the numbers:\n got %+v\nwant %+v", v, got.Advice, res.Advice)
+		}
 	}
 
-	_, err = f.svc.Advice(context.Background(), Options{Variant: "no-such-form"})
+	// A variant name the operator does not know is a selection error, and the response the
+	// request the operator can fix on the next call.
+	_, err = f.svc.Advice(ctx, Options{Variant: "no-such-form"})
 	if err == nil || !strings.Contains(err.Error(), "variant") {
 		t.Errorf("unknown variant: got err=%v; want an error naming the variant", err)
 	}
@@ -143,7 +156,7 @@ func TestServiceVariants(t *testing.T) {
 	// An unset stored variant keeps the model's numbers and falls back to the full form.
 	all := newServiceFixture(t, Settings{Reset: serviceReset}, nil)
 	all.seedReading(t)
-	res, err = all.svc.Advice(context.Background(), Options{})
+	res, err = all.svc.Advice(ctx, Options{})
 	if err != nil {
 		t.Fatalf("Advice with no stored variant: %v", err)
 	}
@@ -152,15 +165,59 @@ func TestServiceVariants(t *testing.T) {
 	}
 }
 
-func TestServicePolicyOverride(t *testing.T) {
+func TestServiceRetiredVariantFallsBack(t *testing.T) {
+	// A stored setting that names a variant removed from the allowed list falls back to
+	// the full form: the service serves the advice without an error, names all in the
+	// response, and keeps the model's numbers.
+	f := newServiceFixture(t, Settings{Reset: serviceReset, Variant: "old-pulse"}, nil)
+	f.seedReading(t)
+	ctx := context.Background()
+
+	res, err := f.svc.Advice(ctx, Options{})
+	if err != nil {
+		t.Fatalf("Advice with a retired stored variant: %v", err)
+	}
+	if res.Variant != VariantAll {
+		t.Errorf("retired stored variant: the response names %q; want the fallback %q", res.Variant, VariantAll)
+	}
+
+	// The fallback keeps the model's numbers: identical to the same settings with the
+	// retired value cleared.
+	clear := newServiceFixture(t, Settings{Reset: serviceReset}, nil)
+	clear.seedReading(t)
+	cleared, err := clear.svc.Advice(ctx, Options{})
+	if err != nil {
+		t.Fatalf("Advice with the setting cleared: %v", err)
+	}
+	if !reflect.DeepEqual(res.Advice, cleared.Advice) {
+		t.Errorf("the fallback kept different numbers:\n got %+v\nwant %+v", res.Advice, cleared.Advice)
+	}
+
+	// A per-call request for a retired name still fails: it is a selection the operator
+	// can fix, not a saved setting that got retired under them.
+	if _, err := f.svc.Advice(ctx, Options{Variant: "old-pulse"}); err == nil {
+		t.Errorf("retired per-call variant: want a selection error")
+	}
+}
+
+// serviceNumbers is the advice with the advice object cleared, the set of numbers the
+// reading alone produced. Variants and policies must never change it.
+func serviceNumbers(res *AdviceResult) Advice {
+	a := res.Advice
+	a.Advice = PolicyAdvice{}
+	return a
+}
+
+func TestServicePolicyOverrideChangesOnlyAdvice(t *testing.T) {
 	f := newServiceFixture(t, Settings{Reset: serviceReset}, nil)
 	f.seedReading(t)
-	if err := f.svc.SetRemainingWork(context.Background(), ptr64(15)); err != nil {
+	ctx := context.Background()
+	if err := f.svc.SetRemainingWork(ctx, ptr64(15)); err != nil {
 		t.Fatalf("SetRemainingWork: %v", err)
 	}
 
 	// The stored policy is empty: use-all plans the whole allowance.
-	res, err := f.svc.Advice(context.Background(), Options{})
+	res, err := f.svc.Advice(ctx, Options{})
 	if err != nil {
 		t.Fatalf("Advice: %v", err)
 	}
@@ -168,8 +225,24 @@ func TestServicePolicyOverride(t *testing.T) {
 		t.Errorf("stored policy: got %q; want %q", res.Policy, PolicyUseAll)
 	}
 
+	// The policy picks the target and the words around it: every policy keeps the
+	// numbers the reading alone produced.
+	policies := []string{PolicyUseAll, PolicyPace, PolicyFinishEarly}
+	for _, p := range policies {
+		got, err := f.svc.Advice(ctx, Options{Policy: p})
+		if err != nil {
+			t.Fatalf("Advice with %s policy: %v", p, err)
+		}
+		if got.Policy != p {
+			t.Errorf("policy %s: the response names %q instead", p, got.Policy)
+		}
+		if !reflect.DeepEqual(serviceNumbers(got), serviceNumbers(res)) {
+			t.Errorf("policy %s changed the numbers of the reading:\n got %+v\nwant %+v", p, got.Advice, res.Advice)
+		}
+	}
+
 	// A per-call policy is independent of the variant and the stored policy.
-	res, err = f.svc.Advice(context.Background(), Options{Variant: VariantPaceGauge, Policy: PolicyPace})
+	res, err = f.svc.Advice(ctx, Options{Variant: VariantPaceGauge, Policy: PolicyPace})
 	if err != nil {
 		t.Fatalf("Advice with pace: %v", err)
 	}
@@ -181,7 +254,7 @@ func TestServicePolicyOverride(t *testing.T) {
 	}
 
 	// Run flat out finishes the typed remaining work before the allowance.
-	res, err = f.svc.Advice(context.Background(), Options{Policy: PolicyFinishEarly})
+	res, err = f.svc.Advice(ctx, Options{Policy: PolicyFinishEarly})
 	if err != nil {
 		t.Fatalf("Advice with finish-early: %v", err)
 	}
@@ -203,7 +276,7 @@ func TestServicePolicyOverride(t *testing.T) {
 	}
 
 	// An unknown policy keeps the default target instead of failing the call.
-	res, err = f.svc.Advice(context.Background(), Options{Policy: "bogus"})
+	res, err = f.svc.Advice(ctx, Options{Policy: "bogus"})
 	if err != nil {
 		t.Fatalf("Advice with unknown policy: %v", err)
 	}
@@ -212,7 +285,7 @@ func TestServicePolicyOverride(t *testing.T) {
 	}
 }
 
-func TestServiceQueueEstimate(t *testing.T) {
+func TestServiceQueueEstimateAndTypedOverride(t *testing.T) {
 	newEstimate := func(n int, cost float64) *serviceFixture {
 		return newServiceFixture(t, Settings{Reset: serviceReset, CostPerTask: cost}, fakeQueue{n: n})
 	}
@@ -399,7 +472,7 @@ func TestServiceRemainingWorkTyped(t *testing.T) {
 	}
 }
 
-func TestServiceStaleSnapshot(t *testing.T) {
+func TestServiceStaleSourceMarked(t *testing.T) {
 	// A peer that cannot reach the keeper serves its last copy, marked stale (decision 8).
 	clock := newFakeClock(serviceNow)
 	store, err := OpenStore(t.TempDir(), clock.Now)
@@ -462,3 +535,48 @@ func TestServiceStaleSnapshot(t *testing.T) {
 }
 
 func ptr64(v float64) *float64 { return &v }
+
+// TestServiceNoReadings checks the clean, clearly labeled empty state through the
+// service: no readings in the series means no percentage is invented. The service tells
+// the operator to take the first reading, the queue and policy chains stay usable, and
+// the shared record's write paths work before that first reading.
+func TestServiceNoReadings(t *testing.T) {
+	f := newServiceFixture(t, Settings{Reset: serviceReset}, fakeQueue{n: 3})
+	ctx := context.Background()
+
+	res, err := f.svc.Advice(ctx, Options{Policy: PolicyFinishEarly})
+	if err != nil {
+		t.Fatalf("Advice with no readings: %v", err)
+	}
+	if res.Advice.Needs != NeedsReading {
+		t.Errorf("Needs: got %q; want %q", res.Advice.Needs, NeedsReading)
+	}
+	if res.Advice.Percent != 0 || len(res.Advice.Series) != 0 {
+		t.Errorf("empty state: percent %v series %d; want 0 and 0", res.Advice.Percent, len(res.Advice.Series))
+	}
+	if res.Advice.RemainingWork.InUse != WorkInUseNone {
+		t.Errorf("InUse: got %q; want %q with no reading", res.Advice.RemainingWork.InUse, WorkInUseNone)
+	}
+
+	// The readings pass-through serves the shared series: empty here.
+	readings, err := f.svc.Readings(ctx)
+	if err != nil {
+		t.Fatalf("Readings: %v", err)
+	}
+	if len(readings) != 0 {
+		t.Errorf("Readings: got %d rows; want 0", len(readings))
+	}
+
+	// Extra credit is an account fact: it goes in before the first reading, and the
+	// advisory ceiling follows it.
+	if err := f.svc.SetExtraCredit(ctx, 25); err != nil {
+		t.Fatalf("SetExtraCredit: %v", err)
+	}
+	res, err = f.svc.Advice(ctx, Options{})
+	if err != nil {
+		t.Fatalf("Advice after extra credit: %v", err)
+	}
+	if res.Advice.Ceiling != 125 {
+		t.Errorf("Ceiling: got %v; want %v", res.Advice.Ceiling, 125)
+	}
+}

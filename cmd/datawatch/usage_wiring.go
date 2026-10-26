@@ -7,10 +7,11 @@ import (
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 )
 
-// usagecalcQueue counts the daemon's queued automation tasks for the usagecalc service:
-// the tasks that are not finished yet. Completed, failed and cancelled tasks count as
-// done; everything else (queued, in progress, running tests, waiting for capacity,
-// blocked, parked...) is still work the allowance must carry.
+// usagecalcQueue counts this daemon's queued automation tasks for the usagecalc service.
+// Only tasks that are queued, approved or running count as remaining work: queued, in
+// progress, running tests and verifying. Completed, failed and cancelled tasks are
+// finished, and skipped tasks are dropped; held work that is not running yet (pending,
+// awaiting approval, blocked, waiting for capacity, held for review) is not counted.
 type usagecalcQueue struct {
 	m *autonomouspkg.Manager
 }
@@ -23,12 +24,14 @@ func (q usagecalcQueue) QueuedTaskCount() int {
 	}
 	n := 0
 	for _, prd := range q.m.Store().ListPRDs() {
+		if prd == nil {
+			continue
+		}
 		for _, story := range prd.Story {
 			for _, task := range story.Tasks {
 				switch task.Status {
-				case autonomouspkg.TaskCompleted, autonomouspkg.TaskFailed, autonomouspkg.TaskCancelled:
-					// finished: not remaining work
-				default:
+				case autonomouspkg.TaskQueued, autonomouspkg.TaskInProgress,
+					autonomouspkg.TaskRunningTests, autonomouspkg.TaskVerifying:
 					n++
 				}
 			}
