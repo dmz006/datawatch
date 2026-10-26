@@ -1390,6 +1390,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				return lerr
 			}
 			// The node the lease was granted on decides where the worker runs.
+			if rerr := m.replaceStaleLease(ctx, prd, t, backend, model); rerr != nil {
+				if errors.Is(rerr, errCancelledWhileWaiting) {
+					return nil
+				}
+				return rerr
+			}
 			heldNode := m.heldNode(t.ID)
 			if nerr := m.requireLeasedNode(t, backend, model, heldNode); nerr != nil {
 				log.Printf("[autonomous] prd=%s task=%s no node leased, not spawning: %v", prd.ID, t.ID, nerr)

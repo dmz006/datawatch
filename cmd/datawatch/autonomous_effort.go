@@ -116,6 +116,9 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 	// no node was held, and the session resolves its node as before.
 	if req.ComputeNode != "" {
 		sessionBody["compute_node"] = req.ComputeNode
+		// The scheduler's node is advisory: the spawn handler re-places it
+		// when the node has left the entry's compute_nodes list.
+		sessionBody["compute_node_advisory"] = true
 	}
 	// Bare task title, so the completion commit can use it without
 	// parsing the "autonomous:"-prefixed name.

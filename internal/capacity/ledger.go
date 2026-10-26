@@ -123,6 +123,33 @@ func (r Request) withNode(name string) Request {
 	return r
 }
 
+// withoutStaleNode treats a recorded Node as advisory. When the request lists
+// candidate nodes and Node is not one of them, Node and its node:<name> pool
+// are dropped so placement chooses again from the current list. A request
+// with fewer than two candidates keeps its Node: callers bind a single-node
+// entry through Node and Pools themselves.
+func (r Request) withoutStaleNode() Request {
+	if !r.multiNode() {
+		return r
+	}
+	if r.Node != "" {
+		for _, c := range r.NodeChoices {
+			if c.Name == r.Node {
+				return r
+			}
+		}
+		stale := "node:" + r.Node
+		pools := make([]string, 0, len(r.Pools))
+		for _, p := range r.Pools {
+			if p != stale {
+				pools = append(pools, p)
+			}
+		}
+		r.Pools, r.Node = pools, ""
+	}
+	return r
+}
+
 // allPools is Pools plus the node pool of every candidate: every pool whose
 // state can affect whether the request is granted.
 func (r Request) allPools() []string {
@@ -562,6 +589,7 @@ func (l *Ledger) dispatchLocked() {
 			w.req.Pools, w.req.Node = cur.Pools, cur.Node
 			w.req.NodeChoices, w.req.ExcludeNodes = cur.NodeChoices, cur.ExcludeNodes
 		}
+		w.req = w.req.withoutStaleNode()
 	}
 	for _, w := range l.orderLocked(now) {
 		bound, why := l.resolveLocked(w.req)

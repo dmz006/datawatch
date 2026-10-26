@@ -352,6 +352,46 @@ func (m *Manager) heldNode(taskID string) string {
 	return ""
 }
 
+// leaseNodeStale reports whether the node the task's lease was granted on is
+// no longer a candidate for backend and model: absent from the current
+// candidate list, or different from the single node the resolver now names.
+func (m *Manager) leaseNodeStale(taskID, backend, model string) bool {
+	node := m.heldNode(taskID)
+	if node == "" {
+		return false
+	}
+	m.mu.Lock()
+	keysFn, choicesFn := m.capacityKeys, m.capacityChoices
+	m.mu.Unlock()
+	if choicesFn != nil {
+		if choices := choicesFn(backend, model); len(choices) > 0 {
+			for _, c := range choices {
+				if c.Name == node {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	if keysFn == nil {
+		return false
+	}
+	_, cur := keysFn(backend, model)
+	return cur != "" && cur != node
+}
+
+// replaceStaleLease treats the leased node as advisory. When the node was
+// removed from the LLM entry's compute_nodes list after the lease was granted,
+// the lease is released and acquired again so placement chooses from the
+// current list, and the spawn never carries the removed node.
+func (m *Manager) replaceStaleLease(ctx context.Context, prd *PRD, t *Task, backend, model string) error {
+	if !m.leaseNodeStale(t.ID, backend, model) {
+		return nil
+	}
+	m.releaseCapacity(t.ID)
+	return m.acquireLease(ctx, prd, t, backend, model, capacity.RoleWorker, nil)
+}
+
 // decomposeAdmitted runs one decompose attempt inside a RolePlanner capacity
 // lease on the same pools a task on that backend+model would use, minus the
 // "host" pool.
