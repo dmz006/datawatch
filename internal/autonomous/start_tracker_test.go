@@ -61,6 +61,24 @@ func TestStartTrackerLaunchWindowStartsAtFirstSilentTick(t *testing.T) {
 	}
 }
 
+func TestStartTrackerLaunchSeedAnchorsWindowAtLastLife(t *testing.T) {
+	// A launch tracker seeded with an adopted task's last evidence of life
+	// (the wait loop's adopted-task case) judges silence from that seed, not
+	// from launch and not from the first silent tick.
+	seed := trackerTickAt(5)
+	tr := NewStartTracker(60*time.Second, time.Time{}, seed, time.Time{})
+	var stalledAt int
+	for k := 6; k <= 20; k++ {
+		obs := tr.Observe(StartInput{Now: trackerTickAt(k), State: sessionStateWaitingInput, Pane: trackerSilentPane})
+		if stalled, _ := obs.Stalled(); stalled && stalledAt == 0 {
+			stalledAt = k
+		}
+	}
+	if stalledAt != 12 {
+		t.Fatalf("seeded launch tracker stalled at tick %d, want 12 (70s after the seed at tick 5)", stalledAt)
+	}
+}
+
 func TestStartTrackerLaunchToolCallKeepsClockRunning(t *testing.T) {
 	tr := NewStartTracker(60*time.Second, time.Time{}, time.Time{}, time.Time{})
 	for k := 1; k <= 20; k++ {
