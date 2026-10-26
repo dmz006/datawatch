@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Queued requests move to a node that frees an engine
+
+- A queued request now picks its compute node again on each admission pass and whenever any node frees an engine. A request that was waiting on a busy node moves to a node with a free engine, least loaded first and then by node priority. This applies to workers and to the judge. Before, a request kept waiting on the node it first tried while other nodes sat idle.
+- A change to an LLM entry's `compute_nodes` list reaches waiting work without a daemon restart. The limit of one engine per node still applies.
+- Docs: [`llm-backends.md`](docs/llm-backends.md) describes how a waiting request moves between nodes.
+
 ### Pi workers are placed on the least-loaded healthy node and launched on the node they leased
 
 - A `pi` or `pi-prompt` worker whose LLM entry lists two or more compute nodes now goes to the least-loaded healthy node (sessions held over the node's session limit). `scheduling_priority` only breaks a tie between equally loaded nodes, then list order. Before, the highest-priority node with a free slot always won, so a fast node filled while the others sat idle. A full node is passed over.
