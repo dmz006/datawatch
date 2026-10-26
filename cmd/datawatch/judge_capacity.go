@@ -49,6 +49,21 @@ func judgeAdmitRequest(unitID, prdID string, pools []string, node, model string,
 	}
 }
 
+// judgeAdmitRefreshed is judgeAdmitRequest with Refresh set: each ledger
+// dispatch pass re-resolves the pools and node through keysFn, so a node learned
+// while the judge waits joins its placement.
+func judgeAdmitRefreshed(keysFn func(backend, model string) ([]string, string), backend, unitID, prdID string, pools []string, node, model string) capacity.Request {
+	req := judgeAdmitRequest(unitID, prdID, pools, node, model, 0)
+	req.Refresh = func() capacity.Request {
+		cur := req
+		if p, n := keysFn(backend, model); len(p) > 0 {
+			cur.Pools, cur.Node = p, n
+		}
+		return cur
+	}
+	return req
+}
+
 // judgeAdmitFailureVerdict turns an admission failure (wait expired or
 // context cancelled) into the "infra" verdict the other pre-spawn failures
 // use: resource contention, not a content judgment — the judge never ran —
@@ -131,7 +146,7 @@ func judgeAdmitters(led *capacity.Ledger, reg *verifierRegistry, keysFn func(bac
 		}
 		// The ledger grants all-or-nothing across the pool list, so the
 		// backend pool and the node pool are held atomically.
-		if err := led.Acquire(ctx, judgeAdmitRequest(unitID, prdID, pools, node, model, 0), waitDur, func() bool { return false }, func(string) {}); err != nil {
+		if err := led.Acquire(ctx, judgeAdmitRefreshed(keysFn, backend, unitID, prdID, pools, node, model), waitDur, func() bool { return false }, func(string) {}); err != nil {
 			return func() {}, err
 		}
 		end := reg.begin(holder)
@@ -143,7 +158,7 @@ func judgeAdmitters(led *capacity.Ledger, reg *verifierRegistry, keysFn func(bac
 			// A short, real Acquire (not a snapshot check): the fast path
 			// grants immediately when there is room, and a busy candidate
 			// is given only the probe window before the caller moves on.
-			if err := led.Acquire(ctx, judgeAdmitRequest(unitID, prdID, pools, node, model, 0), 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
+			if err := led.Acquire(ctx, judgeAdmitRefreshed(keysFn, backend, unitID, prdID, pools, node, model), 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
 				return func() {}, false
 			}
 			end := reg.begin(holder)
