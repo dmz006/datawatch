@@ -9,6 +9,18 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Usage calculator MCP tools — unreleased
+
+The MCP surface of the account usage calculator: six tools that proxy this daemon's loopback REST surface (the REST surface's own tracking lives with the calculator's other sections). Design: `docs/plans/2026-10-23-usage-calculator-design.md`; decisions: `docs/plans/2026-10-25-usage-calculator-decisions.md`. Unit/integration run 2026-10-26: `go test ./internal/mcp/ ./internal/federation/ ./internal/server/ -count=1` — all pass (`-run 'TestUsageCalc'` covers the six tools).
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| MCP `usage_advice` (one advice result; optional `variant`/`policy`/`lanes`/`cost` override the stored settings for this call only) | **Yes** (`internal/mcp/usage_calculator_test.go`: `TestUsageCalcAdviceProxiesGetWithQuery`, `TestUsageCalcAdviceOmitsOmittedArguments`) | **No** | Live: call the tool on a sandbox daemon's MCP endpoint and confirm the result matches `GET /api/usage/advice` with the same query parameters | Proxies `GET /api/usage/advice`; reads `usage:read`; omitted arguments are left off the query so the stored settings apply |
+| MCP `usage_readings` (shared readings series, extra credit, per-policy remaining work) | **Yes** (`TestUsageCalcReadingsProxiesGet`) | **No** | Live: call the tool and confirm the series matches `GET /api/usage/readings` | Proxies `GET /api/usage/readings`; reads `usage:read`; stale-marker semantics are the REST layer's |
+| MCP `usage_reading_add` / `usage_reading_delete` (one figure per reading — `percent` 0–100 or `spend_usd` >= 0, plus optional `at`/`session_percent`/`lanes`; delete by id) | **Yes** (`TestUsageCalcReadingAdd`, `TestUsageCalcReadingAddRejectsBadInput`, `TestUsageCalcReadingDelete`) | **No** | Live: add a reading, confirm it appears in `usage_readings`, delete it by id, confirm it is gone; confirm a 404 on an unknown id | Proxies `POST /api/usage/readings` and `DELETE /api/usage/readings/<id>`; writes `usage:write`; both-together / neither-together and negative ranges rejected before the request is sent |
+| MCP `usage_extra_credit_set` / `usage_remaining_work_set` (points >= 0; extra credit shared, remaining work daemon-local) | **Yes** (`TestUsageCalcExtraCreditSet`, `TestUsageCalcRemainingWorkSet`) | **No** | Live: set extra credit (`points: 0` is valid), confirm the advice ceiling moves; set the typed remaining work, confirm the finish-early estimate compares against it | Proxies `PUT /api/usage/extra-credit` and `PUT /api/usage/remaining-work`; writes `usage:write`; negative or missing points rejected before the request is sent |
+| Capability mapping for all six tools on the federation route-cap registry | **Yes** (`TestUsageCalcToolsRegisteredAndCapped`; `internal/federation/` cap-mapping suite) | **No** | Live: confirm a peer with only `usage:read` can call the two read tools and gets refused on the four write tools | `usage_advice` + `usage_readings` → `usage:read`; the four write tools → `usage:write`; entries in `internal/federation/mcp_tool_caps.go` |
+
 ## Lane fill — shadow mode first (automatic lane filling)
 
 Lane fill runs the planner on every coordinator poll and records what it would start on each idle lane. In `shadow` mode (the default) it starts nothing; in `on` mode it starts work through the existing admission path; in `off` it does nothing. The rules are in `docs/plans/2026-10-24-lane-fill-shadow-mode.md` and the operator procedure is in `docs/howto/automation-lane-fill.md`.
