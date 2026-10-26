@@ -162,6 +162,72 @@ func TestJudgeConfigDefaultsOnRESTSurface(t *testing.T) {
 	check("cleared", `[]`, `1800`)
 }
 
+// Every surface that documents the judge time limit states the same default
+// (1800 seconds, 30 minutes), so a surface that drifts to another number or
+// omits the default fails here. The locale help texts and the web form
+// placeholder are checked too.
+func TestJudgeConfigDefaultWordingOnEverySurface(t *testing.T) {
+	stating := func(src string) bool {
+		return strings.Contains(src, "1800") || strings.Contains(src, "30m") ||
+			strings.Contains(src, "30 min") || strings.Contains(src, "30-min")
+	}
+	for _, sf := range []struct{ name, rel string }{
+		{"MCP schema", "internal/mcp/autonomous.go"},
+		{"comm help", "internal/router/router.go"},
+		{"comm judge verbs", "internal/router/judge_policy_cmd.go"},
+		{"CLI", "cmd/datawatch/cli_autonomous.go"},
+		{"web app.js", "internal/server/web/app.js"},
+		{"config-reference.yaml", "docs/config-reference.yaml"},
+		{"implementation.md", "docs/implementation.md"},
+		{"api/autonomous.md", "docs/api/autonomous.md"},
+		{"api/openapi.yaml", "docs/api/openapi.yaml"},
+		{"mcp.md", "docs/mcp.md"},
+		{"api-mcp-mapping.md", "docs/api-mcp-mapping.md"},
+		{"operations.md", "docs/operations.md"},
+	} {
+		src := readRepoFile(t, sf.rel)
+		// Look only at the lines that name the time limit, so an unrelated
+		// 1800 elsewhere in the file cannot satisfy the check.
+		found, ok := false, false
+		for _, line := range strings.Split(src, "\n") {
+			if strings.Contains(line, "judge_timeout_seconds") || strings.Contains(line, "judge-timeout-seconds") {
+				found = true
+				if stating(line) {
+					ok = true
+					break
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s (%s) never names the judge time limit", sf.name, sf.rel)
+		} else if !ok {
+			t.Errorf("%s (%s) names the judge time limit but not its 1800 second / 30 minute default", sf.name, sf.rel)
+		}
+	}
+	for _, lang := range []string{"en", "de", "es", "fr", "ja"} {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(readRepoFile(t, "internal/server/web/locales/"+lang+".json")), &m); err != nil {
+			t.Fatalf("%s.json: invalid JSON: %v", lang, err)
+		}
+		help, _ := m["settings_judge_timeout_help"].(string)
+		if !strings.Contains(help, "1800") {
+			t.Errorf("%s.json settings_judge_timeout_help does not state the 1800 second default: %q", lang, help)
+		}
+		label, _ := m["settings_judge_timeout"].(string)
+		if !strings.Contains(label, "30") {
+			t.Errorf("%s.json settings_judge_timeout does not show the 30 minute default: %q", lang, label)
+		}
+		policy, _ := m["settings_judge_policy"].(string)
+		if strings.TrimSpace(policy) == "" {
+			t.Errorf("%s.json settings_judge_policy is empty", lang)
+		}
+	}
+	appjs := readRepoFile(t, "internal/server/web/app.js")
+	if !strings.Contains(appjs, "placeholder: '1800'") {
+		t.Error("web form judge time limit lacks the 1800 placeholder")
+	}
+}
+
 func TestJudgeConfigDefaultIsThirtyMinutesOnEverySurface(t *testing.T) {
 	if config.JudgeTimeoutDefaultSeconds != 1800 {
 		t.Fatalf("default = %d, want 1800", config.JudgeTimeoutDefaultSeconds)
