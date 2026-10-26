@@ -52,6 +52,14 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.19.6 — Pi work is placed on the backend own compute nodes
+
+### A pi backend's node list is read from its own LLM entry
+
+- a `pi` or `pi-prompt` backend takes its candidate nodes from its own LLM entry `compute_nodes`, ordered with load first and `scheduling_priority` as the tiebreak. The provider-kind lookup applies only to backends without their own node list.
+- `scripts/check-waiter-nodes.sh` reports the node each waiting request is bound to and exits 2 when every waiter of a multi-node backend sits on one node while another candidate is free.
+- Docs: [`automata-capacity.md`](docs/howto/automata-capacity.md) and [`compute-nodes.md`](docs/howto/compute-nodes.md) describe the node choice and how to read the script's output.
+
 ## v9.19.5 — The compute node list decides where local-model work runs
 
 ### The LLM entry's compute node list decides where local-model work runs
