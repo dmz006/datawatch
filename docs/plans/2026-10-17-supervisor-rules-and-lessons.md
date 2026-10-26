@@ -436,7 +436,63 @@ surfaces map to which regression suites, and how an urgent bug may jump the queu
 
 - **Release manager and kill validation (operator decisions, 2026-10-20).** The supervisor is release manager: it does patch and minor version bumps and releases through the automation scripts (AGENT.md scripts, one bump commit per run). Only a major release (10.0) is the operator's. The "no version bump without ask" gotcha in `DATAWATCH-CONTEXT.md` predates automation and is superseded by this line; the context file is updated to match. A session is killed only when all of these hold: its pi process has exited (checked by process, not by pane silence); the session log or task output shows no completion record and nothing written after the exit; and the reason is written to the BL. A session that is still running and quiet is waiting, not wedged. The earlier kills on 2026-10-19 and 2026-10-20 did not check the log before killing; that gap is recorded as a deviation.
 
-### Tick prompt (current, 2026-10-20)
+### 11a. Schedule and procedures (current, 2026-10-26; supersedes the tick prompt below)
+
+Why this exists: the cron prompt had grown to about 1,900 words by accretion (every incident added a
+clause) and was re-sent twice an hour, while a tick that found nothing still ran a dozen state commands.
+The operator asked for a cheap check often and the full procedure hourly (2026-10-26: "I'm happy with the
+hourly change but want something small every 20"). The cron texts are now short pointers; this section is
+the single source for what each run does.
+
+**Watch, every 20 minutes** (cron `3,23,43 * * * *`). Run `python3 scripts/supervisor-watch.py`. It prints
+`OK <lane summary>` or `ATTENTION` plus one line per finding. On OK, reply with that one line and stop. On
+ATTENTION, handle each finding: a restarted tmux server (section 11, tmux-loss check), a down daemon or a
+missing model, a newly failed or review-needed task (section 5), a finished PRD to merge (section 7), an
+idle lane (fill it, GPU rule below), a broken or silent worktree (see "worktree check" below), a dirty main
+checkout (commit the tracked changes first, a ship aborts otherwise), red or stuck CI (section 8b below).
+The watch does not run merges beyond a MERGE READY finding, the registry audit, the v10 table or the
+budget estimate. Deliberately held PRDs are listed in `IGNORE` in the script with the reason in the registry.
+
+**Full tick, hourly** (cron `17 * * * *`; the old separate backstop is folded in). In order:
+0. CronList: both jobs present (watch `3,23,43 * * * *`, full tick `17 * * * *`); recreate from this section if missing.
+1. Run the watch script and read its findings first.
+2. Budget: estimate Claude use against the pace line before filling any Claude lane. Pace line = days since the
+   Sunday 08:00 reset / 7 x 100. Last operator reading is the newest entry in
+   `docs/plans/2026-10-14-concurrency-and-budget-design.md`. Lead the report with an over-pace warning when the
+   estimate or the reading is above the line; ask for a fresh reading. The lane count is the operator's decision.
+3. Every non-terminal PRD including blocked and failed ones. Held `review_needed` task: retry with
+   `datawatch autonomous resolve-review <prd> --task T --action retry --backend claude-code --model sonnet
+   --effort high --note ...` after reading its attempt summary; a completed task's spec cannot be edited, so fold a
+   correction into the next held task or add a task. After 3 failures of one task stop and bring it to the operator
+   with an attempt summary (a stronger worker first, never the default Haiku). Idle Claude worker over 30 minutes
+   with no file or commit activity: read its pane and nudge with `datawatch session send`.
+4. Worktree check: each running PRD's directory under `~/.datawatch/prd-worktrees/<id>` has `go.mod`, is a
+   registered worktree, and its `.datawatch/verify/*.sh` scripts are executable (a missing exec bit failed a final
+   gate three times on 2026-10-26; a rebuilt worktree must carry the verify folder over).
+5. Lane fill (GPU rule: GPU lanes cost no Claude usage, so Claude limits never hold GPU work). For every idle lane:
+   a. decomposed PRDs: read the spec first (never run HOLD or sequenced-after-unshipped work), 4a grep main for what
+      it asks for (a stale PRD is dropped and reported), validate (section 4, read tasks touching tmux, pkill,
+      killall or systemctl line by line, no forbidden literals or release numbers in specs), ack coverage false
+      positives, approve, run. Mechanical work goes to pi-prompt, design-heavy and debugging-heavy work to Claude.
+   b. finished PRDs: merge (below). c. drafts: decompose. d. new work only from decided designs, after searching the
+   registry, `prd-list` and `scripts/branch-audit.py`. An implementation PRD for an open design point is gated on a
+   `Confirmed: yes` line in the proposal file.
+6. Merge procedure: `/tmp/sv/trial-merge.sh <id>` in a throwaway worktree; resolve conflicts (a helper subagent for
+   semantic ones); changelog body = lines added by the branch against its merge-base; `BUMP=minor` for a feature,
+   patch for a fix or refactor; `/tmp/sv/finish-merge.sh` (lint plus full `go test` with `env -u TMUX -u TMUX_TMPDIR`);
+   ship only on go exit 0 and only with a clean main checkout; `/tmp/sv/ship-merge.sh`; cancel the PRD record only
+   after the ship succeeded; update the registry row; redeploy when a release or setting needs it and no worker is
+   on a final task (record in-flight sessions; resume PRDs the restart parked).
+7. Registry audit (`docs/plans/README.md` against reality; `scripts/branch-audit.py`; a pending branch is merged
+   or recorded as dropped; every defect has a row and a draft PRD) and CI for all workflows on main and the latest
+   tags (`gh run list`; read failures; security patches are consumed as soon as available, an unfixed CVE stays
+   suppressed in `security/accepted-risks.yml`; never rerun a security workflow; leave external dependabot and
+   `auto/cve-cleanup` PRs alone).
+8. Report: one line per lane, then state changes, then the audit result, then `python3 scripts/v10-status.py`.
+   Questions go as plain text at the end, one at a time. Never use the blocking question tool. Record every
+   operator answer in the design or decisions doc with the words quoted.
+
+### Tick prompt (superseded 2026-10-26 by 11a; kept for history, 2026-10-20)
 
 The tick runs these checks in order and reports only state changes and idle lanes with blockers:
 

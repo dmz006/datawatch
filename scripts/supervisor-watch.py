@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Cheap supervisor watch: one command, one verdict, no judgement calls.
+
+Prints "OK <summary>" when nothing needs attention, otherwise "ATTENTION" followed
+by one line per finding. Meant for the 20 minute supervisor wake-up; the full tick
+(merges, lane fill, registry audit, CI deep read, v10 table) stays hourly.
+
+Checks: tmux restarts, daemon up, the working model resident on both nodes, PRDs that
+newly failed, blocked or need review, PRDs finished but not merged, idle lanes with
+work waiting, running PRDs whose worktree is broken or silent, a dirty main checkout
+(it makes a ship abort), and red or stuck CI on main and the tags.
+"""
+import glob
+import json
+import os
+import re
+import ssl
+import subprocess
+import sys
+import time
+import urllib.request
+
+BASE = os.path.expanduser("~/workspace/datawatch")
+WT = os.path.expanduser("~/.datawatch/prd-worktrees")
+STATE = "/tmp/sv/watch-state.json"
+MODEL = "qwen3.8-64k"
+TMUX_RESTARTS, TMUX_SINCE = "3", "Tue 2026-10-20 18:46:38 EDT"
+SILENT_MIN = 60
+# Deliberately held PRDs (operator or build manager decision, with the reason in the registry).
+IGNORE = {"58aa0001"}  # BL598 MCP resource subscriptions: held, see registry row 180
+
+
+def sh(cmd, timeout=40):
+    try:
+        return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout).stdout
+    except Exception:
+        return ""
+
+
+def get_json(url, timeout=6, insecure=False):
+    ctx = ssl._create_unverified_context() if insecure else None
+    try:
+        with urllib.request.urlopen(url, timeout=timeout, context=ctx) as r:
+            return json.load(r)
+    except Exception:
+        return None
+
+
+def models(url):
+    d = get_json(url + "/api/ps")
+    return None if d is None else [m["name"] for m in d.get("models", [])]
+
+
+def recent(ts, hours=72):
+    """True when an ISO timestamp is within the last `hours` (old probes and drafts do not count)."""
+    try:
+        t = time.mktime(time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S"))
+        return time.time() - t < hours * 3600
+    except Exception:
+        return False
+
+
+def newest_activity(prd_id):
+    """Seconds since the newest file change in the worktree or the newest pi log."""
+    best = 0
+    d = os.path.join(WT, prd_id)
+    for root, dirs, files in os.walk(d):
+        dirs[:] = [x for x in dirs if x != ".git"]
+        for f in files:
+            try:
+                best = max(best, os.path.getmtime(os.path.join(root, f)))
+            except OSError:
+                pass
+    for f in glob.glob(os.path.expanduser("~/.pi/agent/sessions/--home-dmz-.datawatch-prd-worktrees-%s--/*.jsonl" % prd_id)):
+        try:
+            best = max(best, os.path.getmtime(f))
+        except OSError:
+            pass
+    return None if best == 0 else time.time() - best
+
+
+def main():
+    findings, state = [], {}
+    try:
+        state = json.load(open(STATE))
+    except Exception:
+        pass
+    seen = set(tuple(x) for x in state.get("held", []))
+
+    # tmux and daemon
+    t = sh("systemctl --user show datawatch-tmux -p NRestarts -p ActiveEnterTimestamp")
+    nr = re.search(r"NRestarts=(\d+)", t)
+    ae = re.search(r"ActiveEnterTimestamp=(.*)", t)
+    if not nr or nr.group(1) != TMUX_RESTARTS or not ae or ae.group(1).strip() != TMUX_SINCE:
+        findings.append("TMUX server restarted or unreadable (%s): audit every non-terminal PRD" % t.replace("\n", " ").strip())
+    if sh("systemctl --user is-active datawatch").strip() != "active":
+        findings.append("DAEMON is not active")
+
+    # models
+    for name, url in (("local", "http://127.0.0.1:11434"), ("remote", "http://100.64.0.20:11434")):
+        m = models(url)
+        if m is None:
+            findings.append("MODEL host %s unreachable" % name)
+        elif not any(MODEL in x for x in m):
+            findings.append("MODEL %s not resident on %s (reload with keep_alive -1)" % (MODEL, name))
+
+    # PRDs
+    out = sh("datawatch autonomous prd-list", 60)
+    prds = []
+    try:
+        prds = json.loads(out[out.index("{"):]).get("prds", [])
+    except Exception:
+        findings.append("PRD list unreadable")
+    held_now, running, queued_runnable = [], [], 0
+    for p in prds:
+        st = p.get("status")
+        tasks = [k for s in p.get("stories", []) for k in s.get("tasks", [])]
+        if p["id"] in IGNORE:
+            continue
+        if st in ("needs_review", "approved", "draft") and recent(p.get("updated_at")) and (tasks or st == "draft"):
+            queued_runnable += 1
+        if st not in ("running", "blocked"):
+            continue
+        done = sum(1 for k in tasks if k.get("status") == "completed")
+        for k in tasks:
+            if k.get("status") in ("failed", "review_needed"):
+                key = (p["id"], k["id"], k["status"])
+                held_now.append(key)
+                if key not in seen and p["id"] not in ("4f9da380", "67915a24", "6d3c36ca"):
+                    findings.append("NEW %s task %s of %s (%s)" % (k["status"], k["id"], p["id"], (p.get("title") or "")[:40]))
+        if tasks and done == len(tasks):
+            findings.append("MERGE READY %s all %d tasks done: %s" % (p["id"], len(tasks), (p.get("title") or "")[:40]))
+        if st == "running":
+            running.append(p["id"])
+            d = os.path.join(WT, p["id"])
+            if not os.path.isfile(os.path.join(d, "go.mod")):
+                findings.append("WORKTREE %s has no go.mod (broken project directory)" % p["id"])
+            live = [k for k in tasks if k.get("status") in ("in_progress", "verifying")]
+            if live:
+                age = newest_activity(p["id"])
+                if age is not None and age > SILENT_MIN * 60:
+                    findings.append("SILENT %s: no file or log activity for %d min while %s is running" % (p["id"], age // 60, live[0]["id"]))
+
+    # capacity and lanes
+    cap = get_json("https://localhost:8443/api/capacity", insecure=True) or {}
+    pools = {p["name"]: p for p in cap.get("pools", [])}
+    waiting = cap.get("waiting") or []
+    cl, pi = pools.get("llm:claude-code", {}), pools.get("llm:pi-prompt", {})
+    summary = "claude %s/%s pi %s/%s waiting %d prds-running %d" % (
+        cl.get("held", "?"), cl.get("limit", "?"), pi.get("held", "?"), pi.get("limit", "?"), len(waiting), len(running))
+    if cl.get("limit") and cl.get("held", 0) == 0 and queued_runnable:
+        findings.append("IDLE Claude lane while %d PRD(s) are needs_review, approved or draft" % queued_runnable)
+    if pi.get("limit") and pi.get("held", 0) < pi.get("limit", 0) and (waiting or queued_runnable):
+        findings.append("IDLE pi lane (%s/%s held) with %d waiting and %d queued PRDs" % (pi.get("held"), pi.get("limit"), len(waiting), queued_runnable))
+
+    # main checkout
+    dirty = [l for l in sh("git -C %s status --short" % BASE).splitlines() if not l.startswith("??")]
+    if dirty:
+        findings.append("MAIN checkout has %d uncommitted tracked file(s): a ship will abort until committed" % len(dirty))
+    ab = sh("git -C %s rev-list --left-right --count origin/main...main" % BASE).split()
+    if len(ab) == 2 and ab[1] != "0":
+        findings.append("MAIN is %s commit(s) ahead of origin: push pending" % ab[1])
+
+    # CI on main and tags
+    ci = sh("gh run list --limit 20 --json workflowName,conclusion,status,databaseId,headBranch,displayTitle,createdAt", 30)
+    try:
+        for r in json.loads(ci):
+            if r["workflowName"] == "Release CI Summary":
+                continue
+            if not (r["headBranch"] == "main" or r["headBranch"].startswith("v")):
+                continue
+            age = time.time() - time.mktime(time.strptime(r["createdAt"], "%Y-%m-%dT%H:%M:%SZ")) + time.timezone
+            if r["status"] == "completed" and r["conclusion"] not in ("success", "skipped", "cancelled"):
+                if age < 6 * 3600:
+                    findings.append("CI RED %s run %s (%s)" % (r["workflowName"], r["databaseId"], r["displayTitle"][:40]))
+            elif r["status"] == "in_progress" and age > 150 * 60 and r["workflowName"] == "Release":
+                findings.append("CI STUCK? Release run %s in progress for %d min" % (r["databaseId"], age // 60))
+    except Exception:
+        findings.append("CI unreadable (gh rate limit or auth): check manually in the hourly tick")
+
+    try:
+        os.makedirs(os.path.dirname(STATE), exist_ok=True)
+        json.dump({"held": held_now, "at": time.time()}, open(STATE, "w"))
+    except OSError:
+        pass
+
+    if findings:
+        print("ATTENTION " + summary)
+        for f in findings:
+            print(" - " + f)
+        return 1
+    print("OK " + summary)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
