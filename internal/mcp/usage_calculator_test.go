@@ -18,6 +18,7 @@ import (
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
@@ -211,6 +212,20 @@ func TestUsageCalcReadingDelete(t *testing.T) {
 	if !res.IsError || !strings.Contains(text, "not found") || !strings.Contains(text, "404") {
 		t.Errorf("unknown id not surfaced: %s", text)
 	}
+
+	// An id carrying slash or query characters stays one path segment on
+	// the route: it is escaped before the loopback call.
+	s, rec = usageCalcServer(t, http.StatusOK, `{"ok":true}`)
+	res, err = s.handleUsageReadingDelete(context.Background(), callReq(map[string]any{"id": "r/9?x=1"}))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("err=%v isError=%v", err, res != nil && res.IsError)
+	}
+	if rec.path != "/api/usage/readings/r/9?x=1" {
+		t.Errorf("path = %q, want the escaped id resolved back to one segment", rec.path)
+	}
+	if rec.rawQuery != "" {
+		t.Errorf("rawQuery = %q, want empty (no id characters leaking into the query)", rec.rawQuery)
+	}
 }
 
 func TestUsageCalcExtraCreditSet(t *testing.T) {
@@ -270,6 +285,22 @@ func TestUsageCalcRemainingWorkSet(t *testing.T) {
 		t.Errorf("result = %s", text)
 	}
 
+	// Omitting points, or passing it as null, clears the typed figure:
+	// both travel as a null PUT, and REST removes the setting so the
+	// finish-early estimate falls back to the queue estimate.
+	for _, args := range []map[string]any{{}, {"points": nil}} {
+		rec.method = ""
+		if _, err := s.handleUsageRemainingWorkSet(context.Background(), callReq(args)); err != nil {
+			t.Fatalf("args=%v: %v", args, err)
+		}
+		if rec.method != http.MethodPut || rec.path != "/api/usage/remaining-work" {
+			t.Errorf("args=%v: proxied %s %s", args, rec.method, rec.path)
+		}
+		if v, ok := rec.body["points"]; !ok || v != nil {
+			t.Errorf("args=%v: body = %v, want {\"points\":null} (clear)", args, rec.body)
+		}
+	}
+
 	rec.method = ""
 	res, err = s.handleUsageRemainingWorkSet(context.Background(), callReq(map[string]any{"points": -1.0}))
 	if err != nil || res == nil {
@@ -321,15 +352,23 @@ func TestUsageCalcToolsRegisteredAndCapped(t *testing.T) {
 		if trackerID.MatchString(tool.Name) || trackerID.MatchString(tool.Description) {
 			t.Errorf("%s: name or description holds a tracker identifier", name)
 		}
+		// Every tool says the calculator is advice only: it never stops or
+		// slows the lanes it reports on.
+		d := strings.ToLower(tool.Description)
+		if !strings.Contains(d, "never stops or slows") {
+			t.Errorf("%s: description does not state the calculator never stops or slows lanes", name)
+		}
 	}
 
 	required := map[string][]string{
-		"usage_advice":             nil,
-		"usage_readings":           nil,
-		"usage_reading_add":        nil,
-		"usage_reading_delete":     {"id"},
-		"usage_extra_credit_set":   {"points"},
-		"usage_remaining_work_set": {"points"},
+		"usage_advice":           nil,
+		"usage_readings":         nil,
+		"usage_reading_add":      nil,
+		"usage_reading_delete":   {"id"},
+		"usage_extra_credit_set": {"points"},
+		// points is optional: omit it, or pass null, to clear the typed
+		// figure.
+		"usage_remaining_work_set": nil,
 	}
 	for name, wantRequired := range required {
 		got := tools[name].InputSchema.Required
@@ -381,5 +420,64 @@ func TestUsageCalcToolsRegisteredAndCapped(t *testing.T) {
 	d = strings.ToLower(tools["usage_remaining_work_set"].Description)
 	if !strings.Contains(d, "never a reading") || !strings.Contains(d, "daemon-local") {
 		t.Errorf("usage_remaining_work_set description does not state the setting-not-reading decision")
+	}
+	// points is optional and omitting it, or passing null, clears.
+	if !strings.Contains(d, "omit points") && !strings.Contains(d, "omitted") {
+		t.Errorf("usage_remaining_work_set description does not say points can be omitted: %s", d)
+	}
+	if !strings.Contains(d, "null") || !strings.Contains(d, "clear") {
+		t.Errorf("usage_remaining_work_set description does not say null clears the figure: %s", d)
+	}
+}
+
+// TestUsageCalcConfigSetVariant proves config_set accepts the calculator's
+// variant key: the same general-configuration surface the REST PUT uses,
+// so the MCP side needs no usage-specific routing for the setting.
+func TestUsageCalcConfigSetVariant(t *testing.T) {
+	rec := &usageCalcRecord{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		rec.method, rec.path = r.Method, r.URL.Path
+		rec.body = nil
+		if !json.Valid(raw) {
+			http.Error(w, "invalid config json", http.StatusBadRequest)
+			return
+		}
+		_ = json.Unmarshal(raw, &rec.body)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(srv.Close)
+	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
+	s := &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: true}}
+
+	res, err := s.handleConfigSet(context.Background(), callReq(map[string]any{
+		"key": "usage.calculator.variant", "value": "pace-gauge",
+	}))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("err=%v res=%v", err, res)
+	}
+	if rec.method != http.MethodPut || rec.path != "/api/config" {
+		t.Errorf("proxied %s %s", rec.method, rec.path)
+	}
+	if rec.body["usage.calculator.variant"] != "pace-gauge" {
+		t.Errorf("body = %v, want the variant key carried through", rec.body)
+	}
+
+	// A denied server (mcp.allow_self_config off) refuses before any
+	// request is made.
+	s = &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: false}}
+	rec.method = ""
+	res, err = s.handleConfigSet(context.Background(), callReq(map[string]any{
+		"key": "usage.calculator.variant", "value": "pace-gauge",
+	}))
+	if err != nil || res == nil {
+		t.Fatalf("err=%v res=%v", err, res)
+	}
+	text := automationText(t, res)
+	if !strings.Contains(text, "allow_self_config") {
+		t.Errorf("denial = %s", text)
+	}
+	if rec.method != "" {
+		t.Errorf("denied config_set reached the server")
 	}
 }

@@ -9,7 +9,7 @@
 //	usage_reading_add       → POST   /api/usage/readings          (exactly one figure; source defaults to typed)
 //	usage_reading_delete    → DELETE /api/usage/readings/<id>
 //	usage_extra_credit_set  → PUT    /api/usage/extra-credit      ({"points": n}, n >= 0)
-//	usage_remaining_work_set→ PUT    /api/usage/remaining-work    ({"points": n}, n >= 0)
+//	usage_remaining_work_set→ PUT    /api/usage/remaining-work    ({"points": n} to set, {"points": null} to clear)
 //
 // The calculator advises only: it never stops or slows lanes (decision 9),
 // so none of these tools gates anything. The planned sources (pasted,
@@ -64,7 +64,7 @@ func (s *Server) handleUsageAdvice(_ context.Context, req mcpsdk.CallToolRequest
 
 func (s *Server) toolUsageReadings() mcpsdk.Tool {
 	return mcpsdk.NewTool("usage_readings",
-		mcpsdk.WithDescription("The shared usage readings series: the readings the account has been measured at (percent and/or spend, when, session percent, lanes, source), the bought extra credit, and the per-policy remaining-work figure. The series is shared across federated daemons through a keeper; a read served from the last on-disk copy because the keeper could not be reached carries the stale markers (is_keeper, stale, stale_reason, copied_at)."),
+		mcpsdk.WithDescription("The shared usage readings series: the readings the account has been measured at (percent and/or spend, when, session percent, lanes, source), the bought extra credit, and the per-policy remaining-work figure. The series is shared across federated daemons through a keeper; a read served from the last on-disk copy because the keeper could not be reached carries the stale markers (is_keeper, stale, stale_reason, copied_at). Advice only — the calculator behind these tools never stops or slows lanes."),
 	)
 }
 
@@ -78,7 +78,7 @@ func (s *Server) handleUsageReadings(_ context.Context, _ mcpsdk.CallToolRequest
 
 func (s *Server) toolUsageReadingAdd() mcpsdk.Tool {
 	return mcpsdk.NewTool("usage_reading_add",
-		mcpsdk.WithDescription("Append one usage reading to the shared series. Carry exactly one figure: percent (0-100, the account's own number) or spend_usd (>= 0); both together is rejected, as is neither. Optional at (RFC3339 time, now when omitted), session_percent (0-100, the account's session number, the secondary reading) and lanes (>= 0). The source defaults to the built kind (typed); the planned pasted and account sources are not built yet and answer 501 at REST. When this daemon is a peer the write is forwarded to the keeper and stored once."),
+		mcpsdk.WithDescription("Append one usage reading to the shared series. Carry exactly one figure: percent (0-100, the account's own number) or spend_usd (>= 0); both together is rejected, as is neither. Optional at (RFC3339 time, now when omitted), session_percent (0-100, the account's session number, the secondary reading) and lanes (>= 0). The source defaults to the built kind (typed); the planned pasted and account sources are not built yet and answer 501 at REST. When this daemon is a peer the write is forwarded to the keeper and stored once. Advice only — the calculator behind these tools never stops or slows lanes."),
 		mcpsdk.WithNumber("percent", mcpsdk.Description("Account percentage, 0-100; exclusive with spend_usd")),
 		mcpsdk.WithNumber("spend_usd", mcpsdk.Description("Spend in account dollars, >= 0; exclusive with percent")),
 		mcpsdk.WithString("at", mcpsdk.Description("Reading time, RFC3339 (default: now)")),
@@ -135,7 +135,7 @@ func (s *Server) handleUsageReadingAdd(_ context.Context, req mcpsdk.CallToolReq
 
 func (s *Server) toolUsageReadingDelete() mcpsdk.Tool {
 	return mcpsdk.NewTool("usage_reading_delete",
-		mcpsdk.WithDescription("Delete one reading from the shared usage readings series by its id (see usage_readings for the ids). When this daemon is a peer the delete is forwarded to the keeper; an unknown id answers 404, and the storing daemon audits the operation."),
+		mcpsdk.WithDescription("Delete one reading from the shared usage readings series by its id (see usage_readings for the ids). When this daemon is a peer the delete is forwarded to the keeper; an unknown id answers 404, and the storing daemon audits the operation. Advice only — the calculator behind these tools never stops or slows lanes."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Reading id to delete")),
 	)
 }
@@ -145,7 +145,9 @@ func (s *Server) handleUsageReadingDelete(_ context.Context, req mcpsdk.CallTool
 	if id == "" {
 		return toolErrorf("usage_reading_delete", "a reading id is required"), nil
 	}
-	out, err := s.proxyJSON(http.MethodDelete, "/api/usage/readings/"+id, nil)
+	// Path-escape the id so one carrying a slash or question mark stays a
+	// single path segment on the loopback route instead of retargeting it.
+	out, err := s.proxyJSON(http.MethodDelete, "/api/usage/readings/"+url.PathEscape(id), nil)
 	if err != nil {
 		return toolError("usage_reading_delete", err), nil
 	}
@@ -154,7 +156,7 @@ func (s *Server) handleUsageReadingDelete(_ context.Context, req mcpsdk.CallTool
 
 func (s *Server) toolUsageExtraCreditSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("usage_extra_credit_set",
-		mcpsdk.WithDescription("Set the bought extra credit, in points of the weekly allowance (>= 0), on the shared series: the calculator's effective ceiling is the weekly allowance plus this figure, per policy. It is a setting, never a reading — it stays out of the readings series and is shown only as its own setting. A 0 is a valid setting (nothing extra bought) and the operator's call to make, not the calculator's. When this daemon is a peer the write is forwarded to the keeper and stored once."),
+		mcpsdk.WithDescription("Set the bought extra credit, in points of the weekly allowance (>= 0), on the shared series: the calculator's effective ceiling is the weekly allowance plus this figure, per policy. It is a setting, never a reading — it stays out of the readings series and is shown only as its own setting. A 0 is a valid setting (nothing extra bought) and the operator's call to make, not the calculator's. When this daemon is a peer the write is forwarded to the keeper and stored once. Advice only — the calculator behind these tools never stops or slows lanes."),
 		mcpsdk.WithNumber("points", mcpsdk.Required(), mcpsdk.Description("Extra credit, points of the weekly allowance, >= 0")),
 	)
 }
@@ -173,15 +175,21 @@ func (s *Server) handleUsageExtraCreditSet(_ context.Context, req mcpsdk.CallToo
 
 func (s *Server) toolUsageRemainingWorkSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("usage_remaining_work_set",
-		mcpsdk.WithDescription("Set the operator's typed remaining work, in points of the weekly allowance (>= 0), under the run-flat-out policy: the finish-early estimate compares the queue estimate (this daemon's unfinished tasks × the per-task cost) against this typed figure, and the typed figure replaces the queue estimate once present. It is a setting, never a reading: it is daemon-local, stays out of the shared readings series, and is never sent to another daemon even through the keeper."),
-		mcpsdk.WithNumber("points", mcpsdk.Required(), mcpsdk.Description("Remaining work, points of the weekly allowance, >= 0")),
+		mcpsdk.WithDescription("Set the operator's typed remaining work, in points of the weekly allowance (>= 0), under the run-flat-out policy: the finish-early estimate compares the queue estimate (this daemon's unfinished tasks × the per-task cost) against this typed figure, and the typed figure replaces the queue estimate once present. Omit points, or pass it as null, to clear the typed figure: the estimate then falls back to the queue estimate. It is a setting, never a reading: it is daemon-local, stays out of the shared readings series, and is never sent to another daemon even through the keeper. It advises only — the calculator never stops or slows lanes."),
+		mcpsdk.WithNumber("points", mcpsdk.Description("Remaining work, points of the weekly allowance, >= 0; omit or pass null to clear the typed figure")),
 	)
 }
 
 func (s *Server) handleUsageRemainingWorkSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	points := req.GetFloat("points", -1)
-	if points < 0 {
-		return toolErrorf("usage_remaining_work_set", "points must be 0 or more"), nil
+	// Points is optional: omitted or null clears the typed figure, which
+	// REST accepts as a null PUT. A nil *float64 marshals to JSON null, so
+	// the clear and the set both travel as PUT {"points": …}.
+	var points any = (*float64)(nil)
+	if raw, present := req.GetArguments()["points"]; present && raw != nil {
+		if v := req.GetFloat("points", 0); v < 0 {
+			return toolErrorf("usage_remaining_work_set", "points must be 0 or more"), nil
+		}
+		points = req.GetFloat("points", 0)
 	}
 	out, err := s.proxyJSON(http.MethodPut, "/api/usage/remaining-work", map[string]any{"points": points})
 	if err != nil {

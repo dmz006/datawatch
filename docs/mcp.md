@@ -1457,13 +1457,42 @@ cost) against this typed figure, and the typed figure replaces the queue
 estimate once present. A setting, never a reading: daemon-local only, it
 never enters the shared series and is never sent to another daemon.
 
+`points` is optional: omit it, or pass it as `null`, to clear the typed
+figure — the setting is removed and the finish-early estimate falls back to
+the queue estimate.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `points` | number | Yes | 0 or more, the typed remaining work in points |
+| `points` | number | No | 0 or more, the typed remaining work in points; omit or pass `null` to clear |
 
 Writes (`usage:write`).
+
+### Examples
+
+One call per tool:
+
+```
+usage_advice(lanes=5, cost=2.5)
+usage_advice(variant="pace-gauge", policy="run-flat-out")
+usage_readings()
+usage_reading_add(percent=42.5, at="2026-12-15T09:00:00Z", session_percent=33, lanes=2)
+usage_reading_add(spend_usd=6.75)
+usage_reading_delete(id="r-8f2c1d")
+usage_extra_credit_set(points=25)
+usage_remaining_work_set(points=15.5)
+usage_remaining_work_set()            # points omitted — clears the typed figure
+usage_remaining_work_set(points=null) # same, explicit
+```
+
+The calculator variant and policy are plain daemon configuration, so they are
+set with the general `config_set` tool, not a usage tool:
+
+```
+config_set(key="usage.calculator.variant", value="pace-gauge")
+config_set(key="usage.calculator.policy", value="run-flat-out")
+```
 
 ## Example Workflows in Cursor
 
