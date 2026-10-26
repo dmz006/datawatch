@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/gitguard"
 )
 
 // defaultTimeoutSec is applied when the quality gate config does not set a
@@ -93,6 +95,11 @@ func RunTests(command, projectDir string, timeout int) TestResult {
 	if trimmed == "" {
 		return unusable("empty test command")
 	}
+	cleanDir, derr := gitguard.CleanProjectDir(projectDir)
+	if derr != nil {
+		return unusable("project directory refused: " + derr.Error())
+	}
+	projectDir = cleanDir
 	if fi, err := os.Stat(projectDir); err != nil || !fi.IsDir() {
 		return unusable("project directory does not exist: " + projectDir)
 	}

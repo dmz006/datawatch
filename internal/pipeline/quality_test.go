@@ -380,3 +380,15 @@ func TestIsPlainGoTest(t *testing.T) {
 		}
 	}
 }
+
+func TestRunTestsRefusesUnsafeProjectDir(t *testing.T) {
+	for _, dir := range []string{"/", "/tmp/x\x00y", ""} {
+		res := RunTests("true", dir, 5)
+		if res.ExitCode != -1 {
+			t.Errorf("RunTests in %q ran: %+v", dir, res)
+		}
+	}
+	if res := RunTests("true", t.TempDir()+"/./", 5); res.ExitCode != 0 {
+		t.Errorf("valid dir refused: %+v", res)
+	}
+}

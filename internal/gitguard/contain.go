@@ -95,3 +95,25 @@ func evalDeepest(p string) (string, error) {
 	}
 	return "", fmt.Errorf("%w: too many levels of symbolic links", ErrPathEscapes)
 }
+
+// CleanProjectDir normalises a project directory that is allowed to be
+// absolute (an operator-chosen location rather than a path under a base). It
+// refuses an empty or NUL-bearing value and a filesystem root, and returns the
+// cleaned absolute path. A relative value is made absolute against the
+// process working directory.
+func CleanProjectDir(dir string) (string, error) {
+	if strings.TrimSpace(dir) == "" {
+		return "", errors.New("project directory is empty")
+	}
+	if strings.ContainsRune(dir, 0) {
+		return "", fmt.Errorf("%w: path contains a NUL byte", ErrPathEscapes)
+	}
+	abs, err := filepath.Abs(filepath.Clean(dir))
+	if err != nil {
+		return "", err
+	}
+	if filepath.Dir(abs) == abs {
+		return "", fmt.Errorf("%w: %q is a filesystem root", ErrPathEscapes, dir)
+	}
+	return abs, nil
+}

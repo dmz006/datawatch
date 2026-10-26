@@ -2008,6 +2008,12 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			return nil, rerr
 		}
 		projectDir = resolved
+	} else {
+		cleaned, cerr := gitguard.CleanProjectDir(projectDir)
+		if cerr != nil {
+			return nil, fmt.Errorf("project dir %q: %w", projectDir, cerr)
+		}
+		projectDir = cleaned
 	}
 
 	// An Automaton-owned worktree must already exist: never recreate it as

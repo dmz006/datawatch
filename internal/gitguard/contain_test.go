@@ -113,3 +113,23 @@ func TestResolveWithin_SymlinkLoop(t *testing.T) {
 		t.Fatal("symlink loop accepted")
 	}
 }
+
+func TestCleanProjectDir(t *testing.T) {
+	base := t.TempDir()
+	got, err := CleanProjectDir(base + "/a/../b/./")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(base, "b"); got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	for _, bad := range []string{"", "  ", "/", "/tmp/x\x00y"} {
+		if _, err := CleanProjectDir(bad); err == nil {
+			t.Errorf("CleanProjectDir(%q) accepted", bad)
+		}
+	}
+	rel, err := CleanProjectDir("sub")
+	if err != nil || !filepath.IsAbs(rel) {
+		t.Fatalf("relative not made absolute: %q %v", rel, err)
+	}
+}
