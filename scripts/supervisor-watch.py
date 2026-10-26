@@ -27,6 +27,7 @@ MODEL = "qwen3.8-64k"
 TMUX_RESTARTS, TMUX_SINCE = "3", "Tue 2026-10-20 18:46:38 EDT"
 SILENT_MIN = 60
 # Deliberately held PRDs (operator or build manager decision, with the reason in the registry).
+ACKED_RUNS = {40316827946, 40293597613}  # owasp-zap: only the "attach reports to release" step failed on a GitHub API rate limit; the scan passed (registry row 209)
 IGNORE = {"58aa0001"}  # BL598 MCP resource subscriptions: held, see registry row 180
 
 
@@ -171,7 +172,7 @@ def main():
                 continue
             age = time.time() - time.mktime(time.strptime(r["createdAt"], "%Y-%m-%dT%H:%M:%SZ")) + time.timezone
             if r["status"] == "completed" and r["conclusion"] not in ("success", "skipped", "cancelled"):
-                if age < 6 * 3600:
+                if age < 6 * 3600 and r["databaseId"] not in ACKED_RUNS:
                     findings.append("CI RED %s run %s (%s)" % (r["workflowName"], r["databaseId"], r["displayTitle"][:40]))
             elif r["status"] == "in_progress" and age > 150 * 60 and r["workflowName"] == "Release":
                 findings.append("CI STUCK? Release run %s in progress for %d min" % (r["databaseId"], age // 60))
