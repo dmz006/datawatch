@@ -1535,7 +1535,10 @@ autonomous:
   # in waiting_input with no sign of work past this => 'session never started'
   # failure (alert carries the last 20 transcript lines), up to 2 start failures
   # retried before the task stays failed. The silence is measured from the last
-  # sign of work. 0 or unset falls back to the 120s default
+  # sign of work, or from the launch time until one is seen. One tracker applies
+  # to a claude-code worker the daemon launches and to one it adopts after a
+  # restart; an adopted worker's clock starts from its last evidence of life.
+  # 0 or unset falls back to the 120s default
   # (NormalizeSessionStartConfirmSeconds).
   verifier_no_progress_timeout_seconds: 900   # a verifier session with no output file, no pane activity, no live runner process and no held capacity slot for this long is ended as an infra failure ('verifier no-progress watchdog'); 0 or negative => 900
   session_start_confirm_seconds: 120
