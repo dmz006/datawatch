@@ -2587,6 +2587,11 @@ type AutonomousConfig struct {
 	// consumes these; default-off semantics).
 	SmokeVerificationBackend string `yaml:"smoke_verification_backend,omitempty" json:"smoke_verification_backend,omitempty"`
 	SmokeVerificationModel   string `yaml:"smoke_verification_model,omitempty" json:"smoke_verification_model,omitempty"`
+
+	// Tags — the Automata tag browser settings (default view, attention
+	// statuses, match mode, direct counts, shared registry keeper and sync
+	// interval). See TagsConfig and ValidateTagSetting.
+	Tags TagsConfig `yaml:"tags" json:"tags"`
 }
 
 // PreserveAttemptWorkEnabled reports whether failed-attempt work is kept.
@@ -3699,6 +3704,12 @@ func DefaultConfig() *Config {
 			// over this value); an explicit `default_events: []` is the
 			// operator opt-out and loads as empty, non-nil — the global
 			// tier then resolves to no kinds.
+			Tags: TagsConfig{
+				DefaultView:         TagDefaultViewAuto,
+				AttentionStatuses:   append([]string(nil), DefaultTagAttentionStatuses...),
+				DefaultMatchMode:    TagMatchAny,
+				RegistrySyncSeconds: TagRegistrySyncDefaultSeconds,
+			},
 			Notify: AutonomousNotifyConfig{
 				DefaultEvents: []string{
 					"prd.needs_review",
@@ -4300,6 +4311,9 @@ func Load(path string) (*Config, error) {
 	if err := validateFailureEscalationYAML(data); err != nil {
 		return nil, err
 	}
+	if err := loadTags(cfg); err != nil {
+		return nil, err
+	}
 	normalizeBooleanFields(cfg)
 	return cfg, nil
 }
@@ -4341,6 +4355,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, err
 	}
 	if err := validateFailureEscalationYAML(data); err != nil {
+		return nil, err
+	}
+	if err := loadTags(cfg); err != nil {
 		return nil, err
 	}
 	normalizeBooleanFields(cfg)

@@ -35,6 +35,7 @@ const (
 	MsgSessionAware   MessageType = "session_aware"   // session awareness broadcast (BL76)
 	MsgUpdateProgress MessageType = "update_progress" // v4.0.6 — self-update download progress {version, downloaded, total, phase}
 	MsgPRDUpdate      MessageType = "prd_update"      // v5.24.0 — autonomous PRD save broadcast {prd_id, status} so PWA Autonomous tab refreshes without manual reload
+	MsgTagUpdate      MessageType = "tag_update"      // autonomous tag registry or assignment change {kind, tag_id?, prd_id?, session_id?}; all clients, id-only, so open tag browsers refresh their counts
 	MsgHookUpdate     MessageType = "hook_update"     // BL303 S3 — session hook state changed {session_id, board} so Status tab refreshes in real-time
 	MsgAlertsRead     MessageType = "alerts_read"     // BL432 — alerts marked read {ids:[...]} or {all:true}, plus unread_count, so badges sync without polling
 	MsgSessionRemoved MessageType = "session_removed" // BL432 / GH#242 — delta session-list clients: {session_id} left the list

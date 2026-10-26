@@ -960,7 +960,10 @@ func (s *Server) handleMemoryImport(ctx context.Context, req mcpsdk.CallToolRequ
 
 func (s *Server) toolConfigSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("config_set",
-		mcpsdk.WithDescription("Set a configuration value. Key format: section.field (e.g. 'detection.prompt_debounce')."),
+		mcpsdk.WithDescription("Set a configuration value. Key format: section.field (e.g. 'detection.prompt_debounce'). "+
+			"Automata tag browser keys: autonomous.tags.default_view (auto|attention|tags), autonomous.tags.attention_statuses (comma list of Automaton statuses), "+
+			"autonomous.tags.default_match_mode (any|all), autonomous.tags.direct_counts_visible (true|false), autonomous.tags.registry_keeper (federation peer name; empty = this daemon), "+
+			"autonomous.tags.registry_sync_seconds (whole seconds >= 5). A refused value returns the daemon's message."),
 		mcpsdk.WithString("key",
 			mcpsdk.Required(),
 			mcpsdk.Description("Config key (e.g. 'detection.prompt_debounce', 'pipeline.max_parallel')"),
@@ -1024,6 +1027,11 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
+		// The daemon's refusal text is the message, so a bad autonomous.tags
+		// value reads the same here as on REST and on the comm channel.
+		if raw, _ := io.ReadAll(resp.Body); strings.TrimSpace(string(raw)) != "" {
+			return toolErrorf("config_set", "config error: %s", strings.TrimSpace(string(raw))), nil
+		}
 		return toolErrorf("config_set", "config error: HTTP %d", resp.StatusCode), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Set %s = %s", key, value)), nil

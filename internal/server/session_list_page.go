@@ -53,6 +53,10 @@ type sessionSummaryRow struct {
 	TokensOut      int           `json:"tokens_out,omitempty"`
 	ScheduledCount *int          `json:"scheduled_count,omitempty"`
 	StatusLine     string        `json:"status_line,omitempty"`
+	// Tags are the session's own tag IDs; InheritedTags come from the
+	// owning Automaton (BL461). Both are additive.
+	Tags          []string `json:"tags,omitempty"`
+	InheritedTags []string `json:"inherited_tags"`
 }
 
 // sessionListPage is the paged envelope.
@@ -218,6 +222,7 @@ func (s *Server) sessionSummaryRow(sess *session.Session, textChars int) session
 		LastActivity: sess.UpdatedAt, ParentID: sess.ParentID,
 		EstCostUSD: sess.EstCostUSD, TokensIn: sess.TokensIn, TokensOut: sess.TokensOut,
 		StatusLine: sessionStatusLine(sess, textChars),
+		Tags:       sess.Tags, InheritedTags: s.manager.InheritedTags(sess),
 	}
 	if sess.LastChannelEventAt.After(row.LastActivity) {
 		row.LastActivity = sess.LastChannelEventAt

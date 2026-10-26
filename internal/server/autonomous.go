@@ -1998,18 +1998,36 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
+			// TagIDs is optional when primary_tag_id is sent: an absent tag_ids
+			// keeps the current tag set and changes only the primary.
 			TagIDs []string `json:"tag_ids"`
+			// PrimaryTagID is optional: absent keeps the current primary while it
+			// is still a tag; empty clears it; any other value must be one of TagIDs.
+			PrimaryTagID *string `json:"primary_tag_id,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		updated, err := api.SetPRDTags(id, req.TagIDs)
+		tagIDs := req.TagIDs
+		if tagIDs == nil && req.PrimaryTagID != nil {
+			current, found := api.AutomatonTagIDs(id)
+			if !found {
+				http.Error(w, "automaton not found", http.StatusNotFound)
+				return
+			}
+			tagIDs = current
+		}
+		updated, err := api.SetPRDTagsAndPrimary(id, tagIDs, req.PrimaryTagID)
 		if err != nil {
 			writeTagError(w, err)
 			return
 		}
-		s.audit(r.Context(), "set_tags", "automaton", id, map[string]any{"tag_ids": req.TagIDs})
+		audit := map[string]any{"tag_ids": req.TagIDs}
+		if req.PrimaryTagID != nil {
+			audit["primary_tag_id"] = *req.PrimaryTagID
+		}
+		s.audit(r.Context(), "set_tags", "automaton", id, audit)
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 	case "set_guided_mode":
 		if r.Method != http.MethodPost {

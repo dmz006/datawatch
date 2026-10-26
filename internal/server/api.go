@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/tagregistry"
 	"io"
 	"log"
 	"math"
@@ -471,6 +472,17 @@ type Server struct {
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
 
+	// tagRegistry is the shared Automata tag registry, wired from main.go
+	// (SetTagRegistry). Nil keeps the tag routes on their local write path.
+	// tagRegistryStart starts its sync loop.
+	tagRegistry      *tagregistry.Registry
+	tagRegistryStart func()
+
+	// autonomousSettings reads the autonomous settings the tag routes use, by
+	// config key. Nil, or a key it does not set, means the built-in default
+	// (see autonomous.ResolveAttentionStatuses).
+	autonomousSettings autonomous.SettingLookup
+
 	// progressNow is the clock the progress routes read; nil means time.Now.
 	// Tests set it to a fixed time.
 	progressNow func() time.Time
@@ -908,7 +920,10 @@ func (s *Server) applyStoreConfig() {
 }
 
 // SetAutonomousAPI is the wiring entry point used by main.go.
-func (s *Server) SetAutonomousAPI(a AutonomousAPI) { s.autonomousMgr = a }
+func (s *Server) SetAutonomousAPI(a AutonomousAPI) {
+	s.autonomousMgr = a
+	s.wireSessionTags()
+}
 
 // SummarizerSvc is the interface for the response summarizer.
 // The summarizer package implements this with Service.Summarize.
@@ -934,6 +949,7 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 		channelHist:       make(map[string][]channelHistEntry),
 		nonces:            newNonceStore(),
 	}
+	s.autonomousSettings = s.tagSettingLookup // attention statuses come from autonomous.tags
 	if cfg != nil {
 		setPushConfig(cfg.Push) // BL394 -- initial push-SSRF-guard config
 	}
@@ -1839,13 +1855,15 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 				orphans = append(orphans, sess)
 			}
 		}
-		_ = json.NewEncoder(w).Encode(orphans)
+		_ = json.NewEncoder(w).Encode(s.sessionViews(orphans))
 		return
 	}
 
 	// BL347 — ?tree=1 returns the lineage tree instead of a flat list.
 	if q.Get("tree") == "1" {
-		_ = json.NewEncoder(w).Encode(buildSessionTree(sessions))
+		tree := buildSessionTree(sessions)
+		s.fillTreeInheritedTags(tree)
+		_ = json.NewEncoder(w).Encode(tree)
 		return
 	}
 
@@ -1862,18 +1880,20 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.schedStore == nil {
-		_ = json.NewEncoder(w).Encode(sessions)
+		_ = json.NewEncoder(w).Encode(s.sessionViews(sessions))
 		return
 	}
 	type sessionWithCounts struct {
 		*session.Session
-		ScheduledCount int `json:"scheduled_count"`
+		ScheduledCount int      `json:"scheduled_count"`
+		InheritedTags  []string `json:"inherited_tags"`
 	}
 	enriched := make([]sessionWithCounts, 0, len(sessions))
 	for _, sess := range sessions {
 		enriched = append(enriched, sessionWithCounts{
 			Session:        sess,
 			ScheduledCount: s.schedStore.CountForSession(sess.FullID),
+			InheritedTags:  s.manager.InheritedTags(sess),
 		})
 	}
 	_ = json.NewEncoder(w).Encode(enriched)
@@ -1882,7 +1902,16 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 // SessionTreeNode is one node in the BL347 lineage tree.
 type SessionTreeNode struct {
 	*session.Session
-	Children []*SessionTreeNode `json:"children,omitempty"`
+	Children      []*SessionTreeNode `json:"children,omitempty"`
+	InheritedTags []string           `json:"inherited_tags"`
+}
+
+// fillTreeInheritedTags sets inherited_tags on every node of a lineage tree.
+func (s *Server) fillTreeInheritedTags(nodes []*SessionTreeNode) {
+	for _, n := range nodes {
+		n.InheritedTags = s.manager.InheritedTags(n.Session)
+		s.fillTreeInheritedTags(n.Children)
+	}
 }
 
 // buildSessionTree converts a flat session list to a forest of trees.
@@ -3929,7 +3958,7 @@ func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		writeJSONOK(w, sess)
+		writeJSONOK(w, s.sessionView(sess))
 		return
 	}
 	if strings.HasSuffix(path, "/last-summary") {
@@ -4718,9 +4747,17 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// higher first, default 0). Kept untyped so a non-integer value is
 		// rejected with a priority-specific error.
 		Priority any `json:"priority,omitempty"`
+		// Tags (BL461) — the session's own tag IDs. Each must exist in the
+		// tag registry; an unknown ID refuses the start.
+		Tags []string `json:"tags,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	startTags, tagErr := s.manager.ValidateTagIDs(req.Tags)
+	if tagErr != nil {
+		writeTagError(w, tagErr)
 		return
 	}
 	startPriority := 0
@@ -5071,6 +5108,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		ScrubTmuxEnv:          req.ScrubTmuxEnv,
 		Git:                   gitFlag,
 		Priority:              startPriority,
+		Tags:                  startTags,
 	}
 	opts.RequireExistingWorktree = req.RequireExistingWorktree
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
@@ -6008,6 +6046,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// defaults ("block", 1.0) rather than blanks.
 			"plan_coverage_check":     effectivePlanCoverageCheckForDisplay(s.cfg.Autonomous.PlanCoverageCheck),
 			"plan_coverage_min_ratio": config.NormalizePlanCoverageRatio(s.cfg.Autonomous.PlanCoverageMinRatio),
+			// Tag browser settings (autonomous.tags) — the effective values, so an
+			// unset block shows its defaults. Validated by ValidateTagSetting.
+			"tags": tagSettingsForDisplay(s.cfg.Autonomous.Tags),
 			// Per-backend usage back-off — render the EFFECTIVE values so an
 			// unset config shows its defaults (pause_backend, 60).
 			"usage_backoff":            usageBackoffModeForDisplay(s.cfg.Autonomous.UsageBackoff),
@@ -6257,6 +6298,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Tag browser settings (autonomous.tags.*): every key goes through the
+	// shared validator before anything is applied, so a bad value rejects the
+	// whole PUT and the comm, MCP and CLI surfaces show the same message.
+	if verr := firstTagSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
 	// v9.5.5 — validate task_override_statuses before anything is applied,
 	// so a bad name rejects the whole PUT instead of storing a partial one.
 	// Accepts the array form and the comma-separated string form the CLI
@@ -6433,6 +6481,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	skipped := applyConfigPatch(s.cfg, patch)
+	// The shared tag registry follows its keeper and sync interval at runtime,
+	// so a change made here needs no restart.
+	for _, k := range []string{"autonomous.tags.registry_keeper", "autonomous.tags.registry_sync_seconds"} {
+		if _, ok := patch[k]; ok {
+			s.applyTagRegistrySettings()
+			break
+		}
+	}
 	// BL368 — re-initialize visioner when vision config changes via PUT.
 	for k := range patch {
 		if strings.HasPrefix(k, "vision.") {
@@ -7676,6 +7732,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.TaskOverrideStatuses = splitCSV(s)
 			}
+		case "autonomous.tags.default_view", "autonomous.tags.attention_statuses",
+			"autonomous.tags.default_match_mode", "autonomous.tags.direct_counts_visible",
+			"autonomous.tags.registry_keeper", "autonomous.tags.registry_sync_seconds":
+			// Validated in handlePutConfig before this runs; Set stores the
+			// normalized value and leaves the block unchanged on a refusal.
+			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
 		case "autonomous.plan_coverage_check":
 			// off|warn|block plan-coverage gate (empty normalizes to
 			// "block"). handlePutConfig rejects invalid modes loudly; this

@@ -86,12 +86,25 @@ test('All shows every Automaton, tagged or not', () => {
   assert.equal(prds.filter(p => sb._automataTagMatches(p, '', true, byId)).length, 3);
 });
 
-test('tag filter state persists under its localStorage keys', () => {
+test('the old single-select tag filter migrates to the browser state and its keys go', () => {
   const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+  // The one tag the dropdown held is read once, carried into the browser's
+  // selection, and both old keys are removed.
+  assert.ok(src.includes("getItem('cs_automata_tag_filter')"), 'the old tag key is read for migration');
   for (const k of ['cs_automata_tag_filter', 'cs_automata_tag_include_sub']) {
-    assert.ok(src.includes(`getItem('${k}')`), `${k} is read`);
-    assert.ok(src.includes(`setItem('${k}'`), `${k} is written`);
+    assert.ok(src.includes(`removeItem('${k}')`), `${k} is removed`);
   }
+  assert.ok(src.includes("setItem('cs_tag_browse_' + scope"), 'the browser state is persisted per scope');
+});
+
+test('a stored single tag becomes a one-tag selection on load', () => {
+  const sb = loadApp();
+  sb.localStorage.setItem('cs_automata_tag_filter', 'aaaa0002');
+  sb.localStorage.setItem('cs_automata_tag_include_sub', '1');
+  vm.runInContext('_tagBrowseMigrateFilter()', sb);
+  assert.deepEqual(plain(vm.runInContext('_tagBrowse.automata.sel', sb)), ['aaaa0002']);
+  assert.equal(sb.localStorage.getItem('cs_automata_tag_filter'), null);
+  assert.equal(sb.localStorage.getItem('cs_automata_tag_include_sub'), null);
 });
 
 test('every tag_ key used in app.js exists in all five bundles', () => {

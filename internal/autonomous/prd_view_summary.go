@@ -27,9 +27,12 @@ type SummaryView struct {
 	// The fields below feed a collapsed Automata row. All are scalars, short
 	// lists or small count maps, so none grows with the amount of text the
 	// stories and tasks carry.
-	Type             string         `json:"type,omitempty"`
-	Backend          string         `json:"backend,omitempty"`
-	Tags             []string       `json:"tags,omitempty"`
+	Type    string `json:"type,omitempty"`
+	Backend string `json:"backend,omitempty"`
+	// Tags and PrimaryTagID are always present, so a tag browser reads the
+	// same shape for an untagged Automaton as for a tagged one.
+	Tags             []string       `json:"tags"`
+	PrimaryTagID     string         `json:"primary_tag_id"`
 	Cost             float64        `json:"cost"`
 	ParentPRDID      string         `json:"parent_prd_id,omitempty"`
 	Priority         int            `json:"priority,omitempty"`
@@ -80,7 +83,8 @@ func BuildSummaryView(prd *PRD) SummaryView {
 
 		Type:             prd.Type,
 		Backend:          prd.Backend,
-		Tags:             prd.TagIDs,
+		Tags:             summaryTagIDs(prd.TagIDs),
+		PrimaryTagID:     prd.PrimaryTagID,
 		ParentPRDID:      prd.ParentPRDID,
 		Priority:         prd.Priority,
 		IsTemplate:       prd.IsTemplate,
@@ -130,4 +134,13 @@ type SummaryRow struct {
 // BuildSummaryRow builds the list row for prd from its SummaryView.
 func BuildSummaryRow(prd *PRD) SummaryRow {
 	return SummaryRow{SummaryView: BuildSummaryView(prd)}
+}
+
+// summaryTagIDs returns the Automaton's tag IDs as a non-nil slice, so an
+// untagged Automaton serializes "tags": [] rather than null.
+func summaryTagIDs(ids []string) []string {
+	if ids == nil {
+		return []string{}
+	}
+	return ids
 }

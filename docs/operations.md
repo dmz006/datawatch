@@ -2678,6 +2678,60 @@ autonomous:
 
 ---
 
+## Tag browser settings (autonomous.tags)
+
+The Automata list has two views. The **attention view** shows the Automata that
+need an operator now; the **tag browser** shows the tag tree, with a count per
+tag. The `autonomous.tags` block sets which view opens first, which statuses
+count as needing attention, how selected tags combine, and how the shared tag
+registry syncs between federated daemons.
+
+| Key | Default | What it does |
+|---|---|---|
+| `autonomous.tags.default_view` | `auto` | `auto` opens the attention view when at least one Automaton needs attention, otherwise the tag browser. `attention` always opens the attention view. `tags` always opens the tag browser. |
+| `autonomous.tags.attention_statuses` | `[blocked, needs_review, paused]` | The Automaton statuses that place an Automaton in the attention group. Valid statuses are `draft`, `planning`, `needs_review`, `approved`, `revisions_asked`, `running`, `completed`, `rejected`, `cancelled`, `archived`, `blocked`, `failed` and `paused`. Any other entry is refused; an empty list takes the default statuses. The default includes `paused`, so a paused Automaton is in the attention group unless you remove it from the list. An Automaton with a task held for operator review is in the attention group whatever the list says. |
+| `autonomous.tags.default_match_mode` | `any` | How several selected tags combine. `any` widens the list to Automata carrying at least one selected tag. `all` narrows it to Automata carrying every selected tag. |
+| `autonomous.tags.direct_counts_visible` | `false` | When `true`, each tag shows its direct count (Automata tagged with that tag itself) as a tooltip beside its subtree count. |
+| `autonomous.tags.registry_keeper` | `""` | The federation peer name of the daemon that keeps the shared tag registry. Empty means standalone: this daemon keeps its own tags and nothing syncs. Set it to this daemon's own name to keep the registry, or to another federation peer's name to follow that keeper. Both take effect at once, with no restart. |
+| `autonomous.tags.registry_sync_seconds` | `30` | How often, in whole seconds, the shared tag registry syncs with the keeper. Minimum 5. |
+
+**Access methods**
+
+| Method | How |
+|--------|-----|
+| **YAML** | Edit `~/.datawatch/config.yaml` → `autonomous:` → `tags:` (the six keys above) |
+| **CLI** | `datawatch config set autonomous.tags.<name> <value>`; read one with `datawatch config get autonomous.tags.<name>` |
+| **Web UI** | Settings → General → Automata → "Autonomous Automata planning" card → **Tag browser** group |
+| **REST API** | `PUT /api/config` with `{"autonomous.tags.<name>": <value>}`; read with `GET /api/config` (the values sit under `autonomous.tags`) |
+| **Comm channel** | `configure autonomous.tags.<name>=<value>` |
+| **MCP** | `config_set` with key `autonomous.tags.<name>` (requires `mcp.allow_self_config=true`) |
+
+Every key is settable on every surface above. An invalid value is refused on
+every surface with the same message, for example
+`autonomous.tags.default_match_mode: must be any or all`, and nothing is written.
+
+```yaml
+autonomous:
+  tags:
+    default_view: auto
+    attention_statuses: [blocked, needs_review, paused]
+    default_match_mode: any
+    direct_counts_visible: false
+    registry_keeper: ""
+    registry_sync_seconds: 30
+```
+
+**Shared registry state on disk.** A peer keeps the last copy of the keeper's
+tags in `tag-registry.json` in the autonomous data directory, so a restart does
+not lose the copy a stale peer is showing. The keeper's own tags stay in the
+normal `tags.jsonl` store. The registry needs the keeper to be a federation peer
+of the daemon that follows it; a keeper name that is not a federation peer leaves
+the follower stale. See [howto/automata-tag-registry.md](howto/automata-tag-registry.md)
+for the operator steps and [flow/tag-registry-sync-flow.md](flow/tag-registry-sync-flow.md)
+for the sync paths.
+
+---
+
 ## Quality gate (test baseline + regression check)
 
 An Automaton can carry a quality gate: a test command that runs once as a

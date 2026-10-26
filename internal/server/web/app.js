@@ -1473,20 +1473,29 @@ function handleMessage(msg) {
       // mutates dozens of tasks per second doesn't reload the panel
       // dozens of times.
       if (state.activeView === 'autonomous') {
-        clearTimeout(state._prdReloadTimer);
-        state._prdReloadTimer = setTimeout(() => {
-          if (_automataDetailId) {
+        if (_automataDetailId) {
+          clearTimeout(state._prdReloadTimer);
+          state._prdReloadTimer = setTimeout(() => {
             // B103 — incremental live update; falls back to full render if off-tab
             apiFetch('/api/autonomous/prds/' + encodeURIComponent(_automataDetailId))
               .then(prd => { if (prd && prd.id) _liveUpdateDetail(prd); })
               .catch(() => {});
-          } else if (_automationTabActive()) {
-            refreshAutomationView();
-          } else {
-            loadAutomataPanel();
-          }
-        }, 250);
+          }, 250);
+        } else {
+          // A status change moves the attention group, the running strip and the
+          // tag counts; the list views refresh them through the shared debounce.
+          _tagLiveSchedule();
+        }
       }
+      break;
+    case 'tag_update':
+      // A tag was created, renamed, moved, recolored, deleted or assigned
+      // (to an Automaton or a session). The frame is id-only, so refetch the
+      // tag registry and redraw the counts it feeds. Nothing is fetched until
+      // the registry has loaded once; the tag browser, the pinned groups and the
+      // registry panel redraw from the fresh reads. One debounce serves this
+      // frame and prd_update, so a burst of both refetches once.
+      if (_tagsState.loaded) _tagLiveSchedule();
       break;
     case 'hook_update':
       // BL303 S3 T12 / S4 T14 — real-time Status tab + dashboard refresh.
@@ -2116,6 +2125,7 @@ function updateSession(sess) {
     updateSessionDetailButtons(sess.full_id);
     refreshGeneratingIndicator(sess.full_id); // v5.27.7 BL208/#26
     refreshLastActivityIndicator(held);
+    _renderSessionDetailTagRow(held);
     // BL263 follow-up / v6.11.10 — operator: "Restart seemed better but
     // still had the tmux command window at bottom not return after
     // refresh." During the disconnect window the session may have been
@@ -3241,6 +3251,7 @@ function renderSessionsView() {
     selectBar.innerHTML = `
       <button class="select-bar-btn" onclick="selectAllInactive()">&#9745; ${allSelected ? 'None' : 'All'} <span style="opacity:0.6;">(${inactive.length})</span></button>
       <button class="select-bar-btn select-bar-delete" onclick="deleteSelectedSessions()" ${state.selectedSessions.size === 0 ? 'disabled' : ''}>&#128465; Delete <span style="opacity:0.6;">(${state.selectedSessions.size})</span></button>
+      <button class="select-bar-btn" onclick="batchTagSelectedSessions()" ${state.selectedSessions.size === 0 ? 'disabled' : ''}>&#127991; ${escHtml(_tagT('tag_batch', 'Tag'))} <span style="opacity:0.6;">(${state.selectedSessions.size})</span></button>
       <button class="select-bar-btn" onclick="toggleSelectMode()">Cancel</button>
     `;
   } else if (selectBar) {
@@ -3248,6 +3259,7 @@ function renderSessionsView() {
   }
   // BL312 S3 — prepend server picker bar if remote servers are registered
   _injectServerPickerBar(view, renderSessionsView);
+  _sessionTagsEnsure(renderSessionsView, state.sessions);
 }
 
 function _sessionsLoadMoreHtml() {
@@ -3695,6 +3707,7 @@ function sessionCard(sess, idx, total) {
             ${sess.agent_id ? `<span class="agent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(124,58,237,0.15);font-weight:600;" title="Container worker (agent ${escHtml(sess.agent_id)})">⬡ ${escHtml(sess.agent_id)}</span>` : ''}
             ${sess.chrome_enabled ? `<span class="chrome-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--success,#22c55e);color:var(--success,#22c55e);background:rgba(34,197,94,0.12);font-weight:600;" title="${escHtml(t('session_chrome_badge_tip')||'Chrome DevTools Protocol browser automation enabled')}">${escHtml(t('session_chrome_badge')||'Chrome')}</span>` : ''}
             ${prioBadge}
+            ${_sessionTagChipsHTML(sess)}
             ${sess.parent_id ? `<span class="parent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--text2);color:var(--text2);opacity:0.7;font-weight:500;" title="${t('session_child_of')||'Child of'} ${escHtml(sess.parent_id)}">↳ ${t('session_child_of')||'child of'} [${escHtml(sess.parent_id.split('-')[0])}]</span>` : ''}
             ${(sess.claude_alive === false) ? '<span style="color:#f59e0b;font-size:11px;padding:2px 7px;border-radius:8px;border:1px solid #f59e0b;background:rgba(245,158,11,0.12);font-weight:600;" title="Claude process not running — session may be a zombie">⚠ zombie</span>' : ''}
             <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">
@@ -4192,6 +4205,7 @@ function renderSessionDetail(sessionId) {
           </span>
         </div>
       </div>
+      <div id="sessionDetailTagRow" class="session-tag-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 10px;"></div>
       <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
       <!-- v5.28.5 (datawatch#34) — per-session process stats panel -->
       <div id="statsPanel" class="session-stats-panel" style="display:none;"></div>
@@ -4228,6 +4242,8 @@ function renderSessionDetail(sessionId) {
         ${connReady ? sendBtnHtml : ''}
       </div>` : ''}
     </div>`;
+  _renderSessionDetailTagRow(sess);
+  _sessionTagsEnsure(() => _renderSessionDetailTagRow(_sessionFind(sessionId)), [sess]);
 
   // Show loading splash over the terminal area while waiting for first pane_capture.
   // Only reset terminal state when navigating to a *different* session — re-renders
@@ -7933,6 +7949,10 @@ function renderNewSessionView() {
             <input type="checkbox" id="killChildrenRecursiveToggle" /> ${t('kill_children_recursive_label')||'Kill children recursively'}
           </label>
         </div>
+        <div class="form-group" id="sessTagsRow">
+          <label>${escHtml(_tagT('tag_picker_label', 'Tags (optional)'))}</label>
+          <div id="newSessionTagsWrap"></div>
+        </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
           <button class="btn-secondary" onclick="closeNewSessionModal()">${t('action_cancel')||'Cancel'}</button>
           <button class="btn-primary" onclick="submitNewSession()">${t('new_session_start_btn')||'Start Session'}</button>
@@ -7968,6 +7988,7 @@ function renderNewSessionView() {
     });
   }
 
+  _newSessionTagsMount();
   // Load backends, session backlog, and resume dropdown
   fetchBackends();
   renderSessionBacklog();
@@ -8359,6 +8380,9 @@ function _sessProfileChanged() {
   if (dirRow) dirRow.style.display = usingProfile ? 'none' : '';
   if (clusterRow) clusterRow.style.display = usingProfile ? '' : 'none';
   if (backendRow) backendRow.style.display = usingProfile ? 'none' : '';
+  // A project-profile spawn goes through /api/agents, not the session start, so the row is hidden there.
+  const tagsRow = document.getElementById('sessTagsRow');
+  if (tagsRow) tagsRow.style.display = usingProfile ? 'none' : '';
 }
 window._sessProfileChanged = _sessProfileChanged;
 
@@ -8575,6 +8599,15 @@ function mkdirInBrowser(parent) {
 }
 window.mkdirInBrowser = mkdirInBrowser;
 
+// The tag picker of the new-session form. The picker is drawn once the registry
+// is loaded; the ticks survive nothing else, so they are read at submit time.
+function _newSessionTagsMount() {
+  _tagsLoad().then(() => {
+    const wrap = document.getElementById('newSessionTagsWrap');
+    if (wrap) wrap.innerHTML = _tagPickerHTML('newSessionTags', []);
+  });
+}
+
 function submitNewSession() {
   const taskInput = document.getElementById('taskInput');
   const nameInput = document.getElementById('sessionNameInput');
@@ -8661,6 +8694,9 @@ function submitNewSession() {
     model: document.getElementById('sessOpenCodeModel')?.value || document.getElementById('sessClaudeModel')?.value || '',
     lsp_language: document.getElementById('sessOpenCodeLSP')?.value || '',
   };
+  // Tags: the session's own tag IDs; omitted when none are ticked.
+  const newTagIds = _tagPickerSelected('newSessionTags');
+  if (newTagIds.length) payload.tags = newTagIds;
   // v8.8.3 — Chrome integration: only send chrome:true when checked; omit field otherwise.
   const chromeEl = document.getElementById('newSessionChrome');
   if (chromeEl && chromeEl.checked) payload.chrome = true;
@@ -16123,6 +16159,16 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.plan_review_mode', label: 'Plan review mode — block holds approval on a failing verdict', labelKey: 'settings_plan_review_mode', type: 'select', options: ['', 'off', 'warn', 'block'] },
     { key: 'autonomous.smoke_verification_backend', label: 'Smoke verification backend (optional)', labelKey: 'settings_smoke_verification_backend', type: 'llm_backend', pairedModelKey: 'autonomous.smoke_verification_model' },
     { key: 'autonomous.smoke_verification_model', label: 'Smoke verification model', labelKey: 'settings_smoke_verification_model', type: 'llm_model', backendKey: 'autonomous.smoke_verification_backend' },
+    // Tag browser — which view the Automata list opens on, how tag filters
+    // combine, and how the shared tag registry is kept in step. The group
+    // row is a sub-heading (type 'group'); it stores no config value.
+    { label: 'Tag browser', labelKey: 'settings_tags_group', type: 'group', hintKey: 'settings_tags_group_help' },
+    { key: 'autonomous.tags.default_view', label: 'Default view (auto opens attention when an item needs it, otherwise tags; attention or tags always opens that view)', labelKey: 'settings_tags_default_view', type: 'select', options: ['auto', 'attention', 'tags'], default: 'auto' },
+    { key: 'autonomous.tags.attention_statuses', label: 'Attention statuses (comma-separated Automaton statuses that raise the attention view)', labelKey: 'settings_tags_attention_statuses', type: 'text', placeholder: 'blocked, needs_review, paused', csv: true, default: 'blocked, needs_review, paused' },
+    { key: 'autonomous.tags.default_match_mode', label: 'Default tag match mode (any widens the list when several tags are selected; all narrows it)', labelKey: 'settings_tags_default_match_mode', type: 'select', options: ['any', 'all'], default: 'any' },
+    { key: 'autonomous.tags.direct_counts_visible', label: 'Show the direct count as a tooltip beside the subtree count', labelKey: 'settings_tags_direct_counts_visible', type: 'toggle' },
+    { key: 'autonomous.tags.registry_keeper', label: 'Tag registry keeper (federation peer name; empty = this daemon keeps it and nothing syncs)', labelKey: 'settings_tags_registry_keeper', type: 'text', placeholder: '' },
+    { key: 'autonomous.tags.registry_sync_seconds', label: 'Tag registry sync interval (seconds, minimum 5, default 30)', labelKey: 'settings_tags_registry_sync_seconds', type: 'number', placeholder: '30', min: 5, step: 1, default: '30' },
   ]},
   // v5.26.16 — operator-reported: PRD-DAG orchestrator section
   // belongs above Plugin framework. Orchestrator is a workflow-level
@@ -16880,7 +16926,7 @@ function loadGeneralConfig() {
         if (!el) continue;
         let html = '';
         for (const f of sec.fields) {
-          const parts = f.key.split('.');
+          const parts = (f.key || '').split('.');
           const val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
           // Resolve label at render time so t() runs after locale loads.
           // GENERAL_CONFIG_FIELDS is a static const (init-time), so any t()
@@ -16892,7 +16938,14 @@ function loadGeneralConfig() {
           // t() returning the key unchanged and fall back to f.label instead.
           const _tl = f.labelKey ? t(f.labelKey) : null;
           const fLabel = (_tl && _tl !== f.labelKey) ? _tl : f.label;
-          if (f.type === 'llm_select') {
+          if (f.type === 'group') {
+            // Sub-heading row inside a card. Optional hintKey adds a one-line note.
+            const _ghint = f.hintKey ? t(f.hintKey) : '';
+            html += `<div style="margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--border);">
+              <div style="font-weight:700;font-size:12px;color:var(--text);">${escHtml(fLabel)}</div>
+              ${_ghint && _ghint !== f.hintKey ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(_ghint)}</div>` : ''}
+            </div>`;
+          } else if (f.type === 'llm_select') {
             const opts = enabledBackends.map(n =>
               `<option value="${escHtml(n)}" ${String(val) === n ? 'selected' : ''}>${escHtml(n)}</option>`
             ).join('');
@@ -21455,9 +21508,6 @@ const _automataState = {
   // state needed — this is a personal marker, not shared/authoritative).
   watched: new Set(JSON.parse(localStorage.getItem('cs_automata_watched') || '[]')),
   watchFilter: false,
-  // Browse-by-tag: '' = All (unchanged behaviour); otherwise a tag id.
-  tagFilter: (() => { try { return localStorage.getItem('cs_automata_tag_filter') || ''; } catch (_) { return ''; } })(),
-  tagIncludeSub: (() => { try { return localStorage.getItem('cs_automata_tag_include_sub') !== '0'; } catch (_) { return true; } })(),
 };
 
 // BL303 S4 — /dashboard Mission Control state.
@@ -21552,7 +21602,9 @@ window.toggleAutomataWatchFilter = function() {
 const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','paused','blocked','completed']);
 const _AUTOMATA_HISTORY_STATUSES = new Set(['completed','rejected','cancelled','archived']);
 
-function _automataFilteredList() {
+// _automataBaseList is the Automata list before the tag and facet filters: the
+// history gate, the type, watch and search filters.
+function _automataBaseList() {
   const st = _automataState;
   const isTemplates = st.tab === 'templates';
   let list = st.allPrds.filter(p => !!p.is_template === isTemplates);
@@ -21562,14 +21614,19 @@ function _automataFilteredList() {
   if (!st.historyOn && st.statusFilter.size === 0) {
     list = list.filter(p => _AUTOMATA_ACTIVE_STATUSES.has(p.status || 'draft'));
   }
-  if (st.statusFilter.size) list = list.filter(p => st.statusFilter.has(p.status || 'draft'));
   if (st.typeFilter.size) list = list.filter(p => st.typeFilter.has(p.type || ''));
   if (st.watchFilter) list = list.filter(p => st.watched.has(p.id)); // GH#172 D61
-  if (st.tagFilter) list = list.filter(p => _automataTagMatches(p, st.tagFilter, st.tagIncludeSub, _tagsState.byId));
   if (st.search) {
     const q = st.search.toLowerCase();
     list = list.filter(p => (p.title || '').toLowerCase().includes(q) || (p.id || '').toLowerCase().includes(q));
   }
+  return list;
+}
+
+function _automataFilteredList() {
+  const st = _automataState;
+  // The tag selection, the backend and the status facets apply on top of the base.
+  const list = _tagBrowseItems('automata', _automataBaseList());
   // alpha.31 #272 — sort: pinned first, then state rank (active-first),
   // then last-activity desc within each tier.
   list.sort((a, b) => {
@@ -21801,7 +21858,7 @@ function renderCurrentPosition(prd) {
   return '';
 }
 
-function renderAutomataCard(prd) {
+function renderAutomataCard(prd, alsoInHtml) {
   const id = prd.id || '';
   const title = prd.title || '(no title)';
   const status = prd.status || 'draft';
@@ -21826,27 +21883,14 @@ function renderAutomataCard(prd) {
   const gateInvalidBadge = prd.quality_gate_status === 'invalid'
     ? `<span class="gate-invalid-badge" style="font-size:11px;padding:2px 8px;border-radius:8px;font-weight:700;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid #f59e0b;" title="${escHtml(prd.quality_gate_invalid_reason || t('prd_gate_invalid_reason') || '')}">${escHtml(t('prd_gate_invalid') || 'Quality gate invalid')}${prd.quality_gate_invalid_reason ? ' · ' + escHtml(prd.quality_gate_invalid_reason) : ''}</span>`
     : '';
-  const progress = renderProgressBar(prd);
   const position = renderCurrentPosition(prd);
   const escId = escHtml(JSON.stringify(id));
   const checkboxCell = _automataState.selectMode
-    ? `<input type="checkbox" class="automata-card-check" data-prd-id="${escHtml(id)}" ${isChecked?'checked':''} style="margin-top:3px;flex-shrink:0;" onchange="updateAutomataSelection(${escId},this.checked)" onclick="event.stopPropagation();" aria-label="Select">`
+    ? `<input type="checkbox" class="automata-card-check" data-prd-id="${escHtml(id)}" ${isChecked?'checked':''} onchange="updateAutomataSelection(${escId},this.checked)" onclick="event.stopPropagation();" aria-label="Select">`
     : '';
-  // GATE alpha.36 (operator 2026-05-10):
-  // - Open button removed: clicking the title (or any non-button area
-  //   of the card) opens detail; explicit Open was redundant
-  // - Pin button moved out of the title row to the bottom-right of the
-  //   action row (right of Cancel/Approve), so it's clearly a "card-
-  //   level" affordance and not part of the title group
-  // - lifecycle strip shrunk via .lifecycle-compact modifier so all 5
-  //   steps fit on one line
-  // - Status pill now right-justified (margin-left:auto) on title row
-  // - ID + last-activity moved to their own meta row, right-justified,
-  //   single line below title
-  // - Stories & tasks summary now shows count
-  const lastActivity = prd.updated_at ? new Date(prd.updated_at).toLocaleString('en-GB', { hour12: false }) : '';
   const isApprovalState = ['needs_review', 'revisions_asked', 'waiting_input'].includes(status);
   const isCancelable = !['completed','cancelled','rejected','archived'].includes(status);
+  const openBtn = `<button class="btn-primary work-tile-open" onclick="event.stopPropagation();renderPRDDetailView(${escId})">${escHtml(t('work_tile_open') || 'Open')}</button>`;
   const approveBtn = isApprovalState
     ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;background:var(--warning,#f59e0b);color:var(--bg);font-weight:700;" title="${escHtml(t('automata_action_approve_tip')||'Approve next story / unblock')}" onclick="event.stopPropagation();renderPRDDetailView(${escId})">✓ ${escHtml(t('automata_action_approve')||'Approve')}</button>`
     : '';
@@ -21870,10 +21914,13 @@ function renderAutomataCard(prd) {
   const resumeBtn = status === 'paused'
     ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_resume_tip')||'Resume this automaton')}" onclick="event.stopPropagation();automataResume(${escId})">▶ ${escHtml(t('automata_action_resume')||'Resume')}</button>`
     : '';
-  const pinBtn = `<button class="btn-icon" style="font-size:14px;padding:2px 8px;background:transparent;border:none;cursor:pointer;${isPinned?'color:var(--warning,#f59e0b);':'opacity:0.4;'}" title="${escHtml(t('automata_action_pin')||'Pin to top')}" onclick="event.stopPropagation();toggleAutomataPin('${escHtml(id)}')">${isPinned?'📌':'📍'}</button>`;
-  // GH#172 D61 — watch sessions/automata + watched-badge filter.
+  // Pin and watch sit in the tile's overflow menu; the marks show their state
+  // in the header while the menu is closed.
   const isWatched = _automataState.watched.has(id);
-  const watchBtn = `<button class="btn-icon" style="font-size:14px;padding:2px 8px;background:transparent;border:none;cursor:pointer;${isWatched?'color:var(--accent2,#60a5fa);':'opacity:0.4;'}" title="${escHtml(isWatched ? (t('automata_action_unwatch')||'Stop watching') : (t('automata_action_watch')||'Watch for updates'))}" onclick="event.stopPropagation();toggleAutomataWatch('${escHtml(id)}')">👁</button>`;
+  const pinItem = _tileMenuItem(isPinned ? '📌' : '📍', t('automata_action_pin') || 'Pin to top', `toggleAutomataPin('${escJsAttr(id)}')`);
+  const watchItem = _tileMenuItem('👁', isWatched ? (t('automata_action_unwatch') || 'Stop watching') : (t('automata_action_watch') || 'Watch for updates'), `toggleAutomataWatch('${escJsAttr(id)}')`);
+  const pinMark = isPinned ? `<span class="work-tile-mark" title="${escHtml(t('automata_action_pin')||'Pin to top')}">📌</span>` : '';
+  const watchMark = isWatched ? `<span class="work-tile-mark" title="${escHtml(t('automata_action_watch')||'Watch for updates')}">👁</span>` : '';
   // GH#172 D71 — parent-PRD ↗ link on an Automaton card (Android already
   // has this). parent_prd_id is already in the JSON (BL191 Q4 recursion).
   const parentLink = prd.parent_prd_id
@@ -21881,39 +21928,39 @@ function renderAutomataCard(prd) {
     : '';
   const storyCount = (prd.stories || []).length || prd.story_count || 0;
   const full = _automataFullPrd(prd);
-  return `<div class="prd-row prd-card ${statusClass}" id="prd-${escHtml(id)}" style="padding:14px;margin-bottom:14px;cursor:pointer;" onclick="renderPRDDetailView(${escId})">
-    <div style="display:flex;align-items:flex-start;gap:10px;">
-      ${checkboxCell}
-      <div style="flex:1;min-width:0;">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          ${typeBadge}${window.automatonKindChipHtml(prd)}${_tagChipsHTML(prd)}${tplBadge}${gateInvalidBadge}
-          <span style="font-weight:700;font-size:15px;color:var(--text);flex:1;min-width:0;">${escHtml(title)}</span>
-          <span style="margin-left:auto;flex-shrink:0;">${statusPill(status)}</span>
-        </div>
-        <div style="display:flex;justify-content:flex-end;gap:10px;font-size:11px;color:var(--text2);margin-top:4px;font-family:var(--mono,monospace);">
-          ${parentLink}
-          <code>${escHtml(id)}</code>
-          ${lastActivity ? `<span>${escHtml(lastActivity)}</span>` : ''}
-        </div>
-        ${progress}
-        ${position}
-        <div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);" onclick="event.stopPropagation()">
-          ${cancelBtn}${rejectBtn}${reviseBtn}${pauseBtn}${resumeBtn}
-          <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${approveBtn}${watchBtn}${pinBtn}</span>
-        </div>
-      </div>
-    </div>
-    <details style="margin-top:8px;" onclick="event.stopPropagation()" ontoggle="_automataCardToggle(${escId},this)"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'} (${storyCount})</summary>
+  const counts = _tileAutomataCounts(prd);
+  const held = _prdHeldBadgeHTML(prd);
+  const storiesDetail = `<details style="margin-top:8px;" onclick="event.stopPropagation()" ontoggle="_automataCardToggle(${escId},this)"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'} (${storyCount})</summary>
       <div class="prd-card-detail" data-prd-detail="${escHtml(id)}" style="margin-top:6px;" onclick="event.stopPropagation()">${_automataCardDetailHtml(prd)}</div>
-    </details>
-    <!-- GH#182 — Automaton dependency graph (DAG) card. No graph library
-         in this repo (zero-heavy-dependency footprint); hand-rolled SVG
-         is plenty for the handful of stories/tasks a real Automaton has. -->
-    ${(storyCount > 0 && full) ? `<details style="margin-top:8px;" onclick="event.stopPropagation()"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_dependency_graph')||'Dependency graph'}</summary>
+    </details>`;
+  // GH#182 — Automaton dependency graph (DAG) card. No graph library
+  // in this repo (zero-heavy-dependency footprint); hand-rolled SVG
+  // is plenty for the handful of stories/tasks a real Automaton has.
+  const graphDetail = (storyCount > 0 && full) ? `<details style="margin-top:8px;" onclick="event.stopPropagation()"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_dependency_graph')||'Dependency graph'}</summary>
       <div style="margin-top:6px;overflow-x:auto;" onclick="event.stopPropagation()">${renderDependencyGraph(full)}</div>
-    </details>` : ''}
-  </div>`;
+    </details>` : '';
+  return renderWorkTile({
+    id,
+    rootId: 'prd-' + id,
+    onOpen: `renderPRDDetailView(${escId})`,
+    statusClass,
+    statusHtml: statusPill(status),
+    title: title,
+    checkHtml: checkboxCell,
+    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${parentLink}${pinMark}${watchMark}`,
+    backend: [prd.backend, prd.model].filter(Boolean).join(' · '),
+    progress: counts,
+    progressLabel: t('work_tile_progress', [counts.done, counts.total]),
+    tagIds: _tileTagIds(prd),
+    tagsById: _tagsState.byId,
+    alsoInHtml,
+    updatedAt: prd.updated_at,
+    nowMs: Date.now(),
+    primaryHtml: `${openBtn}${cancelBtn}${rejectBtn}${reviseBtn}${pauseBtn}${resumeBtn}${approveBtn}`,
+    menuHtml: `${watchItem}${pinItem}`,
+    bodyHtml: `${position}${held ? `<div>${held}</div>` : ''}<div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>`,
+    afterHtml: storiesDetail + graphDetail,
+  });
 }
 
 // GH#182 — hand-rolled SVG DAG: stories as columns, tasks as rows within
@@ -22081,6 +22128,8 @@ function _automataFetchAll(url, o) {
     apiFetch('/api/llms', opts).catch(() => null),
     _tagsLoad(true).catch(() => null),
     apiFetch('/api/capacity', opts).catch(() => null),
+    _tagBrowseConfigLoad(),
+    _tagPinnedLoad(),
   ]).then(([data, llms, , cap]) => {
     const prds = Array.isArray(data) ? data : ((data && data.prds) || []);
     return {
@@ -22123,13 +22172,12 @@ function _automataLoadMoreHtml() {
   return `<div class="list-load-more" style="text-align:center;padding:8px;"><button type="button" class="btn-secondary" id="automataLoadMore" ${st.loadingMore ? 'disabled' : ''} onclick="automataLoadMore()">${escHtml(st.loadingMore ? t('loading') : label)}</button>` +
     (st.moreError ? ` <span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(st.moreError)}</span>` : '') + '</div>';
 }
+// _automataCardsHtml draws the Automata body through the shared tag browser.
 function _automataCardsHtml() {
-  const filtered = _automataFilteredList();
-  if (filtered.length === 0) {
-    const key = _automataState.historyOn ? 'automata_empty_history' : 'automata_empty_active';
-    return `<div class="list-state-empty" style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t(key))}</div>` + _automataLoadMoreHtml();
-  }
-  return filtered.map(renderAutomataCard).join('') + _automataLoadMoreHtml();
+  const key = _automataState.historyOn ? 'automata_empty_history' : 'automata_empty_active';
+  const empty = `<div class="list-state-empty" style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t(key))}</div>`;
+  const base = _automataBaseList();
+  return _tagBrowseMountHTML('automata', _automataFilteredList(), base.length, (p, also) => renderAutomataCard(p, also), empty) + _automataLoadMoreHtml();
 }
 function _automataAfterPaint(panel, openIds) {
   if (openIds && openIds.size) {
@@ -22154,7 +22202,7 @@ function _automataAfterPaint(panel, openIds) {
     allCb.checked = ids.length > 0 && ids.every(i => _automataState.selected.has(i));
     allCb.indeterminate = !allCb.checked && ids.some(i => _automataState.selected.has(i));
   }
-  _automataRenderTagFilter();
+  _tagFacetsRefresh('automata');
   _automataRenderBatchBar();
 }
 function _automataLoader() {
@@ -26101,20 +26149,8 @@ function renderAutonomousView() {
   const st = _automataState;
   _automataNormalizeTab();
   const isAutomation = st.tab === 'automation';
-  // Active statuses + completed (shown by default); then terminal statuses behind history toggle
-  const statusBadgesActive = ['draft','planning','needs_review','approved','running','paused','blocked','completed'].map(s => {
-    const active = st.statusFilter.has(s) ? 'active' : '';
-    const label = escHtml(t('automata_status_' + s) || s);
-    return `<button class="automata-filter-badge status-${s} ${active}" onclick="toggleAutomataStatusFilter('${s}')">${label}</button>`;
-  }).join('');
-  // Terminal-failure + archived badges always visible in the filter bar even when
-  // history is off — clicking one bypasses the gate and shows only those items.
-  const statusBadgesHistory = ['cancelled','rejected','archived'].map(s => {
-    const active = st.statusFilter.has(s) ? 'active' : '';
-    const label = escHtml(t('automata_status_' + s) || s);
-    return `<button class="automata-filter-badge status-${s} ${active}" style="opacity:0.7;" onclick="toggleAutomataStatusFilter('${s}')">${label}</button>`;
-  }).join('');
-  const statusBadges = statusBadgesActive + `<span style="display:inline-block;width:1px;background:var(--border);height:16px;margin:0 4px;vertical-align:middle;"></span>` + statusBadgesHistory;
+  // The status chips (active, then the terminal-failure and archived ones that
+  // bypass the history gate) are drawn with the tag facets, with their counts.
   const typeBadges = ['software','research','operational','personal'].map(type => {
     const active = st.typeFilter.has(type) ? 'active' : '';
     return `<button class="automata-filter-badge type-badge ${active}" data-type="${type}" onclick="toggleAutomataTypeFilter('${type}')">${escHtml(type)}</button>`;
@@ -26147,14 +26183,13 @@ function renderAutonomousView() {
         <button id="automataNewTmplBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;display:none;" onclick="openTemplateCreateModal()">＋ ${escHtml(t('automata_tmpl_new_short')||'Template')}</button>
         ${_automationActionButtonsHTML(isAutomation)}
       </div>
-      ${isAutomation ? _automationBodyHTML() : `<div id="automataFilterBar" class="automata-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
-        <input id="automataSearch" type="text" class="form-input" placeholder="${escHtml(t('automata_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomataSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">
-        <div class="automata-badge-group">${statusBadges}</div>
-        <div class="automata-badge-group">${typeBadges}</div>
-        <div id="automataTagFilterWrap" class="automata-badge-group" style="display:inline-flex;gap:6px;align-items:center;">${_automataTagFilterHTML()}</div>
-        <label style="font-size:12px;display:inline-flex;gap:4px;align-items:center;white-space:nowrap;">
+      ${isAutomation ? _automationBodyHTML() : `<div id="automataFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
+        ${_tagFilterBarHTML('automata',
+          `<input id="automataSearch" type="text" class="form-input" placeholder="${escHtml(t('automata_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomataSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">`,
+          `<div class="automata-badge-group">${typeBadges}</div>`,
+          `<label style="font-size:12px;display:inline-flex;gap:4px;align-items:center;white-space:nowrap;">
           <input type="checkbox" id="automataSelectAll" onchange="toggleAutomataSelectAll(this.checked)"> All
-        </label>
+        </label>`)}
       </div>
       <div id="automataPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
@@ -26245,14 +26280,9 @@ function _automationActionButtonsHTML(visible) {
 // cards and the list panel.
 function _automationBodyHTML() {
   const st = _automationState;
-  const statusBadges = _AUTOMATION_STATUSES.map(s => {
-    const active = st.statusFilter.has(s) ? 'active' : '';
-    const label = escHtml(t('automation_status_' + s));
-    return `<button class="automata-filter-badge status-${s} ${active}" onclick="toggleAutomationStatusFilter('${s}')">${label}</button>`;
-  }).join('');
-  return `<div id="automationFilterBar" class="automata-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
-        <input id="automationSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_filter_search'))}" aria-label="${escHtml(t('automation_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomationSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">
-        <div class="automata-badge-group">${statusBadges}</div>
+  return `<div id="automationFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
+        ${_tagFilterBarHTML('automation',
+          `<input id="automationSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_filter_search'))}" aria-label="${escHtml(t('automation_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomationSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">`)}
       </div>
       <div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
@@ -26373,7 +26403,7 @@ window.automationEmptyStateHtml = automationEmptyStateHtml;
 
 function _automationFetchAll() {
   const request = automationRequest('GET', '/api/automations');
-  return Promise.all([request, loadAutomationPrdInfo()]).then(([data, info]) => ({
+  return Promise.all([request, loadAutomationPrdInfo(), _tagsLoad(true), _tagBrowseConfigLoad(), _tagPinnedLoad()]).then(([data, info]) => ({
     list: Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : []),
     titles: info.titles,
   })).then(d => {
@@ -26396,12 +26426,12 @@ function _automationLoader() {
       _automationState.loadError = null;
       const items = automationListVisible(d.list, _automationState);
       if (!d.list.length) return _automationEmptyAllowed() ? automationEmptyStateHtml() : '';
-      if (!items.length) return `<div class="list-state-empty" style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('automation_list_empty'))}</div>`;
       const ctx = { prdTitles: d.titles, now: Date.now() };
-      return items.map(a => buildAutomationCardHTML(a, ctx)).join('');
+      return _automationTilesHTML(items, ctx);
     },
     afterPaint: () => {
       if (_automationState.detailId) renderAutomationStrip();
+      _tagFacetsRefresh('automation');
       // Refresh the progress card on each 30-second automation poll; its own
       // refetch guard makes this a no-op if it loaded very recently.
       if (typeof window.loadProgressCard === 'function') window.loadProgressCard();
@@ -26529,7 +26559,17 @@ function _automationRenderCards() {
     return;
   }
   const ctx = { prdTitles: st.prdTitles, now: Date.now() };
-  panel.innerHTML = items.map(a => buildAutomationCardHTML(a, ctx)).join('');
+  panel.innerHTML = _automationTilesHTML(items, ctx);
+  _tagFacetsRefresh('automation');
+}
+
+// _automationTilesHTML draws the Automation body through the shared tag browser:
+// the tag and facet filters apply to the visible Automations, then the browser
+// draws them as tiles.
+function _automationTilesHTML(base, ctx) {
+  const empty = `<div class="list-state-empty" style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('automation_list_empty'))}</div>`;
+  return _tagBrowseMountHTML('automation', _tagBrowseItems('automation', base), base.length,
+    (a, also) => buildAutomationCardHTML(a, Object.assign({}, ctx, { alsoIn: also })), empty);
 }
 
 // _automationActiveMembers returns the work members in flight: those named in
@@ -26590,15 +26630,28 @@ function buildAutomationCardHTML(automation, ctx) {
     ? `<div class="automation-card-blocked" style="${meta}color:var(--error);">${escHtml(t('automation_blocked_reason', [reason]))}</div>`
     : '';
 
+  // An Automation has no per-item actions of its own: the tile opens its
+  // detail, so Open is the only action and it moves into the menu on a narrow screen.
   const open = `if (typeof openAutomationDetail === 'function') openAutomationDetail('${escJsAttr(a.id)}')`;
-  return `<div class="prd-row prd-card ${statusClass} automation-card" data-automation-id="${escHtml(a.id)}" style="padding:14px;margin-bottom:14px;cursor:pointer;" onclick="${open}">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-      <span class="automation-card-title" style="font-weight:700;font-size:15px;flex:1;min-width:0;">${escHtml(a.name)}</span>
-      <span class="automation-card-status" style="font-size:11px;color:var(--text2);flex-shrink:0;">${escHtml(t('automation_status_' + status))}</span>
-    </div>
-    <div class="automation-card-progress" style="${meta}">${escHtml(t('automation_members_progress', [done, total]))}</div>
-    ${memberLines}${idle}${blocked}${_automationBudgetHTML(a)}
-  </div>`;
+  return renderWorkTile({
+    id: a.id,
+    rootAttrs: `data-automation-id="${escHtml(a.id)}"`,
+    extraClass: 'automation-card',
+    onOpen: open,
+    statusClass,
+    statusHtml: `<span class="automation-card-status">${escHtml(t('automation_status_' + status))}</span>`,
+    title: a.name,
+    titleClass: 'automation-card-title',
+    progress: { done, total },
+    progressLabel: t('automation_members_progress', [done, total]),
+    tagIds: _tileTagIds(a),
+    tagsById: _tagsState.byId,
+    alsoInHtml: ctx && ctx.alsoIn,
+    updatedAt: a.updated_at,
+    nowMs: now,
+    primaryHtml: `<button class="btn-secondary work-tile-open" onclick="event.stopPropagation();${open}">${escHtml(t('work_tile_open') || 'Open')}</button>`,
+    bodyHtml: `${memberLines}${idle}${blocked}${_automationBudgetHTML(a)}`,
+  });
 }
 window.buildAutomationCardHTML = buildAutomationCardHTML;
 
@@ -36322,7 +36375,9 @@ window.automataTypeRegister = function() {
 // the key is not in the bundle yet (t() returns the key itself on a miss).
 function _tagT(key, fallback, vars) {
   const s = t(key, vars);
-  return s === key ? fallback : s;
+  if (s !== key) return s;
+  // The fallback takes the same %1$s / %1$d placeholders as a bundle string.
+  return String(fallback || '').replace(/%(\d+)\$[sd]/g, (_, n) => (vars && vars[parseInt(n, 10) - 1] !== undefined) ? String(vars[parseInt(n, 10) - 1]) : '');
 }
 
 function _tagsById(tags) {
@@ -36408,12 +36463,17 @@ function _tagSuggestFromAlias(projectDir, projects, tags) {
   return hit ? hit.id : '';
 }
 
-const _tagsState = { list: [], byId: {}, loaded: false };
+const _tagsState = { list: [], byId: {}, loaded: false, untagged: null, registry: null };
 
+// _tagsLoad fetches the registry with its counts: each tag carries subtree_count
+// and direct_count, untagged holds the count of Automata with no tag, and registry
+// holds the shared registry's role, keeper, staleness and notes.
 function _tagsLoad(force) {
   if (_tagsState.loaded && !force) return Promise.resolve(_tagsState.list);
-  return apiFetch('/api/autonomous/tags').then(data => {
+  return apiFetch('/api/autonomous/tags?counts=true').then(data => {
     _tagsState.list = (data && data.tags) || [];
+    _tagsState.untagged = (data && data.untagged) || null;
+    _tagsState.registry = (data && data.registry) || null;
     _tagsState.byId = _tagsById(_tagsState.list);
     _tagsState.loaded = true;
     return _tagsState.list;
@@ -36451,7 +36511,7 @@ function _tagPickerHTML(pickerId, selectedIds) {
   const rows = _tagTreeOrder(_tagsState.list).map(({ tag, depth }) => {
     const dot = tag.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${escHtml(tag.color)};margin-right:5px;"></span>` : '';
     return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0;padding-left:${depth * 16}px;">
-      <input type="checkbox" class="tag-picker-cb" value="${escHtml(tag.id)}" ${sel.has(tag.id) ? 'checked' : ''}>${dot}${escHtml(tag.name)}
+      <input type="checkbox" class="tag-picker-cb" value="${escHtml(tag.id)}" ${sel.has(tag.id) ? 'checked' : ''} onchange="tagPrimaryOptionsRefresh()">${dot}${escHtml(tag.name)}
     </label>`;
   }).join('');
   const empty = `<div style="font-size:12px;color:var(--text2);">${escHtml(_tagT('tag_picker_empty', 'No tags defined yet.'))}</div>`;
@@ -36464,9 +36524,13 @@ function _tagPickerSelected(pickerId) {
   return Array.from(el.querySelectorAll('.tag-picker-cb')).filter(cb => cb.checked).map(cb => cb.value);
 }
 
-function _tagSetPrdTags(prdId, tagIds) {
+// _tagSetPrdTags saves an Automaton's tags. primary is optional: undefined keeps the
+// current primary tag, '' clears it, and an ID must be one of tagIds.
+function _tagSetPrdTags(prdId, tagIds, primary) {
+  const body = { tag_ids: tagIds };
+  if (primary !== undefined) body.primary_tag_id = primary;
   return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId) + '/set_tags', {
-    method: 'POST', body: JSON.stringify({ tag_ids: tagIds }),
+    method: 'POST', body: JSON.stringify(body),
   });
 }
 
@@ -36478,15 +36542,41 @@ function _renderDetailTagRow(prd) {
   el.innerHTML = `${_tagChipsHTML(prd)}<button class="btn-secondary" style="font-size:10px;padding:1px 8px;margin-left:4px;" onclick="event.stopPropagation();openPRDTagsModal(${idJ})">${escHtml(_tagT('tag_edit', 'Tags'))}</button>`;
 }
 
+// The primary tag is optional and only sorts an Automaton inside a tag section; it
+// hides no membership. Its choices are the tags ticked in the picker.
+function _tagPrimaryOptions(current, selectedIds) {
+  const opts = (selectedIds || []).map(id => _tagsState.byId[id]).filter(Boolean);
+  return `<option value="">${escHtml(_tagT('tag_primary_none', 'No primary tag'))}</option>` +
+    opts.map(tg => `<option value="${escHtml(tg.id)}" ${tg.id === current ? 'selected' : ''}>${escHtml(tg.name)}</option>`).join('');
+}
+
+function _tagPrimarySelectHTML(selectId, current, selectedIds) {
+  return `<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;">
+    <span>${escHtml(_tagT('tag_primary_label', 'Primary tag'))}</span>
+    <select id="${escHtml(selectId)}" class="form-select" style="font-size:12px;">${_tagPrimaryOptions(current, selectedIds)}</select></label>`;
+}
+
+// tagPrimaryOptionsRefresh rebuilds the primary tag choices after a tick changes,
+// keeping the current choice when it is still ticked.
+window.tagPrimaryOptionsRefresh = function() {
+  const sel = document.getElementById('prdTagsPrimary');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = _tagPrimaryOptions(current, _tagPickerSelected('prdTagsModalPicker'));
+  sel.value = current;
+};
+
 window.openPRDTagsModal = function(prdId) {
   _tagsLoad().then(() => {
     apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId)).then(prd => {
       showModal({
         title: _tagT('tag_edit_title', 'Automaton tags'),
-        body: _tagPickerHTML('prdTagsModalPicker', prd.tag_ids || []),
+        body: _tagPickerHTML('prdTagsModalPicker', prd.tag_ids || []) +
+          _tagPrimarySelectHTML('prdTagsPrimary', prd.primary_tag_id || '', prd.tag_ids || []),
         confirmLabel: _tagT('tag_save', 'Save'),
         onConfirm: () => {
-          _tagSetPrdTags(prdId, _tagPickerSelected('prdTagsModalPicker'))
+          const primary = document.getElementById('prdTagsPrimary');
+          _tagSetPrdTags(prdId, _tagPickerSelected('prdTagsModalPicker'), primary ? primary.value : undefined)
             .then(() => { showToast(_tagT('tag_saved', 'Tags saved'), 'success', 1500); renderPRDDetailView(prdId); })
             .catch(e => showToast(_tagErrorText(e), 'error', 4000));
         },
@@ -36495,39 +36585,1135 @@ window.openPRDTagsModal = function(prdId) {
   });
 };
 
-// ── Browse-by-tag filter (Automata list) ─────────────────────────────────────
+// ── Session tags ─────────────────────────────────────────────────────────────
+// A session carries its own tags (`tags`) and shows the tags of the Automaton
+// that spawned it (`inherited_tags`). The own tags are edited on the session;
+// the inherited ones are read-only here and change with the Automaton. Nothing
+// below ever sends an inherited ID: the editor starts from the own tags only.
 
-function _automataTagFilterHTML() {
-  const st = _automataState;
-  const prds = st.allPrds.filter(p => !p.is_template);
-  const opts = [`<option value="">${escHtml(_tagT('tag_filter_all', 'All'))}</option>`].concat(
-    _tagTreeOrder(_tagsState.list).map(({ tag, depth }) => {
-      const n = _automataTagCount(prds, tag.id, st.tagIncludeSub, _tagsState.byId);
-      return `<option value="${escHtml(tag.id)}" ${st.tagFilter === tag.id ? 'selected' : ''}>${'  '.repeat(depth)}${escHtml(tag.name)} (${n})</option>`;
-    }));
-  return `<select id="automataTagSelect" class="form-select" style="font-size:12px;" title="${escHtml(_tagT('tag_filter_title', 'Browse by tag'))}" onchange="setAutomataTagFilter(this.value)">${opts.join('')}</select>
-    <label style="font-size:12px;display:inline-flex;gap:4px;align-items:center;white-space:nowrap;">
-      <input type="checkbox" id="automataTagSub" ${st.tagIncludeSub ? 'checked' : ''} onchange="setAutomataTagIncludeSub(this.checked)"> ${escHtml(_tagT('tag_include_sub', 'include sub-tags'))}
-    </label>`;
+// _sessionTagChipsHTML draws the own tags as normal chips and the inherited ones
+// as dashed, dimmed chips with a small "inherited" label. IDs the registry does
+// not know are skipped, so nothing renders until the registry has loaded.
+function _sessionTagChipsHTML(sess) {
+  if (!sess) return '';
+  const own = (sess.tags || []).map(id => _tagsState.byId[id]).filter(Boolean);
+  const ownIds = new Set(own.map(tg => tg.id));
+  const inherited = (sess.inherited_tags || []).filter(id => !ownIds.has(id)).map(id => _tagsState.byId[id]).filter(Boolean);
+  if (!own.length && !inherited.length) return '';
+  const label = _tagT('tag_inherited_label', 'inherited');
+  const tip = _tagT('tag_inherited_tip', 'Inherited from the Automaton; change it there');
+  const inheritedChips = inherited.map(tg => {
+    const c = tg.color || 'var(--accent2,#60a5fa)';
+    return `<span class="tag-chip tag-chip-inherited" data-tag-id="${escHtml(tg.id)}" title="${escHtml(tip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;background:transparent;color:${escHtml(c)};border:1px dashed ${escHtml(c)};font-weight:600;opacity:0.8;">${escHtml(tg.name)} <span class="tag-chip-inherited-label" style="font-weight:400;font-size:9px;">${escHtml(label)}</span></span>`;
+  });
+  return own.map(_tagChipHTML).concat(inheritedChips).join('');
 }
 
-function _automataRenderTagFilter() {
-  const wrap = document.getElementById('automataTagFilterWrap');
-  if (wrap) wrap.innerHTML = _automataTagFilterHTML();
+// _sessionHasTags is true for a session with tag IDs to name, own or inherited.
+function _sessionHasTags(sess) {
+  return !!sess && ((sess.tags || []).length > 0 || (sess.inherited_tags || []).length > 0);
 }
 
-window.setAutomataTagFilter = function(id) {
-  _automataState.tagFilter = id || '';
-  try { localStorage.setItem('cs_automata_tag_filter', _automataState.tagFilter); } catch (_) {}
-  _automataRenderTagFilter();
-  _automataRenderCards();
+// _sessionTagsEnsure loads the registry once when a session view shows a session
+// that has tags, then repaints through paint(). A view of untagged sessions
+// fetches nothing. A failed load never repaints, so it cannot loop.
+function _sessionTagsEnsure(paint, sessions) {
+  if (_tagsState.loaded || !(sessions || []).some(_sessionHasTags)) return;
+  _tagsLoad().then(() => { if (_tagsState.loaded) paint(); });
+}
+
+// _sessionSetTags saves a session's own tags. The server replaces the list and
+// answers with the session, inherited_tags included.
+function _sessionSetTags(fullId, tagIds) {
+  return apiFetch('/api/sessions/tags', {
+    method: 'POST', body: JSON.stringify({ id: fullId, tag_ids: tagIds }),
+  });
+}
+
+function _sessionFind(fullId) {
+  return state.sessions.find(s => s.full_id === fullId || s.id === fullId);
+}
+
+// Detail view: label, chips and an edit button that opens the picker.
+function _renderSessionDetailTagRow(sess) {
+  const el = document.getElementById('sessionDetailTagRow');
+  if (!el || !sess) return;
+  const idJ = escHtml(JSON.stringify(sess.full_id || sess.id || ''));
+  const chips = _sessionTagChipsHTML(sess);
+  const none = `<span style="font-size:11px;color:var(--text2);">${escHtml(_tagT('tag_session_none', 'No tags'))}</span>`;
+  el.innerHTML = `<span style="font-size:11px;color:var(--text2);">${escHtml(_tagT('tag_edit', 'Tags'))}</span>${chips || none}<button class="btn-secondary" style="font-size:10px;padding:1px 8px;" onclick="event.stopPropagation();openSessionTagsModal(${idJ})">${escHtml(_tagT('tag_session_edit', 'Edit tags'))}</button>`;
+}
+
+window.openSessionTagsModal = function(fullId) {
+  _tagsLoad().then(() => {
+    const sess = _sessionFind(fullId);
+    if (!sess) return;
+    const inherited = (sess.inherited_tags || []).map(id => _tagsState.byId[id]).filter(Boolean);
+    const note = inherited.length
+      ? `<div style="font-size:11px;color:var(--text2);margin-top:8px;">${escHtml(_tagT('tag_inherited_note', 'Inherited from the Automaton (read-only):'))} ${inherited.map(tg => escHtml(tg.name)).join(', ')}</div>`
+      : '';
+    showModal({
+      title: _tagT('tag_session_edit_title', 'Session tags'),
+      body: _tagPickerHTML('sessionTagsModalPicker', sess.tags || []) + note,
+      confirmLabel: _tagT('tag_save', 'Save'),
+      onConfirm: () => {
+        _sessionSetTags(sess.full_id, _tagPickerSelected('sessionTagsModalPicker'))
+          .then(res => {
+            if (res && res.full_id) updateSession(res);
+            showToast(_tagT('tag_saved', 'Tags saved'), 'success', 1500);
+            _sessionTagsRepaint();
+          })
+          .catch(e => showToast(_tagErrorText(e), 'error', 4000));
+      },
+    });
+  });
 };
 
-window.setAutomataTagIncludeSub = function(on) {
-  _automataState.tagIncludeSub = !!on;
-  try { localStorage.setItem('cs_automata_tag_include_sub', on ? '1' : '0'); } catch (_) {}
-  _automataRenderTagFilter();
-  _automataRenderCards();
+// _sessionTagsRefresh answers a tag_update frame while a session view is open:
+// refetch the registry (names, colours and parents may have changed) and the
+// session rows, then repaint the chips.
+function _sessionTagsRefresh() {
+  // The sessions frames carry a session's own tags but not the ones it inherits,
+  // so the rows are read again with the registry.
+  let rows = Promise.resolve();
+  if (state.activeView === 'sessions') rows = loadSessionsList();
+  else if (state.activeSession) {
+    rows = apiFetch('/api/sessions/' + encodeURIComponent(state.activeSession))
+      .then(full => { if (full && full.full_id) { delete full.truncated_fields; applySessionUpdate(full); } })
+      .catch(() => {});
+  }
+  return Promise.all([_tagsLoad(true), rows]).then(() => _sessionTagsRepaint());
+}
+
+// _sessionTagsRepaint redraws whichever session view is on screen from the
+// sessions held in state.
+function _sessionTagsRepaint() {
+  if (state.activeView === 'sessions') renderSessionsView();
+  else if (state.activeView === 'session-detail') _renderSessionDetailTagRow(_sessionFind(state.activeSession));
+}
+
+// Batch bar: pick tags and add them to every selected session (the own tags
+// each session already has are kept).
+window.batchTagSelectedSessions = function() {
+  const ids = [...state.selectedSessions];
+  if (!ids.length) return;
+  _tagsLoad().then(() => {
+    showModal({
+      title: _tagT('tag_session_batch_title', 'Add tags to %1$d sessions', [ids.length]),
+      body: _tagPickerHTML('sessionBatchTagPicker', []),
+      confirmLabel: _tagT('tag_apply', 'Apply'),
+      onConfirm: () => {
+        const add = _tagPickerSelected('sessionBatchTagPicker');
+        if (!add.length) return false;
+        Promise.all(ids.map(id => {
+          const cur = (_sessionFind(id) || {}).tags || [];
+          return _sessionSetTags(id, Array.from(new Set(cur.concat(add))));
+        })).then(results => {
+          results.forEach(res => { if (res && res.full_id) applySessionUpdate(res); });
+          state.selectMode = false;
+          state.selectedSessions.clear();
+          renderSessionsView();
+          showToast(_tagT('tag_batch_done', 'tag: %1$d done', [ids.length]), 'success', 2000);
+        }).catch(e => showToast(_tagErrorText(e), 'error', 4000));
+      },
+    });
+  });
+};
+
+// ── Tag browser (Automata and Automation lists) ──────────────────────────────
+// One browser serves both lists: the [List] [Tags] switch, the tag sections on
+// web and tablet, the single-section drill-down under 720px, and the filter bar
+// (a tag multi-select with ANY/ALL, the backend and status facets). Scope is
+// 'automata' (the Automata sub-tab) or 'automation' (the Automation sub-tab).
+// The pure helpers take the tag list and the items and touch no DOM, so the node
+// tests load them; the layer after them draws the controls and wires them.
+
+const _TAG_UNTAGGED = '_untagged';
+const _TAG_DRILL_BELOW = 720;      // drill-down under this width; sections from it
+const _TAG_COLLAPSE_ABOVE = 8;     // more top-level tags than this: sections start closed
+const _TAG_CRUMB_LEVELS = 3;       // deeper paths collapse their middle crumbs
+const _TAG_AUTOMATA_STATUS_BADGES = {
+  active: ['draft', 'planning', 'needs_review', 'approved', 'running', 'paused', 'blocked', 'completed'],
+  history: ['cancelled', 'rejected', 'archived'],
+};
+
+// _tagBrowseTree indexes a tag list: byId, the child IDs of each tag and the root
+// IDs, all sorted by name. A tag whose parent is missing (or is itself) is a root.
+function _tagBrowseTree(tags) {
+  const byId = _tagsById(tags);
+  const nameOf = id => (byId[id] && byId[id].name) || '';
+  const byName = (a, b) => nameOf(a).localeCompare(nameOf(b)) || (a < b ? -1 : 1);
+  const kids = {};
+  const roots = [];
+  for (const tg of (tags || [])) {
+    const parent = tg.parent_id;
+    if (parent && parent !== tg.id && byId[parent]) (kids[parent] = kids[parent] || []).push(tg.id);
+    else roots.push(tg.id);
+  }
+  Object.keys(kids).forEach(k => kids[k].sort(byName));
+  roots.sort(byName);
+  return { byId, kids, roots };
+}
+
+// _tagBrowseAncestors lists the ancestors of a tag, nearest first. A cycle or a
+// missing parent ends the walk.
+function _tagBrowseAncestors(tagId, tree) {
+  const out = [];
+  const seen = new Set([tagId]);
+  let cur = tree.byId[tagId];
+  while (cur && cur.parent_id && tree.byId[cur.parent_id] && !seen.has(cur.parent_id)) {
+    out.push(cur.parent_id);
+    seen.add(cur.parent_id);
+    cur = tree.byId[cur.parent_id];
+  }
+  return out;
+}
+
+// _tagBrowseItemSet is the set of tags an item sits under: each tag it carries
+// and every ancestor of those. A tag matches an item when the tag is in this set,
+// so a selected tag matches itself and its descendants, and an item under two
+// children is still one item. Tags the registry does not hold are ignored.
+function _tagBrowseItemSet(item, tree) {
+  const set = new Set();
+  for (const id of _tileTagIds(item)) {
+    if (!tree.byId[id]) continue;
+    set.add(id);
+    _tagBrowseAncestors(id, tree).forEach(a => set.add(a));
+  }
+  return set;
+}
+
+// _tagBrowseMatches: ANY needs one selected tag in the item's set, ALL needs every
+// selected tag there. With no selection every item matches.
+function _tagBrowseMatches(set, tagIds, mode) {
+  if (!tagIds || !tagIds.length) return true;
+  return mode === 'all' ? tagIds.every(id => set.has(id)) : tagIds.some(id => set.has(id));
+}
+
+// _tagBrowseFilter keeps the items that pass every facet: the tag selection (ANY
+// or ALL), the backend and the status. Values inside one facet are OR-ed and the
+// facets are AND-ed. An empty facet passes everything.
+function _tagBrowseFilter(items, f, tree) {
+  const o = f || {};
+  const tagIds = (o.tagIds || []).filter(id => tree.byId[id]);
+  const backends = o.backends || [];
+  const statuses = o.statuses || [];
+  return (items || []).filter(it => {
+    if (backends.length && !backends.includes(it.backend || '')) return false;
+    if (statuses.length && !statuses.includes(it.status || 'draft')) return false;
+    return _tagBrowseMatches(_tagBrowseItemSet(it, tree), tagIds, o.mode);
+  });
+}
+
+// _tagBrowseCounts gives, per tag, the distinct items in its subtree (an item
+// under two children counts once). Under the untagged key it gives the items that
+// carry no tag.
+function _tagBrowseCounts(items, tree) {
+  const counts = { [_TAG_UNTAGGED]: 0 };
+  for (const it of (items || [])) {
+    const set = _tagBrowseItemSet(it, tree);
+    if (!set.size) { counts[_TAG_UNTAGGED]++; continue; }
+    set.forEach(id => { counts[id] = (counts[id] || 0) + 1; });
+  }
+  return counts;
+}
+
+// _tagBrowseValueCounts counts the items per value of a field (backend, status).
+// An empty backend is left out; a missing status counts as draft.
+function _tagBrowseValueCounts(items, field) {
+  const out = {};
+  for (const it of (items || [])) {
+    const v = it[field] || (field === 'status' ? 'draft' : '');
+    if (v) out[v] = (out[v] || 0) + 1;
+  }
+  return out;
+}
+
+// _tagBrowseOrderForTag sorts items so that those whose primary tag sits in the
+// tag's subtree come first. The sort is stable, so the caller's order holds
+// inside each group. It only reorders: no item is dropped for its primary tag.
+function _tagBrowseOrderForTag(items, tagId, tree) {
+  const hit = it => {
+    const p = it.primary_tag_id;
+    if (!p) return false;
+    return p === tagId || _tagBrowseAncestors(p, tree).includes(tagId);
+  };
+  return (items || []).slice().sort((a, b) => (hit(a) === hit(b) ? 0 : (hit(a) ? -1 : 1)));
+}
+
+// _tagBrowseAlsoIn lists the tag IDs for an item's "also in:" line: its own tags
+// except the section it is drawn in and that section's ancestors, which the
+// position already implies.
+function _tagBrowseAlsoIn(item, sectionId, tree) {
+  const drop = new Set();
+  if (sectionId && sectionId !== _TAG_UNTAGGED) {
+    drop.add(sectionId);
+    _tagBrowseAncestors(sectionId, tree).forEach(a => drop.add(a));
+  }
+  return _tileTagIds(item).filter(id => tree.byId[id] && !drop.has(id));
+}
+
+// _tagBrowseSections builds the sections for the web and tablet layout. A section
+// holds its child sections, then the items at its own level: the items in its
+// subtree that no child subtree holds. An item therefore shows once under each
+// branch of each tag it carries, and a section's count is the distinct items under
+// it. Untagged items form a section of their own.
+function _tagBrowseSections(items, tree) {
+  const list = items || [];
+  const sets = list.map(it => _tagBrowseItemSet(it, tree));
+  const build = id => {
+    const kids = tree.kids[id] || [];
+    const node = { id, name: tree.byId[id].name || '', count: 0, direct: 0, items: [], children: kids.map(build) };
+    list.forEach((it, i) => {
+      if (!sets[i].has(id)) return;
+      node.count++;
+      if (_tileTagIds(it).includes(id)) node.direct++;
+      if (!kids.some(k => sets[i].has(k))) node.items.push(it);
+    });
+    return node;
+  };
+  const untagged = { id: _TAG_UNTAGGED, name: '', count: 0, direct: 0, items: [], children: [] };
+  list.forEach((it, i) => { if (!sets[i].size) { untagged.items.push(it); untagged.count++; } });
+  return { tags: tree.roots.map(build), untagged };
+}
+
+// _tagBrowseDrillItems gives the items a drill-down path shows: a tag shows every
+// item in its subtree, once each; the untagged path shows the items with no tag.
+function _tagBrowseDrillItems(items, path, tree) {
+  const last = path && path.length ? path[path.length - 1] : '';
+  if (!last) return [];
+  const list = items || [];
+  if (last === _TAG_UNTAGGED) return list.filter(it => !_tagBrowseItemSet(it, tree).size);
+  return _tagBrowseOrderForTag(list.filter(it => _tagBrowseItemSet(it, tree).has(last)), last, tree);
+}
+
+// _tagBrowseValidPath keeps the leading part of a drill-down path that is a chain
+// of tags, each the child of the one before. An unknown ID or a break ends it. The
+// untagged token is valid only as the whole path.
+function _tagBrowseValidPath(path, tree) {
+  const src = Array.isArray(path) ? path : [];
+  const out = [];
+  for (const id of src) {
+    if (id === _TAG_UNTAGGED) {
+      if (!out.length && src.length === 1) out.push(id);
+      break;
+    }
+    if (!tree.byId[id]) break;
+    if (out.length && tree.byId[id].parent_id !== out[out.length - 1]) break;
+    out.push(id);
+  }
+  return out;
+}
+
+// _tagBrowseCrumbs builds the breadcrumb for a path: the root crumb, then one crumb
+// per level, each with the depth it returns to. Beyond three levels the middle
+// crumbs collapse into one ellipsis, so the first level and the last two stay.
+function _tagBrowseCrumbs(path, tree, labels) {
+  const crumbs = [{ label: labels.root, depth: 0 }];
+  const n = path.length;
+  path.forEach((id, i) => {
+    const hidden = n > _TAG_CRUMB_LEVELS && i > 0 && i < n - 2;
+    if (hidden) {
+      if (!crumbs.some(c => c.ellipsis)) crumbs.push({ ellipsis: true });
+      return;
+    }
+    const label = id === _TAG_UNTAGGED ? labels.untagged : (tree.byId[id] ? tree.byId[id].name : '');
+    crumbs.push({ label, depth: i + 1 });
+  });
+  return crumbs;
+}
+
+function _tagDecodeSegment(s) {
+  try { return decodeURIComponent(s); } catch (_) { return s; }
+}
+
+// _tagHashBuild is the URL hash for a drill-down path: #automata/tags/<id>/<id>
+// for the Automata sub-tab, #automata/automations/tags/<id>/<id> for the
+// Automation sub-tab.
+function _tagHashBuild(scope, path) {
+  const head = '#automata' + (scope === 'automation' ? '/automations' : '') + '/tags';
+  return head + (path || []).map(id => '/' + encodeURIComponent(id)).join('');
+}
+
+// _tagHashParse reads a drill-down hash back into its scope and path. Any other
+// hash gives null.
+function _tagHashParse(hash) {
+  const m = /^#automata(\/automations)?\/tags((?:\/[^/]+)*)\/?$/.exec(String(hash || ''));
+  if (!m) return null;
+  const path = m[2] ? m[2].split('/').slice(1).map(_tagDecodeSegment) : [];
+  return { scope: m[1] ? 'automation' : 'automata', path };
+}
+
+// _tagBrowseDefaultMode reads autonomous.tags.default_match_mode: 'all' narrows,
+// anything else (unset included) is 'any'.
+function _tagBrowseDefaultMode(tagsCfg) {
+  return String((tagsCfg && tagsCfg.default_match_mode) || '').toLowerCase() === 'all' ? 'all' : 'any';
+}
+
+// _tagBrowseDirectVisible reads autonomous.tags.direct_counts_visible.
+function _tagBrowseDirectVisible(tagsCfg) {
+  return !!(tagsCfg && tagsCfg.direct_counts_visible);
+}
+
+// _tagBrowseModeOf resolves the match mode: a stored choice wins, else the default.
+function _tagBrowseModeOf(stored, defaultMode) {
+  if (stored === 'all' || stored === 'any') return stored;
+  return defaultMode === 'all' ? 'all' : 'any';
+}
+
+// _tagBrowseLayout picks the browser layout for a viewport width: the drill-down
+// under 720px, the sections from 720px up. An unknown width reads as wide.
+function _tagBrowseLayout(width) {
+  const w = Number(width);
+  return w > 0 && w < _TAG_DRILL_BELOW ? 'drill' : 'sections';
+}
+
+// _tagBrowseRootOpen: top-level sections start collapsed when there are more top-level tags than the limit.
+function _tagBrowseRootOpen(rootCount) {
+  return !(rootCount > _TAG_COLLAPSE_ABOVE);
+}
+
+// _tagBrowseState holds each scope's browse state: the view, the tag selection and
+// its mode (persisted per viewer), and the backend chips (session only). attn is
+// true while the Attention view is shown (never persisted here; the landing rule
+// and the viewer's override decide it). cfg holds the autonomous.tags settings the
+// browser reads from GET /api/config.
+function _tagBrowseLoad(scope) {
+  const sc = { view: 'list', attn: false, sel: [], mode: '', backends: new Set() };
+  try {
+    const v = JSON.parse(localStorage.getItem('cs_tag_browse_' + scope) || 'null');
+    if (v && typeof v === 'object') {
+      sc.view = v.view === 'tags' ? 'tags' : 'list';
+      sc.sel = Array.isArray(v.sel) ? v.sel.filter(s => typeof s === 'string') : [];
+      sc.mode = v.mode === 'all' || v.mode === 'any' ? v.mode : '';
+    }
+  } catch (_) { /* storage blocked: start from the defaults */ }
+  return sc;
+}
+function _tagBrowseSave(scope) {
+  const sc = _tagBrowse[scope];
+  try { localStorage.setItem('cs_tag_browse_' + scope, JSON.stringify({ view: sc.view, sel: sc.sel, mode: sc.mode })); } catch (_) { /* not kept */ }
+}
+const _tagBrowse = {
+  automata: _tagBrowseLoad('automata'),
+  automation: _tagBrowseLoad('automation'),
+  cfg: { defaultMode: 'any', directCounts: false, defaultView: 'auto', attentionStatuses: ['blocked', 'needs_review', 'paused'], loaded: false },
+  layout: '',
+};
+
+// The old single-select tag dropdown kept one tag under cs_automata_tag_filter
+// (and its sub-tag switch under cs_automata_tag_include_sub). That tag carries over
+// as a one-tag selection, then both keys are removed.
+function _tagBrowseMigrateFilter() {
+  try {
+    const old = localStorage.getItem('cs_automata_tag_filter') || '';
+    if (old && !_tagBrowse.automata.sel.length) {
+      _tagBrowse.automata.sel = [old];
+      _tagBrowseSave('automata');
+    }
+    localStorage.removeItem('cs_automata_tag_filter');
+    localStorage.removeItem('cs_automata_tag_include_sub');
+  } catch (_) { /* storage blocked: nothing to carry over */ }
+}
+_tagBrowseMigrateFilter();
+
+function _tagBrowseMode(scope) {
+  return _tagBrowseModeOf(_tagBrowse[scope].mode, _tagBrowse.cfg.defaultMode);
+}
+
+function _tagBrowseLocationHash() {
+  return (typeof location !== 'undefined' && location.hash) || '';
+}
+
+// _tagBrowseViewOf: a drill-down hash for this scope opens the Tags view, so a
+// deep link lands in the browser.
+function _tagBrowseViewOf(scope) {
+  const h = _tagHashParse(_tagBrowseLocationHash());
+  if (h && h.scope === scope) { _tagBrowse[scope].view = 'tags'; _tagBrowse[scope].attn = false; }
+  return _tagBrowse[scope].view;
+}
+
+function _tagBrowsePath(scope, tree) {
+  const h = _tagHashParse(_tagBrowseLocationHash());
+  if (!h || h.scope !== scope) return [];
+  return _tagBrowseValidPath(h.path, tree);
+}
+
+function _tagBrowseConfigLoad() {
+  if (_tagBrowse.cfg.loaded) return Promise.resolve(_tagBrowse.cfg);
+  return apiFetch('/api/config').then(cfg => {
+    const tg = (cfg && cfg.autonomous && cfg.autonomous.tags) || {};
+    _tagBrowse.cfg = {
+      defaultMode: _tagBrowseDefaultMode(tg), directCounts: _tagBrowseDirectVisible(tg),
+      defaultView: String(tg.default_view || 'auto').toLowerCase(), attentionStatuses: _tagAttentionStatusList(tg.attention_statuses), loaded: true,
+    };
+    return _tagBrowse.cfg;
+  }).catch(() => _tagBrowse.cfg);
+}
+
+// _tagSectionsStored reads the per-viewer open state of the sections.
+function _tagSectionsStored() {
+  try {
+    const m = JSON.parse(localStorage.getItem('cs_tag_sections') || '{}');
+    return m && typeof m === 'object' ? m : {};
+  } catch (_) { return {}; }
+}
+function _tagSectionSave(key, open) {
+  try {
+    const m = _tagSectionsStored();
+    m[key] = !!open;
+    localStorage.setItem('cs_tag_sections', JSON.stringify(m));
+  } catch (_) { /* not kept: the default applies next time */ }
+}
+
+// _tagBrowseBase is the list a tab shows before the tag and facet filters.
+function _tagBrowseBase(scope) {
+  return scope === 'automation' ? automationListVisible(_automationState.list, _automationState) : _automataBaseList();
+}
+
+// _tagFacetBase is the loaded list the facet counts are taken from.
+function _tagFacetBase(scope) {
+  return scope === 'automation' ? (_automationState.list || []) : _automataState.allPrds.filter(p => !p.is_template);
+}
+
+// _tagBrowseItems applies the tag and facet filters to a tab's base list.
+function _tagBrowseItems(scope, base) {
+  const sc = _tagBrowse[scope];
+  const statuses = scope === 'automata' ? [..._automataState.statusFilter] : [];
+  return _tagBrowseFilter(base, { tagIds: sc.sel, mode: _tagBrowseMode(scope), backends: [...sc.backends], statuses }, _tagBrowseTree(_tagsState.list));
+}
+
+function _tagBrowseActiveCount(scope) {
+  const sc = _tagBrowse[scope];
+  let n = sc.sel.length + sc.backends.size;
+  if (scope === 'automata') n += _automataState.statusFilter.size + _automataState.typeFilter.size;
+  return n;
+}
+
+// _tagBrowseShown is the count a tag row shows. The Automata scope uses the server's
+// figure (subtree_count or direct_count from counts=true); the Automation scope,
+// whose items are Automations, counts from the loaded list.
+function _tagBrowseShown(scope, id, clientCount, field) {
+  if (scope === 'automata') {
+    if (id === _TAG_UNTAGGED) {
+      const u = _tagsState.untagged;
+      if (u && typeof u.count === 'number') return u.count;
+    } else {
+      const tg = _tagsState.byId[id];
+      if (tg && typeof tg[field] === 'number') return tg[field];
+    }
+  }
+  return clientCount;
+}
+
+// ── Pinned groups: Needs attention and Running ───────────────────────────────
+// Two groups sit above the tag browser in both tabs. They are views, not moves: an
+// item in a group still appears in its tag sections. An empty group takes no
+// height, and with both empty the pinned area is not drawn. The header's
+// Attention (N) button opens the Attention view, which shows only these groups.
+
+const _TAG_ATTENTION_DEFAULT = ['blocked', 'needs_review', 'paused'];
+const _TAG_RUNNING_MAX = 5;        // running lines shown before "+N more"
+const _TAG_LIVE_DEBOUNCE_MS = 250; // an event burst waits this long, then refetches once
+
+// _tagAttentionStatusList reads autonomous.tags.attention_statuses (an array or a
+// comma-separated string). An empty or missing value is the default list.
+function _tagAttentionStatusList(raw) {
+  const parts = Array.isArray(raw) ? raw : String(raw == null ? '' : raw).split(',');
+  const out = parts.map(s => String(s).trim().toLowerCase()).filter(Boolean);
+  return out.length ? [...new Set(out)] : _TAG_ATTENTION_DEFAULT.slice();
+}
+
+// _tagHeldForReview: an Automaton with a task held for operator review carries a
+// non-empty review_needed.
+function _tagHeldForReview(item) {
+  const r = item && item.review_needed;
+  return Array.isArray(r) ? r.length > 0 : !!r;
+}
+
+// _tagAttentionMembers picks the Automata that need attention: a status in the
+// list, or a task held for review. Each Automaton is listed once; templates never.
+function _tagAttentionMembers(items, statuses) {
+  const set = new Set(_tagAttentionStatusList(statuses));
+  const seen = new Set();
+  return (items || []).filter(it => {
+    if (!it || !it.id || it.is_template || seen.has(it.id)) return false;
+    if (!(set.has(String(it.status || '').toLowerCase()) || _tagHeldForReview(it))) return false;
+    seen.add(it.id);
+    return true;
+  });
+}
+
+// _tagRunningStrip picks the running Automata for the strip: at most max lines,
+// and the number left over for "+N more". total is the server's running count
+// when the fetched page is shorter than the whole set.
+function _tagRunningStrip(items, total, max) {
+  const running = (items || []).filter(it => it && it.id && !it.is_template && it.status === 'running');
+  const cap = max > 0 ? max : _TAG_RUNNING_MAX;
+  const shown = running.slice(0, cap);
+  return { shown, more: Math.max(0, Math.max(Number(total) || 0, running.length) - shown.length) };
+}
+
+// _tagLandingDecide picks the view a page opens on. A viewer's remembered choice
+// wins, then a forced default_view, then auto: attention when something needs it.
+function _tagLandingDecide(defaultView, override, attentionCount) {
+  if (override === 'attention' || override === 'tags') return override;
+  const d = String(defaultView || '').toLowerCase();
+  if (d === 'attention' || d === 'tags') return d;
+  return attentionCount >= 1 ? 'attention' : 'tags';
+}
+
+function _tagLandingOverride() {
+  try {
+    const v = localStorage.getItem('cs_tag_landing');
+    return v === 'attention' || v === 'tags' ? v : '';
+  } catch (_) { return ''; }
+}
+function _tagLandingSave(view) {
+  try { localStorage.setItem('cs_tag_landing', view === 'attention' ? 'attention' : 'tags'); } catch (_) { /* not kept */ }
+}
+
+// _tagLanding holds the landing decision. It is made once, when the first list
+// paints, and never changes while the page is open.
+const _tagLanding = { view: '' };
+function _tagLandingEnsure(attentionCount) {
+  if (_tagLanding.view) return _tagLanding.view;
+  _tagLanding.view = _tagLandingDecide(_tagBrowse.cfg.defaultView, _tagLandingOverride(), attentionCount);
+  const on = _tagLanding.view === 'attention';
+  _tagBrowse.automata.attn = on;
+  _tagBrowse.automation.attn = on;
+  return _tagLanding.view;
+}
+
+// _tagPinned holds the last attention and running reads. null means that read
+// failed (or the all-servers view is on), and the group is built from the loaded list.
+const _tagPinned = { attention: null, running: null };
+function _tagPinnedLoad() {
+  if (state.activeServer === 'all') {
+    _tagPinned.attention = null;
+    _tagPinned.running = null;
+    return Promise.resolve(_tagPinned);
+  }
+  return Promise.all([
+    apiFetch('/api/autonomous/attention').catch(() => null),
+    apiFetch('/api/autonomous/prds?status=running&limit=' + _TAG_RUNNING_MAX).catch(() => null),
+  ]).then(([att, run]) => {
+    _tagPinned.attention = att && Array.isArray(att.items) ? att : null;
+    _tagPinned.running = run && Array.isArray(run.prds) ? { items: run.prds, total: run.total || run.prds.length } : null;
+    return _tagPinned;
+  });
+}
+
+function _tagLoadedAutomata() {
+  return (_automataState.allPrds || []).filter(p => !p.is_template);
+}
+function _tagAttentionGroup() {
+  const att = _tagPinned.attention;
+  if (att) return _tagAttentionMembers(att.items, att.statuses);
+  return _tagAttentionMembers(_tagLoadedAutomata(), _tagBrowse.cfg.attentionStatuses);
+}
+function _tagRunningGroup() {
+  const run = _tagPinned.running;
+  if (run) return _tagRunningStrip(run.items, run.total, _TAG_RUNNING_MAX);
+  return _tagRunningStrip(_tagLoadedAutomata(), 0, _TAG_RUNNING_MAX);
+}
+
+// The live refresh. tag_update and prd_update frames both land here; a burst of
+// them waits for one quiet window and then refetches once: the tag counts, the
+// attention and running reads, and the list, all through the tab's own loader.
+// The timer lives on window and is cleared before it is set, so repeated frames
+// and re-renders never stack timers. With the stream down no frame arrives, and
+// the loaders' own poll does the same refetch.
+function _tagLiveSchedule() {
+  clearTimeout(window._tagLiveTimer);
+  window._tagLiveTimer = setTimeout(() => {
+    window._tagLiveTimer = 0;
+    _tagLiveRefresh();
+  }, _TAG_LIVE_DEBOUNCE_MS);
+}
+function _tagLiveRefresh() {
+  let list;
+  if (state.activeView === 'sessions' || state.activeView === 'session-detail') list = _sessionTagsRefresh();
+  else if (_automationTabActive()) list = refreshAutomationView();
+  else if (document.getElementById('automataPanel')) list = loadAutomataPanel();
+  else if (_tagsState.loaded) list = _tagsLoad(true);
+  return Promise.resolve(list).then(() => {
+    if (document.getElementById('automataTagRegistryPanel')) loadAutomataTagRegistryPanel();
+  });
+}
+
+// ── Drawing ──────────────────────────────────────────────────────────────────
+
+function _tagViewSwitchHTML(scope, view) {
+  const btn = (v, label) => `<button type="button" class="tag-view-btn${view === v ? ' active' : ''}" aria-pressed="${view === v}" onclick="tagBrowseSetView('${scope}','${v}')">${escHtml(label)}</button>`;
+  // The Attention (N) header is always drawn, so the count is visible at zero.
+  const attention = btn('attention', t('tag_view_attention', [_tagAttentionGroup().length]));
+  return `<div class="tag-view-switch" role="group">${attention}${btn('list', t('tag_view_list'))}${btn('tags', t('tag_view_tags'))}</div>`;
+}
+
+// _tagPinnedRowHTML is one Automaton line in a pinned group; a tap opens it.
+function _tagPinnedRowHTML(it, reason) {
+  const status = String(it.status || 'draft');
+  const label = t('automata_status_' + status) || status;
+  const open = `renderPRDDetailView(${escHtml(JSON.stringify(it.id))})`;
+  const why = reason ? `<span class="tag-pinned-reason">${escHtml(reason)}</span>` : '';
+  return `<button type="button" class="tag-pinned-row" onclick="${open}"><span class="tag-pinned-title">${escHtml(it.title || it.id)}</span><span class="tag-pinned-status automata-filter-badge status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${escHtml(label)}</span>${why}</button>`;
+}
+
+// _tagPinnedReason: the blocked reason where one exists, else how many tasks are
+// held for review.
+function _tagPinnedReason(it) {
+  if (it.blocked_reason) return it.blocked_reason;
+  if (_tagHeldForReview(it)) return t('tag_attention_review_held', [Array.isArray(it.review_needed) ? it.review_needed.length : 1]);
+  return '';
+}
+
+function _tagPinnedGroupHTML(key, title, count, rowsHtml, open, footHtml) {
+  return `<details class="tag-section tag-pinned-group tag-pinned-${key}" data-tag-section="pinned:${key}"${open ? ' open' : ''} ontoggle="tagBrowseSectionToggle(this,'pinned','${key}')"><summary class="tag-section-head"><span class="tag-section-name">${escHtml(title)}</span><span class="tag-section-count">${count}</span></summary><div class="tag-section-body tag-pinned-rows">${rowsHtml}${footHtml || ''}</div></details>`;
+}
+
+// _tagPinnedHTML draws the Needs attention group (expanded) and the Running strip
+// (one line each, at most five, then "+N more"; closed on a phone). An empty group
+// is not drawn, and with both empty the whole area is hidden.
+function _tagPinnedHTML() {
+  const att = _tagAttentionGroup();
+  const run = _tagRunningGroup();
+  if (!att.length && !run.shown.length) return '';
+  const stored = _tagSectionsStored();
+  const isOpen = (key, dflt) => Object.prototype.hasOwnProperty.call(stored, 'pinned:' + key) ? !!stored['pinned:' + key] : dflt;
+  const attHtml = att.length
+    ? _tagPinnedGroupHTML('attention', t('tag_attention_title'), att.length, att.map(it => _tagPinnedRowHTML(it, _tagPinnedReason(it))).join(''), isOpen('attention', true))
+    : '';
+  const more = run.more ? `<div class="tag-pinned-more">${escHtml(t('tag_running_more', [run.more]))}</div>` : '';
+  const phone = _tagBrowseLayout(_tileViewportWidth()) === 'drill';
+  const runHtml = run.shown.length
+    ? _tagPinnedGroupHTML('running', t('tag_running_title'), run.shown.length + run.more, run.shown.map(it => _tagPinnedRowHTML(it, '')).join(''), isOpen('running', !phone), more)
+    : '';
+  return `<div class="tag-pinned">${attHtml}${runHtml}</div>`;
+}
+
+function _tagNoMatchesHTML(scope, base) {
+  const n = _tagBrowseActiveCount(scope);
+  const label = n ? t('tag_browse_no_matches', [n]) : t('tag_browse_no_matches_plain');
+  const showing = t('tag_browse_showing', [0, base]);
+  return `<div class="list-state-empty tag-no-matches"><button type="button" class="tag-no-matches-btn" onclick="tagBrowseClear('${scope}')">${escHtml(label)}</button><div class="tag-showing">${escHtml(showing)}</div></div>`;
+}
+
+// _tagAlsoInHTML draws the "also in:" line of a tile. Each name taps through to
+// its tag.
+function _tagAlsoInHTML(scope, item, sectionId, tree) {
+  const ids = _tagBrowseAlsoIn(item, sectionId, tree);
+  if (!ids.length) return '';
+  const links = ids.map(id => `<button type="button" class="work-tile-also-link" onclick="event.stopPropagation();tagBrowseGo('${escJsAttr(scope)}','${escJsAttr(id)}')">${escHtml(tree.byId[id].name)}</button>`).join(' ');
+  return `<div class="work-tile-also"><span class="work-tile-also-label">${escHtml(t('tag_browse_also_in'))}</span> ${links}</div>`;
+}
+
+function _tagOrderedTiles(ctx, node) {
+  return _tagBrowseOrderForTag(node.items, node.id, ctx.tree)
+    .map(it => ctx.renderTile(it, _tagAlsoInHTML(ctx.scope, it, node.id, ctx.tree)))
+    .join('');
+}
+
+function _tagSectionHTML(ctx, node, depth, defaultOpen) {
+  const key = ctx.scope + ':' + node.id;
+  const open = Object.prototype.hasOwnProperty.call(ctx.stored, key) ? !!ctx.stored[key] : defaultOpen;
+  const name = node.id === _TAG_UNTAGGED ? t('tag_browse_untagged') : node.name;
+  const count = _tagBrowseShown(ctx.scope, node.id, node.count, 'subtree_count');
+  const direct = ctx.direct ? _tagBrowseShown(ctx.scope, node.id, node.direct, 'direct_count') : null;
+  const tip = direct == null ? '' : ` title="${escHtml(t('tag_browse_direct_count', [direct]))}"`;
+  const kids = node.children.map(c => _tagSectionHTML(ctx, c, depth + 1, true)).join('');
+  const tiles = node.items.length ? `<div class="work-tile-grid tag-section-items">${_tagOrderedTiles(ctx, node)}</div>` : '';
+  return `<details class="tag-section tag-section-level-${Math.min(depth, 3)}" data-tag-section="${escHtml(key)}"${open ? ' open' : ''} ontoggle="tagBrowseSectionToggle(this,'${escJsAttr(ctx.scope)}','${escJsAttr(node.id)}')"><summary class="tag-section-head"><span class="tag-section-name">${escHtml(name)}</span>${_tagPendingBadgeHTML(_tagsState.byId[node.id])}<span class="tag-section-count"${tip}>${count}${_tagStaleMarkHTML()}</span></summary><div class="tag-section-body">${kids}${tiles}</div></details>`;
+}
+
+// _tagSectionsHTML draws the web and tablet layout: a collapsible section per top-
+// level tag, nested sections inside, and the Untagged section last.
+function _tagSectionsHTML(scope, items, tree, renderTile) {
+  const sec = _tagBrowseSections(items, tree);
+  const ctx = { scope, tree, renderTile, stored: _tagSectionsStored(), direct: _tagBrowse.cfg.directCounts };
+  const rootOpen = _tagBrowseRootOpen(tree.roots.length);
+  const tags = sec.tags.map(n => _tagSectionHTML(ctx, n, 0, rootOpen)).join('');
+  return `<div class="tag-sections">${tags}${_tagSectionHTML(ctx, sec.untagged, 0, rootOpen)}</div>`;
+}
+
+function _tagDrillRowHTML(scope, id, name, count) {
+  return `<button type="button" class="tag-drill-row" onclick="tagBrowseEnter('${escJsAttr(scope)}','${escJsAttr(id)}')"><span class="tag-drill-name">${escHtml(name)}</span><span class="tag-section-count">${count}${_tagStaleMarkHTML()}</span><span class="tag-drill-chev" aria-hidden="true">›</span></button>`;
+}
+
+// _tagDrillHTML draws the drill-down under 720px: the breadcrumb, a back row, the
+// child tags as rows (Untagged last at the top level) and, under a tag, its items.
+function _tagDrillHTML(scope, items, tree, renderTile) {
+  const path = _tagBrowsePath(scope, tree);
+  const last = path.length ? path[path.length - 1] : '';
+  const labels = { root: t('tag_browse_root'), untagged: t('tag_browse_untagged') };
+  const crumbs = _tagBrowseCrumbs(path, tree, labels).map((c, i) => {
+    const sep = i ? '<span class="tag-crumb-sep" aria-hidden="true">›</span>' : '';
+    if (c.ellipsis) return `${sep}<span class="tag-crumb-ellipsis" aria-hidden="true">…</span>`;
+    return `${sep}<button type="button" class="tag-crumb" onclick="tagBrowseCrumb('${escJsAttr(scope)}',${c.depth})">${escHtml(c.label)}</button>`;
+  }).join('');
+  const back = path.length
+    ? `<button type="button" class="tag-drill-back" onclick="tagBrowseUp('${escJsAttr(scope)}')">‹ ${escHtml(t('tag_browse_back'))}</button>`
+    : '';
+  const counts = _tagBrowseCounts(items, tree);
+  const childIds = last ? (tree.kids[last] || []) : tree.roots;
+  const rows = childIds.map(id => _tagDrillRowHTML(scope, id, tree.byId[id].name || '', _tagBrowseShown(scope, id, counts[id] || 0, 'subtree_count'))).join('');
+  const untaggedRow = last ? '' : _tagDrillRowHTML(scope, _TAG_UNTAGGED, t('tag_browse_untagged'), _tagBrowseShown(scope, _TAG_UNTAGGED, counts[_TAG_UNTAGGED] || 0));
+  let title = '';
+  let tiles = '';
+  if (last) {
+    const name = last === _TAG_UNTAGGED ? t('tag_browse_untagged') : tree.byId[last].name;
+    const drilled = _tagBrowseDrillItems(items, path, tree);
+    const count = _tagBrowseShown(scope, last, drilled.length, 'subtree_count');
+    title = `<div class="tag-drill-title"><span class="tag-drill-name">${escHtml(name)}</span><span class="tag-section-count">${count}</span></div>`;
+    const grid = drilled.length
+      ? _tileGridHTML(drilled.map(it => renderTile(it, _tagAlsoInHTML(scope, it, last, tree))).join(''))
+      : `<div class="tag-showing">${escHtml(t('tag_browse_no_items'))}</div>`;
+    tiles = `<div class="tag-drill-label">${escHtml(t('tag_browse_items_label'))}</div>${grid}`;
+  }
+  return `<nav class="tag-crumbs" aria-label="${escHtml(t('tag_browse_crumbs_label'))}">${crumbs}</nav>${back}${title}<div class="tag-drill-rows">${rows}${untaggedRow}</div>${tiles}`;
+}
+
+// _tagBrowseMountHTML draws the body of a list. Both tabs call it, so the two lists
+// browse the same way.
+//   items      the list after the tag and facet filters
+//   base       the count before those filters, for "Showing X of Y"
+//   renderTile(item, alsoInHtml) returns the tile markup
+//   emptyHtml  the message for an empty tab
+// The List view, and any active filter, draw one flat tile grid. The Tags view
+// draws the sections on web and tablet and the drill-down under 720px. The pinned
+// groups sit above all of them; the Attention view draws only the pinned groups.
+function _tagBrowseMountHTML(scope, items, base, renderTile, emptyHtml) {
+  return _tagRegistryBlockHTML(_tagsState.registry) + _tagBrowseBodyHTML(scope, items, base, renderTile, emptyHtml);
+}
+
+// _tagBrowseBodyHTML is the list body under the registry status block.
+function _tagBrowseBodyHTML(scope, items, base, renderTile, emptyHtml) {
+  _tagLandingEnsure(_tagAttentionGroup().length);
+  const view = _tagBrowseViewOf(scope);
+  const attn = _tagBrowse[scope].attn;
+  const pinned = _tagPinnedHTML();
+  if (attn) {
+    const none = pinned ? '' : `<div class="tag-showing tag-attention-none">${escHtml(t('tag_attention_none'))}</div>`;
+    return _tagViewSwitchHTML(scope, 'attention') + pinned + none;
+  }
+  if (!base) return pinned + emptyHtml;
+  const sw = _tagViewSwitchHTML(scope, view) + pinned;
+  if (!items.length) return sw + _tagNoMatchesHTML(scope, base);
+  const active = _tagBrowseActiveCount(scope);
+  if (view === 'list' || active) {
+    const note = active ? `<div class="tag-showing">${escHtml(t('tag_browse_showing', [items.length, base]))}</div>` : '';
+    return sw + note + _tileGridHTML(items.map(it => renderTile(it, '')).join(''));
+  }
+  const tree = _tagBrowseTree(_tagsState.list);
+  if (_tagBrowseLayout(_tileViewportWidth()) === 'drill') return sw + _tagDrillHTML(scope, items, tree, renderTile);
+  return sw + _tagSectionsHTML(scope, items, tree, renderTile);
+}
+
+// ── Facets and the filter bar ────────────────────────────────────────────────
+
+// _tagFacetsHTML draws the facet controls: the tag multi-select with its ANY/ALL
+// toggle, the backend chips (Automata) and the status chips. Each option carries a
+// count from the loaded list with the other facets applied.
+function _tagFacetsHTML(scope, tagsOpen) {
+  const sc = _tagBrowse[scope];
+  const tree = _tagBrowseTree(_tagsState.list);
+  const all = _tagFacetBase(scope);
+  const statusSel = scope === 'automata' ? [..._automataState.statusFilter] : [..._automationState.statusFilter];
+  const mode = _tagBrowseMode(scope);
+  const tagCounts = _tagBrowseCounts(_tagBrowseFilter(all, { backends: [...sc.backends], statuses: statusSel }, tree), tree);
+  const rows = _tagTreeOrder(_tagsState.list).map(({ tag, depth }) => `<label class="tag-multi-row" style="padding-left:${depth * 14}px;"><input type="checkbox" value="${escHtml(tag.id)}" ${sc.sel.includes(tag.id) ? 'checked' : ''} onchange="tagBrowseToggleTag('${escJsAttr(scope)}','${escJsAttr(tag.id)}',this.checked)"><span class="tag-multi-name">${escHtml(tag.name)}</span><span class="tag-facet-count">${tagCounts[tag.id] || 0}</span></label>`).join('');
+  const modeLabel = mode === 'all' ? t('tag_browse_match_all') : t('tag_browse_match_any');
+  const tagGroup = `<div class="tag-facet-group"><details class="tag-multi"${tagsOpen ? ' open' : ''}><summary class="tag-multi-summary">${escHtml(t('tag_browse_filter_tags'))}${sc.sel.length ? ` (${sc.sel.length})` : ''}</summary><div class="tag-multi-list">${rows || `<div class="tag-multi-empty">${escHtml(t('tag_picker_empty'))}</div>`}</div></details><button type="button" class="tag-mode-btn" aria-pressed="${mode === 'all'}" title="${escHtml(t('tag_browse_mode_title'))}" onclick="tagBrowseToggleMode('${escJsAttr(scope)}')">${escHtml(modeLabel)}</button></div>`;
+  let backendGroup = '';
+  if (scope === 'automata') {
+    const names = [...new Set(all.map(p => p.backend || '').filter(Boolean))].sort();
+    const counts = _tagBrowseValueCounts(_tagBrowseFilter(all, { tagIds: sc.sel, mode, statuses: statusSel }, tree), 'backend');
+    if (names.length) {
+      backendGroup = `<div class="automata-badge-group tag-facet-backends">${names.map(n => {
+        const on = sc.backends.has(n);
+        return `<button type="button" class="automata-filter-badge backend-chip${on ? ' active' : ''}" aria-pressed="${on}" onclick="tagBrowseToggleBackend('automata','${escJsAttr(n)}')">${escHtml(n)} <span class="tag-facet-count">${counts[n] || 0}</span></button>`;
+      }).join('')}</div>`;
+    }
+  }
+  const statusCounts = _tagBrowseValueCounts(_tagBrowseFilter(all, { tagIds: sc.sel, mode, backends: [...sc.backends] }, tree), 'status');
+  const badge = (s, label, onclick, extra) => {
+    const on = statusSel.includes(s);
+    return `<button type="button" class="automata-filter-badge status-${s}${on ? ' active' : ''}"${extra || ''} onclick="${onclick}('${s}')">${escHtml(label)} <span class="tag-facet-count">${statusCounts[s] || 0}</span></button>`;
+  };
+  let statusBadges;
+  if (scope === 'automata') {
+    const act = _TAG_AUTOMATA_STATUS_BADGES.active.map(s => badge(s, t('automata_status_' + s) || s, 'toggleAutomataStatusFilter')).join('');
+    const hist = _TAG_AUTOMATA_STATUS_BADGES.history.map(s => badge(s, t('automata_status_' + s) || s, 'toggleAutomataStatusFilter', ' style="opacity:0.7;"')).join('');
+    statusBadges = act + `<span style="display:inline-block;width:1px;background:var(--border);height:16px;margin:0 4px;vertical-align:middle;"></span>` + hist;
+  } else {
+    statusBadges = _AUTOMATION_STATUSES.map(s => badge(s, t('automation_status_' + s), 'toggleAutomationStatusFilter')).join('');
+  }
+  return tagGroup + backendGroup + `<div class="automata-badge-group tag-facet-statuses">${statusBadges}</div>`;
+}
+
+function _tagFilterPhoneHTML(scope) {
+  return `<button type="button" class="tag-filter-phone-btn" aria-haspopup="dialog" aria-expanded="false" onclick="tagFilterSheet('${escJsAttr(scope)}')">${escHtml(t('tag_browse_filters', [_tagBrowseActiveCount(scope)]))}</button>`;
+}
+
+// _tagFilterBarHTML is the filter bar of a list. On a phone one Filters button
+// opens the controls as a bottom sheet; wider screens show the controls in the bar.
+// searchHtml, extraHtml and footHtml are the tab's own controls.
+function _tagFilterBarHTML(scope, searchHtml, extraHtml, footHtml) {
+  return `<div id="tagFilterPhone-${scope}" class="tag-filter-phone-row">${_tagFilterPhoneHTML(scope)}</div>` +
+    `<div id="tagFilterSheet-${scope}" class="tag-filter-sheet"><div class="tag-filter-sheet-head"><span>${escHtml(t('tag_browse_filter_head'))}</span><button type="button" class="tag-filter-done" onclick="tagFilterSheet('${scope}')">${escHtml(t('tag_browse_done'))}</button></div>` +
+    `${searchHtml || ''}${extraHtml || ''}<div id="tagFacets-${scope}" class="tag-facets">${_tagFacetsHTML(scope, false)}</div>${footHtml || ''}</div>`;
+}
+
+// _tagFacetsRefresh redraws a scope's facet controls and its phone button. The tag
+// dropdown keeps its open state across the redraw.
+function _tagFacetsRefresh(scope) {
+  const wrap = document.getElementById('tagFacets-' + scope);
+  const phone = document.getElementById('tagFilterPhone-' + scope);
+  const open = !!(wrap && wrap.querySelector && wrap.querySelector('details.tag-multi[open]'));
+  if (wrap) wrap.innerHTML = _tagFacetsHTML(scope, open);
+  if (phone) phone.innerHTML = _tagFilterPhoneHTML(scope);
+}
+
+// _tagBrowseRepaint redraws a scope's list and its facets.
+function _tagBrowseRepaint(scope) {
+  if (scope === 'automation') _automationRenderCards();
+  else _automataRenderCards();
+  _tagFacetsRefresh(scope);
+}
+
+function _tagBrowseRepaintVisible() {
+  if (document.getElementById('automataPanel')) _tagBrowseRepaint('automata');
+  if (document.getElementById('automationPanel')) _tagBrowseRepaint('automation');
+}
+
+// _tagBrowseNavigate moves the drill-down to a path by setting the hash, so the
+// back button and a copied link both return to it.
+function _tagBrowseHref(hash) {
+  return (typeof location !== 'undefined' ? location.pathname + location.search : '') + hash;
+}
+function _tagBrowseNavigate(scope, path) {
+  _tagBrowse[scope].view = 'tags';
+  _tagBrowse[scope].attn = false;
+  _tagBrowseSave(scope);
+  const hash = _tagHashBuild(scope, path);
+  if (_tagBrowseLocationHash() !== hash) {
+    try { history.pushState({ view: 'autonomous', sessionId: null, tagBrowse: scope }, '', _tagBrowseHref(hash)); } catch (_) { /* no history: the path still draws */ }
+  }
+  _tagBrowseRepaint(scope);
+}
+function _tagBrowseClearHash(scope) {
+  const h = _tagHashParse(_tagBrowseLocationHash());
+  if (!h || h.scope !== scope) return;
+  try { history.replaceState(history.state, '', _tagBrowseHref('')); } catch (_) { /* keep the hash */ }
+}
+
+window.tagBrowseSetView = function(scope, view) {
+  // Choosing a view is the viewer's override of the landing rule.
+  _tagBrowse[scope].attn = view === 'attention';
+  _tagLandingSave(view);
+  if (view === 'attention') { _tagBrowseClearHash(scope); _tagBrowseRepaint(scope); return; }
+  _tagBrowse[scope].view = view === 'tags' ? 'tags' : 'list';
+  if (_tagBrowse[scope].view === 'list') _tagBrowseClearHash(scope);
+  _tagBrowseSave(scope);
+  _tagBrowseRepaint(scope);
+};
+
+// tagBrowseGo opens a tag: on a phone it moves the drill-down to the tag; on web and
+// tablet it opens the sections above it and scrolls to it.
+window.tagBrowseGo = function(scope, tagId) {
+  const tree = _tagBrowseTree(_tagsState.list);
+  if (!tree.byId[tagId]) return;
+  const path = _tagBrowseAncestors(tagId, tree).reverse().concat([tagId]);
+  if (_tagBrowseLayout(_tileViewportWidth()) === 'drill') { _tagBrowseNavigate(scope, path); return; }
+  path.forEach(id => _tagSectionSave(scope + ':' + id, true));
+  _tagBrowse[scope].view = 'tags';
+  _tagBrowse[scope].attn = false;
+  _tagBrowseSave(scope);
+  _tagBrowseRepaint(scope);
+  setTimeout(() => {
+    const el = document.querySelector(`[data-tag-section="${scope}:${tagId}"]`);
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, 0);
+};
+window.tagBrowseEnter = function(scope, id) {
+  const tree = _tagBrowseTree(_tagsState.list);
+  _tagBrowseNavigate(scope, _tagBrowsePath(scope, tree).concat([id]));
+};
+window.tagBrowseUp = function(scope) {
+  const tree = _tagBrowseTree(_tagsState.list);
+  _tagBrowseNavigate(scope, _tagBrowsePath(scope, tree).slice(0, -1));
+};
+window.tagBrowseCrumb = function(scope, depth) {
+  const tree = _tagBrowseTree(_tagsState.list);
+  _tagBrowseNavigate(scope, _tagBrowsePath(scope, tree).slice(0, depth));
+};
+window.tagBrowseSectionToggle = function(el, scope, id) {
+  _tagSectionSave(scope + ':' + id, el.open);
+};
+window.tagBrowseToggleTag = function(scope, id, on) {
+  const sc = _tagBrowse[scope];
+  const i = sc.sel.indexOf(id);
+  if (on && i < 0) sc.sel.push(id);
+  if (!on && i >= 0) sc.sel.splice(i, 1);
+  _tagBrowseSave(scope);
+  _tagBrowseRepaint(scope);
+};
+window.tagBrowseToggleMode = function(scope) {
+  _tagBrowse[scope].mode = _tagBrowseMode(scope) === 'all' ? 'any' : 'all';
+  _tagBrowseSave(scope);
+  _tagBrowseRepaint(scope);
+};
+window.tagBrowseToggleBackend = function(scope, name) {
+  const set = _tagBrowse[scope].backends;
+  if (set.has(name)) set.delete(name); else set.add(name);
+  _tagBrowseRepaint(scope);
+};
+// tagBrowseClear drops every facet of a scope. The Automata status and type filters
+// go too, and the status filter is refetched because the server applies it.
+window.tagBrowseClear = function(scope) {
+  const sc = _tagBrowse[scope];
+  const hadStatus = scope === 'automata' && _automataState.statusFilter.size > 0;
+  sc.sel = [];
+  sc.backends.clear();
+  if (scope === 'automata') {
+    _automataState.statusFilter.clear();
+    _automataState.typeFilter.clear();
+    document.querySelectorAll('#automataFilterBar .automata-filter-badge.active').forEach(b => b.classList.remove('active'));
+  }
+  _tagBrowseSave(scope);
+  _tagBrowseRepaint(scope);
+  if (hadStatus) loadAutomataPanel();
+};
+window.tagFilterSheet = function(scope) {
+  const el = document.getElementById('tagFilterSheet-' + scope);
+  if (!el) return;
+  const open = !el.classList.contains('is-open');
+  el.classList.toggle('is-open', open);
+  const btn = document.querySelector(`#tagFilterPhone-${scope} .tag-filter-phone-btn`);
+  if (btn) btn.setAttribute('aria-expanded', String(open));
+};
+
+// _tagBrowseOnResize redraws the lists when the width crosses 720px, since that
+// swaps the drill-down for the sections. It runs from the one resize listener the
+// tile layout already binds.
+function _tagBrowseOnResize() {
+  const now = _tagBrowseLayout(_tileViewportWidth());
+  if (now === _tagBrowse.layout) return;
+  _tagBrowse.layout = now;
+  _tagBrowseRepaintVisible();
+}
+
+// ── Tag registry status ──────────────────────────────────────────────────────
+// The shared registry (`registry` on the tag list reply) names the role this node
+// plays and the keeper it follows. A standalone node shows nothing. A peer whose
+// keeper cannot be reached shows its last copy: a banner, a stale mark on every
+// count, and the edits that need the keeper disabled. Create stays enabled, and a
+// tag the keeper has not taken yet shows pending sync. Merge and removal notes stay
+// listed until they are dismissed.
+
+// _tagRegistryActive is true when this node shares the registry with a keeper.
+function _tagRegistryActive(reg) {
+  return !!reg && (reg.role === 'keeper' || reg.role === 'peer');
+}
+
+// _tagRegistryStale is true while a peer shows its last copy of the registry.
+function _tagRegistryStale(reg) {
+  return _tagRegistryActive(reg) && !!reg.stale;
+}
+
+// _tagRegistryEditsBlocked is true while the edits that need the keeper (rename,
+// re-parent, recolor, delete) must stay disabled.
+function _tagRegistryEditsBlocked() {
+  return _tagRegistryStale(_tagsState.registry);
+}
+
+function _tagRegistryPausedText() {
+  return _tagT('tag_registry_edits_paused', 'Rename, move, recolor and delete are paused until the keeper is reachable again. Creating a tag still works and shows pending sync until the keeper has it.');
+}
+
+// _tagRegistryTimeText formats the time of the last copy; a missing or bad time
+// says so rather than showing a date of zero.
+function _tagRegistryTimeText(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d.getTime())) return _tagT('tag_registry_time_unknown', 'an unknown time');
+  return d.toLocaleString();
+}
+
+// _tagRegistryStatusLine names the role and the keeper, or '' for a standalone node.
+function _tagRegistryStatusLine(reg) {
+  if (!_tagRegistryActive(reg)) return '';
+  const role = reg.role === 'keeper'
+    ? _tagT('tag_registry_role_keeper', 'keeper')
+    : _tagT('tag_registry_role_peer', 'peer');
+  const text = _tagT('tag_registry_status', 'Shared registry: %1$s · keeper: %2$s', [role, reg.keeper || '']);
+  return `<div class="tag-registry-line">${escHtml(text)}</div>`;
+}
+
+// _tagRegistryBannerHTML is the stale banner, or '' while the copy is current.
+function _tagRegistryBannerHTML(reg) {
+  if (!_tagRegistryStale(reg)) return '';
+  const when = _tagRegistryTimeText(reg.last_synced_at);
+  const text = _tagT('tag_registry_stale_banner', 'Showing the last copy from %1$s; the keeper is unreachable', [when]);
+  return `<div class="tag-registry-banner" role="status">${escHtml(text)}</div>`;
+}
+
+// _tagStaleMarkHTML marks a count drawn from the last copy; '' while the copy is current.
+function _tagStaleMarkHTML() {
+  if (!_tagRegistryStale(_tagsState.registry)) return '';
+  const tip = _tagT('tag_registry_stale_tip', 'Count from the last copy; the keeper is unreachable');
+  return `<span class="tag-stale-mark" title="${escHtml(tip)}">${escHtml(_tagT('tag_registry_stale_mark', 'stale'))}</span>`;
+}
+
+// _tagPendingBadgeHTML marks a tag this node created while the keeper was unreachable.
+function _tagPendingBadgeHTML(tg) {
+  if (!tg || !tg.pending_sync) return '';
+  return `<span class="tag-pending-badge">${escHtml(_tagT('tag_registry_pending_sync', 'pending sync'))}</span>`;
+}
+
+// _tagRegistryNotesHTML lists the merge and removal notes, each with a Dismiss
+// button. A note names a tag, so the whole line is escaped like every other value.
+function _tagRegistryNotesHTML(reg) {
+  const notes = (reg && reg.notes) || [];
+  if (!_tagRegistryActive(reg) || !notes.length) return '';
+  return notes.map(n => {
+    const name = n.name || '';
+    const text = n.kind === 'removed_on_keeper'
+      ? _tagT('tag_registry_note_removed', 'Tag %1$s was deleted on the keeper while this node still had Automata under it', [name])
+      : _tagT('tag_registry_note_merged', 'Tag %1$s was created on two nodes while they were apart and has been merged', [name]);
+    const dismiss = _tagT('tag_registry_note_dismiss', 'Dismiss');
+    return `<div class="tag-registry-note" data-note-id="${escHtml(n.id)}"><span class="tag-registry-note-text">${escHtml(text)}</span><button type="button" class="btn-secondary" style="font-size:10px;padding:1px 8px;" onclick="tagRegistryNoteDismiss('${escJsAttr(n.id)}')">${escHtml(dismiss)}</button></div>`;
+  }).join('');
+}
+
+// _tagRegistryBlockHTML is the registry status for the tag browser header and the
+// Settings panel: the role line, the stale banner and the notes. '' when standalone.
+function _tagRegistryBlockHTML(reg) {
+  const body = _tagRegistryStatusLine(reg) + _tagRegistryBannerHTML(reg) + _tagRegistryNotesHTML(reg);
+  return body ? `<div class="tag-registry-block">${body}</div>` : '';
+}
+
+// _tagRegistryConflictText names the field the keeper kept and the value it now
+// holds. The write reply carries the keeper's value for the tag.
+function _tagRegistryConflictText(res) {
+  const field = res.conflict_field || 'name';
+  const label = field === 'name' ? _tagT('tag_name', 'Name')
+    : field === 'parent' ? _tagT('tag_parent', 'Parent')
+    : field === 'color' ? _tagT('tag_color', 'Color')
+    : _tagT('tag_registry_field_description', 'Description');
+  let value = res.description || '';
+  if (field === 'name') value = res.name || '';
+  else if (field === 'parent') value = (_tagsState.byId[res.parent_id] || {}).name || _tagT('tag_parent_none', '— top level —');
+  else if (field === 'color') value = res.color || '';
+  return _tagT('tag_registry_conflict_toast', "The keeper's version won: %1$s is now %2$s", [label, value]);
+}
+
+// tagRegistryNoteDismiss dismisses one merge or removal note on this node. The
+// dismissal is kept when the keeper's copy is applied again.
+window.tagRegistryNoteDismiss = function(id) {
+  apiFetch('/api/autonomous/tags/registry/notes/' + encodeURIComponent(id) + '/dismiss', { method: 'POST' })
+    .then(() => _tagsLoad(true))
+    .then(() => { _tagBrowseRepaintVisible(); loadAutomataTagRegistryPanel(); })
+    .catch(e => showToast(_tagErrorText(e), 'error', 4000));
 };
 
 // ── Tag registry settings panel ──────────────────────────────────────────────
@@ -36545,19 +37731,27 @@ function loadAutomataTagRegistryPanel() {
         _tagTreeOrder(tags).filter(r => !banned.has(r.tag.id)).map(r =>
           `<option value="${escHtml(r.tag.id)}" ${current === r.tag.id ? 'selected' : ''}>${'  '.repeat(r.depth)}${escHtml(r.tag.name)}</option>`).join('');
     };
+    // While the keeper is unreachable the edits that need it are disabled, each with
+    // the reason as its tooltip. Create (below) is never disabled.
+    const blocked = _tagRegistryEditsBlocked();
+    const dis = blocked ? ' disabled' : '';
+    const ctl = label => ` title="${escHtml(blocked ? _tagRegistryPausedText() : label)}"${dis}`;
     const rows = _tagTreeOrder(tags).map(({ tag, depth }) => {
       const idJ = escHtml(JSON.stringify(tag.id));
       return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;padding-left:${depth * 18}px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
-        <input type="color" value="${escHtml(/^#[0-9a-f]{6}$/i.test(tag.color || '') ? tag.color : '#6366f1')}" style="width:28px;height:24px;padding:0;border:none;background:none;cursor:pointer;" title="${escHtml(_tagT('tag_color', 'Color'))}" onchange="automataTagUpdate(${idJ},{color:this.value})">
-        <input type="text" value="${escHtml(tag.name)}" style="${inp}flex:1;min-width:90px;" title="${escHtml(_tagT('tag_rename', 'Rename'))}" onchange="automataTagUpdate(${idJ},{name:this.value})">
-        <select style="${inp}max-width:150px;" title="${escHtml(_tagT('tag_parent', 'Parent'))}" onchange="automataTagUpdate(${idJ},{parent_id:this.value})">${parentOpts(tag.id, tag.parent_id || '')}</select>
-        <span style="font-size:11px;opacity:0.6;">${tag.count || 0}</span>
-        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;color:var(--error);" onclick="automataTagDelete(${idJ})">${escHtml(_tagT('tag_delete', 'Delete'))}</button>
+        <input type="color" class="tag-registry-control" value="${escHtml(/^#[0-9a-f]{6}$/i.test(tag.color || '') ? tag.color : '#6366f1')}" style="width:28px;height:24px;padding:0;border:none;background:none;cursor:pointer;"${ctl(_tagT('tag_color', 'Color'))} onchange="automataTagUpdate(${idJ},{color:this.value})">
+        <input type="text" class="tag-registry-control" value="${escHtml(tag.name)}" style="${inp}flex:1;min-width:90px;"${ctl(_tagT('tag_rename', 'Rename'))} onchange="automataTagUpdate(${idJ},{name:this.value})">
+        ${_tagPendingBadgeHTML(tag)}
+        <select class="tag-registry-control" style="${inp}max-width:150px;"${ctl(_tagT('tag_parent', 'Parent'))} onchange="automataTagUpdate(${idJ},{parent_id:this.value})">${parentOpts(tag.id, tag.parent_id || '')}</select>
+        <span style="font-size:11px;opacity:0.6;">${tag.count || 0}${_tagStaleMarkHTML()}</span>
+        <button class="btn-secondary tag-registry-control" style="font-size:11px;padding:2px 8px;color:var(--error);"${ctl(_tagT('tag_delete', 'Delete'))} onclick="automataTagDelete(${idJ})">${escHtml(_tagT('tag_delete', 'Delete'))}</button>
       </div>`;
     }).join('');
     const empty = `<div style="font-size:12px;color:var(--text2);padding:6px 0;">${escHtml(_tagT('tag_registry_empty', 'No tags defined yet.'))}</div>`;
     panel.innerHTML = `
+      ${_tagRegistryBlockHTML(_tagsState.registry)}
       <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">${escHtml(_tagT('tag_registry_desc', 'Organise Automata with nested tags. A tag with child tags or assigned Automata cannot be deleted.'))}</div>
+      ${blocked ? `<div class="tag-registry-paused">${escHtml(_tagRegistryPausedText())}</div>` : ''}
       <div style="margin-bottom:14px;">${rows || empty}</div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
         <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">${escHtml(_tagT('tag_create', 'Create tag'))}</div>
@@ -36583,12 +37777,19 @@ window.automataTagCreate = function() {
 };
 
 window.automataTagUpdate = function(id, patch) {
+  if (_tagRegistryEditsBlocked()) { showToast(_tagRegistryPausedText(), 'error', 4000); loadAutomataTagRegistryPanel(); return; }
   apiFetch('/api/autonomous/tags/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(patch) })
-    .then(() => loadAutomataTagRegistryPanel())
+    .then(res => {
+      // The keeper kept its own value for a field this edit changed: say so, and
+      // the reload below shows the value the keeper holds.
+      if (res && res.conflict) showToast(_tagRegistryConflictText(res), 'info', 5000);
+      loadAutomataTagRegistryPanel();
+    })
     .catch(e => { showToast(_tagErrorText(e), 'error', 4000); loadAutomataTagRegistryPanel(); });
 };
 
 window.automataTagDelete = function(id) {
+  if (_tagRegistryEditsBlocked()) { showToast(_tagRegistryPausedText(), 'error', 4000); return; }
   showConfirmModal(_tagT('tag_confirm_delete', 'Delete this tag?'), () => {
     apiFetch('/api/autonomous/tags/' + encodeURIComponent(id), { method: 'DELETE' })
       .then(() => { showToast(_tagT('tag_deleted', 'Tag deleted'), 'success', 2000); loadAutomataTagRegistryPanel(); })
@@ -38981,3 +40182,164 @@ function pushQueueItem() {
     })
     .catch(() => alert('Failed to push queue item.'));
 }
+
+// ── Shared work tile (Automata and Automation lists) ─────────────────────────
+// One tile renderer serves both lists. The pure helpers hold the progress maths,
+// the tag-chip overflow, the relative age and the layout thresholds, so node
+// tests load them without a DOM. renderWorkTile builds the shape of a tile from
+// the pieces its caller hands over: the caller keeps the item's own actions and
+// detail, the tile keeps the layout. The layout follows data-tile-mode on
+// .work-tile-grid, which _tileRowMode picks from the viewport width.
+
+// _tileProgress turns done and total into a bar fill and its percentage. A zero
+// total draws an empty bar. done is clamped to total, so the bar never overflows.
+function _tileProgress(done, total) {
+  const count = Math.max(0, Number(total) || 0);
+  const finished = Math.min(count, Math.max(0, Number(done) || 0));
+  const pct = count > 0 ? Math.round((finished / count) * 100) : 0;
+  return { done: finished, total: count, pct };
+}
+
+// _tileAutomataCounts returns the task progress of an Automaton. A record whose
+// stories carry their tasks is counted task by task. A list summary, whose
+// stories hold only counts, uses task_count and task_status_counts.
+function _tileAutomataCounts(prd) {
+  const stories = (prd && prd.stories) || [];
+  if (stories.some(s => Array.isArray(s.tasks))) {
+    let total = 0, done = 0;
+    stories.forEach(s => (s.tasks || []).forEach(tk => { total++; if (tk.status === 'completed') done++; }));
+    return _tileProgress(done, total);
+  }
+  const counts = (prd && prd.task_status_counts) || {};
+  return _tileProgress(counts.completed || 0, (prd && prd.task_count) || 0);
+}
+
+// _tileTagIds reads the tag IDs an item carries: the list payload's tags, or
+// tag_ids on a full record.
+function _tileTagIds(item) {
+  if (!item) return [];
+  if (Array.isArray(item.tags)) return item.tags;
+  return Array.isArray(item.tag_ids) ? item.tag_ids : [];
+}
+
+// _tileResolveTags maps tag IDs to registry entries. An ID the registry does not
+// hold (not loaded yet, or deleted) is dropped rather than drawn as a blank chip.
+function _tileResolveTags(ids, byId) {
+  const registry = byId || {};
+  return (Array.isArray(ids) ? ids : [])
+    .filter(id => Object.prototype.hasOwnProperty.call(registry, id))
+    .map(id => registry[id])
+    .filter(Boolean);
+}
+
+// _tileTagOverflow splits a tile's tags into the chips it shows and the count
+// folded into the +N chip. The default limit is three chips.
+function _tileTagOverflow(tags, max) {
+  const list = Array.isArray(tags) ? tags : [];
+  const limit = max == null ? 3 : Math.max(0, max);
+  return { shown: list.slice(0, limit), more: Math.max(0, list.length - limit) };
+}
+
+// _tileAge splits the time since ts into a unit and a count. Under a minute, or
+// a timestamp in the future, is 'now'. An empty or unparsable ts gives null.
+function _tileAge(ts, nowMs) {
+  const at = ts ? Date.parse(ts) : NaN;
+  if (isNaN(at)) return null;
+  const secs = Math.floor((nowMs - at) / 1000);
+  if (secs < 60) return { unit: 'now', n: 0 };
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return { unit: 'minutes', n: mins };
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return { unit: 'hours', n: hours };
+  return { unit: 'days', n: Math.floor(hours / 24) };
+}
+
+// _tileAgeText renders the relative age through the locale bundle.
+function _tileAgeText(ts, nowMs) {
+  const age = _tileAge(ts, nowMs);
+  if (!age) return '';
+  if (age.unit === 'now') return t('work_tile_age_now');
+  if (age.unit === 'minutes') return t('work_tile_age_minutes', [age.n]);
+  if (age.unit === 'hours') return t('work_tile_age_hours', [age.n]);
+  return t('work_tile_age_days', [age.n]);
+}
+
+// _tileRowMode picks the tile layout for a viewport width: tiles from 720px,
+// two-line rows from 420px, one-line rows below that. A width that is not known
+// yet reads as a wide screen.
+function _tileRowMode(width) {
+  const w = Number(width);
+  if (!(w > 0)) return 'tile';
+  if (w >= 720) return 'tile';
+  if (w >= 420) return 'compact';
+  return 'line';
+}
+
+function _tileViewportWidth() {
+  return (typeof window !== 'undefined' && window.innerWidth) || 0;
+}
+
+// _tileGridHTML wraps tile markup in the grid for the current viewport.
+function _tileGridHTML(innerHTML) {
+  return `<div class="work-tile-grid" data-tile-mode="${_tileRowMode(_tileViewportWidth())}">${innerHTML}</div>`;
+}
+
+// _tileSyncModes re-applies the row mode to every grid on screen after a
+// resize, so the layout follows the window without a re-render.
+function _tileSyncModes() {
+  const mode = _tileRowMode(_tileViewportWidth());
+  document.querySelectorAll('.work-tile-grid').forEach(el => { el.dataset.tileMode = mode; });
+}
+if (typeof window !== 'undefined' && !window._tileResizeBound) {
+  window._tileResizeBound = true;
+  window.addEventListener('resize', () => { _tileSyncModes(); _tagBrowseOnResize(); });
+}
+
+// _tileMenuItem is one entry in a tile's overflow menu. onclick is markup the
+// caller has already escaped for a JS string inside the attribute.
+function _tileMenuItem(icon, label, onclick) {
+  return `<button class="btn-secondary work-tile-menu-item" onclick="event.stopPropagation();${onclick}">${icon} ${escHtml(label)}</button>`;
+}
+
+// renderWorkTile draws one Automaton or Automation tile. o carries:
+//   id, rootId, rootAttrs, extraClass   the item id, root DOM id, extra root
+//                                       attributes and class (rootAttrs is escaped by the caller)
+//   onOpen                              JS run on a tile click, escaped for an attribute
+//   statusClass, statusHtml             the prd-card-status-* class and the status chip markup
+//   title, titleClass, checkHtml        the title text, its class and the select checkbox
+//   badgesHtml, backend                 badge markup and the backend/model text
+//   progress {done,total}, progressLabel the bar and its label text
+//   tagIds, tagsById                    tag IDs, and the registry they resolve through
+//   updatedAt, nowMs                    last activity, and the clock it is measured against
+//   primaryHtml, menuHtml               actions shown on a wide tile; actions only in the menu
+//   bodyHtml, afterHtml                 body markup, and detail blocks that sit at the root
+function renderWorkTile(o) {
+  const prog = _tileProgress(o.progress && o.progress.done, o.progress && o.progress.total);
+  const tags = _tileResolveTags(o.tagIds, o.tagsById);
+  const chips = _tileTagOverflow(tags, 3);
+  const id = String(o.id || '');
+  const title = String(o.title || '');
+  const primary = o.primaryHtml || '';
+  const count = escHtml(o.progressLabel || '');
+  const tagMore = chips.more
+    ? `<details class="work-tile-tags-more" onclick="event.stopPropagation()"><summary class="work-tile-tags-more-chip">${escHtml(t('work_tile_tags_more', [chips.more]))}</summary><div class="work-tile-tags-all">${tags.map(_tagChipHTML).join('')}</div></details>`
+    : '';
+  // On a narrow tile the primary actions move into the menu as copies; the
+  // menu is hidden on a wide tile when it holds nothing else.
+  const menuCopies = primary ? `<div class="work-tile-primary-copy">${primary}</div>` : '';
+  const more = `<details class="work-tile-more${o.menuHtml ? '' : ' is-narrow-only'}" onclick="event.stopPropagation()"><summary class="work-tile-more-btn" title="${escHtml(t('work_tile_more'))}" aria-label="${escHtml(t('work_tile_more'))}">⋯</summary><div class="work-tile-menu">${menuCopies}${o.menuHtml || ''}</div></details>`;
+  const head = `<div class="work-tile-head">${o.checkHtml || ''}<span class="work-tile-title${o.titleClass ? ' ' + o.titleClass : ''}" title="${escHtml(title)}">${escHtml(title)}</span><span class="work-tile-status">${o.statusHtml || ''}</span><span class="work-tile-count-head">${count}</span><span class="work-tile-dot" aria-hidden="true"></span>${more}</div>`;
+  const meta = `<div class="work-tile-meta"><code class="work-tile-id" title="${escHtml(id)}">${escHtml(id.slice(0, 8))}</code>${o.backend ? `<span class="work-tile-backend">${escHtml(o.backend)}</span>` : ''}${tags.length ? `<span class="work-tile-tagcount">${escHtml(t('work_tile_tags_count', [tags.length]))}</span>` : ''}${o.badgesHtml ? `<span class="work-tile-badges">${o.badgesHtml}</span>` : ''}</div>`;
+  const fill = prog.pct === 100 ? 'automata-progress-fill complete' : 'automata-progress-fill';
+  const progress = `<div class="work-tile-progress"><div class="automata-progress-wrap"><div class="${fill}" style="width:${prog.pct}%;"></div></div><span class="work-tile-count">${count}</span></div>`;
+  const tagRow = tags.length ? `<div class="work-tile-tags">${chips.shown.map(_tagChipHTML).join('')}${tagMore}</div>` : '';
+  // The "also in:" line is drawn by the tag browser when the tile sits under a tag.
+  const alsoIn = o.alsoInHtml || '';
+  const body = o.bodyHtml ? `<div class="work-tile-body">${o.bodyHtml}</div>` : '';
+  const foot = `<div class="work-tile-foot"><span class="work-tile-activity">${escHtml(_tileAgeText(o.updatedAt, o.nowMs))}</span><span class="work-tile-primary work-tile-actions" onclick="event.stopPropagation()">${primary}</span></div>`;
+  const classes = ['prd-row', 'prd-card', o.statusClass || 'prd-card-status-draft', 'work-tile', o.extraClass || ''].filter(Boolean).join(' ');
+  const idAttr = o.rootId ? ` id="${escHtml(o.rootId)}"` : '';
+  const rootAttrs = o.rootAttrs ? ` ${o.rootAttrs}` : '';
+  return `<div class="${classes}"${idAttr}${rootAttrs} onclick="${o.onOpen || ''}">${head}${meta}${progress}${tagRow}${alsoIn}${body}${foot}${o.afterHtml || ''}</div>`;
+}
+window.renderWorkTile = renderWorkTile;

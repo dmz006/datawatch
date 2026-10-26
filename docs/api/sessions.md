@@ -32,11 +32,12 @@ out from this transition.
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/sessions` | List sessions (active + recent). Filter via `?name=`, `?state=`, `?backend=`, `?alive=`; compact list via `?view=summary`, narrow with `?since=` / `?states=` — see [Compact session list](#compact-session-list-viewsummary). |
-| `POST /api/sessions/start` | Start a new session. Body: `{task, project_dir, backend, name?, template?, effort?, one_shot?, skip_snapshot?}`. `one_shot` terminates the session on `DATAWATCH_COMPLETE:`. `skip_snapshot` (bool, default false) is for planning/judgment sessions: when true the session must never stage or commit the repo — both the pre-session snapshot commit and the completion commit are skipped. |
+| `POST /api/sessions/start` | Start a new session. Body: `{task, project_dir, backend, name?, template?, effort?, one_shot?, skip_snapshot?, tags?}`. `tags` is an array of tag IDs the session carries from the start; an unknown ID refuses the start with 404. `one_shot` terminates the session on `DATAWATCH_COMPLETE:`. `skip_snapshot` (bool, default false) is for planning/judgment sessions: when true the session must never stage or commit the repo — both the pre-session snapshot commit and the completion commit are skipped. |
 | `GET /api/output?id=&n=` | Last N output lines. |
 | `POST /api/command` | Send raw input to a session's tmux pane. |
 | `POST /api/sessions/kill` | Kill the underlying backend; tmux pane stays. |
 | `POST /api/sessions/rename` | Rename a session. |
+| `POST /api/sessions/tags` | Replace a session's own tags. Body: `{id, tag_ids}`; `id` is the full or short session ID. Duplicates are dropped (first wins); an unknown tag ID is refused with 404 and nothing is written. Returns the session with `tags` and `inherited_tags`. Needs the federation sessions-write capability. See [Session tags](#session-tags). |
 | `POST /api/sessions/restart` | Re-launch the backend with the same task + project. |
 | `POST /api/sessions/delete` | Forget a stopped session entirely. |
 | `POST /api/sessions/{id}/rollback` | Roll back to the pre-session git tag (`datawatch-pre-<id>`). |
@@ -47,6 +48,27 @@ out from this transition.
 | `POST /api/sessions/bind` | Bind a session to an ephemeral worker / agent. |
 | `GET /api/sessions/response` | Last `response` event content for one session (used by the PWA "view last response" modal). |
 | `GET /api/sessions/{id}/telemetry` | Structured telemetry for a session (tasks, guardrail verdicts, sprint, progress). |
+
+#### Session tags
+
+A session carries its own managed tags (`tags`, a list of tag IDs). Set
+them at start with the `tags` field of `POST /api/sessions/start`, or
+replace them later with `POST /api/sessions/tags`:
+
+```json
+{"id": "a3f2", "tag_ids": ["5e6f7a8b", "1a2b3c4d"]}
+```
+
+A session spawned by an Automaton also shows that Automaton's tags as
+`inherited_tags`. The value is computed on every read and never stored, so
+it follows the Automaton: change the Automaton's tags and its sessions show
+the new set on the next read. A session outside any Automaton has
+`inherited_tags: []`. The session's own tags are not changed by inheritance.
+
+Session list and detail responses carry `tags` and `inherited_tags`
+additively; no existing field changed. Deleting a tag is refused with 409
+while an Automaton or a session still carries it; the `count` in the 409
+body covers both.
 
 #### Compact session list (`view=summary`)
 

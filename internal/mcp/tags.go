@@ -5,6 +5,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 
@@ -15,12 +16,16 @@ func (s *Server) toolAutonomousTagList() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_tag_list",
 		mcpsdk.WithDescription("List Automata tags (a tree via parent_id) with the number of Automata carrying each tag."),
 		mcpsdk.WithBoolean("include_sub", mcpsdk.Description("Roll each tag's Automata count up to include its descendant tags (default false)")),
+		mcpsdk.WithBoolean("counts", mcpsdk.Description("Add subtree and direct counts for Automata and sessions to each tag, plus an untagged total (default false)")),
 	)
 }
 func (s *Server) handleAutonomousTagList(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	var q url.Values
+	q := url.Values{}
 	if req.GetBool("include_sub", false) {
-		q = url.Values{"include_sub": {"true"}}
+		q.Set("include_sub", "true")
+	}
+	if req.GetBool("counts", false) {
+		q.Set("counts", "true")
 	}
 	out, err := s.proxyGet("/api/autonomous/tags", q)
 	if err != nil {
@@ -114,21 +119,112 @@ func (s *Server) handleAutonomousTagDelete(_ context.Context, req mcpsdk.CallToo
 
 func (s *Server) toolAutonomousPRDSetTags() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_tags",
-		mcpsdk.WithDescription("Replace the set of tags on an Automaton (PRD). Pass an empty array to clear."),
+		mcpsdk.WithDescription("Replace the set of tags on an Automaton (PRD). Pass an empty array to clear. Pass primary_tag_id alone to change only the primary tag and keep the current tags; an empty primary_tag_id clears the primary."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
-		mcpsdk.WithString("tag_ids_json", mcpsdk.Required(), mcpsdk.Description(`JSON array of tag IDs, e.g. ["1a2b3c4d","5e6f7a8b"]`)),
+		mcpsdk.WithString("tag_ids_json", mcpsdk.Description(`JSON array of tag IDs, e.g. ["1a2b3c4d","5e6f7a8b"]. Required unless primary_tag_id is given.`)),
+		mcpsdk.WithString("primary_tag_id", mcpsdk.Description("Optional primary tag ID, one of the Automaton's tags, used for sorting only. Empty clears it. Omit to keep the current primary.")),
 	)
 }
 func (s *Server) handleAutonomousPRDSetTags(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	tagIDs := []string{}
-	if err := json.Unmarshal([]byte(req.GetString("tag_ids_json", "[]")), &tagIDs); err != nil {
-		return toolError("autonomous_prd_set_tags", err), nil
+	args := req.GetArguments()
+	body := map[string]any{}
+	if _, given := args["tag_ids_json"]; given {
+		tagIDs := []string{}
+		if err := json.Unmarshal([]byte(req.GetString("tag_ids_json", "[]")), &tagIDs); err != nil {
+			return toolError("autonomous_prd_set_tags", err), nil
+		}
+		body["tag_ids"] = tagIDs
 	}
-	body, _ := json.Marshal(map[string]any{"tag_ids": tagIDs})
-	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_tags", body)
+	if _, given := args["primary_tag_id"]; given {
+		body["primary_tag_id"] = req.GetString("primary_tag_id", "")
+	}
+	if len(body) == 0 {
+		return toolError("autonomous_prd_set_tags", fmt.Errorf("tag_ids_json or primary_tag_id is required")), nil
+	}
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+url.PathEscape(id)+"/set_tags", body)
 	if err != nil {
 		return toolError("autonomous_prd_set_tags", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolSessionSetTags() mcpsdk.Tool {
+	return mcpsdk.NewTool("session_set_tags",
+		mcpsdk.WithDescription("Replace the tags a session carries itself (not the tags it inherits from its Automaton). Pass an empty array to clear. Tag IDs must exist in the Automata tag registry."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Session ID (full or short)")),
+		mcpsdk.WithString("tag_ids_json", mcpsdk.Required(), mcpsdk.Description(`JSON array of tag IDs, e.g. ["1a2b3c4d","5e6f7a8b"]`)),
+	)
+}
+func (s *Server) handleSessionSetTags(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	tagIDs := []string{}
+	if err := json.Unmarshal([]byte(req.GetString("tag_ids_json", "[]")), &tagIDs); err != nil {
+		return toolError("session_set_tags", err), nil
+	}
+	body, _ := json.Marshal(map[string]any{"id": req.GetString("id", ""), "tag_ids": tagIDs})
+	out, err := s.proxyJSON(http.MethodPost, "/api/sessions/tags", body)
+	if err != nil {
+		return toolError("session_set_tags", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousAttentionList() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_attention_list",
+		mcpsdk.WithDescription("List the Automata that need the operator's attention: those whose status is in the attention statuses (blocked, needs_review, paused by default) plus Automata with a task held for operator review. Returns the statuses in force and the items."),
+	)
+}
+func (s *Server) handleAutonomousAttentionList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/autonomous/attention", nil)
+	if err != nil {
+		return toolError("autonomous_attention_list", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousTagRegistryStatus() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_tag_registry_status",
+		mcpsdk.WithDescription("Show the Automata tag registry status: this daemon's role (standalone, keeper or peer), the keeper it syncs from, staleness, last sync time, revision, pending sync count, notes that need the operator's attention and the last sync error. Returns only the registry object."),
+	)
+}
+func (s *Server) handleAutonomousTagRegistryStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/autonomous/tags", nil)
+	if err != nil {
+		return toolError("autonomous_tag_registry_status", err), nil
+	}
+	registry, err := registryObjectFromTagsReply(out)
+	if err != nil {
+		return toolError("autonomous_tag_registry_status", err), nil
+	}
+	return textOK(string(registry)), nil
+}
+
+// registryObjectFromTagsReply extracts the "registry" object from a
+// GET /api/autonomous/tags reply.
+func registryObjectFromTagsReply(body []byte) ([]byte, error) {
+	var reply struct {
+		Registry json.RawMessage `json:"registry"`
+	}
+	if err := json.Unmarshal(body, &reply); err != nil {
+		return nil, fmt.Errorf("decode tags reply: %w", err)
+	}
+	if len(reply.Registry) == 0 {
+		return nil, fmt.Errorf("tags reply has no registry object")
+	}
+	return reply.Registry, nil
+}
+
+func (s *Server) toolAutonomousTagRegistryDismissNote() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_tag_registry_dismiss_note",
+		mcpsdk.WithDescription("Dismiss one tag registry note (a merge or removal notice from the keeper) so it stops appearing in the registry status. Answers 404 when the note does not exist."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Registry note ID, as listed in autonomous_tag_registry_status")),
+	)
+}
+func (s *Server) handleAutonomousTagRegistryDismissNote(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	path := "/api/autonomous/tags/registry/notes/" + url.PathEscape(req.GetString("id", "")) + "/dismiss"
+	out, err := s.proxyJSON(http.MethodPost, path, nil)
+	if err != nil {
+		return toolError("autonomous_tag_registry_dismiss_note", err), nil
 	}
 	return textOK(string(out)), nil
 }

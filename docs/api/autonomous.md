@@ -54,17 +54,18 @@ POST   /api/autonomous/prds/{id}/set_task_verifier_policy    per-task verifier p
 POST   /api/autonomous/prds/{id}/set_failure_escalation     failure escalation override; body: {[task_id], policy|null, actor} (null clears; see "Failure escalation")
 POST   /api/autonomous/prds/{id}/resolve_task_review        operator decision on a task held for review; body: {task_id, action: retry|cancel, [spec], [backend], [model], [effort], [files[]], [note], actor}
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
-POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {tag_ids[]} ([] clears)
+POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {[tag_ids[]], [primary_tag_id]}; tag_ids may be omitted when primary_tag_id is sent, which keeps the current tags ([] clears; primary_tag_id must be one of the tags or empty, else 400)
 POST   /api/autonomous/prds/{id}/set_kind  Automaton kind; body: {kind} (feature|bug|other; "" derives it again); 400 on an unknown kind, 404 on an unknown id
 POST   /api/autonomous/prds/{id}/set_lane_preference  lane an Automaton may take; body: {lane_preference: gpu|claude|any} ("" means any); 400 on an unknown value, 404 on an unknown id
 POST   /api/autonomous/prds/{id}/set_notify_events  set the lifecycle event kinds the Automaton notifies on; body: {notify_events[]} — absent/null/[] clears (inherit); the reply carries the computed notify_events_effective
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
 GET    /api/autonomous/prds?tag={id}[&include_sub=false]  Automata carrying a tag (and, by default, any descendant tag)
 
-GET    /api/autonomous/tags[?include_sub=]  tag tree (parent_id) with Automata counts
+GET    /api/autonomous/tags[?include_sub=&counts=]  tag tree (parent_id) with Automata counts; counts=true adds subtree, direct and session counts and an untagged object
 POST   /api/autonomous/tags                 create; body: {name, [parent_id], [color], [description]}
 PATCH  /api/autonomous/tags/{id}            rename / recolor / describe / reparent; 409 if the move makes a cycle
 DELETE /api/autonomous/tags/{id}            409 while the tag has child tags, 409 with {count} while Automata carry it
+GET    /api/autonomous/attention           the attention group: {statuses, items}; see "Attention list" below
 GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD                                      [v5.9.0  / BL191 Q4]
 
 GET    /api/autonomous/learnings           extracted post-task learnings
@@ -82,7 +83,7 @@ DELETE /api/autonomous/guardrail_profiles/{id}     delete profile
 PUT    /api/autonomous/prds/{id}/guardrails        set per-Automaton override; body: {guardrail_profile?, per_task_guardrails[], per_story_guardrails[]}
 
 # Automations — orchestration records (see the Automations section below)
-GET    /api/automations              list Automations
+GET    /api/automations              list Automations (each carries a computed tags array: the member Automata's tag IDs)
 POST   /api/automations              create (returns draft, version 1); body: {name, entry_member_id?, members[], budget_policy?, project_dir?, actor, reason}
 GET    /api/automations/{id}         get one
 PUT    /api/automations/{id}         update; body: create fields + expected_version (required)
@@ -476,6 +477,210 @@ Both routes write an audit entry (`set_failure_escalation` or `resolve_task_revi
 | Automation status | `review_needed_count`, `review_needed_task_ids` | Held tasks of the current member Automaton. Omitted when none is held. |
 
 Daemon default: `GET /api/config` returns `autonomous.failure_escalation` (`enabled`, `max_failures`, `steps`), and `PUT /api/config` takes the keys `autonomous.failure_escalation.enabled`, `.max_failures` and `.steps`. `steps` accepts a JSON array or the compact text `backend:model[@attempts],...`, where `-` means the task's normal worker. A bad value is a 400 naming the key, and nothing in that write is applied.
+
+### Tags on Automata and the tag counts
+
+Every Automaton carries its tags. A summary list row (the default
+`GET /api/autonomous/prds`) carries them as `tags`; the full record
+(`?full=1`, and `GET /api/autonomous/prds/{id}`) carries them as `tag_ids`. Both
+are the same tag IDs. A row also carries `primary_tag_id` when the Automaton has
+a primary tag. The primary tag is set with `POST .../set_tags` and is used only to
+sort an Automaton in a tag browser; it never hides a membership. The primary
+defaults to none, and removing the primary tag from the Automaton clears it.
+The same route sets it from every surface: `datawatch autonomous prd-set-tags <id> --primary <tag-id>`,
+the MCP `autonomous_prd_set_tags` tool with `primary_tag_id`, and the comm verb
+`autonomous set-primary <prd-id> <tag-id|none>`. A body that sends `primary_tag_id` without
+`tag_ids` keeps the current tag set and changes only the primary. A body that sends
+`tag_ids` alone keeps the current primary while its tag stays and clears it when the
+tag is removed.
+`task_count`, `story_count` and `task_status_counts` are unchanged.
+
+`GET /api/autonomous/tags?counts=true` adds these fields to each tag:
+
+| Field | Meaning |
+|---|---|
+| `count` | Unchanged: Automata carrying the tag, rolled up with `include_sub`. |
+| `subtree_count` | Distinct Automata carrying the tag or any descendant. An Automaton counts once per tag, however many of its tags sit in that subtree. This is the main figure a tag browser shows. |
+| `direct_count` | Automata carrying exactly this tag. |
+| `session_subtree_count` | As `subtree_count`, for sessions. A session counts through its own tags and through the tags it inherits from its Automaton. |
+| `session_direct_count` | As `direct_count`, for sessions, with inherited tags included. |
+
+The reply also carries `untagged: {count, session_count}`: the Automata, and the
+sessions, that carry no tag at all. A session's inherited tags count, so a session
+is untagged only when neither it nor its Automaton has a tag.
+
+### Tag change events (WebSocket `tag_update`)
+
+Every change to the tag registry and to tag assignments sends one `tag_update`
+frame to every connected WebSocket client, so an open tag browser refreshes its
+counts without polling. The frame is sent after the change is saved, and a refused
+change (a cycle, a tag still in use, a tag with children, an unknown tag) sends nothing.
+
+The data carries IDs only. A client that needs names or counts refetches
+`GET /api/autonomous/tags?counts=true`.
+
+| `kind` | Sent when | Fields |
+|---|---|---|
+| `created` | A tag is created | `tag_id` |
+| `renamed` | A tag is renamed | `tag_id` |
+| `reparented` | A tag's parent changes | `tag_id` |
+| `recolored` | A tag's color changes | `tag_id` |
+| `deleted` | A tag is deleted | `tag_id` |
+| `assigned` | An Automaton's tag list or primary tag is saved | `prd_id` |
+| `session_assigned` | A session's own tags are saved | `session_id` (the full ID) |
+| `registry_synced` | A peer pulls a snapshot from its keeper and applies it | none (the client refetches `GET /api/autonomous/tags`) |
+
+A tag description change sends nothing, because a description never changes a count.
+A rename or a re-parent sends exactly one frame. An Automaton's tag change is also
+reported by its `prd_update` frame, which the Automata list already uses.
+
+A status change (for example `blocked`, `needs_review` or `paused`) sends one `prd_update`
+frame for the Automaton, with its `prd_id` and `status`. Attention lists refresh from that frame.
+
+Surfaces: `tag_update` is a WebSocket event only; it has no REST, MCP, CLI or comm-channel
+form. The PWA refreshes its tag counts from it. The Android and iPhone clients have not
+been given a handler for it yet. Tag changes made through REST, MCP, CLI or the comm channel
+go through the same registry methods, so they send the same frames.
+
+### Shared tag registry
+
+Several daemons can share one tag registry, so the same tags (their names,
+parents, colors and descriptions) appear on each of them. One daemon keeps the
+registry. The others keep a cached copy of it and send their tag edits to the
+keeper. The registry is set with `autonomous.tags.registry_keeper` and synced on
+`autonomous.tags.registry_sync_seconds`. The sync paths (pull, forwarded write,
+stale copy, merge) are drawn in [flow/tag-registry-sync-flow.md](../flow/tag-registry-sync-flow.md),
+and the operator steps are in [howto/automata-tag-registry.md](../howto/automata-tag-registry.md).
+
+**Roles.** The role follows from `registry_keeper`:
+
+| Value | Role | What the daemon does |
+|---|---|---|
+| empty | standalone | Keeps its own tags and syncs with nobody. This is the default, and what a daemon did before the registry existed. |
+| this daemon's own name | keeper | Holds the registry. Its peers pull the registry from it, and its own writes apply directly. |
+| another peer's name | peer | Pulls the keeper's tags into a local cache and forwards its tag writes to the keeper. |
+
+The keeper's name is a federation peer name, so the peer must be a federation peer
+of the daemon. Both config keys take effect at runtime; no restart is needed.
+
+**Cache and stale copies.** A peer keeps the last copy of the keeper's tags on disk,
+so a restart does not lose it. Every `registry_sync_seconds` (a whole number of
+seconds, minimum 5, default 30) the peer asks the keeper for its snapshot. While the
+keeper has not answered, the peer shows the cached copy and reports `stale: true`
+with the time of the last successful sync in `last_synced_at`.
+
+**Writes.** On a peer, a create, rename, re-parent, recolor, describe or delete is
+forwarded to the keeper, and the reply shows the keeper's value. A keeper or a
+standalone daemon applies a write to its own registry.
+
+If the keeper is unreachable from a peer:
+
+- rename, re-parent, recolor, describe and delete are refused with 503. The
+  message says the last copy is shown, and nothing changes;
+- create still works. The tag is created on the peer and marked `pending_sync: true`
+  until it reaches the keeper.
+
+**Conflicts.** A peer sends the registry revision it last saw with each write, and
+the keeper compares it with the last change to each field (name, parent, color and
+description). When the keeper has changed a field the peer also edited, the keeper
+keeps its own value and the reply carries `"conflict": true` and `"conflict_field"`
+naming the field. The peer shows the keeper's value.
+
+**Pending sync.** A tag a peer created while the keeper was unreachable is counted
+in `pending_sync_count` until the keeper has it. When the keeper answers, the tag is
+pushed. If the keeper already holds a tag with the same name under the same parent,
+the two merge into the keeper's tag, and a merge note records it.
+
+**Merge and removed-on-keeper notes.** The registry object lists the notes that
+have not been dismissed on this daemon:
+
+- `merged`: a pending tag was merged into a keeper tag. `kept_id` is the keeper's
+  tag, `replaced_id` is the pending tag, and `merged_at` is when it happened.
+- `removed_on_keeper`: the keeper deleted a tag that this daemon still had
+  assignments on. `tag_id` names the deleted tag, so the operator can see which
+  Automata and sessions it touched.
+
+A note is dismissed on the daemon that shows it. A dismissed note stays dismissed
+when later snapshots are applied. Dismissing a note changes no tag and no
+assignment.
+
+**Routes.**
+
+| Method and path | Capability | Purpose |
+|---|---|---|
+| `GET /api/autonomous/tags` | autonomous read | Now carries a `registry` object (see below) with the tag reply. |
+| `POST`, `PATCH`, `DELETE /api/autonomous/tags[/{id}]` | autonomous write | Go through the registry on a peer; see the write rules above. |
+| `GET /api/autonomous/tags/registry` | autonomous read | Keeper-to-peer protocol route: the keeper's snapshot `{revision, tags, notes}`. A peer answers 409. |
+| `POST /api/autonomous/tags/registry/write` | autonomous write | Keeper-to-peer protocol route: applies one forwarded write and returns the keeper's result. Not for operators. |
+| `POST /api/autonomous/tags/registry/notes/{note-id}/dismiss` | autonomous write | Dismisses one note on this daemon. Returns `{"dismissed": id}`; 404 when no such note. |
+
+The `registry` object on `GET /api/autonomous/tags`:
+
+```json
+"registry": {
+  "role": "peer",
+  "keeper": "keeper-node",
+  "stale": false,
+  "last_synced_at": "2026-10-26T02:10:00Z",
+  "revision": 42,
+  "pending_sync_count": 0,
+  "notes": [],
+  "last_error": ""
+}
+```
+
+`last_synced_at` is omitted before the first answer from the keeper. `notes` is always
+an array. Fields: `role` (`standalone`, `keeper` or `peer`), `keeper` (the keeper's
+name, empty when standalone), `stale`, `last_synced_at`, `revision`,
+`pending_sync_count`, `notes` and `last_error`.
+
+**Refusal bodies.** A refusal is JSON `{"error": text, "kind": kind}`, and a `count`
+field is added only for `in_use`.
+
+| Kind | HTTP status | Meaning |
+|---|---|---|
+| `not_found` | 404 | Unknown tag |
+| `invalid` | 400 | The name, parent, color or other value is not valid |
+| `has_children` | 409 | The tag still has child tags |
+| `in_use` | 409 | Automata still carry the tag; `count` is how many |
+| `cycle` | 409 | A move would make a tag its own ancestor |
+| `not_keeper` | 409 | A keeper-only route was called on a peer or standalone daemon |
+| `note_not_found` | 404 | No such merge or removal note on this daemon |
+| `unreachable` | 503 | The keeper cannot be reached from this peer |
+
+**Configuration.**
+
+```yaml
+autonomous:
+  tags:
+    registry_keeper: ""          # "" = standalone; this daemon's own name = keeper; another peer's name = peer
+    registry_sync_seconds: 30    # how often a peer pulls the keeper's snapshot; whole seconds, minimum 5
+```
+
+Both keys can be set from YAML under `autonomous.tags`, through `GET` and `PUT
+/api/config`, the comm `configure` verb, MCP `config_set` and the CLI `config set`.
+
+**Feature access.** Every surface for the registry, with the reason for each
+exclusion. The keeper-to-peer routes are protocol routes, not operator actions.
+
+| Endpoint | REST | MCP | CLI | Comm channel | YAML/config | PWA | Android | iPhone |
+|---|---|---|---|---|---|---|---|---|
+| `GET /api/autonomous/tags/registry` (keeper snapshot) | yes | no (keeper-to-peer protocol; the status tool shows the local registry object) | no (same reason) | no (same reason) | n/a | no (no UI; a peer's sync is not something an operator edits) | no (not in this change) | no (not in this change) |
+| `POST /api/autonomous/tags/registry/write` | yes (protocol) | no (protocol route, peers only, not an operator action) | no (same reason) | no (same reason) | n/a | no | no | no |
+| `GET /api/autonomous/tags` (registry object) | yes | yes (`autonomous_tag_registry_status`; `autonomous_tag_list` returns it too) | yes (`tag-registry`; `tag-list` prints it too) | yes (`tag-registry`) | n/a | reads it through the tag browser; no registry banner in this change | no (not in this change) | no (not in this change) |
+| `POST /api/autonomous/tags/registry/notes/{id}/dismiss` | yes | yes (`autonomous_tag_registry_dismiss_note`) | yes (`tag-registry-dismiss`) | yes (`tag-registry-dismiss`) | n/a | no (no dismiss control in this change) | no (not in this change) | no (not in this change) |
+| `autonomous.tags.registry_keeper` and `registry_sync_seconds` | yes (`GET`/`PUT /api/config`) | yes (`config_set`) | yes (`config set`) | yes (`configure`) | yes (`autonomous.tags`) | yes: the Settings card's Automata tag browser group has a text field for the keeper and a number field for the sync interval | no (not in this change) | no (not in this change) |
+
+When a surface gains or loses one of these endpoints, update its cell in this table
+in the same change.
+
+### Attention list (`GET /api/autonomous/attention`)
+
+Returns `{"statuses": [...], "items": [...]}`. The items are the Automata whose
+status is one of `statuses`, plus every Automaton with a task held for operator
+review. Each item is the summary view, with `blocked_reason`. `statuses` names the
+statuses in force; they are `blocked`, `needs_review` and `paused`, so a paused
+Automaton is in the group. Read-only; needs the autonomous read capability.
 
 ### Automata list (`GET /api/autonomous/prds`)
 
@@ -1511,6 +1716,8 @@ datawatch autonomous tag-create "Mobile App" --parent <id> --color "#6366f1"
 datawatch autonomous tag-rename <id> <new-name>
 datawatch autonomous tag-move <id> --parent <new-parent-id|root>
 datawatch autonomous tag-delete <id>
+datawatch autonomous tag-registry                  # shared tag registry status: role, keeper, stale, pending sync, notes
+datawatch autonomous tag-registry-dismiss <note-id>
 datawatch autonomous prd-set-tags <prd-id> --tags <id1,id2>   # empty value clears
 datawatch autonomous prd-create "Fix the retry loop" --kind bug   # optional; omit to derive the kind
 datawatch autonomous prd-set-kind <id> <feature|bug|other>
@@ -1537,7 +1744,12 @@ operator-facing AI can drive the autonomous loop end-to-end:
 | `autonomous_prd_cancel`     | cancel + archive |
 | `autonomous_learnings`      | list learnings |
 | `autonomous_tag_list` / `_tag_create` / `_tag_rename` / `_tag_set_parent` / `_tag_set_color` / `_tag_delete` | Automata tag registry; see [howto/automata-tags](../howto/automata-tags.md) |
-| `autonomous_prd_set_tags`   | replace an Automaton's tags (`tag_ids_json`) |
+| `autonomous_prd_set_tags`   | replace an Automaton's tags (`tag_ids_json`) and/or set its primary tag (`primary_tag_id`; alone it keeps the tags) |
+| `autonomous_tag_list` with `counts` | adds the subtree and direct counts (Automata and sessions) and the untagged totals |
+| `autonomous_tag_registry_status` | the shared tag registry object of this daemon (read; the `registry` field of `GET /api/autonomous/tags`) |
+| `autonomous_tag_registry_dismiss_note` | dismiss one merge or removed-on-keeper note by `id` (write; `POST /api/autonomous/tags/registry/notes/{id}/dismiss`) |
+| `autonomous_attention_list` | the attention group: `{statuses, items}` (read) |
+| `session_set_tags`          | replace a session's own tags (`id`, `tag_ids_json`); inherited tags are not set here (write) |
 | `autonomous_prd_set_kind`   | set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again); `autonomous_prd_create` takes the same optional `kind` |
 | `autonomous_progress` / `autonomous_progress_trend` | read the progress metrics object (`automation_id`, `tag_id`, `since`, `until`) / the trend over the saved daily snapshots (`days`); read-only, proxied through the REST routes |
 | `autonomous_prd_set_task_verification_llm` / `_set_story_verification_llm` / `_set_verification_llm` | per-task / per-story / per-Automaton verifier LLM |
@@ -1570,6 +1782,8 @@ autonomous set-task-verification-llm abcd1234 t1 backend=claude-code model=opus 
 autonomous set-story-verification-llm abcd1234 s1 backend=ollama model=qwen3:8b
 autonomous set-verification-llm abcd1234 model=
 autonomous tags
+autonomous tag-registry
+autonomous tag-registry-dismiss 9f8e7d6c
 autonomous tag-create "Mobile App" parent=1a2b3c4d
 autonomous set-tags abcd1234 1a2b3c4d,5e6f7a8b
 autonomous set-kind abcd1234 bug

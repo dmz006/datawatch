@@ -336,6 +336,9 @@ type PRD struct {
 	LanePreference string `json:"lane_preference,omitempty"`
 	// TagIDs lists the managed Tag IDs assigned to this automaton.
 	TagIDs []string `json:"tag_ids,omitempty"`
+	// PrimaryTagID is an optional tag from TagIDs. A tag browser uses it only
+	// to sort the Automaton; it never hides a membership. Empty = none.
+	PrimaryTagID string `json:"primary_tag_id,omitempty"`
 
 	// GuidedMode (BL221 v6.2.0) was originally documented as pausing
 	// before each task — confirmed never implemented (B111, found

@@ -194,4 +194,5 @@ func (m *Manager) blockForTaskReview(prd *PRD, taskID string) {
 		return
 	}
 	m.emitPRDStatus(prd, old, nil, nil)
+	m.EmitPRDUpdate(prd.ID)
 }

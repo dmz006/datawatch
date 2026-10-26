@@ -139,6 +139,8 @@ var MCPToolCap = map[string]string{
 	"autonomous_tag_set_color":        CapAutonomousWrite,
 	"autonomous_tag_delete":           CapAutonomousWrite,
 	"autonomous_prd_set_tags":         CapAutonomousWrite,
+	"autonomous_attention_list":       CapAutonomousRead,
+	"session_set_tags":                CapSessionsWrite,
 	"autonomous_type_list":            CapAutonomousList,
 	"autonomous_type_register":        CapAutonomousWrite,
 	"backends_active":                 CapHealthRead,
@@ -499,6 +501,10 @@ var MCPToolCap = map[string]string{
 	"websearch_provider_update":      CapConfigWrite,
 	"websearch_providers_list":       CapConfigRead,
 	"websearch_stats":                CapAnalyticsRead,
+
+	// Automata tag registry status and note dismissal.
+	"autonomous_tag_registry_status":       CapAutonomousRead,
+	"autonomous_tag_registry_dismiss_note": CapAutonomousWrite,
 }
 
 // RequiredCapForMCPTool returns the capability required to invoke

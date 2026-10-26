@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-20
 **Version:** v9.5.28 (read from `var Version` in `internal/server/api.go`)
-**Status:** Design only. On hold until the tag registry ships (BL393, see Dependencies).
+**Status:** Built on branch `automaton/ead20001`, not merged. The ten open questions are answered in [2026-10-25-tag-browsing-decisions.md](2026-10-25-tag-browsing-decisions.md), which wins where this document differs. The tag registry this design depended on (BL393) is done.
 
 This note records how the PWA lists sessions, PRDs and Automata today, and what a
 browse-by-tag tile would need from the tag registry. It does not design the
@@ -503,8 +503,9 @@ it in the Automata tab first. The Automation tab adopts the shared tile later.
 **Landing rule** (all surfaces): attention view when the attention count is at least
 one, tag browser otherwise, decided once at page load, with a per-viewer override.
 
-**Status: not started.** Every phase below is planned and nothing is implemented. The
-design is also on hold until BL393 ships the tag registry.
+**Status of the phases.** The table below is the original outline, kept as it was
+planned. What was built is in the status line at the top of this document and in the
+decisions document. Saved combos (phase 6) are not built.
 
 **Phased implementation outline.** Sizing is S (under a day), M (a few days), or L (a
 week or more), and is a rough estimate.
@@ -530,18 +531,24 @@ autonomous routes and the Automation design's parity table.
 
 | Surface | Included? | Concrete design |
 |---|---|---|
-| **REST** | Yes | `GET /api/autonomous/tags?counts=true` returns the tree with subtree and direct counts. The list endpoint gains a `tags` field on each item, and counts stay correct at any page size. Saved combos: `GET/POST /api/autonomous/views`, `PUT/DELETE /api/autonomous/views/{id}`. `409` on version mismatch. The tree is only served where the registry exists (BL393). |
-| **MCP** | Yes | `autonomous_tag_list` gains a `counts` flag. New `autonomous_view_list`, `autonomous_view_create`, `autonomous_view_update`, `autonomous_view_delete`. Each is added to the MCP capability map, as the Automation design does. |
+| **REST** | Yes | `GET /api/autonomous/tags?counts=true` returns the tree with subtree and direct counts. The list endpoint gains a `tags` field on each item, and counts stay correct at any page size. Saved combos (not built): `GET/POST /api/autonomous/views`, `PUT/DELETE /api/autonomous/views/{id}`. The tree is served by every daemon; a standalone daemon reports role `standalone` in the `registry` object. Federated tags are on the shared registry routes (see the decisions document). |
+| **MCP** | Yes | `autonomous_tag_list` gains a `counts` flag. Saved combos (not built): `autonomous_view_list`, `autonomous_view_create`, `autonomous_view_update`, `autonomous_view_delete`. Built instead: `session_set_tags`, `autonomous_attention_list`, `autonomous_tag_registry_status`, `autonomous_tag_registry_dismiss_note`. Each is added to the MCP capability map, as the Automation design does. |
 | **CLI** | Yes | `datawatch autonomous tags [--counts]`; `datawatch autonomous views list\|create\|apply\|delete`. The `autonomous` command group already exists (`cmd/datawatch/cli_autonomous.go`). |
-| **Comm channel** | Yes, read-only | `automata tags` (top-level counts) and `automata view <name>` (run a saved combo as a list). `automata attention` lists blocked and needs_review items. Create, rename and combo edits are excluded, since they do not fit one line. |
-| **YAML/config** | Yes | Provisional keys under `autonomous.tags`: `default_view` (`attention`\|`tags`), `attention_statuses` (default `[blocked, needs_review]`), and `direct_counts_visible` (bool). Each goes in `handleGetConfig` / `handlePutConfig`, `docs/config-reference.yaml`, and `configure <key>=<value>`. Saved combos are runtime data, not YAML, the same as Automations. |
+| **Comm channel** | Yes | Built: `tags [counts]`, `attention`, `session-tags`, `set-primary`, and the tag create, rename, move, color and delete verbs, with the registry status verbs. `view <name>` (saved combos) is not built. The `tags` verb sends the counts query only. |
+| **YAML/config** | Yes | Six keys under `autonomous.tags`: `default_view` (`auto`, `attention`, `tags`), `attention_statuses` (default `[blocked, needs_review, paused]`, so paused joins the attention group), `default_match_mode` (`any`, `all`), `direct_counts_visible` (bool), `registry_keeper` and `registry_sync_seconds`. Each is in `handleGetConfig` / `handlePutConfig`, `docs/config-reference.yaml`, and `configure <key>=<value>`. Saved combos are runtime data, not YAML, the same as Automations (and not built). |
 | **PWA** | Yes | Attention pinned area, tile grid, inline sections (web and tablet), drill-down (mobile), faceted filter bar, saved-combo chip row. Locale keys go in all five bundles under `internal/server/web/locales/`. |
 | **Android** | Yes, via a parity issue | A `datawatch-app` issue for the tile row, attention list, and drill-down. The filter and saved combos may lag one release. Filed in the companion app repo by the implementation PRD, not here. |
 | **iPhone/iOS** | Yes, via a parity issue | Same scope as Android, in the companion app's iOS track. Attention pushes ride on BL427's mobile topic sink, so no tag-specific delivery is needed. |
 
-**Sessions:** N/A in v1. Session cards carry no tag field today (see Current state),
-and the tile design covers Automata only. Open question 1 asks whether sessions should
-inherit tags from their parent Automaton.
+**Sessions:** built. A session carries its own tags, and a session spawned by an
+Automaton shows that Automaton's tags as inherited, read-only tags (decision 1 in the
+decisions document). Session tags are set from REST, MCP, the CLI, the comm channel,
+the start request and the PWA session detail.
+
+**Federation:** built. Tags are shared through one registry: the keeper is set by
+configuration, a peer serves its last copy as stale when the keeper is unreachable, and
+merge and removed-on-keeper notes are recorded. The full parity table for this work is
+in the decisions document, under `## Parity surface`.
 
 ## Open questions
 

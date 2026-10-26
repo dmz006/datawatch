@@ -286,6 +286,12 @@ type Session struct {
 	// so the completion commit can use it without parsing Name.
 	TaskTitle string `json:"task_title,omitempty"`
 
+	// Tags (BL461) are the IDs of the managed tags this session carries
+	// itself. Persisted with the record so they survive a daemon restart.
+	// The tags a session inherits from the Automaton that spawned it are
+	// never stored here; Manager.InheritedTags computes them on read.
+	Tags []string `json:"tags,omitempty"`
+
 	// WriteScope (auto-commit leak fix): the session's effective write
 	// directories (PRD.WriteDirs or task ProjectDir override). Automatic
 	// commits stage only files under these directories instead of the

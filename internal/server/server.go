@@ -45,6 +45,7 @@ import (
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
+	"github.com/dmz006/datawatch/internal/tagregistry"
 	"github.com/dmz006/datawatch/internal/tlsutil"
 	"github.com/dmz006/datawatch/internal/websearch"
 )
@@ -253,6 +254,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/files/upload", api.handleFilesJSONUpload)
 	apiMux.HandleFunc("/api/sessions/timeline", api.handleSessionTimeline)
 	apiMux.HandleFunc("/api/sessions/rename", api.handleRenameSession)
+	apiMux.HandleFunc("/api/sessions/tags", api.handleSessionTags) // session tags
 	apiMux.HandleFunc("/api/sessions/bind", api.handleBindSessionAgent)
 	apiMux.HandleFunc("/api/sessions/kill", api.handleKillSession)
 	apiMux.HandleFunc("/api/sessions/delete", api.handleDeleteSession)
@@ -419,6 +421,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Tag registry endpoints.
 	apiMux.HandleFunc("/api/autonomous/tags", api.handleAutonomousTags)
 	apiMux.HandleFunc("/api/autonomous/tags/", api.handleAutonomousTags)
+	// Shared tag registry: the keeper snapshot, forwarded peer writes and the
+	// merge-note dismissal. The exact paths win over the /tags/ subtree above.
+	apiMux.HandleFunc("/api/autonomous/tags/registry", api.handleTagRegistrySnapshot)
+	apiMux.HandleFunc("/api/autonomous/tags/registry/write", api.handleTagRegistryWrite)
+	apiMux.HandleFunc("/api/autonomous/tags/registry/notes/", api.handleTagRegistryNotes)
+	apiMux.HandleFunc("/api/autonomous/attention", api.handleAutonomousAttention)
 	// BL303 S2 — guardrail library + profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/guardrails", api.handleAutonomousGuardrails)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)
@@ -1127,6 +1135,12 @@ func (s *HTTPServer) SetPipelineAPI(api PipelineAPI) {
 // return 503).
 func (s *HTTPServer) SetAutonomousAPI(api AutonomousAPI) {
 	s.api.SetAutonomousAPI(api)
+}
+
+// SetTagRegistry wires the shared Automata tag registry and the function that
+// starts its sync loop. See Server.SetTagRegistry.
+func (s *HTTPServer) SetTagRegistry(r *tagregistry.Registry, startSync func()) {
+	s.api.SetTagRegistry(r, startSync)
 }
 
 // SetAutonomousSubscriptions (BL427 phase 3) wires the lifecycle event

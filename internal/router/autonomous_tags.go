@@ -1,21 +1,26 @@
-// Comm-channel verbs for the Automata tag registry and per-Automaton tag
-// assignment: autonomous tags|tag-create|tag-rename|tag-move|tag-color|
-// tag-delete|set-tags. Each verb proxies the matching REST endpoint.
+// Comm-channel verbs for the Automata tag registry, per-Automaton and
+// per-session tag assignment, the primary tag and the attention list:
+// autonomous tags [counts]|tag-create|tag-rename|tag-move|tag-color|tag-delete|
+// set-tags|set-primary|session-tags|attention|tag-registry|
+// tag-registry-dismiss. Each verb proxies the matching REST endpoint.
 
 package router
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 )
 
-// commTagRequest is the REST call a tag verb translates into.
+// commTagRequest is the REST call a tag verb translates into. registryOnly
+// means the reply is trimmed to its "registry" object.
 type commTagRequest struct {
-	method string
-	path   string
-	body   map[string]any
+	method       string
+	path         string
+	body         map[string]any
+	registryOnly bool
 }
 
 // parseCommTagList splits a comma-separated tag-ID list; an empty list is
@@ -37,7 +42,50 @@ func buildCommTagRequest(verb string, args []string) (req commTagRequest, usage 
 	const base = "/api/autonomous/tags"
 	switch strings.ReplaceAll(verb, "_", "-") {
 	case "tags":
-		return commTagRequest{method: http.MethodGet, path: base}, ""
+		switch {
+		case len(args) == 1:
+			return commTagRequest{method: http.MethodGet, path: base}, ""
+		case len(args) == 2 && args[1] == "counts":
+			return commTagRequest{method: http.MethodGet, path: base + "?counts=true"}, ""
+		}
+		return req, "usage: autonomous tags [counts]"
+	case "tag-registry":
+		if len(args) != 1 {
+			return req, "usage: autonomous tag-registry"
+		}
+		return commTagRequest{method: http.MethodGet, path: base, registryOnly: true}, ""
+	case "tag-registry-dismiss":
+		if len(args) != 2 {
+			return req, "usage: autonomous tag-registry-dismiss <note-id>"
+		}
+		return commTagRequest{method: http.MethodPost,
+			path: base + "/registry/notes/" + url.PathEscape(args[1]) + "/dismiss"}, ""
+	case "attention":
+		if len(args) != 1 {
+			return req, "usage: autonomous attention"
+		}
+		return commTagRequest{method: http.MethodGet, path: "/api/autonomous/attention"}, ""
+	case "session-tags":
+		if len(args) < 2 || len(args) > 3 {
+			return req, "usage: autonomous session-tags <session-id> <tag-id1,tag-id2,...> (omit the list to clear)"
+		}
+		list := ""
+		if len(args) == 3 {
+			list = args[2]
+		}
+		return commTagRequest{method: http.MethodPost, path: "/api/sessions/tags",
+			body: map[string]any{"id": args[1], "tag_ids": parseCommTagList(list)}}, ""
+	case "set-primary":
+		if len(args) != 3 {
+			return req, "usage: autonomous set-primary <prd-id> <tag-id|none>"
+		}
+		primary := args[2]
+		if strings.EqualFold(primary, "none") {
+			primary = ""
+		}
+		return commTagRequest{method: http.MethodPost,
+			path: "/api/autonomous/prds/" + url.PathEscape(args[1]) + "/set_tags",
+			body: map[string]any{"primary_tag_id": primary}}, ""
 	case "tag-create":
 		usage = "usage: autonomous tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]"
 		if len(args) < 2 {
@@ -121,9 +169,33 @@ func (r *Router) handleAutonomousTagVerb(verb string, args []string) {
 		r.reply(name+" failed", err.Error())
 		return
 	}
+	if req.registryOnly {
+		registry, err := registryObjectFromTagsReply([]byte(out))
+		if err != nil {
+			r.reply(name+" failed", err.Error())
+			return
+		}
+		r.reply(name, prettyJSON(string(registry)))
+		return
+	}
 	if strings.TrimSpace(out) == "" {
 		r.reply(name, "ok")
 		return
 	}
 	r.reply(name, prettyJSON(out))
+}
+
+// registryObjectFromTagsReply extracts the "registry" object from a
+// GET /api/autonomous/tags reply.
+func registryObjectFromTagsReply(body []byte) ([]byte, error) {
+	var reply struct {
+		Registry json.RawMessage `json:"registry"`
+	}
+	if err := json.Unmarshal(body, &reply); err != nil {
+		return nil, fmt.Errorf("decode tags reply: %w", err)
+	}
+	if len(reply.Registry) == 0 {
+		return nil, fmt.Errorf("tags reply has no registry object")
+	}
+	return reply.Registry, nil
 }

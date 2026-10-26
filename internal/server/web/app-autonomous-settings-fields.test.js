@@ -467,3 +467,94 @@ test('judge_policy and judge_timeout_seconds label and help keys are non-empty i
     }
   }
 });
+
+// ── Tag browser settings card (autonomous.tags.*) ────────────────────────────
+
+test('autonomous settings group the six tag-browser fields under a Tag browser sub-heading', () => {
+  const sandbox = boot();
+  const fields = JSON.parse(vm.runInContext(
+    'JSON.stringify(GENERAL_CONFIG_FIELDS.find(s => s.id === "autonomous").fields)', sandbox));
+  const groupIdx = fields.findIndex(f => f.type === 'group' && f.labelKey === 'settings_tags_group');
+  assert.ok(groupIdx >= 0, 'Tag browser group header missing from autonomous fields');
+  assert.ok(fields[groupIdx].key === undefined, 'group header must not carry a config key');
+  const tagKeys = [
+    'autonomous.tags.default_view',
+    'autonomous.tags.attention_statuses',
+    'autonomous.tags.default_match_mode',
+    'autonomous.tags.direct_counts_visible',
+    'autonomous.tags.registry_keeper',
+    'autonomous.tags.registry_sync_seconds',
+  ];
+  const idxs = tagKeys.map(k => fields.findIndex(f => f.key === k));
+  idxs.forEach((i, n) => assert.ok(i > groupIdx, tagKeys[n] + ' must sit under the Tag browser header'));
+  // Six fields contiguous directly after the header.
+  assert.deepEqual(idxs, [1, 2, 3, 4, 5, 6].map(n => groupIdx + n), 'tag-browser fields must be contiguous under the header');
+});
+
+test('autonomous.tags.* fields have the declared types, options, defaults and label keys', () => {
+  const sandbox = boot();
+  const fields = JSON.parse(vm.runInContext(
+    'JSON.stringify(GENERAL_CONFIG_FIELDS.find(s => s.id === "autonomous").fields)', sandbox));
+  const get = k => fields.find(f => f.key === k);
+
+  const view = get('autonomous.tags.default_view');
+  assert.equal(view.type, 'select');
+  assert.deepEqual(view.options, ['auto', 'attention', 'tags']);
+  assert.equal(view.default, 'auto');
+  assert.equal(view.labelKey, 'settings_tags_default_view');
+
+  const statuses = get('autonomous.tags.attention_statuses');
+  assert.equal(statuses.type, 'text');
+  assert.equal(statuses.csv, true);
+  assert.equal(statuses.default, 'blocked, needs_review, paused');
+  assert.equal(statuses.labelKey, 'settings_tags_attention_statuses');
+
+  const match = get('autonomous.tags.default_match_mode');
+  assert.equal(match.type, 'select');
+  assert.deepEqual(match.options, ['any', 'all']);
+  assert.equal(match.default, 'any');
+  assert.equal(match.labelKey, 'settings_tags_default_match_mode');
+
+  const direct = get('autonomous.tags.direct_counts_visible');
+  assert.equal(direct.type, 'toggle');
+  assert.equal(direct.labelKey, 'settings_tags_direct_counts_visible');
+
+  const keeper = get('autonomous.tags.registry_keeper');
+  assert.equal(keeper.type, 'text');
+  assert.ok(keeper.default === undefined || keeper.default === '', 'registry_keeper defaults to empty');
+  assert.equal(keeper.labelKey, 'settings_tags_registry_keeper');
+
+  const sync = get('autonomous.tags.registry_sync_seconds');
+  assert.equal(sync.type, 'number');
+  assert.equal(sync.min, 5);
+  assert.equal(sync.step, 1);
+  assert.equal(sync.default, '30');
+  assert.equal(sync.labelKey, 'settings_tags_registry_sync_seconds');
+
+  for (const f of [view, statuses, match, direct, keeper, sync]) {
+    assert.ok(f.label && f.label.length > 0, f.key + ' has a hardcoded fallback label');
+    assert.ok(!/\bPRD\b/.test(f.label), f.key + ' label must not say PRD');
+  }
+});
+
+test('every tag-browser labelKey and the group hint exist in all five locale bundles, with no tracker IDs or PRD wording', () => {
+  const keys = [
+    'settings_tags_group',
+    'settings_tags_group_help',
+    'settings_tags_default_view',
+    'settings_tags_attention_statuses',
+    'settings_tags_default_match_mode',
+    'settings_tags_direct_counts_visible',
+    'settings_tags_registry_keeper',
+    'settings_tags_registry_sync_seconds',
+  ];
+  for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    for (const k of keys) {
+      assert.ok(typeof bundle[k] === 'string' && bundle[k].length > 0,
+        k + ' missing or empty in ' + locale + ' locale');
+      assert.ok(!/\bBL\d+\b|\bB\d+\b|\bGH\d+\b/.test(bundle[k]), k + ' must not contain tracker IDs (' + locale + ')');
+      assert.ok(!/\bPRD\b/.test(bundle[k]), k + ' must not say PRD (' + locale + ')');
+    }
+  }
+});

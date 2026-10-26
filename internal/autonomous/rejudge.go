@@ -218,5 +218,6 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor s
 	if bl := lastBlockVerdict(prd.Verdicts); bl != nil {
 		m.emitPRDStatus(prd, old, lastDecision(prd, "guardrail_rejudge"), bl)
 	}
+	m.EmitPRDUpdate(prd.ID)
 	return prd, nil
 }

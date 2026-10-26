@@ -2942,6 +2942,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			defer resp.Body.Close() //nolint:errcheck
 			if resp.StatusCode != 200 {
+				// Show the daemon's refusal text as-is, so comm carries the same
+				// message as REST (e.g. a bad autonomous.tags value).
+				if msg, _ := io.ReadAll(resp.Body); len(strings.TrimSpace(string(msg))) > 0 {
+					return errors.New(strings.TrimSpace(string(msg)))
+				}
 				return fmt.Errorf("API returned %d", resp.StatusCode)
 			}
 			return nil
@@ -6063,6 +6068,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 				httpServer.BroadcastPRDUpdate(autonomouspkg.PRDUpdatePayload(ev))
 			})
+			// Tag registry and assignment changes reach every client as
+			// tag_update frames (id-only), so open tag browsers refresh
+			// their counts. A callback rather than a lifecycle subscriber:
+			// tag events are not Automaton lifecycle transitions.
+			amgr.SetTagEventFn(func(ev autonomouspkg.TagEvent) {
+				httpServer.BroadcastTagUpdate(ev)
+			})
 			// Built-in lifecycle-event sinks (alert store + topic push) plus the
 			// comm fan-out. They subscribe to every notify event kind; which
 			// of those actually deliver is decided per Automaton by the resolver
@@ -6653,6 +6665,7 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			amgr.SetScanGrader(scanGrader)
 			amgr.SetRuleEditorFn(ruleEditor)
 			httpServer.SetAutonomousAPI(aAPI)
+			wireTagRegistry(ctx, cfg, amgr, httpServer)
 			// Phase 4 follow-up (v5.26.67) — wire the post-session
 			// diff hook now that the autonomous Manager exists.
 			autonomousFilesHook = func(sess *session.Session) {
@@ -7170,6 +7183,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// Wire test message endpoint — a router with a placeholder backend that
 		// HandleTestMessage replaces with a capture backend per request.
 		testRouter := router.NewRouter(cfg.Hostname, "__test__", nil, mgr, cfg.Session.TailLines, wm)
+		// The comm verbs that proxy REST (autonomous tags, attention, ...) need
+		// the local loopback port, the same as the messaging routers above.
+		if cfg.Server.Enabled && cfg.Server.Port > 0 {
+			testRouter.SetWebPort(cfg.Server.Port)
+		}
 		testRouter.SetScheduleStore(schedStore)
 		testRouter.SetAlertStore(alertStore)
 		testRouter.SetCmdLibrary(cmdLib)
@@ -10502,7 +10520,9 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 	if err := putConfig(url, cfg.Server.Token, body); err != nil {
 		bodyQuoted := fmt.Sprintf(`{"%s": "%s"}`, key, value)
 		if err2 := putConfig(url, cfg.Server.Token, bodyQuoted); err2 != nil {
-			return fmt.Errorf("config set: %w (also tried quoted: %v)", err, err2)
+			// The quoted attempt is the one that carries a value refusal, so its
+			// message is the daemon's text as every other surface shows it.
+			return fmt.Errorf("config set: %w", err2)
 		}
 	}
 	fmt.Printf("Set %s = %s\n", key, value)
@@ -10945,6 +10965,9 @@ func newSessionCmd() *cobra.Command {
 			return runSessionHistory(cfg, args[0])
 		},
 	})
+
+	// session tags <id> --tags <list> — set the tags a session carries itself
+	sessionCmd.AddCommand(newSessionTagsCmd())
 
 	// session rename <id> <name>
 	sessionCmd.AddCommand(&cobra.Command{

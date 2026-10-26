@@ -65,6 +65,9 @@ type BudgetView struct {
 type AutomationView struct {
 	*Automation
 	Budget *BudgetView `json:"budget,omitempty"`
+	// Tags is the union of the tag IDs carried by the member Automata. It is
+	// computed on every read and never stored on the Automation.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // allocationOnlyNote explains a policy that can never pause or block.
@@ -72,7 +75,7 @@ const allocationOnlyNote = "this policy is an estimate only: an allocation_pct c
 
 // AutomationViewOf returns a with its computed budget view.
 func (m *Manager) AutomationViewOf(a *Automation) *AutomationView {
-	return &AutomationView{Automation: a, Budget: m.BudgetViewFor(a)}
+	return &AutomationView{Automation: a, Budget: m.BudgetViewFor(a), Tags: m.automationMemberTags(a)}
 }
 
 // BudgetViewFor computes the budget view of a, or nil when a has no budget
