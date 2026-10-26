@@ -3456,3 +3456,16 @@ Both validation levels are listed. Every Tested row below was run on 2026-10-26 
 | Live: the default attention list on a daemon with a blocked, a paused and a review-held Automaton | N/A (manual, sandbox daemon only) | Sandbox daemon with one Automaton in each state | `GET /api/autonomous/attention` returns all three, and the PWA attention section shows them; with `attention_statuses` set to `blocked` only, the paused one leaves the group. | Live | No | Not run | **No** | Owed. The paused and review-held cases are covered by the unit rows above, not on a live daemon. |
 | Docs and index checks for the tag work | N/A (script checks) | `bash scripts/check-howto-coverage.sh`, `bash scripts/check-curated-howtos.sh`, `bash scripts/check-docs-sync.sh`, `bash scripts/check-no-internal-refs.sh` | Every how-to has `exec_steps` or is listed as LLM-only; every `exec_steps` tool is a registered MCP tool; the embedded docs match `docs/`; no tracker IDs in user-facing surfaces. | Script | N/A | Pass | N/A | The how-to `automata-tag-registry` carries `exec_steps` and is not in the LLM-only list. |
 
+
+## GET /api/health — `listeners` auth-posture array
+
+One auth-posture entry per daemon listener (`rest`, `rest_tls`, `mcp_sse`, `proxy_sandbox`, `webhook`, `github_webhook`, `twilio_webhook`), computed on every request from the config the server already holds (`config.ListenerAuthStates`) so the answer is never stale. Posture-only output: bind addresses and any token/secret value are deliberately excluded because this endpoint is reachable without authentication. The pre-existing `auth_required`, `mcp_auth_required` and `mcp_sse` fields are unchanged and remain pinned by `TestBL90_Health` and the `mcp_sse` health-state tests.
+
+| Scenario | Automated | Live | Test / Location | Notes |
+|----------|-----------|------|-----------------|-------|
+| Token-protected REST listener reports `enabled=true, auth_required=true, loopback=true, acknowledged=false` | **Yes** | No | `TestListenerAuth_TokenProtectedListener` (`internal/server/health_listener_auth_test.go`) | PASS — the configured server token also asserted absent from the whole body |
+| Enabled, non-loopback, tokenless listener reported open (`auth_required=false`, `loopback=false`) | **Yes** | No | `TestListenerAuth_OpenNonLoopbackListener` | PASS |
+| `server.acknowledge_unauthenticated` surfaces as `acknowledged=true` on every listener entry | **Yes** | No | `TestListenerAuth_AcknowledgedOpenListener` | PASS |
+| No bind address or credential string anywhere in the body; no `address` key or any non-posture key on entries | **Yes** | No | `TestListenerAuth_NoAddressOrCredentialsInBody` | PASS — a TEST-NET-1 host and two token strings all asserted absent |
+| Nil server config → `listeners` is an empty array, no panic | **Yes** | No | `TestListenerAuth_NilConfigIsSafe` | PASS |
+| Live: inspect `/api/health` on a running daemon and confirm all seven listener entries with correct posture | No | **No** | `env -u TMUX -u TMUX_TMPDIR bash .datawatch/verify/server-listener-auth-endpoints.sh` covers unit level; live inspection against a running daemon | Owed — not run in this change |

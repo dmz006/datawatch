@@ -4907,6 +4907,23 @@ components:
           type: string
         uptime_seconds:
           type: integer
+        listeners:
+          type: array
+          description: One entry per daemon listener with its authentication posture. Computed live from the active config. Posture only — bind addresses and token/secret values are never included because this endpoint is reachable without auth.
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                example: "rest"
+              enabled:
+                type: boolean
+              auth_required:
+                type: boolean
+              loopback:
+                type: boolean
+              acknowledged:
+                type: boolean
 
     ConfigResponse:
       type: object

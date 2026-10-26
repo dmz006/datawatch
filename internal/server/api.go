@@ -2552,6 +2552,24 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if s.mcpSSEStateFn != nil {
 		mcpSSE = s.mcpSSEStateFn()
 	}
+	// listeners — per-listener auth posture, computed live from the config
+	// the server holds (config.ListenerAuthStates) so the answer is never
+	// stale. Health is reachable without auth, so the body carries posture
+	// only: no bind addresses, and never any token/secret value.
+	listeners := []map[string]interface{}{}
+	if s.cfg != nil {
+		states := config.ListenerAuthStates(s.cfg)
+		listeners = make([]map[string]interface{}, 0, len(states))
+		for _, st := range states {
+			listeners = append(listeners, map[string]interface{}{
+				"name":          st.Name,
+				"enabled":       st.Enabled,
+				"auth_required": st.AuthRequired,
+				"loopback":      st.Loopback,
+				"acknowledged":  st.Acknowledged,
+			})
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 		"status":           "ok",
@@ -2565,6 +2583,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		// set, or (since mcp.New falls back) if server.token is set.
 		"mcp_auth_required": s.mcpTokenConfigured || s.token != "",
 		"mcp_sse":           mcpSSE,
+		"listeners":         listeners,
 	})
 }
 
