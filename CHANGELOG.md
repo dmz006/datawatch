@@ -46,6 +46,14 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.19.5 — The compute node list decides where local-model work runs
+
+### The LLM entry's compute node list decides where local-model work runs
+
+- The `compute_nodes` list on an LLM entry now decides which nodes a local-model worker, verifier and judge may run on. Each listed node that is known and serves the model is a candidate.
+- The request goes to the least loaded candidate. `scheduling_priority` only breaks a tie between equally loaded candidates, then list order.
+- The limit of one engine per node still applies. A node that does not serve the model is skipped. A one-entry list behaves as before.
+
 ## v9.19.4 — Adopted sessions hold a node lease and waiting work is re-placed
 
 ### Restart keeps each worker on the node it runs on
