@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dmz006/datawatch/internal/audit"
 )
@@ -44,7 +45,19 @@ const (
 	storeLineAnswerRecorded    = "answer_recorded"
 	storeLineQuestionWithdrawn = "question_withdrawn"
 	storeLineQuestionExpired   = "question_expired"
+	// storeLineCrashResidue marks the line just before it as the abandoned
+	// fragment of a write that never finished (a crash or a failed partial
+	// write). The file is append-only, so the fragment cannot be cut away;
+	// instead the next append closes it with a newline and follows it with
+	// this marker, and replay then skips exactly that fragment.
+	storeLineCrashResidue = "crash_residue"
 )
+
+// ErrQuoteNotUTF8 is returned when an answer quote is not valid UTF-8. The
+// store keeps quotes exactly as received, and the JSON encoding of a line
+// would silently rewrite invalid bytes, so such a quote is refused instead
+// of being stored altered.
+var ErrQuoteNotUTF8 = errors.New("answer quote is not valid UTF-8")
 
 // questionStoreRecord is one line of the store file. A raised question or a
 // recorded answer carries the full record; a withdrawal or an expiry carries
@@ -57,6 +70,9 @@ type questionStoreRecord struct {
 	Actor      string     `json:"actor,omitempty"`
 	Reason     string     `json:"reason,omitempty"`
 	At         *time.Time `json:"at,omitempty"`
+	// DiscardedBytes is set on a crash_residue line: the byte length of the
+	// abandoned fragment on the line before it.
+	DiscardedBytes int `json:"discarded_bytes,omitempty"`
 }
 
 // QuestionStore holds the raised questions and their answers, backed by one
@@ -75,6 +91,10 @@ type QuestionStore struct {
 	questions map[string]*Question // id -> current view
 	answers   map[string]*Answer   // id -> the stored, immutable record
 	answerIDs map[string][]string  // question id -> answer ids, oldest first
+
+	// writeFn writes one chunk to the open append file; a test replaces it
+	// to simulate a write that fails part way.
+	writeFn func(f *os.File, b []byte) (int, error)
 }
 
 // NewQuestionStore opens (or starts, when the file is missing) the
@@ -89,6 +109,7 @@ func NewQuestionStore(path string) (*QuestionStore, error) {
 		now:           time.Now,
 		newQuestionID: defaultNewQuestionID,
 		newAnswerID:   defaultNewAnswerID,
+		writeFn:       func(f *os.File, b []byte) (int, error) { return f.Write(b) },
 		questions:     make(map[string]*Question),
 		answers:       make(map[string]*Answer),
 		answerIDs:     make(map[string][]string),
@@ -135,6 +156,15 @@ func (s *QuestionStore) replay(data []byte) error {
 				// it, then repair the framing on the next append.
 				continue
 			}
+			// An abandoned fragment that a later append closed off is
+			// followed by a crash_residue marker naming its exact length;
+			// that and nothing else makes a bad line acceptable.
+			if i+1 < len(lines) {
+				if next, nerr := parseStoreRecord(lines[i+1]); nerr == nil &&
+					next.Type == storeLineCrashResidue && next.DiscardedBytes == len(line) {
+					continue
+				}
+			}
 			return fmt.Errorf("question store %s: line %d is not a valid record: %w", s.path, i+1, err)
 		}
 		s.applyRecord(rec)
@@ -160,6 +190,10 @@ func parseStoreRecord(line string) (questionStoreRecord, error) {
 	case storeLineQuestionWithdrawn, storeLineQuestionExpired:
 		if rec.QuestionID == "" {
 			return rec, errors.New("line is missing question_id")
+		}
+	case storeLineCrashResidue:
+		if rec.DiscardedBytes <= 0 {
+			return rec, errors.New("crash_residue line is missing discarded_bytes")
 		}
 	default:
 		return rec, errors.New("unknown record type")
@@ -192,27 +226,29 @@ func (s *QuestionStore) applyRecord(rec questionStoreRecord) {
 }
 
 // appendLocked appends one record as a single new line and syncs it. The
-// caller holds s.mu. When a previous crash left the file without a trailing
-// newline, the append starts with a newline so the two records never merge
-// into one line. The file is only ever extended.
+// caller holds s.mu. The file is only ever extended: when a crash or a failed
+// partial write left it without a trailing newline, the append first closes
+// that line, and if the leftover is an unparsable fragment it also writes a
+// crash_residue marker so replay skips exactly that fragment and the store
+// still reopens. Nothing is truncated or rewritten.
 func (s *QuestionStore) appendLocked(rec questionStoreRecord) error {
 	data, err := json.Marshal(rec)
 	if err != nil {
 		return fmt.Errorf("encode question store record: %w", err)
 	}
-	suffix := needsNewlinePrefix(s.path)
+	prefix, err := s.tailRepair()
+	if err != nil {
+		return err
+	}
 	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("open question store %s for append: %w", s.path, err)
 	}
-	if suffix {
-		if _, werr := f.Write([]byte{'\n'}); werr != nil {
-			f.Close()
-			return fmt.Errorf("append question store record: %w", werr)
-		}
-	}
-	data = append(data, '\n')
-	if _, err := f.Write(data); err != nil {
+	// One write for the repair and the record, so a failure leaves at most
+	// one more unterminated tail, which the next append repairs the same way.
+	chunk := append(prefix, data...)
+	chunk = append(chunk, '\n')
+	if _, err := s.writeFn(f, chunk); err != nil {
 		f.Close()
 		return fmt.Errorf("append question store record: %w", err)
 	}
@@ -226,25 +262,52 @@ func (s *QuestionStore) appendLocked(rec questionStoreRecord) error {
 	return nil
 }
 
-// needsNewlinePrefix reports whether the file exists, is non-empty, and
-// does not end with a newline — the signature of a crash mid-write. The
-// probe opens the file for reading separately: a write-only descriptor
-// cannot be read back.
-func needsNewlinePrefix(path string) bool {
-	f, err := os.OpenFile(path, os.O_RDONLY, 0)
+// tailRepair returns the bytes the next append must write before its own
+// record. Empty when the file is missing, empty, or ends with a newline.
+// Otherwise the last line is unterminated: a valid record there only needs
+// its newline, an unparsable fragment also needs the crash_residue marker.
+func (s *QuestionStore) tailRepair() ([]byte, error) {
+	// The common case costs one byte: only an unterminated file is read whole.
+	f, err := os.Open(s.path)
 	if err != nil {
-		return false
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read question store %s: %w", s.path, err)
 	}
-	defer f.Close()
 	fi, err := f.Stat()
-	if err != nil || fi.Size() == 0 {
-		return false
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("stat question store %s: %w", s.path, err)
 	}
-	b := make([]byte, 1)
-	if _, err := f.ReadAt(b, fi.Size()-1); err != nil {
-		return false
+	last := make([]byte, 1)
+	if fi.Size() == 0 {
+		f.Close()
+		return nil, nil
 	}
-	return b[0] != '\n'
+	if _, err := f.ReadAt(last, fi.Size()-1); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("read question store %s: %w", s.path, err)
+	}
+	f.Close()
+	if last[0] == '\n' {
+		return nil, nil
+	}
+	data, err := os.ReadFile(s.path)
+	if err != nil {
+		return nil, fmt.Errorf("read question store %s: %w", s.path, err)
+	}
+	tail := data[strings.LastIndexByte(string(data), '\n')+1:]
+	prefix := []byte{'\n'}
+	if _, perr := parseStoreRecord(string(tail)); perr != nil {
+		marker, merr := json.Marshal(questionStoreRecord{Type: storeLineCrashResidue, DiscardedBytes: len(tail)})
+		if merr != nil {
+			return nil, fmt.Errorf("encode question store record: %w", merr)
+		}
+		prefix = append(prefix, marker...)
+		prefix = append(prefix, '\n')
+	}
+	return prefix, nil
 }
 
 // emitAudit invokes the audit callback outside the store lock.
@@ -320,6 +383,10 @@ func (s *QuestionStore) Answer(questionID string, a Answer) (Answer, error) {
 		return Answer{}, fmt.Errorf("%s: %w", SecretRefusalMessage(pattern), ErrSecretInAnswer)
 	}
 
+	if !utf8.ValidString(a.Quote) {
+		return Answer{}, fmt.Errorf("%w: it cannot be stored exactly as received", ErrQuoteNotUTF8)
+	}
+
 	s.mu.Lock()
 	q, ok := s.questions[questionID]
 	if !ok {
@@ -382,12 +449,10 @@ func (s *QuestionStore) Answer(questionID string, a Answer) (Answer, error) {
 // Withdraw moves an open question to withdrawn and records who withdrew it
 // and why. A question that is no longer open is refused.
 func (s *QuestionStore) Withdraw(id, actor, reason string) (Question, error) {
-	var out Question
-	err := s.mutateState(id, storeLineQuestionWithdrawn, actor, reason, QuestionWithdrawn)
+	out, err := s.mutateState(id, storeLineQuestionWithdrawn, actor, reason, QuestionWithdrawn)
 	if err != nil {
 		return Question{}, err
 	}
-	out = s.view(id)
 	s.emitAudit(audit.ActionQuestionWithdrawn, map[string]any{
 		"question_id": id,
 		"actor":       actor,
@@ -402,12 +467,10 @@ func (s *QuestionStore) Withdraw(id, actor, reason string) (Question, error) {
 // explicit caller (for example a supervisor deciding the question is being
 // skipped). Retention is forever either way: there is no delete.
 func (s *QuestionStore) Expire(id, reason string) (Question, error) {
-	var out Question
-	err := s.mutateState(id, storeLineQuestionExpired, "", reason, QuestionExpired)
+	out, err := s.mutateState(id, storeLineQuestionExpired, "", reason, QuestionExpired)
 	if err != nil {
 		return Question{}, err
 	}
-	out = s.view(id)
 	// The documented details for the expiry action are the question id and
 	// the reason only.
 	s.emitAudit(audit.ActionQuestionExpired, map[string]any{
@@ -418,18 +481,18 @@ func (s *QuestionStore) Expire(id, reason string) (Question, error) {
 }
 
 // mutateState appends a state-change record for an open question and moves
-// its state. A question that is not open is refused with ErrQuestionNotOpen,
+// its state, returning a copy of the question taken while the store lock is
+// still held. A question that is not open is refused with ErrQuestionNotOpen,
 // and one the store does not hold with ErrQuestionNotFound.
-func (s *QuestionStore) mutateState(id, lineType, actor, reason string, nextState QuestionState) error {
+func (s *QuestionStore) mutateState(id, lineType, actor, reason string, nextState QuestionState) (Question, error) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	q, ok := s.questions[id]
 	if !ok {
-		s.mu.Unlock()
-		return fmt.Errorf("question %s: %w", id, ErrQuestionNotFound)
+		return Question{}, fmt.Errorf("question %s: %w", id, ErrQuestionNotFound)
 	}
 	if q.State != QuestionOpen {
-		s.mu.Unlock()
-		return fmt.Errorf("question %s: %w", id, ErrQuestionNotOpen)
+		return Question{}, fmt.Errorf("question %s: %w", id, ErrQuestionNotOpen)
 	}
 	now := s.now()
 	rec := questionStoreRecord{
@@ -439,29 +502,11 @@ func (s *QuestionStore) mutateState(id, lineType, actor, reason string, nextStat
 		Reason:     reason,
 		At:         &now,
 	}
-	err := s.appendLocked(rec)
-	if err != nil {
-		s.mu.Unlock()
-		return err
+	if err := s.appendLocked(rec); err != nil {
+		return Question{}, err
 	}
 	q.State = nextState
-	s.mu.Unlock()
-	return nil
-}
-
-// view returns a copy of the in-memory question. It takes and releases the
-// store lock itself, so it is safe to call from any context — including from
-// Withdraw and Expire, which read the question after mutateState has already
-// released the lock. Reading the questions map while another goroutine is
-// writing it (a concurrent Raise storing a new question) is a data race the
-// Go runtime can treat as fatal, so the read must happen under the lock.
-func (s *QuestionStore) view(id string) Question {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if q := s.questions[id]; q != nil {
-		return *q
-	}
-	return Question{}
+	return *q, nil
 }
 
 // Get returns the current view of the question with id.

@@ -1048,3 +1048,212 @@ func TestQuestionStore_RaiseIDNeverReusedOnCollision(t *testing.T) {
 		t.Errorf("reopened store lost the second question %s", second.ID)
 	}
 }
+
+// appendRawToStoreFile adds raw bytes to the end of the file, as a crashed
+// writer would have left them.
+func appendRawToStoreFile(t *testing.T, path, raw string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open the store for the simulated crash: %v", err)
+	}
+	if _, err := f.WriteString(raw); err != nil {
+		f.Close()
+		t.Fatalf("simulated crash write: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close after the simulated crash: %v", err)
+	}
+}
+
+func TestQuestionStore_PartialRecordThenAppendThenReopen(t *testing.T) {
+	path, s, _, _ := newQuestionStoreTest(t)
+	first := mustRaise(t, s, sampleQuestion("Before the crash?"))
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the store file: %v", err)
+	}
+
+	// A record only partly written: no closing brace, no newline.
+	partial := `{"type":"answer_recorded","answer":{"id":"a-00000001","question_id":"` + first + `","quo`
+	appendRawToStoreFile(t, path, partial)
+
+	reopened, err := NewQuestionStore(path)
+	if err != nil {
+		t.Fatalf("reopen over a partial record: %v", err)
+	}
+	second := mustRaise(t, reopened, sampleQuestion("After the crash?"))
+	if _, err := reopened.Answer(second, Answer{ChosenOptionID: "first", Actor: "operator"}); err != nil {
+		t.Fatalf("answer after the repair: %v", err)
+	}
+
+	// The file only grew: the bytes written before the repair are a prefix,
+	// and the abandoned fragment is still there, closed off by a marker.
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the store file after the appends: %v", err)
+	}
+	if !bytes.HasPrefix(after, append(append([]byte{}, before...), partial...)) {
+		t.Errorf("the file did not grow by appending only")
+	}
+	if !bytes.HasSuffix(after, []byte("\n")) {
+		t.Errorf("the file after the appends does not end with a newline")
+	}
+
+	// The store opens cleanly again and holds everything, twice over.
+	for pass := 1; pass <= 2; pass++ {
+		again, err := NewQuestionStore(path)
+		if err != nil {
+			t.Fatalf("pass %d: reopen after the repair: %v", pass, err)
+		}
+		if q, ok := again.Get(first); !ok || q.State != QuestionOpen {
+			t.Errorf("pass %d: first question = %+v (ok=%v); want open", pass, q, ok)
+		}
+		if q, ok := again.Get(second); !ok || q.State != QuestionAnswered {
+			t.Errorf("pass %d: second question = %+v (ok=%v); want answered", pass, q, ok)
+		}
+		// Each earlier pass raised one more question of its own.
+		if n, want := len(again.List(QuestionFilter{})), 2+pass-1; n != want {
+			t.Errorf("pass %d: %d questions; want %d", pass, n, want)
+		}
+		if _, err := again.Raise(sampleQuestion(fmt.Sprintf("Pass %d still appends?", pass))); err != nil {
+			t.Fatalf("pass %d: append after the reopen: %v", pass, err)
+		}
+	}
+}
+
+func TestQuestionStore_PartialRecordRepairedWithoutReopen(t *testing.T) {
+	path, s, _, _ := newQuestionStoreTest(t)
+	first := mustRaise(t, s, sampleQuestion("Open store, torn tail?"))
+
+	// The tail is torn while this very store is open.
+	appendRawToStoreFile(t, path, `{"type":"question_withdrawn","question_i`)
+	second := mustRaise(t, s, sampleQuestion("Appends past the torn tail?"))
+
+	again, err := NewQuestionStore(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	for _, id := range []string{first, second} {
+		if q, ok := again.Get(id); !ok || q.State != QuestionOpen {
+			t.Errorf("question %s after the reopen = %+v (ok=%v); want open", id, q, ok)
+		}
+	}
+}
+
+func TestQuestionStore_ValidUnterminatedRecordOnlyGetsNewline(t *testing.T) {
+	path, s, _, _ := newQuestionStoreTest(t)
+	first := mustRaise(t, s, sampleQuestion("Complete but unterminated?"))
+
+	// Drop the final newline: the record is whole, only the newline is missing.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	trimmed := bytes.TrimSuffix(data, []byte("\n"))
+	rawPath := filepath.Join(t.TempDir(), "q.jsonl")
+	if err := os.WriteFile(rawPath, trimmed, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	reopened, err := NewQuestionStore(rawPath)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if _, ok := reopened.Get(first); !ok {
+		t.Fatalf("a whole record without its newline was dropped")
+	}
+	mustRaise(t, reopened, sampleQuestion("Next?"))
+	out, _ := os.ReadFile(rawPath)
+	if bytes.Contains(out, []byte(storeLineCrashResidue)) {
+		t.Errorf("a whole record needed no crash marker, but one was written")
+	}
+	if _, err := NewQuestionStore(rawPath); err != nil {
+		t.Fatalf("reopen after the append: %v", err)
+	}
+}
+
+func TestQuestionStore_FailedPartialWriteRepairedByNextAppend(t *testing.T) {
+	path, s, rec, _ := newQuestionStoreTest(t)
+	first := mustRaise(t, s, sampleQuestion("Survives a failed write?"))
+
+	// A write that lands only half its bytes, then fails.
+	s.writeFn = func(f *os.File, b []byte) (int, error) {
+		n, _ := f.Write(b[:len(b)/2])
+		return n, errors.New("disk full")
+	}
+	if _, err := s.Raise(sampleQuestion("Never fully written?")); err == nil {
+		t.Fatalf("a raise whose write failed was accepted")
+	}
+	if _, err := s.Answer(first, Answer{ChosenOptionID: "first"}); err == nil {
+		t.Fatalf("an answer whose write failed was accepted")
+	}
+	if _, err := s.Withdraw(first, "operator", "no longer needed"); err == nil {
+		t.Fatalf("a withdraw whose write failed was accepted")
+	}
+	if got := s.List(QuestionFilter{}); len(got) != 1 || got[0].State != QuestionOpen {
+		t.Errorf("the view changed after failed writes: %v", got)
+	}
+	if actions, _ := rec.snapshot(); len(actions) != 1 {
+		t.Errorf("audit entries after failed writes = %v; want only the first raise", actions)
+	}
+
+	// The store recovers on the next append, and the file reopens.
+	s.writeFn = func(f *os.File, b []byte) (int, error) { return f.Write(b) }
+	if _, err := s.Answer(first, Answer{ChosenOptionID: "second", Actor: "operator"}); err != nil {
+		t.Fatalf("answer after the failed writes: %v", err)
+	}
+	again, err := NewQuestionStore(path)
+	if err != nil {
+		t.Fatalf("reopen after a failed partial write: %v", err)
+	}
+	if q, ok := again.Get(first); !ok || q.State != QuestionAnswered {
+		t.Errorf("reopened question = %+v (ok=%v); want answered", q, ok)
+	}
+	if n := len(again.List(QuestionFilter{})); n != 1 {
+		t.Errorf("reopened store holds %d questions; want 1", n)
+	}
+}
+
+func TestQuestionStore_ResidueMarkerMustMatchTheFragment(t *testing.T) {
+	path, s, _, _ := newQuestionStoreTest(t)
+	mustRaise(t, s, sampleQuestion("Marker check?"))
+
+	// A bad middle line followed by a marker with the wrong length, and a
+	// bad middle line with no marker at all, both stay errors.
+	for name, tail := range map[string]string{
+		"wrong length": "{ junk\n" + `{"type":"crash_residue","discarded_bytes":99}` + "\n",
+		"no marker":    "{ junk\n",
+	} {
+		bad := filepath.Join(t.TempDir(), "q.jsonl")
+		data, _ := os.ReadFile(path)
+		if err := os.WriteFile(bad, append(append([]byte{}, data...), []byte(tail)...), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		_, err := NewQuestionStore(bad)
+		if err == nil || !strings.Contains(err.Error(), "line 2") {
+			t.Errorf("%s: open error = %v; want a failure naming line 2", name, err)
+		}
+	}
+}
+
+func TestQuestionStore_InvalidUTF8QuoteRefused(t *testing.T) {
+	path, s, rec, _ := newQuestionStoreTest(t)
+	id := mustRaise(t, s, sampleQuestion("Bytes intact?"))
+	before, _ := os.ReadFile(path)
+
+	_, err := s.Answer(id, Answer{Quote: "bad \xff\xfe bytes", Actor: "operator"})
+	if !errors.Is(err, ErrQuoteNotUTF8) {
+		t.Fatalf("invalid UTF-8 quote error = %v; want ErrQuoteNotUTF8", err)
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) {
+		t.Errorf("a refused quote changed the file")
+	}
+	if actions, _ := rec.snapshot(); len(actions) != 1 {
+		t.Errorf("audit entries = %v; want only the raise", actions)
+	}
+	if q, _ := s.Get(id); q.State != QuestionOpen {
+		t.Errorf("question state = %s; want open", q.State)
+	}
+}
