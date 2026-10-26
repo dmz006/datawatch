@@ -285,8 +285,11 @@ Nodes with different routing modes can co-exist in a single LLM's failover chain
 llms:
   - name: llama3
     compute_nodes: [local-gpu, dc2-ollama, backup-direct]
-    # dispatcher tries nodes in order; docker-network nodes auto-start their container
+    # a pi-family worker goes to the least-loaded healthy node; a node that is
+    # full or unhealthy is passed over; docker-network nodes auto-start their container
 ```
+
+For `pi` and `pi-prompt` workers the node is not simply the first one listed: the least-loaded healthy node wins, `scheduling_priority` breaks a tie between equally loaded nodes, and list order breaks a remaining tie. See [How a pi-family worker picks its node](compute-nodes.md#how-a-pi-family-worker-picks-its-node).
 
 ---
 

@@ -447,7 +447,8 @@ func (m *Manager) clearPRDWaitReason(prdID string) {
 // only, so without this a live task holds no slot and the host pool
 // over-admits. It never waits: the session already occupies its slots.
 // Idempotent, so the boot-time pass and executeOne's skip-spawn path can
-// both call it.
+// both call it. A task whose worker lease was handed to its verifier already
+// holds its slot under VerifyHolder, so a later pass adopts nothing for it.
 func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	if !m.capacityOn() {
 		return
@@ -464,7 +465,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	}
 	led.Adopt(capacity.Request{
 		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), Model: model,
-	}, t.SessionID)
+	}, t.SessionID, VerifyHolder(t.ID))
 }
 
 // releaseCapacity frees the task's lease (safe when none is held).

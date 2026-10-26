@@ -697,7 +697,7 @@ See [`v7-compute-migration.md`](v7-compute-migration.md) for the full migration 
 
 ## Scheduling priority and permissions
 
-`scheduling_priority` (0–100, default 50) is a tiebreaker hint for the dispatcher. When multiple nodes are eligible for the same workload, the highest priority wins. Use higher values for nodes with faster GPUs or lower latency.
+`scheduling_priority` (0–100, default 50) is a tiebreaker for the dispatcher. When a pi-family worker can run on several nodes, the least-loaded healthy node wins, and priority only decides between nodes that are equally loaded (see [How a pi-family worker picks its node](#how-a-pi-family-worker-picks-its-node)). Use higher values for nodes with faster GPUs or lower latency.
 
 `permissions.allowed_consumers` restricts which callers may route to this node. Valid consumer names are `council`, `ask`, `agent_spawn`, `session_spawn`, and `*` (wildcard). An empty `allowed_consumers` list means all consumers are allowed. `denied_consumers` always wins over `allowed_consumers`.
 
@@ -710,6 +710,56 @@ datawatch compute node add inference-only-1 \
   --priority 95 \
   --allowed-consumers "council,ask" \
   --denied-consumers "agent_spawn"
+```
+
+---
+
+## How a pi-family worker picks its node
+
+A worker on the `pi` or `pi-prompt` backend runs on one of the compute nodes listed by its LLM entry (`compute_nodes`). The capacity ledger chooses the node when the worker is admitted, and the worker is then launched on that node. The choice follows these rules.
+
+**Least-loaded healthy node wins.** Each candidate node has a pool with a session limit (the node's `session_slots`). A node's load is the sessions it holds, counting sessions another part of the system already runs on it, divided by that limit. The worker goes to the node with the lowest load. A node with no limit counts as unloaded. Only when two nodes are equally loaded does `scheduling_priority` decide: the higher value goes first, and equal priorities keep the order of the entry's `compute_nodes` list.
+
+For example, with `gpu-box-1` (priority 80, 1 of 2 sessions in use) and `gpu-box-2` (priority 50, 0 of 2 in use), the next worker goes to `gpu-box-2`. Once both hold one session, the load is equal and `gpu-box-1` wins on priority.
+
+**A full node is passed over.** A node whose limit is reached cannot take the worker, so the ledger tries the next node in load order. If every candidate is full, the worker waits and is placed on the first node that frees a slot.
+
+**What counts as unhealthy.** A node is skipped, as if it were full, when either of these holds:
+
+- the node is not in the compute registry (it was deleted, or the entry names it wrongly), or
+- a [maintenance window](#maintenance-windows) covers the current time, including an open-ended window with no `to`.
+
+A maintenance window opening or closing takes effect at once. A node added to or removed from the registry is noticed on the next capacity sync, which runs every 10 seconds.
+
+**A leased node is always used.** Once a worker holds a lease that names a node, the worker is launched against that node's address, including when the LLM entry lists only one node. A one-node entry that names no node keeps using pi's own provider table, as before.
+
+**No lease on a node, no launch.** If a worker holds capacity but no node was leased, and its LLM entry lists compute nodes, the daemon does not launch it. Starting it would send the work to pi's default endpoint instead of a node of the entry. The task is marked failed with an error of this form:
+
+```
+task <task-id> not spawned: pi-prompt worker on model <model> holds capacity but no compute node was leased, and its LLM entry lists compute nodes
+```
+
+An entry that lists no nodes is not affected.
+
+**Bare model names.** A model written without a provider (for example `qwen3.8:27b`) is given the provider of the backend's configured model (for example `ollama/qwen3.8:27b` when `pi_prompt.model` is set to that) before admission, so the node is chosen for the provider the launch uses. A model that already names a provider is left as written.
+
+### What you see while a worker waits
+
+The waiting reason is shown on the task and in the `waiting` list of `GET /api/capacity`. With two or more candidate nodes it names every candidate in load order and what blocks it:
+
+```
+waiting for nodes gpu-box-1, gpu-box-2: gpu-box-1: unhealthy; gpu-box-2: 2/2 engines in use, held by <task-id>, <task-id>
+```
+
+- `<node>: unhealthy` — the node is not in the registry or is in a maintenance window.
+- `<node>: N/M engines in use, held by ...` — the node is full; the holders are the sessions using its slots.
+- `no eligible node among gpu-box-1, gpu-box-2: all excluded` — every candidate was already tried and dropped for this attempt (for example the node refused to load the model), so the worker has nowhere left to go.
+
+A single-node pool shows the shorter form `waiting for node gpu-box-1: 2/2 engines in use, held by ...`. To read the reasons:
+
+```sh
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity
+# → {"pools":[...],"waiting":[{"holder":"...","reason":"waiting for nodes gpu-box-1, gpu-box-2: ...","nodes":["gpu-box-1","gpu-box-2"]}], ...}
 ```
 
 ---

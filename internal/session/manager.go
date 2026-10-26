@@ -2301,6 +2301,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		m.onPreLaunch(sess)
 	}
 
+	// The backend is a singleton: hold the launch lock from the first
+	// per-session setting until the launch has read them.
+	unlockBackend := lockSharedBackend(backendObj)
+	defer unlockBackend()
+
 	// PRD workers must not read ancestor CLAUDE.md files (other sessions'
 	// Session:/Task: lines). Set on every launch: the backend is a singleton.
 	if ex, ok := backendObj.(interface{ SetExcludeAncestorClaudeMd(bool) }); ok {
@@ -2493,6 +2498,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			return nil, fmt.Errorf("launch LLM backend: %w", launchErr)
 		}
 		m.debugf("backend %q launched in tmux session %q", backendName, tmuxSession)
+		unlockBackend()
 		// Persist backend state for reconnect after daemon restart
 		m.saveBackendState(sess)
 	} else {
@@ -4126,6 +4132,11 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		m.onPreLaunch(sess)
 	}
 
+	// The backend is a singleton: hold the launch lock from the first
+	// per-session setting until the launch has read them.
+	unlockBackend := lockSharedBackend(backendObj)
+	defer unlockBackend()
+
 	// PRD workers must not read ancestor CLAUDE.md files (other sessions'
 	// Session:/Task: lines). Set on every launch: the backend is a singleton.
 	if ex, ok := backendObj.(interface{ SetExcludeAncestorClaudeMd(bool) }); ok {
@@ -4217,6 +4228,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		m.killPane(sess.FullID, sess.TmuxSession, "restart aborted: relaunch LLM backend failed")
 		return nil, fmt.Errorf("relaunch LLM backend: %w", launchErr)
 	}
+	unlockBackend()
 
 	// Save updated session
 	if err := m.store.Save(sess); err != nil {

@@ -93,6 +93,24 @@ func engineNodes(reg *inference.Registry) map[string][]string {
 	return nodes
 }
 
+// piDefaultModel returns the lookup the autonomous manager uses to qualify a
+// pi-family model that names no provider. It reads the model each pi backend
+// launches on when a session names none, the same configured value the
+// session manager applies, so the provider chosen for admission is the one
+// the launch uses. The config is read on each call, so a config change takes
+// effect without a restart. Any other backend, and an unset model, report "".
+func piDefaultModel(cfg *config.Config) autonomous.PiDefaultModelFn {
+	return func(backend string) string {
+		switch backend {
+		case "pi-prompt":
+			return cfg.PiPrompt.Model
+		case "pi":
+			return cfg.Pi.Model
+		}
+		return ""
+	}
+}
+
 // defaultNodePriority is the scheduling priority of a compute node whose
 // record leaves it unset (the compute registry applies the same default).
 const defaultNodePriority = 50
@@ -179,6 +197,10 @@ func capacityResolver(registry func() *inference.Registry, nodes func() *compute
 // multi-node LLM entry: it finds the leased node in the compute registry and
 // makes the model resident there. A node the registry does not hold fails the
 // load, so the task fails over to another node of the entry.
+//
+// The model a lease carries is provider-qualified ("ollama/qwen3.8:27b"); the
+// node knows it only by its own name ("qwen3.8:27b"), so the provider prefix
+// is dropped before the load request.
 func nodeLoader(nodes func() *compute.Registry) autonomous.NodeLoader {
 	loader := &inference.ModelLoader{}
 	return func(ctx context.Context, name, model string, wait func(reason string)) error {
@@ -195,8 +217,18 @@ func nodeLoader(nodes func() *compute.Registry) autonomous.NodeLoader {
 		if node == nil {
 			return &inference.NodeLoadError{Node: name, Model: model, Cause: fmt.Errorf("node %s is not in the compute registry", name)}
 		}
-		return loader.Ensure(ctx, node, model, wait)
+		return loader.Ensure(ctx, node, nodeModelName(model), wait)
 	}
+}
+
+// nodeModelName is the name a compute node serves model under: the text after
+// the provider prefix, which ends at the first slash. A model with no prefix
+// is returned as written.
+func nodeModelName(model string) string {
+	if _, name, found := strings.Cut(model, "/"); found && name != "" {
+		return name
+	}
+	return model
 }
 
 // capacityManagerKeys splits a resolver into the two closures the autonomous
@@ -631,9 +663,11 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	autonomousBudget.PeerBreakdown = peerBudget.Breakdown
 	// Load the budget file now so Blocked never reads it under the ledger lock.
 	autonomousBudget.Preload()
+	nodeHealth := newNodeHealthView()
 	led := capacity.New(capacity.Options{
 		External:     external,
 		Backpressure: backpressure,
+		NodeHealthy:  nodeHealth.healthy,
 		AutonomousBackpressure: composeBackpressure(
 			backoffBackpressure(autonomousBackoff),
 			budgetBackpressure(autonomousBudget),
@@ -648,6 +682,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	keys, choices := capacityManagerKeys(resolve)
 	amgr.SetCapacity(led, keys)
 	amgr.SetCapacityChoices(choices)
+	amgr.SetPiDefaultModel(piDefaultModel(cfg))
 	amgr.SetNodeLoad(nodeLoader(httpServer.ComputeRegistry), nodeAlerts)
 	amgr.SetCapacityAudit(capacityAudit)
 	amgr.SetBackoff(autonomousBackoff)
@@ -883,6 +918,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		}
 		if reg := httpServer.ComputeRegistry(); reg != nil {
 			nodes := reg.List()
+			nodeHealth.refresh(nodes)
 			hosting := map[string]bool{}
 			for _, entryNodes := range engineNodes(httpServer.InferenceRegistry()) {
 				for _, node := range entryNodes {

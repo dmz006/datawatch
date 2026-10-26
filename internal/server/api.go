@@ -4847,10 +4847,13 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	// how the caller spelled the model), and normalize req.Model so
 	// opencode.json always gets the form it requires, regardless of
 	// which spelling the task override used.
-	// A pi session binds to its compute node only when the entry is a pool of two
-	// or more nodes. A one-node entry keeps pi's own provider table, as before.
+	// A pi session binds to its compute node when the entry is a pool of two or
+	// more nodes, or when a one-shot start names the node its lease was granted
+	// on: that node is authoritative whatever the entry size. A one-node entry
+	// that names no node keeps pi's own provider table, as before.
 	hostRef := resolvedComputeNodeRef
-	if resolvedPoolNodes < 2 && (req.Backend == string(inference.KindPi) || req.Backend == string(inference.KindPiPrompt)) {
+	leasedNode := req.OneShot && req.ComputeNode != ""
+	if resolvedPoolNodes < 2 && !leasedNode && (req.Backend == string(inference.KindPi) || req.Backend == string(inference.KindPiPrompt)) {
 		hostRef = ""
 	}
 	resolvedOllamaURL, resolvedNodeAddress := s.nodeHostFor(hostRef, req.Backend)

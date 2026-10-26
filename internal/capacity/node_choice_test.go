@@ -3,6 +3,7 @@ package capacity
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -38,14 +39,82 @@ func ncAcquire(t *testing.T, l *Ledger, req Request) *Lease {
 
 func hasPool(ls *Lease, pool string) bool { return sharesPool(ls.Pools, []string{pool}) }
 
-func TestAcquirePicksHighestPriorityNodeWithRoom(t *testing.T) {
+// ncHold takes a lease on one node's pool, as a session already running there
+// would, so the node carries load.
+func ncHold(t *testing.T, l *Ledger, holder, node string) {
+	t.Helper()
+	ncAcquire(t, l, Request{Holder: holder, PRDID: "prd-0", Pools: []string{"node:" + node}, Node: node})
+}
+
+// With no load on either node the tie goes to the higher priority; the
+// priority is kept as the tie-break after load.
+func TestAcquirePicksHighestPriorityNodeOnLoadTie(t *testing.T) {
 	l := ncLedger(newFakeClock())
 	ls := ncAcquire(t, l, ncRequest("t1"))
 	if ls.Node != "b" {
-		t.Fatalf("Node = %q, want b (highest priority)", ls.Node)
+		t.Fatalf("Node = %q, want b (equal load, higher priority)", ls.Node)
 	}
 	if !hasPool(ls, "node:b") || hasPool(ls, "node:a") || !hasPool(ls, "host") {
 		t.Fatalf("Pools = %v, want host and node:b only", ls.Pools)
+	}
+}
+
+func TestAcquireLeastLoadedNodeBeatsHigherPriority(t *testing.T) {
+	l := New(Options{PollInterval: nqPoll, Clock: newFakeClock()})
+	l.SetLimit("node:a", 2)
+	l.SetLimit("node:b", 2)
+	ncHold(t, l, "h1", "b")
+	ls := ncAcquire(t, l, ncRequest("t1"))
+	if ls.Node != "a" {
+		t.Fatalf("Node = %q, want a (0/2 beats b at 1/2 though b has the higher priority)", ls.Node)
+	}
+}
+
+func TestAcquireLoadIsUsedOverLimit(t *testing.T) {
+	l := New(Options{PollInterval: nqPoll, Clock: newFakeClock()})
+	l.SetLimit("node:a", 4)
+	l.SetLimit("node:b", 2)
+	ncHold(t, l, "h1", "a")
+	ncHold(t, l, "h2", "b")
+	// a is 1/4 and b is 1/2: a holds as many sessions but is less loaded.
+	if ls := ncAcquire(t, l, ncRequest("t1")); ls.Node != "a" {
+		t.Fatalf("Node = %q, want a (1/4 beats 1/2)", ls.Node)
+	}
+	// a is now 2/4 and b 1/2: the same load, so the higher priority b wins.
+	if ls := ncAcquire(t, l, ncRequest("t2")); ls.Node != "b" {
+		t.Fatalf("Node = %q, want b (2/4 ties 1/2, higher priority)", ls.Node)
+	}
+}
+
+func TestAcquireUnlimitedNodeCountsAsNoLoad(t *testing.T) {
+	l := New(Options{PollInterval: nqPoll, Clock: newFakeClock()})
+	l.SetLimit("node:b", 3)
+	ncHold(t, l, "h1", "b")
+	for _, h := range []string{"u1", "u2", "u3"} {
+		ncHold(t, l, h, "a")
+	}
+	// a has no limit and three sessions, which counts as load 0, so it beats b at 1/3.
+	if ls := ncAcquire(t, l, ncRequest("t1")); ls.Node != "a" {
+		t.Fatalf("Node = %q, want a (unlimited counts as 0)", ls.Node)
+	}
+}
+
+func TestAcquireCountsExternalUseAsLoad(t *testing.T) {
+	var ext atomic.Int32
+	l := New(Options{
+		PollInterval: nqPoll, Clock: newFakeClock(),
+		External: func(pool string) int {
+			if pool == "node:b" {
+				return int(ext.Load())
+			}
+			return 0
+		},
+	})
+	l.SetLimit("node:a", 2)
+	l.SetLimit("node:b", 2)
+	ext.Store(1)
+	if ls := ncAcquire(t, l, ncRequest("t1")); ls.Node != "a" {
+		t.Fatalf("Node = %q, want a (b has 1/2 in use outside the ledger)", ls.Node)
 	}
 }
 

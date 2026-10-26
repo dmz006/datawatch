@@ -488,3 +488,77 @@ func TestAutonomousBackpressureSkipsInteractive(t *testing.T) {
 		t.Fatalf("admitted once the back-off clears: %v", err)
 	}
 }
+
+// Three sessions that survived a restart are adopted over a pool whose cap is
+// 2. Each holds one lease and is counted once, so the pool reads 3 held
+// against 2, names all three holders, and a new request waits with a reason
+// that names the pool.
+func TestAdoptOverCapCountsEachSessionOnce(t *testing.T) {
+	led := New(fast())
+	led.SetLimit("pi-prompt", 2)
+	for _, h := range []string{"task-a", "task-b", "task-c"} {
+		led.Adopt(Request{Holder: h, PRDID: "p", Pools: []string{"host", "pi-prompt"}}, "sess-"+h)
+	}
+	// A second pass over the same sessions changes nothing.
+	for _, h := range []string{"task-a", "task-b", "task-c"} {
+		led.Adopt(Request{Holder: h, PRDID: "p", Pools: []string{"host", "pi-prompt"}}, "sess-"+h)
+	}
+
+	st := led.Snapshot()
+	if len(st.Leases) != 3 {
+		t.Fatalf("want 3 leases, got %+v", st.Leases)
+	}
+	var pi *PoolStatus
+	for i := range st.Pools {
+		if st.Pools[i].Name == "pi-prompt" {
+			pi = &st.Pools[i]
+		}
+	}
+	if pi == nil || pi.Held != 3 || pi.Limit != 2 {
+		t.Fatalf("pi-prompt pool = %+v, want 3 held against a limit of 2", pi)
+	}
+	if got := strings.Join(pi.Holders, ","); got != "task-a,task-b,task-c" {
+		t.Fatalf("pool holders = %q, want all three named", got)
+	}
+
+	err := led.Acquire(context.Background(), Request{Holder: "task-d", PRDID: "p", Pools: []string{"host", "pi-prompt"}}, 50*time.Millisecond, nil, nil)
+	if !errors.Is(err, ErrWaitTimeout) || !strings.Contains(err.Error(), "pool pi-prompt full (3/2") {
+		t.Fatalf("new admission must wait naming the pool, got %v", err)
+	}
+}
+
+// Adopting a session whose lease was already re-keyed by a hand-off adds
+// nothing, while an unrelated holder is still adopted.
+func TestAdoptSkipsHolderThatWasHandedOff(t *testing.T) {
+	led := New(fast())
+	led.Adopt(Request{Holder: "task-a", PRDID: "p", Pools: []string{"pi-prompt"}}, "sess-a")
+	if !led.Handoff("task-a", "verify:task-a") {
+		t.Fatal("hand-off failed")
+	}
+	led.Adopt(Request{Holder: "task-a", PRDID: "p", Pools: []string{"pi-prompt"}}, "sess-a", "verify:task-a")
+	led.Adopt(Request{Holder: "task-b", PRDID: "p", Pools: []string{"pi-prompt"}}, "sess-b", "verify:task-b")
+
+	st := led.Snapshot()
+	if len(st.Leases) != 2 || led.Held("task-a") || !led.Held("verify:task-a") || !led.Held("task-b") {
+		t.Fatalf("want verify:task-a and task-b only, got %+v", st.Leases)
+	}
+}
+
+// A hand-off moves the lease to the verifier's holder name without changing
+// the count: three sessions stay three leases and three slots held.
+func TestHandoffKeepsAdoptedCountAtThree(t *testing.T) {
+	led := New(fast())
+	led.SetLimit("pi-prompt", 2)
+	for _, h := range []string{"task-a", "task-b", "task-c"} {
+		led.Adopt(Request{Holder: h, PRDID: "p", Pools: []string{"pi-prompt"}}, "sess-"+h)
+	}
+	for _, h := range []string{"task-a", "task-b", "task-c"} {
+		if !led.Handoff(h, "verify:"+h) {
+			t.Fatalf("hand-off of %s failed", h)
+		}
+	}
+	st := led.Snapshot()
+	if len(st.Leases) != 3 || st.Pools[0].Held != 3 {
+		t.Fatalf("after hand-off want 3 leases and 3 held, got leases=%+v pools=%+v", st.Leases, st.Pools)
+	}
+}

@@ -1548,3 +1548,316 @@ Samples (time since the command was typed, runner alive by `hasLiveRunnerProcess
 Sample 1 was taken before the shell had started pi. The runner stayed visible from the second sample until the run ended, with no child process of its own, and was gone once the marker printed. With the earlier probe, which looked only for a child process, every one of those samples would have read as no work.
 
 Result: PASS. The runner was seen alive in 5 of 7 samples while pi generated, and the pane ended with `DATAWATCH_COMPLETE: pi done` after 12.5 s.
+
+## Two-node pi worker placement
+
+Live check that the placement rules put pi-prompt workers of an Automaton on the compute nodes their capacity leases name, on a running sandbox daemon built from this tree, with two compute nodes behind one LLM entry.
+
+| Field | Details |
+|-------|---------|
+| **Description** | Automata with independent pi-prompt tasks and a bare model name (`qwen3.8:27b`). The daemon qualifies the name with the pi-prompt default provider (`ollama/qwen3.8:27b`), leases a node for each task from the ollama-kind LLM entry that lists both nodes, makes the model resident on the leased node under the node's own name (`qwen3.8:27b`), then launches the worker there. Each node allows two sessions. |
+| **Steps** | 1. Register both nodes and the LLM entry. 2. Start three tasks and read the capacity endpoint. 3. Compare each worker with the node its lease names, and check the split across nodes. 4. With one node full and the other holding one task, start three more tasks. 5. Stop and delete everything the check created. |
+| **Expected** | Three leases, each naming a node, no node pool above its limit of two. Each worker runs on the node its lease names, with the model loaded there by the node's own name. The work splits across the two nodes (two on one, one on the other). With one node full, a new task goes to the other node, and a task that finds both nodes full shows its waiting reason. |
+| **Actual** | As expected. Both nodes took loads, the split was two on the first node and one on the second, every worker was pointed at the node its lease names, the fourth task took the last slot on the second node, and the other two showed a waiting reason that names both full nodes and their holders. |
+| **Result** | PASS |
+
+### Setup
+
+- **Sandbox daemon, not production.** The binary is built from this tree (`go build -o bin/datawatch ./cmd/datawatch/`) and started with a small configuration of its own on loopback (TLS port 18643, plain port 18680), with its own data directory. The production daemon on port 8443 was not touched and no service was restarted. The daemon reported that its proxy sandbox listener could not bind port 8444, which the production daemon holds; that listener is not used here.
+- **Configuration.** `server` on loopback with a sandbox token; `autonomous` enabled with `planning_backend: openwebui` and `max_concurrent_tasks: 5`; `openwebui.url` pointing at the planning stand-in; `session.kill_sessions_on_exit: true`; and `pi: {enabled: true, binary: pi}` and `pi_prompt: {enabled: true, binary: pi, model: ollama/qwen3.8:27b}`. Nodes and the LLM entry are registered through the API below.
+- **Both nodes are stand-ins.** The real Ollama server on this host was not used, because a load request would have put a 27b model into memory on a machine other work shares. Each node is a small HTTP server from the scratch directory (`python3 -I <scratch>/stub_ollama.py <port> <log>`), on loopback ports 19301 (first node) and 19302 (second node). Like a real node, each knows the model only as `qwen3.8:27b`: `POST /api/generate` with any other name answers 404 and logs it, and with that name marks the model resident for `GET /api/ps`. They answer `HEAD /` (the probe in `internal/compute/probe.go`) and `GET /api/tags`. The first node also answers `POST /api/chat/completions` with a fixed plan of one story and three tasks, which serves the planning call through a third node record of kind `openai-compat`.
+- **Worker.** A fake `pi` earlier on the daemon's `PATH`. It exits at once for `--version`. Otherwise it reads the provider base URL from the `models.json` in the `PI_CODING_AGENT_DIR` the launch hands it, appends `dir=<project directory> base=<url>` to a log, and sleeps, so the lease stays held. The base URL is the node the launch pointed the worker at, which is what this check compares with the lease. Nothing was sent to any model.
+- **tmux.** A shim earlier on `PATH` pins every tmux call of the sandbox daemon to a socket this check owns (`bin/placement-check/t.sock`). The daemon was started as `env -u TMUX -u TMUX_TMPDIR PATH="<scratch>/bin:$PATH" PI_CODING_AGENT_DIR=<scratch>/pi-agent TMPDIR=<scratch>/daemon-tmp bin/datawatch start --foreground --config <scratch>/config.yaml`. No tmux server of the operator was stopped.
+- **Scratch directory.** `<scratch>` is `bin/placement-check/`, which is ignored by git. Each task gets its own project directory, and each of those is its own git repository, because tasks that share a tree queue behind a per-tree lock. An earlier attempt with plain directories inside this repository put all tasks on the repository's lock, so two of three waited on it and the check could not show a split; that attempt is not part of the result.
+- **Notation.** `$TOKEN` is the sandbox bearer token and `$BASE` is `https://127.0.0.1:18643`. Long responses are trimmed to the fields that matter and say so.
+
+### Step 1: register both nodes and the LLM entry
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"place-first","kind":"ollama","address":"http://127.0.0.1:19301","scheduling_priority":80,"session_slots":2}' $BASE/api/compute/nodes
+HTTP 200
+{"name":"place-first","ok":true}
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"place-second","kind":"ollama","address":"http://127.0.0.1:19302","scheduling_priority":50,"session_slots":2}' $BASE/api/compute/nodes
+HTTP 200
+{"name":"place-second","ok":true}
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"place-ollama","kind":"ollama","compute_nodes":["place-first","place-second"]}' $BASE/api/llms
+HTTP 200
+{"name":"place-ollama","ok":true}
+```
+
+The pi-prompt backend entry exists already; its in-flight cap is raised so it is not the limit. Planning goes through the openwebui entry, so the planning stand-in gets a node record and the entry lists it:
+
+```
+$ curl -sk -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"pi-prompt","kind":"pi-prompt","max_inflight":6}' $BASE/api/llms/pi-prompt
+HTTP 200
+{"name":"pi-prompt","ok":true}
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"place-planner","kind":"openai-compat","address":"http://127.0.0.1:19301","scheduling_priority":50}' $BASE/api/compute/nodes
+HTTP 200
+{"name":"place-planner","ok":true}
+```
+
+```
+$ curl -sk -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"openwebui","kind":"openwebui","model":"stub-planner","compute_nodes":["place-planner"]}' $BASE/api/llms/openwebui
+HTTP 200
+{"name":"openwebui","ok":true}
+```
+
+Pools after registration, from `GET $BASE/api/capacity` (name, limit, held), read a few seconds later once the node limits had been applied:
+
+```
+llm:pi-prompt     limit 6  held 0
+node:place-first  limit 2  held 0
+node:place-second limit 2  held 0
+node:place-planner limit 1 held 0
+```
+
+Observed: PASS. Both nodes, the LLM entry that lists them, and the node pool limits are in place.
+
+### Step 2: three tasks on one Automaton, then the capacity endpoint
+
+The Automaton is created with the pi-prompt backend and the bare model name, then decomposed; the planning call goes to the stand-in, which returns three tasks. Each task is given its own project directory, concurrency is set to three, the plan coverage report is acknowledged by the operator (the stand-in plan has no requirement list), and the Automaton is approved and run.
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"spec":"Placement check: three independent worker tasks that do nothing.","project_dir":"<scratch>/projects/r1","backend":"pi-prompt","model":"qwen3.8:27b"}' $BASE/api/autonomous/prds
+HTTP 200
+{"id":"cd2b0001","backend":"pi-prompt","model":"qwen3.8:27b","status":"draft", ...   (trimmed)
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/cd2b0001/decompose
+HTTP 202
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"task_id":"<task>","project_dir":"<scratch>/projects/r<n>"}' $BASE/api/autonomous/prds/cd2b0001/set_task_project_dir     (once per task: cf560001, cf570001, cf570002)
+HTTP 200
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"max_concurrent_tasks":3}' $BASE/api/autonomous/prds/cd2b0001/set_concurrency
+HTTP 200
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"actor":"operator","note":"placement check plan comes from a fixed stub"}' $BASE/api/autonomous/prds/cd2b0001/plan_coverage/acknowledge
+HTTP 200
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"actor":"operator","note":"placement check"}' $BASE/api/autonomous/prds/cd2b0001/approve
+HTTP 200
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/cd2b0001/run
+HTTP 200
+```
+
+Twenty-five seconds later, from `GET $BASE/api/capacity` (trimmed to pools and leases):
+
+```
+llm:pi-prompt     limit 6  held 3  hold_nodes [place-second, place-first, place-first]
+node:place-first  limit 2  held 2  hold_nodes [place-first, place-first]
+node:place-second limit 2  held 1  hold_nodes [place-second]
+lease cf560001  node place-second  model ollama/qwen3.8:27b  session a759
+lease cf570001  node place-first   model ollama/qwen3.8:27b  session 68b6
+lease cf570002  node place-first   model ollama/qwen3.8:27b  session e5ec
+```
+
+The node stand-ins' log shows the model loads. The planning call came first, then one load on the second node and two on the first, every one by the bare name, and no request for a qualified name:
+
+```
+port=19301 plan
+port=19302 generate model=qwen3.8:27b
+port=19301 generate model=qwen3.8:27b
+port=19301 generate model=qwen3.8:27b
+```
+
+Observed: PASS. Three leases, each naming a node; no pool above its limit.
+
+### Step 3: each worker runs on the node its lease names, and the split
+
+The fake worker's log, one line per worker, with the project directory shortened (`r1` is the task `cf560001`, `r2` is `cf570001`, `r3` is `cf570002`):
+
+```
+dir=projects/r1 base=http://127.0.0.1:19302/v1
+dir=projects/r3 base=http://127.0.0.1:19301/v1
+dir=projects/r2 base=http://127.0.0.1:19301/v1
+```
+
+The sessions as the daemon stored them (`GET $BASE/api/sessions`, fields `task_id`, `compute_node_ref`, `node_address`, `model`):
+
+```
+session a759  cf560001  place-second  http://127.0.0.1:19302  ollama/qwen3.8:27b
+session 68b6  cf570001  place-first   http://127.0.0.1:19301  ollama/qwen3.8:27b
+session e5ec  cf570002  place-first   http://127.0.0.1:19301  ollama/qwen3.8:27b
+```
+
+The workers that ran on the first node (`r2`, `r3`) were pointed at port 19301, the worker on the second node (`r1`) at port 19302, matching the leases above. The split is two on the first node and one on the second.
+
+Observed: PASS.
+
+### Step 4: fill one node, start more tasks
+
+A second Automaton (`961e0001`, tasks `98000001`, `98000002`, `98000003`, project directories `r4`, `r5`, `r6`) is created, decomposed, configured and run with the same calls as in step 2. The first node is full (2 of 2) and the second holds one task. Twenty-five seconds later:
+
+```
+llm:pi-prompt     limit 6  held 4
+node:place-first  limit 2  held 2  hold_nodes [place-first, place-first]
+node:place-second limit 2  held 2  hold_nodes [place-second, place-second]
+lease 98000003  node place-second  model ollama/qwen3.8:27b  session c7e3
+waiting 98000001 | waiting for nodes place-first, place-second: place-first: 2/2 engines in use, held by cf570001,cf570002; place-second: 2/2 engines in use, held by 98000003,cf560001
+waiting 98000002 | waiting for nodes place-first, place-second: place-first: 2/2 engines in use, held by cf570001,cf570002; place-second: 2/2 engines in use, held by 98000003,cf560001
+```
+
+The worker log gained one line, for the task that took the last slot, and it names the second node:
+
+```
+dir=projects/r6 base=http://127.0.0.1:19302/v1
+```
+
+Observed: PASS. With one node full, the new task went to the other node; the two that found both nodes full waited and showed which nodes are full and who holds them.
+
+### Step 5: stop and delete what the check created
+
+Both Automata were cancelled and deleted with `?hard=true`, which also ends their sessions; the LLM entry and the three node records were deleted; and the pi-prompt and openwebui entries were put back as they were (`max_inflight` 0; no node list). Selected commands and their responses:
+
+```
+$ curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" "$BASE/api/autonomous/prds/cd2b0001?hard=true"
+HTTP 200
+{"id":"cd2b0001","killed_session_ids":["a759","68b6","e5ec"],"killed_sessions":3,"memory_strategy":"","status":"deleted"}
+$ curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" "$BASE/api/autonomous/prds/961e0001?hard=true"
+HTTP 200
+{"id":"961e0001","killed_session_ids":["c7e3"],"killed_sessions":1,"memory_strategy":"","status":"deleted"}
+$ curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" $BASE/api/llms/place-ollama
+HTTP 200
+$ curl -sk -X GET -H "Authorization: Bearer $TOKEN" $BASE/api/compute/nodes
+HTTP 200
+{"nodes":[]}
+```
+
+The sandbox daemon and the two node stand-ins were stopped by their process IDs (`kill <pid>`), and afterwards none of the ports 18643, 18680, 19301 and 19302 was listening, port 8443 was still listening, and the check's own tmux socket had no server left. The scratch directory is deleted.
+
+Cleanup done: PASS
+
+### Notes
+
+- **First run of this check failed, and why.** The first run, on the tree before the fixes below, did not pass. The node loader asked the leased node to load the provider-qualified name `ollama/qwen3.8:27b`, which a real Ollama node does not know (HTTP 404), so a node that behaved like a real one was dropped on every attempt and all work landed on the other node. The loader now drops the provider prefix before the load request; the two-node record above is the run after that change.
+- **Second failure found by this run, and fixed.** With the loader fixed, the leases and sessions named the right nodes but one worker's pi configuration pointed at the other node: a worker leased on the second node ran against the first. The cause was that the pi backend is one object shared by every session, and the node address is set on it just before each launch, so sessions that start at the same moment overwrote each other's address. Starting and restarting a session now holds a lock from the first per-session setting on a shared pi backend until the launch has read them. The run recorded above is the one after this fix, and the three workers of step 3 each match their lease.
+- **What was not tested.** A real Ollama node was not used, so loading a real model was not observed; the stand-ins hold the same contract (the bare name loads, the qualified name is refused) and the loader test below covers it. A model name that already names a provider was not compared with a bare one in this live run.
+- **One observation left unverified.** Read right after the hard deletes, `GET $BASE/api/capacity` still listed four leases with no running or waiting task. The sandbox daemon was stopped straight after, so whether they clear after a short delay was not observed.
+
+Result: PASS. All five steps were observed as expected on the tree with both fixes: workers leased on both nodes, each worker pointed at the node its lease names, a two-and-one split, the fourth task on the node with room, and a waiting reason for tasks that found both nodes full.
+
+## Pi worker placement — regression tests
+
+Bug tests for the placement rules: a pi-family worker goes to the least-loaded healthy compute node, runs on the node its lease names, is not launched when a lease names no node, and is loaded onto its node by the node's own model name. Each entry below was run on this tree with `go test -count=1 -v` against the packages named; all 30 tests passed. These are unit-level runs; the live check on a running sandbox daemon is recorded in "Two-node pi worker placement" above and passed. The API commands show how to look at the same behaviour on a sandbox daemon (never the production daemon); their responses were not captured in this run.
+
+```
+go test -count=1 -v ./internal/capacity/ ./internal/autonomous/ ./internal/server/ ./internal/session/ ./cmd/datawatch/ -run '<test names below>'
+```
+
+`$TOKEN` is the sandbox bearer token and `$BASE` the sandbox daemon address (for example `https://127.0.0.1:18643`).
+
+### A less-loaded node beats a higher-priority one
+
+| Field | Details |
+|-------|---------|
+| **Description** | Two nodes serve one LLM entry. The higher-priority node used to win whenever it had a free slot, so one node filled while the other sat idle. |
+| **Steps** | 1. Give two nodes a session limit and different priorities. 2. Put one session on the higher-priority node. 3. Acquire a lease for a request that lists both nodes. 4. Repeat with equal load, with a node that has no limit, and with sessions that only the external-use counter knows about. |
+| **Expected** | The lease names the less-loaded node (used count over limit). Equal load goes to the higher priority, then to list order. A node with no limit counts as unloaded. External use counts as load. |
+| **Actual** | `TestAcquireLeastLoadedNodeBeatsHigherPriority`, `TestAcquirePicksHighestPriorityNodeOnLoadTie`, `TestAcquireLoadIsUsedOverLimit`, `TestAcquireUnlimitedNodeCountsAsNoLoad` and `TestAcquireCountsExternalUseAsLoad` (`internal/capacity`) passed. |
+| **Result** | PASS |
+
+On a sandbox daemon, read the pools and the lease node after starting workers:
+
+```sh
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity
+# expect each worker lease to name the node whose pool had the lower used/limit when it was admitted
+```
+
+### An unhealthy node is skipped and named in the waiting reason
+
+| Field | Details |
+|-------|---------|
+| **Description** | A node missing from the compute registry, or inside a maintenance window, must not receive new workers. When no node can take a worker, the waiting reason must say which node is unhealthy and which is full. |
+| **Steps** | 1. Mark one candidate node unhealthy. 2. Acquire a lease. 3. Fill the other node and acquire again, then read the waiter's reason. 4. Mark both unhealthy. 5. Make the node healthy again. 6. Send a single-node request while the hook reports unhealthy. 7. Drive the registry view through a refresh and a maintenance window. |
+| **Expected** | The lease lands on the healthy node. The reason reads `waiting for nodes <a>, <b>: <a>: unhealthy; <b>: N/M engines in use, held by <holder>`. With every node unhealthy the reason names each. The waiter is placed on the node once it recovers. A single-node request ignores the health hook. The view treats every node as healthy before its first refresh, a node absent from the registry as unhealthy, and a node in a maintenance window as unhealthy, and a ledger fed by it skips the node in maintenance. |
+| **Actual** | `TestAcquireSkipsUnhealthyNode`, `TestUnhealthyNodeIsNamedInWaitReason`, `TestEveryCandidateUnhealthyOrFullIsNamed`, `TestAllCandidatesUnhealthyNamesEach` and `TestSingleNodeRequestIgnoresHealthHook` (`internal/capacity`), and `TestNodeHealthViewHealthyBeforeFirstRefresh`, `TestNodeHealthViewRegistryAndMaintenance` and `TestNodeHealthViewDrivesLedgerPlacement` (`cmd/datawatch`) passed. |
+| **Result** | PASS |
+
+On a sandbox daemon, open a maintenance window on a node and read the waiting reason:
+
+```sh
+curl -sk -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"gpu-box-1","kind":"ollama","address":"http://gpu-box-1:11434","maintenance_windows":[{"from":"2026-01-01T00:00:00Z","reason":"check"}]}' \
+  $BASE/api/compute/nodes/gpu-box-1
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/compute/nodes/gpu-box-1/health   # in_maintenance: true
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity                         # waiting[].reason contains "gpu-box-1: unhealthy"
+```
+
+### A worker with a bare model name is admitted on the provider it launches with
+
+| Field | Details |
+|-------|---------|
+| **Description** | A pi-family model written without a provider resolved to no node, so the lease named none and the session ran on pi's own endpoint. |
+| **Steps** | 1. Configure the pi default model with a provider. 2. Run a one-task Automaton on a pi-family backend with a bare model name. 3. Compare the model the capacity resolver, the spawn and the session start each saw. 4. Repeat on a hosted backend, with no pi default, and with a model that already names another provider. 5. Read the default-model lookup for each backend. |
+| **Expected** | The worker holds one of the entry's nodes, the spawn names that node, and all three see the same provider-qualified model. The other setups are unchanged. The lookup returns each backend's configured model, re-reads the config on every call, and returns nothing for other backends. |
+| **Actual** | `TestPiFamilyWorkerHoldsNodeItRunsOn` and `TestModelQualificationLeavesOtherSetupsAlone` (`internal/autonomous`) and `TestPiDefaultModelReadsEachBackendsConfiguredModel` (`cmd/datawatch`) passed. |
+| **Result** | PASS |
+
+### The worker is launched on the node its lease names
+
+| Field | Details |
+|-------|---------|
+| **Description** | The node a lease was granted on must reach the session start, and it must be used even when the LLM entry lists one node. |
+| **Steps** | 1. Run a task whose lease names a node and read the spawn request. 2. Build the session body for that task. 3. Start a one-shot pi session that names a node on a one-node entry. 4. Start a session that names no node on a multi-node and on a one-node entry. |
+| **Expected** | The spawn request and the session body carry the leased node. The one-shot start runs against that node's address with the provider-qualified model. With no node named, a multi-node entry binds its first node and a one-node entry keeps pi's own provider table. |
+| **Actual** | `TestSpawnRequestCarriesHeldNode` (`internal/autonomous`), `TestBuildAutonomousSessionBodyCarriesComputeNode` (`cmd/datawatch`), `TestOneShotStartWithLeasedNodeUsesNodeAddress` and `TestStartWithNoNodeNamedKeepsEntryRules` (`internal/server`) passed. |
+| **Result** | PASS |
+
+### The leased node loads the model by its own name
+
+| Field | Details |
+|-------|---------|
+| **Description** | A lease carries the provider-qualified model (`ollama/qwen3.8:27b`), but a node knows the model only as `qwen3.8:27b` and answers 404 to the qualified name. The loader used to send the qualified name, so a real node was dropped on every attempt. |
+| **Steps** | 1. Start a node stand-in that serves only `qwen3.8:27b`. 2. Ask the node loader to load `ollama/qwen3.8:27b` there. 3. Read which model the node holds. 4. Pass a bare name, a name with a longer path after the provider, and an empty provider part through the name helper. |
+| **Expected** | The node is asked for `qwen3.8:27b` and holds it. The helper drops only the provider prefix and leaves a bare name and an empty remainder as written. |
+| **Actual** | `TestNodeLoaderAsksTheNodeForTheModelWithoutItsProvider` and `TestNodeModelName` (`cmd/datawatch`) passed. |
+| **Result** | PASS |
+
+### No launch when capacity was held but no node was leased
+
+| Field | Details |
+|-------|---------|
+| **Description** | A pi-family worker that holds capacity with no node, while its LLM entry lists nodes, would have started on pi's default endpoint. |
+| **Steps** | 1. Run a one-task Automaton where the lease names no node and the entry lists compute nodes. 2. Read how many workers were spawned and the task as stored. 3. Repeat with an entry that lists no nodes, with a hosted backend, and with capacity switched off. |
+| **Expected** | No worker is spawned and the task is failed with an error naming the backend and the model and saying no compute node was leased. The other three cases still spawn. |
+| **Actual** | `TestPiFamilyWorkerWithoutLeasedNodeDoesNotSpawn` and `TestWorkerWithoutLeasedNodeUnchangedElsewhere` (`internal/autonomous`) passed. |
+| **Result** | PASS |
+
+On a sandbox daemon, a refused launch shows as a failed task:
+
+```sh
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/<prd-id>
+# the task's error reads "... holds capacity but no compute node was leased, and its LLM entry lists compute nodes"
+```
+
+### Sessions that start together each launch on their own node
+
+| Field | Details |
+|-------|---------|
+| **Description** | The pi backend is one object shared by every session, and the node address is set on it just before each launch. Sessions that started at the same moment overwrote each other's address, so a worker could run against another worker's node. |
+| **Steps** | 1. Start six sessions at once on a shared backend that takes a node address, each naming a different node. 2. Read which node each session's launch saw. |
+| **Expected** | Every launch sees the node its own session named. With the launch lock removed the test fails, with launches seeing another session's node. |
+| **Actual** | `TestConcurrentStartsLaunchOnTheirOwnNode` (`internal/session`) passed, and failed with the lock taken out (five of six launches saw the wrong node). |
+| **Result** | PASS |
+
+### Sessions adopted after a restart are counted once
+
+| Field | Details |
+|-------|---------|
+| **Description** | After a daemon restart, live workers are re-adopted into the pool counts. A worker whose lease had already been handed to its verifier was counted a second time, so a pool read above its real use. |
+| **Steps** | 1. Adopt three live tasks over a pool capped at 2. 2. Run the adoption pass again. 3. Hand each lease off to its verifier and adopt again. 4. Request a new slot and read its waiting reason. |
+| **Expected** | Three leases and three slots held, however many times the pass runs and after the hand-off. An unrelated holder is still adopted. The new request waits with a reason that names the pool and the holders. |
+| **Actual** | `TestAdoptOverCapCountsEachSessionOnce`, `TestAdoptSkipsHolderThatWasHandedOff` and `TestHandoffKeepsAdoptedCountAtThree` (`internal/capacity`) and `TestBootResumeAdoptsThreeLiveTasksOverCapOnce` and `TestAdoptAfterVerifyHandoffKeepsOneLeasePerSession` (`internal/autonomous`) passed. |
+| **Result** | PASS |
+
+```sh
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity
+# after a restart with live workers: the pool's used count equals the number of live workers, not more
+```

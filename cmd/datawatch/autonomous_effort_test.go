@@ -224,3 +224,21 @@ func TestBuildAutonomousSessionBodyCarriesWriteScope(t *testing.T) {
 		t.Errorf("write_scope should be absent when WriteScope is empty, got %v", bodyEmpty["write_scope"])
 	}
 }
+
+func TestBuildAutonomousSessionBodyCarriesComputeNode(t *testing.T) {
+	for _, backend := range []string{"pi-prompt", "pi", "claude-code", ""} {
+		req := autonomouspkg.SpawnRequest{Backend: backend, Model: "ollama/qwen3.8:27b", ComputeNode: "gpu-a"}
+		body := buildAutonomousSessionBody(req, "spec", "")
+		if got := body["compute_node"]; got != "gpu-a" {
+			t.Errorf("backend %q: compute_node = %v, want gpu-a", backend, got)
+		}
+		if body["one_shot"] != true {
+			t.Errorf("backend %q: one_shot = %v, want true", backend, body["one_shot"])
+		}
+	}
+
+	body := buildAutonomousSessionBody(autonomouspkg.SpawnRequest{Backend: "pi-prompt"}, "spec", "")
+	if _, ok := body["compute_node"]; ok {
+		t.Errorf("compute_node should be absent when no node was named, got %v", body["compute_node"])
+	}
+}
