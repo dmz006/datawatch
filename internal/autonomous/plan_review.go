@@ -192,6 +192,12 @@ type PlanReviewVerdict struct {
 	// true means the verdict above is a placeholder (ok defaults false)
 	// and Approve must NOT treat it as a blocking judgment.
 	ReviewerFailed bool `json:"reviewer_failed,omitempty"`
+	// Held is true when the reviewer did not finish on any backend in the
+	// judge policy (every attempt timed out or lacked a capacity slot). The
+	// verdict is then a blocking-grade placeholder, not a judgment of the
+	// plan: the Automaton stays in needs_review, lane fill does not approve
+	// it, and block mode refuses approval until a re-run replaces it.
+	Held bool `json:"held,omitempty"`
 }
 
 // PlanReviewFn is the daemon-side reviewer entry point (wired via

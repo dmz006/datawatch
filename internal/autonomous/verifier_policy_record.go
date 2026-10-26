@@ -10,6 +10,9 @@ import (
 const (
 	verifierPolicyDecisionKind = "verifier_policy"
 	VerifierPolicyAuditAction  = "autonomous.verifier_policy"
+
+	judgePolicyDecisionKind = "judge_policy"
+	JudgePolicyAuditAction  = "autonomous.judge_policy"
 )
 
 // HeldBackends returns the subset of backends that are currently backed off
@@ -60,7 +63,7 @@ func (m *Manager) RecordVerifierPolicyChoice(prdID, taskID, backend, model, reas
 	}
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: now, Kind: verifierPolicyDecisionKind, Backend: backend, Model: model, Actor: "autonomous",
-		Note: fmt.Sprintf("task=%s backend=%s model=%s reason=%s", taskID, backend, model, reason),
+		Note: fmt.Sprintf("role=%s task=%s backend=%s model=%s reason=%s", PolicyRoleVerifier, taskID, backend, model, reason),
 	})
 	prd.UpdatedAt = now
 	if err := m.store.SavePRD(prd); err != nil {
@@ -68,6 +71,32 @@ func (m *Manager) RecordVerifierPolicyChoice(prdID, taskID, backend, model, reas
 	}
 	m.capAudit.Record(AuditActorAutonomous, VerifierPolicyAuditAction, taskID, map[string]any{
 		"prd_id": prdID, "task_id": taskID, "backend": backend, "model": model, "reason": reason,
+		"role": string(PolicyRoleVerifier),
+	})
+	return nil
+}
+
+// RecordJudgePolicyChoice appends a judge_policy decision to the PRD and writes
+// an audit entry, both carrying the judge role so a judge pick is told apart
+// from a verifier pick. A judge may run for the PRD as a whole (plan review), so
+// taskID is optional; unlike the verifier's pick it is not stored on a task.
+func (m *Manager) RecordJudgePolicyChoice(prdID, taskID, backend, model, reason string) error {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	now := time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: now, Kind: judgePolicyDecisionKind, Backend: backend, Model: model, Actor: "autonomous",
+		Note: fmt.Sprintf("role=%s task=%s backend=%s model=%s reason=%s", PolicyRoleJudge, taskID, backend, model, reason),
+	})
+	prd.UpdatedAt = now
+	if err := m.store.SavePRD(prd); err != nil {
+		return err
+	}
+	m.capAudit.Record(AuditActorAutonomous, JudgePolicyAuditAction, prdID, map[string]any{
+		"prd_id": prdID, "task_id": taskID, "backend": backend, "model": model, "reason": reason,
+		"role": string(PolicyRoleJudge),
 	})
 	return nil
 }

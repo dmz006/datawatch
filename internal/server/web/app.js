@@ -15975,6 +15975,11 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.planning_model', label: 'Planning model', type: 'llm_model', backendKey: 'autonomous.planning_backend' },
     { key: 'autonomous.planning_timeout_seconds', label: 'Planning timeout (sec, 0=effort default)', type: 'number', placeholder: '0' },
     { key: 'autonomous.verification_timeout_seconds', label: 'Verifier/guardrail session timeout (sec, 0=30m)', labelKey: 'settings_verification_timeout', type: 'number', placeholder: '1800' },
+    // Judges (Automaton guardrail, plan review, other autonomous judges)
+    // try these backends in order, one attempt each. Empty follows the
+    // verifier routing policy. The time limit counts the judge run only.
+    { key: 'autonomous.judge_policy', label: 'Judge backends (ordered, comma-separated; empty = verifier routing policy)', labelKey: 'settings_judge_policy', helpKey: 'settings_judge_policy_help', type: 'text', placeholder: 'claude-code, ollama-datawatch', csv: true },
+    { key: 'autonomous.judge_timeout_seconds', label: 'Judge time limit (sec, 0=30m)', labelKey: 'settings_judge_timeout', helpKey: 'settings_judge_timeout_help', type: 'number', min: 0, placeholder: '1800' },
     // GH#172/#182 — planning_effort, verification_effort, and
     // stale_task_seconds were real config keys (internal/config/
     // config.go) with no card field. decomposition_backend/

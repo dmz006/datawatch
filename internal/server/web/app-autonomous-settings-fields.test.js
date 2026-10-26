@@ -432,3 +432,38 @@ test('settings_session_start_confirm label + help keys are non-empty strings in 
     }
   }
 });
+
+test('autonomous settings expose judge_policy and judge_timeout_seconds with label and help keys', () => {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  const fields = JSON.parse(vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields)",
+    sandbox));
+  const policy = fields.find(f => f.key === 'autonomous.judge_policy');
+  assert.ok(policy, 'autonomous.judge_policy missing from autonomous card fields');
+  assert.equal(policy.type, 'text');
+  assert.ok(policy.csv, 'autonomous.judge_policy must set csv: true');
+  assert.equal(policy.labelKey, 'settings_judge_policy');
+  assert.equal(policy.helpKey, 'settings_judge_policy_help');
+  const timeout = fields.find(f => f.key === 'autonomous.judge_timeout_seconds');
+  assert.ok(timeout, 'autonomous.judge_timeout_seconds missing from autonomous card fields');
+  assert.equal(timeout.type, 'number');
+  assert.equal(timeout.placeholder, '1800');
+  assert.equal(timeout.labelKey, 'settings_judge_timeout');
+  assert.equal(timeout.helpKey, 'settings_judge_timeout_help');
+});
+
+test('judge_policy and judge_timeout_seconds label and help keys are non-empty in all five locale bundles', () => {
+  const keys = [
+    'settings_judge_policy', 'settings_judge_policy_help',
+    'settings_judge_timeout', 'settings_judge_timeout_help',
+  ];
+  for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    for (const key of keys) {
+      assert.ok(typeof bundle[key] === 'string' && bundle[key].trim().length > 0,
+        key + ' missing or empty in ' + locale + ' locale');
+    }
+  }
+});

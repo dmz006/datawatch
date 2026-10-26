@@ -51,6 +51,7 @@ const maxHoldRefChars = 80
 // string when nothing holds it. The title and the spec are searched, as data,
 // with regular expressions only: nothing in them is ever run. A hold is any of:
 //
+//   - a judge that timed out on every backend, while the PRD needs review;
 //   - a line starting with HOLD (any case);
 //   - the words "do not run";
 //   - the words "sequenced last";
@@ -62,6 +63,9 @@ const maxHoldRefChars = 80
 func PRDHoldReason(prd *PRD, lookup PRDRefLookup) string {
 	if prd == nil {
 		return ""
+	}
+	if judgeHoldHeld(prd) {
+		return "its judge timed out on every backend and it needs review"
 	}
 	text := prd.Title + "\n" + prd.Spec
 	if holdLinePattern.MatchString(text) {

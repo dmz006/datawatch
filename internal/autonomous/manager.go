@@ -156,6 +156,13 @@ type Config struct {
 	// VerificationBackends omitempty bug described in the config.go comment
 	// dropped its value.
 	VerificationTimeoutSeconds int `json:"verification_timeout_seconds,omitempty"`
+	// JudgePolicy and JudgeTimeoutSeconds mirror autonomous.judge_policy and
+	// autonomous.judge_timeout_seconds in config (see config.AutonomousConfig).
+	// No omitempty on either, for the same round-trip reason as
+	// VerificationBackends: handleAutonomousConfig marshals this struct and
+	// unmarshals the result onto config.AutonomousConfig before persisting.
+	JudgePolicy         []string `json:"judge_policy"`
+	JudgeTimeoutSeconds int      `json:"judge_timeout_seconds"`
 	// SessionIdleTimeoutSeconds mirrors autonomous.session_idle_timeout_seconds
 	// in config. The manager does not consume it: the daemon's autonomous
 	// worker/verifier wait loops in cmd/datawatch/main.go and
@@ -652,6 +659,11 @@ type GuardrailInvocation struct {
 	ScriptOutput     string
 	GuardrailBackend string
 	GuardrailModel   string
+	// Prompt, when set, is the whole judge prompt, used instead of the
+	// generated guardrail prompt. The plan-review judge sets it: its reply
+	// uses the same outcome/severity/summary/issues JSON, but it judges a
+	// plan, not a unit.
+	Prompt string
 }
 
 // AutomatonType (BL221 v6.2.0 Phase 4) is a registered automaton type.
@@ -2328,14 +2340,16 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 	// Plan review gate (2026-10-17): in "block" mode a negative verdict
 	// recorded by runPlanReview refuses approval until it is replaced
 	// (review re-run or re-decompose with ok:true). A degraded verdict
-	// (reviewer outage / unparseable / skipped) never blocks.
-	if normalizePlanReviewMode(m.cfg.PlanReviewMode) == PlanReviewModeBlock {
-		if v := prd.PlanReview; v != nil && !v.Ok && !v.ReviewerFailed {
+	// (reviewer outage / unparseable / skipped) never blocks. A plan review the
+	// judge held (it timed out on every backend) refuses approval in every mode,
+	// since no judge checked the plan.
+	if mode := normalizePlanReviewMode(m.cfg.PlanReviewMode); mode != PlanReviewModeOff {
+		if v := prd.PlanReview; v != nil && !v.Ok && !v.ReviewerFailed && (mode == PlanReviewModeBlock || v.Held) {
 			msg := v.Summary
 			if cats := planReviewCategories(v.Findings); len(cats) > 0 {
 				msg = strings.Join(cats, ", ") + ": " + msg
 			}
-			return nil, fmt.Errorf("plan review blocks approval of prd %q (mode block): %s", prdID, msg)
+			return nil, fmt.Errorf("plan review blocks approval of prd %q (mode %s): %s", prdID, mode, msg)
 		}
 	}
 	now := time.Now()

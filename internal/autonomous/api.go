@@ -15,6 +15,7 @@ import (
 	"time"
 
 	scanPkg "github.com/dmz006/datawatch/internal/autonomous/scan"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // API wraps a *Manager to satisfy server.AutonomousAPI.
@@ -414,6 +415,11 @@ func (a *API) SetConfig(v any) error {
 	if err := normalizeVerifierPolicyConfig(&cfg.VerifierPolicy); err != nil {
 		return err
 	}
+	// Judge settings are normalized on every write path so the stored value
+	// is the effective one: a zero or negative time limit becomes the 30m
+	// default and blank or duplicate judge backends are dropped.
+	cfg.JudgePolicy = config.NormalizeJudgePolicy(cfg.JudgePolicy)
+	cfg.JudgeTimeoutSeconds = config.NormalizeJudgeTimeoutSeconds(cfg.JudgeTimeoutSeconds)
 	if cfg.CapacityRateRequests < 0 || cfg.CapacityRateTokens < 0 || cfg.CapacityRateWindowSeconds < 0 {
 		return fmt.Errorf("config: capacity_rate_requests, capacity_rate_tokens and capacity_rate_window_seconds must be >= 0")
 	}

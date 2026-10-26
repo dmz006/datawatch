@@ -1675,7 +1675,9 @@ paths:
         The `verifier_policy` object holds the global verifier policy: `mode`,
         `backends`, `claude_session_cap`, `claude_cap_window_minutes`,
         `force_stronger_on_retry`, `final_gate_stronger`, `stronger_backend` and
-        `stronger_model`.
+        `stronger_model`. The judge settings are `judge_policy` (ordered backends,
+        one attempt each; empty = the judges follow the verifier routing policy)
+        and `judge_timeout_seconds` (time limit for one judge run, default 1800).
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses: {"200": {description: OK}}
@@ -1695,6 +1697,8 @@ paths:
         `stronger_backend` and `stronger_model` (strings). An unknown mode, an empty
         backend entry, a negative number or an unknown key is rejected with 400 and
         changes nothing. The policy applies to the next verification with no restart.
+        `judge_policy` is an ordered list of backend names (an empty list clears it);
+        `judge_timeout_seconds` is a whole number of seconds (0 or negative = 1800).
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:

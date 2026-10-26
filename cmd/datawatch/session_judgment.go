@@ -442,7 +442,7 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 	for {
 		select {
 		case <-ctx.Done():
-			return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: sessionOneShotTimeoutMessage(sessionName, startOut.ID, backend, model, timeout)}
+			return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: sessionOneShotTimeoutMessage(sessionName, startOut.ID, backend, model, timeout), TimedOut: true}
 		case <-tick.C:
 			pollReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
 				loopbackBaseURL(cfg)+"/api/sessions/"+startOut.ID, nil)

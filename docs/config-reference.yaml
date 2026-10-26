@@ -1475,6 +1475,18 @@ autonomous:
   # need more than this; the old hard-coded limit was 10m and timed out slow
   # local models.
   verification_timeout_seconds: 1800
+  # Judge routing (PRD guardrail, plan-review and other autonomous judges).
+  # judge_policy is the ordered list of backends the judges try, one attempt
+  # each; the attempts total the list length. A judge moves to the next backend
+  # only when its run hits the time limit. Empty (default) = the judges follow
+  # the verifier routing policy (the same modes and backends the verifiers use),
+  # one attempt per backend it offers. A unit that pins its own guardrail
+  # backend keeps that one backend.
+  judge_policy: []
+  # Time limit in seconds for one judge run, counted from the judge's start;
+  # the wait for a capacity slot does not count. 0 or negative falls back to
+  # the 1800-second (30-minute) default.
+  judge_timeout_seconds: 1800
   # --- Plan review before approval (off by default) ---
   # LLM backend that reviews each PRD's plan (spec vs. decomposed stories/
   # tasks) after decompose. Empty (default) = no review; the PRD goes to

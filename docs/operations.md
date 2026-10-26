@@ -2246,7 +2246,7 @@ setting and remain locked to the 3 pre-Run statuses.
 task, per story or per Automaton. Resolution: task → story → Automaton
 → Automation → global `autonomous.verification_backend` / `verification_model` /
 `verification_effort`; a backend set at any per-unit level bypasses the
-`autonomous.verification_backends` pool. Judge sessions (verifier and guardrail) are bounded by `autonomous.verification_timeout_seconds` (default 30m). If a `verifier(session):` or `guardrail(session):` failure names `backend=`, `model=` and `timed out after X`, raise that key rather than treating the model's output as a judgment. Same presence rules: omit to
+`autonomous.verification_backends` pool. Verifier sessions are bounded by `autonomous.verification_timeout_seconds` (default 30m). Guardrail judge sessions are bounded by `autonomous.judge_timeout_seconds` (default 30m, counted from the judge's start, not from any wait for a capacity slot). A judge that times out moves to the next backend in `autonomous.judge_policy`, one attempt each; when every backend has timed out, the PRD needs review (`needs_review`, with a `judge-timeout` reason) and an error alert lists every attempt. If a `verifier(session):` or `guardrail(session):` failure names `backend=`, `model=` and `timed out after X`, raise that key rather than treating the model's output as a judgment. Same presence rules: omit to
 keep, `""` to clear. The task's `verification` result records
 `verifier_backend` / `verifier_model` / `verifier_effort` /
 `verifier_source` (`task`, `story`, `prd` for the Automaton level,

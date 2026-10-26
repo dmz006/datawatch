@@ -4266,6 +4266,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			VerificationEffort:               acfgIn.VerificationEffort,
 			PlanningTimeoutSeconds:           acfgIn.PlanningTimeoutSeconds,
 			VerificationTimeoutSeconds:       acfgIn.VerificationTimeoutSeconds,
+			JudgePolicy:                      config.NormalizeJudgePolicy(acfgIn.JudgePolicy),
+			JudgeTimeoutSeconds:              config.NormalizeJudgeTimeoutSeconds(acfgIn.JudgeTimeoutSeconds),
 			SessionIdleTimeoutSeconds:        acfgIn.SessionIdleTimeoutSeconds,
 			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
 			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
@@ -5808,13 +5810,24 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// configured in autonomous.guardrail_backend (or inherit). Output
 		// JSON shape mirrors the BL117 orchestrator's Verdict so the
 		// downstream UI renders uniformly.
-		autonomousGuardrail := func(ctx context.Context, req autonomouspkg.GuardrailInvocation) (autonomouspkg.GuardrailVerdict, error) {
-			// One live-config snapshot for this invocation (see
-			// liveAutonomousConfig).
-			gcfg := liveAutonomousConfig()
+		// autonomousGuardrailAttempt is one judge attempt on one backend. The
+		// outer autonomousGuardrail below runs it once per backend in the
+		// judge policy (runJudgeAttempts) and sets att.TimedOut when the
+		// session hit its time limit.
+		autonomousGuardrailAttempt := func(ctx context.Context, req autonomouspkg.GuardrailInvocation, gcfg autonomouspkg.Config, backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 			prompt := buildAutonomousGuardrailPrompt(req)
+			if req.Prompt != "" {
+				// The plan-review judge supplies its own prompt.
+				prompt = req.Prompt
+			}
 			// BL416 Phase 3 — per-unit resolved backend/model win over the flat config.
 			gbackend, guardrailModel := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
+			if backend != gbackend {
+				// A judge policy entry replaces the unit's backend. The unit's
+				// model was chosen for that backend, so it is not carried over.
+				gbackend, guardrailModel = backend, ""
+				req.GuardrailModel = ""
+			}
 			gkind, gmodel, _ := resolveAskBackend(gbackend)
 
 			// Capacity admission: the guardrail judge acquires the backend+node
@@ -5827,161 +5840,167 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// means no admission, exactly like the verifier's.
 			// judgeNode is the compute node the judge's lease holds ("" for a
 			// one-node entry): the session or ask call runs there.
-			judgeNode := ""
-			if judgeCapacityAdmit != nil {
-				admModel := guardrailModel
-				if admModel == "" {
-					admModel = gmodel
-				}
-				release, node, aerr := judgeCapacityAdmit(ctx, gbackend, admModel, req.UnitID, req.PRDID)
-				if aerr != nil {
-					// Admission failed (wait expired or context cancelled):
-					// resource contention, not a content judgment — the judge
-					// never ran. No session started, so stamp it as text-only.
-					return judgeVerdictWithSession(judgeAdmitFailureVerdict(aerr), "", ""), nil
-				}
-				judgeNode = node
-				defer release()
+			// An admission failure (wait expired or context cancelled) is the
+			// infra verdict runJudgeLeased returns; the judge never ran.
+			admModel := guardrailModel
+			if admModel == "" {
+				admModel = gmodel
 			}
-			if !askCompatible(gkind) {
-				// B124 — a real tool-using backend with somewhere to run
-				// it: spawn a one-shot session instead of silently
-				// downgrading to ollama (what this used to do
-				// unconditionally). No project_dir (headless PRD) still
-				// downgrades — there's nowhere to spawn into.
-				if needsSessionJudgment(gkind, req.ProjectDir, isInferenceSessionKind) {
-					// B124 follow-up (v9.0.45) — guardrailModel may hold
-					// the flat ask-compatible VerificationModel default
-					// (guardrailBackendModel's own fallback when
-					// req.GuardrailModel is empty), which must never be
-					// applied to a session call — found live, the
-					// identical bug fixed in resolveVerifierBackendModel
-					// for verify: a real claude-code session rejected an
-					// Ollama model name outright and hung until the
-					// session timeout. So only a genuine per-unit override
-					// (req.GuardrailModel) carries through for non-pi
-					// session backends.
-					var sessionModel string
-					if model, verdict := guardPiFamilySessionModel(
-						gkind, gbackend, req.Guardrail,
-						req.GuardrailModel,
-						amgrCfg.GuardrailModel,
-						amgrCfg.VerificationModel,
-						amgrCfg.PlanningModel,
-						gmodel, // non-pi fallback only
-					); verdict != nil {
-						return *verdict, nil
-					} else {
-						sessionModel = model
+			return runJudgeLeased(ctx, judgeCapacityAdmit, att, admModel, req.UnitID, req.PRDID,
+				func(judgeNode string) (autonomouspkg.GuardrailVerdict, error) {
+					if !askCompatible(gkind) {
+						// B124 — a real tool-using backend with somewhere to run
+						// it: spawn a one-shot session instead of silently
+						// downgrading to ollama (what this used to do
+						// unconditionally). No project_dir (headless PRD) still
+						// downgrades — there's nowhere to spawn into.
+						if needsSessionJudgment(gkind, req.ProjectDir, isInferenceSessionKind) {
+							// B124 follow-up (v9.0.45) — guardrailModel may hold
+							// the flat ask-compatible VerificationModel default
+							// (guardrailBackendModel's own fallback when
+							// req.GuardrailModel is empty), which must never be
+							// applied to a session call — found live, the
+							// identical bug fixed in resolveVerifierBackendModel
+							// for verify: a real claude-code session rejected an
+							// Ollama model name outright and hung until the
+							// session timeout. So only a genuine per-unit override
+							// (req.GuardrailModel) carries through for non-pi
+							// session backends.
+							var sessionModel string
+							if model, verdict := guardPiFamilySessionModel(
+								gkind, gbackend, req.Guardrail,
+								req.GuardrailModel,
+								amgrCfg.GuardrailModel,
+								amgrCfg.VerificationModel,
+								amgrCfg.PlanningModel,
+								gmodel, // non-pi fallback only
+							); verdict != nil {
+								return *verdict, nil
+							} else {
+								sessionModel = model
+							}
+							specHash := sha256.Sum256([]byte(req.UnitID + "|" + req.Guardrail + "|" + prompt))
+							outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")
+							sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
+							content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
+								"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
+								"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeSessionTimeout(gcfg), judgeNode)
+							if serr != nil {
+								att.TimedOut = isOneShotTimeout(serr)
+								// BL410 Phase 0 — the SESSION itself failed (timeout,
+								// crash); no judgment ever ran. "infra", not a real
+								// content finding. See FailureReason's doc comment —
+								// this is the exact collapse that made B127's 10-minute
+								// timeout indistinguishable from a genuine block.
+								return judgeVerdictWithSession(autonomouspkg.GuardrailVerdict{
+									Outcome: "block", Severity: "medium",
+									Summary:   "guardrail(session): " + serr.Error(),
+									VerdictAt: time.Now(),
+									Category:  "infra",
+								}, judgeID, outputFile), nil
+							}
+							var parsed autonomouspkg.GuardrailVerdict
+							if uerr := json.Unmarshal([]byte(extractJSON(content)), &parsed); uerr != nil {
+								// Written but unparseable — a TERMINAL, non-retryable
+								// "invalid-response" verdict, NOT "infra": an infra
+								// block makes runGuardrailWithInfraRetry re-run the
+								// whole judge, and the retry re-delivers the same
+								// already-relocated output file (runOneShotJSONSession*),
+								// so the response is consumed twice or not at all (PRD
+								// bbf70001, 8.6KB guardrail output). It must not be
+								// empty either — an empty category reads as a
+								// content-category block eligible for content auto-fix
+								// in runPerTaskGuardrails/runPerStoryGuardrails. Only a
+								// genuine no-output session failure (the serr branch
+								// above) is "infra".
+								return judgeVerdictWithSession(autonomouspkg.GuardrailVerdict{
+									Outcome:   "block",
+									Severity:  "medium",
+									Summary:   fmt.Sprintf("guardrail judge returned %d bytes — its response could not be parsed as a verdict: %v", len(content), uerr),
+									VerdictAt: time.Now(),
+									Category:  "invalid-response",
+									RawJudge:  truncate(content, 16*1024),
+									Issues:    []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(content), truncate(content, 400))},
+								}, judgeID, outputFile), nil
+							}
+							parsed.RawJudge = truncate(content, 16*1024)
+							parsed.Category = judgedGuardrailCategory(parsed.Category)
+							parsed.VerdictAt = time.Now()
+							return judgeVerdictWithSession(parsed, judgeID, outputFile), nil
+						}
+						gkind = "ollama"
 					}
-					specHash := sha256.Sum256([]byte(req.UnitID + "|" + req.Guardrail + "|" + prompt))
-					outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")
-					sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
-					content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
-						"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
-						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", verificationSessionTimeout(cfg), judgeNode)
-					if serr != nil {
-						// BL410 Phase 0 — the SESSION itself failed (timeout,
-						// crash); no judgment ever ran. "infra", not a real
-						// content finding. See FailureReason's doc comment —
-						// this is the exact collapse that made B127's 10-minute
-						// timeout indistinguishable from a genuine block.
-						return judgeVerdictWithSession(autonomouspkg.GuardrailVerdict{
+					if guardrailModel == "" {
+						guardrailModel = gmodel
+					}
+					askBody := judgeAskBody(prompt, gkind, gbackend, guardrailModel, judgeNode)
+					body, _ := json.Marshal(askBody)
+					// The ask call runs under the judge's time limit, which starts
+					// now that the lease is granted; a run that hits it is a timeout.
+					status, rb, timedOut, err := judgeAskRun(ctx, att.Limit,
+						loopbackBaseURL(cfg)+"/api/ask", cfg.Server.Token, body)
+					if timedOut {
+						att.TimedOut = true
+						return judgeAskTimeoutVerdict(att.Limit), nil
+					}
+					if err != nil {
+						// The answer was not read in full: no judgment ran, so
+						// it is an infra failure, never a parsed verdict.
+						return judgeAskFailedVerdict(err), nil
+					}
+					if reason, failed := askFailureReason(status, rb); failed {
+						// BL410 Phase 0 — the /api/ask call itself failed; no
+						// judgment ever ran.
+						return autonomouspkg.GuardrailVerdict{
 							Outcome: "block", Severity: "medium",
-							Summary:   "guardrail(session): " + serr.Error(),
+							Summary:   "guardrail: ask call failed: " + reason,
 							VerdictAt: time.Now(),
 							Category:  "infra",
-						}, judgeID, outputFile), nil
+						}, nil
 					}
+					var ask struct {
+						Answer string `json:"answer"`
+					}
+					_ = json.Unmarshal(rb, &ask)
+					// v8.25.11: unparseable guardrail response is a block, not a pass.
+					// Failing safe here prevents PRD from advancing on malformed output.
 					var parsed autonomouspkg.GuardrailVerdict
-					if uerr := json.Unmarshal([]byte(extractJSON(content)), &parsed); uerr != nil {
+					if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &parsed); uerr != nil {
 						// Written but unparseable — a TERMINAL, non-retryable
-						// "invalid-response" verdict, NOT "infra": an infra
-						// block makes runGuardrailWithInfraRetry re-run the
-						// whole judge, and the retry re-delivers the same
-						// already-relocated output file (runOneShotJSONSession*),
-						// so the response is consumed twice or not at all (PRD
-						// bbf70001, 8.6KB guardrail output). It must not be
-						// empty either — an empty category reads as a
-						// content-category block eligible for content auto-fix
-						// in runPerTaskGuardrails/runPerStoryGuardrails. Only a
-						// genuine no-output session failure (the serr branch
-						// above) is "infra".
-						return judgeVerdictWithSession(autonomouspkg.GuardrailVerdict{
+						// "invalid-response" verdict, never "infra" (which would
+						// auto-retry a judge whose written response we could not
+						// parse) and never empty (which would trigger content
+						// auto-fix on a failure that was never a judgment).
+						return autonomouspkg.GuardrailVerdict{
 							Outcome:   "block",
 							Severity:  "medium",
-							Summary:   fmt.Sprintf("guardrail judge returned %d bytes — its response could not be parsed as a verdict: %v", len(content), uerr),
+							Summary:   fmt.Sprintf("guardrail judge returned %d bytes — its response could not be parsed as a verdict: %v", len(ask.Answer), uerr),
 							VerdictAt: time.Now(),
 							Category:  "invalid-response",
-							RawJudge:  truncate(content, 16*1024),
-							Issues:    []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(content), truncate(content, 400))},
-						}, judgeID, outputFile), nil
+							RawJudge:  truncate(ask.Answer, 16*1024),
+							Issues:    []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(ask.Answer), truncate(ask.Answer, 400))},
+						}, nil
 					}
-					parsed.RawJudge = truncate(content, 16*1024)
+					parsed.RawJudge = truncate(ask.Answer, 16*1024)
 					parsed.Category = judgedGuardrailCategory(parsed.Category)
 					parsed.VerdictAt = time.Now()
-					return judgeVerdictWithSession(parsed, judgeID, outputFile), nil
-				}
-				gkind = "ollama"
-			}
-			if guardrailModel == "" {
-				guardrailModel = gmodel
-			}
-			askBody := judgeAskBody(prompt, gkind, gbackend, guardrailModel, judgeNode)
-			body, _ := json.Marshal(askBody)
-			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-				loopbackBaseURL(cfg)+"/api/ask",
-				bytes.NewReader(body))
-			if err != nil {
-				return autonomouspkg.GuardrailVerdict{}, err
-			}
-			httpReq.Header.Set("Content-Type", "application/json")
-			if cfg.Server.Token != "" {
-				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
-			}
-			resp, err := http.DefaultClient.Do(httpReq)
-			if err != nil {
-				return autonomouspkg.GuardrailVerdict{}, err
-			}
-			defer resp.Body.Close() //nolint:errcheck
-			rb, _ := io.ReadAll(resp.Body)
-			if reason, failed := askFailureReason(resp.StatusCode, rb); failed {
-				// BL410 Phase 0 — the /api/ask call itself failed; no
-				// judgment ever ran.
-				return autonomouspkg.GuardrailVerdict{
-					Outcome: "block", Severity: "medium",
-					Summary:   "guardrail: ask call failed: " + reason,
-					VerdictAt: time.Now(),
-					Category:  "infra",
-				}, nil
-			}
-			var ask struct {
-				Answer string `json:"answer"`
-			}
-			_ = json.Unmarshal(rb, &ask)
-			// v8.25.11: unparseable guardrail response is a block, not a pass.
-			// Failing safe here prevents PRD from advancing on malformed output.
-			var parsed autonomouspkg.GuardrailVerdict
-			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &parsed); uerr != nil {
-				// Written but unparseable — a TERMINAL, non-retryable
-				// "invalid-response" verdict, never "infra" (which would
-				// auto-retry a judge whose written response we could not
-				// parse) and never empty (which would trigger content
-				// auto-fix on a failure that was never a judgment).
-				return autonomouspkg.GuardrailVerdict{
-					Outcome:   "block",
-					Severity:  "medium",
-					Summary:   fmt.Sprintf("guardrail judge returned %d bytes — its response could not be parsed as a verdict: %v", len(ask.Answer), uerr),
-					VerdictAt: time.Now(),
-					Category:  "invalid-response",
-					RawJudge:  truncate(ask.Answer, 16*1024),
-					Issues:    []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(ask.Answer), truncate(ask.Answer, 400))},
-				}, nil
-			}
-			parsed.RawJudge = truncate(ask.Answer, 16*1024)
-			parsed.Category = judgedGuardrailCategory(parsed.Category)
-			parsed.VerdictAt = time.Now()
-			return parsed, nil
+					return parsed, nil
+				})
+		}
+		// autonomousGuardrail routes the judge: one attempt per backend, moving
+		// on only when a run hits its time limit. The backends come from
+		// autonomous.judge_policy, or from the verifier routing policy when that
+		// list is empty. A unit that pins its own guardrail backend keeps that one.
+		autonomousGuardrail := func(ctx context.Context, req autonomouspkg.GuardrailInvocation) (autonomouspkg.GuardrailVerdict, error) {
+			// One live-config snapshot for the whole judge (see liveAutonomousConfig).
+			gcfg := liveAutonomousConfig()
+			unitBackend, _ := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
+			choose := judgeBackendChooserFor(ctx, autonomousMgrRef, req, gcfg, unitBackend)
+			alert := func(level, title, body string) { emitJudgeAlert(autonomousMgrRef, level, title, body) }
+			return runJudgeAttempts(req, choose, judgeSessionTimeout(gcfg), alert, judgeTryLogFor(autonomousMgrRef, req),
+				func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
+					return autonomousGuardrailAttempt(ctx, req, gcfg, backend, att)
+				})
 		}
 		if amgr, err := autonomouspkg.NewManager(expandHome(cfg.DataDir), amgrCfg, decomposeFn); err != nil {
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
@@ -5991,6 +6010,17 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// written to the daemon log once; the status endpoint keeps them.
 			amgr.ReportPairingWarnings()
 			amgr.SetGuardrail(autonomousGuardrail)
+			// The plan-review judge goes through the same routed, leased and
+			// time-limited judge path as the guardrail judge.
+			amgr.SetPlanReview(planReviewViaJudge(autonomousGuardrail, func(prdID string) string {
+				if prd, ok := amgr.Store().GetPRD(prdID); ok {
+					return prd.ProjectDir
+				}
+				return ""
+			}, func() (string, string) {
+				live := liveAutonomousConfig()
+				return live.PlanReviewBackend, live.PlanReviewModel
+			}))
 			// Daily and milestone progress snapshots, stored with the other
 			// autonomous data; the runner starts with amgr.Start below.
 			if _, err := amgr.EnableProgressSnapshots(func() autonomouspkg.ProgressSnapshotSettings {
