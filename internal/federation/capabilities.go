@@ -77,6 +77,14 @@ const (
 	CapConfigRead  = "config:read"
 	CapConfigWrite = "config:write"
 
+	// usage (federated usage calculator series)
+	// CapUsageRead gates a peer's read of the shared usage readings
+	// (GET /api/usage/readings, including the hop-guarded local answer);
+	// CapUsageWrite gates a peer's forwarded writes
+	// (POST/DELETE /api/usage/readings, PUT /api/usage/extra-credit).
+	CapUsageRead  = "usage:read"
+	CapUsageWrite = "usage:write"
+
 	// plugins (widget data surface)
 	// CapPluginRead gates reading plugin widget data
 	// (GET /api/plugins/{name}/widgets[/{widget_id}]); CapPluginWrite
@@ -182,6 +190,7 @@ var allCaps = []string{
 	CapLLMsList, CapLLMsRead, CapLLMsWrite,
 	CapComputeList, CapComputeRead, CapComputeWrite,
 	CapAnalyticsRead, CapAnalyticsWrite,
+	CapUsageRead, CapUsageWrite,
 	CapHealthRead,
 	CapConfigRead, CapConfigWrite,
 	CapPluginRead, CapPluginWrite,
@@ -217,6 +226,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 		Caps: []string{
 			CapHealthRead,
 			CapAnalyticsRead,
+			CapUsageRead,
 			CapSessionsList,
 			CapAgentsList,
 			CapObserversList,
@@ -263,13 +273,13 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 		Name:        "config-admin",
 		Description: "Read and write configuration",
 		Builtin:     true,
-		Caps:        []string{CapConfigRead, CapConfigWrite},
+		Caps:        []string{CapConfigRead, CapConfigWrite, CapUsageRead, CapUsageWrite},
 	},
 	"analytics-viewer": {
 		Name:        "analytics-viewer",
 		Description: "Cost analytics, dashboard, and audit log",
 		Builtin:     true,
-		Caps:        []string{CapAnalyticsRead, CapDashboardRead, CapAuditRead},
+		Caps:        []string{CapAnalyticsRead, CapDashboardRead, CapAuditRead, CapUsageRead},
 	},
 	"autonomous-operator": {
 		Name:        "autonomous-operator",
@@ -334,6 +344,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			CapLLMsList, CapLLMsRead,
 			CapComputeList, CapComputeRead,
 			CapAnalyticsRead,
+			CapUsageRead,
 			CapHealthRead,
 			CapConfigRead,
 			CapSecretsList,
@@ -358,7 +369,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			"PUT /api/smoke/forward-url) — narrower than full-control for " +
 			"a peer instance whose only job is reporting its own smoke runs",
 		Builtin: true,
-		Caps:    []string{CapAnalyticsRead, CapAnalyticsWrite},
+		Caps:    []string{CapAnalyticsRead, CapAnalyticsWrite, CapUsageRead},
 	},
 	// session-default (Design A3, v8.39.25) — the default grant for a
 	// per-session scoped credential (internal/auth.SessionTokenStore),
@@ -392,6 +403,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 			CapObserversList, CapObserversRead,
 			CapHealthRead,
 			CapAnalyticsRead,
+			CapUsageRead, CapUsageWrite,
 			CapDocsRead,
 			CapAlertsList, CapAlertsRead,
 			CapAutonomousList, CapAutonomousRead,

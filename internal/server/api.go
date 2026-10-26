@@ -336,6 +336,11 @@ type Server struct {
 	nodeUsageCacheOnce sync.Once
 	nodeUsageCacheVal  *nodeUsageCache
 
+	// Shared usage-calculator readings series (keeper/peer federation). Lazily
+	// created by (s *Server) usageSeries(); see usage_readings.go.
+	usageSeriesOnce     sync.Once
+	usageSeriesCacheVal *usageSeriesCache
+
 	// v7.0.0 S2 — LLM-inference registry + dispatcher (nil when disabled).
 	inferenceReg   *inference.Registry
 	roleMonitor    inference.RoleContentionMonitor

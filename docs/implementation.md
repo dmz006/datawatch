@@ -194,6 +194,20 @@ retired `variant` falls back to `all` with one log line. All keys are settable a
 value), comm `configure usage.calculator.<key>=<value>`, the generic `config_set` tool and
 CLI `datawatch config set`. The PWA Settings fields are a later change.
 
+Shared readings federation (`internal/usagecalc/shared.go`,
+`internal/server/usage_readings.go`): `usage.calc.SharedSeries` wires one daemon's local
+store to the federation — with an empty `keeper` the daemon keeps the series; otherwise
+it reads the series from the keeper daemon and forwards the writes there, holding the
+last on-disk copy (served stale-flagged when the keeper is down, decision 8). The REST
+surface: `GET /api/usage/readings` (read), `POST /api/usage/readings`,
+`DELETE /api/usage/readings/{id}`, and `PUT /api/usage/extra-credit` (write), gated on
+`federation.CapUsageRead`/`CapUsageWrite`. Requests carrying `X-Usage-Hop: 1` (sent by a
+peer's fetch) always see the keeper's local store, whatever that daemon's own keeper
+setting says — the read can never re-forward. A write that cannot reach the keeper is
+refused whole and stored locally nowh ere (`usagecalc.ErrKeeperUnreachable`). A stale
+read carries `X-Usage-Stale` / `X-Usage-Copied-At` response headers; the body is always
+the same bare record. Server-side tests are in `internal/server/usage_readings_test.go`.
+
 LLM role tags (`internal/inference/role_resolve.go`, `role_contention.go`): `llms[].roles`
 is an open set of strings (trimmed, lower-cased, de-duplicated; empty rejected). An
 explicit per-call-site backend or model always wins; otherwise the entry claiming the role

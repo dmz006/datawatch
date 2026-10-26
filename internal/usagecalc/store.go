@@ -40,9 +40,11 @@ var ErrInvalidValue = errors.New("invalid usage value")
 // ErrReadingNotFound is returned by Delete when no reading has the given ID.
 var ErrReadingNotFound = errors.New("usage reading not found")
 
-// AccountRecord is the part of the store that describes the account rather than this
-// daemon: the readings series and the bought extra credit.
-type AccountRecord struct {
+// LocalAccountRecord is the part of the local store that describes the account rather
+// than this daemon: the readings series and the bought extra credit. A keeper daemon
+// holds one of these per account and serves it to peers through SharedSeries
+// (shared.go); the peer side keeps a copy of it next to its own store file.
+type LocalAccountRecord struct {
 	Readings             []Reading `json:"readings"`
 	ExtraCreditPoints    float64   `json:"extra_credit_points"`
 	ExtraCreditUpdatedAt time.Time `json:"extra_credit_updated_at"`
@@ -56,15 +58,15 @@ type LocalRecord struct {
 }
 
 type storeFile struct {
-	Version int           `json:"version"`
-	Account AccountRecord `json:"account"`
-	Local   LocalRecord   `json:"local"`
+	Version int                `json:"version"`
+	Account LocalAccountRecord `json:"account"`
+	Local   LocalRecord        `json:"local"`
 }
 
-// Snapshot is a copy of the stored state; changing it never changes the store.
-type Snapshot struct {
+// StoreSnapshot is a copy of the stored state; changing it never changes the store.
+type StoreSnapshot struct {
 	Version int
-	Account AccountRecord
+	Account LocalAccountRecord
 	Local   LocalRecord
 }
 
@@ -120,7 +122,7 @@ func OpenStore(dataDir string, now func() time.Time, opts ...StoreOption) (*Stor
 }
 
 func emptyStoreFile() storeFile {
-	return storeFile{Version: StoreSchemaVersion, Account: AccountRecord{Readings: []Reading{}}}
+	return storeFile{Version: StoreSchemaVersion, Account: LocalAccountRecord{Readings: []Reading{}}}
 }
 
 func (s *Store) load() error {
@@ -395,9 +397,13 @@ func (s *Store) SetRemainingWork(work *float64) error {
 }
 
 // Snapshot returns a copy of the stored state.
-func (s *Store) Snapshot() Snapshot {
+func (s *Store) Snapshot() StoreSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c := s.data.clone()
-	return Snapshot{Version: c.Version, Account: c.Account, Local: c.Local}
+	return StoreSnapshot{Version: c.Version, Account: c.Account, Local: c.Local}
 }
+
+// FilePath returns the store file's path, so a SharedSeries can keep its peer copy right
+// next to it.
+func (s *Store) FilePath() string { return s.path }
