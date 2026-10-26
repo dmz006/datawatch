@@ -41,7 +41,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/usagecalc"
 )
 
@@ -128,7 +127,7 @@ func (s *Server) handleUsageReadings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUsageSeriesRead(w http.ResponseWriter, r *http.Request) {
-	if !s.fedCap(w, r, federation.CapUsageRead) {
+	if !s.fedCap(w, r, usageCapabilityRead) {
 		return
 	}
 	series, err := s.usageSeries()
@@ -168,7 +167,7 @@ func (s *Server) handleUsageSeriesRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUsageReadingAdd(w http.ResponseWriter, r *http.Request) {
-	if !s.fedCap(w, r, federation.CapUsageWrite) {
+	if !s.fedCap(w, r, usageCapabilityWrite) {
 		return
 	}
 	var in usagecalc.Reading
@@ -244,7 +243,7 @@ func (s *Server) deleteUsageReading(w http.ResponseWriter, r *http.Request, idFr
 	if id == "" {
 		id = strings.TrimSpace(r.URL.Query().Get("id"))
 	}
-	if !s.fedCap(w, r, federation.CapUsageWrite) {
+	if !s.fedCap(w, r, usageCapabilityWrite) {
 		return
 	}
 	if id == "" {
@@ -280,7 +279,7 @@ func (s *Server) handleUsageExtraCredit(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.fedCap(w, r, federation.CapUsageWrite) {
+	if !s.fedCap(w, r, usageCapabilityWrite) {
 		return
 	}
 	series, err := s.usageSeries()

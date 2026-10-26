@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
-	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/usagecalc"
 )
 
@@ -132,7 +131,7 @@ func (s *Server) handleUsageAdvice(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.fedCap(w, r, federation.CapUsageRead) {
+	if !s.fedCap(w, r, usageCapabilityRead) {
 		return
 	}
 	calc := s.UsageCalculator()
@@ -197,7 +196,7 @@ func isUsageSelectionError(err error) bool {
 // figure is daemon-local (decision 6): it stays in this daemon's store and never travels
 // with the shared account record.
 func (s *Server) handleUsageRemainingWork(w http.ResponseWriter, r *http.Request) {
-	if !s.fedCap(w, r, federation.CapUsageWrite) {
+	if !s.fedCap(w, r, usageCapabilityWrite) {
 		return
 	}
 	calc := s.UsageCalculator()

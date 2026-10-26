@@ -13,12 +13,26 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/usagecalc"
 )
 
 // usageCalcResourceType names the resource every usage-calculator audit
 // entry attaches to.
 const usageCalcResourceType = "usage_calculator"
+
+// The federation capabilities the calculator's endpoints enforce, held
+// here — the calculator's shared REST file — so the guards all read
+// out of one place:
+//
+//	federation.CapUsageRead   (usage:read)   GET advice, GET readings
+//	federation.CapUsageWrite  (usage:write)  POST/DELETE readings, the extra-
+//	                                         credit and the remaining-work
+//	                                         figure
+var (
+	usageCapabilityRead  = federation.CapUsageRead
+	usageCapabilityWrite = federation.CapUsageWrite
+)
 
 // usageReadingsView is the body of a plain (non hop-marked)
 // GET /api/usage/readings: the account record flattened, plus the source
