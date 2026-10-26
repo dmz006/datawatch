@@ -1466,8 +1466,9 @@ An Automaton worker is only launched in a project directory that is a
 registered worktree of the repository holding the repository root marker
 files. If the directory is not registered, the launch is refused and an
 alert naming the Automaton is raised, and a missing worktree directory is
-no longer recreated as an empty repository. After the alert, repair or
-remove the directory and re-run the Automaton so the worktree is recreated.
+no longer recreated as an empty repository. After the alert, repair the
+directory, for example by re-adding it with `git worktree add`, and re-run
+the Automaton.
 
 **Automation** — a named group of Automata (PRDs) wired together as
 members with per-outcome next-step edges (`on_complete` / `on_blocked` /

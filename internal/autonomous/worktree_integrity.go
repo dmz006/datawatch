@@ -229,8 +229,8 @@ func (m *Manager) raiseWorktreeIntegrityAlert(prd *PRD, t *Task, dir, reason str
 	}
 	body := fmt.Sprintf(
 		"Automaton: %s (%s)\nTask: %s (%s)\nProject directory: %s\nFailed check: %s\n"+
-			"Ways to act: repair or remove the directory and run the Automaton again, "+
-			"so the next launch recreates the worktree.",
+			"Ways to act: repair the directory, for example by re-adding it with "+
+			"git worktree add, and run the Automaton again.",
 		prd.ID, prd.Title, t.ID, t.Title, dir, reason)
 	alert("error", "Automaton project directory is not a worktree", body)
 }

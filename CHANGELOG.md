@@ -7,7 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Automaton workers no longer launch in an unregistered worktree
 
-An Automaton worker is no longer launched in a project directory that is not a registered worktree of the repository holding the repository root marker files. When the directory is not registered, the launch is refused and an alert naming the Automaton is raised instead of the worker starting. A worktree directory that has gone missing is also no longer recreated as an empty repository when a session starts, so a worker can no longer run against a blank repository that has none of the project's history. To recover after the alert, repair or remove the directory and run the Automaton again; the worktree is then recreated from the repository.
+An Automaton worker is no longer launched in a project directory that is not a registered worktree of the repository holding the repository root marker files. When the directory is not registered, the launch is refused and an alert naming the Automaton is raised instead of the worker starting. A worktree directory that has gone missing is also no longer recreated as an empty repository when a session starts, so a worker can no longer run against a blank repository that has none of the project's history. To recover after the alert, repair the directory, for example by re-adding it with `git worktree add`, and run the Automaton again.
 
 ### Shared navigation fits phone widths
 
