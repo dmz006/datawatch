@@ -3571,3 +3571,263 @@ entries:
     expires: "2027-01-22"
     validated_by: "claude-session"
     reason: "No fix available in Debian bookworm (status affected). Found live by the Release workflow blocking agent-base scan on the 9.5.111 tag. Moved from a hand edit of .trivyignore into this registry on 2026-10-24. Re-check for a fix each cycle; re-trace only if a new Brotli-linked tool is added to the image."
+
+  # --- code-scanning: alerts triaged as dismiss in the path-injection and
+  # certificate/sanitization decision lists under docs/plans/. Alerts fixed
+  # in code have no entry here. The operator applies the GitHub dismissals.
+  - id: code-scanning/630
+    kind: code-scanning
+    package: "js sanitization (test file)"
+    path: "internal/server/web/app-fed-conn-status.test.js"
+    severity: low
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source review of the test file"
+      analysis: "JSON.stringify of a literal fixture built in the test is interpolated into a script run in a VM sandbox. No external input."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/631
+    kind: code-scanning
+    package: "js sanitization (test file)"
+    path: "internal/server/web/app-fed-conn-status.test.js"
+    severity: low
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source review of the test file"
+      analysis: "JSON.stringify of a literal fixture built in the test is interpolated into a script run in a VM sandbox. No external input."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/664
+    kind: code-scanning
+    package: "js/disabled-certificate-validation"
+    path: "scripts/test-stories/pwa/TS-797.mjs"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source review of the story script"
+      analysis: "Test-only script. The proxy dials the sandbox daemon's own self-signed local listener with a per-connection option; nothing is process-wide and the script is not shipped."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/665
+    kind: code-scanning
+    package: "js/disabled-certificate-validation"
+    path: "scripts/test-stories/pwa/TS-797.mjs"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source review of the story script"
+      analysis: "Test-only script. The proxy dials the sandbox daemon's own self-signed local listener with a per-connection option; nothing is process-wide and the script is not shipped."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/671
+    kind: code-scanning
+    package: "js sanitization (test file)"
+    path: "internal/server/web/app-result-panel.test.js"
+    severity: low
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source review of the test file"
+      analysis: "The DOMPurify and marked stand-ins are deliberately crude stubs that prove the app calls the sanitizer. They never process untrusted input and are not shipped."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/672
+    kind: code-scanning
+    package: "js sanitization (test file)"
+    path: "internal/server/web/app-result-panel.test.js"
+    severity: low
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source review of the test file"
+      analysis: "The DOMPurify and marked stand-ins are deliberately crude stubs that prove the app calls the sanitizer. They never process untrusted input and are not shipped."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/673
+    kind: code-scanning
+    package: "js sanitization (test file)"
+    path: "internal/server/web/app-result-panel.test.js"
+    severity: low
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source review of the test file"
+      analysis: "The DOMPurify and marked stand-ins are deliberately crude stubs that prove the app calls the sanitizer. They never process untrusted input and are not shipped."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/674
+    kind: code-scanning
+    package: "js sanitization (test file)"
+    path: "internal/server/web/app-result-panel.test.js"
+    severity: low
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source review of the test file"
+      analysis: "The DOMPurify and marked stand-ins are deliberately crude stubs that prove the app calls the sanitizer. They never process untrusted input and are not shipped."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/675
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/gitguard/policy.go"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source trace of Policy.Keep callers (attempt_snapshot.go, session/git.go)"
+      analysis: "Policy.Keep only calls os.Stat to read a file's size and type for the staging filter. Candidates are paths git itself lists for the repository; a stat of an odd path only changes whether it is staged, and git add applies its own repository boundary. No content is read or written."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/685
+    kind: code-scanning
+    package: "js sanitization (test file)"
+    path: "internal/server/web/app-automation-empty.test.js"
+    severity: low
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source review of the test file"
+      analysis: "Unescapes an attribute value generated by the app under test so the handler can run in a VM sandbox. Test input only; never served."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/687
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/autonomous/store_records.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source trace of recordName and the store's records directory"
+      analysis: "os.Remove / os.RemoveAll of <recordsDir>/<recordName(id)>.json or .files. recordName applies the same allow-list (64 characters of [A-Za-z0-9_-]) or a SHA-256 digest, and the directory is the store's own, so the id cannot escape it."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/688
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/autonomous/store_records.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source trace of recordName and the store's records directory"
+      analysis: "os.Remove / os.RemoveAll of <recordsDir>/<recordName(id)>.json or .files. recordName applies the same allow-list (64 characters of [A-Za-z0-9_-]) or a SHA-256 digest, and the directory is the store's own, so the id cannot escape it."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/689
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/session/store_records.go"
+    severity: high
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source trace of recordFileName and the store's records directory"
+      analysis: "os.Remove of s.recordPath(id). The file name comes from recordFileName, which keeps the id only when it is 1 to 120 characters of [A-Za-z0-9_-] and otherwise substitutes a SHA-256 hex digest, so no separator or dot reaches the path. The directory is the store's own records directory under the daemon data dir. CodeQL does not model the allow-list as a sanitizer."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/690
+    kind: code-scanning
+    package: "go/path-injection"
+    path: "internal/gitguard/projectdir.go"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source trace of the project directory guard"
+      analysis: "This is the project directory guard itself. os.Lstat(filepath.Join(abs, m)) joins a fixed marker name (go.mod, .git, ...) onto the already-normalized directory being judged and only tests existence. Nothing is read, written or deleted."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/694
+    kind: code-scanning
+    package: "js sanitization (test file)"
+    path: "internal/server/web/app-shared-nav.test.js"
+    severity: low
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source review of the test file"
+      analysis: "The test strips HTML comments from the repository's own checked-in index.html to find nav buttons. It parses a trusted file and the output is never rendered or served."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+
+  - id: code-scanning/699
+    kind: code-scanning
+    package: "js/disabled-certificate-validation"
+    path: "scripts/test-stories/pwa/TS-822.mjs"
+    severity: medium
+    impact:
+      traced: true
+      reachable: "no"
+      method: "source review of the story script"
+      analysis: "Test-only script talking to the local sandbox listener. The relaxed setting (rejectUnauthorized: false) is scoped to a single https.request to the sandbox host; there is no process-wide setting and the script is not shipped."
+    first_added: "2026-10-26"
+    added: "2026-10-26"
+    expires: "2027-01-24"
+    validated_by: "claude-session"
+    reason: "Dismiss as false positive or test-only; see impact.analysis for the traced evidence."
+

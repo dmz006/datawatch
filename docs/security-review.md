@@ -252,6 +252,17 @@ Input scanner: `ScanForInjection(text)` in `internal/autonomous/security.go` che
 
 **Separate gap, not fixed here:** `.github/workflows/security-scan.yaml` only triggers on `pull_request` to `main`, never on a direct push — so this drift went uncaught through roughly 5 months of main-branch commits (2026-05-19 → 2026-10-08), none of which went through a PR. Whether to also run this gate on push (and how that interacts with the release pipeline's own `gosec` step in `release.yaml`) is a CI-workflow-trigger decision, not a baseline-number change — flagged for a deliberate call, not decided unilaterally here.
 
+## Code-scanning triage
+
+Open code-scanning alerts for Go path injection, disabled certificate validation and the JavaScript sanitization rules in test files were triaged one by one; the per-alert reasons are in `docs/plans/path-injection-alert-decisions.md`.
+
+| Outcome | Count | Detail |
+|---|---|---|
+| Fixed in code | 9 | 6 path-injection alerts (project directory containment and cleaning, pack directory containment, test-run directory cleaning), 2 certificate-check alerts in the PWA story scripts, and the Go node-usage client, which now verifies certificates unless the node sets `tls_insecure_skip_verify` |
+| Dismissed | 16 | 5 path-injection alerts on sanitized or fixed-name paths, 3 certificate-check alerts in test-only scripts against local listeners, and 8 sanitization alerts in test files |
+
+Each dismissed alert has a `code-scanning/<alert number>` entry in `security/accepted-risks.yml` with the traced evidence; alerts fixed in code have none. The GitHub dismissals are applied by the operator using the commands listed in the decision list.
+
 ## Procedural changes
 
 - Run `gosec -severity high -confidence medium ./...` and `govulncheck ./...` before every patch. The audit doc is updated only when triage changes (new findings or new mitigations).
