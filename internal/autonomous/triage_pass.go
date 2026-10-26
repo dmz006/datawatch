@@ -1,6 +1,8 @@
 // Triage pass — the poll-time helpers behind Coordinator.triagePass
-// (entry in automation_coordinator.go): the record-context builder that
-// runs on the coordinator's injectable clock, the text formatters for the
+// (entry in automation_coordinator.go): the no-op check that keeps an
+// unchanged record from being rewritten every poll, the
+// record-context builder that runs on the coordinator's injectable
+// clock, the text formatters for the
 // triage alert and the "Automation blocked" alert extension, and the
 // failed-task detail lines.
 //
@@ -13,6 +15,7 @@ package autonomous
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -144,11 +147,36 @@ func triageDetailsBlock(rec *TriageRecord) string {
 	if rec.Error != "" {
 		b.WriteString("Task error: " + rec.Error + "\n")
 	}
+	if rec.BlockedReason != "" {
+		b.WriteString("Blocked reason: " + rec.BlockedReason + "\n")
+	}
 	if rec.SessionEndReason != "" {
 		b.WriteString("Session end reason: " + rec.SessionEndReason + "\n")
 	}
 	b.WriteString("Retry budget: " + triageBudgetLine(rec.RetryBudget) + "\n")
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// triageRecordUnchanged reports whether saving the fresh record would
+// change nothing: it mirrors the fields SaveTriageRecord preserves from
+// the stored record (FirstSeenAt, Notes, and AlertedAt when one is
+// already stored) and ignores UpdatedAt (which only moves when a save
+// happens). A pass uses it to skip the store write when nothing about
+// the stuck work has changed, so a record is not rewritten on every
+// poll.
+func triageRecordUnchanged(stored, fresh *TriageRecord) bool {
+	if stored == nil || fresh == nil {
+		return false
+	}
+	a := *stored
+	b := *fresh
+	b.FirstSeenAt = a.FirstSeenAt
+	b.Notes = a.Notes
+	if a.AlertedAt != nil {
+		b.AlertedAt = a.AlertedAt
+	}
+	a.UpdatedAt, b.UpdatedAt = time.Time{}, time.Time{}
+	return reflect.DeepEqual(a, b)
 }
 
 // triageAlertBody renders the triage alert body for one stuck Automaton:

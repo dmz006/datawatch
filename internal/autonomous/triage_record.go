@@ -75,9 +75,13 @@ type TriageRecord struct {
 	// record when one exists.
 	TaskID    string `json:"task_id,omitempty"`
 	TaskTitle string `json:"task_title,omitempty"`
-	// Error is the failed task's error text (capped); for a blocked
-	// Automaton with no such task, the blocked reason.
+	// Error is the failed (or blocked) task's error text (capped). It is
+	// empty when the Automaton carries no failed/blocked task.
 	Error string `json:"error,omitempty"`
+	// BlockedReason is the Automaton's own block reason
+	// (PRD.BlockedReason), kept separate from Error so a block reason is
+	// never rendered as a task's error.
+	BlockedReason string `json:"blocked_reason,omitempty"`
 	// SessionEndReason carries why the task's live sessions were ended,
 	// read structurally from the task, falling back to the newest
 	// ended_sessions decision note.
@@ -127,8 +131,9 @@ func BuildTriageRecord(prd *PRD, budget TriageRetryBudget, automationName, membe
 		rec.TaskTitle = task.Title
 		rec.Error = capTriageText(task.Error)
 		rec.SessionEndReason = triageSessionEndReason(prd, task)
-	} else if prd.Status == PRDBlocked {
-		rec.Error = capTriageText(prd.BlockedReason)
+	}
+	if prd.Status == PRDBlocked && prd.BlockedReason != "" {
+		rec.BlockedReason = capTriageText(prd.BlockedReason)
 	}
 	return rec
 }

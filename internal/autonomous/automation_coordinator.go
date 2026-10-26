@@ -696,7 +696,10 @@ func (c *Coordinator) blocked(a *Automation, reason string, details map[string]a
 //   - a failed or blocked Automaton gets its stored Triage record
 //     filled in or refreshed in place (Manager.SaveTriageRecord keeps the
 //     stored FirstSeenAt, AlertedAt and append-only Notes across
-//     refreshes, so the record is never duplicated);
+//     refreshes, so the record is never duplicated). A pass with nothing
+//     new compares first and skips the store write entirely
+//     (triageRecordUnchanged, triage_pass.go), so an unchanged record is
+//     not rewritten on every poll;
 //   - an Automaton that has left failed/blocked (completed, cancelled,
 //     archived, rejected, ...) has its record cleared (Manager.Clear-
 //     TriageRecord) and is skipped for recording;
@@ -712,15 +715,25 @@ func (c *Coordinator) blocked(a *Automation, reason string, details map[string]a
 // standalone Automaton — or a member whose Automation no longer exists
 // — is triaged regardless.
 //
-// Verified in code before this pass was built: the existing "Automation
-// blocked" alert does NOT carry the failed task's error AND does NOT
-// carry the session end reason. Its body (blocked, above) is the fixed
-// template "Automation %q (%s): %s" where %s is a short step reason
-// string such as "member run errored" or "next member X is failed" —
-// never Task.Error or Task.SessionEndReason, which although stored on
-// the Automaton's task are never reached by the blocked alert path.
+// Verified in code before this pass was built (per field, with file
+// and line):
+//
+//   - the failed task's error — NO, the blocked alert does not carry
+//     it: the alert body is the fixed template at
+//     automation_coordinator.go:685
+//     (body := fmt.Sprintf("Automation %q (%s): %s", a.Name, a.ID,
+//     reason)), whose interpolated %s is a short step reason string
+//     such as "member run errored" or "next member X is failed"; the
+//     task's error itself (Task.Error, models.go:819) is never read on
+//     the blocked() path;
+//
+//   - the session end reason — NO, the blocked alert does not carry it
+//     either: Task.SessionEndReason (models.go:865) is stored on the
+//     Automaton's task but is likewise never interpolated into the
+//     blocked() body.
+//
 // That is why this pass's record and alert carry both explicitly, why
-// the blocked() alert is extended above with blockedTaskDetails when it
+// the blocked() alert above is extended with blockedTaskDetails when it
 // is known, and why the blocked alert's body stays as-is when it is not.
 func (c *Coordinator) triagePass() {
 	if c == nil || c.m == nil {
@@ -753,6 +766,9 @@ func (c *Coordinator) triagePass() {
 			stored := prd.Triage
 			alerting := threshold > 0 && stored != nil && stored.AlertedAt == nil &&
 				!now.Before(stored.FirstSeenAt.Add(threshold))
+			if !alerting && triageRecordUnchanged(stored, fresh) {
+				continue // nothing new — do not rewrite the stored record
+			}
 			if alerting {
 				t := now
 				fresh.AlertedAt = &t

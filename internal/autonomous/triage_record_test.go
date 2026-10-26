@@ -132,8 +132,11 @@ func TestTriageBuilderBlockedReasonFallback(t *testing.T) {
 	if rec == nil {
 		t.Fatal("nil record")
 	}
-	if rec.Error != "guardrail blocked it" {
-		t.Errorf("Error = %q, want blocked reason fallback", rec.Error)
+	if rec.BlockedReason != "guardrail blocked it" {
+		t.Errorf("BlockedReason = %q, want the block reason", rec.BlockedReason)
+	}
+	if rec.Error != "" {
+		t.Errorf("Error = %q, want empty — a block reason must not be stored as a task error", rec.Error)
 	}
 	if rec.TaskID != "" {
 		t.Errorf("TaskID = %q, want empty (no failed/blocked task)", rec.TaskID)
