@@ -401,6 +401,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newFederationCmd(),      // BL316 S2 — federation peer and group registry
 		newCapacityCmd(),        // capacity admission ledger status
 		newBudgetCmd(),          // per-LLM dollar budget status
+		newUsageCmd(),           // weekly usage allowance: advice, readings, extra credit, remaining work
 		newAlertRulesCmd(),      // S14b — per-pod alert rules + observer-driven autoscaling
 		newMemoryCmd(),          // v7.0.0 S5 — scope-hierarchy memory
 		newMarketplaceCmd(),     // alpha.33 #244 — Ollama marketplace
