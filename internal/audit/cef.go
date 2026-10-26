@@ -188,6 +188,18 @@ func cefSignature(action string) (int, string, int) {
 		return 48, "AutonomousLifecycleForwardDelivery", 3
 	case ActionLifecycleForwardReceive:
 		return 49, "AutonomousLifecycleForwardReceive", 3
+	case ActionQuestionRaised:
+		return 50, "QuestionRaised", 3
+	case ActionQuestionAnswered:
+		return 51, "QuestionAnswered", 3
+	case ActionQuestionWithdrawn:
+		return 52, "QuestionWithdrawn", 3
+	case ActionQuestionExpired:
+		return 53, "QuestionExpired", 4
+	case ActionAnswerSuperseded:
+		return 54, "AnswerSuperseded", 4
+	case ActionQuestionAnswerRefused:
+		return 55, "QuestionAnswerRefused", 6
 	default:
 		return 0, "AuditEvent", 3
 	}

@@ -111,4 +111,41 @@ const (
 	// empty for an admin caller) and the actor. The signature header is never
 	// recorded.
 	ActionLifecycleForwardReceive = "autonomous_lifecycle_forward_receive"
+
+	// Operator question channel — the lifecycle of one question, subjected
+	// by the question id on every entry. A question and its answer are kept
+	// forever in the audit log: the quote is stored verbatim in the
+	// answered and superseded entries, exactly as the answering operator
+	// wrote it.
+
+	// ActionQuestionRaised — a question was raised on the operator question
+	// channel, awaiting an operator answer. Subject: the question id.
+	// Details: question_id, label, asked_by, asker_kind, context, risk,
+	// option_count, default, text.
+	ActionQuestionRaised = "question_raised"
+	// ActionQuestionAnswered — an operator answered the question. Subject:
+	// the question id. Details: question_id, answer_id, chosen_option_id,
+	// quote (verbatim, kept forever), quote_sha256, actor, surface.
+	ActionQuestionAnswered = "question_answered"
+	// ActionQuestionWithdrawn — the asker (or an operator) withdrew the
+	// question before it was answered. Subject: the question id.
+	// Details: question_id, actor, reason.
+	ActionQuestionWithdrawn = "question_withdrawn"
+	// ActionQuestionExpired — the question reached its deadline without an
+	// answer, and its default took effect (or the awaiting automation was
+	// held). Subject: the question id. Details: question_id, reason.
+	ActionQuestionExpired = "question_expired"
+	// ActionAnswerSuperseded — a later answer replaced an earlier one for
+	// the same question. Subject: the question id. Details: question_id,
+	// answer_id, supersedes (the earlier answer_id), chosen_option_id,
+	// quote (verbatim, kept forever), quote_sha256, actor, surface.
+	ActionAnswerSuperseded = "answer_superseded"
+	// ActionQuestionAnswerRefused — the channel refused an operator answer:
+	// the text failed a guard rule, so it never reaches the asker. Audited
+	// without its text — Details carries the name of the matched rule only,
+	// NEVER the rule text or the answer itself, so a refusal of a secret
+	// answer leaves no secret in the audit log. Subject: the question id.
+	// Details: question_id, actor, surface, reason, pattern (the name of
+	// the matched rule only, NEVER the text).
+	ActionQuestionAnswerRefused = "question_answer_refused"
 )
