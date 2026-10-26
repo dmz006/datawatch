@@ -7,8 +7,10 @@
 #     queries report findings.
 #   - alert-gate (BLOCKING) — after every upload has been processed, lists
 #     open alerts at severity high or critical for this ref and fails with the
-#     counts. Dismissed alerts are not "open", so alerts dismissed with a
-#     registered reason (security/accepted-risks.yml) are excluded.
+#     counts. Only alerts in state "open" count, so any alert dismissed in
+#     code scanning is excluded. The gate does not read
+#     security/accepted-risks.yml; that registry documents the reason for each
+#     dismissal, which the operator applies in GitHub.
 #
 # Concurrency is keyed on the ref so two runs on the same commit cannot upload
 # the same category at once.
@@ -48,6 +50,8 @@ jobs:
           - language: javascript-typescript
             build-mode: none
           - language: actions
+            build-mode: none
+          - language: python
             build-mode: none
     steps:
       - name: Checkout repository
