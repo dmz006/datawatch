@@ -5033,6 +5033,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							}
 							if idleFor := time.Since(idleSince); idleFor > idleLimit {
 								_, outputAge, _ := staleWorkerCheck(staleLogPath, idleLimit, time.Now())
+								// HasLiveChildProcess carries runner liveness for pi-prompt (a one-shot
+								// print run has no child), work children for every other family.
 								idleObs := autonomouspkg.SessionIdleObservation{
 									SessionID:           task.SessionID,
 									Backend:             s.BackendFamily,
@@ -5040,17 +5042,24 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									State:               string(s.State),
 									IdleFor:             idleFor,
 									OutputAge:           outputAge,
-									HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession, s.ProjectDir),
+									HasLiveChildProcess: idleLivenessProbe(s.BackendFamily)(s.TmuxSession, s.ProjectDir),
 									Limit:               idleLimit,
 									Nudge:               sessionNudgeNote(autonomousMgrRef, prd.ID, task.ID, task.SessionID),
 								}
 								if idleStalled, idleReason := idleObs.Stalled(); idleStalled {
 									log.Printf("[autonomous] session idle detector fired for %s task %s/%s: %s; killing for retry",
 										task.SessionID, task.PRDID, task.ID, idleReason)
+									if family == "pi-prompt" {
+										pane, paneErr := mgr.CapturePaneScrollback(s.FullID, 300)
+										if paneErr != nil {
+											pane = ""
+										}
+										task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession)
+									}
 									_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerIdleDetector, Reason: idleDetectorEndReason(idleObs)})
 									alertspkg.EmitSystem(alertspkg.LevelError, "Task session idle without completion",
 										fmt.Sprintf("prd=%s task=%s: %s", prd.ID, task.Title, idleReason))
-									stallErr = autonomouspkg.SessionIdleError(idleObs)
+									stallErr = withRunnerExitStatus(autonomouspkg.SessionIdleError(idleObs), task.RunnerEvidence)
 									break waitLoop
 								}
 							}
@@ -5078,10 +5087,17 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								}); stalled {
 								log.Printf("[autonomous] exit-silence detector fired for session %s task %s/%s: %s; killing for retry",
 									task.SessionID, task.PRDID, task.ID, reason)
+								if family == "pi-prompt" {
+									pane, paneErr := mgr.CapturePaneScrollback(s.FullID, 300)
+									if paneErr != nil {
+										pane = ""
+									}
+									task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession)
+								}
 								_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerExitSilence, Reason: exitSilenceEndReason(reason)})
 								alertspkg.EmitSystem(alertspkg.LevelError, "Task session exited silently",
 									fmt.Sprintf("prd=%s task=%s: %s", prd.ID, task.Title, reason))
-								stallErr = autonomouspkg.ExitSilenceError(reason)
+								stallErr = withRunnerExitStatus(autonomouspkg.ExitSilenceError(reason), task.RunnerEvidence)
 								break waitLoop
 							}
 						}

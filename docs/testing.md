@@ -1388,3 +1388,163 @@ Notes:
 
 - Sandbox daemon, stand-ins, sessions, LLM entries, compute nodes and scratch directory: created and removed by the story.
 - Cleanup done: PASS
+
+## pi-prompt early exit and process name measurement
+
+Read-only measurement of a real pi print run. No Go source was changed. Scratch output (stdout, stderr, samples, exit status) lives under `.datawatch/pi-measure/`, which is ignored by git.
+
+### Commands used
+
+All commands ran under `env -u TMUX -u TMUX_TMPDIR` from the project root.
+
+- Model list: `curl -s http://localhost:11434/api/tags` (read-only GET).
+- Launcher: `command -v pi`, then `head -1` on the resolved file.
+- Measured run: `timeout 600 pi --print --mode text --approve --model ollama/qwen3:8b 'Reply with the single word ok.'`, started in the background with stdin from `/dev/null`. A sampler walked the process tree under the PID it started every 2 s and read `/proc/<pid>/comm` and `/proc/<pid>/cmdline`, the same values `readProcessCommName` and `readProcessCmdline` in `cmd/datawatch/session_idle_probe.go` read.
+- Missing-model run: the same command with `--model ollama/no-such-model-xyz`.
+
+### Model choice
+
+The endpoint listed 13 models. `qwen3:8b` was chosen: an 8B chat model that is a tool-capable family, small enough to answer the one-word task in seconds and not the large 27B models the operator's lanes use. pi takes `provider/model`, so the model was passed as `ollama/qwen3:8b`.
+
+### Launcher
+
+`command -v pi` resolves to a node script: the file's first line is `#!/usr/bin/env node`. The real file is `dist/bundle/cli.js` inside the pi-coding-agent package under the node version manager's `lib/node_modules`.
+
+### Run with a real model
+
+- Exit status: 0. Elapsed: 14 s.
+- stdout (1 line): `ok`
+- stderr (1 line): `Warning: Model "qwen3:8b" not found for provider "ollama". Using custom model id.` (pi has no built-in entry for the model, so it uses the id as given and still runs.)
+- First and last five output lines: stdout and stderr each held fewer than five lines, shown in full above.
+
+Sampled process tree (7 samples, t=0 s to t=12 s):
+
+| t | pid role | kernel name (comm) | argv |
+|---|----------|--------------------|------|
+| 0 s | wrapper | `timeout` | `timeout 600 pi --print --mode text --approve --model ollama/qwen3:8b Reply with the single word ok.` |
+| 0 s | pi | `MainThread` | `node <node-bin>/pi --print --mode text --approve --model ollama/qwen3:8b Reply with the single word ok.` |
+| 2 s to 12 s | wrapper | `timeout` | unchanged |
+| 2 s to 12 s | pi | `pi` | `pi` followed by padding spaces (the process rewrote its own title) |
+
+Observations:
+- The pi process is the direct child of the wrapper and has no child processes at any sample while it generates. The model call is an HTTP request from inside the process.
+- Right after exec the kernel name is `MainThread` and argv is the full node command line. From the second sample on, the kernel name is `pi` and argv is the single element `pi`, so a probe that matches on the original node argv sees it only briefly.
+
+### Run with a model that does not exist
+
+- Exit status: 1. Elapsed: 2 s.
+- stdout: empty.
+- stderr (2 lines):
+  1. `Warning: Model "no-such-model-xyz" not found for provider "ollama". Using custom model id.`
+  2. `404: {"message":"model 'no-such-model-xyz' not found","type":"not_found_error","param":null,"code":null}`
+- Samples: one (t=0 s), with the same `timeout` and `MainThread` rows as above. The process ended before the second sample.
+
+### Elapsed times
+
+| Run | Exit status | Elapsed |
+|-----|-------------|---------|
+| Real model | 0 | 14 s |
+| Missing model | 1 | 2 s |
+
+Verdict: pi runs to completion — with a real model it stayed alive for the whole generation, printed the reply on stdout and exited 0; it exited early only when the endpoint rejected the model (status 1 with a 404 message on stderr), and it never exited on its own before producing output.
+
+## Node-hosted pi runner liveness fix
+
+A pi runner that node hosts reports the kernel name `MainThread`, so the idle probes did not see it, and a one-shot pi print run has no child process while it generates. The fix has three parts: the probes resolve a node-hosted runner through the script node runs, the pi-prompt idle check counts a live runner as work, and a stalled pi-prompt task records the pi exit status, the last pane output and the process list. Every command ran from the project root under `env -u TMUX -u TMUX_TMPDIR`. The pane tests start a private tmux server on a temporary socket directory and reap only the processes they started.
+
+Two checks for this change:
+
+- `config-reference.yaml`: N/A, no config fields added.
+- `datawatch-app`: no issue needed, additive optional JSON fields only.
+
+### R1 — Characterization test before the resolver change
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestPiPromptLivenessPane*` runs a stub named `pi` in a private tmux pane and records what `hasLiveChildProcess` and `hasLiveRunnerProcess` report. Before the resolver change it records the defect: a node-hosted runner is not seen. |
+| **Steps** | Check out commit `97bcf5d5` (the characterization test, before the resolver change) in a scratch worktree under the ignored `.datawatch/` directory, then run `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestPiPromptLivenessPane' -count=1 -v`. |
+| **Expected** | Plain runner: `hasLiveRunnerProcess=true`. Node-hosted runner: process name `MainThread`, `hasLiveRunnerProcess=false`. Runner with a child: both true. Finished run: both false. |
+| **Actual** | PASS. `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestPiPromptLivenessPane' -count=1 -v` printed `ok  github.com/dmz006/datawatch/cmd/datawatch  1.290s`. The node case logged `process names under the pane: [MainThread]` and `hasLiveChildProcess=false hasLiveRunnerProcess=false`. |
+| **Result** | PASS |
+
+### R2 — Characterization test after the resolver change
+
+| Field | Details |
+|-------|---------|
+| **Description** | The same four tests on the current tree, where the node-hosted case asserts the runner is recognised through argv. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestPiPromptLivenessPane' -count=1 -v` |
+| **Expected** | Only the node-hosted case changes: process name still `MainThread`, `hasLiveRunnerProcess=true`, `hasLiveChildProcess=false`. The other three cases are unchanged. |
+| **Actual** | PASS. `ok  github.com/dmz006/datawatch/cmd/datawatch  1.256s`. The node case logged `process names under the pane: [MainThread]` and `hasLiveChildProcess=false hasLiveRunnerProcess=true`. |
+| **Result** | PASS |
+
+### R3 — Resolver table tests
+
+| Field | Details |
+|-------|---------|
+| **Description** | The `TestSessionIdleProbe*` tests in `cmd/datawatch/session_idle_probe_test.go`, including `TestSessionIdleProbe_RunnerNameFromProcess`, the table for `runnerNameFromProcess`: a kernel name that is a runner name is returned as is; `node` followed by a script named after a runner resolves to that runner; leading dash options are skipped; any other script or an empty argv leaves the name unchanged. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestSessionIdleProbe' -count=1` |
+| **Expected** | All tests pass; a node process running some other script is not a runner. |
+| **Actual** | PASS. `ok  github.com/dmz006/datawatch/cmd/datawatch  0.007s` |
+| **Result** | PASS |
+
+### R4 — Idle liveness tests
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestIdleLivenessProbe` checks that the pi-prompt family uses the runner probe and every other family (claude-code, opencode, an unknown family, an empty family) uses the work-child probe. `TestIdleLivenessProbe_LiveRunnerNoChildNotStalled` checks that a live runner with no child is not reported as stalled by the idle observation. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestIdleLivenessProbe' -count=1 -v` |
+| **Expected** | Both tests and all five subtests pass. |
+| **Actual** | PASS. `--- PASS: TestIdleLivenessProbe (0.00s)` with five passing subtests, `--- PASS: TestIdleLivenessProbe_LiveRunnerNoChildNotStalled (0.00s)`, then `ok  github.com/dmz006/datawatch/cmd/datawatch  0.007s` |
+| **Result** | PASS |
+
+### R5 — Evidence tests in the daemon command package
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestFormatRunnerProcessLine_NodeHostedPi` and `TestFormatRunnerProcessLine_EmptyArgv` check the process line (pid, kernel name, first two argv entries). `TestRunnerProcessLines_MissingSessionIsNil` checks that a missing session gives no lines and no error. `TestWithRunnerExitStatus_KeepsStalledMatch` and `TestWithRunnerExitStatus_NoStatusLeavesErrorAlone` check that the exit status is appended to a stall error while `errors.Is(err, ErrWorkerStalled)` still holds, and that an error without a status is unchanged. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestFormatRunnerProcessLine|TestRunnerProcessLines|TestWithRunnerExitStatus' -count=1 -v` |
+| **Expected** | All five tests pass. |
+| **Actual** | PASS. Five `--- PASS` lines, then `ok  github.com/dmz006/datawatch/cmd/datawatch  0.014s` |
+| **Result** | PASS |
+
+### R6 — Evidence tests in the autonomous package
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestParsePiPromptExitStatus` and `TestPiExitMarkerPrefixMatchesBackend` check the exit marker parser and that its prefix matches the backend launch command. `TestRunnerEvidenceFromCapsTailAndDropsEmptyLines` and `TestRunnerEvidenceFromStatusAndProcessCap` check the 20-line tail and the 40-process cap. `TestRecordFailedAttemptCopiesAndClearsRunnerEvidence` checks that the attempt record gets a copy and the task's `runner_evidence` is cleared. `TestFormatEscalationAttemptFullRunnerEvidence` checks that the review report and next-attempt prompt print the exit status, last output and processes. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous/ -run 'TestParsePiPromptExitStatus|TestPiExitMarkerPrefixMatchesBackend|TestRunnerEvidence|TestRecordFailedAttemptCopiesAndClearsRunnerEvidence|TestFormatEscalationAttemptFullRunnerEvidence' -count=1 -v` |
+| **Expected** | All six tests pass. |
+| **Actual** | PASS. Six `--- PASS` lines, then `ok  github.com/dmz006/datawatch/internal/autonomous  0.039s` |
+| **Result** | PASS |
+
+## Live pi-prompt run with a node-hosted runner
+
+`TestPiPromptLiveRunWithNodeRunner` in `cmd/datawatch/pi_prompt_live_run_test.go` runs a real pi print command in a private tmux pane and watches it with `hasLiveRunnerProcess`, the probe the pi-prompt exit-silence detector uses. It is gated: it skips unless `DATAWATCH_LIVE_PI` is `1` and `pi`, `tmux` and `pgrep` are on PATH. It sets `TMUX_TMPDIR` to a temporary directory and `TMUX` to empty, starts a bash pane in a scratch project directory, and types a command in the shape of the pi-prompt launch (`pi --print --mode text --approve --model <model> '<task>'`, output teed to a file, status written to a second file, one outcome marker printed at the end). The marker words are split across two shell words in the typed command, so the pane echo of the command never matches. The test then samples every 2 s until the pane shows a `DATAWATCH_COMPLETE` or `DATAWATCH_PI_FAILED` line or 300 s pass. It asserts that the runner was seen alive at least once and that the final pane shows one of the two markers. Every command ran from the project root under `env -u TMUX -u TMUX_TMPDIR`. The test reaps only the processes it started, and a check afterwards found no pi process and no tmux server of its own left.
+
+The earlier measurement (section "pi-prompt early exit and process name measurement") recorded that a node-hosted pi reports the kernel name `MainThread`, has no child process while it generates, and finished in 14 s with the same model. That is the case the runner probe was changed for.
+
+| Field | Details |
+|-------|---------|
+| **Description** | One real pi print run against a local Ollama model, sampled through `hasLiveRunnerProcess`. |
+| **Model** | `ollama/qwen3:8b`, the model chosen in the measurement section. Task: `Reply with the single word ok.` |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR DATAWATCH_LIVE_PI=1 go test -count=1 -v -timeout 400s -run TestPiPromptLiveRunWithNodeRunner ./cmd/datawatch` |
+| **Expected** | The runner is seen alive in at least one sample while pi generates, and the pane ends with a `DATAWATCH_COMPLETE` or `DATAWATCH_PI_FAILED` line within 300 s. |
+| **Marker seen** | `DATAWATCH_COMPLETE: pi done` |
+| **Elapsed** | 12.5 s (7 samples, 5 with the runner alive) |
+| **Actual** | `ok  github.com/dmz006/datawatch/cmd/datawatch  12.549s` |
+
+Samples (time since the command was typed, runner alive by `hasLiveRunnerProcess`, marker on the pane):
+
+| Sample | Time | Runner alive | Marker |
+|--------|------|--------------|--------|
+| 1 | 0.0 s | false | none |
+| 2 | 2.1 s | true | none |
+| 3 | 4.1 s | true | none |
+| 4 | 6.2 s | true | none |
+| 5 | 8.3 s | true | none |
+| 6 | 10.5 s | true | none |
+| 7 | 12.5 s | false | `DATAWATCH_COMPLETE: pi done` |
+
+Sample 1 was taken before the shell had started pi. The runner stayed visible from the second sample until the run ended, with no child process of its own, and was gone once the marker printed. With the earlier probe, which looked only for a child process, every one of those samples would have read as no work.
+
+Result: PASS. The runner was seen alive in 5 of 7 samples while pi generated, and the pane ended with `DATAWATCH_COMPLETE: pi done` after 12.5 s.
