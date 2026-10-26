@@ -57,7 +57,8 @@ func judgeRunTimedOut(parent, run context.Context) bool {
 
 // judgeAskRun posts one judge ask to the /api/ask endpoint and reads the answer
 // within the judge's time limit. timedOut is true when the limit expired before
-// the answer was read; the other results are then not meaningful.
+// the answer was read. A failure before or while the answer is read returns
+// its error and no body: a partial answer is never handed back as a verdict.
 func judgeAskRun(parent context.Context, limit time.Duration, url, token string, body []byte) (status int, rb []byte, timedOut bool, err error) {
 	ctx, cancel := judgeRunContext(parent, limit)
 	defer cancel()
@@ -75,8 +76,8 @@ func judgeAskRun(parent context.Context, limit time.Duration, url, token string,
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	rb, rerr := io.ReadAll(resp.Body)
-	if rerr != nil && judgeRunTimedOut(parent, ctx) {
-		return 0, nil, true, rerr
+	if rerr != nil {
+		return 0, nil, judgeRunTimedOut(parent, ctx), rerr
 	}
 	return resp.StatusCode, rb, false, nil
 }
@@ -88,6 +89,19 @@ func judgeAskTimeoutVerdict(limit time.Duration) autonomouspkg.GuardrailVerdict 
 		Outcome:   "block",
 		Severity:  "medium",
 		Summary:   fmt.Sprintf("guardrail(ask): no answer within the judge time limit (%s)", limit),
+		VerdictAt: time.Now(),
+		Category:  "infra",
+	}
+}
+
+// judgeAskFailedVerdict is the verdict of an ask call that failed before its
+// answer was read in full. It is "infra": no judgment came back, so the infra
+// retry may run the judge again, and the partial body is never parsed.
+func judgeAskFailedVerdict(err error) autonomouspkg.GuardrailVerdict {
+	return autonomouspkg.GuardrailVerdict{
+		Outcome:   "block",
+		Severity:  "medium",
+		Summary:   "guardrail(ask): " + err.Error(),
 		VerdictAt: time.Now(),
 		Category:  "infra",
 	}
@@ -129,9 +143,12 @@ func judgeChooserFromList(backends []string) judgeBackendChooser {
 // judge never ran there and no time limit was hit. When every backend has
 // timed out, the verdict is a judge-timeout block that lists every attempt and
 // an error alert is raised; the PRD then needs review, so nothing is approved,
-// passed or blocked silently. If the last backends lacked a slot rather than
-// timing out, the last attempt's infra verdict is returned instead. The
-// chooser must offer at least one backend on the first call.
+// passed or blocked silently. When no attempt timed out and some lacked a slot,
+// the judge never ran, so the last attempt's infra verdict is returned and
+// nothing is held. Once any attempt has timed out the PRD is held, even when a
+// later backend lacked a slot: an infra return would make the infra retry run
+// the whole judge again, and the timed-out backend would run for another full
+// time limit. The chooser must offer at least one backend on the first call.
 func runJudgeAttempts(req autonomouspkg.GuardrailInvocation, choose judgeBackendChooser, limit time.Duration, alert judgeAlertFn, run judgeAttemptFn) (autonomouspkg.GuardrailVerdict, error) {
 	var attempts []judgeAttempt
 	var tried []string
@@ -154,18 +171,28 @@ func runJudgeAttempts(req autonomouspkg.GuardrailInvocation, choose judgeBackend
 			alert("warn", judgeTimeoutTitle(req.PRDID), judgeTimeoutBody(req.PRDID, att, backend, ok))
 		}
 	}
-	if judgeHasNoSlot(attempts) {
+	if judgeHasNoSlot(attempts) && !judgeHasTimeout(attempts) {
 		return last, lastErr
 	}
-	alert("error", judgeHoldTitle(req.PRDID), judgeHoldBody(req.PRDID, attempts))
+	alert("error", judgeHoldTitle(req.PRDID, attempts), judgeHoldBody(req.PRDID, attempts))
 	return judgeHoldVerdict(req, attempts), nil
 }
 
-// judgeHasNoSlot reports whether any attempt never got its capacity lease. Such
-// a judge did not time out, so its PRD is not held; see runJudgeAttempts.
+// judgeHasNoSlot reports whether any attempt never got its capacity lease, so
+// the judge never ran on that backend.
 func judgeHasNoSlot(attempts []judgeAttempt) bool {
 	for _, a := range attempts {
 		if a.NoSlot {
+			return true
+		}
+	}
+	return false
+}
+
+// judgeHasTimeout reports whether any attempt hit its time limit.
+func judgeHasTimeout(attempts []judgeAttempt) bool {
+	for _, a := range attempts {
+		if a.TimedOut {
 			return true
 		}
 	}
@@ -187,26 +214,36 @@ func judgeTimeoutBody(prdID string, att judgeAttempt, next string, more bool) st
 		prdID, att.Backend, att.Elapsed.Round(time.Second), att.Limit, after)
 }
 
-func judgeHoldTitle(prdID string) string {
-	return fmt.Sprintf("Automaton %s needs review: judge timed out on every backend", prdID)
+// judgeHoldReason says why the judge is held, in words that suit the attempts
+// made. A backend that never got a capacity slot did not time out, so the
+// reason covers that case too.
+func judgeHoldReason(attempts []judgeAttempt) string {
+	if judgeHasNoSlot(attempts) {
+		return "did not finish on any backend tried: timed out or no capacity slot"
+	}
+	return "timed out on every backend tried"
+}
+
+func judgeHoldTitle(prdID string, attempts []judgeAttempt) string {
+	return fmt.Sprintf("Automaton %s needs review: the judge %s", prdID, judgeHoldReason(attempts))
 }
 
 func judgeHoldBody(prdID string, attempts []judgeAttempt) string {
-	return fmt.Sprintf("Automaton %s needs review: the judge timed out on every backend tried (%s), %s in total. Nothing was approved or passed. Attempts: %s",
-		prdID, judgeBackendList(attempts), judgeTotalElapsed(attempts), strings.Join(judgeAttemptLines(attempts), "; "))
+	return fmt.Sprintf("Automaton %s needs review: the judge %s (%s), %s in total. Nothing was approved or passed. Attempts: %s",
+		prdID, judgeHoldReason(attempts), judgeBackendList(attempts), judgeTotalElapsed(attempts), strings.Join(judgeAttemptLines(attempts), "; "))
 }
 
-// judgeHoldVerdict is the block the PRD records when every backend has timed
-// out. It carries one line per attempt, so the review shows every backend
-// that was tried and the time spent on each.
+// judgeHoldVerdict is the block the PRD records when the judge is held. It
+// carries one line per attempt, so the review shows every backend that was
+// tried and the time spent on each.
 func judgeHoldVerdict(req autonomouspkg.GuardrailInvocation, attempts []judgeAttempt) autonomouspkg.GuardrailVerdict {
 	return autonomouspkg.GuardrailVerdict{
 		Guardrail: req.Guardrail,
 		Outcome:   "block",
 		Severity:  "high",
 		Category:  autonomouspkg.JudgeTimeoutCategory,
-		Summary: fmt.Sprintf("judge for Automaton %s timed out on every backend tried (%s), %s in total; the Automaton needs review",
-			req.PRDID, judgeBackendList(attempts), judgeTotalElapsed(attempts)),
+		Summary: fmt.Sprintf("judge for Automaton %s %s (%s), %s in total; the Automaton needs review",
+			req.PRDID, judgeHoldReason(attempts), judgeBackendList(attempts), judgeTotalElapsed(attempts)),
 		Issues:    judgeAttemptLines(attempts),
 		VerdictAt: time.Now(),
 	}
@@ -215,6 +252,10 @@ func judgeHoldVerdict(req autonomouspkg.GuardrailInvocation, attempts []judgeAtt
 func judgeAttemptLines(attempts []judgeAttempt) []string {
 	lines := make([]string, 0, len(attempts))
 	for _, a := range attempts {
+		if a.NoSlot {
+			lines = append(lines, fmt.Sprintf("backend %s: no capacity slot within the wait, the judge did not run", a.Backend))
+			continue
+		}
 		lines = append(lines, fmt.Sprintf("backend %s: timed out after %s (limit %s)", a.Backend, a.Elapsed.Round(time.Second), a.Limit))
 	}
 	return lines

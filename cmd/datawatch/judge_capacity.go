@@ -72,16 +72,21 @@ type judgeLeaseAdmit func(ctx context.Context, backend, model, unitID, prdID str
 // lease is taken before body runs, so the wait for a slot happens before the
 // judge's time limit starts (the session or ask call applies that limit once it
 // starts). The release is deferred, so the lease is released on every exit
-// path: success, error, cancellation and panic. A lease that cannot be granted
-// (the wait expired or the context was cancelled) is an infra verdict, body
-// never runs, and att.NoSlot is set so the judge moves on to the next backend.
-// The Claude session window counts the pick only once its lease is granted. A
-// nil admit (no ledger, e.g. in tests) runs body with no lease and no node.
+// path: success, error, cancellation and panic. A lease whose wait expired is an
+// infra verdict, body never runs, and att.NoSlot is set so the judge moves on to
+// the next backend. A judge cancelled while it waited is not a slot shortage: it
+// returns the context error with no NoSlot, so no further backend is tried and
+// no hold is raised. The Claude session window counts the pick only once its
+// lease is granted. A nil admit (no ledger, e.g. in tests) runs body with no
+// lease and no node.
 func runJudgeLeased(ctx context.Context, admit judgeLeaseAdmit, att *judgeAttempt, model, unitID, prdID string, body func(node string) (autonomouspkg.GuardrailVerdict, error)) (autonomouspkg.GuardrailVerdict, error) {
 	node := ""
 	if admit != nil {
 		release, n, err := admit(ctx, att.Backend, model, unitID, prdID)
 		if err != nil {
+			if ctx.Err() != nil {
+				return judgeAdmitFailureVerdict(err), ctx.Err()
+			}
 			att.NoSlot = true
 			return judgeAdmitFailureVerdict(err), nil
 		}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,6 +77,102 @@ func TestJudgeWithNoSlotOnTheLastBackendIsInfraNotHold(t *testing.T) {
 	}
 	if len(alerts) != 0 {
 		t.Fatalf("alerts = %+v, want none: no judge timed out", alerts)
+	}
+}
+
+func TestJudgeHoldsWhenATimeoutIsMixedWithNoSlot(t *testing.T) {
+	// One backend timed out and the other had no free slot, in either order. The
+	// judge finished nowhere, so the PRD is held. An infra return here would make
+	// the infra retry run the judge again, and the timed-out backend would run
+	// again for another full time limit.
+	for _, order := range [][]string{{"claude-code", "qwen"}, {"qwen", "claude-code"}} {
+		var alerts []alertRecord
+		var tried []string
+		req := autonomouspkg.GuardrailInvocation{PRDID: "prd-11", Guardrail: "rules"}
+		verdict, err := runJudgeAttempts(req, judgeChooserFromList(order), time.Minute, recordAlerts(&alerts),
+			func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
+				tried = append(tried, backend)
+				if backend == "claude-code" {
+					att.TimedOut = true
+					return autonomouspkg.GuardrailVerdict{Outcome: "block", Category: "infra"}, nil
+				}
+				return runJudgeLeased(context.Background(), noSlotLease, att, "", "u1", "prd-11",
+					func(string) (autonomouspkg.GuardrailVerdict, error) {
+						t.Fatal("judge body ran without a lease")
+						return autonomouspkg.GuardrailVerdict{}, nil
+					})
+			})
+		if err != nil {
+			t.Fatalf("order %v: err = %v", order, err)
+		}
+		if !reflect.DeepEqual(tried, order) {
+			t.Fatalf("order %v: attempts = %v, want one per backend", order, tried)
+		}
+		if verdict.Outcome != "block" || verdict.Category != autonomouspkg.JudgeTimeoutCategory {
+			t.Fatalf("order %v: verdict = %+v, want the judge-timeout hold", order, verdict)
+		}
+		if len(alerts) != 2 || alerts[0].level != "warn" || alerts[1].level != "error" {
+			t.Fatalf("order %v: alerts = %+v, want a timeout warning then the hold error", order, alerts)
+		}
+		for _, want := range []string{"prd-11", "claude-code", "qwen", "no capacity slot"} {
+			if !strings.Contains(alerts[1].body, want) {
+				t.Errorf("order %v: hold alert %q lacks %q", order, alerts[1].body, want)
+			}
+		}
+	}
+}
+
+func TestJudgeCancelledWhileWaitingForASlotStopsWithoutNextBackend(t *testing.T) {
+	// A cancelled judge is not a slot shortage. It stops at the backend it was
+	// waiting for: no next backend is tried, and no hold or alert is raised.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cancelledLease := func(ctx context.Context, _, _, _, _ string) (func(), string, error) {
+		return nil, "", ctx.Err()
+	}
+	var alerts []alertRecord
+	var tried []string
+	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-12", Guardrail: "rules"}
+	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"qwen", "claude-code"}), time.Minute, recordAlerts(&alerts),
+		func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
+			tried = append(tried, backend)
+			return runJudgeLeased(ctx, cancelledLease, att, "", "u1", "prd-12",
+				func(string) (autonomouspkg.GuardrailVerdict, error) {
+					t.Fatal("judge body ran without a lease")
+					return autonomouspkg.GuardrailVerdict{}, nil
+				})
+		})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if !reflect.DeepEqual(tried, []string{"qwen"}) {
+		t.Fatalf("attempts = %v, want only the backend it was waiting for", tried)
+	}
+	if verdict.Category != "infra" {
+		t.Fatalf("verdict = %+v, want the infra verdict", verdict)
+	}
+	if len(alerts) != 0 {
+		t.Fatalf("alerts = %+v, want none for a cancelled judge", alerts)
+	}
+}
+
+func TestJudgeAskRunReadErrorIsNotAPartialAnswer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Declare more body than is sent, so reading the answer fails part way.
+		w.Header().Set("Content-Length", "1000")
+		_, _ = w.Write([]byte(`{"answer":"tru`))
+	}))
+	defer srv.Close()
+
+	_, rb, timedOut, err := judgeAskRun(context.Background(), time.Minute, srv.URL, "", []byte("{}"))
+	if err == nil || timedOut {
+		t.Fatalf("err = %v timedOut = %v, want a failed read that is not a timeout", err, timedOut)
+	}
+	if rb != nil {
+		t.Fatalf("body = %q, want none: a partial answer is never returned", rb)
+	}
+	if v := judgeAskFailedVerdict(err); v.Category != "infra" || v.Outcome != "block" {
+		t.Fatalf("verdict = %+v, want an infra failure", v)
 	}
 }
 

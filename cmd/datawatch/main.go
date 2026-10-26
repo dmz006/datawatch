@@ -5926,7 +5926,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						return judgeAskTimeoutVerdict(att.Limit), nil
 					}
 					if err != nil {
-						return autonomouspkg.GuardrailVerdict{}, err
+						// The answer was not read in full: no judgment ran, so
+						// it is an infra failure, never a parsed verdict.
+						return judgeAskFailedVerdict(err), nil
 					}
 					if reason, failed := askFailureReason(status, rb); failed {
 						// BL410 Phase 0 — the /api/ask call itself failed; no
