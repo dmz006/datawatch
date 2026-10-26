@@ -1196,7 +1196,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				m.adoptCapacity(prd, t)
 				skipSpawn = true
 				adopted := AdoptedWait{PRDID: prd.ID, TaskID: t.ID, SessionID: t.SessionID, NudgedAt: t.NudgeTimeForSession(t.SessionID)}
-				startConfirm := m.adoptedStartConfirmFor(t)
+				startConfirm := m.adoptedStartWatchFor(t)
 				if werr := waitForAdoptedSession(ctx, waitFn, aliveFn, adopted, startConfirm); werr != nil {
 					if ctx.Err() != nil {
 						return nil
@@ -1209,7 +1209,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 						// left untouched.
 						m.store.WithLock(func() {
 							t.AdoptedSession = false
-							t.StartFailureTail = startConfirm.failureTail
+							t.StartFailureTail = startConfirm.failureTail()
 						})
 						exhausted, serr := m.countSessionStartFailure(ctx, prd, t, run, werr)
 						if serr != nil || exhausted {

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -75,12 +76,12 @@ type scenarioTick struct {
 // runScenario feeds the ticks to tr in order and checks each tick's end decision.
 // It stops at the first ended tick, as the wait loop does, and returns the end
 // reason recorded there. It returns "" when no tick ended the session.
-func runScenario(t *testing.T, tr *sessionStartTracker, ticks []scenarioTick) string {
+func runScenario(t *testing.T, tr *autonomouspkg.StartTracker, ticks []scenarioTick) string {
 	t.Helper()
 	for _, tk := range ticks {
-		obs := tr.Observe(sessionStartInput{
+		obs := tr.Observe(autonomouspkg.StartInput{
 			Now:       startAt(tk.sec),
-			State:     tk.state,
+			State:     string(tk.state),
 			Pane:      tk.pane,
 			Delivered: tk.delivered,
 			ChildPIDs: processTreeRunnerDescendants(scenarioPaneRoots, tk.tree, scenarioProcessNames),
@@ -140,7 +141,7 @@ func TestSessionStartScenarioSilentToolCallSurvives(t *testing.T) {
 				{name: "frozen tool call in pane with a live command", withCommand: true, spinning: false},
 			} {
 				t.Run(variant.name, func(t *testing.T) {
-					tr := newSessionStartTracker(limit, time.Time{}, time.Time{})
+					tr := autonomouspkg.NewStartTracker(limit, time.Time{}, time.Time{}, time.Time{})
 					if got := runScenario(t, tr, silentToolCallTicks(variant.withCommand, variant.spinning)); got != "" {
 						t.Fatalf("session ended during a silent tool call: %q", got)
 					}
@@ -161,7 +162,7 @@ func TestSessionStartScenarioBareShellEnded(t *testing.T) {
 	}
 	ticks = append(ticks, scenarioTick{sec: 121, state: w, pane: scenarioShellPane, delivered: true, ended: true})
 
-	got := runScenario(t, newSessionStartTracker(scenarioLimit, time.Time{}, time.Time{}), ticks)
+	got := runScenario(t, autonomouspkg.NewStartTracker(scenarioLimit, time.Time{}, time.Time{}, time.Time{}), ticks)
 	if got != scenarioEndReason {
 		t.Fatalf("end reason = %q, want %q", got, scenarioEndReason)
 	}
@@ -181,7 +182,7 @@ func TestSessionStartScenarioAdoptedWorkingSurvives(t *testing.T) {
 		{sec: 91, state: w, pane: startStatusPane(2), ended: true},
 	}
 
-	got := runScenario(t, newSessionStartTracker(scenarioLimit, startAt(-600), time.Time{}), ticks)
+	got := runScenario(t, autonomouspkg.NewAdoptedStartTracker(scenarioLimit, time.Time{}, startAt(-600)), ticks)
 	if got != scenarioEndReason {
 		t.Fatalf("end reason = %q, want %q", got, scenarioEndReason)
 	}
@@ -199,7 +200,7 @@ func TestSessionStartScenarioAdoptedBareShellEnded(t *testing.T) {
 		{sec: 21, state: w, pane: scenarioShellPane, delivered: true, ended: true},
 	}
 
-	got := runScenario(t, newSessionStartTracker(scenarioLimit, startAt(-100), time.Time{}), ticks)
+	got := runScenario(t, autonomouspkg.NewAdoptedStartTracker(scenarioLimit, time.Time{}, startAt(-100)), ticks)
 	if got != scenarioEndReason {
 		t.Fatalf("end reason = %q, want %q", got, scenarioEndReason)
 	}

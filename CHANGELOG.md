@@ -50,6 +50,10 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+### One start tracker for launched and adopted workers
+
+A worker the daemon launches and a worker adopted after a daemon restart now share one start tracker and one limit, so the two paths cannot drift apart. The setting `autonomous.session_start_confirm_seconds` and its 120 second default are unchanged, and start failures are booked the same way on both paths. Behaviour is unchanged on both paths. A launched worker's start-confirm clock still starts at the first check that finds it silent, and an adopted worker is still measured from the last evidence of life it left before the restart.
+
 ## v9.17.1 — Idle worker nudge fires after the turn
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).

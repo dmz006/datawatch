@@ -1,7 +1,7 @@
 # Silent first tool call: restart-matrix states
 
 This matrix covers the start-confirm tracker in the autonomous wait loop
-(`cmd/datawatch/session_start_tracker.go`). The tracker decides whether a
+(`internal/autonomous/start_tracker.go`). The tracker decides whether a
 claude-code worker that was handed its task and sits in `waiting_input` has
 started, and ends it when the silence exceeds the bound. The busy probe that
 keeps the session state right is a separate mechanism; its findings are in
@@ -15,7 +15,7 @@ recorded here and verified by scenario tests in
 fake clock with fixed panes and a fixed process tree. Nothing touches tmux and
 nothing sleeps. No daemon was restarted and no live worker was run to produce
 these results. The adoption seed is modelled by passing the seed time to the
-tracker, which is what the wait loop does with `sessionStartAdoptionSeed`.
+tracker, which is what the wait loop does with `SessionLastLifeAt`.
 
 Tick cadence: 30 s steps unless a state says otherwise. Bound (limit): 120 s,
 and the 300 s variant for state (a).

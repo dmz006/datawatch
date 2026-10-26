@@ -116,7 +116,7 @@ func TestRestartLaunchCases(t *testing.T) {
 		// The watch the executor builds for the adopted task, on a fake clock:
 		// each probe moves the clock 10s, so reads[0] is adoption.
 		clock := &adoptStepClock{at: time.Date(2026, 10, 25, 8, 0, 0, 0, time.UTC), step: adoptedTestStep}
-		sc := m.adoptedStartConfirmFor(&tk)
+		sc := m.adoptedStartWatchFor(&tk)
 		if sc == nil {
 			t.Fatal("no start-confirm watch built for the adopted session")
 		}
@@ -137,7 +137,7 @@ func TestRestartLaunchCases(t *testing.T) {
 		if last != 70*time.Second || prev != 60*time.Second {
 			t.Fatalf("bound fired at %s from adoption (previous probe %s); want 70s, with 60s not yet past the %s limit", last, prev, adoptedTestLimit)
 		}
-		if len(sc.failureTail) == 0 {
+		if len(sc.failureTail()) == 0 {
 			t.Fatal("failure tail not recorded for the task")
 		}
 	})

@@ -4829,7 +4829,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// a startup/confirmation dialog that no one will ever dismiss
 				// (see internal/autonomous/session_start.go). The silence is
 				// measured from the last evidence of work by startTracker (see
-				// session_start_tracker.go), so the bound only bounds such
+				// internal/autonomous/start_tracker.go), so the bound only bounds such
 				// sessions, nothing else.
 				sessionStartLimit := time.Duration(config.NormalizeSessionStartConfirmSeconds(cfg.Autonomous.SessionStartConfirmSeconds)) * time.Second
 				// Genuine worker-stall bound (see staleWorkerCheck): the log file's own
@@ -4840,18 +4840,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					staleThreshold = time.Duration(cfg.Session.StaleTimeoutSeconds) * time.Second
 				}
 				var staleLogPath, family string
-				var startTracker *sessionStartTracker
+				var startTracker *autonomouspkg.StartTracker
 				if s, ok := mgr.GetSession(task.SessionID); ok {
 					staleLogPath = s.LogFile
 					family = s.BackendFamily
 					if family == "claude-code" && sessionStartLimit > 0 {
-						// An adopted session's bound starts from its last evidence
-						// of life, not from the moment it was adopted.
-						var seedAt time.Time
-						if task.AdoptedSession {
-							seedAt = sessionStartAdoptionSeed(s.UpdatedAt, s.LastChannelEventAt, logFileModTime(s.LogFile))
-						}
-						startTracker = newSessionStartTracker(sessionStartLimit, seedAt, s.LastChannelEventAt)
+						// A launched session's silent window starts at the first silent
+						// waiting_input tick. An adopted session is judged in the adopted mode,
+						// anchored at the attempt's launch and seeded from its last evidence of
+						// life, so the bound does not charge the time the daemon was down.
+						startTracker = autonomouspkg.NewWaitStartTracker(sessionStartLimit, task.AdoptedSession, s, task.StartedAt, time.Now())
 					}
 				}
 				// claude-code idle nudge: one nudge after worker_idle_nudge_seconds of
@@ -4986,9 +4984,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							if perr != nil {
 								startPane = ""
 							}
-							startObs := startTracker.Observe(sessionStartInput{
+							startObs := startTracker.Observe(autonomouspkg.StartInput{
 								Now:       time.Now(),
-								State:     s.State,
+								State:     string(s.State),
 								Pane:      startPane,
 								Delivered: mgr.TaskDelivered(s.FullID),
 								ChannelAt: s.LastChannelEventAt,
@@ -6388,7 +6386,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				if !ok {
 					return time.Time{}
 				}
-				return sessionStartAdoptionSeed(s.UpdatedAt, s.LastChannelEventAt, logFileModTime(s.LogFile))
+				return autonomouspkg.SessionLastLifeAt(s)
 			})
 			// Wait for an adopted session by its state / completion marker, so it
 			// works for any backend (claude-code, opencode, pi-prompt). A claude-code

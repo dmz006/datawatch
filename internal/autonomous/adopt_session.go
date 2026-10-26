@@ -77,11 +77,13 @@ type AdoptedWait struct {
 	NudgedAt  time.Time
 }
 
-// adoptedStartConfirm is the start-confirm bound applied while an adopted
-// session is waited on. It is the same bound the worker wait loop applies to
-// a freshly spawned claude-code session: a session parked in waiting_input
-// with no assistant turn past the limit never started and is ended.
-type adoptedStartConfirm struct {
+// adoptedStartWatch is how the start-confirm wait reads an adopted session on
+// each tick, and the bound it applies: the same bound the worker wait loop
+// applies to a freshly spawned claude-code session, where a session parked in
+// waiting_input with no assistant turn past the limit never started and is
+// ended. The bookkeeping lives in the StartTracker the wait builds from the
+// limit, the launch time and the last evidence of life when it starts.
+type adoptedStartWatch struct {
 	// paneFn captures the session's visible pane (the session manager's
 	// CapturePaneVisible in the daemon).
 	paneFn func(sessionID string) (string, error)
@@ -107,23 +109,18 @@ type adoptedStartConfirm struct {
 	now func() time.Time
 	// interval is the probe period; <= 0 uses adoptedSessionPollInterval.
 	interval time.Duration
-	// failureTail holds the last pane lines captured when the bound fires, for
-	// the task's StartFailureTail.
-	failureTail []string
+	// tracker judges the start. The wait builds it when it begins and it is nil
+	// before then.
+	tracker *StartTracker
 }
 
-func (sc *adoptedStartConfirm) clock() time.Time {
-	if sc.now != nil {
-		return sc.now()
+// failureTail returns the last pane lines captured when the bound fired, for
+// the task's StartFailureTail. It is nil when the bound has not fired.
+func (sc *adoptedStartWatch) failureTail() []string {
+	if sc == nil || sc.tracker == nil {
+		return nil
 	}
-	return time.Now()
-}
-
-func (sc *adoptedStartConfirm) probeInterval() time.Duration {
-	if sc.interval > 0 {
-		return sc.interval
-	}
-	return adoptedSessionPollInterval
+	return sc.tracker.FailureTail()
 }
 
 // waitForAdoptedSession blocks until an adopted session finishes. It uses the
@@ -137,7 +134,7 @@ func (sc *adoptedStartConfirm) probeInterval() time.Duration {
 // is unset) is ended and the wait returns ErrSessionNeverStarted wrapped with
 // ErrWorkerStalled. A session that shows a first assistant turn, or leaves
 // waiting_input, is never failed by the bound. A nil sc keeps the plain wait.
-func waitForAdoptedSession(ctx context.Context, waitFn func(context.Context, AdoptedWait) error, aliveFn func(string) bool, w AdoptedWait, sc *adoptedStartConfirm) error {
+func waitForAdoptedSession(ctx context.Context, waitFn func(context.Context, AdoptedWait) error, aliveFn func(string) bool, w AdoptedWait, sc *adoptedStartWatch) error {
 	if sc == nil || sc.paneFn == nil {
 		return waitAdoptedSessionToEnd(ctx, waitFn, aliveFn, w)
 	}
@@ -169,31 +166,33 @@ func waitAdoptedSessionToEnd(ctx context.Context, waitFn func(context.Context, A
 // waitAdoptedSessionStartConfirmed runs the unbounded wait in a goroutine and
 // probes the session on each tick until either the wait returns or the start
 // bound fires.
-func waitAdoptedSessionStartConfirmed(ctx context.Context, waitFn func(context.Context, AdoptedWait) error, aliveFn func(string) bool, w AdoptedWait, sc *adoptedStartConfirm) error {
+func waitAdoptedSessionStartConfirmed(ctx context.Context, waitFn func(context.Context, AdoptedWait) error, aliveFn func(string) bool, w AdoptedWait, sc *adoptedStartWatch) error {
 	sessionID := w.SessionID
 	waitCtx, cancelWait := context.WithCancel(ctx)
 	defer cancelWait()
 	done := make(chan error, 1)
 	go func() { done <- waitAdoptedSessionToEnd(waitCtx, waitFn, aliveFn, w) }()
 
-	// silentFrom is where the current silent window starts: the task's launch
-	// time, or adoption time when no launch time is recorded. A probe that finds
-	// the session outside waiting_input restarts it.
-	silentFrom := sc.clock()
-	if sc.startedAt != nil {
-		silentFrom = *sc.startedAt
+	clock := sc.now
+	if clock == nil {
+		clock = time.Now
 	}
+	// The silent window starts at the task's launch time, or at adoption when no
+	// launch time is recorded, and moves to the last evidence of life when the
+	// session reports one.
+	launchedAt := StartAnchor(sc.startedAt, clock())
+	var lastLife time.Time
 	if sc.lastLifeFn != nil {
-		if life := sc.lastLifeFn(sessionID); !life.IsZero() {
-			silentFrom = life
-		}
+		lastLife = sc.lastLifeFn(sessionID)
 	}
-	prevPane, havePrev := "", false
-	// started latches once a first assistant turn is seen: the session is up,
-	// and the bound never fails it afterwards.
-	started := false
+	tracker := NewAdoptedStartTracker(sc.limit, launchedAt, lastLife)
+	sc.tracker = tracker
 
-	tick := time.NewTicker(sc.probeInterval())
+	interval := sc.interval
+	if interval <= 0 {
+		interval = adoptedSessionPollInterval
+	}
+	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for {
 		select {
@@ -203,13 +202,13 @@ func waitAdoptedSessionStartConfirmed(ctx context.Context, waitFn func(context.C
 			return ctx.Err()
 		case <-tick.C:
 		}
-		now := sc.clock()
+		now := clock()
 		state := ""
 		if sc.stateFn != nil {
 			state = sc.stateFn(sessionID)
 		}
 		if state != sessionStateWaitingInput {
-			silentFrom = now
+			tracker.Observe(StartInput{Now: now, State: state})
 			continue
 		}
 		pane, err := sc.paneFn(sessionID)
@@ -217,30 +216,10 @@ func waitAdoptedSessionStartConfirmed(ctx context.Context, waitFn func(context.C
 			// No evidence either way this tick; the window keeps running.
 			continue
 		}
-		if HasAssistantOutput(pane) {
-			started = true
-		}
-		// Other evidence of work (a tool call in the pane, or a pane that changed
-		// since the last probe) restarts the silent window: the bound measures
-		// silence since the last sign of life, not since the first silent probe.
-		paneChanged := havePrev && pane != prevPane
-		prevPane, havePrev = pane, true
-		if started {
+		obs := tracker.Observe(StartInput{Now: now, State: state, Pane: pane})
+		if stalled, _ := obs.Stalled(); !stalled {
 			continue
 		}
-		if PaneShowsToolCall(pane) || paneChanged {
-			silentFrom = now
-			continue
-		}
-		obs := SessionStartObservation{State: state, Limit: sc.limit}
-		if now.After(silentFrom) {
-			obs.WaitingFor = now.Sub(silentFrom)
-		}
-		stalled, _ := obs.Stalled()
-		if !stalled {
-			continue
-		}
-		sc.failureTail = LastLines(pane, 20)
 		cancelWait()
 		if sc.killFn != nil {
 			if kerr := sc.killFn(sessionID, adoptedStartCaller, sessionStartKillReason(obs)); kerr != nil {
@@ -248,7 +227,7 @@ func waitAdoptedSessionStartConfirmed(ctx context.Context, waitFn func(context.C
 			}
 		}
 		return fmt.Errorf("%s: no assistant output after %s (last %d pane line(s) recorded on the task) — %w; %w",
-			SessionStartFailureReason, obs.WaitingFor.Round(time.Second), len(sc.failureTail),
+			SessionStartFailureReason, obs.WaitingFor.Round(time.Second), len(tracker.FailureTail()),
 			ErrSessionNeverStarted, ErrWorkerStalled)
 	}
 }
