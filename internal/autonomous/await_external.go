@@ -274,9 +274,11 @@ func (m *Manager) awaitReAdmit(ctx context.Context, prd *PRD, t *Task, condition
 		return nil
 	}
 	prefix := AwaitExternalWaitReasonFor(condition)
-	err := led.Acquire(ctx, capacity.Request{
+	req := capacity.Request{
 		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), Model: model, Role: capacity.RoleWorker,
-	}, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
+	}
+	req.Refresh = m.placementRefresh(req, backend, model, nil)
+	err := led.Acquire(ctx, req, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
 		m.setWaiting(t, prefix+" — "+reason)
 	})
 	switch {

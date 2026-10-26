@@ -65,7 +65,7 @@ func (m *Manager) AdmitJudge(ctx context.Context, j JudgeAdmit) (string, func(),
 	if len(pools) == 0 {
 		return "", noop, nil
 	}
-	if err := led.Acquire(ctx, judgeRequest(j, pools, node, choices, nil), j.Wait, judgeCancelled(j), func(string) {}); err != nil {
+	if err := led.Acquire(ctx, m.judgeRequestRefreshed(j, pools, node, choices, nil), j.Wait, judgeCancelled(j), func(string) {}); err != nil {
 		return "", noop, err
 	}
 	return m.placeJudge(ctx, j, led, choices)
@@ -104,7 +104,7 @@ func (m *Manager) placeJudge(ctx context.Context, j JudgeAdmit, led *capacity.Le
 			return "", noop, fmt.Errorf("node load: %w", lerr)
 		}
 		pools, _ := m.judgeKeys(j)
-		if err := led.Acquire(ctx, judgeRequest(j, pools, "", choices, excluded), j.Wait, judgeCancelled(j), func(string) {}); err != nil {
+		if err := led.Acquire(ctx, m.judgeRequestRefreshed(j, pools, "", choices, excluded), j.Wait, judgeCancelled(j), func(string) {}); err != nil {
 			return "", noop, err
 		}
 		node = ""
@@ -136,6 +136,15 @@ func judgeRequest(j JudgeAdmit, pools []string, node string, choices []capacity.
 	if len(choices) >= 2 {
 		req.NodeChoices = choices
 	}
+	return req
+}
+
+// judgeRequestRefreshed is judgeRequest with Refresh set, so a node the compute
+// registry learns while the judge waits joins its candidates. The exclude list
+// carries over.
+func (m *Manager) judgeRequestRefreshed(j JudgeAdmit, pools []string, node string, choices []capacity.NodeChoice, exclude []string) capacity.Request {
+	req := judgeRequest(j, pools, node, choices, exclude)
+	req.Refresh = m.placementRefresh(req, j.Backend, j.Model, nil)
 	return req
 }
 

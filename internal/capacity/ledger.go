@@ -69,6 +69,16 @@ type Request struct {
 	// Interactive marks an operator-started session. Such a request is never
 	// held back by Options.AutonomousBackpressure.
 	Interactive bool
+	// Refresh, when set, returns the current placement for this same holder. Before
+	// each dispatch pass the ledger replaces Pools, Node, NodeChoices and
+	// ExcludeNodes of a queued request with the returned values and keeps the
+	// rest (Holder, PRDID, Priority, Role, Model, Interactive). A waiter holds no
+	// slot, so moving it changes no pool count; the grant still goes through
+	// resolveLocked, which enforces the pool limits. It runs on Acquire's first
+	// pass, on every poll tick and on every Release and remove. Like the Options
+	// functions it is called under the ledger lock: a fast in-memory read that
+	// must never call back into the ledger. Nil keeps the request as queued.
+	Refresh func() Request
 }
 
 // NodeChoice is one candidate compute node for a request. Priority breaks a
@@ -538,12 +548,21 @@ func (l *Ledger) orderListLocked(list []*waiter, now time.Time) []*waiter {
 	return ws
 }
 
-// dispatchLocked grants every waiter that fits, in fair order.
+// dispatchLocked grants every waiter that fits, in fair order. A waiter with
+// Request.Refresh first takes the placement it returns, so the node it queues
+// on and the reason it shows follow the current compute_nodes list.
 func (l *Ledger) dispatchLocked() {
 	if len(l.waiters) == 0 {
 		return
 	}
 	now := l.opt.Clock.Now()
+	for _, w := range l.waiters {
+		if w.req.Refresh != nil {
+			cur := w.req.Refresh()
+			w.req.Pools, w.req.Node = cur.Pools, cur.Node
+			w.req.NodeChoices, w.req.ExcludeNodes = cur.NodeChoices, cur.ExcludeNodes
+		}
+	}
 	for _, w := range l.orderLocked(now) {
 		bound, why := l.resolveLocked(w.req)
 		w.reason = why

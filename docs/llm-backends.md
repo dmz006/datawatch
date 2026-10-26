@@ -522,6 +522,13 @@ node is the one the entry's pool chose, or the entry's only node (see
 - A session keeps the node address it started on, so a resume reuses the same
   host.
 
+A queued request picks its node again on each admission pass and whenever any
+node frees an engine. A waiting request therefore moves to a node with a free
+engine, least loaded first and then by node priority, rather than staying on the
+node it first tried. A change to an LLM entry's `compute_nodes` list reaches
+waiting work without a daemon restart. The limit of one engine per node still
+applies.
+
 The provider is the part of the model name before the first `/`; for
 `ollama/qwen3.8:27b` it is `ollama`. The launch fails with an error, and nothing
 starts, when the model has no provider prefix, or when the source `models.json`

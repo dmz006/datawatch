@@ -247,6 +247,20 @@ func capacityManagerKeys(resolve func(backend, model string) (pools []string, no
 	return keys, choices
 }
 
+// resolveRefresh builds a Request.Refresh for a blocking admission: each call
+// resolves the backend and model again and returns base with Pools, Node and
+// NodeChoices replaced wholesale, so a node the compute registry learns while
+// the request waits joins the candidates and a stale node:<name> pool does not
+// survive a change from several nodes to one.
+func resolveRefresh(resolve func(backend, model string) ([]string, string, []capacity.NodeChoice), base capacity.Request, backend, model string) func() capacity.Request {
+	return func() capacity.Request {
+		cur := base
+		pools, node, choices := resolve(backend, model)
+		cur.Pools, cur.Node, cur.NodeChoices = pools, node, nil
+		return withNodeChoices(cur, choices)
+	}
+}
+
 // withNodeChoices puts the candidate nodes on a request; fewer than two leaves
 // it unchanged.
 func withNodeChoices(req capacity.Request, choices []capacity.NodeChoice) capacity.Request {
@@ -734,7 +748,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		if len(pools) == 0 {
 			return "", nil
 		}
-		if err := led.Acquire(ctx, withNodeChoices(interactiveAdmitRequest(holder, pools, node, model, priority), nodeChoices), 0, func() bool { return false }, func(string) {}); err != nil {
+		req := withNodeChoices(interactiveAdmitRequest(holder, pools, node, model, priority), nodeChoices)
+		req.Refresh = resolveRefresh(resolve, req, backend, model)
+		if err := led.Acquire(ctx, req, 0, func() bool { return false }, func(string) {}); err != nil {
 			return "", err
 		}
 		// The ledger chose one node for this holder among the candidates; report
@@ -856,7 +872,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			return func() {}, nil
 		}
 		waitDur := amgr.CapacityWaitDuration()
-		if err := led.Acquire(ctx, withNodeChoices(councilAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, holder)), nodeChoices), waitDur, func() bool { return false }, func(string) {}); err != nil {
+		req := withNodeChoices(councilAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, holder)), nodeChoices)
+		req.Refresh = resolveRefresh(resolve, req, backend, model)
+		if err := led.Acquire(ctx, req, waitDur, func() bool { return false }, func(string) {}); err != nil {
 			return func() {}, err
 		}
 		return func() { led.Release(holder) }, nil

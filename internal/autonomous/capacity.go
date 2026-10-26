@@ -164,6 +164,32 @@ func nodeChoicesFor(fn CapacityChoicesFn, backend, model string) []capacity.Node
 	return nil
 }
 
+// placementRefresh builds a Request.Refresh for base: each call re-reads the
+// pool keys and node candidates through the manager's capacity functions and
+// returns base with Pools, Node and NodeChoices rebuilt the way the first
+// admission built them (a candidate list needs two or more entries). base's
+// ExcludeNodes carry over. trim, when set, filters the pools (the planner
+// drops "host"). m.mu is held only to read the functions, never across the
+// ledger's call, since the ledger invokes Refresh under its own lock.
+func (m *Manager) placementRefresh(base capacity.Request, backend, model string, trim func([]string) []string) func() capacity.Request {
+	return func() capacity.Request {
+		m.mu.Lock()
+		keysFn, choicesFn := m.capacityKeys, m.capacityChoices
+		m.mu.Unlock()
+		cur := base
+		if keysFn == nil {
+			return cur
+		}
+		pools, node := keysFn(backend, model)
+		if trim != nil {
+			pools = trim(pools)
+		}
+		cur.Pools, cur.Node = pools, node
+		cur.NodeChoices = nodeChoicesFor(choicesFn, backend, model)
+		return cur
+	}
+}
+
 // CapacityWaitDuration returns the configured capacity-wait bound (mirrors
 // the private capacityWait() used inside the executor loop).
 func (m *Manager) CapacityWaitDuration() time.Duration {
@@ -267,9 +293,11 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 	rec := m.capacityAudit()
 	var waitStart time.Time
 	var lastCause WaitCause
-	err := led.Acquire(ctx, capacity.Request{
+	req := capacity.Request{
 		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, ExcludeNodes: exclude, Model: model, Role: role,
-	}, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
+	}
+	req.Refresh = m.placementRefresh(req, backend, model, nil)
+	err := led.Acquire(ctx, req, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
 		if !waited {
 			waitStart = rec.Now()
 		}
@@ -353,9 +381,11 @@ func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req Decompo
 		return m.decompose(req)
 	}
 	holder := "plan:" + prd.ID
-	err := led.Acquire(context.Background(), capacity.Request{
+	lreq := capacity.Request{
 		Holder: holder, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, Model: model, Role: capacity.RolePlanner,
-	}, m.capacityWait(), func() bool { return m.plannerCancelled(prd.ID) }, func(reason string) {
+	}
+	lreq.Refresh = m.placementRefresh(lreq, backend, model, decomposePools)
+	err := led.Acquire(context.Background(), lreq, m.capacityWait(), func() bool { return m.plannerCancelled(prd.ID) }, func(reason string) {
 		m.setPRDWaitReason(prd.ID, reason)
 	})
 	if err != nil {
