@@ -680,7 +680,7 @@ Leaked auto-created nodes (where the backing observer peer was deleted) are swep
 
 ## Per-node model assignment
 
-After adding a Compute Node, go to **Settings → Compute → LLMs** to create or edit an LLM registry entry. The `compute_nodes` field on each LLM entry is an ordered list of Compute Node names. The dispatcher tries them in order and fails over to the next when a node is unreachable, disabled, or in maintenance.
+After adding a Compute Node, go to **Settings → Compute → LLMs** to create or edit an LLM registry entry. The `compute_nodes` field on each LLM entry is a list of Compute Node names. It decides which nodes a local-model worker, verifier and judge may run on: each listed node that is known and serves the model is a candidate, and the request goes to the least loaded candidate, with `scheduling_priority` only breaking a tie and then list order. A node that does not serve the model, is unreachable, disabled, or in maintenance is skipped. One engine per node still applies, and a one-entry list behaves as before.
 
 ```json
 {
@@ -716,7 +716,7 @@ datawatch compute node add inference-only-1 \
 
 ## How a pi-family worker picks its node
 
-A worker on the `pi` or `pi-prompt` backend runs on one of the compute nodes listed by its LLM entry (`compute_nodes`). The capacity ledger chooses the node when the worker is admitted, and the worker is then launched on that node. The choice follows these rules.
+A worker on the `pi` or `pi-prompt` backend runs on one of the compute nodes listed by its LLM entry (`compute_nodes`); the same list decides where that entry's verifier and judge run. A listed node that does not serve the model is skipped. The capacity ledger chooses the node when the worker is admitted, and the worker is then launched on that node. The choice follows these rules.
 
 **Least-loaded healthy node wins.** Each candidate node has a pool with a session limit (the node's `session_slots`). A node's load is the sessions it holds, counting sessions another part of the system already runs on it, divided by that limit. The worker goes to the node with the lowest load. A node with no limit counts as unloaded. Only when two nodes are equally loaded does `scheduling_priority` decide: the higher value goes first, and equal priorities keep the order of the entry's `compute_nodes` list.
 

@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### The LLM entry's compute node list decides where local-model work runs
+
+- The `compute_nodes` list on an LLM entry now decides which nodes a local-model worker, verifier and judge may run on. Each listed node that is known and serves the model is a candidate.
+- The request goes to the least loaded candidate. `scheduling_priority` only breaks a tie between equally loaded candidates, then list order.
+- The limit of one engine per node still applies. A node that does not serve the model is skipped. A one-entry list behaves as before.
+
 ### Restart keeps each worker on the node it runs on
 
 - After a daemon restart, a worker session that survived is adopted onto the compute node it runs on, taken from its recorded node. The node then shows its engines in use, and a new request is placed on a node with a free engine instead of piling onto the busy one.
