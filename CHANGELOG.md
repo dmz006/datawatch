@@ -34,6 +34,14 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.19.1 — Waiting work moves to a free compute node
+
+### Queued requests move to a node that frees an engine
+
+- A queued request now picks its compute node again on each admission pass and whenever any node frees an engine. A request that was waiting on a busy node moves to a node with a free engine, least loaded first and then by node priority. This applies to workers and to the judge. Before, a request kept waiting on the node it first tried while other nodes sat idle.
+- A change to an LLM entry's `compute_nodes` list reaches waiting work without a daemon restart. The limit of one engine per node still applies.
+- Docs: [`llm-backends.md`](docs/llm-backends.md) describes how a waiting request moves between nodes.
+
 ## v9.19.0 — Tag browsing and the shared tile for Automata
 
 **Fixed: untagged Automata carry `tags` and `primary_tag_id` in list responses** — every Automaton list item now has a `tags` array (empty when untagged) and a `primary_tag_id` string (empty when none), so a tag browser reads one shape for tagged and untagged items. Comm verbs that proxy REST (the `autonomous tags`, `attention` and registry verbs) now also work on the test message route, which had no loopback port.
