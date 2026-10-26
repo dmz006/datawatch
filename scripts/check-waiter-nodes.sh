@@ -15,14 +15,24 @@
 # is used ('datawatch capacity --json') so it picks the configured address and
 # token itself; otherwise curl is used.
 #
-# Output: one line per waiter (holder, backend, model, bound node), then a
-# summary of waiters per node. A waiter's bound node is the node:<name> pool in
-# its pools ("-" when none is bound yet); its backend is the llm:<name> pool.
-# The model is shown when the response carries it, "-" otherwise.
+# Output: one line per waiter (holder, backend, model, bound node, candidate
+# nodes), then a summary of waiters per node. The backend is the llm:<name> pool.
 #
-# Exit status: 0 normally, 2 when, for some backend with two or more candidate
-# nodes, every waiter is bound to the same node while another candidate node
-# has free capacity (the original symptom), 1 on a usage or fetch error.
+# Bound node: the daemon picks a node for a multi-node request only at dispatch
+# time, so a queued waiter is bound only when the response names exactly one
+# node for it: a single node:<name> pool, or no node pool and a single entry in
+# its candidate list ("nodes"). A waiter with several candidate nodes is not
+# bound yet; it prints node=- and lists its candidates, and is counted as
+# "unbound" in the summary. It is never assumed to sit on the first candidate.
+#
+# Model: queued requests carry no model in the response. The column shows the
+# waiter's own model when present, else the model of a running lease held by the
+# same holder, else "-".
+#
+# Exit status: 0 normally, 2 when, for some backend whose waiters name two or
+# more candidate nodes in all, every waiter is bound and all to the same node
+# while another candidate node has free capacity (the original symptom). A
+# backend with any unbound waiter is never flagged. 1 on a usage or fetch error.
 
 set -euo pipefail
 
@@ -62,77 +72,89 @@ if ! body="$(fetch)"; then
   exit 1
 fi
 
-# analyse reads the capacity JSON on stdin and prints the report; it exits 2
-# for the same-node symptom, 0 otherwise.
+# analyse_jq and analyse_py read the capacity JSON on stdin, print the report
+# and finish with an @@SYMPTOMS=<n> line. They implement the same rules.
 analyse_jq() {
   jq -r '
-    def bound: ([.pools[]? | select(startswith("node:")) | sub("^node:"; "")] | first) // "-";
-    def backend: ([.pools[]? | select(startswith("llm:")) | sub("^llm:"; "")] | first) // "-";
+    def pick($p): [.pools[]? | select(startswith($p)) | sub("^" + $p; "")];
     def free($n): ([.pools[]? | select(.name == "node:" + $n)] | first) as $p
       | if $p == null then false
         else ($p.limit // 0) == 0 or (($p.held // 0) + ($p.external // 0)) < $p.limit end;
     . as $root
-    | [.waiting[]? | {holder: (.holder // "-"), backend: backend, model: (.model // "-"),
-                      node: bound, nodes: (.nodes // [])}] as $w
-    | ($w[] | "waiter holder=\(.holder) backend=\(.backend) model=\(.model) node=\(.node)"),
+    | ([.leases[]? | select((.model // "") != "") | {key: .holder, value: .model}] | from_entries) as $lm
+    | [.waiting[]? | pick("node:") as $np | (.nodes // []) as $cn
+        | (($cn + $np) | unique) as $cands
+        | {holder: (.holder // "-"),
+           backend: ((pick("llm:") | first) // "-"),
+           model: ((if (.model // "") != "" then .model else $lm[.holder // ""] end) // "-"),
+           node: (if ($np | length) == 1 then $np[0]
+                  elif ($np | length) == 0 and ($cn | length) == 1 then $cn[0]
+                  else "-" end),
+           cands: $cands}] as $w
+    | ($w[] | "waiter holder=\(.holder) backend=\(.backend) model=\(.model) node=\(.node)"
+              + (if .node == "-" and (.cands | length) > 0 then " candidates=\(.cands | join(","))" else "" end)),
       "summary: \($w | length) waiting",
-      ($w | group_by(.node)[] | "  node \(.[0].node): \(length)"),
-      ( [$w | group_by(.backend)[]
-          | select(.[0].nodes | length >= 2)
-          | select([.[].node] | unique | length == 1 and .[0] != "-")
-          | . as $g | $g[0].node as $bn
-          | ($g | map(.nodes[]) | unique | map(select(. != $bn))) as $others
-          | ($others | map(select(. as $n | $root | free($n)))) as $freeOthers
-          | select($freeOthers | length > 0)
-          | "SYMPTOM: every \($g[0].backend) waiter is bound to \($bn) while \($freeOthers | join(",")) has free capacity"
-        ] | .[] ),
-      "@@SYMPTOMS=" + ([ $w | group_by(.backend)[]
-          | select(.[0].nodes | length >= 2)
-          | select([.[].node] | unique | length == 1 and .[0] != "-")
-          | . as $g | $g[0].node as $bn
-          | ($g | map(.nodes[]) | unique | map(select(. != $bn))) as $others
-          | select($others | map(select(. as $n | $root | free($n))) | length > 0)
-        ] | length | tostring)'
+      ($w | group_by(.node)[] | "  node \(if .[0].node == "-" then "unbound" else .[0].node end): \(length)"),
+      ( [ $w | group_by(.backend)[]
+          | . as $g
+          | ($g | map(.cands[]) | unique) as $all
+          | ($g | map(.node) | unique) as $bn
+          | select(($all | length) >= 2 and ($bn | length) == 1 and $bn[0] != "-")
+          | ($all | map(select(. != $bn[0])) | map(select(. as $n | $root | free($n)))) as $fo
+          | select($fo | length > 0)
+          | {line: "SYMPTOM: every \($g[0].backend) waiter is bound to \($bn[0]) while \($fo | join(",")) has free capacity"}
+        ] as $hits
+        | ($hits[] | .line), "@@SYMPTOMS=\($hits | length)")'
 }
 
 analyse_py() {
-  python3 -c '
+  python3 -I -c '
 import json, sys
 d = json.load(sys.stdin)
 def pick(pools, prefix):
-    for p in pools or []:
-        if p.startswith(prefix):
-            return p[len(prefix):]
-    return "-"
+    return [p[len(prefix):] for p in pools or [] if p.startswith(prefix)]
 pool = {p.get("name"): p for p in d.get("pools") or []}
+lm = {l.get("holder"): l.get("model") for l in d.get("leases") or [] if l.get("model")}
 def free(n):
     p = pool.get("node:" + n)
     if p is None:
         return False
     lim = p.get("limit") or 0
     return lim == 0 or (p.get("held") or 0) + (p.get("external") or 0) < lim
-w = [dict(holder=x.get("holder") or "-", backend=pick(x.get("pools"), "llm:"),
-          model=x.get("model") or "-", node=pick(x.get("pools"), "node:"),
-          nodes=x.get("nodes") or []) for x in d.get("waiting") or []]
+w = []
+for x in d.get("waiting") or []:
+    np_ = pick(x.get("pools"), "node:")
+    cn = x.get("nodes") or []
+    if len(np_) == 1:
+        node = np_[0]
+    elif not np_ and len(cn) == 1:
+        node = cn[0]
+    else:
+        node = "-"
+    llm = pick(x.get("pools"), "llm:")
+    w.append(dict(holder=x.get("holder") or "-", backend=llm[0] if llm else "-",
+                  model=x.get("model") or lm.get(x.get("holder")) or "-",
+                  node=node, cands=sorted(set(cn) | set(np_))))
 for x in w:
-    print("waiter holder=%(holder)s backend=%(backend)s model=%(model)s node=%(node)s" % x)
+    line = "waiter holder=%(holder)s backend=%(backend)s model=%(model)s node=%(node)s" % x
+    if x["node"] == "-" and x["cands"]:
+        line += " candidates=" + ",".join(x["cands"])
+    print(line)
 print("summary: %d waiting" % len(w))
 per = {}
 for x in w:
     per[x["node"]] = per.get(x["node"], 0) + 1
 for n in sorted(per):
-    print("  node %s: %d" % (n, per[n]))
+    print("  node %s: %d" % ("unbound" if n == "-" else n, per[n]))
 hits = 0
 for b in sorted({x["backend"] for x in w}):
     g = [x for x in w if x["backend"] == b]
-    cands = sorted({n for x in g for n in x["nodes"]})
-    if len(cands) < 2 and not any(len(x["nodes"]) >= 2 for x in g):
+    allc = sorted({n for x in g for n in x["cands"]})
+    bn = {x["node"] for x in g}
+    if len(allc) < 2 or len(bn) != 1 or "-" in bn:
         continue
-    bound = {x["node"] for x in g}
-    if len(bound) != 1 or "-" in bound:
-        continue
-    bn = next(iter(bound))
-    fo = [n for n in cands if n != bn and free(n)]
+    bn = next(iter(bn))
+    fo = [n for n in allc if n != bn and free(n)]
     if fo:
         hits += 1
         print("SYMPTOM: every %s waiter is bound to %s while %s has free capacity" % (b, bn, ",".join(fo)))
