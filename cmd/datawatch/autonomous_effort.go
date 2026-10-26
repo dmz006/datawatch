@@ -145,6 +145,13 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 	if req.Git {
 		sessionBody["git"] = true
 	}
+	// Worktree mode (SkipDirtyCapture means ProjectDir is an Automaton-owned
+	// linked worktree): Start must refuse a missing or non-worktree
+	// directory instead of creating and initialising it. The refusal
+	// reaches the executor as the spawn error.
+	if req.SkipDirtyCapture {
+		sessionBody["require_existing_worktree"] = true
+	}
 	return sessionBody
 }
 

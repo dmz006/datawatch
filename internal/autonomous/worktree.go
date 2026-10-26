@@ -7,6 +7,7 @@
 package autonomous
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -82,8 +83,12 @@ func EnsureWorktree(prd *PRD, baseRepo, worktreeDir string) (path, branch string
 	path = filepath.Join(worktreeDir, prd.ID)
 
 	if prd.Git.Branch != "" {
-		if st, serr := os.Stat(filepath.Join(path, ".git")); serr == nil {
-			_ = st
+		if _, serr := os.Stat(filepath.Join(path, ".git")); serr == nil {
+			// A .git entry is not proof of a worktree: a standalone
+			// repository initialised in the same path also has one.
+			if cerr := CheckProjectWorktree(path, baseRepo); cerr != nil {
+				return "", "", fmt.Errorf("worktree reuse refused: %w", cerr)
+			}
 			// Reused worktree: still make sure the go:embed placeholder
 			// exists (a daemon restart doesn't conjure it back into
 			// life if the worktree was pruned and re-added by hand).
@@ -107,7 +112,14 @@ func EnsureWorktree(prd *PRD, baseRepo, worktreeDir string) (path, branch string
 		// Git.Branch (e.g. daemon killed mid-Run). Retry checking out
 		// the existing branch instead of creating a new one.
 		if out2, werr2 := runGitIn(baseRepo, "worktree", "add", path, branch); werr2 != nil {
-			return "", "", fmt.Errorf("worktree add (%s): %s / retry on existing branch: %s: %w", branch, out, out2, werr2)
+			msg := fmt.Sprintf("worktree add (%s): %s / retry on existing branch: %s", branch, out, out2)
+			if cerr := CheckProjectWorktree(path, baseRepo); cerr != nil {
+				var ierr *WorktreeIntegrityError
+				if errors.As(cerr, &ierr) {
+					msg += " / existing directory: " + ierr.Reason
+				}
+			}
+			return "", "", fmt.Errorf("%s: %w", msg, werr2)
 		}
 	}
 	// Fresh worktree: drop the git-ignored go:embed placeholder in so
