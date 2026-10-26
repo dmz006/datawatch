@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y ca-certificates git tmux && rm -rf /var
 COPY datawatch /usr/local/bin/
 RUN chmod +x /usr/local/bin/datawatch
 EXPOSE ${DOCKER_SIM_HTTP} ${DOCKER_SIM_TLS} ${DOCKER_SIM_MCP} ${DOCKER_SIM_CHAN}
-ENTRYPOINT ["/usr/local/bin/datawatch", "start", "--foreground", "--config", "/config/config.yaml"]
+ENTRYPOINT ["/usr/local/bin/datawatch", "start", "--foreground", "--config", "/config/config.yaml"] # daemon-cleanup-ok: docker container, not a host process; the e2e runner's EXIT/INT/TERM/HUP traps docker stop/rm it and remove its data dir, so it is wiped with a maximum lifetime bounded by the runner exit
 DOCKEREOF
 
   # Copy binary into build context (ensure it exists first)

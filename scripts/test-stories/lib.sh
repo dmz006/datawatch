@@ -431,6 +431,83 @@ print(",".join(have))
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
+# Shared daemon lifecycle (scripts/test-daemon-lib.sh) — every story that
+# starts a datawatch daemon records it through the library so the shared
+# traps end the daemon (and its sessions through its own API) on every exit
+# path: normal exit, failure, Ctrl-C, runner exit. Under the e2e runner the
+# library and its traps are already loaded (state shared via TD_STATE_DIR),
+# so these helpers are no-ops there; standalone stories install their own.
+# ---------------------------------------------------------------------------
+
+# dw_terminate_pid <pid> <marker> — end a PID this script recorded, only
+# while its live /proc/<pid>/cmdline still carries the marker recorded with
+# it. Routes through the shared library's td_stop_one (sessions first, via
+# the daemon's own API) when a record exists; otherwise TERM, a brief wait,
+# and KILL only after re-checking the marker. A dead or recycled PID is left
+# alone. No process lookup by name of any kind; never touches a multiplexer
+# server.
+dw_terminate_pid() {
+  local pid="${1:-}" marker="${2:-}" cmd end
+  [[ -n "$pid" ]] || return 0
+  if declare -F td_stop_one >/dev/null 2>&1 \
+    && [[ -n "${TD_STATE_DIR:-}" && -f "${TD_STATE_DIR}/${pid}.rec" ]]; then
+    td_stop_one "$pid" || true
+  elif [[ "$pid" =~ ^[0-9]+$ ]] && [[ -r "/proc/$pid/cmdline" ]]; then
+    cmd=$({ tr '\0' ' ' < "/proc/$pid/cmdline"; } 2>/dev/null || true)
+    if [[ -n "$cmd" && "$cmd" == *"$marker"* ]]; then
+      kill -TERM "$pid" 2>/dev/null || true
+      end=$((SECONDS + 15))
+      while kill -0 "$pid" 2>/dev/null && ((SECONDS < end)); do sleep 0.2; done
+      if kill -0 "$pid" 2>/dev/null; then
+        cmd=$({ tr '\0' ' ' < "/proc/$pid/cmdline"; } 2>/dev/null || true)
+        if [[ -n "$cmd" && "$cmd" == *"$marker"* ]]; then
+          kill -KILL "$pid" 2>/dev/null || true
+          end=$((SECONDS + 5))
+          while kill -0 "$pid" 2>/dev/null && ((SECONDS < end)); do sleep 0.2; done
+        fi
+      fi
+    else
+      echo "  [cleanup] pid $pid no longer carries its recorded marker; leaving it alone" >&2
+    fi
+  fi
+  wait "$pid" 2>/dev/null || true
+  return 0
+}
+
+# _dw_channel_cleanup — end the shared-channel helper processes by the PIDs
+# this shell recorded (marker-checked). Runs from the shared library's
+# EXIT/INT/TERM/HUP handlers after td_stop_all (registered via
+# TD_EXTRA_CLEANUP when the library was loaded standalone; the e2e runner
+# keeps its own hook and these PIDs are children of the worker subshell that
+# exits anyway).
+_dw_channel_cleanup() {
+  [[ -n "${_CHAN_TAIL_PID:-}" ]] && dw_terminate_pid "$_CHAN_TAIL_PID" "tail -f /dev/null" || true
+  [[ -n "${_CHAN_PID:-}" ]] && dw_terminate_pid "$_CHAN_PID" "${_CHAN_BIN:-datawatch-channel}" || true
+  [[ -n "${_CHAN_PIPE:-}" ]] && rm -f "$_CHAN_PIPE"
+  _CHAN_PID=""; _CHAN_TAIL_PID=""; _CHAN_PIPE=""
+  return 0
+}
+
+# story_daemon_lifecycle — make the shared daemon-library traps active for
+# this shell. No-op when the e2e runner has already sourced the library
+# (td_start exists in that case, the runner's EXIT/INT/TERM/HUP traps and
+# the shared TD_STATE_DIR cover the story); when a story runs standalone
+# (bash scripts/test-stories/TS-xxx.sh) it sources the library once, keeps
+# any pre-existing TD_EXTRA_CLEANUP hook (the runner's), and installs the
+# traps, so a failure or Ctrl-C still ends every recorded daemon, then
+# removes the library's temp state directory.
+story_daemon_lifecycle() {
+  declare -F td_start >/dev/null 2>&1 && return 0
+  local lib="$REPO_ROOT/scripts/test-daemon-lib.sh"
+  [[ -f "$lib" ]] || { echo "  [lifecycle] test-daemon-lib.sh not found at $lib" >&2; return 1; }
+  # shellcheck source=/dev/null
+  source "$lib"
+  TD_EXTRA_CLEANUP="${TD_EXTRA_CLEANUP:-_dw_channel_cleanup}"
+  td_install_traps
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # start_channel_server — start datawatch-channel against the sandbox daemon,
 # bound to SESSION_ID. Returns 0 when channel_ready=true is confirmed on the
 # session; 1 otherwise (caller should skip).
@@ -451,11 +528,12 @@ print(",".join(have))
 #   resp=$(api POST /api/channel/send '{"session_id":"'"$SESSION_ID"'","text":"hi"}')
 #   stop_channel_server
 # ---------------------------------------------------------------------------
-: "${_CHAN_PID:=}"; : "${_CHAN_TAIL_PID:=}"; : "${_CHAN_PIPE:=}"
+: "${_CHAN_PID:=}"; : "${_CHAN_TAIL_PID:=}"; : "${_CHAN_PIPE:=}"; : "${_CHAN_BIN:=}"
 
 start_channel_server() {
   local chan_bin
   chan_bin=$(command -v datawatch-channel 2>/dev/null || echo "$HOME/.local/bin/datawatch-channel")
+  _CHAN_BIN="$chan_bin"
   if [[ ! -x "$chan_bin" ]]; then
     skip "datawatch-channel binary not found at $chan_bin"
     return 1
@@ -494,11 +572,10 @@ start_channel_server() {
 }
 
 stop_channel_server() {
-  [[ -n "$_CHAN_TAIL_PID" ]] && kill "$_CHAN_TAIL_PID" 2>/dev/null || true
-  [[ -n "$_CHAN_PID" ]]      && kill "$_CHAN_PID"      2>/dev/null || true
-  wait "$_CHAN_TAIL_PID" "$_CHAN_PID" 2>/dev/null || true
-  [[ -n "$_CHAN_PIPE" ]]     && rm -f "$_CHAN_PIPE"
-  _CHAN_PID=""; _CHAN_TAIL_PID=""; _CHAN_PIPE=""
+  # End the helper processes by the PIDs this shell recorded, signalling
+  # each only while its live cmdline still carries the recorded marker; the
+  # same path the EXIT/INT/TERM/HUP traps take on failure or interrupt.
+  _dw_channel_cleanup
 }
 
 # ---------------------------------------------------------------------------

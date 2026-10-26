@@ -281,6 +281,10 @@ FAKE_OLLAMA
 }
 
 ts817_start_daemon() {
+  # Shared lifecycle library first, so the EXIT/INT/TERM/HUP traps are in
+  # place before the daemon forks (a no-op under the e2e runner, which has
+  # already loaded the library and its traps with shared TD_STATE_DIR).
+  story_daemon_lifecycle
   # The daemon's own temp files (tooling directories, per-session pi agent
   # directories) land in the story's scratch area, so cleanup removes them too.
   mkdir -p "$TS817_TMP/daemon-tmp"
@@ -288,17 +292,19 @@ ts817_start_daemon() {
     TMPDIR="$TS817_TMP/daemon-tmp" \
     "$TS817_BINARY" start --foreground --config "$TS817_CFG" >> "$TS817_TMP/daemon.log" 2>&1 &
   TS817_DAEMON_PID=$!
+  # Record the daemon (PID + config-path marker) in the shared library and
+  # set its API/token so teardown destroys its sessions through its own API
+  # before signalling the recorded PID, on every exit path.
+  td_track_pid "$TS817_DAEMON_PID" "$TS817_CFG"
+  td_set_api "$TS817_DAEMON_PID" "$TEST_BASE" "$TEST_TOKEN"
 }
 
 ts817_stop_daemon() {
   [[ -n "$TS817_DAEMON_PID" ]] || return 0
-  kill "$TS817_DAEMON_PID" 2>/dev/null || true
-  local end=$((SECONDS + 20))
-  while kill -0 "$TS817_DAEMON_PID" 2>/dev/null && ((SECONDS < end)); do
-    sleep 1
-  done
-  kill -0 "$TS817_DAEMON_PID" 2>/dev/null && kill -9 "$TS817_DAEMON_PID" 2>/dev/null
-  wait "$TS817_DAEMON_PID" 2>/dev/null || true
+  # End the daemon through its recorded PID (sessions first via its own API,
+  # then TERM/KILL only while the live cmdline still carries the recorded
+  # marker) — the shared traps do the same on failure and interrupt exits.
+  dw_terminate_pid "$TS817_DAEMON_PID" "$TS817_CFG"
   TS817_DAEMON_PID=""
 }
 
@@ -440,9 +446,10 @@ ts817_cleanup() {
     fi
   fi
   ts817_stop_daemon
-  [[ -n "$TS817_FAKE_A_PID" ]] && kill "$TS817_FAKE_A_PID" 2>/dev/null
-  [[ -n "$TS817_FAKE_B_PID" ]] && kill "$TS817_FAKE_B_PID" 2>/dev/null
-  wait "$TS817_FAKE_A_PID" "$TS817_FAKE_B_PID" 2>/dev/null || true
+  # End the fake ollama helpers by the PIDs this script recorded, marker-
+  # checked against their live cmdline, before the scratch tree is removed.
+  dw_terminate_pid "${TS817_FAKE_A_PID}" "$TS817_TMP/fake_ollama.py"
+  dw_terminate_pid "${TS817_FAKE_B_PID}" "$TS817_TMP/fake_ollama.py"
   # Only the story's own socket is probed. A stale socket file is harmless, so
   # the check is whether any session is still listed on it after cleanup.
   local sock="$TS817_SOCK" left

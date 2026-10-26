@@ -47,10 +47,15 @@ session:
   kill_sessions_on_exit: true
 PEERCFG
 
-    # Start the peer daemon
-    "$binary" start --foreground --config "$peer_data/config.yaml" \
-      >> "$peer_data/peer.log" 2>&1 &
-    peer_pid=$!
+    # Start the peer daemon through the shared lifecycle library: td_start
+    # records it (PID + config-path marker) and the shared
+    # EXIT/INT/TERM/HUP traps end the daemon — and any session it started —
+    # on every exit path, including a story failure before the explicit
+    # stop below or a Ctrl-C.
+    story_daemon_lifecycle
+    td_start "$binary" "$peer_data/config.yaml" "$peer_data/peer.log"
+    peer_pid="${TD_LAST_PID:-}"
+    td_set_api "$peer_pid" "https://127.0.0.1:$peer_tls" "$peer_token"
 
     # Wait up to 15s for the peer to become healthy
     local deadline=$(( $(date +%s) + 15 ))
@@ -65,7 +70,9 @@ PEERCFG
     done
 
     if [[ $healthy -eq 0 ]]; then
-      kill "$peer_pid" 2>/dev/null || true
+      # End the peer by the PID we recorded (marker-checked; sessions first
+      # via its own API). Only after it is gone does the scratch folder go.
+      dw_terminate_pid "$peer_pid" "$peer_data/config.yaml"
       rm -rf "$peer_data"
       skip "inline peer daemon did not start within 15s"; return
     fi
@@ -81,10 +88,11 @@ PEERCFG
     "${peer_url}/api/proxy/llm/test-llm" 2>/dev/null || echo "000")
   save_evidence TS-619 "peer_probe_code.txt" "$code"
 
-  # Clean up inline peer if we started one
+  # Clean up inline peer if we started one — end the daemon (and its
+  # sessions, through its own API) first, and only after it is gone
+  # remove the scratch folder.
   if [[ -n "$peer_pid" ]]; then
-    kill "$peer_pid" 2>/dev/null || true
-    wait "$peer_pid" 2>/dev/null || true
+    dw_terminate_pid "$peer_pid" "$peer_data/config.yaml"
     rm -rf "$peer_data" 2>/dev/null || true
   fi
 

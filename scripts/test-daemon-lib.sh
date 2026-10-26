@@ -64,7 +64,8 @@ _td_put() {
 _td_alive() {
   local stat
   kill -0 "$1" 2>/dev/null || return 1
-  stat="$(< "/proc/$1/stat")" 2>/dev/null || return 1
+  [[ -r "/proc/$1/stat" ]] || return 1
+  stat="$(< "/proc/$1/stat")"
   stat="${stat##*) }"
   [[ "${stat%% *}" != Z ]]
 }
@@ -73,7 +74,8 @@ _td_alive() {
 _td_marker_ok() {
   local cmd
   [[ -n "$2" ]] || return 1
-  cmd="$(tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null)" || return 1
+  [[ -r "/proc/$1/cmdline" ]] || return 1
+  cmd="$(tr '\0' ' ' < "/proc/$1/cmdline")" || return 1
   [[ "$cmd" == *"$2"* ]]
 }
 
@@ -90,9 +92,14 @@ td_set_api() {
 }
 
 td_start() {
-  local bin="${1:?td_start <binary> <config> <logfile>}" cfg="${2:?}" log="${3:?}"
+  local bin="${1:?td_start <binary> <config> <logfile> [extra args...]}" cfg="${2:?}" log="${3:?}"
+  shift 3
+  # Optional extra args (e.g. a final --port override) follow the library's
+  # own start arguments. The recorded marker stays the config path, which is
+  # still in the daemon's cmdline.
+  local -a extra=("$@")
   # env -u keeps the daemon off any tmux server the caller is inside.
-  env -u TMUX -u TMUX_TMPDIR "$bin" start --foreground --config "$cfg" >> "$log" 2>&1 &
+  env -u TMUX -u TMUX_TMPDIR "$bin" start --foreground --config "$cfg" ${extra[@]+"${extra[@]}"} >> "$log" 2>&1 &
   TD_LAST_PID=$!
   # The forked shell has the caller's cmdline until exec; record once it is ours.
   for _ in {1..20}; do
