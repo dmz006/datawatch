@@ -56,14 +56,19 @@ Other node probes still skip verification and were left alone (outside this task
 
 ## Dismissals for the operator
 
-Sixteen alerts are decided as dismiss and each has an entry in `security/accepted-risks.yml` (`code-scanning/<alert number>`). The operator applies the dismissals; none was called from this task. Path-injection and sanitization alerts that are false positives or test-only use `false positive` or `used in tests`; use `used in tests` for the test-only scripts and test files.
+Sixteen alerts are decided as dismiss and each has an entry in `security/accepted-risks.yml` (`code-scanning/<alert number>`) with its own reason. The operator applies the dismissals; none was called from this task. Use `false positive` for the five source-code alerts and `used in tests` for the eleven test-only script and test-file alerts.
 
 ```bash
-for n in 689 688 687 690 675 699 664 665 694 685 671 672 673 674 630 631; do
+# false positives in product code
+for n in 689 688 687 690 675; do
   gh api -X PATCH repos/dmz006/datawatch/code-scanning/alerts/$n \
     -f state=dismissed -f dismissed_reason="false positive" \
     -f dismissed_comment="Traced and recorded in security/accepted-risks.yml (code-scanning/$n)."
 done
-# test-only alerts: use -f dismissed_reason="used in tests" for 699 664 665 694 685 671 672 673 674 630 631
+# test-only scripts and test files
+for n in 699 664 665 694 685 671 672 673 674 630 631; do
+  gh api -X PATCH repos/dmz006/datawatch/code-scanning/alerts/$n \
+    -f state=dismissed -f dismissed_reason="used in tests" \
+    -f dismissed_comment="Test-only; traced and recorded in security/accepted-risks.yml (code-scanning/$n)."
+done
 ```
-
