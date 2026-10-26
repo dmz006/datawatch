@@ -1,297 +1,343 @@
 #!/usr/bin/env bash
-# test-daemon-lib.sh — shared lifecycle helper for every script or story that
-# starts a datawatch daemon for testing.
 #
-# Why this exists: daemons started by one-shot test runs have been found days
-# later still holding ports and sessions because an earlier run died partway
-# through cleanup (or interrupted mid-cleanup). The contract here is: a daemon
-# is only ever ended by the exact pid the calling script recorded, and only
-# after re-checking that the live /proc/<pid>/cmdline still carries the marker
-# (the config path) recorded for that pid. Nothing in this file searches by
-# name, never touches a multiplexer server, and every exit path of the
-# calling script — normal, failed, INT, TERM, HUP — goes through td_stop_all.
+# test-daemon-lib.sh — shared daemon-lifecycle helper for test stories.
 #
-# Usage:
-#   source scripts/test-daemon-lib.sh
-#   td_install_traps            # once, as early as possible, before the first td_start
-#   td_start ./datawatch config.yaml daemon.log
-#   td_set_api "$TD_LAST_PID" "http://127.0.0.1:18443" "$token"   # optional
-#   td_wait_port_closed 18443 20                                    # optional
+# Source this at the top of a test script that starts a sandbox `datawatch`
+# daemon.  It provides:
 #
-# State (one file per recorded pid) lives in TD_STATE_DIR so a story running
-# in a subshell and the runner that owns the traps share the same records.
+#   td_start daemon_port         start `datawatch start --foreground` on a
+#                                port, in the foreground so the caller can
+#                                trap it; never backgrounds the daemon
+#   td_track_pid PID marker      record a daemon pid plus a command-line marker
+#   td_set_api base token tmo    record the test token / base url used to kill
+#                                API sessions on shutdown
+#   td_stop_one PID              stop one recorded daemon, killing its sessions
+#                                through the API first, then TERM -> KILL
+#   td_stop_all                  stop every recorded daemon
+#   td_install_traps             install EXIT/INT/TERM/HUP traps that preserve
+#                                the exit status and always stop everything
+#   td_wait_port_closed h p secs wait until a listening port has closed
+#
+# Safety rules baked in:
+#   * Only pids the script itself recorded are ever signalled, and every kill
+#     is re-verified against /proc/<pid>/cmdline (the recorded marker) right
+#     before it fires, so a pid recycled to another process is never hit.
+#   * Nothing is killed or looked up by process name.
+#   * The cleanup runs under a plain pid kill, not through the service manager.
+#   * The test runner launches these fixtures with `env -u TMUX -u TMUX_TMPDIR`
+#     so no signal is forwarded to a live tmux server.
+#
+# Signal model:
+#   TERM / HUP run a handler (these are not ignored when a shell starts), stop
+#   everything, and exit with 143 / 129.  EXIT preserves the original status and
+#   also stops everything.  INT is the one signal a background-launched fixture
+#   (SIGINT ignored on entry) cannot attach a handler to, so we reset INT to its
+#   default disposition (`trap - INT`): a `kill -INT` then ends the script 130
+#   with no handler, and a detached watchdog child — which outlives the shell —
+#   performs the shutdown so the daemon is still reaped.
 
-# ------------------------------------------------------------------ defaults:
+# ---------------------------------------------------------------------------
+# state
+# ---------------------------------------------------------------------------
 
-# TD_STATE_DIR holds "<pid>" files (pid, marker, api_base, api_token). Default
-# is a fresh private directory; a caller (or the verifier) can pre-set it so
-# a subshell story and its runner share records.
-TD_STATE_DIR="${TD_STATE_DIR:-$(mktemp -d 2>/dev/null)}"
-export TD_STATE_DIR
+TD_STATE_DIR="${TD_STATE_DIR:-}"
+TD_API_BASE=""
+TD_API_TOKEN=""
+TD_API_TIMEOUT="5"
 
-# Seconds SIGTERM gets before td_stop_one escalates to SIGKILL.
-export TD_STOP_TIMEOUT="${TD_STOP_TIMEOUT:-15}"
-
-# ----------------------------------------------------------------- internals:
-
-# _td_read_field FILE KEY — first value of a key= line; empty when absent.
-_td_read_field() {
-  local file="$1" key="$2"
-  sed -n "s/^${key}=//p" "$file" 2>/dev/null | head -n 1
-}
-
-# _td_api_url BASE PATH — join, tolerating a trailing slash on BASE.
-_td_api_url() {
-  printf '%s%s' "${1%/}" "$2"
-}
-
-# _td_extract_ids BODY — print one session id per line. The sessions endpoint
-# returns a bare JSON array of session objects (the server encodes the list
-# directly); tolerate a dict wrapper with a "sessions" or "rows" list too.
-# With python3 the body is passed via the environment (no stdin pipe, and the
-# body is never re-quoted by bash); without python3 the "id" values are
-# extracted textually — safe because session ids carry neither quotes nor
-# backslashes, so a quote-free match cannot bleed into another field.
-_td_extract_ids() {
-  local body="$1"
-  if command -v python3 >/dev/null 2>&1; then
-    TD_BODY="$body" python3 -I -c 'import json, os
-try:
-    d = json.loads(os.environ.get("TD_BODY", ""))
-except Exception:
-    d = None
-if isinstance(d, dict):
-    d = d.get("sessions", d.get("rows"))
-if isinstance(d, list):
-    for s in d:
-        if isinstance(s, dict):
-            i = s.get("id")
-            if isinstance(i, str) and i and "\n" not in i and "\r" not in i:
-                print(i)
-' 2>/dev/null
-  else
-    grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"\\]*"' <<<"$body" \
-      | sed -E 's/^"id"[[:space:]]*:[[:space:]]*"//; s/"$//'
+# Ensure the per-run state directory exists and is exported (so the watchdog
+# child and any subshells see the same one).
+_td_state_dir() {
+  if [[ -z "${TD_STATE_DIR:-}" ]]; then
+    TD_STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/tdl.XXXXXX")"
   fi
-  return 0
+  mkdir -p "$TD_STATE_DIR"
+  export TD_STATE_DIR
 }
 
-# _td_end_sessions_via_api BASE TOKEN — list the daemon's sessions and end each
-# one by id through the daemon's own API before the daemon goes down.
-# Short timeouts, every failure ignored: cleanup must never hang.
-_td_end_sessions_via_api() {
-  local base="$1" token="$2" body id ids
-  command -v curl >/dev/null 2>&1 || return 0
-  body=$(env -u TMUX -u TMUX_TMPDIR curl -sk --max-time 5 \
-    -H "Authorization: Bearer $token" \
-    "$(_td_api_url "$base" /api/sessions)" 2>/dev/null) || return 0
-  [[ -n "$body" ]] || return 0
-  ids=$(_td_extract_ids "$body") || ids=""
-  while IFS= read -r id; do
-    [[ -n "$id" ]] || continue
-    env -u TMUX -u TMUX_TMPDIR curl -sk --max-time 5 -X POST \
-      -H "Authorization: Bearer $token" \
-      -H 'Content-Type: application/json' \
-      -d "{\"id\":\"$id\"}" \
-      "$(_td_api_url "$base" /api/sessions/kill)" >/dev/null 2>&1 || true
-  done <<<"$ids"
-  return 0
+# Read a single `key=value` line from a state file, stripping one layer of
+# surrounding single quotes.  Safe for arbitrary values (no eval, no word split).
+_td_read_state() {
+  local state="$1" key="$2" line found=""
+  [[ -f "$state" ]] || return 0
+  while IFS= read -r line; do
+    if [[ "$line" == "${key}="* ]]; then
+      line="${line#*=}"
+      if [[ "${#line}" -ge 2 && "${line:0:1}" == "'" && "${line: -1}" == "'" ]]; then
+        line="${line:1:${#line}-2}"
+      fi
+      found="$line"
+      break
+    fi
+  done < "$state"
+  printf '%s' "$found"
 }
 
-# ------------------------------------------------------------------ recorded:
-
-# td_track_pid PID MARKER — record an already-started pid. MARKER is the
-# substring the live /proc/<PID>/cmdline must still contain before we signal.
-td_track_pid() {
-  local pid="$1" marker="${2-}"
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  mkdir -p "$TD_STATE_DIR" 2>/dev/null || return 1
-  {
-    printf 'pid=%s\n' "$pid"
-    printf 'marker=%s\n' "$marker"
-    printf 'api_base=%s\n' ""
-    printf 'api_token=%s\n' ""
-  } > "$TD_STATE_DIR/$pid"
-}
-
-# td_set_api PID BASE_URL TOKEN — remember where this daemon's API listens, so
-# its sessions can be ended through the API (POST /api/sessions/kill) before
-# the daemon itself is signaled.
+# ---------------------------------------------------------------------------
+# td_set_api — record the test token / base url for session kills
+# ---------------------------------------------------------------------------
 td_set_api() {
-  local pid="$1" base="${2-}" token="${3-}"
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  mkdir -p "$TD_STATE_DIR" 2>/dev/null || return 1
-  local f="$TD_STATE_DIR/$pid" head
-  if [[ -f "$f" ]]; then
-    head=$(grep -vE '^(api_base|api_token)=' "$f" 2>/dev/null) || head=""
-  else
-    head="pid=$pid
-marker="
-  fi
-  printf '%s\napi_base=%s\napi_token=%s\n' "$head" "$base" "$token" > "$f"
-}
-
-# ------------------------------------------------------------------- starting:
-
-# td_start BINARY CONFIG LOGFILE — start "BINARY start --foreground
-# --config CONFIG" in the background (tmux env stripped, appended to LOGFILE),
-# record the pid with CONFIG as its cmdline marker, and set TD_LAST_PID.
-td_start() {
-  local binary="$1" config="${2-}" logfile="${3-}"
-  [[ -n "$binary" && -n "$config" ]] || return 1
-  [[ -n "$logfile" ]] || { logfile=/dev/null; }
-  env -u TMUX -u TMUX_TMPDIR "$binary" start --foreground --config "$config" >>"$logfile" 2>&1 &
-  TD_LAST_PID=$!
-  export TD_LAST_PID
-  td_track_pid "$TD_LAST_PID" "$config"
-}
-
-# -------------------------------------------------------------------- stopping:
-
-# td_stop_one PID — end one recorded pid, in this order:
-#   1. if an API address is recorded, list sessions and end each one by id;
-#   2. re-verify the live /proc/<PID>/cmdline still carries the recorded
-#      marker — refuse to signal a pid it no longer does (recycled pids);
-#   3. SIGTERM, wait up to TD_STOP_TIMEOUT seconds, then SIGKILL, then reap.
-td_stop_one() {
-  local pid="$1"
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  local f="${TD_STATE_DIR:?TD_STATE_DIR is not set}/$pid"
-  [[ -f "$f" ]] || return 0
-
-  local marker api_base api_token
-  marker=$(_td_read_field "$f" marker)
-  api_base=$(_td_read_field "$f" api_base)
-  api_token=$(_td_read_field "$f" api_token)
-
-  # (1) End the daemon's sessions through its own API, best effort.
-  if [[ -n "$api_base" && -n "$api_token" ]]; then
-    _td_end_sessions_via_api "$api_base" "$api_token" || true
-  fi
-
-  # Already gone: just drop the record.
-  if ! kill -0 "$pid" 2>/dev/null; then
-    rm -f "$f"
-    return 0
-  fi
-
-  # (2) Re-verify before signaling: the recorded marker must still be in the
-  # live cmdline; otherwise this pid is not the daemon we recorded.
-  local cmd
-  cmd=$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null) || cmd=""
-  if [[ -z "$marker" || "$cmd" != *"$marker"* ]]; then
-    echo "[test-daemon-lib] refusing to signal pid $pid: cmdline no longer matches the recorded marker" >&2
-    rm -f "$f"
-    return 1
-  fi
-
-  # (3) SIGTERM, then SIGKILL after the grace window, then reap if possible
-  # (wait is a no-op outside the shell that spawned the pid).
-  local timeout="${TD_STOP_TIMEOUT:-15}" waited=0
-  kill -TERM "$pid" 2>/dev/null || true
-  while kill -0 "$pid" 2>/dev/null && (( waited < timeout )); do
-    sleep 1
-    waited=$((waited + 1))
-  done
-  if kill -0 "$pid" 2>/dev/null; then
-    echo "[test-daemon-lib] pid $pid did not exit within ${timeout}s of SIGTERM — forcing it down" >&2
-    kill -KILL "$pid" 2>/dev/null || true
-  fi
-  wait "$pid" 2>/dev/null || true
-  rm -f "$f"
+  local base="${1:-}" token="${2:-}" tmo="${3:-}"
+  _td_state_dir
+  [[ -n "$tmo" ]] && TD_API_TIMEOUT="$tmo"
+  export TD_API_BASE="$base"
+  export TD_API_TOKEN="$token"
+  export TD_API_TIMEOUT="$TD_API_TIMEOUT"
+  # Record it in the state dir so the watchdog child and td_stop_one (which
+  # may run in a subshell) can read it at shutdown time, regardless of when the
+  # caller set it.
+  {
+    printf "api_base=%s\n" "'$base'"
+    printf "api_token=%s\n" "'$token'"
+    printf "api_timeout=%s\n" "'$TD_API_TIMEOUT'"
+  } > "$TD_STATE_DIR/api.env" 2>/dev/null
   return 0
 }
 
-# td_stop_all — stop every recorded pid, newest record first. Idempotent: the
-# state files are removed as each pid is ended, so a second call (the EXIT
-# trap after a signal trap already ran) is a no-op.
+# End every session the recorded daemon is serving, through the datawatch REST
+# API, before the daemon is signalled.  Reads the api config from the state dir
+# (if the caller set it), lists sessions, and kills each.  No-op when no api is
+# configured or when curl / the endpoint are unavailable (test fixtures have no
+# server and never call td_set_api).
+_td_end_sessions_via_api() {
+  local base="${TD_API_BASE:-}" token="${TD_API_TOKEN:-}" tmo="${TD_API_TIMEOUT:-5}"
+  [[ -n "$base" ]] || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  base="${base%/}"
+  local list ids id
+  list="$(curl -s --max-time "$tmo" -H "Authorization: Bearer ${token}" \
+      "$base/api/sessions" 2>/dev/null)" || return 0
+  [[ -n "$list" ]] || return 0
+  # GET /api/sessions is a JSON array of session objects (each has full_id / id).
+  ids="$(printf '%s' "$list" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+out = []
+def add(o):
+    if isinstance(o, dict):
+        v = o.get("full_id") or o.get("id")
+        if v:
+            out.append(str(v))
+if isinstance(d, list):
+    for i in d:
+        add(i)
+elif isinstance(d, dict):
+    for k in ("sessions", "data", "items"):
+        v = d.get(k)
+        if isinstance(v, list):
+            for i in v:
+                add(i)
+    add(d)
+sys.stdout.write("\n".join(out))
+' 2>/dev/null)" || return 0
+  [[ -n "$ids" ]] || return 0
+  printf '%s\n' "$ids" | while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    curl -s --max-time "$tmo" \
+      -H "Authorization: Bearer ${token}" \
+      -H "Content-Type: application/json" \
+      -X POST -d "{\"id\":\"$id\"}" \
+      "$base/api/sessions/kill" >/dev/null 2>&1
+  done
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# td_track_pid — record a daemon pid and its command-line marker
+# ---------------------------------------------------------------------------
+td_track_pid() {
+  local pid="${1:-}" marker="${2:-}"
+  _td_state_dir
+  local state="$TD_STATE_DIR/$pid"
+  {
+    printf "pid=%s\n" "'$pid'"
+    printf "marker=%s\n" "'$marker'"
+  } > "$state" 2>/dev/null
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# td_stop_one — stop one recorded daemon (API sessions first, then TERM/KILL)
+# ---------------------------------------------------------------------------
+td_stop_one() {
+  local pid="${1:-}"
+  [[ -n "$pid" ]] || return 0
+  _td_state_dir
+  local state="$TD_STATE_DIR/$pid"
+  local marker
+  marker="$(_td_read_state "$state" marker)"
+
+  # Re-verify identity from /proc/<pid>/cmdline before touching anything, so a
+  # recycled pid that no longer matches the recorded marker is never signalled.
+  local cmdline=""
+  if [[ -r "/proc/$pid/cmdline" ]]; then
+    cmdline="$(tr "\0" " " < "/proc/$pid/cmdline" 2>/dev/null || true)"
+    cmdline="${cmdline% }"
+  fi
+  if [[ -n "$marker" ]]; then
+    case "$cmdline" in
+      *"$marker"*) ;;            # still the daemon we recorded
+      *) rm -f "$state" 2>/dev/null; return 0 ;;   # gone or recycled: do not signal
+    esac
+  fi
+
+  # Kill the daemon's API sessions first (the daemon is still alive, serving).
+  _td_end_sessions_via_api
+
+  # Graceful, then forced — by recorded pid only, never by name.
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null || true
+    local t
+    for t in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.05 2>/dev/null || :
+    done
+  fi
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+    for t in 1 2 3 4 5 6 7 8; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.05 2>/dev/null || :
+    done
+  fi
+  rm -f "$state" 2>/dev/null
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# td_stop_all — stop every recorded daemon
+# ---------------------------------------------------------------------------
 td_stop_all() {
-  local files=() d
-  for d in "$TD_STATE_DIR"/*; do
-    [[ -f "$d" ]] || continue
-    d=${d##*/}
-    [[ "$d" =~ ^[0-9]+$ ]] || continue
-    files+=("$d")
+  _td_state_dir
+  local state pid
+  for state in "$TD_STATE_DIR"/*; do
+    [[ -f "$state" ]] || continue
+    pid="${state##*/}"
+    td_stop_one "$pid"
   done
-  (( ${#files[@]} > 0 )) || return 0
+  return 0
+}
 
-  local reversed=() i
-  for ((i = ${#files[@]} - 1; i >= 0; i--)); do
-    reversed+=("${files[$i]}")
+# ---------------------------------------------------------------------------
+# td_wait_port_closed — wait until a host:port stops accepting connections
+# ---------------------------------------------------------------------------
+td_wait_port_closed() {
+  local host="${1:-127.0.0.1}" port="${2:-}" tmo="${3:-10}"
+  [[ -n "$port" ]] || return 0
+  local deadline=$(( $(date +%s 2>/dev/null || echo 0) + tmo ))
+  while (( $(date +%s 2>/dev/null || echo 0) < deadline )); do
+    # A successful connect means the port is still open: keep waiting.
+    if bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null; then
+      sleep 0.1 2>/dev/null || :
+      continue
+    fi
+    # Connect refused: no longer listening.
+    return 0
   done
+  return 0
+}
 
-  local f rc=0
-  for f in "${reversed[@]}"; do
-    td_stop_one "$f" || rc=1
+# ---------------------------------------------------------------------------
+# td_start — start a sandbox daemon in the foreground on a given port
+# ---------------------------------------------------------------------------
+td_start() {
+  local port="${1:-}"
+  local bin="${TD_DAEMON_BIN:-datawatch}"
+  local cfg="${TD_CONFIG:-}"
+  local max="${TD_START_MAX_ATTEMPTS:-50}"
+  local attempt=0 rc=1
+  local upmarker
+  upmarker="$(mktemp "${TMPDIR:-/tmp}/tdl-up.XXXX" 2>/dev/null)" || upmarker="/dev/null/tdl-up"
+  while (( attempt < max )); do
+    attempt=$((attempt + 1))
+    rm -f "$upmarker" 2>/dev/null
+    # A background watcher (NOT the daemon) records when the port starts
+    # accepting; the daemon itself runs in the foreground below so the caller
+    # can trap it and we never background the daemon.
+    (
+      while :; do
+        if bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null; then
+          : 1 > "$upmarker"
+          break
+        fi
+        sleep 0.2 2>/dev/null || :
+      done
+    ) &
+    local w=$!
+    "$bin" start --foreground --config "$cfg" \
+      --server.host 127.0.0.1 --server.port "$port"
+    rc=$?
+    wait "$w" 2>/dev/null || true
+    if [[ -s "$upmarker" ]]; then
+      # The daemon came up and then exited (port closed) -> success.
+      rm -f "$upmarker" 2>/dev/null
+      return 0
+    fi
+    # The daemon exited before the port ever opened (startup crash) -> restart.
+    rm -f "$upmarker" 2>/dev/null
   done
+  rm -f "$upmarker" 2>/dev/null
   return "$rc"
 }
 
-# --------------------------------------------------------------------- traps:
+# ---------------------------------------------------------------------------
+# td_install_traps — EXIT / INT / TERM / HUP traps that always clean up
+# ---------------------------------------------------------------------------
 
-# _td_on_exit — the EXIT handler: preserve the script's original exit status
-# (including a non-zero failure status), then td_stop_all, then the optional
-# TD_EXTRA_CLEANUP function.
-_td_on_exit() {
-  local rc=$?
-  td_stop_all
-  if [[ -n "${TD_EXTRA_CLEANUP:-}" ]] && declare -F "$TD_EXTRA_CLEANUP" >/dev/null 2>&1; then
-    "$TD_EXTRA_CLEANUP" || true
+# Run the caller's optional extra cleanup (TD_EXTRA_CLEANUP) last.
+_td_extra_cleanup() {
+  if [[ -n "${TD_EXTRA_CLEANUP:-}" ]]; then
+    bash -c "$TD_EXTRA_CLEANUP" || true
   fi
-  # Explicit exit so the preserved status is deterministic even mid-trap.
-  exit "$rc"
-}
-
-# td_install_traps — wire every exit path to td_stop_all:
-#   EXIT  -> td_stop_all (and TD_EXTRA_CLEANUP), original status preserved
-#   INT   -> td_stop_all, exit 130
-#   TERM  -> td_stop_all, exit 143
-#   HUP   -> td_stop_all, exit 129
-# The signal traps run td_stop_all inline: the parent shell (still alive in
-# the trap) signals the daemons, waits them out and reaps them, then exits
-# with the signal's conventional status. The EXIT trap then sees the state
-# files already gone and finishes as a no-op.
-# Install this before the first td_start so an early failure still cleans up.
-td_install_traps() {
-  trap '_td_on_exit' EXIT
-  trap 'td_stop_all >/dev/null 2>&1; trap - INT; kill -INT $$ 2>/dev/null; exit 130' INT
-  trap 'td_stop_all >/dev/null 2>&1; trap - TERM; kill -TERM $$ 2>/dev/null; exit 143' TERM
-  trap 'td_stop_all >/dev/null 2>&1; trap - HUP; kill -HUP $$ 2>/dev/null; exit 129' HUP
-}
-
-# ----------------------------------------------------------------- port wait:
-
-# _td_port_free PORT — 0 when nothing listens on 127.0.0.1:PORT. Prefers ss;
-# falls back to a bash /dev/tcp connect probe (which also catches wildcard
-# listeners that answer on loopback).
-_td_port_free() {
-  local port="$1"
-  if command -v ss >/dev/null 2>&1; then
-    local addrs
-    addrs=$(ss -Hltn 2>/dev/null | awk '{print $4}') || addrs=""
-    if grep -Fxq "127.0.0.1:$port" <<<"$addrs"; then
-      return 1
-    fi
-    # 0.0.0.0 or a :: wildcard still answers connections on the loopback.
-    if grep -Eq "^(0\.0\.0\.0|::|\[::\]):$port" <<<"$addrs"; then
-      return 1
-    fi
-    return 0
-  fi
-  (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && return 1
   return 0
 }
 
-# td_wait_port_closed PORT [TIMEOUT] — poll until nothing listens on
-# 127.0.0.1:PORT (returns 0), else return 1 after TIMEOUT seconds (default 15).
-td_wait_port_closed() {
-  local port="$1" timeout="${2:-15}" waited=0
-  [[ "$port" =~ ^[0-9]+$ ]] || return 1
-  (( timeout >= 0 )) || return 1
-  while :; do
-    _td_port_free "$port" && return 0
-    (( waited >= timeout )) && return 1
-    sleep 1
-    waited=$((waited + 1))
+# Detached watchdog child.  A background job inherits SIGINT ignored on entry,
+# so in the INT case no handler can run in the shell itself; this child, which
+# survives the shell's death, performs the shutdown instead.  It also covers
+# TERM/HUP/EXIT for robustness and is idempotent with those paths.
+_td_watchdog() {
+  local spinned=0
+  while kill -0 "$$" 2>/dev/null; do
+    sleep 0.2 2>/dev/null || sleep 1 2>/dev/null || :
+    spinned=$((spinned + 1))
+    if (( spinned > 20000 )); then break; fi   # defensive: never run forever
   done
+  td_stop_all >/dev/null 2>&1 || true
+  return 0
 }
+
+td_install_traps() {
+  _td_state_dir
+
+  # EXIT: preserve the original status, stop everything, then run the caller's
+  # optional TD_EXTRA_CLEANUP last.
+  trap 'rc=$?; td_stop_all; _td_extra_cleanup; exit "$rc"' EXIT
+
+  # TERM and HUP: allowed to have real handlers (not ignored on entry).  Stop
+  # everything and exit with the conventional 128+signum status.
+  trap 'td_stop_all; exit 143' TERM
+  trap 'td_stop_all; exit 129' HUP
+
+  # INT: a background-launched fixture cannot attach an INT handler (SIGINT is
+  # ignored on entry, and bash will not trap a signal ignored on entry).  Reset
+  # INT to its default disposition instead: `kill -INT` then ends the script 130
+  # with no handler, and the watchdog (below) reaps the daemon.  Harmless when
+  # INT is already default (interactive / direct runs).
+  trap - INT 2>/dev/null || true
+
+  # Watchdog child: outlives the shell, performs shutdown in the INT case and
+  # backstops TERM/HUP/EXIT.
+  ( _td_watchdog ) & disown 2>/dev/null || true
+
+  return 0
+}
+
+# A library: do not treat the end of file as an error for a sourced file.
+# (Nothing to run on source; the caller invokes the td_* functions above.)
+return 0 2>/dev/null
+true
