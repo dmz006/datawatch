@@ -1548,3 +1548,602 @@ Samples (time since the command was typed, runner alive by `hasLiveRunnerProcess
 Sample 1 was taken before the shell had started pi. The runner stayed visible from the second sample until the run ended, with no child process of its own, and was gone once the marker printed. With the earlier probe, which looked only for a child process, every one of those samples would have read as no work.
 
 Result: PASS. The runner was seen alive in 5 of 7 samples while pi generated, and the pane ended with `DATAWATCH_COMPLETE: pi done` after 12.5 s.
+
+## Two-node pi worker placement
+
+Live check that the placement rules put pi-prompt workers of an Automaton on the compute nodes their capacity leases name, on a running sandbox daemon built from this tree, with two compute nodes behind one LLM entry.
+
+| Field | Details |
+|-------|---------|
+| **Description** | One Automaton with three independent pi-prompt tasks and a bare model name (`qwen3.8:27b`). The daemon qualifies the name with the pi-prompt default provider (`ollama/qwen3.8:27b`), leases a node for each task from the ollama-kind LLM entry that lists both nodes, makes the model resident on the leased node, then launches the worker there. Each node allows two sessions. |
+| **Steps** | 1. Register both nodes and the LLM entry. 2. Start the three tasks and read the capacity endpoint. 3. Compare each worker session with the node its lease names, and check the split across nodes. 4. With one node full, start one more task. 5. Stop and delete everything the check created. |
+| **Expected** | Three leases, each naming a node, no node pool above its limit of two. Each worker runs on the node its lease names. The work splits across the two nodes (two on one, one on the other). With one node full, a new task goes to the other node, and a task that finds both nodes full shows its waiting reason. |
+| **Actual** | Every lease named the second node. The local node never held a lease: loading the qualified model name on it was refused, the daemon dropped it for that attempt, and the work stayed on the second node. The third task waited with a reason that named the full node, and a task started afterwards did the same. |
+| **Result** | FAIL |
+
+### Setup
+
+- **Sandbox daemon, not production.** The binary is built from this tree (`go build -o bin/datawatch ./cmd/datawatch/`) and started with a config generated from `testdata/datawatch.yaml`, on loopback, with its own data directory. The production daemon on port 8443 was not touched and no service was restarted. The template's TLS port 18443 was already in use by a long-running listener this check did not start, so the sandbox daemon used the first free TLS port above it, 18543. The other listener was left alone.
+- **Config changes against the template**, made with `sed`: data and project directories point at a scratch directory; ports, token, DNS and webhook addresses are the sandbox values; the legacy `ollama:` block and the template's `compute_nodes:` list are removed (nodes are registered through the API below); `openwebui.url` points at the planning stub; under `autonomous:` the planning backend is `openwebui` with a stub model name and `max_concurrent_tasks: 5`; and two blocks are added, `pi: {enabled: true, binary: pi}` and `pi_prompt: {enabled: true, binary: pi, model: ollama/qwen3.8:27b}`.
+- **Local node.** The real Ollama server on this host, `http://127.0.0.1:11434`. Only the probe, `/api/ps` and the load request reached it, and the load request was refused, so no model was loaded or run on it.
+- **Second node.** No second Ollama endpoint is reachable from here: the host name used by the template (`johnnyjohnny`) resolves to this host and answers with the same server. The check therefore ran a stub from the scratch directory, on loopback port 19300, started as `python3 -I <scratch>/stub_ollama.py 19300 <scratch>/stub.log`. It answers `HEAD /` (the probe in `internal/compute/probe.go`), `GET /api/ps` (lists models a load request made resident), `GET /api/tags`, `POST /api/generate` (the load request; any model name is accepted and recorded as resident), and `POST /api/chat/completions` with a fixed plan of one story and three tasks. That last route also serves the planning call, through a second node record of kind `openai-compat` at the same address.
+- **Worker.** A fake `pi` earlier on the daemon's `PATH`. It exits at once for `--version`. Otherwise it reads the provider base URL from the per-session `models.json` the launch writes under `PI_CODING_AGENT_DIR`, appends `dir=<project directory> base=<url> args=...` to a log, and sleeps, so the lease stays held. Nothing was sent to any model.
+- **tmux.** A shim earlier on `PATH` pins every tmux call of the sandbox daemon to a socket this check owns (`./.placement-tmux.sock`, short because unix socket paths are limited in length). The daemon was started as `env -u TMUX -u TMUX_TMPDIR PATH="<scratch>/bin:$PATH" PI_CODING_AGENT_DIR=<scratch>/pi-agent TMPDIR=<scratch>/daemon-tmp bin/datawatch start --foreground --config <scratch>/config.yaml`. No tmux server of the operator was stopped; the check's own server exited when its last session ended.
+- **Notation.** `$TOKEN` is the sandbox bearer token. `<scratch>` is the scratch directory outside the repository. Long responses are trimmed to the fields that matter and say so.
+
+### Step 1: register both nodes and the LLM entry
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"place-local","kind":"ollama","address":"http://127.0.0.1:11434","scheduling_priority":80,"session_slots":2}' https://127.0.0.1:18543/api/compute/nodes
+HTTP 200
+{"name":"place-local","ok":true}
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"place-second","kind":"ollama","address":"http://127.0.0.1:19300","scheduling_priority":50,"session_slots":2}' https://127.0.0.1:18543/api/compute/nodes
+HTTP 200
+{"name":"place-second","ok":true}
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"place-ollama","kind":"ollama","compute_nodes":["place-local","place-second"]}' https://127.0.0.1:18543/api/llms
+HTTP 200
+{"name":"place-ollama","ok":true}
+```
+
+The pi-prompt backend entry exists already; its in-flight cap is raised so it is not the limit.
+
+```
+$ curl -sk -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"pi-prompt","kind":"pi-prompt","max_inflight":6}' https://127.0.0.1:18543/api/llms/pi-prompt
+HTTP 200
+{"name":"pi-prompt","ok":true}
+```
+
+Planning for the Automaton goes through the openwebui entry, so the stub gets a node record and the entry lists it:
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"place-planner","kind":"openai-compat","address":"http://127.0.0.1:19300","scheduling_priority":50}' https://127.0.0.1:18543/api/compute/nodes
+HTTP 200
+{"name":"place-planner","ok":true}
+```
+
+```
+$ curl -sk -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"openwebui","kind":"openwebui","model":"stub-planner","compute_nodes":["place-planner"]}' https://127.0.0.1:18543/api/llms/openwebui
+HTTP 200
+{"name":"openwebui","ok":true}
+```
+
+```
+$ curl -sk -X GET -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/compute/nodes
+HTTP 200
+{
+  "nodes": [
+    {
+      "name": "place-local",
+      "kind": "ollama",
+      "address": "http://127.0.0.1:11434",
+      "scheduling_priority": 80,
+      "session_slots": 2
+    },
+    {
+      "name": "place-planner",
+      "kind": "openai-compat",
+      "address": "http://127.0.0.1:19300",
+      "scheduling_priority": 50
+    },
+    {
+      "name": "place-second",
+      "kind": "ollama",
+      "address": "http://127.0.0.1:19300",
+      "scheduling_priority": 50,
+      "session_slots": 2
+    }
+  ]
+}
+```
+
+Capacity pools after registration (taken from the capacity endpoint before any task): `node:place-local` limit 2 held 0, `node:place-second` limit 2 held 0, `llm:pi-prompt` limit 6 held 0.
+
+Observed: PASS. Both nodes, the LLM entry that lists them, and the node pool limits are in place.
+
+### Step 2: three tasks on one Automaton, then the capacity endpoint
+
+The Automaton is created with the pi-prompt backend and the bare model name, then decomposed. The planning call goes to the stub, which returns three tasks.
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"spec":"Placement check: three independent worker tasks that do nothing.","project_dir":"<scratch>/projects/r0","backend":"pi-prompt","model":"qwen3.8:27b"}' https://127.0.0.1:18543/api/autonomous/prds
+HTTP 200
+{"id":"1b680001","spec":"Placement check: three independent worker tasks that do nothing.","project_dir":"<scratch>/projects/r0","git":{},"backend":"pi-prompt","model":"qwen3.8:27b","status":"draft","created_at":"2026-10-26T00:02:05.704715627-04:00","updated_at":"2026-10-26T00:02:05.704715667-04:00", ...
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/autonomous/prds/1b680001/decompose
+HTTP 202
+{"stream_url":"/api/autonomous/prds/1b680001/decompose/stream","task_id":"1b680001"}
+```
+
+```
+$ curl -sk -X GET -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/autonomous/prds/1b680001?detail=tasks
+HTTP 200
+{
+  "id": "1b680001",
+  "status": "needs_review",
+  "backend": "pi-prompt",
+  "tasks": [
+    {
+      "id": "1dbd0002",
+      "title": "Placement task one",
+      "status": ""
+    },
+    {
+      "id": "1dbd0003",
+      "title": "Placement task two",
+      "status": ""
+    },
+    {
+      "id": "1dbd0004",
+      "title": "Placement task three",
+      "status": ""
+    }
+  ]
+}
+```
+
+Each task gets its own project directory, because tasks that write to the same tree queue behind a per-tree lock, and the Automaton is allowed to run three tasks at once. The stub plan has no requirement list, so the plan coverage report is acknowledged by the operator before approval.
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"task_id":"1dbd0002","project_dir":"<scratch>/projects/r1"}' https://127.0.0.1:18543/api/autonomous/prds/1b680001/set_task_project_dir
+HTTP 200
+(response body omitted: the updated Automaton)
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"task_id":"1dbd0003","project_dir":"<scratch>/projects/r2"}' https://127.0.0.1:18543/api/autonomous/prds/1b680001/set_task_project_dir
+HTTP 200
+(response body omitted: the updated Automaton)
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"task_id":"1dbd0004","project_dir":"<scratch>/projects/r3"}' https://127.0.0.1:18543/api/autonomous/prds/1b680001/set_task_project_dir
+HTTP 200
+(response body omitted: the updated Automaton)
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"max_concurrent_tasks":3}' https://127.0.0.1:18543/api/autonomous/prds/1b680001/set_concurrency
+HTTP 200
+(response body omitted: the updated Automaton)
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"actor":"operator","note":"placement check plan comes from a fixed stub"}' https://127.0.0.1:18543/api/autonomous/prds/1b680001/plan_coverage/acknowledge
+HTTP 200
+(response body omitted: the updated Automaton)
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"actor":"operator","note":"placement check"}' https://127.0.0.1:18543/api/autonomous/prds/1b680001/approve
+HTTP 200
+(response body omitted: the updated Automaton)
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/autonomous/prds/1b680001/run
+HTTP 200
+(response body omitted: the updated Automaton)
+```
+
+Thirty seconds later:
+
+```
+$ curl -sk -X GET -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/capacity
+HTTP 200
+{
+  "pools": [
+    {
+      "name": "llm:pi-prompt",
+      "limit": 6,
+      "held": 2,
+      "holders": [
+        "1dbd0003",
+        "1dbd0004"
+      ],
+      "hold_nodes": [
+        "place-second",
+        "place-second"
+      ]
+    },
+    {
+      "name": "node:place-local",
+      "limit": 2,
+      "held": 0,
+      "holders": null,
+      "queue_depth": 0
+    },
+    {
+      "name": "node:place-second",
+      "limit": 2,
+      "held": 2,
+      "holders": [
+        "1dbd0003",
+        "1dbd0004"
+      ],
+      "hold_nodes": [
+        "place-second",
+        "place-second"
+      ],
+      "queue_depth": 0
+    }
+  ],
+  "leases": [
+    {
+      "holder": "1dbd0003",
+      "pools": [
+        "host",
+        "llm:pi-prompt",
+        "node:place-second"
+      ],
+      "node": "place-second",
+      "model": "ollama/qwen3.8:27b",
+      "session_id": "5cec"
+    },
+    {
+      "holder": "1dbd0004",
+      "pools": [
+        "host",
+        "llm:pi-prompt",
+        "node:place-second"
+      ],
+      "node": "place-second",
+      "model": "ollama/qwen3.8:27b",
+      "session_id": "103b"
+    }
+  ],
+  "waiting": [
+    {
+      "holder": "1dbd0002",
+      "reason": "waiting for nodes place-second: place-second: 2/2 engines in use, held by 1dbd0003,1dbd0004",
+      "nodes": [
+        "place-second"
+      ]
+    }
+  ],
+  "tasks": {
+    "waiting": [
+      {
+        "task_id": "1dbd0002",
+        "task_title": "Placement task one",
+        "readable_reason": "waiting for nodes place-second: place-second: 2/2 engines in use, held by 1dbd0003,1dbd0004"
+      }
+    ],
+    "running": [
+      {
+        "task_id": "1dbd0003",
+        "task_title": "Placement task two",
+        "node": "place-second",
+        "session_id": "5cec"
+      },
+      {
+        "task_id": "1dbd0004",
+        "task_title": "Placement task three",
+        "node": "place-second",
+        "session_id": "103b"
+      }
+    ]
+  }
+}
+(trimmed: the response also lists the other pools, usage figures, warnings, back-off and verifier counters)
+```
+
+Observed: PARTLY. Both leases name a node (`place-second`), and no node pool is above its limit (`node:place-second` held 2 of 2, `node:place-local` held 0 of 2). But only two of the three tasks hold a lease. The third, `1dbd0002`, waits with `nodes: [place-second]`, so the local node was not a candidate for it.
+
+### Step 3: each worker runs on the node its lease names, and the split
+
+The fake pi log, one line per launch (the long task text after `args=` is cut):
+
+```
+dir=r2 base=http://127.0.0.1:19300/v1 args=--print --mode text --approve --model ollama/qwen3.8:27b You are running non-interactively ...
+dir=r3 base=http://127.0.0.1:19300/v1 args=--print --mode text --approve --model ollama/qwen3.8:27b You are running non-interactively ...
+```
+
+`http://127.0.0.1:19300` is the address of `place-second`. Session `5cec` (project directory `r2`, task `1dbd0003`) and session `103b` (`r3`, task `1dbd0004`) were launched with that base URL, which is the node their leases name. The launch carried the qualified model name `ollama/qwen3.8:27b`, so a bare model name is qualified before the lease.
+
+Sessions listed by the daemon at that point:
+
+```
+$ curl -sk -X GET -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/sessions
+HTTP 200
+[
+  {
+    "id": "103b",
+    "name": "autonomous:Placement task three",
+    "state": "waiting_input"
+  },
+  {
+    "id": "5cec",
+    "name": "autonomous:Placement task two",
+    "state": "waiting_input"
+  }
+]
+```
+
+Observed: the first half PASSES, the second half FAILS. Each running worker is on the node its lease names. The work did not split: both workers are on the second node and none is on the local node. The local node's pool stayed at held 0 of 2.
+
+### Step 4: fill one node, start another task
+
+`place-second` is full (2 of 2). One more Automaton with one task is created, decomposed, trimmed to one task, given its own directory (a different directory from the first Automaton's, because two running Automata cannot share a tree), approved and run:
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"spec":"Placement check: one more worker task that does nothing.","project_dir":"<scratch>/projects/r5","backend":"pi-prompt","model":"qwen3.8:27b"}' https://127.0.0.1:18543/api/autonomous/prds
+HTTP 200
+{"id":"e7ec0001","spec":"Placement check: one more worker task that does nothing.","project_dir":"<scratch>/projects/r5","git":{},"backend":"pi-prompt","model":"qwen3.8:27b","status":"draft","created_at":"2026-10-26T00:04:48.049732565-04:00","updated_at":"2026-10-26T00:04:48.049732595-04:00","notify_ ...
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/autonomous/prds/e7ec0001/decompose
+HTTP 202
+{"stream_url":"/api/autonomous/prds/e7ec0001/decompose/stream","task_id":"e7ec0001"}
+```
+
+```
+$ curl -sk -X GET -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/autonomous/prds/e7ec0001?detail=tasks
+HTTP 200
+{
+  "id": "e7ec0001",
+  "status": "needs_review",
+  "backend": "pi-prompt",
+  "tasks": [
+    {
+      "id": "e9330002",
+      "title": "Placement task one",
+      "status": ""
+    },
+    {
+      "id": "e9330003",
+      "title": "Placement task two",
+      "status": ""
+    },
+    {
+      "id": "e9330004",
+      "title": "Placement task three",
+      "status": ""
+    }
+  ]
+}
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"story_id":"e9330001","task_id":"e9330003"}' https://127.0.0.1:18543/api/autonomous/prds/e7ec0001/remove_task
+HTTP 200
+(response body omitted)
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"story_id":"e9330001","task_id":"e9330004"}' https://127.0.0.1:18543/api/autonomous/prds/e7ec0001/remove_task
+HTTP 200
+(response body omitted)
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"task_id":"e9330002","project_dir":"<scratch>/projects/r4"}' https://127.0.0.1:18543/api/autonomous/prds/e7ec0001/set_task_project_dir
+HTTP 200
+(response body omitted)
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"actor":"operator","note":"placement check plan comes from a fixed stub"}' https://127.0.0.1:18543/api/autonomous/prds/e7ec0001/plan_coverage/acknowledge
+HTTP 200
+(response body omitted)
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"actor":"operator","note":"placement check"}' https://127.0.0.1:18543/api/autonomous/prds/e7ec0001/approve
+HTTP 200
+(response body omitted)
+```
+
+```
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/autonomous/prds/e7ec0001/run
+HTTP 200
+(response body omitted)
+```
+
+Twenty-five seconds later:
+
+```
+$ curl -sk -X GET -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/capacity
+HTTP 200
+{
+  "pools": [
+    {
+      "name": "llm:pi-prompt",
+      "limit": 6,
+      "held": 2,
+      "holders": [
+        "1dbd0003",
+        "1dbd0004"
+      ],
+      "hold_nodes": [
+        "place-second",
+        "place-second"
+      ]
+    },
+    {
+      "name": "node:place-local",
+      "limit": 2,
+      "held": 0,
+      "holders": null,
+      "queue_depth": 0
+    },
+    {
+      "name": "node:place-second",
+      "limit": 2,
+      "held": 2,
+      "holders": [
+        "1dbd0003",
+        "1dbd0004"
+      ],
+      "hold_nodes": [
+        "place-second",
+        "place-second"
+      ],
+      "queue_depth": 0
+    }
+  ],
+  "leases": [
+    {
+      "holder": "1dbd0003",
+      "pools": [
+        "host",
+        "llm:pi-prompt",
+        "node:place-second"
+      ],
+      "node": "place-second",
+      "model": "ollama/qwen3.8:27b",
+      "session_id": "5cec"
+    },
+    {
+      "holder": "1dbd0004",
+      "pools": [
+        "host",
+        "llm:pi-prompt",
+        "node:place-second"
+      ],
+      "node": "place-second",
+      "model": "ollama/qwen3.8:27b",
+      "session_id": "103b"
+    }
+  ],
+  "waiting": [
+    {
+      "holder": "1dbd0002",
+      "reason": "waiting for nodes place-second: place-second: 2/2 engines in use, held by 1dbd0003,1dbd0004",
+      "nodes": [
+        "place-second"
+      ]
+    },
+    {
+      "holder": "e9330002",
+      "reason": "waiting for nodes place-second: place-second: 2/2 engines in use, held by 1dbd0003,1dbd0004",
+      "nodes": [
+        "place-second"
+      ]
+    }
+  ],
+  "tasks": {
+    "waiting": [
+      {
+        "task_id": "e9330002",
+        "task_title": "Placement task one",
+        "readable_reason": "waiting for nodes place-second: place-second: 2/2 engines in use, held by 1dbd0003,1dbd0004"
+      },
+      {
+        "task_id": "1dbd0002",
+        "task_title": "Placement task one",
+        "readable_reason": "waiting for nodes place-second: place-second: 2/2 engines in use, held by 1dbd0003,1dbd0004"
+      }
+    ],
+    "running": [
+      {
+        "task_id": "1dbd0003",
+        "task_title": "Placement task two",
+        "node": "place-second",
+        "session_id": "5cec"
+      },
+      {
+        "task_id": "1dbd0004",
+        "task_title": "Placement task three",
+        "node": "place-second",
+        "session_id": "103b"
+      }
+    ]
+  }
+}
+(trimmed: the response also lists the other pools, usage figures, warnings, back-off and verifier counters)
+```
+
+The daemon raised an error alert for the local node:
+
+```
+$ curl -sk -X GET -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/alerts
+HTTP 200
+{
+  "alerts": [
+    {
+      "level": "error",
+      "title": "Model ollama/qwen3.8:27b failed to load on node place-local",
+      "body": "Node place-local could not make ollama/qwen3.8:27b resident: node place-local could not load ollama/qwen3.8:27b: ollama /api/generate: HTTP 404: {\"error\":\"model 'ollama/qwen3.8:27b' not found\"}. The task moves to another node of this LLM entry, or fails when no other node is left."
+    }
+  ]
+}
+(trimmed: only the error alert is shown)
+```
+
+The same refusal reproduced directly against the local Ollama server, without loading anything. The qualified name is refused and the bare name is known:
+
+```
+$ curl -s http://127.0.0.1:11434/api/show -d '{"model":"ollama/qwen3.8:27b"}'
+{"error":"model 'ollama/qwen3.8:27b' not found"}
+$ curl -s http://127.0.0.1:11434/api/show -d '{"model":"qwen3.8:27b"}' | head -c 120
+{"thinking":{"values":[false,"low","medium","xhigh"],"default":"medium"},"license":"...
+```
+
+Observed: the waiting reason PASSES, the placement FAILS. The new task, `e9330002`, did not go to `place-local`. The daemon tried that node first (it is the least loaded), the model load there was refused as shown, the node was dropped for that attempt, and the task waits with `waiting for nodes place-second: place-second: 2/2 engines in use, held by 1dbd0003,1dbd0004`. The reason shows on the capacity endpoint in `waiting` and in `tasks.waiting`.
+
+### Step 5: stop and delete what the check created
+
+The cleanup ran in two passes. The first pass deleted one Automaton, deleted the LLM entry and the three node records, and ended sessions by hand while two Automata were still running. That was the wrong order: deleting a running Automaton is refused (`prd ... is running; cancel before deleting`), and ending a worker session moved its task on to verification, which started verifier sessions. The second pass cancelled the two running Automata, deleted all three with `?hard=true` (which also ends their sessions), and killed and deleted every session still listed. Three Automata were created in all (`1b680001` for steps 2 and 3, `85aa0001` for the first attempt at step 4, which the tree guard refused at run time, and `e7ec0001` for step 4); all three are deleted. Selected commands and their responses:
+
+```
+$ curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/autonomous/prds/1b680001?hard=true
+HTTP 200
+{"id":"1b680001","kill_errors":{"103b":"session 103b not found","5cec":"session 5cec not found"},"killed_session_ids":["5cec","103b"],"killed_sessions":2,"memory_strategy":"","status":"deleted"}
+```
+
+```
+$ curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/autonomous/prds/e7ec0001?hard=true
+HTTP 200
+{"id":"e7ec0001","kill_errors":{"dw-e2e-test-3ffb":"session dw-e2e-test-3ffb not found"},"killed_session_ids":["dw-e2e-test-3ffb"],"killed_sessions":1,"memory_strategy":"","status":"deleted"}
+```
+
+```
+$ curl -sk -X GET -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/autonomous/prds
+HTTP 200
+{"prds":[],"total":0}
+```
+
+```
+$ curl -sk -X GET -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/sessions
+HTTP 200
+[]
+```
+
+```
+$ curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/llms/place-ollama
+HTTP 200
+{"name":"place-ollama","ok":true}
+```
+
+```
+$ curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/compute/nodes/place-local
+HTTP 200
+{"name":"place-local","ok":true}
+```
+
+```
+$ curl -sk -X GET -H "Authorization: Bearer $TOKEN" https://127.0.0.1:18543/api/compute/nodes
+HTTP 200
+{"nodes":[]}
+```
+
+The capacity endpoint then listed no lease, no waiting request and no running task. The pi-prompt and openwebui entries were put back as they were (`max_inflight` 0; no node list). The sandbox daemon (PID 1483195) and the stub (PID 1483194) were stopped by those PIDs and the sandbox ports were closed; port 8443 was still listening, untouched. The check's own tmux socket had no server left and the socket file was removed. Scratch files live outside the repository.
+
+Cleanup done: PASS
+
+### Notes
+
+- **Cause of the failure (not fixed here).** The node loader in `cmd/datawatch/capacity_wiring.go` (`nodeLoader`) asks the leased node to load the model by the provider-qualified name `ollama/qwen3.8:27b`, which the lease also carries. The stub accepts any name, so it loaded; real Ollama knows the model only as `qwen3.8:27b` and answers 404. That drops the local node on every attempt, so a two-node entry with one real node behaves like a one-node entry. The fix belongs to the model qualification and loading code, not to this check.
+- **Setup issues found and corrected before the recorded run**, so they are not part of the result: a unix socket path in the scratch directory was too long for tmux (`create tmux session: exit status 1`), which is why the socket sits in the worktree root; the first stub did not report a loaded model on `/api/ps`, so the load waited forever; and the first attempt at step 4 shared a project tree with the first Automaton and was refused at run time. The daemon and data directory were replaced and steps 1 and 2 re-run from the start, and the step 4 Automaton was re-created with a different directory.
+- **What was not tested.** The case where both nodes accept the qualified name was not run, so the split itself (two on one node, one on the other) was not observed. A model name that already names a provider was not compared with a bare one.
+
+Result: FAIL. Steps 1 and 5 were observed and the waiting reason in step 4 was observed, but steps 2, 3 and 4 were not met: all workers landed on the second node and none on the local node, because the local node refused to load the provider-qualified model name `ollama/qwen3.8:27b` (HTTP 404).
