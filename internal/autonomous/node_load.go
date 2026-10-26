@@ -103,3 +103,22 @@ func nodeLeft(choices []capacity.NodeChoice, excluded []string) bool {
 	}
 	return false
 }
+
+// requireLeasedNode refuses to start a pi-family worker that holds a capacity
+// lease naming no node while its LLM entry lists compute nodes: with no node
+// the session would start on pi's own default endpoint instead of on a node of
+// the entry. The candidate list comes from the resolver the lease was
+// requested through. With capacity off, no lease, a held node, another
+// backend, or an entry that lists no nodes, it returns nil.
+func (m *Manager) requireLeasedNode(t *Task, backend, model, heldNode string) error {
+	if heldNode != "" || !servesProviderModels(backend) || !m.capacityOn() {
+		return nil
+	}
+	if led := m.Capacity(); led == nil || led.LeaseOf(t.ID) == nil {
+		return nil
+	}
+	if fn := m.CapacityChoices(); fn == nil || len(fn(backend, model)) == 0 {
+		return nil
+	}
+	return fmt.Errorf("task %s not spawned: %s worker on model %s holds capacity but no compute node was leased, and its LLM entry lists compute nodes", t.ID, backend, model)
+}

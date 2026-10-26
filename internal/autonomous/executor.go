@@ -1382,6 +1382,18 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 			// The node the lease was granted on decides where the worker runs.
 			heldNode := m.heldNode(t.ID)
+			if nerr := m.requireLeasedNode(t, backend, model, heldNode); nerr != nil {
+				log.Printf("[autonomous] prd=%s task=%s no node leased, not spawning: %v", prd.ID, t.ID, nerr)
+				oldStatus := t.Status
+				m.store.WithLock(func() {
+					t.Status = TaskFailed
+					t.Error = nerr.Error()
+				})
+				if m.store.SaveTask(t) == nil {
+					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				}
+				return nerr
+			}
 			// BL428 §3a — tree lock after capacity, before spawn: a second
 			// writer on the same canonical tree waits here (visible as a
 			// waiting task with a "tree lock" reason), and is released by
