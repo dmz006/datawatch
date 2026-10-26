@@ -60,6 +60,7 @@ import (
 	"github.com/dmz006/datawatch/internal/shutdowncause"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tooling"
+	"github.com/dmz006/datawatch/internal/usagecalc"
 	"github.com/dmz006/datawatch/internal/vision"
 	"github.com/dmz006/datawatch/internal/websearch"
 )
@@ -340,6 +341,10 @@ type Server struct {
 	// created by (s *Server) usageSeries(); see usage_readings.go.
 	usageSeriesOnce     sync.Once
 	usageSeriesCacheVal *usageSeriesCache
+
+	// usageCalc is the usage-calculator advice service (nil = not wired);
+	// see usage_calculator_advice.go.
+	usageCalc *usagecalc.Service
 
 	// v7.0.0 S2 — LLM-inference registry + dispatcher (nil when disabled).
 	inferenceReg   *inference.Registry

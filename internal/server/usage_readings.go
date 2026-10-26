@@ -41,6 +41,9 @@ type usageSeriesCache struct {
 	keeper string
 	ready  bool
 	series *usagecalc.SharedSeries
+	// store is this daemon's local record behind the shared series (decision 6:
+	// the typed remaining-work figure is daemon-local). Built with the series.
+	store *usagecalc.Store
 }
 
 func (s *Server) usageSeriesCache() *usageSeriesCache {
@@ -60,17 +63,18 @@ func (s *Server) usageSeries() (*usagecalc.SharedSeries, error) {
 	if cache.ready && cache.keeper == keeper {
 		return cache.series, nil
 	}
-	series, err := s.buildUsageSeries(keeper)
+	series, store, err := s.buildUsageSeries(keeper)
 	if err != nil {
 		return nil, fmt.Errorf("usage series unavailable: %v", err)
 	}
 	cache.series = series
+	cache.store = store
 	cache.keeper = keeper
 	cache.ready = true
 	return series, nil
 }
 
-func (s *Server) buildUsageSeries(keeper string) (*usagecalc.SharedSeries, error) {
+func (s *Server) buildUsageSeries(keeper string) (*usagecalc.SharedSeries, *usagecalc.Store, error) {
 	dataDir := ""
 	if s.cfg != nil {
 		dataDir = s.cfg.DataDir
@@ -82,9 +86,9 @@ func (s *Server) buildUsageSeries(keeper string) (*usagecalc.SharedSeries, error
 	}
 	store, err := usagecalc.OpenStore(dataDir, time.Now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return usagecalc.NewSharedSeries(store, keeper, s.usagePeerLookup), nil
+	return usagecalc.NewSharedSeries(store, keeper, s.usagePeerLookup), store, nil
 }
 
 // usagePeerLookup resolves a registered peer's REST API, the PeerLookup seam the

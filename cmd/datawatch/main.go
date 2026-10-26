@@ -6152,6 +6152,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// into the ledger above. Idle (no HTTP, no blocking) unless a peer
 			// opted in AND a match was confirmed by the operator.
 			wireFingerprint(ctx, cfg, httpServer, capLedger)
+			// Usage calculator advice service (design decision 6): composes the live
+			// config, the shared readings series and the daemon-local typed figure,
+			// and prices the finish-early estimate from the daemon's queued tasks.
+			// Serves GET /api/usage/advice and PUT/DELETE /api/usage/remaining-work.
+			if err := httpServer.AttachUsageCalculator(usagecalcQueue{m: amgr}); err != nil {
+				log.Printf("[usage] wire calculator advice service: %v", err)
+			}
 			// Pin keepers re-pin each pinned compute node's model after ollama drops it.
 			stopPinKeepers := startPinKeepers(ctx, cfg, computeReg, alertStore, capLedger)
 			go func() {
