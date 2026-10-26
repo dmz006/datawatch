@@ -65,6 +65,8 @@ func TestJudgeConfigSurfaceParity(t *testing.T) {
 		{"implementation.md", "docs/implementation.md", []string{"`autonomous.judge_policy`", "`autonomous.judge_timeout_seconds`", judgeRoutingWording, "`needs_review`"}},
 		{"api/autonomous.md", "docs/api/autonomous.md", []string{"judge_policy:", "judge_timeout_seconds:", judgeRoutingWording}},
 		{"api/openapi.yaml", "docs/api/openapi.yaml", []string{"`judge_policy`", "`judge_timeout_seconds`", judgeRoutingWording}},
+		{"mcp.md", "docs/mcp.md", []string{"`judge_policy`", "`judge_timeout_seconds`", judgeRoutingWording, "`needs_review`"}},
+		{"api-mcp-mapping.md", "docs/api-mcp-mapping.md", []string{"`judge_policy`", "`judge_timeout_seconds`", judgeRoutingWording}},
 		{"operations.md", "docs/operations.md", []string{"`autonomous.judge_timeout_seconds`", "`judge-timeout`", "`needs_review`"}},
 	}
 	for _, sf := range surfaces {
