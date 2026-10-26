@@ -28,7 +28,7 @@ TMUX_RESTARTS, TMUX_SINCE = "3", "Tue 2026-10-20 18:46:38 EDT"
 SILENT_MIN = 60
 # Deliberately held PRDs (operator or build manager decision, with the reason in the registry).
 ACKED_RUNS = {40316827946, 40293597613, 40320408404, 40366394552, 40366382818}  # owasp-zap: only the "attach reports to release" step failed on a GitHub API rate limit; the scan passed (registry row 209); 40320408404 failed the version bump check on a script-only commit, fixed by exempting this script in 9.19.3; 40366394552 and 40366382818 are CodeQL Analyze (actions) runs that end red at the result upload with no error shown, tracked in BL625 (row 212)
-IGNORE = {"58aa0001", "db4b0001", "99c20001", "5a390001"}  # 58aa0001 BL598 held (row 180); db4b0001 BL622 draft, not decomposed while Claude use is over the pace line (row 209); 99c20001 BL623 draft, decompose at the next hourly tick if the budget allows (row 210)
+IGNORE = {"58aa0001", "db4b0001", "99c20001", "5a390001", "fdd80001"}  # 58aa0001 BL598 held (row 180); db4b0001 BL622 draft, not decomposed while Claude use is over the pace line (row 209); 99c20001 BL623 draft, decompose at the next hourly tick if the budget allows (row 210)
 
 
 def sh(cmd, timeout=40):
@@ -153,6 +153,19 @@ def main():
         findings.append("IDLE Claude lane while %d PRD(s) are needs_review, approved or draft" % queued_runnable)
     if pi.get("limit") and pi.get("held", 0) < pi.get("limit", 0) and (waiting or queued_runnable):
         findings.append("IDLE pi lane (%s/%s held) with %d waiting and %d queued PRDs" % (pi.get("held"), pi.get("limit"), len(waiting), queued_runnable))
+
+    # node balancing invariants (one engine per node; every running pi worker holds a node lease; no idle node with waiters)
+    for name, pool in pools.items():
+        if name.startswith("node:") and pool.get("limit") and pool.get("held", 0) > pool["limit"]:
+            findings.append("NODE %s holds %s sessions against a limit of %s (balancing broken)" % (name, pool["held"], pool["limit"]))
+    for l in cap.get("leases") or []:
+        lp = l.get("pools") or []
+        if "llm:pi-prompt" in lp and not any(x.startswith("node:") for x in lp):
+            findings.append("LEASE %s holds a pi-prompt slot with no node lease" % l.get("holder"))
+    idle_nodes = [n for n, pool in pools.items() if n.startswith("node:") and pool.get("limit") and pool.get("held", 0) == 0 and n not in ("node:datawatch-openai", "node:verdict")]
+    node_waiters = [w for w in waiting if "waiting for node" in str(w.get("reason", ""))]
+    if idle_nodes and node_waiters:
+        findings.append("PLACEMENT idle %s while %d request(s) wait for a busy node" % (",".join(idle_nodes), len(node_waiters)))
 
     # main checkout
     dirty = [l for l in sh("git -C %s status --short" % BASE).splitlines() if not l.startswith("??")]
