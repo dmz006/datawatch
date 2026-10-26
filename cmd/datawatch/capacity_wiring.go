@@ -649,9 +649,11 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	autonomousBudget.PeerBreakdown = peerBudget.Breakdown
 	// Load the budget file now so Blocked never reads it under the ledger lock.
 	autonomousBudget.Preload()
+	nodeHealth := newNodeHealthView()
 	led := capacity.New(capacity.Options{
 		External:     external,
 		Backpressure: backpressure,
+		NodeHealthy:  nodeHealth.healthy,
 		AutonomousBackpressure: composeBackpressure(
 			backoffBackpressure(autonomousBackoff),
 			budgetBackpressure(autonomousBudget),
@@ -902,6 +904,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		}
 		if reg := httpServer.ComputeRegistry(); reg != nil {
 			nodes := reg.List()
+			nodeHealth.refresh(nodes)
 			hosting := map[string]bool{}
 			for _, entryNodes := range engineNodes(httpServer.InferenceRegistry()) {
 				for _, node := range entryNodes {

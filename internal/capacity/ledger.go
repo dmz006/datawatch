@@ -52,9 +52,12 @@ type Request struct {
 	Pools    []string // all must have room (all-or-nothing)
 	Node     string   // primary compute node, for model affinity
 	// NodeChoices lists compute nodes that can serve the request. With two or
-	// more entries the ledger picks the node at dispatch time: highest Priority
-	// first (ties keep list order), skipping ExcludeNodes, the first whose
-	// node:<name> pool passes the same checks as every pool in Pools. The lease
+	// more entries the ledger picks the node at dispatch time: least loaded
+	// first (the node pool's used count over its limit, an unlimited pool
+	// counting as 0), ties to the higher Priority, then list order. It skips
+	// ExcludeNodes and nodes Options.NodeHealthy reports unhealthy, and takes
+	// the first whose node:<name> pool passes the same checks as every pool in
+	// Pools. The lease
 	// then carries node:<name> in Pools and sets Lease.Node. With none or one
 	// entry the field is ignored and the caller keeps node:<name> in Pools and
 	// sets Node as before.
@@ -68,8 +71,8 @@ type Request struct {
 	Interactive bool
 }
 
-// NodeChoice is one candidate compute node for a request; a higher Priority is
-// tried first.
+// NodeChoice is one candidate compute node for a request. Priority breaks a
+// tie between nodes that are equally loaded: the higher one is tried first.
 type NodeChoice struct {
 	Name     string
 	Priority int
@@ -78,8 +81,9 @@ type NodeChoice struct {
 // multiNode reports whether the ledger chooses the node for this request.
 func (r Request) multiNode() bool { return len(r.NodeChoices) >= 2 }
 
-// candidates returns the nodes the ledger may pick, in try order: Priority
-// descending, ties in list order, excluded and duplicate names dropped.
+// candidates returns the nodes the ledger may pick, excluded and duplicate
+// names dropped, in Priority-descending order (ties in list order). That is the
+// order of equally loaded nodes; Ledger.rankedLocked puts load ahead of it.
 func (r Request) candidates() []NodeChoice {
 	skip := make(map[string]bool, len(r.ExcludeNodes))
 	for _, n := range r.ExcludeNodes {
@@ -122,7 +126,8 @@ func (r Request) allPools() []string {
 	return out
 }
 
-// candidateNames lists the eligible candidate node names in try order.
+// candidateNames lists the eligible candidate node names in priority order,
+// without load; it is for places that hold no ledger state.
 func (r Request) candidateNames() []string {
 	var out []string
 	for _, c := range r.candidates() {
@@ -205,7 +210,7 @@ func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) 
 // Options tune dispatch behaviour.
 //
 // LOCK RULE: every function in Options (External, Backpressure,
-// AutonomousBackpressure, HeldBackpressure) is invoked while the ledger lock is
+// AutonomousBackpressure, HeldBackpressure, NodeHealthy) is invoked while the ledger lock is
 // held. Each must therefore be a fast in-memory read: it must never call back
 // into the ledger (Snapshot, Held, LeaseOf, Limit, Acquire and the like, which
 // would deadlock) or into the autonomous manager, never do network, file or
@@ -232,6 +237,11 @@ type Options struct {
 	// by SetLimit (l.limits), passed as arguments so the function never reads
 	// the ledger back. Called under the lock, so the lock rule applies.
 	HeldBackpressure func(pool string, held, limit int) (blocked bool, reason string)
+	// NodeHealthy reports whether a compute node may take new work. A candidate
+	// of a multi-node request for which it returns false is skipped, as an
+	// excluded node is, and the waiting reason names it as unhealthy. Nil means
+	// every node is healthy. Called under the lock: an in-memory read only.
+	NodeHealthy func(name string) bool
 	// AgeOverride: waiters older than this jump ahead of model affinity.
 	AgeOverride time.Duration
 	// PollInterval is how often waiters re-check cancellation and
@@ -360,25 +370,61 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 	return ""
 }
 
+// rankedLocked returns the nodes req may be placed on, in try order: least
+// loaded first, ties to the higher Priority, then list order. A node's load is
+// its pool's used count (leases plus Options.External, the figure the block
+// check uses) over its limit; a pool with no limit counts as 0.
+func (l *Ledger) rankedLocked(req Request) []NodeChoice {
+	out := req.candidates()
+	used := make(map[string]int, len(out))
+	limit := make(map[string]int, len(out))
+	for _, c := range out {
+		pool := "node:" + c.Name
+		if lim := l.limits[pool]; lim > 0 {
+			used[c.Name], limit[c.Name] = l.usedLocked(pool), lim
+		} else {
+			used[c.Name], limit[c.Name] = 0, 1
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i].Name, out[j].Name
+		// used[a]/limit[a] < used[b]/limit[b], without division.
+		if x, y := used[a]*limit[b], used[b]*limit[a]; x != y {
+			return x < y
+		}
+		return out[i].Priority > out[j].Priority
+	})
+	return out
+}
+
 // resolveLocked decides where req would run now. For an ordinary request it is
 // blockReasonLocked on req itself. For a request with NodeChoices it returns
-// the request bound to the first candidate node that passes every check
-// together with Pools, and an empty reason; when none fits it returns req
-// unchanged and a reason naming every candidate and what blocks it.
+// the request bound to the first healthy candidate node, least loaded first,
+// that passes every check together with Pools, and an empty reason; when none
+// fits it returns req unchanged and a reason naming every candidate and what
+// blocks it. The order and the block check read the same usage figures under
+// one lock hold, so the node chosen is one the check passed.
 func (l *Ledger) resolveLocked(req Request) (Request, string) {
 	if !req.multiNode() {
 		return req, l.blockReasonLocked(req)
 	}
-	names := req.candidateNames()
-	if len(names) == 0 {
+	ranked := l.rankedLocked(req)
+	if len(ranked) == 0 {
 		var all []string
 		for _, c := range req.NodeChoices {
 			all = append(all, c.Name)
 		}
 		return req, fmt.Sprintf("no eligible node among %s: all excluded", strings.Join(all, ", "))
 	}
-	var parts []string
-	for _, name := range names {
+	names := make([]string, 0, len(ranked))
+	parts := make([]string, 0, len(ranked))
+	for _, c := range ranked {
+		name := c.Name
+		names = append(names, name)
+		if l.opt.NodeHealthy != nil && !l.opt.NodeHealthy(name) {
+			parts = append(parts, name+": unhealthy")
+			continue
+		}
 		bound := req.withNode(name)
 		why := l.blockReasonLocked(bound)
 		if why == "" {
