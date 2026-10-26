@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### A pi backend's node list is read from its own LLM entry
+
+- Next patch above main: a `pi` or `pi-prompt` backend takes its candidate nodes from its own LLM entry `compute_nodes`, ordered with load first and `scheduling_priority` as the tiebreak. The provider-kind lookup applies only to backends without their own node list.
+- `scripts/check-waiter-nodes.sh` reports the node each waiting request is bound to and exits 2 when every waiter of a multi-node backend sits on one node while another candidate is free.
+- Docs: [`automata-capacity.md`](docs/howto/automata-capacity.md) and [`compute-nodes.md`](docs/howto/compute-nodes.md) describe the node choice and how to read the script's output.
+
 ### The LLM entry's compute node list decides where local-model work runs
 
 - The `compute_nodes` list on an LLM entry now decides which nodes a local-model worker, verifier and judge may run on. Each listed node that is known and serves the model is a candidate.

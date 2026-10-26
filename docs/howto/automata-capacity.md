@@ -141,11 +141,26 @@ the entry starts is placed on one node of the pool, and that node's
 `node:<name>` pool carries the worker's lease. An entry with one node behaves
 exactly as before: that node takes the lease and nothing is chosen.
 
-**Which node is picked.** The ledger takes the node with the highest
-scheduling priority that has a free slot. A node's priority is its
-`scheduling_priority` (0 to 100, default 50). Nodes of equal priority are tried
-in the order the list gives them. A node with no free slot is passed over, and
-the next one is tried.
+**Which node is picked.** A `pi` or `pi-prompt` backend takes its candidate
+nodes from its own LLM entry's `compute_nodes` list. The ledger orders them with
+load first: the node holding the fewest sessions relative to its limit goes
+first, and `scheduling_priority` (0 to 100, default 50, higher first) only
+breaks a tie, then list order. A node with no free slot is passed over, and the
+next one is tried. The provider-kind lookup (nodes found by the model's
+provider, such as `ollama`) applies only to backends that have no node list of
+their own. See [How a pi-family worker picks its
+node](compute-nodes.md#how-a-pi-family-worker-picks-its-node).
+
+**Checking where waiters sit.** `scripts/check-waiter-nodes.sh` reads
+`GET /api/capacity` (through `datawatch capacity --json` when the CLI is
+installed and `DATAWATCH_URL` is unset, else curl with `DATAWATCH_URL` and
+`DATAWATCH_TOKEN`). It prints one line per waiting request: holder, backend,
+model, bound node and candidate nodes, then a count of waiters per node. A
+`node=-` line is not yet bound: the daemon picks among several candidates only
+at dispatch, and the line lists them. The script exits `2` when, for a
+multi-node backend, every waiter is bound to one node while another candidate
+node has free capacity; that is the symptom to investigate. It exits `1` when
+the daemon cannot be read, and `0` otherwise.
 
 **Slots per node.** A node that hosts a local engine (`pi`, `pi-prompt`,
 `ollama`, `opencode`, `opencode-acp`) has a slot count: how many workers it

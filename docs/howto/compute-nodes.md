@@ -720,6 +720,8 @@ A worker on the `pi` or `pi-prompt` backend runs on one of the compute nodes lis
 
 **Least-loaded healthy node wins.** Each candidate node has a pool with a session limit (the node's `session_slots`). A node's load is the sessions it holds, counting sessions another part of the system already runs on it, divided by that limit. The worker goes to the node with the lowest load. A node with no limit counts as unloaded. Only when two nodes are equally loaded does `scheduling_priority` decide: the higher value goes first, and equal priorities keep the order of the entry's `compute_nodes` list.
 
+**Where the candidates come from.** The candidates are the nodes in the backend's own LLM entry `compute_nodes`. The provider-kind lookup (nodes matched by the model's provider) is used only for a backend that has no node list of its own. To see where waiting requests are bound, run `scripts/check-waiter-nodes.sh`: each line shows holder, backend, model, bound node and candidates, and `node=-` means the daemon has not yet chosen among several candidates. Exit status `2` means all waiters of a multi-node backend sit on one node while another candidate is free.
+
 For example, with `gpu-box-1` (priority 80, 1 of 2 sessions in use) and `gpu-box-2` (priority 50, 0 of 2 in use), the next worker goes to `gpu-box-2`. Once both hold one session, the load is equal and `gpu-box-1` wins on priority.
 
 **A full node is passed over.** A node whose limit is reached cannot take the worker, so the ledger tries the next node in load order. If every candidate is full, the worker waits and is placed on the first node that frees a slot.
