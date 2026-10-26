@@ -1,7 +1,7 @@
 # Silent first tool call: restart-matrix states
 
 This matrix covers the start-confirm tracker in the autonomous wait loop
-(`cmd/datawatch/session_start_tracker.go`). The tracker decides whether a
+(`internal/autonomous/start_tracker.go`). The tracker decides whether a
 claude-code worker that was handed its task and sits in `waiting_input` has
 started, and ends it when the silence exceeds the bound. The busy probe that
 keeps the session state right is a separate mechanism; its findings are in
