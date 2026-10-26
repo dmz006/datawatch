@@ -27,7 +27,7 @@ MODEL = "qwen3.8-64k"
 TMUX_RESTARTS, TMUX_SINCE = "3", "Tue 2026-10-20 18:46:38 EDT"
 SILENT_MIN = 60
 # Deliberately held PRDs (operator or build manager decision, with the reason in the registry).
-ACKED_RUNS = {40316827946, 40293597613}  # owasp-zap: only the "attach reports to release" step failed on a GitHub API rate limit; the scan passed (registry row 209)
+ACKED_RUNS = {40316827946, 40293597613, 40320408404}  # owasp-zap: only the "attach reports to release" step failed on a GitHub API rate limit; the scan passed (registry row 209); 40320408404 failed the version bump check on a script-only commit, fixed by exempting this script in 9.19.3
 IGNORE = {"58aa0001", "db4b0001"}  # 58aa0001 BL598 held (row 180); db4b0001 BL622 draft, not decomposed while Claude use is over the pace line (row 209)
 
 
