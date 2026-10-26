@@ -40,7 +40,7 @@ func TestAdoptedWorkerFirstTurnInsideLimitRunsToCompletion(t *testing.T) {
 	paneCalls, probes := 0, 0
 	finished := make(chan struct{})
 	var killed []string
-	sc := &adoptedStartConfirm{
+	sc := &adoptedStartProbe{
 		paneFn: func(string) (string, error) {
 			paneCalls++
 			// Probe 2 is 20s after adoption, inside the 60s limit.
@@ -91,7 +91,7 @@ func TestAdoptedWorkerNeverStartedIsEndedPastLimitWithPaneTail(t *testing.T) {
 	clock := &adoptStepClock{at: startOutcomesBase, step: adoptedTestStep}
 	pane := startOutcomesSilentPane(25)
 	var killed []string
-	sc := &adoptedStartConfirm{
+	sc := &adoptedStartProbe{
 		paneFn:   func(string) (string, error) { return pane, nil },
 		stateFn:  func(string) string { return "waiting_input" },
 		killFn:   func(id, _, _ string) error { killed = append(killed, id); return nil },
@@ -121,8 +121,8 @@ func TestAdoptedWorkerNeverStartedIsEndedPastLimitWithPaneTail(t *testing.T) {
 	for i := 6; i <= 25; i++ {
 		wantTail = append(wantTail, fmt.Sprintf("pane row %02d", i))
 	}
-	if !reflect.DeepEqual(sc.failureTail, wantTail) {
-		t.Fatalf("failure tail = %v\nwant the last 20 pane rows %v", sc.failureTail, wantTail)
+	if !reflect.DeepEqual(sc.failureTail(), wantTail) {
+		t.Fatalf("failure tail = %v\nwant the last 20 pane rows %v", sc.failureTail(), wantTail)
 	}
 }
 
@@ -136,7 +136,7 @@ func TestAdoptedWorkerBusyUpToRestartIsNotChargedForDowntime(t *testing.T) {
 	lastLife := startOutcomesBase.Add(-10 * time.Second)
 	startedAt := startOutcomesBase.Add(-time.Hour)
 	var killed []string
-	sc := &adoptedStartConfirm{
+	sc := &adoptedStartProbe{
 		paneFn:     func(string) (string, error) { return adoptedTestPaneSilent, nil },
 		stateFn:    func(string) string { return "waiting_input" },
 		killFn:     func(id, _, _ string) error { killed = append(killed, id); return nil },
@@ -168,7 +168,7 @@ func TestAdoptedWorkerWithoutEvidenceFailsAtOnceOnOldLaunchTime(t *testing.T) {
 	clock := &adoptStepClock{at: startOutcomesBase, step: adoptedTestStep}
 	startedAt := startOutcomesBase.Add(-time.Hour)
 	var killed []string
-	sc := &adoptedStartConfirm{
+	sc := &adoptedStartProbe{
 		paneFn:     func(string) (string, error) { return adoptedTestPaneSilent, nil },
 		stateFn:    func(string) string { return "waiting_input" },
 		killFn:     func(id, _, _ string) error { killed = append(killed, id); return nil },

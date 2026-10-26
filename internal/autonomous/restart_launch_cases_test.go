@@ -137,7 +137,7 @@ func TestRestartLaunchCases(t *testing.T) {
 		if last != 70*time.Second || prev != 60*time.Second {
 			t.Fatalf("bound fired at %s from adoption (previous probe %s); want 70s, with 60s not yet past the %s limit", last, prev, adoptedTestLimit)
 		}
-		if len(sc.failureTail) == 0 {
+		if len(sc.failureTail()) == 0 {
 			t.Fatal("failure tail not recorded for the task")
 		}
 	})
