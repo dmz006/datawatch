@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -51,12 +49,12 @@ type startStep struct {
 }
 
 // runStartSteps feeds the steps to tr in order and checks each tick's verdict.
-func runStartSteps(t *testing.T, tr *sessionStartTracker, steps []startStep) {
+func runStartSteps(t *testing.T, tr *autonomouspkg.StartTracker, steps []startStep) {
 	t.Helper()
 	for _, st := range steps {
-		obs := tr.Observe(sessionStartInput{
+		obs := tr.Observe(autonomouspkg.StartInput{
 			Now:       startAt(st.sec),
-			State:     st.state,
+			State:     string(st.state),
 			Pane:      st.pane,
 			Delivered: st.delivered,
 			ChannelAt: st.channel,
@@ -74,7 +72,7 @@ func runStartSteps(t *testing.T, tr *sessionStartTracker, steps []startStep) {
 
 func TestSessionStartTrackerSilentStartStallsOnlyPastLimit(t *testing.T) {
 	w := session.StateWaitingInput
-	tr := newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{})
+	tr := autonomouspkg.NewStartTracker(startTrackerLimit, time.Time{}, time.Time{})
 	runStartSteps(t, tr, []startStep{
 		{sec: 0, state: w, pane: startSilentPane},
 		{sec: 120, state: w, pane: startSilentPane}, // equal to the limit does not stall
@@ -95,12 +93,12 @@ func TestSessionStartTrackerLiveToolCallIsNeverEnded(t *testing.T) {
 		startStep{sec: 480, state: w, pane: startSilentPane},
 		startStep{sec: 481, state: w, pane: startSilentPane, wantStall: true},
 	)
-	runStartSteps(t, newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{}), steps)
+	runStartSteps(t, autonomouspkg.NewStartTracker(startTrackerLimit, time.Time{}, time.Time{}), steps)
 }
 
 func TestSessionStartTrackerPaneChangeRefreshesClock(t *testing.T) {
 	w := session.StateWaitingInput
-	runStartSteps(t, newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
+	runStartSteps(t, autonomouspkg.NewStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
 		{sec: 0, state: w, pane: startSilentPane},
 		{sec: 60, state: w, pane: startStatusPane(1)},
 		{sec: 120, state: w, pane: startStatusPane(2)},
@@ -130,7 +128,7 @@ func TestSessionStartTrackerNewChildProcessKeepsClockRunning(t *testing.T) {
 	// The command the runner starts at 100 is evidence. It is still running at
 	// 200, but a process that merely persists is not new work, so the clock
 	// keeps running from 100 and the silence ends at 221.
-	runStartSteps(t, newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
+	runStartSteps(t, autonomouspkg.NewStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
 		{sec: 0, state: w, pane: startSilentPane},
 		{sec: 100, state: w, pane: startSilentPane, children: []int{7002}},
 		{sec: 200, state: w, pane: startSilentPane, children: []int{7002}},
@@ -145,7 +143,7 @@ func TestSessionStartTrackerPersistentHelperDoesNotKeepDialogAlive(t *testing.T)
 	// the end. It was in the baseline, so it is not evidence and the bound runs
 	// from the first silent tick.
 	helper := []int{7001}
-	runStartSteps(t, newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
+	runStartSteps(t, autonomouspkg.NewStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
 		{sec: 0, state: w, pane: startSilentPane, children: helper},
 		{sec: 60, state: w, pane: startSilentPane, children: helper},
 		{sec: 120, state: w, pane: startSilentPane, children: helper},
@@ -158,7 +156,7 @@ func TestSessionStartTrackerFailedProbeIsNoObservation(t *testing.T) {
 	// A failed tree read at 60 is neither evidence nor a new baseline. The helper
 	// seen at 0 is still the baseline at 100, when a second process appears and
 	// counts as work.
-	runStartSteps(t, newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
+	runStartSteps(t, autonomouspkg.NewStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
 		{sec: 0, state: w, pane: startSilentPane, children: []int{7001}},
 		{sec: 60, state: w, pane: startSilentPane, failProbe: true},
 		{sec: 100, state: w, pane: startSilentPane, children: []int{7001, 7002}},
@@ -176,10 +174,10 @@ func TestSessionStartTrackerDialogStuckRunnerFromProcessTreeIsEnded(t *testing.T
 	tree := map[int][]int{100: {200}, 200: {300}}
 	names := map[int]string{100: "bash", 200: "claude", 300: "node"}
 	pids := processTreeRunnerDescendants(roots, tree, fakeProcessNames(names))
-	tr := newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{})
+	tr := autonomouspkg.NewStartTracker(startTrackerLimit, time.Time{}, time.Time{})
 	w := session.StateWaitingInput
 	for _, sec := range []int{0, 60, 120, 121} {
-		obs := tr.Observe(sessionStartInput{Now: startAt(sec), State: w, Pane: startSilentPane, ChildPIDs: pids})
+		obs := tr.Observe(autonomouspkg.StartInput{Now: startAt(sec), State: string(w), Pane: startSilentPane, ChildPIDs: pids})
 		stalled, reason := obs.Stalled()
 		if want := sec == 121; stalled != want {
 			t.Fatalf("t=%ds: Stalled() = %v (WaitingFor %s), want %v", sec, stalled, obs.WaitingFor, want)
@@ -197,7 +195,7 @@ func TestSessionStartTrackerRunnerSpawnedCommandFromProcessTreeIsWork(t *testing
 	names := map[int]string{100: "bash", 200: "claude", 400: "bash"}
 	base := processTreeRunnerDescendants(roots, map[int][]int{100: {200}}, fakeProcessNames(names))
 	spawned := processTreeRunnerDescendants(roots, map[int][]int{100: {200}, 200: {400}}, fakeProcessNames(names))
-	tr := newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{})
+	tr := autonomouspkg.NewStartTracker(startTrackerLimit, time.Time{}, time.Time{})
 	w := session.StateWaitingInput
 	steps := []struct {
 		sec   int
@@ -210,7 +208,7 @@ func TestSessionStartTrackerRunnerSpawnedCommandFromProcessTreeIsWork(t *testing
 		{sec: 221, pids: spawned, stall: true},
 	}
 	for _, st := range steps {
-		obs := tr.Observe(sessionStartInput{Now: startAt(st.sec), State: w, Pane: startSilentPane, ChildPIDs: st.pids})
+		obs := tr.Observe(autonomouspkg.StartInput{Now: startAt(st.sec), State: string(w), Pane: startSilentPane, ChildPIDs: st.pids})
 		if stalled, _ := obs.Stalled(); stalled != st.stall {
 			t.Fatalf("t=%ds: Stalled() = %v (WaitingFor %s), want %v", st.sec, stalled, obs.WaitingFor, st.stall)
 		}
@@ -219,7 +217,7 @@ func TestSessionStartTrackerRunnerSpawnedCommandFromProcessTreeIsWork(t *testing
 
 func TestSessionStartTrackerChannelEventAfterDeliveryRefreshesClock(t *testing.T) {
 	w := session.StateWaitingInput
-	runStartSteps(t, newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
+	runStartSteps(t, autonomouspkg.NewStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
 		{sec: 0, state: w, pane: startSilentPane, delivered: true},
 		{sec: 90, state: w, pane: startSilentPane, delivered: true, channel: startAt(90)},
 		{sec: 210, state: w, pane: startSilentPane, delivered: true, channel: startAt(90)},
@@ -229,7 +227,7 @@ func TestSessionStartTrackerChannelEventAfterDeliveryRefreshesClock(t *testing.T
 
 func TestSessionStartTrackerChannelEventBeforeDeliveryIsNotEvidence(t *testing.T) {
 	w := session.StateWaitingInput
-	runStartSteps(t, newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
+	runStartSteps(t, autonomouspkg.NewStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
 		{sec: 0, state: w, pane: startSilentPane, channel: startAt(0)},
 		{sec: 120, state: w, pane: startSilentPane, channel: startAt(0)},
 		{sec: 121, state: w, pane: startSilentPane, channel: startAt(0), wantStall: true},
@@ -240,7 +238,7 @@ func TestSessionStartTrackerAssistantTurnIsEvidence(t *testing.T) {
 	w := session.StateWaitingInput
 	// The assistant turn at 60 is evidence, so the silence runs from 60 until
 	// the pane changes back to the silent prompt at 150, which is evidence too.
-	runStartSteps(t, newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
+	runStartSteps(t, autonomouspkg.NewStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
 		{sec: 0, state: w, pane: startSilentPane},
 		{sec: 60, state: w, pane: startAssistantPane},
 		{sec: 150, state: w, pane: startSilentPane},
@@ -251,7 +249,7 @@ func TestSessionStartTrackerAssistantTurnIsEvidence(t *testing.T) {
 
 func TestSessionStartTrackerRunningStateDoesNotStartTheClock(t *testing.T) {
 	w, r := session.StateWaitingInput, session.StateRunning
-	runStartSteps(t, newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
+	runStartSteps(t, autonomouspkg.NewStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
 		{sec: 0, state: r, pane: startSilentPane},
 		{sec: 300, state: r, pane: startSilentPane},
 		{sec: 301, state: w, pane: startSilentPane},
@@ -262,7 +260,7 @@ func TestSessionStartTrackerRunningStateDoesNotStartTheClock(t *testing.T) {
 
 func TestSessionStartTrackerFailedCaptureRearmsClock(t *testing.T) {
 	w := session.StateWaitingInput
-	runStartSteps(t, newSessionStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
+	runStartSteps(t, autonomouspkg.NewStartTracker(startTrackerLimit, time.Time{}, time.Time{}), []startStep{
 		{sec: 0, state: w, pane: startSilentPane},
 		{sec: 100, state: w, pane: ""},
 		{sec: 150, state: w, pane: startSilentPane},
@@ -274,7 +272,7 @@ func TestSessionStartTrackerAdoptedSessionCountsFromLastEvidence(t *testing.T) {
 	w := session.StateWaitingInput
 	// The adopted session's last evidence of life was 30s before adoption, so
 	// the bound has 90s left at the first tick.
-	runStartSteps(t, newSessionStartTracker(startTrackerLimit, startAt(-30), time.Time{}), []startStep{
+	runStartSteps(t, autonomouspkg.NewStartTracker(startTrackerLimit, startAt(-30), time.Time{}), []startStep{
 		{sec: 0, state: w, pane: startSilentPane},
 		{sec: 90, state: w, pane: startSilentPane},
 		{sec: 91, state: w, pane: startSilentPane, wantStall: true},
@@ -283,7 +281,7 @@ func TestSessionStartTrackerAdoptedSessionCountsFromLastEvidence(t *testing.T) {
 
 func TestSessionStartTrackerAdoptedSessionWithOldEvidenceIsJudgedAtOnce(t *testing.T) {
 	w := session.StateWaitingInput
-	runStartSteps(t, newSessionStartTracker(startTrackerLimit, startAt(-600), time.Time{}), []startStep{
+	runStartSteps(t, autonomouspkg.NewStartTracker(startTrackerLimit, startAt(-600), time.Time{}), []startStep{
 		{sec: 0, state: w, pane: startSilentPane, wantStall: true},
 	})
 }
@@ -292,50 +290,9 @@ func TestSessionStartTrackerAdoptedSessionToolCallStillKeepsItAlive(t *testing.T
 	w := session.StateWaitingInput
 	// Seeded with ten-minute-old evidence, but the pane shows a live tool call
 	// on the first tick: that is fresh evidence and the worker is not ended.
-	runStartSteps(t, newSessionStartTracker(startTrackerLimit, startAt(-600), time.Time{}), []startStep{
+	runStartSteps(t, autonomouspkg.NewStartTracker(startTrackerLimit, startAt(-600), time.Time{}), []startStep{
 		{sec: 0, state: w, pane: startToolPane},
 		{sec: 120, state: w, pane: startToolPane},
 		{sec: 240, state: w, pane: startToolPane},
 	})
-}
-
-func TestSessionStartAdoptionSeedUsesLatestEvidence(t *testing.T) {
-	updated := startAt(-300)
-	channel := startAt(-120)
-	logMtime := startAt(-200)
-	tests := []struct {
-		name                           string
-		updatedAt, channelAt, logMtime time.Time
-		want                           time.Time
-	}{
-		{name: "nothing known", want: time.Time{}},
-		{name: "only the update time", updatedAt: updated, want: updated},
-		{name: "channel event is newest", updatedAt: updated, channelAt: channel, logMtime: logMtime, want: channel},
-		{name: "log mtime is newest", updatedAt: updated, channelAt: channel, logMtime: startAt(-10), want: startAt(-10)},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := sessionStartAdoptionSeed(tt.updatedAt, tt.channelAt, tt.logMtime); !got.Equal(tt.want) {
-				t.Fatalf("sessionStartAdoptionSeed() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestLogFileModTimeReadsTheLogMtime(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "session.log")
-	if err := os.WriteFile(path, []byte("out\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	mtime := startAt(-45)
-	if err := os.Chtimes(path, mtime, mtime); err != nil {
-		t.Fatal(err)
-	}
-	if got := logFileModTime(path); !got.Equal(mtime) {
-		t.Errorf("logFileModTime(%s) = %v, want %v", path, got, mtime)
-	}
-	if got := logFileModTime(filepath.Join(dir, "missing.log")); !got.IsZero() {
-		t.Errorf("logFileModTime(missing) = %v, want zero", got)
-	}
 }

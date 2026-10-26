@@ -1,12 +1,15 @@
 package autonomous
 
-import "time"
+import (
+	"os"
+	"time"
+)
 
 // startFailureTailLines is how many pane lines a failed start keeps for the
 // task's StartFailureTail.
 const startFailureTailLines = 20
 
-// startTracker is the start-confirm clock of one wait on a worker session. A
+// StartTracker is the start-confirm clock of one wait on a worker session. A
 // worker that never started parks in waiting_input without an assistant turn,
 // but a worker mid tool call also shows no assistant bullet while it is busy.
 // The bound therefore runs from the last evidence of work (StartEvidence), not
@@ -21,12 +24,11 @@ const startFailureTailLines = 20
 // The adopted mode is the rule for a session found alive at boot: a probe
 // outside waiting_input restarts the window, a changed pane or a tool call
 // restarts it, and the first assistant turn latches the session as started.
-type startTracker struct {
+type StartTracker struct {
 	adopted        bool          // adopted-session window rules; false for the launch rules
 	limit          time.Duration // start-confirm bound; <= 0 disables it
-	launchedAt     time.Time     // launch time, or adoption time when no launch is recorded
 	lastEvidenceAt time.Time     // latest tick with evidence of work; zero until one is seen
-	silentSince    time.Time     // first silent waiting_input tick; the anchor until evidence is seen
+	silentSince    time.Time     // silence anchor until evidence is seen: the adoption launch time, else the first silent tick
 	prevPane       string        // pane captured on the previous observation
 	havePrevPane   bool          // prevPane holds a capture a later pane can be compared with
 	lastChannelAt  time.Time     // session LastChannelEventAt as of the previous observation
@@ -36,8 +38,8 @@ type startTracker struct {
 	failureTail    []string      // pane tail recorded when the bound fires
 }
 
-// startInput is one tick's view of the worker, gathered by the wait loop.
-type startInput struct {
+// StartInput is one tick's view of the worker, gathered by the wait loop.
+type StartInput struct {
 	Now       time.Time
 	State     string    // session state string, compared with sessionStateWaitingInput
 	Pane      string    // visible pane capture; empty when the capture failed
@@ -48,21 +50,23 @@ type startInput struct {
 	ChildPIDs map[int]bool
 }
 
-// newStartTracker starts a launch-mode tracker with the given bound. launchedAt
-// anchors the silent window until evidence is seen; lastLifeSeed is the last
-// evidence of life of the session (zero when none is known), which becomes the
-// anchor. Both are zero for a session launched in this wait.
-func newStartTracker(limit time.Duration, launchedAt, lastLifeSeed time.Time) *startTracker {
-	return &startTracker{limit: limit, launchedAt: launchedAt, silentSince: launchedAt, lastEvidenceAt: lastLifeSeed}
+// NewStartTracker starts a launch-mode tracker with the given bound. The silent
+// window has no anchor until evidence is seen or the first silent waiting_input
+// tick arrives. lastLifeSeed is the session's last evidence of life (zero when
+// none is known), which becomes the anchor. channelAt is the session's
+// LastChannelEventAt when the wait begins: only channel events newer than it
+// count as evidence.
+func NewStartTracker(limit time.Duration, lastLifeSeed, channelAt time.Time) *StartTracker {
+	return &StartTracker{limit: limit, lastEvidenceAt: lastLifeSeed, lastChannelAt: channelAt}
 }
 
-// newAdoptedStartTracker starts an adopted-mode tracker. The arguments mean
-// what they mean for newStartTracker; the silent window runs from the last
-// evidence of life when one is known, otherwise from launchedAt.
-func newAdoptedStartTracker(limit time.Duration, launchedAt, lastLifeSeed time.Time) *startTracker {
-	t := newStartTracker(limit, launchedAt, lastLifeSeed)
-	t.adopted = true
-	return t
+// NewAdoptedStartTracker starts an adopted-mode tracker. launchedAt anchors the
+// silent window until evidence is seen; it is the task's launch time, or
+// adoption time when no launch is recorded. lastLifeSeed is the session's last
+// evidence of life (zero when none is known), and the silent window runs from
+// it when it is set.
+func NewAdoptedStartTracker(limit time.Duration, launchedAt, lastLifeSeed time.Time) *StartTracker {
+	return &StartTracker{adopted: true, limit: limit, silentSince: launchedAt, lastEvidenceAt: lastLifeSeed}
 }
 
 // Observe folds one tick into the tracker and returns the start observation
@@ -72,7 +76,7 @@ func newAdoptedStartTracker(limit time.Duration, launchedAt, lastLifeSeed time.T
 // adopted mode the tick's pane must be a non-empty capture of a waiting session
 // for the bound to be judged; a tick outside waiting_input only restarts the
 // window.
-func (t *startTracker) Observe(in startInput) SessionStartObservation {
+func (t *StartTracker) Observe(in StartInput) SessionStartObservation {
 	var obs SessionStartObservation
 	if t.adopted {
 		obs = t.observeAdopted(in)
@@ -87,14 +91,14 @@ func (t *startTracker) Observe(in startInput) SessionStartObservation {
 
 // FailureTail returns the pane lines recorded when the bound fired, or nil when
 // it has not fired.
-func (t *startTracker) FailureTail() []string {
+func (t *StartTracker) FailureTail() []string {
 	return t.failureTail
 }
 
 // observeLaunch is the launch-mode rule. Any evidence on the tick refreshes the
 // clock; the silent window starts at the first silent waiting_input tick when
 // no evidence has been seen.
-func (t *startTracker) observeLaunch(in startInput) SessionStartObservation {
+func (t *StartTracker) observeLaunch(in StartInput) SessionStartObservation {
 	ev := StartEvidence{
 		TaskDelivered:             in.Delivered,
 		AgentChildProcess:         t.childWorkStarted(in.ChildPIDs),
@@ -139,7 +143,7 @@ func (t *startTracker) observeLaunch(in startInput) SessionStartObservation {
 // reports HasAssistantOutput for the rest of the wait so the bound never fails
 // it; a changed pane or a tool call restarts the window; otherwise the silence
 // since the anchor is what the bound measures.
-func (t *startTracker) observeAdopted(in startInput) SessionStartObservation {
+func (t *StartTracker) observeAdopted(in StartInput) SessionStartObservation {
 	if in.State != sessionStateWaitingInput {
 		t.lastEvidenceAt = in.Now
 		return SessionStartObservation{State: in.State, HasAssistantOutput: t.started, Limit: t.limit}
@@ -179,7 +183,7 @@ func (t *startTracker) observeAdopted(in startInput) SessionStartObservation {
 // runner starts during a tool call is new, so it is. The first observation sets
 // the baseline and reports nothing. Nil means the probe failed: it reports
 // nothing and keeps the previous baseline.
-func (t *startTracker) childWorkStarted(pids map[int]bool) bool {
+func (t *StartTracker) childWorkStarted(pids map[int]bool) bool {
 	if pids == nil {
 		return false
 	}
@@ -198,9 +202,33 @@ func (t *startTracker) childWorkStarted(pids map[int]bool) bool {
 
 // anchor is the moment the silence is measured from: the last evidence of
 // work when there has been any, otherwise the silent-since time.
-func (t *startTracker) anchor() time.Time {
+func (t *StartTracker) anchor() time.Time {
 	if !t.lastEvidenceAt.IsZero() {
 		return t.lastEvidenceAt
 	}
 	return t.silentSince
+}
+
+// SessionStartAdoptionSeed is the evidence-of-life time an adopted session
+// starts with: the latest of its UpdatedAt, its last channel event and its log
+// file mtime. Zero when none is known, which leaves the clock to start at the
+// first silent tick.
+func SessionStartAdoptionSeed(updatedAt, channelAt, logMtime time.Time) time.Time {
+	var seed time.Time
+	for _, at := range []time.Time{updatedAt, channelAt, logMtime} {
+		if at.After(seed) {
+			seed = at
+		}
+	}
+	return seed
+}
+
+// LogFileModTime returns the mtime of the session log, or zero when the log
+// cannot be read.
+func LogFileModTime(path string) time.Time {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return fi.ModTime()
 }

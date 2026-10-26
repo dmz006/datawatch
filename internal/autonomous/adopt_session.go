@@ -81,7 +81,7 @@ type AdoptedWait struct {
 // each tick, and the bound it applies: the same bound the worker wait loop
 // applies to a freshly spawned claude-code session, where a session parked in
 // waiting_input with no assistant turn past the limit never started and is
-// ended. The bookkeeping lives in the startTracker the wait builds from the
+// ended. The bookkeeping lives in the StartTracker the wait builds from the
 // limit, the launch time and the last evidence of life when it starts.
 type adoptedStartProbe struct {
 	// paneFn captures the session's visible pane (the session manager's
@@ -111,7 +111,7 @@ type adoptedStartProbe struct {
 	interval time.Duration
 	// tracker judges the start. The wait builds it when it begins and it is nil
 	// before then.
-	tracker *startTracker
+	tracker *StartTracker
 }
 
 // failureTail returns the last pane lines captured when the bound fired, for
@@ -188,7 +188,7 @@ func waitAdoptedSessionStartConfirmed(ctx context.Context, waitFn func(context.C
 	if sc.lastLifeFn != nil {
 		lastLife = sc.lastLifeFn(sessionID)
 	}
-	tracker := newAdoptedStartTracker(sc.limit, launchedAt, lastLife)
+	tracker := NewAdoptedStartTracker(sc.limit, launchedAt, lastLife)
 	sc.tracker = tracker
 
 	interval := sc.interval
@@ -211,7 +211,7 @@ func waitAdoptedSessionStartConfirmed(ctx context.Context, waitFn func(context.C
 			state = sc.stateFn(sessionID)
 		}
 		if state != sessionStateWaitingInput {
-			tracker.Observe(startInput{Now: now, State: state})
+			tracker.Observe(StartInput{Now: now, State: state})
 			continue
 		}
 		pane, err := sc.paneFn(sessionID)
@@ -219,7 +219,7 @@ func waitAdoptedSessionStartConfirmed(ctx context.Context, waitFn func(context.C
 			// No evidence either way this tick; the window keeps running.
 			continue
 		}
-		obs := tracker.Observe(startInput{Now: now, State: state, Pane: pane})
+		obs := tracker.Observe(StartInput{Now: now, State: state, Pane: pane})
 		if stalled, _ := obs.Stalled(); !stalled {
 			continue
 		}

@@ -1,11 +1,13 @@
 package autonomous
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
-// Direct tests of startTracker.Observe on a fake clock. Each tick is ten
+// Direct tests of StartTracker.Observe on a fake clock. Each tick is ten
 // seconds after the origin, so tick k is at origin+10k seconds.
 
 var startTrackerOrigin = time.Date(2026, 10, 25, 8, 0, 0, 0, time.UTC)
@@ -24,10 +26,10 @@ const trackerToolPane = "❯ run the task\n⏺ Bash(go test ./...)\n  ⎿  Runni
 const trackerFirstTurnPane = "❯ run the task\n• Reading the spec now.\n"
 
 func TestStartTrackerLaunchStallsOnlyPastLimit(t *testing.T) {
-	tr := newStartTracker(60*time.Second, time.Time{}, time.Time{})
+	tr := NewStartTracker(60*time.Second, time.Time{}, time.Time{})
 	var stalledAt int
 	for k := 1; k <= 10; k++ {
-		obs := tr.Observe(startInput{Now: trackerTickAt(k), State: sessionStateWaitingInput, Pane: trackerSilentPane})
+		obs := tr.Observe(StartInput{Now: trackerTickAt(k), State: sessionStateWaitingInput, Pane: trackerSilentPane})
 		if stalled, _ := obs.Stalled(); stalled && stalledAt == 0 {
 			stalledAt = k
 		}
@@ -43,13 +45,13 @@ func TestStartTrackerLaunchStallsOnlyPastLimit(t *testing.T) {
 }
 
 func TestStartTrackerLaunchToolCallKeepsClockRunning(t *testing.T) {
-	tr := newStartTracker(60*time.Second, time.Time{}, time.Time{})
+	tr := NewStartTracker(60*time.Second, time.Time{}, time.Time{})
 	for k := 1; k <= 20; k++ {
 		pane := trackerSilentPane
 		if k%5 == 0 {
 			pane = trackerToolPane
 		}
-		obs := tr.Observe(startInput{Now: trackerTickAt(k), State: sessionStateWaitingInput, Pane: pane})
+		obs := tr.Observe(StartInput{Now: trackerTickAt(k), State: sessionStateWaitingInput, Pane: pane})
 		if stalled, _ := obs.Stalled(); stalled {
 			t.Fatalf("launch tracker ended a session with a tool call every 50s at tick %d", k)
 		}
@@ -63,7 +65,7 @@ func TestStartTrackerAdoptedRestartsWhenLeavingWaitingInput(t *testing.T) {
 	// Waiting for five silent ticks, then running, then waiting again. The
 	// adopted window restarts on the running tick, so the second waiting run
 	// never exceeds the 60s limit.
-	tr := newAdoptedStartTracker(60*time.Second, trackerTickAt(0), time.Time{})
+	tr := NewAdoptedStartTracker(60*time.Second, trackerTickAt(0), time.Time{})
 	states := []string{
 		sessionStateWaitingInput, sessionStateWaitingInput, sessionStateWaitingInput,
 		sessionStateWaitingInput, sessionStateWaitingInput,
@@ -72,7 +74,7 @@ func TestStartTrackerAdoptedRestartsWhenLeavingWaitingInput(t *testing.T) {
 	}
 	for i, state := range states {
 		k := i + 1
-		obs := tr.Observe(startInput{Now: trackerTickAt(k), State: state, Pane: trackerSilentPane})
+		obs := tr.Observe(StartInput{Now: trackerTickAt(k), State: state, Pane: trackerSilentPane})
 		if stalled, _ := obs.Stalled(); stalled {
 			t.Fatalf("adopted tracker stalled at tick %d (state %s) after leaving waiting_input", k, state)
 		}
@@ -82,13 +84,13 @@ func TestStartTrackerAdoptedRestartsWhenLeavingWaitingInput(t *testing.T) {
 func TestStartTrackerAdoptedFirstTurnLatchesStarted(t *testing.T) {
 	// The first turn shows at tick 1; the pane then scrolls it out of view and
 	// the session sits silent far past the limit. The latch never fails it.
-	tr := newAdoptedStartTracker(60*time.Second, trackerTickAt(0), time.Time{})
-	obs := tr.Observe(startInput{Now: trackerTickAt(1), State: sessionStateWaitingInput, Pane: trackerFirstTurnPane})
+	tr := NewAdoptedStartTracker(60*time.Second, trackerTickAt(0), time.Time{})
+	obs := tr.Observe(StartInput{Now: trackerTickAt(1), State: sessionStateWaitingInput, Pane: trackerFirstTurnPane})
 	if !obs.HasAssistantOutput {
 		t.Fatal("first assistant turn not reported")
 	}
 	for k := 2; k <= 40; k++ {
-		obs := tr.Observe(startInput{Now: trackerTickAt(k), State: sessionStateWaitingInput, Pane: trackerSilentPane})
+		obs := tr.Observe(StartInput{Now: trackerTickAt(k), State: sessionStateWaitingInput, Pane: trackerSilentPane})
 		if stalled, _ := obs.Stalled(); stalled {
 			t.Fatalf("started session failed at tick %d after its first turn", k)
 		}
@@ -102,10 +104,10 @@ func TestStartTrackerAdoptedSeedAnchorsWindow(t *testing.T) {
 	// A last evidence of life ten seconds before tick 1 anchors the window, so
 	// the bound fires on tick 6 (70s after that evidence), not on the first tick.
 	lastLife := trackerTickAt(0).Add(-10 * time.Second)
-	tr := newAdoptedStartTracker(60*time.Second, trackerTickAt(0).Add(-time.Hour), lastLife)
+	tr := NewAdoptedStartTracker(60*time.Second, trackerTickAt(0).Add(-time.Hour), lastLife)
 	var stalledAt int
 	for k := 1; k <= 10; k++ {
-		obs := tr.Observe(startInput{Now: trackerTickAt(k), State: sessionStateWaitingInput, Pane: trackerSilentPane})
+		obs := tr.Observe(StartInput{Now: trackerTickAt(k), State: sessionStateWaitingInput, Pane: trackerSilentPane})
 		if stalled, _ := obs.Stalled(); stalled {
 			stalledAt = k
 			break
@@ -113,5 +115,46 @@ func TestStartTrackerAdoptedSeedAnchorsWindow(t *testing.T) {
 	}
 	if stalledAt != 6 {
 		t.Fatalf("adopted tracker stalled at tick %d, want 6", stalledAt)
+	}
+}
+
+func TestSessionStartAdoptionSeedUsesLatestEvidence(t *testing.T) {
+	updated := trackerTickAt(-30)
+	channel := trackerTickAt(-12)
+	logMtime := trackerTickAt(-20)
+	tests := []struct {
+		name                           string
+		updatedAt, channelAt, logMtime time.Time
+		want                           time.Time
+	}{
+		{name: "nothing known", want: time.Time{}},
+		{name: "only the update time", updatedAt: updated, want: updated},
+		{name: "channel event is newest", updatedAt: updated, channelAt: channel, logMtime: logMtime, want: channel},
+		{name: "log mtime is newest", updatedAt: updated, channelAt: channel, logMtime: trackerTickAt(-1), want: trackerTickAt(-1)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := SessionStartAdoptionSeed(tt.updatedAt, tt.channelAt, tt.logMtime); !got.Equal(tt.want) {
+				t.Fatalf("SessionStartAdoptionSeed() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLogFileModTimeReadsTheLogMtime(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.log")
+	if err := os.WriteFile(path, []byte("out\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mtime := trackerTickAt(-5)
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+	if got := LogFileModTime(path); !got.Equal(mtime) {
+		t.Errorf("LogFileModTime(%s) = %v, want %v", path, got, mtime)
+	}
+	if got := LogFileModTime(filepath.Join(dir, "missing.log")); !got.IsZero() {
+		t.Errorf("LogFileModTime(missing) = %v, want zero", got)
 	}
 }
