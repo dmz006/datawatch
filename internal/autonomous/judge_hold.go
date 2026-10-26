@@ -24,11 +24,14 @@ func rulesReviewBlockStatus(prd *PRD) (PRDStatus, string) {
 }
 
 // judgeHoldHeld reports whether prd is waiting in needs_review because its
-// judge timed out on every backend. Lane fill must not approve and run such a
+// judge (plan review or guardrail) did not finish on any backend. Lane fill must not approve and run such a
 // PRD by itself: only the operator's decision moves it on.
 func judgeHoldHeld(prd *PRD) bool {
 	if NormalizePRDStatus(prd.Status) != PRDNeedsReview {
 		return false
+	}
+	if v := prd.PlanReview; v != nil && v.Held {
+		return true
 	}
 	v := lastBlockVerdict(prd.Verdicts)
 	return v != nil && IsJudgeTimeoutHold(*v)

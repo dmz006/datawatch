@@ -5802,6 +5802,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// session hit its time limit.
 		autonomousGuardrailAttempt := func(ctx context.Context, req autonomouspkg.GuardrailInvocation, gcfg autonomouspkg.Config, backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 			prompt := buildAutonomousGuardrailPrompt(req)
+			if req.Prompt != "" {
+				// The plan-review judge supplies its own prompt.
+				prompt = req.Prompt
+			}
 			// BL416 Phase 3 — per-unit resolved backend/model win over the flat config.
 			gbackend, guardrailModel := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
 			if backend != gbackend {
@@ -5992,6 +5996,17 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// written to the daemon log once; the status endpoint keeps them.
 			amgr.ReportPairingWarnings()
 			amgr.SetGuardrail(autonomousGuardrail)
+			// The plan-review judge goes through the same routed, leased and
+			// time-limited judge path as the guardrail judge.
+			amgr.SetPlanReview(planReviewViaJudge(autonomousGuardrail, func(prdID string) string {
+				if prd, ok := amgr.Store().GetPRD(prdID); ok {
+					return prd.ProjectDir
+				}
+				return ""
+			}, func() (string, string) {
+				live := liveAutonomousConfig()
+				return live.PlanReviewBackend, live.PlanReviewModel
+			}))
 			// Daily and milestone progress snapshots, stored with the other
 			// autonomous data; the runner starts with amgr.Start below.
 			if _, err := amgr.EnableProgressSnapshots(func() autonomouspkg.ProgressSnapshotSettings {

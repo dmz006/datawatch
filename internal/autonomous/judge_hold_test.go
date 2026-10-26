@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,5 +66,47 @@ func TestRunPRDCompletionRulesReview_JudgeTimeoutIsBlockedWithHoldCategory(t *te
 	}
 	if status, _ := rulesReviewBlockStatus(prd); status != PRDNeedsReview {
 		t.Fatalf("rollup status = %s, want needs_review", status)
+	}
+}
+
+func heldPlanReviewVerdict() *PlanReviewVerdict {
+	return &PlanReviewVerdict{
+		Held: true, Severity: "high", Summary: "plan review timed out on every backend",
+		Findings: []PlanFinding{{Category: JudgeTimeoutCategory, Detail: "backend qwen: timed out"}},
+	}
+}
+
+func TestPRDHoldReasonHoldsHeldPlanReviewWhileNeedsReview(t *testing.T) {
+	held := &PRD{Status: PRDNeedsReview, PlanReview: heldPlanReviewVerdict()}
+	if PRDHoldReason(held, nil) == "" {
+		t.Fatal("a needs-review PRD whose plan review was held must not be started by lane fill")
+	}
+	approved := &PRD{Status: PRDApproved, PlanReview: heldPlanReviewVerdict()}
+	if reason := PRDHoldReason(approved, nil); reason != "" {
+		t.Fatalf("an operator-approved PRD is not held by lane fill, got %q", reason)
+	}
+}
+
+func TestPlanReviewHeldVerdictBlocksApprovalInBlockModeUntilRerun(t *testing.T) {
+	held := true
+	m := newPlanReviewManager(t, planReviewConfig("block"), func(ctx context.Context, req PlanReviewRequest) (PlanReviewVerdict, error) {
+		if held {
+			return *heldPlanReviewVerdict(), nil
+		}
+		return PlanReviewVerdict{Ok: true, Summary: "looks fine"}, nil
+	})
+	prd, _ := m.CreatePRD("spec", "", "", "", "")
+	if _, err := m.Decompose(prd.ID); err != nil {
+		t.Fatalf("Decompose: %v", err)
+	}
+	if _, err := m.Approve(prd.ID, "op", ""); err == nil || !strings.Contains(err.Error(), JudgeTimeoutCategory) {
+		t.Fatalf("Approve err = %v, want the held plan review to refuse approval", err)
+	}
+	held = false
+	if _, err := m.ReviewPlan(prd.ID, "operator"); err != nil {
+		t.Fatalf("ReviewPlan: %v", err)
+	}
+	if _, err := m.Approve(prd.ID, "op", ""); err != nil {
+		t.Fatalf("Approve after a clearing re-run: %v", err)
 	}
 }

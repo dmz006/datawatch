@@ -659,6 +659,11 @@ type GuardrailInvocation struct {
 	ScriptOutput     string
 	GuardrailBackend string
 	GuardrailModel   string
+	// Prompt, when set, is the whole judge prompt, used instead of the
+	// generated guardrail prompt. The plan-review judge sets it: its reply
+	// uses the same outcome/severity/summary/issues JSON, but it judges a
+	// plan, not a unit.
+	Prompt string
 }
 
 // AutomatonType (BL221 v6.2.0 Phase 4) is a registered automaton type.
