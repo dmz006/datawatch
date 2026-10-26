@@ -393,6 +393,21 @@ curl -sX PUT http://localhost:7433/api/autonomous/config \
   -d '{"verifier_policy":{"mode":"prefer-free","backends":["ollama-a","claude-code"],"claude_session_cap":4,"claude_cap_window_minutes":60}}'
 ```
 
+### Judge routing and time limit (`autonomous.judge_policy` / `autonomous.judge_timeout_seconds`)
+
+The judges (the Automaton's guardrail, plan review and other autonomous judges)
+are a distinct role in the verifier routing policy. Their backend list is
+`autonomous.judge_policy`, one attempt per backend; an empty list means the
+judges follow the verifier policy above. `autonomous.judge_timeout_seconds` is
+the time limit for one judge run, 1800 seconds by default, and the wait for a
+capacity slot does not count against it. When every backend in the judge policy
+has timed out, the Automaton is held in `needs_review` and an error alert lists
+every attempt. The settings are read and written with `GET/PUT /api/autonomous/config`
+(`judge_policy`, `judge_timeout_seconds`), MCP `autonomous_config_set`, the CLI
+`autonomous config-set --judge-policy --judge-timeout-seconds`, and the comm verbs
+`autonomous judge-policy` and `autonomous judge-policy-set`. The guide, with the
+modes, the alerts and how to resolve a hold, is [howto/judge-policy.md](../howto/judge-policy.md).
+
 ### Failure escalation and held tasks (`set_failure_escalation` / `resolve_task_review`)
 
 A task that keeps failing moves up a ladder of workers and, at `max_failures` failed attempts, is held with status `review_needed` for the operator. The policy has three fields, `enabled`, `max_failures` and `steps`, and each resolves per field: task override, then Automaton override, then the daemon default (`autonomous.failure_escalation`). A nil, zero or empty field means "not set at this level." The guide is [howto/failure-escalation.md](../howto/failure-escalation.md).
