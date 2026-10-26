@@ -270,3 +270,9 @@ Each dismissed alert has a `code-scanning/<alert number>` entry in `security/acc
 - New `//#nosec` annotations must include the rule ID *and* a one-line reason. PRs adding bare `//#nosec` get rejected by review.
 - New `InsecureSkipVerify=true` sites must be paired with pinning (`VerifyPeerCertificate` + a fingerprint check) or get an entry in the G402 table above with an "accept (documented)" verdict and a config gate.
 - New `.trivyignore` entries require a one-line rationale in this document. PRs adding bare CVE IDs without rationale get rejected.
+
+## CodeQL workflow and alert gate
+
+CodeQL runs from `.github/workflows/codeql.yaml` (go, javascript-typescript and actions; one `/language:<name>` category each, `upload: always`, `security-events: write` only on the analyze job). A final `alert-gate` job queries open code-scanning alerts for the ref and fails when any are high or critical, printing the counts and a list of rule, path and alert number. Dismissed alerts are not open, so an alert dismissed with a reason registered in `security/accepted-risks.yml` does not count.
+
+The workflow replaces GitHub default setup, which must be disabled by the operator in the repository settings first; the two cannot upload the same categories. Background and the investigation of the earlier Analyze failures are in `docs/plans/codeql-analyze-upload-failure-findings.md`.
