@@ -17,6 +17,20 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.17.2 — Pi-prompt workers are no longer closed while still running
+
+### Node-hosted pi runners are seen as alive
+
+- The liveness probes now recognise a pi runner that node hosts. The kernel names such a process `MainThread`, so the probes missed it; they now also read the script node runs and treat a script named after a runner as that runner.
+- The pi-prompt idle check counts a live runner as work. A one-shot pi print run generates with no child process, so a runner that was alive and generating no longer reads as idle and is no longer ended by the session idle detector. Other backends still count only work children.
+- Held-task reviews and the attempt record carry the pi exit status, the last pane output and the process list when a pi-prompt task stalls. The new attempt fields are `runner_exit_status`, `runner_last_output` and `runner_processes`; they are optional and appear only when evidence was captured. The review report and the next attempt's prompt print them, and the stall error names the exit status when pi returned one.
+
+### Shared navigation fits phone widths
+
+The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.
+
+**Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
+
 ## v9.17.1 — Idle worker nudge fires after the turn
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
