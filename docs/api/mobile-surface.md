@@ -493,7 +493,6 @@ All APIs confirmed stable — documented in this file for Android/Wear/Auto inte
 
 ---
 
-<!-- BL279 see-also footer -->
 ## Listener auth posture (`/api/health` `listeners`, `server.acknowledge_unauthenticated`)
 
 `GET /api/health` (no auth) returns, in addition to status/hostname/version/uptime_seconds, a `listeners` array with one entry per daemon listener: `rest`, `rest_tls`, `mcp_sse`, `proxy_sandbox`, `webhook`, `github_webhook`, `twilio_webhook`. Each entry is posture only:
@@ -527,6 +526,7 @@ bind address, the token, or the warning condition itself.
 
 ---
 
+<!-- BL279 see-also footer -->
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

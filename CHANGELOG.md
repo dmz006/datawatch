@@ -28,6 +28,15 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+### Daemon warns at startup about exposed, unauthenticated listeners (BL062); operator can acknowledge
+
+- At every start, the daemon logs one warning line per listener that is enabled, not token-protected, and bound to a non-loopback address. Covered: `rest` (server.token), `rest_tls` (server.ttls), `mcp_sse` (mcp.token, or server.token when mcp.token is empty), `proxy_sandbox` (always token-protected, never warned), `webhook` (webhook.token), `github_webhook` (github_webhook.secret); `twilio_webhook` has no built-in auth and is never warned. Each line names the listener and its configured bind address so the operator sees which listener; it never names a token or secret value.
+- New config setting `server.acknowledge_unauthenticated` (bool). Set it after deliberately reviewing those listeners: it silences the warning and sets the `acknowledged` flag on the matching entries of the `/api/health` `listeners` array and the `listener_*` diagnose checks. It does not change the bind address, the token, or the warning condition itself.
+- `GET /api/health` (no auth) now returns a `listeners` array — one entry per listener with `name`, `enabled`, `auth_required`, `loopback`, `acknowledged`; posture only, never bind addresses or token/secret values.
+- `GET /api/diagnose` now carries one informational `listener_<name>` check per listener, always `ok` (posture reporting, not a failure), with detail `address=… enabled=… auth_required=… loopback=… acknowledged=… exposed=…`; the overall diagnose `ok` flag is unchanged by listener auth posture.
+- No default changed: `server.acknowledge_unauthenticated` defaults to `false`, so every daemon start warns for exposed, unauthenticated, unacknowledged listeners.
+- Docs: config-reference (setting + covered-listener comment), operations (startup warning, fixes, acknowledge, five-row access table), openapi (both files: health `listeners`, diagnose `listener_*` checks, config key), mobile-surface (health `listeners` array + config key for Android/iPhone clients).
+
 ## v9.19.0 — Tag browsing and the shared tile for Automata
 
 **Fixed: untagged Automata carry `tags` and `primary_tag_id` in list responses** — every Automaton list item now has a `tags` array (empty when untagged) and a `primary_tag_id` string (empty when none), so a tag browser reads one shape for tagged and untagged items. Comm verbs that proxy REST (the `autonomous tags`, `attention` and registry verbs) now also work on the test message route, which had no loopback port.
@@ -10369,15 +10378,6 @@ Downstream-Review Rule.
 |---|---|
 | `feedback_per_release_smoke` | ✓ — section 32 all 4 sub-tests verified |
 | `feedback_phase_release_pattern` | ✓ |
-
-### Daemon warns at startup about exposed, unauthenticated listeners (BL062); operator can acknowledge
-
-- At every start, the daemon logs one warning line per listener that is enabled, not token-protected, and bound to a non-loopback address. Covered: `rest` (server.token), `rest_tls` (server.ttls), `mcp_sse` (mcp.token, or server.token when mcp.token is empty), `proxy_sandbox` (always token-protected, never warned), `webhook` (webhook.token), `github_webhook` (github_webhook.secret); `twilio_webhook` has no built-in auth and is never warned.
-- New config setting `server.acknowledge_unauthenticated` (bool). Set it after deliberately reviewing those listeners: it silences the warning and sets the `acknowledged` flag on the matching entries of the `/api/health` `listeners` array and the `listener_*` diagnose checks. It does not change the bind address, the token, or the warning condition itself.
-- `GET /api/health` (no auth) now returns a `listeners` array — one entry per listener with `name`, `enabled`, `auth_required`, `loopback`, `acknowledged`; posture only, never bind addresses or token/secret values.
-- `GET /api/diagnose` now carries one informational `listener_<name>` check per listener, always `ok` (posture reporting, not a failure), with detail `address=… enabled=… auth_required=… loopback=… acknowledged=… exposed=…`; the overall diagnose `ok` flag is unchanged by listener auth posture.
-- No default changed: `server.acknowledge_unauthenticated` defaults to `false`, so every daemon start warns for exposed, unauthenticated, unacknowledged listeners.
-- Docs: config-reference (setting + covered-listener comment + mcp token fallback), operations (startup warning, fixes, acknowledge, five-row access table), openapi (both files: health `listeners`, diagnose `listener_*` checks, config key), mobile-surface (health `listeners` array + config key for Android/iPhone clients).
 
 ## [7.0.0-alpha.36] - 2026-05-10
 
