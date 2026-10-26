@@ -12,7 +12,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A worker whose model has no provider (for example `qwen3.8:27b`) takes the provider of the backend's configured model, so it is admitted on the node it will actually run on.
 - A worker is launched against the node its lease names, including when the LLM entry lists only one node. If a worker holds capacity but no node was leased while its entry lists nodes, it is no longer launched on pi's default endpoint; the task fails with an error saying no compute node was leased.
 - Sessions adopted after a daemon restart are counted once against pool limits, including those whose lease had already been handed to the verifier, so a pool no longer reads above its real use.
-- Known limitation: on a two-node entry where one node refuses to load the provider-qualified model name (a real Ollama node answers 404 for `ollama/<model>`), that node is dropped for the attempt and the work stays on the other node. See the two-node check in `docs/testing.md`.
+- A leased node is asked to load the model by its own name (`qwen3.8:27b`), not the provider-qualified name the lease carries (`ollama/qwen3.8:27b`). A real Ollama node answers 404 to the qualified name, which used to drop that node on every attempt and leave a two-node entry running on one node.
+- Sessions that start at the same moment no longer share a node address. The pi backend is one object for every session and its node address was set just before each launch, so a worker could be started against another worker's node; starting and restarting a session now hold a lock from the first per-session setting until the launch has read them.
 - Docs: [`compute-nodes.md`](docs/howto/compute-nodes.md) has a new section on how a pi-family worker picks its node, and [`compute-routing.md`](docs/howto/compute-routing.md) no longer says list order decides.
 
 ### Node-hosted pi runners are seen as alive

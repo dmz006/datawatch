@@ -197,6 +197,10 @@ func capacityResolver(registry func() *inference.Registry, nodes func() *compute
 // multi-node LLM entry: it finds the leased node in the compute registry and
 // makes the model resident there. A node the registry does not hold fails the
 // load, so the task fails over to another node of the entry.
+//
+// The model a lease carries is provider-qualified ("ollama/qwen3.8:27b"); the
+// node knows it only by its own name ("qwen3.8:27b"), so the provider prefix
+// is dropped before the load request.
 func nodeLoader(nodes func() *compute.Registry) autonomous.NodeLoader {
 	loader := &inference.ModelLoader{}
 	return func(ctx context.Context, name, model string, wait func(reason string)) error {
@@ -213,8 +217,18 @@ func nodeLoader(nodes func() *compute.Registry) autonomous.NodeLoader {
 		if node == nil {
 			return &inference.NodeLoadError{Node: name, Model: model, Cause: fmt.Errorf("node %s is not in the compute registry", name)}
 		}
-		return loader.Ensure(ctx, node, model, wait)
+		return loader.Ensure(ctx, node, nodeModelName(model), wait)
 	}
+}
+
+// nodeModelName is the name a compute node serves model under: the text after
+// the provider prefix, which ends at the first slash. A model with no prefix
+// is returned as written.
+func nodeModelName(model string) string {
+	if _, name, found := strings.Cut(model, "/"); found && name != "" {
+		return name
+	}
+	return model
 }
 
 // capacityManagerKeys splits a resolver into the two closures the autonomous
