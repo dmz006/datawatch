@@ -1171,7 +1171,10 @@ autonomous:
     # tooltip.
     direct_counts_visible: false
     # Federation peer name of the daemon that keeps the shared tag registry.
-    # Empty (default) means this daemon is its own keeper and nothing syncs.
+    # Empty (default) means standalone: this daemon keeps its own tags and
+    # nothing syncs. Set it to this daemon's own name to keep the registry, or
+    # to another federation peer's name to follow that keeper. A name that is
+    # not a federation peer leaves this daemon stale.
     registry_keeper: ""
     # How often, in whole seconds, the shared tag registry syncs with the
     # keeper peer named in registry_keeper. Minimum 5; default 30.

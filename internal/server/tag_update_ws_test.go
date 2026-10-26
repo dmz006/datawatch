@@ -70,6 +70,7 @@ func TestTagEventFrameCarriesIDsOnlyForEveryKind(t *testing.T) {
 		{autonomous.TagEvent{Kind: autonomous.TagEventDeleted, TagID: "t1"}, map[string]bool{"kind": true, "tag_id": true}},
 		{autonomous.TagEvent{Kind: autonomous.TagEventAssigned, PRDID: "p1"}, map[string]bool{"kind": true, "prd_id": true}},
 		{autonomous.TagEvent{Kind: autonomous.TagEventSessionAssigned, SessionID: "host-s1"}, map[string]bool{"kind": true, "session_id": true}},
+		{autonomous.TagEvent{Kind: autonomous.TagEventRegistrySynced}, map[string]bool{"kind": true}},
 	}
 	for _, tc := range cases {
 		srv.BroadcastTagUpdate(tc.ev)

@@ -30,6 +30,8 @@ Complete reference for configuring, operating, and extending datawatch.
 | [pwa-setup.md](pwa-setup.md) | Browser PWA interface over Tailscale |
 | [howto/mcp-prompts.md](howto/mcp-prompts.md) | 10 MCP prompt slash commands — live context injection for every operator workflow (v7.1.0) |
 | [howto/automata-progress.md](howto/automata-progress.md) | Automata progress dashboard: counts by kind, rates per active day, known versus estimated work left, completion range, daily trend |
+| [howto/automata-tags.md](howto/automata-tags.md) | Nested tags for Automata and sessions: the tag tree, subtree counts, browsing with match ANY or ALL, primary tag, the attention group, session tags (own and inherited), settings |
+| [howto/automata-tag-registry.md](howto/automata-tag-registry.md) | One tag registry across federated daemons: the keeper, peers, stale copies, pending sync and merge notes |
 | [howto/automation-queue-advance.md](howto/automation-queue-advance.md) | Automation (chained Automatons): activate, automatic advance, idle alert |
 | [howto/automation-lane-fill.md](howto/automation-lane-fill.md) | Lane fill: keeping GPU and Claude lanes busy, the shadow mode comparison, lane preferences, the idle alert and restart behaviour |
 | [howto/automation-tab.md](howto/automation-tab.md) | Automation tab: list, pipeline strip, create and edit form, member controls |
@@ -110,6 +112,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [flow/proxy-flow.md](flow/proxy-flow.md) | Proxy mode — remote routing, session discovery, command forwarding |
 | [flow/agent-spawn-flow.md](flow/agent-spawn-flow.md) | F10 agent lifecycle — profile → spawn → bootstrap → clone → terminate → revoke → sweep |
 | [flow/lifecycle-subscription-flow.md](flow/lifecycle-subscription-flow.md) | Automata lifecycle event → dispatcher → subscription engine → comm / session (bridge, SendInput) / topic / alert / pending-events queue (`mcp_queue`) sinks; update + test-fire |
+| [flow/tag-registry-sync-flow.md](flow/tag-registry-sync-flow.md) | Shared tag registry across federated daemons: keeper and peer roles, the pull loop, forwarded writes, stale copies, pending sync, merge and removed-on-keeper notes |
 
 ---
 

@@ -512,6 +512,7 @@ The data carries IDs only. A client that needs names or counts refetches
 | `deleted` | A tag is deleted | `tag_id` |
 | `assigned` | An Automaton's tag list or primary tag is saved | `prd_id` |
 | `session_assigned` | A session's own tags are saved | `session_id` (the full ID) |
+| `registry_synced` | A peer pulls a snapshot from its keeper and applies it | none (the client refetches `GET /api/autonomous/tags`) |
 
 A tag description change sends nothing, because a description never changes a count.
 A rename or a re-parent sends exactly one frame. An Automaton's tag change is also
@@ -531,7 +532,9 @@ Several daemons can share one tag registry, so the same tags (their names,
 parents, colors and descriptions) appear on each of them. One daemon keeps the
 registry. The others keep a cached copy of it and send their tag edits to the
 keeper. The registry is set with `autonomous.tags.registry_keeper` and synced on
-`autonomous.tags.registry_sync_seconds`.
+`autonomous.tags.registry_sync_seconds`. The sync paths (pull, forwarded write,
+stale copy, merge) are drawn in [flow/tag-registry-sync-flow.md](../flow/tag-registry-sync-flow.md),
+and the operator steps are in [howto/automata-tag-registry.md](../howto/automata-tag-registry.md).
 
 **Roles.** The role follows from `registry_keeper`:
 

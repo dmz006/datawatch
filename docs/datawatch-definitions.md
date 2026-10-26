@@ -1504,6 +1504,14 @@ and
 
 **Lane preference** — the setting on each Automaton that says which lane it may take: `gpu`, `claude`, or `any` (the default). The planner honours `gpu` and `claude` exactly. A person sets it; lane fill does not infer it from the work.
 
+**Tag subtree count** — the number of distinct Automata under a tag, counting Automata that carry the tag or any tag below it. An Automaton that carries two of the tags in the subtree is counted once. It is the main count the tag browser shows. Sessions have their own subtree count, which also includes the tags a session inherits. The direct count (Automata carrying exactly that tag) is available as a tooltip when `autonomous.tags.direct_counts_visible` is on. See [howto/automata-tags.md](howto/automata-tags.md).
+
+**Attention group** — the set of Automata that need the operator now: every Automaton whose status is in `autonomous.tags.attention_statuses` (blocked, needs review and paused by default), plus any Automaton with a task held for review. It is the pinned "Needs attention" section above the tag browser, and the view that opens by default when something is in it. See [howto/automata-tags.md](howto/automata-tags.md).
+
+**Inherited tag** — a tag a session gets from the Automaton that started it. It is shown as a dashed chip marked *inherited*, is read-only on the session, and changes when the Automaton's tags change. A session's own tags are separate and are the only ones set on the session itself. See [howto/automata-tags.md](howto/automata-tags.md).
+
+**Tag registry keeper** — the one daemon that holds the shared tag registry for a federation. The keeper is named by `autonomous.tags.registry_keeper`: on a peer it is the name of the keeper peer, and on the keeper it is the keeper's own name. A peer keeps a cached copy and forwards its tag edits to the keeper; when the keeper is unreachable the peer shows its last copy as stale. See [howto/automata-tag-registry.md](howto/automata-tag-registry.md).
+
 ---
 
 ## Core feature reference matrix

@@ -6,7 +6,7 @@
 // value to its own name to keep the registry. An empty value means no keeper:
 // the daemon is standalone and nothing syncs. Peers pull the keeper's snapshot
 // (revision, tags with their origin node, merge notes) every registry_sync_seconds
-// and when a tag event arrives. A peer keeps the last copy in a cache file in
+// and when the registry is reconfigured. A peer keeps the last copy in a cache file in
 // the autonomous data directory, so the copy survives a restart.
 //
 // A peer forwards create, rename, re-parent, recolor, describe and delete to
@@ -50,9 +50,10 @@
 // daemon keeps its own tags and nothing syncs. A value equal to the daemon's own
 // name gives RoleKeeper, and any other value gives RolePeer.
 //
-// Not wired yet. This package is the core only. The autonomous store adapter,
-// the federation KeeperClient, the REST, MCP and CLI handlers that call
-// Registry, the tag event hook that calls Notify, and the Run goroutine in daemon
-// startup are follow-up work. Until they land, autonomous.tags.registry_keeper
-// and registry_sync_seconds do not change behaviour.
+// Wiring. The daemon builds the registry at boot (cmd/datawatch/tag_registry_wiring.go):
+// it passes the autonomous store adapter, the federation KeeperClient and the
+// registry to the REST handlers, and starts the Run goroutine. A change to
+// autonomous.tags.registry_keeper or registry_sync_seconds reconfigures the running
+// registry, so no restart is needed. Nothing calls Notify on a tag event in this
+// build; the sync loop wakes on its interval and on reconfiguration.
 package tagregistry
