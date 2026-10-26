@@ -309,6 +309,12 @@ func capacityResolver(registry func() *inference.Registry, nodes func() *compute
 		if !gated {
 			return pools, node, nil
 		}
+		// A pi backend that lists compute nodes of its own places on that
+		// list; the gate above only decided that the session is local.
+		if own, ok := piOwnEntry(reg, backend); ok {
+			entry = own
+			node = own.ComputeNodes[0]
+		}
 		if len(entry.ComputeNodes) > 1 {
 			ordered := inference.OrderedPoolNodes(entry, priority)
 			serving := make([]inference.PoolNode, 0, len(ordered))
