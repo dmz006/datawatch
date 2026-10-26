@@ -148,6 +148,62 @@ Proposed status: Planned.
 - Parity surface (pending Q4, recommendation (a)): config for the gate, REST read of the decision and of the gate state, PWA read-only decision line; MCP, CLI, comm channel and mobile unchanged.
 - Mobile: N/A unless Q4 adds a contract; a decision written to the existing decision log would not add one.
 
+### Follow-on steps added 2026-10-26: move the supervisor's own checks into the daemon
+
+Source: the operator asked how much of the supervisor's 20-minute watch and hourly tick could be built into datawatch
+automation. The supervisor's current checks are `scripts/supervisor-watch.py` and the hourly procedure in
+`2026-10-17-supervisor-rules-and-lessons.md` section 11a. Operator, 2026-10-26, quoted: "Add them as follow-on steps
+under BL609, remember we should be using DataWatch automation and debugging as we do so, where possible". These are
+planned steps, not confirmed ones: the confirmation of 2026-10-25 covers Step 1 only, and each later step is filed one
+at a time after its own confirmation.
+
+**Dogfood rule (applies to Step 1 and to every step below).** Each step, when it ships, is switched on for the
+supervisor's own loop the same day. The supervisor runs the new built-in in parallel with its script or its manual
+check, compares the two outputs, files every difference or defect as a tracker row and a draft PRD, and retires the
+manual check only after the outputs have agreed for a full day. The supervisor is the first user of every step, and
+debugging it is part of shipping it.
+
+**Step 9.** Daemon-side watch. Depends on: Step 1 (the triage record and poll pass), Steps 5 and 6 (CI watch and
+merge pending), Q1 (the shared 30 minute alert default, decided). The poll raises, through the existing alert and
+notify channels and with no model call, the findings `scripts/supervisor-watch.py` produces today: tmux server
+restart, daemon not active, a model not resident on a registered node, a task newly failed or held for review, a
+finished Automaton not merged, an idle lane with eligible work, a broken or silent project worktree, a verification
+script that is not executable, a dirty main checkout, and red or stuck CI. The supervisor session then wakes on an
+alert instead of on a timer. Switch-over: the script stays as the oracle and the two run side by side until they agree
+for a day.
+Proposed status: Planned (design not confirmed).
+- Docs checklist: `CHANGELOG.md`; new watch keys in `docs/config-reference.yaml`; `docs/operations.md` for the watch;
+  `docs/testing-tracker.md`; full phase completion checklist.
+- Parity surface (Q4, the full set): config keys, REST read of the findings, MCP read, CLI read, comm-channel alert,
+  PWA findings card. Mobile: a parity issue for the new REST contract.
+
+**Step 10.** Lane-fill eligibility, then switch lane fill from shadow to on. Depends on: Step 9 (the same findings
+feed the eligibility), the Q4 surfaces for lane fill, and shadow mode having run long enough to compare its decisions
+with the supervisor's. Teaches lane fill what the supervisor knows and it does not (checked 2026-10-26 against the live
+shadow decisions): skip stale Automata (no update in 72 hours, probes and old drafts), never run a spec that says HOLD
+or is sequenced after something unshipped, run an implementation Automaton only when its proposal file carries a
+`Confirmed: yes` line, check that main does not already carry what the spec asks for, require a valid registered
+worktree, and take its lane counts from the LLM concurrency cap so there is one source of truth (it is configured for
+3 Claude lanes while the live cap is 1). Also fix pool-evidence reading for a registered host whose certificate the
+daemon does not trust. Switch-over: compare shadow decisions with the supervisor's for a day, then turn the mode to
+`on` for the GPU lanes first.
+Proposed status: Planned (design not confirmed).
+- Docs checklist: `CHANGELOG.md`; the lane-fill section of `docs/operations.md`; `docs/config-reference.yaml`;
+  `docs/testing-tracker.md`; full phase completion checklist.
+- Parity surface: config, REST, MCP, CLI, comm channel and PWA already exist for lane fill; new eligibility reasons
+  appear in the decisions list on each. Mobile: parity issue only if the decision record shape changes.
+
+**Step 11.** Merge mechanics in the coordinator (the BL473 coordinator row). Depends on: Steps 9 and 10, and operator
+design decisions that are NOT made yet. Moves the supervisor's merge procedure into the daemon: a trial merge in a
+throwaway worktree, lint and the full tests with the tmux variables unset, a changelog entry taken from the lines the
+branch added against its merge-base, a refusal to ship from a dirty main checkout, shipping only on a green exit code,
+cancelling the Automaton record only after the ship succeeded, and the registry row update. A merge conflict is held
+for a model or the operator; it is never guessed. Open design points for the operator before this step can be
+confirmed: whether the daemon may push and tag by itself, which release number rule applies without a human, and
+what a held conflict costs in model use.
+Proposed status: Planned (design open).
+- Docs checklist and parity surface: to be written when the design points above are answered.
+
 ## Open questions for the operator
 
 None of the following is decided. Each starts a step only when recorded in this document.

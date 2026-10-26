@@ -488,6 +488,10 @@ budget estimate. Deliberately held PRDs are listed in `IGNORE` in the script wit
    tags (`gh run list`; read failures; security patches are consumed as soon as available, an unfixed CVE stays
    suppressed in `security/accepted-risks.yml`; never rerun a security workflow; leave external dependabot and
    `auto/cve-cleanup` PRs alone).
+9. Dogfood (operator, 2026-10-26: "remember we should be using DataWatch automation and debugging as we do so, where
+   possible"). When a datawatch built-in replaces one of these checks (the BL609 follow-on steps 9 to 11: daemon-side
+   watch, lane fill switched on, merge mechanics), run it in parallel with the manual check, compare the outputs, file
+   every difference as a tracker row and a draft PRD, and retire the manual check only after a full day of agreement.
 8. Report: one line per lane, then state changes, then the audit result, then `python3 scripts/v10-status.py`.
    Questions go as plain text at the end, one at a time. Never use the blocking question tool. Record every
    operator answer in the design or decisions doc with the words quoted.
