@@ -44,11 +44,11 @@ func TestStartTrackerLaunchStallsOnlyPastLimit(t *testing.T) {
 	}
 }
 
-func TestStartTrackerLaunchAnchorsWindowAtLaunchTime(t *testing.T) {
-	// The wait loop first sees the worker at tick 5, already silent. With a
-	// recorded launch at the origin the window runs from the launch, so the
-	// bound fires at tick 7 (70s) rather than tick 12 (70s after tick 5).
-	tr := NewStartTracker(60*time.Second, startTrackerOrigin, time.Time{}, time.Time{})
+func TestStartTrackerLaunchWindowStartsAtFirstSilentTick(t *testing.T) {
+	// The wait loop first sees the worker at tick 5, already silent. A launch
+	// tracker given no anchor starts its window at that tick, so the bound
+	// fires at tick 12 (70s after tick 5), as it did before the shared tracker.
+	tr := NewStartTracker(60*time.Second, time.Time{}, time.Time{}, time.Time{})
 	var stalledAt int
 	for k := 5; k <= 14; k++ {
 		obs := tr.Observe(StartInput{Now: trackerTickAt(k), State: sessionStateWaitingInput, Pane: trackerSilentPane})
@@ -56,8 +56,8 @@ func TestStartTrackerLaunchAnchorsWindowAtLaunchTime(t *testing.T) {
 			stalledAt = k
 		}
 	}
-	if stalledAt != 7 {
-		t.Fatalf("launch tracker with a launch anchor stalled at tick %d, want 7", stalledAt)
+	if stalledAt != 12 {
+		t.Fatalf("launch tracker first silent at tick 5 stalled at tick %d, want 12", stalledAt)
 	}
 }
 

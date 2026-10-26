@@ -182,7 +182,7 @@ The restart matrix (`scripts/restart-matrix.sh`, see [The restart matrix](#the-r
 
 **A launch interrupted by a restart.** A worker whose agent never started before the restart (its pane holds only a bare shell) is not adopted. At boot the daemon ends that shell and resets the task to pending with the reason `session never started`. No retry is counted, and the task is launched once more. A task that was `verifying` on such a session is requeued the same way. A live session is adopted only once its agent has started, which the daemon checks by looking for the agent process, a channel-ready event, a delivered task or a first assistant turn, sampling three times a second apart so a snapshot taken between ticks is not read as a bare shell.
 
-**Start-confirm bound for launched and adopted sessions.** A claude-code worker has one start-confirm bound whether the daemon launched it or adopted it after a restart: `autonomous.session_start_confirm_seconds`, default 120 seconds, measured from the last evidence of life. For a launched worker that is its launch time until a sign of work appears; for an adopted worker it is the latest update, channel event or log write the session left before the restart. If the session is still in `waiting_input` with no assistant output past that limit, it is ended and the start counts as a failure against the start retry budget: two requeues, then the task fails. Once a first assistant turn appears, the bound no longer applies. Other backends are not held to it, because their start cannot be confirmed from the assistant marker.
+**Start-confirm bound for launched and adopted sessions.** A claude-code worker has one start-confirm bound whether the daemon launched it or adopted it after a restart: `autonomous.session_start_confirm_seconds`, default 120 seconds, measured from the last evidence of life. For an adopted worker that is the latest update, channel event or log write the session left before the restart; a launched worker has no evidence of life until its first sign of work, so its clock starts at the first check that finds it silent. If the session is still in `waiting_input` with no assistant output past that limit, it is ended and the start counts as a failure against the start retry budget: two requeues, then the task fails. Once a first assistant turn appears, the bound no longer applies. Other backends are not held to it, because their start cannot be confirmed from the assistant marker.
 
 **Shutdown drain.** On a stop, the daemon first waits (at most 6 seconds) for the HTTP server to shut down, so no new launch arrives over HTTP. It then refuses new session launches and gives each launch still running a fixed grace of 15 seconds (`shutdownLaunchGrace` in `cmd/datawatch/shutdown_launch.go`; it is not a config key). A launch still running after that is rolled back, and the daemon logs `[session] rolled back launch <id>` for each one. The rollback's own settle wait (about 2 seconds) comes on top, so the stop stays well inside the 90-second default systemd stop timeout.
 
@@ -2652,7 +2652,8 @@ is not the only proof. A worker in one long silent tool call is not ended.
 - **Launched and adopted workers:** one clock serves both. It is measured from
   the last evidence of life (its last update, channel event or log write), not
   from the moment the daemon adopted the worker. A worker the daemon launched
-  has no evidence yet, so its clock starts at launch.
+  has no evidence of life until its first sign of work, so its clock starts at
+  the first check that finds it silent.
 - **While a tool call runs:** the session shows as `running` (the busy
   probe), not `waiting_input`, while the pane shows the agent working.
 - **What you see:**

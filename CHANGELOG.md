@@ -13,7 +13,7 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 ### One start tracker for launched and adopted workers
 
-A worker the daemon launches and a worker adopted after a daemon restart now share one start tracker and one limit, so the two paths cannot drift apart. The setting `autonomous.session_start_confirm_seconds` and its 120 second default are unchanged, and start failures are booked the same way on both paths. One timing change for launched workers: the start-confirm bound is now measured from the worker's launch time until a sign of work is seen, where it used to start at the first check that found the worker silent. A launched worker with no sign of work can therefore be ended earlier than before, by up to the time between its launch and the first check. An adopted worker is still measured from the last evidence of life it left before the restart.
+A worker the daemon launches and a worker adopted after a daemon restart now share one start tracker and one limit, so the two paths cannot drift apart. The setting `autonomous.session_start_confirm_seconds` and its 120 second default are unchanged, and start failures are booked the same way on both paths. Behaviour is unchanged on both paths. A launched worker's start-confirm clock still starts at the first check that finds it silent, and an adopted worker is still measured from the last evidence of life it left before the restart.
 
 ## v9.17.1 — Idle worker nudge fires after the turn
 

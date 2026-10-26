@@ -255,9 +255,11 @@ shell as the task's session:
 - An adopted claude-code worker is held to the same start-confirm bound as a
   launched one, `autonomous.session_start_confirm_seconds` (default 120
   seconds). The bound is measured from the worker's last evidence of life, so a
-  worker that was active just before the restart is not ended early. A worker
-  that sits in `waiting_input` with no sign of work past the bound is ended as a
-  start failure. The first two such failures requeue the task and the third fails
+  worker that was active just before the restart is not ended early. A launched
+  worker has no evidence of life until its first sign of work, so its clock
+  starts at the first check that finds it silent. A worker that sits in
+  `waiting_input` with no sign of work past the bound is ended as a start
+  failure. The first two such failures requeue the task and the third fails
   it. A bare shell found at boot does not count toward that budget, and neither
   does the normal retry budget.
 

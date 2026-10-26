@@ -4845,15 +4845,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					staleLogPath = s.LogFile
 					family = s.BackendFamily
 					if family == "claude-code" && sessionStartLimit > 0 {
-						// Both modes anchor the silent window at the attempt's launch (see
-						// autonomouspkg.StartAnchor). An adopted session is judged in the adopted
-						// mode and seeded from its last evidence of life, so the bound does not
-						// charge the time the daemon was down.
-						launchedAt := autonomouspkg.StartAnchor(task.StartedAt, time.Now())
+						// An adopted session is judged in the adopted mode, anchored at the
+						// task's launch (see autonomouspkg.StartAnchor) and seeded from its last
+						// evidence of life, so the bound does not charge the time the daemon was
+						// down. A launched session has no evidence of life yet, so its silent
+						// window starts at the first silent waiting_input tick.
 						if task.AdoptedSession {
+							launchedAt := autonomouspkg.StartAnchor(task.StartedAt, time.Now())
 							startTracker = autonomouspkg.NewAdoptedStartTracker(sessionStartLimit, launchedAt, autonomouspkg.SessionLastLifeAt(s))
 						} else {
-							startTracker = autonomouspkg.NewStartTracker(sessionStartLimit, launchedAt, time.Time{}, s.LastChannelEventAt)
+							startTracker = autonomouspkg.NewStartTracker(sessionStartLimit, time.Time{}, time.Time{}, s.LastChannelEventAt)
 						}
 					}
 				}
