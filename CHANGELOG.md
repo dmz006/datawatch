@@ -40,6 +40,14 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.19.4 — Adopted sessions hold a node lease and waiting work is re-placed
+
+### Restart keeps each worker on the node it runs on
+
+- After a daemon restart, a worker session that survived is adopted onto the compute node it runs on, taken from its recorded node. The node then shows its engines in use, and a new request is placed on a node with a free engine instead of piling onto the busy one.
+- A node recorded on waiting work is a hint only. If that node is no longer in the LLM entry's `compute_nodes` list, the request drops it and is placed on a listed node once an engine frees. Nothing is rejected.
+- Removing a node from the list reaches waiting work at once, without a daemon restart.
+
 ## v9.19.3 — Supervisor watch script no longer needs a release
 
 ### Supervisor watch script is exempt from the version bump check
