@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -32,10 +33,48 @@ type judgeBackendChooser func(tried []string) (backend string, ok bool)
 // be granted in time, so the judge never ran on that backend.
 type judgeAttempt struct {
 	Backend  string
+	Started  time.Time
 	Limit    time.Duration
 	Elapsed  time.Duration
 	TimedOut bool
 	NoSlot   bool
+}
+
+// judgeTryLog keeps the timed-out attempts of one judge call durable, so a
+// daemon restart sees which backends were already tried. A nil log keeps them
+// in memory only.
+type judgeTryLog interface {
+	Tried() []autonomouspkg.JudgeAttemptRecord
+	Record(rec autonomouspkg.JudgeAttemptRecord) error
+	Clear() error
+}
+
+// prdJudgeTryLog is the judgeTryLog of one judge call on a PRD, stored on it.
+type prdJudgeTryLog struct {
+	mgr   *autonomouspkg.Manager
+	prdID string
+	key   string
+}
+
+func (l prdJudgeTryLog) Tried() []autonomouspkg.JudgeAttemptRecord {
+	return l.mgr.JudgeTries(l.prdID, l.key)
+}
+
+func (l prdJudgeTryLog) Record(rec autonomouspkg.JudgeAttemptRecord) error {
+	return l.mgr.RecordJudgeTry(l.prdID, l.key, rec)
+}
+
+func (l prdJudgeTryLog) Clear() error {
+	return l.mgr.ClearJudgeTries(l.prdID, l.key)
+}
+
+// judgeTryLogFor returns the durable try log of the judge call that runs for
+// req, or nil when there is no manager or PRD to keep it on.
+func judgeTryLogFor(mgr *autonomouspkg.Manager, req autonomouspkg.GuardrailInvocation) judgeTryLog {
+	if mgr == nil || req.PRDID == "" {
+		return nil
+	}
+	return prdJudgeTryLog{mgr: mgr, prdID: req.PRDID, key: req.UnitID + "|" + req.Guardrail}
 }
 
 // judgeRunContext bounds one judge run by its time limit. A zero limit is no
@@ -148,29 +187,39 @@ func judgeChooserFromList(backends []string) judgeBackendChooser {
 // nothing is held. Once any attempt has timed out the PRD is held, even when a
 // later backend lacked a slot: an infra return would make the infra retry run
 // the whole judge again, and the timed-out backend would run for another full
-// time limit. The chooser must offer at least one backend on the first call.
-func runJudgeAttempts(req autonomouspkg.GuardrailInvocation, choose judgeBackendChooser, limit time.Duration, alert judgeAlertFn, run judgeAttemptFn) (autonomouspkg.GuardrailVerdict, error) {
-	var attempts []judgeAttempt
-	var tried []string
+// time limit.
+//
+// tries, when set, makes the timed-out attempts durable: backends already
+// recorded there (before a daemon restart, say) are excluded up front, each
+// new timeout is recorded before the next backend is chosen, and the record is
+// cleared once the call finishes. A call whose every backend timed out, in this
+// run or an earlier one, holds without running the judge again. The chooser
+// must offer at least one backend on the first call of a fresh judge.
+func runJudgeAttempts(req autonomouspkg.GuardrailInvocation, choose judgeBackendChooser, limit time.Duration, alert judgeAlertFn, tries judgeTryLog, run judgeAttemptFn) (autonomouspkg.GuardrailVerdict, error) {
+	attempts, tried := judgeRestoredAttempts(tries, limit)
 	var last autonomouspkg.GuardrailVerdict
 	var lastErr error
 	backend, ok := choose(tried)
 	for ok {
-		att := judgeAttempt{Backend: backend, Limit: limit}
-		started := time.Now()
+		att := judgeAttempt{Backend: backend, Limit: limit, Started: time.Now()}
 		verdict, err := run(backend, &att)
-		att.Elapsed = time.Since(started)
+		att.Elapsed = time.Since(att.Started)
 		if !att.TimedOut && !att.NoSlot {
+			judgeClearTries(tries)
 			return verdict, err
 		}
 		tried = append(tried, backend)
 		attempts = append(attempts, att)
 		last, lastErr = verdict, err
+		if att.TimedOut {
+			judgeRecordTry(tries, att)
+		}
 		backend, ok = choose(tried)
 		if att.TimedOut {
-			alert("warn", judgeTimeoutTitle(req.PRDID), judgeTimeoutBody(req.PRDID, att, backend, ok))
+			alert("warn", judgeTimeoutTitle(req.PRDID), judgeTimeoutBody(req.PRDID, att, attempts, backend, ok))
 		}
 	}
+	judgeClearTries(tries)
 	if judgeHasNoSlot(attempts) && !judgeHasTimeout(attempts) {
 		return last, lastErr
 	}
@@ -203,15 +252,61 @@ func judgeTimeoutTitle(prdID string) string {
 	return fmt.Sprintf("judge timed out for Automaton %s", prdID)
 }
 
-// judgeTimeoutBody words the warning for one timed-out attempt. next is the
-// backend the judge moves to, and more is false when none is left.
-func judgeTimeoutBody(prdID string, att judgeAttempt, next string, more bool) string {
+// judgeRestoredAttempts returns the attempts a judge call timed out on before
+// this run (read back from tries), and the backends they used, so the chooser
+// skips them. Nothing is restored without a log.
+func judgeRestoredAttempts(tries judgeTryLog, limit time.Duration) ([]judgeAttempt, []string) {
+	if tries == nil {
+		return nil, nil
+	}
+	var attempts []judgeAttempt
+	var tried []string
+	for _, rec := range tries.Tried() {
+		attempts = append(attempts, judgeAttempt{
+			Backend: rec.Backend, Started: rec.Started, Limit: limit, Elapsed: rec.Duration, TimedOut: true,
+		})
+		tried = append(tried, rec.Backend)
+	}
+	return attempts, tried
+}
+
+// judgeRecordTry stores one timed-out attempt in the try log. A failed write is
+// logged, not returned: the attempt still counts for this run, and the warning
+// alert is raised either way.
+func judgeRecordTry(tries judgeTryLog, att judgeAttempt) {
+	if tries == nil {
+		return
+	}
+	rec := autonomouspkg.JudgeAttemptRecord{
+		Backend: att.Backend, Started: att.Started, Duration: att.Elapsed, Outcome: autonomouspkg.JudgeOutcomeTimedOut,
+	}
+	if err := tries.Record(rec); err != nil {
+		log.Printf("judge: record timed-out attempt on backend %s: %v", att.Backend, err)
+	}
+}
+
+// judgeClearTries drops the try log once the judge call has finished. Its
+// summary is kept on the verdict. A failed write is logged, not returned.
+func judgeClearTries(tries judgeTryLog) {
+	if tries == nil {
+		return
+	}
+	if err := tries.Clear(); err != nil {
+		log.Printf("judge: clear timed-out attempts: %v", err)
+	}
+}
+
+// judgeTimeoutBody words the warning for one timed-out attempt. attempts holds
+// every attempt so far, the one just timed out last; next is the backend the
+// judge moves to, and more is false when none is left. The warning names the
+// PRD, the backends tried so far and the time spent.
+func judgeTimeoutBody(prdID string, att judgeAttempt, attempts []judgeAttempt, next string, more bool) string {
 	after := "no backend is left in the judge policy, so the Automaton needs review"
 	if more {
 		after = "retrying on backend " + next + ", the next one in the judge policy"
 	}
-	return fmt.Sprintf("judge for Automaton %s timed out on backend %s after %s (limit %s); %s",
-		prdID, att.Backend, att.Elapsed.Round(time.Second), att.Limit, after)
+	return fmt.Sprintf("judge for Automaton %s timed out on backend %s after %s (limit %s); backends tried so far: %s, %s in total; %s",
+		prdID, att.Backend, att.Elapsed.Round(time.Second), att.Limit, judgeBackendList(attempts), judgeTotalElapsed(attempts), after)
 }
 
 // judgeHoldReason says why the judge is held, in words that suit the attempts
@@ -244,19 +339,39 @@ func judgeHoldVerdict(req autonomouspkg.GuardrailInvocation, attempts []judgeAtt
 		Category:  autonomouspkg.JudgeTimeoutCategory,
 		Summary: fmt.Sprintf("judge for Automaton %s %s (%s), %s in total; the Automaton needs review",
 			req.PRDID, judgeHoldReason(attempts), judgeBackendList(attempts), judgeTotalElapsed(attempts)),
-		Issues:    judgeAttemptLines(attempts),
-		VerdictAt: time.Now(),
+		Issues:        judgeAttemptLines(attempts),
+		JudgeAttempts: judgeAttemptRecords(attempts),
+		VerdictAt:     time.Now(),
 	}
 }
 
+// judgeAttemptRecords is the structured summary of every attempt, one record
+// per backend in the order tried, kept on the hold verdict.
+func judgeAttemptRecords(attempts []judgeAttempt) []autonomouspkg.JudgeAttemptRecord {
+	out := make([]autonomouspkg.JudgeAttemptRecord, 0, len(attempts))
+	for _, a := range attempts {
+		rec := autonomouspkg.JudgeAttemptRecord{
+			Backend: a.Backend, Started: a.Started, Duration: a.Elapsed.Round(time.Second), Outcome: autonomouspkg.JudgeOutcomeTimedOut,
+		}
+		if a.NoSlot {
+			rec.Outcome = autonomouspkg.JudgeOutcomeNoSlot
+		}
+		out = append(out, rec)
+	}
+	return out
+}
+
+// judgeAttemptLines words each attempt for the hold verdict: the backend, when
+// it started, and what happened.
 func judgeAttemptLines(attempts []judgeAttempt) []string {
 	lines := make([]string, 0, len(attempts))
 	for _, a := range attempts {
+		start := a.Started.Format(time.RFC3339)
 		if a.NoSlot {
-			lines = append(lines, fmt.Sprintf("backend %s: no capacity slot within the wait, the judge did not run", a.Backend))
+			lines = append(lines, fmt.Sprintf("backend %s, started %s: no capacity slot within the wait, the judge did not run", a.Backend, start))
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("backend %s: timed out after %s (limit %s)", a.Backend, a.Elapsed.Round(time.Second), a.Limit))
+		lines = append(lines, fmt.Sprintf("backend %s, started %s: timed out after %s (limit %s)", a.Backend, start, a.Elapsed.Round(time.Second), a.Limit))
 	}
 	return lines
 }

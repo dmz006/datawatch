@@ -23,9 +23,20 @@ func rulesReviewBlockStatus(prd *PRD) (PRDStatus, string) {
 	return PRDBlocked, "rules_review_block"
 }
 
+// judgeHoldOrBlocked is the status a story or task block moves the PRD to:
+// needs_review when the block is a judge hold (the judge timed out on every
+// backend), blocked otherwise. v is the unit's last block verdict, or nil.
+func judgeHoldOrBlocked(v *GuardrailVerdict) PRDStatus {
+	if v != nil && IsJudgeTimeoutHold(*v) {
+		return PRDNeedsReview
+	}
+	return PRDBlocked
+}
+
 // judgeHoldHeld reports whether prd is waiting in needs_review because its
-// judge (plan review or guardrail) did not finish on any backend. Lane fill must not approve and run such a
-// PRD by itself: only the operator's decision moves it on.
+// judge (plan review or guardrail) did not finish on any backend, at the PRD,
+// story or task level. Lane fill must not approve and run such a PRD by
+// itself: only the operator's decision moves it on.
 func judgeHoldHeld(prd *PRD) bool {
 	if NormalizePRDStatus(prd.Status) != PRDNeedsReview {
 		return false
@@ -33,6 +44,19 @@ func judgeHoldHeld(prd *PRD) bool {
 	if v := prd.PlanReview; v != nil && v.Held {
 		return true
 	}
-	v := lastBlockVerdict(prd.Verdicts)
-	return v != nil && IsJudgeTimeoutHold(*v)
+	if v := lastBlockVerdict(prd.Verdicts); v != nil && IsJudgeTimeoutHold(*v) {
+		return true
+	}
+	for i := range prd.Story {
+		s := &prd.Story[i]
+		if v := lastBlockVerdict(s.Verdicts); v != nil && IsJudgeTimeoutHold(*v) {
+			return true
+		}
+		for j := range s.Tasks {
+			if v := lastBlockVerdict(s.Tasks[j].Verdicts); v != nil && IsJudgeTimeoutHold(*v) {
+				return true
+			}
+		}
+	}
+	return false
 }

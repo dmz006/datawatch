@@ -293,6 +293,13 @@ type PRD struct {
 	// this is the judgment-based complement for everything else.
 	Verdicts []GuardrailVerdict `json:"verdicts,omitempty"`
 
+	// JudgeTries holds the timed-out judge attempts of judge calls that are
+	// still running for this PRD (see judge_tries.go). A daemon restart reads
+	// them back, so a judge never retries a backend that already timed out
+	// for the same call. Cleared when the call finishes; the summary then
+	// lives on the verdict.
+	JudgeTries []JudgeTry `json:"judge_tries,omitempty"`
+
 	// BL191 Q2 — template flag + variable schema. When IsTemplate is
 	// true the PRD is a reusable shape rather than an executable plan;
 	// instantiating with POST /api/autonomous/prds/{id}/instantiate
@@ -1173,6 +1180,10 @@ type GuardrailVerdict struct {
 	// no raw text is available (deterministic checks, or the judge text
 	// was not captured).
 	RawJudge string `json:"raw_judge,omitempty"`
+	// JudgeAttempts is the summary of every judge attempt that led to this
+	// verdict, one per backend tried, in the order tried. Set on a judge-
+	// timeout hold; empty for a judgment that finished on a backend.
+	JudgeAttempts []JudgeAttemptRecord `json:"judge_attempts,omitempty"`
 }
 
 // VerificationResult is BL25 output. Severity levels match

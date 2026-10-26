@@ -116,7 +116,7 @@ func TestRunJudgeAttemptsTimeoutThenPasses(t *testing.T) {
 	var alerts []alertRecord
 	var tried []string
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-42", Guardrail: "rules"}
-	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), 30*time.Minute, recordAlerts(&alerts),
+	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), 30*time.Minute, recordAlerts(&alerts), nil,
 		func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 			tried = append(tried, backend)
 			if backend == "claude-code" {
@@ -148,7 +148,7 @@ func TestRunJudgeAttemptsHoldsWhenEveryBackendTimesOut(t *testing.T) {
 	var alerts []alertRecord
 	var tried []string
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-77", Guardrail: "rules"}
-	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), 30*time.Minute, recordAlerts(&alerts),
+	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), 30*time.Minute, recordAlerts(&alerts), nil,
 		func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 			tried = append(tried, backend)
 			att.TimedOut = true
@@ -189,7 +189,7 @@ func TestRunJudgeAttemptsNonTimeoutFailureIsFinal(t *testing.T) {
 	var tried []string
 	boom := errors.New("ask call failed")
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-9"}
-	_, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), time.Minute, recordAlerts(&alerts),
+	_, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), time.Minute, recordAlerts(&alerts), nil,
 		func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 			tried = append(tried, backend)
 			return autonomouspkg.GuardrailVerdict{}, boom

@@ -5983,7 +5983,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			unitBackend, _ := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
 			choose := judgeBackendChooserFor(ctx, autonomousMgrRef, req, gcfg, unitBackend)
 			alert := func(level, title, body string) { emitJudgeAlert(autonomousMgrRef, level, title, body) }
-			return runJudgeAttempts(req, choose, judgeSessionTimeout(gcfg), alert,
+			return runJudgeAttempts(req, choose, judgeSessionTimeout(gcfg), alert, judgeTryLogFor(autonomousMgrRef, req),
 				func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 					return autonomousGuardrailAttempt(ctx, req, gcfg, backend, att)
 				})

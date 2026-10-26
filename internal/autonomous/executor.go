@@ -452,7 +452,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					if lt.Status == TaskBlocked {
 						old := latest.Status
 						m.store.WithLock(func() {
-							latest.Status = PRDBlocked
+							latest.Status = judgeHoldOrBlocked(lastBlockVerdict(lt.Verdicts))
 						})
 						latest.BlockedReason = blockedReasonFromVerdicts(lt.Verdicts)
 						if m.store.SavePRD(latest) == nil {
@@ -753,7 +753,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			return err
 		} else if blocked {
 			old := prd.Status
-			prd.Status = PRDBlocked
+			prd.Status = judgeHoldOrBlocked(lastBlockVerdict(s.Verdicts))
 			prd.BlockedReason = blockedReasonFromVerdicts(s.Verdicts)
 			if m.store.SavePRD(prd) == nil {
 				m.emitPRDStatus(prd, old, nil, lastBlockVerdict(s.Verdicts))

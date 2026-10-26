@@ -152,7 +152,7 @@ func planReviewThroughSelector(t *testing.T, gcfg autonomouspkg.Config, admit ju
 	var ranOn []string
 	judge := func(ctx context.Context, inv autonomouspkg.GuardrailInvocation) (autonomouspkg.GuardrailVerdict, error) {
 		choose := judgeBackendChooserFor(ctx, nil, inv, gcfg, "ollama")
-		return runJudgeAttempts(inv, choose, time.Minute, recordAlerts(alerts),
+		return runJudgeAttempts(inv, choose, time.Minute, recordAlerts(alerts), nil,
 			func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 				att.Backend = backend
 				return runJudgeLeased(ctx, admit, att, "", inv.UnitID, inv.PRDID,
