@@ -69,32 +69,26 @@ func TestLaneFillParity(t *testing.T) {
 	}
 }
 
-// triageParity maps the triage REST read to its route and its MCP
-// counterpart. The cli and comm entries are deliberately empty: unlike the
-// lane fill read, the triage read ships on REST and MCP only. The record
-// already shows on the Automaton itself in the reads an operator already
-// has, and the read exists to serve operator-facing tools; the CLI,
-// comm and client surfaces (PWA, Android, iPhone/iOS) ship together with
-// the autonomous how-to pass, as one client slice rather than surface by
-// surface. The plan's "Parity surface" section
-// (docs/plans/2026-10-26-autonomous-triage-read-route.md) states each
-// exclusion with its reason, and the checks below pin them so the
-// exclusion cannot drift silently.
+// triageParity maps the triage REST read to its route and its
+// counterpart on every verb surface. There is no exemption: the triage
+// read ships on all four surfaces — REST, the autonomous_triage MCP
+// tool, the datawatch autonomous triage CLI subcommand, and the
+// autonomous triage comm verb — and the shared formatter
+// (internal/autonomous/triage_text.go) renders the record identically
+// for the CLI, the comm verb and the triage alert.
 var triageParity = struct {
-	method, path, mcp string
-	cli, comm         string // empty: intentionally excluded for this read slice
+	method, path, mcp, cli, comm string
 }{
-	http.MethodGet, "/api/autonomous/triage", "autonomous_triage", "", "",
+	http.MethodGet, "/api/autonomous/triage", "autonomous_triage", "triage", "triage",
 }
 
 // TestTriageParity is the triage half of the lane fill parity test: it
-// pins the triage read's parity decisions. Shipped: the REST route and
-// method, the MCP tool, and its capability mapping. Excluded by design:
-// the CLI — no "triage" subcommand under `datawatch autonomous` — and the
-// comm channel, pinned in internal/router by
-// TestTriageCommVerbIsExcluded. When a later slice ships any of those
-// surfaces it updates triageParity and the plan's "Parity surface"
-// section together, and these pins become inclusion checks.
+// pins the triage read's parity decisions across all four surfaces, in
+// line with the plan's "Parity surface" section
+// (docs/plans/2026-10-26-autonomous-triage-read-route.md): the REST
+// route and method; the MCP tool and its read capability; the CLI
+// subcommand; and the comm verb (rendering pinned in
+// internal/router/triage_comm_test.go and triage_parity_test.go).
 func TestTriageParity(t *testing.T) {
 	ops := server.TriageRESTOperations()
 	if len(ops) != 1 {
@@ -113,12 +107,19 @@ func TestTriageParity(t *testing.T) {
 		t.Errorf("autonomous_triage capability = %q; want %q (the same read capability as the sibling reads)", got, federation.CapAutonomousRead)
 	}
 
-	if triageParity.cli != "" {
-		t.Fatalf("triageParity has a CLI entry but TestTriageParity still asserts the exclusion; update the test with the plan's Parity surface section")
-	}
+	cliVerbs := map[string]bool{}
 	for _, c := range newAutonomousCmd().Commands() {
-		if c.Name() == "triage" {
-			t.Errorf(`the CLI subcommand %q is part of the triage slice now; it was excluded for this read by design — remove this pin and update triageParity and the plan's "Parity surface" section together`, c.Name())
-		}
+		cliVerbs[c.Name()] = true
+	}
+	if !cliVerbs[triageParity.cli] {
+		t.Errorf("no CLI subcommand %q under datawatch autonomous", triageParity.cli)
+	}
+
+	commVerbs := toSet(router.TriageCommVerbs())
+	if !commVerbs[triageParity.comm] {
+		t.Errorf("no comm verb %q", triageParity.comm)
+	}
+	if router.Parse("autonomous "+triageParity.comm).Type != router.CmdAutonomous {
+		t.Errorf("comm verb %q does not parse under the autonomous command", triageParity.comm)
 	}
 }

@@ -179,27 +179,15 @@ func triageRecordUnchanged(stored, fresh *TriageRecord) bool {
 	return reflect.DeepEqual(a, b)
 }
 
-// triageAlertBody renders the triage alert body for one stuck Automaton:
-// who it is (standalone or a member of which Automation), the failed
-// task with its error and end reason, the retry budget, and when it
-// first went stuck.
+// triageAlertBody renders the triage alert body for one stuck
+// Automaton: the full triage record text. It delegates to the shared
+// formatter in triage_text.go (RenderTriageRecord) — the same one the
+// CLI (datawatch autonomous triage) and the comm verb (autonomous triage)
+// render for the same record — so the alert to the chat sink carries
+// the complete standing: identity, membership, the failed or blocked
+// task with its error, the block reason, the session end reason, the
+// retry budget, how long the Automaton has been stuck, the alert stamp
+// when set, and any notes — with no field left out.
 func triageAlertBody(rec *TriageRecord) string {
-	name := rec.PRDTitle
-	if name == "" {
-		name = rec.PRDID
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Automaton %q (id %s) is %s and waiting for operator triage.\n", name, rec.PRDID, rec.Status)
-	if rec.AutomationID != "" {
-		fmt.Fprintf(&b, "Member of Automation %q (id %s)", rec.AutomationName, rec.AutomationID)
-		if rec.MemberID != "" {
-			fmt.Fprintf(&b, ", member %s", rec.MemberID)
-		}
-		b.WriteString("\n")
-	} else {
-		b.WriteString("Standalone Automaton (not part of an Automation).\n")
-	}
-	b.WriteString(triageDetailsBlock(rec) + "\n")
-	fmt.Fprintf(&b, "Stuck since %s.", rec.FirstSeenAt.Format(time.RFC3339))
-	return b.String()
+	return RenderTriageRecord(rec)
 }

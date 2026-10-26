@@ -36,6 +36,16 @@ The triage records for failed and blocked Automata were only readable as files o
   route gate check were extended by the code, not bypassed.
 - **MCP tool:** `autonomous_triage`, same three parameters, proxy to the
   REST route exactly like the rest of the autonomous tools.
+- **CLI:** `datawatch autonomous triage [--automation ID] [--prd ID] [--status failed|blocked] [--json]` —
+  the same read over the command line, same filters, same canonical status
+  refusal, rendered through the shared formatter.
+- **comm channel:** `autonomous triage [automation-id]` — the same read
+  over the chat channel; the optional Automation id narrows the read.
+- **One wording everywhere:** the CLI, the comm reply and the triage
+  alert body all render `TriageRecord` through the shared formatter in
+  `internal/autonomous/triage_text.go`, and `triageAlertBody` delegates
+  to it — so a record shows the same standing wherever the operator
+  reads it and on the alert itself.
 - No writes. The route touches nothing but the record list.
 
 ## What changed
@@ -48,8 +58,29 @@ The triage records for failed and blocked Automata were only readable as files o
 - `internal/mcp/triage_tools.go` (new) — the tool and the proxy; registered
   in `internal/mcp/server.go`.
 - `internal/federation/mcp_tool_caps.go` — the tool's capability entry.
+- `internal/autonomous/triage_text.go` (new) — the shared formatter:
+  `ParseTriageList`, `RenderTriageText` (the list and the threshold,
+  with the "no records" text) and `RenderTriageRecord` (one record in
+  full: identity, membership, the failed or blocked task with error and
+  end reason, the block reason, the retry budget, the stamps, the notes).
+- `cmd/datawatch/cli_triage.go` (new) — the `triage` subcommand of
+  `datawatch autonomous`; registered in `cmd/datawatch/cli_autonomous.go`.
+- `internal/router/triage_comm.go` (new) — the `triage` verb of the
+  autonomous comm command; routed in `internal/router/sx2_parity.go`.
+- `internal/autonomous/triage_pass.go` — `triageAlertBody` now delegates
+  to the shared formatter, so the alert body is the record's text.
 - Tests: `internal/server/triage_rest_test.go` (new) and
   `internal/mcp/triage_tools_test.go` (new).
+- Tests: `internal/autonomous/triage_text_test.go` (the shared
+  formatter; `TestRenderTriageRecord_MatchesTriageAlertBody` pins the
+  alert-body contract), `cmd/datawatch/cli_triage_test.go` (filters, local
+  status refusal, `--json` pass-through, daemon refusal, registration),
+  `internal/router/triage_comm_test.go` (rendering, the Automation
+  filter, argument refusal, daemon refusal),
+  `internal/router/triage_parity_test.go` (`TestTriageCommVerbIsRegistered`
+  — the verb parses and is listed in the autonomous usage) and
+  `cmd/datawatch/lane_fill_parity_test.go` (`TestTriageParity` — all four
+  surfaces listed together).
 
 ## Parity surface
 
@@ -62,18 +93,18 @@ carrying a reason.
 |---|---|---|
 | **REST** | Shipped — `GET /api/autonomous/triage`. | The read the feature is about: filters `automation_id`, `prd_id`, `status`; a wrong `status` is a 400; no match lists empty, never 404; the autonomous read capability, exactly like the sibling reads. |
 | **MCP** | Shipped — `autonomous_triage`. | The operator-facing tool surface of the read: read-only hint, optional `automation_id`, `prd_id`, `status`, mapping to the autonomous read capability and proxying the route. |
-| **CLI** | Excluded. | The record already appears on the Automaton itself, in the reads an operator already has (including `datawatch autonomous get`). A `datawatch autonomous triage` verb is one part of a later operator-surface pass (CLI + comm + client cards together), so it is not added alone here. Pinned: `TestTriageParity` fails if a `triage` CLI subcommand appears before this section is updated. |
-| **comm channel** | Excluded. | Same deliberate deferral as the CLI: the chat verb ships with the operator-surface pass, not with the read slice. Pinned: `TestTriageCommVerbIsExcluded` — `autonomous triage` is still a non-verb, answered with the autonomous usage without reaching the daemon. |
+| **CLI** | Shipped — `datawatch autonomous triage [--automation ID] [--prd ID] [--status failed\|blocked] [--json]`. | The operator-facing CLI surface of the read: the same filters as the route, the status refused locally with the two allowed values (nothing reaches the daemon on a wrong one), `--json` prints the body untouched. The record's standing renders through the shared formatter. Pinned: `TestTriageParity` and `cmd/datawatch/cli_triage_test.go`. |
+| **comm channel** | Shipped — `autonomous triage [automation-id]`. | The operator-facing chat surface of the read: one optional Automation id narrows the list; the reply is the shared formatter's text (the record's standing and the threshold), the same as the CLI and the alert. Pinned: `TestTriageParity`, `internal/router/triage_parity_test.go`, `internal/router/triage_comm_test.go`. |
 | **YAML/config** | No new item. | The read reports the existing `autonomous.automation.triage_alert_minutes` setting (added by the settings task in this story): no new key, no new value, nothing to configure. |
 | **PWA** | Excluded. | A triage card on the Automation sub-tab is an operator-client feature. Client parity (PWA == Android == iPhone) ships as one client slice in the later pass, so the phones are not left behind the PWA. The record is already visible on the Automaton itself, so no client surface is hiding a fact that was not already reachable. |
 | **Android** | Excluded. | Same reason as the PWA: client surfaces ship together, later. |
 | **iPhone/iOS** | Excluded. | Same reason as the PWA: client surfaces ship together, later. |
 
-The exclusions are deliberate, not an oversight: the two surfaces that are
-shipped (REST, MCP) are fully built and tested, and the rest are named
-with a stated reason; the two operator-facing exclusions (CLI, comm) are
-pinned by tests so the exclusion cannot drift silently, and each pin
-changes with this section when its slice lands.
+The exclusions are deliberate, not an oversight: the four surfaces that
+are shipped (REST, MCP, CLI, comm) are fully built and tested, the rest
+are named with a stated reason, and every shipped surface is pinned by
+`TestTriageParity` (the cmd half) and `TestTriageCommVerbIsRegistered`
+(the router half), so no surface can drift silently.
 
 ## Checks that passed (2026-10-26, Go 1.27.2, `env -u TMUX -u TMUX_TMPDIR`)
 
@@ -83,6 +114,11 @@ changes with this section when its slice lands.
 - `TestA2_EveryRegisteredRouteHandlerIsCapabilityGated` — pass.
 - `TestEveryUnconditionallyRegisteredToolHasAnMCPToolCapEntry` — pass.
 - `go test ./...` (whole repository) — pass, no failures.
+- CLI + comm slice (2026-11-04): `go test ./internal/autonomous/ ./internal/router/ ./cmd/datawatch/ -run 'Triage'` —
+  all pass: the shared formatter, the alert-body contract
+  (`TestRenderTriageRecord_MatchesTriageAlertBody`), the CLI filters,
+  refusal and pass-through, the comm rendering and argument handling, and
+  both halves of `TestTriageParity` / `TestTriageCommVerbIsRegistered`.
 
 ## Not done here
 
