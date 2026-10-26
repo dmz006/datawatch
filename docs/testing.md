@@ -2147,3 +2147,102 @@ Cleanup done: PASS
 - **What was not tested.** The case where both nodes accept the qualified name was not run, so the split itself (two on one node, one on the other) was not observed. A model name that already names a provider was not compared with a bare one.
 
 Result: FAIL. Steps 1 and 5 were observed and the waiting reason in step 4 was observed, but steps 2, 3 and 4 were not met: all workers landed on the second node and none on the local node, because the local node refused to load the provider-qualified model name `ollama/qwen3.8:27b` (HTTP 404).
+
+## Pi worker placement — regression tests
+
+Bug tests for the placement rules: a pi-family worker goes to the least-loaded healthy compute node, runs on the node its lease names, and is not launched when a lease names no node. Each entry below was run on this tree with `go test -count=1 -v` against the packages named; all 27 tests passed. The run is a unit-level run: the two-node check on a running sandbox daemon is recorded in "Two-node pi worker placement" above and did not pass, for the reason given there, so the entries here do not replace it. The API commands show how to look at the same behaviour on a sandbox daemon (never the production daemon); their responses were not captured in this run.
+
+```
+go test -count=1 -v ./internal/capacity/ ./internal/autonomous/ ./internal/server/ ./cmd/datawatch/ -run '<test names below>'
+```
+
+`$TOKEN` is the sandbox bearer token and `$BASE` the sandbox daemon address (for example `https://127.0.0.1:18543`).
+
+### A less-loaded node beats a higher-priority one
+
+| Field | Details |
+|-------|---------|
+| **Description** | Two nodes serve one LLM entry. The higher-priority node used to win whenever it had a free slot, so one node filled while the other sat idle. |
+| **Steps** | 1. Give two nodes a session limit and different priorities. 2. Put one session on the higher-priority node. 3. Acquire a lease for a request that lists both nodes. 4. Repeat with equal load, with a node that has no limit, and with sessions that only the external-use counter knows about. |
+| **Expected** | The lease names the less-loaded node (used count over limit). Equal load goes to the higher priority, then to list order. A node with no limit counts as unloaded. External use counts as load. |
+| **Actual** | `TestAcquireLeastLoadedNodeBeatsHigherPriority`, `TestAcquirePicksHighestPriorityNodeOnLoadTie`, `TestAcquireLoadIsUsedOverLimit`, `TestAcquireUnlimitedNodeCountsAsNoLoad` and `TestAcquireCountsExternalUseAsLoad` (`internal/capacity`) passed. |
+| **Result** | PASS |
+
+On a sandbox daemon, read the pools and the lease node after starting workers:
+
+```sh
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity
+# expect each worker lease to name the node whose pool had the lower used/limit when it was admitted
+```
+
+### An unhealthy node is skipped and named in the waiting reason
+
+| Field | Details |
+|-------|---------|
+| **Description** | A node missing from the compute registry, or inside a maintenance window, must not receive new workers. When no node can take a worker, the waiting reason must say which node is unhealthy and which is full. |
+| **Steps** | 1. Mark one candidate node unhealthy. 2. Acquire a lease. 3. Fill the other node and acquire again, then read the waiter's reason. 4. Mark both unhealthy. 5. Make the node healthy again. 6. Send a single-node request while the hook reports unhealthy. 7. Drive the registry view through a refresh and a maintenance window. |
+| **Expected** | The lease lands on the healthy node. The reason reads `waiting for nodes <a>, <b>: <a>: unhealthy; <b>: N/M engines in use, held by <holder>`. With every node unhealthy the reason names each. The waiter is placed on the node once it recovers. A single-node request ignores the health hook. The view treats every node as healthy before its first refresh, a node absent from the registry as unhealthy, and a node in a maintenance window as unhealthy, and a ledger fed by it skips the node in maintenance. |
+| **Actual** | `TestAcquireSkipsUnhealthyNode`, `TestUnhealthyNodeIsNamedInWaitReason`, `TestEveryCandidateUnhealthyOrFullIsNamed`, `TestAllCandidatesUnhealthyNamesEach` and `TestSingleNodeRequestIgnoresHealthHook` (`internal/capacity`), and `TestNodeHealthViewHealthyBeforeFirstRefresh`, `TestNodeHealthViewRegistryAndMaintenance` and `TestNodeHealthViewDrivesLedgerPlacement` (`cmd/datawatch`) passed. |
+| **Result** | PASS |
+
+On a sandbox daemon, open a maintenance window on a node and read the waiting reason:
+
+```sh
+curl -sk -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"gpu-box-1","kind":"ollama","address":"http://gpu-box-1:11434","maintenance_windows":[{"from":"2026-01-01T00:00:00Z","reason":"check"}]}' \
+  $BASE/api/compute/nodes/gpu-box-1
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/compute/nodes/gpu-box-1/health   # in_maintenance: true
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity                         # waiting[].reason contains "gpu-box-1: unhealthy"
+```
+
+### A worker with a bare model name is admitted on the provider it launches with
+
+| Field | Details |
+|-------|---------|
+| **Description** | A pi-family model written without a provider resolved to no node, so the lease named none and the session ran on pi's own endpoint. |
+| **Steps** | 1. Configure the pi default model with a provider. 2. Run a one-task Automaton on a pi-family backend with a bare model name. 3. Compare the model the capacity resolver, the spawn and the session start each saw. 4. Repeat on a hosted backend, with no pi default, and with a model that already names another provider. 5. Read the default-model lookup for each backend. |
+| **Expected** | The worker holds one of the entry's nodes, the spawn names that node, and all three see the same provider-qualified model. The other setups are unchanged. The lookup returns each backend's configured model, re-reads the config on every call, and returns nothing for other backends. |
+| **Actual** | `TestPiFamilyWorkerHoldsNodeItRunsOn` and `TestModelQualificationLeavesOtherSetupsAlone` (`internal/autonomous`) and `TestPiDefaultModelReadsEachBackendsConfiguredModel` (`cmd/datawatch`) passed. |
+| **Result** | PASS |
+
+### The worker is launched on the node its lease names
+
+| Field | Details |
+|-------|---------|
+| **Description** | The node a lease was granted on must reach the session start, and it must be used even when the LLM entry lists one node. |
+| **Steps** | 1. Run a task whose lease names a node and read the spawn request. 2. Build the session body for that task. 3. Start a one-shot pi session that names a node on a one-node entry. 4. Start a session that names no node on a multi-node and on a one-node entry. |
+| **Expected** | The spawn request and the session body carry the leased node. The one-shot start runs against that node's address with the provider-qualified model. With no node named, a multi-node entry binds its first node and a one-node entry keeps pi's own provider table. |
+| **Actual** | `TestSpawnRequestCarriesHeldNode` (`internal/autonomous`), `TestBuildAutonomousSessionBodyCarriesComputeNode` (`cmd/datawatch`), `TestOneShotStartWithLeasedNodeUsesNodeAddress` and `TestStartWithNoNodeNamedKeepsEntryRules` (`internal/server`) passed. |
+| **Result** | PASS |
+
+### No launch when capacity was held but no node was leased
+
+| Field | Details |
+|-------|---------|
+| **Description** | A pi-family worker that holds capacity with no node, while its LLM entry lists nodes, would have started on pi's default endpoint. |
+| **Steps** | 1. Run a one-task Automaton where the lease names no node and the entry lists compute nodes. 2. Read how many workers were spawned and the task as stored. 3. Repeat with an entry that lists no nodes, with a hosted backend, and with capacity switched off. |
+| **Expected** | No worker is spawned and the task is failed with an error naming the backend and the model and saying no compute node was leased. The other three cases still spawn. |
+| **Actual** | `TestPiFamilyWorkerWithoutLeasedNodeDoesNotSpawn` and `TestWorkerWithoutLeasedNodeUnchangedElsewhere` (`internal/autonomous`) passed. |
+| **Result** | PASS |
+
+On a sandbox daemon, a refused launch shows as a failed task:
+
+```sh
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/<prd-id>
+# the task's error reads "... holds capacity but no compute node was leased, and its LLM entry lists compute nodes"
+```
+
+### Sessions adopted after a restart are counted once
+
+| Field | Details |
+|-------|---------|
+| **Description** | After a daemon restart, live workers are re-adopted into the pool counts. A worker whose lease had already been handed to its verifier was counted a second time, so a pool read above its real use. |
+| **Steps** | 1. Adopt three live tasks over a pool capped at 2. 2. Run the adoption pass again. 3. Hand each lease off to its verifier and adopt again. 4. Request a new slot and read its waiting reason. |
+| **Expected** | Three leases and three slots held, however many times the pass runs and after the hand-off. An unrelated holder is still adopted. The new request waits with a reason that names the pool and the holders. |
+| **Actual** | `TestAdoptOverCapCountsEachSessionOnce`, `TestAdoptSkipsHolderThatWasHandedOff` and `TestHandoffKeepsAdoptedCountAtThree` (`internal/capacity`) and `TestBootResumeAdoptsThreeLiveTasksOverCapOnce` and `TestAdoptAfterVerifyHandoffKeepsOneLeasePerSession` (`internal/autonomous`) passed. |
+| **Result** | PASS |
+
+```sh
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity
+# after a restart with live workers: the pool's used count equals the number of live workers, not more
+```

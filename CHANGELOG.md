@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Pi workers are placed on the least-loaded healthy node and launched on the node they leased
+
+- A `pi` or `pi-prompt` worker whose LLM entry lists two or more compute nodes now goes to the least-loaded healthy node (sessions held over the node's session limit). `scheduling_priority` only breaks a tie between equally loaded nodes, then list order. Before, the highest-priority node with a free slot always won, so a fast node filled while the others sat idle. A full node is passed over.
+- A node that is not in the compute registry, or is inside a maintenance window, is skipped. The waiting reason names it, for example `waiting for nodes gpu-box-1, gpu-box-2: gpu-box-1: unhealthy; gpu-box-2: 2/2 engines in use, held by ...`.
+- A worker whose model has no provider (for example `qwen3.8:27b`) takes the provider of the backend's configured model, so it is admitted on the node it will actually run on.
+- A worker is launched against the node its lease names, including when the LLM entry lists only one node. If a worker holds capacity but no node was leased while its entry lists nodes, it is no longer launched on pi's default endpoint; the task fails with an error saying no compute node was leased.
+- Sessions adopted after a daemon restart are counted once against pool limits, including those whose lease had already been handed to the verifier, so a pool no longer reads above its real use.
+- Known limitation: on a two-node entry where one node refuses to load the provider-qualified model name (a real Ollama node answers 404 for `ollama/<model>`), that node is dropped for the attempt and the work stays on the other node. See the two-node check in `docs/testing.md`.
+- Docs: [`compute-nodes.md`](docs/howto/compute-nodes.md) has a new section on how a pi-family worker picks its node, and [`compute-routing.md`](docs/howto/compute-routing.md) no longer says list order decides.
+
 ### Node-hosted pi runners are seen as alive
 
 - The liveness probes now recognise a pi runner that node hosts. The kernel names such a process `MainThread`, so the probes missed it; they now also read the script node runs and treat a script named after a runner as that runner.
