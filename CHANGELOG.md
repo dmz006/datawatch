@@ -28,6 +28,19 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.17.6 — Pi-prompt workers lease the compute node they run on
+
+### Pi workers are placed on the least-loaded healthy node and launched on the node they leased
+
+- A `pi` or `pi-prompt` worker whose LLM entry lists two or more compute nodes now goes to the least-loaded healthy node (sessions held over the node's session limit). `scheduling_priority` only breaks a tie between equally loaded nodes, then list order. Before, the highest-priority node with a free slot always won, so a fast node filled while the others sat idle. A full node is passed over.
+- A node that is not in the compute registry, or is inside a maintenance window, is skipped. The waiting reason names it, for example `waiting for nodes gpu-box-1, gpu-box-2: gpu-box-1: unhealthy; gpu-box-2: 2/2 engines in use, held by ...`.
+- A worker whose model has no provider (for example `qwen3.8:27b`) takes the provider of the backend's configured model, so it is admitted on the node it will actually run on.
+- A worker is launched against the node its lease names, including when the LLM entry lists only one node. If a worker holds capacity but no node was leased while its entry lists nodes, it is no longer launched on pi's default endpoint; the task fails with an error saying no compute node was leased.
+- Sessions adopted after a daemon restart are counted once against pool limits, including those whose lease had already been handed to the verifier, so a pool no longer reads above its real use.
+- A leased node is asked to load the model by its own name (`qwen3.8:27b`), not the provider-qualified name the lease carries (`ollama/qwen3.8:27b`). A real Ollama node answers 404 to the qualified name, which used to drop that node on every attempt and leave a two-node entry running on one node.
+- Sessions that start at the same moment no longer share a node address. The pi backend is one object for every session and its node address was set just before each launch, so a worker could be started against another worker's node; starting and restarting a session now hold a lock from the first per-session setting until the launch has read them.
+- Docs: [`compute-nodes.md`](docs/howto/compute-nodes.md) has a new section on how a pi-family worker picks its node, and [`compute-routing.md`](docs/howto/compute-routing.md) no longer says list order decides.
+
 ## v9.17.5 — One start tracker for launched and adopted workers
 
 ### One start tracker for launched and adopted workers
