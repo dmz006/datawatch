@@ -851,6 +851,54 @@ body {
 .tag-section-count { font-family: var(--mono, monospace); font-size: 11px; color: var(--text2); font-weight: 400; }
 .tag-section-body { display: flex; flex-direction: column; gap: 8px; padding: 0 10px 10px 10px; }
 
+/* Shared tag registry status: the line under the browser header and the Settings
+   panel, the stale banner when the keeper is unreachable, the stale marker on a
+   count, the pending sync badge and the merge notes with their Dismiss button. */
+.tag-registry-block { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; font-size: 12px; }
+.tag-registry-line { font-size: 11px; color: var(--text2); font-family: var(--mono, monospace); }
+.tag-registry-banner {
+  border: 1px solid var(--warning);
+  border-left-width: 4px;
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  font-weight: 600;
+}
+.tag-registry-paused { font-size: 11px; color: var(--text2); margin: 4px 0 8px; }
+.tag-registry-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--text);
+}
+.tag-registry-note-text { flex: 1; min-width: 160px; }
+.tag-stale-mark {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--warning);
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+.tag-pending-badge {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent2);
+  border: 1px dashed var(--accent2);
+  border-radius: 6px;
+  padding: 0 5px;
+  margin-left: 6px;
+}
+.tag-registry-control:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* Pinned groups above the tag browser: Needs attention and the Running strip. An
    empty group is never drawn, so it takes no height. */
 .tag-pinned { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }

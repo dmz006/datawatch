@@ -36214,7 +36214,9 @@ window.automataTypeRegister = function() {
 // the key is not in the bundle yet (t() returns the key itself on a miss).
 function _tagT(key, fallback, vars) {
   const s = t(key, vars);
-  return s === key ? fallback : s;
+  if (s !== key) return s;
+  // The fallback takes the same %1$s / %1$d placeholders as a bundle string.
+  return String(fallback || '').replace(/%(\d+)\$[sd]/g, (_, n) => (vars && vars[parseInt(n, 10) - 1] !== undefined) ? String(vars[parseInt(n, 10) - 1]) : '');
 }
 
 function _tagsById(tags) {
@@ -36300,15 +36302,17 @@ function _tagSuggestFromAlias(projectDir, projects, tags) {
   return hit ? hit.id : '';
 }
 
-const _tagsState = { list: [], byId: {}, loaded: false, untagged: null };
+const _tagsState = { list: [], byId: {}, loaded: false, untagged: null, registry: null };
 
 // _tagsLoad fetches the registry with its counts: each tag carries subtree_count
-// and direct_count, and untagged holds the count of Automata with no tag.
+// and direct_count, untagged holds the count of Automata with no tag, and registry
+// holds the shared registry's role, keeper, staleness and notes.
 function _tagsLoad(force) {
   if (_tagsState.loaded && !force) return Promise.resolve(_tagsState.list);
   return apiFetch('/api/autonomous/tags?counts=true').then(data => {
     _tagsState.list = (data && data.tags) || [];
     _tagsState.untagged = (data && data.untagged) || null;
+    _tagsState.registry = (data && data.registry) || null;
     _tagsState.byId = _tagsById(_tagsState.list);
     _tagsState.loaded = true;
     return _tagsState.list;
@@ -37158,7 +37162,7 @@ function _tagSectionHTML(ctx, node, depth, defaultOpen) {
   const tip = direct == null ? '' : ` title="${escHtml(t('tag_browse_direct_count', [direct]))}"`;
   const kids = node.children.map(c => _tagSectionHTML(ctx, c, depth + 1, true)).join('');
   const tiles = node.items.length ? `<div class="work-tile-grid tag-section-items">${_tagOrderedTiles(ctx, node)}</div>` : '';
-  return `<details class="tag-section tag-section-level-${Math.min(depth, 3)}" data-tag-section="${escHtml(key)}"${open ? ' open' : ''} ontoggle="tagBrowseSectionToggle(this,'${escJsAttr(ctx.scope)}','${escJsAttr(node.id)}')"><summary class="tag-section-head"><span class="tag-section-name">${escHtml(name)}</span><span class="tag-section-count"${tip}>${count}</span></summary><div class="tag-section-body">${kids}${tiles}</div></details>`;
+  return `<details class="tag-section tag-section-level-${Math.min(depth, 3)}" data-tag-section="${escHtml(key)}"${open ? ' open' : ''} ontoggle="tagBrowseSectionToggle(this,'${escJsAttr(ctx.scope)}','${escJsAttr(node.id)}')"><summary class="tag-section-head"><span class="tag-section-name">${escHtml(name)}</span>${_tagPendingBadgeHTML(_tagsState.byId[node.id])}<span class="tag-section-count"${tip}>${count}${_tagStaleMarkHTML()}</span></summary><div class="tag-section-body">${kids}${tiles}</div></details>`;
 }
 
 // _tagSectionsHTML draws the web and tablet layout: a collapsible section per top-
@@ -37172,7 +37176,7 @@ function _tagSectionsHTML(scope, items, tree, renderTile) {
 }
 
 function _tagDrillRowHTML(scope, id, name, count) {
-  return `<button type="button" class="tag-drill-row" onclick="tagBrowseEnter('${escJsAttr(scope)}','${escJsAttr(id)}')"><span class="tag-drill-name">${escHtml(name)}</span><span class="tag-section-count">${count}</span><span class="tag-drill-chev" aria-hidden="true">›</span></button>`;
+  return `<button type="button" class="tag-drill-row" onclick="tagBrowseEnter('${escJsAttr(scope)}','${escJsAttr(id)}')"><span class="tag-drill-name">${escHtml(name)}</span><span class="tag-section-count">${count}${_tagStaleMarkHTML()}</span><span class="tag-drill-chev" aria-hidden="true">›</span></button>`;
 }
 
 // _tagDrillHTML draws the drill-down under 720px: the breadcrumb, a back row, the
@@ -37218,6 +37222,11 @@ function _tagDrillHTML(scope, items, tree, renderTile) {
 // draws the sections on web and tablet and the drill-down under 720px. The pinned
 // groups sit above all of them; the Attention view draws only the pinned groups.
 function _tagBrowseMountHTML(scope, items, base, renderTile, emptyHtml) {
+  return _tagRegistryBlockHTML(_tagsState.registry) + _tagBrowseBodyHTML(scope, items, base, renderTile, emptyHtml);
+}
+
+// _tagBrowseBodyHTML is the list body under the registry status block.
+function _tagBrowseBodyHTML(scope, items, base, renderTile, emptyHtml) {
   _tagLandingEnsure(_tagAttentionGroup().length);
   const view = _tagBrowseViewOf(scope);
   const attn = _tagBrowse[scope].attn;
@@ -37433,6 +37442,119 @@ function _tagBrowseOnResize() {
   _tagBrowseRepaintVisible();
 }
 
+// ── Tag registry status ──────────────────────────────────────────────────────
+// The shared registry (`registry` on the tag list reply) names the role this node
+// plays and the keeper it follows. A standalone node shows nothing. A peer whose
+// keeper cannot be reached shows its last copy: a banner, a stale mark on every
+// count, and the edits that need the keeper disabled. Create stays enabled, and a
+// tag the keeper has not taken yet shows pending sync. Merge and removal notes stay
+// listed until they are dismissed.
+
+// _tagRegistryActive is true when this node shares the registry with a keeper.
+function _tagRegistryActive(reg) {
+  return !!reg && (reg.role === 'keeper' || reg.role === 'peer');
+}
+
+// _tagRegistryStale is true while a peer shows its last copy of the registry.
+function _tagRegistryStale(reg) {
+  return _tagRegistryActive(reg) && !!reg.stale;
+}
+
+// _tagRegistryEditsBlocked is true while the edits that need the keeper (rename,
+// re-parent, recolor, delete) must stay disabled.
+function _tagRegistryEditsBlocked() {
+  return _tagRegistryStale(_tagsState.registry);
+}
+
+function _tagRegistryPausedText() {
+  return _tagT('tag_registry_edits_paused', 'Rename, move, recolor and delete are paused until the keeper is reachable again. Creating a tag still works and shows pending sync until the keeper has it.');
+}
+
+// _tagRegistryTimeText formats the time of the last copy; a missing or bad time
+// says so rather than showing a date of zero.
+function _tagRegistryTimeText(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d.getTime())) return _tagT('tag_registry_time_unknown', 'an unknown time');
+  return d.toLocaleString();
+}
+
+// _tagRegistryStatusLine names the role and the keeper, or '' for a standalone node.
+function _tagRegistryStatusLine(reg) {
+  if (!_tagRegistryActive(reg)) return '';
+  const role = reg.role === 'keeper'
+    ? _tagT('tag_registry_role_keeper', 'keeper')
+    : _tagT('tag_registry_role_peer', 'peer');
+  const text = _tagT('tag_registry_status', 'Shared registry: %1$s · keeper: %2$s', [role, reg.keeper || '']);
+  return `<div class="tag-registry-line">${escHtml(text)}</div>`;
+}
+
+// _tagRegistryBannerHTML is the stale banner, or '' while the copy is current.
+function _tagRegistryBannerHTML(reg) {
+  if (!_tagRegistryStale(reg)) return '';
+  const when = _tagRegistryTimeText(reg.last_synced_at);
+  const text = _tagT('tag_registry_stale_banner', 'Showing the last copy from %1$s; the keeper is unreachable', [when]);
+  return `<div class="tag-registry-banner" role="status">${escHtml(text)}</div>`;
+}
+
+// _tagStaleMarkHTML marks a count drawn from the last copy; '' while the copy is current.
+function _tagStaleMarkHTML() {
+  if (!_tagRegistryStale(_tagsState.registry)) return '';
+  const tip = _tagT('tag_registry_stale_tip', 'Count from the last copy; the keeper is unreachable');
+  return `<span class="tag-stale-mark" title="${escHtml(tip)}">${escHtml(_tagT('tag_registry_stale_mark', 'stale'))}</span>`;
+}
+
+// _tagPendingBadgeHTML marks a tag this node created while the keeper was unreachable.
+function _tagPendingBadgeHTML(tg) {
+  if (!tg || !tg.pending_sync) return '';
+  return `<span class="tag-pending-badge">${escHtml(_tagT('tag_registry_pending_sync', 'pending sync'))}</span>`;
+}
+
+// _tagRegistryNotesHTML lists the merge and removal notes, each with a Dismiss
+// button. A note names a tag, so the whole line is escaped like every other value.
+function _tagRegistryNotesHTML(reg) {
+  const notes = (reg && reg.notes) || [];
+  if (!_tagRegistryActive(reg) || !notes.length) return '';
+  return notes.map(n => {
+    const name = n.name || '';
+    const text = n.kind === 'removed_on_keeper'
+      ? _tagT('tag_registry_note_removed', 'Tag %1$s was deleted on the keeper while this node still had Automata under it', [name])
+      : _tagT('tag_registry_note_merged', 'Tag %1$s was created on two nodes while they were apart and has been merged', [name]);
+    const dismiss = _tagT('tag_registry_note_dismiss', 'Dismiss');
+    return `<div class="tag-registry-note" data-note-id="${escHtml(n.id)}"><span class="tag-registry-note-text">${escHtml(text)}</span><button type="button" class="btn-secondary" style="font-size:10px;padding:1px 8px;" onclick="tagRegistryNoteDismiss('${escJsAttr(n.id)}')">${escHtml(dismiss)}</button></div>`;
+  }).join('');
+}
+
+// _tagRegistryBlockHTML is the registry status for the tag browser header and the
+// Settings panel: the role line, the stale banner and the notes. '' when standalone.
+function _tagRegistryBlockHTML(reg) {
+  const body = _tagRegistryStatusLine(reg) + _tagRegistryBannerHTML(reg) + _tagRegistryNotesHTML(reg);
+  return body ? `<div class="tag-registry-block">${body}</div>` : '';
+}
+
+// _tagRegistryConflictText names the field the keeper kept and the value it now
+// holds. The write reply carries the keeper's value for the tag.
+function _tagRegistryConflictText(res) {
+  const field = res.conflict_field || 'name';
+  const label = field === 'name' ? _tagT('tag_name', 'Name')
+    : field === 'parent' ? _tagT('tag_parent', 'Parent')
+    : field === 'color' ? _tagT('tag_color', 'Color')
+    : _tagT('tag_registry_field_description', 'Description');
+  let value = res.description || '';
+  if (field === 'name') value = res.name || '';
+  else if (field === 'parent') value = (_tagsState.byId[res.parent_id] || {}).name || _tagT('tag_parent_none', '— top level —');
+  else if (field === 'color') value = res.color || '';
+  return _tagT('tag_registry_conflict_toast', "The keeper's version won: %1$s is now %2$s", [label, value]);
+}
+
+// tagRegistryNoteDismiss dismisses one merge or removal note on this node. The
+// dismissal is kept when the keeper's copy is applied again.
+window.tagRegistryNoteDismiss = function(id) {
+  apiFetch('/api/autonomous/tags/registry/notes/' + encodeURIComponent(id) + '/dismiss', { method: 'POST' })
+    .then(() => _tagsLoad(true))
+    .then(() => { _tagBrowseRepaintVisible(); loadAutomataTagRegistryPanel(); })
+    .catch(e => showToast(_tagErrorText(e), 'error', 4000));
+};
+
 // ── Tag registry settings panel ──────────────────────────────────────────────
 
 function loadAutomataTagRegistryPanel() {
@@ -37448,19 +37570,27 @@ function loadAutomataTagRegistryPanel() {
         _tagTreeOrder(tags).filter(r => !banned.has(r.tag.id)).map(r =>
           `<option value="${escHtml(r.tag.id)}" ${current === r.tag.id ? 'selected' : ''}>${'  '.repeat(r.depth)}${escHtml(r.tag.name)}</option>`).join('');
     };
+    // While the keeper is unreachable the edits that need it are disabled, each with
+    // the reason as its tooltip. Create (below) is never disabled.
+    const blocked = _tagRegistryEditsBlocked();
+    const dis = blocked ? ' disabled' : '';
+    const ctl = label => ` title="${escHtml(blocked ? _tagRegistryPausedText() : label)}"${dis}`;
     const rows = _tagTreeOrder(tags).map(({ tag, depth }) => {
       const idJ = escHtml(JSON.stringify(tag.id));
       return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;padding-left:${depth * 18}px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
-        <input type="color" value="${escHtml(/^#[0-9a-f]{6}$/i.test(tag.color || '') ? tag.color : '#6366f1')}" style="width:28px;height:24px;padding:0;border:none;background:none;cursor:pointer;" title="${escHtml(_tagT('tag_color', 'Color'))}" onchange="automataTagUpdate(${idJ},{color:this.value})">
-        <input type="text" value="${escHtml(tag.name)}" style="${inp}flex:1;min-width:90px;" title="${escHtml(_tagT('tag_rename', 'Rename'))}" onchange="automataTagUpdate(${idJ},{name:this.value})">
-        <select style="${inp}max-width:150px;" title="${escHtml(_tagT('tag_parent', 'Parent'))}" onchange="automataTagUpdate(${idJ},{parent_id:this.value})">${parentOpts(tag.id, tag.parent_id || '')}</select>
-        <span style="font-size:11px;opacity:0.6;">${tag.count || 0}</span>
-        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;color:var(--error);" onclick="automataTagDelete(${idJ})">${escHtml(_tagT('tag_delete', 'Delete'))}</button>
+        <input type="color" class="tag-registry-control" value="${escHtml(/^#[0-9a-f]{6}$/i.test(tag.color || '') ? tag.color : '#6366f1')}" style="width:28px;height:24px;padding:0;border:none;background:none;cursor:pointer;"${ctl(_tagT('tag_color', 'Color'))} onchange="automataTagUpdate(${idJ},{color:this.value})">
+        <input type="text" class="tag-registry-control" value="${escHtml(tag.name)}" style="${inp}flex:1;min-width:90px;"${ctl(_tagT('tag_rename', 'Rename'))} onchange="automataTagUpdate(${idJ},{name:this.value})">
+        ${_tagPendingBadgeHTML(tag)}
+        <select class="tag-registry-control" style="${inp}max-width:150px;"${ctl(_tagT('tag_parent', 'Parent'))} onchange="automataTagUpdate(${idJ},{parent_id:this.value})">${parentOpts(tag.id, tag.parent_id || '')}</select>
+        <span style="font-size:11px;opacity:0.6;">${tag.count || 0}${_tagStaleMarkHTML()}</span>
+        <button class="btn-secondary tag-registry-control" style="font-size:11px;padding:2px 8px;color:var(--error);"${ctl(_tagT('tag_delete', 'Delete'))} onclick="automataTagDelete(${idJ})">${escHtml(_tagT('tag_delete', 'Delete'))}</button>
       </div>`;
     }).join('');
     const empty = `<div style="font-size:12px;color:var(--text2);padding:6px 0;">${escHtml(_tagT('tag_registry_empty', 'No tags defined yet.'))}</div>`;
     panel.innerHTML = `
+      ${_tagRegistryBlockHTML(_tagsState.registry)}
       <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">${escHtml(_tagT('tag_registry_desc', 'Organise Automata with nested tags. A tag with child tags or assigned Automata cannot be deleted.'))}</div>
+      ${blocked ? `<div class="tag-registry-paused">${escHtml(_tagRegistryPausedText())}</div>` : ''}
       <div style="margin-bottom:14px;">${rows || empty}</div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
         <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">${escHtml(_tagT('tag_create', 'Create tag'))}</div>
@@ -37486,12 +37616,19 @@ window.automataTagCreate = function() {
 };
 
 window.automataTagUpdate = function(id, patch) {
+  if (_tagRegistryEditsBlocked()) { showToast(_tagRegistryPausedText(), 'error', 4000); loadAutomataTagRegistryPanel(); return; }
   apiFetch('/api/autonomous/tags/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(patch) })
-    .then(() => loadAutomataTagRegistryPanel())
+    .then(res => {
+      // The keeper kept its own value for a field this edit changed: say so, and
+      // the reload below shows the value the keeper holds.
+      if (res && res.conflict) showToast(_tagRegistryConflictText(res), 'info', 5000);
+      loadAutomataTagRegistryPanel();
+    })
     .catch(e => { showToast(_tagErrorText(e), 'error', 4000); loadAutomataTagRegistryPanel(); });
 };
 
 window.automataTagDelete = function(id) {
+  if (_tagRegistryEditsBlocked()) { showToast(_tagRegistryPausedText(), 'error', 4000); return; }
   showConfirmModal(_tagT('tag_confirm_delete', 'Delete this tag?'), () => {
     apiFetch('/api/autonomous/tags/' + encodeURIComponent(id), { method: 'DELETE' })
       .then(() => { showToast(_tagT('tag_deleted', 'Tag deleted'), 'success', 2000); loadAutomataTagRegistryPanel(); })

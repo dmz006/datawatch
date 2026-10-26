@@ -137,6 +137,26 @@ Deleting a tag is refused, with nothing changed, when:
 A third refusal protects the tree: moving a tag under itself or under one
 of its own sub-tags is rejected as a cycle.
 
+### 7. A shared tag registry across nodes
+
+When several daemons share one tag registry, the Automata tag browser shows a
+status line with the node's role (keeper or peer) and the keeper it follows.
+A standalone daemon shows no status line.
+
+- **Stale copy.** When a peer cannot reach its keeper it keeps showing its last
+  copy. A banner reads *Showing the last copy from <time>; the keeper is
+  unreachable*, every tag count carries a *stale* mark, and rename, move,
+  recolor and delete are disabled with the reason as their tooltip. Creating a
+  tag still works.
+- **Pending sync.** A tag created while the keeper is unreachable shows a
+  *pending sync* badge until the keeper takes it.
+- **Conflicts.** When the keeper keeps its own value for a field you edited, a
+  short notice says the keeper's version won, and the registry panel shows the
+  keeper's value.
+- **Merge notes.** A tag created on two nodes while they were apart is merged
+  and listed as *Tag <name> was created on two nodes while they were apart and
+  has been merged*. Click *Dismiss* to remove the note on this node.
+
 ## Same thing from every other surface
 
 | Task | REST | MCP | CLI (`datawatch autonomous …`) | Comm channel (`autonomous …`) |
