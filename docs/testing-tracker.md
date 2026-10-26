@@ -37,6 +37,17 @@ env -u TMUX -u TMUX_TMPDIR go test ./internal/server/ ./internal/mcp/ -run 'Tria
 | Tool proxies the read | `TestTriageProxiesGETAndPassesFiltersThrough`, `TestTriageSendsNoQueryWhenAbsent`, `TestTriageSurfacesValidationError` | Same file, fake HTTP server | A GET to `/api/autonomous/triage` with exactly the supplied filters (and none when none are given); the daemon body comes back inside the tool result; a 400 comes back as a tool error with its text. | Unit | **Yes** | Pass, 2026-10-26 | **No** | — |
 | Capability mapping | `TestTriageCapabilityMapping` | Same file | `autonomous_triage` maps to the autonomous read capability. | Unit | **Yes** | Pass, 2026-10-26 | **No** | — |
 
+The parity pins are a separate concern: they freeze the surface decision for the triage read (REST and MCP shipped; CLI, comm and client surfaces excluded with a stated reason in the plan's "Parity surface" section) so it cannot drift silently. Run them with:
+
+```sh
+env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TriageParity' -count=1 && env -u TMUX -u TMUX_TMPDIR go test ./internal/router/ -run 'TriageCommVerbIsExcluded' -count=1
+```
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Parity entry (shipped + excluded surfaces) | `TestTriageParity` | `cmd/datawatch/lane_fill_parity_test.go` | The triage read's parity decision is frozen: one REST operation, GET `/api/autonomous/triage`; the MCP tool `autonomous_triage` is listed and maps to the autonomous read capability; and no `triage` CLI subcommand exists, which is the recorded exclusion, not a gap. | Unit | **Yes** | Pass, 2026-10-26 | **No** | Fails if a `triage` CLI subcommand appears before the plan's "Parity surface" section and entry are updated. |
+| The comm exclusion is pinned | `TestTriageCommVerbIsExcluded` | `internal/router/triage_parity_test.go`, fake daemon that records calls | `autonomous triage` is still a non-verb: it answers with the autonomous usage and nothing reaches the daemon. | Unit | **Yes** | Pass, 2026-10-26 | **No** | Same exclusion as `TestTriageParity`, pinned on the comm side. |
+
 ## Shared navigation mobile fit
 
 The bottom navigation bar of the PWA now fits 320 to 414 px phones: six equal buttons, labels that truncate with an ellipsis, and a 40 px minimum tap width. The how-to is `docs/howto/navigation-mobile-fit.md`, the plan is `docs/plans/2026-10-25-shared-nav-mobile-fit.md`, and the run records are in `docs/testing/runs/shared-nav-mobile-fit/`. The detailed check steps are in `docs/testing.md` under "Shared navigation mobile fit — phone widths".

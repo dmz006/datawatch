@@ -51,6 +51,30 @@ The triage records for failed and blocked Automata were only readable as files o
 - Tests: `internal/server/triage_rest_test.go` (new) and
   `internal/mcp/triage_tools_test.go` (new).
 
+## Parity surface
+
+The feature touches the operator-interface surfaces. Per the parity rule,
+the full surface set is named here — `REST`, `MCP`, `CLI`, `comm channel`,
+`YAML/config`, `PWA`, `Android`, `iPhone/iOS` — with each excluded surface
+carrying a reason.
+
+| Surface | This slice | Reason |
+|---|---|---|
+| **REST** | Shipped — `GET /api/autonomous/triage`. | The read the feature is about: filters `automation_id`, `prd_id`, `status`; a wrong `status` is a 400; no match lists empty, never 404; the autonomous read capability, exactly like the sibling reads. |
+| **MCP** | Shipped — `autonomous_triage`. | The operator-facing tool surface of the read: read-only hint, optional `automation_id`, `prd_id`, `status`, mapping to the autonomous read capability and proxying the route. |
+| **CLI** | Excluded. | The record already appears on the Automaton itself, in the reads an operator already has (including `datawatch autonomous get`). A `datawatch autonomous triage` verb is one part of a later operator-surface pass (CLI + comm + client cards together), so it is not added alone here. Pinned: `TestTriageParity` fails if a `triage` CLI subcommand appears before this section is updated. |
+| **comm channel** | Excluded. | Same deliberate deferral as the CLI: the chat verb ships with the operator-surface pass, not with the read slice. Pinned: `TestTriageCommVerbIsExcluded` — `autonomous triage` is still a non-verb, answered with the autonomous usage without reaching the daemon. |
+| **YAML/config** | No new item. | The read reports the existing `autonomous.automation.triage_alert_minutes` setting (added by the settings task in this story): no new key, no new value, nothing to configure. |
+| **PWA** | Excluded. | A triage card on the Automation sub-tab is an operator-client feature. Client parity (PWA == Android == iPhone) ships as one client slice in the later pass, so the phones are not left behind the PWA. The record is already visible on the Automaton itself, so no client surface is hiding a fact that was not already reachable. |
+| **Android** | Excluded. | Same reason as the PWA: client surfaces ship together, later. |
+| **iPhone/iOS** | Excluded. | Same reason as the PWA: client surfaces ship together, later. |
+
+The exclusions are deliberate, not an oversight: the two surfaces that are
+shipped (REST, MCP) are fully built and tested, and the rest are named
+with a stated reason; the two operator-facing exclusions (CLI, comm) are
+pinned by tests so the exclusion cannot drift silently, and each pin
+changes with this section when its slice lands.
+
 ## Checks that passed (2026-10-26, Go 1.27.2, `env -u TMUX -u TMUX_TMPDIR`)
 
 - `go test ./internal/server/ -run 'Triage' -count=1` — all pass.

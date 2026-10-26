@@ -24,6 +24,11 @@ func (s *Server) toolAutonomousTriage() mcpsdk.Tool {
 	)
 }
 
+// TriageToolNames lists the triage tools, for the parity test.
+func TriageToolNames() []string {
+	return []string{"autonomous_triage"}
+}
+
 func (s *Server) handleAutonomousTriage(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	q := url.Values{}
 	if v := req.GetString("automation_id", ""); v != "" {

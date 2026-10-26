@@ -94,3 +94,19 @@ func (s *Server) handleAutonomousTriage(w http.ResponseWriter, r *http.Request) 
 		AlertMinutes int                        `json:"alert_minutes"`
 	}{out, tr.TriageAlertMinutes()})
 }
+
+// TriageRESTOperation is one triage REST route, read by the parity test.
+type TriageRESTOperation struct {
+	Name   string
+	Method string
+	Path   string
+}
+
+// TriageRESTOperations is the single list of triage REST operations. The
+// triage read is the only route in this list: a read, with no write
+// siblings, and the parity test checks its surface decisions against it.
+func TriageRESTOperations() []TriageRESTOperation {
+	return []TriageRESTOperation{
+		{"triage", http.MethodGet, "/api/autonomous/triage"},
+	}
+}
