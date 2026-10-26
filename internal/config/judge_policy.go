@@ -23,3 +23,18 @@ func NormalizeJudgeTimeoutSeconds(v int) int {
 func NormalizeJudgePolicy(in []string) []string {
 	return NormalizeVerifierPolicyBackends(in)
 }
+
+// ForJudge returns the routing policy the judges use, derived from the verifier
+// policy p at call time. A non-empty judge backend list replaces the verifier
+// policy's backend list; every other field (mode, Claude session cap, stronger
+// verifier) is the verifier policy's own. An empty or blank judge list returns
+// p unchanged, so the judges follow the verifier policy and later edits to it
+// flow through without any value being copied at save time.
+func (p VerifierPolicyConfig) ForJudge(judgeBackends []string) VerifierPolicyConfig {
+	list := NormalizeJudgePolicy(judgeBackends)
+	if len(list) == 0 {
+		return p
+	}
+	p.Backends = list
+	return p
+}
