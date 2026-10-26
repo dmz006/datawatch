@@ -21,12 +21,34 @@
 // peer is set back to standalone, the federation peer is deleted and the tags created
 // on the peer are deleted. Nothing is skipped for missing state.
 import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
 import { runStory, connectToPWA, navigateTo, screenshot, saveLog, env } from './lib.mjs';
 
 // The sandbox serves HTTPS with a self-signed certificate; the REST calls below go to
 // the TLS origin (HTTP redirects drop the Authorization header).
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+// Only the sandbox listener (self-signed certificate) is exempt from verification:
+// the relaxed setting lives on this dedicated Agent, not on the whole process.
+const sandboxAgent = new https.Agent({ rejectUnauthorized: false });
+
+function sandboxRequest(method, path, body) {
+  return new Promise((resolve, reject) => {
+    const data = body === undefined ? null : JSON.stringify(body);
+    const headers = { Authorization: `Bearer ${env.token}` };
+    if (data !== null) {
+      headers['Content-Type'] = 'application/json';
+      headers['Content-Length'] = Buffer.byteLength(data);
+    }
+    const req = https.request(new URL(path, env.tls), { method, headers, agent: sandboxAgent }, (res) => {
+      let text = '';
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => resolve({ status: res.statusCode, ok: res.statusCode < 300, text }));
+    });
+    req.on('error', reject);
+    if (data !== null) req.write(data);
+    req.end();
+  });
+}
 
 const KEEPER_NAME = 'ts824-keeper';
 const KEEPER_TOKEN = 'ts824-keeper-token';
@@ -39,12 +61,8 @@ const STEP_MS = 45000;
 // ---- REST helper -------------------------------------------------------------
 
 async function api(method, path, body) {
-  const res = await fetch(env.tls + path, {
-    method,
-    headers: { Authorization: `Bearer ${env.token}`, 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const text = await res.text();
+  const res = await sandboxRequest(method, path, body);
+  const text = res.text;
   let json = null;
   try { json = JSON.parse(text); } catch { /* non-JSON reply */ }
   return { status: res.status, json, text };

@@ -566,6 +566,9 @@ type ComputeNodeYAML struct {
 	NodePinnedModel string `yaml:"node_pinned_model,omitempty" json:"node_pinned_model,omitempty"`
 	// AllowModelSwap lets an explicit request replace the pinned model.
 	AllowModelSwap bool `yaml:"allow_model_swap,omitempty" json:"allow_model_swap,omitempty"`
+	// TLSInsecureSkipVerify turns off certificate verification for the
+	// node usage probes. Default false = verify.
+	TLSInsecureSkipVerify bool `yaml:"tls_insecure_skip_verify,omitempty" json:"tls_insecure_skip_verify,omitempty"`
 	// SessionSlots is the operator's worker count for this node (0 = derive
 	// from observer GPU data). Must not be negative.
 	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`

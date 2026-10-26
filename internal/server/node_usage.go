@@ -113,13 +113,16 @@ func nodeUsageErr(format string, args ...any) error {
 }
 
 // newNodeUsageClient returns an HTTP client for probing operator-declared
-// node endpoints.
-func newNodeUsageClient() *http.Client {
+// node endpoints. Certificates are verified unless the node explicitly
+// opts out with tls_insecure_skip_verify.
+func newNodeUsageClient(skipVerify bool) *http.Client {
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	if skipVerify {
+		tlsCfg.InsecureSkipVerify = true // #nosec G402 -- explicit per-node opt-out (tls_insecure_skip_verify) for a self-signed node
+	}
 	return &http.Client{
-		Timeout: nodeUsageProbeTimeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- operator-declared node URL, often self-signed
-		},
+		Timeout:   nodeUsageProbeTimeout,
+		Transport: &http.Transport{TLSClientConfig: tlsCfg},
 	}
 }
 
@@ -133,7 +136,7 @@ func probeNodeModels(ctx context.Context, client *http.Client, n compute.Node) (
 		return models, false, nil
 	}
 	if client == nil {
-		client = newNodeUsageClient()
+		client = newNodeUsageClient(n.TLSInsecureSkipVerify)
 	}
 	req, rerr := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(n.Address, "/")+"/api/ps", nil)
 	if rerr != nil {
@@ -217,7 +220,7 @@ func (s *Server) nodeGPUFromObserver(ctx context.Context, n compute.Node) []node
 		if !strings.Contains(endpoint, "/api/") {
 			endpoint = strings.TrimRight(endpoint, "/") + "/api/stats"
 		}
-		client := newNodeUsageClient()
+		client := newNodeUsageClient(n.TLSInsecureSkipVerify)
 		if req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil); err == nil {
 			if resp, err := client.Do(req); err == nil {
 				defer resp.Body.Close() //nolint:errcheck
@@ -281,7 +284,7 @@ type nodeUsageCache struct {
 	refreshTimeout time.Duration
 	// now is injectable for tests.
 	now func() time.Time
-	// client sends the node probes (injectable for tests).
+	// client sends the node probes; nil builds a per-node client (injectable for tests).
 	client *http.Client
 	// gather produces one nodeUsage for a node; tests can replace it with
 	// a fake that does no I/O.
@@ -296,7 +299,6 @@ func newNodeUsageCache() *nodeUsageCache {
 		probeTimeout:   nodeUsageProbeTimeout,
 		refreshTimeout: nodeUsageRefreshTimeout,
 		now:            func() time.Time { return time.Now().UTC() },
-		client:         newNodeUsageClient(),
 	}
 	c.gather = c.gatherUsage
 	return c

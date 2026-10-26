@@ -230,6 +230,12 @@ type Node struct {
 	// AllowModelSwap lets an explicit request replace the pinned model.
 	AllowModelSwap bool `yaml:"allow_model_swap,omitempty" json:"allow_model_swap,omitempty"`
 
+	// TLSInsecureSkipVerify turns off certificate verification when the
+	// daemon probes this node's HTTPS endpoints for usage (loaded models,
+	// GPU stats). Default false = verify. Set it only for a node whose
+	// certificate is self-signed.
+	TLSInsecureSkipVerify bool `yaml:"tls_insecure_skip_verify,omitempty" json:"tls_insecure_skip_verify,omitempty"`
+
 	// Scheduler hint: 0..100, higher = preferred when multiple
 	// Nodes are eligible for the same workload. Default 50.
 	SchedulingPriority int `yaml:"scheduling_priority,omitempty" json:"scheduling_priority,omitempty"`
