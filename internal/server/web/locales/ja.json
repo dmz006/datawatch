@@ -2407,5 +2407,6 @@
   "notify_events_default_marker": "default",
   "notify_events_profile_label": "Notification events",
   "notify_events_profile_edit": "Edit notification events",
-  "notify_events_profile_prompt": "Notification events (comma-separated kinds, blank to inherit)"
+  "notify_events_profile_prompt": "Notification events (comma-separated kinds, blank to inherit)",
+  "settings_automata_questions_enabled": "オートマタのオペレーター質問（デフォルトではオフ）"
 }
