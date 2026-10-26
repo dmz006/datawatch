@@ -136,6 +136,37 @@ func (m *Manager) SessionEffectiveTagSets() [][]string {
 	return out
 }
 
+// MoveSessionTags replaces tag fromID with toID in the own tags of every
+// session, active and archived. An empty toID drops fromID instead. It returns
+// the number of sessions changed. Inherited tags are not touched. The autonomous
+// tag registry calls it when a tag is merged or removed.
+func (m *Manager) MoveSessionTags(fromID, toID string) (int, error) {
+	all := append([]*Session(nil), m.store.List()...)
+	all = append(all, m.ListArchivedSessions(SessionFilter{}, func(*Session) bool { return true }, "", time.Time{}, 0)...)
+	changed := 0
+	for _, sess := range all {
+		if !sessionHasTag(sess, fromID) {
+			continue
+		}
+		var next []string
+		for _, id := range sess.Tags {
+			switch {
+			case id != fromID:
+				next = append(next, id)
+			case toID != "":
+				next = append(next, toID)
+			}
+		}
+		sess.Tags = dedupeTagIDs(next)
+		sess.UpdatedAt = time.Now()
+		if err := m.store.Save(sess); err != nil {
+			return changed, err
+		}
+		changed++
+	}
+	return changed, nil
+}
+
 // sessionHasTag reports whether tagID is among the session's own tags.
 func sessionHasTag(sess *Session, tagID string) bool {
 	for _, t := range sess.Tags {

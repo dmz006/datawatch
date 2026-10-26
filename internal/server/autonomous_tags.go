@@ -10,6 +10,7 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/tagregistry"
 )
 
 // tagSettingLookup reads a tag setting for the tag routes from the live config.
@@ -104,13 +105,18 @@ func queryBool(r *http.Request, key string, def bool) bool {
 }
 
 // writeTagError maps a tag error to its HTTP status. Refusals (children,
-// assigned Automata, cycle) are 409; an assigned-Automata refusal carries
-// the count in the body.
+// assigned Automata, cycle, a peer that is not the keeper) are 409; an
+// assigned-Automata refusal carries the count in the body. A keeper that cannot
+// be reached is 503. The body names the refusal kind (tagregistry.ErrorKind)
+// when the error has one, so a peer maps a relayed refusal back to its sentinel.
 func writeTagError(w http.ResponseWriter, err error) {
 	status := http.StatusBadRequest
 	body := map[string]any{"error": err.Error()}
+	if kind := tagregistry.ErrorKind(err); kind != "" {
+		body["kind"] = kind
+	}
 	switch {
-	case errors.Is(err, autonomous.ErrTagNotFound):
+	case errors.Is(err, autonomous.ErrTagNotFound), errors.Is(err, tagregistry.ErrNoteNotFound):
 		status = http.StatusNotFound
 	case errors.Is(err, autonomous.ErrTagInUse):
 		status = http.StatusConflict
@@ -118,8 +124,11 @@ func writeTagError(w http.ResponseWriter, err error) {
 		if errors.As(err, &inUse) {
 			body["count"] = inUse.Count
 		}
-	case errors.Is(err, autonomous.ErrTagHasChildren), errors.Is(err, autonomous.ErrTagCycle):
+	case errors.Is(err, autonomous.ErrTagHasChildren), errors.Is(err, autonomous.ErrTagCycle),
+		errors.Is(err, tagregistry.ErrNotKeeper):
 		status = http.StatusConflict
+	case errors.Is(err, tagregistry.ErrKeeperUnreachable):
+		status = http.StatusServiceUnavailable
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -183,12 +192,13 @@ func (s *Server) handleAutonomousTags(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			includeSub := queryBool(r, "include_sub", false)
+			registry := s.tagRegistryStatus()
 			if queryBool(r, "counts", false) {
 				tags, untagged := api.ListTagsWithCounts(includeSub)
-				writeJSONOK(w, map[string]any{"tags": tags, "untagged": untagged})
+				writeJSONOK(w, map[string]any{"tags": tags, "untagged": untagged, "registry": registry})
 				return
 			}
-			writeJSONOK(w, map[string]any{"tags": api.ListTags(includeSub)})
+			writeJSONOK(w, map[string]any{"tags": api.ListTags(includeSub), "registry": registry})
 		case http.MethodPost:
 			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 				return
@@ -201,6 +211,10 @@ func (s *Server) handleAutonomousTags(w http.ResponseWriter, r *http.Request) {
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			if s.tagRegistry != nil {
+				s.registryCreateTag(w, r, req.Name, req.ParentID, req.Color, req.Description)
 				return
 			}
 			t, err := api.CreateTag(req.Name, req.ParentID, req.Color, req.Description)
@@ -220,14 +234,13 @@ func (s *Server) handleAutonomousTags(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 			return
 		}
-		var req struct {
-			Name        *string `json:"name"`
-			ParentID    *string `json:"parent_id"`
-			Color       *string `json:"color"`
-			Description *string `json:"description"`
-		}
+		var req tagPatchRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if s.tagRegistry != nil {
+			s.registryPatchTag(w, r, id, req)
 			return
 		}
 		t, err := api.UpdateTag(id, req.Name, req.ParentID, req.Color, req.Description)
@@ -239,6 +252,10 @@ func (s *Server) handleAutonomousTags(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, t)
 	case http.MethodDelete:
 		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		if s.tagRegistry != nil {
+			s.registryDeleteTag(w, r, id)
 			return
 		}
 		if err := api.DeleteTag(id); err != nil {

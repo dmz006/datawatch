@@ -631,6 +631,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousTagSetParent(), tracked(s.handleAutonomousTagSetParent))
 	mcpSrv.AddTool(s.toolAutonomousTagSetColor(), tracked(s.handleAutonomousTagSetColor))
 	mcpSrv.AddTool(s.toolAutonomousTagDelete(), tracked(s.handleAutonomousTagDelete))
+	mcpSrv.AddTool(s.toolAutonomousTagRegistryStatus(), tracked(s.handleAutonomousTagRegistryStatus))
+	mcpSrv.AddTool(s.toolAutonomousTagRegistryDismissNote(), tracked(s.handleAutonomousTagRegistryDismissNote))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetTags(), tracked(s.handleAutonomousPRDSetTags))
 	mcpSrv.AddTool(s.toolAutonomousAttentionList(), tracked(s.handleAutonomousAttentionList))
 	mcpSrv.AddTool(s.toolSessionSetTags(), tracked(s.handleSessionSetTags))

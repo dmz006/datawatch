@@ -181,3 +181,50 @@ func (s *Server) handleAutonomousAttentionList(_ context.Context, _ mcpsdk.CallT
 	}
 	return textOK(string(out)), nil
 }
+
+func (s *Server) toolAutonomousTagRegistryStatus() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_tag_registry_status",
+		mcpsdk.WithDescription("Show the Automata tag registry status: this daemon's role (standalone, keeper or peer), the keeper it syncs from, staleness, last sync time, revision, pending sync count, notes that need the operator's attention and the last sync error. Returns only the registry object."),
+	)
+}
+func (s *Server) handleAutonomousTagRegistryStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/autonomous/tags", nil)
+	if err != nil {
+		return toolError("autonomous_tag_registry_status", err), nil
+	}
+	registry, err := registryObjectFromTagsReply(out)
+	if err != nil {
+		return toolError("autonomous_tag_registry_status", err), nil
+	}
+	return textOK(string(registry)), nil
+}
+
+// registryObjectFromTagsReply extracts the "registry" object from a
+// GET /api/autonomous/tags reply.
+func registryObjectFromTagsReply(body []byte) ([]byte, error) {
+	var reply struct {
+		Registry json.RawMessage `json:"registry"`
+	}
+	if err := json.Unmarshal(body, &reply); err != nil {
+		return nil, fmt.Errorf("decode tags reply: %w", err)
+	}
+	if len(reply.Registry) == 0 {
+		return nil, fmt.Errorf("tags reply has no registry object")
+	}
+	return reply.Registry, nil
+}
+
+func (s *Server) toolAutonomousTagRegistryDismissNote() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_tag_registry_dismiss_note",
+		mcpsdk.WithDescription("Dismiss one tag registry note (a merge or removal notice from the keeper) so it stops appearing in the registry status. Answers 404 when the note does not exist."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Registry note ID, as listed in autonomous_tag_registry_status")),
+	)
+}
+func (s *Server) handleAutonomousTagRegistryDismissNote(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	path := "/api/autonomous/tags/registry/notes/" + url.PathEscape(req.GetString("id", "")) + "/dismiss"
+	out, err := s.proxyJSON(http.MethodPost, path, nil)
+	if err != nil {
+		return toolError("autonomous_tag_registry_dismiss_note", err), nil
+	}
+	return textOK(string(out)), nil
+}

@@ -20,6 +20,9 @@ const (
 	TagEventDeleted         = "deleted"
 	TagEventAssigned        = "assigned"
 	TagEventSessionAssigned = "session_assigned"
+	// TagEventRegistrySynced is sent when a sync from the tag registry keeper
+	// changes the tags or the notes this daemon holds. It carries no ID.
+	TagEventRegistrySynced = "registry_synced"
 )
 
 // TagEvent is one tag registry or assignment change. Fields a kind does not

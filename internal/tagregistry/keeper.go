@@ -4,7 +4,7 @@ package tagregistry
 // applied in the order they arrive, under the registry lock. A peer daemon
 // cannot keep the registry, so it refuses with ErrNotKeeper.
 func (r *Registry) ApplyPeerWrite(w Write) (WriteResult, error) {
-	if r.role == RolePeer {
+	if r.Role() == RolePeer {
 		return WriteResult{}, ErrNotKeeper
 	}
 	r.mu.Lock()
@@ -14,7 +14,7 @@ func (r *Registry) ApplyPeerWrite(w Write) (WriteResult, error) {
 
 // KeeperSnapshot returns the registry a peer pulls. A peer refuses with ErrNotKeeper.
 func (r *Registry) KeeperSnapshot() (Snapshot, error) {
-	if r.role == RolePeer {
+	if r.Role() == RolePeer {
 		return Snapshot{}, ErrNotKeeper
 	}
 	r.mu.Lock()

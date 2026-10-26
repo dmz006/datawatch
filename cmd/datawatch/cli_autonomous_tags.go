@@ -6,6 +6,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -189,4 +191,53 @@ func parseTagIDList(list string) []string {
 		}
 	}
 	return ids
+}
+
+// newAutonomousTagRegistryCmd prints the tag registry status: the registry
+// object of GET /api/autonomous/tags, without the tag list.
+func newAutonomousTagRegistryCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "tag-registry",
+		Short: "Show the Automata tag registry status (role, keeper, staleness, revision, notes and last error)",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			raw, err := daemonJSONBody(http.MethodGet, autonomousTagsPath, nil)
+			if err != nil {
+				return err
+			}
+			registry, err := registryObjectFromTagsReply(raw)
+			if err != nil {
+				return err
+			}
+			prettyPrint(registry)
+			return nil
+		},
+	}
+}
+
+// newAutonomousTagRegistryDismissCmd dismisses one registry note.
+func newAutonomousTagRegistryDismissCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "tag-registry-dismiss <note-id>",
+		Short: "Dismiss one tag registry note (a merge or removal notice from the keeper)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodPost, autonomousTagsPath+"/registry/notes/"+url.PathEscape(args[0])+"/dismiss", nil)
+		},
+	}
+}
+
+// registryObjectFromTagsReply extracts the "registry" object from a
+// GET /api/autonomous/tags reply.
+func registryObjectFromTagsReply(body []byte) ([]byte, error) {
+	var reply struct {
+		Registry json.RawMessage `json:"registry"`
+	}
+	if err := json.Unmarshal(body, &reply); err != nil {
+		return nil, fmt.Errorf("decode tags reply: %w", err)
+	}
+	if len(reply.Registry) == 0 {
+		return nil, fmt.Errorf("tags reply has no registry object")
+	}
+	return reply.Registry, nil
 }

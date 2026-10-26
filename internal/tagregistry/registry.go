@@ -34,6 +34,10 @@ type Options struct {
 	Clock Clock
 	// NewID makes a tag or note id. Nil uses random ids.
 	NewID func() string
+	// OnSnapshotChange is called after a peer's sync changes the tags or the
+	// notes this daemon holds. It runs without the registry lock held and must
+	// not call the registry. Nil does nothing.
+	OnSnapshotChange func()
 }
 
 // state is the registry as this daemon holds it. It is what the cache stores.
@@ -60,14 +64,18 @@ type Registry struct {
 	clock  Clock
 	newID  func() string
 	notify chan struct{}
+	// onChange is Options.OnSnapshotChange.
+	onChange func()
 
 	// opMu serializes writes and syncs. It is held across keeper calls.
 	opMu sync.Mutex
-	// mu guards st, reachable and lastErr. It is never held across a keeper call.
+	// mu guards role, keeper, every, running, st, reachable and lastErr. It is
+	// never held across a keeper call.
 	mu        sync.Mutex
 	st        state
 	reachable bool
 	lastErr   string
+	running   bool
 }
 
 // New builds a registry for the role the options give, and loads the cache
@@ -91,6 +99,7 @@ func New(opts Options) (*Registry, error) {
 		clock:     opts.Clock,
 		newID:     opts.NewID,
 		notify:    make(chan struct{}, 1),
+		onChange:  opts.OnSnapshotChange,
 		reachable: role != RolePeer,
 	}
 	if r.every <= 0 {
@@ -132,7 +141,45 @@ func (r *Registry) load() error {
 }
 
 // Role reports what this daemon does for the registry.
-func (r *Registry) Role() Role { return r.role }
+func (r *Registry) Role() Role {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.role
+}
+
+// KeeperName returns autonomous.tags.registry_keeper as this daemon holds it.
+func (r *Registry) KeeperName() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.keeper
+}
+
+// Reconfigure applies a change to autonomous.tags.registry_keeper and
+// registry_sync_seconds while the daemon runs. The role follows from the new
+// keeper name. A running sync loop picks the change up on its next pass, and a
+// loop that is not running starts when Run is called again.
+func (r *Registry) Reconfigure(keeper string, every time.Duration) error {
+	if every <= 0 {
+		every = DefaultSyncEvery
+	}
+	role := RoleFor(r.node, keeper)
+	if role == RolePeer && r.client == nil {
+		return fmt.Errorf("tag registry: peer %q needs a keeper client", r.node)
+	}
+	r.mu.Lock()
+	r.role, r.keeper, r.every = role, keeper, every
+	r.reachable = role != RolePeer
+	r.mu.Unlock()
+	r.Notify()
+	return nil
+}
+
+// syncInterval returns the current interval between peer syncs.
+func (r *Registry) syncInterval() time.Duration {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.every
+}
 
 // View returns the registry as this daemon shows it.
 func (r *Registry) View() View {
@@ -160,19 +207,29 @@ func (r *Registry) Notify() {
 }
 
 // Run syncs a peer now, then every sync interval and whenever Notify is
-// called, until ctx is done. A failed sync is recorded and shows as stale in
-// View, so Run does not stop on it. On a standalone or keeper daemon Run returns
-// at once.
+// called, until ctx is done or the daemon stops being a peer. A failed sync is
+// recorded and shows as stale in View, so Run does not stop on it. On a
+// standalone or keeper daemon Run returns at once. A second Run while a loop is
+// running returns at once too, so a daemon runs at most one sync loop.
 func (r *Registry) Run(ctx context.Context) {
-	if r.role != RolePeer {
+	r.mu.Lock()
+	if r.role != RolePeer || r.running {
+		r.mu.Unlock()
 		return
 	}
-	for {
+	r.running = true
+	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		r.running = false
+		r.mu.Unlock()
+	}()
+	for r.Role() == RolePeer {
 		_ = r.Sync(ctx)
 		select {
 		case <-ctx.Done():
 			return
-		case <-r.clock.After(r.every):
+		case <-r.clock.After(r.syncInterval()):
 		case <-r.notify:
 		}
 	}

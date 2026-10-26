@@ -1,23 +1,26 @@
 // Comm-channel verbs for the Automata tag registry, per-Automaton and
 // per-session tag assignment, the primary tag and the attention list:
 // autonomous tags [counts]|tag-create|tag-rename|tag-move|tag-color|tag-delete|
-// set-tags|set-primary|session-tags|attention. Each verb proxies the matching
-// REST endpoint.
+// set-tags|set-primary|session-tags|attention|tag-registry|
+// tag-registry-dismiss. Each verb proxies the matching REST endpoint.
 
 package router
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 )
 
-// commTagRequest is the REST call a tag verb translates into.
+// commTagRequest is the REST call a tag verb translates into. registryOnly
+// means the reply is trimmed to its "registry" object.
 type commTagRequest struct {
-	method string
-	path   string
-	body   map[string]any
+	method       string
+	path         string
+	body         map[string]any
+	registryOnly bool
 }
 
 // parseCommTagList splits a comma-separated tag-ID list; an empty list is
@@ -46,6 +49,17 @@ func buildCommTagRequest(verb string, args []string) (req commTagRequest, usage 
 			return commTagRequest{method: http.MethodGet, path: base + "?counts=true"}, ""
 		}
 		return req, "usage: autonomous tags [counts]"
+	case "tag-registry":
+		if len(args) != 1 {
+			return req, "usage: autonomous tag-registry"
+		}
+		return commTagRequest{method: http.MethodGet, path: base, registryOnly: true}, ""
+	case "tag-registry-dismiss":
+		if len(args) != 2 {
+			return req, "usage: autonomous tag-registry-dismiss <note-id>"
+		}
+		return commTagRequest{method: http.MethodPost,
+			path: base + "/registry/notes/" + url.PathEscape(args[1]) + "/dismiss"}, ""
 	case "attention":
 		if len(args) != 1 {
 			return req, "usage: autonomous attention"
@@ -155,9 +169,33 @@ func (r *Router) handleAutonomousTagVerb(verb string, args []string) {
 		r.reply(name+" failed", err.Error())
 		return
 	}
+	if req.registryOnly {
+		registry, err := registryObjectFromTagsReply([]byte(out))
+		if err != nil {
+			r.reply(name+" failed", err.Error())
+			return
+		}
+		r.reply(name, prettyJSON(string(registry)))
+		return
+	}
 	if strings.TrimSpace(out) == "" {
 		r.reply(name, "ok")
 		return
 	}
 	r.reply(name, prettyJSON(out))
+}
+
+// registryObjectFromTagsReply extracts the "registry" object from a
+// GET /api/autonomous/tags reply.
+func registryObjectFromTagsReply(body []byte) ([]byte, error) {
+	var reply struct {
+		Registry json.RawMessage `json:"registry"`
+	}
+	if err := json.Unmarshal(body, &reply); err != nil {
+		return nil, fmt.Errorf("decode tags reply: %w", err)
+	}
+	if len(reply.Registry) == 0 {
+		return nil, fmt.Errorf("tags reply has no registry object")
+	}
+	return reply.Registry, nil
 }

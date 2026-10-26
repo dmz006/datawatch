@@ -76,6 +76,8 @@ Subcommands:
   tag-move <id> --parent <id|root>  Move a tag under another parent
   tag-color <id> <color>          Set a tag's color
   tag-delete <id>                 Delete a tag
+  tag-registry                    Show the tag registry status (role, keeper, staleness, revision, notes, last error)
+  tag-registry-dismiss <note-id>  Dismiss one tag registry note
   prd-set-tags <id> [--tags a,b] [--primary <tag-id>]  Set an Automaton's tags and its primary tag
   attention                       List the Automata that need attention (blocked, needs review, paused)
   prd-set-notify-events <id> [kinds]  Set the event kinds that produce notifications for an Automaton (inherit or omit to clear)
@@ -166,6 +168,8 @@ Subcommands:
 		newAutonomousTagMoveCmd(),
 		newAutonomousTagColorCmd(),
 		newAutonomousTagDeleteCmd(),
+		newAutonomousTagRegistryCmd(),
+		newAutonomousTagRegistryDismissCmd(),
 		newAutonomousAttentionCmd(),
 		newAutonomousPRDSetTagsCmd(),
 		newAutonomousPRDSetGuidedModeCmd(),

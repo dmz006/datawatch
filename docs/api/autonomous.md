@@ -525,6 +525,136 @@ form. The PWA refreshes its tag counts from it. The Android and iPhone clients h
 been given a handler for it yet. Tag changes made through REST, MCP, CLI or the comm channel
 go through the same registry methods, so they send the same frames.
 
+### Shared tag registry
+
+Several daemons can share one tag registry, so the same tags (their names,
+parents, colors and descriptions) appear on each of them. One daemon keeps the
+registry. The others keep a cached copy of it and send their tag edits to the
+keeper. The registry is set with `autonomous.tags.registry_keeper` and synced on
+`autonomous.tags.registry_sync_seconds`.
+
+**Roles.** The role follows from `registry_keeper`:
+
+| Value | Role | What the daemon does |
+|---|---|---|
+| empty | standalone | Keeps its own tags and syncs with nobody. This is the default, and what a daemon did before the registry existed. |
+| this daemon's own name | keeper | Holds the registry. Its peers pull the registry from it, and its own writes apply directly. |
+| another peer's name | peer | Pulls the keeper's tags into a local cache and forwards its tag writes to the keeper. |
+
+The keeper's name is a federation peer name, so the peer must be a federation peer
+of the daemon. Both config keys take effect at runtime; no restart is needed.
+
+**Cache and stale copies.** A peer keeps the last copy of the keeper's tags on disk,
+so a restart does not lose it. Every `registry_sync_seconds` (a whole number of
+seconds, minimum 5, default 30) the peer asks the keeper for its snapshot. While the
+keeper has not answered, the peer shows the cached copy and reports `stale: true`
+with the time of the last successful sync in `last_synced_at`.
+
+**Writes.** On a peer, a create, rename, re-parent, recolor, describe or delete is
+forwarded to the keeper, and the reply shows the keeper's value. A keeper or a
+standalone daemon applies a write to its own registry.
+
+If the keeper is unreachable from a peer:
+
+- rename, re-parent, recolor, describe and delete are refused with 503. The
+  message says the last copy is shown, and nothing changes;
+- create still works. The tag is created on the peer and marked `pending_sync: true`
+  until it reaches the keeper.
+
+**Conflicts.** A peer sends the registry revision it last saw with each write, and
+the keeper compares it with the last change to each field (name, parent, color and
+description). When the keeper has changed a field the peer also edited, the keeper
+keeps its own value and the reply carries `"conflict": true` and `"conflict_field"`
+naming the field. The peer shows the keeper's value.
+
+**Pending sync.** A tag a peer created while the keeper was unreachable is counted
+in `pending_sync_count` until the keeper has it. When the keeper answers, the tag is
+pushed. If the keeper already holds a tag with the same name under the same parent,
+the two merge into the keeper's tag, and a merge note records it.
+
+**Merge and removed-on-keeper notes.** The registry object lists the notes that
+have not been dismissed on this daemon:
+
+- `merged`: a pending tag was merged into a keeper tag. `kept_id` is the keeper's
+  tag, `replaced_id` is the pending tag, and `merged_at` is when it happened.
+- `removed_on_keeper`: the keeper deleted a tag that this daemon still had
+  assignments on. `tag_id` names the deleted tag, so the operator can see which
+  Automata and sessions it touched.
+
+A note is dismissed on the daemon that shows it. A dismissed note stays dismissed
+when later snapshots are applied. Dismissing a note changes no tag and no
+assignment.
+
+**Routes.**
+
+| Method and path | Capability | Purpose |
+|---|---|---|
+| `GET /api/autonomous/tags` | autonomous read | Now carries a `registry` object (see below) with the tag reply. |
+| `POST`, `PATCH`, `DELETE /api/autonomous/tags[/{id}]` | autonomous write | Go through the registry on a peer; see the write rules above. |
+| `GET /api/autonomous/tags/registry` | autonomous read | Keeper-to-peer protocol route: the keeper's snapshot `{revision, tags, notes}`. A peer answers 409. |
+| `POST /api/autonomous/tags/registry/write` | autonomous write | Keeper-to-peer protocol route: applies one forwarded write and returns the keeper's result. Not for operators. |
+| `POST /api/autonomous/tags/registry/notes/{note-id}/dismiss` | autonomous write | Dismisses one note on this daemon. Returns `{"dismissed": id}`; 404 when no such note. |
+
+The `registry` object on `GET /api/autonomous/tags`:
+
+```json
+"registry": {
+  "role": "peer",
+  "keeper": "keeper-node",
+  "stale": false,
+  "last_synced_at": "2026-10-26T02:10:00Z",
+  "revision": 42,
+  "pending_sync_count": 0,
+  "notes": [],
+  "last_error": ""
+}
+```
+
+`last_synced_at` is omitted before the first answer from the keeper. `notes` is always
+an array. Fields: `role` (`standalone`, `keeper` or `peer`), `keeper` (the keeper's
+name, empty when standalone), `stale`, `last_synced_at`, `revision`,
+`pending_sync_count`, `notes` and `last_error`.
+
+**Refusal bodies.** A refusal is JSON `{"error": text, "kind": kind}`, and a `count`
+field is added only for `in_use`.
+
+| Kind | HTTP status | Meaning |
+|---|---|---|
+| `not_found` | 404 | Unknown tag |
+| `invalid` | 400 | The name, parent, color or other value is not valid |
+| `has_children` | 409 | The tag still has child tags |
+| `in_use` | 409 | Automata still carry the tag; `count` is how many |
+| `cycle` | 409 | A move would make a tag its own ancestor |
+| `not_keeper` | 409 | A keeper-only route was called on a peer or standalone daemon |
+| `note_not_found` | 404 | No such merge or removal note on this daemon |
+| `unreachable` | 503 | The keeper cannot be reached from this peer |
+
+**Configuration.**
+
+```yaml
+autonomous:
+  tags:
+    registry_keeper: ""          # "" = standalone; this daemon's own name = keeper; another peer's name = peer
+    registry_sync_seconds: 30    # how often a peer pulls the keeper's snapshot; whole seconds, minimum 5
+```
+
+Both keys can be set from YAML under `autonomous.tags`, through `GET` and `PUT
+/api/config`, the comm `configure` verb, MCP `config_set` and the CLI `config set`.
+
+**Feature access.** Every surface for the registry, with the reason for each
+exclusion. The keeper-to-peer routes are protocol routes, not operator actions.
+
+| Endpoint | REST | MCP | CLI | Comm channel | YAML/config | PWA | Android | iPhone |
+|---|---|---|---|---|---|---|---|---|
+| `GET /api/autonomous/tags/registry` (keeper snapshot) | yes | no (keeper-to-peer protocol; the status tool shows the local registry object) | no (same reason) | no (same reason) | n/a | no (no UI; a peer's sync is not something an operator edits) | no (not in this change) | no (not in this change) |
+| `POST /api/autonomous/tags/registry/write` | yes (protocol) | no (protocol route, peers only, not an operator action) | no (same reason) | no (same reason) | n/a | no | no | no |
+| `GET /api/autonomous/tags` (registry object) | yes | yes (`autonomous_tag_registry_status`; `autonomous_tag_list` returns it too) | yes (`tag-registry`; `tag-list` prints it too) | yes (`tag-registry`) | n/a | reads it through the tag browser; no registry banner in this change | no (not in this change) | no (not in this change) |
+| `POST /api/autonomous/tags/registry/notes/{id}/dismiss` | yes | yes (`autonomous_tag_registry_dismiss_note`) | yes (`tag-registry-dismiss`) | yes (`tag-registry-dismiss`) | n/a | no (no dismiss control in this change) | no (not in this change) | no (not in this change) |
+| `autonomous.tags.registry_keeper` and `registry_sync_seconds` | yes (`GET`/`PUT /api/config`) | yes (`config_set`) | yes (`config set`) | yes (`configure`) | yes (`autonomous.tags`) | yes: the Settings card's Automata tag browser group has a text field for the keeper and a number field for the sync interval | no (not in this change) | no (not in this change) |
+
+When a surface gains or loses one of these endpoints, update its cell in this table
+in the same change.
+
 ### Attention list (`GET /api/autonomous/attention`)
 
 Returns `{"statuses": [...], "items": [...]}`. The items are the Automata whose
@@ -1565,6 +1695,8 @@ datawatch autonomous tag-create "Mobile App" --parent <id> --color "#6366f1"
 datawatch autonomous tag-rename <id> <new-name>
 datawatch autonomous tag-move <id> --parent <new-parent-id|root>
 datawatch autonomous tag-delete <id>
+datawatch autonomous tag-registry                  # shared tag registry status: role, keeper, stale, pending sync, notes
+datawatch autonomous tag-registry-dismiss <note-id>
 datawatch autonomous prd-set-tags <prd-id> --tags <id1,id2>   # empty value clears
 datawatch autonomous prd-create "Fix the retry loop" --kind bug   # optional; omit to derive the kind
 datawatch autonomous prd-set-kind <id> <feature|bug|other>
@@ -1593,6 +1725,8 @@ operator-facing AI can drive the autonomous loop end-to-end:
 | `autonomous_tag_list` / `_tag_create` / `_tag_rename` / `_tag_set_parent` / `_tag_set_color` / `_tag_delete` | Automata tag registry; see [howto/automata-tags](../howto/automata-tags.md) |
 | `autonomous_prd_set_tags`   | replace an Automaton's tags (`tag_ids_json`) and/or set its primary tag (`primary_tag_id`; alone it keeps the tags) |
 | `autonomous_tag_list` with `counts` | adds the subtree and direct counts (Automata and sessions) and the untagged totals |
+| `autonomous_tag_registry_status` | the shared tag registry object of this daemon (read; the `registry` field of `GET /api/autonomous/tags`) |
+| `autonomous_tag_registry_dismiss_note` | dismiss one merge or removed-on-keeper note by `id` (write; `POST /api/autonomous/tags/registry/notes/{id}/dismiss`) |
 | `autonomous_attention_list` | the attention group: `{statuses, items}` (read) |
 | `session_set_tags`          | replace a session's own tags (`id`, `tag_ids_json`); inherited tags are not set here (write) |
 | `autonomous_prd_set_kind`   | set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again); `autonomous_prd_create` takes the same optional `kind` |
@@ -1627,6 +1761,8 @@ autonomous set-task-verification-llm abcd1234 t1 backend=claude-code model=opus 
 autonomous set-story-verification-llm abcd1234 s1 backend=ollama model=qwen3:8b
 autonomous set-verification-llm abcd1234 model=
 autonomous tags
+autonomous tag-registry
+autonomous tag-registry-dismiss 9f8e7d6c
 autonomous tag-create "Mobile App" parent=1a2b3c4d
 autonomous set-tags abcd1234 1a2b3c4d,5e6f7a8b
 autonomous set-kind abcd1234 bug

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/tagregistry"
 	"io"
 	"log"
 	"math"
@@ -470,6 +471,12 @@ type Server struct {
 	// Wired from main.go; nil when autonomous is disabled. Handlers
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
+
+	// tagRegistry is the shared Automata tag registry, wired from main.go
+	// (SetTagRegistry). Nil keeps the tag routes on their local write path.
+	// tagRegistryStart starts its sync loop.
+	tagRegistry      *tagregistry.Registry
+	tagRegistryStart func()
 
 	// autonomousSettings reads the autonomous settings the tag routes use, by
 	// config key. Nil, or a key it does not set, means the built-in default
@@ -6446,6 +6453,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	skipped := applyConfigPatch(s.cfg, patch)
+	// The shared tag registry follows its keeper and sync interval at runtime,
+	// so a change made here needs no restart.
+	for _, k := range []string{"autonomous.tags.registry_keeper", "autonomous.tags.registry_sync_seconds"} {
+		if _, ok := patch[k]; ok {
+			s.applyTagRegistrySettings()
+			break
+		}
+	}
 	// BL368 — re-initialize visioner when vision config changes via PUT.
 	for k := range patch {
 		if strings.HasPrefix(k, "vision.") {

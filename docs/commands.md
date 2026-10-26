@@ -1113,6 +1113,8 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `tag-create <name> [--parent <id>] [--color <hex>] [--description <text>]` | Create a tag, optionally nested under a parent; `POST /api/autonomous/tags` |
 | `tag-rename <id> <new-name>`, `tag-color <id> <color>`, `tag-move <id> --parent <new-parent-id\|root>` | Edit a tag; `PATCH /api/autonomous/tags/{id}`. A move that would make a tag its own ancestor is refused |
 | `tag-delete <id>` | Delete a tag; refused while it has child tags, and refused with a count while Automata still carry it |
+| `tag-registry` | Show this daemon's shared tag registry status: role (standalone, keeper or peer), keeper, stale, last sync, revision, pending sync count, notes and last sync error; the `registry` field of `GET /api/autonomous/tags` |
+| `tag-registry-dismiss <note-id>` | Dismiss one merge or removed-on-keeper note on this daemon; `POST /api/autonomous/tags/registry/notes/{id}/dismiss`. An unknown note is refused with 404 |
 | `prd-set-tags <prd-id> [--tags <id1,id2,...>] [--primary <tag-id>]` | Replace the tags on an Automaton (an empty `--tags` value clears them) and/or set its primary tag, used for sorting (an empty `--primary` clears it). Give `--primary` alone to keep the tags; `POST /api/autonomous/prds/{id}/set_tags` |
 | `session tags <session-id> --tags <id1,id2,...>` | Replace the tags a session carries itself (an empty `--tags` value clears them). Inherited tags come from the Automaton and are not set here; `POST /api/sessions/tags` |
 | `attention` | List the Automata that need attention: the attention statuses (`blocked`, `needs_review`, `paused` by default) plus any with a task held for review; `GET /api/autonomous/attention` |
@@ -1124,6 +1126,8 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 Comm channels: `autonomous tags [counts]`, `attention`, `session-tags <session-id> <tag-id1,tag-id2,...>` (omit the list to clear), `set-primary <prd-id> <tag-id|none>`, `tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]`,
 `tag-rename <id> <new-name>`, `tag-move <id> <parent-id|root>`, `tag-color <id> <color>`,
 `tag-delete <id>`, and `set-tags <prd-id> <tag-id1,tag-id2,...>` (omit the list to clear).
+`tag-registry` shows the shared tag registry status and `tag-registry-dismiss <note-id>` dismisses one of its notes on this daemon.
+The registry itself, and the feature-access table for its endpoints, are in [api/autonomous.md](api/autonomous.md#shared-tag-registry).
 `set-notify-events <prd-id> [kind,kind,...|]` likewise sets the Automaton's notify set (omit the list to clear back to inherit); `status` includes the global notify tier and every Automaton's override.
 
 The guardrail-profile notify tier is the same story one level up: `datawatch guardrail profile create --name <name> [--guardrails <list>] --notify-events kind,kind,...` / `datawatch guardrail profile update <id> --notify-events kind,kind,...` (`inherit` or an omitted value clears the tier back to the global default; on `update`, omitting leaves it unchanged), and comm `guardrail profile notify-events <id> <kind,kind,...|inherit>` (or an omitted list). See the how-to [howto/guardrail-library.md](howto/guardrail-library.md), section *Notify events on a profile*.

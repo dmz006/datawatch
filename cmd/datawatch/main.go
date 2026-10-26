@@ -6505,6 +6505,7 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			amgr.SetScanGrader(scanGrader)
 			amgr.SetRuleEditorFn(ruleEditor)
 			httpServer.SetAutonomousAPI(aAPI)
+			wireTagRegistry(ctx, cfg, amgr, httpServer)
 			// Phase 4 follow-up (v5.26.67) — wire the post-session
 			// diff hook now that the autonomous Manager exists.
 			autonomousFilesHook = func(sess *session.Session) {

@@ -501,6 +501,10 @@ var MCPToolCap = map[string]string{
 	"websearch_provider_update":      CapConfigWrite,
 	"websearch_providers_list":       CapConfigRead,
 	"websearch_stats":                CapAnalyticsRead,
+
+	// Automata tag registry status and note dismissal.
+	"autonomous_tag_registry_status":       CapAutonomousRead,
+	"autonomous_tag_registry_dismiss_note": CapAutonomousWrite,
 }
 
 // RequiredCapForMCPTool returns the capability required to invoke

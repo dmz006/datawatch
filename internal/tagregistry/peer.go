@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 )
@@ -27,7 +28,7 @@ func (r *Registry) Create(ctx context.Context, in CreateInput) (WriteResult, err
 		Description: in.Description,
 		OriginNode:  r.node,
 	}
-	if r.role != RolePeer {
+	if r.Role() != RolePeer {
 		return r.localWrite(w)
 	}
 	r.opMu.Lock()
@@ -72,7 +73,7 @@ func (r *Registry) Describe(ctx context.Context, id, description string) (WriteR
 // as it refuses one with children, and the keeper applies its own checks too.
 func (r *Registry) Delete(ctx context.Context, id string) (WriteResult, error) {
 	w := Write{Kind: WriteDelete, TagID: id}
-	if r.role != RolePeer {
+	if r.Role() != RolePeer {
 		return r.localWrite(w)
 	}
 	r.opMu.Lock()
@@ -85,7 +86,7 @@ func (r *Registry) Delete(ctx context.Context, id string) (WriteResult, error) {
 
 // edit applies a field edit on a peer by forwarding it, or on a keeper locally.
 func (r *Registry) edit(ctx context.Context, op string, w Write) (WriteResult, error) {
-	if r.role != RolePeer {
+	if r.Role() != RolePeer {
 		return r.localWrite(w)
 	}
 	r.opMu.Lock()
@@ -102,12 +103,12 @@ func (r *Registry) edit(ctx context.Context, op string, w Write) (WriteResult, e
 // caller holds opMu.
 func (r *Registry) forwardEdit(ctx context.Context, op string, w Write) (WriteResult, error) {
 	if !r.isReachable() {
-		return WriteResult{}, unreachableErr(op, r.keeper)
+		return WriteResult{}, unreachableErr(op, r.KeeperName())
 	}
 	w.BaseRevision = r.revision()
 	res, err := r.forward(ctx, w)
 	if errors.Is(err, ErrKeeperUnreachable) {
-		return WriteResult{}, unreachableErr(op, r.keeper)
+		return WriteResult{}, unreachableErr(op, r.KeeperName())
 	}
 	if err != nil {
 		return WriteResult{}, err
@@ -189,7 +190,7 @@ func (r *Registry) adopt(w Write, res WriteResult) error {
 // does nothing on a standalone or keeper daemon. A keeper that cannot be reached
 // marks the copy stale and returns ErrKeeperUnreachable.
 func (r *Registry) Sync(ctx context.Context) error {
-	if r.role != RolePeer {
+	if r.Role() != RolePeer {
 		return nil
 	}
 	r.opMu.Lock()
@@ -322,12 +323,46 @@ func (r *Registry) adoptPush(pendingID string, res WriteResult) error {
 // pending tags. A tag the keeper no longer has is removed from this daemon's
 // assignments, and a note records it when there were any. A pending tag whose
 // parent is removed moves to the root.
+//
+// When the tags or the notes change, Options.OnSnapshotChange runs after the
+// lock is released.
 func (r *Registry) applySnapshot(snap Snapshot) error {
+	changed, err := r.applySnapshotChanged(snap)
+	if err == nil && changed && r.onChange != nil {
+		r.onChange()
+	}
+	return err
+}
+
+// applySnapshotChanged applies a snapshot and reports whether the tags or the
+// notes this daemon holds differ afterwards.
+func (r *Registry) applySnapshotChanged(snap Snapshot) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.mutateWithStoreLocked(func(steps *[]storeStep) error {
+	beforeTags, beforeNotes := copyTags(r.st.Tags), copyNotes(r.st.Notes)
+	err := r.mutateWithStoreLocked(func(steps *[]storeStep) error {
 		return r.applySnapshotLocked(snap, steps)
 	})
+	if err != nil {
+		return false, err
+	}
+	return !sameTags(beforeTags, r.st.Tags) || !sameNotes(beforeNotes, r.st.Notes), nil
+}
+
+// sameTags reports whether two tag lists hold the same tags in the same order.
+func sameTags(a, b []Tag) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	return reflect.DeepEqual(a, b)
+}
+
+// sameNotes reports whether two note lists hold the same notes in the same order.
+func sameNotes(a, b []Note) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	return reflect.DeepEqual(a, b)
 }
 
 // applySnapshotLocked is applySnapshot's change. A tag the keeper no longer has
