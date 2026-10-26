@@ -25,10 +25,10 @@ const (
 // daemon is standalone. A value equal to the daemon's own name makes it the
 // keeper. Any other value names the keeper peer this daemon pulls from.
 func RoleFor(nodeName, keeper string) Role {
-	switch {
-	case keeper == "":
+	switch keeper {
+	case "":
 		return RoleStandalone
-	case keeper == nodeName:
+	case nodeName:
 		return RoleKeeper
 	default:
 		return RolePeer

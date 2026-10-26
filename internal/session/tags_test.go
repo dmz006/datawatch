@@ -77,7 +77,7 @@ func TestSessionTagsPersistAcrossStoreReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen NewStore: %v", err)
 	}
-	defer reopened.Close()
+	defer func() { _ = reopened.Close() }()
 	got, ok := reopened.Get("host-ab12")
 	if !ok {
 		t.Fatal("session missing after reload")

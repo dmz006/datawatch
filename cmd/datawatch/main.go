@@ -7030,6 +7030,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// Wire test message endpoint — a router with a placeholder backend that
 		// HandleTestMessage replaces with a capture backend per request.
 		testRouter := router.NewRouter(cfg.Hostname, "__test__", nil, mgr, cfg.Session.TailLines, wm)
+		// The comm verbs that proxy REST (autonomous tags, attention, ...) need
+		// the local loopback port, the same as the messaging routers above.
+		if cfg.Server.Enabled && cfg.Server.Port > 0 {
+			testRouter.SetWebPort(cfg.Server.Port)
+		}
 		testRouter.SetScheduleStore(schedStore)
 		testRouter.SetAlertStore(alertStore)
 		testRouter.SetCmdLibrary(cmdLib)
