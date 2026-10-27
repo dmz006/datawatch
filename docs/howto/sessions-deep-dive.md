@@ -207,10 +207,6 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    **This session**, press **Watch this session** (or **Stop watching
    this session**). The same section has **Edit tags of this session**.
 
-   ![Session detail header with the Tags button](screenshots/session-detail-header.png)
-
-   ![The Tags dropdown with Watched only, tag checkboxes and the This session section](screenshots/session-tags-menu.png)
-
    Detail view opens with three tabs:
    - **Tmux** — live xterm.js stream of the LLM's terminal. Read-only
      by default; tap the input bar to send commands. While the session

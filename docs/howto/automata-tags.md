@@ -150,8 +150,6 @@ a **Back** row; the URL hash follows the drill-down.
 The page header has a **Tags** button. It opens a dropdown that holds the
 session list's filters and the actions for the session you have open.
 
-![The Tags dropdown](screenshots/session-tags-menu.png)
-
 - **Active-filter count.** A small number on the **Tags** button counts the
   filters in force: one for **Watched only**, plus one for each ticked tag.
   It is empty when no filter is on.
@@ -167,8 +165,6 @@ session list's filters and the actions for the session you have open.
   editor as the **Edit tags** button in [step 7](#7-tag-a-session).
 
 Press Escape, the button again, or click outside the dropdown to close it.
-
-![Session detail header](screenshots/session-detail-header.png)
 
 ### 4. Primary tag (sorting only)
 
