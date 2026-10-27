@@ -98,14 +98,14 @@ func TestStart_WorktreeOwnedDirRejectsPlainDir(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := checkExistingWorktree(dir); !errors.Is(err, ErrProjectDirNotWorktree) {
+	if err := checkExistingWorktree([]string{root}, dir); !errors.Is(err, ErrProjectDirNotWorktree) {
 		t.Fatalf("err = %v, want ErrProjectDirNotWorktree", err)
 	}
 	file := filepath.Join(root, "file")
 	if err := os.WriteFile(file, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := checkExistingWorktree(file); !errors.Is(err, ErrProjectDirNotWorktree) {
+	if err := checkExistingWorktree([]string{root}, file); !errors.Is(err, ErrProjectDirNotWorktree) {
 		t.Fatalf("file: err = %v, want ErrProjectDirNotWorktree", err)
 	}
 }
@@ -126,7 +126,7 @@ func TestStart_WorktreeOwnedDirAcceptsLinkedWorktree(t *testing.T) {
 	scratchGit(t, base, "commit", "-q", "-m", "init")
 	scratchGit(t, base, "worktree", "add", "-q", "-b", "automaton/w1", wt, "main")
 
-	if err := checkExistingWorktree(wt); err != nil {
+	if err := checkExistingWorktree([]string{root}, wt); err != nil {
 		t.Fatalf("a real linked worktree was refused: %v", err)
 	}
 	// The gitlink is a file, and Start proceeds past the pre-check.

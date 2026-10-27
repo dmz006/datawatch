@@ -161,3 +161,32 @@ func TestStartConfiguredDefaultProjectDirIsDaemonConfig(t *testing.T) {
 		t.Fatalf("empty dir (daemon default) refused: %v", err)
 	}
 }
+
+// TestStartOutsideRootsRefusedBeforeMkdirAll: a project directory outside the
+// allowed roots is refused before Start creates anything, including the
+// missing parents above it.
+func TestStartOutsideRootsRefusedBeforeMkdirAll(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "worktrees")
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	outside := t.TempDir()
+	mgr := rootsManager(t, base, workspace)
+
+	dir := filepath.Join(outside, "a", "b", "c")
+	requireRefused(t, startIn(mgr, dir), dir)
+	if _, err := os.Stat(filepath.Join(outside, "a")); !os.IsNotExist(err) {
+		t.Fatalf("MkdirAll ran for a refused directory: %v", err)
+	}
+
+	// The same holds for an Automaton worktree start: the worktree check
+	// refuses a directory outside the roots without inspecting it.
+	err := checkExistingWorktree(mgr.AllowedProjectRoots(), outside)
+	if !errors.Is(err, ErrProjectDirNotWorktree) {
+		t.Fatalf("checkExistingWorktree outside the roots: %v", err)
+	}
+	if _, err := mgr.Start(context.Background(), "task", "", dir, &StartOptions{OneShot: true, RequireExistingWorktree: true}); err == nil {
+		t.Fatal("worktree start outside the roots was accepted")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "a")); !os.IsNotExist(err) {
+		t.Fatalf("worktree start created a directory: %v", err)
+	}
+}

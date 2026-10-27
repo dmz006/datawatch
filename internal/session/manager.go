@@ -1951,8 +1951,14 @@ var ErrProjectDirNotWorktree = errors.New("project directory is not a linked wor
 // checkExistingWorktree verifies that dir is an existing linked worktree:
 // a directory whose .git entry is a regular file (the gitlink a linked
 // worktree carries), not a directory (a standalone repository) and not
-// absent. It never creates or modifies anything.
-func checkExistingWorktree(dir string) error {
+// absent. It never creates or modifies anything. dir must lie under one of
+// roots (the allowed project roots); anything else is refused before any file
+// is touched, and the path that is inspected is the contained one.
+func checkExistingWorktree(roots []string, dir string) error {
+	dir, err := containedUnderAny(roots, dir)
+	if err != nil {
+		return fmt.Errorf("%w: %s is outside the allowed project roots: %v", ErrProjectDirNotWorktree, dir, err)
+	}
 	fi, err := os.Stat(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -1971,6 +1977,25 @@ func checkExistingWorktree(dir string) error {
 		return fmt.Errorf("%w: %s has a .git directory, not a worktree link file; it is a standalone repository", ErrProjectDirNotWorktree, dir)
 	}
 	return nil
+}
+
+// containedUnderAny returns path cleaned and made absolute when it lies under
+// one of roots, using gitguard.ContainedPath (so '..' and symlinks that leave
+// the root are refused). Roots that are empty or cannot be resolved are
+// skipped. When none contains path the last containment error is returned.
+func containedUnderAny(roots []string, path string) (string, error) {
+	err := errors.New("no allowed project root is configured")
+	for _, root := range roots {
+		if strings.TrimSpace(root) == "" {
+			continue
+		}
+		contained, cerr := gitguard.ContainedPath(root, path)
+		if cerr == nil {
+			return contained, nil
+		}
+		err = cerr
+	}
+	return path, err
 }
 
 // Start creates a new AI coding session for the given task.
@@ -2059,27 +2084,33 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 		if d := m.configDefaultProjectDir(); d != "" && cleaned == filepath.Clean(d) {
 			requestSupplied = false
+			cleaned = filepath.Clean(d) // the daemon's own config value, not the request's
 		}
 		projectDir = cleaned
 	}
+	// safeDir is the directory every filesystem call below uses: the value
+	// ResolveProjectDir returned for a request-supplied directory, otherwise
+	// the daemon's own default.
+	safeDir := projectDir
 	if requestSupplied {
 		checked, perr := gitguard.ResolveProjectDir(projectDir, m.AllowedProjectRoots())
 		if perr != nil {
 			return nil, fmt.Errorf("project dir refused: %w", perr)
 		}
+		safeDir = checked
 		projectDir = checked
 	}
 
 	// An Automaton-owned worktree must already exist: never recreate it as
 	// an empty directory (and never git-init it below).
 	if opt != nil && opt.RequireExistingWorktree {
-		if err := checkExistingWorktree(projectDir); err != nil {
+		if err := checkExistingWorktree(m.AllowedProjectRoots(), safeDir); err != nil {
 			return nil, err
 		}
 	}
 
 	// Ensure project dir exists
-	if err := os.MkdirAll(projectDir, 0755); err != nil {
+	if err := os.MkdirAll(safeDir, 0755); err != nil {
 		return nil, fmt.Errorf("create project dir: %w", err)
 	}
 

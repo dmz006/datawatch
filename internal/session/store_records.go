@@ -4,12 +4,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/secfile"
 )
 
@@ -63,6 +66,39 @@ func (s *Store) recordsDir() string { return filepath.Join(filepath.Dir(s.path),
 
 func (s *Store) recordPath(fullID string) string {
 	return filepath.Join(s.recordsDir(), recordFileName(fullID))
+}
+
+// errBadRecordID is returned for a record ID that is not a single safe path
+// element.
+var errBadRecordID = errors.New("invalid session record id")
+
+// validRecordID reports whether fullID may name a record: not empty, no path
+// separator, no NUL byte and no '..'.
+func validRecordID(fullID string) bool {
+	return fullID != "" &&
+		!strings.ContainsAny(fullID, "/\\\x00") &&
+		!strings.Contains(fullID, "..")
+}
+
+// checkedRecordPath is recordPath for IDs that pass validRecordID, with the
+// joined path verified to lie under the records directory. Writes and removals
+// use it, so an ID that could point outside the store is refused before any
+// file is touched.
+func (s *Store) checkedRecordPath(fullID string) (string, error) {
+	if !validRecordID(fullID) {
+		return "", fmt.Errorf("%w: %q", errBadRecordID, fullID)
+	}
+	p, err := gitguard.ContainedPath(s.recordsDir(), s.recordPath(fullID))
+	if err != nil {
+		return "", fmt.Errorf("%w: %q: %v", errBadRecordID, fullID, err)
+	}
+	return p, nil
+}
+
+// warnBadRecordID logs a session ID that cannot name a record file; the
+// session stays in memory but is not persisted, and the flush carries on.
+func warnBadRecordID(id string) {
+	fmt.Fprintf(os.Stderr, "[warn] sessions store: not persisting session with unsafe id %q\n", id)
 }
 
 func recordsLayoutPresent(dir string) bool {
@@ -196,7 +232,11 @@ func syncDir(dir string) {
 
 // writeRecord writes one record atomically (secfile: temp file, fsync, rename).
 func (s *Store) writeRecord(fullID string, data []byte) error {
-	if err := secfile.WriteFile(s.recordPath(fullID), data, 0644, s.encKey); err != nil {
+	path, err := s.checkedRecordPath(fullID)
+	if err != nil {
+		return err
+	}
+	if err := secfile.WriteFile(path, data, 0644, s.encKey); err != nil {
 		return fmt.Errorf("write record %s: %w", fullID, err)
 	}
 	s.bytesWritten.Add(int64(len(data)))
@@ -349,6 +389,10 @@ func (s *Store) flushRecords(force bool) error {
 	s.mu.RLock()
 	var merr error
 	collect := func(id string, sess *Session) {
+		if !validRecordID(id) {
+			warnBadRecordID(id)
+			return
+		}
 		data, side, err := s.marshalCapped(sess)
 		if err != nil {
 			merr = fmt.Errorf("marshal session %s: %w", id, err)
@@ -385,6 +429,14 @@ func (s *Store) flushRecords(force bool) error {
 		}
 	}
 	s.mu.RUnlock()
+	dels = slices.DeleteFunc(dels, func(id string) bool {
+		if validRecordID(id) {
+			return false
+		}
+		warnBadRecordID(id)
+		delete(s.written, id)
+		return true
+	})
 
 	requeue := func(puts []put, dels []string) {
 		s.mu.Lock()
@@ -437,7 +489,11 @@ func (s *Store) flushRecords(force bool) error {
 		s.written[p.id] = p.sum
 	}
 	for i, id := range dels {
-		if err := os.Remove(s.recordPath(id)); err != nil && !os.IsNotExist(err) {
+		path, err := s.checkedRecordPath(id)
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			requeue(nil, dels[i:])
 			return fmt.Errorf("remove record %s: %w", id, err)
 		}

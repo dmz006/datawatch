@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -109,13 +110,13 @@ func (g *ProjectGit) stageChanges(scope []string) error {
 		}
 		var inside []string
 		for _, d := range scope {
-			dd, aerr := filepath.Abs(d)
-			if aerr != nil {
-				fmt.Printf("[datawatch] warning: bad write scope entry %q, skipping it\n", d)
+			dd, aerr := gitguard.ContainedPath(absDir, d)
+			if errors.Is(aerr, gitguard.ErrPathEscapes) {
+				fmt.Printf("[datawatch] warning: write scope dir %s is outside repo %s — not staged by this commit\n", d, g.dir)
 				continue
 			}
-			if dd != absDir && !strings.HasPrefix(dd, absDir+string(filepath.Separator)) {
-				fmt.Printf("[datawatch] warning: write scope dir %s is outside repo %s — not staged by this commit\n", dd, g.dir)
+			if aerr != nil {
+				fmt.Printf("[datawatch] warning: bad write scope entry %q, skipping it\n", d)
 				continue
 			}
 			if _, serr := os.Stat(dd); serr != nil {
@@ -337,7 +338,11 @@ func (g *ProjectGit) unscopedChangedFiles(since time.Time) []string {
 		}
 		// mtime bounds what counts as run output. Files that no longer
 		// exist are skipped — staging a missing path would fail the add.
-		st, err := os.Stat(filepath.Join(g.dir, rel))
+		abs, err := gitguard.ContainedPath(g.dir, filepath.Join(g.dir, rel))
+		if err != nil {
+			continue
+		}
+		st, err := os.Stat(abs)
 		if err != nil {
 			continue
 		}
