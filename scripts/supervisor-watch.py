@@ -83,6 +83,27 @@ def newest_activity(prd_id):
     return None if best == 0 else time.time() - best
 
 
+def liveness(prd_id):
+    """One-line sign of life for a silent worker: processes whose cwd is in its worktree, with state and wait channel.
+
+    A worker that is only waiting shows pipe_read or do_wait with no CPU time; a live one is running, or its children are.
+    """
+    root = os.path.join(WT, prd_id)
+    out = []
+    for d in glob.glob("/proc/[0-9]*"):
+        try:
+            if not os.path.realpath(os.readlink(d + "/cwd")).startswith(root):
+                continue
+            pid = os.path.basename(d)
+            st = open(d + "/stat").read().rsplit(")", 1)[1].split()
+            cpu = (int(st[11]) + int(st[12])) / os.sysconf("SC_CLK_TCK")
+            wchan = open(d + "/wchan").read().strip() or "-"
+            out.append("%s:%s/%s/%.0fs" % (pid, st[0], wchan, cpu))
+        except (OSError, IndexError, ValueError):
+            continue
+    return ("processes in worktree (pid:state/wait/cpu) " + " ".join(out[:6])) if out else "no process has its cwd in the worktree"
+
+
 def main():
     findings, state = [], {}
     try:
@@ -143,7 +164,7 @@ def main():
             if live:
                 age = newest_activity(p["id"])
                 if age is not None and age > SILENT_MIN * 60:
-                    findings.append("SILENT %s: no file or log activity for %d min while %s is running" % (p["id"], age // 60, live[0]["id"]))
+                    findings.append("SILENT %s: no file or log activity for %d min while %s is running; %s" % (p["id"], age // 60, live[0]["id"], liveness(p["id"])))
 
     # capacity and lanes
     cap = get_json("https://localhost:8443/api/capacity", insecure=True) or {}
