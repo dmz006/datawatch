@@ -11,14 +11,17 @@ alert — `internal/autonomous/triage_record.go`, `triage_pass.go`,
 (`datawatch autonomous triage`), comm channel (`autonomous triage [automation-id]`),
 and the PWA triage card in the Automaton detail view.
 
-**Status:** the app-side triage surface is owed to `dmz006/datawatch-app`.
-**No GitHub issue has been filed** — this spec (PRD `bd550001`) does not open
-external issues, and the issue body below is the single source the supervisor
-files on merge, as with the other two app-side notes in this folder
-(`2026-10-24-datawatch-app-capacity-node-usage-note.md`,
-`2026-10-24-datawatch-app-ws-session-window-note.md`). The debt is also
-tracked in `docs/testing-tracker.md` (the *Wearable / mobile read* row and the
-*Mobile-Parity: owed, not yet filed* block, which repeat the same draft).
+**Status:** the app-side triage surface is owed to `dmz006/datawatch-app`,
+and the owed issue **has been filed** as
+[`dmz006/datawatch-app` #284](https://github.com/dmz006/datawatch-app/issues/284)
+(2026-10-27). This spec said not to open external issues, but the daemon
+repo's standing Mobile-Parity Rule (AGENT.md, Section B4) requires a
+datawatch-app issue for any operator-visible PWA change and it takes
+precedence; the rule prefers commenting on a relevant existing issue, but
+none existed, so a new one was filed with the prefix the rule asks for. The
+filed body (the issue body below) stands on its own, and the debt is also
+tracked in `docs/testing-tracker.md` (the *Wearable / mobile read* row and
+the *Mobile-Parity: filed* block, which repeat the same text).
 
 ## What the daemon already gives the app
 
@@ -43,7 +46,7 @@ one read over `GET /api/autonomous/triage`.
 2. A record that disappears (the Automaton recovers) clears the card on the next read.
 3. `alert_minutes` `0` is displayed as "alert off", not as a zero-minute timer.
 
-## Draft issue body for `dmz006/datawatch-app` (file on merge, not from here)
+## Filed issue body for `dmz006/datawatch-app` [#284](https://github.com/dmz006/datawatch-app/issues/284)
 
 > `feat(automaton-detail): triage card for failed/blocked Automata`
 >

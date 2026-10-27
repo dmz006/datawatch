@@ -103,7 +103,7 @@ carrying a reason.
 | **comm channel** | Shipped — `autonomous triage [automation-id]`. | The operator-facing chat surface of the read: one optional Automation id narrows the list; the reply is the shared formatter's text (the record's standing and the threshold), the same as the CLI and the alert. Pinned: `TestTriageParity`, `internal/router/triage_parity_test.go`, `internal/router/triage_comm_test.go`. |
 | **YAML/config** | No new item. | The read reports the existing `autonomous.automation.triage_alert_minutes` setting (added by the settings task in this story): no new key, no new value, nothing to configure. |
 | **PWA** | Shipped — the triage card on the Automaton detail page and the settings field for `auto_triage`; `web/app-triage.test.js` covers rendering, the no-record state, and invalid-value refusal, and the five locale bundles carry the card's wording (en source, real translations). | Operator-visible client slice of this branch; the story for it is `scripts/test-stories/pwa/triage-card.mjs`. |
-| **Android** | Excluded from this branch. | This repo ships the daemon side; the Android UI lives in `dmz006/datawatch-app`. The owed mobile-parity debt (issue not yet filed under this spec) is tracked in `docs/plans/2026-10-26-autonomous-triage-mobile-parity-note.md` and named in `docs/testing-tracker.md`. |
+| **Android** | Excluded from this branch. | This repo ships the daemon side; the Android UI lives in `dmz006/datawatch-app`. The parity debt is tracked as `dmz006/datawatch-app` issue #284, described in `docs/plans/2026-10-26-autonomous-triage-mobile-parity-note.md` and named in `docs/testing-tracker.md`. |
 | **iPhone/iOS** | Excluded from this branch. | Same as Android: `dmz006/datawatch-app` owns the app UI; the triage record and alert are already readable over REST, comm, MCP and CLI without the app, and the parity note names the surface the app will call. |
 
 The shipped-and-excluded split is deliberate: every surface this feature ships
@@ -132,5 +132,6 @@ named with a stated reason, and the shipped ones are pinned by
   Validated=No). The PWA triage card has likewise not been looked at in a
   running PWA — same pending live validation.
 - The Android / iPhone triage surface lives in `dmz006/datawatch-app`; the
-  owed issue is drafted at `docs/plans/2026-10-26-autonomous-triage-mobile-parity-note.md`
-  and, per this spec, not filed from here.
+  drafted at `docs/plans/2026-10-26-autonomous-triage-mobile-parity-note.md`
+  and filed as `dmz006/datawatch-app` issue #284 (the daemon repo's standing
+  Mobile-Parity Rule in AGENT.md takes precedence over the spec's skip).

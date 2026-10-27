@@ -2,7 +2,6 @@
 /**
  * Triage card story — a stuck Automaton's triage card renders on the Automation sub-tab
  *                     and above every tab of its detail view
- * (filed under story id TS-821; the id stays in this comment, not the filename)
  * tags: surface:pwa feature:triage
  *
  * Route fulfilment (no daemon data): GET /api/autonomous/triage answers one
