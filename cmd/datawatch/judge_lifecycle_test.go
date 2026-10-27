@@ -165,8 +165,9 @@ func newJudgeLifecycle(t *testing.T, led *capacity.Ledger, mgr *autonomouspkg.Ma
 		limit: judgeLifecycleLimit,
 		hang:  map[string]bool{},
 	}
-	mgr.SetAlertSink(func(level, title, body string) {
+	mgr.SetAlertSink(func(level, title, body string) (id string) {
 		lc.alerts = append(lc.alerts, alertRecord{level: level, title: title, body: body})
+		return ""
 	})
 
 	admit, try, started := judgeAdmitters(led, newVerifierRegistry(), judgePoolPerBackend, 5*time.Second)

@@ -46,10 +46,11 @@ func newGuardFixture(t *testing.T) *guardFixture {
 	prd.Status = PRDApproved
 	_ = m.Store().SavePRD(prd)
 	f := &guardFixture{m: m, prd: prd, path: filepath.Join(cfg.WorktreeDir, prd.ID)}
-	m.SetAlertSink(func(level, title, body string) {
+	m.SetAlertSink(func(level, title, body string) (id string) {
 		f.alertsMu.Lock()
 		defer f.alertsMu.Unlock()
 		f.alerts = append(f.alerts, guardAlert{level, title, body})
+		return ""
 	})
 	return f
 }
