@@ -186,9 +186,9 @@ func TestNotifyGateEngineOneShotStaysArmed(t *testing.T) {
 	// A resolved event delivers AND consumes the now-still-armed one-shot.
 	m.emit(startedEvent())
 	waitFor(t, "one-shot delivery for a resolved Automaton", func() bool { return rec.bridgeCount() == 1 })
-	if subs := store.List(""); len(subs) != 0 {
-		t.Fatalf("one-shot not consumed after a delivered event: %d records left (want 0)", len(subs))
-	}
+	// The one-shot is removed just after the delivery is recorded, so wait for it
+	// instead of reading the store at the instant of delivery.
+	waitFor(t, "one-shot consumed after a delivered event", func() bool { return len(store.List("")) == 0 })
 }
 
 // TestNotifyGateEngineCommCoalesced — comm-sink subscriptions ride the
