@@ -104,3 +104,38 @@ func TestGuardrailResolution_NothingSet_FailsLoud(t *testing.T) {
 		t.Errorf("expected ErrNoGuardrailModel, got: %v", err)
 	}
 }
+
+// Only a task or PRD backend override pins the judge. The production
+// fixture (global verification backend pi-prompt, no override) resolves to
+// that backend but is not pinned, so the judge policy order and the size
+// rule still apply to it.
+func TestGuardrailResolution_PinnedOnlyForTaskOrPRDOverride(t *testing.T) {
+	cfg := Config{
+		VerificationBackend: "pi-prompt",
+		VerificationModel:   "qwen3.8-64k:27b",
+		JudgePolicy:         []string{"pi-prompt", "claude-code"},
+	}
+	cases := []struct {
+		name       string
+		task       *Task
+		prd        *PRD
+		wantBack   string
+		wantPinned bool
+	}{
+		{"no override", nil, nil, "pi-prompt", false},
+		{"empty task and PRD", &Task{}, &PRD{}, "pi-prompt", false},
+		{"task override", &Task{GuardrailBackend: "pi-prompt"}, &PRD{}, "pi-prompt", true},
+		{"PRD override", &Task{}, &PRD{GuardrailBackend: "claude-code", GuardrailModel: "sonnet"}, "claude-code", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			backend, _, pinned, err := resolveUnitGuardrailModelLocked(cfg, c.task, c.prd)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if backend != c.wantBack || pinned != c.wantPinned {
+				t.Errorf("got (%q, pinned=%v), want (%q, pinned=%v)", backend, pinned, c.wantBack, c.wantPinned)
+			}
+		})
+	}
+}
