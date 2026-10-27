@@ -29,6 +29,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -36,6 +37,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -70,6 +72,9 @@ type sseCloseObserver struct {
 	lastWrite  time.Time
 	firstWrite time.Time
 	writeErr   error // first error, recorded at most once
+
+	hardened atomic.Bool // headers pinned before the first final-status write
+	escape   atomic.Bool // handler gave no non-HTML type: payload is HTML-escaped
 }
 
 // NewSSECloseObserver wraps w for the SSE session stream. Pass the
@@ -83,34 +88,53 @@ func NewSSECloseObserver(w http.ResponseWriter, remote string) *sseCloseObserver
 func (o *sseCloseObserver) Header() http.Header { return o.w.Header() }
 
 func (o *sseCloseObserver) WriteHeader(statusCode int) {
-	o.hardenHeaders()
+	// An informational (1xx) status is followed by the final one, which is
+	// the header snapshot that reaches the client; pin before that one.
+	if statusCode >= 200 || statusCode == http.StatusSwitchingProtocols {
+		o.hardenHeaders()
+	}
 	o.w.WriteHeader(statusCode)
 }
 
 // hardenHeaders pins the stream to a non-HTML content type and forbids
-// sniffing. The event payloads carry JSON-RPC results that can echo
-// request values (tool names, arguments), so the response must never be
-// interpretable as a document. mcp-go already sets text/event-stream;
-// this keeps that true if it ever stops and adds nosniff, which it does
-// not set.
+// sniffing. It runs before the first WriteHeader or Write reaches the
+// underlying writer, because net/http snapshots the header map at that
+// point and a later Set never reaches the client.
+//
+// The event payloads carry JSON-RPC results that can echo request values
+// (tool names, arguments). mcp-go sets text/event-stream itself, and a
+// stream that does is passed through byte for byte. When the handler set no
+// type or an HTML one, the type is replaced and the payload is also
+// HTML-escaped in Write, so the stream cannot be read as a document even by
+// a consumer that ignores the type.
 func (o *sseCloseObserver) hardenHeaders() {
+	if o.hardened.Swap(true) {
+		return
+	}
 	h := o.w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
 	if ct := strings.ToLower(h.Get("Content-Type")); ct == "" || strings.Contains(ct, "html") {
 		h.Set("Content-Type", "text/event-stream")
+		o.escape.Store(true)
 	}
 }
 
-// Write pins the stream type before every write rather than once: a
-// handler that never calls WriteHeader reaches its first Write with an
-// implicit 200, and a wrapper that holds the headers back would otherwise
-// see a type the handler changed between chunks. Once the headers are sent
-// the Sets are no-ops, and a non-HTML Content-Type the handler set is kept.
+// Write pins the headers before the first write (an implicit 200 never
+// calls WriteHeader) and, when the handler's type had to be overridden,
+// sends the payload HTML-escaped.
 func (o *sseCloseObserver) Write(p []byte) (int, error) {
 	o.hardenHeaders()
-	n, err := o.w.Write(p)
+	if !o.escape.Load() {
+		n, err := o.w.Write(p)
+		o.observe(n, err)
+		return n, err
+	}
+	n, err := o.w.Write([]byte(html.EscapeString(string(p))))
 	o.observe(n, err)
-	return n, err
+	if err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
 type sseFlusher interface{ Flush() }
