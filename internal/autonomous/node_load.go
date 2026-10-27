@@ -60,7 +60,7 @@ func (m *Manager) loadWorkerNode(ctx context.Context, prd *PRD, t *Task, backend
 		if !nodeLeft(choices, excluded) {
 			return fmt.Errorf("node load: %w", lerr)
 		}
-		if aerr := m.acquireLease(ctx, prd, t, backend, model, capacity.RoleWorker, excluded); aerr != nil {
+		if aerr := m.acquireLease(ctx, prd, t, backend, model, capacity.RoleWorker, excluded, ""); aerr != nil {
 			return aerr
 		}
 	}

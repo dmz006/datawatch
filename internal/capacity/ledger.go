@@ -54,7 +54,8 @@ type Request struct {
 	// NodeChoices lists compute nodes that can serve the request. With two or
 	// more entries the ledger picks the node at dispatch time: least loaded
 	// first (the node pool's used count over its limit, an unlimited pool
-	// counting as 0), ties to the higher Priority, then list order. It skips
+	// counting as 0); equally loaded nodes go to PreferNode, then the higher
+	// Priority, then list order. It skips
 	// ExcludeNodes and nodes Options.NodeHealthy reports unhealthy, and takes
 	// the first whose node:<name> pool passes the same checks as every pool in
 	// Pools. The lease
@@ -64,8 +65,14 @@ type Request struct {
 	NodeChoices []NodeChoice
 	// ExcludeNodes names nodes the ledger must not pick from NodeChoices.
 	ExcludeNodes []string
-	Model        string // model wanted, for model affinity
-	Role         Role   // dispatch rank; zero value means RoleWorker
+	// PreferNode is the node a relaunch ran on before. It is only a tie breaker
+	// between equally loaded candidates: it never outranks load, never adds a
+	// node that is not in NodeChoices, never bypasses ExcludeNodes or
+	// Options.NodeHealthy, and is ignored for a request with fewer than two
+	// NodeChoices. Refresh does not replace it.
+	PreferNode string
+	Model      string // model wanted, for model affinity
+	Role       Role   // dispatch rank; zero value means RoleWorker
 	// NodeUnknown is set by Adopt callers that expected a compute node for the
 	// running work and could not determine it. The adopted lease then holds no
 	// node and carries Lease.NodeUnknown so the gap stays visible. Ignored by
@@ -418,7 +425,8 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 }
 
 // rankedLocked returns the nodes req may be placed on, in try order: least
-// loaded first, ties to the higher Priority, then list order. A node's load is
+// loaded first, ties to req.PreferNode, then the higher Priority, then list
+// order. A node's load is
 // its pool's used count (leases plus Options.External, the figure the block
 // check uses) over its limit; a pool with no limit counts as 0.
 func (l *Ledger) rankedLocked(req Request) []NodeChoice {
@@ -438,6 +446,11 @@ func (l *Ledger) rankedLocked(req Request) []NodeChoice {
 		// used[a]/limit[a] < used[b]/limit[b], without division.
 		if x, y := used[a]*limit[b], used[b]*limit[a]; x != y {
 			return x < y
+		}
+		if req.PreferNode != "" && a != b {
+			if pa, pb := a == req.PreferNode, b == req.PreferNode; pa != pb {
+				return pa
+			}
 		}
 		return out[i].Priority > out[j].Priority
 	})

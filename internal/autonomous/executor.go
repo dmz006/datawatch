@@ -1267,6 +1267,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 		}
 
+		// prevNode is the node the previous attempt's lease named, passed to
+		// admission as the tie breaker for this attempt's placement.
+		prevNode := ""
 		if !skipSpawn {
 			// Kill any session left over from a previous attempt (a failed-
 			// verification retry within this call, or a session inherited from
@@ -1295,6 +1298,13 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if ended := m.endLiveSessionsOfTask(prd, t, "", "autonomous.executor.respawn", fmt.Sprintf("task %s relaunch: other live sessions of the task or its worktree end so the replacement is the only one", t.ID)); len(ended) > 0 {
 				m.store.WithLock(func() { recordEndedSessions(prd, t, ended, "replacement session launching") })
 				_ = m.store.SavePRD(prd)
+			}
+			// The old engine process is gone, so its slot can be freed. The
+			// lease is released here, not at the end of the attempt, because
+			// Acquire returns at once for a holder that is already admitted and
+			// the relaunch would keep the previous node without placement.
+			if prevNode = m.releaseForRelaunch(t); prevNode != "" {
+				log.Printf("[autonomous] task %s relaunch: previous attempt held node %s; admitting through placement", t.ID, prevNode)
 			}
 			now := m.attemptNow()
 			m.store.WithLock(func() {
@@ -1379,7 +1389,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				contextPrepend = m.contextFn(prd.Type)
 			}
 			m.mu.Unlock()
-			if aerr := m.admit(ctx, prd, t, backend, model, capacity.RoleWorker); aerr != nil {
+			if aerr := m.admitPreferring(ctx, prd, t, backend, model, capacity.RoleWorker, prevNode); aerr != nil {
 				if errors.Is(aerr, errCancelledWhileWaiting) {
 					return nil
 				}

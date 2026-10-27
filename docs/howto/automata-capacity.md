@@ -159,8 +159,23 @@ model, bound node and candidate nodes, then a count of waiters per node. A
 `node=-` line is not yet bound: the daemon picks among several candidates only
 at dispatch, and the line lists them. The script exits `2` when, for a
 multi-node backend, every waiter is bound to one node while another candidate
-node has free capacity; that is the symptom to investigate. It exits `1` when
-the daemon cannot be read, and `0` otherwise.
+node has free capacity; that is the symptom to investigate. Independent of any
+waiter, it also prints an `OVERLIMIT` line for each node that holds more engines
+than its limit (`OVERLIMIT: node:<name> holds <n> of <limit> engines`), followed
+by one indented line per lease on that node with the holder, session, model and
+node. A node at or under its limit, or with no limit, prints nothing. The script
+exits `2` for an `OVERLIMIT` node too, even when nothing is waiting. It exits `1`
+when the daemon cannot be read, and `0` otherwise.
+
+**A relaunched task.** A task that is relaunched, meaning its earlier session is
+replaced (including one that was verifying), gives up the lease of the previous
+attempt and is admitted through the same placement as a new request: the least
+loaded of the backend's own compute nodes, one engine per node. The node the
+previous attempt used is only a tie breaker, chosen when it is free and equally
+loaded; it never outranks a less loaded node. If no node is free, the relaunch
+waits like any other request. A worker that survives a daemon restart keeps the
+node recorded for it. A respawned verifier and a task returning from an external
+wait are placed the same way. No cap or setting changed.
 
 **Slots per node.** A node that hosts a local engine (`pi`, `pi-prompt`,
 `ollama`, `opencode`, `opencode-acp`) has a slot count: how many workers it

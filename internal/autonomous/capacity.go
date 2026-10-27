@@ -307,18 +307,27 @@ func (m *Manager) clearWaiting(t *Task) {
 // TaskWaitingCapacity and never counts as a retry or failure. role ranks the
 // request in the ledger's dispatch order (see capacity.Role).
 func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model string, role capacity.Role) error {
+	return m.admitPreferring(ctx, prd, t, backend, model, role, "")
+}
+
+// admitPreferring is admit with a tie-breaking node: among equally loaded
+// candidates the ledger picks prefer first. A relaunch passes the node of its
+// previous attempt, so placement still chooses the least loaded node and the
+// old one only wins a tie.
+func (m *Manager) admitPreferring(ctx context.Context, prd *PRD, t *Task, backend, model string, role capacity.Role, prefer string) error {
 	if role == capacity.RoleWorker {
 		if err := m.waitAutomationBudget(ctx, prd, t); err != nil {
 			return err
 		}
 	}
-	return m.acquireLease(ctx, prd, t, backend, model, role, nil)
+	return m.acquireLease(ctx, prd, t, backend, model, role, nil, prefer)
 }
 
 // acquireLease blocks until the task holds a capacity lease, never on a node
-// named in exclude. admit calls it with nil; the node-load failover calls it
+// named in exclude, and breaking a tie between equally loaded nodes toward
+// prefer. admit calls it with nil and ""; the node-load failover calls it
 // again with the nodes that failed for this attempt.
-func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, model string, role capacity.Role, exclude []string) error {
+func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, model string, role capacity.Role, exclude []string, prefer string) error {
 	if !m.capacityOn() {
 		return nil
 	}
@@ -335,7 +344,7 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 	var waitStart time.Time
 	var lastCause WaitCause
 	req := capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, ExcludeNodes: exclude, Model: model, Role: role,
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, ExcludeNodes: exclude, PreferNode: prefer, Model: model, Role: role,
 	}
 	req.Refresh = m.placementRefresh(req, backend, model, nil)
 	err := led.Acquire(ctx, req, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
@@ -418,7 +427,7 @@ func (m *Manager) replaceStaleLease(ctx context.Context, prd *PRD, t *Task, back
 		return nil
 	}
 	m.releaseCapacity(t.ID)
-	return m.acquireLease(ctx, prd, t, backend, model, capacity.RoleWorker, nil)
+	return m.acquireLease(ctx, prd, t, backend, model, capacity.RoleWorker, nil, "")
 }
 
 // decomposeAdmitted runs one decompose attempt inside a RolePlanner capacity
@@ -640,6 +649,30 @@ func poolsWithoutNodes(pools []string) []string {
 		}
 	}
 	return out
+}
+
+// releaseForRelaunch frees every lease a relaunched task still holds from its
+// previous attempt (the worker lease and the one handed to the verifier) and
+// returns the node that attempt ran on, or "" when unknown. The node comes from
+// the leases, then from the node recorded on the task. Freeing the leases
+// sends the next admission through placement instead of letting Acquire
+// return at once for a holder that is already admitted.
+func (m *Manager) releaseForRelaunch(t *Task) string {
+	prev := ""
+	if led := m.Capacity(); led != nil {
+		for _, h := range []string{t.ID, VerifyHolder(t.ID)} {
+			if ls := led.LeaseOf(h); ls != nil && ls.Node != "" {
+				prev = ls.Node
+				break
+			}
+		}
+	}
+	if prev == "" {
+		prev = t.ComputeNode
+	}
+	m.releaseCapacity(t.ID)
+	m.releaseCapacity(VerifyHolder(t.ID))
+	return prev
 }
 
 // releaseCapacity frees the task's lease (safe when none is held).

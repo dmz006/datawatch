@@ -192,9 +192,15 @@ func (m *Manager) AwaitExternal(ctx context.Context, prd *PRD, t *Task, conditio
 
 	// 2. Release the lease(s). Capture which pools for the audit event.
 	var releasedPools []string
+	releasedNode := t.ComputeNode
 	if led := m.Capacity(); led != nil {
-		if lease := led.LeaseOf(t.ID); lease != nil && len(lease.Pools) > 0 {
-			releasedPools = append([]string(nil), lease.Pools...)
+		if lease := led.LeaseOf(t.ID); lease != nil {
+			if len(lease.Pools) > 0 {
+				releasedPools = append([]string(nil), lease.Pools...)
+			}
+			if lease.Node != "" {
+				releasedNode = lease.Node
+			}
 		}
 	}
 	m.releaseCapacity(t.ID)
@@ -219,7 +225,7 @@ func (m *Manager) AwaitExternal(ctx context.Context, prd *PRD, t *Task, conditio
 	}
 
 	// 5. Bounded re-admission.
-	if err := m.awaitReAdmit(ctx, prd, t, condition); err != nil {
+	if err := m.awaitReAdmit(ctx, prd, t, condition, releasedNode); err != nil {
 		return fmt.Errorf("task %s: await-external re-admission: %w", t.ID, err)
 	}
 
@@ -258,8 +264,9 @@ func (m *Manager) resumeAwaitExternal(prd *PRD, t *Task, releasedTree bool, box 
 // Structured like admit() but the wait reason KEEPS the await_external
 // prefix — the status JSON must show the task queued FOR the external
 // condition (plus the pool it is parked behind), not a bare pool-reason
-// string.
-func (m *Manager) awaitReAdmit(ctx context.Context, prd *PRD, t *Task, condition string) error {
+// string. prefer is the node the task released for the wait: placement still
+// picks the least loaded node, and that node only wins a tie.
+func (m *Manager) awaitReAdmit(ctx context.Context, prd *PRD, t *Task, condition, prefer string) error {
 	if !m.capacityOn() {
 		return nil
 	}
@@ -275,7 +282,7 @@ func (m *Manager) awaitReAdmit(ctx context.Context, prd *PRD, t *Task, condition
 	}
 	prefix := AwaitExternalWaitReasonFor(condition)
 	req := capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), Model: model, Role: capacity.RoleWorker,
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), PreferNode: prefer, Model: model, Role: capacity.RoleWorker,
 	}
 	req.Refresh = m.placementRefresh(req, backend, model, nil)
 	err := led.Acquire(ctx, req, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
