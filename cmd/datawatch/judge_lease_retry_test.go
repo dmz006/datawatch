@@ -219,7 +219,7 @@ func TestJudgePinnedUnitBackendIsProbedBySelector(t *testing.T) {
 	}
 	t.Cleanup(func() { judgeCapacityTryAdmit = prev })
 
-	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-1", UnitID: "u-1", GuardrailBackend: "qwen"}
+	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-1", UnitID: "u-1", GuardrailBackend: "qwen", GuardrailPinned: true}
 	gcfg := autonomouspkg.Config{
 		VerifierPolicy: config.VerifierPolicyConfig{Mode: "prefer-free", Backends: []string{"claude-code"}},
 		JudgePolicy:    []string{"claude-code"},

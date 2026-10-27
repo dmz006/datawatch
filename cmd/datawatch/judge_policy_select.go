@@ -208,9 +208,18 @@ func judgeBackendChooserFor(ctx context.Context, mgr *autonomouspkg.Manager, req
 // judgeBackendChooserForSize is judgeBackendChooserFor with the size rule. A
 // unit that pins its guardrail backend keeps its existing behaviour: the size
 // rule does not apply to it.
+//
+// Only a pinned invocation (req.GuardrailPinned, set for a task or Automaton
+// override) takes the pinned branch. An invocation that merely carries a
+// resolved GuardrailBackend is unpinned and goes through the normal chain that
+// judgeVerifierChooserSized builds: autonomous.judge_policy when set, else the
+// verifier policy backend list, else the verification backend pool. The
+// resolved backend (unitBackend) is the only entry just when that chain is
+// otherwise empty. It is never put in front of a configured judge_policy list,
+// because the operator's list order must stand.
 func judgeBackendChooserForSize(ctx context.Context, mgr *autonomouspkg.Manager, req autonomouspkg.GuardrailInvocation, gcfg autonomouspkg.Config, unitBackend string, size judgeSize) judgeBackendChooser {
 	pick := judgeDecisionLog(mgr, req)
-	if pin := req.GuardrailBackend; pin != "" {
+	if pin := req.GuardrailBackend; req.GuardrailPinned && pin != "" {
 		gcfg.JudgePolicy = []string{pin}
 		unitBackend = pin
 		logged := pick
