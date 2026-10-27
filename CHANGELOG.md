@@ -57,6 +57,12 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.21.3 — The workspace root is an allowed project directory by default
+
+### Fixed
+
+- The default allowed project roots now include the workspace root, the folder `~/workspace` when `session.workspace_root` is unset, so interactive sessions, explicit `project_dir` Automata and test runs under that folder are no longer refused. No configuration change is needed. More roots come only through `server.allowed_project_roots`; setting `session.workspace_root` replaces the default workspace root.
+
 ## v9.21.2 — A restart keeps each pi worker on the node it was placed on
 
 - After a daemon restart, a surviving pi-prompt worker is re-adopted on the compute node it was placed on, read from the node recorded at placement, never guessed from names or DNS. Before this, both survivors could land on one node (`node:datawatch` 2 of 1) while the other GPU sat idle and requests waited.
