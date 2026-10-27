@@ -1549,8 +1549,8 @@ autonomous:
   # each; the attempts total the list length. A judge moves to the next backend
   # only when its run hits the time limit. Empty (default) = the judges follow
   # the verifier routing policy (the same modes and backends the verifiers use),
-  # one attempt per backend it offers. A unit that pins its own guardrail
-  # backend keeps that one backend.
+  # one attempt per backend it offers. A unit with its own task or PRD
+  # guardrail backend override keeps that one backend.
   judge_policy: []
   # Time limit in seconds for one judge run, counted from the judge's start;
   # the wait for a capacity slot does not count. 0 or negative falls back to

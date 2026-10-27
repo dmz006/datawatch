@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The judge routing treated any resolved guardrail backend as an operator pin, so the size rule and the fallback never ran for the judges. A pin is now only an explicit task or PRD override; a global verification backend is only a default. See [howto/judge-policy.md](docs/howto/judge-policy.md).
+
 ### Large changes go to claude-code first when a judge runs
 
 - **Size-aware judge routing.** When the Automaton branch has more than `autonomous.judge_size_threshold_lines` changed lines (default 400), the judges try `claude-code` first and the other backends follow in their usual order, still one attempt per backend. On 2026-10-26 an Automaton of about 1,000 changed lines spent the whole 30-minute limit on a local judge that could not finish; a large change no longer starts on that model.
