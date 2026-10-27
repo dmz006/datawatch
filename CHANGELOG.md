@@ -64,6 +64,15 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.22.0 — Large diffs go to Claude first for the final judge
+
+### Large changes go to claude-code first when a judge runs
+
+- **Size-aware judge routing.** When the Automaton branch has more than `autonomous.judge_size_threshold_lines` changed lines (default 400), the judges try `claude-code` first and the other backends follow in their usual order, still one attempt per backend. On 2026-10-26 an Automaton of about 1,000 changed lines spent the whole 30-minute limit on a local judge that could not finish; a large change no longer starts on that model.
+- **How lines are counted.** Added plus deleted lines on the Automaton branch against its merge base, with lock files left out. `0` turns the rule off.
+- **Nothing else changes.** In `balance` mode the load still decides and the order only breaks ties. A judge that times out on every backend still holds the Automaton with the hold reason `judge_timeout_hold`, after the `judge_timeout_seconds` limit is spent on each backend. The Automaton decision log names the rule that routed the judge and the line count.
+- **Settings on every surface.** YAML (`autonomous.judge_size_threshold_lines`), REST (`PUT /api/config` and `PUT /api/autonomous/config`), MCP (`autonomous_config_set`), the CLI (`autonomous config-set --judge-size-threshold-lines`), the comm channel (`autonomous judge-policy-set judge_size_threshold_lines=400`) and the PWA Settings autonomous card in five locales. See [howto/judge-policy.md](docs/howto/judge-policy.md#size-aware-routing).
+
 ## v9.21.3 — The workspace root is an allowed project directory by default
 
 ### Fixed
