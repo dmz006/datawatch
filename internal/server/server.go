@@ -424,9 +424,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)
 	apiMux.HandleFunc("/api/autonomous/subscriptions", api.handleAutonomousSubscriptions)
 	apiMux.HandleFunc("/api/autonomous/subscriptions/", api.handleAutonomousSubscriptions)
-	// Operator question channel (raise + read): one generic question
-	// record, label-is-type, never expiring. /answer, /answers and
-	// /withdraw under a question id are reserved elsewhere and 404 here.
+	// Operator question channel (raise, read, answer, withdraw): one
+	// generic question record, label-is-type, never expiring. /answer,
+	// /withdraw and /answers under a question id serve the answer flow;
+	// other sub-paths 404.
 	apiMux.HandleFunc("/api/questions", api.handleQuestions)
 	apiMux.HandleFunc("/api/questions/", api.handleQuestions)
 	apiMux.HandleFunc("/api/autonomous/events", api.handleAutonomousEvents)

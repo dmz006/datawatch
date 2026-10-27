@@ -1,15 +1,21 @@
-// questions_rest_test.go — REST-level tests for /api/questions
-// (POST raise, GET list, GET by id). Two store backings are exercised:
-// the real autonomous.QuestionStore in a temp dir (the same store the
-// daemon opens at <data_dir>/questions.jsonl) and a fake QuestionsAPI (the
-// interface seam the daemon wires through SetQuestions). Together they
-// cover the JSON wire shape, the status mapping (201/200/400/404/405/413/
-// 503) and the store validation errors.
+// questions_rest_test.go — REST-level tests for /api/questions: POST and
+// GET on the collection, GET by id, and the answer flow under a question
+// id (POST /answer, POST /withdraw, GET /answers). Two store backings are
+// exercised: the real autonomous.QuestionStore in a temp dir (the same
+// store the daemon opens at <data_dir>/questions.jsonl) and a fake
+// QuestionsAPI (the interface seam the daemon wires through SetQuestions).
+// They together cover the JSON wire shape, the status mapping
+// (201/200/400/404/405/409/413/422/503), the store's validation errors,
+// the capability gates and the switch. Where the data-path flow is the
+// point the real store stands in; the fake stands in for the status
+// mapping.
 
 package server
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -111,6 +117,13 @@ type fakeQuestions struct {
 	byID    map[string]autonomous.Question
 	current map[string]autonomous.Answer
 	counts  map[string]int
+	// answerErr, when set, is returned by Answer (and nothing is stored):
+	// the status-mapping tests point it at the store's sentinel errors.
+	answerErr error
+	// withdrawErr, when set, is returned by Withdraw.
+	withdrawErr error
+	// answerViews overrides the default answer log returned by Answers.
+	answerViews []autonomous.AnswerView
 }
 
 func newFakeQuestions() *fakeQuestions {
@@ -167,12 +180,18 @@ func (f *fakeQuestions) List(filter autonomous.QuestionFilter) []autonomous.Ques
 	return out
 }
 func (f *fakeQuestions) Answer(questionID string, a autonomous.Answer) (autonomous.Answer, error) {
+	if f.answerErr != nil {
+		return autonomous.Answer{}, f.answerErr
+	}
 	a.QuestionID = questionID
 	f.current[questionID] = a
 	f.counts[questionID]++
 	return a, nil
 }
 func (f *fakeQuestions) Withdraw(id, actor, reason string) (autonomous.Question, error) {
+	if f.withdrawErr != nil {
+		return autonomous.Question{}, f.withdrawErr
+	}
 	q, ok := f.byID[id]
 	if !ok {
 		return autonomous.Question{}, autonomous.ErrQuestionNotFound
@@ -183,6 +202,9 @@ func (f *fakeQuestions) Withdraw(id, actor, reason string) (autonomous.Question,
 func (f *fakeQuestions) Answers(questionID string) ([]autonomous.AnswerView, bool) {
 	if _, ok := f.byID[questionID]; !ok {
 		return nil, false
+	}
+	if f.answerViews != nil {
+		return f.answerViews, true
 	}
 	a, ok := f.current[questionID]
 	if !ok {
@@ -550,18 +572,38 @@ func TestQuestionsREST_WrongMethodIs405(t *testing.T) {
 	}
 }
 
-func TestQuestionsREST_ReservedPathsAre404(t *testing.T) {
+func TestQuestionsREST_UnknownSubPathsAre404AndWrongMethodsAre405(t *testing.T) {
 	s, _ := newQuestionsRESTServer(t)
 
-	// The answer paths and the withdraw path are reserved sub-paths of this
-	// API (the store has the verbs; this surface does not): a fixed 404 for
-	// every method — never a stub that returns success.
-	paths := []string{
-		"/api/questions/some-id/answer",
-		"/api/questions/some-id/withdraw",
-		"/api/questions/some-id/answers",
+	// The answer flow paths exist, but each accepts one method only: the
+	// same path on any other method is 405, for a known and an unknown id
+	// alike (the shape fails before the id is looked up).
+	wrong := []struct{ method, path string }{
+		{http.MethodGet, "/api/questions/some-id/answer"},
+		{http.MethodPut, "/api/questions/some-id/answer"},
+		{http.MethodDelete, "/api/questions/some-id/answer"},
+		{http.MethodGet, "/api/questions/some-id/withdraw"},
+		{http.MethodPut, "/api/questions/some-id/withdraw"},
+		{http.MethodPost, "/api/questions/some-id/answers"},
+		{http.MethodPut, "/api/questions/some-id/answers"},
+		{http.MethodDelete, "/api/questions/some-id/answers"},
+		{http.MethodGet, "/api/questions/never-existed/answer"},
 	}
-	for _, path := range paths {
+	for _, tc := range wrong {
+		rr := doQ(t, s, tc.method, tc.path, nil)
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("%s %s: want 405, got %d body=%s", tc.method, tc.path, rr.Code, rr.Body.String())
+		}
+	}
+
+	// Other sub-paths beneath a question id are not on this surface at all:
+	// a fixed 404 — never a stub that returns success.
+	unshaped := []string{
+		"/api/questions/some-id/bogus",
+		"/api/questions/some-id/answers/deep",
+		"/api/questions/a/b",
+	}
+	for _, path := range unshaped {
 		for _, method := range []string{http.MethodPost, http.MethodGet, http.MethodDelete} {
 			rr := doQ(t, s, method, path, nil)
 			if rr.Code != http.StatusNotFound {
@@ -769,5 +811,552 @@ func TestQuestionsREST_MuxRoutable(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/questions/{id} via real mux: want 200, got %d (the original bug)", resp.StatusCode)
+	}
+}
+
+// --- the answer flow under a question id ---------------------------------
+
+// doAnswer posts the answer body to /api/questions/{id}/answer (optionally
+// tagged with the given peer capabilities) and returns the recorder.
+func doAnswer(t *testing.T, s *Server, id string, body map[string]any, caps ...string) *httptest.ResponseRecorder {
+	t.Helper()
+	b, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal answer body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/questions/"+id+"/answer", bytes.NewReader(b))
+	if len(caps) > 0 {
+		req = asPeer(req, caps...)
+	}
+	rec := httptest.NewRecorder()
+	s.handleQuestions(rec, req)
+	return rec
+}
+
+// doWithdraw posts the withdraw body to /api/questions/{id}/withdraw and
+// returns the recorder.
+func doWithdraw(t *testing.T, s *Server, id, reason string, caps ...string) *httptest.ResponseRecorder {
+	t.Helper()
+	b, err := json.Marshal(map[string]any{"reason": reason})
+	if err != nil {
+		t.Fatalf("marshal withdraw body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/questions/"+id+"/withdraw", bytes.NewReader(b))
+	if len(caps) > 0 {
+		req = asPeer(req, caps...)
+	}
+	rec := httptest.NewRecorder()
+	s.handleQuestions(rec, req)
+	return rec
+}
+
+// doAnswers reads /api/questions/{id}/answers and returns the recorder.
+func doAnswers(t *testing.T, s *Server, id string, caps ...string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/questions/"+id+"/answers", nil)
+	if len(caps) > 0 {
+		req = asPeer(req, caps...)
+	}
+	rec := httptest.NewRecorder()
+	s.handleQuestions(rec, req)
+	return rec
+}
+
+// raiseQ raises one valid question through the REST handler and returns the
+// stored record (201 expected).
+func raiseQ(t *testing.T, s *Server) autonomous.Question {
+	t.Helper()
+	rr := doQ(t, s, http.MethodPost, "/api/questions", validQuestionBody())
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("raise: want 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	return decodeQuestion(t, rr)
+}
+
+// decodeAnswerEnv unwraps the {"answer": {...}, "question": {...}} envelope
+// the 201 answer response uses.
+func decodeAnswerEnv(t *testing.T, rr *httptest.ResponseRecorder) (autonomous.Answer, autonomous.Question) {
+	t.Helper()
+	var env struct {
+		Answer   autonomous.Answer   `json:"answer"`
+		Question autonomous.Question `json:"question"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode 201: %v body=%q", err, rr.Body.String())
+	}
+	return env.Answer, env.Question
+}
+
+// TestQuestionsREST_AnswerAllThreeShapes drives the three accepted shapes:
+// option only, quote only, and both together — and checks the 201 carries
+// the stored answer (option, quote, quote hash) and the question's new
+// state.
+func TestQuestionsREST_AnswerAllThreeShapes(t *testing.T) {
+	s, _ := newQuestionsRESTServer(t)
+
+	// Option only.
+	q := raiseQ(t, s)
+	rr := doAnswer(t, s, q.ID, map[string]any{"chosen_option_id": "yes"})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("option-only: want 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	ans, qout := decodeAnswerEnv(t, rr)
+	if ans.ID == "" || ans.QuestionID != q.ID || ans.ChosenOptionID != "yes" {
+		t.Fatalf("option-only: answer record = %+v", ans)
+	}
+	if qout.State != autonomous.QuestionAnswered {
+		t.Fatalf("option-only: question state %q, want answered", qout.State)
+	}
+
+	// Quote only.
+	q2 := raiseQ(t, s)
+	rr = doAnswer(t, s, q2.ID, map[string]any{"quote": "yes, cap it at five"})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("quote-only: want 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	ans, _ = decodeAnswerEnv(t, rr)
+	if ans.Quote != "yes, cap it at five" {
+		t.Fatalf("quote-only: stored quote %q not passed through", ans.Quote)
+	}
+	sum := sha256.Sum256([]byte("yes, cap it at five"))
+	if ans.QuoteSHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("quote-only: quote_sha256 mismatch")
+	}
+
+	// Both together.
+	q3 := raiseQ(t, s)
+	rr = doAnswer(t, s, q3.ID, map[string]any{"chosen_option_id": "no", "quote": "keep it uncapped for the long tail"})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("both: want 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	ans, _ = decodeAnswerEnv(t, rr)
+	if ans.ChosenOptionID != "no" || ans.Quote != "keep it uncapped for the long tail" {
+		t.Fatalf("both: answer = %+v", ans)
+	}
+}
+
+// TestQuestionsREST_AnswerQuoteVerbatimAndHashed is the byte-for-byte rule:
+// nothing in the REST layer may trim, normalize or re-encode the quote
+// before it is stored, and the hash must cover exactly the bytes received.
+func TestQuestionsREST_AnswerQuoteVerbatimAndHashed(t *testing.T) {
+	s, _ := newQuestionsRESTServer(t)
+
+	q := raiseQ(t, s)
+	quote := "  leading and trailing spaces,\t a tab,\r\n a CRLF, and unicode: café — 日本語"
+	rr := doAnswer(t, s, q.ID, map[string]any{"quote": quote})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	ans, _ := decodeAnswerEnv(t, rr)
+	if ans.Quote != quote {
+		t.Fatalf("quote altered in transit: %q != %q", ans.Quote, quote)
+	}
+	sum := sha256.Sum256([]byte(quote))
+	if ans.QuoteSHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("quote_sha256 = %q, want the hash of the exact bytes of %q", ans.QuoteSHA256, quote)
+	}
+}
+
+// TestQuestionsREST_SupersedesChainAndAnswerLog is the changed-mind flow
+// end-to-end: superseding requires naming the current answer (409
+// otherwise), a wrong target is 409, the right one is 201; the answer log
+// is oldest first with derived superseded state, the current id on the
+// newest.
+func TestQuestionsREST_SupersedesChainAndAnswerLog(t *testing.T) {
+	s, _ := newQuestionsRESTServer(t)
+
+	q := raiseQ(t, s)
+	rr := doAnswer(t, s, q.ID, map[string]any{"chosen_option_id": "yes"})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("first answer: got %d body=%s", rr.Code, rr.Body.String())
+	}
+	first, _ := decodeAnswerEnv(t, rr)
+
+	// Now answered: no supersedes -> 409; wrong target -> 409.
+	rr = doAnswer(t, s, q.ID, map[string]any{"chosen_option_id": "no"})
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("change of mind without supersedes: want 409, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = doAnswer(t, s, q.ID, map[string]any{"chosen_option_id": "no", "supersedes": "a-ghost"})
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("wrong supersedes target: want 409, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	// Naming the current answer -> 201.
+	rr = doAnswer(t, s, q.ID, map[string]any{"chosen_option_id": "no", "supersedes": first.ID})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("superseding answer: want 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	second, _ := decodeAnswerEnv(t, rr)
+
+	// The log: oldest first with derived superseded state, current on newest.
+	rr = doAnswers(t, s, q.ID)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET answers: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var logEnv struct {
+		Answers []autonomous.AnswerView `json:"answers"`
+		Current string                  `json:"current_answer_id"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &logEnv); err != nil {
+		t.Fatalf("decode log: %v body=%q", err, rr.Body.String())
+	}
+	if len(logEnv.Answers) != 2 {
+		t.Fatalf("log: %d entries, want 2 (body=%q)", len(logEnv.Answers), rr.Body.String())
+	}
+	oldest, newest := logEnv.Answers[0], logEnv.Answers[1]
+	if oldest.Answer.ID != first.ID || newest.Answer.ID != second.ID {
+		t.Fatalf("log order: %q then %q, want oldest first (%q then %q)",
+			oldest.Answer.ID, newest.Answer.ID, first.ID, second.ID)
+	}
+	if !oldest.Superseded || oldest.SupersededBy != second.ID {
+		t.Fatalf("oldest: superseded=%v superseded_by=%q, want true/%q",
+			oldest.Superseded, oldest.SupersededBy, second.ID)
+	}
+	if newest.Superseded || newest.SupersededBy != "" {
+		t.Fatalf("newest: superseded=%v superseded_by=%q, want false/\"\"",
+			newest.Superseded, newest.SupersededBy)
+	}
+	if logEnv.Current != second.ID {
+		t.Fatalf("current id field = %q, want %q", logEnv.Current, second.ID)
+	}
+}
+
+// TestQuestionsREST_WithdrawFlow is the withdraw end-to-end: 200 with the
+// withdrawn state and the actor recorded; 409 a second time; 404 on a
+// missing question; an answered question can still be withdrawn, as can an
+// open one; a withdrawn question refuses an answer.
+func TestQuestionsREST_WithdrawFlow(t *testing.T) {
+	s, _ := newQuestionsRESTServer(t)
+
+	q := raiseQ(t, s)
+	rr := doWithdraw(t, s, q.ID, "the situation changed")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("withdraw open: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var env struct {
+		Question autonomous.Question `json:"question"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v body=%q", err, rr.Body.String())
+	}
+	if env.Question.State != autonomous.QuestionWithdrawn {
+		t.Fatalf("withdrawn state not in 200 body: %+v", env.Question)
+	}
+
+	// The log read still works on the withdrawn question.
+	rr = doAnswers(t, s, q.ID)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("answers on withdrawn: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// A second withdraw is a conflict.
+	rr = doWithdraw(t, s, q.ID, "again")
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("second withdraw: want 409, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// A withdrawn question refuses an answer.
+	rr = doAnswer(t, s, q.ID, map[string]any{"quote": "too late"})
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("answer after withdraw: want 409, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// An answered question is no longer withdrawable: 409 (the operator's
+	// reply stands; a changed mind is a superseding answer, not a withdraw).
+	q2 := raiseQ(t, s)
+	rr = doAnswer(t, s, q2.ID, map[string]any{"quote": "cap it"})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("answer q2: want 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = doWithdraw(t, s, q2.ID, "change")
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("withdraw answered: want 409, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// Withdraw of a missing question is 404.
+	rr = doWithdraw(t, s, "never-existed", "why")
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("withdraw missing: want 404, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestQuestionsREST_AnswerStatusMappingThroughTheFake drives the handler's
+// error mapping against a fake store pointed at the store's sentinel
+// errors: 404 not found, 409 not open / needs supersedes / wrong target,
+// 400 empty / unknown option, 422 secret.
+func TestQuestionsREST_AnswerStatusMappingThroughTheFake(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"not found", autonomous.ErrQuestionNotFound, http.StatusNotFound},
+		{"not open", autonomous.ErrQuestionNotOpen, http.StatusConflict},
+		{"needs supersedes", autonomous.ErrAnswerNeedsSupersedes, http.StatusConflict},
+		{"wrong target", autonomous.ErrSupersedesWrongTarget, http.StatusConflict},
+		{"empty", autonomous.ErrAnswerEmpty, http.StatusBadRequest},
+		{"unknown option", autonomous.ErrUnknownOption, http.StatusBadRequest},
+		{"secret", autonomous.ErrSecretInAnswer, http.StatusUnprocessableEntity},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := newFakeQuestions()
+			fake.answerErr = tc.err
+			cfg := questionRESTTestConfig(true)
+			s := &Server{cfg: &cfg, questionStore: fake}
+
+			rr := doAnswer(t, s, "q-fake-1", map[string]any{"quote": "x"})
+			if rr.Code != tc.want {
+				t.Fatalf("status = %d, want %d (body=%q)", rr.Code, tc.want, rr.Body.String())
+			}
+			if !strings.Contains(rr.Body.String(), `"error"`) {
+				t.Fatalf("body lacks the error field: %q", rr.Body.String())
+			}
+		})
+	}
+
+	// Withdraw mapping: 404 and 409.
+	t.Run("withdraw not found", func(t *testing.T) {
+		fake := newFakeQuestions()
+		cfg := questionRESTTestConfig(true)
+		s := &Server{cfg: &cfg, questionStore: fake}
+		rr := doWithdraw(t, s, "no-such", "why")
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404 (body=%q)", rr.Code, rr.Body.String())
+		}
+	})
+	t.Run("withdraw closed", func(t *testing.T) {
+		fake := newFakeQuestions()
+		fake.withdrawErr = autonomous.ErrQuestionNotOpen
+		cfg := questionRESTTestConfig(true)
+		s := &Server{cfg: &cfg, questionStore: fake}
+		rr := doWithdraw(t, s, "q-fake-1", "why")
+		if rr.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want 409 (body=%q)", rr.Code, rr.Body.String())
+		}
+	})
+}
+
+// TestQuestionsREST_SecretRefusalNamesSafeRoutesWithoutEchoing is the 422
+// contract: the error names the two safe routes, the response carries none
+// of the submitted text, and the question stays open and unanswered — the
+// submission is refused, not stored.
+func TestQuestionsREST_SecretRefusalNamesSafeRoutesWithoutEchoing(t *testing.T) {
+	s, _ := newQuestionsRESTServer(t)
+	q := raiseQ(t, s)
+
+	// This quote trips the answer secret scan (a secret assignment).
+	secret := `password = "s3cr3t-rotated-2026"`
+	rr := doAnswer(t, s, q.ID, map[string]any{"quote": secret})
+	if rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("secret quote: want 422, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `"reason":"secret_detected"`) && !strings.Contains(body, "secret_detected") {
+		t.Fatalf("response does not name the reason: %q", body)
+	}
+	if !strings.Contains(body, "datawatch secrets store") {
+		t.Fatalf("response does not name the secrets store: %q", body)
+	}
+	if !strings.Contains(body, "${secret:name}") && !strings.Contains(body, "secret:name") {
+		t.Fatalf("response does not name the ${secret:name} shape: %q", body)
+	}
+	if !strings.Contains(body, "filesystem") && !strings.Contains(body, "file") {
+		t.Fatalf("response does not name the filesystem route: %q", body)
+	}
+	// The submitted text must not come back.
+	if strings.Contains(body, "s3cr3t-rotated-2026") || strings.Contains(body, secret) {
+		t.Fatalf("422 echoed the secret text: %q", body)
+	}
+	// Nothing stored: still open, no answer recorded.
+	got, ok := s.questionStore.Get(q.ID)
+	if !ok || got.State != autonomous.QuestionOpen {
+		t.Fatalf("question state after refusal: ok=%v state=%q, want open", ok, got.State)
+	}
+	if _, ok := s.questionStore.CurrentAnswer(q.ID); ok {
+		t.Fatalf("a refusal recorded an answer")
+	}
+
+	// A well-formed reference to a stored secret is NOT a secret: it is
+	// accepted and stored verbatim (the reference names what to fetch, not
+	// the value).
+	rr = doAnswer(t, s, q.ID, map[string]any{"quote": "the token is ${secret:deploy_token}; it rotates weekly"})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("secret reference in quote: want 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestQuestionsREST_AnswerSurfaceValidationIs400 is the surface gate: the
+// named surfaces are accepted (stored and returned), "system" is refused
+// with a 400 for this channel, and the empty comm name is refused.
+func TestQuestionsREST_AnswerSurfaceValidationIs400(t *testing.T) {
+	s, _ := newQuestionsRESTServer(t)
+
+	for _, surface := range []string{"pwa", "android", "ios", "cli", "mcp", "comm:slack"} {
+		q := raiseQ(t, s)
+		rr := doAnswer(t, s, q.ID, map[string]any{"quote": "ok", "surface": surface})
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("surface %q: want 201, got %d body=%s", surface, rr.Code, rr.Body.String())
+		}
+	}
+
+	for _, surface := range []string{"system", "comm:", "browser", ""} {
+		q := raiseQ(t, s)
+		bodys := []map[string]any{{"quote": "ok", "surface": surface}}
+		if surface == "" {
+			bodys = []map[string]any{{"quote": "ok"}} // absent
+		}
+		rr := doAnswer(t, s, q.ID, bodys[0])
+		// Absent surface defaults to "rest" (201), not a refusal.
+		if (surface == "" && rr.Code != http.StatusCreated) || (surface != "" && rr.Code != http.StatusBadRequest) {
+			t.Fatalf("surface %q: got %d body=%s", surface, rr.Code, rr.Body.String())
+		}
+		if surface != "" {
+			if !strings.Contains(rr.Body.String(), "surface") {
+				t.Fatalf("400 for %s does not mention surface: %s", surface, rr.Body.String())
+			}
+		}
+		if surface == "" {
+			got, _ := s.questionStore.Get(q.ID)
+			if got.State != autonomous.QuestionAnswered {
+				t.Fatalf("absent surface: question should be answered, state=%q", got.State)
+			}
+		} else {
+			if _, ok := s.questionStore.CurrentAnswer(q.ID); ok {
+				t.Fatalf("refused surface %q stored an answer", surface)
+			}
+		}
+	}
+}
+
+// TestQuestionsREST_AnswerAndWithdrawCapabilities runs the capability gate
+// for the new endpoints: autonomous:write authorizes answer and withdraw;
+// the answer log stays behind autonomous:read; a peer with only read sees
+// 403 on both writes and 200 on the log read.
+func TestQuestionsREST_AnswerAndWithdrawCapabilities(t *testing.T) {
+	s, _ := newQuestionsRESTServer(t)
+	q1 := raiseQ(t, s)
+
+	// read-only peer: log is fine, answer and withdraw are 403.
+	rr := doAnswers(t, s, q1.ID, "autonomous:read")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("answers as read peer: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = doAnswer(t, s, q1.ID, map[string]any{"quote": "x"}, "autonomous:read")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("answer as read peer: want 403, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = doWithdraw(t, s, q1.ID, "y", "autonomous:read")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("withdraw as read peer: want 403, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// write peer: both writes go through, the log stays 403.
+	rr = doAnswer(t, s, q1.ID, map[string]any{"quote": "cap it"}, "autonomous:write")
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("answer as write peer: want 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	q2 := raiseQ(t, s)
+	rr = doWithdraw(t, s, q2.ID, "y", "autonomous:write")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("withdraw as write peer: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = doAnswers(t, s, q1.ID, "autonomous:write")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("answers as write-only peer: want 403, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// A peer with no relevant capability: 403 on every path.
+	rr = doAnswers(t, s, q1.ID, "sessions:read")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("answers as caps-less peer: want 403, got %d", rr.Code)
+	}
+	rr = doAnswer(t, s, q1.ID, map[string]any{"quote": "x"}, "sessions:read")
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("answer as caps-less peer: want 403, got %d", rr.Code)
+	}
+}
+
+// TestQuestionsREST_AnswerBodySizeIs413 applies both size caps: the quote
+// is capped at 16 KiB by the store (an over-cap quote is a 413 with the
+// store's own count-and-cap message, and the quote text is never echoed),
+// and the whole body is capped at 64 KiB plus the quote cap — anything
+// bigger is refused before it is even read (413).
+func TestQuestionsREST_AnswerBodySizeIs413(t *testing.T) {
+	s, _ := newQuestionsRESTServer(t)
+	q := raiseQ(t, s)
+
+	// Oversize the *body*: quote 16 KiB cap + body cap + one.
+	huge := strings.Repeat("y", maxAnswerBodyBytes+1)
+	req := httptest.NewRequest(http.MethodPost, "/api/questions/"+q.ID+"/answer",
+		strings.NewReader(`{"quote":"`+huge+`"}`))
+	rec := httptest.NewRecorder()
+	s.handleQuestions(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversize body: want 413, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	// Oversize the *quote* within the body: the store's 16 KiB quote cap
+	// fires (the error names the byte count, not the quote).
+	over := strings.Repeat("x", 16*1024+1)
+	rr := doAnswer(t, s, q.ID, map[string]any{"quote": over})
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversize quote: want 413, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), over) {
+		t.Fatalf("413 echoed the quote")
+	}
+	if _, ok := s.questionStore.CurrentAnswer(q.ID); ok {
+		t.Fatalf("oversize quote stored an answer")
+	}
+}
+
+// TestQuestionsREST_SwitchOffIs503OnTheAnswerFlow extends the existing
+// switch-off coverage to the answer endpoints: off returns 503 naming the
+// switch, on serves them.
+func TestQuestionsREST_SwitchOffIs503OnTheAnswerFlow(t *testing.T) {
+	store, err := autonomous.NewQuestionStore(filepath.Join(t.TempDir(), "questions.jsonl"))
+	if err != nil {
+		t.Fatalf("NewQuestionStore: %v", err)
+	}
+	cfg := questionRESTTestConfig(false)
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	s := &Server{cfg: &cfg, cfgPath: cfgPath, questionStore: store}
+
+	for _, tc := range []struct {
+		method, path string
+	}{
+		{http.MethodPost, "/api/questions/some-id/answer"},
+		{http.MethodPost, "/api/questions/some-id/withdraw"},
+		{http.MethodGet, "/api/questions/some-id/answers"},
+	} {
+		rr := doQ(t, s, tc.method, tc.path, nil)
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s %s (switch off): want 503, got %d body=%s", tc.method, tc.path, rr.Code, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), "autonomous.questions.enabled") {
+			t.Fatalf("%s %s (switch off): error %q does not name autonomous.questions.enabled", tc.method, tc.path, rr.Body.String())
+		}
+	}
+
+	// On: the endpoints start serving.
+	putJSON(t, s.handlePutConfig, "/api/config", map[string]any{"autonomous.questions.enabled": true})
+	q := raiseQ(t, s)
+	rr := doAnswer(t, s, q.ID, map[string]any{"quote": "on"})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("answer with switch on: want 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	q2 := raiseQ(t, s)
+	rr = doWithdraw(t, s, q2.ID, "done")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("withdraw open with switch on: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = doAnswer(t, s, q2.ID, map[string]any{"quote": "late"})
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("answer withdrawn with switch on: want 409, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = doAnswers(t, s, q.ID)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("answers with switch on: want 200, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
