@@ -17,6 +17,19 @@ func NormalizeJudgeTimeoutSeconds(v int) int {
 	return v
 }
 
+// JudgeSizeThresholdDefaultLines is the default for
+// autonomous.judge_size_threshold_lines: a change of more than this many
+// changed lines routes the judges size-aware. It is applied by DefaultConfig
+// when the key is absent; an explicit 0 turns the rule off and stays 0.
+const JudgeSizeThresholdDefaultLines = 400
+
+// JudgeSizeRuleEnabled reports whether the size-aware judge routing rule is
+// on for the configured threshold: any positive value enables it, 0 turns it
+// off.
+func JudgeSizeRuleEnabled(threshold int) bool {
+	return threshold > 0
+}
+
 // NormalizeJudgePolicy returns the judge backend list with blank and
 // duplicate entries dropped and the order kept. An empty result means the
 // judges follow the verifier routing policy.

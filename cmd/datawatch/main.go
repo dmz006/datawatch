@@ -4277,6 +4277,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			VerificationTimeoutSeconds:       acfgIn.VerificationTimeoutSeconds,
 			JudgePolicy:                      config.NormalizeJudgePolicy(acfgIn.JudgePolicy),
 			JudgeTimeoutSeconds:              config.NormalizeJudgeTimeoutSeconds(acfgIn.JudgeTimeoutSeconds),
+			JudgeSizeThresholdLines:          acfgIn.JudgeSizeThresholdLines,
 			SessionIdleTimeoutSeconds:        acfgIn.SessionIdleTimeoutSeconds,
 			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
 			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
