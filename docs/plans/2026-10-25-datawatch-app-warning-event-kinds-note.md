@@ -74,6 +74,35 @@ de/es/fr/ja, never "PRD", never "Automation".
   rendered form shows the localized "Warnings (opt-in)" group and the
   opt-in explainer below the kind grid.
 
+## REST surface (what the app must know about)
+
+The endpoints do not change (the 2026-10-23 note's set: `POST
+/api/autonomous/prds/{id}/set_notify_events`, guardrail-profile create/update,
+`GET /api/autonomous/prds/{id}`); the *contents* of two fields change:
+
+- `notify_events` (Automaton, and guardrail profile): two bare names are now
+  valid kinds — `scope_warning` and `guardrail_warn`. They take no
+  arguments. A `400` on an unknown kind still lists the full valid set, so
+  the app can keep deriving the kind list from the daemon instead of
+  hard-coding it.
+- `notify_events_effective.events`: the resolved list may now contain the two
+  warning kinds (with `source` = `automaton` / `profile` / `global`)
+  **only** when some tier listed them explicitly — they never enter the
+  resolved list from the baseline. A warning kind present in the resolved
+  list is therefore always explicitly opted in by the operator.
+- Opt-in set (`autonomous.OptInNotifyEvents()`: `guardrail_warn`,
+  `scope_warning`, `task.session_started`, `task.session_cleared`) — these
+  four are off unless some tier lists them; the default set stays the five
+  `prd.*` terminal states. Practical app rule: a kind outside the default
+  set is opt-in, and the two new ones are the kinds a warning alert carries.
+- Warning delivery: when a warning event fires, the app receives it through
+  the existing push path — no new delivery field. Its `kind` is one of the
+  two bare names; the level (task / story / Automaton) is carried in the
+  event's `level` field, not in the kind. The payload fields are `files`
+  (`scope_warning`: the out-of-scope paths), `guardrail`
+  (`guardrail_warn`: the guardrail name) and optional `link` (a PWA
+  deep-link such as `?alert=<id>` where one was raised alongside).
+
 ## Datawatch-app parity
 
 The 5 new keys follow the Android naming convention (`notify_events_*`,
