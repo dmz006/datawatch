@@ -161,6 +161,14 @@ test('the frame supplies the shared policy and lane card around the burn-ledger 
   assert.ok(html.includes('Points used each day since the reset'), 'the burn-ledger chart is inside the frame');
 });
 
+test('the verdict card carries the nine shared reading fields, open from the start', () => {
+  const html = frame(loadApp(), workedExampleBody(), { variant: 'burn-ledger' });
+  const start = html.indexOf('class="usage-calc-ledger-fields"');
+  assert.ok(start > html.indexOf('class="usage-calc-verdict"'), 'the fields sit in the verdict card');
+  assert.equal((html.match(/data-field="\d+"/g) || []).length, 9, 'one row for each shared field');
+  assert.ok(!html.includes('<details'), 'the ledger does not fold the fields away');
+});
+
 test('the layout is fluid at phone width: the chart scales and nothing is fixed wider than the column', () => {
   const html = render(loadApp(), workedExampleBody());
   assert.ok(html.includes('<svg viewBox="0 0 320 132" width="100%"'), 'the chart scales to the column');

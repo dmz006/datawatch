@@ -191,4 +191,4 @@ function emptyBody(patch) {
   return merge(body, patch || {});
 }
 
-module.exports = { workedExampleBody, emptyBody, SERIES_ROWS };
+module.exports = { workedExampleBody, emptyBody, SERIES_ROWS, merge };

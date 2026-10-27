@@ -24619,7 +24619,15 @@ function _usageCalcBurnLedger(res) {
     `</div>`;
 }
 
+// The verdict card's reading fields, open from the start. The design puts the reading fields in
+// the ledger's first card, and they are the same rows the other two variants draw, so a reading
+// reads the same in all three.
+function _usageCalcLedgerVerdictDetails(res) {
+  return `<div class="usage-calc-ledger-fields" style="margin-top:4px;">${usageCalcFieldRowsHtml(res)}</div>`;
+}
+
 window.usageCalcRenderers['burn-ledger'] = _usageCalcBurnLedger;
+window.usageCalcVerdictDetails['burn-ledger'] = _usageCalcLedgerVerdictDetails;
 
 function usageCalcRerender() {
   const ctl = window._listLoaders && window._listLoaders.automation_usage;
