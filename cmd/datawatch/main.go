@@ -5709,17 +5709,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						},
 						Take:    verifierTryAdmit,
 						Changed: verifierCapacityChanged,
-						Complete: func(s *verifierSelection) bool {
+						Pin: func(s *verifierSelection) *autonomouspkg.VerificationResult {
 							if s.UseSession && isPiFamilyKind(s.Kind) && s.Model == "" {
-								// A move target the pinned-model guard would
-								// refuse is not worth leaving a working wait for.
+								// Same setup verdict as for the first pick.
 								m, setup := guardPiFamilyVerifyModel(s.Backend, amgrCfg.VerificationModel, amgrCfg.PlanningModel)
 								if setup != nil {
-									return false
+									return setup
 								}
 								s.Model = m
 							}
-							return true
+							return nil
 						},
 						Mgr: autonomousMgrRef, PRDID: prd.ID, TaskID: task.ID,
 					})
@@ -5732,6 +5731,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 							VerifiedAt: time.Now(),
 							Category:   "infra",
 						}, nil
+					}
+					if lease.Setup != nil {
+						return *lease.Setup, nil
 					}
 					release = lease.Release
 					vnode = lease.Node

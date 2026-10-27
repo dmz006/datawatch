@@ -265,7 +265,10 @@ func policyVerifierSelection(
 		log.Printf("[autonomous] verifier: policy: %s (%s/%s); using the configured selection", pick.Reason, prd.ID, task.ID)
 		return verifierSelection{}, false
 	}
-	if pick.Claude {
+	if pick.Claude && (pick.Selection.Release != nil || verifierCapacityAdmit == nil) {
+		// A pick that has to wait is counted when it gets its lease (see
+		// awaitVerifierLease): it may still move to another backend, and a
+		// Claude session that never starts must not use up the cap.
 		verifierClaudeWindow.Record()
 	}
 	if mgr != nil {
@@ -330,11 +333,12 @@ func (l *verifierRetargetLoad) RelativeLoad(backend string) float64 {
 // made from the load. Each call re-runs the selector with the same policy and
 // candidates and fresh holds and Claude window count. The retry and final-gate
 // triggers are left off: they decide the first pick only, and this one was
-// not made by them. The waiting backend and those already left read as full
-// but stay in the eligible list, so fixed, gpu-only and claude-only keep their
-// rules and never move, prefer-free moves to the first fitting backend and
-// balance to the lowest load among the fitting ones. It takes no lease and
-// writes no decision log; the caller records a move it acts on.
+// not made by them. Only prefer-free and balance ever move: fixed, gpu-only and
+// claude-only keep the backend they picked. The waiting backend and those
+// already left read as full but stay in the eligible list, so prefer-free moves
+// to the first fitting backend and balance to the lowest load among the
+// fitting ones. It takes no lease and writes no decision log; the caller
+// records a move it acts on.
 func newVerifierRetarget(
 	mgr *autonomouspkg.Manager,
 	in verifierPolicyInput,
@@ -343,7 +347,19 @@ func newVerifierRetarget(
 	askCompatible func(kind string) bool,
 	isSessionKind func(kind string) bool,
 ) func(waiting string, left []string) (verifierSelection, string, bool) {
+	mode, err := config.NormalizeVerifierPolicyMode(in.Policy.Mode)
+	if err != nil {
+		mode = config.VerifierPolicyFixed
+	}
+	movable := mode == config.VerifierPolicyPreferFree || mode == config.VerifierPolicyBalance
 	return func(waiting string, left []string) (verifierSelection, string, bool) {
+		if !movable {
+			// fixed, gpu-only and claude-only name one backend and keep it.
+			// Re-running the selector is not enough to guarantee that: a Claude
+			// hold or the cap landing while the request waits on a Claude
+			// backend would make the selector name the next entry.
+			return verifierSelection{}, "", false
+		}
 		skip := map[string]bool{waiting: true}
 		for _, b := range left {
 			skip[b] = true
@@ -385,10 +401,11 @@ type verifierLeaseWait struct {
 	Take func(backend, model string) (release func(), node string, ok bool)
 	// Changed returns the capacity change channel (may be nil).
 	Changed func() <-chan struct{}
-	// Complete finishes a move target (for a pi-family session backend, the
-	// pinned-model guard). It returns false when the target cannot run, and
-	// the request then stays where it is.
-	Complete func(sel *verifierSelection) bool
+	// Pin finishes a move target once the lease on it is held (for a pi-family
+	// session backend, the pinned-model guard). It returns a setup verdict when
+	// the target cannot run, as the first pick does; the lease is then let go
+	// and the verdict is returned in verifierLease.Setup.
+	Pin func(sel *verifierSelection) *autonomouspkg.VerificationResult
 	// Mgr, PRDID and TaskID say where a move is recorded; Mgr may be nil.
 	Mgr           *autonomouspkg.Manager
 	PRDID, TaskID string
@@ -402,22 +419,27 @@ type verifierLease struct {
 	Release func()
 	Node    string
 	Moved   bool
+	// Setup is the verdict that ends the verification when the move target
+	// cannot run (no pinned model); the lease has been released and Release is
+	// nil.
+	Setup *autonomouspkg.VerificationResult
 }
 
 // awaitVerifierLease waits for the verifier's lease on sel.Backend with sel's
 // model. While it waits, a selection that carries a Retarget re-runs the
 // policy on every tick and every capacity change and takes the lease on
 // another backend as soon as one has room. A move is written to the Automaton's
-// decision log and the task's policy choice, and counts toward the Claude
-// session cap when it lands on a Claude backend. A selection with no Retarget
-// waits on its backend alone.
+// decision log and the task's policy choice. A policy pick that waited counts
+// toward the Claude session cap once, when the lease is granted and only if the
+// backend it ended on is a Claude one. A selection with no Retarget waits on its
+// backend alone.
 func awaitVerifierLease(ctx context.Context, sel verifierSelection, w verifierLeaseWait) (verifierLease, error) {
 	targets := map[string]verifierSelection{}
 	in := retargetWaitIn{Backend: sel.Backend, Model: sel.Model, Wait: w.Admit, Take: w.Take, Changed: w.Changed}
 	if sel.Retarget != nil {
 		in.Next = func(waiting string, left []string) (string, string, string, bool) {
 			ns, reason, ok := sel.Retarget(waiting, left)
-			if !ok || (w.Complete != nil && !w.Complete(&ns)) {
+			if !ok {
 				return "", "", "", false
 			}
 			targets[ns.Backend] = ns
@@ -432,9 +454,6 @@ func awaitVerifierLease(ctx context.Context, sel verifierSelection, w verifierLe
 					log.Printf("[autonomous] verifier: RecordVerifierPolicyChoice(%s/%s): %v", w.PRDID, w.TaskID, err)
 				}
 			}
-			if config.IsClaudeVerifierBackend(to) {
-				verifierClaudeWindow.Record()
-			}
 		}
 	}
 	out, err := retargetWait(ctx, in)
@@ -442,16 +461,24 @@ func awaitVerifierLease(ctx context.Context, sel verifierSelection, w verifierLe
 		return verifierLease{}, err
 	}
 	lease := verifierLease{Sel: sel, Release: out.Release, Node: out.Node}
-	if !out.Moved {
-		return lease, nil
-	}
-	lease.Sel, lease.Moved = targets[out.Backend], true
-	if lease.Release == nil {
-		// No non-blocking admission is wired: admit on the new backend now.
-		lease.Release, lease.Node, err = w.Admit(ctx, lease.Sel.Backend, lease.Sel.Model)
-		if err != nil {
-			return verifierLease{}, err
+	if out.Moved {
+		lease.Sel, lease.Moved = targets[out.Backend], true
+		if lease.Release == nil {
+			// No non-blocking admission is wired: admit on the new backend now.
+			lease.Release, lease.Node, err = w.Admit(ctx, lease.Sel.Backend, lease.Sel.Model)
+			if err != nil {
+				return verifierLease{}, err
+			}
 		}
+		if w.Pin != nil {
+			if setup := w.Pin(&lease.Sel); setup != nil {
+				lease.Release()
+				return verifierLease{Sel: lease.Sel, Moved: true, Setup: setup}, nil
+			}
+		}
+	}
+	if lease.Sel.Source == autonomouspkg.VerifierSourcePolicy && config.IsClaudeVerifierBackend(lease.Sel.Backend) {
+		verifierClaudeWindow.Record()
 	}
 	return lease, nil
 }

@@ -1090,11 +1090,12 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 
 	// verifierCapacityFits is the dry run of the same admission, for a verifier
 	// that waits and re-runs its policy: the worker lease is already released or
-	// handed over by then, so only the verifier's own pools count. The ledger's
-	// room check does not read the priority, so none is passed.
+	// handed over by then, so WorkerHolder is empty and only the verifier's own
+	// pools count. The priority is the task session's, as in the probe above.
 	verifierCapacityFits = func(backend, model, taskID, prdID string) bool {
 		return amgr.JudgeFits(autonomous.JudgeAdmit{
 			Holder: autonomous.VerifyHolder(taskID), PRDID: prdID, Backend: backend, Model: model,
+			Priority: sessionPriority(mgr, verifierTaskSession(amgr, taskID)),
 		})
 	}
 	verifierCapacityChanged = amgr.CapacityChanged
@@ -1283,6 +1284,23 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 
 // sessionPriority returns the capacity priority of the session id, or 0 when
 // there is no such session (a council run or an unspawned task has none).
+// verifierTaskSession returns the session the task's worker ran in, "" when the
+// task is unknown. The dry run in verifierCapacityFits has no session id of its
+// own, and the priority belongs to that session.
+func verifierTaskSession(amgr *autonomous.Manager, taskID string) string {
+	if amgr == nil {
+		return ""
+	}
+	st := amgr.Store()
+	t, ok := st.GetTask(taskID)
+	if !ok {
+		return ""
+	}
+	var id string
+	st.WithLock(func() { id = t.SessionID })
+	return id
+}
+
 func sessionPriority(mgr *session.Manager, id string) int {
 	if mgr == nil || id == "" {
 		return 0

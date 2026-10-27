@@ -147,15 +147,15 @@ func (h *retargetHarness) selection() verifierSelection {
 	return sel
 }
 
-// waitDeps is what main.go passes awaitVerifierLease. complete pins the
-// pi-family session model, as the pinned-model guard does.
-func (h *retargetHarness) waitDeps(complete func(*verifierSelection) bool) verifierLeaseWait {
-	if complete == nil {
-		complete = func(s *verifierSelection) bool {
+// waitDeps is what main.go passes awaitVerifierLease. pin finishes a move
+// target as the pinned-model guard does; nil pins the pi-family session model.
+func (h *retargetHarness) waitDeps(pin func(*verifierSelection) *autonomouspkg.VerificationResult) verifierLeaseWait {
+	if pin == nil {
+		pin = func(s *verifierSelection) *autonomouspkg.VerificationResult {
 			if s.UseSession && isPiFamilyKind(s.Kind) && s.Model == "" {
 				s.Model = "ollama/q"
 			}
-			return true
+			return nil
 		}
 	}
 	return verifierLeaseWait{
@@ -165,9 +165,9 @@ func (h *retargetHarness) waitDeps(complete func(*verifierSelection) bool) verif
 		Take: func(b, m string) (func(), string, bool) {
 			return verifierCapacityTryAdmit(h.ctx, b, m, h.taskID, h.prd.ID, "")
 		},
-		Changed:  verifierCapacityChanged,
-		Complete: complete,
-		Mgr:      h.mgr, PRDID: h.prd.ID, TaskID: h.taskID,
+		Changed: verifierCapacityChanged,
+		Pin:     pin,
+		Mgr:     h.mgr, PRDID: h.prd.ID, TaskID: h.taskID,
 	}
 }
 
@@ -340,8 +340,10 @@ func TestVerifierRetargetPinnedWaiterStaysAndIsGrantedThere(t *testing.T) {
 	r.lease.Release()
 }
 
-// TestVerifierRetargetDoesNotFlapBack: once the waiter moved, freeing pi-prompt
-// and filling claude-code again does not send it back.
+// TestVerifierRetargetDoesNotFlapBack: once the waiter moved to claude-code,
+// freeing pi-prompt and filling claude-code again (a new holder takes the slot
+// another one left) does not send it back: the lease stays, nothing queues, and
+// no second move is recorded or counted.
 func TestVerifierRetargetDoesNotFlapBack(t *testing.T) {
 	h := newRetargetHarness(t, preferFree("pi-prompt", "claude-code"), retargetPools, retargetLimits)
 	h.fill()
@@ -353,10 +355,15 @@ func TestVerifierRetargetDoesNotFlapBack(t *testing.T) {
 	if !r.lease.Moved {
 		t.Fatal("setup: the waiter did not move")
 	}
+	cur, _ := h.mgr.Store().GetPRD(h.prd.ID)
+	decisions := len(cur.Decisions)
 
+	// claude-code churns: c2 leaves and c3 takes its slot, so the pool is full
+	// again (c3 and the verifier). pi-prompt empties out.
+	h.led.Release("c2")
+	h.hold("c3", retargetPools["claude-code"]...)
 	h.led.Release("p1")
 	h.led.Release("p2")
-	// claude-code is full again: c2 and the verifier's own lease hold its two slots.
 	time.Sleep(10 * retargetTick)
 
 	if !containsString(h.leasePools(), "llm:claude-code") || containsString(h.leasePools(), "llm:pi-prompt") {
@@ -364,6 +371,16 @@ func TestVerifierRetargetDoesNotFlapBack(t *testing.T) {
 	}
 	if ws := h.waiters(); len(ws) != 0 {
 		t.Fatalf("waiters = %+v, want none", ws)
+	}
+	cur, _ = h.mgr.Store().GetPRD(h.prd.ID)
+	if len(cur.Decisions) != decisions {
+		t.Fatalf("decisions grew from %d to %d after the move", decisions, len(cur.Decisions))
+	}
+	if choice := cur.Story[0].Tasks[0].VerifierPolicyChoice; choice == nil || choice.Backend != "claude-code" {
+		t.Fatalf("task choice = %+v, want it still on claude-code", choice)
+	}
+	if n := verifierClaudeWindow.Count(time.Hour); n != 1 {
+		t.Fatalf("claude window count = %d, want 1", n)
 	}
 
 	// The policy itself also refuses to return to a backend the request left.
@@ -496,9 +513,10 @@ func TestVerifierRetargetUnchangedKeepsOneWaiter(t *testing.T) {
 	}
 }
 
-// TestVerifierRetargetSkipsTargetTheModelGuardRefuses: a move target the
-// pinned-model guard would refuse is left alone and the wait carries on.
-func TestVerifierRetargetSkipsTargetTheModelGuardRefuses(t *testing.T) {
+// TestVerifierRetargetRefusedMoveTargetReturnsSetupVerdict: a move target the
+// pinned-model guard refuses ends the verification with the setup verdict, as
+// the first pick would, and leaves no lease behind.
+func TestVerifierRetargetRefusedMoveTargetReturnsSetupVerdict(t *testing.T) {
 	// claude-code first: the waiter sits on claude-code, and pi-prompt is the
 	// target that has no pinned model.
 	h := newRetargetHarness(t, preferFree("claude-code", "pi-prompt"), retargetPools, retargetLimits)
@@ -507,18 +525,129 @@ func TestVerifierRetargetSkipsTargetTheModelGuardRefuses(t *testing.T) {
 	if sel.Backend != "claude-code" {
 		t.Fatalf("pick = %q, want claude-code", sel.Backend)
 	}
-	refuse := func(s *verifierSelection) bool { return !(s.UseSession && isPiFamilyKind(s.Kind) && s.Model == "") }
+	_, setup := guardPiFamilyVerifyModel("pi-prompt", "", "")
+	if setup == nil {
+		t.Fatal("setup: the guard accepted a pi-prompt verifier with no model configured")
+	}
+	refuse := func(s *verifierSelection) *autonomouspkg.VerificationResult {
+		if s.UseSession && isPiFamilyKind(s.Kind) && s.Model == "" {
+			_, v := guardPiFamilyVerifyModel(s.Backend, "", "")
+			return v
+		}
+		return nil
+	}
 	ch := h.start(sel, h.waitDeps(refuse))
 	h.waitForWaiter("llm:claude-code")
 	h.led.Release("p1")
-	h.stays(ch, "llm:claude-code")
-
-	h.led.Release("c1")
 	r := h.result(ch)
-	if r.lease.Moved || r.lease.Sel.Backend != "claude-code" {
-		t.Fatalf("lease = moved %v backend %q, want granted on claude-code", r.lease.Moved, r.lease.Sel.Backend)
+
+	if r.lease.Setup == nil || r.lease.Setup.Category != "setup" || r.lease.Setup.OK {
+		t.Fatalf("lease = %+v, want the setup verdict", r.lease)
 	}
-	r.lease.Release()
+	if r.lease.Release != nil || h.led.LeaseOf(h.holder) != nil {
+		t.Fatalf("a refused move left a lease on %v", h.leasePools())
+	}
+	if ws := h.waiters(); len(ws) != 0 {
+		t.Fatalf("waiters = %+v, want none", ws)
+	}
+}
+
+// TestVerifierRetargetFixedModeIgnoresClaudeHoldMidWait: a fixed waiter on
+// claude-code stays when a Claude hold lands while it waits, though the
+// selector would now name the next entry.
+func TestVerifierRetargetFixedModeIgnoresClaudeHoldMidWait(t *testing.T) {
+	policy := config.VerifierPolicyConfig{Mode: "fixed", Backends: []string{"claude-code", "pi-prompt"}}
+	h := newRetargetHarness(t, policy, retargetPools, retargetLimits)
+	bo := autonomouspkg.NewBackoff()
+	h.mgr.SetBackoff(bo)
+	h.fill()
+	sel := h.selection()
+	if sel.Backend != "claude-code" {
+		t.Fatalf("fixed pick = %q, want claude-code", sel.Backend)
+	}
+	ch := h.start(sel, h.waitDeps(nil))
+	h.waitForWaiter("llm:claude-code")
+
+	bo.Set("claude-code", time.Now().Add(time.Hour), "usage limit", "test")
+	h.led.Release("p1") // pi-prompt now has room
+	h.stays(ch, "llm:claude-code")
+	if h.led.LeaseOf(h.holder) != nil {
+		t.Fatalf("fixed waiter moved to %v", h.leasePools())
+	}
+	if _, _, ok := sel.Retarget("claude-code", nil); ok {
+		t.Fatal("Retarget moved a fixed waiter")
+	}
+}
+
+// TestVerifierRetargetClaudeWindowCountsTheFinalBackend: a Claude first pick
+// that has to wait is not counted until it holds a lease, so a move off
+// claude-code leaves nothing counted, and a grant on claude-code counts once.
+func TestVerifierRetargetClaudeWindowCountsTheFinalBackend(t *testing.T) {
+	t.Run("moved off claude", func(t *testing.T) {
+		policy := preferFree("claude-code", "pi-prompt")
+		policy.ClaudeSessionCap = 1
+		h := newRetargetHarness(t, policy, retargetPools, retargetLimits)
+		h.fill()
+		sel := h.selection()
+		if sel.Backend != "claude-code" || sel.Release != nil {
+			t.Fatalf("pick = %q release %v, want a claude-code wait", sel.Backend, sel.Release != nil)
+		}
+		if n := verifierClaudeWindow.Count(time.Hour); n != 0 {
+			t.Fatalf("a waiting Claude pick counted %d sessions, want 0", n)
+		}
+		ch := h.start(sel, h.waitDeps(nil))
+		h.waitForWaiter("llm:claude-code")
+		h.led.Release("p1")
+		r := h.result(ch)
+		if !r.lease.Moved || r.lease.Sel.Backend != "pi-prompt" {
+			t.Fatalf("lease = moved %v backend %q, want moved to pi-prompt", r.lease.Moved, r.lease.Sel.Backend)
+		}
+		if n := verifierClaudeWindow.Count(time.Hour); n != 0 {
+			t.Fatalf("window count = %d after a move to pi-prompt, want 0", n)
+		}
+		r.lease.Release()
+	})
+	t.Run("granted on claude", func(t *testing.T) {
+		policy := preferFree("claude-code", "pi-prompt")
+		policy.ClaudeSessionCap = 1
+		h := newRetargetHarness(t, policy, retargetPools, retargetLimits)
+		h.fill()
+		sel := h.selection()
+		ch := h.start(sel, h.waitDeps(nil))
+		h.waitForWaiter("llm:claude-code")
+		// The pick's own pending session must not count against the cap: with
+		// the cap at 1 the selector still reads claude-code as eligible.
+		h.stays(ch, "llm:claude-code")
+		h.led.Release("c1")
+		r := h.result(ch)
+		if r.lease.Moved || r.lease.Sel.Backend != "claude-code" {
+			t.Fatalf("lease = moved %v backend %q, want granted on claude-code", r.lease.Moved, r.lease.Sel.Backend)
+		}
+		if n := verifierClaudeWindow.Count(time.Hour); n != 1 {
+			t.Fatalf("window count = %d, want 1", n)
+		}
+		r.lease.Release()
+	})
+}
+
+// TestVerifierTaskSession: the dry run takes its priority from the task's
+// session.
+func TestVerifierRetargetTaskSession(t *testing.T) {
+	h := newRetargetHarness(t, preferFree("pi-prompt"), retargetPools, retargetLimits)
+	if got := verifierTaskSession(h.mgr, h.taskID); got != "" {
+		t.Fatalf("session of a task with none = %q", got)
+	}
+	tk, _ := h.mgr.Store().GetTask(h.taskID)
+	h.mgr.Store().WithLock(func() { tk.SessionID = "sess-1" })
+	if got := verifierTaskSession(h.mgr, h.taskID); got != "sess-1" {
+		t.Fatalf("session = %q, want sess-1", got)
+	}
+	if got := verifierTaskSession(h.mgr, "no-such-task"); got != "" {
+		t.Fatalf("session of an unknown task = %q", got)
+	}
+	if got := verifierTaskSession(nil, h.taskID); got != "" {
+		t.Fatalf("session with no manager = %q", got)
+	}
 }
 
 // TestVerifierRetargetBalanceMovesToLowestLoad: balance names the lowest load
