@@ -112,3 +112,37 @@ func TestNonProjectRefuse_NonProjectAllowsRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestHasMarkerRefusesPathOutsideDir(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "proj")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(parent, "go.mod"), []byte("module x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if hasMarker(dir, "../go.mod") {
+		t.Fatal("marker outside the project directory was accepted")
+	}
+	if hasMarker(dir, "go.mod") {
+		t.Fatal("missing marker reported present")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !hasMarker(dir, "go.mod") {
+		t.Fatal("marker inside the project directory not found")
+	}
+}
+
+func TestHasMarkerCountsSymlinkMarker(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dir, ".git")); err != nil {
+		t.Skip(err)
+	}
+	if !hasMarker(dir, ".git") {
+		t.Fatal("a .git symlink must still count as a marker")
+	}
+}

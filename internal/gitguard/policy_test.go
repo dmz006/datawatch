@@ -352,3 +352,103 @@ func sameSet(a, b []string) bool {
 	}
 	return true
 }
+
+func TestKeepRefusesPathOutsideRoot(t *testing.T) {
+	repo := t.TempDir()
+	writeFile(t, repo, "in.go")
+	outside := t.TempDir()
+	writeFile(t, outside, "out.go")
+	files := []string{"in.go", filepath.Join(outside, "out.go"), "../escape.go"}
+	kept, skipped := Default.Keep(repo, files)
+	if !reflect.DeepEqual(kept, []string{"in.go"}) {
+		t.Fatalf("kept=%v, want only the file under the repository", kept)
+	}
+	want := []Skip{
+		{File: filepath.Join(outside, "out.go"), Reason: "outside-root"},
+		{File: "../escape.go", Reason: "outside-root"},
+	}
+	if !reflect.DeepEqual(skipped, want) {
+		t.Fatalf("skipped=%v, want %v", skipped, want)
+	}
+}
+
+func TestKeepKeepsSymlinkLeafPointingOut(t *testing.T) {
+	repo := t.TempDir()
+	outside := t.TempDir()
+	writeFile(t, outside, "target.txt")
+	if err := os.Symlink(filepath.Join(outside, "target.txt"), filepath.Join(repo, "link.txt")); err != nil {
+		t.Skip(err)
+	}
+	kept, skipped := Default.Keep(repo, []string{"link.txt"})
+	if !reflect.DeepEqual(kept, []string{"link.txt"}) || len(skipped) != 0 {
+		t.Fatalf("kept=%v skipped=%v, want the link kept", kept, skipped)
+	}
+}
+
+func TestKeepRefusesSymlinkDirEscape(t *testing.T) {
+	repo := t.TempDir()
+	outside := t.TempDir()
+	writeFile(t, outside, "f.txt")
+	if err := os.Symlink(outside, filepath.Join(repo, "dir")); err != nil {
+		t.Skip(err)
+	}
+	kept, skipped := Default.Keep(repo, []string{"dir/f.txt"})
+	if len(kept) != 0 || len(skipped) != 1 || skipped[0].Reason != "outside-root" {
+		t.Fatalf("kept=%v skipped=%v, want outside-root skip", kept, skipped)
+	}
+}
+
+func TestReadDirWithinRefusesOutsideRoot(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	writeFile(t, outside, "secret.txt")
+	if entries, err := readDirWithin(root, outside); !errors.Is(err, ErrPathEscapes) || entries != nil {
+		t.Fatalf("entries=%v err=%v, want ErrPathEscapes and no entries", entries, err)
+	}
+	writeFile(t, root, "sub/a.txt")
+	entries, err := readDirWithin(root, filepath.Join(root, "sub"))
+	if err != nil || len(entries) != 1 || entries[0].Name() != "a.txt" {
+		t.Fatalf("entries=%v err=%v, want a.txt listed", entries, err)
+	}
+}
+
+func TestRemoveWithinRefusesOutsideRoot(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	victim := filepath.Join(outside, writeFile(t, outside, "victim.txt"))
+	if err := removeWithin(root, victim); !errors.Is(err, ErrPathEscapes) {
+		t.Fatalf("err=%v, want ErrPathEscapes", err)
+	}
+	if err := removeWithin(root, filepath.Join(root, "..", filepath.Base(outside), "victim.txt")); !errors.Is(err, ErrPathEscapes) {
+		t.Fatalf("dotdot err=%v, want ErrPathEscapes", err)
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Fatalf("file outside root was removed: %v", err)
+	}
+	inside := filepath.Join(root, writeFile(t, root, "x.txt"))
+	if err := removeWithin(root, inside); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(inside); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("inside file still present: %v", err)
+	}
+}
+
+func TestRemoveWithinRemovesSymlinkLeafNotTarget(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	target := filepath.Join(outside, writeFile(t, outside, "t.txt"))
+	link := filepath.Join(root, "tmp_pack_link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip(err)
+	}
+	if err := removeWithin(root, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(link); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("link still present: %v", err)
+	}
+	if _, err := os.Stat(target); err != nil {
+		t.Fatalf("link target was removed: %v", err)
+	}
+}
