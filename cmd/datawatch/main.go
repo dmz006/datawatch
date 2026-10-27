@@ -4114,6 +4114,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			CapacityEnabled:            acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds: acfgIn.CapacityWaitTimeoutSeconds,
 			StaleTaskSeconds:           acfgIn.StaleTaskSeconds,
+			TaskMaxAttemptSeconds:      acfgIn.TaskMaxAttemptSeconds,
+			TaskNoProgressSeconds:      acfgIn.TaskNoProgressSeconds,
 			AutoFixRetries:             acfgIn.AutoFixRetries,
 			VerifierDiffMaxBytes:       acfgIn.VerifierDiffMaxBytes,
 			SecurityScan:               acfgIn.SecurityScan,

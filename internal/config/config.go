@@ -2077,6 +2077,12 @@ type AutonomousConfig struct {
 	// StaleTaskSeconds — default 900 seconds. A zero or negative value
 	// inherits session.stale_timeout_seconds.
 	StaleTaskSeconds int `yaml:"stale_task_seconds,omitempty" json:"stale_task_seconds,omitempty"`
+	// TaskMaxAttemptSeconds is the wall-clock cap on one task attempt. 0 (the
+	// default) means off; 5400 is recommended.
+	TaskMaxAttemptSeconds int `yaml:"task_max_attempt_seconds,omitempty" json:"task_max_attempt_seconds,omitempty"`
+	// TaskNoProgressSeconds is how many seconds one task attempt may go
+	// without progress. 0 (the default) means off; 1800 is recommended.
+	TaskNoProgressSeconds int `yaml:"task_no_progress_seconds,omitempty" json:"task_no_progress_seconds,omitempty"`
 	// PreserveAttemptWork keeps a failed attempt's worktree changes around
 	// so the next attempt can build on them. Nil (unset) means true; use
 	// PreserveAttemptWorkEnabled rather than dereferencing the pointer.

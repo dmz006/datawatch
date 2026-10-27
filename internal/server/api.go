@@ -5607,6 +5607,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"per_prd_guardrails":            s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
 			"block_on_file_drift":           s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
 			"stale_task_seconds":            s.cfg.Autonomous.StaleTaskSeconds,
+			"task_max_attempt_seconds":      s.cfg.Autonomous.TaskMaxAttemptSeconds,
+			"task_no_progress_seconds":      s.cfg.Autonomous.TaskNoProgressSeconds,
 			"preserve_attempt_work":         s.cfg.Autonomous.PreserveAttemptWorkEnabled(),
 			"auto_fix_retries":              s.cfg.Autonomous.AutoFixRetries,
 			"verifier_diff_max_bytes":       s.cfg.Autonomous.VerifierDiffMaxBytes,
@@ -7043,6 +7045,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.stale_task_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.StaleTaskSeconds = n
+			}
+		case "autonomous.task_max_attempt_seconds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.TaskMaxAttemptSeconds = n
+			}
+		case "autonomous.task_no_progress_seconds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.TaskNoProgressSeconds = n
 			}
 		case "autonomous.preserve_attempt_work":
 			if b, ok := v.(bool); ok {
