@@ -3388,6 +3388,7 @@ window.toggleSessionWatch = function(fullId) {
 
 window.toggleSessionWatchFilter = function() {
   state.sessionWatchFilter = !state.sessionWatchFilter;
+  _tagsMenuRefresh();
   renderSessionsView();
   updateAlertBadge(); // GH#192 D61a — badge reflects the new filter immediately
 };
@@ -36615,6 +36616,69 @@ function _tagSuggestFromAlias(projectDir, projects, tags) {
   return hit ? hit.id : '';
 }
 
+// The header Tags menu: one button that opens a panel holding the session tag
+// and watch filters. The panel content comes from _tagsMenuHTML() when it exists.
+let _tagsMenuOpen = false;
+let _tagsMenuListening = false;
+
+// _tagsMenuActiveCount counts the watch filter as one plus each selected session tag.
+function _tagsMenuActiveCount() {
+  return (state.sessionWatchFilter ? 1 : 0) + _tagBrowse.session.sel.length;
+}
+
+function _tagsMenuRefresh() {
+  const btn = document.getElementById('headerTagsBtn');
+  if (!btn) return;
+  const n = _tagsMenuActiveCount();
+  const label = t('tags_menu_button');
+  const chip = document.getElementById('headerTagsCount');
+  if (chip) chip.textContent = n ? String(n) : '';
+  btn.setAttribute('aria-label', n ? label + ' (' + n + ')' : label);
+  btn.setAttribute('aria-expanded', _tagsMenuOpen ? 'true' : 'false');
+}
+
+function _tagsMenuListen() {
+  if (_tagsMenuListening) return;
+  _tagsMenuListening = true;
+  document.addEventListener('pointerdown', ev => {
+    if (!_tagsMenuOpen) return;
+    const btn = document.getElementById('headerTagsBtn');
+    const panel = document.getElementById('headerTagsMenu');
+    const tg = ev && ev.target;
+    if ((btn && btn.contains && btn.contains(tg)) || (panel && panel.contains && panel.contains(tg))) return;
+    closeTagsMenu();
+  });
+  document.addEventListener('keydown', ev => {
+    if (!_tagsMenuOpen || !ev || ev.key !== 'Escape') return;
+    closeTagsMenu();
+    const btn = document.getElementById('headerTagsBtn');
+    if (btn && btn.focus) btn.focus();
+  });
+}
+
+function closeTagsMenu() {
+  _tagsMenuOpen = false;
+  const panel = document.getElementById('headerTagsMenu');
+  if (panel) panel.hidden = true;
+  _tagsMenuRefresh();
+}
+
+function toggleTagsMenu() {
+  if (_tagsMenuOpen) { closeTagsMenu(); return; }
+  _tagsMenuOpen = true;
+  _tagsMenuListen();
+  _tagsMenuRefresh();
+  _tagsLoad().then(() => {
+    if (!_tagsMenuOpen) return; // closed while the registry was loading
+    const panel = document.getElementById('headerTagsMenu');
+    if (!panel) return;
+    if (typeof _tagsMenuHTML === 'function') panel.innerHTML = _tagsMenuHTML();
+    panel.hidden = false;
+  });
+}
+window.toggleTagsMenu = toggleTagsMenu;
+window.closeTagsMenu = closeTagsMenu;
+
 const _tagsState = { list: [], byId: {}, loaded: false, untagged: null, registry: null };
 
 // _tagsLoad fetches the registry with its counts: each tag carries subtree_count
@@ -37164,6 +37228,7 @@ function _tagBrowseLoad(scope) {
 function _tagBrowseSave(scope) {
   const sc = _tagBrowse[scope];
   try { localStorage.setItem('cs_tag_browse_' + scope, JSON.stringify({ view: sc.view, sel: sc.sel, mode: sc.mode })); } catch (_) { /* not kept */ }
+  if (scope === 'session') _tagsMenuRefresh();
 }
 const _tagBrowse = {
   automata: _tagBrowseLoad('automata'),

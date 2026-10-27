@@ -2498,5 +2498,7 @@
   "tag_session_none": "Aucune étiquette",
   "tag_session_edit": "Modifier les étiquettes",
   "tag_session_edit_title": "Étiquettes de la session",
-  "tag_session_batch_title": "Ajouter des étiquettes à %1$d sessions"
+  "tag_session_batch_title": "Ajouter des étiquettes à %1$d sessions",
+  "tags_menu_button": "Étiquettes",
+  "tags_menu_close": "Fermer"
 }

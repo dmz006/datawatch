@@ -2498,5 +2498,7 @@
   "tag_session_none": "Keine Tags",
   "tag_session_edit": "Tags bearbeiten",
   "tag_session_edit_title": "Tags der Sitzung",
-  "tag_session_batch_title": "Tags zu %1$d Sitzungen hinzufügen"
+  "tag_session_batch_title": "Tags zu %1$d Sitzungen hinzufügen",
+  "tags_menu_button": "Tags",
+  "tags_menu_close": "Schließen"
 }

@@ -2498,5 +2498,7 @@
   "tag_session_none": "No tags",
   "tag_session_edit": "Edit tags",
   "tag_session_edit_title": "Session tags",
-  "tag_session_batch_title": "Add tags to %1$d sessions"
+  "tag_session_batch_title": "Add tags to %1$d sessions",
+  "tags_menu_button": "Tags",
+  "tags_menu_close": "Close"
 }

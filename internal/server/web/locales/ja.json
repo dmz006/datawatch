@@ -2498,5 +2498,7 @@
   "tag_session_none": "タグなし",
   "tag_session_edit": "タグを編集",
   "tag_session_edit_title": "セッションのタグ",
-  "tag_session_batch_title": "%1$d 件のセッションにタグを追加"
+  "tag_session_batch_title": "%1$d 件のセッションにタグを追加",
+  "tags_menu_button": "タグ",
+  "tags_menu_close": "閉じる"
 }
