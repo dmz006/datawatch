@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/pipeline"
 )
@@ -141,5 +142,32 @@ func TestQualityGateRefusesDirectoryOutsideRoots(t *testing.T) {
 	status, reason := m.checkGateBaseline(outside, cfg)
 	if status != "invalid" || !strings.Contains(reason, "could not be started") {
 		t.Fatalf("out-of-root gate run: status %q reason %q, want invalid", status, reason)
+	}
+}
+
+func TestCheckProjectDirDefaultRoots(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repo := filepath.Join(home, "workspace", "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+
+	cfg := config.DefaultConfig()
+	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	m.SetProjectRoots(func() []string { return cfg.AllowedProjectRoots() })
+
+	if _, err := m.CheckProjectDir(repo); err != nil {
+		t.Fatalf("a directory under HOME/workspace was refused: %v", err)
+	}
+	if _, err := m.CheckProjectDir(filepath.Join(outside, "proj")); !refusedByRoots(err) {
+		t.Fatalf("a directory outside both roots: want a project-root refusal, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "proj")); !os.IsNotExist(err) {
+		t.Fatalf("a refused check must not create the directory: %v", err)
 	}
 }
