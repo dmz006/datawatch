@@ -837,7 +837,7 @@ func TestAPIGzip_HeadersOnTheWire(t *testing.T) {
 				t.Fatal(err)
 			}
 			raw, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			srv.Close()
 			ct := strings.ToLower(resp.Header.Get("Content-Type"))
 			if !strings.HasPrefix(ct, "text/plain") {
@@ -876,7 +876,7 @@ func TestAPIGzip_EscapedBodyDropsDeclaredContentLength(t *testing.T) {
 			t.Fatal(err)
 		}
 		raw, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		srv.Close()
 		if err != nil {
 			t.Fatalf("min %d: reading body: %v", min, err)
@@ -945,7 +945,7 @@ func TestAPIGzip_NoSniffRestoredOnTheWireWhenHandlerDropsIt(t *testing.T) {
 				t.Fatal(err)
 			}
 			raw, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			srv.Close()
 			if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
 				t.Fatalf("min %d accept %q: client received X-Content-Type-Options %q, want nosniff", min, accept, got)

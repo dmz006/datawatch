@@ -44,7 +44,7 @@ func getOnTheWire(t *testing.T, h http.HandlerFunc) (*http.Response, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	return resp, string(body)
 }
