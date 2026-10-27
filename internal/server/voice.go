@@ -25,9 +25,23 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/transcribe"
 )
+
+// voiceLogf writes one voice diagnostics line. A variable so tests can
+// capture lines.
+var voiceLogf = func(format string, args ...any) { fmt.Printf(format, args...) }
+
+// voiceSlowThreshold is the elapsed time past which a successful
+// transcription is still logged, so slow requests are visible before
+// they start timing out. A variable so tests can shrink it.
+var voiceSlowThreshold = 30 * time.Second
+
+// voiceDetailMaxBytes caps the raw error text returned in the JSON body.
+const voiceDetailMaxBytes = 500
 
 // maxVoiceUploadBytes is the hard cap for POST /api/voice/transcribe
 // uploads (25 MB — the Whisper API's own cap + headroom for a couple of
@@ -161,21 +175,40 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 	// faster primary path. ffmpeg is invoked only when present;
 	// missing-ffmpeg silently keeps the original file (chain fallback
 	// then takes over as before).
-	if ffmpegBin, ferr := exec.LookPath("ffmpeg"); ferr == nil {
+	ffmpegMissing := false
+	if ffmpegBin, ferr := exec.LookPath("ffmpeg"); ferr != nil {
+		ffmpegMissing = true
+	} else {
+		ffmpegStart := time.Now()
 		wavPath := filepath.Join(tmpDir, "audio.wav")
 		// -y overwrite, -i input, -ac 1 mono, -ar 16000 16kHz, -c:a pcm_s16le 16-bit PCM
 		cmd := exec.CommandContext(ctx, ffmpegBin, "-y", "-i", tmpPath, "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wavPath)
 		if out, fferr := cmd.CombinedOutput(); fferr != nil {
 			// Transcode failed — keep original; chain fallback handles.
-			fmt.Printf("[voice] ffmpeg transcode failed (%v); using original %s. ffmpeg said: %s\n", fferr, ext, strings.TrimSpace(string(out)))
+			voiceLogf("[voice] ffmpeg transcode failed (%v); using original %s. bytes=%d elapsed_ms=%d ffmpeg said: %s\n",
+				fferr, ext, header.Size, time.Since(ffmpegStart).Milliseconds(), strings.TrimSpace(string(out)))
 		} else {
 			tmpPath = wavPath
 		}
 	}
 
+	transcribeStart := time.Now()
 	transcript, err := s.transcriber.Transcribe(ctx, tmpPath)
+	elapsed := time.Since(transcribeStart)
+	failure := transcribe.ClassifyError(err)
+	if err != nil || elapsed > voiceSlowThreshold {
+		s.logVoiceTranscribe(tmpPath, header.Size, elapsed, err, failure, ffmpegMissing)
+	}
 	if err != nil {
-		http.Error(w, "transcribe: "+err.Error(), http.StatusBadGateway)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":      "transcribe: " + failure.Message,
+			"cause":      failure.Cause,
+			"hint":       failure.Hint,
+			"detail":     truncateBytes(err.Error(), voiceDetailMaxBytes),
+			"latency_ms": time.Since(start).Milliseconds(),
+		})
 		return
 	}
 	transcript = strings.TrimSpace(transcript)
@@ -229,10 +262,12 @@ func (s *Server) handleVoiceTest(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	out, err := s.transcriber.Transcribe(ctx, tmpPath)
 	if err != nil {
+		failure := transcribe.ClassifyError(err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"ok": false, "error": err.Error(), "latency_ms": time.Since(start).Milliseconds(),
+			"ok": false, "error": err.Error(), "cause": failure.Cause, "hint": failure.Hint,
+			"latency_ms": time.Since(start).Milliseconds(),
 		})
 		return
 	}
@@ -240,6 +275,59 @@ func (s *Server) handleVoiceTest(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"ok": true, "transcript": strings.TrimSpace(out), "latency_ms": time.Since(start).Milliseconds(),
 	})
+}
+
+// voiceBackend returns the configured whisper backend, "whisper" when unset.
+// Safe on a Server built without config.
+func (s *Server) voiceBackend() string {
+	if s.cfg != nil && s.cfg.Whisper.Backend != "" {
+		return s.cfg.Whisper.Backend
+	}
+	return "whisper"
+}
+
+// logVoiceTranscribe emits the one-line diagnostics record for a failed or
+// slow transcription. It never includes the transcript text.
+func (s *Server) logVoiceTranscribe(audioPath string, uploadBytes int64, elapsed time.Duration, err error, f transcribe.Failure, ffmpegMissing bool) {
+	label, cause, exit, errText := "slow", "none", "n/a", ""
+	if err != nil {
+		label, cause, errText = "failed", f.Cause, firstErrLine(err.Error())
+		switch {
+		case f.Signal != "":
+			exit = f.Signal
+		case f.ExitCode >= 0:
+			exit = strconv.Itoa(f.ExitCode)
+		}
+	}
+	audioSeconds := "unknown"
+	probeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if d, ok := transcribe.AudioDuration(probeCtx, audioPath); ok {
+		audioSeconds = strconv.FormatFloat(d.Seconds(), 'f', 1, 64)
+	}
+	note := ""
+	if err != nil && ffmpegMissing {
+		note = " ffmpeg=missing"
+	}
+	voiceLogf("[voice] transcribe %s: backend=%s bytes=%d audio_seconds=%s elapsed_ms=%d cause=%s exit=%s%s err=%s\n",
+		label, s.voiceBackend(), uploadBytes, audioSeconds, elapsed.Milliseconds(), cause, exit, note, errText)
+}
+
+// firstErrLine returns the first line of an error message.
+func firstErrLine(s string) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return line
+}
+
+// truncateBytes shortens s to at most max bytes without splitting a rune.
+func truncateBytes(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	for max > 0 && !utf8.RuneStart(s[max]) {
+		max--
+	}
+	return s[:max]
 }
 
 // silentWAV1Sec returns ~1 KB of valid mono 16-bit 8 kHz WAV (silence).
