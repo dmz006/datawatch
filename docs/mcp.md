@@ -346,7 +346,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   A `limit` outside 1 to 1000 is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer.
-- **`autonomous_triage`** — read the triage records: one record per failed or blocked Automaton (worst first), with its identity (`prd_id`, `automation_id`, `automation_name`, `member_id`), the failed task (id, name, last error, session end reason), `first_seen_at` and, once set, `alerted_at`, the retry budgets shown as given (all four categories: `limit`, `used`, `left`), and the append-only notes, plus `alert_minutes` — the triage alarm threshold in minutes (`0` = alarm off). Read-only: listing never starts, retries or edits anything. Returns the same object as `GET /api/autonomous/triage`.
+- **`autonomous_triage`** — read the triage records: one record per failed or blocked Automaton (newest first), with its identity (`prd_id`, `prd_title` when it has one, `automation_id`, `automation_name`, `member_id`), the failed or blocked task (`task_id`, `task_title` when present) with its `error` and `blocked_reason` and `session_end_reason` (each truncated to 2000 chars by the pass), `first_seen_at`, `updated_at` and, once set, `alerted_at`, the retry budgets shown as given (all four categories with `limit`, `used`, `left`, plus `ceiling_total` and `ceiling_left` when an overall ceiling is set), and the append-only notes — beside `alert_minutes`, the triage alert threshold in minutes currently in effect (`0` = alert off), which rides the list body, not each record. Read-only: listing never starts, retries or edits anything. Returns the same object as `GET /api/autonomous/triage`.
 
   | Parameter | Required | Description |
   |---|---|---|

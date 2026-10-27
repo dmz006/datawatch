@@ -18,7 +18,7 @@ The records are readable on the same channel-parity surfaces as the rest of auto
 | REST | `GET /api/autonomous/triage` — `automation_id`, `prd_id` or `status` (`failed`\|`blocked`, anything else refused); the body lists the records newest first and the alert threshold currently in force (`alert_minutes`) |
 | MCP | `autonomous_triage` — same filters, proxies the read route, needs the autonomous read capability from a federated peer |
 | CLI | `datawatch autonomous triage [--automation <id>] [--prd <id>] [--status failed\|blocked] [--json]` — a bad status is refused before anything is sent; `--json` prints the REST body untouched |
-| Comm | `autonomous triage [automation=<id>] [prd=<id>] [status=<failed\|blocked>]` on every messaging channel |
+| Comm | `autonomous triage [automation-id]` on every messaging channel (one optional positional argument, the automation id; no `prd` or `status` filter) |
 | PWA | a triage card in the Automaton detail view: status, failed task, first-seen and alert times, the four retry budgets and the notes, with wording in all five locale bundles |
 | Mobile/wear | the same `GET /api/autonomous/triage` contract, documented for Android/Wear/Auto in `docs/api/mobile-surface.md` |
 

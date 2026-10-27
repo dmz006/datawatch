@@ -3953,7 +3953,7 @@ The autonomous engine keeps one triage record per **failed** or **blocked** Auto
 
 **What the pass does, and when.** A triage pass runs on every coordinator tick (~60 s, the same idle tick as the rest of autonomous). It reads the live Automaton list once and then, per Automaton: fills a fresh record (identity, failed-task block, retry budget, notes) for each `failed` or `blocked` Automaton, refreshes the record if one is already kept, and clears the record if the Automaton is in any other state. So a record is kept while the Automaton stays failed or blocked, refreshed with each pass, and gone once it leaves that state. `first_seen_at` is taken from the Automaton's own status timestamp, so it survives refreshes. The failed-task error and the session end reason are each truncated to 2000 chars by the pass.
 
-**The triage alert.** Once a record has been sitting failed or blocked for `autonomous.automation.triage_alert_minutes` (default 30; `0` turns the alert off), the engine raises one triage alert per episode through the existing lifecycle alert sink (the same path the lane-fill idle alert uses). The alert names the Automaton, its Automation, the state, the failed task (if any), how long it has been sitting, and the retry budgets, and states plainly that **no automatic action is taken** — triage is a read for the operator, not a re-runner. The alert is audited and stamped on the record as `alerted_at`.
+**The triage alert.** Once a record has been sitting failed or blocked for `autonomous.automation.triage_alert_minutes` (default 30; `0` turns the alert off), the engine raises one triage alert per episode through the existing lifecycle alert sink (the same path the lane-fill idle alert uses). The alert names the Automaton, its Automation, the state, the failed task (if any), how long it has been sitting, and the retry budgets, and states plainly that the Automaton **is failed (or blocked) and waiting for operator triage** — triage is a read for the operator, not a re-runner. The alert is audited and stamped on the record as `alerted_at`.
 
 **The one key it has.**
 
@@ -3967,10 +3967,10 @@ Keep `30` for the default half-hour; set `0` to keep the records and the pass bu
 
 | Part | Source |
 |---|---|
-| Identity | `prd_id`, `automation_id`, `automation_name`, `member_id`, `status` (`failed`\|`blocked`) |
-| Failed task | `failed_task_id`, `failed_task_name`, `failed_task_error` (truncated), plus `session_end_reason` (truncated) |
-| Timing | `first_seen_at` (the Automaton's own status timestamp), `alerted_at` (set when the alert fires), `alert_minutes` (the threshold that applied) |
-| Retry budget | The engine's existing budget for all four categories — `infra`, `content`, `scope`, `policy`, each with `limit`, `used`, `left`. **Informational only**: the pass neither spends nor resets any of it. |
+| Identity | `prd_id` and `prd_title` (when it has one), `automation_id`, `automation_name`, `member_id`, `status` (`failed`\|`blocked`) |
+| Failed task | `task_id`, `task_title` (when one exists), `error` (truncated), `blocked_reason` (the Automaton's own block reason), plus `session_end_reason` (truncated) |
+| Timing | `first_seen_at` (the Automaton's own status timestamp), `updated_at` (last pass refresh), `alerted_at` (set when the alert fires). `alert_minutes` is on the read body beside `records`, not on the record |
+| Retry budget | The engine's existing budget for all four categories — `infra`, `content`, `scope`, `policy`, each with `limit`, `used`, `left` — plus `ceiling_total` and `ceiling_left`, the overall auto-retry ceiling when one is set (0 when there is none). **Informational only**: the pass neither spends nor resets any of it. |
 | Notes | An append-only list (`at`, `source`, `text`) grown over the life of the record |
 
 **Surfaces.**
@@ -3980,7 +3980,7 @@ Keep `30` for the default half-hour; set `0` to keep the records and the pass bu
 | REST | `GET /api/autonomous/triage` (filters: `automation_id`, `prd_id`, `status=failed\|blocked`) |
 | MCP | `autonomous_triage` (same filters; proxies the read route; federated peers need the autonomous read capability) |
 | CLI | `datawatch autonomous triage [--automation <id>] [--prd <id>] [--status failed\|blocked] [--json]` |
-| Comm channel | `autonomous triage [automation=<id>] [prd=<id>] [status=<failed\|blocked>]` |
+| Comm channel | `autonomous triage [automation-id]` (one optional positional argument, the automation id) |
 | PWA | Triage card in the Automaton detail view (reloads with the view) |
 | Mobile/wear | The same REST contract, documented in `docs/api/mobile-surface.md` |
 

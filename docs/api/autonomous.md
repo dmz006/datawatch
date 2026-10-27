@@ -1228,25 +1228,29 @@ A record (newest first in `records`):
 ```json
 {
   "prd_id": "d0442737d38c",
+  "prd_title": "nightly ingest",
   "automation_id": "4522f306c266",
   "automation_name": "nightly pipeline",
   "member_id": "member-2",
 
   "status": "failed",
-  "failed_task_id": "task-9",
-  "failed_task_name": "run integration tests",
-  "failed_task_error": "connection refused: testdb:5432 (truncated at 2000 chars)",
+  "task_id": "task-9",
+  "task_title": "run integration tests",
+  "error": "connection refused: testdb:5432 (truncated at 2000 chars)",
+  "blocked_reason": "dependency gate: awaiting operator approval",
   "session_end_reason": "runtime error: exit 2 (truncated at 2000 chars)",
 
   "first_seen_at": "2026-10-27T09:12:44Z",
+  "updated_at": "2026-10-27T09:44:02Z",
   "alerted_at": "2026-10-27T09:44:02Z",
-  "alert_minutes": 30,
 
   "retry_budget": {
     "infra":   { "limit": 3, "used": 1, "left": 2 },
     "content": { "limit": 4, "used": 4, "left": 0 },
     "scope":   { "limit": 2, "used": 0, "left": 2 },
-    "policy":  { "limit": 1, "used": 0, "left": 1 }
+    "policy":  { "limit": 1, "used": 0, "left": 1 },
+    "ceiling_total": 10,
+    "ceiling_left": 4
   },
 
   "notes": [
@@ -1255,9 +1259,9 @@ A record (newest first in `records`):
 }
 ```
 
-The fields are copied from the live Automaton at the last pass, not derived: `automation_name` and `member_id` place the record in its Automation; the failed task block is the task that failed (id, name, the task's error and the session end reason, each already truncated to 2000 chars by the pass); `first_seen_at` is when the Automaton first ended in this failed or blocked state (its own status timestamp); `alerted_at` is when the triage alert for this episode fired (absent until it does). `retry_budget` is the engine's existing retry budget, reused as-is and shown for all four categories — `limit` is the maximum, `used` what has been consumed, `left` what remains; it is **informational**: the pass neither spends nor resets any of it. `notes` is an append-only list (at, source, text) the pass grows over the life of the record.
+The fields are copied from the live Automaton at the last pass, not derived: `prd_title` names the Automaton (absent when it has no title); `automation_name` and `member_id` place the record in its Automation; `task_id` and `task_title` name the task that failed (or was blocked), `error` is that task's error and `session_end_reason` why its live sessions were ended, each already truncated to 2000 chars by the pass; `blocked_reason` is the Automaton's own block reason, kept separate from the task error; `first_seen_at` is when the Automaton first ended in this failed or blocked state (its own status timestamp), `updated_at` when the pass last refreshed it, and `alerted_at` when the triage alert for this episode fired (absent until it does). `retry_budget` is the engine's existing retry budget, reused as-is and shown for all four categories — `limit` is the maximum, `used` what has been consumed, `left` what remains — plus `ceiling_total` and `ceiling_left`, the overall retry ceiling when one is set; it is **informational**: the pass neither spends nor resets any of it. `notes` is an append-only list (at, source, text) the pass grows over the life of the record. `alert_minutes` is not on the record: it rides the list body beside `records`.
 
-The route is read-only and a sibling of the lane-fill read under the same access rules: bearer-authenticated locally, and it needs the autonomous read **capability** when called by a federated peer. Its surfaces are the REST route above, the MCP tool `autonomous_triage` (the same three filters, proxying the route), the CLI (`datawatch autonomous triage [--automation <id>] [--prd <id>] [--status failed|blocked] [--json]`), the comm verb (`autonomous triage [automation=<id>] [prd=<id>] [status=<failed|blocked>]`), the PWA triage card in the Automaton detail view, and the same contract documented for the mobile and wear surfaces in [mobile-surface.md](mobile-surface.md). Triage has exactly one configuration key, `autonomous.automation.triage_alert_minutes`. The record shape is in `internal/server/web/openapi.yaml` (`TriageList`, `TriageRecord`).
+The route is read-only and a sibling of the lane-fill read under the same access rules: bearer-authenticated locally, and it needs the autonomous read **capability** when called by a federated peer. Its surfaces are the REST route above, the MCP tool `autonomous_triage` (the same three filters, proxying the route), the CLI (`datawatch autonomous triage [--automation <id>] [--prd <id>] [--status failed|blocked] [--json]`), the comm verb (`autonomous triage [automation-id]`, one optional positional argument: the Automation id), the PWA triage card in the Automaton detail view, and the same contract documented for the mobile and wear surfaces in [mobile-surface.md](mobile-surface.md). The record card on each client displays, in order: the Automaton name (title, or id), the status chip (failed/blocked), the owning Automation name with its member id when one exists, the failed task title, the task error, the blocked reason, the session end reason, the first-seen time, whether the alert has fired and when, one row per retry-budget category (used of limit, left), and the overall retry ceiling when one is set; values the record does not carry are simply not shown. Triage has exactly one configuration key, `autonomous.automation.triage_alert_minutes`. The record shape is in `internal/server/web/openapi.yaml` (`TriageList`, `TriageRecord`).
 
 ## Configuration
 

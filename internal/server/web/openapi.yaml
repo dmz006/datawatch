@@ -399,7 +399,7 @@ paths:
           description: "Absolute path to browse (default: user home directory)"
           schema:
             type: string
-            example: "/home/user/projects"
+            example: "projects"
       responses:
         "200":
           description: Directory entries
@@ -535,7 +535,7 @@ paths:
                 value:
                   task: "refactor the auth module"
                   name: "auth refactor"
-                  project_dir: "/home/user/projects/myapp"
+                  project_dir: "projects/myapp"
                   backend: "aider"
       responses:
         "200":
@@ -739,7 +739,19 @@ paths:
         `autonomous.failure_escalation.enabled` (true|false, default true),
         `autonomous.failure_escalation.max_failures` (whole number of 1 or more, default 3),
         `autonomous.failure_escalation.steps` (a JSON array of step objects, or the text
-        `backend:model[@attempts],...`; empty clears the ladder).
+        `backend:model[@attempts],...`; empty clears the ladder),
+        `autonomous.verifier_policy.mode` (fixed | prefer-free | balance | gpu-only |
+        claude-only; empty = fixed), `autonomous.verifier_policy.backends` (ordered
+        list, or comma-separated), `autonomous.verifier_policy.claude_session_cap`
+        (whole number >= 0, 0 = unlimited),
+        `autonomous.verifier_policy.claude_cap_window_minutes` (whole number >= 0,
+        0 = 60), `autonomous.verifier_policy.force_stronger_on_retry`,
+        `autonomous.verifier_policy.final_gate_stronger`,
+        `autonomous.verifier_policy.stronger_backend` and
+        `autonomous.verifier_policy.stronger_model`. An unknown mode, an empty
+        backend entry, a negative number or an unknown `verifier_policy` key rejects
+        the whole PUT with 400. The policy applies to the next verification with no
+        restart.
       operationId: updateConfig
       tags: [System]
       requestBody:
@@ -1340,6 +1352,7 @@ paths:
                 properties:
                   pools:
                     type: array
+                    description: Pool rows. A pool with a rate ceiling also carries rate_requests, rate_tokens, rate_window_seconds, requests_in_window, tokens_in_window and rate_resets_at; a pool without one serialises as before.
                     items:
                       type: object
                       properties:
@@ -1383,7 +1396,7 @@ paths:
                             prd_id: {type: string}
                             prd_title: {type: string}
                             task_title: {type: string}
-                            cause: {type: string, enum: [pool_full, node_busy, backoff, budget, global_cooldown, await_external, tree_lock]}
+                            cause: {type: string, enum: [pool_full, node_busy, backoff, budget, global_cooldown, await_external, tree_lock, rate_ceiling]}
                             reason: {type: string, description: Plain-language wait reason}
                             since: {type: string, format: date-time}
                             resets_at: {type: string, format: date-time, description: Present only when the daemon knows when the wait ends}
@@ -1402,6 +1415,42 @@ paths:
                             since: {type: string, format: date-time}
                             note: {type: string, description: Sentence for a task parked while holding resources}
 
+  /api/capacity/admission:
+    get:
+      summary: Capacity admission query
+      description: Whether a start of the given backend would be admitted now, queued (with its position) or could use an alternate pool. Resolves the same host, llm and node pools a real start uses. Read-only - takes no lease and changes no state.
+      operationId: capacityAdmission
+      tags: [Autonomous]
+      parameters:
+        - {name: backend, in: query, required: true, description: Backend or named LLM to start (llm is accepted as an alias), schema: {type: string}}
+        - {name: llm, in: query, required: false, description: Alias for backend, schema: {type: string}}
+        - {name: node, in: query, required: false, description: Compute node the start would use, schema: {type: string}}
+        - {name: model, in: query, required: false, description: Model wanted, schema: {type: string}}
+        - {name: role, in: query, required: false, description: Dispatch role, schema: {type: string, enum: [worker, verifier, planner, interactive]}}
+        - {name: priority, in: query, required: false, description: Integer queue priority; higher runs first, schema: {type: integer}}
+        - {name: prd_id, in: query, required: false, description: Automaton the start would belong to, schema: {type: string}}
+      responses:
+        "200":
+          description: Admission decision
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kind: {type: string, enum: [admit, queued, alternate_available]}
+                  queue_position: {type: integer, description: 1-based; 0 when admitted}
+                  reason: {type: string}
+                  resets_at: {type: string, format: date-time}
+                  alternates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        pool: {type: string}
+                        node: {type: string}
+                        model: {type: string}
+        "400":
+          description: Missing or unknown backend, or an invalid priority or role
   /api/autonomous/prds/{id}/set_priority:
     post:
       summary: Set a PRD's capacity-queue priority
@@ -1477,6 +1526,175 @@ paths:
         "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: Unknown Automaton id}
         "405": {description: Method not allowed}
+  /api/autonomous/prds/{id}/set_tags:
+    post:
+      summary: Replace the tags on an Automaton
+      description: Replaces the full list; an empty array clears it. Every ID must be an existing tag.
+      operationId: autonomousPRDSetTags
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tag_ids]
+              properties:
+                tag_ids: {type: array, items: {type: string}}
+      responses:
+        "200": {description: Updated PRD, carries tag_ids}
+        "404": {description: Unknown tag}
+
+  /api/autonomous/prds/{id}/set_notify_events:
+    post:
+      summary: Set the lifecycle event kinds an Automaton notifies on
+      description: |
+        The Automaton's notification list is the most specific tier of the
+        notify_events precedence chain (Automaton > guardrail profile > global
+        default). A missing `notify_events` key, `null` or an empty array
+        clears the list, so the Automaton inherits from its assigned guardrail
+        profile and, behind that, the global default set. The reply is the
+        updated Automaton and carries the computed read-time view
+        `notify_events_effective` — `{events, source}` where `source` is
+        `automaton`, `profile` or `global`, the tier that actually supplied
+        the effective list. POST only; any other method is rejected with 405.
+      operationId: autonomousPRDSetNotifyEvents
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notify_events:
+                  type: array
+                  items: {type: string}
+                  description: "Lifecycle event kinds, e.g. prd.completed, task.completed; absent/null/empty clears (inherit)"
+      responses:
+        "200": {description: "Updated Automaton; carries notify_events and notify_events_effective"}
+        "400": {description: "An invalid entry — message names the offending kind (or its index) and lists the valid kinds; nothing is changed"}
+        "405": {description: "POST-only action"}
+
+  /api/autonomous/tags:
+    get:
+      summary: List Automata tags
+      description: Returns every tag (a tree via parent_id) with the number of Automata carrying it.
+      operationId: autonomousTagList
+      tags: [Autonomous]
+      parameters:
+        - {name: include_sub, in: query, required: false, schema: {type: boolean, default: false}, description: "Roll counts up to include descendant tags"}
+      responses: {"200": {description: "{tags:[{id,name,parent_id,color,description,created_at,updated_at,count}]}"}}
+    post:
+      summary: Create a tag
+      operationId: autonomousTagCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string}
+                parent_id: {type: string}
+                color: {type: string}
+                description: {type: string}
+      responses: {"200": {description: Created tag}, "400": {description: Invalid name or unknown parent}}
+
+  /api/autonomous/tags/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    patch:
+      summary: Rename, recolor, describe or reparent a tag
+      description: Omitted fields are unchanged. A parent_id of "" makes the tag a root. A move that would make a tag its own ancestor is refused with 409 and nothing is changed.
+      operationId: autonomousTagUpdate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                parent_id: {type: string}
+                color: {type: string}
+                description: {type: string}
+      responses: {"200": {description: Updated tag}, "404": {description: Unknown tag}, "409": {description: Cycle}}
+    delete:
+      summary: Delete a tag
+      description: Refused with 409 while the tag has child tags, and refused with 409 plus a count of Automata using it while it is still assigned. Nothing is changed on a refusal.
+      operationId: autonomousTagDelete
+      tags: [Autonomous]
+      responses:
+        "200": {description: "{deleted: id}"}
+        "404": {description: Unknown tag}
+        "409": {description: "Has child tags, or assigned to Automata (body carries count)"}
+
+  /api/autonomous/guardrail_profiles:
+    get:
+      summary: List guardrail profiles
+      operationId: autonomousGuardrailProfileList
+      tags: [Autonomous]
+      responses: {"200": {description: "[profiles]"}}
+    post:
+      summary: Create a guardrail profile
+      description: A profile is a named bundle of guardrail settings. `notify_events` seeds the profile tier of the notification precedence chain; an absent or empty list means the profile inherits the global default.
+      operationId: autonomousGuardrailProfileCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string}
+                description: {type: string}
+                guardrails: {type: array, items: {type: string}}
+                block_on_file_drift: {type: boolean}
+                notify_events: {type: array, items: {type: string}}
+      responses: {"201": {description: "Created profile, carries notify_events"}, "400": {description: "Invalid name or entry — message lists the valid kinds"}}
+
+  /api/autonomous/guardrail_profiles/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Read one guardrail profile
+      operationId: autonomousGuardrailProfileGet
+      tags: [Autonomous]
+      responses: {"200": {description: "The profile, with its notify_events list"}, "404": {description: "Unknown profile"}}
+    put:
+      summary: Update a guardrail profile
+      description: >
+        Omitted fields are unchanged. notify_events follows the same key
+        rule — a key left out keeps the list as-is, an explicit empty array
+        clears it, a present list replaces it.
+      operationId: autonomousGuardrailProfileUpdate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                description: {type: string}
+                guardrails: {type: array, items: {type: string}}
+                block_on_file_drift: {type: boolean}
+                notify_events: {type: array, items: {type: string}}
+      responses: {"200": {description: "Updated profile"}, "400": {description: "Invalid entry or unknown profile"}, "404": {description: "Unknown profile"}}
+    delete:
+      summary: Delete a guardrail profile
+      operationId: autonomousGuardrailProfileDelete
+      tags: [Autonomous]
+      responses: {"204": {description: Deleted}, "404": {description: Unknown profile}}
 
   /api/alerts:
     get:
@@ -1661,11 +1879,22 @@ paths:
         row has `id`, `name`, `status`, `current_member_id`, `current_prd_id`,
         `current_prd_title`, `pending_members`, `idle_since` and
         `idle_seconds` (set while no member is running), and `blocked_reason`
-        (blocked only). The array is omitted when there are none.
+        (blocked only). Each row also carries `active_cursors`, one entry per
+        live member (`member_id`, `prd_id` for a PRD member, `automation_id`
+        for a nested one, and `status`), sorted by member ID and always present
+        (empty when idle). `join_wait` is present only while a join waits on
+        its branches: `join_member_id`, `rule`, `pending_branches` and
+        `failed_branches`. The array is omitted when there are none.
         A row whose Automation has a budget policy also carries `spent_usd`,
         `ceiling_display` (for example `$12.40 of $40.00 (week)`) and `budget`,
         the computed budget view. The estimated allocation figure appears
         only inside `budget.allocation_estimate`, always marked estimated.
+        The snapshot also carries `notify`: `default_events`, the in-effect
+        global default kinds, and `overrides`, one entry per non-terminal
+        Automaton whose effective list resolves from the `automaton` or
+        `profile` tier (`id`, `source` — `automaton` or `profile`, the
+        tier supplying its list — and `events`). Sorted by Automaton ID and
+        capped at 100. Both arrays are always lists: empty, never null.
       operationId: autonomousStatus
       tags: [Autonomous]
       responses:
@@ -1691,6 +1920,36 @@ paths:
                         idle_since: {type: string, format: date-time}
                         idle_seconds: {type: integer}
                         blocked_reason: {type: string}
+                        active_cursors:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              member_id: {type: string}
+                              prd_id: {type: string}
+                              automation_id: {type: string}
+                              status: {type: string}
+                        join_wait:
+                          type: object
+                          description: "Present only while a join waits on its branches"
+                          properties:
+                            join_member_id: {type: string}
+                            rule: {type: string, enum: [all_must_succeed, any_one_is_enough, continue_anyway]}
+                            pending_branches: {type: array, items: {type: string}}
+                            failed_branches: {type: array, items: {type: string}}
+                  notify:
+                    type: object
+                    description: "Notify-event resolution: the in-effect global default and the non-terminal Automata whose list resolves from the automaton or profile tier (sorted by Automaton ID, capped at 100). Both arrays are always lists - empty, never null."
+                    properties:
+                      default_events: {type: array, items: {type: string}, description: "In-effect global default kinds"}
+                      overrides:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: {type: string}
+                            source: {type: string, enum: [automaton, profile], description: "Tier supplying this Automaton's effective list"}
+                            events: {type: array, items: {type: string}}
   /api/autonomous/config:
     get:
       summary: Read autonomous config
@@ -1699,6 +1958,12 @@ paths:
         `plan_coverage_check` (off|warn|block, default block) and
         `plan_coverage_min_ratio` (covered/extractable ratio required for a passing
         report, 0-1, default 1.0). Both are settable here and via /api/config PUT.
+        It also carries `undeclared_edit_mode` (off|warn|block, default warn), the
+        enforcement for files a task's worker edited without declaring them.
+        The `verifier_policy` object holds the global verifier policy: `mode`,
+        `backends`, `claude_session_cap`, `claude_cap_window_minutes`,
+        `force_stronger_on_retry`, `final_gate_stronger`, `stronger_backend` and
+        `stronger_model`.
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses: {"200": {description: OK}}
@@ -1708,6 +1973,16 @@ paths:
         Accepts partial JSON. Among the valid fields are `plan_coverage_check`
         (off|warn|block, default block) and `plan_coverage_min_ratio` (0-1,
         default 1.0). Values outside the allowed range are rejected with 400.
+        `undeclared_edit_mode` (off|warn|block, default warn) is also accepted;
+        any other value is rejected with 400.
+        `verifier_policy` is an object merged onto the current policy field by
+        field: `mode` (fixed | prefer-free | balance | gpu-only | claude-only),
+        `backends` (array of backend names; an empty list clears it),
+        `claude_session_cap` and `claude_cap_window_minutes` (whole numbers >= 0),
+        `force_stronger_on_retry`, `final_gate_stronger` (booleans),
+        `stronger_backend` and `stronger_model` (strings). An unknown mode, an empty
+        backend entry, a negative number or an unknown key is rejected with 400 and
+        changes nothing. The policy applies to the next verification with no restart.
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:
@@ -1721,7 +1996,10 @@ paths:
       summary: List PRDs (newest first)
       operationId: autonomousPRDList
       tags: [Autonomous]
-      responses: {"200": {description: OK}}
+      parameters:
+        - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag ID"}
+        - {name: include_sub, in: query, required: false, schema: {type: boolean, default: true}, description: "With tag: also include Automata carrying any descendant tag"}
+      responses: {"200": {description: OK}, "404": {description: Unknown tag}}
     post:
       summary: Create a draft PRD
       operationId: autonomousPRDCreate
@@ -1745,6 +2023,12 @@ paths:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:
       summary: Fetch one PRD with story+task tree
+      description: |
+        Each task may carry `undeclared_edits`: an array of
+        `{path: string, lines_changed: integer}` for files the task's worker
+        committed that are in neither the task's planned nor generated files
+        (lines summed across retries). Absent when there are none. Enforcement
+        is `autonomous.undeclared_edit_mode` (off|warn|block, default warn).
       operationId: autonomousPRDGet
       tags: [Autonomous]
       responses: {"200": {description: OK}, "404": {description: Not found}}
@@ -1886,6 +2170,58 @@ paths:
                 guardrail_model: {type: string, description: "Optional; omitted = unchanged; empty string = cleared"}
       responses:
         "200": {description: Updated PRD}
+  /api/autonomous/prds/{id}/set_verifier_policy:
+    post:
+      summary: Set an Automaton's verifier policy override
+      description: |
+        Overrides the verifier policy mode and backend list for every task of the
+        Automaton that has no task-level override. Precedence is task, then
+        Automaton, then the global `autonomous.verifier_policy`; the mode and the
+        backend list resolve independently. Fields the caller omits are left
+        unchanged; an empty `mode` or an empty `backends` list clears that field,
+        and clearing both makes the Automaton inherit again. Accepted only while the
+        Automaton is `needs_review`, `revisions_asked` or `cancelled`; any other
+        status is rejected with 400. Applied settings are audit-logged and appended
+        to the Automaton's decision log.
+      operationId: autonomousPRDSetVerifierPolicy
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/VerifierPolicyOverrideRequest"}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: Unknown mode, empty or unknown backend entry, or the Automaton is locked}
+        "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
+  /api/autonomous/prds/{id}/set_task_verifier_policy:
+    post:
+      summary: Set a task's verifier policy override
+      description: |
+        Overrides the verifier policy mode and backend list for one task, the most
+        specific level. Presence-aware like `set_verifier_policy`. Accepted while
+        the Automaton's status is listed in `autonomous.task_override_statuses`;
+        any other status is rejected with 400. Applied settings are audit-logged and
+        appended to the Automaton's decision log.
+      operationId: autonomousPRDSetTaskVerifierPolicy
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - {$ref: "#/components/schemas/VerifierPolicyOverrideRequest"}
+                - type: object
+                  required: [task_id]
+                  properties:
+                    task_id: {type: string, description: "Task to override"}
+      responses:
+        "200": {description: Updated task}
+        "400": {description: Missing task_id, unknown mode, empty or unknown backend entry, or the Automaton is locked}
+        "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
   /api/autonomous/prds/{id}/set_failure_escalation:
     post:
       summary: Set or clear the failure escalation override on an Automaton or one task
@@ -2845,6 +3181,57 @@ paths:
       operationId: automationsSetBudget
       tags: [Automations]
       requestBody:
+  /api/automations/{id}/set_decision_assistant:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Set or clear an Automation's decision assistant
+      description: |
+        Sets or clears the optional local-model decision assistant of the
+        Automation, or, with `member_id`, of one member. It is off by default.
+        The fields replace the whole setting; `clear`, or an empty `backend`,
+        turns it off, and `clear` cannot be combined with the setting fields.
+        `mode` is `shadow` (the default) or `live`; `hooks` are `empty_edge`,
+        `skip_member`, `insert_member` and `budget_breach`; `thresholds` map a
+        hook to a confidence in (0,1] (defaults 0.9, `budget_breach` 0.95).
+        The Automation's status is not changed. `actor` and `reason` are
+        recorded in the audit log as `automation_set_decision_assistant`.
+      operationId: automationsSetDecisionAssistant
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                member_id: {type: string}
+                backend: {type: string}
+                model: {type: string}
+                mode: {type: string, enum: [shadow, live]}
+                hooks:
+                  type: array
+                  items: {type: string, enum: [empty_edge, skip_member, insert_member, budget_breach]}
+                thresholds:
+                  type: object
+                  additionalProperties: {type: number, exclusiveMinimum: 0, maximum: 1}
+                clear: {type: boolean}
+                expected_version: {type: integer}
+                actor: {type: string}
+                reason: {type: string}
+      responses:
+        "200":
+          description: The updated Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Invalid setting, or nothing to set"}
+        "404": {description: Automation or member not found}
+        "409": {description: "expected_version is stale, or the Automation is completed or cancelled"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
         required: true
         content:
           application/json:
@@ -3768,6 +4155,103 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [id, state], properties: {id: {type: string}, state: {type: string, enum: [running, waiting_input, complete, killed, rate_limited]}}}}}}
       responses: {"200": {description: OK}, "400": {description: Bad state}, "404": {description: Not found}}
 
+  /api/sessions/set_priority:
+    post:
+      summary: Set a session's capacity-queue priority
+      description: Higher priority sessions are admitted first when capacity is contended. Default 0. Identify the session by id or session_name.
+      operationId: sessionSetPriority
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [priority]
+              properties:
+                id: {type: string}
+                session_name: {type: string}
+                priority: {type: integer, description: "A whole number; anything else is a 400"}
+      responses:
+        "200": {description: "OK: {status, id, priority}"}
+        "400": {description: Priority is not an integer, or neither id nor session_name was given}
+        "404": {description: Session not found}
+        "409": {description: session_name matches more than one session}
+  /api/llms:
+    get:
+      summary: List LLM registry entries
+      description: Returns the entries plus a status object. status.role_warnings carries the current role-contention warnings.
+      operationId: llmsList
+      tags: [LLMs]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  llms: {type: array, items: {$ref: "#/components/schemas/LLMEntry"}}
+                  status:
+                    type: object
+                    properties:
+                      role_warnings: {type: array, items: {type: string}}
+    post:
+      summary: Create an LLM registry entry
+      description: Roles are trimmed, lower-cased and de-duplicated. An empty role string is a 400. Every write re-runs the role contention check.
+      operationId: llmsCreate
+      tags: [LLMs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LLMWriteBody"}
+      responses:
+        "200": {description: Created, content: {application/json: {schema: {$ref: "#/components/schemas/LLMEntry"}}}}
+        "400": {description: Invalid entry, including an empty role}
+  /api/llms/{name}:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Get one LLM registry entry
+      description: The entry carries role_warnings, the contention warnings that name it.
+      operationId: llmsGet
+      tags: [LLMs]
+      responses:
+        "200": {description: OK, content: {application/json: {schema: {$ref: "#/components/schemas/LLMEntry"}}}}
+        "404": {description: Not found}
+    put:
+      summary: Update an LLM registry entry
+      description: A body that omits roles keeps the stored roles; an empty list clears them.
+      operationId: llmsUpdate
+      tags: [LLMs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LLMWriteBody"}
+      responses:
+        "200": {description: Updated, content: {application/json: {schema: {$ref: "#/components/schemas/LLMEntry"}}}}
+        "400": {description: Invalid entry, including an empty role}
+        "404": {description: Not found}
+  /api/llm-roles:
+    get:
+      summary: Resolved workload roles and contention warnings
+      description: |
+        Each claimed role with the registry entry it currently resolves to, plus the contention warnings.
+        Only enabled entries count. When several enabled entries claim one role the first by name wins and a warning says so.
+        It sits beside /api/llms because /api/llms/{name} would shadow a literal roles sub-path.
+      operationId: llmRolesGet
+      tags: [LLMs]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LLMRoleTable"}
+        "405": {description: Method not allowed}
+        "503": {description: LLM registry disabled}
+
   # Agents
   /api/agents:
     get:
@@ -4526,6 +5010,7 @@ components:
       required: [prd_id, status]
       properties:
         prd_id: {type: string, description: The Automaton}
+        prd_title: {type: string}
         automation_id: {type: string, description: The Automation it is a member of; empty for standalone Automata}
         automation_name: {type: string}
         member_id: {type: string, description: The Automation member slot the Automaton holds}
@@ -4533,9 +5018,12 @@ components:
           type: string
           enum: [failed, blocked]
           description: The state the record covers; cleared when the Automaton leaves it
-        failed_task_id: {type: string, description: The task that failed; empty for blocked Automata without one}
-        failed_task_name: {type: string}
-        failed_task_error:
+        task_id: {type: string, description: The task that failed; empty for blocked Automata without one}
+        task_title: {type: string}
+        blocked_reason:
+          type: string
+          description: The blocked reason recorded on the Automaton; empty for failed ones without one
+        error:
           type: string
           description: The failed task's error, truncated to 2000 chars by the pass
         session_end_reason:
@@ -4545,12 +5033,15 @@ components:
           type: string
           format: date-time
           description: When the Automaton first ended in this failed or blocked state (its own status timestamp)
+        updated_at:
+          type: string
+          format: date-time
+          description: When the triage pass last refreshed the record
         alerted_at:
           nullable: true
           description: When the triage alert for this episode fired; null until it does
           type: string
           format: date-time
-        alert_minutes: {type: integer, description: The threshold that applied to this record, in minutes; 0 = off}
         retry_budget:
           type: object
           description: |-
@@ -4561,6 +5052,8 @@ components:
             content: {$ref: "#/components/schemas/TriageRetryCategory"}
             scope: {$ref: "#/components/schemas/TriageRetryCategory"}
             policy: {$ref: "#/components/schemas/TriageRetryCategory"}
+            ceiling_total: {type: integer, description: The overall retry ceiling, if one is set}
+            ceiling_left: {type: integer, description: What remains of the overall ceiling}
         notes:
           type: array
           description: Appended over the life of the record, oldest first
@@ -4649,6 +5142,20 @@ components:
         dropped:
           type: boolean
           description: True when unseen events were evicted from the bounded queue
+    VerifierPolicyOverrideRequest:
+      type: object
+      description: |
+        Presence-aware verifier policy override. Omitting a field leaves it
+        unchanged; an empty `mode` or an empty `backends` list clears it.
+      properties:
+        mode:
+          type: string
+          description: "fixed | prefer-free | balance | gpu-only | claude-only. Empty string = clear (inherit). Any other value is rejected with 400."
+        backends:
+          type: array
+          items: {type: string}
+          description: "Ordered list of eligible verifier backends (LLM registry names). Empty list = clear (inherit). An empty entry or an unknown LLM name is rejected with 400."
+        actor: {type: string, description: "Who made the change (default `operator`)"}
     PlanReviewVerdict:
       type: object
       description: |
@@ -4691,6 +5198,13 @@ components:
         id: {type: string}
         spec: {type: string}
         status: {type: string}
+        notify_events: {type: array, items: {type: string}, description: "Lifecycle event kinds that notify for this Automaton; absent or empty means inherit from the guardrail profile, then the global default"}
+        notify_events_effective:
+          type: object
+          description: "Computed read-time view (never persisted): the effective kinds and the tier supplying them"
+          properties:
+            events: {type: array, items: {type: string}}
+            source: {type: string, enum: [automaton, profile, global]}
         plan_review: {$ref: "#/components/schemas/PlanReviewVerdict", description: "Present once a review has run (warn/block modes)"}
         story:
           type: array
@@ -4851,6 +5365,10 @@ components:
           example: "hal9000-a3f2"
         name:
           type: string
+        priority:
+          type: integer
+          default: 0
+          description: Capacity-queue priority; higher is admitted first when capacity is contended
           description: Optional human-readable name (set at creation or via rename)
           example: "auth refactor"
         task:
@@ -4868,7 +5386,7 @@ components:
         log_file:
           type: string
           description: Path to the session's output log
-          example: "/home/user/.datawatch/logs/hal9000-a3f2.log"
+          example: ".datawatch/logs/hal9000-a3f2.log"
         state:
           $ref: "#/components/schemas/SessionState"
         created_at:
@@ -4900,6 +5418,49 @@ components:
         - `failed`: claude-code exited with error
         - `killed`: session was manually terminated
 
+    LLMEntry:
+      type: object
+      description: An LLM registry entry. Only the fields documented here are covered; the registry holds more (kind, models, compute nodes, budget).
+      properties:
+        name: {type: string}
+        kind: {type: string}
+        enabled: {type: boolean}
+        plan_tier: {type: string}
+        max_inflight: {type: integer, nullable: true}
+        roles:
+          type: array
+          items: {type: string}
+          description: Workloads this entry serves. Open set of strings, stored trimmed, lower-cased and de-duplicated.
+        role_warnings:
+          type: array
+          items: {type: string}
+          description: Contention warnings that name this entry. Set on the single-entry GET only.
+
+    LLMWriteBody:
+      type: object
+      description: Body of an LLM create or update. Only the fields documented here are covered; the other entry fields are accepted as on the entry.
+      properties:
+        name: {type: string}
+        kind: {type: string}
+        roles:
+          type: array
+          items: {type: string}
+          description: Workload roles this entry serves. On update, omit to keep the stored roles; an empty list clears them. An empty role string is rejected.
+
+    LLMRoleTable:
+      type: object
+      properties:
+        roles:
+          type: array
+          items:
+            type: object
+            properties:
+              role: {type: string}
+              entry: {type: string, description: Name of the registry entry the role resolves to}
+        warnings:
+          type: array
+          items: {type: string}
+
     StartSessionRequest:
       type: object
       required: [task]
@@ -4917,7 +5478,7 @@ components:
           description: |
             Absolute path to the project directory. The LLM will be constrained to this tree.
             Defaults to session.default_project_dir from config.
-          example: "/home/user/projects/myapp"
+          example: "projects/myapp"
         backend:
           type: string
           description: |
@@ -4929,6 +5490,10 @@ components:
           default: false
           description: Opt in to git init, snapshot and automatic commit.
           example: true
+        priority:
+          type: integer
+          default: 0
+          description: Capacity-queue priority; higher is admitted first when capacity is contended. A non-integer value is a 400.
 
     CommandRequest:
       type: object
@@ -5370,17 +5935,21 @@ components:
     Automation:
       type: object
       description: |
-        An Automation: a named graph of member Automata (PRDs) advanced by a
-        single cursor, one member at a time. For now a stored record only —
-        nothing on the server advances from one member to the next
-        automatically.
+        An Automation: a named graph of members advanced along outcome edges.
+        A member is a PRD, a nested Automation, or a fork/join control node.
+        A fork starts its branches at once and its join waits for them. Once
+        activated, the Automation advances itself as members finish.
       properties:
         id: {type: string, description: "Automation ID (8-hex)"}
         name: {type: string}
         description: {type: string}
         status: {type: string, enum: [draft, active, paused, completed, blocked, cancelled]}
         entry_member_id: {type: string, description: "Member the Automation starts at"}
-        current_member_id: {type: string, description: "Member the cursor is on (while active)"}
+        current_member_id: {type: string, description: "Member the cursor is on for a linear Automation; see active_cursors for fork/join"}
+        active_cursors:
+          type: array
+          description: "Member IDs currently in flight, sorted; one entry per live cursor"
+          items: {type: string}
         members:
           type: array
           items:
@@ -5408,10 +5977,15 @@ components:
 
     AutomationMember:
       type: object
-      description: "One member of an Automation: one member PRD plus one next member per outcome."
+      description: "One member of an Automation: a member PRD, a nested Automation, or a fork/join control node, each with an outcome edge per result. Fork/join and nested members carry the kind fields below; prd members carry prd_id."
       properties:
         id: {type: string, description: "Stable member ID (8-hex, or operator-supplied)"}
-        prd_id: {type: string, description: "The member Automaton (PRD) ID"}
+        kind: {type: string, enum: [prd, automation, fork, join], description: "Member kind; omitted means prd"}
+        prd_id: {type: string, description: "The member Automaton (PRD) ID; prd members only"}
+        automation_id: {type: string, description: "kind automation: the nested child Automation ID"}
+        fork_members: {type: array, items: {type: string}, description: "kind fork: the branch member IDs started together (at least 2)"}
+        join_members: {type: array, items: {type: string}, description: "kind join: the branch member IDs collected, equal to the paired fork's fork_members"}
+        on_branch_failure: {type: string, enum: [all_must_succeed, any_one_is_enough, continue_anyway], description: "kind join only; omitted means all_must_succeed"}
         on_complete: {type: string, description: "Next member when this one completes; empty = the Automation completes"}
         on_blocked: {type: string, description: "Next member when this one is blocked; empty = the Automation is blocked"}
         on_failed: {type: string, description: "Next member when this one fails; empty = the Automation is blocked"}
