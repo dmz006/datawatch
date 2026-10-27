@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_prd_set_lane_preference`, `capacity_status` |
+| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_triage`, `autonomous_prd_set_lane_preference`, `capacity_status` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
@@ -346,6 +346,21 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   A `limit` outside 1 to 1000 is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer.
+- **`autonomous_triage`** — read the triage records: one record per failed or blocked Automaton (worst first), with its identity (`prd_id`, `automation_id`, `automation_name`, `member_id`), the failed task (id, name, last error, session end reason), `first_seen_at` and, once set, `alerted_at`, the retry budgets shown as given (all four categories: `limit`, `used`, `left`), and the append-only notes, plus `alert_minutes` — the triage alarm threshold in minutes (`0` = alarm off). Read-only: listing never starts, retries or edits anything. Returns the same object as `GET /api/autonomous/triage`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `automation_id` | no | only records in this automation |
+  | `prd_id` | no | the record of one Automaton |
+  | `status` | no | `failed` or `blocked` (case-sensitive; anything else is refused) |
+
+  ```
+  autonomous_triage()
+  autonomous_triage(status="failed")
+  autonomous_triage(automation_id="aut_01", status="blocked")
+  ```
+
+  A wrong `status` comes back as a tool error with the daemon's message. Needs the autonomous read capability when called by a federated peer.
 - **`autonomous_prd_set_lane_preference`** — set which lane an Automaton may take: `gpu`, `claude` or `any`. Takes `id` and `lane_preference`; an empty `lane_preference` clears the setting, which means `any`. An unknown value is refused. Proxies `POST /api/autonomous/prds/{id}/set_lane_preference`. Needs the autonomous write capability when called by a federated peer.
 
   | Parameter | Required | Description |

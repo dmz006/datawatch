@@ -16,7 +16,7 @@ Disabled by default — opt in by setting `autonomous.enabled: true`.
 |---|---|
 | YAML  | `autonomous:` block in `~/.datawatch/config.yaml` |
 | REST  | `/api/autonomous/*` (bearer-authenticated) |
-| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings` |
+| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings`, `autonomous_lane_fill_status`, `autonomous_triage` |
 | CLI   | `datawatch autonomous <subcmd>` |
 | Comm  | `rest GET /api/autonomous/status` etc. via the comm `rest` passthrough (Signal/Slack/Telegram/Matrix/etc.) |
 
@@ -1207,6 +1207,57 @@ autonomous:
 ```
 
 **Surfaces.** The same status is read by MCP `autonomous_lane_fill_status`, the CLI `datawatch autonomous lane-fill [--limit N] [--json]` and the comm verb `autonomous lane-fill [limit]`. The preference is set with MCP `autonomous_prd_set_lane_preference`, the CLI `datawatch autonomous prd-set-lane-preference <id> gpu|claude|any` and the comm verb `autonomous set-lane-preference <prd-id> gpu|claude|any`. The PWA shows the status on the Automation sub-tab.
+
+## Triage records (`GET /api/autonomous/triage`)
+
+The engine keeps one **triage record** per Automaton that ends **failed** or **blocked**, and you read them from the daemon. The pass that fills them runs on every coordinator tick (~60 s); this section documents only the read. The operator reference — what the record contains, what the pass does, the alert key and what triage never does — is in [docs/operations.md](../operations.md) (section *Triage records*).
+
+```
+GET /api/autonomous/triage
+    ?automation_id=<automation-id>
+    ?prd_id=<automaton-id>
+    ?status=failed | blocked
+
+200: { "records": [ { ... } ], "alert_minutes": 30 }
+```
+
+The filter params are optional and can be combined. `status` accepts only `failed` or `blocked`; anything else is refused with the daemon's message. A read that matches nothing is `records: []`, not an error. The last field, `alert_minutes`, states the triage alert threshold currently in force (`autonomous.automation.triage_alert_minutes`, default 30, `0` = off) in the same body as the records it applies to.
+
+A record (newest first in `records`):
+
+```json
+{
+  "prd_id": "d0442737d38c",
+  "automation_id": "4522f306c266",
+  "automation_name": "nightly pipeline",
+  "member_id": "member-2",
+
+  "status": "failed",
+  "failed_task_id": "task-9",
+  "failed_task_name": "run integration tests",
+  "failed_task_error": "connection refused: testdb:5432 (truncated at 2000 chars)",
+  "session_end_reason": "runtime error: exit 2 (truncated at 2000 chars)",
+
+  "first_seen_at": "2026-10-27T09:12:44Z",
+  "alerted_at": "2026-10-27T09:44:02Z",
+  "alert_minutes": 30,
+
+  "retry_budget": {
+    "infra":   { "limit": 3, "used": 1, "left": 2 },
+    "content": { "limit": 4, "used": 4, "left": 0 },
+    "scope":   { "limit": 2, "used": 0, "left": 2 },
+    "policy":  { "limit": 1, "used": 0, "left": 1 }
+  },
+
+  "notes": [
+    { "at": "2026-10-27T09:12:44Z", "source": "triage", "text": "Automaton failed on task 'run integration tests'" }
+  ]
+}
+```
+
+The fields are copied from the live Automaton at the last pass, not derived: `automation_name` and `member_id` place the record in its Automation; the failed task block is the task that failed (id, name, the task's error and the session end reason, each already truncated to 2000 chars by the pass); `first_seen_at` is when the Automaton first ended in this failed or blocked state (its own status timestamp); `alerted_at` is when the triage alert for this episode fired (absent until it does). `retry_budget` is the engine's existing retry budget, reused as-is and shown for all four categories — `limit` is the maximum, `used` what has been consumed, `left` what remains; it is **informational**: the pass neither spends nor resets any of it. `notes` is an append-only list (at, source, text) the pass grows over the life of the record.
+
+The route is read-only and a sibling of the lane-fill read under the same access rules: bearer-authenticated locally, and it needs the autonomous read **capability** when called by a federated peer. Its surfaces are the REST route above, the MCP tool `autonomous_triage` (the same three filters, proxying the route), the CLI (`datawatch autonomous triage [--automation <id>] [--prd <id>] [--status failed|blocked] [--json]`), the comm verb (`autonomous triage [automation=<id>] [prd=<id>] [status=<failed|blocked>]`), the PWA triage card in the Automaton detail view, and the same contract documented for the mobile and wear surfaces in [mobile-surface.md](mobile-surface.md). Triage has exactly one configuration key, `autonomous.automation.triage_alert_minutes`. The record shape is in `internal/server/web/openapi.yaml` (`TriageList`, `TriageRecord`).
 
 ## Configuration
 

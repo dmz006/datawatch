@@ -1116,6 +1116,40 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/triage:
+    get:
+      summary: Triage records
+      description: |
+        The triage records of the failed and blocked Automata, newest first. Each
+        record places the Automaton in its Automation, says when it was first seen
+        failed or blocked, carries the failed task (id, name, the error and the session
+        end reason, each truncated to 2000 chars), the retry-budget categories with
+        their limit, used and left values, and the notes appended over the record's
+        life. The body also states the triage alert threshold currently in force
+        (`alert_minutes`, the `autonomous.automation.triage_alert_minutes` setting;
+        0 = off). `status` accepts only `failed` or `blocked`. A read that matches
+        nothing is an empty `records` array, not an error. Read-only; needs the
+        autonomous read capability when called by a federated peer.
+      operationId: autonomousTriage
+      tags: [Autonomous]
+      parameters:
+        - {name: automation_id, in: query, required: false, description: Records of the Automata in this Automation, schema: {type: string}}
+        - {name: prd_id, in: query, required: false, description: Only the record of this Automaton, schema: {type: string}}
+        - {name: status, in: query, required: false, description: "Only failed or blocked", schema: {type: string, enum: [failed, blocked]}}
+      responses:
+        "200":
+          description: Triage records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriageList"
+        "400": {description: status is not failed or blocked}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/progress:
     get:
       summary: Progress metrics
@@ -4470,6 +4504,83 @@ components:
         at: {type: string, format: date-time}
         lane_id: {type: string}
         work: {type: string, description: Title of the work waiting for the lane}
+    TriageList:
+      type: object
+      description: |-
+        The triage record list, as GET /api/autonomous/triage returns it. `records`
+        is newest first; `alert_minutes` is the triage alert threshold currently in
+        force (the autonomous.automation.triage_alert_minutes setting; 0 = off).
+      required: [records, alert_minutes]
+      properties:
+        records:
+          type: array
+          description: Triage records, newest first; empty when nothing matches
+          items: {$ref: "#/components/schemas/TriageRecord"}
+        alert_minutes: {type: integer, description: The triage alert threshold in force in minutes; 0 = off}
+    TriageRecord:
+      type: object
+      description: |-
+        One triage record for an Automaton that ended failed or blocked, filled and
+        refreshed by the triage pass on every coordinator tick and cleared again when
+        the Automaton leaves that state.
+      required: [prd_id, status]
+      properties:
+        prd_id: {type: string, description: The Automaton}
+        automation_id: {type: string, description: The Automation it is a member of; empty for standalone Automata}
+        automation_name: {type: string}
+        member_id: {type: string, description: The Automation member slot the Automaton holds}
+        status:
+          type: string
+          enum: [failed, blocked]
+          description: The state the record covers; cleared when the Automaton leaves it
+        failed_task_id: {type: string, description: The task that failed; empty for blocked Automata without one}
+        failed_task_name: {type: string}
+        failed_task_error:
+          type: string
+          description: The failed task's error, truncated to 2000 chars by the pass
+        session_end_reason:
+          type: string
+          description: The worker session's end reason, truncated to 2000 chars by the pass
+        first_seen_at:
+          type: string
+          format: date-time
+          description: When the Automaton first ended in this failed or blocked state (its own status timestamp)
+        alerted_at:
+          nullable: true
+          description: When the triage alert for this episode fired; null until it does
+          type: string
+          format: date-time
+        alert_minutes: {type: integer, description: The threshold that applied to this record, in minutes; 0 = off}
+        retry_budget:
+          type: object
+          description: |-
+            The engine's existing retry budget, reused as-is and shown for all four
+            categories. Informational: the pass neither spends nor resets any of it.
+          properties:
+            infra: {$ref: "#/components/schemas/TriageRetryCategory"}
+            content: {$ref: "#/components/schemas/TriageRetryCategory"}
+            scope: {$ref: "#/components/schemas/TriageRetryCategory"}
+            policy: {$ref: "#/components/schemas/TriageRetryCategory"}
+        notes:
+          type: array
+          description: Appended over the life of the record, oldest first
+          items: {$ref: "#/components/schemas/TriageNote"}
+    TriageRetryCategory:
+      type: object
+      description: One retry-budget category
+      required: [limit, used, left]
+      properties:
+        limit: {type: integer, description: The maximum}
+        used: {type: integer, description: What has been consumed}
+        left: {type: integer, description: What remains}
+    TriageNote:
+      type: object
+      description: One appended note on a triage record
+      required: [at, source, text]
+      properties:
+        at: {type: string, format: date-time}
+        source: {type: string, description: Who appended the note, e.g. triage}
+        text: {type: string}
     NodeUsage:
       type: object
       description: |
