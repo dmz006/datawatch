@@ -447,3 +447,71 @@ func mustGit(t *testing.T, dir string, args ...string) {
 		t.Fatalf("git %v in %s: %v", args, dir, err)
 	}
 }
+
+// ── operand validation ─────────────────────────────
+
+func TestCheckGitOperands(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      string
+		wantErr bool
+	}{
+		{"normal branch", "feature/x-1", false},
+		{"remote name", "origin", false},
+		{"https url", "https://github.com/o/r.git", false},
+		{"leading dash option", "--upload-pack=touch /tmp/x", true},
+		{"single dash", "-x", true},
+		{"NUL byte", "main\x00--exec", true},
+		{"empty", "", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := checkGitOperands([]string{"ok", c.in})
+			if (err != nil) != c.wantErr {
+				t.Errorf("checkGitOperands(%q) err=%v wantErr=%v", c.in, err, c.wantErr)
+			}
+		})
+	}
+}
+
+func TestRunGitEnv_RefusesBadOperand(t *testing.T) {
+	dir, _ := newSessionWorkTestRepo(t)
+	for _, bad := range []string{"--hard", "-x", "tag\x00x"} {
+		if err := runGitEnv(dir, nil, []string{"reset", "--hard"}, bad); err == nil {
+			t.Errorf("runGitEnv accepted operand %q", bad)
+		}
+		if _, err := gitOutputOperands(dir, []string{"rev-parse", "--verify"}, bad); err == nil {
+			t.Errorf("gitOutputOperands accepted operand %q", bad)
+		}
+	}
+	if err := runGitEnv(dir, nil, []string{"tag", "-f", "--"}, "good-tag"); err != nil {
+		t.Errorf("normal operand refused: %v", err)
+	}
+	if _, err := gitOutputOperands(dir, []string{"rev-parse", "--verify"}, "good-tag"); err != nil {
+		t.Errorf("normal operand refused by gitOutputOperands: %v", err)
+	}
+}
+
+func TestRunGit_RefusesNULInFixedArgs(t *testing.T) {
+	dir, _ := newSessionWorkTestRepo(t)
+	if err := runGit(dir, "tag", "x\x00y"); err == nil {
+		t.Error("runGit accepted a NUL byte")
+	}
+	if _, err := gitOutput(dir, "log", "-1", "--format=a\x00b"); err == nil {
+		t.Error("gitOutput accepted a NUL byte")
+	}
+}
+
+func TestProjectGit_PushBranch_RefusesDashOperands(t *testing.T) {
+	dir, g := newSessionWorkTestRepo(t)
+	_ = dir
+	if err := g.PushBranch("origin", "--delete", "", ""); err == nil {
+		t.Error("expected leading-dash branch to be refused")
+	}
+	if err := g.PushBranch("--mirror", "main", "", ""); err == nil {
+		t.Error("expected leading-dash remote to be refused")
+	}
+	if err := g.PushBranch("origin", "main", "--upload-pack=x", "tok"); err == nil {
+		t.Error("expected leading-dash URL to be refused")
+	}
+}
