@@ -63,6 +63,7 @@ func largestFitting(rows []LaneRow, limit float64) int {
 // adviseTarget serves use-all (target: the ceiling) and pace (target: the ceiling minus the
 // safety margin).
 func adviseTarget(pa *PolicyAdvice, cfg settings, a *Advice, target float64, pace bool) {
+	pa.PolicyTarget = &target
 	pa.LanesSuggested = largestFitting(a.ByLanes, target)
 	row := a.ByLanes[pa.LanesSuggested]
 	atMax := a.ByLanes[cfg.maxLanes]

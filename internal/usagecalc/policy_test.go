@@ -1,6 +1,7 @@
 package usagecalc
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -156,5 +157,56 @@ func TestPolicySwitchChangesOnlyTheAdvice(t *testing.T) {
 				t.Errorf("%s changed lane row %d", policy, j)
 			}
 		}
+	}
+}
+
+// TestPolicyTargetIsTheTargetEachPolicyAimsAt pins the projected end the response names for
+// each policy: the ceiling under use-all, the ceiling minus the margin under pace, and none
+// under finish-early. Bought extra credit moves the ceiling, so it moves both targets.
+func TestPolicyTargetIsTheTargetEachPolicyAimsAt(t *testing.T) {
+	for _, extra := range []float64{0, 10} {
+		in := workedExample(t)
+		in.ExtraCreditPoints = extra
+		ceiling := 100 + extra
+		cases := []struct {
+			policy string
+			want   *float64
+		}{
+			{PolicyUseAll, f64(ceiling)},
+			{PolicyPace, f64(ceiling - 5)},
+			{PolicyFinishEarly, nil},
+		}
+		for _, c := range cases {
+			in.Policy = c.policy
+			got := Advise(in).Advice.PolicyTarget
+			switch {
+			case c.want == nil && got != nil:
+				t.Errorf("extra %v, %s: policy_target = %v, want none", extra, c.policy, *got)
+			case c.want != nil && (got == nil || *got != *c.want):
+				t.Errorf("extra %v, %s: policy_target = %v, want %v", extra, c.policy, got, *c.want)
+			}
+		}
+	}
+}
+
+// TestPolicyTargetSerializesAsNullUnderFinishEarly keeps the field present in the body, so a
+// renderer can tell "no target" from a missing field.
+func TestPolicyTargetSerializesAsNullUnderFinishEarly(t *testing.T) {
+	in := workedExample(t)
+	in.Policy = PolicyFinishEarly
+	body, err := json.Marshal(Advise(in).Advice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"policy_target":null`) {
+		t.Errorf("finish-early advice JSON lacks policy_target null: %s", body)
+	}
+	in.Policy = PolicyUseAll
+	body, err = json.Marshal(Advise(in).Advice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"policy_target":100`) {
+		t.Errorf("use-all advice JSON lacks policy_target 100: %s", body)
 	}
 }

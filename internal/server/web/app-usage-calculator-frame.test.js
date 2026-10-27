@@ -53,7 +53,7 @@ test('the switcher shows all three variants for variant all and is absent for a 
 
 test('a single variant with no renderer on this page says it is not available yet', () => {
   const s = loadApp();
-  const html = frame(s, workedExampleBody({ variant: 'lane-planner' }), {});
+  const html = frame(s, workedExampleBody({ variant: 'burn-ledger' }), {});
   assert.ok(html.includes('This view is not available yet.'), 'unavailable message missing');
 });
 

@@ -79,6 +79,7 @@ const WORKED_ADVICE = {
       'Pace to the week aims 5 points under the pace line.',
     ],
     finish: null,
+    policy_target: 95,
   },
 };
 
@@ -153,6 +154,7 @@ function emptyBody(patch) {
         headline: 'Enter a weekly reading to see advice.',
         notes: [],
         finish: null,
+        policy_target: 100,
       },
     },
   };

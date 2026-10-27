@@ -120,13 +120,17 @@ type Finish struct {
 	NoBurn          bool       `json:"no_burn"`
 }
 
-// PolicyAdvice is the part of the result that depends on the policy.
+// PolicyAdvice is the part of the result that depends on the policy. PolicyTarget is the
+// projected end at the reset that a lane count must not pass to fit the policy: the ceiling
+// under use-all, the ceiling minus the safety margin under pace, and nil under finish-early,
+// where no row has a target.
 type PolicyAdvice struct {
 	Policy         string   `json:"policy"`
 	LanesSuggested int      `json:"lanes_suggested"`
 	Headline       string   `json:"headline"`
 	Notes          []string `json:"notes"`
 	Finish         *Finish  `json:"finish"`
+	PolicyTarget   *float64 `json:"policy_target"`
 }
 
 // WorkResult reports which remaining-work figure is in use.
