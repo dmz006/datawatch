@@ -149,7 +149,10 @@ func ResolveGuardrailModel(backend, prdModel, taskModel, globalGuardrailModel, g
 // It is lock-free by design: callers that already hold Manager.mu
 // (e.g. SetTaskGuardrailLLM) pass their already-loaded cfg snapshot;
 // the Manager method below acquires the lock itself.
-func resolveUnitGuardrailModelLocked(cfg Config, t *Task, prd *PRD) (backend, model string, err error) {
+//
+// pinned is true only when the backend came from an explicit task or PRD
+// override; the cfg.VerificationBackend default fallback is not a pin.
+func resolveUnitGuardrailModelLocked(cfg Config, t *Task, prd *PRD) (backend, model string, pinned bool, err error) {
 	if t == nil {
 		t = &Task{}
 	}
@@ -159,8 +162,10 @@ func resolveUnitGuardrailModelLocked(cfg Config, t *Task, prd *PRD) (backend, mo
 	switch {
 	case t.GuardrailBackend != "":
 		backend = t.GuardrailBackend
+		pinned = true
 	case prd.GuardrailBackend != "":
 		backend = prd.GuardrailBackend
+		pinned = true
 	default:
 		backend = cfg.VerificationBackend
 	}
@@ -172,7 +177,11 @@ func resolveUnitGuardrailModelLocked(cfg Config, t *Task, prd *PRD) (backend, mo
 		cfg.VerificationModel,
 		cfg.PlanningModel,
 	)
-	return backend, model, err
+	if err != nil {
+		// Nothing was resolved for the judge, so nothing is pinned.
+		pinned = false
+	}
+	return backend, model, pinned, err
 }
 
 // resolveUnitGuardrailModel resolves the effective guardrail backend and
@@ -181,7 +190,7 @@ func resolveUnitGuardrailModelLocked(cfg Config, t *Task, prd *PRD) (backend, mo
 // own lock. It returns an error wrapping ErrNoGuardrailModel when no
 // tier resolves a model the backend can serve; callers must then record
 // a loud, non-retried infra-category block instead of launching a judge.
-func (m *Manager) resolveUnitGuardrailModel(t *Task, prd *PRD) (backend, model string, err error) {
+func (m *Manager) resolveUnitGuardrailModel(t *Task, prd *PRD) (backend, model string, pinned bool, err error) {
 	m.mu.Lock()
 	cfg := m.cfg
 	m.mu.Unlock()

@@ -242,6 +242,7 @@ func TestResolveUnitGuardrailModelLocked(t *testing.T) {
 		prd         *PRD
 		wantBackend string
 		wantModel   string
+		wantPinned  bool
 		wantErr     bool
 	}{
 		{
@@ -250,6 +251,7 @@ func TestResolveUnitGuardrailModelLocked(t *testing.T) {
 			task:        &Task{GuardrailBackend: "pi", GuardrailModel: "ollama/qwen3.8-64k:27b"},
 			wantBackend: "pi",
 			wantModel:   "ollama/qwen3.8-64k:27b",
+			wantPinned:  true,
 		},
 		{
 			name:        "PRD backend + global guardrail_model tier over a PRD model it can pair with",
@@ -257,6 +259,7 @@ func TestResolveUnitGuardrailModelLocked(t *testing.T) {
 			prd:         &PRD{GuardrailBackend: "pi", GuardrailModel: "ollama/qwen3.8:27b"},
 			wantBackend: "pi",
 			wantModel:   "ollama/qwen3.8:27b",
+			wantPinned:  true,
 		},
 		{
 			name:        "global verification_backend default with global tier3 model",
@@ -292,6 +295,23 @@ func TestResolveUnitGuardrailModelLocked(t *testing.T) {
 			wantBackend: claudeCodeBackendName,
 		},
 		{
+			name:        "only the global VerificationBackend set: default fallback, not a pin",
+			cfg:         Config{VerificationBackend: "pi", GuardrailModel: "ollama/qwen3.8-64k:27b"},
+			task:        &Task{},
+			prd:         &PRD{},
+			wantBackend: "pi",
+			wantModel:   "ollama/qwen3.8-64k:27b",
+			wantPinned:  false,
+		},
+		{
+			name:        "task override with no servable model: error path is never pinned",
+			cfg:         Config{},
+			task:        &Task{GuardrailBackend: "pi"},
+			wantErr:     true,
+			wantBackend: "pi",
+			wantPinned:  false,
+		},
+		{
 			name:        "nil task and nil PRD are safe",
 			cfg:         Config{VerificationBackend: "pi", GuardrailModel: "ollama/qwen3.8-64k:27b"},
 			task:        nil,
@@ -303,9 +323,12 @@ func TestResolveUnitGuardrailModelLocked(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			backend, model, err := resolveUnitGuardrailModelLocked(tc.cfg, tc.task, tc.prd)
+			backend, model, pinned, err := resolveUnitGuardrailModelLocked(tc.cfg, tc.task, tc.prd)
 			if backend != tc.wantBackend {
 				t.Fatalf("backend = %q; want %q", backend, tc.wantBackend)
+			}
+			if pinned != tc.wantPinned {
+				t.Fatalf("pinned = %v; want %v", pinned, tc.wantPinned)
 			}
 			if tc.wantErr {
 				if !errors.Is(err, ErrNoGuardrailModel) {
@@ -336,7 +359,7 @@ func TestManagerResolveUnitGuardrailModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	backend, model, err := m.resolveUnitGuardrailModel(
+	backend, model, pinned, err := m.resolveUnitGuardrailModel(
 		&Task{GuardrailModel: "ollama/qwen3.8:27b"}, (&PRD{}),
 	)
 	if err != nil {
@@ -345,6 +368,9 @@ func TestManagerResolveUnitGuardrailModel(t *testing.T) {
 	if backend != "pi" || model != "ollama/qwen3.8:27b" {
 		t.Fatalf("resolved %q/%q; want pi/ollama/qwen3.8:27b (task tier beats global tier3)", backend, model)
 	}
+	if pinned {
+		t.Fatalf("pinned = true; a model-only task pin on the global default backend is not a backend pin")
+	}
 
 	cfg2 := DefaultConfig()
 	cfg2.VerificationBackend = "pi" // nothing else configured
@@ -352,7 +378,7 @@ func TestManagerResolveUnitGuardrailModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
-	if _, _, err := m2.resolveUnitGuardrailModel(nil, nil); !errors.Is(err, ErrNoGuardrailModel) {
+	if _, _, pinned2, err := m2.resolveUnitGuardrailModel(nil, nil); !errors.Is(err, ErrNoGuardrailModel) || pinned2 {
 		t.Fatalf("err = %v; want ErrNoGuardrailModel", err)
 	}
 }

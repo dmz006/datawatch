@@ -2241,7 +2241,7 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 	// default. An unresolvable route does not run a judge — it records
 	// a loud, non-retried infra-category block so the misconfiguration
 	// is visible instead of evicting the operator's pinned model.
-	gb, gm, resErr := m.resolveUnitGuardrailModel(t, prd)
+	gb, gm, pinned, resErr := m.resolveUnitGuardrailModel(t, prd)
 
 	guardrails := m.resolveGuardrails(prd, "task")
 	if len(guardrails) == 0 {
@@ -2258,6 +2258,7 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 	}
 	if resErr == nil {
 		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
+		inv.GuardrailPinned = pinned
 	}
 	scriptPassed := prepareScriptEvidence(&inv, t.VerificationScript, inv.ProjectDir) // BL447
 	for _, g := range guardrails {
@@ -2350,7 +2351,7 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 	// backend-default fallback, loud non-retried infra block on failure.
 	// No story-level guardrail routing exists, so an empty Task means
 	// no task-level tier for this call.
-	gb, gm, resErr := m.resolveUnitGuardrailModel(&Task{}, prd)
+	gb, gm, pinned, resErr := m.resolveUnitGuardrailModel(&Task{}, prd)
 
 	guardrails := m.resolveGuardrails(prd, "story")
 	if len(guardrails) == 0 {
@@ -2367,6 +2368,7 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 	}
 	if resErr == nil {
 		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
+		inv.GuardrailPinned = pinned
 	}
 	scriptPassed := prepareScriptEvidence(&inv, s.VerificationScript, inv.ProjectDir) // BL447
 	for _, g := range guardrails {

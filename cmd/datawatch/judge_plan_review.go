@@ -47,6 +47,9 @@ func planReviewViaJudge(judge planReviewJudgeFn, projectDir func(prdID string) s
 		}
 		if pinned != nil {
 			inv.GuardrailBackend, inv.GuardrailModel = pinned()
+			// A backend set in autonomous.plan_review_backend is an
+			// explicit pin; an empty one is not.
+			inv.GuardrailPinned = inv.GuardrailBackend != ""
 		}
 		v, err := judge(ctx, inv)
 		if err != nil {
