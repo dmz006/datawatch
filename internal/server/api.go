@@ -479,6 +479,10 @@ type Server struct {
 	// /api/autonomous/subscriptions. Wired from main.go alongside the
 	// subscription engine; nil (default) makes the handlers return 503.
 	autonomousSubs LifecycleSubscriptionsAPI
+	// questionStore — the operator question channel (raise + read)
+	// backing /api/questions. Wired from main.go alongside the daemon's
+	// data; nil (default) makes the handlers return 503.
+	questionStore QuestionsAPI
 	// mcp_queue sink read side for /api/autonomous/events; nil → 503.
 	autonomousEvents PendingEventsAPI
 	// BL427 phase 5 — receiving side of peer forwarding for

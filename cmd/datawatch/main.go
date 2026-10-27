@@ -6262,6 +6262,19 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				// store change, so a subscription created or deleted over
 				// REST takes effect without a restart.
 				httpServer.SetAutonomousSubscriptions(lifeSubStore)
+				// The operator question channel over REST (POST/GET /api/questions):
+				// one generic question record, the label being the type, not the
+				// structure. Append-only JSONL under the data dir. The handler gates
+				// it on autonomous.questions.enabled (off by default); the store's
+				// answer and withdraw paths are not this surface (404 under a question id).
+				if qstore, qerr := autonomouspkg.NewQuestionStore(filepath.Join(expandHome(cfg.DataDir), "questions.jsonl")); qerr != nil {
+					fmt.Fprintf(os.Stderr, "[warn] operator question store: %v\n", qerr)
+				} else {
+					if lifecycleAuditFn != nil {
+						qstore.SetAuditFn(lifecycleAuditFn)
+					}
+					httpServer.SetQuestions(qstore)
+				}
 				// BL427 (phase 5) — POST /api/autonomous/events/forward: a peer's
 				// forwarded event is re-emitted into this daemon's dispatcher.
 				httpServer.SetAutonomousForwardedEvents(amgr)
