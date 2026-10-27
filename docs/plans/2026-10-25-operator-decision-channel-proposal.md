@@ -381,3 +381,16 @@ Open points for the operator: whether the marker route may carry options (a smal
 Operator answers to the two open points above, 2026-10-25 (quoted: "1 marker with options, 2 daemon asks on its behalf"):
 1. The marker route carries options: a small structured block after the marker line (options, recommendation, risk label), with the same caps and untrusted-text handling as free text.
 2. A one-shot print-mode backend does not ask for itself. When its task ends needing a decision, the daemon raises the question on its behalf, names the task and backend as the asker, and holds the task (not failed, no retry counted) until the answer arrives.
+
+## Rules-review verification 2026-10-27
+
+1. PASS — `docs/implementation.md` line 945 documents `autonomous.questions.enabled`.
+2. PASS — `docs/parity-status.md` line 85 names datawatch-app#283; `gh issue view 283 -R dmz006/datawatch-app` returns it OPEN.
+3. PASS — `settings_automata_questions_enabled` is in `mustHave` (`internal/server/v5280_locales_test.go` line 142) and has real translations in en, es, de, fr and ja (`internal/server/web/locales/*.json` line 2411).
+4. PASS — the CHANGELOG entry has a Reuse audit line (21), a Skills hook N/A reason (23) and a Monitoring N/A reason (25).
+5. PASS — settable through MCP and CLI; pin tests `TestQuestionsMCPConfigSetTogglesChannel` (`internal/mcp/questions_config_surface_test.go`) and `TestQuestionsCLIConfigSetTogglesChannel` (`cmd/datawatch/questions_config_surface_test.go`).
+6. PASS — the status line (line 4) reads "Status: in progress"; "proposal only" no longer appears.
+7. FAIL — `git diff main -- internal/server/repair_depends_on_error_test.go` is non-empty: line 58 drops `allowTestTemp(sm)` and the `sm.WithFakeTmux()` block at lines 55-57 is mis-indented. Not a one-line docs fix in this file; needs `git checkout main -- internal/server/repair_depends_on_error_test.go`.
+8. PASS — no "PRD" or "Automation" wording in the CHANGELOG entry, the questions rows of `docs/operations.md` and `docs/api/autonomous.md`, or the locale string; operator-facing text says Automaton/Automata.
+
+Commands (env -u TMUX -u TMUX_TMPDIR): gofmt -l FAIL (`internal/server/repair_depends_on_error_test.go`, the same file as check 7; `cmd/datawatch-channel/main.go` and `internal/mcp/transport_debug.go` also listed, not part of the questions work), go build PASS, go vet PASS, go test ./internal/server/ -run 'Locale|Question' PASS.
