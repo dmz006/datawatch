@@ -1992,9 +1992,9 @@ function appendChatBubble(sessionId, role, content) {
     </div>`;
   }
   div.innerHTML = `<div class="chat-header">
-    <span class="chat-avatar">${avatars[role] || '?'}</span>
-    <span class="chat-role">${labels[role] || role}</span>
-    <span class="chat-time">${now}</span>
+    <span class="chat-avatar">${escHtml(avatars[role] || '?')}</span>
+    <span class="chat-role">${escHtml(labels[role] || role)}</span>
+    <span class="chat-time">${escHtml(now)}</span>
   </div>
   <div class="chat-content">${rendered}</div>${actions}`;
   chatArea.appendChild(div);
@@ -17607,7 +17607,7 @@ function _prdHeldTaskCount(prd) {
 function _prdHeldBadgeHTML(prd) {
   const n = _prdHeldTaskCount(prd);
   if (!n) return '';
-  return `<span class="prd-held-badge" title="${escHtml(t('review_held_help'))}">&#9873; ${n} ${escHtml(t('review_held_badge'))}</span>`;
+  return `<span class="prd-held-badge" title="${escHtml(t('review_held_help'))}">&#9873; ${escHtml(n)} ${escHtml(t('review_held_badge'))}</span>`;
 }
 
 // _findPRDTask returns the cached Automaton's task with taskID, or null.
@@ -22014,8 +22014,8 @@ function renderProgressBar(prd) {
   if (total === 0) return '';
   const pct = Math.round((done / total) * 100);
   const fillClass = pct === 100 ? 'automata-progress-fill complete' : 'automata-progress-fill';
-  return `<div class="automata-progress-wrap"><div class="${fillClass}" style="width:${pct}%;"></div></div>
-          <div style="font-size:10px;color:var(--text2);">${done}/${total} tasks · ${pct}%${_prdHeldBadgeHTML(prd) ? ' ' + _prdHeldBadgeHTML(prd) : ''}</div>`;
+  return `<div class="automata-progress-wrap"><div class="${fillClass}" style="width:${escHtml(pct)}%;"></div></div>
+          <div style="font-size:10px;color:var(--text2);">${escHtml(done)}/${escHtml(total)} tasks · ${escHtml(pct)}%${_prdHeldBadgeHTML(prd) ? ' ' + _prdHeldBadgeHTML(prd) : ''}</div>`;
 }
 
 function renderCurrentPosition(prd) {
@@ -24014,15 +24014,18 @@ function capacityBackoffHtml(backoff) {
 // and the holdings line. Field names cover both payload shapes: the task
 // views (cause, resets_at, pools, node) and the session status automaton
 // block (wait_cause, wait_resets_at, holds).
-const _TASK_WAIT_CAUSES = {
-  pool_full: () => t('task_wait_cause_pool_full') || 'Pool full',
-  node_busy: () => t('task_wait_cause_node_busy') || 'Node busy',
-  backoff: () => t('task_wait_cause_backoff') || 'Back-off',
-  budget: () => t('task_wait_cause_budget') || 'Budget',
-  global_cooldown: () => t('task_wait_cause_global_cooldown') || 'Cool-down',
-  await_external: () => t('task_wait_cause_await_external') || 'Awaiting external',
-  tree_lock: () => t('task_wait_cause_tree_lock') || 'Tree lock',
-};
+function _taskWaitCauseLabel(cause) {
+  switch (cause) {
+    case 'pool_full': return t('task_wait_cause_pool_full') || 'Pool full';
+    case 'node_busy': return t('task_wait_cause_node_busy') || 'Node busy';
+    case 'backoff': return t('task_wait_cause_backoff') || 'Back-off';
+    case 'budget': return t('task_wait_cause_budget') || 'Budget';
+    case 'global_cooldown': return t('task_wait_cause_global_cooldown') || 'Cool-down';
+    case 'await_external': return t('task_wait_cause_await_external') || 'Awaiting external';
+    case 'tree_lock': return t('task_wait_cause_tree_lock') || 'Tree lock';
+    default: return '';
+  }
+}
 window.taskWaitHtml = function(task) {
   if (!task) return '';
   // wait_reason_readable / readable_reason hold the same reason with the
@@ -24038,7 +24041,7 @@ window.taskWaitHtml = function(task) {
   const name = nameText
     ? ` ${window.capacityNameHtml(nameText, task.short_id || task.id || task.task_id || '')}`
     : '';
-  const label = (Object.prototype.hasOwnProperty.call(_TASK_WAIT_CAUSES, cause) && typeof _TASK_WAIT_CAUSES[cause] === 'function') ? _TASK_WAIT_CAUSES[cause]() : '';
+  const label = _taskWaitCauseLabel(cause);
   const resetsRaw = task.wait_resets_at || task.resets_at || '';
   const resetsMs = resetsRaw ? new Date(resetsRaw).getTime() : NaN;
   const resets = Number.isNaN(resetsMs) ? '' : new Date(resetsMs).toLocaleString('en-GB', { hour12: false });
@@ -30903,7 +30906,7 @@ function renderStatsData(el, data) {
     const bar = (label, val, max, color, extra) => {
       const p = max > 0 ? Math.min(100, Math.round(100*val/max)) : 0;
       return `<div class="stat-card">
-        <div style="display:flex;justify-content:space-between;"><span class="stat-label">${label}</span><span class="stat-value">${extra || p+'%'}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span class="stat-label">${label}</span><span class="stat-value">${escHtml(extra || p+'%')}</span></div>
         <div style="height:6px;background:var(--bg);border-radius:3px;margin-top:4px;overflow:hidden;">
           <div style="height:100%;width:${p}%;background:${color || 'var(--accent)'};border-radius:3px;transition:width 0.3s;"></div>
         </div>
@@ -30940,8 +30943,8 @@ function renderStatsData(el, data) {
     const netLabel = data.ebpf_active ? 'Network (datawatch)' : 'Network (system)';
     html += `<div class="stat-card"><div class="stat-label">${netLabel}</div>
       <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
-        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">&#8595; Download</span><span>${fmt(data.net_rx_bytes || 0)}</span></div>
-        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">&#8593; Upload</span><span>${fmt(data.net_tx_bytes || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">&#8595; Download</span><span>${escHtml(fmt(data.net_rx_bytes || 0))}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">&#8593; Upload</span><span>${escHtml(fmt(data.net_tx_bytes || 0))}</span></div>
       </div></div>`;
     // Daemon — line-per-stat layout
     const up = data.uptime_seconds || 0;
@@ -30949,10 +30952,10 @@ function renderStatsData(el, data) {
     html += `<div class="stat-card"><div class="stat-label">${t('stats_daemon')||'Daemon'}</div>
       <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
         ${data.hostname ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${t('stats_hostname')||'Hostname'}</span><span>${escHtml(data.hostname)}</span></div>` : ''}
-        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Memory</span><span>${fmt(data.daemon_rss_bytes)} RSS</span></div>
-        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Goroutines</span><span>${data.goroutines}</span></div>
-        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">File descriptors</span><span>${data.open_fds || 0}</span></div>
-        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Uptime</span><span>${upStr}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Memory</span><span>${escHtml(fmt(data.daemon_rss_bytes))} RSS</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Goroutines</span><span>${escHtml(data.goroutines)}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">File descriptors</span><span>${escHtml(data.open_fds || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Uptime</span><span>${escHtml(upStr)}</span></div>
       </div></div>`;
     // Infrastructure
     const host = data.bound_interfaces?.[0] || '0.0.0.0';
@@ -30962,11 +30965,11 @@ function renderStatsData(el, data) {
     html += `<div class="stat-card"><div class="stat-label">${t('stats_infrastructure')||'Infrastructure'}</div>
       <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
         ${data.daemon_version ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${t('stats_daemon_version')||'Version'}</span><span>${escHtml(data.daemon_version)}</span></div>` : ''}
-        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">HTTP</span><span>http://${host}:${httpPort}${hasTLS ? ' <span style="color:var(--text2);">(→ HTTPS)</span>' : ''}</span></div>
-        ${hasTLS ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">HTTPS</span><span style="color:var(--success);">https://${host}:${tlsPort} <span style="color:var(--success);">🔒</span></span></div>` : ''}
-        ${!hasTLS && data.tls_enabled ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">TLS</span><span style="color:var(--success);">https://${host}:${httpPort} 🔒</span></div>` : ''}
-        ${data.mcp_sse_port ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">MCP SSE</span><span>${data.mcp_sse_host || '0.0.0.0'}:${data.mcp_sse_port}</span></div>` : ''}
-        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Tmux</span><span>${data.tmux_sessions || 0} sessions${data.orphaned_tmux?.length ? ' <span style="color:var(--warning);">(' + data.orphaned_tmux.length + ' orphan)</span>' : ''}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">HTTP</span><span>http://${escHtml(host)}:${escHtml(httpPort)}${hasTLS ? ' <span style="color:var(--text2);">(→ HTTPS)</span>' : ''}</span></div>
+        ${hasTLS ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">HTTPS</span><span style="color:var(--success);">https://${escHtml(host)}:${escHtml(tlsPort)} <span style="color:var(--success);">🔒</span></span></div>` : ''}
+        ${!hasTLS && data.tls_enabled ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">TLS</span><span style="color:var(--success);">https://${escHtml(host)}:${escHtml(httpPort)} 🔒</span></div>` : ''}
+        ${data.mcp_sse_port ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">MCP SSE</span><span>${escHtml(data.mcp_sse_host || '0.0.0.0')}:${escHtml(data.mcp_sse_port)}</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Tmux</span><span>${escHtml(data.tmux_sessions || 0)} sessions${data.orphaned_tmux?.length ? ' <span style="color:var(--warning);">(' + escHtml(data.orphaned_tmux.length) + ' orphan)</span>' : ''}</span></div>
       </div></div>`;
     // RTK Token Savings
     if (data.rtk_installed) {
@@ -30988,9 +30991,9 @@ function renderStatsData(el, data) {
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Version</span><span>${escHtml(data.rtk_version || '?')}${updateBadge}</span></div>
           ${upgradeRow}
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Hooks</span><span style="color:${data.rtk_hooks_active ? 'var(--success)' : 'var(--warning)'};">${data.rtk_hooks_active ? 'active' : 'inactive'}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Tokens saved</span><span>${savTok}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Avg savings</span><span>${savPct}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Commands</span><span>${savCmds}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Tokens saved</span><span>${escHtml(savTok)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Avg savings</span><span>${escHtml(savPct)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Commands</span><span>${escHtml(savCmds)}</span></div>
         </div></div>`;
     }
     {
@@ -31005,11 +31008,11 @@ function renderStatsData(el, data) {
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Backend</span><span>${escHtml(data.memory_backend || 'sqlite')}</span></div>
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Embedder</span><span>${escHtml(data.memory_embedder || '—')}</span></div>
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Encryption</span><span>${encStatus}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Total</span><span>${data.memory_total_count || 0}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Manual</span><span>${data.memory_manual_count || 0}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Sessions</span><span>${data.memory_session_count || 0}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Learnings</span><span>${data.memory_learning_count || 0}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">DB Size</span><span>${fmt(data.memory_db_size_bytes || 0)}</span></div>`;
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Total</span><span>${escHtml(data.memory_total_count || 0)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Manual</span><span>${escHtml(data.memory_manual_count || 0)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Sessions</span><span>${escHtml(data.memory_session_count || 0)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Learnings</span><span>${escHtml(data.memory_learning_count || 0)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">DB Size</span><span>${escHtml(fmt(data.memory_db_size_bytes || 0))}</span></div>`;
       }
       html += `</div></div>`;
     }
@@ -31021,12 +31024,12 @@ function renderStatsData(el, data) {
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Host</span><span>${escHtml(os.host || '—')}</span></div>
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Status</span><span style="color:var(--success);">online</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Models</span><span>${os.model_count || 0}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Disk Used</span><span>${fmt(os.total_size_bytes || 0)}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Running</span><span>${running.length}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">VRAM Used</span><span>${fmt(totalVRAM)}</span></div>`;
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Models</span><span>${escHtml(os.model_count || 0)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Disk Used</span><span>${escHtml(fmt(os.total_size_bytes || 0))}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Running</span><span>${escHtml(running.length)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">VRAM Used</span><span>${escHtml(fmt(totalVRAM))}</span></div>`;
       for (const m of running) {
-        html += `<div style="display:flex;justify-content:space-between;padding-left:8px;"><span style="color:var(--accent2);">${escHtml(m.name)}</span><span>${fmt(m.size_vram || 0)}</span></div>`;
+        html += `<div style="display:flex;justify-content:space-between;padding-left:8px;"><span style="color:var(--accent2);">${escHtml(m.name)}</span><span>${escHtml(fmt(m.size_vram || 0))}</span></div>`;
       }
       html += `</div></div>`;
     } else if (data.ollama_stats) {
@@ -31060,13 +31063,13 @@ function renderStatsData(el, data) {
       // gate warned but never blocked.
       const qgInvalid = data.quality_gate_invalid || 0;
       const qgInvalidLine = qgInvalid > 0
-        ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t('prd_gate_invalid')||'Quality gate invalid')}</span><span style="color:var(--warning);">${qgInvalid}</span></div>`
+        ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t('prd_gate_invalid')||'Quality gate invalid')}</span><span style="color:var(--warning);">${escHtml(qgInvalid)}</span></div>`
         : '';
       html += `<div class="stat-card"><div class="stat-label">${t('stats_quality_gates')||'Quality Gates'}</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Runs</span><span>${qgTotal}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Pass</span><span style="color:var(--success);">${qgPass}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Regressions</span><span style="color:${passColor};">${qgFail}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Runs</span><span>${escHtml(qgTotal)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Pass</span><span style="color:var(--success);">${escHtml(qgPass)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Regressions</span><span style="color:${passColor};">${escHtml(qgFail)}</span></div>
           ${qgInvalidLine}
         </div></div>`;
     }
@@ -31079,11 +31082,11 @@ function renderStatsData(el, data) {
     const maxSess = state._maxSessions || 10; // loaded from config
     const activePct = Math.min(100, Math.round(100 * active / maxSess));
     html += `<div style="display:flex;align-items:center;gap:12px;padding:4px 8px;">
-      <div style="width:48px;height:48px;border-radius:50%;background:conic-gradient(var(--success) 0% ${activePct}%, var(--border) ${activePct}% 100%);display:flex;align-items:center;justify-content:center;">
-        <div style="width:32px;height:32px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text);">${fmtCountCompact(active)}</div>
+      <div style="width:48px;height:48px;border-radius:50%;background:conic-gradient(var(--success) 0% ${escHtml(activePct)}%, var(--border) ${escHtml(activePct)}% 100%);display:flex;align-items:center;justify-content:center;">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text);">${escHtml(fmtCountCompact(active))}</div>
       </div>
       <div style="font-size:11px;color:var(--text2);">
-        <div><span style="color:var(--success);font-weight:600;">${active}</span> of ${maxSess} max</div>
+        <div><span style="color:var(--success);font-weight:600;">${escHtml(active)}</span> of ${escHtml(maxSess)} max</div>
       </div>
     </div>`;
     // (Orphaned tmux affordance moved to Settings → About per operator
@@ -31113,27 +31116,28 @@ function renderStatsData(el, data) {
         const sid = s.session_id;
         const isDaemon = sid === 'daemon';
         const isOpen = _expandedSessions.has(sid);
+        const safeSid = escJsAttr(sid);
         const memStr = s.rss_bytes > 1e6 ? (s.rss_bytes/1e6).toFixed(0) + ' MB' : Math.round(s.rss_bytes/1024) + ' KB';
         html += `<div style="border-bottom:1px solid var(--border);padding:4px 0;">
-          <div class="stats-taprow" style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedSessions.has('${sid}')?_expandedSessions.delete('${sid}'):_expandedSessions.add('${sid}');loadStatsPanel()">
+          <div class="stats-taprow" style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedSessions.has('${safeSid}')?_expandedSessions.delete('${safeSid}'):_expandedSessions.add('${safeSid}');loadStatsPanel()">
             <span style="font-size:8px;color:var(--text2);width:10px;">${isOpen ? '▼' : '▶'}</span>
             <span style="font-size:11px;font-weight:${isDaemon?'700':'500'};flex:1;">${escHtml(s.name || sid)}${!isDaemon ? ' <span style="color:var(--text2);font-weight:400;">(#' + escHtml(sid) + ')</span>' : ''}</span>
-            <span class="state-badge-${s.state}" style="font-size:9px;padding:1px 5px;border-radius:4px;">${s.state}</span>
-            <span style="font-size:10px;font-family:monospace;color:var(--text2);">${memStr}</span>
+            <span class="state-badge-${escHtml(s.state)}" style="font-size:9px;padding:1px 5px;border-radius:4px;">${escHtml(s.state)}</span>
+            <span style="font-size:10px;font-family:monospace;color:var(--text2);">${escHtml(memStr)}</span>
             <span style="font-size:10px;color:var(--text2);">${escHtml(s.uptime || '')}</span>
           </div>
           ${isOpen ? `<div style="padding:4px 0 4px 16px;font-size:10px;color:var(--text2);">
-            <div>Backend: ${escHtml(s.backend)}${s.pane_pid ? ' · PID: ' + s.pane_pid : ''}</div>
-            <div>Memory: ${memStr}${s.cpu_percent ? ' · CPU: ' + s.cpu_percent + '%' : ''}</div>
+            <div>Backend: ${escHtml(s.backend)}${s.pane_pid ? ' · PID: ' + escHtml(s.pane_pid) : ''}</div>
+            <div>Memory: ${escHtml(memStr)}${s.cpu_percent ? ' · CPU: ' + escHtml(s.cpu_percent) + '%' : ''}</div>
             ${(s.net_tx_bytes || s.net_rx_bytes) ?
-              `<div>Network: ↓ ${fmt(s.net_rx_bytes||0)} ↑ ${fmt(s.net_tx_bytes||0)}</div>` :
+              `<div>Network: ↓ ${escHtml(fmt(s.net_rx_bytes||0))} ↑ ${escHtml(fmt(s.net_tx_bytes||0))}</div>` :
               data.ebpf_enabled ? '<div>Network: eBPF tracking (no data yet)</div>' : '<div>Network: enable eBPF for per-session tracking</div>'}
           </div>` : ''}
         </div>`;
       });
       // Session count with link
       html += `<div style="font-size:10px;color:var(--text2);padding:4px 8px;text-align:center;">
-        <a href="#" onclick="event.preventDefault();state.showHistory=true;navigate('sessions');setTimeout(renderSessionsView,100)" style="color:var(--accent2);">${data.total_sessions || 0} sessions in store</a>
+        <a href="#" onclick="event.preventDefault();state.showHistory=true;navigate('sessions');setTimeout(renderSessionsView,100)" style="color:var(--accent2);">${escHtml(data.total_sessions || 0)} sessions in store</a>
       </div>`;
       html += '</div>';
     }
@@ -31159,26 +31163,26 @@ function renderStatsData(el, data) {
           <div class="stats-taprow" style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedChannels.has('${safeCid}')?_expandedChannels.delete('${safeCid}'):_expandedChannels.add('${safeCid}');loadStatsPanel()">
             <span style="font-size:8px;color:var(--text2);width:10px;">${isOpen ? '▼' : '▶'}</span>
             <span style="font-size:11px;flex:1;">${escHtml(ch.name)}</span>
-            ${ch.type === 'llm' && ch.active_sessions ? `<span style="font-size:9px;font-weight:700;color:var(--bg2);background:var(--success);padding:1px 6px;border-radius:8px;min-width:16px;text-align:center;">${ch.active_sessions}</span>` : ''}
-            ${ch.type === 'llm' ? `<span style="font-size:10px;font-family:monospace;color:var(--text2);">${ch.total_sessions || 0}</span>` : ''}
-            ${ch.type === 'infra' && ch.connections ? `<span style="font-size:10px;font-family:monospace;color:var(--text2);">${ch.connections} conn</span>` : ''}
-            ${ch.type === 'messaging' && (ch.msg_recv || ch.msg_sent) ? `<span style="font-size:10px;font-family:monospace;color:var(--text2);">${ch.msg_recv||0} in / ${ch.msg_sent||0} out</span>` : ''}
+            ${ch.type === 'llm' && ch.active_sessions ? `<span style="font-size:9px;font-weight:700;color:var(--bg2);background:var(--success);padding:1px 6px;border-radius:8px;min-width:16px;text-align:center;">${escHtml(ch.active_sessions)}</span>` : ''}
+            ${ch.type === 'llm' ? `<span style="font-size:10px;font-family:monospace;color:var(--text2);">${escHtml(ch.total_sessions || 0)}</span>` : ''}
+            ${ch.type === 'infra' && ch.connections ? `<span style="font-size:10px;font-family:monospace;color:var(--text2);">${escHtml(ch.connections)} conn</span>` : ''}
+            ${ch.type === 'messaging' && (ch.msg_recv || ch.msg_sent) ? `<span style="font-size:10px;font-family:monospace;color:var(--text2);">${escHtml(ch.msg_recv||0)} in / ${escHtml(ch.msg_sent||0)} out</span>` : ''}
           </div>
           ${isOpen ? `<div style="padding:4px 0 4px 16px;font-size:10px;font-family:monospace;color:var(--text2);line-height:1.6;">` + (
             ch.type === 'llm' ? `
-              <div style="display:flex;justify-content:space-between;"><span>Active sessions</span><span style="color:var(--text);">${ch.active_sessions || 0}</span></div>
-              <div style="display:flex;justify-content:space-between;"><span>Total sessions</span><span style="color:var(--text);">${ch.total_sessions || 0}</span></div>
-              <div style="display:flex;justify-content:space-between;"><span>Avg duration</span><span style="color:var(--text);">${ch.avg_duration_sec ? fmtDur(ch.avg_duration_sec) : '—'}</span></div>
-              <div style="display:flex;justify-content:space-between;"><span>Avg prompts/session</span><span style="color:var(--text);">${ch.avg_prompts ? ch.avg_prompts.toFixed(1) : '—'}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Active sessions</span><span style="color:var(--text);">${escHtml(ch.active_sessions || 0)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Total sessions</span><span style="color:var(--text);">${escHtml(ch.total_sessions || 0)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Avg duration</span><span style="color:var(--text);">${escHtml(ch.avg_duration_sec ? fmtDur(ch.avg_duration_sec) : '—')}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Avg prompts/session</span><span style="color:var(--text);">${escHtml(ch.avg_prompts ? ch.avg_prompts.toFixed(1) : '—')}</span></div>
             ` : `
               <div style="display:flex;justify-content:space-between;"><span>Endpoint</span><span style="color:var(--text);">${escHtml(ch.endpoint || '—')}</span></div>
-              ${ch.connections ? `<div style="display:flex;justify-content:space-between;"><span>Connections</span><span style="color:var(--text);">${ch.connections}</span></div>` : ''}
-              <div style="display:flex;justify-content:space-between;"><span>Requests in</span><span style="color:var(--text);">${ch.msg_recv || 0}</span></div>
-              <div style="display:flex;justify-content:space-between;"><span>Responses out</span><span style="color:var(--text);">${ch.msg_sent || 0}</span></div>
-              <div style="display:flex;justify-content:space-between;"><span>Data in</span><span style="color:var(--text);">${fmt(ch.bytes_in || 0)}</span></div>
-              <div style="display:flex;justify-content:space-between;"><span>Data out</span><span style="color:var(--text);">${fmt(ch.bytes_out || 0)}</span></div>
-              ${ch.errors ? `<div style="display:flex;justify-content:space-between;"><span>Errors</span><span style="color:var(--error);">${ch.errors}</span></div>` : ''}
-              ${ch.last_active ? `<div style="display:flex;justify-content:space-between;"><span>Last activity</span><span style="color:var(--text);">${fmtAgo(ch.last_active)}</span></div>` : ''}
+              ${ch.connections ? `<div style="display:flex;justify-content:space-between;"><span>Connections</span><span style="color:var(--text);">${escHtml(ch.connections)}</span></div>` : ''}
+              <div style="display:flex;justify-content:space-between;"><span>Requests in</span><span style="color:var(--text);">${escHtml(ch.msg_recv || 0)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Responses out</span><span style="color:var(--text);">${escHtml(ch.msg_sent || 0)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Data in</span><span style="color:var(--text);">${escHtml(fmt(ch.bytes_in || 0))}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Data out</span><span style="color:var(--text);">${escHtml(fmt(ch.bytes_out || 0))}</span></div>
+              ${ch.errors ? `<div style="display:flex;justify-content:space-between;"><span>Errors</span><span style="color:var(--error);">${escHtml(ch.errors)}</span></div>` : ''}
+              ${ch.last_active ? `<div style="display:flex;justify-content:space-between;"><span>Last activity</span><span style="color:var(--text);">${escHtml(fmtAgo(ch.last_active))}</span></div>` : ''}
             `
           ) + '</div>' : ''}
         </div>`;

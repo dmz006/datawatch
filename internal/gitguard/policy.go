@@ -244,7 +244,17 @@ func containedEntry(root, path string) (string, error) {
 	if perr != nil {
 		return "", err
 	}
+	rootAbs, rerr := filepath.Abs(root)
+	if rerr != nil {
+		return "", err
+	}
+	// parent was accepted under root, so entry lies strictly below root; the
+	// prefix test keeps the entry checked against root on the path that
+	// reaches Lstat and the return.
 	entry := filepath.Join(parent, filepath.Base(abs))
+	if !strings.HasPrefix(entry, strings.TrimSuffix(rootAbs, string(filepath.Separator))+string(filepath.Separator)) {
+		return "", err
+	}
 	if fi, lerr := os.Lstat(entry); lerr != nil || fi.Mode()&os.ModeSymlink == 0 {
 		return "", err
 	}

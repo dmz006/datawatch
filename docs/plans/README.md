@@ -361,6 +361,7 @@ The per-topic design documents live alongside this file, named
 - Guardrails and rules: [logprob-classification guardrail (BL452)](2026-10-15-logprob-classification-guardrail-design.md),
   [tooled deterministic guardrails](2026-10-12-tooled-deterministic-guardrails.md),
   [project-rules enforcement](2026-10-10-configurable-project-rules-enforcement.md)
+- Security: [CodeQL local reproduction and the code fixes it drove](2026-10-27-codeql-local-reproduction.md)
 - Other: [LLM enhancements](2026-10-10-llm-enhancements.md),
   [plugin extension surfaces](2026-10-09-plugin-extension-surfaces.md),
   [PRD git workflow](2026-10-10-prd-git-workflow.md),

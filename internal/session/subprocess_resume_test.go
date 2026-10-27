@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -114,5 +115,46 @@ func TestSubprocessGoneWithoutStatusIsNotReattached(t *testing.T) {
 	}
 	if m.reattachSubprocess(sess) {
 		t.Fatal("a pid that is no longer running must not re-attach")
+	}
+}
+
+// subprocessCommand passes the task as one argument of the bash wrapper, so
+// the daemon's later cmdline comparison finds it, and keeps it a shell command.
+func TestSubprocessCommandConstruction(t *testing.T) {
+	m := newTestManager(t)
+	task := "echo one; echo two && exit 3"
+	sess := newDetachedSubprocess(t, m, task)
+	cmd := subprocessCommand(sess)
+
+	want := []string{"bash", "-c", subprocessWrapper, "bash", task, subprocessFile(sess, subprocessRCFile)}
+	if len(cmd.Args) != len(want) {
+		t.Fatalf("args = %q, want %q", cmd.Args, want)
+	}
+	for i := range want {
+		if cmd.Args[i] != want[i] {
+			t.Errorf("arg %d = %q, want %q", i, cmd.Args[i], want[i])
+		}
+	}
+	if cmd.Dir != sess.ProjectDir {
+		t.Errorf("Dir = %q, want %q", cmd.Dir, sess.ProjectDir)
+	}
+}
+
+// The task keeps full shell semantics (lists, && and exit status) and the
+// wrapper records the status.
+func TestSubprocessCommandRunsTaskAsShell(t *testing.T) {
+	m := newTestManager(t)
+	sess := newDetachedSubprocess(t, m, "echo one; echo two && exit 3")
+	cmd := subprocessCommand(sess)
+	out, err := cmd.Output()
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) || ee.ExitCode() != 3 {
+		t.Fatalf("want exit 3, got %v", err)
+	}
+	if string(out) != "one\ntwo\n" {
+		t.Errorf("output = %q", out)
+	}
+	if rc, ok := readSubprocessRC(sess); !ok || rc != 3 {
+		t.Errorf("recorded rc = %d ok=%v, want 3", rc, ok)
 	}
 }

@@ -515,3 +515,57 @@ func TestProjectGit_PushBranch_RefusesDashOperands(t *testing.T) {
 		t.Error("expected leading-dash URL to be refused")
 	}
 }
+
+// Free text such as a tag message reaches git on stdin, not in its argument
+// list, and an option-looking message cannot be read as an option.
+func TestTagCheckpoint_MessageTravelsOnStdin(t *testing.T) {
+	dir, _ := newSessionWorkTestRepo(t)
+	g := NewProjectGit(dir)
+	task := "--upload-pack=touch /tmp/x; $(id) `id` \"quoted\""
+	if err := g.TagCheckpoint("pre", "stdn", task); err != nil {
+		t.Fatalf("TagCheckpoint: %v", err)
+	}
+	msg, err := gitOutputOperands(dir, []string{"tag", "-n1", "--list"}, "datawatch-pre-stdn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg, "--upload-pack=touch /tmp/x") {
+		t.Errorf("tag message lost the task text: %q", msg)
+	}
+}
+
+func TestRunGitStdin_RefusesBadOperandAndFeedsStdin(t *testing.T) {
+	dir, _ := newSessionWorkTestRepo(t)
+	if err := runGitStdin(dir, nil, "msg", []string{"tag", "-a", "-F", "-", "--"}, "-bad"); err == nil {
+		t.Error("an option-looking operand must be refused")
+	}
+	if err := runGitStdin(dir, nil, "msg", []string{"tag", "-a", "-F", "-", "--"}, "ok-tag"); err != nil {
+		t.Fatalf("valid call failed: %v", err)
+	}
+	out, err := gitOutputOperands(dir, []string{"tag", "-n1", "--list"}, "ok-tag")
+	if err != nil || !strings.Contains(out, "msg") {
+		t.Errorf("stdin message not recorded: %q err=%v", out, err)
+	}
+}
+
+// A commit message reaches git on stdin: option-looking and multi-line
+// text is recorded verbatim as the message.
+func TestCommitMessage_TravelsOnStdin(t *testing.T) {
+	dir, _ := newSessionWorkTestRepo(t)
+	g := NewProjectGit(dir)
+	if err := os.WriteFile(filepath.Join(dir, "m.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, dir, "add", "m.txt")
+	msg := "--amend $(id)\n\nbody line; `id`"
+	if err := g.commitMessage(msg); err != nil {
+		t.Fatalf("commitMessage: %v", err)
+	}
+	got, err := gitOutput(dir, "log", "-1", "--format=%B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(got) != msg {
+		t.Errorf("commit message = %q, want %q", got, msg)
+	}
+}

@@ -38,6 +38,9 @@ func ResolveWithin(base, rel string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if baseReal, err = filepath.Abs(baseReal); err != nil {
+		return "", err
+	}
 	joined := filepath.Join(base, filepath.Clean(rel))
 	real, err := evalDeepest(filepath.Join(baseReal, filepath.Clean(rel)))
 	if err != nil {
@@ -81,25 +84,36 @@ func ContainedPath(root, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	sep := string(filepath.Separator)
 	rootPrefix := rootAbs
-	if !strings.HasSuffix(rootPrefix, string(filepath.Separator)) {
-		rootPrefix += string(filepath.Separator)
+	if !strings.HasSuffix(rootPrefix, sep) {
+		rootPrefix += sep
 	}
-	if pathAbs != rootAbs && !strings.HasPrefix(pathAbs, rootPrefix) {
+	// Lexical check. pathDir is pathAbs with a trailing separator, so the one
+	// prefix test accepts both root itself and anything under it, and a
+	// sibling that merely shares root's name as a prefix is refused. The early
+	// return guards pathDir, and contained, built from it, is the only form of
+	// the path used from here on.
+	pathDir := pathAbs
+	if !strings.HasSuffix(pathDir, sep) {
+		pathDir += sep
+	}
+	if !strings.HasPrefix(pathDir, rootPrefix) {
 		return "", fmt.Errorf("%w: %q is outside %s", ErrPathEscapes, path, rootAbs)
 	}
+	contained := filepath.Clean(pathDir)
 	rootReal, err := evalDeepest(rootAbs)
 	if err != nil {
 		return "", err
 	}
-	pathReal, err := evalDeepest(pathAbs)
+	pathReal, err := evalDeepest(contained)
 	if err != nil {
 		return "", err
 	}
 	if !isWithin(rootReal, pathReal) {
 		return "", fmt.Errorf("%w: %q resolves outside %s", ErrPathEscapes, path, rootAbs)
 	}
-	return pathAbs, nil
+	return contained, nil
 }
 
 // maxLinkHops bounds how many dangling links evalDeepest follows.
@@ -108,13 +122,18 @@ const maxLinkHops = 40
 // evalDeepest resolves symlinks in the longest existing prefix of p and
 // appends the not-yet-existing remainder unchanged. A dangling symlink met on
 // the way is followed to its (missing) target so the caller sees where the
-// link really points.
+// link really points. p must be absolute: a relative path would be resolved
+// against the working directory, which the callers do not mean, so it is
+// refused before any file is touched.
 func evalDeepest(p string) (string, error) {
 	for hops := 0; hops <= maxLinkHops; hops++ {
 		rest := ""
 		cur := p
 		redirected := false
 		for {
+			if !strings.HasPrefix(cur, filepath.VolumeName(cur)+string(filepath.Separator)) {
+				return "", fmt.Errorf("%w: %q is not absolute", ErrPathEscapes, cur)
+			}
 			real, err := filepath.EvalSymlinks(cur)
 			if err == nil {
 				return filepath.Join(real, rest), nil

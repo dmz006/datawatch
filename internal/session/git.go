@@ -52,9 +52,16 @@ func (g *ProjectGit) SetCommitEnv(env []string) {
 	g.commitEnv = env
 }
 
-// commit runs git commit with the commit environment, if any.
+// commit runs git commit with the commit environment, if any. args are fixed
+// flags only; a commit message goes through commitMessage.
 func (g *ProjectGit) commit(args ...string) error {
 	return runGitEnv(g.dir, g.commitEnv, append([]string{"commit"}, args...))
+}
+
+// commitMessage runs git commit with msg on stdin (-F -), so message text,
+// which can derive from a task, never enters git's argument list.
+func (g *ProjectGit) commitMessage(msg string) error {
+	return runGitStdin(g.dir, g.commitEnv, msg, []string{"commit", "-F", "-"})
 }
 
 // IsRepo returns true if dir is inside a git repository.
@@ -110,7 +117,7 @@ func (g *ProjectGit) stageChanges(scope []string) error {
 		}
 		var inside []string
 		for _, d := range scope {
-			dd, aerr := gitguard.ContainedPath(absDir, d)
+			dd, aerr := containedInDir(absDir, d)
 			if errors.Is(aerr, gitguard.ErrPathEscapes) {
 				fmt.Printf("[datawatch] warning: write scope dir %s is outside repo %s — not staged by this commit\n", d, g.dir)
 				continue
@@ -338,7 +345,7 @@ func (g *ProjectGit) unscopedChangedFiles(since time.Time) []string {
 		}
 		// mtime bounds what counts as run output. Files that no longer
 		// exist are skipped — staging a missing path would fail the add.
-		abs, err := gitguard.ContainedPath(g.dir, filepath.Join(g.dir, rel))
+		abs, err := containedInDir(g.dir, filepath.Join(g.dir, rel))
 		if err != nil {
 			continue
 		}
@@ -356,6 +363,31 @@ func (g *ProjectGit) unscopedChangedFiles(since time.Time) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// containedInDir returns path cleaned and made absolute when it is root or
+// lies under root. gitguard.ContainedPath does the symlink-aware check; the
+// prefix test on the value that is returned is repeated here, behind an early
+// return, so the one path handed to os.Stat and the other file calls is the
+// one that was checked. dir carries a trailing separator while it is tested,
+// which accepts root itself and refuses a sibling that merely shares root's
+// name as a prefix.
+func containedInDir(root, path string) (string, error) {
+	contained, err := gitguard.ContainedPath(root, path)
+	if err != nil {
+		return "", err
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	sep := string(filepath.Separator)
+	rootPrefix := strings.TrimSuffix(rootAbs, sep) + sep
+	dir := strings.TrimSuffix(contained, sep) + sep
+	if !strings.HasPrefix(dir, rootPrefix) {
+		return "", fmt.Errorf("%w: %q is outside %s", gitguard.ErrPathEscapes, path, rootAbs)
+	}
+	return filepath.Clean(dir), nil
 }
 
 // stagedOnly reports whether the index holds any staged changes relative
@@ -385,7 +417,7 @@ func (g *ProjectGit) PreSessionCommit(prdID, taskTitle string, scope []string) e
 	if !g.stagedOnly() {
 		return nil // nothing to commit
 	}
-	return g.commit("-m", snapshotSubject(prdID, taskTitle))
+	return g.commitMessage(snapshotSubject(prdID, taskTitle))
 }
 
 // PostSessionCommit creates a final commit after the session ends.
@@ -400,7 +432,7 @@ func (g *ProjectGit) PostSessionCommit(sessionID, task string, state State, scop
 		return nil
 	}
 	msg := fmt.Sprintf("session[%s](%s): %s", sessionID, state, truncateStr(task, 60))
-	return g.commit("-m", msg)
+	return g.commitMessage(msg)
 }
 
 // CommitSessionWork stages changes (scoped to the session's write
@@ -419,7 +451,7 @@ func (g *ProjectGit) CommitSessionWork(sessionID, task, summary string, scope []
 	if !g.stagedOnly() {
 		return "", nil
 	}
-	if err := g.commit("-m", buildCommitMessage(sessionID, summary, task)); err != nil {
+	if err := g.commitMessage(buildCommitMessage(sessionID, summary, task)); err != nil {
 		return "", err
 	}
 	return g.headSHA()
@@ -461,12 +493,7 @@ func (g *ProjectGit) CommitTaskWork(sessionID string, label TaskCommitLabel, sco
 		msg += "\n\n" + s
 	}
 
-	path, err := writeCommitMessageFile(msg)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = os.Remove(path) }()
-	if err := g.commit("-F", path); err != nil {
+	if err := g.commitMessage(msg); err != nil {
 		return "", fmt.Errorf("session %s: %w", sessionID, err)
 	}
 	return g.headSHA()
@@ -480,25 +507,6 @@ func taskCommitSummaryLine(summary, prompt string) string {
 		return ""
 	}
 	return capRunes(line, commitSubjectMaxRunes)
-}
-
-// writeCommitMessageFile writes msg to a new temporary file in the OS temp
-// directory and returns its path. The caller removes it.
-func writeCommitMessageFile(msg string) (string, error) {
-	f, err := os.CreateTemp("", "datawatch-commit-*.txt")
-	if err != nil {
-		return "", fmt.Errorf("commit message file: %w", err)
-	}
-	if _, err := f.WriteString(msg); err != nil {
-		_ = f.Close()
-		_ = os.Remove(f.Name())
-		return "", fmt.Errorf("commit message file: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(f.Name())
-		return "", fmt.Errorf("commit message file: %w", err)
-	}
-	return f.Name(), nil
 }
 
 // headSHA returns the sha of HEAD, trimmed.
@@ -553,7 +561,8 @@ func (g *ProjectGit) TagCheckpoint(kind, sessionID, task string) error {
 	}
 	msg := fmt.Sprintf("datawatch %s-session checkpoint for %s: %s",
 		kind, sessionID, truncateStr(task, 60))
-	return runGitEnv(g.dir, nil, []string{"tag", "-f", "-a", "-m", msg, "--"}, tag)
+	// The message travels on stdin (-F -) so task text never reaches git's argv.
+	return runGitStdin(g.dir, nil, msg, []string{"tag", "-f", "-a", "-F", "-", "--"}, tag)
 }
 
 // Rollback (BL29) hard-resets the working tree to the pre-session
@@ -877,6 +886,12 @@ func runGit(dir string, args ...string) error {
 // environment, and with operands (refs, remotes, URLs, paths) validated by
 // checkGitOperands and appended after args.
 func runGitEnv(dir string, env []string, args []string, operands ...string) error {
+	return runGitStdin(dir, env, "", args, operands...)
+}
+
+// runGitStdin is runGitEnv with stdin fed to git. Free text such as a tag or
+// commit message goes here (git -F -) rather than into the argument list.
+func runGitStdin(dir string, env []string, stdin string, args []string, operands ...string) error {
 	if err := checkGitFixedArgs(args); err != nil {
 		return err
 	}
@@ -888,6 +903,9 @@ func runGitEnv(dir string, env []string, args []string, operands ...string) erro
 	cmd.Dir = dir
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
+	}
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {

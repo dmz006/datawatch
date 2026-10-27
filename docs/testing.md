@@ -1861,3 +1861,13 @@ curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/<prd-id>
 curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity
 # after a restart with live workers: the pool's used count equals the number of live workers, not more
 ```
+
+## TS-826 — PWA task card: wait-cause label and escaped task/board text
+
+| Field | Details |
+|-------|---------|
+| **Description** | The waiting-task line, the Automata progress bar and the chat bubble header render hostile values as text. Each known wait cause keeps its chip label. Unknown causes, including `__proto__` and `constructor`, render no chip. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR bash scripts/run-tests.sh --stories=TS-826`. 1. Open the PWA on the sandbox daemon. 2. Call `window.taskWaitHtml` for the seven known causes, five unknown causes and a task whose title, reason and cause hold an `<img onerror>` payload. 3. Call `renderProgressBar` with a payload task count and with one of two tasks completed. 4. Call `appendChatBubble` with a payload role. |
+| **Expected** | Chip labels are Pool full, Node busy, Back-off, Budget, Cool-down, Awaiting external and Tree lock. Unknown causes show only the reason text. No `img` element is created and the injected handler never runs. The normal progress bar reads `1/2 tasks · 50%`. |
+| **Actual** | Run live on 2026-10-27 against a daemon built from this worktree (`bin/datawatch`, `go build -o bin/datawatch ./cmd/datawatch/`), headless Chromium, exit 0. Re-run at 17:21 the same day with `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh TS-826` (the command prints `daemon healthy`, then `running node TS-826.mjs`, and exits 0; no output file is kept in the repository). The 104 `internal/server/web/*.test.js` node suites also pass, including `app-wait-reason-text.test.js` for the chip labels. A first run against the older installed binary failed on the progress bar (`progress bar markup was parsed into an element`), which shows the story detects the unescaped markup. |
+| **Result** | Pass (live) |

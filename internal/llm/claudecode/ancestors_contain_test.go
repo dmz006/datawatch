@@ -77,3 +77,19 @@ func TestAncestorClaudeMds_KeepsSymlinkedFile(t *testing.T) {
 		t.Errorf("symlinked CLAUDE.md %s was dropped", link)
 	}
 }
+
+// claudeMdIn returns the CLAUDE.md entry inside the directory and nothing for
+// a directory that cannot hold it, so only a checked path reaches os.Stat.
+func TestClaudeMdIn(t *testing.T) {
+	dir := t.TempDir()
+	got, ok := claudeMdIn(dir)
+	if !ok || got != filepath.Join(dir, "CLAUDE.md") {
+		t.Errorf("claudeMdIn(%q) = %q, %v; want %q", dir, got, ok, filepath.Join(dir, "CLAUDE.md"))
+	}
+	if got, ok := claudeMdIn(dir + "/sub/.."); !ok || got != filepath.Join(dir, "CLAUDE.md") {
+		t.Errorf("unclean dir: got %q, %v", got, ok)
+	}
+	if got, ok := claudeMdIn(""); ok {
+		t.Errorf("empty dir produced %q, want a refusal", got)
+	}
+}

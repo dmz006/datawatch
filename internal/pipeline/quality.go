@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -99,7 +100,7 @@ func RunTests(command, projectDir string, timeout int, roots []string) TestResul
 	if trimmed == "" {
 		return unusable("empty test command")
 	}
-	cleanDir, derr := gitguard.ResolveContainedProjectDir(projectDir, roots)
+	cleanDir, derr := containedProjectDir(projectDir, roots)
 	if derr != nil {
 		return unusable("project directory refused: " + derr.Error())
 	}
@@ -141,6 +142,40 @@ func RunTests(command, projectDir string, timeout int, roots []string) TestResul
 
 	parseTestOutput(&result)
 	return result
+}
+
+// containedProjectDir applies the allowed-roots check (gitguard.
+// ResolveContainedProjectDir) and returns the directory checked under the root
+// that holds it. The prefix test on the returned value is repeated here, behind
+// an early return, so the one path handed to os.Stat and the command's
+// working directory is the one that was checked. A directory that is neither a
+// root nor under one is refused and nothing is returned.
+func containedProjectDir(dir string, roots []string) (string, error) {
+	resolved, err := gitguard.ResolveContainedProjectDir(dir, roots)
+	if err != nil {
+		return "", err
+	}
+	sep := string(filepath.Separator)
+	for _, root := range roots {
+		if strings.TrimSpace(root) == "" {
+			continue
+		}
+		contained, cerr := gitguard.ContainedPath(root, resolved)
+		if cerr != nil {
+			continue
+		}
+		rootAbs, aerr := filepath.Abs(root)
+		if aerr != nil {
+			continue
+		}
+		rootPrefix := strings.TrimSuffix(rootAbs, sep) + sep
+		checked := strings.TrimSuffix(contained, sep) + sep
+		if !strings.HasPrefix(checked, rootPrefix) {
+			continue
+		}
+		return filepath.Clean(checked), nil
+	}
+	return "", fmt.Errorf("%w: %q", gitguard.ErrOutsideAllowedRoots, dir)
 }
 
 var (

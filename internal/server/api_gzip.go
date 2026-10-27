@@ -27,6 +27,7 @@ package server
 import (
 	"bufio"
 	"compress/gzip"
+	"html"
 	"mime"
 	"net"
 	"net/http"
@@ -115,23 +116,33 @@ func apiGzipCompressibleType(ct string) bool {
 	return strings.HasPrefix(mt, "application/") && strings.HasSuffix(mt, "+json")
 }
 
-// setSafeContentType gives a response that has no Content-Type an explicit
-// one from the body's first bytes. Types a browser would render as markup
-// (HTML, XML) are replaced with text/plain, so a body that echoes request
-// input is never served as a document. Responses that already carry a
-// Content-Type or Content-Encoding, or have no body yet, are left alone.
-func setSafeContentType(h http.Header, body []byte) {
+// safeContentType returns the Content-Type to set for a response that has
+// none yet, taken from the body's first bytes. Types a browser would render
+// as markup (HTML, XML) become text/plain, so a body that echoes request
+// input is never served as a document; markup reports that this happened,
+// so the caller also escapes the body. It returns "" for a response that
+// already carries a Content-Type or Content-Encoding, or has no body yet.
+func safeContentType(h http.Header, body []byte) (ct string, markup bool) {
 	if len(body) == 0 || h.Get("Content-Type") != "" || h.Get("Content-Encoding") != "" {
-		return
+		return "", false
 	}
-	ct := http.DetectContentType(body)
+	ct = http.DetectContentType(body)
 	if mt, _, err := mime.ParseMediaType(ct); err == nil {
 		switch mt {
 		case "text/html", "text/xml", "image/svg+xml":
-			ct = "text/plain; charset=utf-8"
+			return "text/plain; charset=utf-8", true
 		}
 	}
-	h.Set("Content-Type", ct)
+	return ct, false
+}
+
+// setNoSniff adds X-Content-Type-Options: nosniff unless the handler set it.
+// It has to run before the underlying WriteHeader: net/http snapshots the
+// header map there, so a later Set never reaches the client.
+func setNoSniff(h http.Header) {
+	if h.Get("X-Content-Type-Options") == "" {
+		h.Set("X-Content-Type-Options", "nosniff")
+	}
 }
 
 // apiGzipWriter buffers the start of a response until it can decide
@@ -147,6 +158,7 @@ type apiGzipWriter struct {
 	buf         []byte
 	gz          *gzip.Writer // non-nil once compressing
 	hijacked    bool
+	escape      bool // untyped markup body: sent as text/plain, HTML-escaped
 }
 
 func (w *apiGzipWriter) Header() http.Header { return w.rw.Header() }
@@ -178,10 +190,11 @@ func (w *apiGzipWriter) Write(b []byte) (int, error) {
 		w.WriteHeader(http.StatusOK)
 	}
 	if w.gz != nil {
-		return w.gz.Write(b)
+		n, err := w.gz.Write(w.encode(b))
+		return w.written(len(b), n, err)
 	}
 	if w.committed {
-		return w.rw.Write(b)
+		return w.forward(b)
 	}
 	w.buf = append(w.buf, b...)
 	if w.noGzip {
@@ -220,11 +233,7 @@ func (w *apiGzipWriter) mayCompress() bool {
 // decide runs once the buffer passes the threshold.
 func (w *apiGzipWriter) decide() error {
 	h := w.rw.Header()
-	if w.mayCompress() {
-		// Same sniff net/http would apply on the first Write, done here
-		// so the gzip bytes are never what gets sniffed.
-		setSafeContentType(h, w.buf)
-	}
+	w.pinHeaders()
 	if !w.mayCompress() {
 		return w.commitPassthrough()
 	}
@@ -235,8 +244,52 @@ func (w *apiGzipWriter) decide() error {
 	w.gz = acquireGzipWriter(w.rw)
 	buf := w.buf
 	w.buf = nil
-	_, err := w.gz.Write(buf)
+	_, err := w.gz.Write(w.encode(buf))
 	return err
+}
+
+// pinHeaders fixes the headers that must be right before the underlying
+// WriteHeader. A response with no Content-Type gets the type net/http would
+// sniff from the buffered body, except that markup becomes text/plain and
+// marks the body for escaping (the length the handler declared no longer
+// holds, so it is dropped); the gzip bytes are never what gets sniffed.
+// nosniff is restored if the handler removed it.
+func (w *apiGzipWriter) pinHeaders() {
+	h := w.rw.Header()
+	if w.mayCompress() {
+		ct, markup := safeContentType(h, w.buf)
+		if ct != "" {
+			h.Set("Content-Type", ct)
+		}
+		if markup {
+			w.escape = true
+			h.Del("Content-Length")
+		}
+	}
+	setNoSniff(h)
+}
+
+// encode returns b as it must reach the client: HTML-escaped when the body
+// was untyped markup, unchanged otherwise (JSON and other typed bodies are
+// never altered).
+func (w *apiGzipWriter) encode(b []byte) []byte {
+	if !w.escape {
+		return b
+	}
+	return []byte(html.EscapeString(string(b)))
+}
+
+// written reports a write of want caller bytes that put n bytes on the wire.
+// When the body was escaped the two counts differ, and the caller is owed
+// its own length on success.
+func (w *apiGzipWriter) written(want, n int, err error) (int, error) {
+	if !w.escape {
+		return n, err
+	}
+	if err != nil {
+		return 0, err
+	}
+	return want, nil
 }
 
 func (w *apiGzipWriter) statusOrOK() int {
@@ -253,19 +306,33 @@ func (w *apiGzipWriter) commitPassthrough() error {
 		return nil
 	}
 	w.committed = true
-	if w.mayCompress() {
-		// Without this net/http sniffs the first Write itself and can
-		// pick text/html for a body that echoes request input.
-		setSafeContentType(w.rw.Header(), w.buf)
-	}
+	// Without the pin net/http sniffs the first Write itself and can pick
+	// text/html for a body that echoes request input.
+	w.pinHeaders()
 	w.rw.WriteHeader(w.statusOrOK())
 	if len(w.buf) == 0 {
 		return nil
 	}
 	buf := w.buf
 	w.buf = nil
-	_, err := w.rw.Write(buf)
+	_, err := w.forward(buf)
 	return err
+}
+
+// forward writes b to the underlying writer uncompressed, HTML-escaped when
+// the body was untyped markup. The header Sets here run after the underlying
+// WriteHeader, when net/http has already snapshotted the headers, so they
+// change nothing on the wire; the Sets that reach the client are the ones in
+// pinHeaders. They are kept so this write site states the same type and
+// nosniff, and they leave a Content-Type the handler set alone.
+func (w *apiGzipWriter) forward(b []byte) (int, error) {
+	h := w.rw.Header()
+	setNoSniff(h)
+	if ct, _ := safeContentType(h, b); ct != "" {
+		h.Set("Content-Type", ct)
+	}
+	n, err := w.rw.Write(w.encode(b))
+	return w.written(len(b), n, err)
 }
 
 // Flush implements http.Flusher. Flushing before the threshold commits
