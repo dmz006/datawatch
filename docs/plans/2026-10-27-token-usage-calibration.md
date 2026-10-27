@@ -4,7 +4,7 @@ Operator, 2026-10-27, quoted: "all sessions should have token details, make sure
 
 ## Where the tokens come from
 
-Datawatch's per-session counters (`tokens_in`, `tokens_out`) are lifetime totals and leave out cache reads and cache writes, so they cannot give a per-window figure. The complete record is the Claude transcript files under `~/.claude/projects/<project>/<session>.jsonl`: every assistant message carries `message.usage` (input, output, cache-creation and cache-read tokens), `message.model` and a timestamp. Each message id is counted once. For the week from the 2026-10-25 08:00 reset there are 12,297 messages in 1,884 files (all of the last 9 days: 114,216 messages).
+Datawatch's per-session counters (`tokens_in`, `tokens_out`) are lifetime totals and leave out cache reads and cache writes, so they cannot give a per-window figure. The complete record is the Claude transcript files under `~/.claude/projects/<project>/<session>.jsonl`: every assistant message carries `message.usage` (input, output, cache-creation and cache-read tokens), `message.model` and a timestamp. Each message id is counted once. Since the 2026-10-25 08:00 reset there are 12,297 messages (the last 9 days hold 114,216 messages in 1,884 transcript files).
 
 Cost-equivalent weighting used, dollars per million tokens (input, output, cache write, cache read): Sonnet 3, 15, 3.75, 0.30; Haiku 1, 5, 1.25, 0.10; Opus 15, 75, 18.75, 1.50. These are API list-price ratios and are an assumption about how the plan meter weights usage; the calibration below tests it.
 
