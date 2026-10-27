@@ -154,6 +154,44 @@ func TestAutonomousSubscribe_FullKindsAndCommSink(t *testing.T) {
 	}
 }
 
+// TestAutonomousSubscribe_WarningKindsStayBare pins the new opt-in
+// warning kinds as bare lifecycle kinds: --on scope_warning and
+// --on guardrail_warn must pass through themselves, never expand to
+// task.scope_warning / task.guardrail_warn (they are warnings, not task
+// statuses), and be accepted where task.* statuses are.
+func TestAutonomousSubscribe_WarningKindsStayBare(t *testing.T) {
+	c := &captureDaemon{replyBody: `{"id":"sub-cli-3"}`}
+	withCaptureServer(t, c)
+
+	cmd := newAutonomousSubscribeCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	cmd.SetArgs([]string{
+		"--on", "scope_warning",
+		"--on", "guardrail_warn",
+		"--prd", "prd-guard",
+		"--sink", "alert",
+		"--target", "router-1",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v (output: %s)", err, out)
+	}
+	body := c.body(t)
+	filter := mapOf(t, body, "filter")
+	kinds := stringSliceOf(t, filter, "kinds")
+	if len(kinds) != 2 || kinds[0] != "scope_warning" || kinds[1] != "guardrail_warn" {
+		t.Errorf("filter.kinds = %v, want [scope_warning guardrail_warn] (bare, never task.*)", kinds)
+	}
+	if filter["prd_id"] != "prd-guard" {
+		t.Errorf("filter.prd_id = %v, want prd-guard", filter["prd_id"])
+	}
+	sink := mapOf(t, body, "sink")
+	if sink["type"] != "alert" || sink["target"] != "router-1" {
+		t.Errorf("sink = %v, want {alert router-1}", sink)
+	}
+}
+
 // TestAutonomousSubscribe_ValidationErrors covers client-side validation.
 func TestAutonomousSubscribe_ValidationErrors(t *testing.T) {
 	cases := []struct {

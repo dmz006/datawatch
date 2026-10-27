@@ -214,6 +214,19 @@ func TestParseCommSubscribe(t *testing.T) {
 			kinds: []string{"task.session_started", "task.session_cleared"},
 		},
 		{
+			// scope_warning / guardrail_warn have no dotted task.* form —
+			// they must stay themselves, never task.scope_warning etc.
+			name:  "warning kinds map to themselves, not task.<word>",
+			args:  []string{"scope_warning", "guardrail_warn"},
+			kinds: []string{"scope_warning", "guardrail_warn"},
+		},
+		{
+			name:  "warning kinds mix with shorthands in one list",
+			args:  []string{"session_started", "scope_warning", "task=task_9"},
+			kinds: []string{"task.session_started", "scope_warning"},
+			taskID: "task_9",
+		},
+		{
 			name:  "dotted kinds pass through",
 			args:  []string{"prd.blocked", "task.completed"},
 			kinds: []string{"prd.blocked", "task.completed"},

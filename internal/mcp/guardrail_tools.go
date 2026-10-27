@@ -16,10 +16,20 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
+
+// notifyEventsKindsHint is the shared opt-in-kind note for tool
+// descriptions that accept a notify_events list. Derived from
+// autonomous.OptInNotifyEvents() so it can't drift from the validator.
+func notifyEventsKindsHint() string {
+	return strings.Join(autonomous.OptInNotifyEvents(), ", ")
+}
 
 // ── guardrail_library_list ────────────────────────────────────────────────
 
@@ -62,7 +72,7 @@ func (s *Server) toolGuardrailProfileCreate() mcpsdk.Tool {
 		mcpsdk.WithString("description", mcpsdk.Description("Optional description.")),
 		mcpsdk.WithString("guardrails_json", mcpsdk.Description(`JSON array of guardrail names, e.g. ["sast-scan","secrets-scan"]`)),
 		mcpsdk.WithBoolean("block_on_file_drift", mcpsdk.Description("Optional foreign-file-drift enforcement for automata using this profile: true blocks a task whose own commit swept in files that were already uncommitted before it started and were not in its planned files; false keeps it warn-only. Omit to inherit the daemon-wide autonomous.block_on_file_drift.")),
-		mcpsdk.WithString("notify_events_json", mcpsdk.Description(`Optional notification event set as a JSON array of event kinds, e.g. ["prd.blocked","task.session_started"]. Omit to leave the profile at its default; an empty array means the profile tier notifies on no kinds.`)),
+		mcpsdk.WithString("notify_events_json", mcpsdk.Description(fmt.Sprintf(`Optional notification event set as a JSON array of event kinds, e.g. ["prd.blocked","task.session_started"]. Omit to leave the profile at its default; an empty array means the profile tier notifies on no kinds. Opt-in kinds (off by default even in the default set; warnings never block any work): %s.`, notifyEventsKindsHint()))),
 	)
 }
 
@@ -111,7 +121,7 @@ func (s *Server) toolGuardrailProfileUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("description", mcpsdk.Description("New description.")),
 		mcpsdk.WithString("guardrails_json", mcpsdk.Description(`New guardrail list as JSON array, e.g. ["sast-scan","deps-scan"]`)),
 		mcpsdk.WithBoolean("block_on_file_drift", mcpsdk.Description("Optional foreign-file-drift enforcement for automata using this profile: true blocks a task whose own commit swept in files that were already uncommitted before it started and were not in its planned files; false keeps it warn-only. Omit to leave the profile's current value unchanged.")),
-		mcpsdk.WithString("notify_events_json", mcpsdk.Description(`Optional notification event set as a JSON array of event kinds, e.g. ["prd.blocked","task.session_started"]. Omit to leave the profile's current list unchanged; "[]" clears it.`)),
+		mcpsdk.WithString("notify_events_json", mcpsdk.Description(fmt.Sprintf(`Optional notification event set as a JSON array of event kinds, e.g. ["prd.blocked","task.session_started"]. Omit to leave the profile's current list unchanged; "[]" clears it. Opt-in kinds (off by default even in the default set; warnings never block any work): %s.`, notifyEventsKindsHint()))),
 	)
 }
 

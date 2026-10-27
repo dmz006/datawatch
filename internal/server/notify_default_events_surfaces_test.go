@@ -115,3 +115,75 @@ func TestAutonomousNotifyConfigSurfaces(t *testing.T) {
 		t.Fatalf("cfg.Autonomous.Notify.DefaultEvents after clear = %v (len %d), want non-nil empty", v, len(v))
 	}
 }
+
+// TestAutonomousNotifyConfigOptInWarningKinds pins the opt-in warning
+// kinds on the REST config surface: the new scope_warning /
+// guardrail_warn kinds are accepted on PUT /api/config (array and CSV
+// forms) and persist, while an unknown kind is rejected with 400 and
+// the stored value is left unchanged. Warnings remain opt-in — never
+// in the default set.
+func TestAutonomousNotifyConfigOptInWarningKinds(t *testing.T) {
+	s, _ := newNotifyDefaultEventsServer(t)
+
+	// 1) Array form: new warning kinds accepted alongside baseline kinds.
+	b, _ := json.Marshal(map[string]any{"autonomous.notify.default_events": []string{"prd.blocked", "scope_warning", "guardrail_warn"}})
+	rr := httptest.NewRecorder()
+	s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(b)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT array with warning kinds: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	got := getNotifyDefaultEvents(t, s)
+	want := []string{"prd.blocked", "scope_warning", "guardrail_warn"}
+	if len(got) != len(want) {
+		t.Fatalf("GET after PUT = %v, want %v", got, want)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Fatalf("GET after PUT = %v, want %v", got, want)
+		}
+	}
+
+	// 2) CSV form: same kinds accepted.
+	b, _ = json.Marshal(map[string]any{"autonomous.notify.default_events": "scope_warning,guardrail_warn"})
+	rr = httptest.NewRecorder()
+	s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(b)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT csv with warning kinds: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	got = getNotifyDefaultEvents(t, s)
+	if len(got) != 2 || got[0] != "scope_warning" || got[1] != "guardrail_warn" {
+		t.Fatalf("GET after CSV PUT = %v, want [scope_warning guardrail_warn]", got)
+	}
+}
+
+// TestAutonomousNotifyConfigRejectsUnknownKinds pins the negative side
+// of the config surface: an unknown kind (or an empty entry) rejects
+// the whole PUT with 400 and leaves the stored value unchanged.
+func TestAutonomousNotifyConfigRejectsUnknownKinds(t *testing.T) {
+	s, _ := newNotifyDefaultEventsServer(t)
+
+	// First establish a known-good stored value.
+	b, _ := json.Marshal(map[string]any{"autonomous.notify.default_events": []string{"prd.blocked"}})
+	rr := httptest.NewRecorder()
+	s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(b)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT good value: want 200, got %d", rr.Code)
+	}
+
+	for _, bad := range []map[string]any{
+		{"autonomous.notify.default_events": []string{"prd.blocked", "scope.warngin"}}, // typo / unknown
+		{"autonomous.notify.default_events": []string{"prd.blocked", ""}},                // empty entry
+		{"autonomous.notify.default_events": "scope warning"},                              // unknown CSV
+		{"autonomous.notify.default_events": "not-an-array"},                              // wrong type
+	} {
+		bb, _ := json.Marshal(bad)
+		rr = httptest.NewRecorder()
+		s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(bb)))
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("PUT %v: want 400, got %d body=%s", bad, rr.Code, rr.Body.String())
+		}
+		if got := getNotifyDefaultEvents(t, s); len(got) != 1 || got[0] != "prd.blocked" {
+			t.Errorf("after rejected PUT %v, stored = %v, want unchanged [prd.blocked]", bad, got)
+		}
+	}
+}

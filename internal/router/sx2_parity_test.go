@@ -294,6 +294,49 @@ func TestNotifyEvents_Set(t *testing.T) {
 	}
 }
 
+// TestNotifyEvents_SetWarningKinds pins the comm surface for the new
+// opt-in warning kinds: set-notify-events accepts scope_warning /
+// guardrail_warn verbatim and the reply lists them — turning warnings on
+// per Automaton never implies blocking.
+func TestNotifyEvents_SetWarningKinds(t *testing.T) {
+	var reqs []notifyEventsRequest
+	srv := fakeNotifyEventsDaemon(t, &reqs)
+	defer srv.Close()
+
+	r := loopbackRouter(t, srv)
+	out := strings.Join(r.HandleTestMessage("autonomous set-notify-events p1 prd.blocked,scope_warning,guardrail_warn"), "\n")
+
+	if len(reqs) != 1 {
+		t.Fatalf("daemon requests = %d want 1 (%v)", len(reqs), reqs)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(reqs[0].body), &body); err != nil {
+		t.Fatalf("body not valid JSON: %v (%q)", err, reqs[0].body)
+	}
+	kinds, _ := body["notify_events"].([]any)
+	want := []string{"prd.blocked", "scope_warning", "guardrail_warn"}
+	if len(kinds) != len(want) {
+		t.Fatalf("notify_events = %v, want %v", kinds, want)
+	}
+	for _, w := range want {
+		if i := findKind(kinds, w); i < 0 {
+			t.Errorf("notify_events = %v, missing %v", kinds, w)
+		}
+	}
+	if !strings.Contains(out, "autonomous set-notify-events") {
+		t.Errorf("reply should echo the verb header:\n%s", out)
+	}
+}
+
+func findKind(vals []any, want string) int {
+	for i, v := range vals {
+		if v == want {
+			return i
+		}
+	}
+	return -1
+}
+
 func TestNotifyEvents_SetUnderscoreAlias(t *testing.T) {
 	var reqs []notifyEventsRequest
 	srv := fakeNotifyEventsDaemon(t, &reqs)

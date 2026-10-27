@@ -6252,6 +6252,29 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// notify default events: the operator pre-selects which lifecycle
+	// kinds the built-in sinks subscribe to. The new opt-in warning
+	// kinds (scope_warning, guardrail_warn) and the task session
+	// lifecycle kinds are valid choices; an unknown kind (or an
+	// empty entry) rejects the whole PUT instead of silently storing a
+	// list the sinks will never match — same rule as
+	// task_override_statuses above. An empty list is valid: it clears
+	// the pre-selection so the global default set applies.
+	if v, ok := patch["autonomous.notify.default_events"]; ok {
+		var candidate []string
+		if arr, ok := toStringArray(v); ok {
+			candidate = arr
+		} else if str, ok := v.(string); ok {
+			candidate = splitCSV(str)
+		} else {
+			http.Error(w, "autonomous.notify.default_events must be an array of event kinds or a comma-separated list", http.StatusBadRequest)
+			return
+		}
+		if verr := autonomous.ValidateNotifyEvents(candidate); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	// Plan requirement coverage gate — validate both knobs before
 	// anything is applied, so a bad mode or ratio rejects the whole
 	// PUT instead of storing a half-set or malformed pair (same rule

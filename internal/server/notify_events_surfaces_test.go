@@ -319,3 +319,66 @@ func TestNotifyEvents_StatusNotifyBlock(t *testing.T) {
 		t.Fatalf("overrides = %+v", got.Notify.Overrides)
 	}
 }
+
+// TestNotifyEvents_WarningKindsOnServerSurfaces pins the new opt-in
+// warning kinds on the server REST surface: the Automaton
+// set_notify_events endpoint and the guardrail-profile create/update
+// paths all accept scope_warning and guardrail_warn (they are warnings —
+// accepting them never implies blocking), while a near-miss like
+// "scope.warning" is rejected with a message that names the valid
+// warning kinds.
+func TestNotifyEvents_WarningKindsOnServerSurfaces(t *testing.T) {
+	spy := &notifyEventsSpy{
+		setReply: map[string]any{
+			"id":            "prd-1",
+			"notify_events": []string{"prd.blocked", "scope_warning", "guardrail_warn"},
+		},
+		createdReply: map[string]any{"id": "gp-2", "notify_events": []string{"scope_warning", "guardrail_warn"}},
+		updatedReply: map[string]any{"id": "gp-1", "notify_events": []string{"guardrail_warn"}},
+		profileGet:   map[string]any{"gp-1": map[string]any{"id": "gp-1", "name": "strict"}},
+	}
+	s := notifyEventsTestServer(spy)
+
+	// Automaton set: both new warning kinds accepted.
+	rec := doNotifyRequest(t, s, http.MethodPost, "/api/autonomous/prds/prd-1/set_notify_events",
+		`{"notify_events":["prd.blocked","scope_warning","guardrail_warn"]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set with warning kinds: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if got := spy.setKinds; len(got) != 3 || got[0] != "prd.blocked" || got[1] != "scope_warning" || got[2] != "guardrail_warn" {
+		t.Fatalf("manager set got %v, want [prd.blocked scope_warning guardrail_warn]", got)
+	}
+
+	// Profile create: warning kinds accepted.
+	spy.created = nil
+	rec = doProfileRequest(t, s, http.MethodPost, "/api/autonomous/guardrail_profiles",
+		`{"name":"warn","notify_events":["scope_warning","guardrail_warn"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create with warning kinds: want 201, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if spy.created == nil || !spy.created.notifySet || len(spy.created.notify) != 2 || spy.created.notify[0] != "scope_warning" {
+		t.Fatalf("create: manager got %v, want notify [scope_warning guardrail_warn]", spy.created)
+	}
+
+	// Profile update: warning kind replaces the list.
+	rec = doProfileRequest(t, s, http.MethodPut, "/api/autonomous/guardrail_profiles/gp-1",
+		`{"notify_events":["guardrail_warn"]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update with warning kind: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if got := spy.updated[len(spy.updated)-1]; got == nil || !got.notifySet || len(got.notify) != 1 || got.notify[0] != "guardrail_warn" {
+		t.Fatalf("update: manager got %v, want notify [guardrail_warn]", got)
+	}
+
+	// Near-miss: a dotted variant is rejected and the error names the valid
+	// warning kinds.
+	spy.setErr = errors.New(`unknown notify event kind "scope.warning"; valid kinds: guardrail_warn, scope_warning, ...`)
+	rec = doNotifyRequest(t, s, http.MethodPost, "/api/autonomous/prds/prd-1/set_notify_events",
+		`{"notify_events":["scope.warning"]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("set scope.warning: want 400, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "scope_warning") {
+		t.Errorf("error body should name the valid warning kinds: %s", rec.Body.String())
+	}
+}
