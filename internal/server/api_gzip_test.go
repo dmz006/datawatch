@@ -840,3 +840,50 @@ func TestAPIGzip_HeadersOnTheWire(t *testing.T) {
 		}
 	}
 }
+
+// The middleware sets nosniff on entry, but a handler can drop it again. The
+// writer restores it before the underlying WriteHeader, so the client still
+// receives it, on the passthrough and the gzip path, and the gzip output
+// decodes to the original body.
+func TestAPIGzip_NoSniffRestoredOnTheWireWhenHandlerDropsIt(t *testing.T) {
+	want := reflectedPayload + strings.Repeat("n", 3000)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Del("X-Content-Type-Options")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, want)
+	})
+	for _, min := range []int{0, 1 << 20} {
+		for _, accept := range []string{"gzip", ""} {
+			srv := httptest.NewServer(newAPIGzipHandler(fixedGzipSettings(true, min), inner))
+			req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/echo", nil)
+			if err != nil {
+				srv.Close()
+				t.Fatal(err)
+			}
+			if accept != "" {
+				req.Header.Set("Accept-Encoding", accept)
+			}
+			resp, err := (&http.Client{Transport: &http.Transport{DisableCompression: true}}).Do(req)
+			if err != nil {
+				srv.Close()
+				t.Fatal(err)
+			}
+			raw, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			srv.Close()
+			if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Fatalf("min %d accept %q: client received X-Content-Type-Options %q, want nosniff", min, accept, got)
+			}
+			if got := resp.Header.Get("Content-Type"); got != "application/json" {
+				t.Fatalf("min %d accept %q: Content-Type = %q, want application/json", min, accept, got)
+			}
+			body := string(raw)
+			if resp.Header.Get("Content-Encoding") == "gzip" {
+				body = gunzip(t, raw)
+			}
+			if body != want {
+				t.Fatalf("min %d accept %q: body changed (got %d bytes, want %d)", min, accept, len(body), len(want))
+			}
+		}
+	}
+}

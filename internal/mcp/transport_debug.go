@@ -101,19 +101,13 @@ func (o *sseCloseObserver) hardenHeaders() {
 	}
 }
 
-// Write pins the content type on the writer it writes to, in this method
-// rather than only in WriteHeader: a handler that never calls WriteHeader
-// reaches its first Write with an implicit 200 and whatever type net/http
-// would sniff from the payload. After the headers are sent these Sets are
-// no-ops, and a non-HTML Content-Type the handler set is left as it is.
+// Write pins the stream type before every write rather than once: a
+// handler that never calls WriteHeader reaches its first Write with an
+// implicit 200, and a wrapper that holds the headers back would otherwise
+// see a type the handler changed between chunks. Once the headers are sent
+// the Sets are no-ops, and a non-HTML Content-Type the handler set is kept.
 func (o *sseCloseObserver) Write(p []byte) (int, error) {
-	// Inline rather than via hardenHeaders: the Sets must sit in the
-	// function that does the write for the response-type analysis to see them.
-	h := o.w.Header()
-	h.Set("X-Content-Type-Options", "nosniff")
-	if ct := strings.ToLower(h.Get("Content-Type")); ct == "" || strings.Contains(ct, "html") {
-		h.Set("Content-Type", "text/event-stream")
-	}
+	o.hardenHeaders()
 	n, err := o.w.Write(p)
 	o.observe(n, err)
 	return n, err

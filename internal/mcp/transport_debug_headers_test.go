@@ -119,8 +119,8 @@ func TestSSEObserver_HeadersOnTheWire(t *testing.T) {
 			}
 			defer resp.Body.Close()
 			body, _ := io.ReadAll(resp.Body)
-			if ct := strings.ToLower(resp.Header.Get("Content-Type")); ct == "" || strings.Contains(ct, "html") {
-				t.Fatalf("client received Content-Type %q, want non-HTML", ct)
+			if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+				t.Fatalf("client received Content-Type %q, want text/event-stream", ct)
 			}
 			if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
 				t.Fatalf("client received X-Content-Type-Options %q, want nosniff", got)
@@ -129,5 +129,25 @@ func TestSSEObserver_HeadersOnTheWire(t *testing.T) {
 				t.Fatalf("body = %q, want reflected value unchanged", body)
 			}
 		})
+	}
+}
+
+// Each Write re-pins the type on the header map it writes to, not just the
+// first one: a handler that switches to an HTML type between chunks while the
+// headers are still unsent (a wrapper that buffers them) is corrected before
+// the next chunk goes out. Bytes are unchanged.
+func TestSSEObserver_LaterHTMLTypeIsRepinnedOnNextWrite(t *testing.T) {
+	rr := serveObserved(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: one\n\n")
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, "data: "+r.URL.Query().Get("q")+"\n\n")
+	})
+	if got := rr.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("Content-Type = %q, want text/event-stream", got)
+	}
+	want := "data: one\n\ndata: " + sseReflected + "\n\n"
+	if got := rr.Body.String(); got != want {
+		t.Fatalf("body = %q, want %q", got, want)
 	}
 }

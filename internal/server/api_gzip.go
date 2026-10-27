@@ -286,13 +286,13 @@ func (w *apiGzipWriter) commitPassthrough() error {
 	return err
 }
 
-// forward writes b to the underlying writer uncompressed. The headers that
-// matter on the wire (the sniffed non-HTML Content-Type and nosniff) are set
-// in commitPassthrough and decide, before the underlying WriteHeader, because
-// net/http snapshots them there. The Sets below are no-ops once the headers
-// are out; they keep the type pinned in the function that owns the write, so
-// a caller that reaches forward before a commit still cannot let net/http
-// sniff the body, and a Content-Type the handler set is kept.
+// forward writes b to the underlying writer uncompressed, pinning nosniff
+// and a non-HTML Content-Type on the header map right before the write.
+// After the underlying WriteHeader net/http has already snapshotted the
+// headers, so on the committed path these Sets change nothing on the wire;
+// the Sets that reach the client are the ones in decide and commitPassthrough.
+// They are kept here so every uncompressed write site sets the headers
+// itself and a Content-Type the handler set is never overridden.
 func (w *apiGzipWriter) forward(b []byte) (int, error) {
 	h := w.rw.Header()
 	setNoSniff(h)
