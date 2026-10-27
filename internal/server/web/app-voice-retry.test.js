@@ -194,3 +194,143 @@ test('retry of an unknown id fails without calling fetch', async () => {
   assert.equal(r.ok, false);
   assert.equal(sb.calls.length, 0);
 });
+
+// --- failure notice (_voiceShowFailure) ------------------------------------
+// The handlers that record audio need MediaRecorder, which the sandbox does
+// not have, so the three sites are covered at the helper level: the shared
+// notice they all call, plus a source check that only the helper fetches.
+
+// fakeDom gives the sandbox just enough of a DOM for the notice: elements
+// that keep textContent/children/attributes and a registry for getElementById.
+function fakeDom(sb) {
+  const registry = new Map();
+  function make(tag) {
+    const el = {
+      tag, id: '', className: '', title: '', type: '', disabled: false, children: [], attrs: {}, onclick: null,
+      textContent: '', parent: null,
+      appendChild(c) { c.parent = el; el.children.push(c); return c; },
+      setAttribute(k, v) { el.attrs[k] = v; },
+      removeAttribute(k) { delete el.attrs[k]; if (k === 'title') el.title = ''; },
+      remove() {
+        registry.delete(el.id);
+        if (el.parent) el.parent.children = el.parent.children.filter((c) => c !== el);
+        el.parent = null;
+      },
+    };
+    return el;
+  }
+  sb.document.createElement = (tag) => make(tag);
+  sb.document.getElementById = (id) => registry.get(id) || null;
+  return {
+    make,
+    // place registers the notice the way DOM insertion would.
+    host(name = 'host') { const h = make('div'); h.id = name; return h; },
+    placeIn(h) { return (el) => { h.appendChild(el); registry.set(el.id, el); }; },
+    buttons(box) { return box.children.filter((c) => c.tag === 'button'); },
+    count() { return registry.size; },
+  };
+}
+
+async function failedResult(sb, causeBody = { cause: 'timeout', detail: '<img src=x onerror=alert(1)>' }) {
+  sb.enqueue(jsonResponse(502, causeBody));
+  return sb._voiceTranscribeBlob(newBlob(), opts());
+}
+
+test('the notice shows the localized message, the kept line, Retry and Discard', async () => {
+  const sb = loadAppJS();
+  const dom = fakeDom(sb);
+  sb.t = (k) => '[' + k + ']';
+  const host = dom.host();
+  const r = await failedResult(sb);
+  const box = sb._voiceShowFailure(r, { place: dom.placeIn(host) });
+  const [msg, kept] = box.children;
+  assert.equal(msg.textContent, '[voice_error_timeout]');
+  assert.equal(kept.textContent, '[voice_audio_kept]');
+  // Server detail is only ever exposed as plain text in a title attribute.
+  assert.equal(msg.title, '<img src=x onerror=alert(1)>');
+  const [retry, discard] = dom.buttons(box);
+  assert.equal(retry.textContent, '[voice_retry]');
+  assert.equal(discard.textContent, '[voice_discard]');
+  assert.equal(host.children.length, 1);
+});
+
+test('Retry shows the retrying text, inserts the transcript and removes the notice', async () => {
+  const sb = loadAppJS();
+  const dom = fakeDom(sb);
+  sb.t = (k) => '[' + k + ']';
+  const host = dom.host();
+  const r = await failedResult(sb);
+  let inserted = null;
+  const box = sb._voiceShowFailure(r, { place: dom.placeIn(host), onTranscript: (text) => { inserted = text; } });
+  sb.enqueue(jsonResponse(200, { transcript: 'recovered words' }));
+  const done = dom.buttons(box)[0].onclick();
+  assert.equal(box.children[0].textContent, '[voice_retrying]');
+  await done;
+  assert.equal(inserted, 'recovered words');
+  assert.equal(host.children.length, 0);
+  assert.equal(sb._voiceFailedCount(), 0);
+});
+
+test('a second failure keeps the notice with the new message and the recording', async () => {
+  const sb = loadAppJS();
+  const dom = fakeDom(sb);
+  sb.t = (k) => '[' + k + ']';
+  const host = dom.host();
+  const r = await failedResult(sb);
+  let inserted = null;
+  const box = sb._voiceShowFailure(r, { place: dom.placeIn(host), onTranscript: (text) => { inserted = text; } });
+  sb.enqueue(jsonResponse(502, { cause: 'killed' }));
+  await dom.buttons(box)[0].onclick();
+  assert.equal(inserted, null);
+  assert.equal(host.children.length, 1);
+  assert.equal(box.children[0].textContent, '[voice_error_killed]');
+  assert.equal(box.children[1].textContent, '[voice_audio_kept]');
+  assert.equal(dom.buttons(box)[0].disabled, false);
+  assert.equal(sb._voiceFailedCount(), 1);
+});
+
+test('Discard drops the kept recording and removes the notice', async () => {
+  const sb = loadAppJS();
+  const dom = fakeDom(sb);
+  const host = dom.host();
+  const r = await failedResult(sb);
+  const box = sb._voiceShowFailure(r, { place: dom.placeIn(host) });
+  dom.buttons(box)[1].onclick();
+  assert.equal(host.children.length, 0);
+  assert.equal(sb._voiceFailedCount(), 0);
+});
+
+test('with a status line the message goes there and only buttons are placed', async () => {
+  const sb = loadAppJS();
+  const dom = fakeDom(sb);
+  sb.t = (k) => '[' + k + ']';
+  const host = dom.host();
+  const status = dom.make('div');
+  const r = await failedResult(sb, { cause: 'ffmpeg_missing' });
+  let inserted = null;
+  const box = sb._voiceShowFailure(r, { statusEl: status, place: dom.placeIn(host), onTranscript: (text) => { inserted = text; } });
+  assert.equal(status.textContent, '[voice_error_ffmpeg_missing] [voice_audio_kept]');
+  assert.deepEqual(box.children.map((c) => c.tag), ['button', 'button']);
+  sb.enqueue(jsonResponse(200, { transcript: 'ok now' }));
+  const done = box.children[0].onclick();
+  assert.equal(status.textContent, '[voice_retrying]');
+  await done;
+  assert.equal(inserted, 'ok now');
+  assert.equal(host.children.length, 0);
+});
+
+test('applying a transcript appends with a space and never clears typed text', () => {
+  const sb = loadAppJS();
+  const box = { value: 'already typed', focus() {} };
+  sb._voiceApplyTranscript(box, 'more');
+  assert.equal(box.value, 'already typed more');
+  sb._voiceApplyTranscript(box, '');
+  assert.equal(box.value, 'already typed more');
+});
+
+test('only the helper fetches /api/voice/transcribe and the old English errors are gone', () => {
+  const src = require('fs').readFileSync(APP_JS, 'utf8');
+  assert.equal((src.match(/fetch\('\/api\/voice\/transcribe'/g) || []).length, 1);
+  assert.ok(!src.includes('Transcribe failed (HTTP'));
+  assert.ok(!src.includes('Voice transcribe error'));
+});

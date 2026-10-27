@@ -7004,6 +7004,93 @@ async function _voiceRetry(id) {
   });
 }
 
+// Append a transcript to whatever is already typed in a text box (never
+// replaces it), focus the box and toast. An empty transcript only warns.
+function _voiceApplyTranscript(target, transcript) {
+  if (transcript) {
+    if (target) {
+      target.value = target.value ? target.value + ' ' + transcript : transcript;
+      target.focus();
+    }
+    showToast('✓ Transcribed (' + transcript.length + ' chars)', 'success', 2500);
+  } else {
+    showToast('Backend returned empty transcript — check whisper config', 'warning', 4000);
+  }
+}
+
+// Persistent failure notice for a kept recording: the localized message, the
+// "recording kept" line, a Retry and a Discard button. result is a failed
+// _voiceTranscribeBlob result. opts:
+//   place(el)           inserts the notice element next to the input
+//   statusEl            optional existing status line; the message goes there
+//                       and only the buttons are placed (via place)
+//   onTranscript(text)  called after a successful retry; the notice is gone
+// Server-provided detail is only ever set through textContent / title.
+function _voiceShowFailure(result, opts) {
+  const { place, statusEl, onTranscript } = opts || {};
+  const id = result.keepId;
+  const prev = document.getElementById('voiceFailureNotice_' + id);
+  if (prev) prev.remove();
+  const box = document.createElement(statusEl ? 'span' : 'div');
+  box.id = 'voiceFailureNotice_' + id;
+  box.className = 'voice-failure-notice' + (statusEl ? ' voice-failure-notice-inline' : '');
+  let msgEl = statusEl;
+  let keptEl = null;
+  if (!statusEl) {
+    box.setAttribute('role', 'alert');
+    msgEl = document.createElement('span');
+    msgEl.className = 'voice-failure-message';
+    keptEl = document.createElement('span');
+    keptEl.className = 'voice-failure-kept';
+    box.appendChild(msgEl);
+    box.appendChild(keptEl);
+  }
+  const retryBtn = document.createElement('button');
+  retryBtn.type = 'button';
+  retryBtn.className = 'btn-secondary voice-failure-retry';
+  retryBtn.textContent = t('voice_retry');
+  const discardBtn = document.createElement('button');
+  discardBtn.type = 'button';
+  discardBtn.className = 'btn-secondary voice-failure-discard';
+  discardBtn.textContent = t('voice_discard');
+  box.appendChild(retryBtn);
+  box.appendChild(discardBtn);
+
+  const showMessage = (r) => {
+    const text = t(r.messageKey);
+    if (statusEl) {
+      msgEl.textContent = text + ' ' + t('voice_audio_kept');
+    } else {
+      msgEl.textContent = text;
+      keptEl.textContent = t('voice_audio_kept');
+    }
+    if (r.detail) msgEl.title = r.detail; else msgEl.removeAttribute('title');
+  };
+  showMessage(result);
+
+  discardBtn.onclick = () => {
+    _voiceDiscardFailed(id);
+    box.remove();
+  };
+  retryBtn.onclick = async () => {
+    retryBtn.disabled = true;
+    discardBtn.disabled = true;
+    msgEl.textContent = t('voice_retrying');
+    if (keptEl) keptEl.textContent = '';
+    const r = await _voiceRetry(id);
+    if (r.ok) {
+      box.remove();
+      if (onTranscript) onTranscript(r.transcript);
+      return;
+    }
+    showMessage(r);
+    retryBtn.disabled = false;
+    discardBtn.disabled = false;
+  };
+  if (place) place(box);
+  return box;
+}
+
 async function toggleVoiceInput(sessionId) {
   const btn = document.getElementById('voiceInputBtn');
   const inputEl = document.getElementById('sessionInput');
@@ -7048,33 +7135,18 @@ async function toggleVoiceInput(sessionId) {
     _composerBanner(t('voice_transcribing_banner')||'Transcribing voice message…');
     try {
       const ext = (mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.webm');
-      const fd = new FormData();
-      fd.append('audio', blob, 'voice' + ext);
-      if (sessionId) fd.append('session_id', sessionId);
-      fd.append('ts_client', String(Date.now()));
-      const token = localStorage.getItem('cs_token') || '';
-      const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-      console.log('[voice] POST /api/voice/transcribe', blob.size, 'bytes (session)', sessionId || '');
-      const res = await fetch('/api/voice/transcribe', { method: 'POST', headers, body: fd });
-      if (!res.ok) {
-        const txt = await res.text();
-        console.warn('[voice] transcribe HTTP', res.status, txt);
-        showError('Transcribe failed (HTTP ' + res.status + ')', txt || 'see console');
+      const result = await _voiceTranscribeBlob(blob, { filename: 'voice' + ext, sessionId, targetId: 'sessionInput' });
+      if (!result.ok) {
+        _voiceShowFailure(result, {
+          place: (el) => { const bar = document.getElementById('inputBar'); if (bar && bar.parentNode) bar.parentNode.insertBefore(el, bar); },
+          onTranscript: (text) => _voiceApplyTranscript(document.getElementById('sessionInput'), text),
+        });
         return;
       }
-      const data = await res.json();
-      const transcript = (data && data.transcript) || '';
-      console.log('[voice] transcript:', JSON.stringify(transcript));
-      if (inputEl && transcript) {
-        inputEl.value = inputEl.value ? inputEl.value + ' ' + transcript : transcript;
-        inputEl.focus();
-        showToast('✓ Transcribed (' + transcript.length + ' chars)', 'success', 2500);
-      } else if (!transcript) {
-        showToast('Backend returned empty transcript — check whisper config', 'warning', 4000);
-      }
+      console.log('[voice] transcript:', JSON.stringify(result.transcript));
+      _voiceApplyTranscript(inputEl, result.transcript);
     } catch (err) {
-      console.error('[voice] transcribe error:', err);
-      showError('Voice transcribe error', err.message);
+      console.error('[voice] composer transcript handling failed:', err);
     } finally {
       if (inputEl) { inputEl.disabled = false; inputEl.placeholder = originalPlaceholder; }
       _composerBanner(null);
@@ -7253,32 +7325,23 @@ window.startGenericVoiceInput = async function(targetId, btn) {
     target.disabled = true;
     try {
       const ext = mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.webm';
-      const fd = new FormData();
-      fd.append('audio', blob, 'voice' + ext);
-      fd.append('ts_client', String(Date.now()));
-      const tok = localStorage.getItem('cs_token') || '';
-      const headers = tok ? { 'Authorization': 'Bearer ' + tok } : {};
-      console.log('[voice] POST /api/voice/transcribe', blob.size, 'bytes', mime);
-      const res = await fetch('/api/voice/transcribe', { method: 'POST', headers, body: fd });
-      if (!res.ok) {
-        const txt = await res.text();
-        console.warn('[voice] transcribe HTTP', res.status, txt);
-        showError('Transcribe failed (HTTP ' + res.status + ')', txt || 'see console');
+      const result = await _voiceTranscribeBlob(blob, { filename: 'voice' + ext, targetId });
+      if (!result.ok) {
+        _voiceShowFailure(result, {
+          place: (el) => {
+            // The auto-attached mic wraps the box in a flex row; sit below the row.
+            const row = target.parentNode;
+            const anchor = row && row.style && /flex/.test(row.style.display) ? row : target;
+            anchor.insertAdjacentElement('afterend', el);
+          },
+          onTranscript: (text) => _voiceApplyTranscript(document.getElementById(targetId) || target, text),
+        });
         return;
       }
-      const data = await res.json();
-      const transcript = (data && data.transcript) || '';
-      console.log('[voice] transcript:', JSON.stringify(transcript));
-      if (transcript) {
-        target.value = target.value ? target.value + ' ' + transcript : transcript;
-        target.focus();
-        showToast('✓ Transcribed (' + transcript.length + ' chars)', 'success', 2500);
-      } else {
-        showToast('Backend returned empty transcript — check whisper config', 'warning', 4000);
-      }
+      console.log('[voice] transcript:', JSON.stringify(result.transcript));
+      _voiceApplyTranscript(target, result.transcript);
     } catch (err) {
-      console.error('[voice] transcribe error:', err);
-      showError('Voice transcribe error', err.message);
+      console.error('[voice] transcript handling failed:', err);
     } finally {
       target.disabled = false; target.placeholder = oldPlaceholder;
     }
@@ -17997,21 +18060,30 @@ window._whisperTestToggle = async function(btn) {
     if (blob.size === 0) { status.textContent = 'no audio captured'; return; }
     try {
       const ext = mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.webm';
-      const fd = new FormData();
-      fd.append('audio', blob, 'voice' + ext);
-      fd.append('ts_client', String(Date.now()));
-      const tok = localStorage.getItem('cs_token') || '';
-      const headers = tok ? { 'Authorization': 'Bearer ' + tok } : {};
+      const showTranscript = (transcript, ms) => {
+        target.value = transcript || '(empty transcript — backend returned no text)';
+        const timing = ms === null ? '' : `${ms}ms, `;
+        status.textContent = transcript
+          ? `ok (${timing}${transcript.length} chars)`
+          : 'transcribed empty — backend may be misconfigured';
+      };
       const t0 = performance.now();
-      const res = await fetch('/api/voice/transcribe', { method: 'POST', headers, body: fd });
-      if (!res.ok) { status.textContent = 'transcribe failed: ' + (await res.text() || res.status); return; }
-      const data = await res.json();
-      const transcript = (data && data.transcript) || '';
-      const ms = Math.round(performance.now() - t0);
-      target.value = transcript || '(empty transcript — backend returned no text)';
-      status.textContent = transcript
-        ? `ok (${ms}ms, ${transcript.length} chars)`
-        : 'transcribed empty — backend may be misconfigured';
+      const result = await _voiceTranscribeBlob(blob, { filename: 'voice' + ext, targetId: 'whisperTestTranscript' });
+      if (!result.ok) {
+        // One status line can only describe one failure; a newer test
+        // supersedes an earlier failed test recording.
+        document.querySelectorAll('#whisperTestOverlay .voice-failure-notice-inline').forEach((old) => {
+          _voiceDiscardFailed(Number(old.id.replace('voiceFailureNotice_', '')));
+          old.remove();
+        });
+        _voiceShowFailure(result, {
+          statusEl: status,
+          place: (el) => status.insertAdjacentElement('afterend', el),
+          onTranscript: (text) => showTranscript(text, null),
+        });
+        return;
+      }
+      showTranscript(result.transcript, Math.round(performance.now() - t0));
       // Don't auto-disable whisper here — the operator opened this
       // dialog deliberately. They can disable manually if it really
       // is broken.

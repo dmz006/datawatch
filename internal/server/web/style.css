@@ -3009,6 +3009,27 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .composer-status-spinner { animation: none; opacity: 0.6; }
 }
 
+/* Persistent voice transcription failure notice — message, "recording kept"
+   line, Retry / Discard. Sits next to the input the recording was for. */
+.voice-failure-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(239,68,68,0.12);
+  border-top: 1px solid var(--error, #ef4444);
+  font-size: 12px;
+  color: var(--text);
+}
+.voice-failure-notice-inline {
+  padding: 0;
+  background: none;
+  border-top: 0;
+}
+.voice-failure-kept { color: var(--text2); }
+.voice-failure-notice button { font-size: 12px; padding: 4px 10px; }
+
 /* GH#182 — alert deep link (web+datawatch://alert/<id>) lands here. */
 .alert-deep-link-highlight {
   animation: dw-picker-pulse 2s ease-out;
