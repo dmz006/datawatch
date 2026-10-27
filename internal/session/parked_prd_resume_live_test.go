@@ -112,7 +112,7 @@ func TestParkedPRDResumeAdoptsLiveWorkerLive(t *testing.T) {
 	// Production guard: without the full sandbox contract the shared
 	// bl462RestartCommand path skips; check it here so the test does not
 	// set up a probe PRD before discovering it cannot restart the daemon.
-	bl462SandboxRestartContract(t)
+	sandboxPID := bl462SandboxRestartContract(t)
 	c := newBL462LiveClient(t)
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Fatalf("tmux is required on the test host: %v", err)
@@ -147,16 +147,11 @@ func TestParkedPRDResumeAdoptsLiveWorkerLive(t *testing.T) {
 		startBody["project_dir"] = dir
 	}
 
-	var lastSess bl462LiveSession
-	t.Cleanup(func() {
-		// API-only kill of the probe session, only if still alive.
-		if lastSess.ID == "" || bl462IsTerminal(lastSess.State) {
-			return
-		}
-		if status, err := c.do(http.MethodPost, "/api/sessions/kill", map[string]string{"id": lastSess.ID}, nil); err != nil || status >= 300 {
-			t.Logf("cleanup: could not kill probe session %s (HTTP %d, err %v)", lastSess.ID, status, err)
-		}
-	})
+	// End the probe session via the daemon API — and verify the recorded
+	// sandbox daemon pid — on every exit path (pass, failure, interrupt).
+	// Registered before the first call that can create the PRD (and its
+	// worker session).
+	lc := newLiveTestCleanup(t, c, sandboxPID)
 
 	// Create, plan, approve and run the probe PRD.
 	var prd adoptLivePRD
@@ -232,7 +227,7 @@ func TestParkedPRDResumeAdoptsLiveWorkerLive(t *testing.T) {
 	if !ok {
 		t.Fatalf("worker session %s not found in /api/sessions", taskSession)
 	}
-	lastSess = sess
+	lc.trackSession(sess)
 	t.Logf("worker session %s running (state=%q tmux=%q)", sess.ID, sess.State, sess.TmuxSession)
 
 	// assertSameSession fails if any task of the PRD points at another session.
@@ -250,7 +245,7 @@ func TestParkedPRDResumeAdoptsLiveWorkerLive(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s: worker session %s vanished from the daemon", phase, taskSession)
 		}
-		lastSess = s
+		lc.trackSession(s)
 		if s.State == "failed" || s.State == "killed" {
 			t.Errorf("BUG %s: worker session %s is %s; a live worker must never be killed", phase, s.ID, s.State)
 		}
@@ -306,7 +301,7 @@ func TestParkedPRDResumeAdoptsLiveWorkerLive(t *testing.T) {
 		listed = true
 		has := false
 		for _, id := range e.LiveSessions {
-			if id == taskSession || id == lastSess.FullID {
+			if id == taskSession || id == lc.sessionFullID {
 				has = true
 			}
 		}
