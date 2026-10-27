@@ -119,3 +119,7 @@ Clips: 16 kHz mono PCM WAV, 440 Hz tone, 30/60/120/180 s. Regenerate:
 `ffmpeg -f lavfi -i "sine=frequency=440:duration=30" -ac 1 -ar 16000 speech30.wav` (etc.).
 
 Harness and clips were removed/retained per the "throwaway" instruction; the Go file stays in `.voice-harness/` (excluded from git) for one re-run, and can be deleted after the follow-up in *Proposed fix* step 1 resolves the field-host question.
+
+## Operator decision (2026-10-27 about 12:30)
+
+Operator, quoted: "Good the fix i will get an example in a few hours". No fix task is run. The operator will supply a real failing example in a few hours (the client-side error text or a recording that fails); the investigation resumes from that, as a normal worktree PRD, not in the main checkout. The streaming voice design doc is not re-filed yet.
