@@ -38,20 +38,29 @@ import (
 const maxQuestionBodyBytes = 64 * 1024
 
 // QuestionsAPI is the operator question store as the REST layer sees it.
-// autonomous.QuestionStore satisfies it; tests may. Nil (default) means
-// the endpoints are not wired and return 503.
+// autonomous.QuestionStore satisfies it; tests may provide a fake. Nil
+// (the default) means the endpoints are not wired and return 503. The
+// answer, withdraw and answers methods belong to the store's contract even
+// though this surface does not route them (the sub-paths under a question
+// id are reserved and 404 here).
 type QuestionsAPI interface {
 	Raise(q autonomous.Question) (autonomous.Question, error)
 	Get(id string) (autonomous.Question, bool)
 	List(filter autonomous.QuestionFilter) []autonomous.Question
+	Answer(questionID string, a autonomous.Answer) (autonomous.Answer, error)
+	Withdraw(id, actor, reason string) (autonomous.Question, error)
+	Answers(questionID string) ([]autonomous.AnswerView, bool)
 	CurrentAnswer(id string) (autonomous.Answer, bool)
 	AnswerCount(id string) int
 }
 
-// raiseQuestionBody is the POST /api/questions body. Text, options and
-// default are required (the store rejects a question without them); the
-// absent asker, asker kind and context default to the caller, "operator"
-// and "none" (the automation does not always self-attest one).
+// raiseQuestionBody is the POST /api/questions body. Text, options, a
+// valid context and default are required (the store rejects a question
+// without them); an absent asker and asker kind default to the caller and
+// "operator" (the automation does not always self-attest one). Context is
+// passed through as-is and must name one of the known kinds: the store's
+// validation returns a 400 naming the field when it does not, and there is
+// no handler-side default.
 type raiseQuestionBody struct {
 	Label          string                             `json:"label"`
 	AskedBy        string                             `json:"asked_by"`
@@ -160,26 +169,27 @@ func (s *Server) handleQuestions(w http.ResponseWriter, r *http.Request) {
 
 // handleQuestionRaise implements POST /api/questions.
 func (s *Server) handleQuestionRaise(w http.ResponseWriter, r *http.Request) {
-	buf, err := io.ReadAll(io.LimitReader(r.Body, maxQuestionBodyBytes+1))
-	if err != nil {
-		http.Error(w, "cannot read request body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if len(buf) > maxQuestionBodyBytes {
-		http.Error(w, "request body too large (cap 64 KiB)", http.StatusRequestEntityTooLarge)
-		return
-	}
+	// The body is capped with http.MaxBytesReader at 64 KiB: a question is
+	// one line of text plus a small option set, so anything bigger is a
+	// mistake (or an attack) and the read is refused before it runs to the
+	// end (413).
+	body := http.MaxBytesReader(w, r.Body, maxQuestionBodyBytes)
 
-	var body raiseQuestionBody
-	dec := json.NewDecoder(strings.NewReader(string(buf)))
-	if err := dec.Decode(&body); err != nil {
+	var reqBody raiseQuestionBody
+	dec := json.NewDecoder(body)
+	if err := dec.Decode(&reqBody); err != nil {
+		var maxSize *http.MaxBytesError
+		if errors.As(err, &maxSize) {
+			http.Error(w, "request body too large (cap 64 KiB)", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	// Trailing content after the object is a malformed body, not a
-	// silently ignored duplicate.
-	if dec.More() {
-		http.Error(w, "invalid JSON body: content after the JSON object", http.StatusBadRequest)
+	// Content after the object (a second JSON value or trailing junk) is a
+	// malformed body, not a silently ignored duplicate.
+	if _, err := dec.Token(); err != io.EOF {
+		http.Error(w, "invalid JSON body: expected exactly one JSON object", http.StatusBadRequest)
 		return
 	}
 
@@ -189,20 +199,20 @@ func (s *Server) handleQuestionRaise(w http.ResponseWriter, r *http.Request) {
 	actor := s.auditActor(r.Context())
 
 	q := autonomous.Question{
-		Label:          strings.TrimSpace(body.Label),
-		AskedBy:        strings.TrimSpace(body.AskedBy),
-		AskerKind:      autonomous.AskerKind(strings.TrimSpace(body.AskerKind)),
-		SessionID:      strings.TrimSpace(body.SessionID),
-		Context:        strings.TrimSpace(body.Context),
-		PRDID:          strings.TrimSpace(body.PRDID),
-		TaskID:         strings.TrimSpace(body.TaskID),
-		ProposalPath:   body.ProposalPath,
-		RegistryRowKey: strings.TrimSpace(body.RegistryRowKey),
-		Text:           body.Text,
-		Options:        body.Options,
-		Recommendation: body.Recommendation,
-		Default:        body.Default,
-		Risk:           strings.TrimSpace(body.Risk),
+		Label:          strings.TrimSpace(reqBody.Label),
+		AskedBy:        strings.TrimSpace(reqBody.AskedBy),
+		AskerKind:      autonomous.AskerKind(strings.TrimSpace(reqBody.AskerKind)),
+		SessionID:      strings.TrimSpace(reqBody.SessionID),
+		Context:        strings.TrimSpace(reqBody.Context),
+		PRDID:          strings.TrimSpace(reqBody.PRDID),
+		TaskID:         strings.TrimSpace(reqBody.TaskID),
+		ProposalPath:   reqBody.ProposalPath,
+		RegistryRowKey: strings.TrimSpace(reqBody.RegistryRowKey),
+		Text:           reqBody.Text,
+		Options:        reqBody.Options,
+		Recommendation: reqBody.Recommendation,
+		Default:        reqBody.Default,
+		Risk:           strings.TrimSpace(reqBody.Risk),
 	}
 	if q.AskedBy == "" {
 		q.AskedBy = actor
@@ -210,9 +220,9 @@ func (s *Server) handleQuestionRaise(w http.ResponseWriter, r *http.Request) {
 	if q.AskerKind == "" {
 		q.AskerKind = autonomous.QuestionAskerOperator
 	}
-	if q.Context == "" {
-		q.Context = autonomous.QuestionContextNone
-	}
+	// An omitted context is deliberately NOT defaulted here: the body must
+	// name one of the known contexts, and the store's validation is the one
+	// that says so (400 naming the field).
 
 	raised, err := s.questionStore.Raise(q)
 	if err != nil {
@@ -309,7 +319,7 @@ func (s *Server) handleQuestionGet(w http.ResponseWriter, r *http.Request, id st
 
 	writeJSONOK(w, map[string]any{
 		"question":          q,
-		"count":             count,
+		"answer_count":      count,
 		"current_answer_id": currentID,
 	})
 }

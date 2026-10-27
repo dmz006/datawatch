@@ -127,8 +127,6 @@ var loopbackBypassPaths = []string{
 	"/api/sessions/",     // prefix (per-session sub-paths)
 	"/api/orchestrator/", // prefix
 	"/api/autonomous/",   // prefix
-	"/api/questions",     // exact — operator question channel (raise)
-	"/api/questions/",    // prefix — operator question channel (per-id reads)
 	"/api/mcp/",          // prefix — channel bridge dynamic proxy (tools list + call)
 }
 
