@@ -57,6 +57,20 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.21.1 — Open CodeQL alerts are fixed in code: command injection, path containment, reflected output and more
+
+CodeQL findings on main are fixed in code, with no scanner setting changed:
+
+- Git helpers build their commands from fixed argument vectors, and subprocess-resume tasks no longer go through a shell wrapper (the two critical `go/command-injection` alerts).
+- One checked path-containment helper now guards the git guard, session, autonomous, pipeline and claude-code path sinks (the `go/path-injection` alerts), with unit tests for symlink, dot-dot, dangling-link and outside-root cases.
+- The MCP debug transport and the gzip middleware write echoed values safely (`go/reflected-xss`), the federation hop chain bounds its allocation size, and three product-code web UI findings are fixed.
+- Test-only web alerts are dismissed in GitHub with reason "used in tests".
+
+### The channel bridge verifies the daemon's TLS certificate
+
+- `datawatch-channel` no longer sets `InsecureSkipVerify` on its health probe and parent posts (CodeQL `go/disabled-certificate-check`, alert 643). It trusts the daemon's own certificate as a root, read from `DATAWATCH_CA_CERT`, and the daemon sets that variable to the certificate it serves.
+- `DATAWATCH_CHANNEL_INSECURE_SKIP_VERIFY` is an explicit operator opt-in (default off) that restores the old skip and logs a warning when on. Both variables are listed in `docs/implementation.md`.
+
 ## v9.21.0 — The daemon warns at startup about exposed, unauthenticated listeners
 
 ### Daemon warns at startup about exposed, unauthenticated listeners (BL062); operator can acknowledge
