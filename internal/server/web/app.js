@@ -36678,6 +36678,34 @@ function toggleTagsMenu() {
     panel.hidden = false;
   });
 }
+// _tagsMenuHTML draws the Tags menu panel: the watched-only switch, the session tag
+// filter (tags in tree order, match mode, Clear) and, with a session open, the
+// watch and tag-edit actions for that session.
+function _tagsMenuHTML() {
+  const watched = `<label class="tags-menu-row"><input type="checkbox" ${state.sessionWatchFilter ? 'checked' : ''} onchange="toggleSessionWatchFilter()"><span>${escHtml(t('tags_menu_watched_only'))}</span></label>`;
+  const rows = _tagMultiRowsHTML('session');
+  const list = rows
+    ? `<div class="tags-menu-list">${rows}</div>`
+    : `<div class="tag-multi-empty">${escHtml(t('tags_menu_no_tags'))}</div>`;
+  const mode = _tagBrowseMode('session');
+  const modeLabel = mode === 'all' ? t('tag_browse_match_all') : t('tag_browse_match_any');
+  const modeBtn = `<button type="button" class="tag-mode-btn" aria-pressed="${mode === 'all'}" title="${escHtml(t('tag_browse_mode_title'))}" onclick="tagBrowseToggleMode('session')">${escHtml(modeLabel)}</button>`;
+  const clearBtn = _tagBrowseActiveCount('session')
+    ? `<button type="button" class="tags-menu-btn" onclick="tagBrowseClear('session')">${escHtml(t('tags_menu_clear'))}</button>`
+    : '';
+  const tagsSection = `<div class="tags-menu-section"><div class="tags-menu-head">${escHtml(t('tags_menu_button'))}</div>${list}<div class="tags-menu-actions">${modeBtn}${clearBtn}</div></div>`;
+  let sessionSection = '';
+  const id = state.activeView === 'session-detail' ? state.activeSession : '';
+  if (id) {
+    const idJ = escJsAttr(id);
+    const watchLabel = state.watchedSessions.has(id) ? t('tags_menu_unwatch_this') : t('tags_menu_watch_this');
+    sessionSection = `<div class="tags-menu-section"><div class="tags-menu-head">${escHtml(t('tags_menu_this_session'))}</div>` +
+      `<button type="button" class="tags-menu-btn" onclick="toggleSessionWatch('${idJ}')">${escHtml(watchLabel)}</button>` +
+      `<button type="button" class="tags-menu-btn" onclick="closeTagsMenu();openSessionTagsModal('${idJ}')">${escHtml(t('tags_menu_edit_this'))}</button></div>`;
+  }
+  return `<div class="tags-menu-section">${watched}</div>${tagsSection}${sessionSection}`;
+}
+
 window.toggleTagsMenu = toggleTagsMenu;
 window.closeTagsMenu = closeTagsMenu;
 
@@ -37650,6 +37678,17 @@ function _tagBrowseBodyHTML(scope, items, base, renderTile, emptyHtml) {
 
 // ── Facets and the filter bar ────────────────────────────────────────────────
 
+// _tagMultiRowsHTML draws one checkbox row per tag in tree order, indented by depth
+// and checked from the scope's selection. counts, when given, adds each tag's count.
+// The list facet dropdowns and the header Tags menu both draw their rows with it.
+function _tagMultiRowsHTML(scope, counts) {
+  const sc = _tagBrowse[scope];
+  return _tagTreeOrder(_tagsState.list).map(({ tag, depth }) => {
+    const count = counts ? `<span class="tag-facet-count">${counts[tag.id] || 0}</span>` : '';
+    return `<label class="tag-multi-row" style="padding-left:${depth * 14}px;"><input type="checkbox" value="${escHtml(tag.id)}" ${sc.sel.includes(tag.id) ? 'checked' : ''} onchange="tagBrowseToggleTag('${escJsAttr(scope)}','${escJsAttr(tag.id)}',this.checked)"><span class="tag-multi-name">${escHtml(tag.name)}</span>${count}</label>`;
+  }).join('');
+}
+
 // _tagFacetsHTML draws the facet controls: the tag multi-select with its ANY/ALL
 // toggle, the backend chips (Automata) and the status chips. Each option carries a
 // count from the loaded list with the other facets applied.
@@ -37660,7 +37699,7 @@ function _tagFacetsHTML(scope, tagsOpen) {
   const statusSel = scope === 'automata' ? [..._automataState.statusFilter] : [..._automationState.statusFilter];
   const mode = _tagBrowseMode(scope);
   const tagCounts = _tagBrowseCounts(_tagBrowseFilter(all, { backends: [...sc.backends], statuses: statusSel }, tree), tree);
-  const rows = _tagTreeOrder(_tagsState.list).map(({ tag, depth }) => `<label class="tag-multi-row" style="padding-left:${depth * 14}px;"><input type="checkbox" value="${escHtml(tag.id)}" ${sc.sel.includes(tag.id) ? 'checked' : ''} onchange="tagBrowseToggleTag('${escJsAttr(scope)}','${escJsAttr(tag.id)}',this.checked)"><span class="tag-multi-name">${escHtml(tag.name)}</span><span class="tag-facet-count">${tagCounts[tag.id] || 0}</span></label>`).join('');
+  const rows = _tagMultiRowsHTML(scope, tagCounts);
   const modeLabel = mode === 'all' ? t('tag_browse_match_all') : t('tag_browse_match_any');
   const tagGroup = `<div class="tag-facet-group"><details class="tag-multi"${tagsOpen ? ' open' : ''}><summary class="tag-multi-summary">${escHtml(t('tag_browse_filter_tags'))}${sc.sel.length ? ` (${sc.sel.length})` : ''}</summary><div class="tag-multi-list">${rows || `<div class="tag-multi-empty">${escHtml(t('tag_picker_empty'))}</div>`}</div></details><button type="button" class="tag-mode-btn" aria-pressed="${mode === 'all'}" title="${escHtml(t('tag_browse_mode_title'))}" onclick="tagBrowseToggleMode('${escJsAttr(scope)}')">${escHtml(modeLabel)}</button></div>`;
   let backendGroup = '';

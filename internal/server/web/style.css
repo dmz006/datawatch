@@ -264,6 +264,28 @@ body {
 }
 .header-tags-menu[hidden] { display: none; }
 
+.tags-menu-section + .tags-menu-section { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.tags-menu-head { font-size: 11px; font-weight: 600; color: var(--text2); margin-bottom: 4px; }
+.tags-menu-row { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
+.tags-menu-list { max-height: 220px; overflow-y: auto; margin-bottom: 6px; }
+.tags-menu-actions { display: flex; align-items: center; gap: 6px; }
+.tags-menu-btn {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 6px 10px;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.tags-menu-actions .tags-menu-btn { width: auto; margin-top: 0; text-align: center; }
+
 /* Narrow phones (320px at 130% zoom = 246 CSS px): the Tags button would squeeze
    the title to nothing, so tighten the row and drop the help toggle, the same
    least-essential control the 219px rule hides. */
