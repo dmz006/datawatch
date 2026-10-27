@@ -1636,6 +1636,26 @@ it did before.
   each holder's short id, under the same one-node rule. The web tests asserting
   it are in `internal/server/web/app-capacity-holder-nodes.test.js`.
 
+### Unknown node after a restart
+
+When a daemon restart adopts a surviving worker of a local-engine LLM entry that
+lists two or more compute nodes and the node cannot be determined (the task's
+recorded node, the session's `compute_node_ref` and its endpoint matched against
+a node `address` all come up empty), the lease holds **no** node and is flagged
+`node_unknown: true`. No node is guessed from a host name, DNS or a partial name
+match. The lease still counts against the `host` and `llm:<name>` pools, so those
+caps are respected; it occupies no `node:<name>` pool. A later adoption that
+learns the node clears the flag. A lease with no node that is not flagged (a
+hosted backend) is unchanged, and the field is omitted when false.
+
+- **REST / MCP / CLI:** each entry of `leases` in `GET /api/capacity` carries
+  `node_unknown`, and each entry of `tasks.running` carries it for its task.
+- **Text views:** the running task line says `node unknown`, and a
+  `Leases with unknown node: N` line follows the pools.
+- **Log:** one line at adoption names the task, session and endpoint that
+  matched no node.
+- **PWA:** the capacity card marks the holder `node unknown`.
+
 ### Rate ceilings
 
 A pool can carry a rolling-window rate ceiling (requests and/or tokens per

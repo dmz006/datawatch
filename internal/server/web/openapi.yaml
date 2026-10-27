@@ -1364,7 +1364,13 @@ paths:
                             - {$ref: "#/components/schemas/NodeUsage"}
                           nullable: true
                           description: The node_usage object. Present on a node:<name> pool when the daemon reports per-node usage; the daemon prints a short line here per loaded model and GPU. Absent on host and llm pools and on older daemons.
-                  leases: {type: array, items: {type: object}}
+                  leases:
+                    type: array
+                    description: Held leases. node_unknown is true on a lease adopted after a daemon restart whose compute node could not be determined; it holds no node:<name> pool but still counts against its host and llm:<name> pools. Absent otherwise.
+                    items:
+                      type: object
+                      properties:
+                        node_unknown: {type: boolean, description: "True when the lease's compute node was expected and could not be determined at adoption. The lease holds no node pool. Absent when false"}
                   waiting: {type: array, items: {type: object}}
                   backoff:
                     type: array

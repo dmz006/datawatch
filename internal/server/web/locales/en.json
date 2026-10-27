@@ -1677,6 +1677,7 @@
   "capacity_no_limit": "no limit",
   "capacity_no_cap_configured": "no cap configured",
   "capacity_waiting_for_node": "waiting for node",
+  "capacity_node_unknown": "node unknown",
   "capacity_node_holder": "holder",
   "capacity_pool_host": "Host sessions (all tasks + interactive)",
   "capacity_pool_host_hint": "Machine-wide session limit, shared with interactive sessions — not specific to this Automaton.",

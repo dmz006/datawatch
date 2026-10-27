@@ -862,6 +862,8 @@ type Manager struct {
 	sessionNode SessionNodeFn
 	// entryNodes counts the compute nodes an LLM entry lists (nil = unknown).
 	entryNodes EntryNodesFn
+	// sessionEndpoint reads the endpoint a session was placed on, for logging.
+	sessionEndpoint SessionEndpointFn
 	// piDefaultModel reports the provider-qualified model a pi-family launch
 	// of a backend falls back to (nil = no provider known). See model_qualify.go.
 	piDefaultModel PiDefaultModelFn

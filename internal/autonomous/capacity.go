@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 	"time"
@@ -85,6 +86,19 @@ func (m *Manager) SetSessionNode(fn SessionNodeFn) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessionNode = fn
+}
+
+// SessionEndpointFn names the endpoint a session was placed on (its node
+// address, else its engine URL), "" when it records none. adoptCapacity only
+// logs it, to show which endpoint matched no compute node.
+type SessionEndpointFn func(sessionID string) string
+
+// SetSessionEndpoint wires the endpoint reader used in the log line for a
+// worker adopted on no known node. Nil leaves the endpoint out of that line.
+func (m *Manager) SetSessionEndpoint(fn SessionEndpointFn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionEndpoint = fn
 }
 
 // SetEntryNodes wires the count of compute nodes an LLM entry lists, which
@@ -551,7 +565,9 @@ func (m *Manager) clearPRDWaitReason(prdID string) {
 // its worker was started, the node the session says it runs on (its explicit
 // reference, then its own endpoint), the resolver's node when the worker's LLM
 // entry lists exactly one compute node, and otherwise none. An entry that
-// lists several nodes never falls back to its first.
+// lists several nodes never falls back to its first. When the worker is a
+// local-engine session of an entry with two or more nodes and none resolves,
+// the lease holds no node and is flagged node-unknown, and one line is logged.
 func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	if !m.capacityOn() {
 		return
@@ -559,7 +575,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	m.mu.Lock()
 	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
 	fallback := m.cfg.ExecutionBackend
-	sessionNode, entryNodes := m.sessionNode, m.entryNodes
+	sessionNode, entryNodes, sessionEndpoint := m.sessionNode, m.entryNodes, m.sessionEndpoint
 	m.mu.Unlock()
 	story := findStory(prd, t.StoryID)
 	backend, model := resolveTaskBackendModel(t, story, prd, m.AutomationForPRD(prd), fallback)
@@ -568,9 +584,31 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 		return
 	}
 	node = adoptedNode(t, sessionNode, node, entryNodes, backend, model)
+	choices := nodeChoicesFor(choicesFn, backend, model)
+	unknown := node == "" && nodeExpected(entryNodes, len(choices), backend, model)
+	if unknown {
+		if ls := led.LeaseOf(t.ID); ls == nil || !ls.NodeUnknown {
+			endpoint := ""
+			if sessionEndpoint != nil && t.SessionID != "" {
+				endpoint = sessionEndpoint(t.SessionID)
+			}
+			log.Printf("[autonomous] adopt: task=%s session=%s endpoint=%q matches no compute node; lease holds no node (node_unknown)", t.ID, t.SessionID, endpoint)
+		}
+	}
 	led.Adopt(capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: poolsWithoutNodes(pools), Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), Model: model,
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: poolsWithoutNodes(pools), Node: node, NodeChoices: choices, Model: model, NodeUnknown: unknown,
 	}, t.SessionID, VerifyHolder(t.ID))
+}
+
+// nodeExpected reports whether an adopted worker should sit on a compute node:
+// it is a local-engine session of an LLM entry that lists two or more nodes.
+// Without an entry count it falls back to the live candidate list. A backend
+// that never takes a node reports 0 nodes and no candidates.
+func nodeExpected(entryNodes EntryNodesFn, candidates int, backend, model string) bool {
+	if entryNodes != nil {
+		return entryNodes(backend, model) >= 2
+	}
+	return candidates >= 2
 }
 
 // adoptedNode picks the node an adopted worker occupies: the node recorded on

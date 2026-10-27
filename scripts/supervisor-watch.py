@@ -185,7 +185,8 @@ def main():
     for l in cap.get("leases") or []:
         lp = l.get("pools") or []
         if "llm:pi-prompt" in lp and not any(x.startswith("node:") for x in lp):
-            findings.append("LEASE %s holds a pi-prompt slot with no node lease" % l.get("holder"))
+            why = "node unknown after adoption" if l.get("node_unknown") else "no node lease"
+            findings.append("LEASE %s holds a pi-prompt slot with %s" % (l.get("holder"), why))
     idle_nodes = [n for n, pool in pools.items() if n.startswith("node:") and pool.get("limit") and pool.get("held", 0) == 0 and n not in ("node:datawatch-openai", "node:verdict")]
     node_waiters = [w for w in waiting if "waiting for node" in str(w.get("reason", ""))]
     if idle_nodes and node_waiters:

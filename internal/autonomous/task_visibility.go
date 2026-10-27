@@ -54,14 +54,18 @@ type TaskWaitView struct {
 // the pools it holds (host, llm:, node: and any tree lock key), the node and
 // the session it runs on, and since when.
 type TaskHoldView struct {
-	TaskID    string    `json:"task_id"`
-	PRDID     string    `json:"prd_id"`
-	PRDTitle  string    `json:"prd_title,omitempty"`
-	TaskTitle string    `json:"task_title,omitempty"`
-	Pools     []string  `json:"pools"`
-	Node      string    `json:"node,omitempty"`
-	SessionID string    `json:"session_id,omitempty"`
-	Since     time.Time `json:"since"`
+	TaskID    string   `json:"task_id"`
+	PRDID     string   `json:"prd_id"`
+	PRDTitle  string   `json:"prd_title,omitempty"`
+	TaskTitle string   `json:"task_title,omitempty"`
+	Pools     []string `json:"pools"`
+	Node      string   `json:"node,omitempty"`
+	// NodeUnknown is set when the task's surviving worker was adopted after a
+	// restart without a determinable compute node: the task holds its host and
+	// llm pools but no node pool.
+	NodeUnknown bool      `json:"node_unknown,omitempty"`
+	SessionID   string    `json:"session_id,omitempty"`
+	Since       time.Time `json:"since"`
 	// Note is set when the holdings need a sentence: a task parked on an
 	// external condition has released its inference slot.
 	Note string `json:"note,omitempty"`
@@ -304,6 +308,7 @@ func (m *Manager) runningHoldView(p visPRD, t *visTask, led *capacity.Ledger) Ta
 		if lease != nil {
 			h.Pools = append(h.Pools, lease.Pools...)
 			h.Node = lease.Node
+			h.NodeUnknown = lease.NodeUnknown
 			if !lease.Acquired.IsZero() {
 				h.Since = lease.Acquired
 			}

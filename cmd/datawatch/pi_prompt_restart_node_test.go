@@ -13,7 +13,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
@@ -194,5 +196,129 @@ func TestEntryNodeCountIgnoresTheServingFilter(t *testing.T) {
 	}
 	if n := entryNodeCount(nil)(piBackendName, restartModel); n != 0 {
 		t.Errorf("nil registry count = %d, want 0", n)
+	}
+}
+
+// strayEndpointSession is a surviving worker whose endpoint matches no node
+// address and which carries no ComputeNodeRef.
+func strayEndpointSession(addr string) *session.Session {
+	return &session.Session{NodeAddress: addr, OllamaURL: addr}
+}
+
+// TestPiPromptRestartUnknownNodeHoldsNoNode proves that a surviving worker
+// whose node cannot be determined holds no node pool and is flagged, that no
+// guess from a host name, DNS or part of a node name is made, and that a
+// worker whose node is knowable in the same run still lands on it.
+func TestPiPromptRestartUnknownNodeHoldsNoNode(t *testing.T) {
+	const piNodeFirstPort = "http://10.0.0.1:9999"
+	const piNodeLookalike = "http://datawatch-gpu.example:11434"
+
+	t.Run("two workers on no known node", func(t *testing.T) {
+		for _, servesBoth := range []bool{true, false} {
+			// Same host as the first node, other port; and a host that only
+			// resembles a node name.
+			r, a, b := piRestart(t, servesBoth, strayEndpointSession(piNodeFirstPort), strayEndpointSession(piNodeLookalike))
+			st := r.led.Snapshot()
+			for _, id := range []string{a, b} {
+				ls := r.led.LeaseOf(id)
+				if ls.Node != "" || !ls.NodeUnknown {
+					t.Errorf("servesBoth=%v task %s lease = %+v, want no node and node_unknown", servesBoth, id, ls)
+				}
+			}
+			for _, n := range []string{piNodeFirst, piNodeSecond} {
+				if p, ok := poolNamed(st, "node:"+n); ok && p.Held != 0 {
+					t.Errorf("servesBoth=%v pool node:%s = %+v, want held 0", servesBoth, n, p)
+				}
+			}
+			if p, ok := poolNamed(st, "llm:"+piBackendName); !ok || p.Held != 2 {
+				t.Errorf("servesBoth=%v pool llm:%s = %+v (found %v), want 2 held", servesBoth, piBackendName, p, ok)
+			}
+			assertNoNodeOverLimit(t, st)
+
+			// The /api/capacity-shaped body flags both leases.
+			body, err := json.Marshal(map[string]any{"pools": st.Pools, "leases": st.Leases})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var shaped struct {
+				Leases []map[string]any `json:"leases"`
+			}
+			if err := json.Unmarshal(body, &shaped); err != nil {
+				t.Fatal(err)
+			}
+			if len(shaped.Leases) != 2 {
+				t.Fatalf("want 2 leases in the body, got %s", body)
+			}
+			for _, ls := range shaped.Leases {
+				if ls["node_unknown"] != true {
+					t.Errorf("lease %v is not flagged in the capacity body", ls)
+				}
+			}
+			text, err := autonomous.FormatCapacityText(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(text, "Leases with unknown node: 2") {
+				t.Errorf("status text should count both leases:\n%s", text)
+			}
+		}
+	})
+
+	t.Run("a knowable node still lands on it", func(t *testing.T) {
+		reg, creg := piPromptRegistries(t, true)
+		sessions := map[string]*session.Session{
+			"sess-lost":  strayEndpointSession(piNodeFirstPort),
+			"sess-known": placedSession(piNodeSecond, piAddrSecond),
+		}
+		r := newRestartRigWith(t, sessions, reg, creg, map[string]int{"node:" + piNodeFirst: 1, "node:" + piNodeSecond: 1})
+		lost := r.runningTask("lost", "sess-lost")
+		known := r.runningTask("known", "sess-known")
+		r.api.SetExecutors(func(_ context.Context, req autonomous.SpawnRequest) (autonomous.SpawnResult, error) {
+			t.Errorf("task %s was spawned, want its surviving session adopted", req.TaskID)
+			return autonomous.SpawnResult{}, context.Canceled
+		}, func(ctx context.Context, _ *autonomous.PRD, _ *autonomous.Task) (autonomous.VerificationResult, error) {
+			<-ctx.Done()
+			return autonomous.VerificationResult{}, ctx.Err()
+		})
+		r.waitFor("both sessions to be adopted", func() bool { return r.led.LeaseOf(lost) != nil && r.led.LeaseOf(known) != nil })
+
+		if ls := r.led.LeaseOf(lost); ls.Node != "" || !ls.NodeUnknown {
+			t.Errorf("lost worker lease = %+v, want no node and node_unknown", ls)
+		}
+		if ls := r.led.LeaseOf(known); ls.Node != piNodeSecond || ls.NodeUnknown {
+			t.Errorf("known worker lease = %+v, want node %s and no flag", ls, piNodeSecond)
+		}
+		st := r.led.Snapshot()
+		if p, ok := poolNamed(st, "node:"+piNodeFirst); ok && p.Held != 0 {
+			t.Errorf("pool node:%s = %+v, want held 0", piNodeFirst, p)
+		}
+		if p, ok := poolNamed(st, "node:"+piNodeSecond); !ok || p.Held != 1 {
+			t.Errorf("pool node:%s = %+v (found %v), want held 1", piNodeSecond, p, ok)
+		}
+		if p, ok := poolNamed(st, "llm:"+piBackendName); !ok || p.Held != 2 {
+			t.Errorf("pool llm:%s = %+v (found %v), want 2 held", piBackendName, p, ok)
+		}
+	})
+}
+
+// sessionEndpoint reads the endpoint adoption logs for a worker on no known
+// node: the node address, else the engine URL, and "" for an unknown session.
+func TestSessionEndpointReadsNodeAddressThenEngineURL(t *testing.T) {
+	sessions := map[string]*session.Session{
+		"a": {NodeAddress: "http://n:1", OllamaURL: "http://o:2"},
+		"b": {OllamaURL: "http://o:2"},
+	}
+	read := sessionEndpoint(func(id string) (*session.Session, bool) { s, ok := sessions[id]; return s, ok })
+	for id, want := range map[string]string{"a": "http://n:1", "b": "http://o:2", "gone": ""} {
+		if got := read(id); got != want {
+			t.Errorf("endpoint(%s) = %q, want %q", id, got, want)
+		}
+	}
+	if got := sessionEndpoint(nil)("a"); got != "" {
+		t.Errorf("no lookup wired: endpoint = %q, want empty", got)
+	}
+	nilSess := sessionEndpoint(func(string) (*session.Session, bool) { return nil, true })
+	if got := nilSess("a"); got != "" {
+		t.Errorf("nil session: endpoint = %q, want empty", got)
 	}
 }

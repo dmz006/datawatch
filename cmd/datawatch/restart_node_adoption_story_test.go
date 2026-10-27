@@ -65,6 +65,7 @@ func newRestartRigWith(t *testing.T, sessions map[string]*session.Session, reg *
 	mgr.SetCapacityChoices(choices)
 	mgr.SetEntryNodes(entryNodeCount(regFn))
 	mgr.SetSessionNode(sessionComputeNode(func(id string) (*session.Session, bool) { s, ok := sessions[id]; return s, ok }, nodesFn))
+	mgr.SetSessionEndpoint(sessionEndpoint(func(id string) (*session.Session, bool) { s, ok := sessions[id]; return s, ok }))
 	mgr.SetSessionAliveFn(func(id string) bool { _, ok := sessions[id]; return ok })
 	reg.SetChangeFn(replanOnPlacementChange(led, regFn, nodesFn))
 

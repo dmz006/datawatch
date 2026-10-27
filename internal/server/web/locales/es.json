@@ -1634,6 +1634,7 @@
   "capacity_no_limit": "no limit",
   "capacity_no_cap_configured": "no cap configured",
   "capacity_waiting_for_node": "esperando al nodo",
+  "capacity_node_unknown": "nodo desconocido",
   "capacity_node_holder": "titular",
   "capacity_pool_host": "Host sessions (all tasks + interactive)",
   "capacity_pool_host_hint": "Límite de sesiones a nivel de máquina, compartido con sesiones interactivas — no específico de este autómata.",

@@ -879,6 +879,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	amgr.SetCapacityChoices(choices)
 	amgr.SetEntryNodes(entryNodeCount(httpServer.InferenceRegistry))
 	amgr.SetSessionNode(sessionComputeNode(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }, httpServer.ComputeRegistry))
+	amgr.SetSessionEndpoint(sessionEndpoint(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }))
 	amgr.SetPiDefaultModel(piDefaultModel(cfg))
 	amgr.SetNodeLoad(nodeLoader(httpServer.ComputeRegistry), nodeAlerts)
 	amgr.SetCapacityAudit(capacityAudit)
@@ -1322,6 +1323,24 @@ func sessionComputeNode(lookup func(id string) (*session.Session, bool), nodes f
 			}
 		}
 		return ""
+	}
+}
+
+// sessionEndpoint builds the reader of the endpoint a session was placed on:
+// its node address, else its Ollama URL ("" when it records neither).
+func sessionEndpoint(lookup func(id string) (*session.Session, bool)) autonomous.SessionEndpointFn {
+	return func(sessionID string) string {
+		if lookup == nil {
+			return ""
+		}
+		s, ok := lookup(sessionID)
+		if !ok || s == nil {
+			return ""
+		}
+		if s.NodeAddress != "" {
+			return s.NodeAddress
+		}
+		return s.OllamaURL
 	}
 }
 

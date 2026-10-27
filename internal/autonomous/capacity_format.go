@@ -76,7 +76,10 @@ type capacityWaiterView struct {
 
 // capacityBody is the part of the /api/capacity response the text needs.
 type capacityBody struct {
-	Pools   []capacityPoolView    `json:"pools"`
+	Pools  []capacityPoolView `json:"pools"`
+	Leases []struct {
+		NodeUnknown bool `json:"node_unknown"`
+	} `json:"leases"`
 	Waiting []capacityWaiterView  `json:"waiting"`
 	Backoff []capacityBackoffView `json:"backoff"`
 	Budgets []BudgetStatus        `json:"budgets"`
@@ -103,6 +106,15 @@ func FormatCapacityText(body []byte) (string, error) {
 	now := CapacityTextClock()
 	var b strings.Builder
 	b.WriteString(poolsTextWithUsage(c.Pools))
+	unknown := 0
+	for _, l := range c.Leases {
+		if l.NodeUnknown {
+			unknown++
+		}
+	}
+	if unknown > 0 {
+		fmt.Fprintf(&b, "Leases with unknown node: %d (counted in host and llm pools, held on no node pool)\n", unknown)
+	}
 
 	switch {
 	case len(c.Tasks.Waiting) > 0:
@@ -132,6 +144,8 @@ func FormatCapacityText(body []byte) (string, error) {
 				holdList(h.Pools))
 			if h.Node != "" {
 				fmt.Fprintf(&b, ", node %s", h.Node)
+			} else if h.NodeUnknown {
+				b.WriteString(", node unknown")
 			}
 			if h.SessionID != "" {
 				fmt.Fprintf(&b, ", session %s", h.SessionID)
