@@ -174,8 +174,9 @@ test('_tagsMenuRefresh runs after a session\'s own tags are saved', async () => 
 test('_tagsMenuRefresh runs when the open session changes', () => {
   const h = loadApp();
   h.sb.fetch = () => new Promise(() => {});
+  h.sb.send = () => {};
   const spy = spyRefresh(h);
-  try { h.sb.renderSessionDetail('host-aaaa'); } catch (_) { /* the rest of the render needs a full page */ }
+  h.sb.renderSessionDetail('host-aaaa');
   assert.ok(spy.calls >= 1, '_tagsMenuRefresh ran');
 });
 
@@ -188,4 +189,85 @@ test('the menu adds no storage key beyond the two existing ones', () => {
   assert.equal(/localStorage|sessionStorage|indexedDB/.test(menu), false);
   assert.ok(src.includes("'cs_tag_browse_' + scope"));
   assert.ok(src.includes("'cs_sessions_watched'"));
+});
+
+// openMenu puts a drawn panel on screen with the menu marked open.
+function openMenu(h, panel) {
+  run(h, `_tagsMenuOpen = true; state.activeView = 'session-detail'; state.activeSession = 'host-aaaa';`);
+  panel.innerHTML = run(h, '_tagsMenuHTML()');
+  panel.hidden = false;
+}
+
+test('the open panel follows a watch toggle', () => {
+  const panel = makeEl();
+  const h = loadApp({ byId: { headerTagsMenu: panel } });
+  h.sb.renderSessionDetail = () => {};
+  openMenu(h, panel);
+  assert.ok(panel.innerHTML.includes(h.sb.t('tags_menu_watch_this')));
+  h.sb.toggleSessionWatch('host-aaaa');
+  assert.ok(panel.innerHTML.includes(h.sb.t('tags_menu_unwatch_this')));
+  assert.equal(panel.innerHTML.includes(h.sb.t('tags_menu_watch_this')), false);
+  h.sb.toggleSessionWatch('host-aaaa');
+  assert.ok(panel.innerHTML.includes(h.sb.t('tags_menu_watch_this')));
+  assert.equal(run(h, '_tagsMenuOpen'), true);
+});
+
+test('the open panel follows the watched filter, a tag, the match mode and Clear', () => {
+  const panel = makeEl();
+  const h = loadApp({ byId: { headerTagsMenu: panel } });
+  openMenu(h, panel);
+  const clear = h.sb.t('tags_menu_clear');
+  assert.equal(panel.innerHTML.includes('tagBrowseClear('), false);
+  assert.equal(panel.innerHTML.includes('type="checkbox"  onchange="toggleSessionWatchFilter()"') || /toggleSessionWatchFilter\(\)/.test(panel.innerHTML), true);
+  h.sb.toggleSessionWatchFilter();
+  assert.match(panel.innerHTML, /checked onchange="toggleSessionWatchFilter\(\)"/);
+  h.sb.tagBrowseToggleTag('session', 'a', true);
+  assert.ok(panel.innerHTML.includes('tagBrowseClear('), 'Clear appears with a tag selected');
+  assert.ok(panel.innerHTML.includes(clear));
+  assert.match(panel.innerHTML, /value="a" checked/);
+  assert.match(panel.innerHTML, /aria-pressed="false"/);
+  h.sb.tagBrowseToggleMode('session');
+  assert.match(panel.innerHTML, /aria-pressed="true"/);
+  assert.ok(panel.innerHTML.includes(h.sb.t('tag_browse_match_all')));
+  h.sb.tagBrowseClear('session');
+  assert.equal(panel.innerHTML.includes('tagBrowseClear('), false, 'Clear goes with the selection');
+  assert.equal(/value="a" checked/.test(panel.innerHTML), false);
+});
+
+test('a closed or still hidden panel is not redrawn', () => {
+  const panel = makeEl();
+  const h = loadApp({ byId: { headerTagsMenu: panel } });
+  panel.innerHTML = 'untouched';
+  run(h, `_tagsMenuOpen = false;`);
+  h.sb.toggleSessionWatchFilter();
+  assert.equal(panel.innerHTML, 'untouched');
+  run(h, `_tagsMenuOpen = true;`);
+  panel.hidden = true;
+  h.sb.toggleSessionWatchFilter();
+  assert.equal(panel.innerHTML, 'untouched');
+});
+
+test('the open panel follows a change of the open session', () => {
+  const panel = makeEl();
+  const h = loadApp({ byId: { headerTagsMenu: panel } });
+  h.sb.fetch = () => new Promise(() => {});
+  h.sb.send = () => {};
+  openMenu(h, panel);
+  run(h, `state.watchedSessions.add('host-bbbb'); state.activeSession = 'host-bbbb';`);
+  h.sb.renderSessionDetail('host-bbbb');
+  assert.ok(panel.innerHTML.includes("toggleSessionWatch('host-bbbb')"));
+  assert.ok(panel.innerHTML.includes(h.sb.t('tags_menu_unwatch_this')));
+});
+
+test('the open panel keeps keyboard focus on the same control across a redraw', () => {
+  const panel = makeEl();
+  const h = loadApp({ byId: { headerTagsMenu: panel } });
+  h.sb.renderSessionDetail = () => {};
+  openMenu(h, panel);
+  const focused = [];
+  const ctrls = [{ focus() { focused.push(0); } }, { focus() { focused.push(1); } }, { focus() { focused.push(2); } }];
+  panel.querySelectorAll = () => ctrls;
+  h.sb.document.activeElement = ctrls[1];
+  h.sb.toggleSessionWatch('host-aaaa');
+  assert.deepEqual(focused, [1]);
 });

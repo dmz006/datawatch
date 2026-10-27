@@ -36640,6 +36640,25 @@ function _tagsMenuRefresh() {
   if (chip) chip.textContent = n ? String(n) : '';
   btn.setAttribute('aria-label', n ? label + ' (' + n + ')' : label);
   btn.setAttribute('aria-expanded', _tagsMenuOpen ? 'true' : 'false');
+  _tagsMenuRedraw();
+}
+
+// _tagsMenuRedraw rebuilds the open panel from the existing state so its watch label,
+// Clear button and match mode follow a toggle. A panel still hidden (the registry is
+// loading) is left to toggleTagsMenu, and keyboard focus stays on the same control.
+function _tagsMenuRedraw() {
+  if (!_tagsMenuOpen || typeof _tagsMenuHTML !== 'function') return;
+  const panel = document.getElementById('headerTagsMenu');
+  if (!panel || panel.hidden) return;
+  const html = _tagsMenuHTML();
+  if (panel.innerHTML === html) return;
+  const controls = () => Array.from(panel.querySelectorAll('input,button'));
+  const at = controls().indexOf(document.activeElement);
+  panel.innerHTML = html;
+  if (at >= 0) {
+    const next = controls()[at];
+    if (next && next.focus) next.focus();
+  }
 }
 
 function _tagsMenuListen() {
@@ -37760,7 +37779,7 @@ function _tagFacetsRefresh(scope) {
 function _tagBrowseRepaint(scope) {
   if (scope === 'session') {
     renderSessionsView();
-    if (typeof _sessionTagMenuRefresh === 'function') _sessionTagMenuRefresh();
+    _tagsMenuRefresh();
     return;
   }
   if (scope === 'automation') _automationRenderCards();
