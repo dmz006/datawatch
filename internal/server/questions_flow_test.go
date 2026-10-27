@@ -24,9 +24,9 @@ import (
 //
 //  1. POST /api/questions creates an open question;
 //  2. lists filter by state, asker, text, context and limit;
-//  3. an answer quote holding a newline, pipe, backslashes, tab and UTF-8 is
-//     stored byte-exact (hash included) in memory, in the store file and on
-//     the wire;
+//  3. an answer quote holding an equals sign, a newline, pipe, backslashes,
+//     tab and UTF-8 is stored byte-exact (hash included) in memory, in the
+//     store file and on the wire;
 //  4. a second non-superseding answer gets a 409;
 //  5. a superseding answer gets a fresh id and the question stays answered;
 //  6. a second question is withdrawn, after which answers to it are refused;
@@ -45,7 +45,7 @@ func TestQuestionsFlow_EndToEnd(t *testing.T) {
 
 	// The daemon wiring: one append-only audit log with the CEF mirror
 	// enabled, and the store's audit callback pointed at it, exactly like
-	// cmd/datawatch/main.go does.
+	// the daemon does at startup.
 	al, err := audit.New(dir)
 	if err != nil {
 		t.Fatalf("audit.New: %v", err)
@@ -77,7 +77,16 @@ func TestQuestionsFlow_EndToEnd(t *testing.T) {
 	// --- 1. raise -------------------------------------------------------------
 	asker := "automation:orchestrator-task-7"
 	body := validQuestionBody()
+	// A real raise: prd context with its link, and the three options an
+	// actual decision question carries.
 	body["asked_by"] = asker
+	body["context"] = "prd"
+	body["prd_id"] = "auto-dmz-cleanup"
+	body["options"] = []map[string]any{
+		{"id": "yes", "label": "Yes, cap it"},
+		{"id": "no", "label": "No"},
+		{"id": "third", "label": "Cap only the first retry"},
+	}
 	rr := doQ(t, s, http.MethodPost, "/api/questions", body)
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("raise: want 201, got %d body=%s", rr.Code, rr.Body.String())
@@ -89,7 +98,10 @@ func TestQuestionsFlow_EndToEnd(t *testing.T) {
 	if q1.State != autonomous.QuestionOpen {
 		t.Fatalf("raised state=%q, want open", q1.State)
 	}
-	if q1.AskedBy != asker || q1.Default != "yes" || len(q1.Options) != 2 {
+	if q1.Context != autonomous.QuestionContextPrd || q1.PRDID == "" {
+		t.Fatalf("raised context=%q prd_id=%q, want prd with its link: %+v", q1.Context, q1.PRDID, q1)
+	}
+	if q1.AskedBy != asker || q1.Default != "yes" || len(q1.Options) != 3 {
 		t.Fatalf("raised record wrong: %+v", q1)
 	}
 
@@ -98,7 +110,7 @@ func TestQuestionsFlow_EndToEnd(t *testing.T) {
 		"state":   "state=open",
 		"asker":   "asker=" + asker,
 		"text":    "text=backoff",
-		"context": "context=none",
+		"context": "context=prd",
 		"limit":   "limit=1",
 	}
 	for name, args := range filters {
@@ -121,7 +133,7 @@ func TestQuestionsFlow_EndToEnd(t *testing.T) {
 	}
 
 	// --- 3. answer with a hostile quote -------------------------------------
-	quote := "  pick A, not B | a" + "\t" + "b" + "\r\n" + `\back\slash — café 日本語   `
+	quote := "  pick A = B? no — pick A, not B | a" + "\t" + "b" + "\r\n" + `\back\slash — café 日本語   `
 	hsum := sha256.Sum256([]byte(quote))
 	wantHash := hex.EncodeToString(hsum[:])
 
@@ -219,6 +231,9 @@ func TestQuestionsFlow_EndToEnd(t *testing.T) {
 	if s.cfg.Autonomous.Questions.Enabled {
 		t.Fatalf("switch still on after PUT off")
 	}
+	if getQuestionsEnabled(t, s) {
+		t.Fatalf("GET /api/config still shows the switch on after PUT off")
+	}
 	offSurfaces := []struct {
 		name string
 		run  func() *httptest.ResponseRecorder
@@ -245,6 +260,9 @@ func TestQuestionsFlow_EndToEnd(t *testing.T) {
 	putJSON(t, s.handlePutConfig, "/api/config", map[string]any{"autonomous.questions.enabled": true})
 	if !s.cfg.Autonomous.Questions.Enabled {
 		t.Fatal("switch did not come back on")
+	}
+	if !getQuestionsEnabled(t, s) {
+		t.Fatal("GET /api/config does not show the switch back on")
 	}
 	rr = doQ(t, s, http.MethodGet, "/api/questions", nil)
 	if rr.Code != http.StatusOK {
@@ -344,7 +362,7 @@ func TestQuestionsFlow_EndToEnd(t *testing.T) {
 	assert("raised q1", entries[5], "question_raised", q1.ID,
 		[]string{"question_id", "label", "asked_by", "asker_kind", "context", "risk", "option_count", "default", "text"},
 		map[string]any{"question_id": q1.ID, "label": "decision", "asked_by": asker,
-			"context": "none", "risk": "low", "default": "yes",
+			"context": "prd", "risk": "low", "default": "yes", "option_count": 3,
 			"text": "Should retry backoff be capped at five minutes?"})
 	assert("answered q1", entries[4], "question_answered", q1.ID,
 		[]string{"question_id", "answer_id", "chosen_option_id", "quote", "quote_sha256", "actor", "surface"},
