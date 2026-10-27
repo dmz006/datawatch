@@ -60,7 +60,12 @@
 //     id (BL + digits, case-insensitive), per AGENT.md's naming rule;
 //
 //  6. failing — any finding of any kind fails the check (Pass == false);
-//     the caller decides whether that means warn or block.
+//     the caller decides whether that means warn or block;
+//
+//  7. write task files — every task whose title starts with a write verb
+//     (planWriteTaskVerbs) must declare the files it will change in
+//     FilesPlanned; FilesGenerated is verification output and does not
+//     satisfy the rule.
 package autonomous
 
 import (
@@ -94,6 +99,10 @@ const (
 	// FindingTrackerIDInName — a task title or generated file name that
 	// embeds a tracker id (bl + digits, case-insensitive).
 	FindingTrackerIDInName = "tracker_id_in_name"
+	// FindingWriteTaskWithoutFiles — a task whose title starts with a
+	// write verb (planWriteTaskVerbs) but whose FilesPlanned list is
+	// empty.
+	FindingWriteTaskWithoutFiles = "write_task_without_files"
 )
 
 // StructuralFinding is one typed, deterministic finding in a decomposed
@@ -173,9 +182,40 @@ var (
 	// case-insensitive ("BL124", "bl9"). Per the structural rule this
 	// is a plain containment match on task titles and generated names.
 	trackerIDRefRe = regexp.MustCompile(`(?i)bl[0-9]+`)
+
+	// planWriteTaskVerbs — the leading title verbs that mark a task as
+	// one that writes files. Rule 7 matches a task title's first word
+	// against this list, case-insensitively.
+	planWriteTaskVerbs = []string{
+		"Write", "Add", "Update", "Create", "Fix", "Bump", "Implement",
+		"Document", "Register", "Wire", "Make", "Move", "Replace",
+		"Rename", "Extend", "Remove",
+	}
 )
 
-// CheckPlanStructure runs the six structural rules above over the
+// titleStartsWithWriteVerb reports whether the first word of title
+// (after trimming) is one of planWriteTaskVerbs, ignoring case.
+func titleStartsWithWriteVerb(title string) bool {
+	_, ok := writeVerbOf(title)
+	return ok
+}
+
+// writeVerbOf returns the planWriteTaskVerbs entry matching the first
+// word of title, in its canonical spelling.
+func writeVerbOf(title string) (string, bool) {
+	fields := strings.Fields(title)
+	if len(fields) == 0 {
+		return "", false
+	}
+	for _, v := range planWriteTaskVerbs {
+		if strings.EqualFold(fields[0], v) {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// CheckPlanStructure runs the seven structural rules above over the
 // in-memory plan stories and returns the typed finding list. It is
 // deterministic: the same arguments always yield the same report.
 // prd may be nil, in which case the project tree is the current
@@ -489,6 +529,23 @@ func CheckPlanStructure(prd *PRD, stories []Story) *PlanStructureReport {
 					})
 				}
 			}
+		}
+	}
+
+	// --- Rule 7: a write-verb task must declare the files it changes. ---
+	for _, s := range stories {
+		for _, t := range s.Tasks {
+			verb, ok := writeVerbOf(t.Title)
+			if !ok || len(t.FilesPlanned) > 0 {
+				continue
+			}
+			add(StructuralFinding{
+				Kind:    FindingWriteTaskWithoutFiles,
+				StoryID: s.ID,
+				TaskID:  t.ID,
+				Detail: "task " + t.ID + " title " + strconv.Quote(t.Title) + " starts with write verb " + verb +
+					" but declares no files; add the files it will change to its files list, or make the first line of its spec READ-ONLY: <reason>",
+			})
 		}
 	}
 
