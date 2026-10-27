@@ -37,7 +37,7 @@ func wavDuration(path string) (time.Duration, bool) {
 	if err != nil {
 		return 0, false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var head [12]byte
 	if _, err := io.ReadFull(f, head[:]); err != nil {
 		return 0, false
