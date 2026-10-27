@@ -1769,3 +1769,9 @@ Operator: "Claude is at 27%". The week started at the 2026-10-25 08:00 reset, so
 - Second Claude lane: operator, quoted: "4 yes open 2nd lane". Decision: Claude cap raised from 1 to 2 for ordinary work at 05:32 on 10-27 (usage 27%, on the pace line). Supersedes "Stay at 1 but use 2nd for special" (2026-10-26).
 - Design questions: operator, quoted: "5 if there are decisions ask". Decision: the supervisor asks, one at a time, when a design decision is needed.
 - Housekeeping: operator, quoted: "6 housekeeping is build supervisor job". Done: issue #210 closed with a note naming v9.5.84. The duplicate `v9.0.0` CHANGELOG heading is a non-exempt file, so it ships with the next release's version bump. No stable tag is named yet (no soak period has run).
+
+### Usage reading 2026-10-27 about 07:40 and judge routing decision
+
+Operator: "Claude is at 30%". Days since the 2026-10-25 08:00 reset: 1.98, so the pace line is 28.3% and the reading is 1.7 points over it. Since 27% at about 04:00 the burn is 3 points in about 3.7 hours (about 19 points a day) with the second Claude lane open since 05:32 and both slots almost always busy. If both lanes stayed that busy the week would end well over 100%; at the one-lane rate of about 8 a day it ends near 70%. The operator picks the lane count; the supervisor reports this at the next tick and does not close the lane on its own projection.
+
+Final judge routing: operator, quoted: "size aware rooting sound good". Decision: a diff above a size threshold (proposed 400 changed lines, setting default 0 = off is NOT chosen; default on at 400) goes to the Claude backend first instead of spending the judge time limit on the local model; a judge that times out on every backend still holds the PRD for review.
