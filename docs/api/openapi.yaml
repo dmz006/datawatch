@@ -4338,7 +4338,8 @@ paths:
 
         An answer is immutable: a changed mind is a new answer that supersedes
         the old one via `supersedes` (which must name the current answer of an
-        answered question; a supersedes on an open question is malformed).
+        answered question; a supersedes on an open question is a 409 — there
+        is no current answer to replace).
 
         An answer whose text looks like a secret is refused 422, is never
         stored, and the response never echoes any part of the submitted text
@@ -4362,10 +4363,10 @@ paths:
             schema: {$ref: "#/components/schemas/QuestionAnswer"}
       responses:
         "201": {description: "The stored answer record (quote hash included) and the question's new state"}
-        "400": {description: "Malformed body; an unknown surface; neither an option nor a non-blank quote; an option id the question does not have; a quote that is not valid UTF-8; a supersedes on an open question (no current answer to replace)", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "400": {description: "Malformed body; an unknown surface; neither an option nor a non-blank quote; an option id the question does not have; a quote that is not valid UTF-8", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
         "403": {description: "Federated peer lacks the autonomous write capability", content: {"text/plain": {schema: {type: string}}}}
         "404": {description: Unknown question id, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
-        "409": {description: "Answering a withdrawn or expired question; a supersedes that is absent or wrong on an answered question", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "409": {description: "Answering a withdrawn or expired question; a supersedes on an open question (no current answer to replace); a supersedes that is absent or wrong on an answered question", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
         "413": {description: "Body over the cap, or a quote over 16 KiB", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
         "422": {description: "The answer looks like a secret — the fixed phrase and the safe routes, no echo of the submitted text; no rule name in the body", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionSecretRefusal"}}}}
         "500": {description: "The store could not append or replay the answer", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
@@ -5567,7 +5568,7 @@ components:
       properties:
         chosen_option_id: {type: string, description: "Must name an option of the question."}
         quote: {type: string, description: "The operator's own words, stored exactly as received. <= 16384 bytes."}
-        supersedes: {type: string, description: "The id of the answer being replaced (the current answer of an answered question). On an open question a supersedes is malformed (400 — there is no current answer to replace)."}
+        supersedes: {type: string, description: "The id of the answer being replaced (the current answer of an answered question). On an open question a supersedes is a 409 — there is no current answer to replace."}
         surface: {type: string, description: "pwa, android, ios, cli, rest, mcp, or `comm:<channel name>`. Defaults to `rest`; `system` is refused."}
         source_message_id: {type: string}
         actor: {type: string, description: "Defaults to the caller."}
@@ -5584,7 +5585,7 @@ components:
       type: object
       required: [error]
       properties:
-        error: {type: string, description: "A human-readable reason, e.g. `missing choice and quote`, `quote not valid UTF-8`, `supersedes must name this question's current answer`, `withdrawal requires an open question`."}
+        error: {type: string, description: "A human-readable reason, e.g. `answer carries neither an option nor non-blank text`, `answer quote is not valid UTF-8`, `answer must name the answer it supersedes`, `answer supersedes the wrong target`, `question is not open`."}
 
     QuestionSecretRefusal:
       description: "The 422 body of POST /api/questions/{id}/answer when an answer's text looks like a secret. Nothing from the submitted text is echoed: `error` is a fixed phrase and `suggestion` the two fixed safe routes. The matched rule's name is not in this body — it is recorded on the `question_answer_refused` audit entry."

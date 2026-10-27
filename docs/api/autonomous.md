@@ -1743,7 +1743,7 @@ curl -sX POST http://localhost:7433/api/questions/q1/answer \
 | Field | Rule |
 |---|---|
 | `chosen_option_id` | must name an option of the question; at least one of this or a non-blank `quote` is required |
-| `quote` | the operator's own words, stored exactly as received — no trimming, normalising or re-encoding; ≤ 16384 bytes; must be valid UTF-8 (a byte string that decodes to nothing is a `400`, `quote not valid UTF-8`, before anything is stored) |
+| `quote` | the operator's own words, stored exactly as received — no trimming, normalising or re-encoding; ≤ 16384 bytes; must be valid UTF-8 (a byte string that decodes to nothing is a `400`, `answer quote is not valid UTF-8`, before anything is stored) |
 | `supersedes` | the id of the answer being replaced (see "Changed minds" below) |
 | `surface` | `pwa`, `android`, `ios`, `cli`, `rest`, `mcp` or `comm:<channel name>`; empty defaults to `rest`; anything else (including `system`) is a `400` naming the accepted set |
 | `source_message_id` | the message that carried the answer, when it came over a comm channel |
@@ -1820,10 +1820,11 @@ only states that accept answers; a withdrawn question accepts none.
   read, and nothing is ever edited or deleted. There is no TTL and no
   expiry job — a question stays until it is answered or withdrawn.
 - **A changed mind is a new answer, not an edit.** An open question accepts
-  only an answer with no `supersedes` (carrying one is a `400` — there is no
-  current answer to replace), and
+  only an answer with no `supersedes` (carrying one is a `409` — the open
+  question has no current answer to replace, so the target is wrong), and
   an answered question accepts only an answer whose `supersedes` names its
-  current answer — a different target is a `409` naming both ids. The new
+  current answer — a target that is absent or different is a `409` naming
+  the answer ids. The new
   answer becomes current; the old one stays in the log, marked superseded.
 - **No choice is silent.** A raised question must name a `default` — an
   option or `hold` — so automation that walks past an unanswered question
@@ -1838,11 +1839,11 @@ only states that accept answers; a withdrawn question accepts none.
 |---|---|
 | 200 | list, by-id get, withdraw, answer log |
 | 201 | raise (`{question}`); answer (`{answer, question}`) |
-| 400 | malformed body (bad JSON, content after the object); a validation rule failed (every offending field named); an unknown `surface` on an answer; an answer that carries neither option nor non-blank quote; an option id the question does not have; a quote that is not valid UTF-8 (`quote not valid UTF-8`); an answer on an open question that names a supersedes (no current answer to replace); an unknown `state` / `context` filter (the value named); a `limit` that is not a positive integer (`limit must be a positive integer`) |
+| 400 | malformed body (bad JSON, content after the object); a validation rule failed (every offending field named); an unknown `surface` on an answer; an answer that carries neither option nor non-blank quote; an option id the question does not have; a quote that is not valid UTF-8 (`answer quote is not valid UTF-8`); an unknown `state` / `context` filter (the value named); a `limit` that is not a positive integer (`limit must be a positive integer`) |
 | 403 | a federation peer without the capability the action needs |
 | 404 | an unknown question id; any sub-path of a question that is not /answer, /withdraw or /answers |
 | 405 | a method other than the one shaped for the path |
-| 409 | answering a withdrawn or expired question; an answer on an answered question whose supersedes is absent or wrong (the answer ids named); withdrawing a question that is not open |
+| 409 | answering a withdrawn or expired question; an answer on an open question that names a supersedes (no current answer to replace); an answer on an answered question whose supersedes is absent or wrong (the answer ids named); withdrawing a question that is not open |
 | 413 | a raise or withdraw body over 64 KiB; an answer body over 64 KiB plus the quote cap; a quote over 16384 bytes |
 | 422 | an answer looks like a secret (see "Secret refusal" above) — never stored, never echoed; the body carries the fixed phrase `matched: secret pattern`, not the rule name, plus the `suggestion` routes |
 | 500 | the store could not append or replay an otherwise-valid write |
@@ -1852,9 +1853,9 @@ only states that accept answers; a withdrawn question accepts none.
 failures come back **plain text** — the message only, no JSON wrapper (e.g.
 `limit must be a positive integer`, `options must have 2 to 20 items`).
 Answer, withdraw and the answer-log failures come back as a **JSON object
-with one `error` field** (e.g. `missing choice and quote`, `supersedes must
-name this question's current answer`, `withdrawal requires an open
-question`). A secret refusal uses that same object with `reason`
+with one `error` field** (e.g. `answer carries neither an option nor
+non-blank text`, `answer must name the answer it supersedes`, `answer
+supersedes the wrong target`, `question is not open`). A secret refusal uses that same object with `reason`
 (`secret_detected`) and `suggestion` added. `403`, `404`, `405` and `503`
 are plain text on every endpoint. Parse `Content-Type`, not the path.
 
