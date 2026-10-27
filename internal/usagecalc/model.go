@@ -100,13 +100,16 @@ type Input struct {
 	RemainingWork RemainingWork `json:"remaining_work"`
 }
 
-// LaneRow is the projection for one lane count.
+// LaneRow is the projection for one lane count. BurnPer24h is measured from the recent
+// readings; PlanningBurnPer24h is the planning figure from the queue alone (see
+// planningPerLane). The two can disagree, and the planning figure is not a forecast.
 type LaneRow struct {
-	Lanes        int        `json:"lanes"`
-	BurnPer24h   float64    `json:"burn_per_24h"`
-	ProjectedEnd float64    `json:"projected_end"`
-	RunOutAt     *time.Time `json:"run_out_at"`
-	HoursEarly   float64    `json:"hours_early"`
+	Lanes              int        `json:"lanes"`
+	BurnPer24h         float64    `json:"burn_per_24h"`
+	PlanningBurnPer24h float64    `json:"planning_burn_per_24h"`
+	ProjectedEnd       float64    `json:"projected_end"`
+	RunOutAt           *time.Time `json:"run_out_at"`
+	HoursEarly         float64    `json:"hours_early"`
 }
 
 // Finish is the run-flat-out check of whether the remaining work ends before the allowance.
@@ -489,17 +492,35 @@ func (a *Advice) setLanes(cfg settings, percent float64, readAt time.Time, loc *
 	if cfg.recentLanes > 0 {
 		a.PerLanePer24h = math.Max((a.RecentBurnPer24h-cfg.baseline)/float64(cfg.recentLanes), 0)
 	}
+	planLane := a.planningPerLane(cfg.maxLanes)
 	a.ByLanes = make([]LaneRow, 0, cfg.maxLanes+1)
 	for l := 0; l <= cfg.maxLanes; l++ {
 		burn := cfg.baseline + float64(l)*a.PerLanePer24h
 		at, early := a.runOut(burn, percent, readAt, loc)
 		a.ByLanes = append(a.ByLanes, LaneRow{
-			Lanes: l, BurnPer24h: burn, ProjectedEnd: percent + burn*a.DaysLeft,
-			RunOutAt: at, HoursEarly: early,
+			Lanes: l, BurnPer24h: burn, PlanningBurnPer24h: cfg.baseline + float64(l)*planLane,
+			ProjectedEnd: percent + burn*a.DaysLeft, RunOutAt: at, HoursEarly: early,
 		})
 	}
 	chosen := a.ByLanes[cfg.lanes]
 	a.Chosen = &chosen
+}
+
+// planningPerLane is the points per lane per 24 hours that would finish the queue by the
+// reset if the queue were shared evenly over maxLanes lanes: the queue estimate (queued tasks
+// times the cost per task) divided by the lanes and by the days left. It reads the queue and
+// the reset only, never a measured burn, and it is 0 when there is no estimate, no lane or
+// no time left.
+func (a *Advice) planningPerLane(maxLanes int) float64 {
+	est := a.RemainingWork.EstimatePoints
+	if est == nil || maxLanes <= 0 || a.DaysLeft <= 0 {
+		return 0
+	}
+	per := *est / (float64(maxLanes) * a.DaysLeft)
+	if !finite(per) {
+		return 0
+	}
+	return per
 }
 
 // resolveWork picks the remaining-work figure in use: the typed figure when it is valid,

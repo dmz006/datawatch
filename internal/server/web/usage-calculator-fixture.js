@@ -61,15 +61,25 @@ const WORKED_ADVICE = {
   per_lane_per_24h: 7.03,
   baseline_per_24h: 3,
   by_lanes: [
-    { lanes: 0, burn_per_24h: 3, projected_end: 76.23, run_out_at: null, hours_early: 0 },
-    { lanes: 1, burn_per_24h: 10.03, projected_end: 86.14, run_out_at: null, hours_early: 0 },
-    { lanes: 2, burn_per_24h: 17.05, projected_end: 96.07, run_out_at: null, hours_early: 0 },
-    { lanes: 3, burn_per_24h: 24.08, projected_end: 105.98, run_out_at: '2026-10-25T02:02:00-04:00', hours_early: 5.96 },
+    { lanes: 0, burn_per_24h: 3, planning_burn_per_24h: 3, projected_end: 76.23, run_out_at: null, hours_early: 0 },
+    { lanes: 1, burn_per_24h: 10.03, planning_burn_per_24h: 7.73, projected_end: 86.14, run_out_at: null, hours_early: 0 },
+    { lanes: 2, burn_per_24h: 17.05, planning_burn_per_24h: 12.46, projected_end: 96.07, run_out_at: null, hours_early: 0 },
+    { lanes: 3, burn_per_24h: 24.08, planning_burn_per_24h: 17.18, projected_end: 105.98, run_out_at: '2026-10-25T02:02:00-04:00', hours_early: 5.96 },
   ],
   chosen: { lanes: 3, burn_per_24h: 24.08, projected_end: 105.98, run_out_at: '2026-10-25T02:02:00-04:00', hours_early: 5.96 },
   remaining_work: { in_use: 'estimate', points: 20, estimate_points: 20, queue_tasks: 6, cost_per_task: 3.33 },
   series: SERIES_ROWS.map(([hours, percent, at]) => ({ at, percent, hours_since_reset: hours })),
-  daily: [],
+  // One entry per day from the reset (Sunday 08:00) to the reading (Friday 22:08). The
+  // points are the straight-line interpolation between readings, so they are estimates and
+  // sum to the newest percent (72).
+  daily: [
+    { start: '2026-10-18T08:00:00-04:00', end: '2026-10-19T08:00:00-04:00', points: 8.700935, estimated: true, partial: false },
+    { start: '2026-10-19T08:00:00-04:00', end: '2026-10-20T08:00:00-04:00', points: 8.158325, estimated: true, partial: false },
+    { start: '2026-10-20T08:00:00-04:00', end: '2026-10-21T08:00:00-04:00', points: 9.805741, estimated: true, partial: false },
+    { start: '2026-10-21T08:00:00-04:00', end: '2026-10-22T08:00:00-04:00', points: 15.346223, estimated: true, partial: false },
+    { start: '2026-10-22T08:00:00-04:00', end: '2026-10-23T08:00:00-04:00', points: 19.301623, estimated: true, partial: false },
+    { start: '2026-10-23T08:00:00-04:00', end: '2026-10-23T22:08:00-04:00', points: 10.687155, estimated: true, partial: true },
+  ],
   advice: {
     policy: 'pace',
     lanes_suggested: 1,
@@ -88,6 +98,26 @@ const WORKED_BODY = {
   policy: 'pace',
   stale: false,
   advice: WORKED_ADVICE,
+  // The text forms the daemon builds from the same body (usagecalc.FormatCLI and FormatComm).
+  text: {
+    cli: 'usage: 72% read Fri 22:08, reset Sun 08:00 (1.41 days left)\n' +
+      'pace line 79.8%, headroom 7.8, days since reset 5.59\n' +
+      'burn 24.1 per 24h recent, 12.9 per 24h week average\n' +
+      'projected end 106.0% recent (over), 90.2% week average (within)\n' +
+      'runs out Sun 02:02, 6 hours before the reset (recent burn)\n' +
+      'lanes 3 running, policy Pace to the week\n' +
+      'advice: 1 lane ends at 86.1%',
+    comm: 'Weekly 72% (read Fri 22:08)\n' +
+      'Reset Sun 08:00, 1.41 days left\n' +
+      'Pace line 79.8%, headroom 7.8\n' +
+      'Burn 24.1 per 24h recent, 12.9 average\n' +
+      'Ends at reset: 106.0% recent, 90.2% average\n' +
+      'Over budget at the recent burn\n' +
+      'Runs out Sun 02:02, about 6 h early\n' +
+      'Lanes 3, policy Pace to the week\n' +
+      'Advice: 1 lane ends at 86.1%\n' +
+      'Reply: usage lanes 1 (example, not final)',
+  },
 };
 
 function clone(value) {

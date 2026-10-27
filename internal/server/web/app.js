@@ -24495,6 +24495,132 @@ window.usageCalcRenderers['lane-planner'] = _usageCalcLanePlanner;
 window.usageCalcVerdictDetails['lane-planner'] = _usageCalcLaneVerdictDetails;
 window.usageCalcInputNotes['lane-planner'] = _usageCalcLaneInputNote;
 
+// The burn-ledger variant. The chart draws one bar for each day the response gives, flagged
+// estimated where a day boundary fell between readings. No split by kind of work is drawn,
+// because no session attribution exists, so each day is one total. The cost table reads
+// by_lanes (the measured burn and the planning burn of each lane count), the queue line reads
+// remaining_work, the consumers section is an empty state, and the text forms are the body's
+// own strings. Nothing here computes a burn, a day total, a lane count or a figure.
+const USAGE_CALC_LEDGER_W = 320;
+const USAGE_CALC_LEDGER_H = 132;
+
+function _usageCalcLedgerChart(res) {
+  const days = Array.isArray(res.advice.daily) ? res.advice.daily : [];
+  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('usage_calc_ledger_chart_title'))}</div>` +
+    `<div style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_ledger_chart_note'))}</div>`;
+  const kind = `<div class="usage-calc-ledger-kind" style="font-size:11px;color:var(--text2);">${escHtml(t('usage_calc_ledger_kind_note'))}</div>`;
+  if (!days.length) {
+    return `<div class="usage-calc-ledger-chart" style="display:flex;flex-direction:column;gap:6px;min-width:0;">${head}` +
+      `<div class="usage-calc-ledger-daily-empty" style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_ledger_daily_empty'))}</div>${kind}</div>`;
+  }
+  const W = USAGE_CALC_LEDGER_W;
+  const H = USAGE_CALC_LEDGER_H;
+  const top = 16;
+  const base = H - 30;
+  // The tallest entry sets the scale of the drawing; the scale is not shown as a figure.
+  const scale = Math.max(...days.map(d => Number(d.points) || 0), 1);
+  const slot = W / days.length;
+  const barW = Math.min(slot * 0.6, 48);
+  const bars = days.map((d, i) => {
+    const pts = Number(d.points) || 0;
+    const h = Math.max(pts / scale, 0) * (base - top);
+    const x = i * slot + (slot - barW) / 2;
+    const cx = (x + barW / 2).toFixed(2);
+    const startDay = _usageCalcDayBase(d.start);
+    const day = isFinite(startDay) ? _usageCalcWeekday(startDay) : '';
+    const title = d.estimated
+      ? t('usage_calc_ledger_bar_title_estimated', [day, _usageCalcNum(pts)])
+      : t('usage_calc_ledger_bar_title', [day, _usageCalcNum(pts)]);
+    const style = d.estimated
+      ? 'fill:var(--accent,#3b82f6);fill-opacity:0.35;stroke:var(--accent,#3b82f6);stroke-width:1.5;stroke-dasharray:4 2;'
+      : 'fill:var(--accent,#3b82f6);';
+    return `<g data-day="${i}"${d.estimated ? ' data-estimated="true"' : ''}${d.partial ? ' data-partial="true"' : ''}>` +
+      `<title>${escHtml(title)}</title>` +
+      `<rect data-points="${escHtml(String(d.points))}" x="${x.toFixed(2)}" y="${(base - h).toFixed(2)}" width="${barW.toFixed(2)}" height="${h.toFixed(2)}" style="${style}"/>` +
+      `<text x="${cx}" y="${(base - h - 3).toFixed(2)}" text-anchor="middle" style="font-size:10px;fill:var(--text,#ddd);">${escHtml(_usageCalcNum(pts))}</text>` +
+      `<text x="${cx}" y="${base + 13}" text-anchor="middle" style="font-size:10px;fill:var(--text2,#999);">${escHtml(day)}</text>` +
+      (d.partial ? `<text x="${cx}" y="${base + 25}" text-anchor="middle" style="font-size:9px;fill:var(--text2,#999);">${escHtml(t('usage_calc_ledger_day_partial'))}</text>` : '') +
+      `</g>`;
+  }).join('');
+  return `<div class="usage-calc-ledger-chart" style="display:flex;flex-direction:column;gap:6px;min-width:0;">${head}` +
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escHtml(t('usage_calc_ledger_chart_aria'))}" style="display:block;max-width:100%;">` +
+    `<line x1="0" y1="${base}" x2="${W}" y2="${base}" style="stroke:var(--border,#444);stroke-width:1;"/>` +
+    bars + `</svg>${kind}</div>`;
+}
+
+function _usageCalcLedgerCostTable(res) {
+  const rows = Array.isArray(res.advice.by_lanes) ? res.advice.by_lanes : [];
+  if (!rows.length) {
+    return `<div class="usage-calc-ledger-cost-empty" style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_ledger_cost_empty'))}</div>`;
+  }
+  const head = ['usage_calc_ledger_cost_col_lanes', 'usage_calc_ledger_cost_col_measured', 'usage_calc_ledger_cost_col_planning']
+    .map(key => `<th scope="col" style="${USAGE_CALC_LANE_CELL}font-weight:600;color:var(--text2);">${escHtml(t(key))}</th>`).join('');
+  const body = rows.map(row => {
+    const lanes = escHtml(String(row.lanes));
+    return `<tr data-lanes="${lanes}">` +
+      `<td style="${USAGE_CALC_LANE_CELL}font-weight:600;">${lanes}</td>` +
+      `<td data-measured="${lanes}" style="${USAGE_CALC_LANE_CELL}">${_usageCalcNum(row.burn_per_24h)}</td>` +
+      `<td data-planning="${lanes}" style="${USAGE_CALC_LANE_CELL}">${_usageCalcNum(row.planning_burn_per_24h)}</td></tr>`;
+  }).join('');
+  return `<table class="usage-calc-ledger-cost" style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px;">` +
+    `<caption style="caption-side:top;text-align:left;font-size:13px;font-weight:600;padding-bottom:4px;">${escHtml(t('usage_calc_ledger_cost_title'))}</caption>` +
+    `<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+// The queue line reads remaining_work: the queued count, the cost per task, the estimate and
+// the typed override, and which of the two the run-flat-out figure is using.
+function _usageCalcLedgerQueue(res) {
+  const w = res.advice.remaining_work || {};
+  const hasEstimate = w.estimate_points !== undefined && w.estimate_points !== null;
+  const hasTyped = w.typed_points !== undefined && w.typed_points !== null;
+  const inUse = w.in_use === 'typed' ? t('usage_calc_ledger_in_use_typed')
+    : w.in_use === 'estimate' ? t('usage_calc_ledger_in_use_estimate') : t('usage_calc_ledger_in_use_none');
+  const line = (id, text) => `<div data-queue="${id}" style="font-size:12px;">${escHtml(text)}</div>`;
+  return `<div class="usage-calc-ledger-queue" style="display:flex;flex-direction:column;gap:2px;min-width:0;">` +
+    `<div style="font-weight:600;font-size:13px;">${escHtml(t('usage_calc_ledger_queue_title'))}</div>` +
+    line('queued', t('usage_calc_ledger_queue_line', [String(w.queue_tasks || 0), _usageCalcNum(w.cost_per_task)])) +
+    line('estimate', hasEstimate ? t('usage_calc_ledger_queue_estimate', [_usageCalcNum(w.estimate_points)]) : t('usage_calc_ledger_queue_no_estimate')) +
+    line('typed', hasTyped ? t('usage_calc_ledger_queue_typed', [_usageCalcNum(w.typed_points)]) : t('usage_calc_ledger_queue_no_typed')) +
+    line('in-use', t('usage_calc_ledger_queue_in_use', [inUse])) +
+    `</div>`;
+}
+
+// No consumer registry exists yet, so the section says so and draws no rows or figures.
+function _usageCalcLedgerConsumers() {
+  return `<div class="usage-calc-ledger-consumers" style="display:flex;flex-direction:column;gap:4px;min-width:0;">` +
+    `<div style="font-weight:600;font-size:13px;">${escHtml(t('usage_calc_ledger_consumers_title'))}</div>` +
+    `<div class="usage-calc-ledger-consumers-empty" style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_ledger_consumers_empty'))}</div>` +
+    `</div>`;
+}
+
+// The text forms are the body's own strings (usagecalc.FormatCLI and FormatComm), drawn as
+// they are, so the preview cannot disagree with the CLI or the comm channel.
+function _usageCalcLedgerText(res) {
+  const tf = res.text || {};
+  const form = (key, id, body) => `<div data-text="${id}" style="display:flex;flex-direction:column;gap:2px;min-width:0;">` +
+    `<div style="font-size:12px;font-weight:600;">${escHtml(t(key))}</div>` +
+    `<pre style="margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;">${escHtml(body || t('usage_calc_ledger_text_empty'))}</pre></div>`;
+  return `<div class="usage-calc-ledger-text" style="display:flex;flex-direction:column;gap:6px;min-width:0;">` +
+    `<div style="font-weight:600;font-size:13px;">${escHtml(t('usage_calc_ledger_text_title'))}</div>` +
+    form('usage_calc_ledger_text_cli', 'cli', tf.cli) + form('usage_calc_ledger_text_comm', 'comm', tf.comm) +
+    `</div>`;
+}
+
+function _usageCalcBurnLedger(res) {
+  return `<div class="usage-calc-burn-ledger" style="display:flex;flex-direction:column;gap:14px;min-width:0;max-width:100%;">` +
+    _usageCalcLedgerChart(res) +
+    `<div class="usage-calc-ledger-costs" style="display:flex;flex-direction:column;gap:6px;min-width:0;">` +
+    _usageCalcLedgerCostTable(res) +
+    `<div style="font-size:11px;color:var(--text2);">${escHtml(t('usage_calc_ledger_cost_note'))}</div>` +
+    _usageCalcLedgerQueue(res) +
+    `</div>` +
+    _usageCalcLedgerConsumers() +
+    _usageCalcLedgerText(res) +
+    `</div>`;
+}
+
+window.usageCalcRenderers['burn-ledger'] = _usageCalcBurnLedger;
+
 function usageCalcRerender() {
   const ctl = window._listLoaders && window._listLoaders.automation_usage;
   if (ctl) ctl.paint();

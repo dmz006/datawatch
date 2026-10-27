@@ -106,6 +106,7 @@ type Options struct {
 // AdviceResult is one advice with the resolved selections and the series provenance.
 // Stale and StaleReason carry the shared-series markers when this daemon reads the last
 // copy while the keeper is unreachable (decision 8); CopiedAt is when that copy was taken.
+// Text carries the two text forms of this advice, so every surface shows the same words.
 type AdviceResult struct {
 	Variant     string     `json:"variant"`
 	Policy      string     `json:"policy"`
@@ -113,6 +114,14 @@ type AdviceResult struct {
 	StaleReason string     `json:"stale_reason,omitempty"`
 	CopiedAt    *time.Time `json:"copied_at,omitempty"`
 	Advice      Advice     `json:"advice"`
+	Text        TextForms  `json:"text"`
+}
+
+// TextForms are the CLI and comm-channel renderings of one advice, built by FormatCLI and
+// FormatComm from the same fields in the same order.
+type TextForms struct {
+	CLI  string `json:"cli"`
+	Comm string `json:"comm"`
 }
 
 // Service is the daemon-level usage calculator. It composes the shared readings series,
@@ -237,6 +246,7 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 		at := snap.CopiedAt
 		res.CopiedAt = &at
 	}
+	res.Text = TextForms{CLI: FormatCLI(*res), Comm: FormatComm(*res)}
 	return res, nil
 }
 
