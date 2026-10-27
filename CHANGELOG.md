@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### A relaunched task is placed like a new request
+
+- A relaunch (a task whose earlier session is replaced, including one that was verifying) gives up the lease of the previous attempt and is admitted through the same placement as a new request. Before, the relaunch could keep the node of the attempt it replaced without placement choosing again.
+- Placement picks the least loaded of the backend's own compute nodes, one engine per node. The node of the previous attempt is only a tie breaker: it wins when it is free and equally loaded, and never outranks a less loaded node.
+- If no node is free, the relaunch waits like any other request.
+- A worker that survives a daemon restart keeps its recorded node.
+- The verifier and the await-external re-admission follow the same rule. A respawned verifier or judge that still holds a lease from an earlier run frees it and is placed again, and a task returning from an external wait is re-admitted through placement with the node it released as the tie breaker.
+- `scripts/check-waiter-nodes.sh` prints an `OVERLIMIT` line, with the lease holders, for any node that holds more engines than its limit, and exits 2 for it even when nothing is waiting.
+- Nothing about caps or settings changed: no limit was raised and no setting or default was added or changed.
+
 ### Voice transcription: real error causes, long-recording chunking and kept recordings
 
 - **Failed and slow requests are logged.** A failed `POST /api/voice/transcribe`, and any request slower than 30 s, writes one `[voice] transcribe failed:` or `[voice] transcribe slow:` line with the backend, upload size, audio length, elapsed time, cause and exit status. The transcript text is never logged.
