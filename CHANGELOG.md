@@ -77,6 +77,12 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.25.0 — Plan coverage flags write tasks that declare no files
+
+### Plan check flags write tasks that declare no files
+
+- **A write task with no files is now a finding.** The plan coverage check raises `write_task_without_files` for a task whose title starts with a write verb and whose `files` list is empty, unless the first line of its spec starts with `READ-ONLY:` or it is a gate, smoke or similar task. In `block` mode the finding stops approval until the plan is fixed or the finding is acknowledged with a note; see [autonomous planning](docs/howto/autonomous-planning.md#declaring-files-for-write-tasks).
+
 ## v9.24.0 — Scope lint ignores literal pattern text and is a setting
 
 ### Added
