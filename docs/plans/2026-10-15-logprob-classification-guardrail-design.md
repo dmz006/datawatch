@@ -79,7 +79,45 @@ Moving #4, #5, #7, #8, #14, and the final gate of #11 covers the verdict bit of 
 - **P6 — Live validation.** Run on a live daemon: the native path on an upgraded remote node, the generic path on `llama-server`, and a deliberate failure on a pre-0.35 node.
 - **P7 — Scope-breadth classifier (table row #14, added 2026-10-16).** Depends on P2 (classifier client) existing. Wire the "one unit / bundles multiple units" question into the `content`-category failure path, writing `FailureReason.ScopeTooBroad` (BL410, additive field — no code changes to BL410's existing categories). Does not depend on P3/P4 (task-verdict/guardrail wiring) — this is a separate call site, not a guardrail. The consumer (auto-split on this signal) lives in BL431's orchestrator doc, not here.
 
-**Evaluation (not yet run).** Measure, per model and task type: infra-block rate, false-pass and false-block rates against the verifier scripts (`testdata/eval/model-tiering/verify/*.sh`), and p50/p95 latency on GPU and CPU nodes. Use a fit/test split. BL449 has no valid scored run yet, so no metric can be computed.
+## Evaluation plan
+
+This section says how a future implementation would be judged. It does not run anything. The comparison baseline is the current generate-and-parse verifier on the same models, same prompts, and same hardware. Classify mode must beat or match that baseline to justify the feature.
+
+**Status of the data.** The open-model matrix ([BL449](./2026-10-15-bl449-open-model-matrix.md)) has no valid scored run yet. Every run so far was invalid for scoring (see its "Status and history" table). So no metric can be quoted here, and none is quoted.
+
+**Inputs.**
+
+- Models and tasks: the open-model matrix (4 roles by 4 task types), driven by `scripts/eval_open_model_matrix.py`, which reuses the HTTP client and PRD helpers from `scripts/eval_model_tiering.py`.
+- Ground truth: the scripted verifiers in `testdata/eval/model-tiering/verify/` (`scripting.sh`, `docs.sh`, `analysis.sh`, `review.sh`, and the `hidden` checks). Their pass/fail verdict is the label. Grading stays deterministic, as in the recurring model eval design ([Test matrix and Grading](./2026-10-14-recurring-model-eval-design.md)).
+- The `review` task's fixed `candidate-pass.diff` and `candidate-fail.diff` pair gives labelled inputs for the verdict bit.
+
+**The four measurements.**
+
+(a) **Completion reliability.** For each model and task type, count the infra-block rate: replies that end as `Category: infra` because they are unparseable, empty, or timed out. Run classify mode and generate mode on identical prompts, so the only difference is how the verdict is read. Report both rates side by side.
+
+(b) **Agreement with ground truth.** Compare each mode's verdict to the scripted verdict. Report the false-pass rate (mode passes, script fails) and the false-block rate (mode blocks, script passes). Use a fit/test split. Calibration thresholds are fitted on the fit set only and scored on the test set only. A threshold is never scored on the set that fitted it.
+
+(c) **Latency and cost per decision.** Report p50 and p95 wall time per decision, and tokens per decision. The native decision endpoint reports zero output tokens, because it returns scores and not text. Generate-and-parse spends output tokens on every verdict. The comparison states both numbers plainly, and notes that the optional generative explanation call adds its own cost back.
+
+(d) **CPU-only feasibility.** Can the classify path run on the CPU-only node class (H4, `cpu-only-24c`, the `johnnyjohnny-cpu` node in the recurring model eval design)? At what p50 and p95 latency per decision? Only models in the CPU budget are in scope. Models of 32B and up are excluded, as in that doc.
+
+**Phases.**
+
+| Item | What it measures | Depends on | Status |
+|---|---|---|---|
+| E0 | Fixtures and the scoring harness: labelled inputs from the verify scripts, the fit/test split, and a paired classify/generate runner | A valid matrix run to supply real replies; P0 evidence fixtures | Planned |
+| E1 | Completion reliability: infra-block and unparseable-reply rate per model and task type, classify vs generate | E0; P1 and P2 for the classify side | Planned |
+| E2 | Ground-truth agreement: false-pass and false-block rates on the test split | E0, E1; P2 calibration | Planned |
+| E3 | Latency and cost: p50/p95 and tokens per decision, native endpoint vs generate-and-parse | E0; P1 | Planned |
+| E4 | CPU-only feasibility: classify latency and agreement on the H4 node class | E3; the minimum Ollama release named in the Backend note on the CPU node | Planned |
+
+## Out of scope
+
+- This pass is design and evaluation only. Implementing the backend is out of scope: the classifier client, the `verification_mode` wiring, endpoint probing, config keys, and surfaces. It is design-only in the same way as the recurring model eval design pass ([BL437](./2026-10-14-recurring-model-eval-design.md)).
+- Replacing the generative worker path is out of scope. The worker is unaffected by this feature and still needs full codebase tool access.
+- Choosing or pulling judge models.
+- Registering or upgrading compute nodes.
+- Changing any default.
 
 ## Open questions
 
