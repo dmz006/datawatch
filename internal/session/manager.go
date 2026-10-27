@@ -1954,10 +1954,10 @@ var ErrProjectDirNotWorktree = errors.New("project directory is not a linked wor
 // absent. It never creates or modifies anything. dir must lie under one of
 // roots (the allowed project roots); anything else is refused before any file
 // is touched, and the path that is inspected is the contained one.
-func checkExistingWorktree(roots []string, dir string) error {
-	dir, err := containedUnderAny(roots, dir)
+func checkExistingWorktree(roots []string, requested string) error {
+	dir, err := containedUnderAny(roots, requested)
 	if err != nil {
-		return fmt.Errorf("%w: %s is outside the allowed project roots: %v", ErrProjectDirNotWorktree, dir, err)
+		return fmt.Errorf("%w: %s is outside the allowed project roots: %v", ErrProjectDirNotWorktree, requested, err)
 	}
 	fi, err := os.Stat(dir)
 	if err != nil {
@@ -1982,7 +1982,8 @@ func checkExistingWorktree(roots []string, dir string) error {
 // containedUnderAny returns path cleaned and made absolute when it lies under
 // one of roots, using gitguard.ContainedPath (so '..' and symlinks that leave
 // the root are refused). Roots that are empty or cannot be resolved are
-// skipped. When none contains path the last containment error is returned.
+// skipped. When none contains path the last containment error is returned
+// and the path result is empty: a refused value is never handed back.
 func containedUnderAny(roots []string, path string) (string, error) {
 	err := errors.New("no allowed project root is configured")
 	for _, root := range roots {
@@ -1995,7 +1996,7 @@ func containedUnderAny(roots []string, path string) (string, error) {
 		}
 		err = cerr
 	}
-	return path, err
+	return "", err
 }
 
 // Start creates a new AI coding session for the given task.
@@ -2054,12 +2055,16 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	// default, and the configured default itself, which the REST layer fills
 	// in) must lie under an allowed project root; see AllowedProjectRoots.
 	requestSupplied := projectDir != ""
+	// safeDir is the directory every filesystem call below uses. A request-
+	// supplied directory becomes safeDir only through the roots check further
+	// down; the daemon's own defaults are assigned to it directly.
+	var safeDir string
 	switch {
 	case projectDir == "":
 		home, _ := os.UserHomeDir()
-		projectDir = home
+		safeDir = home
 		if d := m.configDefaultProjectDir(); d != "" {
-			projectDir = d
+			safeDir = d
 		}
 	case !filepath.IsAbs(projectDir):
 		// A relative value is contained under the workspace root, or under
@@ -2084,22 +2089,21 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 		if d := m.configDefaultProjectDir(); d != "" && cleaned == filepath.Clean(d) {
 			requestSupplied = false
-			cleaned = filepath.Clean(d) // the daemon's own config value, not the request's
+			safeDir = filepath.Clean(d) // the daemon's own config value, not the request's
+		} else {
+			projectDir = cleaned
 		}
-		projectDir = cleaned
 	}
-	// safeDir is the directory every filesystem call below uses: the value
-	// ResolveProjectDir returned for a request-supplied directory, otherwise
-	// the daemon's own default.
-	safeDir := projectDir
 	if requestSupplied {
-		checked, perr := gitguard.ResolveProjectDir(projectDir, m.AllowedProjectRoots())
+		// ResolveContainedProjectDir applies the allowed-roots check and
+		// returns the value checked under the root that accepted it.
+		checked, perr := gitguard.ResolveContainedProjectDir(projectDir, m.AllowedProjectRoots())
 		if perr != nil {
 			return nil, fmt.Errorf("project dir refused: %w", perr)
 		}
 		safeDir = checked
-		projectDir = checked
 	}
+	projectDir = safeDir
 
 	// An Automaton-owned worktree must already exist: never recreate it as
 	// an empty directory (and never git-init it below).
