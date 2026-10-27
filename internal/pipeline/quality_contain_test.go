@@ -55,3 +55,35 @@ func TestRunTests_AcceptsDirInsideRoot(t *testing.T) {
 		t.Errorf("want exit 0, got exit=%d output=%q", r.ExitCode, r.Output)
 	}
 }
+
+// containedProjectDir returns the checked directory, the root itself included,
+// and refuses a sibling that only shares the root's name as a prefix.
+func TestContainedProjectDir(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "work")
+	sibling := filepath.Join(base, "work-evil")
+	inside := filepath.Join(root, "proj")
+	for _, d := range []string{inside, sibling} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range []string{root, inside, inside + "/"} {
+		got, err := containedProjectDir(d, []string{root})
+		if err != nil {
+			t.Errorf("containedProjectDir(%q) refused: %v", d, err)
+			continue
+		}
+		if got != filepath.Clean(d) {
+			t.Errorf("containedProjectDir(%q) = %q, want %q", d, got, filepath.Clean(d))
+		}
+	}
+	for _, d := range []string{sibling, base, filepath.Join(root, "..", "work-evil"), ""} {
+		if got, err := containedProjectDir(d, []string{root}); err == nil || got != "" {
+			t.Errorf("containedProjectDir(%q) = %q, %v; want a refusal and no path", d, got, err)
+		}
+	}
+	if got, err := containedProjectDir(inside, nil); err == nil || got != "" {
+		t.Errorf("no roots: got %q, %v; want a refusal", got, err)
+	}
+}

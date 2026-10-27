@@ -99,8 +99,8 @@ func ancestorClaudeMds(projectDir string) []string {
 			break
 		}
 		dir = parent
-		p, err := gitguard.ContainedEntry(dir, filepath.Join(dir, "CLAUDE.md"))
-		if err != nil {
+		p, ok := claudeMdIn(dir)
+		if !ok {
 			continue
 		}
 		if st, err := os.Stat(p); err == nil && !st.IsDir() {
@@ -108,6 +108,25 @@ func ancestorClaudeMds(projectDir string) []string {
 		}
 	}
 	return out
+}
+
+// claudeMdIn returns the path of the CLAUDE.md entry directly inside dir, and
+// false when that entry is not contained in dir. gitguard.ContainedEntry does
+// the symlink-aware check; the prefix test on the value that is returned is
+// repeated here, behind an early return, so the one path handed to os.Stat is
+// the one that was checked. A symlinked CLAUDE.md is accepted as the link
+// itself, wherever it points.
+func claudeMdIn(dir string) (string, bool) {
+	entry, err := gitguard.ContainedEntry(dir, filepath.Join(dir, "CLAUDE.md"))
+	if err != nil {
+		return "", false
+	}
+	sep := string(filepath.Separator)
+	dirPrefix := strings.TrimSuffix(filepath.Clean(dir), sep) + sep
+	if !strings.HasPrefix(entry, dirPrefix) {
+		return "", false
+	}
+	return filepath.Clean(entry), true
 }
 
 // settingsFlag returns the ` --settings '<json>'` flag excluding ancestor
