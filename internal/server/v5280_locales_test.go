@@ -138,6 +138,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		// v8.27.0 BL382 — cancel story/task + requeue task affordances.
 		"prd_requeue_task",
 		"prd_requeue_task_label",
+		// Operator-question channel (plan 2026-10-25) — PWA Settings toggle copy.
+		"settings_automata_questions_enabled",
 		"prd_cancel_task",
 		"prd_cancel_task_confirm",
 		"prd_cancel_task_ok",

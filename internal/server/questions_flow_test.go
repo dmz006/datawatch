@@ -50,7 +50,7 @@ func TestQuestionsFlow_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("audit.New: %v", err)
 	}
-	t.Cleanup(func() { al.Close() })
+	t.Cleanup(func() { _ = al.Close() })
 	if err := al.EnableCEFMirror(); err != nil {
 		t.Fatalf("EnableCEFMirror: %v", err)
 	}

@@ -315,7 +315,7 @@ func TestQuestionsREST_RaiseReturnsImmediately(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST within the 2s deadline (a handler waiting for an answer would not return): %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("POST: want 201 at once, got %d", resp.StatusCode)
 	}
@@ -789,7 +789,7 @@ func TestQuestionsREST_MuxRoutable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST via mux: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var env struct {
 		Question autonomous.Question `json:"question"`
 	}
@@ -808,7 +808,7 @@ func TestQuestionsREST_MuxRoutable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET via mux: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/questions/{id} via real mux: want 200, got %d (the original bug)", resp.StatusCode)
 	}
@@ -1004,9 +1004,9 @@ func TestQuestionsREST_SupersedesChainAndAnswerLog(t *testing.T) {
 		t.Fatalf("log: %d entries, want 2 (body=%q)", len(logEnv.Answers), rr.Body.String())
 	}
 	oldest, newest := logEnv.Answers[0], logEnv.Answers[1]
-	if oldest.Answer.ID != first.ID || newest.Answer.ID != second.ID {
+	if oldest.ID != first.ID || newest.ID != second.ID {
 		t.Fatalf("log order: %q then %q, want oldest first (%q then %q)",
-			oldest.Answer.ID, newest.Answer.ID, first.ID, second.ID)
+			oldest.ID, newest.ID, first.ID, second.ID)
 	}
 	if !oldest.Superseded || oldest.SupersededBy != second.ID {
 		t.Fatalf("oldest: superseded=%v superseded_by=%q, want true/%q",

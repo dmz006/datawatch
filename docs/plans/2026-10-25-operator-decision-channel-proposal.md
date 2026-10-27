@@ -1,7 +1,7 @@
 # Operator decision channel: proposal
 
 Date: 2026-10-25
-Status: proposal only. Nothing is decided, and no code, configuration, tracker row or CHANGELOG entry changes with this document.
+Status: in progress. All open points below were decided by the operator on 2026-10-25. Step 1 (config switch, question store, audit actions, REST, config accessibility) is implemented in this branch with its tests, the operator docs, the curl walkthrough, the PWA settings toggle and the locale key in all five bundles; Steps 2-5 follow the order in this document. The mobile surfaces are tracked externally in datawatch-app#283 (filed 2026-10-25).
 
 Confirmed: no
 
@@ -159,7 +159,7 @@ Builds:
 - CLI commands: question list, question show, question answer, question withdraw and question raise.
 - MCP tools: question_raise, question_list, question_get, question_answer and question_withdraw.
 - Comm verbs: question list, question show and question answer. The reply mapping follows the open point on comm replies.
-- Mobile apps: datawatch-app issues, following the Mobile App Sync Rule, carrying the API contract from Steps 1 and 2. This repository holds no native code, so nothing is built here.
+- Mobile apps: datawatch-app#283 (filed 2026-10-25) carries the API contract from Steps 1 and 2, following the Mobile App Sync Rule. This repository holds no native code, so nothing is built here.
 - Locale keys in all five bundles, with the locale-guard test updated for the high-visibility keys. Every new string says Automaton or Automata.
 
 Depends on: Steps 1 and 2.

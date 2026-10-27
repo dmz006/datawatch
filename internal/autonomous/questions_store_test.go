@@ -371,18 +371,18 @@ func TestQuestionStore_SupersedeAndFileOnlyGrows(t *testing.T) {
 	if !views[0].Superseded || views[0].SupersededBy != second.ID {
 		t.Errorf("first answer view = superseded=%v by=%q; want superseded by %s", views[0].Superseded, views[0].SupersededBy, second.ID)
 	}
-	if !views[1].Superseded || views[1].SupersededBy != views[2].Answer.ID {
+	if !views[1].Superseded || views[1].SupersededBy != views[2].ID {
 		t.Errorf("second answer view = superseded=%v by=%q; want superseded by the third", views[1].Superseded, views[1].SupersededBy)
 	}
 	if views[2].Superseded {
 		t.Errorf("third answer view = superseded; want current")
 	}
 	cur, ok := s.CurrentAnswer(id)
-	if !ok || cur.ID != views[2].Answer.ID {
-		t.Errorf("CurrentAnswer.ID = %q (ok=%v); want %s", cur.ID, ok, views[2].Answer.ID)
+	if !ok || cur.ID != views[2].ID {
+		t.Errorf("CurrentAnswer.ID = %q (ok=%v); want %s", cur.ID, ok, views[2].ID)
 	}
-	if views[0].Answer.Quote != "first route, please" {
-		t.Errorf("stored first quote = %q; the recorded answer was never edited", views[0].Answer.Quote)
+	if views[0].Quote != "first route, please" {
+		t.Errorf("stored first quote = %q; the recorded answer was never edited", views[0].Quote)
 	}
 }
 
@@ -739,7 +739,7 @@ func TestQuestionStore_FailedAppendEmitsNoAudit(t *testing.T) {
 	if err := os.Chmod(path, 0o400); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { os.Chmod(path, 0o600) })
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
 
 	if _, err := s.Raise(sampleQuestion("This one cannot be written?")); err == nil {
 		t.Fatalf("a second raise over a read-only directory was accepted; want a failure")
@@ -769,7 +769,7 @@ func TestQuestionStore_TruncatedFinalLineSkipped(t *testing.T) {
 		t.Fatalf("open the store for the simulated crash: %v", err)
 	}
 	if _, err := f.WriteString(`{"type":"answer_recorded","answer":{"id"`); err != nil {
-		f.Close()
+		_ = f.Close()
 		t.Fatalf("simulated crash write: %v", err)
 	}
 	if err := f.Close(); err != nil {
@@ -1058,7 +1058,7 @@ func appendRawToStoreFile(t *testing.T, path, raw string) {
 		t.Fatalf("open the store for the simulated crash: %v", err)
 	}
 	if _, err := f.WriteString(raw); err != nil {
-		f.Close()
+		_ = f.Close()
 		t.Fatalf("simulated crash write: %v", err)
 	}
 	if err := f.Close(); err != nil {

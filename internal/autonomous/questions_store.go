@@ -249,11 +249,11 @@ func (s *QuestionStore) appendLocked(rec questionStoreRecord) error {
 	chunk := append(prefix, data...)
 	chunk = append(chunk, '\n')
 	if _, err := s.writeFn(f, chunk); err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("append question store record: %w", err)
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("sync question store %s: %w", s.path, err)
 	}
 	if err := f.Close(); err != nil {
@@ -277,19 +277,19 @@ func (s *QuestionStore) tailRepair() ([]byte, error) {
 	}
 	fi, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("stat question store %s: %w", s.path, err)
 	}
 	last := make([]byte, 1)
 	if fi.Size() == 0 {
-		f.Close()
+		_ = f.Close()
 		return nil, nil
 	}
 	if _, err := f.ReadAt(last, fi.Size()-1); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("read question store %s: %w", s.path, err)
 	}
-	f.Close()
+	_ = f.Close()
 	if last[0] == '\n' {
 		return nil, nil
 	}

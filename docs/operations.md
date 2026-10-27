@@ -4039,7 +4039,7 @@ session log). Well-formed `${secret:name}` references pass the scan.
 
 | Task | YAML | REST | MCP | CLI / comm | PWA / Android / iOS |
 |---|---|---|---|---|---|
-| Toggle the channel | `autonomous.questions.enabled` | `PUT /api/config` | `config_set` (the generic config tool — wired) | `datawatch config set autonomous.questions.enabled true\|false`; comm `configure autonomous.questions.enabled=true` (both wired — the key is in the comm `configure` key set) | Settings — deferred: the PWA has no toggle for it yet, so set it via REST, CLI, comm or YAML in the meantime |
+| Toggle the channel | `autonomous.questions.enabled` | `PUT /api/config` | `config_set` (the generic config tool — wired; round-trip pinned in `internal/mcp/questions_config_surface_test.go`) | `datawatch config set autonomous.questions.enabled true\|false` (wired; round-trip pinned in `cmd/datawatch/questions_config_surface_test.go`); comm `configure autonomous.questions.enabled=true` (wired — the key is in the comm `configure` key set) | Settings → General toggle, labeled in all five locales (`settings_automata_questions_enabled`), round-trip covered by `internal/server/questions_settings_locale_test.go` |
 | Raise | n/a | `POST /api/questions` | deferred — no `question_raise` MCP tool yet | deferred — no CLI `ask` verb and no comm `ask` command yet | deferred — no raise form / queue view in the PWA or the companion apps yet |
 | List / read | n/a | `GET /api/questions`, `GET /api/questions/{id}` | deferred — no `list_questions` MCP tool yet | deferred — no CLI list verb yet | deferred — no queue view in the PWA or the companion apps yet |
 | Answer | n/a | `POST /api/questions/{id}/answer` | deferred — no `answer_question` MCP tool yet | deferred — no CLI `answer` verb and no comm `answer` command yet | deferred — no answer sheet in the PWA or the companion apps yet |
@@ -4084,9 +4084,21 @@ See the audit section of the API reference above.
 | Where | What |
 |---|---|
 | REST | The six endpoints above — every state, the whole answer log, the same JSON for every caller. |
-| Config | The one switch (`autonomous.questions.enabled`), via YAML or `PUT /api/config`. |
+| Config | The one switch (`autonomous.questions.enabled`), via YAML, `PUT /api/config`, MCP `config_set` (round-trip pinned in `internal/mcp/questions_config_surface_test.go`), `datawatch config set` (round-trip pinned in `cmd/datawatch/questions_config_surface_test.go`), comm `configure`, or the PWA Settings → General toggle (all five locales). |
 | MCP / CLI / comm | The switch already works there: MCP `config_set`, `datawatch config set`, and comm `configure` (all on `autonomous.questions.enabled`). The question verbs and MCP tools — not yet; logged deferrals, same object when the rows land. |
-| Android and iOS | Not yet — the queue view (list, raise, answer) is not built in the companion apps yet. Tracked in the parity table. |
+| Android and iOS | Not yet — the queue view (list, raise, answer) is not built in the companion apps yet. Tracked in [parity-status](parity-status.md) and [datawatch-app#283](https://github.com/dmz006/datawatch-app/issues/283). |
+
+**Monitoring (B7), n/a per item, with reasons.** This step's parity line is
+config + REST only (step 1 of the plan), so there is no channel `SystemStats`
+field, no `GET /api/<subsystem>/stats` endpoint for it, no channel stats MCP
+tool, no Monitor card, and no comm stats command. In the meantime, every
+mutation lands in the audit log under its question CEF action
+(`question_raised`, `question_answered`, `answer_superseded`,
+`question_withdrawn`, `question_answer_refused`), and queue and state counts
+are queryable through `GET /api/questions` with its `state`, `context`,
+`asker` and `limit` filters. The queue view, the surface verbs and the stats
+wiring follow in plan steps 2-3, and this is the reason recorded for
+deferring monitoring here.
 
 ---
 
