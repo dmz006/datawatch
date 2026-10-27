@@ -1221,7 +1221,7 @@ and bound to a non-loopback address**. Covered listeners and their tokens:
 | `rest` (Web UI + REST API, `server.host:server.port`) | `server.token` |
 | `rest_tls` (`server.host:<TLS port>` when `server.tls_enabled`) | `server.ttls` |
 | `mcp_sse` (`mcp.sse_host:mcp.sse_port`) | `mcp.token` (or `server.token` when `mcp.token` is empty) |
-| `proxy_sandbox` (`server.proxy_sandbox_port`) | per-session tokens — always protected, never warned |
+| `proxy_sandbox` (`server.proxy_sandbox_port`) | `server.token` (same gate as `rest`); warns when the port is set, the address is non-loopback, and `server.token` is empty |
 | `webhook` | `webhook.token` |
 | `github_webhook` | `github_webhook.secret` |
 

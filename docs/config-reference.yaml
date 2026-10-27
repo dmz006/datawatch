@@ -269,7 +269,7 @@ server:
   #   rest           (server.token)
   #   rest_tls       (server.ttls)
   #   mcp_sse        (mcp.token, or server.token when mcp.token is empty)
-  #   proxy_sandbox  (always token-protected, so it is never warned)
+  #   proxy_sandbox  (server.token — same as `rest`; warned when enabled and the token is empty)
   #   webhook        (webhook.token)
   #   github_webhook (github_webhook.secret)
   # The twilio_webhook listener has no built-in auth and is never warned.
