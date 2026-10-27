@@ -133,3 +133,119 @@ func TestCleanProjectDir(t *testing.T) {
 		t.Fatalf("relative not made absolute: %q %v", rel, err)
 	}
 }
+
+func TestContainedPath(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "a", "b"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// inside -> outside, inside -> inside, plus dangling variants of both.
+	links := map[string]string{
+		"out":         outside,
+		"in":          filepath.Join(root, "a"),
+		"dangleout":   filepath.Join(outside, "missing"),
+		"dangleoutrl": "../escape-missing",
+		"dangle-in":   filepath.Join(root, "a", "missing"),
+		"danglein-rl": "inner-missing",
+	}
+	for name, target := range links {
+		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
+			t.Skip(err)
+		}
+	}
+	sibling := root + "-sibling"
+
+	ok := []struct{ name, path string }{
+		{"root itself", root},
+		{"root with trailing slash", root + string(filepath.Separator)},
+		{"existing child", filepath.Join(root, "a", "b")},
+		{"missing tail", filepath.Join(root, "new", "dir")},
+		{"dot-dot that stays inside", filepath.Join(root, "a", "..", "a", "b")},
+		{"symlink inside pointing inside", filepath.Join(root, "in", "b")},
+		{"dangling symlink pointing inside", filepath.Join(root, "dangle-in")},
+		{"dangling relative symlink pointing inside", filepath.Join(root, "danglein-rl")},
+	}
+	for _, c := range ok {
+		got, err := ContainedPath(root, c.path)
+		if err != nil {
+			t.Fatalf("%s: unexpected error %v", c.name, err)
+		}
+		if want, _ := filepath.Abs(c.path); got != want {
+			t.Fatalf("%s: got %q want %q", c.name, got, want)
+		}
+	}
+
+	bad := []struct{ name, path string }{
+		{"symlink inside pointing outside", filepath.Join(root, "out")},
+		{"path below a symlink pointing outside", filepath.Join(root, "out", "sub", "not-yet")},
+		{"dot-dot traversal", filepath.Join(root, "..", filepath.Base(outside))},
+		{"dot-dot traversal after a child", filepath.Join(root, "a") + "/../../etc"},
+		{"dangling symlink pointing outside", filepath.Join(root, "dangleout")},
+		{"dangling relative symlink pointing outside", filepath.Join(root, "dangleoutrl")},
+		{"path outside root", outside},
+		{"sibling sharing the root name as a prefix", sibling},
+		{"filesystem root", string(filepath.Separator)},
+		{"NUL byte", filepath.Join(root, "a\x00b")},
+	}
+	for _, c := range bad {
+		if _, err := ContainedPath(root, c.path); !errors.Is(err, ErrPathEscapes) {
+			t.Fatalf("%s: want ErrPathEscapes, got %v", c.name, err)
+		}
+	}
+}
+
+func TestContainedPath_EmptyRoot(t *testing.T) {
+	for _, root := range []string{"", "   "} {
+		got, err := ContainedPath(root, t.TempDir())
+		if err == nil || got != "" {
+			t.Fatalf("root %q: want an error and no path, got %q, %v", root, got, err)
+		}
+	}
+}
+
+func TestContainedPath_NULInRoot(t *testing.T) {
+	if _, err := ContainedPath("ro\x00ot", "x"); !errors.Is(err, ErrPathEscapes) {
+		t.Fatalf("want ErrPathEscapes, got %v", err)
+	}
+}
+
+func TestContainedPath_RelativePath(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A relative path is made absolute against the working directory.
+	t.Chdir(root)
+	got, err := ContainedPath(root, filepath.Join("a", "b"))
+	if err != nil {
+		t.Fatalf("relative path under root: %v", err)
+	}
+	if want, _ := filepath.Abs(filepath.Join("a", "b")); got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	if _, err := ContainedPath(root, filepath.Join("..", "x")); !errors.Is(err, ErrPathEscapes) {
+		t.Fatalf("relative traversal: want ErrPathEscapes, got %v", err)
+	}
+	// With the working directory outside root, a relative path is outside too.
+	t.Chdir(t.TempDir())
+	if _, err := ContainedPath(root, "a"); !errors.Is(err, ErrPathEscapes) {
+		t.Fatalf("relative path from outside root: want ErrPathEscapes, got %v", err)
+	}
+	// A relative root is made absolute the same way.
+	t.Chdir(root)
+	if _, err := ContainedPath(".", "a"); err != nil {
+		t.Fatalf("relative root: %v", err)
+	}
+}
+
+func TestContainedPath_SymlinkedRoot(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "rootlink")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skip(err)
+	}
+	if _, err := ContainedPath(link, filepath.Join(link, "x")); err != nil {
+		t.Fatalf("path under a symlinked root: %v", err)
+	}
+}
