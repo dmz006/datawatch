@@ -535,3 +535,106 @@ func TestPRDStoreCrashSafety(t *testing.T) {
 		}
 	}
 }
+
+// A record name that is not a single safe path element must be refused before
+// anything is removed, so a name carrying a slash or '..' cannot reach a file
+// outside the records directory.
+func TestRemoveRecordFilesRefusesUnsafeName(t *testing.T) {
+	s, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(s.recordsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(filepath.Dir(s.recordsDir()), "victim")
+	if err := os.MkdirAll(outside+".files", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outside+".json", []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"", ".", "..", "../victim", "a/b", `a\b`, "..%", "x\x00y", "/etc/passwd"} {
+		if err := s.removeRecordFiles(name); err == nil {
+			t.Errorf("removeRecordFiles(%q) = nil, want a refusal", name)
+		}
+	}
+	if _, err := os.Stat(outside + ".files"); err != nil {
+		t.Errorf("side-file directory outside the store was touched: %v", err)
+	}
+	if _, err := os.Stat(outside + ".json"); err != nil {
+		t.Errorf("record file outside the store was touched: %v", err)
+	}
+}
+
+// A PRD id with a slash or '..' is stored under a hashed name, so removing its
+// files stays inside the records directory.
+func TestRemovePRDFilesUnsafeIDStaysInStore(t *testing.T) {
+	s, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(s.recordsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(filepath.Dir(s.recordsDir()), "victim.json")
+	if err := os.WriteFile(outside, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"../victim", "a/../../victim", "a/b"} {
+		if err := s.removePRDFiles(id); err != nil {
+			t.Errorf("removePRDFiles(%q): %v", id, err)
+		}
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Errorf("file outside the store was removed: %v", err)
+	}
+}
+
+// A PRD id used as a scratch directory name must be one safe path element:
+// none of the scratch helpers may create, move or remove anything for an id
+// with a slash or '..'.
+func TestScratchHelpersRefuseUnsafePRDID(t *testing.T) {
+	dataDir := t.TempDir()
+	victimDir := filepath.Join(dataDir, "autonomous", "victim")
+	if err := os.MkdirAll(victimDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(victimDir, decomposeOutputName)
+	if err := os.WriteFile(victim, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"..", "../victim", "a/../../victim", "a/b", `a\b`, "x\x00y"} {
+		if _, err := ScratchDir(dataDir, id); err == nil {
+			t.Errorf("ScratchDir(%q) = nil error, want a refusal", id)
+		}
+		if _, err := MarkDecomposeOutputArtifactFailed(dataDir, id); err == nil {
+			t.Errorf("MarkDecomposeOutputArtifactFailed(%q) = nil error, want a refusal", id)
+		}
+		RemoveDecomposeOutputArtifact(dataDir, id)
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Errorf("file outside the scratch directory was touched: %v", err)
+	}
+	if _, err := os.Stat(victim + ".failed"); err == nil {
+		t.Errorf("file outside the scratch directory was renamed")
+	}
+}
+
+// A normal PRD id still gets its scratch directory and its decompose output
+// is removed.
+func TestScratchHelpersAcceptSafePRDID(t *testing.T) {
+	dataDir := t.TempDir()
+	dir, err := ScratchDir(dataDir, "prd-1_a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, decomposeOutputName)
+	if err := os.WriteFile(out, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	RemoveDecomposeOutputArtifact(dataDir, "prd-1_a")
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Errorf("decompose output still present: %v", err)
+	}
+}

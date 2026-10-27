@@ -238,10 +238,23 @@ func (s *Store) removePRDFiles(id string) error {
 
 func (s *Store) removeRecordFiles(name string) error {
 	dir := s.recordsDir()
-	if err := os.RemoveAll(filepath.Join(dir, name+".files")); err != nil {
+	// name itself must be one safe element: ".files" and ".json" alone are
+	// valid elements, so an empty name would pass the checks below.
+	if !validPathElement(name) {
+		return fmt.Errorf("%w: %q", errBadPathElement, name)
+	}
+	filesDir, err := containedElement(dir, name+".files")
+	if err != nil {
 		return err
 	}
-	if err := os.Remove(filepath.Join(dir, name+".json")); err != nil && !os.IsNotExist(err) {
+	recFile, err := containedElement(dir, name+".json")
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(filesDir); err != nil {
+		return err
+	}
+	if err := os.Remove(recFile); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil

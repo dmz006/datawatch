@@ -99,7 +99,7 @@ func RunTests(command, projectDir string, timeout int, roots []string) TestResul
 	if trimmed == "" {
 		return unusable("empty test command")
 	}
-	cleanDir, derr := gitguard.ResolveProjectDir(projectDir, roots)
+	cleanDir, derr := gitguard.ResolveContainedProjectDir(projectDir, roots)
 	if derr != nil {
 		return unusable("project directory refused: " + derr.Error())
 	}

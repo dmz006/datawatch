@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/llm"
 )
 
@@ -98,7 +99,10 @@ func ancestorClaudeMds(projectDir string) []string {
 			break
 		}
 		dir = parent
-		p := filepath.Join(dir, "CLAUDE.md")
+		p, err := gitguard.ContainedEntry(dir, filepath.Join(dir, "CLAUDE.md"))
+		if err != nil {
+			continue
+		}
 		if st, err := os.Stat(p); err == nil && !st.IsDir() {
 			out = append(out, p)
 		}

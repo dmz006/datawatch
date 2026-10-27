@@ -24,13 +24,33 @@ var ErrOutsideAllowedRoots = errors.New("project directory is outside the allowe
 //
 // An empty roots list refuses every directory: the check never fails open.
 func ResolveProjectDir(dir string, roots []string) (string, error) {
-	clean, err := CleanProjectDir(dir)
+	clean, _, err := resolveProjectDirRoot(dir, roots)
+	return clean, err
+}
+
+// ResolveContainedProjectDir is ResolveProjectDir followed by ContainedPath
+// against the root that accepted the directory. It is the same single roots
+// check; the extra step returns a value that is checked under that root, which
+// is the form the path-injection query accepts as a sanitizer. Use it where
+// the directory goes straight to a file system call.
+func ResolveContainedProjectDir(dir string, roots []string) (string, error) {
+	clean, root, err := resolveProjectDirRoot(dir, roots)
 	if err != nil {
 		return "", err
 	}
+	return ContainedPath(root, clean)
+}
+
+// resolveProjectDirRoot is the shared body of ResolveProjectDir. Besides the
+// cleaned directory it returns the cleaned root that accepted it.
+func resolveProjectDirRoot(dir string, roots []string) (string, string, error) {
+	clean, err := CleanProjectDir(dir)
+	if err != nil {
+		return "", "", err
+	}
 	real, err := evalDeepest(clean)
 	if err != nil {
-		return "", fmt.Errorf("project dir %q: %w", dir, err)
+		return "", "", fmt.Errorf("project dir %q: %w", dir, err)
 	}
 	var usable []string
 	for _, root := range roots {
@@ -47,13 +67,13 @@ func ResolveProjectDir(dir string, roots []string) (string, error) {
 		}
 		usable = append(usable, rc)
 		if isWithin(rr, real) {
-			return clean, nil
+			return clean, rc, nil
 		}
 	}
 	if len(usable) == 0 {
-		return "", fmt.Errorf("%w: %q (no allowed project root is configured; set session.workspace_root or server.allowed_project_roots)", ErrOutsideAllowedRoots, dir)
+		return "", "", fmt.Errorf("%w: %q (no allowed project root is configured; set session.workspace_root or server.allowed_project_roots)", ErrOutsideAllowedRoots, dir)
 	}
-	return "", fmt.Errorf("%w: %q (allowed roots: %s; add a root with server.allowed_project_roots)", ErrOutsideAllowedRoots, dir, strings.Join(usable, ", "))
+	return "", "", fmt.Errorf("%w: %q (allowed roots: %s; add a root with server.allowed_project_roots)", ErrOutsideAllowedRoots, dir, strings.Join(usable, ", "))
 }
 
 // isWithin reports whether target is base or lies under it. Both must

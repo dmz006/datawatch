@@ -218,6 +218,9 @@ func CleanTempPacks(repoDir string) (removed []string, err error) {
 	return removed, errors.Join(errs...)
 }
 
+// ContainedEntry is containedEntry for callers outside the package.
+func ContainedEntry(root, path string) (string, error) { return containedEntry(root, path) }
+
 // containedEntry is ContainedPath for a path that names a directory entry,
 // where the entry itself may be a symlink. A link is judged by where it
 // lies, not by where it points: when path is a symlink whose parent directory
