@@ -1664,7 +1664,7 @@
   "settings_ws_session_list_default": "Live-Sitzungsupdates (Clients ohne hello)",
   "settings_ws_output_scope_default": "Live-Terminalausgabe (Clients ohne hello)",
   "settings_allowed_project_roots": "Zusätzlich erlaubte Projektwurzeln (kommagetrennt)",
-  "settings_allowed_project_roots_help": "Sitzungen und Testläufe dürfen nur ein Projektverzeichnis unter dem autonomen Worktree-Ordner (autonomous.worktree_dir), dem Workspace-Root der Sitzungen oder einem dieser Ordner verwenden. Ein Verzeichnis außerhalb aller Wurzeln wird abgelehnt. Nur absolute Pfade.",
+  "settings_allowed_project_roots_help": "Sitzungen und Testläufe dürfen nur ein Projektverzeichnis unter dem autonomen Worktree-Ordner (autonomous.worktree_dir), dem Workspace-Root der Sitzungen (session.workspace_root, oder ~/workspace, wenn nicht gesetzt) oder einem dieser Ordner verwenden. Ein Verzeichnis außerhalb aller Wurzeln wird abgelehnt. Nur absolute Pfade.",
   "settings_api_gzip": "API-Antworten komprimieren (gzip)",
   "settings_api_gzip_min_bytes": "API-Komprimierungsschwelle (Bytes)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",

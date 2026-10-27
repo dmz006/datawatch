@@ -1664,7 +1664,7 @@
   "settings_ws_session_list_default": "Actualizaciones de sesiones en vivo (clientes sin hello)",
   "settings_ws_output_scope_default": "Salida de terminal en vivo (clientes sin hello)",
   "settings_allowed_project_roots": "Raíces de proyecto permitidas adicionales (separadas por comas)",
-  "settings_allowed_project_roots_help": "Las sesiones y las pruebas solo pueden usar un directorio de proyecto dentro de la carpeta de worktrees autónomos (autonomous.worktree_dir), la raíz del espacio de trabajo de sesiones o una de estas carpetas. Un directorio fuera de todas las raíces se rechaza. Solo rutas absolutas.",
+  "settings_allowed_project_roots_help": "Las sesiones y las pruebas solo pueden usar un directorio de proyecto dentro de la carpeta de worktrees autónomos (autonomous.worktree_dir), la raíz del espacio de trabajo de sesiones (session.workspace_root, o ~/workspace si no está definida) o una de estas carpetas. Un directorio fuera de todas las raíces se rechaza. Solo rutas absolutas.",
   "settings_api_gzip": "Comprimir respuestas de la API (gzip)",
   "settings_api_gzip_min_bytes": "Umbral de compresión de la API (bytes)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
