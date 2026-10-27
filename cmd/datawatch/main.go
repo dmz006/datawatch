@@ -5699,7 +5699,30 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			defer func() { vsel.stamp(&vres) }()
 			if release == nil {
 				if verifierCapacityAdmit != nil {
-					r, n, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, task.ID, prd.ID, task.SessionID)
+					// A pick the policy made from the load is re-run while the
+					// request waits; any other pick waits on its backend alone.
+					waitSel := vsel
+					waitSel.Model = verifyModel
+					lease, aerr := awaitVerifierLease(ctx, waitSel, verifierLeaseWait{
+						Admit: func(c context.Context, b, m string) (func(), string, error) {
+							return verifierCapacityAdmit(c, b, m, task.ID, prd.ID, task.SessionID)
+						},
+						Take:    verifierTryAdmit,
+						Changed: verifierCapacityChanged,
+						Complete: func(s *verifierSelection) bool {
+							if s.UseSession && isPiFamilyKind(s.Kind) && s.Model == "" {
+								// A move target the pinned-model guard would
+								// refuse is not worth leaving a working wait for.
+								m, setup := guardPiFamilyVerifyModel(s.Backend, amgrCfg.VerificationModel, amgrCfg.PlanningModel)
+								if setup != nil {
+									return false
+								}
+								s.Model = m
+							}
+							return true
+						},
+						Mgr: autonomousMgrRef, PRDID: prd.ID, TaskID: task.ID,
+					})
 					if aerr != nil {
 						// BL410 Phase 0 — resource contention/admission
 						// failure, not a content judgment.
@@ -5710,8 +5733,14 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 							Category:   "infra",
 						}, nil
 					}
-					release = r
-					vnode = n
+					release = lease.Release
+					vnode = lease.Node
+					if lease.Moved {
+						// Run, count and stamp the result under the backend the
+						// lease landed on.
+						vsel = lease.Sel
+						vbackend, vkind, verifyModel, useSession = vsel.Backend, vsel.Kind, vsel.Model, vsel.UseSession
+					}
 					vGrantedAt = time.Now()
 				}
 			}

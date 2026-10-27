@@ -35,6 +35,13 @@ type verifierSelection struct {
 	// Node is the compute node the admitted candidate holds; "" unless its
 	// LLM entry pools two or more nodes. The judge starts on this node.
 	Node string
+	// Retarget re-runs the verifier policy for a request waiting on a backend
+	// (waiting) after it left the backends in left. ok is true only when the
+	// policy names another backend that has a free slot right now; the new
+	// selection and the reason come back with it. Nil when the choice is
+	// pinned: a per-unit verification LLM, an infra escalation, the stronger
+	// verifier, or a policy that did not apply.
+	Retarget func(waiting string, left []string) (verifierSelection, string, bool)
 }
 
 // selectVerifierLLM decides the verifier backend/kind/model, whether the

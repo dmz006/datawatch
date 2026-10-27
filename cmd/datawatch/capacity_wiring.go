@@ -1088,6 +1088,17 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		return func() { end(); release() }, node, true
 	}
 
+	// verifierCapacityFits is the dry run of the same admission, for a verifier
+	// that waits and re-runs its policy: the worker lease is already released or
+	// handed over by then, so only the verifier's own pools count. The ledger's
+	// room check does not read the priority, so none is passed.
+	verifierCapacityFits = func(backend, model, taskID, prdID string) bool {
+		return amgr.JudgeFits(autonomous.JudgeAdmit{
+			Holder: autonomous.VerifyHolder(taskID), PRDID: prdID, Backend: backend, Model: model,
+		})
+	}
+	verifierCapacityChanged = amgr.CapacityChanged
+
 	// verifierBackendLoad feeds the verifier policy's balance mode: the
 	// highest used-over-limit among the backend's own pools. The shared
 	// host pool is left out, since every backend draws on it and it would
