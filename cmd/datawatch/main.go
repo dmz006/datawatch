@@ -1437,6 +1437,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if cfg.Server.Token != "" {
 			channelEnv["DATAWATCH_TOKEN"] = cfg.Server.Token
 		}
+		// Let the bridge verify the daemon's TLS cert instead of skipping
+		// verification: hand it the path of the cert the daemon serves.
+		if cfg.Server.TLSEnabled {
+			channelEnv["DATAWATCH_CA_CERT"] = daemonCertPath(cfg)
+		}
 
 		mgr.SetOnPreLaunch(func(sess *session.Session) {
 			// Design A3 — mint this session's own scoped credential and
@@ -1448,6 +1453,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// bridge no longer holds the admin token at all.
 			sessionChannelEnv := map[string]string{
 				"DATAWATCH_API_URL": channelEnv["DATAWATCH_API_URL"],
+			}
+			if v, ok := channelEnv["DATAWATCH_CA_CERT"]; ok {
+				sessionChannelEnv["DATAWATCH_CA_CERT"] = v
 			}
 			if sessionTokenStore != nil {
 				grantCaps := cfg.Session.Capabilities
@@ -18130,4 +18138,14 @@ func computeNodeFromConfig(c config.ComputeNodeYAML) compute.Node {
 		SessionSlots:          c.SessionSlots,
 		TLSInsecureSkipVerify: c.TLSInsecureSkipVerify,
 	}
+}
+
+// daemonCertPath returns the TLS certificate the daemon serves: the
+// configured server.tls_cert, else the auto-generated
+// <data_dir>/tls/server/cert.pem (internal/tlsutil ensureSelfSigned).
+func daemonCertPath(cfg *config.Config) string {
+	if cfg.Server.TLSCert != "" {
+		return expandHome(cfg.Server.TLSCert)
+	}
+	return filepath.Join(expandHome(cfg.DataDir), "tls", "server", "cert.pem")
 }

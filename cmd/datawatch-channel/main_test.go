@@ -2,10 +2,21 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"io"
+	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -276,5 +287,99 @@ func TestPostToParent_FailsOnUnreachable(t *testing.T) {
 	defer cancel()
 	if err := b.postToParent(ctx, "/api/channel/reply", map[string]any{"text": "x"}); err == nil {
 		t.Fatal("expected error against closed server, got nil")
+	}
+}
+
+// writeTestCert writes a self-signed cert for 127.0.0.1 and returns its PEM path.
+func writeTestCert(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "test"},
+		NotBefore:             time.Now().Add(-time.Minute),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "cert.pem")
+	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestBuildTLSConfig_DefaultVerifies(t *testing.T) {
+	tc := buildTLSConfig(config{})
+	if tc.InsecureSkipVerify {
+		t.Fatal("default config must verify the daemon certificate")
+	}
+	if tc.MinVersion < tls.VersionTLS12 {
+		t.Fatalf("MinVersion = %x, want >= TLS 1.2", tc.MinVersion)
+	}
+}
+
+func TestBuildTLSConfig_CACertBecomesRoot(t *testing.T) {
+	tc := buildTLSConfig(config{caCertFile: writeTestCert(t)})
+	if tc.InsecureSkipVerify {
+		t.Fatal("a CA cert must not disable verification")
+	}
+	if tc.RootCAs == nil {
+		t.Fatal("RootCAs not set from the daemon certificate")
+	}
+}
+
+func TestBuildTLSConfig_UnreadableCertStillVerifies(t *testing.T) {
+	tc := buildTLSConfig(config{caCertFile: filepath.Join(t.TempDir(), "missing.pem")})
+	if tc.InsecureSkipVerify {
+		t.Fatal("a missing cert must not fall back to skipping verification")
+	}
+}
+
+func TestBuildTLSConfig_SkipOnlyWithOptIn(t *testing.T) {
+	tc := buildTLSConfig(config{insecureSkipVerify: true})
+	if !tc.InsecureSkipVerify {
+		t.Fatal("opt-in should skip verification")
+	}
+}
+
+func TestLoadConfig_SkipVerifyDefaultsOff(t *testing.T) {
+	t.Setenv("DATAWATCH_CHANNEL_INSECURE_SKIP_VERIFY", "")
+	if loadConfig().insecureSkipVerify {
+		t.Fatal("skip-verify must default to false")
+	}
+	t.Setenv("DATAWATCH_CHANNEL_INSECURE_SKIP_VERIFY", "true")
+	if !loadConfig().insecureSkipVerify {
+		t.Fatal("env opt-in not honoured")
+	}
+}
+
+// The default config must talk to a self-signed TLS daemon when given its cert,
+// and must refuse it without the cert.
+func TestProbeDaemon_SelfSignedDaemon(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	certPath := filepath.Join(t.TempDir(), "cert.pem")
+	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := probeDaemon(config{apiURL: srv.URL, caCertFile: certPath}); err != nil {
+		t.Fatalf("probe with daemon cert as root: %v", err)
+	}
+	if err := probeDaemon(config{apiURL: srv.URL}); err == nil {
+		t.Fatal("probe without the daemon cert should fail verification")
+	}
+	if err := probeDaemon(config{apiURL: srv.URL, insecureSkipVerify: true}); err != nil {
+		t.Fatalf("probe with opt-in skip: %v", err)
 	}
 }
