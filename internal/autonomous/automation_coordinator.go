@@ -53,7 +53,7 @@ type Coordinator struct {
 	// alertFn and auditFn override the Manager's sinks; nil means "use the
 	// Manager's current sink at call time" (main wires those after the
 	// Manager is built).
-	alertFn func(level, title, body string)
+	alertFn func(level, title, body string) (id string)
 	auditFn func(action string, details map[string]any)
 
 	mu       sync.Mutex

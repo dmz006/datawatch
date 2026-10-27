@@ -70,19 +70,75 @@ func lifecycleSinkMessage(ev LifecycleEvent) string {
 	if msg == "" {
 		return ""
 	}
-	msg = strings.ReplaceAll(strings.ReplaceAll(msg, "\n", " "), "\r", " ")
-	msg = strings.TrimSpace(msg)
-	if utf8.RuneCountInString(msg) > lifecycleSinkMsgLimit {
-		msg = string([]rune(msg)[:lifecycleSinkMsgLimit]) + lifecycleSinkMsgSuffix
+	return flattenSinkText(msg)
+}
+
+// flattenSinkText collapses s to a single trimmed line and truncates it
+// to lifecycleSinkMsgLimit runes (plus lifecycleSinkMsgSuffix).
+func flattenSinkText(s string) string {
+	s = strings.ReplaceAll(strings.ReplaceAll(s, "\n", " "), "\r", " ")
+	s = strings.TrimSpace(s)
+	if utf8.RuneCountInString(s) > lifecycleSinkMsgLimit {
+		s = string([]rune(s)[:lifecycleSinkMsgLimit]) + lifecycleSinkMsgSuffix
 	}
-	return msg
+	return s
+}
+
+// describeWarningEvent renders the opt-in warning kinds, which carry no
+// status transition:
+//
+//	Automaton <id> (task <id>): scope warning - files: a, b
+//	Automaton <id> (task <id>): guardrail <name> warn - <verdict summary>
+//
+// The link target is appended when set. Operator-facing text says
+// Automaton, never PRD.
+func describeWarningEvent(ev LifecycleEvent) string {
+	var b strings.Builder
+	switch {
+	case ev.PRDID != "":
+		fmt.Fprintf(&b, "Automaton %s", ev.PRDID)
+		if ev.TaskID != "" {
+			fmt.Fprintf(&b, " (task %s)", ev.TaskID)
+		}
+	case ev.TaskID != "":
+		fmt.Fprintf(&b, "task %s", ev.TaskID)
+	default:
+		b.WriteString(ev.Kind)
+	}
+	b.WriteString(": ")
+	detail := ""
+	if ev.Kind == KindScopeWarning {
+		b.WriteString("scope warning")
+		if len(ev.Files) > 0 {
+			detail = "files: " + flattenSinkText(strings.Join(ev.Files, ", "))
+		}
+	} else {
+		if ev.Guardrail != "" {
+			fmt.Fprintf(&b, "guardrail %s warn", ev.Guardrail)
+		} else {
+			b.WriteString("guardrail warn")
+		}
+		detail = lifecycleSinkMessage(ev)
+	}
+	if detail != "" {
+		b.WriteString(" - " + detail)
+	}
+	if ev.Link != "" {
+		fmt.Fprintf(&b, " (link %s)", ev.Link)
+	}
+	return b.String()
 }
 
 // DescribeLifecycleEvent renders one human-readable line:
 // "PRD <id>: <old> -> <new>" plus " (task <id>)" and
 // " (msg …)" when those fields are non-empty (truncate msg to ~160
-// chars). PRDID empty -> "task <TaskID>: <old> -> <new>".
+// chars). PRDID empty -> "task <TaskID>: <old> -> <new>". The opt-in
+// warning kinds (scope_warning, guardrail_warn) have no status
+// transition and render through describeWarningEvent instead.
 func DescribeLifecycleEvent(ev LifecycleEvent) string {
+	if ev.Kind == KindScopeWarning || ev.Kind == KindGuardrailWarn {
+		return describeWarningEvent(ev)
+	}
 	var b strings.Builder
 	if ev.PRDID != "" {
 		fmt.Fprintf(&b, "PRD %s: %s -> %s", ev.PRDID, ev.OldStatus, ev.NewStatus)

@@ -366,10 +366,16 @@ list means *inherit*, never *off*; only the global tier can resolve to
 names its **source**: `automaton`, `profile` or `global` — that is
 what the surfaces show as `notify_events_effective`.
 
-`task.session_started` and `task.session_cleared` are **opt-in** kinds
-and are not in the default set: a session lifecycle subscription fires
-only on Automata whose resolved set includes that kind (add it to the
-per-Automaton or profile list). The usable closed set is every known
+`task.session_started`, `task.session_cleared`, `scope_warning` and
+`guardrail_warn` are **opt-in** kinds and are not in the default set: a
+subscription on one of them fires only on Automata whose resolved set
+includes that kind (add it to the per-Automaton, profile or global
+default list). `scope_warning` (a task touched files outside its declared
+scope; the event lists the files) and `guardrail_warn` (a guardrail
+returned a warn outcome; the event names the guardrail and carries the
+level: task, story or Automaton) are bare kind names with no `prd.` or
+`task.` prefix. They are informational only and never block or change any
+task, story or Automaton. The usable closed set is every known
 lifecycle event kind except `prd.updated`, which is deliberately not a
 notify kind. Unknown or blank kinds are rejected (400 / a tool error).
 
@@ -410,6 +416,80 @@ plus the `notify_events` field in the profile create/update body on
 REST, the `guardrail_profile_create` / `guardrail_profile_update` MCP
 tools, and the profile editor in PWA **Settings → Automate → Guardrail
 Profiles**.
+
+**Globally** (every Automaton; the lowest tier, and the only tier that can
+express *no kinds*):
+
+```yaml
+autonomous:
+  notify:
+    # adds guardrail_warn to the five-kind baseline for every Automaton
+    default_events: [prd.needs_review, prd.blocked, prd.failed, prd.completed, prd.cancelled, guardrail_warn]
+```
+
+under `autonomous.notify` in the config file (annotated example in
+[config-reference.yaml](../config-reference.yaml)), or without touching the
+file: REST `PUT /api/config` with `{"autonomous.notify.default_events": [...]}`
+(JSON array; read back via `GET /api/config`), MCP `config_set`, CLI
+`datawatch config set autonomous.notify.default_events <kinds>`, comm channel
+`configure autonomous.notify.default_events=<kinds>`, or the PWA settings
+field (Settings → General → Automate). Changed once, applies at daemon start;
+an explicit empty list (`default_events: []`) turns the global tier off.
+
+#### Enabling warning kinds from every surface
+
+| What you want | YAML | CLI | Web UI | REST | comm channel |
+|---|---|---|---|---|---|
+| One or both warning kinds for one Automaton | — (the per-Automaton list is data, set through the other surfaces) | `datawatch autonomous prd-set-notify-events <id> prd.blocked,guardrail_warn` | Automaton settings → *Notification events* panel: tick the opt-in kinds, toggle *Inherit* off | `POST /api/autonomous/prds/{id}/set_notify_events` with `{"notify_events": ["prd.blocked", "guardrail_warn"]}` | `autonomous set-notify-events <id> prd.blocked,guardrail_warn` (`inherit` clears it back to the profile/global tier) |
+| Warning kinds for all Automata on one guardrail profile | — (the profile's list is data, set through the other surfaces) | `datawatch guardrail profile update <id> --notify-events prd.failed,scope_warning` | Settings → Automate → Guardrail Profiles → the profile's notify list | `PUT /api/autonomous/guardrail_profiles/{id}` with `{"notify_events": ["scope_warning"]}` | `guardrail profile notify-events <id> prd.failed,scope_warning` (or `inherit`) |
+| Warning kinds globally (lowest tier) | `autonomous.notify.default_events` (example above) | `datawatch config set autonomous.notify.default_events "prd.blocked,prd.failed,guardrail_warn"` | Settings → General → Automate → the default-events field | `PUT /api/config` with `{"autonomous.notify.default_events": ["prd.blocked", "prd.failed", "guardrail_warn"]}` | `configure autonomous.notify.default_events=prd.blocked,prd.failed,guardrail_warn` |
+
+MCP joins every row: `autonomous_prd_set_notify_events(id, notify_events)` for
+the Automaton tier, `guardrail_profile_update(id, notify_events_json="[\"scope_warning\"]")`
+for the profile tier, and `config_set` / `autonomous_config_set` for the
+global tier. Every surface validates the kinds, reports the effective set on
+read, and rejects a typo'd kind with a near-miss hint.
+
+#### Worked example: a guardrail `warn` into a queue
+
+1. **Allow the kind** on the Automaton (any tier — the highest non-empty tier wins):
+
+   ```sh
+   datawatch autonomous prd-set-notify-events a1b2c3d4 prd.blocked,guardrail_warn
+   ```
+
+2. **Subscribe** the kind to the sink you want:
+
+   ```sh
+   # a named queue a generic MCP client polls:
+   datawatch autonomous subscribe --on guardrail_warn --prd a1b2c3d4 --sink mcp_queue --target warn-watch
+   # or a datawatch session (the event is typed in when it fires):
+   datawatch autonomous subscribe --on guardrail_warn --prd a1b2c3d4 --sink session --target "$SESSION"
+   ```
+
+3. **When a guardrail judge returns `warn`**, the event is delivered to that
+   sink: the Automaton, and (for a task- or story-scoped warning) its task and
+   story; `guardrail` names the guardrail; `verdict` carries the outcome,
+   summary and issues; `decision` is the verdict decision the same check
+   recorded; and `link` is the PWA alert deep-link when the same check also
+   raised an alert. In a queue it looks like:
+
+   ```json
+   {"kind":"guardrail_warn","level":"task","prd_id":"a1b2c3d4","story_id":"story_2","task_id":"task_9","guardrail":"ci-watch","verdict":{"outcome":"warn","summary":"re-run flake","issues":["flaky re-run"]},"link":"?alert=alert_171"}
+   ```
+
+   A `scope_warning` event is the same shape with `level` always `task` and
+   `files` listing what the task touched outside its declared scope (including
+   pre-existing foreign files swept into the task's commit), and, only when the
+   finding did raise an alert, the same `link`. The full field list and the
+   closed kind set are in the [lifecycle reference](../api/autonomous.md#lifecycle-event-kinds).
+
+Two things stay fixed regardless of the notify set: **the PWA still shows the
+warning either way** — the alert and the inline scope-drift marker appear for
+every operator no matter what the tiers say — and **the warnings never block
+or alter anything**: the task keeps running, the verdict does not fail the
+work, and no status changes. The notify events only add delivery destinations
+on top of the PWA warning.
 
 Check where an Automaton stands at any tier with
 `datawatch autonomous prd-get <id>` (`notify_events`,

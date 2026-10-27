@@ -1405,6 +1405,10 @@ Valid kinds:
   task.awaiting_approval task.blocked task.cancelled task.completed task.failed
   task.in_progress task.pending task.queued task.review_needed task.running_tests
   task.session_cleared task.session_started task.verifying task.waiting_capacity
+  scope_warning guardrail_warn
+
+Opt-in kinds (off by default, list them to turn them on):
+  task.session_started task.session_cleared scope_warning guardrail_warn
 
 Default set (used when the Automaton and its guardrail profile both inherit):
   prd.needs_review prd.blocked prd.failed prd.completed prd.cancelled

@@ -1483,7 +1483,8 @@ consumes the edges yet.
 
 **Lifecycle event subscription** — a persisted rule that maps an Automaton
 lifecycle event (PRD/task status changes, `task.session_started` /
-`task.session_cleared`, `prd.updated`) to a delivery sink: a comm router,
+`task.session_cleared`, `prd.updated`, and the opt-in warning kinds
+`scope_warning` and `guardrail_warn`) to a delivery sink: a comm router,
 a datawatch session (bridge `POST /send` preferred, `SendInput` fallback
 tagged `lifecycle-sub`), a push topic, the in-app alert store, or a named
 **pending events queue** (`mcp_queue` sink) that a client polls. Options:

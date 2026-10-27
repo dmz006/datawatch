@@ -334,3 +334,68 @@ func stringSliceField(t *testing.T, m map[string]any, key string) []string {
 	}
 	return out
 }
+
+// TestSubscribe_WarningKindsAreOptIn pins the MCP surface for the
+// new opt-in warning kinds: the handler accepts scope_warning /
+// guardrail_warn bare (they are warnings, not task statuses — never
+// expanded to task.*), and the tool + kinds descriptions name them as
+// warnings that never block work.
+func TestSubscribe_WarningKindsAreOptIn(t *testing.T) {
+	// 1) The tool definitions advertise the opt-in warning kinds.
+	def := (&Server{}).toolAutonomousSubscribe()
+	desc := def.Description
+	props, _ := def.InputSchema.Properties["kinds"].(map[string]any)
+	kindDesc, _ := props["description"].(string)
+	for _, want := range []string{"scope_warning", "guardrail_warn", "never block"} {
+		if !strings.Contains(desc, want) && !strings.Contains(kindDesc, want) {
+			t.Errorf("autonomous_subscribe descriptions missing %q (tool: %q; kinds: %q)", want, desc, kindDesc)
+		}
+	}
+
+	// 2) The handler passes the warning kinds through unchanged.
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/autonomous/subscriptions" {
+			t.Errorf("route = %s %s, want POST /api/autonomous/subscriptions", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"sub-warn-1"}`))
+	}))
+	defer srv.Close()
+
+	s := &Server{webPort: bl427Port(t, srv)}
+	req := mcpsdk.CallToolRequest{}
+	req.Params.Name = "autonomous_subscribe"
+	req.Params.Arguments = map[string]any{
+		"kinds":       "scope_warning,guardrail_warn",
+		"prd_id":      "prd-guard",
+		"sink_type":   "alert",
+		"sink_target": "router-1",
+	}
+	res, err := s.handleAutonomousSubscribe(t.Context(), req)
+	if err != nil {
+		t.Fatalf("handleAutonomousSubscribe: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("tool reported error: %v", res.Content)
+	}
+	if text := resContentText(t, res); !strings.Contains(text, "sub-warn-1") {
+		t.Errorf("response should echo the daemon body (has sub-warn-1), got %q", text)
+	}
+
+	filter, _ := gotBody["filter"].(map[string]any)
+	if filter == nil {
+		t.Fatalf("body missing filter: %v", gotBody)
+	}
+	gotKinds := stringSliceField(t, filter, "kinds")
+	if len(gotKinds) != 2 || gotKinds[0] != "scope_warning" || gotKinds[1] != "guardrail_warn" {
+		t.Errorf("filter.kinds = %v, want [scope_warning guardrail_warn] (bare — never task.*)", gotKinds)
+	}
+	if filter["prd_id"] != "prd-guard" {
+		t.Errorf("filter.prd_id = %v, want prd-guard", filter["prd_id"])
+	}
+}

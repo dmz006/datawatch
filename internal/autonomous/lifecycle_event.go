@@ -42,6 +42,17 @@ const (
 	// KindTaskSessionCleared fires when Task.SessionID is cleared
 	// (before a respawn or on reset).
 	KindTaskSessionCleared = "task.session_cleared"
+	// KindScopeWarning is an opt-in warning that a task touched files
+	// outside its declared scope. It carries no status prefix because it
+	// is not a status transition; Files lists the offending files. It is
+	// informational only and never blocks or alters any work.
+	KindScopeWarning = "scope_warning"
+	// KindGuardrailWarn is an opt-in warning that a guardrail returned a
+	// warn outcome. Bare name (no level prefix) because a guardrail can
+	// warn at task, story or Automaton level; the event's Level field
+	// carries the level and Guardrail names the guardrail. It is
+	// informational only and never blocks or alters any work.
+	KindGuardrailWarn = "guardrail_warn"
 	// KindPRDUpdated is the generic "this PRD was persisted" notification
 	// (the WS refresh broadcast subscribes to it).
 	KindPRDUpdated = "prd.updated"
@@ -92,6 +103,18 @@ type LifecycleEvent struct {
 	Decision     *Decision         `json:"decision,omitempty"`
 	Verdict      *GuardrailVerdict `json:"verdict,omitempty"`
 	Host         string            `json:"host,omitempty"`
+	// Files, Guardrail and Link are the payload of the opt-in warning
+	// kinds (KindScopeWarning, KindGuardrailWarn): the files outside the
+	// declared scope, the guardrail name, and an optional PWA deep-link
+	// target. The only deep-link forms the PWA handles today are
+	// "?alert=<id>" (opens one alert) and "?automation=<id>" (opens one
+	// chain Automation); there is no route for an Automaton or task
+	// detail page, and none is invented here. Emitters therefore set Link
+	// to "?alert=<id>" for the alert they raise alongside the warning, or
+	// leave it empty.
+	Files     []string `json:"files,omitempty"`
+	Guardrail string   `json:"guardrail,omitempty"`
+	Link      string   `json:"link,omitempty"`
 	// Deleted is set only on KindPRDUpdated events for a PRD that no
 	// longer loads (deleted). The legacy WS prd_update frame carries
 	// {"deleted": true} in that case and NewStatus alone can't express

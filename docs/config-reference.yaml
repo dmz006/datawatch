@@ -1240,9 +1240,9 @@ autonomous:
     # global tier off (no kinds from it). Custom replacement example:
     #   [prd.needs_review, prd.completed, prd.failed, task.session_started,
     #    task.completed, task.failed]
-    # Note: task.session_started and task.session_cleared are opt-in kinds
-    # (not in the five-kind baseline) — list them wherever a session
-    # lifecycle notification should fire. `prd.updated` is never a valid
+    # Note: task.session_started, task.session_cleared, scope_warning and
+    # guardrail_warn are opt-in kinds (not in the five-kind baseline) —
+    # list them wherever that notification should fire. `prd.updated` is never a valid
     # notify kind.
     default_events: [prd.needs_review, prd.blocked, prd.failed, prd.completed, prd.cancelled]
     # Per-queue retention for the mcp_queue subscription sink: each named

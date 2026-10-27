@@ -12,22 +12,35 @@ window._splashStart = Date.now();
 
 // Per-Automaton notification-event overrides. The closed set of valid
 // lifecycle event kinds (sorted; every prd.<status> kind, every
-// task.<status> kind, plus task.session_started / task.session_cleared)
+// task.<status> kind, task.session_started / task.session_cleared, plus the
+// bare opt-in warning kinds scope_warning / guardrail_warn)
 // and the default set an effective list falls back to when an Automaton
 // stores an empty (= inherit) list. Ground truth: the lifecycle
 // subscription known event kinds, minus the generic "persisted" kind.
-const NOTIFY_EVENT_KINDS = ['prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.completed', 'task.failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
+const NOTIFY_EVENT_KINDS = ['guardrail_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.completed', 'task.failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
 const NOTIFY_EVENT_DEFAULTS = ['prd.needs_review', 'prd.blocked', 'prd.failed', 'prd.completed', 'prd.cancelled'];
+// Opt-in event kinds: off by default and only fire when explicitly listed in
+// the resolved notification events (Automaton tier, else guardrail profile,
+// then the global baseline). task.session_started / task.session_cleared ride
+// on other task activity; scope_warning / guardrail_warn fire *only* because
+// some Automaton opted in. Mirrors autonomous.OptInNotifyEvents().
+const NOTIFY_EVENT_OPT_IN = ['guardrail_warn', 'scope_warning', 'task.session_cleared', 'task.session_started'];
 
 // One checkbox row per kind, grouped Automaton (prd.*) / Task
-// (task.<status>) / Session (task.session_*); the default set is marked
-// with the 'default' tag. Rows are disabled while inherit is checked.
+// (task.<status>) / Session (task.session_*) / Warnings (scope_warning,
+// guardrail_warn); the default set is marked with the 'default' tag and the
+// opt-in set (NOTIFY_EVENT_OPT_IN) with the 'opt-in' tag. Rows are disabled
+// while inherit is checked.
 function _renderNotifyKindOptions(current, inheritOn) {
   const curSet = new Set(current || []);
   const defaultSet = new Set(NOTIFY_EVENT_DEFAULTS);
+  const optInSet = new Set(NOTIFY_EVENT_OPT_IN);
   const row = k => {
-    const mark = defaultSet.has(k)
-      ? ` <span style="color:var(--text2);font-size:10px;">(${escHtml(t('notify_events_default_marker')||'default')})</span>`
+    const marks = [];
+    if (defaultSet.has(k)) marks.push(t('notify_events_default_marker')||'default');
+    if (optInSet.has(k)) marks.push(t('notify_events_opt_in_marker')||'opt-in');
+    const mark = marks.length
+      ? ` <span style="color:var(--text2);font-size:10px;">(${escHtml(marks.join(' / '))})</span>`
       : '';
     return `<label class="wizard-checkbox-row" style="margin:2px 0;cursor:pointer;">
       <input type="checkbox" data-notify-kind value="${escHtml(k)}" ${curSet.has(k) ? 'checked' : ''} ${inheritOn ? 'disabled' : ''}>
@@ -38,9 +51,11 @@ function _renderNotifyKindOptions(current, inheritOn) {
   const prdKinds     = NOTIFY_EVENT_KINDS.filter(k => k.startsWith('prd.'));
   const taskKinds    = NOTIFY_EVENT_KINDS.filter(k => k.startsWith('task.') && !k.startsWith('task.session_'));
   const sessionKinds = NOTIFY_EVENT_KINDS.filter(k => k.startsWith('task.session_'));
+  const warningKinds = NOTIFY_EVENT_KINDS.filter(k => !k.startsWith('prd.') && !k.startsWith('task.'));
   return header('Automaton') + prdKinds.map(row).join('')
     + header('Task')    + taskKinds.map(row).join('')
-    + header('Session') + sessionKinds.map(row).join('');
+    + header('Session') + sessionKinds.map(row).join('')
+    + header(t('notify_events_group_warnings')||'Warnings') + warningKinds.map(row).join('');
 }
 
 // Inherit checkbox toggle: disables the kind checkboxes and shows the
@@ -15571,6 +15586,7 @@ function openPRDSettingsModal(prdID) {
             <div class="wizard-field" style="margin-top:4px;padding-top:8px;border-top:1px solid var(--border);">
               <label class="wizard-label">${escHtml(t('notify_events_label')||'Notification events')}</label>
               <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${escHtml(t('notify_events_help')||'Choose which lifecycle events notify. Inherit uses the guardrail profile, then the global default.')}</div>
+              <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${escHtml(t('notify_events_opt_in_help')||'Opt-in events are off by default and only notify when listed here.')}</div>
               <label class="wizard-checkbox-row" style="margin:0 0 4px;">
                 <input type="checkbox" id="prdSettingsNotifyInherit" ${notifyInherit?'checked':''} onchange="_prdNotifyInheritToggle(this.checked);return true;">
                 <span>${escHtml(t('notify_events_inherit')||'Inherit')}</span>
@@ -25347,6 +25363,8 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
     'task.review_needed']],
   ['lifecycle_sub_form_group_other', 'Other', [
     'task.session_started', 'task.session_cleared', 'prd.updated']],
+  ['lifecycle_sub_form_group_warnings', 'Warnings (opt-in)', [
+    'scope_warning', 'guardrail_warn']],
 ];
 const _LIFECYCLE_SUB_KINDS = _LIFECYCLE_SUB_KIND_GROUPS.reduce((all, g) => all.concat(g[2]), []);
 const _LIFECYCLE_SUB_SINKS = ['comm', 'session', 'topic', 'alert', 'mcp_queue', 'webhook', 'peer'];
@@ -25668,6 +25686,7 @@ function _openLifecycleSubscriptionForm(prd, subOrNull) {
       <label style="${small}">${escHtml(t('lifecycle_sub_form_kinds') || 'Event kinds')}</label>
       <div style="${small}">${escHtml(t('lifecycle_sub_form_kinds_hint') || 'Pick at least one kind, or choose a level below.')}</div>
       <div>${_lifecycleSubKindsHTML(Array.isArray(f.kinds) ? f.kinds : [])}</div>
+      <div style="${small}">${escHtml(t('lifecycle_sub_form_opt_in_hint') || "An opt-in kind only fires when the Automaton's notification events include it.")}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
         <div><label style="${small}">${escHtml(t('lifecycle_sub_form_level') || 'Level')}</label>
           ${_lifecycleSubSelectHTML('lcSubLevel', [

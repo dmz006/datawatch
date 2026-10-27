@@ -277,12 +277,18 @@ test('lifecycle subscriptions form: the sink picker offers webhook and peer afte
   assert.deepEqual([...run(s.sandbox, `_LIFECYCLE_SUB_SINKS`)], order);
   assert.match(html, /<option value="comm" selected>/);
   const kinds = run(s.sandbox, `_LIFECYCLE_SUB_KINDS`);
-  assert.equal(kinds.length, 29);
-  for (const k of ['prd.draft', 'prd.paused', 'task.awaiting_approval', 'task.review_needed', 'task.session_started', 'task.session_cleared', 'prd.updated']) {
+  assert.equal(kinds.length, 31);
+  for (const k of ['prd.draft', 'prd.paused', 'task.awaiting_approval', 'task.review_needed', 'task.session_started', 'task.session_cleared', 'scope_warning', 'guardrail_warn', 'prd.updated']) {
     assert.ok(kinds.includes(k), k);
     assert.ok(html.includes(k), k);
   }
   assert.match(html, /Add subscription/);
+
+  // The bare warning kinds sit in their own localized "Warnings (opt-in)"
+  // group, and the form carries the opt-in explainer below the kind grid.
+  assert.match(html, /Warnings \(opt-in\)/, 'opt-in warning group header shown (en value via t(lifecycle_sub_form_group_warnings))');
+  assert.match(html, /opt-in kind only fires when the Automaton/,
+    'opt-in explainer shown under the kind grid (apostrophe HTML-escaped in render)');
 });
 
 test('lifecycle subscriptions form: the webhook and peer fields belong to their own sink only', () => {

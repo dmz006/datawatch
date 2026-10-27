@@ -102,7 +102,8 @@ DELETE /api/autonomous/subscriptions/{id}   delete (204; 404 when unknown) — a
 persisted lifecycle subscriptions (`<data_dir>/lifecycle_subscriptions.json`):
 `filter.kinds` picks event kinds from the known set (`prd.completed`,
 `task.completed`, … every PRD/task status-change kind plus
-`task.session_started`, `task.session_cleared`, `prd.updated`),
+`task.session_started`, `task.session_cleared`, `scope_warning`,
+`guardrail_warn`, `prd.updated`),
 `filter.level` narrows to `prd` or `task` events, and the `sink` is
 where matching events are delivered (`comm` = the notify pipeline, `session`
 = a datawatch-managed session, `topic` = the push-topic bus, `alert` = the

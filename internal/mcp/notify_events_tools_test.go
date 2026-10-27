@@ -13,6 +13,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/session"
+	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
 
 func TestNotifyEvents_PostsPathAndBody(t *testing.T) {
@@ -79,11 +80,34 @@ func TestNotifyEvents_ToolDefinition(t *testing.T) {
 	desc := def.Description + " " + anyToString(eventsDesc["description"])
 	for _, want := range []string{
 		"prd.needs_review", "prd.blocked", "prd.failed", "prd.completed", "prd.cancelled",
-		"task.session_started", "task.session_cleared",
+		"task.session_started", "task.session_cleared", "scope_warning", "guardrail_warn",
 		"Automaton", "guardrail profile", "subscription",
 	} {
 		if !strings.Contains(desc, want) {
 			t.Errorf("tool descriptions missing %q", want)
+		}
+	}
+}
+
+// TestNotifyEvents_ProfileToolDescriptionsNameOptInKinds pins the
+// guardrail-profile notify_events_json parameter documentation: create
+// and update must name the new opt-in warning kinds and say they are off
+// by default (warnings never block work).
+func TestNotifyEvents_ProfileToolDescriptionsNameOptInKinds(t *testing.T) {
+	toolDefs := map[string]mcpsdk.Tool{
+		"guardrail_profile_create": (&Server{}).toolGuardrailProfileCreate(),
+		"guardrail_profile_update": (&Server{}).toolGuardrailProfileUpdate(),
+	}
+	for name, def := range toolDefs {
+		props, ok := def.InputSchema.Properties["notify_events_json"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: no notify_events_json property in schema %v", name, def.InputSchema.Properties)
+		}
+		desc, _ := props["description"].(string)
+		for _, want := range []string{"scope_warning", "guardrail_warn", "off by default"} {
+			if !strings.Contains(desc, want) {
+				t.Errorf("%s notify_events_json description missing %q: %s", name, want, desc)
+			}
 		}
 	}
 }

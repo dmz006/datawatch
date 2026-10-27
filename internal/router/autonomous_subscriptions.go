@@ -70,15 +70,20 @@ func (r *Router) commSubIdentity() string {
 // commSubShortKinds maps the bare shorthand words (the CLI's --on
 // shorthand, cmd/datawatch/cli_autonomous_subscriptions.go) to their
 // full task-level event kinds. Kinds passed with a dot (prd.blocked,
-// task.completed) always pass through unchanged.
+// task.completed) always pass through unchanged. The two opt-in warning
+// kinds (scope_warning, guardrail_warn) are bare lifecycle kinds, not task
+// statuses, so they map to themselves instead of task.<word>.
 var commSubShortKinds = map[string]string{
 	"session_started": "task.session_started",
 	"session_cleared": "task.session_cleared",
 	"prd_updated":     "task.prd_updated",
+	// The warning kinds are bare lifecycle kinds, not task statuses.
+	"scope_warning":  "scope_warning",
+	"guardrail_warn": "guardrail_warn",
 }
 
 // commSubUsage is the operator-facing syntax line for "subscribe".
-const commSubUsage = "usage: autonomous subscribe <kinds|short-names> [prd=<id>] [task=<id>] [sink=comm|webhook|peer] [target=<t>] [secret_ref=${secret:name}]  (e.g. autonomous subscribe session_started,prd.blocked prd=prd_a3f9)"
+const commSubUsage = "usage: autonomous subscribe <kinds|short-names> [prd=<id>] [task=<id>] [sink=comm|webhook|peer] [target=<t>] [secret_ref=${secret:name}]  (e.g. autonomous subscribe session_started,prd.blocked prd=prd_a3f9 | autonomous subscribe scope_warning,guardrail_warn task=<id>)"
 
 // commSubArgs is the parsed form of "subscribe <kinds…> [prd=<id>] [task=<id>] [sink=…] [target=…] [secret_ref=…]".
 type commSubArgs struct {
@@ -137,7 +142,8 @@ func commSubSinkBody(sinkType, target, secretRef, identity string) (map[string]a
 // resolveCommSubKind normalizes one kind token: full kinds (containing
 // ".") pass through, shorthand words map to task.<kind> when known, and
 // any other bare word is a task status kind (task.<word>) — the same
-// behavior as the CLI's --on shorthand.
+// behavior as the CLI's --on shorthand. The opt-in warning kinds
+// scope_warning and guardrail_warn carry no dot but map to themselves.
 func resolveCommSubKind(kind string) (string, error) {
 	kind = strings.TrimSpace(kind)
 	if kind == "" {

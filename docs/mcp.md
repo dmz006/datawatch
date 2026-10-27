@@ -387,7 +387,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   autonomous_prd_set_notify_events(id="a1b2c3d4")   # clear the Automaton-level set (inherit)
   ```
 
-  Default set (when unset at this tier): `prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`, `prd.cancelled`. The session lifecycle kinds `task.session_started` and `task.session_cleared` (the session-end kind) are **opt-in** — add them to the list to be notified. Precedence: **Automaton > guardrail profile > global default**. A subscription's own event filter can only **narrow** this resolved set, never widen it. Returns the write reply described above (a small summary, not the whole Automaton).
+  Default set (when unset at this tier): `prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`, `prd.cancelled`. The opt-in kinds `task.session_started`, `task.session_cleared` (the session-end kind), `scope_warning` and `guardrail_warn` are off by default — add them to the list to be notified. Warnings never block or change any work. Precedence: **Automaton > guardrail profile > global default**. A subscription's own event filter can only **narrow** this resolved set, never widen it. Returns the write reply described above (a small summary, not the whole Automaton).
 - **`autonomous_subscribe` / `autonomous_unsubscribe` / `autonomous_subscriptions`** (BL427) — persisted Automaton lifecycle-event subscriptions (design: [plans/2026-10-13-prd-lifecycle-events.md](plans/2026-10-13-prd-lifecycle-events.md)). Register, list and remove subscriptions so matching lifecycle events (e.g. `task.session_started`, `task.completed`, `prd.blocked`) are delivered to a sink when they fire.
 
   `autonomous_subscribe` parameters:

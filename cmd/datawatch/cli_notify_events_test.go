@@ -39,6 +39,33 @@ func TestNotifyEvents_SetsKindsForAutomaton(t *testing.T) {
 	}
 }
 
+// TestNotifyEvents_SetWarningKinds covers the new opt-in warning kinds
+// on the CLI: the command forwards scope_warning and guardrail_warn
+// verbatim (they are not task.* statuses, so there is no shorthand
+// expansion) — turning per-Automaton warnings on never blocks, it only
+// widens what reaches the operator.
+func TestNotifyEvents_SetWarningKinds(t *testing.T) {
+	c := &captureDaemon{replyBody: `{"id":"a1"}`}
+	withCaptureServer(t, c)
+
+	cmd := newAutonomousPRDSetNotifyEventsCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	cmd.SetArgs([]string{"a1", "scope_warning, guardrail_warn"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v (output: %s)", err, out)
+	}
+	if c.gotMethod != http.MethodPost || c.gotPath != "/api/autonomous/prds/a1/set_notify_events" {
+		t.Fatalf("route = %s %s, want POST /api/autonomous/prds/a1/set_notify_events", c.gotMethod, c.gotPath)
+	}
+	body := c.body(t)
+	kinds := stringSliceOf(t, body, "notify_events")
+	if len(kinds) != 2 || kinds[0] != "scope_warning" || kinds[1] != "guardrail_warn" {
+		t.Errorf("notify_events = %v, want [scope_warning guardrail_warn] (bare kinds, no task.* expansion)", kinds)
+	}
+}
+
 // TestNotifyEvents_InheritAndOmittedSendEmptyList covers the two
 // "clear" spellings: an omitted kinds argument and the word inherit
 // both send an empty list (inherit from the next tier).

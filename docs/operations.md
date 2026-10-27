@@ -4190,7 +4190,7 @@ The PWA draws each `pane_capture` frame at most every 33 ms. A frame that arrive
 This release lands the **notify set**: three tiers, an Automaton's own `notify_events` list, its guardrail profile's `notify_events` list, and finally the global `autonomous.notify.default_events`. The first non-empty tier decides the kinds; a subscription's filter can only narrow that set, never widen it. Two behaviour changes:
 
 1. **The global default is now the five-kind baseline** — `prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`, `prd.cancelled` — instead of an empty set. Automata and profiles without their own list will now notify on those five kinds (where before nothing fired from the global tier).
-2. **Opt-in kinds are gated** — `task.session_started` / `task.session_cleared` (and every task-level kind) fire only when the Automaton's resolved set includes them. A subscription on `task.session_started` for an Automaton that was not given that kind does nothing until the kind is added.
+2. **Opt-in kinds are gated** — `task.session_started` / `task.session_cleared` / `scope_warning` / `guardrail_warn` (and every task-level kind) fire only when the Automaton's resolved set includes them. A subscription on `task.session_started` for an Automaton that was not given that kind does nothing until the kind is added.
 
 **Turning it off — by scope:**
 

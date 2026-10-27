@@ -237,6 +237,17 @@ func TestNotifyEventsEndToEnd(t *testing.T) {
 	if empty.Code != http.StatusBadRequest {
 		t.Fatalf("empty-string kind: got %d, want 400 (body %s)", empty.Code, empty.Body.String())
 	}
+	// The near-miss dotted form of the new opt-in warning kind is
+	// rejected too, and the error body names the valid warning kinds
+	// (scope_warning, guardrail_warn) so the operator can correct the
+	// typo.
+	nearMiss := call(http.MethodPost, "/api/autonomous/prds/"+prd.ID+"/set_notify_events", `{"notify_events":["scope.warning"]}`)
+	if nearMiss.Code != http.StatusBadRequest {
+		t.Fatalf("near-miss scope.warning: got %d, want 400 (body %s)", nearMiss.Code, nearMiss.Body.String())
+	}
+	if b := nearMiss.Body.String(); !strings.Contains(b, "scope_warning") || !strings.Contains(b, "guardrail_warn") {
+		t.Fatalf("near-miss 400 body should name the valid warning kinds: %q", b)
+	}
 	if n := aud.count(notifyChanged); n != 1 {
 		t.Fatalf("rejected sets wrote audit entries: %d, want 1", n)
 	}

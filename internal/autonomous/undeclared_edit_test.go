@@ -2,21 +2,38 @@ package autonomous
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 )
 
-// undeclaredEditAlertRecorder captures SetAlertSink calls.
+// undeclaredEditAlertRecorder captures SetAlertSink calls. fn returns an
+// id for the alert it recorded, like a real sink that names its alert.
 type undeclaredEditAlertRecorder struct {
 	mu   sync.Mutex
 	rows []string
+	ids  []string
 }
 
-func (r *undeclaredEditAlertRecorder) fn(level, title, body string) {
+func (r *undeclaredEditAlertRecorder) fn(level, title, body string) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.rows = append(r.rows, level+"|"+title+"|"+body)
+	id := fmt.Sprintf("alert-%d", len(r.ids))
+	r.ids = append(r.ids, id)
+	return id
+}
+
+// lastID returns the id of the most recent recorded alert ("" when
+// none were recorded).
+func (r *undeclaredEditAlertRecorder) lastID() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.ids) == 0 {
+		return ""
+	}
+	return r.ids[len(r.ids)-1]
 }
 
 func (r *undeclaredEditAlertRecorder) all() []string {

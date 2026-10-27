@@ -71,6 +71,8 @@ var KnownEventKinds = func() map[string]bool {
 	m := map[string]bool{
 		KindTaskSessionStarted: true,
 		KindTaskSessionCleared: true,
+		KindScopeWarning:       true,
+		KindGuardrailWarn:      true,
 		KindPRDUpdated:         true,
 	}
 	for _, s := range []PRDStatus{

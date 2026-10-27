@@ -943,8 +943,10 @@ type Manager struct {
 	treeLockBox map[string]*func()
 
 	// alertSink — operator-facing alert callback (level, title, body).
-	// Guarded by mu. Nil = alerts silently skipped.
-	alertSink func(level, title, body string)
+	// Guarded by mu. Nil = alerts silently skipped. It returns the id of
+	// the alert it recorded ("" when it cannot name one) so an emitter
+	// raising a warning alongside the alert can link the event to it.
+	alertSink func(level, title, body string) (id string)
 
 	// attemptClock — the time source for failure escalation attempt records
 	// and review holds (attemptNow). Nil reads the wall clock; tests inject a
@@ -1274,14 +1276,16 @@ func (m *Manager) budgetsSummary() []BudgetStatus {
 }
 
 // SetAlertSink wires the operator-facing alert callback. Nil disables.
-func (m *Manager) SetAlertSink(fn func(level, title, body string)) {
+// The sink returns the id of the alert it recorded ("" when it cannot
+// name one).
+func (m *Manager) SetAlertSink(fn func(level, title, body string) (id string)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.alertSink = fn
 }
 
 // AlertSink returns the configured alert callback, or nil when unset.
-func (m *Manager) AlertSink() func(level, title, body string) {
+func (m *Manager) AlertSink() func(level, title, body string) (id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.alertSink

@@ -44,10 +44,25 @@ func ValidNotifyEventKinds() []string {
 	return valid
 }
 
+// OptInNotifyEvents returns a fresh sorted slice of every notify event
+// kind that is off by default and must be listed explicitly (in an
+// Automaton's or guardrail profile's notify_events, or in the global
+// default_events) to produce notifications.
+func OptInNotifyEvents() []string {
+	opt := []string{
+		KindTaskSessionStarted,
+		KindTaskSessionCleared,
+		KindScopeWarning,
+		KindGuardrailWarn,
+	}
+	sort.Strings(opt)
+	return opt
+}
+
 // DefaultNotifyEvents returns a fresh copy of the default notification
-// set, in display order (terminal Automaton states first). Task session
-// start (KindTaskSessionStarted) and task session end
-// (KindTaskSessionCleared) are opt-in only and deliberately absent.
+// set, in display order (terminal Automaton states first). The opt-in
+// kinds (see OptInNotifyEvents: task session start and end, scope
+// warning, guardrail warn) are deliberately absent.
 func DefaultNotifyEvents() []string {
 	return []string{
 		PRDStatusKind(PRDNeedsReview),

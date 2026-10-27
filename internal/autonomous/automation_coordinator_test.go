@@ -69,10 +69,11 @@ func newCoordHarness(t *testing.T, nPRDs int) *coordHarness {
 		h.setStatus(i, PRDApproved)
 	}
 	h.c = NewCoordinator(m, h.fake)
-	h.c.alertFn = func(level, title, body string) {
+	h.c.alertFn = func(level, title, body string) string {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		h.alerts = append(h.alerts, level+"|"+title+"|"+body)
+		return ""
 	}
 	h.c.auditFn = func(action string, d map[string]any) {
 		h.mu.Lock()

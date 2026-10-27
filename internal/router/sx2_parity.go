@@ -741,9 +741,16 @@ func (r *Router) handleAutonomous(cmd Command) {
 		// produce notifications. inherit (empty list) falls back to the
 		// guardrail profile, then the global default set.
 		if len(args) < 3 {
+			// The kind lists are derived from internal/autonomous/notify_events.go
+			// (the single source of truth) so the usage text can't drift from
+			// ValidateNotifyEvents when new kinds land.
+			validKinds := strings.Join(autonomous.ValidNotifyEventKinds(), " ")
+			optInKinds := strings.Join(autonomous.OptInNotifyEvents(), ", ")
+			defSet := strings.Join(autonomous.DefaultNotifyEvents(), ", ")
 			usage := "usage: autonomous set-notify-events <prd-id> <kind,kind,...|inherit>"
-			usage += "\nvalid kinds: prd.active prd.approved prd.archived prd.blocked prd.cancelled prd.completed prd.draft prd.failed prd.needs_review prd.paused prd.planning prd.rejected prd.revisions_asked prd.running task.awaiting_approval task.blocked task.cancelled task.completed task.failed task.in_progress task.pending task.queued task.review_needed task.running_tests task.session_cleared task.session_started task.verifying task.waiting_capacity"
-			usage += "\ndefault set (used when the Automaton and its guardrail profile both inherit): prd.needs_review, prd.blocked, prd.failed, prd.completed, prd.cancelled"
+			usage += "\nvalid kinds: " + validKinds
+			usage += "\nopt-in kinds (off by default — inherit does NOT include them): " + optInKinds
+			usage += "\ndefault set (used when the Automaton and its guardrail profile both inherit): " + defSet
 			r.reply("autonomous set-notify-events failed", usage)
 			return
 		}
