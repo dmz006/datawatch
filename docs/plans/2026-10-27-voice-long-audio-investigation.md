@@ -120,6 +120,7 @@ Clips: 16 kHz mono PCM WAV, 440 Hz tone, 30/60/120/180 s. Regenerate:
 
 Harness and clips were removed/retained per the "throwaway" instruction; the Go file stays in `.voice-harness/` (excluded from git) for one re-run, and can be deleted after the follow-up in *Proposed fix* step 1 resolves the field-host question.
 
-## Operator decision (2026-10-27 about 12:30)
+## Operator decisions (2026-10-27)
 
-Operator, quoted: "Good the fix i will get an example in a few hours". No fix task is run. The operator will supply a real failing example in a few hours (the client-side error text or a recording that fails); the investigation resumes from that, as a normal worktree PRD, not in the main checkout. The streaming voice design doc is not re-filed yet.
+- About 12:30, operator, quoted: "Good the fix i will get an example in a few hours".
+- About 12:35, operator, quoted: "Hold, not good". The supervisor had read the first line as putting the fix on hold; the operator wants the fix to go ahead. Decision: the fix is filed as a normal worktree PRD (eca00001) that hardens long-recording transcription (visible failure logging and clear errors, keep the recording or draft in the PWA on failure, bounded chunking with ffmpeg, tests, docs), and the operator's real failing example, when it arrives, is used to confirm it or to find the remaining cause.
