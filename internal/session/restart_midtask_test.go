@@ -206,6 +206,13 @@ func mtRun(t *testing.T, o mtOpts) (*Session, int32, *FakeTmux) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	final, _ := b.GetSession(sess.FullID)
+	// The end callback runs just after the state flips; on a loaded runner the
+	// loop above can read the new state before the callback has counted.
+	if final != nil && final.State != StateRunning && final.State != StateWaitingInput {
+		for wait := time.Now().Add(3 * time.Second); ended.Load() == 0 && time.Now().Before(wait); {
+			time.Sleep(25 * time.Millisecond)
+		}
+	}
 	return final, ended.Load(), fake
 }
 
