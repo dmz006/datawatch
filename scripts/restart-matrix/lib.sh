@@ -790,3 +790,18 @@ rm_sandbox_finish() {
     rm -rf "$RM_SB"
   fi
 }
+
+# rm_install_traps — the daemon-cleanup safety net for every exit path.
+# EXIT covers normal exits, failures and early returns; INT, TERM and HUP must
+# each be trapped in their own right, because a signal that is neither trapped
+# nor ignored kills the shell without running the EXIT trap, leaving exactly
+# one thing alive: the sandbox daemon. All four paths run rm_sandbox_finish —
+# the same order as the happy path (end the recorded daemon pid, its sessions
+# one by one; remove the sandbox dir unless RM_KEEP=1). It is idempotent, so
+# the second run after a signal is a no-op.
+rm_install_traps() {
+  trap 'rm_sandbox_finish' EXIT
+  trap 'rm_sandbox_finish; trap - EXIT INT TERM HUP; exit 130' INT
+  trap 'rm_sandbox_finish; trap - EXIT INT TERM HUP; exit 143' TERM
+  trap 'rm_sandbox_finish; trap - EXIT INT TERM HUP; exit 129' HUP
+}
