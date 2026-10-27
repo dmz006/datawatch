@@ -73,6 +73,8 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # --- daemon ------------------------------------------------------------------
 if [[ -n "${TEST_HTTP:-}" && -n "${TEST_TLS:-}" && -n "${TEST_TOKEN:-}" ]]; then

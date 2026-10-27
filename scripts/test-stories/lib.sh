@@ -439,27 +439,44 @@ print(",".join(have))
 # so these helpers are no-ops there; standalone stories install their own.
 # ---------------------------------------------------------------------------
 
-# dw_terminate_pid <pid> <marker> — end a PID this script recorded, only
-# while its live /proc/<pid>/cmdline still carries the marker recorded with
-# it. Routes through the shared library's td_stop_one (sessions first, via
-# the daemon's own API) when a record exists; otherwise TERM, a brief wait,
-# and KILL only after re-checking the marker. A dead or recycled PID is left
-# alone. No process lookup by name of any kind; never touches a multiplexer
-# server.
+# dw_terminate_pid <pid-or-container-id> [marker] — end a daemon this shell
+# started. A recorded value goes through the shared library (td_stop_one:
+# ends its sessions via the recorded API first, then signals, by the
+# recorded id and marker only). An unrecorded Docker container id — 12-hex
+# short form or 64-hex full form — is addressed to docker by that id (a
+# /proc signal for a container id is a no-op). An unrecorded numeric
+# process is signalled only while the marker (arg 2, non-empty) is still in
+# its live cmdline; that check guards against recycled PIDs, so an EMPTY
+# marker signals nothing and reports failure. Callers must treat a nonzero
+# result as "the daemon may still be running" and skip/ko on that basis.
+# Returns 0 only when the daemon/container is gone (or was already gone).
 dw_terminate_pid() {
   local pid="${1:-}" marker="${2:-}" cmd end
   [[ -n "$pid" ]] || return 0
-  if declare -F td_stop_one >/dev/null 2>&1 \
+  if declare -F td_is_recorded >/dev/null 2>&1 && td_is_recorded "$pid"; then
+    if td_stop_one "$pid"; then return 0; fi
+    echo "dw_terminate_pid: recorded daemon $pid could not be ended (its record was kept)" >&2
+    return 1
+  elif declare -F td_stop_one >/dev/null 2>&1 \
     && [[ -n "${TD_STATE_DIR:-}" && -f "${TD_STATE_DIR}/${pid}.rec" ]]; then
-    td_stop_one "$pid" || true
-  elif [[ "$pid" =~ ^[a-f0-9]{12}$ ]]; then
-    # A Docker container id, not a host PID. A signal for it is a no-op, so
-    # end the container by the id this run passed (and any record for it),
-    # the same shape the shared library's td_stop_one takes for a container
-    # record. No name search of any kind.
-    docker stop "$pid" >/dev/null 2>&1 || true
+    td_stop_one "$pid"
+  elif [[ "$pid" =~ ^([a-f0-9]{12}|[a-f0-9]{64})$ ]]; then
+    if ! docker stop "$pid" >/dev/null 2>&1; then
+      if docker inspect "$pid" >/dev/null 2>&1; then
+        echo "dw_terminate_pid: docker stop of container $pid failed" >&2
+        return 1
+      fi
+    fi
     docker rm -f "$pid" >/dev/null 2>&1 || true
-  elif [[ "$pid" =~ ^[0-9]+$ ]] && [[ -r "/proc/$pid/cmdline" ]]; then
+    return 0
+  elif [[ "$pid" =~ ^[0-9]+$ ]]; then
+    if [[ -z "$marker" ]]; then
+      echo "dw_terminate_pid: pid $pid is not recorded and no cmdline marker was given; not signalling it" >&2
+      return 1
+    fi
+    if [[ ! -r "/proc/$pid/cmdline" ]]; then
+      return 0
+    fi
     cmd=$({ tr '\0' ' ' < "/proc/$pid/cmdline"; } 2>/dev/null || true)
     if [[ -n "$cmd" && "$cmd" == *"$marker"* ]]; then
       kill -TERM "$pid" 2>/dev/null || true
@@ -471,13 +488,21 @@ dw_terminate_pid() {
           kill -KILL "$pid" 2>/dev/null || true
           end=$((SECONDS + 5))
           while kill -0 "$pid" 2>/dev/null && ((SECONDS < end)); do sleep 0.2; done
+        else
+          echo "dw_terminate_pid: pid $pid lost its marker ($marker) before SIGKILL; not signalling it" >&2
+          return 1
         fi
       fi
-    else
-      echo "  [cleanup] pid $pid no longer carries its recorded marker; leaving it alone" >&2
+      wait "$pid" 2>/dev/null || true
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "dw_terminate_pid: pid $pid survived SIGKILL" >&2
+        return 1
+      fi
+      return 0
     fi
+    echo "dw_terminate_pid: pid $pid's cmdline does not carry '$marker'; not signalling it" >&2
+    return 1
   fi
-  wait "$pid" 2>/dev/null || true
   return 0
 }
 

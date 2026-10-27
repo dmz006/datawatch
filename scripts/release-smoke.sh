@@ -373,6 +373,8 @@ except Exception:
   fi
 }
 trap cleanup_all EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 PASS=0
 FAIL=0

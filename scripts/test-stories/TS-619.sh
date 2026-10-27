@@ -52,9 +52,17 @@ PEERCFG
     # EXIT/INT/TERM/HUP traps end the daemon — and any session it started —
     # on every exit path, including a story failure before the explicit
     # stop below or a Ctrl-C.
-    story_daemon_lifecycle
-    td_start "$binary" "$peer_data/config.yaml" "$peer_data/peer.log"
-    peer_pid="${TD_LAST_PID:-}"
+    if declare -F td_start >/dev/null 2>&1; then
+      story_daemon_lifecycle
+      td_start "$binary" "$peer_data/config.yaml" "$peer_data/peer.log"
+      peer_pid="${TD_LAST_PID:-}"
+    else
+      # Shared library unavailable (standalone run from another harness):
+      # plain background launch as before; teardown below still ends it by
+      # the PID we record here, marker-checked.
+      "$binary" --foreground --config "$peer_data/config.yaml" >>"$peer_data/peer.log" 2>&1 &
+      peer_pid=$!
+    fi
     td_set_api "$peer_pid" "https://127.0.0.1:$peer_tls" "$peer_token"
 
     # Wait up to 15s for the peer to become healthy
@@ -71,10 +79,17 @@ PEERCFG
 
     if [[ $healthy -eq 0 ]]; then
       # End the peer by the PID we recorded (marker-checked; sessions first
-      # via its own API). Only after it is gone does the scratch folder go.
-      dw_terminate_pid "$peer_pid" "$peer_data/config.yaml"
-      rm -rf "$peer_data"
-      skip "inline peer daemon did not start within 15s"; return
+      # via its own API). The scratch folder goes only once the daemon is
+      # verified gone — rm -rf never underneath a live daemon.
+      dw_terminate_pid "$peer_pid" "$peer_data/config.yaml" || true
+      if declare -F td_alive >/dev/null 2>&1 && td_alive "$peer_pid"; then
+        echo "TS-619: inline peer daemon $peer_pid still running after teardown; keeping scratch at $peer_data" >&2
+        skip "inline peer daemon did not start within 15s (could not end it; scratch kept at $peer_data)"
+      else
+        rm -rf "$peer_data"
+        skip "inline peer daemon did not start within 15s"
+      fi
+      return
     fi
 
     peer_url="https://127.0.0.1:$peer_tls"
@@ -89,11 +104,16 @@ PEERCFG
   save_evidence TS-619 "peer_probe_code.txt" "$code"
 
   # Clean up inline peer if we started one — end the daemon (and its
-  # sessions, through its own API) first, and only after it is gone
-  # remove the scratch folder.
+  # sessions, through its own API) first, verify it is actually gone, and
+  # only then remove the scratch folder.
   if [[ -n "$peer_pid" ]]; then
-    dw_terminate_pid "$peer_pid" "$peer_data/config.yaml"
-    rm -rf "$peer_data" 2>/dev/null || true
+    dw_terminate_pid "$peer_pid" "$peer_data/config.yaml" || true
+    if declare -F td_alive >/dev/null 2>&1 && td_alive "$peer_pid"; then
+      echo "TS-619: inline peer daemon $peer_pid still running after teardown; keeping scratch at $peer_data" >&2
+      ko "inline peer daemon $peer_pid could not be ended (scratch kept at $peer_data)"
+    else
+      rm -rf "$peer_data" 2>/dev/null || true
+    fi
   fi
 
   if [[ "$code" == "000" ]]; then

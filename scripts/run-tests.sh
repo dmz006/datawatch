@@ -117,8 +117,10 @@ _kill_orphan_daemon_for() {
     echo "  [cleanup] $dir: no daemon record (no daemon.pid, no shared state dir); any daemon it ran is not recorded here and is left alone" >&2
   fi
   # Shared state files recorded through the lifecycle library (covers second
-  # and peer daemons that stories record against the run's state dir).
-  for f in "$dir"/.daemon-state/*.rec; do
+  # and peer daemons that stories record against the run's state dir; this
+  # run's own story daemons live under the per-story owner subdirs set by
+  # the parallel workers).
+  for f in "$dir"/.daemon-state/*.rec "$dir"/.daemon-state/*/*.rec; do
     [[ -f "$f" ]] || continue
     pid=$(sed -n 's/^pid=//p' "$f" | sed -n 1p)
     marker=$(sed -n 's/^marker=//p' "$f" | sed -n 1p)
@@ -755,10 +757,18 @@ launch_parallel() {
     export CLEANUP_LOG="$par_cleanup"
     RESULT=""
     CURRENT_STORY="$story_id"
+    # Scope the shared daemon-library state to this story: daemons this
+    # subshell starts are recorded under its owner and its EXIT trap ends
+    # them with td_stop_self — a parallel worker never leaves its daemons
+    # to the runner's traps, and never signals a sibling's or the
+    # runner's recorded daemons.
+    export TD_OWNER="$story_id"
     mkdir -p "$EVIDENCE_DIR/$story_id"
     # Trap ensures result file and semaphore release run even when the story
     # calls `exit 0` directly instead of `return` (TS-750/751/752 pattern).
-    trap 'flush_story_cleanup; dw_runner_worker_cleanup; printf "%s" "${RESULT:-fail}" > "$result_file"; release_worker' EXIT
+    # Order: the story's own registered cleanup, then this owner's recorded
+    # daemons (td_stop_self), then the result file and the semaphore.
+    trap 'flush_story_cleanup; dw_runner_worker_cleanup; { if declare -F td_stop_self >/dev/null 2>&1; then td_stop_self; fi; printf "%s" "${RESULT:-fail}" > "$result_file"; release_worker; }' EXIT
     # shellcheck source=/dev/null
     source "$script"
   ) &

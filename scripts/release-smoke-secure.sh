@@ -47,7 +47,9 @@ fi
 TMPDIR=$(mktemp -d)
 PORT_TLS=18444
 PORT_HTTP=18081
-trap 'kill $DW_PID 2>/dev/null; rm -rf "$TMPDIR"' EXIT
+trap '[[ -n "${DW_PID:-}" ]] && kill "$DW_PID" 2>/dev/null; rm -rf "$TMPDIR"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 H "1. Bring up encrypted-mode daemon"
 DATAWATCH_DATA_DIR="$TMPDIR" datawatch start --foreground --secure \

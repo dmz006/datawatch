@@ -365,6 +365,12 @@ rm_launch_daemon() {
     >>"$RM_DAEMON_LOG" 2>&1 &
   RM_DAEMON_PID=$!
   echo "$RM_DAEMON_PID" >"$RM_PIDFILE"
+  # Record this sandbox's daemon in the shared lifecycle state (config path
+  # as its marker) so the shell that sourced this lib can end it later by
+  # recorded PID with a cmdline check — never by name, even on interrupt.
+  if declare -F td_track_pid >/dev/null 2>&1; then
+    td_track_pid "$RM_DAEMON_PID" "$RM_CONFIG" 2>/dev/null || true
+  fi
   if ! rm_wait_until 45 rm_healthy; then
     rm_log "sandbox daemon did not answer health; log tail:"
     tail -20 "$RM_DAEMON_LOG" >&2

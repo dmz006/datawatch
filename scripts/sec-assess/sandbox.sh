@@ -95,7 +95,8 @@ session:
   auto_git_commit: false
 EOF
     echo "→ starting sandbox: bind=$BIND http=$PORT tls=$TLSPORT token=$([[ -n "$TOKEN" ]] && echo set || echo EMPTY)"
-    DATAWATCH_DATA_DIR="$SB" "$BIN" start --foreground --config "$SB/config.yaml" > "$LOGF" 2>&1 &
+    # daemon-cleanup-ok: a long-lived sandbox by design (start/url/wipe subcommands); the pid is recorded in $PIDF and `wipe` or a kill of $(cat $PIDF) ends it
+    DATAWATCH_DATA_DIR="$SB" "$BIN" start --foreground --config "$SB/config.yaml" > "$LOGF" 2>&1 & # daemon-cleanup-ok: long-lived by design; pid recorded in $PIDF
     echo $! > "$PIDF"
     wait_health
     echo "✓ sandbox up: $(cat "$URLF")"

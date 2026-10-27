@@ -57,6 +57,13 @@ DOCKEREOF
   fi
 
   DOCKER_SIM_PID=$(cat "$DOCKER_SIM_DATA/container.id")
+  # `{{.Id}}` prints the FULL 64-hex id — the shared library and
+  # dw_terminate_pid key container records by the canonical 12-hex form, so
+  # normalize here, the one place the id enters the environment. docker
+  # accepts the short form for every command, so nothing else in this story
+  # changes.
+  DOCKER_SIM_PID="${DOCKER_SIM_PID:0:12}"
+  [[ "$DOCKER_SIM_PID" =~ ^[a-f0-9]{12}$ ]] || DOCKER_SIM_PID=""
   DOCKER_SIM_CONTAINER="$container_name"
   DOCKER_SIM_IMAGE="$image_tag"
   # Record the container in the shared daemon-library state so the traps of
@@ -65,7 +72,11 @@ DOCKEREOF
   # runner's shared traps (its stop_docker_sim is the second safety net),
   # or this script's own traps when run standalone.
   story_daemon_lifecycle
-  td_track_container "$container_name" || echo "  [cleanup] WARN: could not record $container_name for trap cleanup" >&2
+  # Record under the 12-hex id (trap and dw_terminate_pid route by id);
+  # keep the name as the fallback marker. With no id (docker absent) the
+  # name is the only handle, and td_track_container records it under itself.
+  _ts160_rec_key="${DOCKER_SIM_PID:=$container_name}"
+  td_track_container "$_ts160_rec_key" || echo "  [cleanup] WARN: could not record ${_ts160_rec_key} for trap cleanup" >&2
   # Persist names so stop_docker_sim() can recover them after a SIGKILL.
   echo "$container_name" > "$DOCKER_SIM_DATA/container.name"
   echo "$image_tag"      > "$DOCKER_SIM_DATA/image.name"

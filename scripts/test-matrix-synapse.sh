@@ -103,6 +103,8 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 SYNAPSE_URL="http://localhost:8008"
 BOT_USER="dwmatrixbot"
