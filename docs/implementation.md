@@ -263,6 +263,24 @@ Worktree-mode PRDs are skipped. Read-only git only.
 
 The shared-node gate (`fingerprint.PeerGate`) reads each opted-in peer's held counts from `fingerprint.PeerUsageCache`, an in-memory map of the last good `/api/capacity` answer per peer. `wireFingerprint` builds one cache, sets it as `PeerGate.Usage`, and sets `Syncer.AfterPass` to `RefreshAll`, so the cache is refreshed once at start and after every 15-minute sync pass. The ledger callback only reads memory; a missing or stale entry fails open and triggers a background refresh. Peers without fingerprint sync opted in get no HTTP call, and no config key is involved.
 
+### Pre-spawn scope lint mode (`autonomous.scope_lint`)
+
+`autonomous.scope_lint` (`config.AutonomousConfig.ScopeLint`, JSON
+`scope_lint`, default `enforce`) selects what the pre-spawn scope lint does
+with a hit: `off` skips the lint, `warn` records the problems and spawns the
+task, `enforce` blocks it. `ScopeLintMode` normalises the value, and any empty
+or unknown value resolves to `enforce`, so an existing configuration keeps
+blocking. `ValidateScopeLint` rejects unknown values on the write surfaces.
+The executor reads the resolved mode (`Manager.scopeLintMode`) in
+`executeOne`, before the task spawns. Plan-time `ScopeWarnings` are skipped
+when the mode is `off` (`planScopeWarnings`). Placeholder and quoted pattern
+text is never flagged in any mode. A failed Automaton accepts a spec edit
+(`EditTaskSpec`) only for a task whose failure is a scope-lint rejection
+(`isScopeLintFailure`). Surfaces: YAML `autonomous.scope_lint`, REST
+`PUT /api/config` and `GET /api/config`, MCP `autonomous_config_get` /
+`autonomous_config_set`, comm `configure`, CLI `autonomous config-set`, and the PWA
+Settings → Automate → Task scope lint select. See `docs/operations.md`.
+
 ### Per-task project directory (Automata)
 
 `autonomous.Task.ProjectDir` (JSON `project_dir`) overrides the

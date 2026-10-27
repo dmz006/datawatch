@@ -551,6 +551,15 @@ unchanged; the change takes effect on the next verification:
   verifier_policy.stronger_backend           stronger verifier backend (empty = claude-code)
   verifier_policy.stronger_model             stronger verifier model (empty = the default Sonnet model)
 
+Example — set the pre-spawn scope lint to warn (spawn the task and record a
+scope_lint_warn decision) instead of blocking it:
+
+  datawatch autonomous config-set '{"scope_lint":"warn"}'
+
+scope_lint takes one of three values: off (skip the lint), warn (spawn the
+task and record a scope_lint_warn decision) or enforce (block the task before
+its session starts; the default). Any other value is rejected.
+
 max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

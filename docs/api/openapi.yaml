@@ -1901,9 +1901,23 @@ paths:
         deleted, on the Automaton branch against its merge base, lock files left
         out) above which the judges try `claude-code` first, default 400; 0 turns
         the size rule off.
+        `scope_lint` (off|warn|enforce, default enforce) is the pre-spawn scope
+        lint mode: the effective, normalized value is returned.
       operationId: autonomousConfigGet
       tags: [Autonomous]
-      responses: {"200": {description: OK}}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scope_lint:
+                    type: string
+                    enum: [off, warn, enforce]
+                    default: enforce
+                    description: "Pre-spawn scope lint mode (autonomous.scope_lint). off skips the lint; warn spawns the task and records a scope_lint_warn decision; enforce blocks the task before its session starts."
     put:
       summary: Replace autonomous config
       description: |
@@ -1925,13 +1939,23 @@ paths:
         `judge_size_threshold_lines` is a whole number of changed lines of 0 or more
         (0 = size-aware judge routing off, default 400). `PUT /api/config` with the
         key `autonomous.judge_size_threshold_lines` rejects anything else with 400.
+        `scope_lint` (off|warn|enforce, default enforce) sets the pre-spawn scope
+        lint mode; any other value is rejected with 400. `PUT /api/config` accepts
+        it as `autonomous.scope_lint`.
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:
         required: true
         content:
           application/json:
-            schema: {type: object}
+            schema:
+              type: object
+              properties:
+                scope_lint:
+                  type: string
+                  enum: [off, warn, enforce]
+                  default: enforce
+                  description: "Pre-spawn scope lint mode (autonomous.scope_lint). off skips the lint; warn spawns the task and records a scope_lint_warn decision; enforce blocks the task before its session starts."
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
   /api/autonomous/prds:
     get:

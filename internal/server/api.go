@@ -6154,6 +6154,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"security_scan":             s.cfg.Autonomous.SecurityScan,
 			"per_story_approval":        s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
 			"continue_on_story_failure": s.cfg.Autonomous.ContinueOnStoryFailure,
+			"scope_lint":                s.cfg.Autonomous.ScopeLintMode(), // off, warn or enforce
 			// BL367 — default quality gate config (GET surface; PUT cases in applyConfigPatch).
 			"default_quality_gates": map[string]interface{}{
 				"enabled":             s.cfg.Autonomous.DefaultQualityGates.Enabled,
@@ -6355,6 +6356,16 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			candidate = splitCSV(str)
 		}
 		if verr := autonomous.ValidateTaskOverrideStatuses(candidate); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// scope_lint — refuse an unknown mode before anything is applied, so a
+	// typo rejects the whole PUT instead of storing a value that quietly
+	// resolves to enforce.
+	if v, ok := patch["autonomous.scope_lint"]; ok {
+		mode, _ := v.(string)
+		if verr := config.ValidateScopeLint(mode); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -8138,6 +8149,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// into later, independent stories. Per-PRD override via
 			// POST .../set_continue_on_story_failure takes precedence.
 			cfg.Autonomous.ContinueOnStoryFailure = toBool(v)
+		case "autonomous.scope_lint":
+			// Pre-spawn scope lint mode: off, warn or enforce. handlePutConfig
+			// rejects anything else before this runs; an invalid value that
+			// reaches here is reported as skipped rather than stored.
+			mode, _ := v.(string)
+			if config.ValidateScopeLint(mode) == nil {
+				cfg.Autonomous.ScopeLint = mode
+			} else {
+				skipped = append(skipped, k)
+			}
 		case "autonomous.default_auto_pr":
 			// BL407 Phase 5 -- daemon-wide default for a new PRD's
 			// Git.AutoPR, applied once at creation time. Per-PRD

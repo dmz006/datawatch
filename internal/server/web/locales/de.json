@@ -1695,6 +1695,7 @@
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",
   "settings_block_on_file_drift": "Bei fremden Dateiänderungen blockieren",
+  "settings_scope_lint": "Aufgaben-Umfangsprüfung",
   "settings_capacity_gpu_util": "Hold tasks while node GPU is above (% util, 0=off)",
   "capacity_rate_requests_label": "Ratenlimit pro LLM: Anfragen pro Fenster (0 = keins)",
   "capacity_rate_requests_help": "Höchstzahl an Task- und Verifier-Starts, die jedes LLM in einem gleitenden Fenster ausführen darf. 0 = kein Anfragenlimit.",

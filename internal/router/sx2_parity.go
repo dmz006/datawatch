@@ -21,6 +21,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // commHTTP is the shared HTTP client for in-process REST calls.
@@ -471,6 +472,18 @@ func (r *Router) handleAutonomous(cmd Command) {
 			}
 			k := strings.TrimSpace(kv[:i])
 			v := strings.TrimSpace(kv[i+1:])
+			// scope_lint takes off|warn|enforce. Accept the configure-style
+			// autonomous.scope_lint spelling too, and refuse anything else
+			// here rather than sending a value the daemon would not store.
+			if k == "autonomous.scope_lint" {
+				k = "scope_lint"
+			}
+			if k == "scope_lint" {
+				if err := config.ValidateScopeLint(v); err != nil {
+					r.reply("autonomous config-set failed", err.Error())
+					return
+				}
+			}
 			switch {
 			case v == "true":
 				cfgMap[k] = true

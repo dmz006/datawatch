@@ -408,6 +408,17 @@ func (a *API) SetConfig(v any) error {
 			return verr
 		}
 	}
+	// scope_lint — refuse an unknown mode on every write path (REST, MCP,
+	// comm) instead of storing it and resolving it to enforce later. A
+	// null or absent key leaves the current mode alone.
+	var scopeProbe struct {
+		ScopeLint *string `json:"scope_lint"`
+	}
+	if err := json.Unmarshal(raw, &scopeProbe); err == nil && scopeProbe.ScopeLint != nil {
+		if verr := config.ValidateScopeLint(*scopeProbe.ScopeLint); verr != nil {
+			return verr
+		}
+	}
 	cfg := a.M.Config()
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("config: %w", err)

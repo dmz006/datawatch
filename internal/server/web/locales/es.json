@@ -1695,6 +1695,7 @@
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",
   "settings_block_on_file_drift": "Bloquear ante deriva de archivos",
+  "settings_scope_lint": "Control de alcance de tareas",
   "settings_capacity_gpu_util": "Hold tasks while node GPU is above (% util, 0=off)",
   "capacity_rate_requests_label": "Límite de tasa por LLM: solicitudes por ventana (0 = ninguno)",
   "capacity_rate_requests_help": "Máximo de inicios de tareas y verificadores que cada LLM puede realizar en una ventana móvil. 0 = sin límite de solicitudes.",

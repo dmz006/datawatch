@@ -1833,6 +1833,15 @@ autonomous:
   # rejected at the config surface and resolves to warn if stored anyway.
   # The check never reverts or modifies any file.
   undeclared_edit_mode: warn
+  # Pre-spawn scope lint: checks each task's spec and planned files against
+  # the Automaton's read and write directories before the task spawns.
+  # "off" skips the lint entirely. "warn" records each problem as a
+  # scope_lint_warn decision and spawns the task anyway. "enforce" blocks
+  # the task and does not spawn it. Default "enforce"; an empty or unknown
+  # value also resolves to enforce. Placeholder and quoted pattern text
+  # (for example <name>, globs, $VAR, ~user, or a path inside quotes after
+  # grep or search) is never flagged in any mode.
+  scope_lint: enforce
   # BL367 — default quality gate config applied to every PRD that does not
   # set its own quality_gates at creation time. When enabled, a test
   # baseline is captured before the first task runs, and tests are re-run

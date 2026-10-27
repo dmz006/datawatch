@@ -2,10 +2,55 @@ package autonomous
 
 import (
 	"fmt"
+	"log"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
+
+// Scope-lint modes for Config.ScopeLint, as resolved by
+// config.AutonomousConfig.ScopeLintMode.
+const (
+	scopeLintOff     = "off"
+	scopeLintWarn    = "warn"
+	scopeLintEnforce = "enforce"
+)
+
+// scopeLintMode returns the resolved scope-lint mode. Any value other than
+// off or warn, including the empty value a bare Config carries, is enforce:
+// today's blocking behaviour.
+func (m *Manager) scopeLintMode() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	switch m.cfg.ScopeLint {
+	case scopeLintOff, scopeLintWarn:
+		return m.cfg.ScopeLint
+	}
+	return scopeLintEnforce
+}
+
+// planScopeWarnings is LintPlanScope gated by the scope-lint mode: off leaves
+// ScopeWarnings empty at plan time, warn and enforce record the problems.
+func (m *Manager) planScopeWarnings(prd *PRD, stories []Story) []string {
+	if m.scopeLintMode() == scopeLintOff {
+		return nil
+	}
+	return LintPlanScope(prd, stories)
+}
+
+// recordScopeLintWarn appends a scope_lint_warn Decision for a task that the
+// pre-spawn scope lint flagged in warn mode, then persists the PRD. The task
+// still spawns; the Decision is the operator's record of the flagged scope.
+func (m *Manager) recordScopeLintWarn(prd *PRD, t *Task, problems []string) {
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "scope_lint_warn", Actor: "autonomous",
+		Note: "task " + t.ID + ": spawned despite scope lint (warn mode): " + strings.Join(problems, "; "),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] %s/%s scope-lint warn: save PRD: %v", prd.ID, t.ID, err)
+	}
+}
 
 // EffectiveWriteDirs returns the directories workers may modify: the PRD's
 // WriteDirs, or its ProjectDir when none are declared.
@@ -125,6 +170,71 @@ func isBinaryMention(p, pre string) bool {
 	return !writeVerbRe.MatchString(strings.Join(words, " "))
 }
 
+// patternVerbRe matches the words that mark a quoted span as a search pattern
+// (e.g. grep for '/home/x/.ssh') rather than a path the worker must touch.
+var patternVerbRe = regexp.MustCompile(`(?i)(?:^|[^A-Za-z])(?:grep|pattern|patterns|scan|search|match|matches|forbidden)(?:$|[^A-Za-z])`)
+
+// patternWindowWords is how many words before an opening quote are checked for a pattern verb.
+const patternWindowWords = 5
+
+// isPlaceholderPath reports whether p is template or glob syntax rather than a
+// concrete location: an angle-bracket or curly-brace placeholder, a glob star,
+// or a segment that is a shell variable ($NAME) or tilde-user form (~name).
+func isPlaceholderPath(p string) bool {
+	if strings.ContainsAny(p, "<>{}*") {
+		return true
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if strings.HasPrefix(seg, "$") || strings.HasPrefix(seg, "~") {
+			return true
+		}
+	}
+	return false
+}
+
+// isPatternQuoted reports whether the token starting at pos sits inside a
+// single-, double- or backtick-quoted span whose opening quote follows a
+// pattern verb on the same line. A quote only opens when it does not follow a
+// word character, so the apostrophe in "don't" is not taken for a quote.
+func isPatternQuoted(spec string, pos int) bool {
+	lineStart := strings.LastIndex(spec[:pos], "\n") + 1
+	open := -1
+	var quote byte
+	for i := lineStart; i < pos; i++ {
+		c := spec[i]
+		if open < 0 {
+			if isQuoteByte(c) && (i == lineStart || !isWordByte(spec[i-1])) {
+				open, quote = i, c
+			}
+			continue
+		}
+		if c == quote && (i+1 >= len(spec) || !isWordByte(spec[i+1])) {
+			open = -1
+		}
+	}
+	if open < 0 {
+		return false
+	}
+	return patternVerbRe.MatchString(lastWords(spec[lineStart:open], patternWindowWords))
+}
+
+func isQuoteByte(c byte) bool {
+	return c == '\'' || c == '"' || c == '`'
+}
+
+func isWordByte(c byte) bool {
+	return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+// lastWords returns the final n whitespace-separated words of s, joined by spaces.
+func lastWords(s string, n int) string {
+	words := strings.Fields(s)
+	if len(words) > n {
+		words = words[len(words)-n:]
+	}
+	return strings.Join(words, " ")
+}
+
 func firstSegment(p string) string {
 	p = strings.TrimPrefix(p, "/")
 	if i := strings.Index(p, "/"); i >= 0 {
@@ -141,7 +251,9 @@ func firstSegment(p string) string {
 // that merely naming a system binary (a path directly inside an execDirs
 // entry, e.g. "fall back to /usr/bin/time -v") is not an access claim and is
 // skipped, unless a write verb in the few words before it makes it a write
-// target (BL421).
+// target (BL421). Placeholder or glob syntax (/home/<user>, /home/{x}, $NAME,
+// ~name, *) and paths inside a quoted pattern after a search verb (grep for
+// '/home/x') are not access claims either.
 func LintTaskScope(prd *PRD, label, spec string, files []string) []string {
 	return lintScope(prd.ProjectDir, EffectiveReadDirs(prd), EffectiveWriteDirs(prd), label, spec, files)
 }
@@ -159,7 +271,7 @@ func lintScope(projectDir string, read, write []string, label, spec string, file
 		switch {
 		case filepath.IsAbs(f):
 			if !PathInDirs(f, write) {
-				out = append(out, fmt.Sprintf("%s: planned file %s is outside the writable directories", label, f))
+				out = append(out, fmt.Sprintf("%s: planned file %s is outside the writable directories; remove it from the task's files or widen the PRD write dirs", label, f))
 			}
 		case strings.HasPrefix(filepath.Clean(f), ".."):
 			out = append(out, fmt.Sprintf("%s: planned file %s escapes the project directory", label, f))
@@ -170,11 +282,15 @@ func lintScope(projectDir string, read, write []string, label, spec string, file
 		if seg := firstSegment(p); !fsRoots[seg] && seg != firstSegment(projectDir) {
 			continue
 		}
+		if isPlaceholderPath(p) || isPatternQuoted(spec, m[2]) {
+			continue
+		}
 		if isBinaryMention(p, spec[:m[2]]) {
 			continue
 		}
 		if !PathInDirs(p, read) {
-			out = append(out, fmt.Sprintf("%s: spec references %s outside the allowed directories", label, p))
+			line := strings.Count(spec[:m[2]], "\n") + 1
+			out = append(out, fmt.Sprintf("%s: spec line %d references %s outside the allowed directories; edit the task spec to remove or quote it, or widen the PRD read dirs if the task must read it", label, line, p))
 		}
 	}
 	return out
@@ -216,6 +332,17 @@ func EffectiveTaskReadDirs(prd *PRD, t *Task) []string {
 // when the task has no ProjectDir override.
 func TaskScopeBlock(prd *PRD, t *Task) string {
 	return renderScopeBlock(prd.ReadDirs, ResolveTaskProjectDir(prd, t), EffectiveTaskWriteDirs(prd, t))
+}
+
+// scopeLintErrorPrefix is the Task.Error prefix the executor writes when the
+// pre-spawn scope lint rejects a task (see executor.go, "scope: %s (task not
+// spawned)").
+const scopeLintErrorPrefix = "scope:"
+
+// isScopeLintFailure reports whether t failed only because the pre-spawn scope
+// lint rejected its spec, so the operator can fix the spec in place.
+func isScopeLintFailure(t *Task) bool {
+	return t != nil && t.Status == TaskFailed && strings.HasPrefix(t.Error, scopeLintErrorPrefix)
 }
 
 // ValidateTaskProjectDir checks a per-task ProjectDir override: it must be an

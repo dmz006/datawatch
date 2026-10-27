@@ -2485,6 +2485,17 @@ type AutonomousConfig struct {
 	// Default "warn". Independent of DriftMode. No omitempty so an explicit
 	// value round-trips. Validated by ValidateUndeclaredEditMode.
 	UndeclaredEditMode string `yaml:"undeclared_edit_mode" json:"undeclared_edit_mode"`
+	// ScopeLint controls the pre-spawn scope lint that checks a task's
+	// spec or planned files before the task runs. Modes:
+	//   - "off" skips the scope lint entirely.
+	//   - "warn" lints and records problems but never blocks a task.
+	//   - "enforce" blocks a task whose spec or planned files fail the
+	//     lint — today's behaviour, and the default.
+	// Placeholder and quoted pattern text is never flagged in any mode.
+	// An empty or unrecognised value resolves to "enforce" (see
+	// ScopeLintMode), so an existing configuration keeps blocking.
+	// No omitempty, same explicit-clear reason as BlockOnFileDrift above.
+	ScopeLint string `yaml:"scope_lint" json:"scope_lint"`
 
 	// Phase 3 (v5.26.61) — per-story approval gate. Default false
 	// (preserves the v5.26.x behavior where PRD approval auto-
@@ -2979,6 +2990,41 @@ func (c AutonomousAutomationConfig) EffectiveAgentInsertPolicy() string {
 		return AgentInsertPolicyAllow
 	}
 	return c.AgentInsertPolicy
+}
+
+// Scope-lint modes for AutonomousConfig.ScopeLint. See the field's doc
+// comment for what each mode does.
+const (
+	ScopeLintOff     = "off"
+	ScopeLintWarn    = "warn"
+	ScopeLintEnforce = "enforce"
+)
+
+// ScopeLintMode returns the normalised scope-lint mode: the value is
+// trimmed and lower-cased, and anything other than off or warn —
+// including an empty or garbage value — resolves to enforce, so an
+// existing configuration keeps today's blocking behaviour.
+func (a AutonomousConfig) ScopeLintMode() string {
+	switch strings.ToLower(strings.TrimSpace(a.ScopeLint)) {
+	case ScopeLintOff:
+		return ScopeLintOff
+	case ScopeLintWarn:
+		return ScopeLintWarn
+	default:
+		return ScopeLintEnforce
+	}
+}
+
+// ValidateScopeLint reports an error unless s is exactly one of the
+// scope-lint modes. Write surfaces (REST, MCP, comm, CLI) call it so a
+// typo is refused instead of being stored and quietly resolved to enforce
+// by ScopeLintMode. Unlike ScopeLintMode it does not trim or fold case.
+func ValidateScopeLint(s string) error {
+	switch s {
+	case ScopeLintOff, ScopeLintWarn, ScopeLintEnforce:
+		return nil
+	}
+	return fmt.Errorf("scope_lint: unknown mode %q (use off, warn or enforce)", s)
 }
 
 // AutonomousNotifyConfig —autonomous.notify sub-config. DefaultEvents
@@ -3725,6 +3771,7 @@ func DefaultConfig() *Config {
 			BlockOnFileDrift:        false,   // opt-in strict drift enforcement
 			DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
 			UndeclaredEditMode:      "warn",
+			ScopeLint:               ScopeLintEnforce,
 			Automation:              AutonomousAutomationConfig{AgentInsertPolicy: AgentInsertPolicyAllow},
 			LaneFill:                DefaultAutonomousLaneFill(),
 			Progress:                AutonomousProgressConfig{BacklogPath: DefaultProgressBacklogPath},

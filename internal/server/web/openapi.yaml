@@ -1715,22 +1715,46 @@ paths:
         `plan_coverage_check` (off|warn|block, default block) and
         `plan_coverage_min_ratio` (covered/extractable ratio required for a passing
         report, 0-1, default 1.0). Both are settable here and via /api/config PUT.
+        `scope_lint` (off|warn|enforce, default enforce) is the pre-spawn scope
+        lint mode: the effective, normalized value is returned.
       operationId: autonomousConfigGet
       tags: [Autonomous]
-      responses: {"200": {description: OK}}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scope_lint:
+                    type: string
+                    enum: [off, warn, enforce]
+                    default: enforce
+                    description: "Pre-spawn scope lint mode (autonomous.scope_lint). off skips the lint; warn spawns the task and records a scope_lint_warn decision; enforce blocks the task before its session starts."
     put:
       summary: Replace autonomous config
       description: |
         Accepts partial JSON. Among the valid fields are `plan_coverage_check`
         (off|warn|block, default block) and `plan_coverage_min_ratio` (0-1,
         default 1.0). Values outside the allowed range are rejected with 400.
+        `scope_lint` (off|warn|enforce, default enforce) sets the pre-spawn scope
+        lint mode; any other value is rejected with 400. `PUT /api/config` accepts
+        it as `autonomous.scope_lint`.
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:
         required: true
         content:
           application/json:
-            schema: {type: object}
+            schema:
+              type: object
+              properties:
+                scope_lint:
+                  type: string
+                  enum: [off, warn, enforce]
+                  default: enforce
+                  description: "Pre-spawn scope lint mode (autonomous.scope_lint). off skips the lint; warn spawns the task and records a scope_lint_warn decision; enforce blocks the task before its session starts."
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
   /api/autonomous/prds:
     get:

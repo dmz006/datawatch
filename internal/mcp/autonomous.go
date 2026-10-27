@@ -40,7 +40,8 @@ func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub. "+
 			"block_on_file_drift (default false) controls foreign-file drift: when false a task whose commit swept in files that were already uncommitted before it started is only flagged (warn-only); when true that task is blocked instead. An automaton's own setting or its guardrail profile overrides it; worktree-mode automata are never checked. "+
 			"undeclared_edit_mode sets what happens when a task edits files outside its declared scope: off = skip the check, warn = record + alert (the default), block = hold the task. "+
-			"gate_disagreement (default \"warn\") covers verifier/quality-gate disagreement: when the verifier passed a task but the quality gate found a regression, \"warn\" records task.gate_disagreement and a PRD decision-log entry and the task still completes, while \"block\" fails the task with a \"gate_disagreement: …\" error. An invalid gate never blocks."),
+			"gate_disagreement (default \"warn\") covers verifier/quality-gate disagreement: when the verifier passed a task but the quality gate found a regression, \"warn\" records task.gate_disagreement and a PRD decision-log entry and the task still completes, while \"block\" fails the task with a \"gate_disagreement: …\" error. An invalid gate never blocks. "+
+			"scope_lint (off, warn or enforce; default enforce) controls the pre-spawn scope lint that checks a task's planned paths before its session starts: off skips it, warn spawns the task and records a scope_lint_warn decision, enforce blocks the task."),
 	)
 }
 func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -129,6 +130,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("gate_disagreement", mcpsdk.Description("Policy for verifier/quality-gate disagreement: applies when the verifier passed a task but the quality gate found a regression. Only \"warn\" (the default; records task.gate_disagreement and a PRD decision-log entry, task still completes) or \"block\" (fails the task with a \"gate_disagreement: …\" error) are accepted. An invalid gate never blocks.")),
 		mcpsdk.WithBoolean("block_on_file_drift", mcpsdk.Description("Daemon-wide default for foreign-file-drift enforcement. false (the default) only flags a task whose own commit swept in files that were already uncommitted before it started and were not in its planned files (warn-only, recorded as task foreign_file_drift and a file_drift_detected decision); true blocks that task instead. An automaton's own setting or its guardrail profile overrides this; worktree-mode automata are never checked.")),
 		mcpsdk.WithString("undeclared_edit_mode", mcpsdk.Description("Daemon-wide default for undeclared edits (a task editing files outside its declared scope): off = skip the check, warn = record + alert (the default), block = hold the task.")),
+		mcpsdk.WithString("scope_lint", mcpsdk.Description("Pre-spawn scope lint mode. off skips the lint; warn spawns a task whose planned paths fail it and records a scope_lint_warn decision; enforce (the default) blocks that task before its session starts."), mcpsdk.Enum("off", "warn", "enforce")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
 	}, verifierPolicyConfigTools()...)...)
 }
@@ -397,6 +399,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		}
 		if _, ok := args["undeclared_edit_mode"]; ok {
 			body["undeclared_edit_mode"] = req.GetString("undeclared_edit_mode", "")
+		}
+		if _, ok := args["scope_lint"]; ok {
+			body["scope_lint"] = req.GetString("scope_lint", "")
 		}
 	}
 	// Verifier policy (autonomous.verifier_policy.*), nested under one object.

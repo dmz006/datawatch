@@ -1424,8 +1424,15 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				return terr
 			}
 			// BL447: lint against the task's own resolved dir/write scope.
-			if problems := LintTaskScopeFor(prd, t, "task '"+t.Title+"'", t.Spec, t.FilesPlanned); len(problems) > 0 {
-				return fmt.Errorf("scope: %s (edit the task or widen the PRD read/write dirs)", strings.Join(problems, "; "))
+			// scope_lint decides what a hit does: enforce blocks the task,
+			// warn records it and spawns anyway, off skips the lint.
+			if mode := m.scopeLintMode(); mode != scopeLintOff {
+				if problems := LintTaskScopeFor(prd, t, "task '"+t.Title+"'", t.Spec, t.FilesPlanned); len(problems) > 0 {
+					if mode == scopeLintEnforce {
+						return fmt.Errorf("scope: %s (task not spawned)", strings.Join(problems, "; "))
+					}
+					m.recordScopeLintWarn(prd, t, problems)
+				}
 			}
 			// BL447: cwd, scope block and pre-task capture anchor to the
 			// task's resolved dir (override or PRD.ProjectDir).

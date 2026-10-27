@@ -1695,6 +1695,7 @@
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",
   "settings_block_on_file_drift": "ファイル混入時にブロック",
+  "settings_scope_lint": "タスク範囲チェック",
   "settings_capacity_gpu_util": "Hold tasks while node GPU is above (% util, 0=off)",
   "capacity_rate_requests_label": "LLM ごとのレート上限：ウィンドウあたりのリクエスト数（0 = なし）",
   "capacity_rate_requests_help": "各 LLM が 1 つのスライディングウィンドウ内で開始できるタスクと検証の最大数。0 = リクエスト数の上限なし。",
