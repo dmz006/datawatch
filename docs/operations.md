@@ -4017,9 +4017,12 @@ off without a restart.
 
 **Secrets.** An answer whose text looks like a secret is refused `422`, is
 never stored, and the response never echoes any part of the submitted text —
-it names the rule and the two safe routes (the datawatch secrets store via
-`${secret:name}`, or the filesystem). Well-formed `${secret:name}` references
-pass the scan.
+`error` is the fixed phrase `matched: secret pattern` (not the name of the
+specific rule that matched) and `suggestion` names the two safe routes (the
+datawatch secrets store via `${secret:name}`, or the filesystem). The matched
+rule's name goes into the `question_answer_refused` audit entry instead — and
+the submitted text goes nowhere (not the response, not the audit log, not any
+session log). Well-formed `${secret:name}` references pass the scan.
 
 **Six endpoints, four verbs + one switch.**
 
@@ -4036,18 +4039,24 @@ pass the scan.
 
 | Task | YAML | REST | MCP | CLI / comm | PWA / Android / iOS |
 |---|---|---|---|---|---|
-| Toggle the channel | `autonomous.questions.enabled` | `PUT /api/config` | `config_set` (deferred row, same config path) | `datawatch config set autonomous.questions.enabled true` (deferred row, same config path) | Settings (deferred) |
-| Raise | n/a | `POST /api/questions` | deferred | deferred | deferred |
-| List / read | n/a | `GET /api/questions`, `GET /api/questions/{id}` | deferred | deferred | deferred |
-| Answer | n/a | `POST /api/questions/{id}/answer` | deferred | deferred | deferred |
-| Withdraw | n/a | `POST /api/questions/{id}/withdraw` | deferred | deferred | deferred |
-| Answer log | n/a | `GET /api/questions/{id}/answers` | deferred | deferred | deferred |
+| Toggle the channel | `autonomous.questions.enabled` | `PUT /api/config` | `config_set` (the generic config tool — wired) | `datawatch config set autonomous.questions.enabled true\|false`; comm `configure autonomous.questions.enabled=true` (both wired — the key is in the comm `configure` key set) | Settings — deferred: the PWA has no toggle for it yet, so set it via REST, CLI, comm or YAML in the meantime |
+| Raise | n/a | `POST /api/questions` | deferred — no `question_raise` MCP tool yet | deferred — no CLI `ask` verb and no comm `ask` command yet | deferred — no raise form / queue view in the PWA or the companion apps yet |
+| List / read | n/a | `GET /api/questions`, `GET /api/questions/{id}` | deferred — no `list_questions` MCP tool yet | deferred — no CLI list verb yet | deferred — no queue view in the PWA or the companion apps yet |
+| Answer | n/a | `POST /api/questions/{id}/answer` | deferred — no `answer_question` MCP tool yet | deferred — no CLI `answer` verb and no comm `answer` command yet | deferred — no answer sheet in the PWA or the companion apps yet |
+| Withdraw | n/a | `POST /api/questions/{id}/withdraw` | deferred — no `withdraw_question` MCP tool yet | deferred — no CLI `retract` verb and no comm `retract` command yet | deferred — no queue view in the PWA or the companion apps yet |
+| Answer log | n/a | `GET /api/questions/{id}/answers` | deferred — no `list_answers` MCP tool yet | deferred — no CLI log verb yet | deferred — no queue view in the PWA or the companion apps yet |
 
-Deferral reasons, per AGENT.md's parity rule: the channel is a new operator
-surface and its MCP tools, CLI verbs, comm-channel commands, and the app UIs
-are deliberate follow-ups; until they land the channel is REST + Config only,
-and each deferred surface keeps the deferral logged in [api-mcp-mapping](api-mcp-mapping.md#operator-questions)
-and [parity-status](parity-status.md).
+Deferral reasons, per AGENT.md's parity rule — every cell above states why it
+is deferred: the PWA / Android / iOS cells are the queue view (list, raise,
+answer, withdraw) that is not built in the PWA or the companion apps yet —
+tracked in [parity-status](parity-status.md); the MCP cells are the question
+tools (`question_raise`, `list_questions`, `answer_question`,
+`withdraw_question`, `list_answers`) that are not registered in the MCP
+server yet — tracked in [api-mcp-mapping](api-mcp-mapping.md#operator-questions);
+the CLI / comm cells are the `ask` / `answer` / `retract` verbs that are not
+added yet — with one exception already wired: the comm `configure`
+`autonomous.questions.enabled` key (see the Toggle row). Until those rows
+land, the channel is REST + Config.
 
 **Access control (federation).** Reads need the autonomous read capability
 (`autonomous:read`); raising, answering and withdrawing need the autonomous
@@ -4059,9 +4068,16 @@ the data directory (questions, answers and withdrawals as separate lines). It
 never loses or rewrites a line — superseded answers are derived on read from
 the log, not deleted. Back it up with the rest of the data directory.
 
-**Audit.** Every mutation is an audit event: `question_raised`,
-`question_answered`, `question_withdrawn` (plus the store's replay events for
-recovery); see the audit section of the API reference above.
+**Audit.** Every mutation is an audit event, all keyed on the question id and
+kept forever: `question_raised`; `question_answered` (the quote verbatim,
+with its SHA-256); `answer_superseded` (a later answer replaced an earlier
+one — both quotes kept verbatim); `question_withdrawn`; `question_expired`
+(a reserved state for external question sources that have deadlines — this
+channel has none, so it never fires here); and `question_answer_refused`
+(a secret refusal — the name of the matched rule only, never any part of the
+answer text). A crash or restart is recovered by replaying the append-only
+JSONL store, which is the store's own mechanism, not a separate audit entry.
+See the audit section of the API reference above.
 
 **Where to see it.**
 
@@ -4069,8 +4085,8 @@ recovery); see the audit section of the API reference above.
 |---|---|
 | REST | The six endpoints above — every state, the whole answer log, the same JSON for every caller. |
 | Config | The one switch (`autonomous.questions.enabled`), via YAML or `PUT /api/config`. |
-| MCP / CLI / comm | Not yet — logged deferrals, same object when the rows land. |
-| Android and iOS | Not yet — tracked in the parity table. |
+| MCP / CLI / comm | The switch already works there: MCP `config_set`, `datawatch config set`, and comm `configure` (all on `autonomous.questions.enabled`). The question verbs and MCP tools — not yet; logged deferrals, same object when the rows land. |
+| Android and iOS | Not yet — the queue view (list, raise, answer) is not built in the companion apps yet. Tracked in the parity table. |
 
 ---
 

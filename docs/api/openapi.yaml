@@ -4274,11 +4274,12 @@ paths:
             schema: {$ref: "#/components/schemas/QuestionRaise"}
       responses:
         "201": {description: "The stored question record"}
-        "400": {description: "Malformed body, or a validation rule failed (every offending field named); nothing is stored"}
-        "403": {description: "Federated peer lacks the autonomous write capability"}
-        "413": {description: "Body over the 64 KiB cap"}
-        "500": {description: "The store could not append or replay the question"}
-        "503": {description: "The autonomous.questions.enabled switch is off (named in the message), or the question store is not wired"}
+        "400": {description: "Malformed body, or a validation rule failed (every offending field named); nothing is stored", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "Federated peer lacks the autonomous write capability", content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
+        "413": {description: "Body over the 64 KiB cap", content: {"text/plain": {schema: {type: string}}}}
+        "500": {description: "The store could not append or replay the question", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off (named in the message), or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
     get:
       summary: List operator questions
       description: |
@@ -4299,9 +4300,10 @@ paths:
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, default: 100, maximum: 1000}}
       responses:
         "200": {description: "count and questions, newest first"}
-        "400": {description: "An unknown state or context, or a limit that is not a positive integer"}
-        "403": {description: "Federated peer lacks the autonomous read capability"}
-        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired"}
+        "400": {description: "An unknown state or context (named in the error), or a limit that is not a positive integer (\"limit must be a positive integer\")", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "Federated peer lacks the autonomous read capability", content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
 
   /api/questions/{id}:
     get:
@@ -4318,9 +4320,9 @@ paths:
         - {name: id, in: path, required: true, schema: {type: string}}
       responses:
         "200": {description: "question, answer_count, current_answer_id"}
-        "404": {description: Unknown question id}
-        "405": {description: Method not allowed}
-        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired"}
+        "404": {description: Unknown question id, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
 
   /api/questions/{id}/answer:
     post:
@@ -4340,9 +4342,12 @@ paths:
 
         An answer whose text looks like a secret is refused 422, is never
         stored, and the response never echoes any part of the submitted text
-        — it names the rule and the two safe routes (the datawatch secrets
-        store via ${secret:name}, or the filesystem). Well-formed ${secret:name}
-        references pass the scan.
+        — `error` is the fixed phrase `matched: secret pattern` (not the
+        name of the specific rule that matched) and `suggestion` lists the
+        two safe routes (the datawatch secrets store via ${secret:name},
+        or the filesystem); the matched rule's name is recorded in the
+        `question_answer_refused` audit entry, not in this body. Well-formed
+        ${secret:name} references pass the scan.
 
         Body cap 64 KiB plus the 16 KiB quote cap. Needs the autonomous write
         capability when called by a federated peer.
@@ -4357,14 +4362,14 @@ paths:
             schema: {$ref: "#/components/schemas/QuestionAnswer"}
       responses:
         "201": {description: "The stored answer record (quote hash included) and the question's new state"}
-        "400": {description: "Malformed body; an unknown surface; neither an option nor a non-blank quote; an option id the question does not have"}
-        "403": {description: "Federated peer lacks the autonomous write capability"}
-        "404": {description: Unknown question id}
-        "409": {description: "Answering a withdrawn or expired question; a supersedes on an open question; a supersedes that is absent or wrong on an answered question"}
-        "413": {description: "Body over the cap, or a quote over 16 KiB"}
-        "422": {description: "The answer looks like a secret — reason and the safe routes, no echo of the submitted text"}
-        "500": {description: "The store could not append or replay the answer"}
-        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired"}
+        "400": {description: "Malformed body; an unknown surface; neither an option nor a non-blank quote; an option id the question does not have; a quote that is not valid UTF-8; a supersedes on an open question (no current answer to replace)", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "403": {description: "Federated peer lacks the autonomous write capability", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: Unknown question id, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "409": {description: "Answering a withdrawn or expired question; a supersedes that is absent or wrong on an answered question", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "413": {description: "Body over the cap, or a quote over 16 KiB", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "422": {description: "The answer looks like a secret — the fixed phrase and the safe routes, no echo of the submitted text; no rule name in the body", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionSecretRefusal"}}}}
+        "500": {description: "The store could not append or replay the answer", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
 
   /api/questions/{id}/withdraw:
     post:
@@ -4385,13 +4390,13 @@ paths:
             schema: {$ref: "#/components/schemas/QuestionWithdraw"}
       responses:
         "200": {description: "The question in its new state"}
-        "400": {description: Malformed body}
-        "403": {description: "Federated peer lacks the autonomous write capability"}
-        "404": {description: Unknown question id}
-        "409": {description: "The question is not open"}
-        "413": {description: "Body over the 64 KiB cap"}
-        "500": {description: "The store could not append or replay the withdrawal"}
-        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired"}
+        "400": {description: Malformed body, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "403": {description: "Federated peer lacks the autonomous write capability", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: Unknown question id, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "409": {description: "The question is not open", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "413": {description: "Body over the 64 KiB cap", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "500": {description: "The store could not append or replay the withdrawal", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
 
   /api/questions/{id}/answers:
     get:
@@ -4408,9 +4413,9 @@ paths:
         - {name: id, in: path, required: true, schema: {type: string}}
       responses:
         "200": {description: "answers (oldest first, each with derived superseded state) and current_answer_id"}
-        "404": {description: Unknown question id}
-        "405": {description: Method not allowed}
-        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired"}
+        "404": {description: Unknown question id, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
 
 components:
   securitySchemes:
@@ -5562,7 +5567,7 @@ components:
       properties:
         chosen_option_id: {type: string, description: "Must name an option of the question."}
         quote: {type: string, description: "The operator's own words, stored exactly as received. <= 16384 bytes."}
-        supersedes: {type: string, description: "The id of the answer being replaced (the current answer of an answered question). On an open question a supersedes is malformed (409)."}
+        supersedes: {type: string, description: "The id of the answer being replaced (the current answer of an answered question). On an open question a supersedes is malformed (400 — there is no current answer to replace)."}
         surface: {type: string, description: "pwa, android, ios, cli, rest, mcp, or `comm:<channel name>`. Defaults to `rest`; `system` is refused."}
         source_message_id: {type: string}
         actor: {type: string, description: "Defaults to the caller."}
@@ -5573,3 +5578,27 @@ components:
       properties:
         reason: {type: string, description: "Free text for the log."}
         actor: {type: string, description: "Defaults to the caller."}
+
+    QuestionError:
+      description: "The error body of the JSON-answering question endpoints (answer, withdraw, answer log). A secret refusal is the same object with `reason` and `suggestion` added — see QuestionSecretRefusal."
+      type: object
+      required: [error]
+      properties:
+        error: {type: string, description: "A human-readable reason, e.g. `missing choice and quote`, `quote not valid UTF-8`, `supersedes must name this question's current answer`, `withdrawal requires an open question`."}
+
+    QuestionSecretRefusal:
+      description: "The 422 body of POST /api/questions/{id}/answer when an answer's text looks like a secret. Nothing from the submitted text is echoed: `error` is a fixed phrase and `suggestion` the two fixed safe routes. The matched rule's name is not in this body — it is recorded on the `question_answer_refused` audit entry."
+      type: object
+      required: [error, reason, suggestion]
+      properties:
+        error:
+          type: string
+          description: "Fixed text containing the phrase `matched: secret pattern` and the two safe routes; it does not name the specific rule that matched."
+        reason:
+          type: string
+          enum: [secret_detected]
+          description: "Always `secret_detected`."
+        suggestion:
+          type: array
+          items: {type: string}
+          description: "The two safe routes: store the secret in the datawatch secrets store and refer to it as ${secret:name}; or save it on the filesystem and point the session at the file."
