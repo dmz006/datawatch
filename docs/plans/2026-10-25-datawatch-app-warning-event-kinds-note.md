@@ -5,7 +5,7 @@ Date: 2026-10-25
 ## What changed
 
 The two opt-in notify event kinds (`scope_warning`, `guardrail_warn`) shipped
-on the backend in v9.16.0 (they only fire because some Automaton opted in —
+on the backend in the immediately preceding release (they only fire because some Automaton opted in —
 unlike every other kind, they ride no default set) and until now were buried
 unmarked in generic lists in the PWA. This change marks them as opt-in in the
 two places where the operator decides which events fire:

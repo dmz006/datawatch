@@ -335,12 +335,12 @@ func stringSliceField(t *testing.T, m map[string]any, key string) []string {
 	return out
 }
 
-// TestBL427_Subscribe_WarningKindsAreOptIn pins the MCP surface for the
+// TestSubscribe_WarningKindsAreOptIn pins the MCP surface for the
 // new opt-in warning kinds: the handler accepts scope_warning /
 // guardrail_warn bare (they are warnings, not task statuses — never
 // expanded to task.*), and the tool + kinds descriptions name them as
 // warnings that never block work.
-func TestBL427_Subscribe_WarningKindsAreOptIn(t *testing.T) {
+func TestSubscribe_WarningKindsAreOptIn(t *testing.T) {
 	// 1) The tool definitions advertise the opt-in warning kinds.
 	def := (&Server{}).toolAutonomousSubscribe()
 	desc := def.Description
