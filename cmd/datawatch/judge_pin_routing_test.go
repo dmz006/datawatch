@@ -197,7 +197,7 @@ func TestPinRoutingTimeoutFallback(t *testing.T) {
 			var ran []string
 			ok := autonomouspkg.GuardrailVerdict{Outcome: "pass", Summary: "second backend verdict"}
 			verdict, err := runJudgeAttempts(c.req, choose, time.Minute,
-				func(string, string, string) {}, nil,
+				func(string, string, string) {}, nil, nil, nil,
 				func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 					ran = append(ran, backend)
 					if len(ran) == 1 {

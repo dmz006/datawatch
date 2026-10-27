@@ -6055,9 +6055,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 				return autonomousMgrRef.Store().GetPRD(id)
 			})
-			choose := judgeBackendChooserForSize(ctx, autonomousMgrRef, req, gcfg, unitBackend, size)
+			route := judgeRouteForSize(ctx, autonomousMgrRef, req, gcfg, unitBackend, size)
 			alert := func(level, title, body string) { emitJudgeAlert(autonomousMgrRef, level, title, body) }
-			return runJudgeAttempts(req, choose, judgeSessionTimeout(gcfg), alert, judgeTryLogFor(autonomousMgrRef, req),
+			return runJudgeAttempts(req, route.Choose, judgeSessionTimeout(gcfg), alert, judgeTryLogFor(autonomousMgrRef, req),
+				route.Retarget, route.Pick,
 				func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 					return autonomousGuardrailAttempt(ctx, req, gcfg, backend, att)
 				})

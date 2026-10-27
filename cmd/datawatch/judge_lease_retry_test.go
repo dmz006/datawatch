@@ -37,7 +37,7 @@ func TestJudgeMovesOnWhenItsLeaseWaitExpires(t *testing.T) {
 		return freeLease(ctx, backend, model, unitID, prdID)
 	}
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-9", Guardrail: "rules"}
-	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"qwen", "claude-code"}), time.Minute, recordAlerts(&alerts), nil,
+	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"qwen", "claude-code"}), time.Minute, recordAlerts(&alerts), nil, nil, nil,
 		func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 			tried = append(tried, backend)
 			return runJudgeLeased(context.Background(), admit, att, "", "u1", "prd-9",
@@ -61,7 +61,7 @@ func TestJudgeWithNoSlotOnTheLastBackendIsInfraNotHold(t *testing.T) {
 	// the PRD is not held: the infra verdict is returned and no error alert fires.
 	var alerts []alertRecord
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-10", Guardrail: "rules"}
-	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"qwen"}), time.Minute, recordAlerts(&alerts), nil,
+	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"qwen"}), time.Minute, recordAlerts(&alerts), nil, nil, nil,
 		func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 			return runJudgeLeased(context.Background(), noSlotLease, att, "", "u1", "prd-10",
 				func(string) (autonomouspkg.GuardrailVerdict, error) {
@@ -89,7 +89,7 @@ func TestJudgeHoldsWhenATimeoutIsMixedWithNoSlot(t *testing.T) {
 		var alerts []alertRecord
 		var tried []string
 		req := autonomouspkg.GuardrailInvocation{PRDID: "prd-11", Guardrail: "rules"}
-		verdict, err := runJudgeAttempts(req, judgeChooserFromList(order), time.Minute, recordAlerts(&alerts), nil,
+		verdict, err := runJudgeAttempts(req, judgeChooserFromList(order), time.Minute, recordAlerts(&alerts), nil, nil, nil,
 			func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 				tried = append(tried, backend)
 				if backend == "claude-code" {
@@ -133,7 +133,7 @@ func TestJudgeCancelledWhileWaitingForASlotStopsWithoutNextBackend(t *testing.T)
 	var alerts []alertRecord
 	var tried []string
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-12", Guardrail: "rules"}
-	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"qwen", "claude-code"}), time.Minute, recordAlerts(&alerts), nil,
+	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"qwen", "claude-code"}), time.Minute, recordAlerts(&alerts), nil, nil, nil,
 		func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 			tried = append(tried, backend)
 			return runJudgeLeased(ctx, cancelledLease, att, "", "u1", "prd-12",

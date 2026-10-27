@@ -953,21 +953,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// same way the verifier's does.
 	judges := newVerifierRegistry()
 	_, _, judgeStartedFn := judgeAdmitters(led, judges, keys, amgr.CapacityWaitDuration())
-	judgeCapacityAdmit = judgeNodeAdmitter(amgr, judges)
-	// The judge's non-blocking probe for the verifier routing policy. It takes
-	// the same judge lease as judgeCapacityAdmit with a short wait, then lets
-	// go at once, so the attempt that follows admits for real.
-	judgeCapacityTryAdmit = func(ctx context.Context, backend, model, unitID, prdID string) bool {
-		_, release, err := amgr.AdmitJudge(ctx, autonomous.JudgeAdmit{
-			Holder: autonomous.JudgeHolder(unitID), PRDID: prdID, Backend: backend, Model: model,
-			Wait: 150 * time.Millisecond,
-		})
-		if err != nil {
-			return false
-		}
-		release()
-		return true
-	}
+	wireJudgeAdmission(amgr, judges)
 	judgeSessionStarted = judgeStartedFn
 	// Adopt, never double-spawn: on a daemon restart a guardrail-judge
 	// session may still be live while the capacity ledger is empty, so the
@@ -1226,6 +1212,36 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		}
 	}()
 	return led
+}
+
+// wireJudgeAdmission sets the guardrail judge's capacity hooks over amgr's
+// ledger: the blocking admission, the non-blocking probe the routing policy
+// reads, the dry run and the change channel a waiting judge re-evaluates its
+// policy on. judges tracks the running judge leases.
+func wireJudgeAdmission(amgr *autonomous.Manager, judges *verifierRegistry) {
+	judgeCapacityAdmit = judgeNodeAdmitter(amgr, judges)
+	// The judge's non-blocking probe for the verifier routing policy. It takes
+	// the same judge lease as judgeCapacityAdmit with a short wait, then lets
+	// go at once, so the attempt that follows admits for real.
+	judgeCapacityTryAdmit = func(ctx context.Context, backend, model, unitID, prdID string) bool {
+		_, release, err := amgr.AdmitJudge(ctx, autonomous.JudgeAdmit{
+			Holder: autonomous.JudgeHolder(unitID), PRDID: prdID, Backend: backend, Model: model,
+			Wait: 150 * time.Millisecond,
+		})
+		if err != nil {
+			return false
+		}
+		release()
+		return true
+	}
+	// The dry run of the same admission, for a judge that waits and re-runs its
+	// policy: it queues nothing and takes no lease.
+	judgeCapacityFits = func(backend, model, unitID, prdID string) bool {
+		return amgr.JudgeFits(autonomous.JudgeAdmit{
+			Holder: autonomous.JudgeHolder(unitID), PRDID: prdID, Backend: backend, Model: model,
+		})
+	}
+	judgeCapacityChanged = amgr.CapacityChanged
 }
 
 // wireVerifierAdmission sets the verifier's capacity hooks over amgr's ledger:

@@ -94,10 +94,15 @@ type judgeLeaseAdmit func(ctx context.Context, backend, model, unitID, prdID str
 // no hold is raised. The Claude session window counts the pick only once its
 // lease is granted. A nil admit (no ledger, e.g. in tests) runs body with no
 // lease and no node.
+//
+// A judge whose attempt carries a Retarget does not block on one backend: the
+// wait re-evaluates the routing policy and may leave for a backend with room
+// (see judgeAwaitLease). It then returns an infra verdict with att.MoveTo set,
+// holding no lease and setting no NoSlot, so it is not a slot shortage.
 func runJudgeLeased(ctx context.Context, admit judgeLeaseAdmit, att *judgeAttempt, model, unitID, prdID string, body func(node string) (autonomouspkg.GuardrailVerdict, error)) (autonomouspkg.GuardrailVerdict, error) {
 	node := ""
 	if admit != nil {
-		release, n, err := admit(ctx, att.Backend, model, unitID, prdID)
+		release, n, err := judgeAwaitLease(ctx, admit, att, model, unitID, prdID)
 		if err != nil {
 			if ctx.Err() != nil {
 				return judgeAdmitFailureVerdict(err), ctx.Err()
@@ -105,11 +110,64 @@ func runJudgeLeased(ctx context.Context, admit judgeLeaseAdmit, att *judgeAttemp
 			att.NoSlot = true
 			return judgeAdmitFailureVerdict(err), nil
 		}
+		if att.MoveTo != "" {
+			// The wait left this backend for att.MoveTo. No lease is held and the
+			// judge did not run; runJudgeAttempts runs it on the target.
+			return judgeMovedVerdict(att), nil
+		}
 		defer release()
 		node = n
 	}
 	judgeRecordClaudeSession(att.Backend)
 	return body(node)
+}
+
+// judgeAwaitLease waits for the judge's lease on att.Backend. With att.Retarget
+// set, the wait re-runs the routing policy on every retargetTick and every
+// capacity change and, when the policy names another backend with room, gives
+// up its place in the queue and records the target in att.MoveTo (move-only:
+// the lease on the target is taken by the next attempt, not here). A wait with
+// no Retarget is the blocking admit alone.
+func judgeAwaitLease(ctx context.Context, admit judgeLeaseAdmit, att *judgeAttempt, model, unitID, prdID string) (func(), string, error) {
+	if att.Retarget == nil {
+		return admit(ctx, att.Backend, model, unitID, prdID)
+	}
+	out, err := retargetWait(ctx, retargetWaitIn{
+		Backend: att.Backend, Model: model,
+		Wait: func(ctx context.Context, backend, model string) (func(), string, error) {
+			return admit(ctx, backend, model, unitID, prdID)
+		},
+		Next:    att.Retarget,
+		Changed: judgeCapacityChanged,
+		OnMove: func(_, to, toModel, reason string) {
+			att.MoveTo, att.MoveModel, att.MoveReason = to, toModel, reason
+		},
+	})
+	if err != nil {
+		return func() {}, "", err
+	}
+	if out.Moved && out.Release != nil {
+		// Move-only takes no lease; let go of one if a wait ever handed it over.
+		out.Release()
+		out.Release = nil
+	}
+	if out.Release == nil {
+		out.Release = func() {}
+	}
+	return out.Release, out.Node, nil
+}
+
+// judgeMovedVerdict is the verdict of a wait that moved to another backend. It
+// is "infra": the judge did not run on the backend it left, and runJudgeAttempts
+// drops it and runs the target.
+func judgeMovedVerdict(att *judgeAttempt) autonomouspkg.GuardrailVerdict {
+	return autonomouspkg.GuardrailVerdict{
+		Outcome:   "block",
+		Severity:  "medium",
+		Summary:   "guardrail(capacity): moved from " + att.Backend + " to " + att.MoveTo + ": " + att.MoveReason,
+		VerdictAt: time.Now(),
+		Category:  "infra",
+	}
 }
 
 // judgeUnitFromSessionName extracts the unit id from a
