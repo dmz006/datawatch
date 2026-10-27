@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -607,3 +608,123 @@ func TestAPIGzipSettings_NilAndNegative(t *testing.T) {
 
 // headerSpy lets a test observe the headers a wrapped handler sent.
 type headerSpy struct{ http.ResponseWriter }
+
+// reflectedPayload is a request value that would execute if the response
+// carrying it were ever rendered as HTML.
+const reflectedPayload = `<html><script>alert(document.domain)</script></html>`
+
+// echoHandler reflects the "q" query value into the body, optionally with
+// no Content-Type (the handler-forgot case) and a body of padLen extra bytes.
+func echoHandler(contentType string, padLen int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if contentType != "" {
+			w.Header().Set("Content-Type", contentType)
+		}
+		_, _ = io.WriteString(w, r.URL.Query().Get("q")+strings.Repeat(" ", padLen))
+	}
+}
+
+func serveEcho(h http.Handler, acceptEncoding string) *httptest.ResponseRecorder {
+	q := url.QueryEscape(reflectedPayload)
+	return serveGzip(h, http.MethodGet, "/api/echo?q="+q, acceptEncoding)
+}
+
+func assertNotHTML(t *testing.T, rr *httptest.ResponseRecorder) {
+	t.Helper()
+	ct := rr.Header().Get("Content-Type")
+	if ct == "" || strings.Contains(strings.ToLower(ct), "html") || strings.Contains(strings.ToLower(ct), "xml") {
+		t.Fatalf("reflected body served with Content-Type %q, want explicit non-HTML", ct)
+	}
+	if got := rr.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+}
+
+func TestAPIGzip_ReflectedValueNonHTMLNosniff(t *testing.T) {
+	cases := []struct {
+		name   string
+		ct     string
+		pad    int
+		min    int
+		accept string
+	}{
+		{"missing type small gzip", "", 0, 4096, "gzip"},
+		{"missing type large gzip", "", 5000, 64, "gzip"},
+		{"missing type no gzip accept", "", 0, 64, ""},
+		{"missing type HEAD-free large no accept", "", 5000, 64, ""},
+		{"json small", "application/json", 0, 4096, "gzip"},
+		{"json large", "application/json", 5000, 64, "gzip"},
+		{"plain large", "text/plain; charset=utf-8", 5000, 64, "gzip"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newAPIGzipHandler(fixedGzipSettings(true, tc.min), echoHandler(tc.ct, tc.pad))
+			rr := serveEcho(h, tc.accept)
+			assertNotHTML(t, rr)
+			if tc.ct != "" && rr.Header().Get("Content-Type") != tc.ct {
+				t.Fatalf("Content-Type = %q, want handler's %q preserved", rr.Header().Get("Content-Type"), tc.ct)
+			}
+			body := rr.Body.Bytes()
+			if rr.Header().Get("Content-Encoding") == "gzip" {
+				body = []byte(gunzip(t, body))
+			}
+			if !strings.HasPrefix(string(body), reflectedPayload) {
+				t.Fatalf("reflected value not served intact: %.80q", body)
+			}
+		})
+	}
+}
+
+func TestAPIGzip_GzipKeepsContentTypeAndEncoding(t *testing.T) {
+	h := newAPIGzipHandler(fixedGzipSettings(true, 64), echoHandler("application/json", 5000))
+	rr := serveEcho(h, "gzip")
+	if rr.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("Content-Encoding = %q, want gzip", rr.Header().Get("Content-Encoding"))
+	}
+	if rr.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json kept", rr.Header().Get("Content-Type"))
+	}
+	assertNotHTML(t, rr)
+}
+
+func TestAPIGzip_HTMLTypedByHandlerNotSniffedHere(t *testing.T) {
+	// A handler that sets its own type keeps it; the middleware only
+	// fills in a missing one and always adds nosniff.
+	h := newAPIGzipHandler(fixedGzipSettings(true, 64), echoHandler("text/event-stream", 0))
+	rr := serveEcho(h, "gzip")
+	if got := rr.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("Content-Type = %q, want text/event-stream", got)
+	}
+	if rr.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("missing nosniff")
+	}
+}
+
+func TestAPIGzip_DisabledStillNonHTMLNosniff(t *testing.T) {
+	h := newAPIGzipHandler(fixedGzipSettings(false, 64), echoHandler("", 0))
+	rr := serveEcho(h, "gzip")
+	assertNotHTML(t, rr)
+	if rr.Header().Get("Content-Encoding") != "" {
+		t.Fatalf("disabled middleware must not compress")
+	}
+	if rr.Header().Get("Vary") != "" {
+		t.Fatalf("disabled middleware must not add Vary")
+	}
+}
+
+func TestAPIGzip_ExplicitStatusBeforeBodyStillNonHTML(t *testing.T) {
+	// WriteHeader before Write freezes net/http's header snapshot, so the
+	// type has to be chosen before the status is sent.
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, r.URL.Query().Get("q"))
+	})
+	for _, accept := range []string{"gzip", ""} {
+		h := newAPIGzipHandler(fixedGzipSettings(true, 4096), inner)
+		rr := serveEcho(h, accept)
+		assertNotHTML(t, rr)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", rr.Code)
+		}
+	}
+}

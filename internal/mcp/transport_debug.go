@@ -70,6 +70,8 @@ type sseCloseObserver struct {
 	lastWrite  time.Time
 	firstWrite time.Time
 	writeErr   error // first error, recorded at most once
+
+	hardenOnce sync.Once // implicit-200 first Write path
 }
 
 // NewSSECloseObserver wraps w for the SSE session stream. Pass the
@@ -82,9 +84,27 @@ func NewSSECloseObserver(w http.ResponseWriter, remote string) *sseCloseObserver
 // with observation: see sseCloseObserver doc.
 func (o *sseCloseObserver) Header() http.Header { return o.w.Header() }
 
-func (o *sseCloseObserver) WriteHeader(statusCode int) { o.w.WriteHeader(statusCode) }
+func (o *sseCloseObserver) WriteHeader(statusCode int) {
+	o.hardenHeaders()
+	o.w.WriteHeader(statusCode)
+}
+
+// hardenHeaders pins the stream to a non-HTML content type and forbids
+// sniffing. The event payloads carry JSON-RPC results that can echo
+// request values (tool names, arguments), so the response must never be
+// interpretable as a document. mcp-go already sets text/event-stream;
+// this keeps that true if it ever stops and adds nosniff, which it does
+// not set.
+func (o *sseCloseObserver) hardenHeaders() {
+	h := o.w.Header()
+	h.Set("X-Content-Type-Options", "nosniff")
+	if ct := strings.ToLower(h.Get("Content-Type")); ct == "" || strings.Contains(ct, "html") {
+		h.Set("Content-Type", "text/event-stream")
+	}
+}
 
 func (o *sseCloseObserver) Write(p []byte) (int, error) {
+	o.hardenOnce.Do(o.hardenHeaders)
 	n, err := o.w.Write(p)
 	o.observe(n, err)
 	return n, err
