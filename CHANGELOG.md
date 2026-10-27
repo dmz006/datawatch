@@ -7,7 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- The default allowed project roots now include the workspace folder `~/workspace` when `session.workspace_root` is unset, so interactive sessions, explicit `project_dir` Automata and test runs under that folder are no longer refused. No configuration change is needed. More roots come only through `server.allowed_project_roots`.
+- The default allowed project roots now include the workspace root, the folder `~/workspace` when `session.workspace_root` is unset, so interactive sessions, explicit `project_dir` Automata and test runs under that folder are no longer refused. No configuration change is needed. More roots come only through `server.allowed_project_roots`; setting `session.workspace_root` replaces the default workspace root.
 
 ### A pi backend's node list is read from its own LLM entry
 

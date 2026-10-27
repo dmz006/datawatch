@@ -94,10 +94,10 @@ a link that points outside the roots is refused.
 A directory outside every root is refused with an error such as:
 
 ```
-project directory is outside the allowed project roots: "/srv/app" (allowed roots: /home/me/.datawatch/prd-worktrees, /home/me/workspace; add a root with server.allowed_project_roots)
+project dir refused: project directory is outside the allowed project roots: "/srv/app" (allowed roots: /home/me/.datawatch/prd-worktrees, /home/me/workspace; add a root with server.allowed_project_roots)
 ```
 
-REST answers 400. To widen the set, list the folder (or a parent of several
+REST answers with a bad-request error. To widen the set, list the folder (or a parent of several
 repositories) in `server.allowed_project_roots`, or set `session.workspace_root`
 to the parent folder of your repositories; setting it replaces `~/workspace`
 as the default. Changes apply without a restart:

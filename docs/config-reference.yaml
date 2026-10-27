@@ -262,11 +262,11 @@ server:
   # Hide toast notifications for the currently viewed session
   suppress_active_toasts: true
   # Extra directories a project directory may lie under. The allowed roots are
-  # the PRD worktree base (autonomous.worktree_dir), then session.workspace_root
-  # when set and otherwise the workspace folder ~/workspace, plus the folders in
-  # this list. The first two are always allowed. A session, automaton or test run
-  # whose project directory is outside every root is refused. Symlinks and '..'
-  # are resolved before the check.
+  # the PRD worktree base (autonomous.worktree_dir), then the workspace root
+  # (session.workspace_root when set, otherwise the workspace folder ~/workspace),
+  # plus the folders in this list. The first two are always allowed. A session,
+  # automaton or test run whose project directory is outside every root is
+  # refused. Symlinks and '..' are resolved before the check.
   allowed_project_roots: []
 
 # ── MCP Server ──

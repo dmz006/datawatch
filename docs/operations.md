@@ -1026,8 +1026,10 @@ them in `server.allowed_project_roots`.
 the check, so a link inside a root that points outside it is refused, as is a
 missing path that a dangling link would create outside the roots. A refused
 directory returns an error that names the roots (REST answers 400). A
-relative `project_dir` is joined under the workspace root (or the daemon's
-working directory when no root is set) and checked the same way. The daemon's
+relative `project_dir` is joined under `session.workspace_root` when that is
+set, or under the daemon's working directory when it is not (the default
+`~/workspace` folder is an allowed root but not a base for relative paths), and
+checked the same way. The daemon's
 own `session.default_project_dir` is configuration, not request input, so it
 is used as is.
 
