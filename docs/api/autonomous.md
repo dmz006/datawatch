@@ -394,7 +394,7 @@ curl -sX PUT http://localhost:7433/api/autonomous/config \
   -d '{"verifier_policy":{"mode":"prefer-free","backends":["ollama-a","claude-code"],"claude_session_cap":4,"claude_cap_window_minutes":60}}'
 ```
 
-### Judge routing and time limit (`autonomous.judge_policy` / `autonomous.judge_timeout_seconds`)
+### Judge routing and time limit (`autonomous.judge_policy` / `autonomous.judge_timeout_seconds` / `autonomous.judge_size_threshold_lines`)
 
 The judges (the Automaton's guardrail, plan review and other autonomous judges)
 are a distinct role in the verifier routing policy. Their backend list is
@@ -403,9 +403,13 @@ judges follow the verifier policy above. `autonomous.judge_timeout_seconds` is
 the time limit for one judge run, 1800 seconds by default, and the wait for a
 capacity slot does not count against it. When every backend in the judge policy
 has timed out, the Automaton is held in `needs_review` and an error alert lists
-every attempt. The settings are read and written with `GET/PUT /api/autonomous/config`
-(`judge_policy`, `judge_timeout_seconds`), MCP `autonomous_config_set`, the CLI
-`autonomous config-set --judge-policy --judge-timeout-seconds`, and the comm verbs
+every attempt. `autonomous.judge_size_threshold_lines` (default 400, `0` = off) is the
+changed-line count (added plus deleted, on the Automaton branch against its merge
+base, lock files left out) above which the judges try `claude-code` first and the
+rest follow in their usual order, still one attempt per backend; the decision log
+names the rule and the line count. The settings are read and written with `GET/PUT /api/autonomous/config`
+(`judge_policy`, `judge_timeout_seconds`, `judge_size_threshold_lines`), MCP `autonomous_config_set`, the CLI
+`autonomous config-set --judge-policy --judge-timeout-seconds --judge-size-threshold-lines`, and the comm verbs
 `autonomous judge-policy` and `autonomous judge-policy-set`. The guide, with the
 modes, the alerts and how to resolve a hold, is [howto/judge-policy.md](../howto/judge-policy.md).
 
@@ -1460,6 +1464,7 @@ autonomous:
     stronger_model:       ""          # empty = the default Sonnet model
   judge_policy:           []          # ordered judge backends, one attempt each; empty = follow the verifier routing policy
   judge_timeout_seconds:  1800        # time limit for one judge run; the capacity-slot wait does not count
+  judge_size_threshold_lines: 400     # changed lines above which claude-code is tried first; 0 = size rule off
 ```
 
 ### Compute-node engine cap (`max_engines_per_node`)

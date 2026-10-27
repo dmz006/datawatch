@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Large changes go to claude-code first when a judge runs
+
+- **Size-aware judge routing.** When the Automaton branch has more than `autonomous.judge_size_threshold_lines` changed lines (default 400), the judges try `claude-code` first and the other backends follow in their usual order, still one attempt per backend. On 2026-10-26 an Automaton of about 1,000 changed lines spent the whole 30-minute limit on a local judge that could not finish; a large change no longer starts on that model.
+- **How lines are counted.** Added plus deleted lines on the Automaton branch against its merge base, with lock files left out. `0` turns the rule off.
+- **Nothing else changes.** In `balance` mode the load still decides and the order only breaks ties. A judge that times out on every backend still holds the Automaton with `judge_timeout_seconds`. The Automaton decision log names the rule that routed the judge and the line count.
+- **Settings on every surface.** YAML (`autonomous.judge_size_threshold_lines`), REST (`PUT /api/config` and `PUT /api/autonomous/config`), MCP (`autonomous_config_set`), the CLI (`autonomous config-set --judge-size-threshold-lines`), the comm channel (`autonomous judge-policy-set judge_size_threshold_lines=400`) and the PWA Settings autonomous card in five locales. See [howto/judge-policy.md](docs/howto/judge-policy.md#size-aware-routing).
+
 ### The channel bridge verifies the daemon's TLS certificate
 
 - `datawatch-channel` no longer sets `InsecureSkipVerify` on its health probe and parent posts (CodeQL `go/disabled-certificate-check`, alert 643). It trusts the daemon's own certificate as a root, read from `DATAWATCH_CA_CERT`, and the daemon sets that variable to the certificate it serves.

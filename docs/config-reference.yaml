@@ -1554,6 +1554,13 @@ autonomous:
   # the wait for a capacity slot does not count. 0 or negative falls back to
   # the 1800-second (30-minute) default.
   judge_timeout_seconds: 1800
+  # Size-aware judge routing. When the change under review is larger than this
+  # many changed lines (added plus deleted, on the Automaton branch against its
+  # merge base, lock files left out), the judge tries claude-code first and the
+  # other backends follow in their usual order, still one attempt per backend.
+  # In balance mode the load still decides and the order only breaks ties.
+  # 0 turns the rule off. Default 400.
+  judge_size_threshold_lines: 400
   # --- Plan review before approval (off by default) ---
   # LLM backend that reviews each PRD's plan (spec vs. decomposed stories/
   # tasks) after decompose. Empty (default) = no review; the PRD goes to
