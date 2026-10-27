@@ -3384,6 +3384,7 @@ window.toggleSessionWatch = function(fullId) {
   if (state.activeView === 'session-detail' && state.activeSession === fullId) {
     renderSessionDetail(fullId);
   }
+  if (document.getElementById('headerTagsBtn')) _tagsMenuRefresh();
 };
 
 window.toggleSessionWatchFilter = function() {
@@ -3919,6 +3920,8 @@ function cardSendCmd(fullId, cmd) {
 
 // ── Session detail view ───────────────────────────────────────────────────────
 function renderSessionDetail(sessionId) {
+  // The open session changed, so the Tags menu button follows it.
+  _tagsMenuRefresh();
   // Reset scroll mode on re-render — prevents input bar stuck in display:none
   state._scrollMode = false;
   state._scrollUseClientHistory = false;
@@ -36934,6 +36937,7 @@ function _sessionTagsRefresh() {
 // _sessionTagsRepaint redraws whichever session view is on screen from the
 // sessions held in state.
 function _sessionTagsRepaint() {
+  _tagsMenuRefresh();
   if (state.activeView === 'sessions') renderSessionsView();
   else if (state.activeView === 'session-detail') _renderSessionDetailTagRow(_sessionFind(state.activeSession));
 }
