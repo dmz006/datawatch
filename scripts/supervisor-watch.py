@@ -65,7 +65,7 @@ def recent(ts, hours=72):
 
 
 def newest_activity(prd_id):
-    """Seconds since the newest file change in the worktree or the newest pi log."""
+    """Seconds since the newest file change in the worktree, the newest pi log or the newest Claude transcript."""
     best = 0
     d = os.path.join(WT, prd_id)
     for root, dirs, files in os.walk(d):
@@ -76,6 +76,11 @@ def newest_activity(prd_id):
             except OSError:
                 pass
     for f in glob.glob(os.path.expanduser("~/.pi/agent/sessions/--home-dmz-.datawatch-prd-worktrees-%s--/*.jsonl" % prd_id)):
+        try:
+            best = max(best, os.path.getmtime(f))
+        except OSError:
+            pass
+    for f in glob.glob(os.path.expanduser("~/.claude/projects/-home-dmz--datawatch-prd-worktrees-%s/*.jsonl" % prd_id)):
         try:
             best = max(best, os.path.getmtime(f))
         except OSError:
