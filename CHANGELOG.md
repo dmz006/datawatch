@@ -77,6 +77,18 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.25.1 — A relaunched task is placed through the capacity ledger, not on its old node
+
+### A relaunched task is placed like a new request
+
+- A relaunch (a task whose earlier session is replaced, including one that was verifying) gives up the lease of the previous attempt and is admitted through the same placement as a new request. Before, the relaunch could keep the node of the attempt it replaced without placement choosing again.
+- Placement picks the least loaded of the backend's own compute nodes, one engine per node. The node of the previous attempt is only a tie breaker: it wins when it is free and equally loaded, and never outranks a less loaded node.
+- If no node is free, the relaunch waits like any other request.
+- A worker that survives a daemon restart keeps its recorded node.
+- The verifier and the await-external re-admission follow the same rule. A respawned verifier or judge that still holds a lease from an earlier run frees it and is placed again, and a task returning from an external wait is re-admitted through placement with the node it released as the tie breaker.
+- `scripts/check-waiter-nodes.sh` prints an `OVERLIMIT` line, with the lease holders, for any node that holds more engines than its limit, and exits 2 for it even when nothing is waiting.
+- Nothing about caps or settings changed: no limit was raised and no setting or default was added or changed.
+
 ## v9.25.0 — Plan coverage flags write tasks that declare no files
 
 ### Plan check flags write tasks that declare no files
