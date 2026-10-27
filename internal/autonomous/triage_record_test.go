@@ -28,18 +28,21 @@ func triageSetup(t *testing.T, status PRDStatus) (*Manager, *PRD) {
 	return m, prd
 }
 
-func setBlockedTask(m *Manager, prdID, storyID, taskID string, task Task) *Task {
-	m.Store().SetStories(prdID, []Story{{
+func setBlockedTask(t *testing.T, m *Manager, prdID, storyID, taskID string, task Task) *Task {
+	t.Helper()
+	if err := m.Store().SetStories(prdID, []Story{{
 		ID: storyID, Title: "story",
 		Tasks: []Task{task},
-	}})
+	}}); err != nil {
+		t.Fatalf("SetStories: %v", err)
+	}
 	got, _ := m.Store().GetPRD(prdID)
 	return &got.Story[0].Tasks[0]
 }
 
 func TestTriageBuilderBlocked(t *testing.T) {
 	m, prd := triageSetup(t, PRDBlocked)
-	tk := setBlockedTask(m, prd.ID, "s1", "t1", Task{
+	tk := setBlockedTask(t, m, prd.ID, "s1", "t1", Task{
 		ID: "t1", Title: "do the work", Status: TaskBlocked,
 		Error: "blocked: capacity", UpdatedAt: time.Now(),
 	})
@@ -82,12 +85,14 @@ func TestTriageBuilderFailedPrecedence(t *testing.T) {
 	prd.Status = PRDFailed
 	now := time.Now()
 	longErr := strings.Repeat("x", maxTriageErrorLen+500)
-	m.Store().SetStories(prd.ID, []Story{{
+	if err := m.Store().SetStories(prd.ID, []Story{{
 		ID: "s1", Title: "story", Tasks: []Task{
 			{ID: "tb", Title: "old blocked", Status: TaskBlocked, Error: "b", UpdatedAt: now.Add(-time.Minute)},
 			{ID: "tf", Title: "failed one", Status: TaskFailed, Error: longErr, UpdatedAt: now},
 		},
-	}})
+	}}); err != nil {
+		t.Fatalf("SetStories: %v", err)
+	}
 	got, _ := m.Store().GetPRD(prd.ID)
 	rec := m.BuildTriageRecordFor(got)
 	if rec == nil {
@@ -145,7 +150,7 @@ func TestTriageBuilderBlockedReasonFallback(t *testing.T) {
 
 func TestTriageEndReasonFromTaskField(t *testing.T) {
 	m, prd := triageSetup(t, PRDBlocked)
-	tk := setBlockedTask(m, prd.ID, "s1", "t1", Task{
+	tk := setBlockedTask(t, m, prd.ID, "s1", "t1", Task{
 		ID: "t1", Title: "t", Status: TaskBlocked, Error: "e",
 		SessionEndReason: "structural reason", UpdatedAt: time.Now(),
 	})
@@ -163,7 +168,7 @@ func TestTriageEndReasonFromTaskField(t *testing.T) {
 func TestTriageEndReasonFallsBackToDecisionNote(t *testing.T) {
 	m, prd := triageSetup(t, PRDBlocked)
 	// ended_sessions decision, no Task.SessionEndReason field.
-	tk := setBlockedTask(m, prd.ID, "s1", "t1", Task{
+	tk := setBlockedTask(t, m, prd.ID, "s1", "t1", Task{
 		ID: "t1", Title: "t", Status: TaskBlocked, Error: "e", UpdatedAt: time.Now(),
 	})
 	_ = tk
