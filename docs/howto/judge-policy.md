@@ -133,9 +133,10 @@ How it plays out:
    cap for the window is not reached, so the judge runs there. The decision log
    says `prefer-free: claude-code has a free slot`.
 3. If the Claude backend is also full, the judge waits on the first eligible
-   backend, `ollama-a`, for its slot. Its wait is the capacity wait
-   (`autonomous.capacity_wait_timeout_seconds`), and the time limit does not
-   start until a slot is granted.
+   backend, `ollama-a`, for its slot. It waits there but is re-checked (see
+   [A waiting request moves when another backend frees up](#a-waiting-request-moves-when-another-backend-frees-up)).
+   Its wait is the capacity wait (`autonomous.capacity_wait_timeout_seconds`),
+   and the time limit does not start until a slot is granted.
 
 Points to keep in mind:
 
@@ -146,6 +147,28 @@ Points to keep in mind:
 - The cap and the usage back-off apply to judges as they do to verifiers. The
   stronger-verifier fields (`force_stronger_on_retry`, `final_gate_stronger`)
   do not apply to judges, because a judge is never a retry or the final gate.
+
+## A waiting request moves when another backend frees up
+
+A verifier or judge request that waits for a slot does not stay tied to the
+backend it first picked. While it waits, it reads the routing policy again when
+a slot is released or a pool limit changes, and about every 5 seconds.
+
+- When the policy now picks a backend that has a free slot, the request moves
+  there. It does not wait for the original backend.
+- The move is written to the Automaton decision log. Look for a
+  `verifier_policy` or `judge_policy` decision whose reason starts
+  `moved from <backend>:`.
+- The same mode rules apply. `prefer-free` takes the first backend in list order
+  with a free slot. `balance` takes the least loaded one. `fixed`, `gpu-only`
+  and `claude-only` never move.
+- The per-backend caps, the Claude session cap, the usage back-off and the
+  one-engine-per-node limit decide what has a free slot. No cap or setting is
+  changed by a move.
+- A request stays on its backend when it has an explicit per-task or
+  per-Automaton verification LLM, a pinned guardrail backend, or a
+  stronger-verifier pick (a retry or the final gate).
+- A request never moves back to a backend it left.
 
 ## Capacity leases
 
@@ -398,6 +421,9 @@ autonomous_config_set(judge_policy=["ollama-a","ollama-b","claude-code"], judge_
 - **The judge never moves to a Claude backend.** The Claude backend is not in
   the judge list, or it is held, or its session cap for the window is reached.
   Check the `judge_policy` decisions for the reason.
+- **A verifier or judge shows `all full, waiting on <backend>` while another
+  listed backend is idle.** That backend is held, is over its Claude cap, or is
+  not in the policy list.
 - **The judge keeps waiting.** The mode is `prefer-free` or `balance` and every
   backend is full. The wait is the capacity wait. Check the capacity card in the
   PWA, or the `capacity_status` MCP tool.

@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### A waiting verifier or judge moves to a backend that frees up
+
+- **What was wrong.** A verifier or judge request that started waiting on one backend stayed on it, even when another listed backend sat idle.
+- **The fix.** The waiting request re-evaluates the routing policy when a slot is released or a pool limit changes, and about every 5 s. When the policy now picks a backend with a free slot, the request moves there. The move is written to the Automaton decision log as a `verifier_policy` or `judge_policy` decision whose reason starts `moved from <backend>:`. A request never moves back to a backend it left.
+- **What does not change.** A request with an explicit verification LLM, a pinned guardrail backend or a stronger-verifier pick stays put. The mode rules (`fixed`, `gpu-only` and `claude-only` never move), the caps, the Claude session cap, the usage back-off and the one-engine-per-node limit decide what has a free slot. No setting is changed.
+- Docs: [howto/judge-policy.md](docs/howto/judge-policy.md#a-waiting-request-moves-when-another-backend-frees-up).
+
 ### Voice transcription: real error causes, long-recording chunking and kept recordings
 
 - **Failed and slow requests are logged.** A failed `POST /api/voice/transcribe`, and any request slower than 30 s, writes one `[voice] transcribe failed:` or `[voice] transcribe slow:` line with the backend, upload size, audio length, elapsed time, cause and exit status. The transcript text is never logged.
