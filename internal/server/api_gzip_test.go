@@ -792,3 +792,51 @@ func TestAPIGzip_MarkupBodyWithoutTypeDecodesToOriginal(t *testing.T) {
 		}
 	}
 }
+
+// The recorder's header map is live, so it cannot show what a client was
+// sent. This serves over a real connection and reads the headers the client
+// received: a handler that sets no Content-Type and reflects markup must
+// reach the client as non-HTML with nosniff, and the gzip output must still
+// decode to the original body.
+func TestAPIGzip_HeadersOnTheWire(t *testing.T) {
+	want := reflectedPayload + strings.Repeat("z", 3000)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, want[:10])
+		_, _ = io.WriteString(w, want[10:])
+	})
+	for _, min := range []int{0, 64, 1 << 20} {
+		for _, accept := range []string{"gzip", ""} {
+			srv := httptest.NewServer(newAPIGzipHandler(fixedGzipSettings(true, min), inner))
+			req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/echo", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if accept != "" {
+				req.Header.Set("Accept-Encoding", accept)
+			}
+			client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+			resp, err := client.Do(req)
+			if err != nil {
+				srv.Close()
+				t.Fatal(err)
+			}
+			raw, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			srv.Close()
+			ct := strings.ToLower(resp.Header.Get("Content-Type"))
+			if !strings.HasPrefix(ct, "text/plain") {
+				t.Fatalf("min %d accept %q: client received Content-Type %q, want text/plain", min, accept, ct)
+			}
+			if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Fatalf("min %d accept %q: client received X-Content-Type-Options %q, want nosniff", min, accept, got)
+			}
+			body := string(raw)
+			if resp.Header.Get("Content-Encoding") == "gzip" {
+				body = gunzip(t, raw)
+			}
+			if body != want {
+				t.Fatalf("min %d accept %q: body changed (got %d bytes, want %d)", min, accept, len(body), len(want))
+			}
+		}
+	}
+}

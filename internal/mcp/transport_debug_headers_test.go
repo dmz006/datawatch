@@ -90,3 +90,44 @@ func TestSSEObserver_ChunkedWritesKeepTypeAndBytes(t *testing.T) {
 		t.Fatalf("body = %q, want %q", got, want)
 	}
 }
+
+// The recorder's header map is live, so it cannot show what a client was
+// sent. This serves over a real connection and reads the headers the client
+// received, for an implicit-200 write and for an explicit WriteHeader.
+func TestSSEObserver_HeadersOnTheWire(t *testing.T) {
+	handlers := map[string]http.HandlerFunc{
+		"implicit": func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.WriteString(w, "data: "+r.URL.Query().Get("q")+"\n\n")
+		},
+		"explicit": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, "data: "+r.URL.Query().Get("q")+"\n\n")
+		},
+	}
+	for name, h := range handlers {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(ObserveSSEHandler(h))
+			defer srv.Close()
+			req, err := http.NewRequest(http.MethodGet, srv.URL+"/sse?q="+sseReflected, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Accept", "text/event-stream")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			if ct := strings.ToLower(resp.Header.Get("Content-Type")); ct == "" || strings.Contains(ct, "html") {
+				t.Fatalf("client received Content-Type %q, want non-HTML", ct)
+			}
+			if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Fatalf("client received X-Content-Type-Options %q, want nosniff", got)
+			}
+			if !strings.Contains(string(body), sseReflected) {
+				t.Fatalf("body = %q, want reflected value unchanged", body)
+			}
+		})
+	}
+}

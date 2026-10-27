@@ -141,6 +141,15 @@ func setSafeContentType(h http.Header, body []byte) {
 	}
 }
 
+// setNoSniff adds X-Content-Type-Options: nosniff unless the handler set it.
+// It has to run before the underlying WriteHeader: net/http snapshots the
+// header map there, so a later Set never reaches the client.
+func setNoSniff(h http.Header) {
+	if h.Get("X-Content-Type-Options") == "" {
+		h.Set("X-Content-Type-Options", "nosniff")
+	}
+}
+
 // apiGzipWriter buffers the start of a response until it can decide
 // between gzip and an untouched passthrough.
 type apiGzipWriter struct {
@@ -232,6 +241,7 @@ func (w *apiGzipWriter) decide() error {
 		// so the gzip bytes are never what gets sniffed.
 		setSafeContentType(h, w.buf)
 	}
+	setNoSniff(h)
 	if !w.mayCompress() {
 		return w.commitPassthrough()
 	}
@@ -265,6 +275,7 @@ func (w *apiGzipWriter) commitPassthrough() error {
 		// pick text/html for a body that echoes request input.
 		setSafeContentType(w.rw.Header(), w.buf)
 	}
+	setNoSniff(w.rw.Header())
 	w.rw.WriteHeader(w.statusOrOK())
 	if len(w.buf) == 0 {
 		return nil
@@ -275,16 +286,16 @@ func (w *apiGzipWriter) commitPassthrough() error {
 	return err
 }
 
-// forward writes b to the underlying writer uncompressed. The type and
-// nosniff are pinned here, on the writer being written to: every caller has
-// normally set them already (commitPassthrough sniffs before the headers go
-// out), so these Sets only matter for a body that would otherwise reach
-// net/http's own sniffing, and they keep a Content-Type the handler set.
+// forward writes b to the underlying writer uncompressed. The headers that
+// matter on the wire (the sniffed non-HTML Content-Type and nosniff) are set
+// in commitPassthrough and decide, before the underlying WriteHeader, because
+// net/http snapshots them there. The Sets below are no-ops once the headers
+// are out; they keep the type pinned in the function that owns the write, so
+// a caller that reaches forward before a commit still cannot let net/http
+// sniff the body, and a Content-Type the handler set is kept.
 func (w *apiGzipWriter) forward(b []byte) (int, error) {
 	h := w.rw.Header()
-	if h.Get("X-Content-Type-Options") == "" {
-		h.Set("X-Content-Type-Options", "nosniff")
-	}
+	setNoSniff(h)
 	if ct := safeContentType(h, b); ct != "" {
 		h.Set("Content-Type", ct)
 	}

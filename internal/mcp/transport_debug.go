@@ -107,6 +107,8 @@ func (o *sseCloseObserver) hardenHeaders() {
 // would sniff from the payload. After the headers are sent these Sets are
 // no-ops, and a non-HTML Content-Type the handler set is left as it is.
 func (o *sseCloseObserver) Write(p []byte) (int, error) {
+	// Inline rather than via hardenHeaders: the Sets must sit in the
+	// function that does the write for the response-type analysis to see them.
 	h := o.w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
 	if ct := strings.ToLower(h.Get("Content-Type")); ct == "" || strings.Contains(ct, "html") {
