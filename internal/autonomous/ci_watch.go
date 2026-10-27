@@ -671,9 +671,10 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 	}
 	// v9.10.18 — paired judge-model resolution, no backend-default
 	// fallback; see rules-review's identical handling.
-	gb, gm, resErr := m.resolveUnitGuardrailModel(&Task{}, prd)
+	gb, gm, pinned, resErr := m.resolveUnitGuardrailModel(&Task{}, prd)
 	if resErr == nil {
 		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
+		inv.GuardrailPinned = pinned
 	}
 
 	var v GuardrailVerdict

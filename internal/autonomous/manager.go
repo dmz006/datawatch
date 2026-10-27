@@ -663,6 +663,11 @@ type GuardrailInvocation struct {
 	ScriptOutput     string
 	GuardrailBackend string
 	GuardrailModel   string
+	// GuardrailPinned is true only when GuardrailBackend came from an
+	// explicit task or PRD guardrail backend override. It is false when
+	// GuardrailBackend is the global default fallback
+	// (cfg.VerificationBackend) or nothing resolved.
+	GuardrailPinned bool
 	// Prompt, when set, is the whole judge prompt, used instead of the
 	// generated guardrail prompt. The plan-review judge sets it: its reply
 	// uses the same outcome/severity/summary/issues JSON, but it judges a
@@ -3952,7 +3957,7 @@ func (m *Manager) SetTaskGuardrailLLM(prdID, taskID string, backend, model *stri
 				next.GuardrailBackend = *backend
 			}
 			next.GuardrailModel = *model
-			if _, _, gerr := m.resolveUnitGuardrailModel(&next, prd); gerr != nil {
+			if _, _, _, gerr := m.resolveUnitGuardrailModel(&next, prd); gerr != nil {
 				return nil, fmt.Errorf("prd %q: guardrail model: %w", prdID, gerr)
 			}
 		}

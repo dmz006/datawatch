@@ -90,6 +90,17 @@ func measureJudgeSize(ctx context.Context, threshold int, req autonomouspkg.Guar
 	return size
 }
 
+// judgeSizeFor is the size input for one judge call. A pinned invocation keeps
+// its own backend and is not measured, so it gets the zero judgeSize (size
+// routing off); every other invocation is measured. find looks the Automaton
+// up in the manager store.
+func judgeSizeFor(ctx context.Context, threshold int, req autonomouspkg.GuardrailInvocation, find func(id string) (*autonomouspkg.PRD, bool)) judgeSize {
+	if req.GuardrailPinned {
+		return judgeSize{}
+	}
+	return measureJudgeSize(ctx, threshold, req, find)
+}
+
 // route returns the rule text for the decision log and the function that
 // orders a backend list for this call (a fresh slice, each backend once). read
 // is the list the selector reads, which the rule text is built from. balance

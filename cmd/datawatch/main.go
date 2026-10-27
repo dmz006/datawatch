@@ -6018,15 +6018,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			unitBackend, _ := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
 			// Size rule: a large diff routes the judge to claude-code first. A
 			// pinned unit backend keeps its own behaviour and is not measured.
-			var size judgeSize
-			if req.GuardrailBackend == "" {
-				size = measureJudgeSize(ctx, gcfg.JudgeSizeThresholdLines, req, func(id string) (*autonomouspkg.PRD, bool) {
-					if autonomousMgrRef == nil {
-						return nil, false
-					}
-					return autonomousMgrRef.Store().GetPRD(id)
-				})
-			}
+			size := judgeSizeFor(ctx, gcfg.JudgeSizeThresholdLines, req, func(id string) (*autonomouspkg.PRD, bool) {
+				if autonomousMgrRef == nil {
+					return nil, false
+				}
+				return autonomousMgrRef.Store().GetPRD(id)
+			})
 			choose := judgeBackendChooserForSize(ctx, autonomousMgrRef, req, gcfg, unitBackend, size)
 			alert := func(level, title, body string) { emitJudgeAlert(autonomousMgrRef, level, title, body) }
 			return runJudgeAttempts(req, choose, judgeSessionTimeout(gcfg), alert, judgeTryLogFor(autonomousMgrRef, req),

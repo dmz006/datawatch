@@ -66,11 +66,21 @@ replaces only the list of backends.
 
 Two exceptions:
 
-- **A unit that pins its own guardrail backend** keeps that backend as the only
-  entry. The selector still chooses it, waits for its slot and applies the time
-  limit, but the judge never moves to a different backend.
+- **A task or PRD guardrail backend override** pins the judge to that one
+  backend. It is the only entry: the selector still chooses it, waits for its
+  slot and applies the time limit, but the judge never moves to a different
+  backend.
 - **Plan review with a pinned plan-review backend** (`autonomous.plan_review_backend`)
   takes that backend as its only entry, in the same way.
+
+**Pin versus default.** A global verification backend
+(`autonomous.verification_backend`) is only a default and never pins. An
+unpinned judge uses the normal chain, the size rule and the one-attempt-per-backend
+fallback. For example, with `autonomous.verification_backend` set to `pi-prompt`,
+no task or PRD override, and `autonomous.judge_policy` set to `pi-prompt` then
+`claude-code`, the judge tries `pi-prompt` first, moves to `claude-code` if
+`pi-prompt` times out, and a large change is tried on `claude-code` first. A task
+or PRD override is the only pin: the judge uses only that backend and never moves.
 
 When the judge list is empty, the verifier policy is `fixed`, and that policy
 names no backends and sets no Claude session cap, the judge has nothing to
@@ -222,8 +232,9 @@ which the rule applies.
   `judge_timeout_seconds` limit, the warnings and the `needs_review` hold with
   the error alert work as described in [The needs-review hold](#the-needs-review-hold).
   The hold reason is `judge_timeout_hold`. The size rule changes the order only.
-- **A unit that pins its own guardrail backend is not reordered.** It keeps that
-  one backend.
+- **A task or PRD override is not reordered.** It pins the judge to that one
+  backend. An unpinned judge is reordered, including one that only has a global
+  verification backend as its default.
 - **If the lines cannot be counted** (for example the Automaton has no branch
   yet), the judge keeps the usual order and the decision log says the count is
   unknown. The judge is never blocked by a failed count.

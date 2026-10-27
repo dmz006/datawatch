@@ -47,6 +47,9 @@ func TestPlanReviewRunsAsAJudgeInvocationForItsAutomaton(t *testing.T) {
 	if got.ProjectDir != "/work/prd-5" || got.GuardrailBackend != "qwen" || got.GuardrailModel != "qwen3.8:27b" {
 		t.Fatalf("invocation = %+v, want the project dir and the configured reviewer backend", got)
 	}
+	if !got.GuardrailPinned {
+		t.Fatalf("GuardrailPinned = false, want true: plan_review_backend is an explicit pin")
+	}
 	for _, want := range []string{"add a retry to the uploader", "retry three times", "missing", "fragile_verification", "STRICT JSON"} {
 		if !strings.Contains(got.Prompt, want) {
 			t.Errorf("prompt lacks %q", want)
@@ -55,6 +58,33 @@ func TestPlanReviewRunsAsAJudgeInvocationForItsAutomaton(t *testing.T) {
 	other := planReviewUnitID("prd-6")
 	if other == got.UnitID {
 		t.Fatalf("two Automata share the lease holder unit %q", other)
+	}
+}
+
+func TestPlanReviewPinFlagFollowsTheConfiguredBackend(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		backend    string
+		wantPinned bool
+	}{
+		{"backend set", "qwen", true},
+		{"backend empty", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got autonomouspkg.GuardrailInvocation
+			judge := func(_ context.Context, inv autonomouspkg.GuardrailInvocation) (autonomouspkg.GuardrailVerdict, error) {
+				got = inv
+				return autonomouspkg.GuardrailVerdict{Outcome: "pass", Summary: "plan is sound"}, nil
+			}
+			review := planReviewViaJudge(judge, nil,
+				func() (string, string) { return tc.backend, "" })
+			if _, err := review(context.Background(), planReviewTestRequest("prd-7")); err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			if got.GuardrailPinned != tc.wantPinned {
+				t.Fatalf("GuardrailPinned = %v, want %v for backend %q", got.GuardrailPinned, tc.wantPinned, tc.backend)
+			}
+		})
 	}
 }
 

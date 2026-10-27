@@ -147,9 +147,10 @@ func (m *Manager) prdRulesReviewInvocation(prd *PRD) (GuardrailInvocation, error
 		ProjectDir: prd.ProjectDir,
 		OwnerPeer:  prd.OwnerPeer, // BL369 Layer 3 — federation trust boundary
 	}
-	gb, gm, resErr := m.resolveUnitGuardrailModel(&Task{}, prd)
+	gb, gm, pinned, resErr := m.resolveUnitGuardrailModel(&Task{}, prd)
 	if resErr == nil {
 		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
+		inv.GuardrailPinned = pinned
 	}
 	return inv, resErr
 }

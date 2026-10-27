@@ -24,7 +24,7 @@ func TestJudgeSessionTimeoutDefaultsToThirtyMinutes(t *testing.T) {
 
 func TestJudgeBackendChooserForPinsAndListOrder(t *testing.T) {
 	ctx := context.Background()
-	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-1", UnitID: "u-1", GuardrailBackend: "qwen"}
+	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-1", UnitID: "u-1", GuardrailBackend: "qwen", GuardrailPinned: true}
 	gcfg := autonomouspkg.Config{JudgePolicy: []string{"claude-code", "qwen", "claude-code"}}
 
 	// A unit that pins its own guardrail backend keeps that one backend.
@@ -37,7 +37,7 @@ func TestJudgeBackendChooserForPinsAndListOrder(t *testing.T) {
 	}
 
 	// An explicit judge policy list is tried in order, duplicates dropped.
-	req.GuardrailBackend = ""
+	req.GuardrailBackend, req.GuardrailPinned = "", false
 	list := judgeBackendChooserFor(ctx, nil, req, gcfg, "ollama")
 	if b, _ := list(nil); b != "claude-code" {
 		t.Fatalf("list first = %q, want claude-code", b)

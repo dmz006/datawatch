@@ -389,6 +389,7 @@ func (m *Manager) runGuardrailWithInfraRetry(ctx context.Context, prd *PRD, inv 
 			// attempt, now applied to a RETRY.
 			inv.GuardrailBackend = ""
 			inv.GuardrailModel = ""
+			inv.GuardrailPinned = false // the retry now runs on the global default
 		}
 		m.recordAutoRetryDecision(prd, inv.UnitID, "infra", attempt, escalated)
 		_ = m.savePRDOwn(prd)

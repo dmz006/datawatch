@@ -192,7 +192,7 @@ func TestJudgeSizeRouteMeasurementIsBoundedAndUsesProjectDir(t *testing.T) {
 }
 
 func TestJudgeSizeRoutePinnedUnitBackendKeepsItsBehaviour(t *testing.T) {
-	req := autonomouspkg.GuardrailInvocation{PRDID: "p1", UnitID: "u1", GuardrailBackend: "pi"}
+	req := autonomouspkg.GuardrailInvocation{PRDID: "p1", UnitID: "u1", GuardrailBackend: "pi", GuardrailPinned: true}
 	cfg := sizeRouteConfig("fixed", "pi", "claude-code")
 	choose := judgeBackendChooserForSize(context.Background(), nil, req, cfg, "pi", judgeSize{Threshold: 400, Lines: 900})
 	if b, ok := choose(nil); !ok || b != "pi" {
@@ -292,5 +292,37 @@ func TestJudgeSizeRouteBalanceDefaultOrderSaysOrderOnlyBreaksTies(t *testing.T) 
 	_, reason := sizeRouteFirstPick(t, cfg, judgeSize{Threshold: 400, Lines: 12})
 	if !strings.Contains(reason, "default order") || !strings.Contains(reason, "load ties") {
 		t.Fatalf("reason %q lacks default order or the balance-mode note", reason)
+	}
+}
+
+func TestJudgeUnpinnedResolvedBackendDoesNotOverrideJudgePolicyOrder(t *testing.T) {
+	req := autonomouspkg.GuardrailInvocation{PRDID: "p1", UnitID: "u1", GuardrailBackend: "pi"}
+	cfg := autonomouspkg.Config{JudgePolicy: []string{"claude-code", "pi"}}
+	choose := judgeBackendChooserForSize(context.Background(), nil, req, cfg, "pi", judgeSize{})
+	if b, ok := choose(nil); !ok || b != "claude-code" {
+		t.Fatalf("unpinned first = %q %v, want claude-code (the judge_policy order)", b, ok)
+	}
+	if b, ok := choose([]string{"claude-code"}); !ok || b != "pi" {
+		t.Fatalf("unpinned second = %q %v, want pi", b, ok)
+	}
+}
+
+func TestJudgeSizeForSkipsMeasurementOnlyWhenPinned(t *testing.T) {
+	prev := judgeDiffLines
+	calls := 0
+	judgeDiffLines = func(context.Context, *autonomouspkg.PRD, string) (int, error) {
+		calls++
+		return 900, nil
+	}
+	t.Cleanup(func() { judgeDiffLines = prev })
+	find := func(string) (*autonomouspkg.PRD, bool) { return &autonomouspkg.PRD{}, true }
+
+	pinned := autonomouspkg.GuardrailInvocation{PRDID: "p1", GuardrailBackend: "pi", GuardrailPinned: true}
+	if got := judgeSizeFor(context.Background(), 400, pinned, find); got != (judgeSize{}) || calls != 0 {
+		t.Fatalf("pinned size = %+v with %d measurements, want zero size and none", got, calls)
+	}
+	unpinned := autonomouspkg.GuardrailInvocation{PRDID: "p1", GuardrailBackend: "pi"}
+	if got := judgeSizeFor(context.Background(), 400, unpinned, find); got.Lines != 900 || calls != 1 {
+		t.Fatalf("unpinned size = %+v with %d measurements, want 900 lines measured once", got, calls)
 	}
 }

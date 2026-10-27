@@ -25,7 +25,7 @@ import (
 func TestGuardrailResolution_TaskBackendWinsPRDModelPinResolves(t *testing.T) {
 	task := &Task{GuardrailBackend: "pi", GuardrailModel: "qwen3.8-64k:27b"}
 	prd := &PRD{GuardrailBackend: "claude-code", GuardrailModel: "sonnet"}
-	backend, model, err := resolveUnitGuardrailModelLocked(Config{}, task, prd)
+	backend, model, _, err := resolveUnitGuardrailModelLocked(Config{}, task, prd)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestGuardrailResolution_TaskBackendWinsPRDModelPinResolves(t *testing.T) {
 func TestGuardrailResolution_TaskBackendDropsUnpairablePRDPin(t *testing.T) {
 	task := &Task{GuardrailBackend: "pi", GuardrailModel: "qwen3.8-64k:27b"}
 	prd := &PRD{GuardrailBackend: "claude-code", GuardrailModel: "claude-opus-5-5"}
-	backend, model, err := resolveUnitGuardrailModelLocked(Config{}, task, prd)
+	backend, model, _, err := resolveUnitGuardrailModelLocked(Config{}, task, prd)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestGuardrailResolution_TaskBackendDropsUnpairablePRDPin(t *testing.T) {
 func TestGuardrailResolution_TaskOwnModelWinsWhenBackendInherited(t *testing.T) {
 	task := &Task{GuardrailModel: "haiku"}
 	prd := &PRD{GuardrailBackend: "pi"}
-	backend, model, err := resolveUnitGuardrailModelLocked(Config{}, task, prd)
+	backend, model, _, err := resolveUnitGuardrailModelLocked(Config{}, task, prd)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestGuardrailResolution_PRDOverridePairsItsOwnModelAndBeatsGlobal(t *testin
 		GuardrailModel:      "global-guardrail",
 		PlanningModel:       "global-planning",
 	}
-	backend, model, err := resolveUnitGuardrailModelLocked(cfg, nil, prd)
+	backend, model, _, err := resolveUnitGuardrailModelLocked(cfg, nil, prd)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestGuardrailResolution_PRDOverridePairsItsOwnModelAndBeatsGlobal(t *testin
 // guardrail records a loud, non-retried infra block instead of
 // launching a judge on the backend's built-in default.
 func TestGuardrailResolution_NothingSet_FailsLoud(t *testing.T) {
-	backend, model, err := resolveUnitGuardrailModelLocked(Config{}, nil, nil)
+	backend, model, _, err := resolveUnitGuardrailModelLocked(Config{}, nil, nil)
 	if err == nil {
 		t.Fatalf("expected ErrNoGuardrailModel, got backend=%q model=%q with nil error", backend, model)
 	}
@@ -102,5 +102,40 @@ func TestGuardrailResolution_NothingSet_FailsLoud(t *testing.T) {
 	}
 	if !errors.Is(err, ErrNoGuardrailModel) {
 		t.Errorf("expected ErrNoGuardrailModel, got: %v", err)
+	}
+}
+
+// Only a task or PRD backend override pins the judge. The production
+// fixture (global verification backend pi-prompt, no override) resolves to
+// that backend but is not pinned, so the judge policy order and the size
+// rule still apply to it.
+func TestGuardrailResolution_PinnedOnlyForTaskOrPRDOverride(t *testing.T) {
+	cfg := Config{
+		VerificationBackend: "pi-prompt",
+		VerificationModel:   "qwen3.8-64k:27b",
+		JudgePolicy:         []string{"pi-prompt", "claude-code"},
+	}
+	cases := []struct {
+		name       string
+		task       *Task
+		prd        *PRD
+		wantBack   string
+		wantPinned bool
+	}{
+		{"no override", nil, nil, "pi-prompt", false},
+		{"empty task and PRD", &Task{}, &PRD{}, "pi-prompt", false},
+		{"task override", &Task{GuardrailBackend: "pi-prompt"}, &PRD{}, "pi-prompt", true},
+		{"PRD override", &Task{}, &PRD{GuardrailBackend: "claude-code", GuardrailModel: "sonnet"}, "claude-code", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			backend, _, pinned, err := resolveUnitGuardrailModelLocked(cfg, c.task, c.prd)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if backend != c.wantBack || pinned != c.wantPinned {
+				t.Errorf("got (%q, pinned=%v), want (%q, pinned=%v)", backend, pinned, c.wantBack, c.wantPinned)
+			}
+		})
 	}
 }
