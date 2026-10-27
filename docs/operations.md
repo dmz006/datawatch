@@ -3997,6 +3997,83 @@ under *Progress engine settings* in the backup section above and in
 
 ---
 
+## Operator questions
+
+A channel for the operator's own decisions that the Automata and the rest of the
+system should be able to point at: one operator question is one decision,
+recorded when it is raised and kept until it is answered or withdrawn — there
+is no deadline. Raising never blocks the asker. An answer is **immutable**: a
+changed mind is a new answer that supersedes the old one, and both stay in the
+log. The answer quote is stored exactly as received, with its SHA-256
+recorded alongside, so a decision can always be shown back word-for-word with
+proof of the bytes. API reference: [api/autonomous](api/autonomous.md#operator-question-channel).
+
+**Enabled by config.** Off by default behind `autonomous.questions.enabled`.
+All six endpoints answer `503` naming the switch while it is off; the switch
+is read live on every request, so `PUT /api/config` turns the channel on or
+off without a restart.
+
+**Body caps.** Raising: 64 KiB. Answer: 64 KiB plus a 16 KiB quote cap.
+
+**Secrets.** An answer whose text looks like a secret is refused `422`, is
+never stored, and the response never echoes any part of the submitted text —
+it names the rule and the two safe routes (the datawatch secrets store via
+`${secret:name}`, or the filesystem). Well-formed `${secret:name}` references
+pass the scan.
+
+**Six endpoints, four verbs + one switch.**
+
+| Endpoint | What it does |
+|---|---|
+| `POST /api/questions` | Raise a question: `text`, 2 to 20 options with unique ids, a `default` (an option or `hold`), a `context` (`none`, `prd`, `task`, `proposal`, `registry_row`) with its matching link; `asker_kind` defaults to `operator` |
+| `GET /api/questions` | List newest first: `?state=`, `?context=`, `?asker=` (exact on `asked_by`), `?text=` (case-insensitive substring over question text, option labels and tradeoffs, and answer quotes), `?limit=` (default 100, capped 1000) |
+| `GET /api/questions/{id}` | One question + `answer_count` + `current_answer_id` |
+| `POST /api/questions/{id}/answer` | Record an answer: `chosen_option_id` and/or a non-blank `quote`; `supersedes` for a changed mind; `surface` (`pwa`/`android`/`ios`/`cli`/`rest`/`mcp`/`comm:<channel>`), `source_message_id`, `actor` |
+| `POST /api/questions/{id}/withdraw` | Withdraw an open question (`reason`, `actor`); `409` when it has already moved on |
+| `GET /api/questions/{id}/answers` | The full answer log, oldest first, each answer with its derived superseded flags, plus `current_answer_id` |
+
+**The access methods.**
+
+| Task | YAML | REST | MCP | CLI / comm | PWA / Android / iOS |
+|---|---|---|---|---|---|
+| Toggle the channel | `autonomous.questions.enabled` | `PUT /api/config` | `config_set` (deferred row, same config path) | `datawatch config set autonomous.questions.enabled true` (deferred row, same config path) | Settings (deferred) |
+| Raise | n/a | `POST /api/questions` | deferred | deferred | deferred |
+| List / read | n/a | `GET /api/questions`, `GET /api/questions/{id}` | deferred | deferred | deferred |
+| Answer | n/a | `POST /api/questions/{id}/answer` | deferred | deferred | deferred |
+| Withdraw | n/a | `POST /api/questions/{id}/withdraw` | deferred | deferred | deferred |
+| Answer log | n/a | `GET /api/questions/{id}/answers` | deferred | deferred | deferred |
+
+Deferral reasons, per AGENT.md's parity rule: the channel is a new operator
+surface and its MCP tools, CLI verbs, comm-channel commands, and the app UIs
+are deliberate follow-ups; until they land the channel is REST + Config only,
+and each deferred surface keeps the deferral logged in [api-mcp-mapping](api-mcp-mapping.md#operator-questions)
+and [parity-status](parity-status.md).
+
+**Access control (federation).** Reads need the autonomous read capability
+(`autonomous:read`); raising, answering and withdrawing need the autonomous
+write capability (`autonomous:write`). A federated peer without the
+capability gets `403`; the capability rows are `fedCap` in the peer definition.
+
+**Storage.** One append-only JSON-lines file per host, `questions.jsonl` under
+the data directory (questions, answers and withdrawals as separate lines). It
+never loses or rewrites a line — superseded answers are derived on read from
+the log, not deleted. Back it up with the rest of the data directory.
+
+**Audit.** Every mutation is an audit event: `question_raised`,
+`question_answered`, `question_withdrawn` (plus the store's replay events for
+recovery); see the audit section of the API reference above.
+
+**Where to see it.**
+
+| Where | What |
+|---|---|
+| REST | The six endpoints above — every state, the whole answer log, the same JSON for every caller. |
+| Config | The one switch (`autonomous.questions.enabled`), via YAML or `PUT /api/config`. |
+| MCP / CLI / comm | Not yet — logged deferrals, same object when the rows land. |
+| Android and iOS | Not yet — tracked in the parity table. |
+
+---
+
 ## Terminal Performance
 
 ### xterm.js load time
