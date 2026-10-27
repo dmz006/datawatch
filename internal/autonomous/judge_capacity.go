@@ -71,6 +71,46 @@ func (m *Manager) AdmitJudge(ctx context.Context, j JudgeAdmit) (string, func(),
 	return m.placeJudge(ctx, j, led, choices)
 }
 
+// CapacityChanged returns the channel the capacity ledger closes the next time
+// capacity changes (see capacity.Ledger.Changed), so a caller can wait for room
+// instead of polling. With no ledger wired it is a nil channel, which blocks
+// forever, so a select on it is always safe. Take the channel before checking
+// JudgeFits and select on it afterwards, so a change in between is not lost.
+func (m *Manager) CapacityChanged() <-chan struct{} {
+	m.mu.Lock()
+	led := m.capacity
+	m.mu.Unlock()
+	if led == nil {
+		return nil
+	}
+	return led.Changed()
+}
+
+// JudgeFits is a dry run of AdmitJudge for the same JudgeAdmit: it reports
+// whether the judge's lease would be granted right now. It resolves pools, node
+// and candidate nodes as AdmitJudge does, but never queues, takes a lease,
+// hands over or releases a worker lease, or loads a model on a node. WorkerHolder
+// is ignored: by the time a verifier waits, the worker lease is already released
+// or handed over. Whatever AdmitJudge admits at once (no ledger, no resolver, no
+// pools, or a NodeOnly judge on a single-node entry) fits.
+func (m *Manager) JudgeFits(j JudgeAdmit) bool {
+	m.mu.Lock()
+	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
+	m.mu.Unlock()
+	if led == nil || keysFn == nil {
+		return true
+	}
+	choices := nodeChoicesFor(choicesFn, j.Backend, j.Model)
+	if j.NodeOnly && len(choices) < 2 {
+		return true
+	}
+	pools, node := keysFn(j.Backend, j.Model)
+	if len(pools) == 0 {
+		return true
+	}
+	return led.WouldGrant(m.judgeRequestRefreshed(j, pools, node, choices, nil))
+}
+
 // placeJudge finishes an admission: it reads the node the judge's lease holds,
 // makes the model resident there when the entry pools two or more nodes, and
 // fails over to another candidate when the load fails.
