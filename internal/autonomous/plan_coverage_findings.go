@@ -60,7 +60,14 @@
 //     id (BL + digits, case-insensitive), per AGENT.md's naming rule;
 //
 //  6. failing — any finding of any kind fails the check (Pass == false);
-//     the caller decides whether that means warn or block.
+//     the caller decides whether that means warn or block;
+//
+//  7. write task files — every task whose title starts with a write verb
+//     (planWriteTaskVerbs) must declare the files it will change in
+//     FilesPlanned; FilesGenerated is verification output and does not
+//     satisfy the rule. The rule is waived for a read-only task (first
+//     spec line starts with planReadOnlyMarker), a smoke or final_gate
+//     task, and a task whose title holds a planGateTitlePhrases phrase.
 package autonomous
 
 import (
@@ -94,6 +101,11 @@ const (
 	// FindingTrackerIDInName — a task title or generated file name that
 	// embeds a tracker id (bl + digits, case-insensitive).
 	FindingTrackerIDInName = "tracker_id_in_name"
+	// FindingWriteTaskWithoutFiles — a task whose title starts with a
+	// write verb (planWriteTaskVerbs) but whose FilesPlanned list is
+	// empty, and which is not read-only, smoke, final_gate or a gate
+	// or check task by title.
+	FindingWriteTaskWithoutFiles = "write_task_without_files"
 )
 
 // StructuralFinding is one typed, deterministic finding in a decomposed
@@ -173,9 +185,88 @@ var (
 	// case-insensitive ("BL124", "bl9"). Per the structural rule this
 	// is a plain containment match on task titles and generated names.
 	trackerIDRefRe = regexp.MustCompile(`(?i)bl[0-9]+`)
+
+	// planWriteTaskVerbs — the leading title verbs that mark a task as
+	// one that writes files. Rule 7 matches a task title's first word
+	// against this list, case-insensitively.
+	planWriteTaskVerbs = []string{
+		"Write", "Add", "Update", "Create", "Fix", "Bump", "Implement",
+		"Document", "Register", "Wire", "Make", "Move", "Replace",
+		"Rename", "Extend", "Remove",
+	}
+
+	// planGateTitlePhrases — phrases that mark a task as a gate or check
+	// task rather than a file-writing one. Rule 7 matches them as whole
+	// words, case-insensitively, against the task TITLE only: doc tasks
+	// often mention install or a test suite in passing in their spec, and
+	// matching the body would hide real misses.
+	planGateTitlePhrases = []string{
+		"final gate", "stability gate", "suite run", "eval", "install",
+		"investigation",
+	}
+
+	// planGateTitleRe is planGateTitlePhrases compiled as one whole-word,
+	// case-insensitive alternation; spaces in a phrase match any run of
+	// whitespace.
+	planGateTitleRe = func() *regexp.Regexp {
+		alts := make([]string, len(planGateTitlePhrases))
+		for i, p := range planGateTitlePhrases {
+			alts[i] = strings.Join(strings.Fields(regexp.QuoteMeta(p)), `\s+`)
+		}
+		return regexp.MustCompile(`(?i)\b(?:` + strings.Join(alts, "|") + `)\b`)
+	}()
 )
 
-// CheckPlanStructure runs the six structural rules above over the
+// planReadOnlyMarker — a task whose spec's first non-empty line begins
+// with this marker (case-insensitively) is read-only and exempt from
+// rule 7. The decompose prompt quotes this marker, so the two stay in
+// step: change one, change the other.
+const planReadOnlyMarker = `READ-ONLY:`
+
+// specIsReadOnly reports whether the first non-empty line of spec,
+// trimmed, begins with planReadOnlyMarker, ignoring case. Only the first
+// non-empty line counts; the marker on a later line does not exempt.
+func specIsReadOnly(spec string) bool {
+	for _, line := range strings.Split(spec, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		return len(line) >= len(planReadOnlyMarker) &&
+			strings.EqualFold(line[:len(planReadOnlyMarker)], planReadOnlyMarker)
+	}
+	return false
+}
+
+// titleIsGateTask reports whether title contains a planGateTitlePhrases
+// phrase as whole words, ignoring case.
+func titleIsGateTask(title string) bool {
+	return planGateTitleRe.MatchString(title)
+}
+
+// titleStartsWithWriteVerb reports whether the first word of title
+// (after trimming) is one of planWriteTaskVerbs, ignoring case.
+func titleStartsWithWriteVerb(title string) bool {
+	_, ok := writeVerbOf(title)
+	return ok
+}
+
+// writeVerbOf returns the planWriteTaskVerbs entry matching the first
+// word of title, in its canonical spelling.
+func writeVerbOf(title string) (string, bool) {
+	fields := strings.Fields(title)
+	if len(fields) == 0 {
+		return "", false
+	}
+	for _, v := range planWriteTaskVerbs {
+		if strings.EqualFold(fields[0], v) {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// CheckPlanStructure runs the seven structural rules above over the
 // in-memory plan stories and returns the typed finding list. It is
 // deterministic: the same arguments always yield the same report.
 // prd may be nil, in which case the project tree is the current
@@ -489,6 +580,25 @@ func CheckPlanStructure(prd *PRD, stories []Story) *PlanStructureReport {
 					})
 				}
 			}
+		}
+	}
+
+	// --- Rule 7: a write-verb task must declare the files it changes. ---
+	for _, s := range stories {
+		for _, t := range s.Tasks {
+			verb, ok := writeVerbOf(t.Title)
+			if !ok || len(t.FilesPlanned) > 0 || specIsReadOnly(t.Spec) ||
+				t.Kind == TaskKindSmoke || t.Kind == TaskKindFinalGate ||
+				titleIsGateTask(t.Title) {
+				continue
+			}
+			add(StructuralFinding{
+				Kind:    FindingWriteTaskWithoutFiles,
+				StoryID: s.ID,
+				TaskID:  t.ID,
+				Detail: "task " + t.ID + " title " + strconv.Quote(t.Title) + " starts with write verb " + verb +
+					" but declares no files; add the files it will change to its files list, or make the first line of its spec READ-ONLY: <reason>",
+			})
 		}
 	}
 

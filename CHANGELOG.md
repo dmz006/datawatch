@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Plan check flags write tasks that declare no files
+
+- **A write task with no files is now a finding.** The plan coverage check raises `write_task_without_files` for a task whose title starts with a write verb and whose `files` list is empty, unless the first line of its spec starts with `READ-ONLY:` or it is a gate, smoke or similar task. In `block` mode the finding stops approval until the plan is fixed or the finding is acknowledged with a note; see [autonomous planning](docs/howto/autonomous-planning.md#declaring-files-for-write-tasks).
+
 ### Voice transcription: real error causes, long-recording chunking and kept recordings
 
 - **Failed and slow requests are logged.** A failed `POST /api/voice/transcribe`, and any request slower than 30 s, writes one `[voice] transcribe failed:` or `[voice] transcribe slow:` line with the backend, upload size, audio length, elapsed time, cause and exit status. The transcript text is never logged.

@@ -28,6 +28,21 @@ import (
 	"strings"
 )
 
+// planWriteFilesRuleBullet is the Rules bullet, shared by both planning
+// prompts, that tells the planner to declare files for write tasks and to
+// mark read-only tasks. The verb list is written out here because
+// planWriteTaskVerbs is a slice; decompose_write_files_rule_test.go checks
+// every verb in the slice appears in both prompts. The marker is the
+// planReadOnlyMarker constant so the prompt and the plan-coverage check
+// stay in step. No percent sign: PlanningPrompt goes through fmt.Sprintf.
+const planWriteFilesRuleBullet = `- Every task whose title starts with a write verb (Write, Add, Update, Create,
+  Fix, Bump, Implement, Document, Register, Wire, Make, Move, Replace, Rename,
+  Extend, Remove) must list in its "files" the repo-relative paths it will
+  change. A task changing no files must start its spec with the line
+  ` + planReadOnlyMarker + ` followed by a reason; gates, smoke tests, suite runs, evals,
+  installs and investigations are read-only and take that line.
+`
+
 // PlanningPrompt is the system+user prompt prefix the LLM sees.
 // Operators can override via autonomous.planning_prompt config.
 const PlanningPrompt = `You are planning a feature request into a structured Product Requirements Document with stories and tasks.
@@ -65,7 +80,7 @@ Rules:
   task is expected to touch. Include both code and docs/test files.
   Empty array is valid when paths are unknown ahead of time. Do NOT
   invent paths that obviously can't exist.
-- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
@@ -155,7 +170,7 @@ Rules:
   verification_script is only correct for a unit with no applicable
   check (e.g. a pure-research story producing no files); every unit that
   touches real files should have one.
-- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that

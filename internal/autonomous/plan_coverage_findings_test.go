@@ -131,6 +131,7 @@ func TestPlanCoverageFindings_DanglingDependsOn(t *testing.T) {
 						{
 							ID:                       "t2",
 							Title:                    "Wire the layout",
+							FilesPlanned:             []string{"layout.go"},
 							DependsOn:                []string{"t1"}, // earlier story: allowed
 							VerificationScriptReason: exemption,
 						},
@@ -327,6 +328,7 @@ func TestPlanCoverageFindings_FileProvenance(t *testing.T) {
 				{
 					ID:                       "t2",
 					Title:                    "Wire the reports/daily.txt reporter",
+					FilesPlanned:             []string{"reporter.go"},
 					VerificationScriptReason: exemption,
 				},
 			},
@@ -413,6 +415,7 @@ func TestPlanCoverageFindings_FileProvenance(t *testing.T) {
 			Tasks: []Task{{
 				ID:                       "t1",
 				Title:                    "Write the check",
+				FilesPlanned:             []string{"verify/t1.sh"},
 				FilesGenerated:           []string{"verify/t1.sh"},
 				VerificationScriptReason: exemption,
 			}},
@@ -431,7 +434,7 @@ func TestPlanCoverageFindings_VerificationReason(t *testing.T) {
 	}{
 		{
 			name:     "no script and no reason fails",
-			task:     Task{ID: "t1", Title: "Update the notes"},
+			task:     Task{ID: "t1", Title: "Update the notes", FilesPlanned: []string{"NOTES.md"}},
 			wantPass: false,
 		},
 		{
@@ -439,13 +442,14 @@ func TestPlanCoverageFindings_VerificationReason(t *testing.T) {
 			task: Task{
 				ID:                       "t1",
 				Title:                    "Update the notes",
+				FilesPlanned:             []string{"NOTES.md"},
 				VerificationScriptReason: "docs-only change: nothing executable to check",
 			},
 			wantPass: true,
 		},
 		{
 			name:     "verification script present passes",
-			task:     Task{ID: "t1", Title: "Update the notes", VerificationScript: "verify/t1.sh"},
+			task:     Task{ID: "t1", Title: "Update the notes", FilesPlanned: []string{"NOTES.md"}, VerificationScript: "verify/t1.sh"},
 			wantPass: true,
 		},
 	}

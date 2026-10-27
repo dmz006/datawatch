@@ -266,6 +266,39 @@ guardrails:
 Edit the YAML directly between `plan` and `approve` to refine the
 spec without re-planning. (Use `decompose` alias if scripts require it.)
 
+## Declaring files for write tasks
+
+The plan-coverage check expects a task that writes to say which files it
+changes. A task whose title starts with a write verb (`Write`, `Add`, `Update`,
+`Create`, `Fix`, `Bump`, `Implement`, `Document`, `Register`, `Wire`, `Make`,
+`Move`, `Replace`, `Rename`, `Extend`, `Remove`) must list those files in its
+`files` list. A task with no files gets the `write_task_without_files` finding,
+which blocks approval in the default `block` mode. See the
+[coverage gate](../operations.md#plan-requirement-coverage-gate-autonomousplan_coverage_check)
+for the modes and the acknowledge path.
+
+When a task changes nothing, make the **first line of its spec** `READ-ONLY:`
+followed by a reason. Only the first non-empty line counts, and the case does
+not matter. The check looks only at the marker, so the reason is for the people
+reading the plan and is not enforced:
+
+```text
+READ-ONLY: audits the retry paths and reports what it finds; no file is edited.
+List every call site of the retry helper and note which ones skip the backoff.
+```
+
+A task that does change files needs no marker; it lists them instead, for
+example `internal/config/config.go` and `internal/config/config_test.go` for a
+task titled "Add the retry setting to the config loader".
+
+These are exempt without a marker:
+
+- a task of kind `smoke` or `final_gate`;
+- a task whose title contains one of the phrases `final gate`, `stability gate`,
+  `suite run`, `eval`, `install` or `investigation` as whole words. Only the
+  title is matched, never the spec, so a doc task that mentions a test suite in
+  its body is still checked.
+
 ## Choose the verifier per task, story or Automaton
 
 After a task runs, a verifier LLM judges the work. By default every
