@@ -77,6 +77,15 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.25.3 — Verifier and judge waiters move to a backend that frees up
+
+### A waiting verifier or judge moves to a backend that frees up
+
+- **What was wrong.** A verifier or judge request that started waiting on one backend stayed on it, even when another listed backend sat idle.
+- **The fix.** The waiting request re-evaluates the routing policy when a slot is released or a pool limit changes, and about every 5 s. When the policy now picks a backend with a free slot, the request moves there. The move is written to the Automaton decision log as a `verifier_policy` or `judge_policy` decision whose reason starts `moved from <backend>:`. A request never moves back to a backend it left.
+- **What does not change.** A request with an explicit verification LLM, a pinned guardrail backend or a stronger-verifier pick stays put. The mode rules (`fixed`, `gpu-only` and `claude-only` never move), the caps, the Claude session cap, the usage back-off and the one-engine-per-node limit decide what has a free slot. No setting is changed.
+- Docs: [howto/judge-policy.md](docs/howto/judge-policy.md#a-waiting-request-moves-when-another-backend-frees-up).
+
 ## v9.25.2 — CodeQL findings fixed in code: escaped output, nosniff, path containment and argument vectors
 
 ### Code-scanning alerts fixed in code: responses that echo input, project paths and PWA text
