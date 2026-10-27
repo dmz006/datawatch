@@ -13,8 +13,8 @@ import (
 )
 
 // retargetHarness is a production-shaped verifier fixture over a real capacity
-// ledger: the verifier admission vars are wired to the ledger exactly as
-// wireCapacity does, minus the registry bookkeeping.
+// ledger: the verifier admission vars are set by wireVerifierAdmission, the
+// function wireCapacity calls.
 type retargetHarness struct {
 	t      *testing.T
 	led    *capacity.Ledger
@@ -82,24 +82,7 @@ func newRetargetHarness(t *testing.T, policy config.VerifierPolicyConfig, pools 
 	h.cfg = autonomouspkg.DefaultConfig()
 	h.cfg.VerifierPolicy = policy
 
-	judge := func(backend, model string, wait time.Duration) autonomouspkg.JudgeAdmit {
-		return autonomouspkg.JudgeAdmit{Holder: h.holder, WorkerHolder: taskID, PRDID: cur.ID, Backend: backend, Model: model, Wait: wait}
-	}
-	verifierCapacityAdmit = func(ctx context.Context, backend, model, _, _, _ string) (func(), string, error) {
-		node, release, err := mgr.AdmitJudge(ctx, judge(backend, model, 30*time.Second))
-		return release, node, err
-	}
-	verifierCapacityTryAdmit = func(ctx context.Context, backend, model, _, _, _ string) (func(), string, bool) {
-		node, release, err := mgr.AdmitJudge(ctx, judge(backend, model, 150*time.Millisecond))
-		if err != nil {
-			return func() {}, "", false
-		}
-		return release, node, true
-	}
-	verifierCapacityFits = func(backend, model, _, _ string) bool {
-		return mgr.JudgeFits(autonomouspkg.JudgeAdmit{Holder: h.holder, PRDID: cur.ID, Backend: backend, Model: model})
-	}
-	verifierCapacityChanged = mgr.CapacityChanged
+	wireVerifierAdmission(mgr, func(string) int { return 0 }, newVerifierRegistry())
 	return h
 }
 
@@ -550,6 +533,18 @@ func TestVerifierRetargetRefusedMoveTargetReturnsSetupVerdict(t *testing.T) {
 	if ws := h.waiters(); len(ws) != 0 {
 		t.Fatalf("waiters = %+v, want none", ws)
 	}
+	cur, _ := h.mgr.Store().GetPRD(h.prd.ID)
+	if got := cur.Story[0].Tasks[0].VerifierPolicyChoice; got == nil || got.Backend != "claude-code" || strings.Contains(got.Reason, "moved from") {
+		t.Fatalf("task choice = %+v, want the first pick left as it was", got)
+	}
+	for _, d := range cur.Decisions {
+		if strings.Contains(d.Note, "moved from") {
+			t.Fatalf("decision log records a move that never ran: %+v", d)
+		}
+	}
+	if n := verifierClaudeWindow.Count(time.Hour); n != 1 {
+		t.Fatalf("window count = %d, want only the first claude-code pick", n)
+	}
 }
 
 // TestVerifierRetargetFixedModeIgnoresClaudeHoldMidWait: a fixed waiter on
@@ -579,11 +574,11 @@ func TestVerifierRetargetFixedModeIgnoresClaudeHoldMidWait(t *testing.T) {
 	}
 }
 
-// TestVerifierRetargetClaudeWindowCountsTheFinalBackend: a Claude first pick
-// that has to wait is not counted until it holds a lease, so a move off
-// claude-code leaves nothing counted, and a grant on claude-code counts once.
-func TestVerifierRetargetClaudeWindowCountsTheFinalBackend(t *testing.T) {
-	t.Run("moved off claude", func(t *testing.T) {
+// TestVerifierRetargetClaudeWindowCounting: a Claude pick is counted when it
+// is made, a waiting one included, so concurrent verifications see it against
+// the cap; a move onto a Claude backend adds one count.
+func TestVerifierRetargetClaudeWindowCounting(t *testing.T) {
+	t.Run("waiting claude pick counts at pick time", func(t *testing.T) {
 		policy := preferFree("claude-code", "pi-prompt")
 		policy.ClaudeSessionCap = 1
 		h := newRetargetHarness(t, policy, retargetPools, retargetLimits)
@@ -592,31 +587,11 @@ func TestVerifierRetargetClaudeWindowCountsTheFinalBackend(t *testing.T) {
 		if sel.Backend != "claude-code" || sel.Release != nil {
 			t.Fatalf("pick = %q release %v, want a claude-code wait", sel.Backend, sel.Release != nil)
 		}
-		if n := verifierClaudeWindow.Count(time.Hour); n != 0 {
-			t.Fatalf("a waiting Claude pick counted %d sessions, want 0", n)
+		if n := verifierClaudeWindow.Count(time.Hour); n != 1 {
+			t.Fatalf("a waiting Claude pick counted %d sessions, want 1", n)
 		}
 		ch := h.start(sel, h.waitDeps(nil))
 		h.waitForWaiter("llm:claude-code")
-		h.led.Release("p1")
-		r := h.result(ch)
-		if !r.lease.Moved || r.lease.Sel.Backend != "pi-prompt" {
-			t.Fatalf("lease = moved %v backend %q, want moved to pi-prompt", r.lease.Moved, r.lease.Sel.Backend)
-		}
-		if n := verifierClaudeWindow.Count(time.Hour); n != 0 {
-			t.Fatalf("window count = %d after a move to pi-prompt, want 0", n)
-		}
-		r.lease.Release()
-	})
-	t.Run("granted on claude", func(t *testing.T) {
-		policy := preferFree("claude-code", "pi-prompt")
-		policy.ClaudeSessionCap = 1
-		h := newRetargetHarness(t, policy, retargetPools, retargetLimits)
-		h.fill()
-		sel := h.selection()
-		ch := h.start(sel, h.waitDeps(nil))
-		h.waitForWaiter("llm:claude-code")
-		// The pick's own pending session must not count against the cap: with
-		// the cap at 1 the selector still reads claude-code as eligible.
 		h.stays(ch, "llm:claude-code")
 		h.led.Release("c1")
 		r := h.result(ch)
@@ -624,7 +599,55 @@ func TestVerifierRetargetClaudeWindowCountsTheFinalBackend(t *testing.T) {
 			t.Fatalf("lease = moved %v backend %q, want granted on claude-code", r.lease.Moved, r.lease.Sel.Backend)
 		}
 		if n := verifierClaudeWindow.Count(time.Hour); n != 1 {
-			t.Fatalf("window count = %d, want 1", n)
+			t.Fatalf("window count = %d after the grant, want it counted once", n)
+		}
+		r.lease.Release()
+	})
+	t.Run("a second verification sees the waiting pick against the cap", func(t *testing.T) {
+		policy := preferFree("claude-code", "pi-prompt")
+		policy.ClaudeSessionCap = 1
+		h := newRetargetHarness(t, policy, retargetPools, retargetLimits)
+		h.fill()
+		if sel := h.selection(); sel.Backend != "claude-code" {
+			t.Fatalf("first pick = %q, want claude-code", sel.Backend)
+		}
+		if sel := h.selection(); sel.Backend != "pi-prompt" {
+			t.Fatalf("second pick = %q, want pi-prompt: the cap of 1 is used by the first", sel.Backend)
+		}
+	})
+	t.Run("move off claude keeps the pick count and adds none", func(t *testing.T) {
+		policy := preferFree("claude-code", "pi-prompt")
+		h := newRetargetHarness(t, policy, retargetPools, retargetLimits)
+		h.fill()
+		sel := h.selection()
+		ch := h.start(sel, h.waitDeps(nil))
+		h.waitForWaiter("llm:claude-code")
+		h.led.Release("p1")
+		r := h.result(ch)
+		if !r.lease.Moved || r.lease.Sel.Backend != "pi-prompt" {
+			t.Fatalf("lease = moved %v backend %q, want moved to pi-prompt", r.lease.Moved, r.lease.Sel.Backend)
+		}
+		if n := verifierClaudeWindow.Count(time.Hour); n != 1 {
+			t.Fatalf("window count = %d after a move to pi-prompt, want the pick's one", n)
+		}
+		r.lease.Release()
+	})
+	t.Run("move onto claude adds a count", func(t *testing.T) {
+		h := newRetargetHarness(t, preferFree("pi-prompt", "claude-code"), retargetPools, retargetLimits)
+		h.fill()
+		sel := h.selection()
+		if n := verifierClaudeWindow.Count(time.Hour); n != 0 {
+			t.Fatalf("a pi-prompt pick counted %d Claude sessions", n)
+		}
+		ch := h.start(sel, h.waitDeps(nil))
+		h.waitForWaiter("llm:pi-prompt")
+		h.led.Release("c1")
+		r := h.result(ch)
+		if !r.lease.Moved || r.lease.Sel.Backend != "claude-code" {
+			t.Fatalf("lease = moved %v backend %q, want moved to claude-code", r.lease.Moved, r.lease.Sel.Backend)
+		}
+		if n := verifierClaudeWindow.Count(time.Hour); n != 1 {
+			t.Fatalf("window count = %d, want the move counted once", n)
 		}
 		r.lease.Release()
 	})

@@ -265,10 +265,7 @@ func policyVerifierSelection(
 		log.Printf("[autonomous] verifier: policy: %s (%s/%s); using the configured selection", pick.Reason, prd.ID, task.ID)
 		return verifierSelection{}, false
 	}
-	if pick.Claude && (pick.Selection.Release != nil || verifierCapacityAdmit == nil) {
-		// A pick that has to wait is counted when it gets its lease (see
-		// awaitVerifierLease): it may still move to another backend, and a
-		// Claude session that never starts must not use up the cap.
+	if pick.Claude {
 		verifierClaudeWindow.Record()
 	}
 	if mgr != nil {
@@ -428,13 +425,14 @@ type verifierLease struct {
 // awaitVerifierLease waits for the verifier's lease on sel.Backend with sel's
 // model. While it waits, a selection that carries a Retarget re-runs the
 // policy on every tick and every capacity change and takes the lease on
-// another backend as soon as one has room. A move is written to the Automaton's
-// decision log and the task's policy choice. A policy pick that waited counts
-// toward the Claude session cap once, when the lease is granted and only if the
-// backend it ended on is a Claude one. A selection with no Retarget waits on its
-// backend alone.
+// another backend as soon as one has room. A move that holds a lease and can
+// run is written to the Automaton's decision log and the task's policy choice,
+// and a move onto a Claude backend counts toward the Claude session cap (the
+// first pick was counted when it was made). A selection with no Retarget waits
+// on its backend alone.
 func awaitVerifierLease(ctx context.Context, sel verifierSelection, w verifierLeaseWait) (verifierLease, error) {
 	targets := map[string]verifierSelection{}
+	var moveFrom, moveReason string
 	in := retargetWaitIn{Backend: sel.Backend, Model: sel.Model, Wait: w.Admit, Take: w.Take, Changed: w.Changed}
 	if sel.Retarget != nil {
 		in.Next = func(waiting string, left []string) (string, string, string, bool) {
@@ -446,14 +444,8 @@ func awaitVerifierLease(ctx context.Context, sel verifierSelection, w verifierLe
 			return ns.Backend, ns.Model, reason, true
 		}
 		in.OnMove = func(from, to, _, reason string) {
-			ns := targets[to]
-			why := fmt.Sprintf("moved from %s: %s", from, reason)
 			log.Printf("[autonomous] verifier: %s -> %s (%s/%s): %s", from, to, w.PRDID, w.TaskID, reason)
-			if w.Mgr != nil {
-				if err := w.Mgr.RecordVerifierPolicyChoice(w.PRDID, w.TaskID, to, ns.Model, why); err != nil {
-					log.Printf("[autonomous] verifier: RecordVerifierPolicyChoice(%s/%s): %v", w.PRDID, w.TaskID, err)
-				}
-			}
+			moveFrom, moveReason = from, reason
 		}
 	}
 	out, err := retargetWait(ctx, in)
@@ -472,13 +464,20 @@ func awaitVerifierLease(ctx context.Context, sel verifierSelection, w verifierLe
 		}
 		if w.Pin != nil {
 			if setup := w.Pin(&lease.Sel); setup != nil {
+				// The target cannot run, so it is not a move worth recording.
 				lease.Release()
 				return verifierLease{Sel: lease.Sel, Moved: true, Setup: setup}, nil
 			}
 		}
-	}
-	if lease.Sel.Source == autonomouspkg.VerifierSourcePolicy && config.IsClaudeVerifierBackend(lease.Sel.Backend) {
-		verifierClaudeWindow.Record()
+		if config.IsClaudeVerifierBackend(lease.Sel.Backend) {
+			verifierClaudeWindow.Record()
+		}
+		if w.Mgr != nil {
+			why := fmt.Sprintf("moved from %s: %s", moveFrom, moveReason)
+			if err := w.Mgr.RecordVerifierPolicyChoice(w.PRDID, w.TaskID, lease.Sel.Backend, lease.Sel.Model, why); err != nil {
+				log.Printf("[autonomous] verifier: RecordVerifierPolicyChoice(%s/%s): %v", w.PRDID, w.TaskID, err)
+			}
+		}
 	}
 	return lease, nil
 }
