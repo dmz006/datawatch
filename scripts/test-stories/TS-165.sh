@@ -37,14 +37,15 @@ MEMYAML
   fi
   ok "memory saved before restart: id=$mem_id"
 
-  # Stop the docker-sim by the id this run recorded, before restarting it.
-  # Whatever shape DOCKER_SIM_PID has — a 12-hex Docker container id (TS-160
-  # normalizes to this form; a 64-hex id is accepted by docker too), or a
-  # numeric host pid from an earlier restart (ended through the shared
-  # library, marker-checked) — dw_terminate_pid ends it, and returns
-  # nonzero if it still exists. The restart below must not run over ports
-  # 8171/8172 a surviving container still holds, so gate on success.
-  if ! dw_terminate_pid "$DOCKER_SIM_PID"; then
+  # Stop the docker-sim before restarting it. DOCKER_SIM_PID holds the
+  # container id TS-160 recorded (12-hex; a 64-hex id or the container name
+  # are accepted too), so it is stopped with docker by that id — a signal to
+  # an id would do nothing — and checked to really have stopped. After a
+  # restart it holds a host pid instead, ended through the shared library
+  # (marker-checked). The restart below must not run over the ports a
+  # surviving container still holds, so the story stops when it cannot be
+  # ended.
+  if ! dw_terminate_pid "$DOCKER_SIM_PID" "$DOCKER_SIM_DATA/config.yaml"; then
     echo "TS-165: could not end docker-sim ($DOCKER_SIM_PID) before restart"
     ko "docker-sim could not be ended before restart; its ports would stay in use"
     return

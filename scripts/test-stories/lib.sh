@@ -439,12 +439,29 @@ print(",".join(have))
 # so these helpers are no-ops there; standalone stories install their own.
 # ---------------------------------------------------------------------------
 
+# dw_stop_container <id-or-name> — stop and remove one Docker container by
+# the reference this script recorded for it (never by a name search). Returns
+# 0 when the container is no longer running (including "never existed" or
+# "already gone"), 1 when docker could not stop it.
+dw_stop_container() {
+  local ref="${1:-}"
+  [[ -n "$ref" ]] || return 0
+  docker inspect "$ref" >/dev/null 2>&1 || return 0
+  docker stop "$ref" >/dev/null 2>&1 || true
+  if [[ "$(docker inspect -f '{{.State.Running}}' "$ref" 2>/dev/null)" == true ]]; then
+    echo "dw_stop_container: container $ref is still running after docker stop" >&2
+    return 1
+  fi
+  docker rm -f "$ref" >/dev/null 2>&1 || true
+  return 0
+}
+
 # dw_terminate_pid <pid-or-container-id> [marker] — end a daemon this shell
 # started. A recorded value goes through the shared library (td_stop_one:
 # ends its sessions via the recorded API first, then signals, by the
-# recorded id and marker only). An unrecorded Docker container id — 12-hex
-# short form or 64-hex full form — is addressed to docker by that id (a
-# /proc signal for a container id is a no-op). An unrecorded numeric
+# recorded id and marker only). An unrecorded Docker container reference —
+# 12-hex short id, 64-hex full id or name — is addressed to docker with
+# dw_stop_container (a /proc signal for a container id is a no-op). An unrecorded numeric
 # process is signalled only while the marker (arg 2, non-empty) is still in
 # its live cmdline; that check guards against recycled PIDs, so an EMPTY
 # marker signals nothing and reports failure. Callers must treat a nonzero
@@ -460,15 +477,12 @@ dw_terminate_pid() {
   elif declare -F td_stop_one >/dev/null 2>&1 \
     && [[ -n "${TD_STATE_DIR:-}" && -f "${TD_STATE_DIR}/${pid}.rec" ]]; then
     td_stop_one "$pid"
-  elif [[ "$pid" =~ ^([a-f0-9]{12}|[a-f0-9]{64})$ ]]; then
-    if ! docker stop "$pid" >/dev/null 2>&1; then
-      if docker inspect "$pid" >/dev/null 2>&1; then
-        echo "dw_terminate_pid: docker stop of container $pid failed" >&2
-        return 1
-      fi
-    fi
-    docker rm -f "$pid" >/dev/null 2>&1 || true
-    return 0
+    return
+  elif [[ ! "$pid" =~ ^[0-9]+$ ]]; then
+    # Not a process id: a Docker container reference (12-hex id, 64-hex id
+    # or name). Ended with docker, never with a signal.
+    dw_stop_container "$pid"
+    return
   elif [[ "$pid" =~ ^[0-9]+$ ]]; then
     if [[ -z "$marker" ]]; then
       echo "dw_terminate_pid: pid $pid is not recorded and no cmdline marker was given; not signalling it" >&2

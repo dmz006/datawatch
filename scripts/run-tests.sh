@@ -74,7 +74,7 @@ TD_EXTRA_CLEANUP=cleanup
 # A set -e death must still count as a failure for cleanup()'s keep-dir
 # decision (the library's handler preserves the original exit status).
 trap 'FAILED=1' ERR
-td_install_traps
+td_install_traps "$@"
 
 FAILED=0
 DAEMON_PID=""

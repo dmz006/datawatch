@@ -29,6 +29,12 @@ _story_ts_619() {
       skip "could not allocate free ports for inline peer daemon"; return
     fi
 
+    # The shared lifecycle library must be loaded before anything is created:
+    # its EXIT/INT/TERM/HUP traps are what end the daemon on every exit path.
+    if ! story_daemon_lifecycle || ! declare -F td_start >/dev/null 2>&1; then
+      skip "shared daemon lifecycle library unavailable; not starting an inline peer daemon"; return
+    fi
+
     peer_data=$(mktemp -d)
 
     # Write a minimal peer config
@@ -52,17 +58,8 @@ PEERCFG
     # EXIT/INT/TERM/HUP traps end the daemon — and any session it started —
     # on every exit path, including a story failure before the explicit
     # stop below or a Ctrl-C.
-    if declare -F td_start >/dev/null 2>&1; then
-      story_daemon_lifecycle
-      td_start "$binary" "$peer_data/config.yaml" "$peer_data/peer.log"
-      peer_pid="${TD_LAST_PID:-}"
-    else
-      # Shared library unavailable (standalone run from another harness):
-      # plain background launch as before; teardown below still ends it by
-      # the PID we record here, marker-checked.
-      "$binary" --foreground --config "$peer_data/config.yaml" >>"$peer_data/peer.log" 2>&1 &
-      peer_pid=$!
-    fi
+    td_start "$binary" "$peer_data/config.yaml" "$peer_data/peer.log"
+    peer_pid="${TD_LAST_PID:-}"
     td_set_api "$peer_pid" "https://127.0.0.1:$peer_tls" "$peer_token"
 
     # Wait up to 15s for the peer to become healthy

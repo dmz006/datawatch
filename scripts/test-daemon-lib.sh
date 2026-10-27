@@ -9,8 +9,12 @@
 # for days.
 #
 #   td_start <binary> <config> <logfile> [extra...]  start a daemon in the
-#                                                     background, record it,
-#                                                     set TD_LAST_PID
+#                                                     background, as
+#                                                     `<binary> start
+#                                                     --foreground --config
+#                                                     <config> [extra...]`,
+#                                                     record it, set
+#                                                     TD_LAST_PID
 #   td_track_pid <pid> <marker>      record a daemon started elsewhere
 #   td_track_container <name-or-id>  record a Docker container started here;
 #                                    resolved to the canonical 12-char id
@@ -25,7 +29,7 @@
 #                                    conditionals — safe under `set -e`)
 #   td_is_recorded <pid>             0 iff a record for this pid exists in
 #                                    this shell's scope
-#   td_install_traps                 EXIT/INT/TERM/HUP traps that call
+#   td_install_traps ["$@"]          EXIT/INT/TERM/HUP traps that call
 #                                    td_stop_all, preserving exit status
 #                                    (idempotent: calling it twice does not
 #                                    clobber what a first call registered)
@@ -49,10 +53,11 @@
 # fallback). No name searches; the tmux server is never touched.
 #
 # td_install_traps must be called early in a script, before any other side
-# effect: when the script is started as a background job SIGINT is
-# inherited as SIG_IGN and bash cannot trap it, so td_install_traps reruns
-# the script once through a launcher that resets it (TD_REEXEC_GUARD
-# prevents a loop).
+# effect, and be given the script's own arguments ("$@"): when the script is
+# started as a background job SIGINT is inherited as SIG_IGN and bash cannot
+# trap it, so td_install_traps reruns the top-level script once, with those
+# arguments, through a launcher that resets the signal to its default
+# (TD_REEXEC_GUARD, holding the pid that was rerun, prevents a loop).
 
 TD_STATE_DIR="${TD_STATE_DIR:-$(mktemp -d /tmp/dw-daemon-state.XXXXXX)}"
 TD_OWNER="${TD_OWNER:-}"
@@ -184,22 +189,33 @@ td_set_api() {
   local base="${2:?td_set_api <pid> <base_url>}" token="${3:-}"
   local rec="$(_td_rec "$pid")"
   [[ -f "$rec" ]] || { echo "test-daemon: td_set_api: no record for pid $pid" >&2; return 1; }
-  sed -i "s/^api_base=.*/api_base=$base/; s/^api_token=.*/api_token=$token/" "$rec"
+  # Rewritten line by line: a URL or token may hold any character, so no
+  # sed expression (its delimiter) is built from them.
+  local tmp="$rec.tmp.$$" line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      api_base=*) printf 'api_base=%s\n' "$base" ;;
+      api_token=*) printf 'api_token=%s\n' "$token" ;;
+      *) printf '%s\n' "$line" ;;
+    esac
+  done < "$rec" > "$tmp" || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$rec"
 }
 
 td_start() {
   # td_start <binary> <config> <logfile> [extra args...]
-  # Start the daemon in the background, record it, set TD_LAST_PID. The
-  # config path is used as the marker: it must appear in the daemon's
-  # cmdline (datawatch start --config <path>). Under `set -e` this call must
-  # run in a failure-conditional context (it legitimately fails when the
-  # binary cannot be exec'd).
+  # Start the daemon in the background as
+  #   <binary> start --foreground --config <config> [extra args...]
+  # record it, set TD_LAST_PID. The config path is the marker: it is in the
+  # daemon's cmdline for as long as the daemon runs. Under `set -e` this call
+  # must run in a failure-conditional context (it legitimately fails when the
+  # record cannot be written).
   local bin="${1:?td_start <binary> <config> <logfile> [extra args...]}" cfg="${2:?}" log="${3:?}"
   shift 3
   if command -v setsid >/dev/null 2>&1; then
-    setsid "$bin" "$@" </dev/null >>"$log" 2>&1 &
+    setsid "$bin" start --foreground --config "$cfg" "$@" </dev/null >>"$log" 2>&1 &
   else
-    "$bin" "$@" </dev/null >>"$log" 2>&1 &
+    "$bin" start --foreground --config "$cfg" "$@" </dev/null >>"$log" 2>&1 &
   fi
   local pid=$!
   TD_LAST_PID="$pid"
@@ -378,17 +394,30 @@ td_wait_port_closed() {
 }
 
 _td_sigint_ignored() {
-  # 0 iff SIGINT arrived as SIG_IGN (bash cannot install a SIGINT trap)
-  bash -c 'trap - INT' 2>/dev/null && return 0 || return 1
+  # 0 iff SIGINT arrived as SIG_IGN (bash cannot install a SIGINT trap then):
+  # bit 2 of the SigIgn mask in this process's /proc status
+  local mask
+  mask=$(sed -n 's/^SigIgn:[[:space:]]*//p' "/proc/$$/status" 2>/dev/null | sed -n 1p)
+  [[ "$mask" =~ ^[0-9a-fA-F]+$ ]] && (( (0x$mask & 2) != 0 ))
 }
 
 _td_reexec_with_int() {
-  # If SIGINT was inherited as SIG_IGN (this script started as a background
-  # job), rerun through a launcher that resets it. Guarded to prevent a loop.
-  if _td_sigint_ignored && [[ -z "${TD_REEXEC_GUARD:-}" && -n "${0:-}" && -f "${BASH_SOURCE[0]:-${COMPILER_SOURCE:-}}" ]]; then
-    local src="${BASH_SOURCE[0]:-${COMPILER_SOURCE:-${0}}}"
-    export TD_REEXEC_GUARD=1
-    exec bash -c 'trap "" INT; exec bash "$1" ${2+"$@"}' _ "$src" ${1+"$@"}
+  # _td_reexec_with_int [script args...] — if SIGINT was inherited as SIG_IGN
+  # (this script started as a background job), rerun the top-level script
+  # once with its arguments through a launcher that resets the signal to its
+  # default. The guard holds the pid that was rerun (an exec keeps the pid),
+  # so the rerun does not loop while a child script of its own still can.
+  # Best effort: without python3, or without a script file to rerun, the
+  # traps are installed anyway (EXIT and TERM still work).
+  local src="${BASH_SOURCE[${#BASH_SOURCE[@]}-1]:-${0:-}}"
+  if _td_sigint_ignored && [[ "${TD_REEXEC_GUARD:-}" != "$$" && -f "$src" ]] \
+      && command -v python3 >/dev/null 2>&1; then
+    export TD_REEXEC_GUARD=$$
+    exec python3 -I -c '
+import os, signal, sys
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+os.execvp("bash", ["bash"] + sys.argv[1:])
+' "$src" "$@"
   fi
   return 0
 }
@@ -410,18 +439,24 @@ _td_on_exit() {
 }
 
 _td_on_signal() {
-  # Forward the terminating signal to recorded child daemons, then exit so the
-  # shell's own exit status reflects the delivered signal (EXIT trap still runs)
+  # End every recorded daemon, then exit with the conventional 128+signal
+  # status (the EXIT trap still runs). The signal is deliberately not sent
+  # to ourselves again: its trap is still installed, so the handler would
+  # re-enter itself.
+  local sig="$1" code=1
   td_stop_all
-  local sig="$1"
-  if [[ "$sig" != "EXIT" ]]; then
-    kill -s "$sig" $$ 2>/dev/null || true
-  fi
-  exit 1
+  case "$sig" in
+    HUP) code=129 ;;
+    INT) code=130 ;;
+    TERM) code=143 ;;
+  esac
+  exit "$code"
 }
 
 td_install_traps() {
-  _td_reexec_with_int
+  # td_install_traps ["$@"] — pass the calling script's arguments so a rerun
+  # (see _td_reexec_with_int) keeps them.
+  _td_reexec_with_int "$@"
   if [[ -n "${TD_TRAPS_INSTALLED:-}" ]]; then
     return 0
   fi
