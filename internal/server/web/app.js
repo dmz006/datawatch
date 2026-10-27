@@ -15856,6 +15856,22 @@ const GENERAL_CONFIG_FIELDS = [
   { id: 'compute_pin', section: 'Compute pin keeper', fields: [
     { key: 'pin_check_seconds', label: 'Pin check interval (sec, 0 = keeper off)', labelKey: 'settings_pin_check_seconds', type: 'number', min: 0, placeholder: '300' },
   ]},
+  // Usage calculator — the weekly-allowance advice. Variant picks how the advice
+  // is drawn, policy picks the target it aims at; the rest feed the model.
+  // optionLabelKeys shows a locale label for an option whose id is not for people.
+  { id: 'usage_calculator', section: 'Usage calculator', fields: [
+    { key: 'usage.calculator.variant', label: 'Usage calculator layout (pace-gauge | lane-planner | burn-ledger | all)', labelKey: 'settings_usage_calculator_variant', type: 'select', options: ['pace-gauge', 'lane-planner', 'burn-ledger', 'all'], default: 'all' },
+    { key: 'usage.calculator.policy', label: 'Usage calculator policy', labelKey: 'settings_usage_calculator_policy', type: 'select', options: ['use-all', 'pace', 'finish-early'], default: 'use-all',
+      optionLabelKeys: { 'use-all': 'settings_usage_calculator_policy_use_all', 'pace': 'settings_usage_calculator_policy_pace', 'finish-early': 'settings_usage_calculator_policy_finish_early' } },
+    { key: 'usage.calculator.safety_points', label: 'Usage calculator safety margin (points under the pace line, 0 to 50, default 5)', labelKey: 'settings_usage_calculator_safety_points', type: 'number', placeholder: '5', min: 0, max: 50, step: 0.5, default: '5' },
+    { key: 'usage.calculator.cost_per_task_points', label: 'Usage calculator cost per task (weekly points, above 0, default 0.1)', labelKey: 'settings_usage_calculator_cost_per_task_points', type: 'number', placeholder: '0.1', min: 0.01, step: 0.01, default: '0.1' },
+    { key: 'usage.calculator.baseline_per_24h', label: 'Usage calculator idle burn (points per 24 hours, 0 to 20, default 3)', labelKey: 'settings_usage_calculator_baseline_per_24h', type: 'number', placeholder: '3', min: 0, max: 20, step: 0.5, default: '3' },
+    { key: 'usage.calculator.max_lanes', label: 'Usage calculator largest lane count (1 to 8, default 3)', labelKey: 'settings_usage_calculator_max_lanes', type: 'number', placeholder: '3', min: 1, max: 8, step: 1, default: '3' },
+    { key: 'usage.calculator.reset_weekday', label: 'Usage calculator reset weekday (default sunday)', labelKey: 'settings_usage_calculator_reset_weekday', type: 'select', options: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'], default: 'sunday' },
+    { key: 'usage.calculator.reset_time', label: 'Usage calculator reset time (24-hour HH:MM, default 08:00)', labelKey: 'settings_usage_calculator_reset_time', type: 'text', placeholder: '08:00', default: '08:00', hintKey: 'settings_usage_calculator_reset_time_hint' },
+    { key: 'usage.calculator.reset_zone', label: 'Usage calculator reset time zone (IANA name, default UTC)', labelKey: 'settings_usage_calculator_reset_zone', type: 'text', placeholder: 'America/New_York', default: 'UTC', hintKey: 'settings_usage_calculator_reset_zone_hint' },
+    { key: 'usage.calculator.keeper', label: 'Usage calculator keeper (federation peer that keeps the readings, empty = this daemon)', labelKey: 'settings_usage_calculator_keeper', type: 'text', placeholder: '', hintKey: 'settings_usage_calculator_keeper_hint' },
+  ]},
   { id: 'autonomous', section: 'Autonomous Automata planning', docs: 'howto/autonomous-planning.md', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
@@ -16744,6 +16760,25 @@ function saveOpenCodeProviderKey(provider, inputId) {
 }
 window.saveOpenCodeProviderKey = saveOpenCodeProviderKey;
 
+// Locale label for one option of a select field; an option with no entry in
+// optionLabelKeys, or whose key is missing from the bundle, shows its id.
+function _selectOptionLabel(f, option) {
+  const k = f.optionLabelKeys && f.optionLabelKeys[option];
+  if (!k) return option;
+  const v = t(k);
+  return (v && v !== k) ? v : option;
+}
+
+// Hint line under a settings field that carries a hintKey; empty when the
+// field has none or the bundle lacks the key. The line takes the full row width
+// so it wraps under the control at phone width.
+function _fieldHintHTML(f) {
+  if (!f.hintKey) return '';
+  const v = t(f.hintKey);
+  if (!v || v === f.hintKey) return '';
+  return `<div style="flex-basis:100%;font-size:10px;color:var(--text2);margin-top:4px;">${escHtml(v)}</div>`;
+}
+
 function loadGeneralConfig() {
   // Settings-tab federation pass (2026-10-08): all three were raw,
   // non-proxy-aware fetch()es with a silently-swallowed failure.
@@ -16832,11 +16867,13 @@ function loadGeneralConfig() {
           } else if (f.type === 'select') {
             const selVal = String(val);
             const opts = (f.options || []).map(o =>
-              `<option value="${escHtml(o)}" ${selVal === o || (selVal === '' && f.default !== undefined && String(f.default) === o) ? 'selected' : ''}>${escHtml(o)}</option>`
+              `<option value="${escHtml(o)}" ${selVal === o || (selVal === '' && f.default !== undefined && String(f.default) === o) ? 'selected' : ''}>${escHtml(_selectOptionLabel(f, o))}</option>`
             ).join('');
-            html += `<div class="settings-row" style="justify-content:space-between;">
+            const _selHint = _fieldHintHTML(f);
+            html += `<div class="settings-row" style="justify-content:space-between;${_selHint ? 'flex-wrap:wrap;' : ''}">
               <div class="settings-label">${escHtml(fLabel)}</div>
               <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
+              ${_selHint}
             </div>`;
           } else if (f.type === 'button') {
             // v5.19.0 — operator-reported regression: the whisper.test_button
@@ -17040,7 +17077,8 @@ function loadGeneralConfig() {
             </div>`;
           } else {
             const defVal = (val !== '' && val !== undefined) ? String(val) : (f.default !== undefined ? String(f.default) : '');
-            html += `<div class="settings-row" style="justify-content:space-between;">
+            const _inHint = _fieldHintHTML(f);
+            html += `<div class="settings-row" style="justify-content:space-between;${_inHint ? 'flex-wrap:wrap;' : ''}">
               <div class="settings-label">${escHtml(fLabel)}</div>
               <input type="${f.type}" class="form-input general-cfg-input" value="${escHtml(defVal)}"
                 ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
@@ -17048,6 +17086,7 @@ function loadGeneralConfig() {
                 ${f.max !== undefined ? 'max="' + f.max + '"' : ''}
                 ${f.step !== undefined ? 'step="' + f.step + '"' : ''}
                 onchange="saveGeneralField('${f.key}', ${f.type === 'number' ? 'Number(this.value)' : 'this.value'})" />
+              ${_inHint}
             </div>`;
           }
         }
