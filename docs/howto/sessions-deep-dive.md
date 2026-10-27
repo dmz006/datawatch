@@ -75,6 +75,39 @@ v7.0 added two new orthogonal identifiers carried on every session object:
 
 No setup beyond having a backend. Sessions spawn on demand.
 
+### Project directories and allowed roots
+
+A session may only start in a project directory that lies under an allowed
+root. The roots are:
+
+- the PRD worktree base, `autonomous.worktree_dir` (default
+  `~/.datawatch/prd-worktrees`);
+- the workspace root: `session.workspace_root` when set, otherwise the default
+  workspace folder `~/workspace`;
+- any folder listed in `server.allowed_project_roots`.
+
+A session started in a folder under `~/workspace` works with no
+configuration. The check applies to every way of starting a session (CLI,
+REST, MCP, chat and Automaton tasks) and resolves `..` and symlinks first, so
+a link that points outside the roots is refused.
+
+A directory outside every root is refused with an error such as:
+
+```
+project dir refused: project directory is outside the allowed project roots: "/srv/app" (allowed roots: /home/me/.datawatch/prd-worktrees, /home/me/workspace; add a root with server.allowed_project_roots)
+```
+
+REST answers with a bad-request error. To widen the set, list the folder (or a parent of several
+repositories) in `server.allowed_project_roots`, or set `session.workspace_root`
+to the parent folder of your repositories; setting it replaces `~/workspace`
+as the default. Changes apply without a restart:
+
+```sh
+datawatch config set server.allowed_project_roots /srv/projects,~/work
+```
+
+See [`operations.md`](../operations.md) "Allowed project roots" for the full rule.
+
 ## Two happy paths
 
 ### 4a. Happy path — CLI
@@ -196,7 +229,7 @@ optional.
 # Start — v7 LLM registry path.
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"llm":"claude-code","task":"...","project_dir":"/tmp"}' \
+  -d '{"llm":"claude-code","task":"...","project_dir":"/home/me/workspace/myproject"}' \
   $BASE/api/sessions/start
 
 # Start — with explicit compute node.
