@@ -3534,6 +3534,13 @@ type WhisperConfig struct {
 	// ".venv" (relative to datawatch working directory).
 	VenvPath string `yaml:"venv_path" json:"venv_path"`
 
+	// ChunkSeconds is the longest audio slice, in seconds, handed to the
+	// local whisper process in one go. Longer recordings are split and
+	// transcribed slice by slice so memory stays flat. Default 120; 0
+	// disables chunking. Valid values are 0 or >= 30 (whisper's own
+	// window is 30 s). Used only by the `whisper` backend.
+	ChunkSeconds int `yaml:"chunk_seconds" json:"chunk_seconds"`
+
 	// Endpoint is the base URL for the `openai` / `openai_compat`
 	// backend (e.g. "https://api.openai.com/v1" or
 	// "http://localhost:3000/api"). The full transcribe URL is
@@ -3753,9 +3760,10 @@ func DefaultConfig() *Config {
 		Webhook:       WebhookConfig{Addr: "127.0.0.1:9002"},
 		Twilio:        TwilioConfig{WebhookAddr: "127.0.0.1:9003"},
 		Whisper: WhisperConfig{
-			Model:    "base",
-			Language: "en",
-			VenvPath: ".venv",
+			Model:        "base",
+			Language:     "en",
+			VenvPath:     ".venv",
+			ChunkSeconds: 120,
 		},
 		LSP: LSPConfig{
 			Servers: map[string]LSPServerConfig{

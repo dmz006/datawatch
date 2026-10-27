@@ -16206,6 +16206,7 @@ const GENERAL_CONFIG_FIELDS = [
     // or directly in YAML.
     { key: 'whisper.language', label: 'Language — tracks PWA language (Settings → About). Override via CLI/YAML if needed.', type: 'readonly' },
     { key: 'whisper.venv_path', label: 'Python venv path (local whisper only)', type: 'text', placeholder: '.venv' },
+    { key: 'whisper.chunk_seconds', label: 'Longest audio slice per local whisper run (sec; 0=no chunking, otherwise 30 or more)', type: 'number', placeholder: '120' },
     { key: 'whisper.test_button', label: 'Test transcription endpoint', type: 'button', action: 'testWhisperBackend' },
   ]},
 ];
