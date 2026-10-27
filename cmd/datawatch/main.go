@@ -2776,12 +2776,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	var voiceTranscriber transcribePkg.Transcriber
 	if cfg.Whisper.Enabled {
 		bcfg := transcribePkg.BackendConfig{
-			Backend:  cfg.Whisper.Backend,
-			VenvPath: cfg.Whisper.VenvPath,
-			Model:    cfg.Whisper.Model,
-			Language: cfg.Whisper.Language,
-			Endpoint: cfg.Whisper.Endpoint,
-			APIKey:   cfg.Whisper.APIKey,
+			Backend:      cfg.Whisper.Backend,
+			VenvPath:     cfg.Whisper.VenvPath,
+			Model:        cfg.Whisper.Model,
+			Language:     cfg.Whisper.Language,
+			Endpoint:     cfg.Whisper.Endpoint,
+			APIKey:       cfg.Whisper.APIKey,
+			ChunkSeconds: cfg.Whisper.ChunkSeconds,
 		}
 		// BL201 — inherit endpoint + key from the matching LLM config
 		// when the operator left them blank for an HTTP-shape backend.
@@ -2799,6 +2800,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				backend = "whisper"
 			}
 			fmt.Printf("[voice] enabled (backend=%s, model=%s, language=%s)\n", backend, bcfg.Model, bcfg.Language)
+			if bcfg.ChunkSeconds > 0 {
+				fmt.Printf("[voice] chunking: local whisper slices audio longer than %ds\n", bcfg.ChunkSeconds)
+			} else {
+				fmt.Println("[voice] chunking disabled")
+			}
 
 			// v7.0.0-alpha.14 (#236) — when primary is HTTP (openai-compat
 			// to OpenWebUI/etc.), build a local-whisper venv as silent
@@ -2813,9 +2819,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					fallbackModel = "base"
 				}
 				if local, lerr := transcribePkg.New(bcfg.VenvPath, fallbackModel, bcfg.Language); lerr == nil {
+					var fallback transcribePkg.Transcriber = local
+					if bcfg.ChunkSeconds > 0 {
+						fallback = transcribePkg.NewChunked(local, time.Duration(bcfg.ChunkSeconds)*time.Second)
+					}
 					voiceTranscriber = &transcribePkg.ChainedTranscriber{
 						Primary:       t,
-						Secondary:     local,
+						Secondary:     fallback,
 						PrimaryName:   "openai-compat (" + bcfg.Endpoint + ")",
 						SecondaryName: "local-whisper (" + bcfg.VenvPath + " model=" + fallbackModel + ")",
 					}

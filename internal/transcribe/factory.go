@@ -8,6 +8,7 @@ package transcribe
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // BackendConfig is the minimum subset of WhisperConfig the factory
@@ -20,6 +21,11 @@ type BackendConfig struct {
 	Language string
 	Endpoint string // for openai* backends
 	APIKey   string // for openai* backends
+	// ChunkSeconds is the longest audio slice, in seconds, the local
+	// whisper backend transcribes in one pass. Zero leaves it unwrapped.
+	// HTTP-shape backends ignore it: openai_compat already splits on
+	// rejection.
+	ChunkSeconds int
 }
 
 // New constructs a Transcriber per the chosen backend. Empty
@@ -37,7 +43,14 @@ func NewFromConfig(cfg BackendConfig) (Transcriber, error) {
 		if model == "" {
 			model = "base"
 		}
-		return New(venv, model, cfg.Language)
+		w, err := New(venv, model, cfg.Language)
+		if err != nil {
+			return nil, err
+		}
+		if cfg.ChunkSeconds > 0 {
+			return NewChunked(w, time.Duration(cfg.ChunkSeconds)*time.Second), nil
+		}
+		return w, nil
 	case "openai", "openai_compat", "openai-compat", "openwebui", "ollama":
 		// Ollama exposes an OpenAI-compatible /v1/audio/transcriptions
 		// when called through OpenWebUI; the bare ollama daemon doesn't
