@@ -3438,6 +3438,11 @@ paths:
         that session; when `auto_exec` is `true` and the transcript starts
         with `new:`, `reply:`, or `status`, the corresponding action is
         returned in the `action` field.
+
+        The transcription deadline is 5 minutes, or twice the audio length
+        when that is longer, capped at 30 minutes. Local whisper splits audio
+        longer than `whisper.chunk_seconds` (default 120, 0 disables) and
+        transcribes it slice by slice.
       operationId: voiceTranscribe
       tags: [Voice]
       requestBody:
@@ -3475,7 +3480,40 @@ paths:
                   session_id: {type: string}
                   latency_ms: {type: integer}
         "400": {description: Missing or malformed audio}
-        "502": {description: Whisper backend error}
+        "413": {description: Upload larger than the 25 MB limit}
+        "502":
+          description: |
+            The transcription failed. The body is JSON and names the real
+            cause. The same failure is logged on the daemon as a
+            `[voice] transcribe failed:` line.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, cause, hint, detail, latency_ms]
+                properties:
+                  error:
+                    type: string
+                    description: One sentence naming the real cause, prefixed with `transcribe:`
+                  cause:
+                    type: string
+                    enum: [timeout, killed, out_of_memory, ffmpeg_missing, backend_error, unknown]
+                    description: |
+                      `timeout` — the deadline expired or the request was cancelled.
+                      `killed` — the whisper process was ended by SIGKILL, usually the kernel out-of-memory killer.
+                      `out_of_memory` — whisper reported it ran out of memory.
+                      `ffmpeg_missing` — ffmpeg is not installed or not on PATH.
+                      `backend_error` — any other non-zero exit or HTTP failure from the backend.
+                      `unknown` — matches no known cause.
+                  hint:
+                    type: string
+                    description: One actionable sentence for the operator
+                  detail:
+                    type: string
+                    description: The raw backend error text, cut to 500 bytes
+                  latency_ms:
+                    type: integer
+                    description: Milliseconds from request start to the failure
         "503": {description: Voice transcription not enabled}
 
   # ─── RTK auto-update (BL85, v4.0.1) — surfaces the background

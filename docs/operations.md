@@ -1977,9 +1977,10 @@ OpenAI Whisper, then processed as normal commands.
 | Method | How |
 |--------|-----|
 | **YAML** | `whisper:` section in `config.yaml` |
+| **CLI** | `datawatch config set whisper.model small`, `datawatch config set whisper.chunk_seconds 120` |
 | **Web UI** | Settings → General → **Voice Input (Whisper)** card |
-| **REST API** | `PUT /api/config` with `{"whisper.enabled": true, "whisper.model": "small"}` |
-| **Comm channel** | `configure whisper.enabled=true`, `configure whisper.language=es` |
+| **REST API** | `PUT /api/config` with `{"whisper.enabled": true, "whisper.model": "small", "whisper.chunk_seconds": 120}` |
+| **Comm channel** | `configure whisper.enabled=true`, `configure whisper.language=es`, `configure whisper.chunk_seconds=120` |
 
 **Requirements:** Python venv with `openai-whisper`, ffmpeg on PATH.
 
@@ -1989,7 +1990,18 @@ whisper:
   model: base        # tiny/base/small/medium/large
   language: en       # ISO 639-1 code, or "auto" for detection
   venv_path: .venv   # path to Python venv
+  chunk_seconds: 120 # local whisper: split audio longer than this (0 = off, else >= 30)
 ```
+
+**Long recordings.** The local whisper backend splits audio longer than
+`whisper.chunk_seconds` (default 120, `0` turns it off, otherwise 30 or more) and
+transcribes it slice by slice, so memory stays flat. PCM WAV is split in pure Go;
+other formats need `ffmpeg` and are sent whole when it is missing. Hosts with 8 GiB
+of RAM or less should use the `small` or `base` model. A failed transcription
+returns HTTP 502 with a `cause` (`timeout`, `killed`, `out_of_memory`,
+`ffmpeg_missing`, `backend_error`) and a `hint`, and writes a `[voice] transcribe
+failed:` log line; the PWA keeps the recording with Retry and Discard. See
+[howto/voice-input.md](howto/voice-input.md#long-recordings-and-memory-local-whisper).
 
 99 languages supported. Per-user language preferences are planned for the multi-user access control feature.
 
