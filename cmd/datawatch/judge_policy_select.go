@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"sync/atomic"
 	"time"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
@@ -220,7 +221,15 @@ func judgeVerifierRouteSized(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.C
 		return autonomouspkg.SelectBackendForRole(autonomouspkg.PolicyRoleJudge, verifier, backends, left, load, flags), false
 	}
 
+	// fellBack is the backend the last choose took from the unit-backend
+	// fallback, "" when the last pick came from the policy. A judge waiting on
+	// it never moves: the fallback is not a policy pick, and the policy reading
+	// differently later (the Claude window clearing, say) must not undo it.
+	var fellBack atomic.Value
+	fellBack.Store("")
+
 	choose := func(tried []string) (string, bool) {
+		fellBack.Store("")
 		load := &judgeRouteLoad{results: map[string]bool{}}
 		if probe != nil {
 			load.admit = func(backend string) bool { return probe(backend, "") }
@@ -232,6 +241,7 @@ func judgeVerifierRouteSized(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.C
 		if sel.Backend == "" {
 			if len(tried) == 0 {
 				pick(unitBackend, "", sel.Reason+"; using the unit backend "+unitBackend)
+				fellBack.Store(unitBackend)
 				return unitBackend, true
 			}
 			return "", false
@@ -250,6 +260,9 @@ func judgeVerifierRouteSized(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.C
 			// fixed, gpu-only and claude-only name one backend and keep it. A
 			// Claude hold or the cap landing while the judge waits would make
 			// the selector name the next entry, so the mode is checked here.
+			return "", "", "", false
+		}
+		if fb, _ := fellBack.Load().(string); fb != "" && fb == waiting {
 			return "", "", "", false
 		}
 		skip := map[string]bool{waiting: true}

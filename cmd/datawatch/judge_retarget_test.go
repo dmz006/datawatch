@@ -462,6 +462,16 @@ func TestJudgeRetargetUnitBackendFallbackDoesNotMove(t *testing.T) {
 		Mode: config.VerifierPolicyPreferFree, Backends: []string{"claude-code"}, ClaudeSessionCap: 1,
 	}
 	h := newJudgeRetargetHarness(t, policy)
+	// The session window runs on a fake clock so the cap can clear while the
+	// judge waits: the policy then names claude-code, and the judge must still
+	// stay on its fallback pick.
+	var clockMu sync.Mutex
+	clock := time.Now()
+	judgeClaudeWindow = autonomouspkg.NewVerifierPolicyWindow(func() time.Time {
+		clockMu.Lock()
+		defer clockMu.Unlock()
+		return clock
+	})
 	judgeClaudeWindow.Record()
 	h.fill()
 	ch := h.start(h.req, h.attempt(judgeCapacityAdmit, judgeRetargetPass))
@@ -469,6 +479,12 @@ func TestJudgeRetargetUnitBackendFallbackDoesNotMove(t *testing.T) {
 	lines := h.judgeLines()
 	if len(lines) != 1 || !strings.Contains(lines[0], "using the unit backend pi-prompt") {
 		t.Fatalf("first pick = %q, want the unit-backend fallback", lines)
+	}
+	clockMu.Lock()
+	clock = clock.Add(48 * time.Hour)
+	clockMu.Unlock()
+	if n := judgeClaudeWindow.Count(time.Duration(config.NormalizeVerifierPolicyClaudeCapWindow(0)) * time.Minute); n != 0 {
+		t.Fatalf("claude window = %d after the clock moved; the cap should have cleared", n)
 	}
 	h.led.Release("c1")
 	h.staysQueued(ch, 300*time.Millisecond)
