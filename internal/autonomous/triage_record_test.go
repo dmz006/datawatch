@@ -167,26 +167,65 @@ func TestTriageEndReasonFromTaskField(t *testing.T) {
 
 func TestTriageEndReasonFallsBackToDecisionNote(t *testing.T) {
 	m, prd := triageSetup(t, PRDBlocked)
-	// ended_sessions decision, no Task.SessionEndReason field.
-	tk := setBlockedTask(t, m, prd.ID, "s1", "t1", Task{
+	// blocked task with an EMPTY SessionEndReason field...
+	setBlockedTask(t, m, prd.ID, "s1", "t1", Task{
 		ID: "t1", Title: "t", Status: TaskBlocked, Error: "e", UpdatedAt: time.Now(),
 	})
-	_ = tk
 	prd2, _ := m.Store().GetPRD(prd.ID)
-	recordEndedSessions(prd2, &prd2.Story[0].Tasks[0], []string{"sess-1", "sess-2"}, "operator reset the task")
+	// ...and an ended_sessions decision in recordEndedSessions' note shape.
+	// The decision is appended directly because recordEndedSessions also
+	// fills Task.SessionEndReason — and a filled field must not shadow the
+	// very fallback this test exists to cover.
+	note := "task t1: ended live session(s) sess-1, sess-2: operator reset the task"
+	prd2.Decisions = append(prd2.Decisions, Decision{At: time.Now(), Kind: "ended_sessions", Actor: "autonomous", Note: note})
 	rec := m.BuildTriageRecordFor(prd2)
 	if rec == nil {
 		t.Fatal("nil record")
 	}
 	if rec.SessionEndReason != "operator reset the task" {
-		t.Errorf("SessionEndReason = %q, want %q", rec.SessionEndReason, "operator reset the task")
+		t.Errorf("SessionEndReason = %q, want the reason parsed out of the decision note %q", rec.SessionEndReason, note)
 	}
 	// structural field wins when both are present
+	m, prd = triageSetup(t, PRDBlocked)
+	setBlockedTask(t, m, prd.ID, "s1", "t1", Task{
+		ID: "t1", Title: "t", Status: TaskBlocked, Error: "e",
+		SessionEndReason: "field wins", UpdatedAt: time.Now(),
+	})
 	prd2, _ = m.Store().GetPRD(prd.ID)
-	prd2.Story[0].Tasks[0].SessionEndReason = "field wins"
+	prd2.Decisions = append(prd2.Decisions, Decision{At: time.Now(), Kind: "ended_sessions", Actor: "autonomous", Note: note})
 	rec = m.BuildTriageRecordFor(prd2)
 	if rec.SessionEndReason != "field wins" {
 		t.Errorf("SessionEndReason = %q, want field to win over decision", rec.SessionEndReason)
+	}
+}
+
+func TestEndReasonFromDecisionNoteShapes(t *testing.T) {
+	// the recorded note shape → the reason after the second colon
+	if got := endReasonFromDecisionNote("task t1: ended live session(s) sess-1, sess-2: operator reset the task"); got != "operator reset the task" {
+		t.Errorf("recorded shape = %q, want the reason after the marker", got)
+	}
+	// the marker appears but no ": " follows → whole trimmed note
+	if got := endReasonFromDecisionNote("task t1: ended live session(s) sess-1"); got != "task t1: ended live session(s) sess-1" {
+		t.Errorf("marker-only note = %q, want the whole note", got)
+	}
+	// no marker at all → whole trimmed note
+	if got := endReasonFromDecisionNote("  a plain reason line  "); got != "a plain reason line" {
+		t.Errorf("unshaped note = %q, want the trimmed note", got)
+	}
+}
+
+func TestTriageEndReasonNoDecisionNoField(t *testing.T) {
+	m, prd := triageSetup(t, PRDFailed)
+	setBlockedTask(t, m, prd.ID, "s1", "t1", Task{
+		ID: "t1", Title: "t", Status: TaskFailed, Error: "e", UpdatedAt: time.Now(),
+	})
+	prd2, _ := m.Store().GetPRD(prd.ID)
+	rec := m.BuildTriageRecordFor(prd2)
+	if rec == nil {
+		t.Fatal("nil record")
+	}
+	if rec.SessionEndReason != "" {
+		t.Errorf("SessionEndReason = %q, want empty (no field, no decision)", rec.SessionEndReason)
 	}
 }
 

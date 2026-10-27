@@ -938,9 +938,10 @@ autonomous:
   # autonomous.automation.idle_alert_minutes=30`, and the PWA Settings field
   # (settings_automation_idle_alert_minutes).
   #
-  # triage_alert_minutes: whole number >= 0. How long an active Automation may sit
-  # waiting for its next member (a member finished or failed and nothing started)
-  # before the daemon raises one triage alert. Unlike idle_alert_minutes, an unset
+  # triage_alert_minutes: whole number >= 0. How long an Automaton may sit
+  # failed or blocked (the coordinator's poll-time triage pass times failed and
+  # blocked Automaton records, not waiting-for-next-member) before the daemon
+  # raises one triage alert for the episode. Unlike idle_alert_minutes, an unset
   # key is read as 30, and an explicit 0 turns triage alerts off. Settable via PUT
   # /api/config (key autonomous.automation.triage_alert_minutes; GET /api/config
   # shows the effective value), CLI `datawatch config set

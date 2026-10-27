@@ -1,6 +1,12 @@
 # Autonomous triage records — readable through one endpoint
 
-Date: 2026-10-26. Status: implemented and tested (unit level; no live check).
+Date: 2026-10-26.
+**Version:** 9.17.1 (lands with the next 9.x release on merge).
+**Status:** implemented on this branch; unit + parity tests green; live validation pending (see `docs/testing-tracker.md`).
+
+## Scope
+
+Files and packages affected: `internal/autonomous` (record, pass, formatter), `internal/config` (key, validation, round-trip), `internal/server` (route, subscriptions, capability gate), `internal/mcp` (tool), `internal/federation` (capability entry), `cmd/datawatch` (CLI), `internal/router` (comm verb), `internal/server/web` (card, settings field, locale bundles), `docs/` (API, config, MCP, implementations, definitions, testing tracker, this plan), `scripts/test-stories/pwa/triage-card.mjs` (the PWA triage-card story).
 
 ## What was wanted
 
@@ -96,13 +102,13 @@ carrying a reason.
 | **CLI** | Shipped — `datawatch autonomous triage [--automation ID] [--prd ID] [--status failed\|blocked] [--json]`. | The operator-facing CLI surface of the read: the same filters as the route, the status refused locally with the two allowed values (nothing reaches the daemon on a wrong one), `--json` prints the body untouched. The record's standing renders through the shared formatter. Pinned: `TestTriageParity` and `cmd/datawatch/cli_triage_test.go`. |
 | **comm channel** | Shipped — `autonomous triage [automation-id]`. | The operator-facing chat surface of the read: one optional Automation id narrows the list; the reply is the shared formatter's text (the record's standing and the threshold), the same as the CLI and the alert. Pinned: `TestTriageParity`, `internal/router/triage_parity_test.go`, `internal/router/triage_comm_test.go`. |
 | **YAML/config** | No new item. | The read reports the existing `autonomous.automation.triage_alert_minutes` setting (added by the settings task in this story): no new key, no new value, nothing to configure. |
-| **PWA** | Excluded. | A triage card on the Automation sub-tab is an operator-client feature. Client parity (PWA == Android == iPhone) ships as one client slice in the later pass, so the phones are not left behind the PWA. The record is already visible on the Automaton itself, so no client surface is hiding a fact that was not already reachable. |
-| **Android** | Excluded. | Same reason as the PWA: client surfaces ship together, later. |
-| **iPhone/iOS** | Excluded. | Same reason as the PWA: client surfaces ship together, later. |
+| **PWA** | Shipped — the triage card on the Automaton detail page and the settings field for `auto_triage`; `web/app-triage.test.js` covers rendering, the no-record state, and invalid-value refusal, and the five locale bundles carry the card's wording (en source, real translations). | Operator-visible client slice of this branch; the story for it is `scripts/test-stories/pwa/triage-card.mjs`. |
+| **Android** | Excluded from this branch. | This repo ships the daemon side; the Android UI lives in `dmz006/datawatch-app`. The owed mobile-parity debt (issue not yet filed under this spec) is tracked in `docs/plans/2026-10-26-autonomous-triage-mobile-parity-note.md` and named in `docs/testing-tracker.md`. |
+| **iPhone/iOS** | Excluded from this branch. | Same as Android: `dmz006/datawatch-app` owns the app UI; the triage record and alert are already readable over REST, comm, MCP and CLI without the app, and the parity note names the surface the app will call. |
 
-The exclusions are deliberate, not an oversight: the four surfaces that
-are shipped (REST, MCP, CLI, comm) are fully built and tested, the rest
-are named with a stated reason, and every shipped surface is pinned by
+The shipped-and-excluded split is deliberate: every surface this feature ships
+(REST, MCP, CLI, comm, PWA) is built and tested; every excluded surface is
+named with a stated reason, and the shipped ones are pinned by
 `TestTriageParity` (the cmd half) and `TestTriageCommVerbIsRegistered`
 (the router half), so no surface can drift silently.
 
@@ -123,6 +129,8 @@ are named with a stated reason, and every shipped surface is pinned by
 ## Not done here
 
 - No live daemon check against a real store (tracker row says
-  Validated=No).
-- The operator how-to and the config reference are left to the same
-  documentation pass as the rest of the autonomous reads.
+  Validated=No). The PWA triage card has likewise not been looked at in a
+  running PWA — same pending live validation.
+- The Android / iPhone triage surface lives in `dmz006/datawatch-app`; the
+  owed issue is drafted at `docs/plans/2026-10-26-autonomous-triage-mobile-parity-note.md`
+  and, per this spec, not filed from here.

@@ -195,6 +195,11 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"capacity_node_model",
 		"capacity_node_unreachable",
 		"capacity_node_gpu_util",
+		// 2026-10-26 — autonomous triage: the settings field for
+		// `autonomous.automation.triage_alert_minutes` and the triage
+		// card title in the Automaton detail view.
+		"settings_automation_triage_alert_minutes",
+		"triage_card_title",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

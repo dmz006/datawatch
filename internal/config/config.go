@@ -2618,12 +2618,13 @@ func ValidateUndeclaredEditMode(mode string) error {
 // "require_operator" holds it as a pending insert until an operator approves it.
 // An empty value means "allow".
 //
-// TriageAlertMinutes is how long (whole minutes) an Automation may sit waiting
-// before a triage alert is raised. It is a pointer on purpose: an unset key
+// TriageAlertMinutes is how long (whole minutes) an Automaton may sit failed or
+// blocked before the coordinator's poll-time triage pass raises one triage
+// alert for the episode. It is a pointer on purpose: an unset key
 // (nil) reads the default of DefaultAutomationTriageAlertMinutes (30), while an
 // explicit 0 (a pointer to zero) turns the triage alert off and must survive a
-// round trip. Negative and non-integer values are rejected with a 400 on every
-// write path.
+// round trip. Negative values are rejected with a 400 on every write path and
+// with an error on config load.
 const DefaultAutomationTriageAlertMinutes = 30
 
 type AutonomousAutomationConfig struct {
@@ -4198,6 +4199,10 @@ func validateLoaded(cfg *Config) error {
 	}
 	if err := ValidateAgentInsertPolicy(cfg.Autonomous.Automation.AgentInsertPolicy); err != nil {
 		return err
+	}
+	if t := cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(); t < 0 {
+		return fmt.Errorf("autonomous.automation.triage_alert_minutes: %d must be a whole number >= 0 (0 = off, default %d); fractional or non-numeric values are refused by the config parser",
+			t, DefaultAutomationTriageAlertMinutes)
 	}
 	if err := cfg.Autonomous.LaneFill.validate(); err != nil {
 		return err

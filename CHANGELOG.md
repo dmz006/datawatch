@@ -22,7 +22,9 @@ The records are readable on the same channel-parity surfaces as the rest of auto
 | PWA | a triage card in the Automaton detail view: status, failed task, first-seen and alert times, the four retry budgets and the notes, with wording in all five locale bundles |
 | Mobile/wear | the same `GET /api/autonomous/triage` contract, documented for Android/Wear/Auto in `docs/api/mobile-surface.md` |
 
-The triage record is a read: the pass starts, retries or edits nothing, and the retry budgets it shows are the engine's existing budgets, reused as-is. No record on a live daemon is live-verified yet, and nobody has looked at the card in a running PWA — the testing tracker marks every row `Validated: No` with the pending live checks. The operator reference for the record, the pass, the alert key and the surfaces is in `docs/operations.md`; the API contract is in `docs/api/autonomous.md`; the how-to pointer is in `docs/howto/automation-tab.md`.
+The triage record is a read: the pass starts, retries or edits nothing, and the retry budgets it shows are the engine's existing budgets, reused as-is.
+
+The comm-channel alert delivery changed with this: the alert body is no longer truncated at 200 characters, so every comm-channel alert (lifecycle, Automation blocked, triage, ...) now carries its full text, not just a prefix (`internal/router/router.go`, `SendAlert`). This is a behavior change for all comm alerts, not only triage. No record on a live daemon is live-verified yet, and nobody has looked at the card in a running PWA — the testing tracker marks every row `Validated: No` with the pending live checks. The operator reference for the record, the pass, the alert key and the surfaces is in `docs/operations.md`; the API contract is in `docs/api/autonomous.md`; the how-to pointer is in `docs/howto/automation-tab.md`.
 
 ### Shared navigation fits phone widths
 

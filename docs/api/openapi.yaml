@@ -2303,6 +2303,76 @@ paths:
       operationId: autonomousLearnings
       tags: [Autonomous]
       responses: {"200": {description: OK}}
+  /api/autonomous/subscriptions:
+    get:
+      summary: List lifecycle event subscriptions
+      description: |
+        Returns the persisted lifecycle event subscriptions, optionally narrowed
+        with the `owner` query parameter. Requires the `autonomous:read`
+        capability.
+      operationId: autonomousSubscriptionList
+      tags: [Autonomous]
+      parameters:
+        - {name: owner, in: query, required: false, schema: {type: string}}
+      responses:
+        "200": {description: "The subscription records"}
+        "503": {description: "Lifecycle subscriptions not wired"}
+    post:
+      summary: Create a lifecycle event subscription
+      description: |
+        Persists a new subscription (filter, sink, action, coalesce, one_shot,
+        expires_at; the server assigns the id, a client-supplied id is not
+        honoured) and returns it with 201. The new subscription takes effect
+        live, without a daemon restart. Requires the `autonomous:write`
+        capability.
+      operationId: autonomousSubscriptionCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filter, sink]
+              properties:
+                owner: {type: string, description: "Optional owner tag; also usable as the list filter."}
+                filter:
+                  type: object
+                  description: "At least one of kinds or level; level is prd|task|automation."
+                  properties:
+                    kinds: {type: array, items: {type: string}, description: "Known lifecycle event kinds."}
+                    level: {type: string}
+                    prd_id: {type: string}
+                    task_id: {type: string}
+                sink:
+                  type: object
+                  description: "comm, session, topic, alert or mcp_queue target."
+                  properties:
+                    type: {type: string}
+                    target: {type: string}
+                    text_template: {type: string}
+                    send_input: {type: boolean}
+                action: {type: object, description: "Optional labelled action text; not used by the test event."}
+                coalesce: {type: boolean, description: "Human-facing sinks batch per Automaton during a quiet window."}
+                one_shot: {type: boolean, description: "Fire once, then delete."}
+                expires_at: {type: string, format: date-time}
+      responses:
+        "201": {description: "The created subscription record"}
+        "400": {description: "Malformed body or failed validation"}
+        "503": {description: "Lifecycle subscriptions not wired"}
+    delete:
+      summary: Delete a lifecycle event subscription
+      description: |
+        Deletes the subscription named by the `id` query parameter and
+        returns 204. Requires the `autonomous:write` capability.
+      operationId: autonomousSubscriptionDelete
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: query, required: true, schema: {type: string}}
+      responses:
+        "204": {description: "Deleted"}
+        "404": {description: "Unknown subscription id"}
+        "503": {description: "Lifecycle subscriptions not wired"}
   /api/autonomous/subscriptions/{id}:
     put:
       summary: Replace a lifecycle subscription's mutable fields
