@@ -493,6 +493,39 @@ All APIs confirmed stable — documented in this file for Android/Wear/Auto inte
 
 ---
 
+## Listener auth posture (`/api/health` `listeners`, `server.acknowledge_unauthenticated`)
+
+`GET /api/health` (no auth) returns, in addition to status/hostname/version/uptime_seconds, a `listeners` array with one entry per daemon listener: `rest`, `rest_tls`, `mcp_sse`, `proxy_sandbox`, `webhook`, `github_webhook`, `twilio_webhook`. Each entry is posture only:
+
+```
+{ "name": "rest", "enabled": true,
+  "auth_required": false, "loopback": false,
+  "acknowledged": false }
+```
+
+Fields are booleans: `enabled` (listener enabled in the active config), `auth_required` (a token/secret guards it), `loopback` (bound to `127.0.0.1`/`::1`/`localhost`), `acknowledged` (the operator set `server.acknowledge_unauthenticated`). Bind addresses and token/secret values are never included.
+
+**Client guidance (Android and iPhone):** flag a listener when
+`enabled && !auth_required && !loopback && !acknowledged` — the daemon's
+"exposed" condition — the same set of listeners the daemon warns about at
+start. Clear the flag when the operator sets
+`server.acknowledge_unauthenticated` (then `acknowledged` is `true`).
+
+`server.acknowledge_unauthenticated` (bool, default `false`) is read and
+written with the standard config endpoints:
+
+```
+GET /api/config   → server.acknowledge_unauthenticated
+PUT /api/config   { "server.acknowledge_unauthenticated": true }
+```
+
+It silences the daemon's startup warning for exposed, unauthenticated,
+unacknowledged listeners and sets `acknowledged` in the health `listeners`
+array (and in the `listener_*` diagnose checks). It does not change the
+bind address, the token, or the warning condition itself.
+
+---
+
 <!-- BL279 see-also footer -->
 ## See also
 

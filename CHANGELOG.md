@@ -5258,6 +5258,81 @@ token/cost accounting reports zero on every backend; root-caused
 (`Manager.AddUsage` is never called from real session lifecycle, only
 from the manual `POST /api/cost/usage` endpoint), not yet fixed.
 
+### Major release notes
+
+Operator-authorized full-pipeline major release: run the complete E2E
+suite, fix everything found, cut 9.0.0. See
+`docs/plans/2026-10-07-v9.0.0-major-release.md` for the full writeup.
+
+### Why major, not minor
+
+This milestone has been tracked in the backlog since 2026-09-15, gated on
+the three-part memory-lifecycle trilogy (subprocess scope isolation,
+lifecycle management, PRD memory integration) — all three shipped
+incrementally back in September (v8.29.0–v8.33.0), but the milestone itself
+was never formally cut; its backlog status text went stale and was never
+corrected. v9.0.0 is that formal cut, bundled with every v8.x release since
+(the GH#192 Android/iOS parity batch, the federation live-store staleness
+fix, and this release's own full E2E pass + housekeeping) — no new feature
+beyond what's already in 8.73.1.
+
+### Fixed
+
+- **Android beta instructions** (relayed from the datawatch-app session): the "Join Beta" badge linked straight to the Play opt-in page, which only works after joining the Google Group first. Badge now points at the tester-group link; step 1 notes to use the same Google account the phone uses for Play; added a line noting Wear OS is in the same closed test (install via Play Store search on the watch itself, or play.google.com in a browser — "Install on more devices" often doesn't surface the watch as an option).
+- **Full E2E suite**: 672 passed, 1 failed, 15 skipped (47 min, isolated
+  sandbox daemon, never production). The 1 failure was a release gate
+  (`release-smoke.sh` → `tidy-plans.sh --dry-run`) finding 9 plan docs past
+  the 7-day archive cutoff still sitting in `docs/plans/` — fixed by
+  running `tidy-plans.sh` for real; re-verified with a standalone
+  `release-smoke.sh` run afterward (185 passed, 0 failed, 33 skipped). The
+  15 skips are all pre-existing infrastructure-floor gaps in the sandbox
+  (1Password/Signal/Tailscale not configured, an Ollama vision model that
+  crashed mid-run, and a parallel-LLM Automata test hitting its own
+  documented 30-minute soft-skip branch) — none a code regression.
+- **Claude model aliases** (major-release refresh rule): `handleClaudeModels`'s
+  hardcoded `full_names` were missing the `-5-5` minor-version suffix —
+  `claude-opus-5`/`claude-sonnet-5` corrected to `claude-opus-5-5`/
+  `claude-sonnet-5-5`. `claude-haiku-4-5-20251001` and `claude-fable-5-1`
+  were already current.
+- **Release-gate lint**: the first `v9.0.0` tag's CI run failed on
+  `golangci-lint` errcheck — a `//nolint:errcheck` sat on the wrong line
+  (`exec.Command(...)` instead of the wrapped `.Run()` continuation two
+  lines down, which golangci-lint doesn't honor) in
+  `internal/llm/backends/gemini/backend.go`, plus two unguarded
+  `fmt.Fprint` in `internal/llm/backends/openwebui/usage_test.go`. Both
+  pre-existing, neither introduced by this release. Fixed; full E2E then
+  re-run completely from scratch (not just the narrower `release-smoke.sh`
+  recheck) to rule out side effects from the TS-557 plan-doc move:
+  **674 passed, 0 failed, 14 skipped, 48 min.**
+- **Agent-spawn integration smokes**: `tests/integration/spawn_docker.sh`
+  and `spawn_k8s.sh` are required by the major-release checklist but wired
+  into neither CI nor `scripts/run-tests.sh` — `git log -S` shows they'd
+  likely never actually passed. Both called the singular
+  `/api/profiles/project(cluster)` against routes that have always been
+  plural (404 on every call); `spawn_docker.sh` separately hardcoded an
+  `image_pair.agent` that the docker driver resolves to a non-existent
+  registry tag, leaving its own `$IMAGE` override as dead code. Fixed
+  both; they now pass end-to-end (real Pod and container lifecycle).
+
+### Changed
+
+- **Container/Helm maintenance audit**: confirmed every worker/parent
+  container image bakes in a fresh-from-source build of the `datawatch`
+  binary itself (`agent-base`'s builder stage), and that
+  `.github/workflows/release.yaml` already rebuilds every one of them on
+  every release tag push, unconditionally — no manual rebuild needed for
+  this release. `charts/datawatch/Chart.yaml`'s `appVersion` (stale at
+  `5.26.22`, ~80 releases behind) refreshed to `9.0.0`; chart `version`
+  left unchanged (no template/values changes this release).
+- **README restructure**: added the `## Current release` marquee section
+  the release checklist requires (previously just a drifted "Recent
+  highlights" paragraph with no dedicated heading); folded older entries
+  into `### vX.Y highlights` bullet groups.
+- **Backlog correction**: `docs/plans/README.md`'s v9.0.0/BL386/BL387
+  entries had sat at stale "in-progress"/"planned" status text since
+  2026-09-16, long after all three actually shipped — corrected to reflect
+  the real, already-tracked-elsewhere closure state.
+
 ## v8.80.0 — chore: v9.0.0 pre-tag re-verification pass
 
 ### Fixed
@@ -6197,81 +6272,6 @@ from the manual `POST /api/cost/usage` endpoint), not yet fixed.
 ### Added
 - `server_picker_loading`, `fed_conn_connecting`, `fed_conn_loading_sessions`, `fed_conn_error_title`, `fed_conn_error_body`, `fed_conn_back_to_local` — new locale keys, all 5 bundles.
 - `internal/server/web/app-fed-conn-status.test.js` — 10 new tests pinning the state-default regression, retry-not-poison behavior, and the real event-driven status transitions.
-
-## v9.0.0 — Memory Lifecycle Complete (major release)
-
-Operator-authorized full-pipeline major release: run the complete E2E
-suite, fix everything found, cut 9.0.0. See
-`docs/plans/2026-10-07-v9.0.0-major-release.md` for the full writeup.
-
-### Why major, not minor
-
-This milestone has been tracked in the backlog since 2026-09-15, gated on
-the three-part memory-lifecycle trilogy (subprocess scope isolation,
-lifecycle management, PRD memory integration) — all three shipped
-incrementally back in September (v8.29.0–v8.33.0), but the milestone itself
-was never formally cut; its backlog status text went stale and was never
-corrected. v9.0.0 is that formal cut, bundled with every v8.x release since
-(the GH#192 Android/iOS parity batch, the federation live-store staleness
-fix, and this release's own full E2E pass + housekeeping) — no new feature
-beyond what's already in 8.73.1.
-
-### Fixed
-
-- **Android beta instructions** (relayed from the datawatch-app session): the "Join Beta" badge linked straight to the Play opt-in page, which only works after joining the Google Group first. Badge now points at the tester-group link; step 1 notes to use the same Google account the phone uses for Play; added a line noting Wear OS is in the same closed test (install via Play Store search on the watch itself, or play.google.com in a browser — "Install on more devices" often doesn't surface the watch as an option).
-- **Full E2E suite**: 672 passed, 1 failed, 15 skipped (47 min, isolated
-  sandbox daemon, never production). The 1 failure was a release gate
-  (`release-smoke.sh` → `tidy-plans.sh --dry-run`) finding 9 plan docs past
-  the 7-day archive cutoff still sitting in `docs/plans/` — fixed by
-  running `tidy-plans.sh` for real; re-verified with a standalone
-  `release-smoke.sh` run afterward (185 passed, 0 failed, 33 skipped). The
-  15 skips are all pre-existing infrastructure-floor gaps in the sandbox
-  (1Password/Signal/Tailscale not configured, an Ollama vision model that
-  crashed mid-run, and a parallel-LLM Automata test hitting its own
-  documented 30-minute soft-skip branch) — none a code regression.
-- **Claude model aliases** (major-release refresh rule): `handleClaudeModels`'s
-  hardcoded `full_names` were missing the `-5-5` minor-version suffix —
-  `claude-opus-5`/`claude-sonnet-5` corrected to `claude-opus-5-5`/
-  `claude-sonnet-5-5`. `claude-haiku-4-5-20251001` and `claude-fable-5-1`
-  were already current.
-- **Release-gate lint**: the first `v9.0.0` tag's CI run failed on
-  `golangci-lint` errcheck — a `//nolint:errcheck` sat on the wrong line
-  (`exec.Command(...)` instead of the wrapped `.Run()` continuation two
-  lines down, which golangci-lint doesn't honor) in
-  `internal/llm/backends/gemini/backend.go`, plus two unguarded
-  `fmt.Fprint` in `internal/llm/backends/openwebui/usage_test.go`. Both
-  pre-existing, neither introduced by this release. Fixed; full E2E then
-  re-run completely from scratch (not just the narrower `release-smoke.sh`
-  recheck) to rule out side effects from the TS-557 plan-doc move:
-  **674 passed, 0 failed, 14 skipped, 48 min.**
-- **Agent-spawn integration smokes**: `tests/integration/spawn_docker.sh`
-  and `spawn_k8s.sh` are required by the major-release checklist but wired
-  into neither CI nor `scripts/run-tests.sh` — `git log -S` shows they'd
-  likely never actually passed. Both called the singular
-  `/api/profiles/project(cluster)` against routes that have always been
-  plural (404 on every call); `spawn_docker.sh` separately hardcoded an
-  `image_pair.agent` that the docker driver resolves to a non-existent
-  registry tag, leaving its own `$IMAGE` override as dead code. Fixed
-  both; they now pass end-to-end (real Pod and container lifecycle).
-
-### Changed
-
-- **Container/Helm maintenance audit**: confirmed every worker/parent
-  container image bakes in a fresh-from-source build of the `datawatch`
-  binary itself (`agent-base`'s builder stage), and that
-  `.github/workflows/release.yaml` already rebuilds every one of them on
-  every release tag push, unconditionally — no manual rebuild needed for
-  this release. `charts/datawatch/Chart.yaml`'s `appVersion` (stale at
-  `5.26.22`, ~80 releases behind) refreshed to `9.0.0`; chart `version`
-  left unchanged (no template/values changes this release).
-- **README restructure**: added the `## Current release` marquee section
-  the release checklist requires (previously just a drifted "Recent
-  highlights" paragraph with no dedicated heading); folded older entries
-  into `### vX.Y highlights` bullet groups.
-- **Backlog correction**: `docs/plans/README.md`'s v9.0.0/BL386/BL387
-  entries had sat at stale "in-progress"/"planned" status text since
-  2026-09-16, long after all three actually shipped — corrected to reflect
-  the real, already-tracked-elsewhere closure state.
 
 ## v8.73.1 — docs: Android beta step 3 — install link now live
 

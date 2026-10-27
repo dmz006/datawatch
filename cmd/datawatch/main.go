@@ -979,6 +979,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		cfg.MCP.Enabled = false
 	}
 
+	// Startup warning: name every listener that is enabled, bound
+	// non-loopback, and enforcing no credential, unless the operator has
+	// acknowledged that posture. Runs once per daemon start (after flag
+	// overrides, before any listener starts) and never again on config
+	// reloads.
+	config.LogUnauthenticatedListeners(os.Stdout, config.ListenerAuthStates(cfg))
+
 	debugf("hostname=%s", cfg.Hostname)
 
 	// Early LLM registry load — claude-code settings moved from SessionConfig

@@ -1482,6 +1482,11 @@ type ServerConfig struct {
 	// If empty, no auth is required.
 	Token string `yaml:"token"`
 
+	// AcknowledgeUnauthenticated silences the startup warning for
+	// listeners reachable without authentication; it changes no
+	// listener. Default: false.
+	AcknowledgeUnauthenticated bool `yaml:"acknowledge_unauthenticated"`
+
 	// TLSEnabled enables TLS for the server.
 	TLSEnabled bool `yaml:"tls_enabled"`
 

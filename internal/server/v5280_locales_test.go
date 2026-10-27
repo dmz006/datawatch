@@ -217,6 +217,9 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"capacity_node_model",
 		"capacity_node_unreachable",
 		"capacity_node_gpu_util",
+		// Acknowledge-unauthenticated-listeners setting: label + help keys.
+		"settings_acknowledge_unauthenticated",
+		"settings_acknowledge_unauthenticated_help",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
