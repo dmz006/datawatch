@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Operator questions for the Automaton, over REST
+
+**New: the Automation can now ask you a question, and you can answer it over REST.** The operator question channel is up: an Automaton raises a question, and an operator authorized for it reads it, answers it, changes their mind about the answer, or withdraws the question. The surface is REST for now:
+
+- `POST /api/questions` raises one (`label`, `risk`, `context`, `text`, a set of `options`, optional `recommendation`, and a required `default`), returning the stored record with its generated id.
+- `GET /api/questions` lists them, filterable by `state`, `context`, `asker`, `text` and `limit`.
+- `GET /api/questions/{id}` reads one question along with its answer count and the id of the currently effective answer.
+- Under each question id: `POST /answer` records an answer, `POST /withdraw` withdraws an open question, and `GET /answers` reads the oldest-first answer log showing which answers stand and which were superseded.
+
+Answers are **immutable**: picking an option, writing your own wording in a quote, or both leaves a stored record with a hash over the quote's exact bytes, and a changed mind is a *new* answer that names the one it supersedes, never an edit of the old one. Questions **never expire by a clock**: they stay in the file until answered or withdrawn (the `expired` state exists only as an explicit terminal move). An answer whose text looks like a secret is **refused with a 422 that names the two safe routes** — the datawatch secrets store referenced as `${secret:name}`, or a session-facing file — and is never stored, with none of the submitted text echoed to the caller. Every state change writes one question audit line into the existing single audit log under its own CEF name (`QuestionRaised`, `QuestionAnswered`, `AnswerSuperseded`, `QuestionWithdrawn`, `QuestionExpired`, `QuestionAnswerRefused`), with the pipes, `=`, backslashes and newlines the lines carry escaped, and the refused line records the refusal without any of the answer's text. The channel is **off by default** behind the new `autonomous.questions.enabled` switch — the PWA Settings toggle (labeled in five locales), `configure` from chat, or `PUT /api/config` — flipping it on takes effect on the next request without a restart, and while it is off every endpoint refuses with a 503 that names the switch. The reads sit behind `autonomous:read`, the writes (raise, answer, withdraw) behind `autonomous:write`, the same gates every other autonomous surface uses, and local operators always pass. A curl walkthrough is in `docs/howto/automation-tab.md`.
+
+**Next:** the MCP tools, the CLI subcommands, the in-PWA question queue, and answering from a comm channel build directly on this REST surface and its record, state and audit shapes.
+
 ### Shared navigation fits phone widths
 
 The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.
