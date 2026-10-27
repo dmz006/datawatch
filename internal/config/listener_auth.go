@@ -143,7 +143,9 @@ func LogUnauthenticatedListeners(w io.Writer, states []ListenerAuthState) {
 		if !st.Exposed() || st.Acknowledged {
 			continue
 		}
-		fmt.Fprintf(w, "[warn] listener %s on %s accepts requests without authentication; set a token or bind to loopback, or set server.acknowledge_unauthenticated to acknowledge.\n",
-			st.Name, st.Address)
+		if _, err := fmt.Fprintf(w, "[warn] listener %s on %s accepts requests without authentication; set a token or bind to loopback, or set server.acknowledge_unauthenticated to acknowledge.\n",
+			st.Name, st.Address); err != nil {
+			return
+		}
 	}
 }
