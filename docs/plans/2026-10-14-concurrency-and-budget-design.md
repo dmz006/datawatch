@@ -1761,3 +1761,11 @@ After the Phase 3 capacity admission shipped (9.5.68) and the daemon restarted o
 ### Usage reading 2026-10-27 about 04:00
 
 Operator: "Claude is at 27%". The week started at the 2026-10-25 08:00 reset, so 1.83 days have passed and the pace line is 26.2%: the reading is 0.8 points over it, essentially on the line. Since the 26% reading at 19:30 on 10-26 the burn is 1 point in 8.5 hours (about 2.8 a day) because the Claude lane was nearly idle. The remaining 5.17 days end near 41% at that burn and near 69% at the earlier 8.1 a day: within budget either way, with room for a second Claude lane on real work.
+
+### Decisions 2026-10-27 about 05:30 (operator answers, quoted)
+
+- Local-model time limit: operator, quoted: "Local model can continue, it's there any way to tell if it is still running?" Decision: no automatic hand-off on elapsed time; instead the supervisor needs a reliable liveness signal (open item: log growth plus child process CPU and wait state plus GPU use), so a stalled worker is told apart from one still generating.
+- CodeQL alerts: operator, quoted: "2 yes fix the issue". Decision: triage each open alert's location, fix the code or dismiss with a recorded reason; no GitHub setting changes.
+- Second Claude lane: operator, quoted: "4 yes open 2nd lane". Decision: Claude cap raised from 1 to 2 for ordinary work at 05:32 on 10-27 (usage 27%, on the pace line). Supersedes "Stay at 1 but use 2nd for special" (2026-10-26).
+- Design questions: operator, quoted: "5 if there are decisions ask". Decision: the supervisor asks, one at a time, when a design decision is needed.
+- Housekeeping: operator, quoted: "6 housekeeping is build supervisor job". Done: issue #210 closed with a note naming v9.5.84. The duplicate `v9.0.0` CHANGELOG heading is a non-exempt file, so it ships with the next release's version bump. No stable tag is named yet (no soak period has run).
