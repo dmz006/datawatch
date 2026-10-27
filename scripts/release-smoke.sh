@@ -289,7 +289,7 @@ cleanup_all() {
         # pre-smoke extra credit and usage.calculator.variant (never a pattern sweep).
         usage)           UXQ=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(str(sys.argv[1])))' "$id" 2>/dev/null || echo "$id"); curl "${curl_args[@]}" -X DELETE "$BASE/api/usage/readings?id=$UXQ" >/dev/null 2>&1 && echo "  deleted usage reading $id" || echo "  (already gone) usage reading $id" ;;
         usage-credit)    [[ -n "$id" ]] && curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"points\": $id}" "$BASE/api/usage/extra-credit" >/dev/null 2>&1 && echo "  restored usage extra credit to $id" || echo "  (already gone) usage-credit $id" ;;
-        usage-variant)   [[ -n "$id" ]] && curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.variant\": \"$(echo "$id" | tr -d '\"')\"}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored usage.calculator.variant to $id" || echo "  (already gone) usage-variant $id" ;;
+        usage-variant)   UC=$(echo "$id" | tr -d '"'); curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.variant\": \"$UC\"}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored usage.calculator.variant to ${UC:-<unset/default>}" || echo "  (already gone) usage-variant ${UC:-<unset/default>}" ;;
         # Cancel first (a draft refuses it, which is fine), then delete.
         automation)      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"cancel_in_flight":true}' "$BASE/api/automations/$id/cancel" >/dev/null 2>&1; curl "${curl_args[@]}" -X DELETE "$BASE/api/automations/$id" >/dev/null 2>&1 && echo "  removed automation $id" || echo "  (already gone) automation $id" ;;
         device)          curl "${curl_args[@]}" -X DELETE "$BASE/api/devices/$id" >/dev/null 2>&1 && echo "  removed device $id" || echo "  (already gone) device $id" ;;
@@ -4829,8 +4829,10 @@ H "82. Usage calculator (advice, readings, verdict, policy/variant, extra credit
 # The empty state answers with a needs marker (not an error); typed readings drive the
 # verdict and by_lanes; per-call policy and variant overrides are honored and unknown
 # values refused with 400; extra credit shifts the ceiling by exactly its amount and is
-# restored to the pre-smoke value; pasted and account sources stay 501 (planned, never
-# emulated) and unknown kinds are 400; the comm text renders within 50 columns over both
+# reset to 0 afterwards; the config variant round-trips through GET /api/config and is
+# restored exactly (empty when this script owns a fresh daemon, so the daemon's config
+# is left untouched); pasted and account sources stay 501 (planned, never emulated)
+# and unknown kinds are 400; the comm text renders within 50 columns over both
 # the advice and the test-message route; the CLI verdict is compared with the API
 # verdict, not just grepped.
 #
@@ -4876,11 +4878,18 @@ UX_A0CODE=$(curl "${curl_args[@]}" -s -o "$UX_A0BODY" -w '%{http_code}' "$BASE/a
 UX_A0=$(cat "$UX_A0BODY" 2>/dev/null || true)
 UX_CEIL0=$(echo "$UX_A0" | ux_num ceiling); UX_CEIL0=${UX_CEIL0:-100}
 UX_CRED0=$(echo "$UX_A0" | ux_num extra_credit_points); UX_CRED0=${UX_CRED0:-0}
-add_cleanup usage-credit "$UX_CRED0"
+# The section resets the credit to 0 itself (asserted), so the safety-net cleanup
+# kind also holds 0: an exact-value restore, never a pattern sweep.
+add_cleanup usage-credit 0
 UX_CONF0=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
 UX_V0=$(echo "$UX_CONF0" | python3 -c 'import json, sys; v = json.load(sys.stdin)["usage"]["calculator"]["variant"]; print(v if v else "all")' 2>/dev/null || true)
 UX_V0=${UX_V0:-all}
-add_cleanup usage-variant "$UX_V0"
+# Restore target: on a daemon this script owns, the stored variant was unset (GET shows
+# the effective default "all"), so restore EMPTY — the default applies again and the
+# daemon's config is left exactly as found. On an external daemon restore the exact
+# value that was effective before the smoke.
+if [[ -z "$UX_EXT" ]]; then UX_VRESTORE=""; else UX_VRESTORE="$UX_V0"; fi
+add_cleanup usage-variant "$UX_VRESTORE"
 if [[ "$UX_A0CODE" == "200" ]] && echo "$UX_A0" | UX_EXT="$UX_EXT" python3 -c '
 import json, os, sys
 d = json.load(sys.stdin)
@@ -4929,40 +4938,13 @@ else
   ko "usage source gate: expected pasted=501 account=501 unknown=400, got pasted=$UX_PS account=$UX_AS unknown=$UX_UK: $(head -c 120 "$UX_PSB" 2>/dev/null)"
 fi
 
-# --- two typed readings; ids captured from the POST response (fallback: list match) ----
+# --- two typed readings; both exact ids come from the POST response, nothing else ----
 UX_R1=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T1\",\"percent\":30,\"source\":\"typed\"}" "$BASE/api/usage/readings" 2>/dev/null || true)
 UX_R2=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T2\",\"percent\":45,\"source\":\"typed\"}" "$BASE/api/usage/readings" 2>/dev/null || true)
 UX_ID1=$(echo "$UX_R1" | ux_readid)
 UX_ID2=$(echo "$UX_R2" | ux_readid)
-if [[ -z "$UX_ID1" || -z "$UX_ID2" ]]; then
-  UX_LIST0=$(curl "${curl_args[@]}" -s "$BASE/api/usage/readings" 2>/dev/null || true)
-  UX_FALL=$(echo "$UX_LIST0" | UX_T1="$UX_T1" UX_T2="$UX_T2" python3 -c '
-import json, os, sys
-from datetime import datetime
-d = json.load(sys.stdin)
-def parse(v):
-    return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
-t1 = parse(os.environ["UX_T1"]); t2 = parse(os.environ["UX_T2"])
-found = []
-for r in d.get("readings") or []:
-    if r.get("source") != "typed" or not r.get("id"):
-        continue
-    try:
-        at = parse(r["at"])
-    except Exception:
-        continue
-    p = r.get("percent")
-    for t, want in ((t1, 30), (t2, 45)):
-        if abs((at - t).total_seconds()) < 3600 and p is not None and abs(p - want) < 0.001:
-            found.append(r["id"])
-            break
-print(" ".join(found[:2]))
-' 2>/dev/null || true)
-  UX_ID1=${UX_ID1:-$(printf '%s' "$UX_FALL" | awk '{print $1}')}
-  UX_ID2=${UX_ID2:-$(printf '%s' "$UX_FALL" | awk '{print $2}')}
-fi
 if echo "$UX_R1" | grep -q '"ok":true' && echo "$UX_R2" | grep -q '"ok":true' \
-   && [[ -n "$UX_ID1" && "$UX_ID1" != "$UX_ID2" ]]; then
+   && [[ -n "$UX_ID1" && -n "$UX_ID2" && "$UX_ID1" != "$UX_ID2" ]]; then
   add_cleanup usage "$UX_ID1"
   add_cleanup usage "$UX_ID2"
   ok "usage readings: two typed readings accepted; both exact ids captured for precise cleanup"
@@ -5076,16 +5058,17 @@ assert abs(a["extra_credit_points"] - 80) < 0.001, a["extra_credit_points"]
 assert abs(a["ceiling"] - (float(os.environ["UX_CEIL0"]) + 80)) < 0.001, (a["ceiling"], os.environ["UX_CEIL0"])
 ' 2>/dev/null; then
   ok "usage extra credit: PUT +80 raises the ceiling by exactly 80 (was $UX_CEIL0, now $(echo "$UX_AC" | ux_num ceiling)); PUT -5 refused with 400"
-  UX_EC2=$(curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d "{\"points\": $UX_CRED0}" "$BASE/api/usage/extra-credit" 2>/dev/null || true)
+  UX_EC2=$(curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d '{"points": 0}' "$BASE/api/usage/extra-credit" 2>/dev/null || true)
   UX_AR=$(ux_adv "$BASE/api/usage/advice")
   if echo "$UX_EC2" | grep -q '"ok":true' && echo "$UX_AR" | UX_CEIL0="$UX_CEIL0" python3 -c '
 import json, os, sys
 a = json.load(sys.stdin)["advice"]
+assert abs(a["extra_credit_points"] - 0) < 0.001, a["extra_credit_points"]
 assert abs(a["ceiling"] - float(os.environ["UX_CEIL0"])) < 0.001, (a["ceiling"], os.environ["UX_CEIL0"])
 ' 2>/dev/null; then
-    ok "usage extra credit: restored to the pre-smoke value ($UX_CRED0 points, ceiling back to $UX_CEIL0)"
+    ok "usage extra credit: reset to 0 afterwards (credit 0, ceiling back to $UX_CEIL0)"
   else
-    ko "usage extra credit: restore failed (ceiling=$(echo "$UX_AR" | ux_num ceiling), wanted $UX_CEIL0)"
+    ko "usage extra credit: reset to 0 failed (ceiling=$(echo "$UX_AR" | ux_num ceiling), wanted $UX_CEIL0)"
   fi
 else
   ko "usage extra credit: PUT +80 did not raise the ceiling by 80 (was $UX_CEIL0 => $(echo "$UX_AC" | ux_num ceiling)), negative status=$UX_EN: $UX_EC1"
@@ -5099,14 +5082,16 @@ UX_ADV=$(ux_adv "$BASE/api/usage/advice")
 if echo "$UX_CONF2" | python3 -c 'import json, sys; assert json.load(sys.stdin)["usage"]["calculator"]["variant"] == "burn-ledger"' 2>/dev/null \
    && echo "$UX_ADV" | python3 -c 'import json, sys; assert json.load(sys.stdin)["variant"] == "burn-ledger"' 2>/dev/null; then
   ok "usage config round-trip: usage.calculator.variant PUT lands in GET /api/config and applies live to advice"
-  curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.variant\":\"$UX_V0\"}" "$BASE/api/config" >/dev/null 2>&1
+  curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.variant\":\"$UX_VRESTORE\"}" "$BASE/api/config" >/dev/null 2>&1
   UX_CONF3=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
   UX_ADB=$(ux_adv "$BASE/api/usage/advice")
+  # The config display is the EFFECTIVE value: an empty restore reads back the default
+  # ("all"), so compare the display against the pre-smoke effective value UX_V0.
   if echo "$UX_CONF3" | UX_V0="$UX_V0" python3 -c 'import json, os, sys; assert (json.load(sys.stdin)["usage"]["calculator"]["variant"] or "all") == os.environ["UX_V0"]' 2>/dev/null \
      && echo "$UX_ADB" | UX_V0="$UX_V0" python3 -c 'import json, os, sys; assert json.load(sys.stdin)["variant"] == os.environ["UX_V0"]' 2>/dev/null; then
-    ok "usage config round-trip: variant restored to the pre-smoke value ($UX_V0) and live advice follows"
+    ok "usage config round-trip: variant restored (stored=\"$UX_VRESTORE\") and live advice is back to the pre-smoke value ($UX_V0)"
   else
-    ko "usage config round-trip: variant not restored to $UX_V0: conf=$(echo "$UX_CONF3" | head -c 160)"
+    ko "usage config round-trip: variant not restored (saved \"$UX_VRESTORE\", effective still != $UX_V0): conf=$(echo "$UX_CONF3" | head -c 160)"
   fi
 else
   ko "usage config round-trip: variant set/change not visible or live: conf=$(echo "$UX_CONF2" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("usage", {}))' 2>/dev/null || echo '?') adv=$(echo "$UX_ADV" | head -c 120)"
