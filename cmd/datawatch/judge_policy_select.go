@@ -122,7 +122,8 @@ func judgeVerifierChooser(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Conf
 // else the verifier policy list) and the candidate pool are put in size order
 // once, so fixed and prefer-free see claude-code first for a large diff and
 // balance only breaks load ties by it. Every pick's reason starts with the rule
-// text, so the decision log shows the rule and the line count. Backends tried
+// text, the unit-backend fallback pick included, so the decision log shows the
+// rule and the line count. Backends tried
 // are still excluded per call, so each is tried at most once.
 func judgeVerifierChooserSized(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Config, unitBackend string, probe func(backend, model string) bool, pick judgePickFn, size judgeSize) judgeBackendChooser {
 	verifier := effectiveVerifierPolicy(liveCfg)
@@ -158,7 +159,7 @@ func judgeVerifierChooserSized(mgr *autonomouspkg.Manager, liveCfg autonomouspkg
 	return func(tried []string) (string, bool) {
 		fallback := func(reason string) (string, bool) {
 			if len(tried) == 0 {
-				plainPick(unitBackend, "", reason+"; using the unit backend "+unitBackend)
+				pick(unitBackend, "", reason+"; using the unit backend "+unitBackend)
 				return unitBackend, true
 			}
 			return "", false

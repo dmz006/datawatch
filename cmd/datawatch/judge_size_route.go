@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
@@ -92,12 +91,17 @@ func measureJudgeSize(ctx context.Context, threshold int, req autonomouspkg.Guar
 }
 
 // route returns the rule text for the decision log and the function that
-// orders a backend list for this call (a fresh slice, each backend once). read is the list the selector reads, which the rule
-// text is built from. balance says the selector picks by load, so the order
-// only breaks load ties.
+// orders a backend list for this call (a fresh slice, each backend once). read
+// is the list the selector reads, which the rule text is built from. balance
+// says the selector picks by load, so the order only breaks load ties and the
+// rule text says so, whether or not the rule moved a backend.
 func (s judgeSize) route(read []string, balance bool) (rule string, order func([]string) []string) {
+	const balanceNote = "; balance mode picks by load, so the order only breaks load ties"
 	if s.Err != nil {
 		rule = fmt.Sprintf("default order: changed line count unknown (%v), size routing skipped", s.Err)
+		if balance {
+			rule += balanceNote
+		}
 		return rule, func(l []string) []string { return l }
 	}
 	_, rule = judgeSizeRoute(read, s.Lines, s.Threshold)
@@ -105,8 +109,8 @@ func (s judgeSize) route(read []string, balance bool) (rule string, order func([
 		o, _ := judgeSizeRoute(l, s.Lines, s.Threshold)
 		return o
 	}
-	if balance && strings.HasPrefix(rule, "size rule") {
-		rule += "; balance mode picks by load, so the order only breaks load ties"
+	if balance && s.Threshold > 0 {
+		rule += balanceNote
 	}
 	return rule, order
 }

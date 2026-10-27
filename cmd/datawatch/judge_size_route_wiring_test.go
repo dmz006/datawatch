@@ -241,3 +241,56 @@ func TestJudgeSizeRouteEachBackendTriedOnceAndHoldStaysUnchanged(t *testing.T) {
 		}
 	}
 }
+
+func TestJudgeSizeRouteUnitBackendFallbackCarriesRule(t *testing.T) {
+	cases := map[string]struct {
+		cfg   autonomouspkg.Config
+		probe func(string, string) bool
+		size  judgeSize
+		want  string
+	}{
+		"policy does not apply": {
+			cfg:   autonomouspkg.Config{VerifierPolicy: config.VerifierPolicyConfig{Mode: "fixed"}},
+			probe: func(string, string) bool { return true },
+			size:  judgeSize{Threshold: 400, Lines: 900},
+			want:  "900 changed lines",
+		},
+		"no eligible backend": {
+			cfg:   sizeRouteConfig("gpu-only", "claude-code"),
+			probe: func(string, string) bool { return false },
+			size:  judgeSize{Threshold: 400, Lines: 900},
+			want:  "900 changed lines",
+		},
+		"count unknown": {
+			cfg:   sizeRouteConfig("gpu-only", "claude-code"),
+			probe: func(string, string) bool { return false },
+			size:  judgeSize{Threshold: 400, Err: errors.New("git failed")},
+			want:  "changed line count unknown",
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			rec := &pickRecorder{}
+			choose := judgeVerifierChooserSized(nil, c.cfg, "ollama", c.probe, rec.record, c.size)
+			backend, ok := choose(nil)
+			if !ok || backend != "ollama" {
+				t.Fatalf("pick = %q %v, want the unit backend ollama", backend, ok)
+			}
+			if len(rec.picks) != 1 {
+				t.Fatalf("decision log has %d picks, want 1: %v", len(rec.picks), rec.picks)
+			}
+			reason := strings.SplitN(rec.picks[0], "|", 3)[2]
+			if !strings.Contains(reason, c.want) || !strings.Contains(reason, "using the unit backend ollama") {
+				t.Fatalf("fallback reason %q lacks %q or the unit backend note", reason, c.want)
+			}
+		})
+	}
+}
+
+func TestJudgeSizeRouteBalanceDefaultOrderSaysOrderOnlyBreaksTies(t *testing.T) {
+	cfg := sizeRouteConfig("balance", "pi", "claude-code")
+	_, reason := sizeRouteFirstPick(t, cfg, judgeSize{Threshold: 400, Lines: 12})
+	if !strings.Contains(reason, "default order") || !strings.Contains(reason, "load ties") {
+		t.Fatalf("reason %q lacks default order or the balance-mode note", reason)
+	}
+}
