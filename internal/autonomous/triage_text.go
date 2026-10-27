@@ -97,6 +97,7 @@ func RenderTriageRecord(rec *TriageRecord) string {
 		b.WriteString("Standalone Automaton (not part of an Automation).\n")
 	}
 	b.WriteString(triageDetailsBlock(rec))
+	b.WriteString("\n")
 	fmt.Fprintf(&b, "Stuck since %s.", rec.FirstSeenAt.Format(time.RFC3339))
 	if rec.UpdatedAt.After(rec.FirstSeenAt) {
 		fmt.Fprintf(&b, " Last updated %s.", rec.UpdatedAt.Format(time.RFC3339))

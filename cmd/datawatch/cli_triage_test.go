@@ -60,6 +60,26 @@ func TestTriageCLI_RendersRecordsAndThreshold(t *testing.T) {
 	}
 }
 
+func TestTriageCLI_EmptyShowsNothingWaiting(t *testing.T) {
+	d := newLaneFillCLIDaemon(t, http.StatusOK, `{"records":[],"alert_minutes":30}`)
+	out, err := runLaneFillCmd(t, newAutonomousTriageCmd(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.path != "/api/autonomous/triage" || d.query != "" {
+		t.Errorf("path=%s query=%q", d.path, d.query)
+	}
+	if !strings.Contains(out, "No failed or blocked Automata to triage") {
+		t.Errorf("empty case must say nothing is waiting:\n%s", out)
+	}
+	if !strings.Contains(out, "30 min") {
+		t.Errorf("the threshold in effect must still show:\n%s", out)
+	}
+	if strings.Contains(out, `Automaton "`) {
+		t.Errorf("no record may be rendered with an empty list:\n%s", out)
+	}
+}
+
 func TestTriageCLI_FiltersAreSentAsQuery(t *testing.T) {
 	d := newLaneFillCLIDaemon(t, http.StatusOK, `{"records":[],"alert_minutes":30}`)
 	if _, err := runLaneFillCmd(t, newAutonomousTriageCmd(),

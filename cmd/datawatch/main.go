@@ -7867,6 +7867,23 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 			}
 		}
+		// System alerts (no session, e.g. the triage alert or the
+		// Automation-blocked alert) fan out over the comm channels, using
+		// the same per-send notify_exclude as the lifecycle comm sinks.
+		// The body reaches each chat sink verbatim (no truncation):
+		// the triage alert body is the shared triage record text, and
+		// it must arrive intact. Session alerts keep flowing through
+		// bundleRemoteAlert's bundled messages.
+		if a.SessionID == "" {
+			var sendNtfy, sendEmail func(text string) error
+			if ntfyBackend != nil {
+				sendNtfy = func(text string) error { return ntfyBackend.Send(cfg.Ntfy.Topic, text) }
+			}
+			if emailBackend != nil {
+				sendEmail = func(text string) error { return emailBackend.Send(cfg.Email.To, text) }
+			}
+			sendSystemAlertToComm(a, cfg.Hostname, cfg.NotifyExclude, routers, sendNtfy, sendEmail)
+		}
 	})
 
 	// Start the scheduler goroutine (fires timed commands and on-input-prompt commands)

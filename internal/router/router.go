@@ -1325,13 +1325,27 @@ func (r *Router) handleAlerts(cmd Command) {
 	r.send(sb.String())
 }
 
-// SendAlert formats an alert and broadcasts it to this router's backend group.
-// Called by main.go's alert listener for each active messaging backend.
-func (r *Router) SendAlert(a *alerts.Alert) {
-	body := ""
+// AlertText renders an alert in the comm channel format: a header line
+// with host, level and title, then the body verbatim on the following
+// lines. The body is never truncated or reformatted — the triage
+// alert's body is the shared triage record text, and it must reach
+// the chat sink intact.
+func AlertText(hostname string, a *alerts.Alert) string {
+	out := fmt.Sprintf("[%s] ALERT [%s] %s", hostname, strings.ToUpper(string(a.Level)), a.Title)
 	if a.Body != "" {
-		body = "\n" + truncate(a.Body, 200)
+		out += "\n" + a.Body
 	}
+	return out
+}
+
+// AlertText renders an alert for this router: the same format as the
+// package AlertText, stamped with this router's host.
+func (r *Router) AlertText(a *alerts.Alert) string { return AlertText(r.hostname, a) }
+
+// SendAlert formats an alert and broadcasts it to this router's backend
+// group. Called by main.go's alert listener for each active messaging
+// backend. The body carries through untruncated (see AlertText).
+func (r *Router) SendAlert(a *alerts.Alert) {
 	// Append quick-reply hints when a session is waiting for input and saved commands exist.
 	quickHints := ""
 	if a.SessionID != "" && r.cmdLib != nil {
@@ -1349,8 +1363,7 @@ func (r *Router) SendAlert(a *alerts.Alert) {
 			}
 		}
 	}
-	r.send(fmt.Sprintf("[%s] ALERT [%s] %s%s%s",
-		r.hostname, strings.ToUpper(string(a.Level)), a.Title, body, quickHints))
+	r.send(r.AlertText(a) + quickHints)
 }
 
 func (r *Router) handleVersion() {
