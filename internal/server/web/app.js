@@ -16018,6 +16018,7 @@ const GENERAL_CONFIG_FIELDS = [
     // verifier routing policy. The time limit counts the judge run only.
     { key: 'autonomous.judge_policy', label: 'Judge backends (ordered, comma-separated; empty = verifier routing policy)', labelKey: 'settings_judge_policy', helpKey: 'settings_judge_policy_help', type: 'text', placeholder: 'claude-code, ollama-datawatch', csv: true },
     { key: 'autonomous.judge_timeout_seconds', label: 'Judge time limit (sec, 0=30m)', labelKey: 'settings_judge_timeout', helpKey: 'settings_judge_timeout_help', type: 'number', min: 0, placeholder: '1800' },
+    { key: 'autonomous.judge_size_threshold_lines', label: 'Judge size threshold (lines, 0=off)', labelKey: 'settings_judge_size_threshold', helpKey: 'settings_judge_size_threshold_help', type: 'number', min: 0, placeholder: '400' },
     // GH#172/#182 — planning_effort, verification_effort, and
     // stale_task_seconds were real config keys (internal/config/
     // config.go) with no card field. decomposition_backend/

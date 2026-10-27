@@ -1765,6 +1765,8 @@
   "settings_judge_policy_help": "Die LLM-Backends, die die Judges der Reihe nach versuchen, jeweils ein Versuch: der Guardrail des Automaten sowie Plan-Review- und andere autonome Judges. Ein Judge wechselt nur dann zum nächsten Backend, wenn sein Lauf das Zeitlimit erreicht. Leer (Standard) folgt der Verifier-Routing-Richtlinie, sodass Judges dieselben Modi und Backends nutzen wie Verifier; die Anzahl der Versuche entspricht der Anzahl der Backends, die die Richtlinie anbietet.",
   "settings_judge_timeout": "Zeitlimit für Judges (Sek., 0=30min)",
   "settings_judge_timeout_help": "Zeitlimit für einen Judge-Lauf, gezählt ab dem Start des Judges. Die Wartezeit auf einen Kapazitätsplatz zählt nicht. 0 verwendet den Standard von 1800 Sekunden (30 Minuten). Bei einer Zeitüberschreitung wird jeweils gewarnt und das nächste Backend versucht. Nach dem letzten Backend braucht der Automat eine Prüfung (needs review), und eine Fehlermeldung listet jeden Versuch auf.",
+  "settings_judge_size_threshold": "Judge-Größenschwelle (Zeilen, 0=aus)",
+  "settings_judge_size_threshold_help": "Wenn die geprüfte Änderung mehr hinzugefügte und gelöschte Zeilen als diesen Wert umfasst, versucht der Judge zuerst claude-code und danach die anderen Backends in ihrer üblichen Reihenfolge. Die Zeilen werden auf dem Branch des Automaten gegen dessen Merge-Basis gezählt, Lock-Dateien bleiben unberücksichtigt. 0 schaltet die Funktion ab. Der Standard ist 400.",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_session_idle_timeout": "Sitzungs-Idle-Timeout (Sek., 0=15min)",
   "settings_verifier_infra_escalation_threshold": "Schwelle für Verifier-Infra-Eskalation (0=2)",

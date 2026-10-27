@@ -452,12 +452,24 @@ test('autonomous settings expose judge_policy and judge_timeout_seconds with lab
   assert.equal(timeout.placeholder, '1800');
   assert.equal(timeout.labelKey, 'settings_judge_timeout');
   assert.equal(timeout.helpKey, 'settings_judge_timeout_help');
+  const sizeThreshold = fields.find(f => f.key === 'autonomous.judge_size_threshold_lines');
+  assert.ok(sizeThreshold, 'autonomous.judge_size_threshold_lines missing from autonomous card fields');
+  assert.equal(sizeThreshold.type, 'number');
+  assert.equal(sizeThreshold.min, 0);
+  assert.equal(sizeThreshold.placeholder, '400');
+  assert.equal(sizeThreshold.labelKey, 'settings_judge_size_threshold');
+  assert.equal(sizeThreshold.helpKey, 'settings_judge_size_threshold_help');
+  const keys = fields.map(f => f.key);
+  assert.equal(keys.indexOf('autonomous.judge_size_threshold_lines'),
+    keys.indexOf('autonomous.judge_timeout_seconds') + 1,
+    'size threshold must sit right after the time-limit field');
 });
 
 test('judge_policy and judge_timeout_seconds label and help keys are non-empty in all five locale bundles', () => {
   const keys = [
     'settings_judge_policy', 'settings_judge_policy_help',
     'settings_judge_timeout', 'settings_judge_timeout_help',
+    'settings_judge_size_threshold', 'settings_judge_size_threshold_help',
   ];
   for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
     const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
