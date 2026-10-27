@@ -104,8 +104,25 @@ def liveness(prd_id):
     return ("processes in worktree (pid:state/wait/cpu) " + " ".join(out[:6])) if out else "no process has its cwd in the worktree"
 
 
+def usage_snapshot():
+    """Append cumulative Claude token counters per session to /tmp/sv/usage-ledger.jsonl.
+
+    Session counters are lifetime totals, so only the difference between two snapshots says how many tokens a window used.
+    """
+    d = get_json("https://localhost:8443/api/sessions", timeout=15, insecure=True)
+    ss = d if isinstance(d, list) else (d or {}).get("sessions", [])
+    rec = {"ts": int(time.time()), "s": {x["id"]: [x.get("model") or "default", x.get("tokens_in") or 0, x.get("tokens_out") or 0, x.get("name", "")[:30]]
+                                         for x in ss if x.get("backend_family") == "claude-code"}}
+    try:
+        with open("/tmp/sv/usage-ledger.jsonl", "a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except OSError:
+        pass
+
+
 def main():
     findings, state = [], {}
+    usage_snapshot()
     try:
         state = json.load(open(STATE))
     except Exception:
