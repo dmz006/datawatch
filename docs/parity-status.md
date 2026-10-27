@@ -67,7 +67,7 @@ Legend:
 | PRD list story/task status parity — icon mapping, effective status, card persistence (B104) | ✅ v8.33.28 | ✅ | ✅ |
 | Automata list — completed in default view, filter badges for all statuses incl. history group (B105) | ✅ v8.33.29 | ✅ | ✅ |
 | Inline file viewer for task file chips — markdown rendered, plain text, download fallback (B106) | ✅ v8.33.32 | ✅ | ✅ |
-| Watch sessions/automata + watched-only filter | ✅ v8.50.0 | ✅ | ✅ (app CHANGELOG: "👁 N button... Android and iOS") |
+| Watch sessions/automata + watched-only filter | ✅ v8.50.0; on the session list and detail, watching and the Watched only toggle now sit in the header Tags dropdown (Unreleased) | ✅ | ✅ (app CHANGELOG: "👁 N button... Android and iOS") |
 | Council markdown rendering | 🔶 v8.46.0 — completed-run modal only; the live in-progress run log is still plain text (GH#181, left open) | ✅ | ✅ |
 | Animated "eye" loading state (replacing plain "Loading…" / shimmer bars) | ❌ — tracked, `dmz006/datawatch#186`, not started | ✅ | ✅ |
 | Native ACME / Let's Encrypt cert management — HTTP-01 + DNS-01 (Cloudflare) + zero-downtime hot-swap (BL397) | ✅ v8.62.x | N/A (server-side feature; apps just consume whatever cert the daemon serves) | N/A |
