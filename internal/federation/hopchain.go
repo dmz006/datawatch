@@ -37,6 +37,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"time"
 )
@@ -44,6 +45,18 @@ import (
 // HopChainHeader is the HTTP header carrying an encoded Chain on a
 // daemon-to-daemon federation/proxy forward.
 const HopChainHeader = "X-Datawatch-Hop-Chain"
+
+// maxHopChainBytes bounds the signing input (prior chain JSON plus
+// actor, daemon and the delimiters/timestamp). 1 MiB matches Go's
+// net/http default header limit (DefaultMaxHeaderBytes), which already
+// caps any chain that can arrive in X-Datawatch-Hop-Chain, so no
+// legitimate chain gets near it; it exists so a huge input is refused
+// before the capacity sum is computed and the buffer allocated.
+const maxHopChainBytes = 1 << 20
+
+// ErrHopChainTooLarge is returned when a hop's signing input would
+// exceed maxHopChainBytes.
+var ErrHopChainTooLarge = errors.New("hop chain signing input exceeds maximum size")
 
 // HopEntry is one link. Actor stays constant across every entry in a
 // Chain — it names who originated the action, carried forward
@@ -79,6 +92,14 @@ func signingInput(prior Chain, actor, daemon string, ts int64) ([]byte, error) {
 	priorJSON, err := json.Marshal(prior)
 	if err != nil {
 		return nil, err
+	}
+	// Check each length on its own first so the capacity sum below
+	// cannot overflow, then the total against the same bound.
+	if len(priorJSON) > maxHopChainBytes || len(actor) > maxHopChainBytes || len(daemon) > maxHopChainBytes {
+		return nil, ErrHopChainTooLarge
+	}
+	if len(priorJSON)+len(actor)+len(daemon)+24 > maxHopChainBytes {
+		return nil, ErrHopChainTooLarge
 	}
 	in := make([]byte, 0, len(priorJSON)+len(actor)+len(daemon)+24)
 	in = append(in, priorJSON...)

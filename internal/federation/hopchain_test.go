@@ -2,6 +2,8 @@ package federation
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -231,5 +233,50 @@ func TestHopChain_ChainFromContext_DefaultsToNil(t *testing.T) {
 func TestHopChain_PrincipalFromContext_DefaultsToEmpty(t *testing.T) {
 	if got := PrincipalFromContext(context.Background()); got != "" {
 		t.Fatalf("PrincipalFromContext on a bare context = %q, want empty", got)
+	}
+}
+
+func TestHopChain_SigningInputUnchangedForNormalChain(t *testing.T) {
+	prior := Chain{{Actor: "admin", Daemon: "daemon-a", TS: 1000, Sig: "abc"}}
+	got, err := signingInput(prior, "admin", "daemon-b", 2000)
+	if err != nil {
+		t.Fatalf("signingInput: %v", err)
+	}
+	want := `[{"actor":"admin","daemon":"daemon-a","ts":1000,"sig":"abc"}]|admin|daemon-b|2000`
+	if string(got) != want {
+		t.Fatalf("signing input changed:\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestHopChain_OversizedActorRefused(t *testing.T) {
+	_, err := SignHop(nil, strings.Repeat("a", maxHopChainBytes+1), "daemon-a", 1000, "k")
+	if !errors.Is(err, ErrHopChainTooLarge) {
+		t.Fatalf("expected ErrHopChainTooLarge, got %v", err)
+	}
+}
+
+func TestHopChain_OversizedDaemonRefused(t *testing.T) {
+	_, err := SignHop(nil, "admin", strings.Repeat("d", maxHopChainBytes+1), 1000, "k")
+	if !errors.Is(err, ErrHopChainTooLarge) {
+		t.Fatalf("expected ErrHopChainTooLarge, got %v", err)
+	}
+}
+
+func TestHopChain_OversizedPriorChainRefused(t *testing.T) {
+	prior := Chain{{Actor: strings.Repeat("a", maxHopChainBytes), Daemon: "d", TS: 1, Sig: "s"}}
+	_, err := SignHop(prior, "admin", "daemon-b", 2000, "k")
+	if !errors.Is(err, ErrHopChainTooLarge) {
+		t.Fatalf("expected ErrHopChainTooLarge, got %v", err)
+	}
+	if VerifyLastHop(append(prior, HopEntry{Actor: "admin", Daemon: "daemon-b", TS: 2000, Sig: "x"}), "k") {
+		t.Fatal("oversized chain must not verify")
+	}
+}
+
+func TestHopChain_TotalOverLimitRefused(t *testing.T) {
+	half := strings.Repeat("a", maxHopChainBytes/2+1)
+	_, err := SignHop(nil, half, half, 1000, "k")
+	if !errors.Is(err, ErrHopChainTooLarge) {
+		t.Fatalf("expected ErrHopChainTooLarge, got %v", err)
 	}
 }
