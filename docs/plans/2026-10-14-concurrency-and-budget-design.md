@@ -1787,3 +1787,7 @@ Operator: "33% claude". Days since the 2026-10-25 08:00 reset: 2.12, so the pace
 - Usage: operator, quoted: "2 still 33%" (still 33% at about 12:00, 5 hours after the 07:40 reading; the transcript-based burn since 10:55 is about 0.3 points).
 - Supervisor tick schedule: operator, quoted: "3 no" (keep the 20-minute watch and the hourly full tick through the 24-hour trial).
 - CodeQL alerts: operator, quoted: "1 option 1" (get a local CodeQL CLI, iterate the fixes against it, push only code that clears the alerts; no dismissals of product alerts and no GitHub setting changes).
+
+### Usage reading 2026-10-27 about 13:55
+
+Operator: "Claude is at 36%". Days since the 2026-10-25 08:00 reset: 2.25, so the pace line is 32.1% and the reading is 3.9 points over it. Since 33% at 10:55 the burn is 3 points in 3 hours (about 24 points a day). Normalized units from the transcripts: 3.52 million units for those 3 points (1.17 million per point, the heaviest window per point so far, with merge helpers and two large Claude PRDs running), and 24.4 million units since the reset for 36 points, a pooled 0.68 million per point (was 0.655 million). At the week-average burn of about 16 points a day the week ends near 112 percent. The two-lane trial the operator asked for runs until about 11:00 on 2026-10-28.
