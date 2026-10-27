@@ -114,6 +114,17 @@ func judgeDecisionLog(mgr *autonomouspkg.Manager, req autonomouspkg.GuardrailInv
 // backend both fall back to the unit's own guardrail backend, but only on the
 // first attempt.
 func judgeVerifierChooser(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Config, unitBackend string, probe func(backend, model string) bool, pick judgePickFn) judgeBackendChooser {
+	return judgeVerifierChooserSized(mgr, liveCfg, unitBackend, probe, pick, judgeSize{})
+}
+
+// judgeVerifierChooserSized is judgeVerifierChooser with the size rule: when
+// size.Threshold is set, the list the selector reads (the judge policy list,
+// else the verifier policy list) and the candidate pool are put in size order
+// once, so fixed and prefer-free see claude-code first for a large diff and
+// balance only breaks load ties by it. Every pick's reason starts with the rule
+// text, so the decision log shows the rule and the line count. Backends tried
+// are still excluded per call, so each is tried at most once.
+func judgeVerifierChooserSized(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Config, unitBackend string, probe func(backend, model string) bool, pick judgePickFn, size judgeSize) judgeBackendChooser {
 	verifier := effectiveVerifierPolicy(liveCfg)
 	listed := config.NormalizeJudgePolicy(liveCfg.JudgePolicy)
 	if len(listed) == 0 {
@@ -127,10 +138,27 @@ func judgeVerifierChooser(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Conf
 			candidates = []string{global}
 		}
 	}
+	plainPick := pick
+	if size.Threshold > 0 {
+		pool = config.NormalizeVerifierPolicyBackends(pool)
+		read := listed
+		if len(read) == 0 {
+			read = pool
+		}
+		mode, _ := config.NormalizeVerifierPolicyMode(verifier.Mode)
+		rule, order := size.route(read, mode == config.VerifierPolicyBalance)
+		if len(listed) > 0 {
+			listed = order(listed)
+		}
+		if len(pool) > 0 {
+			candidates = order(pool)
+		}
+		pick = func(backend, model, reason string) { plainPick(backend, model, rule+"; "+reason) }
+	}
 	return func(tried []string) (string, bool) {
 		fallback := func(reason string) (string, bool) {
 			if len(tried) == 0 {
-				pick(unitBackend, "", reason+"; using the unit backend "+unitBackend)
+				plainPick(unitBackend, "", reason+"; using the unit backend "+unitBackend)
 				return unitBackend, true
 			}
 			return "", false
@@ -173,6 +201,13 @@ func judgeVerifierChooser(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Conf
 // the probe and the decision log apply, and the judge never moves to another
 // backend.
 func judgeBackendChooserFor(ctx context.Context, mgr *autonomouspkg.Manager, req autonomouspkg.GuardrailInvocation, gcfg autonomouspkg.Config, unitBackend string) judgeBackendChooser {
+	return judgeBackendChooserForSize(ctx, mgr, req, gcfg, unitBackend, judgeSize{})
+}
+
+// judgeBackendChooserForSize is judgeBackendChooserFor with the size rule. A
+// unit that pins its guardrail backend keeps its existing behaviour: the size
+// rule does not apply to it.
+func judgeBackendChooserForSize(ctx context.Context, mgr *autonomouspkg.Manager, req autonomouspkg.GuardrailInvocation, gcfg autonomouspkg.Config, unitBackend string, size judgeSize) judgeBackendChooser {
 	pick := judgeDecisionLog(mgr, req)
 	if pin := req.GuardrailBackend; pin != "" {
 		gcfg.JudgePolicy = []string{pin}
@@ -181,6 +216,7 @@ func judgeBackendChooserFor(ctx context.Context, mgr *autonomouspkg.Manager, req
 		pick = func(backend, model, reason string) {
 			logged(backend, model, "pinned unit backend; "+reason)
 		}
+		size = judgeSize{}
 	}
 	var probe func(backend, model string) bool
 	if judgeCapacityTryAdmit != nil {
@@ -188,5 +224,5 @@ func judgeBackendChooserFor(ctx context.Context, mgr *autonomouspkg.Manager, req
 			return judgeCapacityTryAdmit(ctx, backend, model, req.UnitID, req.PRDID)
 		}
 	}
-	return judgeVerifierChooser(mgr, gcfg, unitBackend, probe, pick)
+	return judgeVerifierChooserSized(mgr, gcfg, unitBackend, probe, pick, size)
 }

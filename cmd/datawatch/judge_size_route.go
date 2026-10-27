@@ -1,6 +1,13 @@
 package main
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+)
 
 // judgeSizeRouteBackend is the backend a large diff is routed to first.
 const judgeSizeRouteBackend = "claude-code"
@@ -42,4 +49,64 @@ func judgeSizeRoute(chain []string, lines, threshold int) (ordered []string, rul
 	}
 	return front, fmt.Sprintf("size rule: %d changed lines is above the threshold of %d, %s tried first",
 		lines, threshold, judgeSizeRouteBackend)
+}
+
+// judgeSizeMeasureTimeout bounds the git work that counts one Automaton's
+// changed lines before a judge call.
+const judgeSizeMeasureTimeout = 30 * time.Second
+
+// judgeDiffLines counts an Automaton branch's changed lines; a variable so
+// tests can fake the git work.
+var judgeDiffLines = autonomouspkg.JudgeDiffLines
+
+// judgeSize is the size input of one judge call. The zero value (threshold 0)
+// is size routing off. A non-nil Err means the line count is unknown, and the
+// judge keeps the default order.
+type judgeSize struct {
+	Threshold int
+	Lines     int
+	Err       error
+}
+
+// measureJudgeSize counts the changed lines of req's Automaton for one judge
+// call. With threshold 0 it measures nothing. A failed measurement is never an
+// error for the judge: it is recorded on the result and the judge routes in
+// default order. find looks the Automaton up in the manager store.
+func measureJudgeSize(ctx context.Context, threshold int, req autonomouspkg.GuardrailInvocation, find func(id string) (*autonomouspkg.PRD, bool)) judgeSize {
+	if threshold <= 0 {
+		return judgeSize{}
+	}
+	size := judgeSize{Threshold: threshold}
+	var prd *autonomouspkg.PRD
+	if find != nil {
+		prd, _ = find(req.PRDID)
+	}
+	if prd == nil {
+		size.Err = fmt.Errorf("automaton %s not found in the store", req.PRDID)
+		return size
+	}
+	mctx, cancel := context.WithTimeout(ctx, judgeSizeMeasureTimeout)
+	defer cancel()
+	size.Lines, size.Err = judgeDiffLines(mctx, prd, req.ProjectDir)
+	return size
+}
+
+// route returns the rule text for the decision log and the function that
+// orders a backend list for this call (a fresh slice, each backend once). read is the list the selector reads, which the rule
+// text is built from. balance says the selector picks by load, so the order
+// only breaks load ties.
+func (s judgeSize) route(read []string, balance bool) (rule string, order func([]string) []string) {
+	if s.Err != nil {
+		rule = fmt.Sprintf("default order: changed line count unknown (%v), size routing skipped", s.Err)
+		return rule, func(l []string) []string { return l }
+	}
+	_, rule = judgeSizeRoute(read, s.Lines, s.Threshold)
+	order = func(l []string) []string {
+		o, _ := judgeSizeRoute(l, s.Lines, s.Threshold)
+		return o
+	}
+	if balance && strings.HasPrefix(rule, "size rule") {
+		rule += "; balance mode picks by load, so the order only breaks load ties"
+	}
+	return rule, order
 }
