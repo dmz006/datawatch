@@ -796,6 +796,10 @@ type Task struct {
 	DependsOn  []string   `json:"depends_on,omitempty"`  // other Task IDs
 	SessionID  string     `json:"session_id,omitempty"`  // datawatch session ID once running
 	WaitReason string     `json:"wait_reason,omitempty"` // why the task is waiting_capacity
+	// ComputeNode is the compute node the task's worker was started on, as the
+	// start handler reports it. A daemon restart adopts the surviving worker
+	// onto this node before it looks at anything else.
+	ComputeNode string `json:"compute_node,omitempty"`
 	// VerifierSessionID is the live verifier session adopted at boot, so the
 	// resumed verification waits for it instead of spawning a second one.
 	VerifierSessionID string `json:"verifier_session_id,omitempty"`

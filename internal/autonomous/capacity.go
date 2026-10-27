@@ -70,6 +70,11 @@ func (m *Manager) SetCapacityChoices(fn CapacityChoicesFn) {
 	m.capacityChoices = fn
 }
 
+// EntryNodesFn reports how many compute nodes the LLM entry hosting a backend
+// and model lists, whatever the serving filter leaves of them. It is 0 for a
+// backend that runs on no local engine.
+type EntryNodesFn func(backend, model string) int
+
 // SessionNodeFn names the compute node a session runs on ("" when it runs on
 // none or the node is unknown).
 type SessionNodeFn func(sessionID string) string
@@ -80,6 +85,16 @@ func (m *Manager) SetSessionNode(fn SessionNodeFn) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessionNode = fn
+}
+
+// SetEntryNodes wires the count of compute nodes an LLM entry lists, which
+// tells adoptCapacity a single-node entry from a multi-node entry whose
+// candidates the serving filter collapsed to one. Nil keeps the resolver's node
+// as the default for every entry.
+func (m *Manager) SetEntryNodes(fn EntryNodesFn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.entryNodes = fn
 }
 
 // SetNodeLoad wires the step that makes a worker's model resident on the
@@ -531,6 +546,12 @@ func (m *Manager) clearPRDWaitReason(prdID string) {
 // Idempotent, so the boot-time pass and executeOne's skip-spawn path can
 // both call it. A task whose worker lease was handed to its verifier already
 // holds its slot under VerifyHolder, so a later pass adopts nothing for it.
+//
+// The node the lease names is, in order: the node recorded on the task when
+// its worker was started, the node the session says it runs on (its explicit
+// reference, then its own endpoint), the resolver's node when the worker's LLM
+// entry lists exactly one compute node, and otherwise none. An entry that
+// lists several nodes never falls back to its first.
 func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	if !m.capacityOn() {
 		return
@@ -538,7 +559,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	m.mu.Lock()
 	led, keysFn, choicesFn := m.capacity, m.capacityKeys, m.capacityChoices
 	fallback := m.cfg.ExecutionBackend
-	sessionNode := m.sessionNode
+	sessionNode, entryNodes := m.sessionNode, m.entryNodes
 	m.mu.Unlock()
 	story := findStory(prd, t.StoryID)
 	backend, model := resolveTaskBackendModel(t, story, prd, m.AutomationForPRD(prd), fallback)
@@ -546,16 +567,41 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	if len(pools) == 0 {
 		return
 	}
-	// A multi-node entry resolves no single node; the session itself says
-	// where it runs.
+	node = adoptedNode(t, sessionNode, node, entryNodes, backend, model)
+	led.Adopt(capacity.Request{
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: poolsWithoutNodes(pools), Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), Model: model,
+	}, t.SessionID, VerifyHolder(t.ID))
+}
+
+// adoptedNode picks the node an adopted worker occupies: the node recorded on
+// the task, then the node its session reports, then resolved when the entry
+// lists a single node (or no count is wired), else "".
+func adoptedNode(t *Task, sessionNode SessionNodeFn, resolved string, entryNodes EntryNodesFn, backend, model string) string {
+	if t.ComputeNode != "" {
+		return t.ComputeNode
+	}
 	if sessionNode != nil && t.SessionID != "" {
 		if n := sessionNode(t.SessionID); n != "" {
-			node = n
+			return n
 		}
 	}
-	led.Adopt(capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), Model: model,
-	}, t.SessionID, VerifyHolder(t.ID))
+	if entryNodes == nil || entryNodes(backend, model) == 1 {
+		return resolved
+	}
+	return ""
+}
+
+// poolsWithoutNodes drops every node:<name> pool. The ledger adds the pool of
+// the node an adopted lease names, so a node pool the resolver chose as the
+// default cannot be held next to the node the worker really occupies.
+func poolsWithoutNodes(pools []string) []string {
+	out := make([]string, 0, len(pools))
+	for _, p := range pools {
+		if !strings.HasPrefix(p, "node:") {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // releaseCapacity frees the task's lease (safe when none is held).
