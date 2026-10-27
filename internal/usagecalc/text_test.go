@@ -121,14 +121,69 @@ func TestFormatCLIWorkedExample(t *testing.T) {
 			t.Errorf("comm form missing %q\nfull output:\n%s", sub, comm)
 		}
 	}
+	// ...and the same figures as the CLI form, not just its labels: 72
+	// percent, the 79.8 pace line, the 24.1/12.9 burns, and the 106 percent
+	// recent (90.2 percent average) projection.
+	mustContainAll(t, "comm figures", comm,
+		"72%",
+		"79.8",
+		"24.1",
+		"12.9",
+		"106",
+		"90.2",
+	)
 	if got := strings.TrimSpace(lastLine(comm)); !strings.HasPrefix(got, "Reply:") {
 		t.Errorf("comm form must end with the reply line, got %q", got)
 	}
 	assertWidth(t, "comm", comm, CommWidth)
 }
 
+// TestFormatWidths pins the column caps with the longest real inputs: the
+// design doc's worked example, a stale copy with its network error, a
+// non-zero extra credit, and a long zone name. No line in either form may
+// exceed its cap.
 func TestFormatWidths(t *testing.T) {
-	resp := advResp(t, workedExample(t))
+	t.Run("worked example", func(t *testing.T) {
+		assertFormWidths(t, advResp(t, workedExample(t)))
+	})
+	t.Run("stale copy", func(t *testing.T) {
+		in := workedExample(t)
+		a := Advise(in)
+		copiedAt := time.Date(2026, 10, 24, 9, 12, 25, 0, time.UTC)
+		assertFormWidths(t, Response{
+			Policy:      a.Advice.Policy,
+			Stale:       true,
+			StaleReason: `keeper "alpha" unreachable: dial tcp 10.0.0.5:9138: no route to host`,
+			CopiedAt:    &copiedAt,
+			Advice:      a,
+		})
+	})
+	t.Run("extra credit", func(t *testing.T) {
+		in := workedExample(t)
+		in.ExtraCreditPoints = 7
+		assertFormWidths(t, advResp(t, in))
+	})
+	t.Run("long zone name", func(t *testing.T) {
+		_, err := time.LoadLocation("Australia/Broken_Hill")
+		if err != nil {
+			t.Skipf("Australia/Broken_Hill not available: %v", err)
+		}
+		loc, _ := time.LoadLocation("Australia/Broken_Hill")
+		in := Input{
+			Readings: []Reading{{
+				ID:      "acdt",
+				At:      time.Date(2026, 11, 15, 2, 0, 0, 0, loc),
+				Percent: f64(28),
+				Source:  "typed",
+			}},
+			Reset: ResetSpec{Weekday: time.Sunday, Clock: "08:00", Zone: "Australia/Broken_Hill"},
+		}
+		assertFormWidths(t, advResp(t, in))
+	})
+}
+
+func assertFormWidths(t *testing.T, resp Response) {
+	t.Helper()
 	assertWidth(t, "cli", FormatCLI(resp), CLIWidth)
 	assertWidth(t, "comm", FormatComm(resp), CommWidth)
 }

@@ -40,7 +40,7 @@ func usageTestPRD(prdID string, statuses []autonomouspkg.TaskStatus) *autonomous
 		Status: autonomouspkg.StoryInProgress, CreatedAt: now, UpdatedAt: now}
 	for i, status := range statuses {
 		story.Tasks = append(story.Tasks, autonomouspkg.Task{
-			ID:        prdID + "task" + string(rune('a'+i)), StoryID: story.ID, PRDID: prdID,
+			ID: prdID + "task" + string(rune('a'+i)), StoryID: story.ID, PRDID: prdID,
 			Title: string(status), Spec: "a task in the " + string(status) + " state",
 			Status: status, CreatedAt: now, UpdatedAt: now,
 		})

@@ -109,7 +109,7 @@ func textLines(resp Response) []string {
 		lines = append(lines, fmt.Sprintf("burn %s points per 24h recent, %s points per 24h week average",
 			txtPoints(ad.RecentBurnPer24h), txtPoints(ad.WeekAvgBurnPer24h)))
 		if ad.FallbackNotice != "" {
-			lines = append(lines, "note: " + ad.FallbackNotice)
+			lines = append(lines, "note: "+ad.FallbackNotice)
 		}
 		lines = append(lines, fmt.Sprintf("projected end %s%% recent (%s), %s%% week average (%s)",
 			txtPoints(ad.ProjectedEndRecent), verdictLabel(ad.Verdict),

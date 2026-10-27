@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -223,9 +224,10 @@ func TestUsageCalcAdviceJSON(t *testing.T) {
 	if err := usageRun(t, c); err != nil {
 		t.Fatal(err)
 	}
-	// The raw body, pretty-printed: JSON keys, not text-form sentences.
-	if !strings.Contains(out.String(), `"percent": 72`) || !strings.Contains(out.String(), `"verdict"`) {
-		t.Errorf("--json should print the raw AdviceResult:\n%s", out.String())
+	// The daemon's body, byte for byte: the fixture keeps its compact
+	// "percent":72 shape, which a re-encode (json.MarshalIndent) would break.
+	if want := usageFixture + "\n"; out.String() != want {
+		t.Errorf("--json = %q, want the body as received:\n%s", out.String(), want)
 	}
 	if strings.Contains(out.String(), "advice: Within budget") {
 		t.Errorf("--json must not print the text form:\n%s", out.String())
@@ -469,5 +471,64 @@ func TestUsageCalcAdviceNoOverrideSendsNoQuery(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "no weekly readings yet") {
 		t.Errorf("expected the no-reading empty state, got:\n%s", out.String())
+	}
+}
+
+// TestUsageCalcConfigSetVariantPassthrough pins `config set
+// usage.calculator.variant <v>` — the calculator's settings go through the
+// existing config command unchanged: it PUTs /api/config with that key and
+// value, with no usage-specific rewiring of the key.
+func TestUsageCalcConfigSetVariantPassthrough(t *testing.T) {
+	type call struct{ method, uri, raw string }
+	var mu sync.Mutex
+	var calls []call
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		calls = append(calls, call{r.Method, r.URL.RequestURI(), string(raw)})
+		mu.Unlock()
+		// The daemon parses the body as JSON; the first (unquoted) attempt is
+		// rejected, the quoted one is accepted.
+		if !json.Valid(raw) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"invalid json"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(srv.Close)
+	prevURL := serverURL
+	t.Cleanup(func() { serverURL = prevURL })
+	serverURL = srv.URL
+
+	// Keep the command from reading the operator's real config off disk: a
+	// path that does not exist loads the defaults.
+	prevCfg := cfgPath
+	t.Cleanup(func() { cfgPath = prevCfg })
+	cfgPath = filepath.Join(t.TempDir(), "config.yaml")
+
+	c := newConfigSetCmd()
+	c.SetArgs([]string{"usage.calculator.variant", "lane-planner"})
+	if err := usageRun(t, c); err != nil {
+		t.Fatalf("config set: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calls) == 0 {
+		t.Fatal("the daemon was never called")
+	}
+	last := calls[len(calls)-1]
+	if last.method != http.MethodPut || last.uri != "/api/config" {
+		t.Errorf("got %s %s, want PUT /api/config", last.method, last.uri)
+	}
+	// The key passes through unchanged and the accepted body carries the exact
+	// value.
+	if !strings.Contains(last.raw, `"usage.calculator.variant"`) {
+		t.Errorf("accepted body lost the key: %s", last.raw)
+	}
+	if !strings.Contains(last.raw, `"lane-planner"`) {
+		t.Errorf("accepted body = %q, want the value lane-planner", last.raw)
 	}
 }

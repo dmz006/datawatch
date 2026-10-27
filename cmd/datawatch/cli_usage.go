@@ -96,14 +96,19 @@ func newUsageAdviceCmd() *cobra.Command {
 				return err
 			}
 			if asJSON {
-				var v any
-				if json.Unmarshal(body, &v) == nil {
-					indented, _ := json.MarshalIndent(v, "", "  ")
-					_, err := fmt.Fprint(c.OutOrStdout(), string(indented))
+				// The daemon's body byte for byte — no re-encoding, so the compact
+				// shape and order it sent are exactly what a pipe sees, with a
+				// terminating newline if the body did not carry one.
+				w := c.OutOrStdout()
+				if _, err := w.Write(body); err != nil {
 					return err
 				}
-				_, err := fmt.Fprint(c.OutOrStdout(), string(body))
-				return err
+				if len(body) == 0 || body[len(body)-1] != '\n' {
+					if _, err := w.Write([]byte("\n")); err != nil {
+						return err
+					}
+				}
+				return nil
 			}
 			var resp usagecalc.Response
 			if err := json.Unmarshal(body, &resp); err != nil {
