@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+**Warning notify events are presented as opt-in in the PWA** — the two opt-in event kinds (`scope_warning`, `guardrail_warn`) are no longer buried unmarked in generic lists: the Automaton settings modal shows an `(opt-in)` marker on the four opt-in kinds (the two warning kinds plus the two session kinds) and groups the bare warning kinds under a localized Warnings header, and the lifecycle-subscription editor offers a dedicated "Warnings (opt-in)" kind group with an explainer of when an opt-in kind fires. Five new locale keys land in all five bundles (de/es/fr/ja translated, Automaton rendered per locale), with parity tests on both sides (Go cross-checks the app.js opt-in set against the backend and the locale guard; JS checks the markers, groups and hints).
+
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
 ## v9.16.0 — Per-Automaton notify events

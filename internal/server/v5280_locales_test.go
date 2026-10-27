@@ -195,6 +195,14 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"capacity_node_model",
 		"capacity_node_unreachable",
 		"capacity_node_gpu_util",
+		// 2026-10-25 — opt-in warning notify kinds (scope_warning /
+		// guardrail_warn): settings-group label, opt-in marker + explainer,
+		// and the subscription-form group + opt-in hint.
+		"notify_events_group_warnings",
+		"notify_events_opt_in_marker",
+		"notify_events_opt_in_help",
+		"lifecycle_sub_form_group_warnings",
+		"lifecycle_sub_form_opt_in_hint",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

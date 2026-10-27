@@ -276,6 +276,12 @@ test('lifecycle subscriptions form: the webhook sink is not offered and every ki
     assert.ok(html.includes(k), k);
   }
   assert.match(html, /Add subscription/);
+
+  // The bare warning kinds sit in their own localized "Warnings (opt-in)"
+  // group, and the form carries the opt-in explainer below the kind grid.
+  assert.match(html, /Warnings \(opt-in\)/, 'opt-in warning group header shown (en value via t(lifecycle_sub_form_group_warnings))');
+  assert.match(html, /opt-in kind only fires when the Automaton/,
+    'opt-in explainer shown under the kind grid (apostrophe HTML-escaped in render)');
 });
 
 test('lifecycle subscriptions form: edit is prefilled and saves with PUT', async () => {

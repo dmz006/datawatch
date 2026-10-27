@@ -1883,6 +1883,8 @@
   "lifecycle_sub_form_group_prd": "Automaton status",
   "lifecycle_sub_form_group_task": "Task status",
   "lifecycle_sub_form_group_other": "Other",
+  "lifecycle_sub_form_group_warnings": "Warnings (opt-in)",
+  "lifecycle_sub_form_opt_in_hint": "An opt-in kind only fires when the Automaton's notification events include it.",
   "lifecycle_sub_form_level": "Level",
   "lifecycle_sub_form_level_any": "Any",
   "lifecycle_sub_form_level_prd": "Automaton",
@@ -2367,6 +2369,9 @@
   "notify_events_saved": "Notification events saved",
   "notify_events_save_failed": "Could not save notification events",
   "notify_events_default_marker": "default",
+  "notify_events_opt_in_marker": "opt-in",
+  "notify_events_opt_in_help": "Opt-in events are off by default and only notify when listed here.",
+  "notify_events_group_warnings": "Warnings",
   "notify_events_profile_label": "Notification events",
   "notify_events_profile_edit": "Edit notification events",
   "notify_events_profile_prompt": "Notification events (comma-separated kinds, blank to inherit)"

@@ -1883,6 +1883,8 @@
   "lifecycle_sub_form_group_prd": "Statut de l'automate",
   "lifecycle_sub_form_group_task": "Statut de la tâche",
   "lifecycle_sub_form_group_other": "Autres",
+  "lifecycle_sub_form_group_warnings": "Avertissements (opt-in)",
+  "lifecycle_sub_form_opt_in_hint": "Un type opt-in ne se déclenche que si les événements de notification de l'automate l'incluent.",
   "lifecycle_sub_form_level": "Niveau",
   "lifecycle_sub_form_level_any": "Tous",
   "lifecycle_sub_form_level_prd": "Automate",
@@ -2367,6 +2369,9 @@
   "notify_events_saved": "Notification events saved",
   "notify_events_save_failed": "Could not save notification events",
   "notify_events_default_marker": "default",
+  "notify_events_opt_in_marker": "opt-in",
+  "notify_events_opt_in_help": "Les événements opt-in sont désactivés par défaut et ne notifient que s'ils sont listés ici.",
+  "notify_events_group_warnings": "Avertissements",
   "notify_events_profile_label": "Notification events",
   "notify_events_profile_edit": "Edit notification events",
   "notify_events_profile_prompt": "Notification events (comma-separated kinds, blank to inherit)"

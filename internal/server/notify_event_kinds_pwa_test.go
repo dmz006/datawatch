@@ -1,18 +1,20 @@
 // PWA↔Go parity for the notify-events closed kind set.
 //
 // The PWA (web/app.js) exposes NOTIFY_EVENT_KINDS as the exhaustive set of
-// selectable lifecycle events and NOTIFY_EVENT_DEFAULTS as the default
-// subset (rendered with a 'default' marker). app.js is loaded unmodified
-// in the browser suite (app-notify-events.test.js); this Go test extracts
-// both arrays from the source text and checks them against the backend
-// ground truth, so the PWA cannot drift from:
+// selectable lifecycle events, NOTIFY_EVENT_DEFAULTS as the default subset
+// (rendered with a 'default' marker), and NOTIFY_EVENT_OPT_IN as the opt-in
+// subset (rendered with an 'opt-in' marker): kinds that only fire when
+// explicitly listed in the resolved notification events. app.js is loaded
+// unmodified in the browser suite (app-notify-events.test.js); this Go test
+// extracts all three arrays from the source text and checks them against the
+// backend ground truth, so the PWA cannot drift from:
 //   - valid kinds: every autonomous.PRDStatus / autonomous.TaskStatus
 //     lifecycle kind ("prd."/"task." + status) plus the two
 //     task session kinds (KindTaskSessionStarted / KindTaskSessionCleared)
-//     and the two bare opt-in warning kinds (KindScopeWarning /
-//     KindGuardrailWarn);
+//     and the two bare warning kinds (KindScopeWarning / KindGuardrailWarn);
 //   - defaults: config.DefaultConfig().Autonomous.Notify.DefaultEvents
-//     (the global notify baseline).
+//     (the global notify baseline);
+//   - opt-in: autonomous.OptInNotifyEvents() (the never-off-by-default set).
 package server
 
 import (
@@ -59,8 +61,9 @@ func TestNotifyEventKinds_MatchPWA(t *testing.T) {
 
 	jsKinds := jsStringArray(t, src, "NOTIFY_EVENT_KINDS")
 	jsDefaults := jsStringArray(t, src, "NOTIFY_EVENT_DEFAULTS")
-	if len(jsKinds) == 0 || len(jsDefaults) == 0 {
-		t.Fatalf("extraction failed: kinds=%v defaults=%v", jsKinds, jsDefaults)
+	jsOptIn := jsStringArray(t, src, "NOTIFY_EVENT_OPT_IN")
+	if len(jsKinds) == 0 || len(jsDefaults) == 0 || len(jsOptIn) == 0 {
+		t.Fatalf("extraction failed: kinds=%v defaults=%v optIn=%v", jsKinds, jsDefaults, jsOptIn)
 	}
 
 	// --- PWA kinds must be exactly the backend's valid lifecycle kinds ---
@@ -138,6 +141,37 @@ func TestNotifyEventKinds_MatchPWA(t *testing.T) {
 		// Every default must itself be a selectable kind.
 		if !pwaSet[d] {
 			t.Errorf("default %q is not in the PWA kind set", d)
+		}
+	}
+
+	// --- Opt-in set: PWA NOTIFY_EVENT_OPT_IN == autonomous.OptInNotifyEvents()
+	goOptIn := autonomous.OptInNotifyEvents()
+	if len(goOptIn) == 0 {
+		t.Fatal("autonomous.OptInNotifyEvents() unexpectedly empty")
+	}
+	goOptInSet := toSet(goOptIn)
+	pwaOptInSet := toSet(jsOptIn)
+	for _, o := range goOptIn {
+		if !pwaOptInSet[o] {
+			t.Errorf("opt-in kind %q missing from PWA NOTIFY_EVENT_OPT_IN", o)
+		}
+		// Every opt-in kind must itself be a selectable kind.
+		if !pwaSet[o] {
+			t.Errorf("opt-in kind %q is not in the PWA kind set", o)
+		}
+	}
+	for _, o := range jsOptIn {
+		if !goOptInSet[o] {
+			t.Errorf("PWA opt-in kind %q not in autonomous.OptInNotifyEvents()' set", o)
+		}
+	}
+	// Opt-in kinds must not overlap the default set: an opt-in kind is
+	// never-on-by-default, so a default kind opting in would be a
+	// contradiction in the rendered marker (default / opt-in).
+	defaultSet := toSet(goDefaults)
+	for _, o := range jsOptIn {
+		if defaultSet[o] {
+			t.Errorf("kind %q is both a default and an opt-in notify event", o)
 		}
 	}
 }

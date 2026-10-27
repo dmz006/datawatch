@@ -175,11 +175,20 @@ test('_renderNotifyKindOptions: grouped checkboxes, default markers, inherit dis
   assert.ok(html.indexOf('value="scope_warning"') > warningsHeader, 'scope_warning must be in the Warnings section');
   assert.ok(html.indexOf('value="guardrail_warn"') > warningsHeader, 'guardrail_warn must be in the Warnings section');
 
-  // Checked state mirrors the stored list; default marker on default kinds.
+  // Checked state mirrors the stored list; default marker on default kinds,
+  // opt-in marker on the four opt-in kinds (session + bare warning kinds).
   assert.match(html, /value="prd\.blocked" checked/);
   assert.doesNotMatch(html, /value="prd\.active" checked/);
   const markers = (html.match(/\(default\)/g) || []).length;
   assert.equal(markers, 5, 'one (default) marker per default kind');
+  const optInMarkers = (html.match(/\(opt-in\)/g) || []).length;
+  assert.equal(optInMarkers, 4, 'one (opt-in) marker per opt-in kind (guardrail_warn, scope_warning, task.session_started, task.session_cleared)');
+  assert.doesNotMatch(html, /default \/ opt-in|opt-in \/ default/, 'no kind may carry both markers');
+  for (const k of ['scope_warning', 'guardrail_warn', 'task.session_started', 'task.session_cleared']) {
+    const i = html.indexOf('value="' + k + '"');
+    assert.ok(i >= 0, 'opt-in kind ' + k + ' rendered');
+    assert.match(html.slice(i, i + 300), /opt-in/, 'marker follows the ' + k + ' row');
+  }
 
   // Inherit on → every row disabled.
   const inh = run(`_renderNotifyKindOptions(['prd.blocked'], true)`);
