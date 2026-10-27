@@ -685,6 +685,45 @@ federation peer fingerprint beta on
 
 ---
 
+### `usage` / `usage advice` / `usage reading` / `usage extra` / `usage work`
+
+The account **usage calculator** — the account's usage verdict, lane count, pace, policy and typed figures — the same data the REST, MCP and PWA surfaces show (design: `docs/plans/2026-10-23-usage-calculator-design.md`). Every reply stays within 50 columns and closes with the forms the operator can send back.
+
+| Form | Meaning |
+|---|---|
+| `usage` | The advice for the configured variant, policy and lane count. Same as `usage advice`. |
+| `usage advice [variant=V] [policy=P] [lanes=N]` | Advice for this one call. Overrides apply to this call only and are not saved. |
+| `usage reading <percent> [lanes=N] [session=N]` | Store a typed weekly percent (optionally a lane count and a second session's percent), then show the refreshed advice. |
+| `usage extra <points>` | Set the bought extra-credit points, then show the refreshed advice. |
+| `usage work <points\|clear>` | Set (or clear) the typed remaining-work figure, then show the refreshed advice. When cleared, the per-task estimate stands in. |
+
+The `variant` / `policy` / `lanes` / `session` keys are case-insensitive; values pass through verbatim and the daemon validates them.
+
+**Example:**
+```
+usage advice variant=lane-planner lanes=3
+[myserver] usage advice
+  … 50-column advice text …
+  reply with one of:
+    usage advice [variant=V] [policy=P] [lanes=N]
+    usage reading <pct> [lanes=N] [session=N]
+    usage extra <pts>
+    usage work <pts|clear>
+
+usage reading 72.5 lanes=3 session=41
+[myserver] usage reading
+  reading stored: 72.5%
+  … refreshed advice …
+```
+
+**Notes:**
+- `usage` / `usage advice` are read-only and reflect the stored `usage.calculator.*` settings; set them with `configure usage.calculator.variant=…` or `configure usage.calculator.policy=…`. A per-call `variant=` / `policy=` saves nothing.
+- `reading`, `extra` and `work` write first; the reply acknowledges the write, then shows the refreshed advice.
+- A bare or unrecognized form answers with the grammar lines and touches nothing on the daemon.
+- This is the comm-channel view of the calculator; it is separate from `usage_backoff` (the per-backend rate-limit hold).
+
+---
+
 ## CLI Commands
 
 In addition to the messaging interface, datawatch has a full CLI for local session management. These run against the data directory directly (or talk to the running daemon via HTTP).

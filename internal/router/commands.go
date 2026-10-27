@@ -102,7 +102,9 @@ const (
 	// Per-LLM dollar budget status, same data and field names as REST /
 	// MCP / CLI.
 	CmdBudget CommandType = "budget"
-	CmdAudit  CommandType = "audit"
+	// Account usage calculator, same data as REST / MCP / CLI.
+	CmdUsage CommandType = "usage"
+	CmdAudit CommandType = "audit"
 
 	// BL172 (S11) — federated observer peers. List + show + register +
 	// delete a Shape B / C peer over chat. Mirror of the
@@ -495,6 +497,18 @@ type Command struct {
 	BudgetLLM string
 	// BudgetVerb is "invalid" when the arguments could not be parsed.
 	BudgetVerb string
+
+	// CmdUsage fields (the usage calculator's comm grammar). UsageVerb is
+	// one of "advice", "reading", "extra", "work" or "invalid"; "" is a
+	// bare `usage`, answered with the advice, as is "advice".
+	UsageVerb    string
+	UsageVariant string   // advice: variant=<one of pace-gauge|burn-ledger|lane-planner|weekly-trend>
+	UsagePolicy  string   // advice: policy=<one of pace|pace-with-safety|burn|lane-budget|use-all|finish-early>
+	UsageLanes   int      // advice / reading: lanes=
+	UsagePercent float64  // reading: the weekly percentage
+	UsageSession *float64 // reading: session= (the secondary percentage)
+	UsagePoints  float64  // extra / work: the points figure
+	UsageClear   bool     // work: clear the typed figure
 
 	// BL353 — schedule targeting fields.
 	SessionName  string // for schedule: resolve session by name at fire time
@@ -1323,6 +1337,15 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdAutonomous, Text: rest}
 
+	// Account usage calculator:
+	//   usage
+	//   usage advice [variant=V] [policy=P] [lanes=N]
+	//   usage reading <percent> [lanes=N] [session=N]
+	//   usage extra <points>
+	//   usage work <points|clear>
+	case lower == "usage" || strings.HasPrefix(lower, "usage "):
+		return parseUsage(strings.TrimSpace(text[len("usage"):]))
+
 	case lower == "usage_backoff" || lower == "usage-backoff" ||
 		strings.HasPrefix(lower, "usage_backoff ") || strings.HasPrefix(lower, "usage-backoff "):
 		return parseUsageBackoff(strings.TrimSpace(text[len("usage_backoff"):]))
@@ -1849,6 +1872,11 @@ usage_backoff set <backend> <minutes> [reason]  hold autonomous dispatch to a ba
 usage_backoff clear [backend|all]  clear one back-off, or all (default)
 usage_backoff recheck            record the rate-limit patterns and the claude tool version as rechecked
 budget [status] [<llm>]          per-LLM dollar spend, ceiling, window end and rollover
+usage                            account usage calculator: verdict, lanes, advice
+usage advice [variant=V] [...]   advice with a per-call variant / policy / lane override
+usage reading <pct> [..]         store a typed weekly percent (optionally with lanes and session percent)
+usage extra <points>             set the bought extra credit
+usage work <points|clear>        set or clear the typed remaining work
 stale [<seconds>]                list stale running sessions
 audit [actor=x action=y limit=N] query operator audit log
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
@@ -1894,6 +1922,135 @@ func parseBudget(rest string) Command {
 		cmd.BudgetLLM = fields[0]
 	}
 	return cmd
+}
+
+// usageKV parses the "key=value" tail tokens shared by the usage calculator's
+// verbs. Recognized keys (case-insensitive, like the verbs): variant, policy,
+// lanes, session. A duplicate or unknown key, or a lanes / session value
+// that is not a usable number, makes the form invalid; the result is nil so
+// the caller can reject the form. Values pass through verbatim.
+func usageKV(tokens []string) (out map[string]string, lanes int, ok bool) {
+	out = make(map[string]string, len(tokens))
+	for _, tok := range tokens {
+		key, val, found := strings.Cut(tok, "=")
+		if !found || val == "" {
+			return nil, 0, false
+		}
+		key = strings.ToLower(key)
+		if _, dup := out[key]; dup {
+			return nil, 0, false
+		}
+		switch key {
+		case "variant", "policy", "session":
+			out[key] = val
+		case "lanes":
+			n, err := strconv.Atoi(val)
+			if err != nil || n <= 0 {
+				return nil, 0, false
+			}
+			lanes = n
+		default:
+			return nil, 0, false
+		}
+	}
+	return out, lanes, true
+}
+
+func usageNumber(tok string) (float64, bool) {
+	n, err := strconv.ParseFloat(tok, 64)
+	return n, err == nil && n >= 0
+}
+
+// parseUsage parses the tail of "usage …" (the comm-channel section of the
+// usage calculator design):
+//
+//	usage
+//	usage advice [variant=V] [policy=P] [lanes=N]
+//	usage reading <percent> [lanes=N] [session=N]
+//	usage extra <points>
+//	usage work <points|clear>
+//
+// An unrecognized verb or a malformed figure keeps the verb "invalid" so the
+// handler can answer with the usage lines instead of guessing.
+func parseUsage(rest string) Command {
+	cmd := Command{Type: CmdUsage}
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return cmd
+	}
+	switch strings.ToLower(fields[0]) {
+	case "advice":
+		cmd.UsageVerb = "advice"
+		kv, lanes, ok := usageKV(fields[1:])
+		if !ok {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		if _, present := kv["session"]; present {
+			// session= belongs to the reading verb, not the advice.
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		cmd.UsageVariant = kv["variant"]
+		cmd.UsagePolicy = kv["policy"]
+		cmd.UsageLanes = lanes
+		return cmd
+	case "reading":
+		if len(fields) < 2 {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		pct, ok := usageNumber(fields[1])
+		if !ok {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		cmd.UsagePercent = pct
+		kv, lanes, ok := usageKV(fields[2:])
+		if !ok {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		cmd.UsageLanes = lanes
+		sess, present := kv["session"]
+		if present {
+			s, ok := usageNumber(sess)
+			if !ok {
+				cmd.UsageVerb = "invalid"
+				return cmd
+			}
+			cmd.UsageSession = &s
+		}
+		cmd.UsageVerb = "reading"
+		return cmd
+	case "extra", "work":
+		cmd.UsageVerb = strings.ToLower(fields[0])
+		if len(fields) < 2 {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		if len(fields) > 2 {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		if strings.EqualFold(fields[1], "clear") {
+			if cmd.UsageVerb != "work" {
+				cmd.UsageVerb = "invalid"
+			}
+			cmd.UsageClear = true
+			return cmd
+		}
+		points, ok := usageNumber(fields[1])
+		if !ok {
+			cmd.UsageVerb = "invalid"
+			return cmd
+		}
+		cmd.UsagePoints = points
+		return cmd
+	default:
+		cmd.UsageVerb = "invalid"
+		return cmd
+	}
 }
 
 // parseUsageBackoff parses the tail of "usage_backoff …":

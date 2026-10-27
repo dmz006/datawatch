@@ -101,6 +101,7 @@ The table above tracks **shipped** client parity. This section tracks **in-fligh
 | Red-team validator pipeline (deepening the injection guard) | REST, MCP, CLI, comm, PWA | planned — spec under `docs/plans/harness-impl/` (proposal: `docs/plans/harness-research/enhancement-proposals.md` §5) |
 | ACME B1 (delegated-zone DNS-01 via an extended `dns_channel`) | internal + YAML | deferred — a much larger subsystem than Phase 2's scoped-token path (B2, shipped); see the BL397 plan doc's scope note |
 | Automata lifecycle subscriptions — remaining work: WebSocket payload enrichment + live toasts (follow-up), Phase 5 (webhook sink, federation forwarding) | REST, MCP, CLI, comm, PWA, app (note) | planned — `docs/plans/2026-10-13-prd-lifecycle-events.md` (Phases 3–4 shipped Unreleased; app-side UI tracked in `docs/plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md`) |
+| Account usage calculator — comm-channel command (`usage`, `usage advice`, `usage reading`, `usage extra`, `usage work`) | comm channel (the surfaces-and-parity debt item in `docs/plans/2026-10-23-usage-calculator-design.md`) | ✅ daemon side shipped — router parses the grammar and proxies the REST loopback (`internal/router/usage_calculator.go`); unit-tested (`TestUsageCalc*` in `internal/router/usage_calculator_test.go`), live validation pending |
 
 Features promoted to shipped move a row into the Feature Parity Table above with per-client ✅/🔶/❌ columns and `datawatch-app` tracking; until then they remain visible here.
 
