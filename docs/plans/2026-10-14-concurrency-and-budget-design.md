@@ -1760,4 +1760,4 @@ After the Phase 3 capacity admission shipped (9.5.68) and the daemon restarted o
 
 ### Usage reading 2026-10-27 about 04:00
 
-Operator: "Claude is at 27%". Pace line about 40% (2.8 days into the week that resets Sunday 2026-11-01 08:00). Burn since the 26% reading at 19:30 on 10-26 is about 1 point in 8.5 hours (about 2.8 points a day, the Claude lane was nearly idle), projecting about 39% at the reset: roughly 13 points under the pace line and 60% of the week unused at current burn.
+Operator: "Claude is at 27%". The week started at the 2026-10-25 08:00 reset, so 1.83 days have passed and the pace line is 26.2%: the reading is 0.8 points over it, essentially on the line. Since the 26% reading at 19:30 on 10-26 the burn is 1 point in 8.5 hours (about 2.8 a day) because the Claude lane was nearly idle. The remaining 5.17 days end near 41% at that burn and near 69% at the earlier 8.1 a day: within budget either way, with room for a second Claude lane on real work.
