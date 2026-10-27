@@ -420,6 +420,8 @@ func (a *API) SetConfig(v any) error {
 	// default and blank or duplicate judge backends are dropped.
 	cfg.JudgePolicy = config.NormalizeJudgePolicy(cfg.JudgePolicy)
 	cfg.JudgeTimeoutSeconds = config.NormalizeJudgeTimeoutSeconds(cfg.JudgeTimeoutSeconds)
+	// JudgeSizeThresholdLines passes through unchanged: 0 turns the size rule
+	// off, so there is no zero-to-default rule here.
 	if cfg.CapacityRateRequests < 0 || cfg.CapacityRateTokens < 0 || cfg.CapacityRateWindowSeconds < 0 {
 		return fmt.Errorf("config: capacity_rate_requests, capacity_rate_tokens and capacity_rate_window_seconds must be >= 0")
 	}

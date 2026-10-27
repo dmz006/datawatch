@@ -2293,6 +2293,14 @@ type AutonomousConfig struct {
 	// NormalizeJudgeTimeoutSeconds). No omitempty, for the same round-trip
 	// reason as JudgePolicy.
 	JudgeTimeoutSeconds int `yaml:"judge_timeout_seconds" json:"judge_timeout_seconds"`
+	// JudgeSizeThresholdLines is the change size above which the judges route
+	// size-aware. The size is the changed lines (added plus deleted) on the
+	// Automaton branch measured against its merge base. Default 400 (see
+	// JudgeSizeThresholdDefaultLines); 0 turns the rule off and is kept as 0,
+	// never mapped to the default; negative values are rejected at load. No
+	// omitempty, for the same round-trip reason as JudgePolicy: an explicit 0
+	// must reach the saved config.
+	JudgeSizeThresholdLines int `yaml:"judge_size_threshold_lines" json:"judge_size_threshold_lines"`
 	// SessionIdleTimeoutSeconds bounds one autonomous worker or verifier
 	// session: a session sitting in waiting_input/idle with no live child
 	// process for longer than this is an infra failure. 0 or unset => 900
@@ -3683,6 +3691,7 @@ func DefaultConfig() *Config {
 			RoleScanIntervalSeconds: RoleScanIntervalDefaultSeconds,
 			ResumeMaxAgeSeconds:     3600,
 			MaxEnginesPerNode:       1,
+			JudgeSizeThresholdLines: JudgeSizeThresholdDefaultLines,
 			GateDisagreement:        autonomousGateDisagreementWarn,
 			FailureEscalation:       DefaultFailureEscalationConfig(),
 			// Starting plan-tier table — operator policy, see the field
@@ -4198,6 +4207,9 @@ func validateLoaded(cfg *Config) error {
 		if v < 0 {
 			return fmt.Errorf("autonomous.%s: %d must be >= 0", k, v)
 		}
+	}
+	if cfg.Autonomous.JudgeSizeThresholdLines < 0 {
+		return fmt.Errorf("autonomous.judge_size_threshold_lines: %d must be >= 0", cfg.Autonomous.JudgeSizeThresholdLines)
 	}
 	for _, n := range cfg.ComputeNodes {
 		if n.SessionSlots < 0 {

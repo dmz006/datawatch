@@ -163,6 +163,10 @@ type Config struct {
 	// unmarshals the result onto config.AutonomousConfig before persisting.
 	JudgePolicy         []string `json:"judge_policy"`
 	JudgeTimeoutSeconds int      `json:"judge_timeout_seconds"`
+	// JudgeSizeThresholdLines mirrors autonomous.judge_size_threshold_lines in
+	// config. No omitempty and no normalization: 0 means the size rule is off
+	// and must round-trip as 0.
+	JudgeSizeThresholdLines int `json:"judge_size_threshold_lines"`
 	// SessionIdleTimeoutSeconds mirrors autonomous.session_idle_timeout_seconds
 	// in config. The manager does not consume it: the daemon's autonomous
 	// worker/verifier wait loops in cmd/datawatch/main.go and

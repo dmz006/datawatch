@@ -1897,6 +1897,10 @@ paths:
         `stronger_model`. The judge settings are `judge_policy` (ordered backends,
         one attempt each; empty = the judges follow the verifier routing policy)
         and `judge_timeout_seconds` (time limit for one judge run, default 1800).
+        `judge_size_threshold_lines` is the number of changed lines (added plus
+        deleted, on the Automaton branch against its merge base, lock files left
+        out) above which the judges try `claude-code` first, default 400; 0 turns
+        the size rule off.
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses: {"200": {description: OK}}
@@ -1918,6 +1922,9 @@ paths:
         changes nothing. The policy applies to the next verification with no restart.
         `judge_policy` is an ordered list of backend names (an empty list clears it);
         `judge_timeout_seconds` is a whole number of seconds (0 or negative = 1800).
+        `judge_size_threshold_lines` is a whole number of changed lines of 0 or more
+        (0 = size-aware judge routing off, default 400). `PUT /api/config` with the
+        key `autonomous.judge_size_threshold_lines` rejects anything else with 400.
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:

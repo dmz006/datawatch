@@ -1,10 +1,10 @@
 ---
 docs:
   index: true
-  topics: [judge, judges, guardrail, plan review, verifier, routing, routing policy, time limit, timeout, needs review, hold, alerts, capacity, lease, automaton, autonomous]
+  topics: [judge, judges, size, threshold, changed lines, guardrail, plan review, verifier, routing, routing policy, time limit, timeout, needs review, hold, alerts, capacity, lease, automaton, autonomous]
 exec_steps:
   - tool: autonomous_config_get
-    description: Read the judge settings (judge_policy, judge_timeout_seconds) and the verifier routing policy the judges follow when judge_policy is empty
+    description: Read the judge settings (judge_policy, judge_timeout_seconds, judge_size_threshold_lines) and the verifier routing policy the judges follow when judge_policy is empty
     args: {}
     read_only: true
 ---
@@ -190,6 +190,67 @@ judge moves to `claude-code`. If `claude-code` times out too, there is no backen
 left, the Automaton is held (see below) and an error is raised. Three attempts,
 three limits, and nothing else.
 
+## Size-aware routing
+
+A large change is slow for a small local model to judge. On 2026-10-26 an
+Automaton of about 1,000 changed lines timed out on the local judge, and the
+whole 30-minute limit was spent on a model that could not finish. Size-aware
+routing sends a large change to `claude-code` first so the limit is not spent
+on a backend that cannot finish.
+
+`autonomous.judge_size_threshold_lines` is the number of changed lines above
+which the rule applies.
+
+- **What is counted.** The lines added plus the lines deleted on the Automaton
+  branch, measured against its merge base with the base branch. Lock files
+  (`go.sum`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `Cargo.lock`
+  and the other package-manager lock files) are left out. Only committed work
+  counts, and a binary file counts as 0.
+- **Default 400.** A change of 400 changed lines or fewer keeps the configured
+  order. A change of 401 or more is a large change.
+- **`0` turns it off.** Nothing is measured and the judge backends are tried in
+  their usual order. A negative value is refused.
+- **Above the threshold, `claude-code` is tried first.** It moves to the front of
+  the judge's backend list, and the other backends follow in their usual order.
+  It is still one attempt per backend (see [One attempt per backend](#one-attempt-per-backend)),
+  so the number of attempts does not change. If `claude-code` is not in the
+  list, the order is unchanged.
+- **Balance mode still picks by load.** In `balance` mode the load decides which
+  backend runs, and the size rule only breaks ties between equally loaded
+  backends. The decision log says so.
+- **A judge that times out on every backend still holds the Automaton.** The
+  `judge_timeout_seconds` limit, the warnings and the `needs_review` hold with
+  the error alert work as described in [The needs-review hold](#the-needs-review-hold).
+  The hold reason is `judge_timeout_hold`. The size rule changes the order only.
+- **A unit that pins its own guardrail backend is not reordered.** It keeps that
+  one backend.
+- **If the lines cannot be counted** (for example the Automaton has no branch
+  yet), the judge keeps the usual order and the decision log says the count is
+  unknown. The judge is never blocked by a failed count.
+
+The Automaton decision log shows which rule routed the judge and the line count,
+at the start of each `judge_policy` decision:
+
+```
+size rule: 1012 changed lines is above the threshold of 400, claude-code tried first; <the usual reason>
+default order: 212 changed lines is at or below the threshold of 400; <the usual reason>
+default order: size routing is off (threshold 0); <the usual reason>
+default order: 1012 changed lines is above the threshold of 400 but claude-code is not in the chain; <the usual reason>
+```
+
+Set it with any of the five methods:
+
+| Method | Where | How |
+|---|---|---|
+| YAML | `autonomous.judge_size_threshold_lines` in `config.yaml` | `autonomous:` then `judge_size_threshold_lines: 400`, and restart the daemon |
+| CLI | `datawatch autonomous config-set` with the flag `--judge-size-threshold-lines` (the CLI has no `judge-policy-set` subcommand; that verb belongs to the comm channel) | `datawatch autonomous config-set --judge-size-threshold-lines 400` |
+| Web UI | Settings > Automata > Autonomous Automata planning > Judge size threshold | Enter the number of lines (0 = off) and save |
+| REST API | `PUT /api/config` | Send the key `autonomous.judge_size_threshold_lines`, for example `{"autonomous.judge_size_threshold_lines": 400}` |
+| Comm channel | `autonomous judge-policy-set` | `autonomous judge-policy-set judge_size_threshold_lines=400` |
+
+A change made through the CLI, REST API, comm channel or Web UI applies to the
+next judge call, with no restart. A YAML edit takes effect on restart.
+
 ## Alerts
 
 Judge alerts go to the daemon's existing alert channels, the same ones other
@@ -294,12 +355,12 @@ fix the cause, then pick the route that matches the hold.
 
 | Surface | Read | Write |
 |---|---|---|
-| YAML (`~/.datawatch/config.yaml`) | `autonomous.judge_policy`, `autonomous.judge_timeout_seconds` | Edit the keys and restart the daemon |
-| REST | `GET /api/autonomous/config` and `GET /api/config` | `PUT /api/autonomous/config` with `{"judge_policy": ["a","b"], "judge_timeout_seconds": 1800}`; or `PUT /api/config` with the dotted keys |
-| MCP | `autonomous_config_get` | `autonomous_config_set` with `judge_policy` (array) and `judge_timeout_seconds` (number) |
-| CLI | `datawatch autonomous config-get` | `datawatch autonomous config-set --judge-policy ollama-a,claude-code --judge-timeout-seconds 1800` |
-| Comm channel | `autonomous judge-policy` | `autonomous judge-policy-set judge_policy=ollama-a,claude-code judge_timeout_seconds=1800`; or `configure autonomous.judge_timeout_seconds=1800` |
-| PWA | Settings, autonomous card | The `judge_policy` comma list and the `judge_timeout_seconds` field on the same card |
+| YAML (`~/.datawatch/config.yaml`) | `autonomous.judge_policy`, `autonomous.judge_timeout_seconds`, `autonomous.judge_size_threshold_lines` | Edit the keys and restart the daemon |
+| REST | `GET /api/autonomous/config` and `GET /api/config` | `PUT /api/autonomous/config` with `{"judge_policy": ["a","b"], "judge_timeout_seconds": 1800, "judge_size_threshold_lines": 400}`; or `PUT /api/config` with the dotted keys |
+| MCP | `autonomous_config_get` | `autonomous_config_set` with `judge_policy` (array), `judge_timeout_seconds` (number) and `judge_size_threshold_lines` (number) |
+| CLI | `datawatch autonomous config-get` | `datawatch autonomous config-set --judge-policy ollama-a,claude-code --judge-timeout-seconds 1800 --judge-size-threshold-lines 400` |
+| Comm channel | `autonomous judge-policy` | `autonomous judge-policy-set judge_policy=ollama-a,claude-code judge_timeout_seconds=1800 judge_size_threshold_lines=400`; or `configure autonomous.judge_timeout_seconds=1800` |
+| PWA | Settings, autonomous card | The `judge_policy` comma list, the `judge_timeout_seconds` field and the `judge_size_threshold_lines` field (Judge size threshold) on the same card |
 
 Notes on the write forms:
 
@@ -308,6 +369,8 @@ Notes on the write forms:
   the list, so the judges follow the verifier routing policy again.
 - `--judge-timeout-seconds 0` sets the default of 1800 seconds. A negative value
   is refused.
+- `judge_size_threshold_lines` is a whole number of 0 or more. `0` turns the size
+  rule off, and a negative value is refused. See [Size-aware routing](#size-aware-routing).
 - A change made through the API, MCP, CLI, comm channel or PWA applies to the
   next judge call, with no restart. A YAML edit takes effect on restart.
 

@@ -1766,6 +1766,8 @@
   "settings_judge_policy_help": "Los backends de LLM que prueban los jueces, en orden, con un intento cada uno: el guardrail del autómata y los jueces de revisión de planes y otros jueces autónomos. Un juez pasa al siguiente backend solo cuando su ejecución alcanza el límite de tiempo. Vacío (predeterminado) sigue la política de enrutamiento del verificador, así que los jueces usan los mismos modos y backends que los verificadores; el número de intentos es el de backends que ofrece la política.",
   "settings_judge_timeout": "Límite de tiempo de los jueces (seg, 0=30m)",
   "settings_judge_timeout_help": "Límite de tiempo de una ejecución de juez, contado desde que empieza el juez. La espera de un hueco de capacidad no cuenta. 0 usa el predeterminado de 1800 segundos (30 minutos). Cuando un juez agota el tiempo, se prueba el siguiente backend con una advertencia cada vez. Tras el último backend, el autómata necesita revisión (needs review) y una alerta de error enumera todos los intentos.",
+  "settings_judge_size_threshold": "Umbral de tamaño del juez (líneas, 0=desactivado)",
+  "settings_judge_size_threshold_help": "Cuando el cambio en revisión supera esta cantidad de líneas añadidas y eliminadas, el juez prueba primero claude-code y después los demás backends en su orden habitual. Las líneas se cuentan en la rama del autómata frente a su base de fusión, sin contar los archivos de bloqueo. 0 lo desactiva. El valor predeterminado es 400.",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_session_idle_timeout": "Tiempo de espera de sesión inactiva (seg, 0=15min)",
   "settings_verifier_infra_escalation_threshold": "Umbral de escalada de fallos de infra del verificador (0=2)",

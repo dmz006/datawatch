@@ -262,7 +262,10 @@ func applyAutonomousRateFlags(cmd *cobra.Command, body map[string]any) error {
 // applyAutonomousJudgeFlags copies the judge flags that were set onto body:
 // --judge-policy (an ordered comma list; an explicit empty value clears it so
 // the judges follow the verifier routing policy) and --judge-timeout-seconds (the
-// time limit; a negative value is rejected before anything is sent).
+// time limit; a negative value is rejected before anything is sent) and
+// --judge-size-threshold-lines (the changed-line count above which the judges
+// route by change size; 0 turns the rule off, and a negative value is rejected).
+// A flag that was not given adds no key to body.
 func applyAutonomousJudgeFlags(cmd *cobra.Command, body map[string]any) error {
 	if cmd.Flags().Changed("judge-policy") {
 		s, _ := cmd.Flags().GetString("judge-policy")
@@ -274,6 +277,13 @@ func applyAutonomousJudgeFlags(cmd *cobra.Command, body map[string]any) error {
 			return fmt.Errorf("--judge-timeout-seconds must be >= 0")
 		}
 		body["judge_timeout_seconds"] = n
+	}
+	if cmd.Flags().Changed("judge-size-threshold-lines") {
+		n, _ := cmd.Flags().GetInt("judge-size-threshold-lines")
+		if n < 0 {
+			return fmt.Errorf("--judge-size-threshold-lines must be >= 0")
+		}
+		body["judge_size_threshold_lines"] = n
 	}
 	return nil
 }
@@ -514,6 +524,7 @@ capacity slot does not count):
 
   judge_policy                    ordered judge backends (empty = follow the verifier routing policy)
   judge_timeout_seconds           time limit for one judge run (default 1800)
+  judge_size_threshold_lines      changed-line count above which the judges route by change size (default 400; 0 = off)
 
 Rate ceiling on each LLM's pool, by flag or by JSON key (0 = no ceiling,
 the default; negative values are rejected):
@@ -583,6 +594,7 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 	cmd.Flags().Int("capacity-rate-window-seconds", 0, "Rolling window length in seconds for the rate ceilings (0 = default 3600)")
 	cmd.Flags().String("judge-policy", "", "Ordered comma list of judge backends, one attempt each (empty = follow the verifier routing policy)")
 	cmd.Flags().Int("judge-timeout-seconds", 0, "Time limit in seconds for one judge run (0 = default 1800 = 30m)")
+	cmd.Flags().Int("judge-size-threshold-lines", 400, "Changed-line count above which the judges route by change size (whole number; 0 = rule off)")
 	addVerifierPolicyFlags(cmd)
 	return cmd
 }

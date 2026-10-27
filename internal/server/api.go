@@ -6104,9 +6104,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"planning_timeout_seconds":     s.cfg.Autonomous.PlanningTimeoutSeconds,
 			"verification_timeout_seconds": s.cfg.Autonomous.VerificationTimeoutSeconds,
 			// Judge routing: an empty judge_policy means the judges follow the verifier routing policy;
-			// the time limit shows its 30-minute default.
+			// the time limit shows its 30-minute default; the size threshold is the stored value (0 = off).
 			"judge_policy":                         judgePolicyForDisplay(s.cfg.Autonomous.JudgePolicy),
 			"judge_timeout_seconds":                config.NormalizeJudgeTimeoutSeconds(s.cfg.Autonomous.JudgeTimeoutSeconds),
+			"judge_size_threshold_lines":           s.cfg.Autonomous.JudgeSizeThresholdLines,
 			"session_idle_timeout_seconds":         s.cfg.Autonomous.SessionIdleTimeoutSeconds,
 			"session_start_confirm_seconds":        s.cfg.Autonomous.SessionStartConfirmSeconds,
 			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
@@ -6521,6 +6522,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// The failure escalation block is checked as a whole, the same way: a bad
 	// max_failures, steps value or enabled flag refuses the whole PUT.
 	if err := validateFailureEscalationPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// judge_size_threshold_lines is a whole number of 0 or more; the whole PUT
+	// is refused before anything is applied.
+	if err := validateJudgeSizeThresholdPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -7948,6 +7955,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok {
 				cfg.Autonomous.JudgeTimeoutSeconds = n
 			}
+		case "autonomous.judge_size_threshold_lines":
+			// Stored as-is: 0 turns size-aware judge routing off. Negative and
+			// fractional values are refused up front by
+			// validateJudgeSizeThresholdPatch.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.JudgeSizeThresholdLines = n
+			}
 		case "autonomous.session_idle_timeout_seconds":
 			// Stored as-is; zero falls back to the default via
 			// config.NormalizeSessionIdleTimeoutSeconds at read time.
@@ -8758,6 +8772,28 @@ func parsePlanTierTable(v any) (map[string]int, error) {
 		}
 	}
 	return out, nil
+}
+
+// validateJudgeSizeThresholdPatch checks autonomous.judge_size_threshold_lines
+// in a config patch: a whole number of 0 or more. Zero is valid and turns
+// size-aware judge routing off.
+func validateJudgeSizeThresholdPatch(patch map[string]interface{}) error {
+	const key = "autonomous.judge_size_threshold_lines"
+	v, ok := patch[key]
+	if !ok {
+		return nil
+	}
+	switch x := v.(type) {
+	case float64:
+		if x == math.Trunc(x) && x >= 0 && x <= math.MaxInt32 {
+			return nil
+		}
+	case int:
+		if x >= 0 {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s: %v is invalid; use a whole number of 0 or more (0 turns size-aware judge routing off)", key, v)
 }
 
 func toInt(v interface{}) (int, bool) {
