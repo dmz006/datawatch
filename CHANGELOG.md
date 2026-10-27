@@ -52,6 +52,17 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.20.0 — Project directories must lie under an allowed root
+
+### Project directories must lie under an allowed root
+
+- A project directory that comes from a request or a stored record is now refused unless it lies under an allowed root. This applies to a session start (REST, MCP, chat, CLI and PRD tasks), an Automaton created with an explicit `project_dir` or a per-task `project_dir`, and the working directory of the pipeline and quality-gate test runner. The rule is always on, whether or not an API token is set.
+- The allowed roots are the PRD worktree base (`autonomous.worktree_dir`, default `~/.datawatch/prd-worktrees`) and the workspace root (`session.workspace_root`), plus any folders listed in the new setting `server.allowed_project_roots`. Nothing else widens the set.
+- `..` segments and symlinks, including dangling links, are resolved before the check. A refused directory returns an error that names the allowed roots (REST answers 400).
+- `server.allowed_project_roots` is available in `config.yaml`, `PUT /api/config`, MCP `config_set`, `datawatch config set`, chat `configure` and the Settings card (with strings in all five locale bundles). It takes absolute paths only and applies without a restart.
+- Upgrade note: a session or Automaton whose project directory is outside these roots (for example a checkout under `~/workspace`) is refused until its folder is added to `server.allowed_project_roots` or set as `session.workspace_root`. `session.default_project_dir` is daemon configuration and is still used as is.
+- Docs: [`operations.md`](docs/operations.md) "Allowed project roots".
+
 ## v9.19.6 — Pi work is placed on the backend own compute nodes
 
 ### A pi backend's node list is read from its own LLM entry
