@@ -19,6 +19,20 @@
 #   3. A Go test file that runs the binary as a daemon (exec.Command or
 #      exec.CommandContext whose arguments include "start" and "--foreground")
 #      must register t.Cleanup in the same file.
+#   4. A shell file that records a daemon or helper PID through the daemon
+#      library (td_start / td_track_pid) must make the shared traps active —
+#      it calls td_install_traps, or goes through story_daemon_lifecycle
+#      (which does), or owns EXIT+INT+TERM traps itself. Recording without
+#      installed traps is inert: nothing ends the pid on any exit path.
+#      Sourced helper libraries named lib.sh are exempt: their callers
+#      install.
+#   5. A function passed to a TD_*_CLEANUP hook must not capture
+#      `local rc=$?` to exit with: the hook runs in a subshell of the shared
+#      handler, and the handler must always finish (state wipe included)
+#      with the script's own status available as TD_EXIT_STATUS.
+#   6. The exit code of a job a script waits on is its verdict and the
+#      script's own exit status: it must not be collapsed into 0/1
+#      bookkeeping around `wait <pid>` with no `rc=$?` anywhere in the file.
 # A line may carry the `daemon-cleanup-ok` marker with a comment saying why it
 # is safe (an audit regular expression, or a long-lived sandbox start that has
 # a maximum lifetime and a wipe command); marked lines and comment-only lines
@@ -53,8 +67,18 @@ R_XARGS_KILL='(^|[^[:alnum:]_])xargs[^|;&]*[[:space:]]+kill([^[:alnum:]_]|$)' # 
 R_KILLSESSION='kill-session'
 R_SESSION_GREP='grep([[:space:]]+-[A-Za-z]+)*[[:space:]]+.{0,8}\^'
 R_START_WORD='(^|[^[:alnum:]_.-])start([^[:alnum:]_]|$)'
-R_TD_CALL='(^|[[:space:];|&(])td_start([[:space:]]|\()'
-R_TD_TRACK='(^|[[:space:];|&(])td_track_pid([[:space:]]|\()'
+R_TD_CALL='(^|[^[:alnum:]_.])td_start([[:space:]]|$|\()'
+R_TD_TRACK='(^|[^[:alnum:]_.])td_track_pid([[:space:]]|$|\()'
+R_TD_INSTALL='(^|[^[:alnum:]_.])td_install_traps([[:space:]]|$|\()'
+R_STORY_LC='(^|[^[:alnum:]_.])story_daemon_lifecycle([[:space:]]|$)'
+R_TDHOOK='TD_(PRE|EXTRA)_CLEANUP='
+R_LOCALRC='local[[:space:]]+rc[[:space:]]*=[[:space:]]*\$\?'
+R_WAITJOB='wait[[:space:]]+[^[:space:]]*\$[A-Za-z]'
+R_RC0A='[^[:alnum:]_]rc=[[:space:]]*0([[:space:]]|;|\}|\)|#|$)'
+R_RC0B='^[[:space:]]*rc=[[:space:]]*0$'
+R_RC1A='[^[:alnum:]_]rc=[[:space:]]*1([[:space:]]|;|\}|\)|#|$)'
+R_RC1B='^[[:space:]]*rc=[[:space:]]*1$'
+R_RCREAL='rc[[:space:]]*=[[:space:]]*\$\?'
 R_SIG_EXIT='(^|[^[:alnum:]_])EXIT([^[:alnum:]_]|$)'
 R_SIG_INT='(^|[^[:alnum:]_])INT([^[:alnum:]_]|$)'
 R_SIG_TERM='(^|[^[:alnum:]_])TERM([^[:alnum:]_]|$)'
@@ -68,6 +92,8 @@ audit_shell() {
     local n=${#lines[@]}
     local i text
     local daemon_line="" td_helper=0
+    local td_install=0 story_lc=0 td_hook=0 localrc=0
+    local waitjob=0 rc0=0 rc1=0 rcreal=0
     local any_trap=0 trap_exit=0 trap_int=0 trap_term=0
 
     for ((i = 0; i < n; i++)); do
@@ -105,6 +131,30 @@ audit_shell() {
         if [[ "$text" =~ $R_TD_CALL || "$text" =~ $R_TD_TRACK ]]; then
             td_helper=1
         fi
+        if [[ "$text" =~ $R_TD_INSTALL ]]; then
+            td_install=1
+        fi
+        if [[ "$text" =~ $R_STORY_LC ]]; then
+            story_lc=1
+        fi
+        if [[ "$text" =~ $R_TDHOOK ]]; then
+            td_hook=1
+        fi
+        if [[ "$text" =~ $R_LOCALRC ]]; then
+            localrc=1
+        fi
+        if [[ "$text" =~ $R_WAITJOB ]]; then
+            waitjob=1
+        fi
+        if [[ "$text" =~ $R_RC0A || "$text" =~ $R_RC0B ]]; then
+            rc0=1
+        fi
+        if [[ "$text" =~ $R_RC1A || "$text" =~ $R_RC1B ]]; then
+            rc1=1
+        fi
+        if [[ "$text" =~ $R_RCREAL ]]; then
+            rcreal=1
+        fi
     done
 
     for ((i = 0; i < n; i++)); do
@@ -129,6 +179,27 @@ audit_shell() {
         else
             report "$file:$daemon_line: starts a datawatch daemon with no cleanup on every exit path; use td_start/td_track_pid from scripts/test-daemon-lib.sh, trap EXIT, INT and TERM, or end the PID it recorded by hand"
         fi
+    fi
+    # Rule 4: recording a PID through the daemon library is inert unless the
+    # shared traps were installed (or the story helper / own traps do the
+    # job); otherwise nothing ends the pid on any exit path.
+    if [[ "$td_helper" -eq 1 && "$td_install" -eq 0 && "$story_lc" -eq 0 ]] \
+        && [[ "$(basename "$file")" != "lib.sh" ]] \
+        && { [[ "$trap_exit" -eq 0 ]] || [[ "$trap_int" -eq 0 ]] || [[ "$trap_term" -eq 0 ]]; }; then
+        report "$file: records a daemon or helper PID via the daemon library but the shared traps are never installed (td_install_traps, story_daemon_lifecycle, or own EXIT+INT+TERM traps) — the record is inert and the pid survives every exit path"
+    fi
+
+    # Rule 5: TD_*_CLEANUP hooks run in a subshell of the shared handler; a
+    # hook that captures `local rc=$?` to exit with cuts the handler off
+    # (state wipe included) and can change the script's own exit status.
+    if [[ "$td_hook" -eq 1 && "$localrc" -eq 1 ]]; then
+        report "$file: passes a cleanup function to a TD_*_CLEANUP hook that captures local rc=\$? to exit with — the hook must return; the shared handler owns the exit status (the original is available to the hook as TD_EXIT_STATUS)"
+    fi
+
+    # Rule 6: the exit code of a job a script waits on is its verdict; it
+    # must not be collapsed into 0/1 bookkeeping.
+    if [[ "$waitjob" -eq 1 && "$rc0" -eq 1 && "$rc1" -eq 1 && "$rcreal" -eq 0 ]]; then
+        report "$file: collapses the exit code of a job it waits on into 0/1 bookkeeping instead of capturing the real one (wait <job> … || rc=\$?) and exiting with it"
     fi
     return 0
 }
@@ -224,9 +295,15 @@ if [[ "$ERRORS" -gt 0 ]]; then
     echo "  session the daemon started, on every exit path (normal exit, failure, interrupt):"
     echo "    shell: source scripts/test-daemon-lib.sh and use td_start (or td_track_pid);"
     echo "           its shared traps cover EXIT, INT and TERM and end only the recorded PID"
+    echo "    shell: recording a PID without td_install_traps is a no-op — install the"
+    echo "           traps for the record to mean anything"
+    echo "    shell: TD_*_CLEANUP hooks run in a subshell and must return — the shared"
+    echo "           handler owns the exit status (TD_EXIT_STATUS carries the original)"
     echo "    shell: or add your own trap naming EXIT, INT and TERM, signalling only a PID"
     echo "           the script recorded while /proc/<pid>/cmdline still carries its marker"
     echo "    shell: never end processes by name, never stop a multiplexer server"
+    echo "    shell: don't collapse a waited job's exit code into 0/1 — the script's"
+    echo "           verdict and exit status are the job's own code"
     echo "    go:    register t.Cleanup in the test that starts the daemon"
     echo
     echo "FAIL: $ERRORS daemon cleanup violation(s)"

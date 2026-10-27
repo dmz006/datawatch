@@ -158,8 +158,15 @@ start_receiver() {
 
 stop_receiver() {
   if [[ -n "$RECV_PID" ]]; then
-    kill "$RECV_PID" 2>/dev/null || true
-    wait "$RECV_PID" 2>/dev/null || true
+    # Signal the pid only while it is still identifiable as this session's
+    # receiver (marker in /proc/<pid>/cmdline) — never by pid alone: a
+    # recycled pid may be an unrelated process.
+    if [[ -d "/proc/$RECV_PID" ]] && \
+       tr '\0' ' ' < "/proc/$RECV_PID/cmdline" 2>/dev/null | \
+       grep -qF 'webhook-receiver'; then
+      kill "$RECV_PID" 2>/dev/null || true
+      wait "$RECV_PID" 2>/dev/null || true
+    fi
     RECV_PID=""
   fi
 }
@@ -246,7 +253,12 @@ stop_sandbox() {
 }
 
 cleanup() {
-  local rc=$?
+  # Runs from the library's TD_EXTRA_CLEANUP hook (subshell): it must not
+  # `exit` — the shared handler owns the script's status (TD_EXIT_STATUS)
+  # and still has to finish after this hook. API cleanup below is
+  # best-effort: in fresh-sandbox mode the subscription and secret die
+  # with the sandbox anyway; in existing-sandbox mode a failed restore is
+  # reported, not fatal.
   stop_receiver
   if [[ -n "$SANDBOX_PID" ]]; then
     # Fresh-sandbox mode: this cleanup() runs from the library's
@@ -282,7 +294,6 @@ cleanup() {
   else
     rm -rf "$WORK"
   fi
-  exit "$rc"
 }
 # The EXIT/INT/TERM/HUP traps were installed by the shared daemon
 # lifecycle library at the top of this script (TD_EXTRA_CLEANUP=cleanup):

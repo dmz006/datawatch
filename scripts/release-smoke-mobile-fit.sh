@@ -125,6 +125,13 @@ console.log(`mobile-fit: ${s.scenarios} scenarios, ${s.total} findings in ${s.gr
 # launcher (it appends "start --foreground --config"), so the runner is
 # started directly and recorded with td_track_pid instead.
 source "$SCRIPT_DIR/test-daemon-lib.sh"
+# Activate the library's EXIT/INT/TERM/HUP traps NOW, before the runner
+# forks: td_track_pid only records — without installed traps the record is
+# inert and the runner would survive every exit path. When the script ends
+# (normal, failure, Ctrl-C) the handler signals the recorded runner pid —
+# only while its marker is still in /proc/<pid>/cmdline — which takes the
+# browser child down with it.
+td_install_traps "$@"
 if command -v setsid >/dev/null 2>&1; then
   ( cd "$PWA_DIR" && exec setsid env \
       MOBILE_FIT_VIEW=observer MOBILE_FIT_PROFILE=quick \
@@ -143,8 +150,11 @@ runner_pid=$!
 # present in the runner's cmdline for its whole life (a recycled PID is
 # left alone).
 td_track_pid "$runner_pid" "mobile-fit.mjs" || exit 1
-rc=1
-if [[ -n "$runner_pid" ]] && wait "$runner_pid" 2>/dev/null; then rc=0; fi
+# The verdict and the script's exit status are the runner's own exit code,
+# uncollapsed: 0 pass, 1 reportless failure, 2 "no browser", anything else
+# whatever the runner actually exited with.
+rc=0
+if [[ -n "$runner_pid" ]]; then wait "$runner_pid" 2>/dev/null || rc=$?; fi
 
 case $rc in
   0)
@@ -169,6 +179,6 @@ case $rc in
     ;;
   *)
     echo "FAIL: mobile-fit runner exited $rc; report kept at $REPORT_DIR"
-    exit 1
+    exit "$rc"
     ;;
 esac

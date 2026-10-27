@@ -73,7 +73,7 @@ case "$HOST" in
 esac
 
 TOKEN="${DW_BASE_TOKEN:-}"
-CURL_ARGS=(-s --max-time 20)
+CURL_ARGS=(-sk --max-time 20) # -k: the sandbox daemon serves a self-signed TLS cert
 [[ -n "$TOKEN" ]] && CURL_ARGS+=(-H "Authorization: Bearer $TOKEN")
 
 # ---------------------------------------------------------------------------
@@ -146,7 +146,11 @@ SID_B=""
 # this script) — then removes the scratch repo. Idempotent, so it is
 # safe to run once from the signal path and again from the EXIT trap.
 cleanup() {
-  local rc=$?
+  local rc=$? # first line: $? is still the script's own pending status
+  # Ignore further HUP/INT/TERM while cleanup is running: a second Ctrl-C
+  # mid-cleanup would `exit` from the signal handler and leave this run's
+  # sessions behind — cleanup must be allowed to finish.
+  trap '' HUP INT TERM
   for sid in "$SID_A" "$SID_B"; do
     if [[ -n "$sid" ]]; then
       curl "${CURL_ARGS[@]}" -X POST -H "Content-Type: application/json" \

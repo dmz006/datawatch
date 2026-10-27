@@ -46,6 +46,11 @@
 #   TD_EXTRA_CLEANUP     runs AFTER td_stop_all: filesystem cleanup (scratch
 #                        dirs) that must never happen while its daemon is
 #                        still running belongs here.
+#   Hooks run in their own subshell: a hook that `exit`s or fails cannot cut
+#   the shared cleanup off mid-run (the state wipe included) and cannot
+#   change the script's final status. That status — the script's own
+#   pending one, or 128+signal after INT/TERM/HUP — is captured before the
+#   first hook runs and available to hooks as TD_EXIT_STATUS.
 #   td_wait_port_closed <port> [timeout]   wait until nothing listens
 #
 # Ownership scope: TD_STATE_DIR is shared by a runner shell and the story
@@ -74,6 +79,7 @@
 
 TD_STATE_DIR="${TD_STATE_DIR:-$(mktemp -d /tmp/dw-daemon-state.XXXXXX)}"
 TD_OWNER="${TD_OWNER:-}"
+TD_EXIT_STATUS="" # set by the handlers: the status the script is ending with
 export TD_STATE_DIR
 TD_STOP_TIMEOUT="${TD_STOP_TIMEOUT:-15}"
 TD_API_TIMEOUT="${TD_API_TIMEOUT:-10}"
@@ -247,7 +253,7 @@ _td_end_sessions() {
   curl=$(readlink -f "$(command -v curl 2>/dev/null)" 2>/dev/null || command -v curl 2>/dev/null || true)
   [[ -n "$base" && -n "${curl:-}" ]] || return 0
   local resp sids sid
-  if resp=$(curl -sS --max-time "$TD_API_TIMEOUT" \
+  if resp=$(curl -skS --max-time "$TD_API_TIMEOUT" \
       ${token:+-H "Authorization: Bearer $token"} \
       "$base/api/sessions" 2>/dev/null); then
     if sids=$(echo "$resp" | python3 -c '
@@ -262,7 +268,7 @@ for item in d if isinstance(d, list) else d.get("sessions", []):
 ' 2>/dev/null); then
       for sid in $sids; do
         [[ -n "$sid" ]] || continue
-        curl -sS --max-time "$TD_API_TIMEOUT" \
+        curl -skS --max-time "$TD_API_TIMEOUT" \
           ${token:+-H "Authorization: Bearer $token"} \
           -X POST -H "Content-Type: application/json" \
           -d '{"id":"'$sid'"}' \
@@ -439,6 +445,19 @@ os.execvp("bash", ["bash"] + sys.argv[1:])
   return 0
 }
 
+# _td_run_hook — run a registered TD_*_CLEANUP hook (a shell function name)
+# in its own subshell: an `exit` or failure inside the hook cannot cut the
+# shared handler off mid-cleanup, and the hook cannot change the script's
+# recorded exit status.
+_td_run_hook() {
+  local hook="${1:-}"
+  [[ -n "$hook" ]] || return 0
+  if declare -f "$hook" >/dev/null 2>&1; then
+    ( "$hook" || true )
+  fi
+  return 0
+}
+
 _td_run_pre_stop_hook() {
   # Runs the cleanup that must talk to a recorded daemon's own API
   # (tracked-resource deletion, ending sessions by id) while the daemon
@@ -446,20 +465,18 @@ _td_run_pre_stop_hook() {
   # exactly one exit path runs it.
   local hook="${TD_PRE_STOP_CLEANUP:-}"
   TD_PRE_STOP_CLEANUP=""
-  if [[ -n "$hook" ]] && declare -f "$hook" >/dev/null 2>&1; then
-    "$hook" || true
-  fi
-  return 0
+  _td_run_hook "$hook"
 }
 
 _td_on_exit() {
+  TD_EXIT_STATUS="$?" # first line: $? is still the script's own pending status
   _td_run_pre_stop_hook
   td_stop_all
   # Story scripts may register their own cleanup (e.g. scratch dirs) here;
-  # td_stop_all runs first so their functions never leak daemons.
-  if [[ -n "${TD_EXTRA_CLEANUP:-}" ]] && declare -f "$TD_EXTRA_CLEANUP" >/dev/null 2>&1; then
-    "$TD_EXTRA_CLEANUP"
-  fi
+  # td_stop_all runs first so their functions never leak daemons. The hook
+  # runs in a subshell, so it cannot abort the state wipe below or change
+  # this handler's (and the script's) exit status.
+  _td_run_hook "${TD_EXTRA_CLEANUP:-}"
   if [[ -z "${TD_OWNER:-}" ]]; then
     # Only the owner-less shell owns the shared state dir (a worker
     # subshell with TD_OWNER set must not delete the dir its runner is
@@ -476,13 +493,16 @@ _td_on_signal() {
   # The signal is deliberately not sent to ourselves again: its trap is
   # still installed, so the handler would re-enter itself.
   local sig="$1" code=1
-  _td_run_pre_stop_hook
-  td_stop_all
   case "$sig" in
     HUP) code=129 ;;
     INT) code=130 ;;
     TERM) code=143 ;;
   esac
+  # The signal means the script ends with 128+signal; record it before any
+  # hook runs so a hook `exit` (subshell only) cannot change it.
+  TD_EXIT_STATUS="${TD_EXIT_STATUS:-$code}"
+  _td_run_pre_stop_hook
+  td_stop_all
   exit "$code"
 }
 
