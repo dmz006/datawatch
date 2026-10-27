@@ -66,6 +66,11 @@ type Request struct {
 	ExcludeNodes []string
 	Model        string // model wanted, for model affinity
 	Role         Role   // dispatch rank; zero value means RoleWorker
+	// NodeUnknown is set by Adopt callers that expected a compute node for the
+	// running work and could not determine it. The adopted lease then holds no
+	// node and carries Lease.NodeUnknown so the gap stays visible. Ignored by
+	// Acquire and when Node is set.
+	NodeUnknown bool
 	// Interactive marks an operator-started session. Such a request is never
 	// held back by Options.AutonomousBackpressure.
 	Interactive bool
@@ -182,6 +187,11 @@ type Lease struct {
 	Model     string    `json:"model,omitempty"`
 	Acquired  time.Time `json:"acquired"`
 	SessionID string    `json:"session_id,omitempty"`
+	// NodeUnknown marks an adopted lease whose compute node was expected but
+	// could not be determined. Such a lease holds no node:<name> pool, yet it
+	// still counts against every host and llm pool. It clears when a later
+	// Adopt supplies the node.
+	NodeUnknown bool `json:"node_unknown,omitempty"`
 }
 
 // Waiter is a queued request as reported by Snapshot.
@@ -739,9 +749,11 @@ func (l *Ledger) remove(w *waiter) {
 // a task whose session survived a daemon restart (BL462). Unlike Acquire it
 // never queues and ignores pool limits, because the session already occupies
 // its slots. Idempotent: an existing lease for the holder is kept and only
-// its session binding is refreshed, and a lease holding no node gains req.Node. Adopt never picks a node: a request with
-// NodeChoices is recorded on req.Node (its node:<name> pool added) or, when
-// Node is empty, on no node.
+// its session binding is refreshed, and a lease holding no node gains req.Node.
+// Adopt never picks a node: a request with NodeChoices is recorded on req.Node
+// (its node:<name> pool added) or, when Node is empty, on no node. With
+// req.NodeUnknown set that nodeless lease is also flagged NodeUnknown; gaining
+// a node clears the flag.
 //
 // successors names the holders the work's lease may since have been re-keyed
 // to by Handoff. When one of them holds a lease the work already occupies its
@@ -757,9 +769,12 @@ func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 		}
 		if ls.Node == "" && req.Node != "" {
 			ls.Node = req.Node
+			ls.NodeUnknown = false
 			if pool := "node:" + req.Node; !sharesPool(ls.Pools, []string{pool}) {
 				ls.Pools = append(ls.Pools, pool)
 			}
+		} else if ls.Node == "" && req.NodeUnknown {
+			ls.NodeUnknown = true
 		}
 		return
 	}
@@ -781,6 +796,7 @@ func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 	l.leases[req.Holder] = &Lease{
 		Holder: req.Holder, PRDID: req.PRDID, Pools: append([]string(nil), req.Pools...),
 		Node: req.Node, Model: req.Model, Acquired: now, SessionID: sessionID,
+		NodeUnknown: req.NodeUnknown && req.Node == "",
 	}
 	l.lastGrant[req.PRDID] = now
 	l.recordRequestsLocked(req.Pools, l.opt.Clock.Now())
@@ -996,6 +1012,15 @@ func FormatPools(pools []PoolStatus) string {
 func FormatText(st Status) string {
 	var b strings.Builder
 	b.WriteString(FormatPools(st.Pools))
+	unknown := 0
+	for _, ls := range st.Leases {
+		if ls.NodeUnknown {
+			unknown++
+		}
+	}
+	if unknown > 0 {
+		fmt.Fprintf(&b, "Leases with unknown node: %d (counted in host and llm pools, held on no node pool)\n", unknown)
+	}
 	if len(st.Waiting) == 0 {
 		b.WriteString("Waiting: none\n")
 		return b.String()

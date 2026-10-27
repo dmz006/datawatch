@@ -87,3 +87,26 @@ test('the node name is HTML-escaped', () => {
   assert.ok(!html.includes('<img'), 'unescaped node name leaked: ' + html);
   assert.ok(html.includes('&lt;img src=x onerror=1&gt;'), 'node name must be escaped: ' + html);
 });
+
+test('a lease adopted on no known node is marked node unknown beside its holder', () => {
+  const s = loadApp();
+  const cap = {
+    pools: [pool('llm:pi', 4, 2, [H1, H2], ['', ''])],
+    leases: [{ holder: H1, node_unknown: true, pools: ['llm:pi'] }, { holder: H2, pools: ['llm:pi'] }],
+    waiting: [], backoff: [], budgets: [],
+  };
+  const html = render(s, cap);
+  assert.ok(html.includes('abcdef12 <span class="cap-node-unknown"'), 'flagged holder is marked: ' + html);
+  assert.ok(html.includes('node unknown</span>'), 'chip text: ' + html);
+  assert.equal(html.split('cap-node-unknown').length - 1, 1, 'only the flagged lease is marked: ' + html);
+});
+
+test('a running task flagged node_unknown says so in its holds line', () => {
+  const s = loadApp();
+  s._task = { pools: ['host', 'llm:pi'], node_unknown: true };
+  const flagged = vm.runInContext('window.taskHoldsHtml(_task)', s);
+  assert.ok(flagged.includes('node unknown'), flagged);
+  s._task = { pools: ['host', 'llm:pi'], node: 'gpu-a', node_unknown: false };
+  const placed = vm.runInContext('window.taskHoldsHtml(_task)', s);
+  assert.ok(!placed.includes('node unknown'), placed);
+});

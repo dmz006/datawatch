@@ -1153,7 +1153,13 @@ paths:
                             - {$ref: "#/components/schemas/NodeUsage"}
                           nullable: true
                           description: The node_usage object. Present on a node:<name> pool when the daemon reports per-node usage; the daemon prints a short line here per loaded model and GPU. Absent on host and llm pools and on older daemons.
-                  leases: {type: array, items: {type: object}}
+                  leases:
+                    type: array
+                    description: Held leases. node_unknown is true on a lease adopted after a daemon restart whose compute node could not be determined; it holds no node:<name> pool but still counts against its host and llm:<name> pools. Absent otherwise.
+                    items:
+                      type: object
+                      properties:
+                        node_unknown: {type: boolean, description: "True when the lease's compute node was expected and could not be determined at adoption. The lease holds no node pool. Absent when false"}
                   waiting: {type: array, items: {type: object}}
                   backoff:
                     type: array
@@ -4645,6 +4651,7 @@ components:
         kind: {type: string, enum: ['', decompose, smoke, final_gate], description: "Empty = ordinary task. 'smoke' marks the task that IS the plan's own smoke verification (judged by the verifier LLM from autonomous.smoke_verification_backend/models); 'final_gate' the terminal verification task that runs the plan's verification script"}
         verification_script: {type: string}
         status: {type: string}
+        compute_node: {type: string, description: "Compute node the task's worker was started on; a daemon restart adopts the surviving worker onto it. Absent for a hosted backend or before the worker starts"}
         executor_source: {type: string, description: "task | story | prd | automation | global"}
     SessionAutomatonDetail:
       type: object

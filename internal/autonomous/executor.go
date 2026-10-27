@@ -154,7 +154,11 @@ type SpawnResult struct {
 	// git diff --name-only --cached HEAD) captured alongside PreTaskSHA.
 	// Used by the foreign-file-drift check (DetectForeignFileDrift).
 	PreTaskDirtyFiles []string
-	Err               error
+	// ComputeNode is the compute node the start handler placed the worker on,
+	// which differs from SpawnRequest.ComputeNode when the handler re-placed
+	// the session. Empty when the spawn path does not report one.
+	ComputeNode string
+	Err         error
 }
 
 // SpawnFn is the indirection used by the executor to start a worker.
@@ -1469,9 +1473,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if led := m.Capacity(); led != nil {
 				led.Bind(t.ID, sr.SessionID)
 			}
+			placedNode := sr.ComputeNode
+			if placedNode == "" {
+				placedNode = heldNode
+			}
 			m.store.WithLock(func() {
 				oldSession = t.SessionID
 				t.SessionID = sr.SessionID
+				t.ComputeNode = placedNode
 			})
 			// persist SessionID immediately so killPRDSessions can reach it if daemon exits before TaskVerifying is saved
 			if m.store.SaveTask(t) == nil {

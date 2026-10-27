@@ -1634,6 +1634,7 @@
   "capacity_no_limit": "no limit",
   "capacity_no_cap_configured": "no cap configured",
   "capacity_waiting_for_node": "wartet auf Node",
+  "capacity_node_unknown": "Node unbekannt",
   "capacity_node_holder": "Halter",
   "capacity_pool_host": "Host sessions (all tasks + interactive)",
   "capacity_pool_host_hint": "Maschinenweites Sitzungslimit, gemeinsam mit interaktiven Sitzungen genutzt — nicht spezifisch für diesen Automaten.",

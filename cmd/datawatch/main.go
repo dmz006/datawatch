@@ -4792,10 +4792,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				return autonomouspkg.SpawnResult{}, fmt.Errorf("session start: %s — %s", resp.Status, string(rb))
 			}
 			var out struct {
-				ID string `json:"id"`
+				ID             string `json:"id"`
+				ComputeNodeRef string `json:"compute_node_ref"`
 			}
 			_ = json.Unmarshal(rb, &out)
-			return autonomouspkg.SpawnResult{SessionID: out.ID, PreTaskSHA: preTaskSHA, PreTaskUntrackedFiles: preTaskUntrackedFiles, PreTaskDirtyFiles: preTaskDirtyFiles}, nil
+			return autonomouspkg.SpawnResult{SessionID: out.ID, ComputeNode: out.ComputeNodeRef, PreTaskSHA: preTaskSHA, PreTaskUntrackedFiles: preTaskUntrackedFiles, PreTaskDirtyFiles: preTaskDirtyFiles}, nil
 		}
 		// v4.0.1 — VerifyFn: uses /api/ask to attest the task spec
 		// against the session summary. verification_backend (empty =

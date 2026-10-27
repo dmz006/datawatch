@@ -260,6 +260,47 @@ func computePriority(nodes func() *compute.Registry) func(string) (int, bool) {
 	}
 }
 
+// hostingEntry returns the LLM entry that hosts a local-engine session of
+// backend and model, and that entry's first compute node. gated is false for a
+// session that runs on no local engine. A pi backend that lists compute nodes
+// of its own places on that list; the engine gate only decides that the
+// session is local.
+func hostingEntry(reg *inference.Registry, backend, model string) (entry inference.LLM, node string, gated bool) {
+	node, gated = autonomous.LocalEngineGate(backend, model, func(provider string) (string, bool) {
+		l, ok := engineEntry(reg, provider, model)
+		if !ok {
+			return "", false
+		}
+		entry = l
+		return l.ComputeNodes[0], true
+	})
+	if !gated {
+		return inference.LLM{}, node, false
+	}
+	if own, ok := piOwnEntry(reg, backend); ok {
+		entry = own
+		node = own.ComputeNodes[0]
+	}
+	return entry, node, true
+}
+
+// entryNodeCount builds the counter that tells adoption how many compute nodes
+// the entry hosting a backend and model lists, before any serving filter. It
+// is 0 for a backend that runs on no local engine.
+func entryNodeCount(registry func() *inference.Registry) autonomous.EntryNodesFn {
+	return func(backend, model string) int {
+		var reg *inference.Registry
+		if registry != nil {
+			reg = registry()
+		}
+		entry, _, gated := hostingEntry(reg, backend, model)
+		if !gated {
+			return 0
+		}
+		return len(entry.ComputeNodes)
+	}
+}
+
 // capacityResolver builds the pool resolver the admission paths share. For a
 // backend and model it returns the capacity pools, the primary compute node
 // and, when the hosting LLM entry has two or more candidate nodes, those
@@ -297,23 +338,9 @@ func capacityResolver(registry func() *inference.Registry, nodes func() *compute
 			}
 		}
 		// Only a local-engine session takes a compute node's pool.
-		var entry inference.LLM
-		node, gated := autonomous.LocalEngineGate(backend, model, func(provider string) (string, bool) {
-			l, ok := engineEntry(reg, provider, model)
-			if !ok {
-				return "", false
-			}
-			entry = l
-			return l.ComputeNodes[0], true
-		})
+		entry, node, gated := hostingEntry(reg, backend, model)
 		if !gated {
 			return pools, node, nil
-		}
-		// A pi backend that lists compute nodes of its own places on that
-		// list; the gate above only decided that the session is local.
-		if own, ok := piOwnEntry(reg, backend); ok {
-			entry = own
-			node = own.ComputeNodes[0]
 		}
 		if len(entry.ComputeNodes) > 1 {
 			ordered := inference.OrderedPoolNodes(entry, priority)
@@ -850,7 +877,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		reg.SetChangeFn(replan)
 	}
 	amgr.SetCapacityChoices(choices)
+	amgr.SetEntryNodes(entryNodeCount(httpServer.InferenceRegistry))
 	amgr.SetSessionNode(sessionComputeNode(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }, httpServer.ComputeRegistry))
+	amgr.SetSessionEndpoint(sessionEndpoint(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }))
 	amgr.SetPiDefaultModel(piDefaultModel(cfg))
 	amgr.SetNodeLoad(nodeLoader(httpServer.ComputeRegistry), nodeAlerts)
 	amgr.SetCapacityAudit(capacityAudit)
@@ -1294,6 +1323,24 @@ func sessionComputeNode(lookup func(id string) (*session.Session, bool), nodes f
 			}
 		}
 		return ""
+	}
+}
+
+// sessionEndpoint builds the reader of the endpoint a session was placed on:
+// its node address, else its Ollama URL ("" when it records neither).
+func sessionEndpoint(lookup func(id string) (*session.Session, bool)) autonomous.SessionEndpointFn {
+	return func(sessionID string) string {
+		if lookup == nil {
+			return ""
+		}
+		s, ok := lookup(sessionID)
+		if !ok || s == nil {
+			return ""
+		}
+		if s.NodeAddress != "" {
+			return s.NodeAddress
+		}
+		return s.OllamaURL
 	}
 }
 

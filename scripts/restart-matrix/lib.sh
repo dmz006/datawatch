@@ -141,6 +141,8 @@ rm_sandbox_new() {
   while [[ "$RM_TLS_PORT" == "$RM_PORT" ]]; do RM_TLS_PORT="$(rm_free_port)"; done
   RM_BASE="http://127.0.0.1:$RM_PORT"
   RM_DAEMON_PID=""
+  RM_DAEMON_ENV=()    # extra KEY=VALUE pairs for the daemon; only rm_pi_nodes_setup fills it
+  RM_NODE_STUB_PID="" # the compute-node stub, only started by rm_pi_nodes_setup
   # tmux appends /tmux-<uid>/default to TMUX_TMPDIR.
   local sock="$RM_TMUX/tmux-$(id -u)/default"
   if ((${#sock} > 100)); then
@@ -288,6 +290,25 @@ autonomous:
   poll_interval_seconds: 1
   refuse_dirty_tree_start: false
 EOF
+  # Opt-in only: states that do not set RM_PI_NODES keep the config above, byte for byte.
+  [[ "${RM_PI_NODES:-0}" == 1 ]] && rm_write_config_pi
+  return 0
+}
+
+# rm_write_config_pi — extends the sandbox config when RM_PI_NODES=1: the pi and
+# pi-prompt backends run the fake pi that rm_pi_nodes_setup writes into the sandbox.
+rm_write_config_pi() {
+  # A PRD's project dir must lie under an allowed project root; the sandbox dir is not under
+  # the default roots, so name it (inside the server block, after its last key).
+  sed -i "/^  proxy_sandbox_port:/a\\  allowed_project_roots: [\"$RM_SB\"]" "$RM_CONFIG"
+  cat >>"$RM_CONFIG" <<EOF
+pi:
+  enabled: true
+  binary: $RM_SB/bin/pi
+pi_prompt:
+  enabled: true
+  binary: $RM_SB/bin/pi
+EOF
 }
 
 # rm_init_project — a tiny git repo with the verification scripts the plans name.
@@ -361,7 +382,7 @@ rm_wait_until() {
 rm_launch_daemon() {
   local bin
   bin="$(rm_find_binary)"
-  env -u TMUX TMUX_TMPDIR="$RM_TMUX" "$bin" --config "$RM_CONFIG" start --foreground \
+  env -u TMUX TMUX_TMPDIR="$RM_TMUX" ${RM_DAEMON_ENV[@]+"${RM_DAEMON_ENV[@]}"} "$bin" --config "$RM_CONFIG" start --foreground \
     >>"$RM_DAEMON_LOG" 2>&1 &
   RM_DAEMON_PID=$!
   echo "$RM_DAEMON_PID" >"$RM_PIDFILE"
@@ -466,7 +487,129 @@ rm_sandbox_down() {
       [[ -n "$s" ]] && rm_tmux kill-session -t "$s" 2>/dev/null || true
     done < <(rm_tmux list-sessions -F '#{session_name}' 2>/dev/null)
   fi
+  rm_node_stub_stop
   RM_DAEMON_PID=""
+}
+
+# ------------------------------------------------- pi workers on two nodes ----
+#
+# Opt-in plumbing for the worker-node-placement state, which needs pi-prompt
+# workers placed on compute nodes. A state calls it as
+#
+#   RM_PI_NODES=1; rm_sandbox_new NAME; unset RM_PI_NODES   # config gets the pi blocks
+#   rm_pi_nodes_setup                                       # fake pi, pi config dir, node stub
+#   rm_daemon_start
+#   rm_pi_nodes_register                                    # compute nodes and LLM entries
+#
+# Everything lives under the sandbox dir ($RM_SB), which rm_sandbox_finish removes.
+#
+#   - bin/pi          a fake pi: it records its start in <ctrl>/pi.starts (with the
+#                     provider endpoint the daemon bound it to), then only sleeps until
+#                     <ctrl>/pi.release exists or <ctrl>/pi_seconds pass, and prints a
+#                     line. No network, no model.
+#   - pi-agent/       the pi config directory the daemon's launches read
+#                     (PI_CODING_AGENT_DIR): a provider table naming the "ollama" provider
+#   - node-stub.py    a loopback listener on each node's address that answers the model
+#                     residency check (GET /api/ps) the daemon makes before it starts a
+#                     worker on a node of a multi-node entry. Without it the check fails
+#                     and the worker fails over or fails. It serves nothing else.
+# The daemon gets the fake pi directory first on its PATH and PI_CODING_AGENT_DIR through
+# RM_DAEMON_ENV, so a real pi on the host can never be reached.
+
+RM_PI_MODEL="ollama/qwen3.8:27b"
+RM_NODE_A="matrix-node-a"
+RM_NODE_B="matrix-node-b"
+
+rm_pi_nodes_setup() {
+  mkdir -p "$RM_SB/bin" "$RM_SB/pi-agent"
+  cat >"$RM_SB/bin/pi" <<EOF
+#!/usr/bin/env bash
+ctrl="$RM_CTRL"
+[[ "\${1:-}" == --version ]] && { echo "fake-pi 0.0.0"; exit 0; }
+base="\$(sed -nE 's/.*"baseUrl"[^"]*"([^"]*)".*/\1/p' "\${PI_CODING_AGENT_DIR:-/nonexistent}/models.json" 2>/dev/null | head -n 1)"
+echo "\$(date +%s) pid=\$\$ base=\${base:-none}" >>"\$ctrl/pi.starts"
+echo "fake pi started"
+end=\$((SECONDS + \$(cat "\$ctrl/pi_seconds" 2>/dev/null || echo 300)))
+while [[ ! -e "\$ctrl/pi.release" ]] && ((SECONDS < end)); do sleep 1; done
+echo "\$(date +%s) pid=\$\$" >>"\$ctrl/pi.done"
+echo "fake pi done"
+EOF
+  chmod +x "$RM_SB/bin/pi"
+  # the provider table a node-bound launch rewrites: only the provider's baseUrl changes
+  cat >"$RM_SB/pi-agent/models.json" <<EOF
+{"providers": {"ollama": {"baseUrl": "http://127.0.0.1:1/v1", "api": "openai-completions", "apiKey": "none", "models": [{"id": "qwen3.8:27b"}]}}}
+EOF
+  cat >"$RM_CTRL/node-stub.py" <<'EOF'
+import json, sys, threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+model = sys.argv[1]
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.rstrip("/") == "/api/ps":
+            code, body = 200, {"models": [{"name": model, "model": model}]}
+        else:
+            code, body = 404, {}
+        data = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args):
+        pass
+
+
+servers = [ThreadingHTTPServer(("127.0.0.1", int(p)), Handler) for p in sys.argv[2:]]
+for srv in servers[1:]:
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+servers[0].serve_forever()
+EOF
+  RM_NODE_PORT_A="$(rm_free_port)"
+  RM_NODE_PORT_B="$(rm_free_port)"
+  while [[ "$RM_NODE_PORT_B" == "$RM_NODE_PORT_A" ]]; do RM_NODE_PORT_B="$(rm_free_port)"; done
+  python3 -I "$RM_CTRL/node-stub.py" "${RM_PI_MODEL#*/}" "$RM_NODE_PORT_A" "$RM_NODE_PORT_B" >>"$RM_SB/node-stub.log" 2>&1 &
+  RM_NODE_STUB_PID=$!
+  RM_DAEMON_ENV=("PATH=$RM_SB/bin:$PATH" "PI_CODING_AGENT_DIR=$RM_SB/pi-agent")
+  export RM_NODE_PORT_A RM_NODE_PORT_B
+}
+
+# rm_node_stub_stop — ends the node stub by the pid recorded when it was started, after
+# checking that pid still runs THIS sandbox's stub script.
+rm_node_stub_stop() {
+  local pid="${RM_NODE_STUB_PID:-}"
+  [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 1 ]] || return 0
+  if [[ -r "/proc/$pid/cmdline" ]] && tr '\0' ' ' <"/proc/$pid/cmdline" | grep -qF "$RM_CTRL/node-stub.py"; then
+    kill -TERM "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+  RM_NODE_STUB_PID=""
+}
+
+# rm_pi_nodes_register — two compute nodes with distinct explicit addresses and one
+# worker slot each, an ollama entry (the engine the model's provider resolves to) and a
+# pi-prompt entry, both listing the two nodes. Returns 1 when the daemon refuses any.
+rm_pi_nodes_register() {
+  local n port models body rc=0
+  for n in "$RM_NODE_A:$RM_NODE_PORT_A" "$RM_NODE_B:$RM_NODE_PORT_B"; do
+    port="${n#*:}"
+    rm_api POST /api/compute/nodes "$(jq -nc --arg name "${n%%:*}" --arg addr "http://127.0.0.1:$port" \
+      '{name: $name, kind: "ollama", address: $addr, session_slots: 1, max_concurrent_sessions: 1}')" |
+      jq -e '.name' >/dev/null 2>&1 || { rm_log "compute node ${n%%:*} was not accepted"; rc=1; }
+  done
+  models="$(jq -nc --arg a "$RM_NODE_A" --arg b "$RM_NODE_B" --arg m "${RM_PI_MODEL#*/}" '[{node: $a, model: $m}, {node: $b, model: $m}]')"
+  for n in ollama pi-prompt; do
+    body="$(jq -nc --arg name "$n" --arg a "$RM_NODE_A" --arg b "$RM_NODE_B" --argjson models "$models" \
+      '{name: $name, kind: $name, compute_nodes: [$a, $b], models: $models, max_inflight: 4}')"
+    # The daemon may have created the entry itself from the config (the pi-prompt binary), so
+    # replace it in place; deleting it would only tombstone it. Create it when it is absent.
+    { rm_api PUT "/api/llms/$n" "$body" | jq -e '.name' >/dev/null 2>&1 ||
+      rm_api POST /api/llms "$body" | jq -e '.name' >/dev/null 2>&1; } || { rm_log "llm entry $n was not accepted"; rc=1; }
+  done
+  return $rc
 }
 
 # --------------------------------------------------------- scenario plumbing ----

@@ -23706,8 +23706,15 @@ function capacityHolderNodes(p, ids) {
   const nodes = ids.map(id => byId[id] || '');
   return new Set(nodes.filter(Boolean)).size >= 2 ? nodes : nodes.map(() => '');
 }
+// Short ids of the leases that were adopted with no determinable node.
+function capacityUnknownNodeIds(leases) {
+  const out = new Set();
+  if (Array.isArray(leases)) leases.forEach(l => { if (l && l.node_unknown) out.add(String(l.holder||'').trim().slice(0, 8)); });
+  return out;
+}
 function capacityHoldersLine(p, leases) {
   const ids = capacityHolders(p, leases);
+  const unknownNode = capacityUnknownNodeIds(leases);
   const names = Array.isArray(p.holder_names) ? p.holder_names
     : (Array.isArray(p.hold_names) ? p.hold_names : null);
   const nodes = capacityHolderNodes(p, ids);
@@ -23717,6 +23724,7 @@ function capacityHoldersLine(p, leases) {
     ? `${escHtml(t('capacity_card_holders')||'Holders')}: ${ids.map((id, i) => {
         const h = (names && names[i] != null) ? window.capacityNameHtml(names[i], id) : '';
         const label = h || escHtml(id);
+        if (!nodes[i] && unknownNode.has(id)) return `${label} <span class="cap-node-unknown" style="font-size:10px;color:var(--warning,#f59e0b);">${escHtml(t('capacity_node_unknown'))}</span>`;
         return nodes[i] ? `${label} <span class="cap-node" style="font-size:10px;color:var(--text2);">${escHtml(nodes[i])}</span>` : label;
       }).join(', ')}`
     : '';
@@ -23875,7 +23883,7 @@ window.taskHoldsHtml = function(task) {
   const pools = Array.isArray(task.pools) ? task.pools : (Array.isArray(task.holds) ? task.holds : []);
   const held = pools.slice();
   if (task.node && !held.includes('node:' + task.node) && !held.includes(task.node)) held.push(task.node);
-  const note = task.holds_note || task.note || '';
+  const note = task.holds_note || task.note || (task.node_unknown && !task.node ? t('capacity_node_unknown') : '');
   if (held.length === 0 && !note) return '';
   const list = held.length ? held.map(h => `<code>${escHtml(h)}</code>`).join(', ') : '';
   return `<div class="task-holds" style="font-size:11px;color:var(--text2);"><span class="task-holds-label">${escHtml(t('task_holds_label') || 'Holds')}:</span> ${list}${note ? `${list ? ' · ' : ''}<span class="task-holds-note">${escHtml(note)}</span>` : ''}</div>`;

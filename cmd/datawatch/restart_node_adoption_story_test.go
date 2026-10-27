@@ -40,9 +40,17 @@ func newRestartRig(t *testing.T, sessions map[string]*session.Session) *restartR
 	reg, creg := nodeTestRegistries(t,
 		[]*inference.LLM{{Name: storyProvider, Kind: storyProvider, ComputeNodes: []string{"alpha", "beta"}}},
 		map[string]int{"alpha": 50, "beta": 50})
+	return newRestartRigWith(t, sessions, reg, creg, map[string]int{"node:alpha": 1, "node:beta": 1})
+}
+
+// newRestartRigWith builds the post-restart rig over the given registries,
+// with the given pool limits on the fresh ledger.
+func newRestartRigWith(t *testing.T, sessions map[string]*session.Session, reg *inference.Registry, creg *compute.Registry, limits map[string]int) *restartRig {
+	t.Helper()
 	led := capacity.New(capacity.Options{PollInterval: time.Hour})
-	led.SetLimit("node:alpha", 1)
-	led.SetLimit("node:beta", 1)
+	for pool, n := range limits {
+		led.SetLimit(pool, n)
+	}
 
 	regFn := func() *inference.Registry { return reg }
 	nodesFn := func() *compute.Registry { return creg }
@@ -55,7 +63,9 @@ func newRestartRig(t *testing.T, sessions map[string]*session.Session) *restartR
 	}
 	mgr.SetCapacity(led, keys)
 	mgr.SetCapacityChoices(choices)
+	mgr.SetEntryNodes(entryNodeCount(regFn))
 	mgr.SetSessionNode(sessionComputeNode(func(id string) (*session.Session, bool) { s, ok := sessions[id]; return s, ok }, nodesFn))
+	mgr.SetSessionEndpoint(sessionEndpoint(func(id string) (*session.Session, bool) { s, ok := sessions[id]; return s, ok }))
 	mgr.SetSessionAliveFn(func(id string) bool { _, ok := sessions[id]; return ok })
 	reg.SetChangeFn(replanOnPlacementChange(led, regFn, nodesFn))
 

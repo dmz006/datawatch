@@ -89,6 +89,10 @@ func (m *Manager) adoptUnlinkedSession(prd *PRD, t *Task, listFn func() []Sessio
 		return "", nil
 	}
 	now := time.Now()
+	if t.SessionID != adopted.ID {
+		// The node recorded for an earlier worker says nothing about this one.
+		t.ComputeNode = ""
+	}
 	t.SessionID = adopted.ID
 	t.UpdatedAt = now
 	m.adoptCapacity(prd, t)
