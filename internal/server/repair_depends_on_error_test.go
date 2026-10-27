@@ -55,6 +55,7 @@ func newRepairErrorServer(t *testing.T, repairErr error) *Server {
 	// In-memory tmux fake: these tests never need a live multiplexer.
 	sm.WithFakeTmux()
 	}
+	allowTestTemp(sm)
 	t.Cleanup(sm.WaitBackground)
 	srv := NewServer(NewHub(), sm, "h", "", nil, &config.Config{}, filepath.Join(dir, "config.yaml"))
 	srv.SetAutonomousAPI(&fakeRepairError{repairErr: repairErr})

@@ -25,6 +25,7 @@ func setupBindRouter(t *testing.T) (*Router, *session.Session, *agents.Agent) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(sm)
 	sess := &session.Session{
 		ID:       "aa11",
 		FullID:   "h-aa11",

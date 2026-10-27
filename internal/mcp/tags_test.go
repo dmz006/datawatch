@@ -25,7 +25,7 @@ func newTagMCPServer(t *testing.T) (*Server, *autonomous.Manager) {
 	if err != nil {
 		t.Fatalf("autonomous.NewManager: %v", err)
 	}
-	api := autonomous.NewAPI(mgr)
+	api := newTestAPI(mgr)
 	reply := func(w http.ResponseWriter, v any, err error) {
 		w.Header().Set("Content-Type", "application/json")
 		if err != nil {

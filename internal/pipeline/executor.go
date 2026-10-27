@@ -29,6 +29,24 @@ type Executor struct {
 	// success state when BlockOnRegression is set.
 	qualityGates QualityGateConfig
 	baseline     *TestResult
+
+	// projectRoots returns the directories a pipeline project directory may
+	// lie under (server.allowed_project_roots and the always-allowed roots).
+	// Nil means none: the quality gate then refuses every directory.
+	projectRoots func() []string
+}
+
+// SetProjectRoots sets the source of the allowed project roots the quality
+// gate checks its working directory against.
+func (e *Executor) SetProjectRoots(fn func() []string) {
+	e.projectRoots = fn
+}
+
+func (e *Executor) allowedRoots() []string {
+	if e.projectRoots == nil {
+		return nil
+	}
+	return e.projectRoots()
 }
 
 // SetQualityGates (BL28) configures test-regression gating.
@@ -60,7 +78,7 @@ func (e *Executor) Start(p *Pipeline) error {
 	// BL28 — capture pre-pipeline baseline when enabled.
 	if e.qualityGates.Enabled && e.qualityGates.TestCommand != "" {
 		result := RunTests(e.qualityGates.TestCommand, p.ProjectDir,
-			e.qualityGates.EffectiveTimeout())
+			e.qualityGates.EffectiveTimeout(), e.allowedRoots())
 		e.mu.Lock()
 		e.baseline = &result
 		e.mu.Unlock()
@@ -130,9 +148,9 @@ func (e *Executor) run(p *Pipeline) {
 			// BL28 — compare post-pipeline test run against baseline.
 			if e.qualityGates.Enabled && e.qualityGates.TestCommand != "" && e.baseline != nil {
 				current := RunTests(e.qualityGates.TestCommand, p.ProjectDir,
-					e.qualityGates.EffectiveTimeout())
+					e.qualityGates.EffectiveTimeout(), e.allowedRoots())
 				compare := EvaluateGate(*e.baseline, current, p.ProjectDir,
-					e.qualityGates.EffectiveTimeout())
+					e.qualityGates.EffectiveTimeout(), e.allowedRoots())
 				if compare.Invalid {
 					log.Printf("[pipeline] %s quality-gate INVALID (not a regression): %s", p.ID, compare.Summary)
 				} else {

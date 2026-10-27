@@ -91,6 +91,7 @@ func gateDisagreementRun(t *testing.T, projDir string, gate pipeline.QualityGate
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTempProjectRoots(mgr)
 	defer mgr.Stop()
 
 	spawnFn := func(_ context.Context, _ SpawnRequest) (SpawnResult, error) {
@@ -157,6 +158,7 @@ func TestGateDisagreement_SetConfigSanitizes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTempProjectRoots(mgr)
 	defer mgr.Stop()
 
 	cases := []struct{ in, want string }{
@@ -188,6 +190,7 @@ func TestGateDisagreement_APISetConfigRejectsInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTempProjectRoots(mgr)
 	defer mgr.Stop()
 	apiV2 := &API{M: mgr}
 

@@ -21,6 +21,7 @@ func TestGateValidity_SetPRDQualityGatesMarksInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTempProjectRoots(mgr)
 	defer mgr.Stop()
 
 	projDir := t.TempDir()
@@ -98,6 +99,7 @@ func TestGateValidity_StatusCountsInvalidGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTempProjectRoots(mgr)
 	defer mgr.Stop()
 
 	prd, err := mgr.Store().CreatePRD("gate status", t.TempDir(), "claude-code", "", EffortNormal)
@@ -142,6 +144,7 @@ func gvSetup(t *testing.T, dir string, qg pipeline.QualityGateConfig) (*Manager,
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTempProjectRoots(m)
 	prd, err := m.CreatePRD("spec", dir, "", "", "")
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
@@ -226,7 +229,7 @@ func TestGateValidity_SeamInvalidBaseline_CompletesWithWarning(t *testing.T) {
 	dir := t.TempDir()
 	orig := runQualityGateTests
 	runs := 0
-	runQualityGateTests = func(cmd, d string, _ int) pipeline.TestResult {
+	runQualityGateTests = func(cmd, d string, _ int, _ []string) pipeline.TestResult {
 		runs++
 		if d != dir {
 			t.Errorf("run %d in dir %q, want %q", runs, d, dir)

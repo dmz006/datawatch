@@ -27,6 +27,7 @@ func newManagerWithSession(t *testing.T, logPath string) (*Manager, *Session) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTestTemp(mgr)
 	sess := &Session{
 		ID:      "ab01",
 		FullID:  "testhost-ab01",

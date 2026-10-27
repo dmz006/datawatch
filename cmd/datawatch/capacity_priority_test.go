@@ -26,6 +26,7 @@ func TestPriorityFromOwningSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	now := time.Now()
 	if err := mgr.SaveSession(&session.Session{ID: "p002", FullID: "h-p002", Priority: 9, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)

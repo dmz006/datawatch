@@ -119,7 +119,7 @@ func TestEffectiveAutonomousConfig_AutonomousConfigSetPath(t *testing.T) {
 	var ref *autonomouspkg.Manager
 	live := func() autonomouspkg.Config { return effectiveAutonomousConfig(ref, boot) }
 	ref = newTestManager(t, boot)
-	api := autonomouspkg.NewAPI(ref)
+	api := newTestAPI(ref)
 
 	// Partial update, exactly the shape the MCP/REST set sends.
 	err := api.SetConfig(json.RawMessage(`{

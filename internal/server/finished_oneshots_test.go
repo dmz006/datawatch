@@ -25,6 +25,7 @@ func TestFinishedOneShots_ListIsEmptyWhenNothingIsStuck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(sm)
 	// In-memory tmux fake: these tests never need a live multiplexer.
 	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
@@ -51,6 +52,7 @@ func TestFinishedOneShots_RejectsOtherMethods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(sm)
 	t.Cleanup(sm.WaitBackground)
 	// In-memory tmux fake: these tests never need a live multiplexer.
 	sm.WithFakeTmux()

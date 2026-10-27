@@ -28,7 +28,7 @@ func TestModelBackendRefusalRESTReturns400(t *testing.T) {
 	if err := m.Store().SavePRD(prd); err != nil {
 		t.Fatalf("SavePRD: %v", err)
 	}
-	srv := &Server{autonomousMgr: autonomous.NewAPI(m)}
+	srv := &Server{autonomousMgr: newTestAPI(m)}
 
 	createBody, _ := json.Marshal(map[string]string{
 		"spec":        "refusal spec",

@@ -48,6 +48,7 @@ func newEndAttrManager(t *testing.T) (*session.Manager, string, *endAttrJournal)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTestTemp(sm)
 	sm.WithFakeTmux()
 	sm.SetVerbose(true)
 	j := &endAttrJournal{}

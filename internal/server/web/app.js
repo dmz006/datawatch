@@ -15939,6 +15939,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
     { key: 'session.alert_context_lines', label: 'Alert context lines', type: 'number', placeholder: '10' },
     { key: 'session.default_project_dir', label: 'Default project dir', type: 'dir_browse' },
+    { key: 'server.allowed_project_roots', label: 'Extra allowed project roots (comma-separated)', labelKey: 'settings_allowed_project_roots', helpKey: 'settings_allowed_project_roots_help', type: 'text', placeholder: '/srv/projects, ~/work', csv: true },
     { key: 'session.root_path', label: 'File browser root path', type: 'dir_browse' },
     { key: 'session.console_cols', label: 'Default console width (cols)', type: 'number', placeholder: '80' },
     { key: 'session.console_rows', label: 'Default console height (rows)', type: 'number', placeholder: '24' },

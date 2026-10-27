@@ -8,10 +8,32 @@
 // Runs against the sandbox daemon that scripts/e2e-pwa.sh starts (TEST_HTTP, TEST_TLS,
 // TEST_TOKEN from lib.mjs). Every tag and Automaton is created inline and removed at
 // the end; nothing is skipped for missing state.
+import https from 'node:https';
 import { runStory, connectToPWA, navigateTo, screenshot, saveLog, waitForSplash, env } from './lib.mjs';
 
 // The sandbox serves a self-signed certificate; the API calls go to its TLS origin.
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+// Only the sandbox listener (self-signed certificate) is exempt from verification:
+// the relaxed setting lives on this dedicated Agent, not on the whole process.
+const sandboxAgent = new https.Agent({ rejectUnauthorized: false });
+
+function sandboxRequest(method, path, body) {
+  return new Promise((resolve, reject) => {
+    const data = body === undefined ? null : JSON.stringify(body);
+    const headers = { Authorization: `Bearer ${env.token}` };
+    if (data !== null) {
+      headers['Content-Type'] = 'application/json';
+      headers['Content-Length'] = Buffer.byteLength(data);
+    }
+    const req = https.request(new URL(path, env.tls), { method, headers, agent: sandboxAgent }, (res) => {
+      let text = '';
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => resolve({ status: res.statusCode, ok: res.statusCode < 300, text }));
+    });
+    req.on('error', reject);
+    if (data !== null) req.write(data);
+    req.end();
+  });
+}
 
 const RUN = Date.now().toString(36);
 const nm = (base) => `${base} ${RUN}`;
@@ -21,12 +43,8 @@ function check(cond, msg) {
 }
 
 async function api(method, path, body) {
-  const res = await fetch(env.tls + path, {
-    method,
-    headers: { Authorization: `Bearer ${env.token}`, 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const text = await res.text();
+  const res = await sandboxRequest(method, path, body);
+  const text = res.text;
   if (!res.ok) throw new Error(`${method} ${path} -> HTTP ${res.status}: ${text.slice(0, 200)}`);
   return text ? JSON.parse(text) : null;
 }

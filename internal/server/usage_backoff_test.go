@@ -351,6 +351,7 @@ func patternsServerWithCLI(t *testing.T, out string) (*Server, *fakeCLIRunner) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(sm)
 	// In-memory tmux fake: these tests never need a live multiplexer.
 	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
@@ -453,6 +454,7 @@ func TestUsageBackoff_RecheckCapabilityGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(sm)
 	// In-memory tmux fake: these tests never need a live multiplexer.
 	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)

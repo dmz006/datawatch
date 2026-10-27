@@ -90,7 +90,7 @@ func newPlanCoverageServer(t *testing.T, mode string, minRatio float64, planJSON
 	s := &Server{
 		cfg:           config.DefaultConfig(),
 		cfgPath:       cfgPath,
-		autonomousMgr: autonomous.NewAPI(mgr),
+		autonomousMgr: newTestAPI(mgr),
 	}
 	return s, mgr, cfgPath
 }

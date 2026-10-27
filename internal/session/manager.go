@@ -623,6 +623,9 @@ type Manager struct {
 	// summaryLinesFor returns the recommended history line count for the
 	// configured model's context window. nil = use default 200.
 	summaryLinesFor func() int
+
+	// extraProjectRoots are roots added with AllowProjectRoot, beyond the config's.
+	extraProjectRoots []string
 }
 
 // NewManager creates a new session Manager.
@@ -938,6 +941,46 @@ func (m *Manager) SetSecureTracking(mode string) { m.secureTracking = mode }
 // relative session project_dirs are resolved. Empty disables the rewrite
 // (bare-metal back-compat).
 func (m *Manager) SetWorkspaceRoot(root string) { m.workspaceRoot = root }
+
+// AllowProjectRoot adds a directory a request-supplied project directory may
+// lie under, on top of the PRD worktree base, session.workspace_root and
+// server.allowed_project_roots from the config. Embedders and tests that
+// start sessions in directories outside those roots register them here.
+func (m *Manager) AllowProjectRoot(dir string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.extraProjectRoots = append(m.extraProjectRoots, dir)
+}
+
+// AllowedProjectRoots returns the directories a request-supplied project
+// directory may lie under: the config's roots (PRD worktree base, workspace
+// root, server.allowed_project_roots), the workspace root set on the manager
+// and any root added with AllowProjectRoot. The PRD worktree base and the
+// workspace root are always included.
+func (m *Manager) AllowedProjectRoots() []string {
+	m.mu.Lock()
+	extra := append([]string(nil), m.extraProjectRoots...)
+	m.mu.Unlock()
+	roots := m.cfg.AllowedProjectRoots() // nil-safe: falls back to the default worktree base
+	if m.workspaceRoot != "" {
+		roots = append(roots, m.workspaceRoot)
+	}
+	return append(roots, extra...)
+}
+
+// configDefaultProjectDir returns session.default_project_dir with "~"
+// expanded, or "" when unset. It is daemon-config input, not request input.
+func (m *Manager) configDefaultProjectDir() string {
+	if m.cfg == nil || m.cfg.Session.DefaultProjectDir == "" {
+		return ""
+	}
+	d := m.cfg.Session.DefaultProjectDir
+	if d == "~" || strings.HasPrefix(d, "~/") {
+		home, _ := os.UserHomeDir()
+		d = filepath.Join(home, strings.TrimPrefix(d, "~"))
+	}
+	return d
+}
 
 // BackfillOutputMode sets output_mode on existing sessions that don't have it,
 // reading from the per-backend config. Call after SetConfig.
@@ -1979,21 +2022,52 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	//     didn't, so a test daemon wrote CLAUDE.md/.mcp.json into the
 	//     operator's real $HOME (B108).
 	//   - relative + workspaceRoot set → join under workspaceRoot (F10 container mode)
-	//   - relative + no workspaceRoot → leave to caller (back-compat with the
-	//     pre-F10 absolute-path expectation; many call sites already pass abs)
-	//   - absolute → unchanged
-	if projectDir == "" {
+	//   - relative + no workspaceRoot → joined under the process working
+	//     directory
+	//   - absolute → cleaned
+	// A directory that came with the request (everything but the empty
+	// default, and the configured default itself, which the REST layer fills
+	// in) must lie under an allowed project root; see AllowedProjectRoots.
+	requestSupplied := projectDir != ""
+	switch {
+	case projectDir == "":
 		home, _ := os.UserHomeDir()
 		projectDir = home
-		if m.cfg != nil && m.cfg.Session.DefaultProjectDir != "" {
-			d := m.cfg.Session.DefaultProjectDir
-			if d == "~" || strings.HasPrefix(d, "~/") {
-				d = filepath.Join(home, strings.TrimPrefix(d, "~"))
-			}
+		if d := m.configDefaultProjectDir(); d != "" {
 			projectDir = d
 		}
-	} else if !filepath.IsAbs(projectDir) && m.workspaceRoot != "" {
-		projectDir = filepath.Join(m.workspaceRoot, projectDir)
+	case !filepath.IsAbs(projectDir):
+		// A relative value is contained under the workspace root, or under
+		// the process working directory when no root is configured.
+		root := m.workspaceRoot
+		if root == "" {
+			cwd, werr := os.Getwd()
+			if werr != nil {
+				return nil, fmt.Errorf("resolve relative project dir: %w", werr)
+			}
+			root = cwd
+		}
+		resolved, rerr := resolveWorkspaceDir(root, projectDir)
+		if rerr != nil {
+			return nil, rerr
+		}
+		projectDir = resolved
+	default:
+		cleaned, cerr := gitguard.CleanProjectDir(projectDir)
+		if cerr != nil {
+			return nil, fmt.Errorf("project dir %q: %w", projectDir, cerr)
+		}
+		if d := m.configDefaultProjectDir(); d != "" && cleaned == filepath.Clean(d) {
+			requestSupplied = false
+		}
+		projectDir = cleaned
+	}
+	if requestSupplied {
+		checked, perr := gitguard.ResolveProjectDir(projectDir, m.AllowedProjectRoots())
+		if perr != nil {
+			return nil, fmt.Errorf("project dir refused: %w", perr)
+		}
+		projectDir = checked
 	}
 
 	// An Automaton-owned worktree must already exist: never recreate it as

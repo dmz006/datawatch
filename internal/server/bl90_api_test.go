@@ -27,6 +27,7 @@ func bl90Server(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	t.Cleanup(mgr.WaitBackground)
 	mgr.WithFakeTmux()
 	devStore, err := devices.NewStore(dir + "/devices.json")

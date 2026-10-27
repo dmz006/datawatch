@@ -14,6 +14,7 @@ func newTestManagerWithFake(t *testing.T) (*Manager, *FakeTmux) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	fake := mgr.WithFakeTmux()
 	return mgr, fake
 }

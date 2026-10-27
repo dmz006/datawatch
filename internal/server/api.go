@@ -42,6 +42,7 @@ import (
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/fingerprint"
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
@@ -5219,7 +5220,11 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		if capacityHolder != "" && s.capacityRelease != nil {
 			s.capacityRelease(capacityHolder)
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		status := http.StatusInternalServerError
+		if errors.Is(err, gitguard.ErrOutsideAllowedRoots) || errors.Is(err, gitguard.ErrPathEscapes) {
+			status = http.StatusBadRequest // the project_dir in the request is not allowed
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 	if capacityHolder != "" && s.capacityBind != nil {
@@ -5693,6 +5698,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"tls_port":                       s.cfg.Server.TLSPort,
 			"proxy_sandbox_port":             s.proxySandboxPortFor(""),
 			"auto_restart_on_config":         s.cfg.Server.AutoRestartOnConfig,
+			"allowed_project_roots":          append([]string{}, s.cfg.Server.AllowedProjectRoots...),
 			"recent_session_minutes":         s.cfg.Server.RecentSessionMinutes,
 			"session_summary_terminal_limit": s.cfg.Server.SessionSummaryTerminalLimit,
 			"session_summary_text_chars":     s.cfg.Server.SessionSummaryTextChars,
@@ -6484,6 +6490,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// server.allowed_project_roots is checked before anything is applied: a
+	// relative path or a filesystem root refuses the whole PUT.
+	if v, ok := patch["server.allowed_project_roots"]; ok {
+		if _, err := parseAllowedProjectRoots(v); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	// The failure escalation block is checked as a whole, the same way: a bad
 	// max_failures, steps value or enabled flag refuses the whole PUT.
 	if err := validateFailureEscalationPatch(patch); err != nil {
@@ -7004,6 +7018,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "server.auto_restart_on_config":
 			cfg.Server.AutoRestartOnConfig = toBool(v)
+		case "server.allowed_project_roots":
+			// Validated before the patch is applied; an empty value clears it.
+			if roots, err := parseAllowedProjectRoots(v); err == nil {
+				cfg.Server.AllowedProjectRoots = roots
+			}
 		case "server.recent_session_minutes":
 			if n, ok := toInt(v); ok {
 				cfg.Server.RecentSessionMinutes = n

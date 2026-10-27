@@ -1663,6 +1663,8 @@
   "settings_session_summary_text_chars": "セッション概要: テキストの長さ (文字数)",
   "settings_ws_session_list_default": "ライブセッション更新 (hello を送らないクライアント)",
   "settings_ws_output_scope_default": "ライブ端末出力 (hello を送らないクライアント)",
+  "settings_allowed_project_roots": "追加で許可するプロジェクトルート (カンマ区切り)",
+  "settings_allowed_project_roots_help": "セッションとテスト実行が使えるプロジェクトディレクトリは、自律ワークツリーフォルダー (autonomous.worktree_dir)、セッションのワークスペースルート、またはここに挙げたフォルダーの配下に限られます。どのルートにも属さないディレクトリは拒否されます。絶対パスのみ。",
   "settings_api_gzip": "API レスポンスを圧縮 (gzip)",
   "settings_api_gzip_min_bytes": "API 圧縮しきい値 (バイト)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",

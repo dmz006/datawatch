@@ -68,6 +68,7 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "api_gzip_min_bytes", cfg.Server.APIGzipMinBytes, "Only compress /api/* responses larger than this many bytes (min 0)")
 	fieldi(&b, "auto_restart_on_config", cfg.Server.AutoRestartOnConfig, "Auto-restart daemon when config is saved via web UI")
 	fieldi(&b, "suppress_active_toasts", cfg.Server.SuppressActiveToasts, "Hide toast notifications for the currently viewed session")
+	fieldi(&b, "allowed_project_roots", cfg.Server.AllowedProjectRoots, "Extra directories a project directory may lie under, besides the PRD worktree base and session.workspace_root (always allowed)")
 	b.WriteString("\n")
 
 	section(&b, "MCP Server", "Model Context Protocol server for IDE and AI agent integrations.")

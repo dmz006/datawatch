@@ -328,7 +328,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	qgCfg := m.resolveQualityGates(prd)
 	var qgBaseline *pipeline.TestResult
 	if qgCfg.Enabled && qgCfg.TestCommand != "" && prd.ProjectDir != "" {
-		r := runQualityGateTests(qgCfg.TestCommand, prd.ProjectDir, qgCfg.EffectiveTimeout())
+		r := runQualityGateTests(qgCfg.TestCommand, prd.ProjectDir, qgCfg.EffectiveTimeout(), m.allowedProjectRoots())
 		qgBaseline = &r
 		log.Printf("[autonomous] %s quality-gate baseline: %d pass / %d fail", prdID, r.PassCount, r.FailCount)
 		// Validate the baseline before trusting it. An invalid one
@@ -344,7 +344,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// BL447: the PRD-level baseline is only comparable for tasks that run
 	// in prd.ProjectDir; tasks with another resolved dir get a lazily
 	// captured, per-dir baseline cached for the rest of this run.
-	qgBaselines := newQualityGateBaselines(qgCfg, prd.ProjectDir, qgBaseline)
+	qgBaselines := newQualityGateBaselines(qgCfg, prd.ProjectDir, qgBaseline, m.allowedProjectRoots())
 	// Lazily captured per-dir baselines get the same validation.
 	qgBaselines.onInvalid = func(dir, reason string) {
 		m.markGateInvalid(prdID, prd, fmt.Sprintf("task dir %s: %s", dir, reason))
@@ -1591,8 +1591,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// captured in that same dir (qualityGateBaselines.forDir).
 			qgDir := m.resolveTaskProjectDir(prd, t)
 			if base, ok := qgBaselines.forDir(qgDir); ok {
-				current := runQualityGateTests(qgCfg.TestCommand, qgDir, qgCfg.EffectiveTimeout())
-				cmp := pipeline.EvaluateGate(base, current, qgDir, qgCfg.EffectiveTimeout())
+				current := runQualityGateTests(qgCfg.TestCommand, qgDir, qgCfg.EffectiveTimeout(), m.allowedProjectRoots())
+				cmp := pipeline.EvaluateGate(base, current, qgDir, qgCfg.EffectiveTimeout(), m.allowedProjectRoots())
 				t.QualityGateResult = &cmp
 				log.Printf("[autonomous] %s/%s quality-gate: %s", prd.ID, t.ID, cmp.Summary)
 				metrics.QualityGateRunsTotal.Inc()

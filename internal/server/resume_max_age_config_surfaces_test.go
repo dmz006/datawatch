@@ -34,7 +34,7 @@ func newResumeMaxAgeServer(t *testing.T) (*Server, *autonomous.Manager, string) 
 	s := &Server{
 		cfg:           config.DefaultConfig(),
 		cfgPath:       cfgPath,
-		autonomousMgr: autonomous.NewAPI(mgr),
+		autonomousMgr: newTestAPI(mgr),
 	}
 	return s, mgr, cfgPath
 }

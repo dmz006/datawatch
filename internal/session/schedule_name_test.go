@@ -65,6 +65,7 @@ func TestSessionScheduleNameAttachedToSpawnedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	mgr.SetConfig(config.DefaultConfig())
 
 	schedStore, err := NewScheduleStore(dataDir + "/schedule.json")

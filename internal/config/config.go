@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -566,6 +567,9 @@ type ComputeNodeYAML struct {
 	NodePinnedModel string `yaml:"node_pinned_model,omitempty" json:"node_pinned_model,omitempty"`
 	// AllowModelSwap lets an explicit request replace the pinned model.
 	AllowModelSwap bool `yaml:"allow_model_swap,omitempty" json:"allow_model_swap,omitempty"`
+	// TLSInsecureSkipVerify turns off certificate verification for the
+	// node usage probes. Default false = verify.
+	TLSInsecureSkipVerify bool `yaml:"tls_insecure_skip_verify,omitempty" json:"tls_insecure_skip_verify,omitempty"`
 	// SessionSlots is the operator's worker count for this node (0 = derive
 	// from observer GPU data). Must not be negative.
 	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`
@@ -1546,6 +1550,13 @@ type ServerConfig struct {
 	// SuppressActiveToasts hides toast notifications for the currently viewed session
 	// (e.g. state change toasts while you're watching the output). Default: true.
 	SuppressActiveToasts bool `yaml:"suppress_active_toasts"`
+
+	// AllowedProjectRoots lists extra directories a request-supplied project
+	// directory may lie under, on top of the two that are always allowed: the
+	// PRD worktree base (autonomous.worktree_dir) and session.workspace_root.
+	// A project directory outside every root is refused at session start, PRD
+	// creation and the pipeline test runner. Empty (the default) adds nothing.
+	AllowedProjectRoots []string `yaml:"allowed_project_roots,omitempty" json:"allowed_project_roots,omitempty"`
 
 	// ProxySandboxPort (BL394 security review, docs/plans/2026-10-03-
 	// bl394-security-findings-review.md §6) — a second listener, bound
@@ -4411,6 +4422,73 @@ func Save(cfg *Config, path string) error {
 func ConfigPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".datawatch", "config.yaml")
+}
+
+// DefaultPRDWorktreeDir is the folder the daemon creates PRD worktrees in
+// when autonomous.worktree_dir is not set.
+func DefaultPRDWorktreeDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".datawatch", "prd-worktrees")
+	}
+	return filepath.Join(home, ".datawatch", "prd-worktrees")
+}
+
+// AllowedProjectRoots returns every directory a request-supplied project
+// directory may lie under: the PRD worktree base, the session workspace root
+// (when set) and server.allowed_project_roots. The first two are always in
+// the list, whatever else is configured, and whether or not an API token is
+// set. A "~" prefix in a configured root is expanded to the home directory.
+func (c *Config) AllowedProjectRoots() []string {
+	if c == nil {
+		return []string{DefaultPRDWorktreeDir()}
+	}
+	base := strings.TrimSpace(c.Autonomous.WorktreeDir)
+	if base == "" {
+		base = DefaultPRDWorktreeDir()
+	}
+	roots := []string{expandHome(base)}
+	if ws := strings.TrimSpace(c.Session.WorkspaceRoot); ws != "" {
+		roots = append(roots, expandHome(ws))
+	}
+	for _, r := range c.Server.AllowedProjectRoots {
+		if r = strings.TrimSpace(r); r != "" {
+			roots = append(roots, expandHome(r))
+		}
+	}
+	return roots
+}
+
+// ValidateAllowedProjectRoots checks server.allowed_project_roots: every entry
+// must be an absolute path (a leading "~" is allowed) with no NUL byte, and
+// none may be a filesystem root, which would allow every directory.
+func ValidateAllowedProjectRoots(roots []string) error {
+	for _, r := range roots {
+		r = strings.TrimSpace(r)
+		switch {
+		case r == "":
+			return errors.New("server.allowed_project_roots: empty entry")
+		case strings.ContainsRune(r, 0):
+			return fmt.Errorf("server.allowed_project_roots: %q contains a NUL byte", r)
+		}
+		e := expandHome(r)
+		if !filepath.IsAbs(e) {
+			return fmt.Errorf("server.allowed_project_roots: %q must be an absolute path", r)
+		}
+		if c := filepath.Clean(e); filepath.Dir(c) == c {
+			return fmt.Errorf("server.allowed_project_roots: %q is a filesystem root and would allow every directory", r)
+		}
+	}
+	return nil
+}
+
+func expandHome(p string) string {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, strings.TrimPrefix(p, "~"))
+		}
+	}
+	return p
 }
 
 // ResolveProjectDir maps a session-supplied project_dir to an absolute path.

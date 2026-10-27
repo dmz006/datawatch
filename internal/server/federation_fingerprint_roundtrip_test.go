@@ -174,6 +174,7 @@ func newFPDaemon(t *testing.T, name, adminTok string, nodes []compute.Node, host
 	if err != nil {
 		t.Fatalf("%s: session manager: %v", name, err)
 	}
+	allowTestTemp(mgr)
 	// In-memory tmux fake: these tests never need a live multiplexer.
 	mgr.WithFakeTmux()
 	t.Cleanup(mgr.WaitBackground)

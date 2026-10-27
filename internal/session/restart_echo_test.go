@@ -38,6 +38,7 @@ func restartEchoSetup(t *testing.T, pane string) (*Manager, *FakeTmux, *Session,
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(a)
 	fake := a.WithFakeTmux()
 
 	ctxA, cancelA := context.WithCancel(context.Background())
@@ -84,6 +85,7 @@ func restartEchoSetup(t *testing.T, pane string) (*Manager, *FakeTmux, *Session,
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(b)
 	b.tmux = fake
 	b.mu.Lock()
 	_, armed := b.taskDeliveredAt[sess.FullID]

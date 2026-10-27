@@ -36,7 +36,7 @@ func TestHandleAutonomousConfig_PutThenLiveReadReflectsChange(t *testing.T) {
 	s := &Server{
 		cfg:           &config.Config{},
 		cfgPath:       t.TempDir() + "/config.yaml",
-		autonomousMgr: autonomous.NewAPI(mgr),
+		autonomousMgr: newTestAPI(mgr),
 	}
 
 	set := httptest.NewRequest(http.MethodPut, "/api/autonomous/config", bytes.NewReader([]byte(`{

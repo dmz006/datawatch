@@ -48,6 +48,7 @@ func newCurrentStatusServer(t *testing.T, initialLog string, startOffset int64) 
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTestTemp(sm)
 	// In-memory tmux fake: these tests never need a live multiplexer.
 	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)

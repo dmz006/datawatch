@@ -27,6 +27,7 @@ func newSessionDeleteTestServer(t *testing.T) (*Server, *scopeTestBackend) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTestTemp(sm)
 	// In-memory tmux fake: startTestSession/handleStartSession then never
 	// touch a real multiplexer server, so the tests are hermetic.
 	sm.WithFakeTmux()

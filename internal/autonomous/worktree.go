@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // branchNameFor derives the deterministic branch name a PRD's
@@ -40,13 +42,7 @@ func slugify(s string) string {
 }
 
 // defaultWorktreeDir is used when Config.WorktreeDir is empty.
-func defaultWorktreeDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(".datawatch", "prd-worktrees")
-	}
-	return filepath.Join(home, ".datawatch", "prd-worktrees")
-}
+func defaultWorktreeDir() string { return config.DefaultPRDWorktreeDir() }
 
 // defaultBranchOf resolves repoDir's current default branch (e.g.
 // "main"). Falls back to "main" on any error — same default

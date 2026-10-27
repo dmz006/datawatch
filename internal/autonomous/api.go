@@ -456,6 +456,10 @@ func (a *API) ReadableWaitSentence(reason string) string { return a.M.ReadableWa
 func (a *API) ReportPairingWarnings() []string { return a.M.ReportPairingWarnings() }
 
 func (a *API) CreatePRD(spec, projectDir, backend, model, effort string) (any, error) {
+	projectDir, err := a.M.CheckProjectDir(projectDir)
+	if err != nil {
+		return nil, fmt.Errorf("project_dir refused: %w", err)
+	}
 	prd, err := a.M.CreatePRD(spec, projectDir, backend, model, Effort(effort))
 	if err == nil && prd != nil {
 		a.M.EmitPRDUpdate(prd.ID)
@@ -1054,6 +1058,10 @@ func (a *API) SetFailureEscalation(prdID, taskID string, policy *FailureEscalati
 }
 
 func (a *API) SetTaskProjectDir(prdID, taskID, dir, actor string) (any, error) {
+	dir, err := a.M.CheckProjectDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("project_dir refused: %w", err)
+	}
 	out, err := a.M.SetTaskProjectDir(prdID, taskID, dir, actor)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
@@ -1247,6 +1255,10 @@ func (a *API) CloneToTemplate(prdID, description, actor string) (any, error) {
 }
 
 func (a *API) InstantiateFromTemplateStore(templateID string, vars map[string]string, projectDir, backend, effort string) (any, error) {
+	projectDir, err := a.M.CheckProjectDir(projectDir)
+	if err != nil {
+		return nil, fmt.Errorf("project_dir refused: %w", err)
+	}
 	prd, err := a.M.InstantiateFromTemplateStore(templateID, vars, projectDir, backend, Effort(effort))
 	if err == nil && prd != nil {
 		a.M.EmitPRDUpdate(prd.ID)

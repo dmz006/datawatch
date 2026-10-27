@@ -69,7 +69,9 @@ var (
 )
 
 // RefuseNonProject checks dir and returns a *NonProjectError when automatic
-// commits are not allowed there, nil otherwise. The first refusal for a
+// commits are not allowed there, nil otherwise. When the daemon has registered
+// its allowed project roots (SetProjectRoots), a project directory outside
+// every root is refused as well. The first refusal for a
 // directory writes one audit line; later calls return the same error without
 // logging again.
 func RefuseNonProject(dir string) error {
@@ -84,7 +86,9 @@ func refuseNonProject(dir string, homeResolver func() (string, error)) error {
 	}
 	reason := NonProjectReason(dir, homeResolver)
 	if reason == "" {
-		return nil
+		// A project, but is it under an allowed root? Not remembered: the
+		// operator can add a root and the next commit is allowed.
+		return refuseOutsideRoots(dir)
 	}
 	refusedDirs[dir] = reason
 	fmt.Printf("[audit] {\"event\":\"commit_refused_non_project\",\"dir\":%q,\"reason\":%q}\n", dir, reason)

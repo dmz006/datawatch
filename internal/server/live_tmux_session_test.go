@@ -67,6 +67,7 @@ func TestLiveTmuxSessionStartDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	allowTestTemp(sm)
 	// Deliberately no WithFakeTmux here: the manager keeps its real tmux
 	// backend and talks only to the throwaway TMUX_TMPDIR server.
 	t.Cleanup(sm.WaitBackground)

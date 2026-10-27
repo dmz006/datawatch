@@ -75,7 +75,7 @@ func (m *Manager) checkGateBaseline(dir string, cfg pipeline.QualityGateConfig) 
 	if strings.TrimSpace(dir) == "" {
 		return "", ""
 	}
-	r := runQualityGateTests(cfg.TestCommand, dir, cfg.EffectiveTimeout())
+	r := runQualityGateTests(cfg.TestCommand, dir, cfg.EffectiveTimeout(), m.allowedProjectRoots())
 	if valid, reason := pipeline.ClassifyBaseline(r); !valid {
 		return "invalid", reason
 	}
@@ -999,6 +999,12 @@ type Manager struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	status LoopStatus
+
+	// projectRoots returns the allowed project roots for request-supplied
+	// directories (nil = none). projectRootsMu guards it on its own so a
+	// check never waits on (or deadlocks with) mu.
+	projectRoots   func() []string
+	projectRootsMu sync.RWMutex
 }
 
 // ProfileResolver lets Manager validate that named F10 project +

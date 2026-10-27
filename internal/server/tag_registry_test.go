@@ -119,7 +119,7 @@ func newTagPeer(t *testing.T, keeper *fakeTagKeeper) (*Server, *tagregistry.Regi
 	if err != nil {
 		t.Fatalf("peer registry: %v", err)
 	}
-	s := &Server{autonomousMgr: autonomous.NewAPI(mgr), tagRegistry: reg}
+	s := &Server{autonomousMgr: newTestAPI(mgr), tagRegistry: reg}
 	return s, reg
 }
 
@@ -372,7 +372,7 @@ func TestTagRegistryRouteWithRegistryKeepsLocalWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("standalone registry: %v", err)
 	}
-	s := &Server{autonomousMgr: autonomous.NewAPI(mgr), tagRegistry: reg}
+	s := &Server{autonomousMgr: newTestAPI(mgr), tagRegistry: reg}
 	rec := tagCall(t, s, http.MethodPost, "/api/autonomous/tags", `{"name":"local"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("standalone create: %d %s", rec.Code, rec.Body.String())

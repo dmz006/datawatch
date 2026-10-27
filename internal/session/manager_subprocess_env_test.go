@@ -39,6 +39,7 @@ func TestSubprocessResultEnvHasIdentityBaseURLAndToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	tokenStore, err := auth.NewSessionTokenStore("") // "" = in-memory
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +85,7 @@ func TestSubprocessResultEnvOmitsTokenWithoutStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	mgr.SetSubprocessBaseURL("http://127.0.0.1:18175")
 
 	sess := &Session{FullID: "testhost-ab12cd"}
@@ -113,6 +115,7 @@ func TestSubprocessResultChildActuallyReceivesToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(mgr)
 	mgr.SetConfig(config.DefaultConfig())
 	tokenStore, err := auth.NewSessionTokenStore("")
 	if err != nil {

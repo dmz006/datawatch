@@ -1706,6 +1706,8 @@
   "settings_session_summary_text_chars": "Session summary: text length (chars)",
   "settings_ws_session_list_default": "Live session updates (clients without hello)",
   "settings_ws_output_scope_default": "Live terminal output (clients without hello)",
+  "settings_allowed_project_roots": "Extra allowed project roots (comma-separated)",
+  "settings_allowed_project_roots_help": "Sessions and test runs may only use a project directory under the autonomous worktree folder (autonomous.worktree_dir), the session workspace root, or one of these folders. A directory outside every root is refused. Absolute paths only.",
   "settings_api_gzip": "Compress API responses (gzip)",
   "settings_api_gzip_min_bytes": "API compression threshold (bytes)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",

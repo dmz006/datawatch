@@ -268,6 +268,25 @@ func TestCleanTempPacksMissingDir(t *testing.T) {
 	}
 }
 
+func TestCleanTempPacksRefusesSymlinkEscape(t *testing.T) {
+	repo := t.TempDir()
+	outside := t.TempDir()
+	victim := filepath.Join(outside, writeFile(t, outside, "tmp_pack_victim"))
+	if err := os.MkdirAll(filepath.Join(repo, ".git", "objects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(repo, ".git", "objects", "pack")); err != nil {
+		t.Skip(err)
+	}
+	removed, err := CleanTempPacks(repo)
+	if !errors.Is(err, ErrPathEscapes) || len(removed) != 0 {
+		t.Fatalf("removed=%v err=%v, want nothing and ErrPathEscapes", removed, err)
+	}
+	if _, serr := os.Stat(victim); serr != nil {
+		t.Fatalf("file outside the repository must survive: %v", serr)
+	}
+}
+
 func TestInHome(t *testing.T) {
 	home := t.TempDir()
 	sub := filepath.Join(home, "projects", "datawatch")

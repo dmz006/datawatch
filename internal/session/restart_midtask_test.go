@@ -115,6 +115,7 @@ func mtRun(t *testing.T, o mtOpts) (*Session, int32, *FakeTmux) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(a)
 	fake := a.WithFakeTmux()
 	ctxA, cancelA := context.WithCancel(context.Background())
 	sess, err := a.Start(ctxA, mtTask, "", t.TempDir(), &StartOptions{
@@ -170,6 +171,7 @@ func mtRun(t *testing.T, o mtOpts) (*Session, int32, *FakeTmux) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowTestTemp(b)
 	b.tmux = fake
 	b.probeClaudeAliveFunc = func(*Session) bool { return true }
 	var ended atomic.Int32

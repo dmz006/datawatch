@@ -225,7 +225,7 @@ func TestSessionTagsDeleteRefusedWhileSessionCarriesTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("autonomous.NewManager: %v", err)
 	}
-	s.autonomousMgr = autonomous.NewAPI(amgr)
+	s.autonomousMgr = newTestAPI(amgr)
 	s.wireSessionTags()
 
 	tg := createTag(t, s, `{"name":"work"}`)
