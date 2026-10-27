@@ -156,7 +156,7 @@ Per AGENT.md rule 8, this section lists every surface in the full parity-surface
 | Android | touched in a future implementation | Capability parity: the app shows the mode and the verdict record from the same REST contract. Delivery is idiomatic, and a `datawatch-app` issue is filed per the Mobile-Parity Rule. |
 | iPhone | touched in a future implementation | Same capability parity as Android, using the same REST contract. Setting the mode on a phone is not required, but reading the verdict record is. |
 
-**Reconciling the Design line.** The Design section previously said all surfaces are touched. This table keeps that outcome, but it is now a decision with a reason per row, not an assumption. The Design Parity line was changed to point here, so the two statements agree. If the implementation PRD finds a client surface has no operator-visible change, it records that row as `intentionally excluded` with a reason, as the BL449 matrix doc does.
+**Reconciling the Design line.** The Design section's Parity bullet points here. Each surface above is a decision with a reason, not an assumption, so the two statements agree. If the implementation PRD finds a client surface has no operator-visible change, it records that row as `intentionally excluded` with a reason, as the BL449 matrix doc does.
 
 ## Cross-references
 
