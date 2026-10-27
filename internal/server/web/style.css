@@ -264,6 +264,18 @@ body {
 }
 .header-tags-menu[hidden] { display: none; }
 
+/* Narrow phones (320px at 130% zoom = 246 CSS px): the Tags button would squeeze
+   the title to nothing, so tighten the row and drop the help toggle, the same
+   least-essential control the 219px rule hides. */
+@media (max-width: 279px) {
+  .header {
+    padding-left: 8px;
+    padding-right: 8px;
+    gap: 4px;
+  }
+  .header > #headerHelpLink { display: none !important; }
+}
+
 /* Extreme zoom (200% on a 320px phone = 160 CSS px): even 44px controls
    can't all fit (44×3 + 10px dot + gaps + padding > 160). The spec floor
    is 40px and the fullscreen/help affordances are the least essential —

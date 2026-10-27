@@ -31975,6 +31975,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // first render. Falls through to English on fetch failure.
   initI18n().finally(() => {
     document.documentElement.setAttribute('lang', window._i18n.current);
+    // A tag selection restored from storage counts from the first paint, in the loaded language.
+    _tagsMenuRefresh();
     // If no token is stored, probe health to see if auth is required before
     // spinning up the WS. When it is, replace the splash with a token-entry
     // prompt so visitors without credentials don't see an endless loading

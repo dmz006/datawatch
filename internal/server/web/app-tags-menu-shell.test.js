@@ -24,7 +24,7 @@ function makeEl() {
   return plain;
 }
 
-function loadApp() {
+function loadApp(stored = {}) {
   const btn = makeEl();
   const chip = makeEl();
   const panel = makeEl();
@@ -32,7 +32,9 @@ function loadApp() {
   const handlers = {};
   const sandbox = buildSandbox({ byId: { headerTagsBtn: btn, headerTagsCount: chip, headerTagsMenu: panel } });
   sandbox.document.addEventListener = (type, fn) => { (handlers[type] = handlers[type] || []).push(fn); };
+  sandbox.URLSearchParams = URLSearchParams;
   sandbox.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ tags: [] }), text: () => Promise.resolve('{"tags":[]}') });
+  for (const k of Object.keys(stored)) sandbox.localStorage.setItem(k, stored[k]);
   vm.createContext(sandbox);
   loadScript(path.join(__dirname, 'app.js'), sandbox);
   const fire = (type, ev) => (handlers[type] || []).forEach(fn => fn(ev));
@@ -122,6 +124,17 @@ test('the button shows the active count: watch is one, plus each selected tag', 
   assert.match(h.btn.getAttribute('aria-label'), /3/);
   run(h, 'state.sessionWatchFilter = false;');
   assert.equal(run(h, '_tagsMenuActiveCount()'), 2);
+});
+
+test('a tag selection restored from storage shows its count once the page has loaded', async () => {
+  const h = loadApp({ cs_tag_browse_session: JSON.stringify({ view: 'list', sel: ['aaaa0001', 'aaaa0002'], mode: '' }) });
+  assert.equal(run(h, '_tagsMenuActiveCount()'), 2);
+  assert.equal(h.chip.textContent, '', 'nothing has refreshed the button before the page loads');
+  for (const fn of h.handlers.DOMContentLoaded || []) { try { fn(); } catch (_) { /* unrelated startup code */ } }
+  await flushAsync();
+  assert.equal(h.chip.textContent, '2');
+  assert.match(h.btn.getAttribute('aria-label'), /2/);
+  assert.equal(h.btn.getAttribute('aria-expanded'), 'false');
 });
 
 test('the new strings exist in every locale and the visible label has no PRD wording', () => {
