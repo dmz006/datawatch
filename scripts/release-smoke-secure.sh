@@ -44,8 +44,6 @@ if ! command -v datawatch >/dev/null 2>&1; then
   exit 0
 fi
 
-TMPDIR=$(mktemp -d)
-LOG="$TMPDIR/dw-secure.log"
 PORT_TLS=18444
 PORT_HTTP=18081
 
@@ -57,15 +55,22 @@ PORT_HTTP=18081
 # (which is also the daemon's data dir) removed, so the daemon never runs
 # with its data dir deleted out from under it.
 source "$(cd "$(dirname "$0")" && pwd)/test-daemon-lib.sh"
+SCRATCH=""
 secure_extra_cleanup() {
   # Runs on every exit, after td_stop_all has ended the recorded daemon(s).
   if [[ -n "${DW_PID:-}" ]] && kill -0 "$DW_PID" 2>/dev/null; then
     echo "  FAIL  secured daemon ${DW_PID} still alive after cleanup" >&2
   fi
-  rm -rf "$TMPDIR" 2>/dev/null
+  if [[ -n "$SCRATCH" ]]; then rm -rf "$SCRATCH" 2>/dev/null; fi
 }
 TD_EXTRA_CLEANUP=secure_extra_cleanup
 td_install_traps "$@"
+# The scratch dir is made only after the traps are installed: when the
+# library reruns the script (to make INT trappable) a dir made earlier
+# would be orphaned by the rerun.
+SCRATCH=$(mktemp -d)
+TMPDIR="$SCRATCH"
+LOG="$TMPDIR/dw-secure.log"
 
 H "1. Bring up encrypted-mode daemon"
 DATAWATCH_DATA_DIR="$TMPDIR" datawatch start --foreground --secure \

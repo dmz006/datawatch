@@ -27,11 +27,33 @@
 
 set -uo pipefail
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# The runner (playwright) is tracked through the shared daemon lifecycle
+# library so a Ctrl-C or failure ends it on EVERY exit path: its PID is
+# recorded at start (marker = the runner script name, present in its
+# cmdline for its whole life) and the library's EXIT/INT/TERM/HUP traps
+# signal only that recorded PID — only while the marker is still in its
+# cmdline — so the browser it launches (a child of the runner) never
+# survives an interrupt (the leak fixed here, on 2026-09-28: a thrown test
+# phase used to abandon the runner). td_start is a datawatch-daemon
+# launcher (it appends "start --foreground --config"), so the runner is
+# started directly and recorded with td_track_pid instead.
+source "$SCRIPT_DIR/test-daemon-lib.sh"
+# Activate the library's EXIT/INT/TERM/HUP traps NOW, before anything is
+# created or the runner forks: td_track_pid only records — without installed
+# traps the record is inert and the runner would survive every exit path —
+# and the library may rerun this script once (to make INT trappable), which
+# would orphan anything created earlier (the report dir below). When the
+# script ends (normal, failure, Ctrl-C) the handler signals the recorded
+# runner pid — only while its marker is still in /proc/<pid>/cmdline —
+# which takes the browser child down with it.
+td_install_traps "$@"
+
 BASE="${DATAWATCH_BASE:-https://localhost:8443}"
 TOKEN="${DATAWATCH_TOKEN:-}"
 INSECURE="${DATAWATCH_INSECURE:-1}"
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PWA_DIR="$SCRIPT_DIR/test-stories/pwa"
 
 if [[ ! -f "$PWA_DIR/mobile-fit.mjs" ]]; then
@@ -114,24 +136,6 @@ console.log(`mobile-fit: ${s.scenarios} scenarios, ${s.total} findings in ${s.gr
 ' "$1"
 }
 
-# The runner (playwright) is tracked through the shared daemon lifecycle
-# library so a Ctrl-C or failure ends it on EVERY exit path: its PID is
-# recorded at start (marker = the runner script name, present in its
-# cmdline for its whole life) and the library's EXIT/INT/TERM/HUP traps
-# signal only that recorded PID — only while the marker is still in its
-# cmdline — so the browser it launches (a child of the runner) never
-# survives an interrupt (the leak fixed here, on 2026-09-28: a thrown test
-# phase used to abandon the runner). td_start is a datawatch-daemon
-# launcher (it appends "start --foreground --config"), so the runner is
-# started directly and recorded with td_track_pid instead.
-source "$SCRIPT_DIR/test-daemon-lib.sh"
-# Activate the library's EXIT/INT/TERM/HUP traps NOW, before the runner
-# forks: td_track_pid only records — without installed traps the record is
-# inert and the runner would survive every exit path. When the script ends
-# (normal, failure, Ctrl-C) the handler signals the recorded runner pid —
-# only while its marker is still in /proc/<pid>/cmdline — which takes the
-# browser child down with it.
-td_install_traps "$@"
 if command -v setsid >/dev/null 2>&1; then
   ( cd "$PWA_DIR" && exec setsid env \
       MOBILE_FIT_VIEW=observer MOBILE_FIT_PROFILE=quick \
