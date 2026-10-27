@@ -1010,9 +1010,17 @@ Allowed roots are:
 
 1. the PRD worktree base, `autonomous.worktree_dir` (default
    `~/.datawatch/prd-worktrees`), the folder the daemon creates PRD worktrees in;
-2. the daemon's workspace root, `session.workspace_root`, when set;
+2. the workspace root: `session.workspace_root` when set, otherwise the
+   default workspace folder `~/workspace` (the `workspace` folder in the
+   daemon user's home directory). Setting `session.workspace_root` replaces
+   the default; it does not add to it;
 3. every folder listed in `server.allowed_project_roots` (absolute paths, a
    leading `~` is allowed, no filesystem root). Nothing else widens the set.
+
+Sessions, Automata with an explicit `project_dir` and test runs under
+`~/workspace` therefore work without any configuration. For repositories that
+live elsewhere, set `session.workspace_root` to their parent folder, or list
+them in `server.allowed_project_roots`.
 
 `..` segments and symlinks, including a dangling link, are resolved before
 the check, so a link inside a root that points outside it is refused, as is a
