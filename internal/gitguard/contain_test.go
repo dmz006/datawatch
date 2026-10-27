@@ -249,3 +249,78 @@ func TestContainedPath_SymlinkedRoot(t *testing.T) {
 		t.Fatalf("path under a symlinked root: %v", err)
 	}
 }
+
+// evalDeepest sits under every Lstat and Readlink in this package, so it
+// must refuse a relative path before touching the file system.
+func TestEvalDeepest_RefusesRelativePath(t *testing.T) {
+	for _, p := range []string{"", ".", "rel/dir", "../up"} {
+		got, err := evalDeepest(p)
+		if !errors.Is(err, ErrPathEscapes) || got != "" {
+			t.Fatalf("evalDeepest(%q) = %q, %v; want ErrPathEscapes", p, got, err)
+		}
+	}
+	dir := t.TempDir()
+	got, err := evalDeepest(filepath.Join(dir, "missing", "tail"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(dir)
+	if got != filepath.Join(want, "missing", "tail") {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// A relative base is judged against the working directory, the same as before
+// evalDeepest required an absolute path.
+func TestResolveWithin_RelativeBase(t *testing.T) {
+	parent := t.TempDir()
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(parent, "base", "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(parent, "base", "out")); err != nil {
+		t.Skip(err)
+	}
+	t.Chdir(parent)
+	got, err := ResolveWithin("base", "a/new")
+	if err != nil || got != filepath.Join("base", "a", "new") {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if _, err := ResolveWithin("base", "out/x"); !errors.Is(err, ErrPathEscapes) {
+		t.Fatalf("symlink escape under a relative base: want ErrPathEscapes, got %v", err)
+	}
+}
+
+// With the filesystem root as root, the trailing-separator prefix test must
+// still accept the root itself and anything below it.
+func TestContainedPath_FilesystemRootAsRoot(t *testing.T) {
+	sep := string(filepath.Separator)
+	for _, p := range []string{sep, sep + "tmp", sep + "no-such-dir" + sep + "x"} {
+		got, err := ContainedPath(sep, p)
+		if err != nil || got != filepath.Clean(p) {
+			t.Fatalf("ContainedPath(%q, %q) = %q, %v", sep, p, got, err)
+		}
+	}
+}
+
+// The value ContainedPath returns is the cleaned lexical path, not the
+// symlink-resolved one, for the root itself and for a path under a link.
+func TestContainedPath_ReturnsCleanedLexicalPath(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "a"), filepath.Join(root, "in")); err != nil {
+		t.Skip(err)
+	}
+	for _, p := range []string{
+		root + string(filepath.Separator),
+		filepath.Join(root, "in", "x"),
+		filepath.Join(root, "a", "..", "a", "y"),
+	} {
+		got, err := ContainedPath(root, p)
+		if err != nil || got != filepath.Clean(p) {
+			t.Fatalf("ContainedPath(%q) = %q, %v; want %q", p, got, err, filepath.Clean(p))
+		}
+	}
+}

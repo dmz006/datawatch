@@ -452,3 +452,34 @@ func TestRemoveWithinRemovesSymlinkLeafNotTarget(t *testing.T) {
 		t.Fatalf("link target was removed: %v", err)
 	}
 }
+
+func TestContainedEntryChecksTheEntryAgainstRoot(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	sibling := root + "-sibling"
+	if err := os.MkdirAll(sibling, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sibling) })
+	inLink := filepath.Join(root, "link")
+	if err := os.Symlink(outside, inLink); err != nil {
+		t.Skip(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(sibling, "link")); err != nil {
+		t.Skip(err)
+	}
+	got, err := containedEntry(root, inLink)
+	if err != nil || got != inLink {
+		t.Fatalf("link inside root: got %q, %v; want %q", got, err, inLink)
+	}
+	if got, err := containedEntry(root, filepath.Join(sibling, "link")); !errors.Is(err, ErrPathEscapes) || got != "" {
+		t.Fatalf("link in a sibling sharing the root name as a prefix: got %q, %v; want ErrPathEscapes", got, err)
+	}
+	if got, err := containedEntry(root, filepath.Join(root, "..", filepath.Base(sibling), "link")); !errors.Is(err, ErrPathEscapes) || got != "" {
+		t.Fatalf("dot-dot to a sibling link: got %q, %v; want ErrPathEscapes", got, err)
+	}
+	plain := filepath.Join(outside, writeFile(t, outside, "plain.txt"))
+	if got, err := containedEntry(root, plain); !errors.Is(err, ErrPathEscapes) || got != "" {
+		t.Fatalf("regular file outside root: got %q, %v; want ErrPathEscapes", got, err)
+	}
+}
