@@ -4839,6 +4839,15 @@ H "82. Usage calculator (advice, readings, verdict, policy/variant, extra credit
 # the section through DELETE ?id= (its cleanup entry then no-ops). No name-pattern
 # sweeps, no tracker IDs in names. Sandbox-only assertions (default max_lanes, our 45%
 # reading being the newest) hold only when this script controls a fresh daemon.
+#
+# Evidence — SMOKE_ONLY=82 against the section's own isolated sandbox daemon
+# (fresh daemon, TLS auto-generated self-signed cert, TMUX unset, no production):
+#   == Summary ==   Pass: 16, Fail: 0, Skip: 0
+# The comm route passes over the real path (POST /api/test/message): the test
+# router gets the daemon's web port at startup (main.go, SetWebPort), and the
+# in-process loopback client skips certificate verification for the daemon's own
+# 127.0.0.1 auto-generated cert (internal/router/sx2_parity.go) — the same
+# trust posture the smoke script's curl -sk takes for the local daemon.
 ux_adv() { curl "${curl_args[@]}" -s "$1" 2>/dev/null; }
 ux_code() { curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' "$1" 2>/dev/null || echo 000; }
 ux_num() { python3 -c "import json, sys
@@ -4872,16 +4881,25 @@ UX_CONF0=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
 UX_V0=$(echo "$UX_CONF0" | python3 -c 'import json, sys; v = json.load(sys.stdin)["usage"]["calculator"]["variant"]; print(v if v else "all")' 2>/dev/null || true)
 UX_V0=${UX_V0:-all}
 add_cleanup usage-variant "$UX_V0"
-if [[ "$UX_A0CODE" == "200" ]] && echo "$UX_A0" | python3 -c '
-import json, sys
+if [[ "$UX_A0CODE" == "200" ]] && echo "$UX_A0" | UX_EXT="$UX_EXT" python3 -c '
+import json, os, sys
 d = json.load(sys.stdin)
 a = d["advice"]
-assert a.get("needs") in ("reading", "reset", "percent") or a.get("read_at"), \
-    "neither a needs marker nor a latest reading: %r" % a.get("needs")
+if os.environ.get("UX_EXT"):
+    assert a.get("needs") in ("reading", "reset", "percent") or a.get("read_at"), \
+        "neither a needs marker nor a latest reading: %r" % a.get("needs")
+else:
+    # Fresh smoke daemon: the readings store is empty and the reset is set,
+    # so the empty state must answer needs=reading — with no verdict yet
+    # (the needs marker is the answer; a verdict cannot precede it).
+    assert a.get("needs") == "reading", "expected the empty state needs=reading, got needs=%r read_at=%r" % (a.get("needs"), a.get("read_at"))
+    assert not a.get("verdict"), "a verdict cannot precede any reading: %r" % a.get("verdict")
 t = d.get("text") or {}
 assert t.get("cli") and t.get("comm"), "text forms missing"
+if not os.environ.get("UX_EXT"):
+    assert "no weekly readings yet" in t["comm"], t["comm"][:160]
 ' 2>/dev/null; then
-  ok "usage baseline: advice answers 200 with a needs marker or a latest reading, ceiling set, both text forms present"
+  ok "usage baseline: advice answers 200; on the fresh daemon the empty state answers needs=reading with no verdict (the comm form says so); ceiling set; both text forms present"
 else
   ko "usage baseline: not well-formed (code=$UX_A0CODE): $(head -c 200 "$UX_A0BODY" 2>/dev/null)"
 fi
@@ -5130,12 +5148,15 @@ assert "usage advice" in joined, joined[:200]
   if echo "$UX_TM" | python3 -c 'import json, sys; assert "loopback" not in (json.load(sys.stdin)["responses"] or [""])[0].lower()' 2>/dev/null; then
     if echo "$UX_TM" | python3 -c '
 import json, sys
-joined = "\n".join(json.load(sys.stdin).get("responses") or [])
+d = json.load(sys.stdin)
+lines = [l for r in (d.get("responses") or []) for l in r.splitlines()]
+joined = "\n".join(d.get("responses") or [])
+assert lines and max(len(l) for l in lines) <= 50, max((len(l) for l in lines), default=0)
 assert ("over budget" in joined) or ("within budget" in joined) or ("no weekly reading" in joined) or ("weekly reset is not set" in joined), joined[:240]
 ' 2>/dev/null; then
-      ok "usage comm route: POST /api/test/message 'usage advice' replies with the verdict language"
+      ok "usage comm route: POST /api/test/message 'usage advice' replies with the verdict language, every line within 50 columns"
     else
-      ko "usage comm route: reply lacks the advice verdict/needs language: $(echo "$UX_TM" | head -c 240)"
+      ko "usage comm route: reply lacks the advice verdict/needs language or exceeds 50 columns: $(echo "$UX_TM" | head -c 240)"
     fi
   else
     skip "usage comm route: loopback unavailable in this env (route wired; same caveat as 7aa)"

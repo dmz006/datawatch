@@ -6986,6 +6986,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// Wire test message endpoint — a router with a placeholder backend that
 		// HandleTestMessage replaces with a capture backend per request.
 		testRouter := router.NewRouter(cfg.Hostname, "__test__", nil, mgr, cfg.Session.TailLines, wm)
+		// Sx2 — comm-channel parity verbs proxy through the in-process REST
+		// loopback (commGet/commJSON); without the local web port the test
+		// route reports "REST loopback not configured" for every verb that
+		// reaches it — including the usage calculator comm route.
+		if cfg.Server.Enabled && cfg.Server.Port > 0 {
+			testRouter.SetWebPort(cfg.Server.Port)
+		}
 		testRouter.SetScheduleStore(schedStore)
 		testRouter.SetAlertStore(alertStore)
 		testRouter.SetCmdLibrary(cmdLib)
