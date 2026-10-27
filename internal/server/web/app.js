@@ -23803,6 +23803,534 @@ window._loadPRDCapacityCard = function(prdId) {
   window._prdCapacityInterval = setInterval(render, 5000);
 };
 
+// ── Usage calculator card ───────────────────────────────────────────────────
+// The usage calculator screen (docs/plans/2026-10-23-usage-calculator-design.md;
+// operator decisions in docs/plans/2026-10-25-usage-calculator-decisions.md).
+// The card reads GET /api/usage/advice once per refresh and draws what comes
+// back. A renderer only reads fields of that body: it never computes a burn, a
+// projection, a verdict, a lane count or a day total, and it never reads a
+// reading or the policy from anywhere else. Variant renderers register in
+// window.usageCalcRenderers under their variant id.
+window.usageCalcRenderers = window.usageCalcRenderers || {};
+const USAGE_CALC_VARIANTS = ['pace-gauge', 'lane-planner', 'burn-ledger'];
+const USAGE_CALC_VARIANT_KEYS = { 'pace-gauge': 'usage_calc_variant_pace_gauge', 'lane-planner': 'usage_calc_variant_lane_planner', 'burn-ledger': 'usage_calc_variant_burn_ledger' };
+const USAGE_CALC_POLICIES = ['use-all', 'pace', 'finish-early'];
+const USAGE_CALC_POLICY_KEYS = { 'use-all': 'usage_calc_policy_use_all', 'pace': 'usage_calc_policy_pace', 'finish-early': 'usage_calc_policy_finish_early' };
+const USAGE_CALC_COUNTER_KEY = 'datawatch.usageCalc.counts';
+const USAGE_CALC_COUNTER_ON_KEY = 'datawatch.usageCalc.countsOn';
+const USAGE_CALC_CHART_W = 320;
+const USAGE_CALC_CHART_H = 110;
+window._usageCalc = window._usageCalc || { body: null, error: '', loading: false, seq: 0, variant: '', policy: '', showCounts: false };
+
+// Browser storage is a per-viewer convenience only: every access is guarded,
+// and the card renders the same without it.
+function _usageCalcStorageGet(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+function _usageCalcStorageSet(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) { /* storage blocked: nothing persists */ }
+}
+function _usageCalcStorageRemove(key) {
+  try { localStorage.removeItem(key); } catch (e) { /* storage blocked: nothing to remove */ }
+}
+
+// The view counter is off by default. It records which variant the operator
+// opened and whether the suggested lanes were used, in this browser only.
+function usageCalcCounterOn() {
+  return _usageCalcStorageGet(USAGE_CALC_COUNTER_ON_KEY) === '1';
+}
+function usageCalcCounts() {
+  let parsed = null;
+  try { parsed = JSON.parse(_usageCalcStorageGet(USAGE_CALC_COUNTER_KEY) || 'null'); } catch (e) { parsed = null; }
+  const out = {};
+  for (const v of USAGE_CALC_VARIANTS) {
+    const row = (parsed && typeof parsed === 'object' && parsed[v]) || {};
+    out[v] = { opened: Number(row.opened) || 0, used: Number(row.used) || 0 };
+  }
+  return out;
+}
+function _usageCalcCountBump(variant, field) {
+  if (!usageCalcCounterOn() || !USAGE_CALC_VARIANTS.includes(variant)) return;
+  const counts = usageCalcCounts();
+  counts[variant][field] += 1;
+  _usageCalcStorageSet(USAGE_CALC_COUNTER_KEY, JSON.stringify(counts));
+}
+window.usageCalcToggleCounter = function () {
+  if (usageCalcCounterOn()) {
+    _usageCalcStorageRemove(USAGE_CALC_COUNTER_ON_KEY);
+    _usageCalc.showCounts = false;
+  } else {
+    _usageCalcStorageSet(USAGE_CALC_COUNTER_ON_KEY, '1');
+  }
+  usageCalcRerender();
+};
+window.usageCalcShowCounts = function () {
+  _usageCalc.showCounts = !_usageCalc.showCounts;
+  usageCalcRerender();
+};
+window.usageCalcClearCounts = function () {
+  _usageCalcStorageRemove(USAGE_CALC_COUNTER_KEY);
+  usageCalcRerender();
+};
+
+// Formatting helpers. Numbers are shown as the response gives them; the
+// clock is the wall clock the daemon wrote into the timestamp, which is the
+// reset zone's own clock, so no zone is converted here.
+function _usageCalcNum(v, digits) {
+  const n = Number(v);
+  return isFinite(n) ? n.toFixed(digits === undefined ? 1 : digits) : '—';
+}
+function _usageCalcClock(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(iso || ''));
+  if (!m) return '';
+  const when = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]));
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' }).format(when);
+}
+function _usageCalcLocalInput(ms) {
+  const d = new Date(ms);
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function _usageCalcVariantList(res) {
+  return !res || res.variant === 'all' ? USAGE_CALC_VARIANTS : [res.variant];
+}
+function _usageCalcActive(variants, requested) {
+  return variants.includes(requested) ? requested : variants[0];
+}
+function _usageCalcChip(verdict) {
+  if (verdict !== 'over' && verdict !== 'within') return '';
+  const over = verdict === 'over';
+  const color = over ? 'var(--error,#ef4444)' : 'var(--success,#22c55e)';
+  const label = over ? t('usage_calc_over') : t('usage_calc_within');
+  return `<span class="usage-calc-chip ${over ? 'over' : 'within'}" style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:${color};">${escHtml(label)}</span>`;
+}
+function _usageCalcPolicyLabel(id) {
+  const key = USAGE_CALC_POLICY_KEYS[id];
+  return key ? t(key) : String(id || '');
+}
+function _usageCalcRunOut(at, early) {
+  if (!at) return t('usage_calc_runout_none');
+  return _usageCalcClock(at) + ' · ' + t('usage_calc_hours_early', [_usageCalcNum(early)]);
+}
+
+// Reading, policy, extra credit and remaining-work inputs are validated here so
+// the request bodies can be tested without a DOM.
+function usageCalcPointsBody(raw) {
+  const s = String(raw === undefined || raw === null ? '' : raw).trim();
+  const n = Number(s);
+  if (s === '' || !isFinite(n) || n < 0) return { error: t('usage_calc_points_range') };
+  return { body: { points: n } };
+}
+function usageCalcReadingBody(input) {
+  const percentText = String(input.percent === undefined || input.percent === null ? '' : input.percent).trim();
+  const pct = Number(percentText);
+  if (percentText === '' || !isFinite(pct) || pct < 0 || pct > 1000) return { error: t('usage_calc_percent_range') };
+  const body = { percent: pct, lanes: Number(input.lanes) || 0, source: 'typed' };
+  const sessionText = String(input.session === undefined || input.session === null ? '' : input.session).trim();
+  if (sessionText !== '') {
+    const s = Number(sessionText);
+    if (!isFinite(s) || s < 0 || s > 100) return { error: t('usage_calc_session_range') };
+    body.session_percent = s;
+  }
+  let at = input.readAt ? new Date(input.readAt) : null;
+  if (!at || isNaN(at.getTime())) at = new Date(input.now === undefined ? Date.now() : input.now);
+  body.at = at.toISOString();
+  return { body };
+}
+
+function _usageCalcMessage(text) {
+  const el = document.getElementById('usageCalcFormMsg');
+  if (el) el.textContent = text;
+}
+function _usageCalcWrite(method, path, body) {
+  const opts = { method };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  return apiFetch(path, opts)
+    .then(() => usageCalcRefresh())
+    .catch(err => {
+      _usageCalc.error = err && err.message ? err.message : String(err);
+      usageCalcRerender();
+    });
+}
+
+// The frame: verdict first, then the variant switcher and the chosen variant,
+// then the reading, policy, extra-credit, remaining-work and counter sections.
+// opts: variant (the chosen switcher id), policy, error, loading, now (ms).
+window.usageCalcFrameHtml = function (body, opts) {
+  opts = opts || {};
+  const res = body || null;
+  const variants = _usageCalcVariantList(res);
+  const active = _usageCalcActive(variants, opts.variant);
+  const parts = [];
+  parts.push(`<div class="usage-calc-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">` +
+    `<div class="usage-calc-title" style="font-weight:600;">${escHtml(t('usage_calc_title'))}</div>` +
+    `<button type="button" class="btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="usageCalcRefresh()">${escHtml(t('usage_calc_refresh'))}</button></div>`);
+  parts.push(`<div class="usage-calc-intro" style="font-size:12px;color:var(--text2);margin:4px 0 8px;">${escHtml(t('usage_calc_intro'))}</div>`);
+  if (opts.error) parts.push(`<div class="usage-calc-error" role="alert" style="color:var(--error,#ef4444);font-size:12px;margin-bottom:8px;">${escHtml(t('usage_calc_error', [opts.error]))}</div>`);
+  if (!res) {
+    if (!opts.error) parts.push(`<div class="usage-calc-loading" style="color:var(--text2);font-size:12px;">${escHtml(t('usage_calc_loading'))}</div>`);
+  } else if (res.advice && res.advice.needs) {
+    parts.push(`<div class="usage-calc-empty" style="padding:12px 0;"><div style="font-weight:600;">${escHtml(t('usage_calc_empty_title'))}</div>` +
+      `<div style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_empty_body'))}</div></div>`);
+  } else if (res.advice) {
+    parts.push(_usageCalcVerdictHtml(res));
+    if (variants.length > 1) parts.push(_usageCalcSwitcherHtml(variants, active));
+    parts.push(_usageCalcVariantBody(res, active, opts));
+  }
+  parts.push(_usageCalcReadingForm(res, opts));
+  parts.push(_usageCalcPolicyForm(res, opts));
+  parts.push(_usageCalcExtraForm(res));
+  parts.push(_usageCalcRemainingForm(res));
+  parts.push(_usageCalcCounterHtml(res, active));
+  return `<div class="usage-calc-frame" style="display:flex;flex-direction:column;gap:12px;min-width:0;max-width:100%;overflow-wrap:anywhere;">${parts.join('')}</div>`;
+};
+
+function _usageCalcVerdictHtml(res) {
+  const a = res.advice;
+  const p = a.advice || {};
+  const parts = [];
+  parts.push(`<div class="usage-calc-verdict" style="display:flex;flex-direction:column;gap:6px;">`);
+  parts.push(`<div class="usage-calc-chips" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;">` +
+    `${_usageCalcChip(a.verdict)}<span style="color:var(--text2);">${escHtml(t('usage_calc_recent_burn'))}</span>` +
+    `${_usageCalcChip(a.verdict_avg)}<span style="color:var(--text2);">${escHtml(t('usage_calc_week_average'))}</span></div>`);
+  parts.push(`<div class="usage-calc-headline" style="font-weight:600;">${escHtml(p.headline || '')}</div>`);
+  if (p.lanes_suggested >= 0) {
+    parts.push(`<div><button type="button" class="btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="usageCalcUseSuggested()">` +
+      `${escHtml(t('usage_calc_use_suggested', [String(p.lanes_suggested)]))}</button></div>`);
+  }
+  if (Array.isArray(p.notes) && p.notes.length) {
+    parts.push(`<ul class="usage-calc-notes" style="margin:0;padding-left:18px;font-size:12px;color:var(--text2);">` +
+      p.notes.map(n => `<li>${escHtml(n)}</li>`).join('') + `</ul>`);
+  }
+  if (a.recent_fallback) {
+    parts.push(`<div class="usage-calc-notice" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(a.fallback_notice || t('usage_calc_fallback_default'))}</div>`);
+  }
+  if (res.stale) {
+    parts.push(`<div class="usage-calc-stale" style="font-size:12px;color:var(--warning,#f59e0b);">` +
+      escHtml(t('usage_calc_stale', [res.keeper || t('usage_calc_keeper_generic'), _usageCalcClock(res.copied_at)])) + `</div>`);
+  }
+  if (a.session) {
+    parts.push(`<div class="usage-calc-secondary" style="font-size:12px;color:var(--text2);">` +
+      escHtml(t('usage_calc_session_secondary', [_usageCalcNum(a.session.percent, 0)])) + `</div>`);
+  }
+  parts.push(`</div>`);
+  return parts.join('');
+}
+
+function _usageCalcSwitcherHtml(variants, active) {
+  const buttons = variants.map(id => {
+    const on = id === active;
+    return `<button type="button" class="usage-calc-switch${on ? ' active' : ''}" aria-pressed="${on}" ` +
+      `style="font-size:12px;padding:4px 10px;border-radius:12px;${on ? 'background:var(--accent);color:#fff;' : ''}" ` +
+      `onclick="usageCalcSetVariant('${id}')">${escHtml(t(USAGE_CALC_VARIANT_KEYS[id]))}</button>`;
+  }).join('');
+  return `<div class="usage-calc-switcher" role="group" aria-label="${escHtml(t('usage_calc_variant_label'))}" style="display:flex;flex-wrap:wrap;gap:6px;">${buttons}</div>`;
+}
+
+function _usageCalcVariantBody(res, active, opts) {
+  const registry = window.usageCalcRenderers || {};
+  if (!Object.prototype.hasOwnProperty.call(registry, active)) {
+    return `<div class="usage-calc-unavailable" style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_variant_unavailable'))}</div>`;
+  }
+  return registry[active](res, opts);
+}
+
+function _usageCalcReadingForm(res, opts) {
+  const a = res && res.advice && !res.advice.needs ? res.advice : null;
+  const max = a && a.max_lanes ? a.max_lanes : 3;
+  const lanes = a && a.lanes ? a.lanes : 0;
+  const percent = a ? _usageCalcNum(a.percent, 0) : '';
+  const now = opts.now === undefined ? Date.now() : opts.now;
+  return `<div class="usage-calc-section" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:8px;">` +
+    `<div style="font-weight:600;">${escHtml(t('usage_calc_reading_title'))}</div>` +
+    `<label style="font-size:12px;">${escHtml(t('usage_calc_percent_label'))} <input id="usageCalcPercent" type="number" min="0" max="1000" step="any" value="${escHtml(percent)}" style="width:100%;max-width:200px;"></label>` +
+    `<label style="font-size:12px;">${escHtml(t('usage_calc_session_label'))} <input id="usageCalcSession" type="number" min="0" max="100" step="any" value="" style="width:100%;max-width:200px;"></label>` +
+    `<div class="usage-calc-stepper" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;">` +
+    `<span>${escHtml(t('usage_calc_lanes_label'))}</span>` +
+    `<button type="button" id="usageCalcLanesMinus" aria-label="${escHtml(t('usage_calc_lanes_minus'))}" onclick="usageCalcStepLanes(-1)"${lanes <= 0 ? ' disabled' : ''}>−</button>` +
+    `<span id="usageCalcLanes" data-value="${lanes}" data-max="${max}" style="min-width:18px;text-align:center;">${lanes}</span>` +
+    `<button type="button" id="usageCalcLanesPlus" aria-label="${escHtml(t('usage_calc_lanes_plus'))}" onclick="usageCalcStepLanes(1)"${lanes >= max ? ' disabled' : ''}>+</button>` +
+    `<span id="usageCalcZeroNote" style="color:var(--text2);">${lanes === 0 ? escHtml(t('usage_calc_zero_lanes')) : ''}</span></div>` +
+    `<label style="font-size:12px;">${escHtml(t('usage_calc_read_at_label'))} <input id="usageCalcReadAt" type="datetime-local" value="${_usageCalcLocalInput(now)}" style="max-width:100%;"></label>` +
+    `<div><button type="button" class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="usageCalcSubmitReading()">${escHtml(t('usage_calc_save_reading'))}</button></div>` +
+    `<div id="usageCalcFormMsg" role="status" style="font-size:12px;color:var(--error,#ef4444);"></div>` +
+    `</div>`;
+}
+
+window.usageCalcStepLanes = function (delta) {
+  const el = document.getElementById('usageCalcLanes');
+  if (!el) return;
+  const cur = Number(el.getAttribute('data-value')) || 0;
+  usageCalcSetLanes(cur + delta);
+};
+function usageCalcSetLanes(n) {
+  const el = document.getElementById('usageCalcLanes');
+  if (!el) return;
+  const max = Number(el.getAttribute('data-max')) || 0;
+  const v = Math.min(max, Math.max(0, n));
+  el.setAttribute('data-value', String(v));
+  el.textContent = String(v);
+  const minus = document.getElementById('usageCalcLanesMinus');
+  if (minus) minus.disabled = v <= 0;
+  const plus = document.getElementById('usageCalcLanesPlus');
+  if (plus) plus.disabled = v >= max;
+  const zero = document.getElementById('usageCalcZeroNote');
+  if (zero) zero.textContent = v === 0 ? t('usage_calc_zero_lanes') : '';
+}
+
+window.usageCalcSubmitReading = function () {
+  const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const lanesEl = document.getElementById('usageCalcLanes');
+  const built = usageCalcReadingBody({
+    percent: val('usageCalcPercent'),
+    session: val('usageCalcSession'),
+    lanes: lanesEl ? lanesEl.getAttribute('data-value') : 0,
+    readAt: val('usageCalcReadAt'),
+    now: Date.now(),
+  });
+  if (built.error) return _usageCalcMessage(built.error);
+  return _usageCalcWrite('POST', '/api/usage/readings', built.body);
+};
+
+function _usageCalcPolicyForm(res, opts) {
+  const current = (res && res.policy) || opts.policy || 'use-all';
+  const radios = USAGE_CALC_POLICIES.map(id => {
+    const on = id === current;
+    return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;">` +
+      `<input type="radio" name="usageCalcPolicy" data-policy="${id}" value="${id}"${on ? ' checked' : ''} onchange="usageCalcSetPolicy('${id}')">` +
+      `<span>${escHtml(t(USAGE_CALC_POLICY_KEYS[id]))}</span></label>`;
+  }).join('');
+  return `<div class="usage-calc-section" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:6px;">` +
+    `<div style="font-weight:600;">${escHtml(t('usage_calc_policy_title'))}</div>` +
+    `<div role="radiogroup" aria-label="${escHtml(t('usage_calc_policy_title'))}" style="display:flex;flex-direction:column;gap:2px;">${radios}</div>` +
+    `<div style="font-size:11px;color:var(--text2);">${escHtml(t('usage_calc_policy_hint'))}</div>` +
+    `</div>`;
+}
+
+// Choosing a policy changes only the advice: it refetches with the policy
+// query value and saves nothing.
+window.usageCalcSetPolicy = function (id) {
+  if (!USAGE_CALC_POLICIES.includes(id)) return;
+  _usageCalc.policy = id;
+  return usageCalcRefresh();
+};
+
+window.usageCalcSetVariant = function (id) {
+  if (!USAGE_CALC_VARIANTS.includes(id)) return;
+  _usageCalc.variant = id;
+  _usageCalcCountBump(id, 'opened');
+  usageCalcRerender();
+};
+
+window.usageCalcUseSuggested = function () {
+  const res = _usageCalc.body;
+  if (!res || !res.advice || !res.advice.advice) return;
+  const n = res.advice.advice.lanes_suggested;
+  if (!(n >= 0)) return;
+  usageCalcSetLanes(n);
+  _usageCalcCountBump(_usageCalcActive(_usageCalcVariantList(res), _usageCalc.variant), 'used');
+};
+
+function _usageCalcExtraForm(res) {
+  const a = res && res.advice ? res.advice : null;
+  const extra = a ? (a.extra_credit_points || 0) : 0;
+  const ceiling = a && a.ceiling ? a.ceiling : 100;
+  return `<div class="usage-calc-section" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:6px;">` +
+    `<div style="font-weight:600;">${escHtml(t('usage_calc_extra_title'))}</div>` +
+    `<div class="usage-calc-extra-line" style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_extra_line', [_usageCalcNum(ceiling, 0), _usageCalcNum(extra, 0)]))}</div>` +
+    `<label style="font-size:12px;">${escHtml(t('usage_calc_extra_label'))} <input id="usageCalcExtra" type="number" min="0" step="any" value="${escHtml(String(extra))}" style="width:100%;max-width:200px;"></label>` +
+    `<div><button type="button" style="font-size:12px;padding:5px 12px;" onclick="usageCalcSaveExtraCredit()">${escHtml(t('usage_calc_extra_save'))}</button></div>` +
+    `</div>`;
+}
+window.usageCalcSaveExtraCredit = function () {
+  const el = document.getElementById('usageCalcExtra');
+  const built = usageCalcPointsBody(el ? el.value : '');
+  if (built.error) return _usageCalcMessage(built.error);
+  return _usageCalcWrite('PUT', '/api/usage/extra-credit', built.body);
+};
+
+// The remaining work is the estimate (queued tasks times the cost per task)
+// unless the operator has typed a figure. The response says which one is in use.
+function _usageCalcRemainingForm(res) {
+  const a = res && res.advice ? res.advice : null;
+  const rw = a && a.remaining_work ? a.remaining_work : null;
+  let inUse = t('usage_calc_remaining_none');
+  if (rw && rw.in_use === 'estimate') inUse = t('usage_calc_remaining_estimate');
+  if (rw && rw.in_use === 'typed') inUse = t('usage_calc_remaining_typed');
+  const line = rw
+    ? t('usage_calc_remaining_line', [_usageCalcNum(rw.points), inUse, String(rw.queue_tasks || 0), _usageCalcNum(rw.cost_per_task)])
+    : t('usage_calc_remaining_none');
+  return `<div class="usage-calc-section" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:6px;">` +
+    `<div style="font-weight:600;">${escHtml(t('usage_calc_remaining_title'))}</div>` +
+    `<div class="usage-calc-remaining" style="font-size:12px;">${escHtml(line)}</div>` +
+    `<label style="font-size:12px;">${escHtml(t('usage_calc_remaining_override_label'))} <input id="usageCalcTypedWork" type="number" min="0" step="any" value="" style="width:100%;max-width:200px;"></label>` +
+    `<div style="display:flex;gap:6px;flex-wrap:wrap;">` +
+    `<button type="button" style="font-size:12px;padding:5px 12px;" onclick="usageCalcSaveRemainingWork()">${escHtml(t('usage_calc_remaining_save_typed'))}</button>` +
+    `<button type="button" style="font-size:12px;padding:5px 12px;" onclick="usageCalcClearRemainingWork()">${escHtml(t('usage_calc_remaining_clear'))}</button>` +
+    `</div></div>`;
+}
+window.usageCalcSaveRemainingWork = function () {
+  const el = document.getElementById('usageCalcTypedWork');
+  const built = usageCalcPointsBody(el ? el.value : '');
+  if (built.error) return _usageCalcMessage(built.error);
+  return _usageCalcWrite('PUT', '/api/usage/remaining-work', built.body);
+};
+window.usageCalcClearRemainingWork = function () {
+  return _usageCalcWrite('DELETE', '/api/usage/remaining-work');
+};
+
+function _usageCalcCounterHtml(res, active) {
+  const on = usageCalcCounterOn();
+  const state = on ? t('usage_calc_counter_on') : t('usage_calc_counter_off');
+  const parts = [];
+  parts.push(`<div class="usage-calc-section" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:6px;">`);
+  parts.push(`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;">` +
+    `<span>${escHtml(t('usage_calc_counter_title'))}: ${escHtml(state)}</span>` +
+    `<button type="button" aria-pressed="${on}" style="font-size:12px;padding:4px 10px;" onclick="usageCalcToggleCounter()">${escHtml(state)}</button></div>`);
+  parts.push(`<div style="font-size:11px;color:var(--text2);">${escHtml(t('usage_calc_counter_hint'))}</div>`);
+  if (on) {
+    parts.push(`<div style="display:flex;gap:6px;flex-wrap:wrap;">` +
+      `<button type="button" style="font-size:12px;padding:4px 10px;" onclick="usageCalcShowCounts()">${escHtml(t('usage_calc_counter_show'))}</button>` +
+      `<button type="button" style="font-size:12px;padding:4px 10px;" onclick="usageCalcClearCounts()">${escHtml(t('usage_calc_counter_clear'))}</button></div>`);
+    if (_usageCalc.showCounts) {
+      const counts = usageCalcCounts();
+      parts.push(USAGE_CALC_VARIANTS.map(v => {
+        const c = counts[v];
+        return `<div style="font-size:12px;">${escHtml(t('usage_calc_counter_row', [t(USAGE_CALC_VARIANT_KEYS[v]), String(c.opened), String(c.used)]))}</div>`;
+      }).join(''));
+    }
+  }
+  parts.push(`</div>`);
+  return parts.join('');
+}
+
+// The pace-gauge variant: one bar from 0 to the ceiling with the weekly percent
+// filled, a solid tick for the pace line and dashed and dotted ticks for the
+// two projections at the reset, a red zone at the right edge for projections
+// past the ceiling, then the reading fields, the chosen-lanes line and the
+// series chart. Every number is read from the response.
+function _usageCalcPaceGauge(res) {
+  const a = res.advice;
+  const p = a.advice || {};
+  const ceiling = a.ceiling > 0 ? a.ceiling : 100;
+  const W = USAGE_CALC_CHART_W;
+  const pos = v => Math.min(Math.max(Number(v) / ceiling, 0), 1) * W;
+  const past = v => Number(v) > ceiling;
+  const tick = (id, v, style) => `<line data-tick="${id}" x1="${pos(v).toFixed(2)}" x2="${pos(v).toFixed(2)}" y1="10" y2="42" style="${style}"/>`;
+  const gauge = `<svg viewBox="0 0 ${W} 60" width="100%" role="img" aria-label="${escHtml(t('usage_calc_gauge_title'))}" style="display:block;max-width:100%;">` +
+    `<rect x="0" y="18" width="${W}" height="14" rx="3" style="fill:var(--bg2,#1e1e1e);"/>` +
+    `<rect data-fill="percent" x="0" y="18" width="${pos(a.percent).toFixed(2)}" height="14" rx="3" style="fill:var(--accent,#3b82f6);"/>` +
+    `<rect data-zone="over" x="${W - 8}" y="18" width="8" height="14" style="fill:var(--error,#ef4444);"/>` +
+    tick('pace', a.pace_line, 'stroke:var(--text,#ddd);stroke-width:2;') +
+    tick('recent', a.projected_end_recent, 'stroke:var(--warning,#f59e0b);stroke-width:2;stroke-dasharray:4 3;') +
+    tick('average', a.projected_end_avg, 'stroke:var(--text2,#999);stroke-width:2;stroke-dasharray:1 3;stroke-linecap:round;') +
+    ((past(a.projected_end_recent) || past(a.projected_end_avg))
+      ? `<text data-label="over-edge" x="${W}" y="58" text-anchor="end" style="font-size:10px;fill:var(--error,#ef4444);">${escHtml(t('usage_calc_gauge_over_edge', [_usageCalcNum(Math.max(a.projected_end_recent, a.projected_end_avg), 1)]))}</text>`
+      : '') +
+    `</svg>`;
+  const legend = `<div style="display:flex;flex-wrap:wrap;gap:8px 12px;font-size:11px;color:var(--text2);">` +
+    `<span>${escHtml(t('usage_calc_gauge_now', [_usageCalcNum(a.percent, 0)]))}</span>` +
+    `<span>${escHtml(t('usage_calc_gauge_pace', [_usageCalcNum(a.pace_line)]))}</span>` +
+    `<span>${escHtml(t('usage_calc_gauge_recent', [_usageCalcNum(a.projected_end_recent)]))}</span>` +
+    `<span>${escHtml(t('usage_calc_gauge_average', [_usageCalcNum(a.projected_end_avg)]))}</span>` +
+    `<span>${escHtml(t('usage_calc_extra_line', [_usageCalcNum(ceiling, 0), _usageCalcNum(a.extra_credit_points || 0, 0)]))}</span></div>`;
+
+  const fields = [
+    [t('usage_calc_field_read'), `${_usageCalcNum(a.percent, 0)}% · ${_usageCalcClock(a.read_at)}`],
+    [t('usage_calc_field_days'), t('usage_calc_days', [_usageCalcNum(a.days_since_reset, 2)])],
+    [t('usage_calc_field_pace'), `${_usageCalcNum(a.pace_line)}% · ` + (a.ahead_of_pace ? t('usage_calc_ahead_of_pace') : t('usage_calc_headroom', [_usageCalcNum(a.headroom)]))],
+    [t('usage_calc_field_burn'), `${t('usage_calc_recent_burn')} ${_usageCalcNum(a.recent_burn_per_24h)}` +
+      (a.recent_fallback ? ` (${t('usage_calc_burn_fallback')})` : '') +
+      ` · ${t('usage_calc_week_average')} ${_usageCalcNum(a.week_avg_burn_per_24h)}`],
+    [t('usage_calc_field_projected'), `${t('usage_calc_recent_burn')} ${_usageCalcNum(a.projected_end_recent)}% · ${t('usage_calc_week_average')} ${_usageCalcNum(a.projected_end_avg)}%`],
+    [t('usage_calc_field_runout'), `${t('usage_calc_recent_burn')}: ${_usageCalcRunOut(a.run_out_at_recent, a.hours_early_recent)} · ` +
+      `${t('usage_calc_week_average')}: ${_usageCalcRunOut(a.run_out_at_avg, a.hours_early_avg)}`],
+    [t('usage_calc_field_verdict'), `${_usageCalcChip(a.verdict)} ${_usageCalcChip(a.verdict_avg)}`],
+    [t('usage_calc_field_lanes'), t('usage_calc_lanes_policy', [String(a.lanes), _usageCalcPolicyLabel(res.policy)])],
+    [t('usage_calc_field_advice'), escHtml(p.headline || '')],
+  ];
+  const rows = fields.map(([label, value], i) =>
+    `<div data-field="${i}" style="display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border,#2a2a2a);">` +
+    `<span style="min-width:110px;color:var(--text2);">${escHtml(label)}</span>` +
+    `<span style="flex:1;min-width:0;overflow-wrap:anywhere;">${value}</span></div>`).join('');
+
+  let chosen = '';
+  if (a.chosen) {
+    chosen = `<div data-chosen="lanes" style="font-size:12px;">` +
+      escHtml(t('usage_calc_chosen_line', [String(a.chosen.lanes), _usageCalcNum(a.chosen.burn_per_24h), _usageCalcNum(a.chosen.projected_end) + '%'])) +
+      (a.chosen.lanes === 0 ? ` <span style="color:var(--text2);">${escHtml(t('usage_calc_zero_lanes'))}</span>` : '') + `</div>`;
+  }
+
+  return `<div class="usage-calc-pace-gauge" style="display:flex;flex-direction:column;gap:8px;min-width:0;">` +
+    `<div style="font-weight:600;font-size:13px;">${escHtml(t('usage_calc_gauge_title'))}</div>` +
+    gauge + legend + rows + chosen + usageCalcSeriesHtml(a) +
+    `</div>`;
+}
+
+// The readings since the reset, each at its hours since the reset, with the pace
+// line and the two projections dashed from the newest reading to the reset.
+function usageCalcSeriesHtml(a) {
+  const series = Array.isArray(a.series) ? a.series : [];
+  if (!series.length) return '';
+  const W = USAGE_CALC_CHART_W;
+  const H = USAGE_CALC_CHART_H;
+  const ceiling = a.ceiling > 0 ? a.ceiling : 100;
+  const span = (Number(a.days_since_reset) + Number(a.days_left)) * 24;
+  const x = h => Math.min(Math.max(Number(h) / span, 0), 1) * W;
+  const y = v => H - Math.min(Math.max(Number(v) / ceiling, 0), 1) * H;
+  const pts = series.map(s => `${x(s.hours_since_reset).toFixed(2)},${y(s.percent).toFixed(2)}`);
+  const last = series[series.length - 1];
+  const lx = x(last.hours_since_reset).toFixed(2);
+  const ly = y(last.percent).toFixed(2);
+  return `<div class="usage-calc-series" style="display:flex;flex-direction:column;gap:4px;">` +
+    `<div style="font-size:12px;font-weight:600;">${escHtml(t('usage_calc_series_title'))}</div>` +
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escHtml(t('usage_calc_series_title'))}" style="display:block;max-width:100%;">` +
+    `<line data-series="pace" x1="0" y1="${H}" x2="${W}" y2="${y(100).toFixed(2)}" style="stroke:var(--text2,#999);stroke-width:1;"/>` +
+    `<polyline data-series="readings" points="${pts.join(' ')}" style="fill:none;stroke:var(--accent,#3b82f6);stroke-width:2;"/>` +
+    `<line data-series="recent" x1="${lx}" y1="${ly}" x2="${W}" y2="${y(a.projected_end_recent).toFixed(2)}" style="stroke:var(--warning,#f59e0b);stroke-width:2;stroke-dasharray:4 3;"/>` +
+    `<line data-series="average" x1="${lx}" y1="${ly}" x2="${W}" y2="${y(a.projected_end_avg).toFixed(2)}" style="stroke:var(--text2,#999);stroke-width:2;stroke-dasharray:1 3;"/>` +
+    `</svg>` +
+    `<div style="display:flex;flex-wrap:wrap;gap:8px 12px;font-size:11px;color:var(--text2);">` +
+    `<span>${escHtml(t('usage_calc_series_pace'))}</span><span>${escHtml(t('usage_calc_series_projection'))}</span></div>` +
+    `</div>`;
+}
+
+window.usageCalcRenderers['pace-gauge'] = _usageCalcPaceGauge;
+
+function usageCalcRerender() {
+  const el = document.getElementById('usageCalcCard');
+  if (!el) return;
+  el.innerHTML = window.usageCalcFrameHtml(_usageCalc.body, {
+    variant: _usageCalc.variant,
+    policy: _usageCalc.policy,
+    error: _usageCalc.error,
+    loading: _usageCalc.loading,
+  });
+}
+
+// One GET /api/usage/advice per refresh. A stale reply is dropped, so a slow
+// earlier request never overwrites a newer one.
+window.usageCalcRefresh = function () {
+  const state = _usageCalc;
+  const seq = ++state.seq;
+  state.loading = true;
+  state.error = '';
+  usageCalcRerender();
+  const q = state.policy ? '?policy=' + encodeURIComponent(state.policy) : '';
+  return apiFetch('/api/usage/advice' + q).then(body => {
+    if (seq !== state.seq) return;
+    state.body = body;
+    state.loading = false;
+    state.error = '';
+    usageCalcRerender();
+  }).catch(err => {
+    if (seq !== state.seq) return;
+    state.loading = false;
+    state.error = err && err.message ? err.message : String(err);
+    usageCalcRerender();
+  });
+};
+
 // ── Lane fill card ──────────────────────────────────────────────────────────
 // laneFillCardHtml(status) turns the decoded GET /api/autonomous/lane-fill body
 // into the Automation sub-tab's lane card: the mode, one row per lane, the
@@ -34458,6 +34986,13 @@ function renderObserverView() {
       </div>
 
       <div class="settings-section">
+        ${settingsSectionHeader('usage_calculator', t('usage_calc_title'), 'howto/automata-capacity.md')}
+        <div id="settings-sec-usage_calculator" style="${secContent('usage_calculator')}">
+          <div id="usageCalcCard" class="obs-panel" style="min-width:0;"></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         ${settingsSectionHeader('analytics', 'Session Analytics', 'api/sessions.md')}
         <div id="settings-sec-analytics" style="${secContent('analytics')}">
           <div id="analyticsPanel" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
@@ -34510,6 +35045,7 @@ function renderObserverView() {
   loadMemoryScopeInventory(); // GH#172 D77
   loadSchedulesList();
   loadCooldownStatus();
+  usageCalcRefresh();
   loadAnalyticsPanel();
   loadAuditPanel();
   loadKgPanel();
