@@ -285,6 +285,11 @@ cleanup_all() {
         # Clears only the named backend's flag (never "all"), so pre-existing
         # operator flags survive the smoke run.
         usage-backoff)   [[ -n "$id" ]] && curl "${curl_args[@]}" -X DELETE -H "Content-Type: application/json" -d "{\"backend\":\"$id\"}" "$BASE/api/usage-backoff" >/dev/null 2>&1 && echo "  cleared usage back-off $id" || echo "  (already gone) usage-backoff $id" ;;
+        # Usage calculator: exact-id reading delete, and exact-value restores of the
+        # pre-smoke extra credit and usage.calculator.variant (never a pattern sweep).
+        usage)           UXQ=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(str(sys.argv[1])))' "$id" 2>/dev/null || echo "$id"); curl "${curl_args[@]}" -X DELETE "$BASE/api/usage/readings?id=$UXQ" >/dev/null 2>&1 && echo "  deleted usage reading $id" || echo "  (already gone) usage reading $id" ;;
+        usage-credit)    [[ -n "$id" ]] && curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"points\": $id}" "$BASE/api/usage/extra-credit" >/dev/null 2>&1 && echo "  restored usage extra credit to $id" || echo "  (already gone) usage-credit $id" ;;
+        usage-variant)   [[ -n "$id" ]] && curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.variant\": \"$(echo "$id" | tr -d '\"')\"}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored usage.calculator.variant to $id" || echo "  (already gone) usage-variant $id" ;;
         # Cancel first (a draft refuses it, which is fine), then delete.
         automation)      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"cancel_in_flight":true}' "$BASE/api/automations/$id/cancel" >/dev/null 2>&1; curl "${curl_args[@]}" -X DELETE "$BASE/api/automations/$id" >/dev/null 2>&1 && echo "  removed automation $id" || echo "  (already gone) automation $id" ;;
         device)          curl "${curl_args[@]}" -X DELETE "$BASE/api/devices/$id" >/dev/null 2>&1 && echo "  removed device $id" || echo "  (already gone) device $id" ;;
@@ -4780,6 +4785,9 @@ else
     skip "restart matrix ${RM_P%%|*}: ${RM_P#*|}"
   done
   rm -rf "$RM_BASE"
+fi
+
+# ---------------------------------------------------------------------------
 H "81. Mobile-fit view runner (release smoke)"
 # Runs the mobile-fit view harness (observer view, quick profile, Playwright)
 # via release-smoke-mobile-fit.sh, which derives TEST_HTTP / TEST_TLS /
@@ -4804,6 +4812,237 @@ if [[ -f "$MOBILE_FIT_SCRIPT" ]]; then
   fi
 else
   skip "release-smoke-mobile-fit.sh missing; mobile-fit probe deferred"
+fi
+
+# ---------------------------------------------------------------------------
+H "82. Usage calculator (advice, readings, verdict/by-lanes, policy, variant, extra credit, pasted gate, config round-trip, comm, CLI)"
+# Usage calculator surface (docs/plans/2026-10-23-usage-calculator-design.md and the
+# 2026-10-25 decisions):
+#
+#   GET    /api/usage/advice            verdict, by_lanes, text.cli / text.comm
+#   POST   /api/usage/readings          source: typed is accepted; pasted/account answer 501
+#   DELETE /api/usage/readings?id=      exact-id delete (cleanup_all: usage case)
+#   PUT    /api/usage/extra-credit      ceiling = 100 points + credit
+#   GET/PUT /api/config                 usage.calculator.* round-trips and applies live
+#
+# The empty state has to answer with a needs marker (not an error), typed readings have
+# to drive verdict and by_lanes, policy and variant have to be overridable per call with
+# unknown values refused, extra credit has to shift the ceiling by exactly its amount,
+# pasted must stay a 501, and the comm and CLI text forms have to render the verdict.
+#
+# Everything this section creates is cleaned up by exact id / exact restore (cleanup_all
+# cases: usage, usage-credit, usage-variant); no name-pattern sweeps against operator
+# data. Sandbox-only assertions (4 by_lanes rows / 3 max lanes, CLI binary) are asserted
+# only when this script controls the daemon.
+ux_adv() { curl "${curl_args[@]}" -s "$1" 2>/dev/null; }
+ux_num() { python3 -c "import json, sys
+try:
+    print(json.load(sys.stdin)['advice']['$1'])
+except Exception:
+    pass" 2>/dev/null || true; }
+UX_EXT=""
+[[ -n "${DW_BASE:-}" ]] && UX_EXT=1
+UX_A0=$(ux_adv "$BASE/api/usage/advice")
+UX_CEIL0=$(echo "$UX_A0" | ux_num ceiling); UX_CEIL0=${UX_CEIL0:-100}
+UX_CRED0=$(echo "$UX_A0" | ux_num extra_credit_points); UX_CRED0=${UX_CRED0:-0}
+add_cleanup usage-credit "$UX_CRED0"
+if echo "$UX_A0" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+a = d["advice"]
+assert a.get("needs") in ("reading", "reset", "percent") or a.get("read_at"), "neither a needs marker nor a reading"
+assert d.get("text", {}).get("comm") or d.get("text", {}).get("cli"), "no text form rendered"
+' 2>/dev/null; then
+  ok "usage empty state: advice answers with a needs marker (no server error)"
+else
+  ko "usage empty state: not well-formed: $(echo "$UX_A0" | head -c 200)"
+fi
+UX_T1=$(python3 -c 'import time; print(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 48 * 3600)))' 2>/dev/null || true)
+UX_T2=$(python3 -c 'import time; print(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 24 * 3600)))' 2>/dev/null || true)
+UX_R1=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T1\",\"percent\":30,\"source\":\"typed\"}" "$BASE/api/usage/readings" 2>/dev/null || true)
+UX_R2=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T2\",\"percent\":45,\"source\":\"typed\"}" "$BASE/api/usage/readings" 2>/dev/null || true)
+if echo "$UX_R1" | grep -q '"ok":true' && echo "$UX_R2" | grep -q '"ok":true'; then
+  ok "usage readings: two typed weekly readings accepted (source: typed)"
+else
+  ko "usage readings: typed add failed: r1=$UX_R1 r2=$UX_R2"
+fi
+UX_LIST=$(curl "${curl_args[@]}" -s "$BASE/api/usage/readings" 2>/dev/null || true)
+UX_IDS=$(echo "$UX_LIST" | UX_T1="$UX_T1" UX_T2="$UX_T2" python3 -c '
+import json, os, sys
+from datetime import datetime, timezone
+d = json.load(sys.stdin)
+t1 = datetime.strptime(os.environ["UX_T1"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+t2 = datetime.strptime(os.environ["UX_T2"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+def parse(v):
+    return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+i30 = i45 = None
+ids = []
+for i, r in enumerate(d.get("readings") or []):
+    if r.get("source") != "typed":
+        continue
+    try:
+        at = parse(r["at"])
+    except Exception:
+        continue
+    p = r.get("percent")
+    if abs((at - t1).total_seconds()) < 3600 and p is not None and abs(p - 30) < 0.001 and i30 is None:
+        i30 = i
+        ids.append(r["id"])
+    if abs((at - t2).total_seconds()) < 3600 and p is not None and abs(p - 45) < 0.001 and i45 is None:
+        i45 = i
+        ids.append(r["id"])
+assert i30 is not None and i45 is not None and i30 < i45, (i30, i45)
+for x in ids:
+    print(x)
+' 2>/dev/null || true)
+if [[ -n "$UX_IDS" ]]; then
+  while IFS= read -r UX_ID; do
+    [[ -n "$UX_ID" ]] && add_cleanup usage "$UX_ID"
+  done <<< "$UX_IDS"
+fi
+if [[ $(printf '%s\n' "$UX_IDS" | grep -c . || true) -ge 2 ]]; then
+  ok "usage readings: GET /api/usage/readings lists both new readings (typed, oldest first)"
+else
+  ko "usage readings: list does not carry both added readings in order: $(echo "$UX_LIST" | head -c 240)"
+fi
+UX_A=$(ux_adv "$BASE/api/usage/advice")
+if echo "$UX_A" | UX_EXT="$UX_EXT" python3 -c '
+import json, os, sys
+a = json.load(sys.stdin)["advice"]
+assert not a.get("needs"), "expected numbers after adding readings, got needs=%r" % a.get("needs")
+assert (a["verdict"] == "over") == (a["projected_end_recent"] > a["ceiling"]), (a["verdict"], a["projected_end_recent"], a["ceiling"])
+va = a.get("verdict_avg")
+if va in ("within", "over"):
+    assert (va == "over") == (a["projected_end_avg"] > a["ceiling"]), (va, a["projected_end_avg"], a["ceiling"])
+rows = a["by_lanes"]
+assert isinstance(rows, list) and len(rows) >= 1, rows
+assert rows[0]["lanes"] == 0 and rows[-1]["lanes"] == a["max_lanes"], (a["max_lanes"], len(rows))
+assert a["chosen"]["lanes"] == a["lanes"] and a["lanes"] <= a["max_lanes"], (a["chosen"], a["lanes"])
+assert a["advice"]["headline"], "no headline"
+if not os.environ.get("UX_EXT"):
+    assert a["max_lanes"] == 3 and len(rows) == a["max_lanes"] + 1, (a["max_lanes"], len(rows))
+' 2>/dev/null; then
+  ok "usage advice: verdict is within/over and self-consistent, by_lanes has one row per lane count, headline set"
+else
+  ko "usage advice: verdict/by_lanes not as expected: $(echo "$UX_A" | head -c 240)"
+fi
+UX_PU=$(ux_adv "$BASE/api/usage/advice?policy=use-all")
+UX_PP=$(ux_adv "$BASE/api/usage/advice?policy=pace")
+UX_PF=$(ux_adv "$BASE/api/usage/advice?policy=finish-early")
+if echo "$UX_PU" | UX_PP="$UX_PP" UX_PF="$UX_PF" python3 -c '
+import json, os, sys
+du = json.load(sys.stdin)["advice"]
+dp = json.loads(os.environ["UX_PP"])["advice"]
+df = json.loads(os.environ["UX_PF"])["advice"]
+# The policy picks only the target/lanes advice; the numbers must be
+# identical across all three calls on the same readings.
+assert (du["percent"], du["recent_burn_per_24h"], du["ceiling"]) == (dp["percent"], dp["recent_burn_per_24h"], dp["ceiling"]) == (df["percent"], df["recent_burn_per_24h"], df["ceiling"]), "policy changed the numbers"
+assert du["advice"]["policy"] == "use-all" and dp["advice"]["policy"] == "pace" and df["advice"]["policy"] == "finish-early"
+# finish-early runs all lanes and reports when the work finishes;
+assert df["advice"]["lanes_suggested"] == df["max_lanes"], (df["advice"], df["max_lanes"])
+assert df["advice"].get("finish") is None or isinstance(df["advice"]["finish"], dict), df["advice"]
+# use-all / pace suggest the fitting lane count, never out of range.
+for x in (du, dp):
+    assert 1 <= x["advice"]["lanes_suggested"] <= x["max_lanes"], (x["advice"]["lanes_suggested"], x["max_lanes"])
+for x in (du, dp, df):
+    assert x["advice"]["headline"], x["advice"]
+' 2>/dev/null; then
+  ok "usage policy: use-all / pace / finish-early override per call (labels, lanes, headline), numbers do not move"
+else
+  ko "usage policy: override not honored correctly (use-all=$(echo "$UX_PU" | head -c 120) ... pace=$(echo "$UX_PP" | head -c 120) ... finish-early=$(echo "$UX_PF" | head -c 120) ...)"
+fi
+UX_VR=$(ux_adv "$BASE/api/usage/advice?variant=lane-planner")
+UX_VB=$(curl "${curl_args[@]}" -s -o "$TMPD/ux_bogus.json" -w '%{http_code}' "$BASE/api/usage/advice?variant=bogus" 2>/dev/null || echo 000)
+if echo "$UX_VR" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["variant"] == "lane-planner", d["variant"]
+assert d["advice"]["advice"]["headline"], "no headline"
+' 2>/dev/null && [[ "$UX_VB" == "400" ]]; then
+  ok "usage variant: ?variant=lane-planner accepted and echoed; ?variant=bogus refused with 400"
+else
+  ko "usage variant: lane-planner response=$(echo "$UX_VR" | head -c 160) bogus_status=$UX_VB"
+fi
+if echo "$UX_A" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+comm = d["text"]["comm"]
+assert comm.strip(), "empty comm text"
+lines = comm.splitlines()
+assert all(len(l) <= 50 for l in lines), max(len(l) for l in lines)
+v = d["advice"].get("verdict")
+if v in ("within", "over"):
+    label = "over budget" if v == "over" else "within budget"
+    assert label in comm, label
+' 2>/dev/null; then
+  ok "usage comm path: text.comm renders (<= 50 columns) and carries the verdict"
+else
+  ko "usage comm path: text.comm missing, too wide or without the verdict: $(echo "$UX_A" | head -c 240)"
+fi
+UX_EC1=$(curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d '{"points":80}' "$BASE/api/usage/extra-credit" 2>/dev/null || true)
+UX_AC=$(ux_adv "$BASE/api/usage/advice")
+if echo "$UX_EC1" | grep -q '"ok":true' && echo "$UX_AC" | UX_CEIL0="$UX_CEIL0" python3 -c '
+import json, os, sys
+a = json.load(sys.stdin)["advice"]
+assert abs(a["extra_credit_points"] - 80) < 0.001, a["extra_credit_points"]
+assert abs(a["ceiling"] - (float(os.environ["UX_CEIL0"]) + 80)) < 0.001, (a["ceiling"], os.environ["UX_CEIL0"])
+' 2>/dev/null; then
+  ok "usage extra credit: PUT 80 points raises the ceiling by exactly 80 (was $UX_CEIL0, now $(echo "$UX_AC" | ux_num ceiling))"
+  UX_EC2=$(curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d "{\"points\": $UX_CRED0}" "$BASE/api/usage/extra-credit" 2>/dev/null || true)
+  UX_AR=$(ux_adv "$BASE/api/usage/advice")
+  if echo "$UX_EC2" | grep -q '"ok":true' && echo "$UX_AR" | UX_CEIL0="$UX_CEIL0" python3 -c '
+import json, os, sys
+a = json.load(sys.stdin)["advice"]
+assert abs(a["ceiling"] - float(os.environ["UX_CEIL0"])) < 0.001, (a["ceiling"], os.environ["UX_CEIL0"])
+' 2>/dev/null; then
+    ok "usage extra credit: restored to the pre-smoke value ($UX_CRED0 points, ceiling back to $UX_CEIL0)"
+  else
+    ko "usage extra credit: restore failed (ceiling=$(echo "$UX_AR" | ux_num ceiling), wanted $UX_CEIL0)"
+  fi
+else
+  ko "usage extra credit: PUT 80 points did not raise the ceiling by 80 (was $UX_CEIL0 => $(echo "$UX_AC" | ux_num ceiling)): $UX_EC1"
+fi
+UX_PS_BODY="$TMPD/ux_pasted"
+UX_PS=$(curl "${curl_args[@]}" -s -o "$UX_PS_BODY" -w '%{http_code}' -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T2\",\"percent\":10,\"source\":\"pasted\"}" "$BASE/api/usage/readings" 2>/dev/null || echo 000)
+if [[ "$UX_PS" == "501" ]]; then
+  ok "usage readings source gate: source: pasted answers 501 Not Implemented (not worked around)"
+else
+  ko "usage readings source gate: expected 501 for source: pasted, got $UX_PS: $(head -c 160 "$UX_PS_BODY" 2>/dev/null)"
+fi
+UX_CONF0=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
+UX_V0=$(echo "$UX_CONF0" | python3 -c 'import json, sys; print(json.load(sys.stdin)["usage"]["calculator"]["variant"] or "all")' 2>/dev/null || true)
+UX_V0=${UX_V0:-all}
+add_cleanup usage-variant "$UX_V0"
+UX_CONF1=$(curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d '{"usage.calculator.variant":"burn-ledger"}' "$BASE/api/config" 2>/dev/null || true)
+UX_CONF2=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
+UX_ADV=$(ux_adv "$BASE/api/usage/advice")
+if echo "$UX_CONF2" | python3 -c 'import json, sys; assert json.load(sys.stdin)["usage"]["calculator"]["variant"] == "burn-ledger"' 2>/dev/null \
+   && echo "$UX_ADV" | python3 -c 'import json, sys; assert json.load(sys.stdin)["variant"] == "burn-ledger"' 2>/dev/null; then
+  ok "usage config round-trip: usage.calculator.variant PUT lands in GET /api/config and applies live to advice"
+  UX_V0PUT=$(curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.variant\":\"$UX_V0\"}" "$BASE/api/config" 2>/dev/null || true)
+  UX_CONF3=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
+  if echo "$UX_CONF3" | UX_V0="$UX_V0" python3 -c 'import json, os, sys; assert (json.load(sys.stdin)["usage"]["calculator"]["variant"] or "all") == os.environ["UX_V0"]' 2>/dev/null; then
+    ok "usage config round-trip: variant restored to the pre-smoke value ($UX_V0)"
+  else
+    ko "usage config round-trip: variant not restored to $UX_V0: $(echo "$UX_CONF3" | head -c 160)"
+  fi
+else
+  ko "usage config round-trip: variant set/change not visible or live: conf=$(echo "$UX_CONF2" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("usage", {}))' 2>/dev/null || echo ?) adv=$(echo "$UX_ADV" | head -c 120)"
+fi
+if [[ -z "${DW_BASE:-}" && -n "${DW_CLI:-}" ]]; then
+  UX_CLI=$($DW_CLI usage advice 2>&1 | head -c 2000 || true)
+  if echo "$UX_CLI" | python3 -c '
+import sys
+out = sys.stdin.read()
+assert out.strip(), "empty output"
+assert ("over budget" in out) or ("within budget" in out) or "no recent readings" in out, out[:200]
+' 2>/dev/null; then
+    ok "usage CLI: datawatch usage advice renders the verdict (operator-readable)"
+  else
+    ko "usage CLI: output did not render a verdict: $(echo "$UX_CLI" | head -c 240)"
+  fi
+else
+  skip "usage CLI: external daemon mode (DW_BASE), CLI runs against the base daemon there"
 fi
 
 # ---------------------------------------------------------------------------
