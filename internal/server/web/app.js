@@ -3058,6 +3058,7 @@ function renderSessionsView() {
   if (state.sessionWatchFilter) {
     pool = pool.filter(s => state.watchedSessions.has(s.full_id || s.id)); // GH#172 D61
   }
+  pool = _sessionTagFilter(pool);
   const visible = sortSessionsByOrder(pool);
   // Cache the done subset of the visible (filtered) set so selectAllInactive
   // and the select bar always operate on what the user can actually see.
@@ -36941,6 +36942,25 @@ function _tagBrowseMatches(set, tagIds, mode) {
   return mode === 'all' ? tagIds.every(id => set.has(id)) : tagIds.some(id => set.has(id));
 }
 
+// _sessionTagFilter keeps the sessions that pass the session tag selection. A
+// session sits under its own tags plus the ones it inherited, the same chips the
+// list shows. Selected IDs the registry does not hold are ignored, so an unloaded
+// registry or a deleted tag never hides a session. The session objects are kept.
+function _sessionTagFilter(sessions) {
+  const sel = _tagBrowse.session.sel;
+  if (!sel || !sel.length) return sessions;
+  const tree = _tagBrowseTree(_tagsState.list);
+  const tagIds = sel.filter(id => tree.byId[id]);
+  if (!tagIds.length) return sessions;
+  const mode = _tagBrowseMode('session');
+  return sessions.filter(s => {
+    const own = Array.isArray(s.tags) ? s.tags : [];
+    const inherited = Array.isArray(s.inherited_tags) ? s.inherited_tags : [];
+    const set = _tagBrowseItemSet({ tags: own.concat(inherited) }, tree);
+    return _tagBrowseMatches(set, tagIds, mode);
+  });
+}
+
 // _tagBrowseFilter keeps the items that pass every facet: the tag selection (ANY
 // or ALL), the backend and the status. Values inside one facet are OR-ed and the
 // facets are AND-ed. An empty facet passes everything.
@@ -37148,6 +37168,7 @@ function _tagBrowseSave(scope) {
 const _tagBrowse = {
   automata: _tagBrowseLoad('automata'),
   automation: _tagBrowseLoad('automation'),
+  session: _tagBrowseLoad('session'),
   cfg: { defaultMode: 'any', directCounts: false, defaultView: 'auto', attentionStatuses: ['blocked', 'needs_review', 'paused'], loaded: false },
   layout: '',
 };
@@ -37627,6 +37648,11 @@ function _tagFacetsRefresh(scope) {
 
 // _tagBrowseRepaint redraws a scope's list and its facets.
 function _tagBrowseRepaint(scope) {
+  if (scope === 'session') {
+    renderSessionsView();
+    if (typeof _sessionTagMenuRefresh === 'function') _sessionTagMenuRefresh();
+    return;
+  }
   if (scope === 'automation') _automationRenderCards();
   else _automataRenderCards();
   _tagFacetsRefresh(scope);
