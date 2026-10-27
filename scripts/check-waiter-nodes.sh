@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # scripts/check-waiter-nodes.sh — for a running daemon, report the node each
 # waiting capacity request is bound to, and flag the case where every waiter of
-# a multi-node backend sits on one node while another candidate node is free.
+# a multi-node backend sits on one node while another candidate node is free. It
+# also flags any node holding more engines than its limit, waiters or not.
 #
 # Usage:
 #   scripts/check-waiter-nodes.sh [--help]
@@ -25,14 +26,24 @@
 # bound yet; it prints node=- and lists its candidates, and is counted as
 # "unbound" in the summary. It is never assumed to sit on the first candidate.
 #
+# Over-limit nodes: independent of any waiter, every node:<name> pool whose limit
+# is above 0 and whose held + external count is above that limit prints
+#   OVERLIMIT: node:<name> holds <held+external> of <limit> engines (held=<h> external=<e>)
+# followed by one indented line per lease naming that pool:
+#   holder=<holder> session=<session_id or -> model=<model or -> node=<node or ->
+# A node at or under its limit, a node with limit 0 (unlimited) and any non-node
+# pool print nothing. These lines follow the waiter report and any SYMPTOM line.
+#
 # Model: queued requests carry no model in the response. The column shows the
 # waiter's own model when present, else the model of a running lease held by the
 # same holder, else "-".
 #
 # Exit status: 0 normally, 2 when, for some backend whose waiters name two or
 # more candidate nodes in all, every waiter is bound and all to the same node
-# while another candidate node has free capacity (the original symptom). A
-# backend with any unbound waiter is never flagged. 1 on a usage or fetch error.
+# while another candidate node has free capacity (the original symptom), and also
+# 2 once per OVERLIMIT node, even when nothing is waiting. A backend with any
+# unbound waiter is never flagged for the first symptom. 1 on a usage or fetch
+# error.
 
 set -euo pipefail
 
@@ -104,7 +115,17 @@ analyse_jq() {
           | select($fo | length > 0)
           | {line: "SYMPTOM: every \($g[0].backend) waiter is bound to \($bn[0]) while \($fo | join(",")) has free capacity"}
         ] as $hits
-        | ($hits[] | .line), "@@SYMPTOMS=\($hits | length)")'
+      | def dash($v): if ($v // "") == "" then "-" else $v end;
+        [ $root | .pools[]?
+          | select((.name // "" | startswith("node:")) and (.limit // 0) > 0
+                   and ((.held // 0) + (.external // 0)) > .limit)
+          | .name as $n
+          | "OVERLIMIT: \($n) holds \((.held // 0) + (.external // 0)) of \(.limit) engines (held=\(.held // 0) external=\(.external // 0))",
+            ($root | .leases[]? | select(any(.pools[]?; . == $n))
+              | "  holder=\(dash(.holder)) session=\(dash(.session_id)) model=\(dash(.model)) node=\(dash(.node))")
+        ] as $ol
+      | ($hits[] | .line), $ol[],
+        "@@SYMPTOMS=\($hits | length + ($ol | map(select(startswith("OVERLIMIT:"))) | length))")'
 }
 
 analyse_py() {
@@ -158,6 +179,21 @@ for b in sorted({x["backend"] for x in w}):
     if fo:
         hits += 1
         print("SYMPTOM: every %s waiter is bound to %s while %s has free capacity" % (b, bn, ",".join(fo)))
+def dash(v):
+    return v or "-"
+for p in d.get("pools") or []:
+    name = p.get("name") or ""
+    lim = p.get("limit") or 0
+    held = p.get("held") or 0
+    ext = p.get("external") or 0
+    if not name.startswith("node:") or lim <= 0 or held + ext <= lim:
+        continue
+    hits += 1
+    print("OVERLIMIT: %s holds %d of %d engines (held=%d external=%d)" % (name, held + ext, lim, held, ext))
+    for l in d.get("leases") or []:
+        if name in (l.get("pools") or []):
+            print("  holder=%s session=%s model=%s node=%s" % (
+                dash(l.get("holder")), dash(l.get("session_id")), dash(l.get("model")), dash(l.get("node"))))
 print("@@SYMPTOMS=%d" % hits)
 '
 }
