@@ -115,14 +115,14 @@ func apiGzipCompressibleType(ct string) bool {
 	return strings.HasPrefix(mt, "application/") && strings.HasSuffix(mt, "+json")
 }
 
-// setSafeContentType gives a response that has no Content-Type an explicit
-// one from the body's first bytes. Types a browser would render as markup
-// (HTML, XML) are replaced with text/plain, so a body that echoes request
-// input is never served as a document. Responses that already carry a
-// Content-Type or Content-Encoding, or have no body yet, are left alone.
-func setSafeContentType(h http.Header, body []byte) {
+// safeContentType returns the Content-Type to set for a response that has
+// none yet, taken from the body's first bytes. Types a browser would render
+// as markup (HTML, XML) become text/plain, so a body that echoes request
+// input is never served as a document. It returns "" for a response that
+// already carries a Content-Type or Content-Encoding, or has no body yet.
+func safeContentType(h http.Header, body []byte) string {
 	if len(body) == 0 || h.Get("Content-Type") != "" || h.Get("Content-Encoding") != "" {
-		return
+		return ""
 	}
 	ct := http.DetectContentType(body)
 	if mt, _, err := mime.ParseMediaType(ct); err == nil {
@@ -131,7 +131,14 @@ func setSafeContentType(h http.Header, body []byte) {
 			ct = "text/plain; charset=utf-8"
 		}
 	}
-	h.Set("Content-Type", ct)
+	return ct
+}
+
+// setSafeContentType sets the type safeContentType picks, if any.
+func setSafeContentType(h http.Header, body []byte) {
+	if ct := safeContentType(h, body); ct != "" {
+		h.Set("Content-Type", ct)
+	}
 }
 
 // apiGzipWriter buffers the start of a response until it can decide
@@ -181,7 +188,7 @@ func (w *apiGzipWriter) Write(b []byte) (int, error) {
 		return w.gz.Write(b)
 	}
 	if w.committed {
-		return w.rw.Write(b)
+		return w.forward(b)
 	}
 	w.buf = append(w.buf, b...)
 	if w.noGzip {
@@ -264,8 +271,24 @@ func (w *apiGzipWriter) commitPassthrough() error {
 	}
 	buf := w.buf
 	w.buf = nil
-	_, err := w.rw.Write(buf)
+	_, err := w.forward(buf)
 	return err
+}
+
+// forward writes b to the underlying writer uncompressed. The type and
+// nosniff are pinned here, on the writer being written to: every caller has
+// normally set them already (commitPassthrough sniffs before the headers go
+// out), so these Sets only matter for a body that would otherwise reach
+// net/http's own sniffing, and they keep a Content-Type the handler set.
+func (w *apiGzipWriter) forward(b []byte) (int, error) {
+	h := w.rw.Header()
+	if h.Get("X-Content-Type-Options") == "" {
+		h.Set("X-Content-Type-Options", "nosniff")
+	}
+	if ct := safeContentType(h, b); ct != "" {
+		h.Set("Content-Type", ct)
+	}
+	return w.rw.Write(b)
 }
 
 // Flush implements http.Flusher. Flushing before the threshold commits

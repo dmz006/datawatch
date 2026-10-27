@@ -70,3 +70,23 @@ func TestSSEObserver_HTMLTypeIsReplaced(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want text/event-stream", got)
 	}
 }
+
+// Every write goes through the type pin, not only the first one: chunks
+// after the first keep the stream type and arrive unchanged.
+func TestSSEObserver_ChunkedWritesKeepTypeAndBytes(t *testing.T) {
+	rr := serveObserved(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		q := r.URL.Query().Get("q")
+		_, _ = io.WriteString(w, "data: "+q[:5])
+		_, _ = io.WriteString(w, q[5:]+"\n\n")
+		_, _ = io.WriteString(w, "data: second\n\n")
+	})
+	assertSSEHeaders(t, rr)
+	if got := rr.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("Content-Type = %q, want text/event-stream", got)
+	}
+	want := "data: " + sseReflected + "\n\ndata: second\n\n"
+	if got := rr.Body.String(); got != want {
+		t.Fatalf("body = %q, want %q", got, want)
+	}
+}

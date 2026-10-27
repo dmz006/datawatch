@@ -29,8 +29,8 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"log"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"runtime/debug"
@@ -70,8 +70,6 @@ type sseCloseObserver struct {
 	lastWrite  time.Time
 	firstWrite time.Time
 	writeErr   error // first error, recorded at most once
-
-	hardenOnce sync.Once // implicit-200 first Write path
 }
 
 // NewSSECloseObserver wraps w for the SSE session stream. Pass the
@@ -103,8 +101,17 @@ func (o *sseCloseObserver) hardenHeaders() {
 	}
 }
 
+// Write pins the content type on the writer it writes to, in this method
+// rather than only in WriteHeader: a handler that never calls WriteHeader
+// reaches its first Write with an implicit 200 and whatever type net/http
+// would sniff from the payload. After the headers are sent these Sets are
+// no-ops, and a non-HTML Content-Type the handler set is left as it is.
 func (o *sseCloseObserver) Write(p []byte) (int, error) {
-	o.hardenOnce.Do(o.hardenHeaders)
+	h := o.w.Header()
+	h.Set("X-Content-Type-Options", "nosniff")
+	if ct := strings.ToLower(h.Get("Content-Type")); ct == "" || strings.Contains(ct, "html") {
+		h.Set("Content-Type", "text/event-stream")
+	}
 	n, err := o.w.Write(p)
 	o.observe(n, err)
 	return n, err

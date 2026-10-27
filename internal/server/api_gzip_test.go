@@ -728,3 +728,67 @@ func TestAPIGzip_ExplicitStatusBeforeBodyStillNonHTML(t *testing.T) {
 		}
 	}
 }
+
+// A JSON body written in several chunks keeps its status, its handler-set
+// Content-Type and its exact bytes, compressed or not; the writes after the
+// first go through the already-committed path.
+func TestAPIGzip_ChunkedJSONKeepsStatusTypeAndBytes(t *testing.T) {
+	want := `{"q":"` + reflectedPayload + `","pad":"` + strings.Repeat("x", 3000) + `"}`
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		for i := 0; i < len(want); i += 700 {
+			end := i + 700
+			if end > len(want) {
+				end = len(want)
+			}
+			_, _ = io.WriteString(w, want[i:end])
+		}
+	})
+	for _, accept := range []string{"gzip", ""} {
+		rr := serveEcho(newAPIGzipHandler(fixedGzipSettings(true, 64), inner), accept)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("accept %q: status = %d, want %d", accept, rr.Code, http.StatusCreated)
+		}
+		if got := rr.Header().Get("Content-Type"); got != "application/json" {
+			t.Fatalf("accept %q: Content-Type = %q, want application/json", accept, got)
+		}
+		assertNotHTML(t, rr)
+		body := rr.Body.Bytes()
+		if accept == "gzip" {
+			if rr.Header().Get("Content-Encoding") != "gzip" {
+				t.Fatalf("Content-Encoding = %q, want gzip", rr.Header().Get("Content-Encoding"))
+			}
+			body = []byte(gunzip(t, body))
+		} else if rr.Header().Get("Content-Encoding") != "" {
+			t.Fatalf("no Accept-Encoding but Content-Encoding = %q", rr.Header().Get("Content-Encoding"))
+		}
+		if string(body) != want {
+			t.Fatalf("accept %q: body changed (got %d bytes, want %d)", accept, len(body), len(want))
+		}
+	}
+}
+
+// Without a handler-set type, a body that starts with markup is served as
+// plain text on every path and still decodes to the original bytes.
+func TestAPIGzip_MarkupBodyWithoutTypeDecodesToOriginal(t *testing.T) {
+	want := reflectedPayload + strings.Repeat("y", 3000)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, want[:10])
+		_, _ = io.WriteString(w, want[10:])
+	})
+	for _, min := range []int{0, 64, 1 << 20} {
+		rr := serveEcho(newAPIGzipHandler(fixedGzipSettings(true, min), inner), "gzip")
+		assertNotHTML(t, rr)
+		if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+			t.Fatalf("min %d: Content-Type = %q, want text/plain", min, ct)
+		}
+		body := rr.Body.Bytes()
+		if rr.Header().Get("Content-Encoding") == "gzip" {
+			body = []byte(gunzip(t, body))
+		}
+		if string(body) != want {
+			t.Fatalf("min %d: body changed (got %d bytes, want %d)", min, len(body), len(want))
+		}
+	}
+}
