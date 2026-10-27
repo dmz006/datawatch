@@ -4768,7 +4768,9 @@ rm -rf "$NAV_EVD"
 # ---------------------------------------------------------------------------
 H "80. Daemon restart matrix - in-flight work survives a restart (strict)"
 # Runs scripts/restart-matrix.sh --strict, one state at a time, for the rows
-# that must survive a daemon restart. The matrix starts its own throwaway
+# that must survive a daemon restart (worker-node-placement among them: two
+# pi-prompt workers on two compute nodes keep their node pools, lease nodes and
+# sessions across the restart). The matrix starts its own throwaway
 # daemons (own config, data dir, free ports, TLS off, own multiplexer socket
 # dir) and refuses to start when a target matches the production daemon, so
 # this section never touches this smoke's daemon or production. Rows still
@@ -4777,7 +4779,7 @@ H "80. Daemon restart matrix - in-flight work survives a restart (strict)"
 # Needs jq, curl, python3, tmux and git, and a daemon binary ($_DW_BIN). Each
 # state is bounded by SMOKE_RESTART_TIMEOUT (default 900s) through `timeout`
 # when available. SMOKE_RESTART_MATRIX=0 skips the whole section.
-RM_SURVIVE_STATES=(worker-running waiting-capacity waiting-external git-operation automation-branches scheduled-due websocket-clients)
+RM_SURVIVE_STATES=(worker-running waiting-capacity waiting-external git-operation automation-branches scheduled-due websocket-clients worker-node-placement)
 RM_PICK_STATES=(
   "planning|OPERATOR PICK: a planning PRD is reset to draft on restart and the operator re-plans; the fix is not chosen"
   "verify-script|OPERATOR PICK: the verification script is a daemon child that runs again after a restart; where it runs is not chosen"

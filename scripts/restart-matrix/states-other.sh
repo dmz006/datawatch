@@ -14,6 +14,8 @@
 #   automation-branches   an Automation runs an entry PRD, forks into two active PRD branches and joins them
 #   scheduled-due         a scheduled spawn comes due while the daemon is down
 #   websocket-clients     two WebSocket clients ride out the restart (scripts/restart-matrix/ws-client.py)
+#   worker-node-placement two pi-prompt workers each run on a different compute node; the node pools,
+#                         the leases' nodes and the sessions are the same after the restart
 #
 # Usage:
 #   scripts/restart-matrix/states-other.sh [--strict] [--only NAME[,NAME]] [--list] [--keep]
@@ -34,7 +36,7 @@ OT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=states-session.sh
 . "$OT_DIR/states-session.sh" # sc_* helpers: restart with snapshots, common criteria, finish
 
-OT_ALL_STATES=(waiting-capacity waiting-external final-gate git-operation automation-branches scheduled-due websocket-clients)
+OT_ALL_STATES=(waiting-capacity waiting-external final-gate git-operation automation-branches scheduled-due websocket-clients worker-node-placement)
 
 ot_usage() {
   sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed -E 's/^# ?//'
@@ -151,6 +153,68 @@ ot_ws_summary() {
       elif $e.ev == "gave_up" then .gave_up = true
       else . end)
     | del(.restarted)' "$1" 2>/dev/null || echo '{"before":0,"after":0,"reconnect_seconds":null,"gave_up":true}'
+}
+
+# ot_boot_pi NAME — fresh sandbox whose pi and pi-prompt backends run a fake pi, with
+# two compute nodes (one worker slot each) and the LLM entries that list them.
+ot_boot_pi() {
+  unset RM_MAX_SESSIONS
+  RM_PI_NODES=1
+  rm_sandbox_new "$1"
+  unset RM_PI_NODES
+  rm_pi_nodes_setup
+  rm_daemon_start
+  rm_pi_nodes_register
+}
+
+# ot_prd_create_pi DIR — creates a PRD whose worker runs on pi-prompt with the pinned
+# model; prints its id.
+ot_prd_create_pi() {
+  local body
+  body="$(jq -n --arg dir "$1" --arg model "$RM_PI_MODEL" '{spec: "Restart matrix probe: write a result file.", project_dir: $dir, backend: "pi-prompt", model: $model}')"
+  rm_api POST /api/autonomous/prds "$body" | jq -r '.id // .prd.id // empty'
+}
+
+# ot_node_held NODE — what GET /api/capacity says node:<NODE> holds.
+ot_node_held() { rm_api GET /api/capacity | jq -r --arg p "node:$1" '[.pools[]? | select(.name == $p) | .held][0] // 0'; }
+
+# ot_each_node_holds_one — both node pools hold exactly one lease.
+ot_each_node_holds_one() { [[ "$(ot_node_held "$RM_NODE_A")" == 1 && "$(ot_node_held "$RM_NODE_B")" == 1 ]]; }
+
+# ot_leases_of A B — the ledger has a lease for each of the two tasks.
+ot_leases_of() {
+  rm_api GET /api/capacity | jq -e --arg a "$1" --arg b "$2" '[.leases[]?.holder] | (index($a) != null) and (index($b) != null)' >/dev/null
+}
+
+# ot_node_snapshot LABEL PRD_A PRD_B OUT — the usual snapshot of PRD A plus the placement
+# the restart must leave alone: every node pool (name, limit, held, holders), every lease's
+# node, the two workers' task and session ids, and the pi starts the fake pi recorded.
+ot_node_snapshot() {
+  local label="$1" a="$2" b="$3" out="$4" cap tasks
+  rm_snapshot "$label" "$a" "$out"
+  cap="$(rm_api GET /api/capacity | jq -c . 2>/dev/null || echo '{}')"
+  tasks="$(jq -nc --argjson a "$(rm_task_json "$a")" --argjson b "$(rm_task_json "$b")" '[$a, $b] | map({id: (.id // ""), status: (.status // ""), session_id: (.session_id // ""), retry_count: (.retry_count // 0)})')"
+  jq -c --argjson cap "$cap" --argjson tasks "$tasks" --argjson pi "$(rm_ctrl_count pi.starts)" '
+    . + {
+      node_pools: [$cap.pools[]? | select(.name | startswith("node:")) | {name, limit, held, holders: ((.holders // []) | sort)}] | sort_by(.name),
+      leases: [$cap.leases[]? | {holder, node: (.node // ""), node_unknown: (.node_unknown // false), session_id: (.session_id // "")}] | sort_by(.holder),
+      workers: $tasks,
+      pi_starts: $pi
+    }' "$out" >"$out.tmp" && mv "$out.tmp" "$out"
+}
+
+# ot_pi_pids — pid of every fake pi start recorded so far, one per line.
+ot_pi_pids() { sed -nE 's/.*pid=([0-9]+).*/\1/p' "$RM_CTRL/pi.starts" 2>/dev/null; }
+
+# ot_pi_all_alive — every recorded fake pi is still running.
+ot_pi_all_alive() {
+  local p n=0
+  while IFS= read -r p; do
+    [[ -n "$p" ]] || continue
+    n=$((n + 1))
+    rm_pid_alive "$p" || return 1
+  done < <(ot_pi_pids)
+  ((n > 0))
 }
 
 # ------------------------------------------------------------------ states ----
@@ -523,6 +587,86 @@ state_websocket_clients() {
   rm_check "no_client_gave_up" "$([[ "$(jq -r .gave_up <<<"$sum_one")" == false && "$(jq -r .gave_up <<<"$sum_two")" == false ]] && echo 0 || echo 1)" "gave up: one=$(jq -r .gave_up <<<"$sum_one") two=$(jq -r .gave_up <<<"$sum_two")"
   rm_check "messages_flow_after_reconnect" "$([[ "$(jq -r .after <<<"$sum_one")" -ge 1 && "$(jq -r .after <<<"$sum_two")" -ge 1 ]] && echo 0 || echo 1)" "messages after reconnect: one=$(jq -r .after <<<"$sum_one") two=$(jq -r .after <<<"$sum_two")"
   rm_state_end "$SC_BEFORE" "$SC_FINAL" "messages before/after the restart: one $(jq -r .before <<<"$sum_one")/$(jq -r .after <<<"$sum_one"), two $(jq -r .before <<<"$sum_two")/$(jq -r .after <<<"$sum_two"); events during the outage are not replayed"
+}
+
+# Two pi-prompt workers, placed by the capacity ledger on two different compute nodes (one
+# slot each), are running when the daemon restarts. The fake pi processes live in the
+# multiplexer and survive; the new daemon adopts their sessions. Each node's pool must still
+# hold exactly one worker, each lease must name the node it had, no lease may lose its node
+# (node_unknown), and neither worker may be started again. The nodes' addresses are loopback
+# stubs that only answer the model residency check (see rm_pi_nodes_setup).
+state_worker_node_placement() {
+  local name=worker-node-placement a b
+  SC_PRD=""
+  rm_state_begin "$name" "two pi-prompt workers, each on a different compute node, ride out a daemon restart"
+  ot_boot_pi "$name" || { sc_abort_state "$name" "sandbox daemon, compute nodes or LLM entries did not come up"; return; }
+  echo 1 >"$RM_CTRL/planner_delay"
+  echo 300 >"$RM_CTRL/pi_seconds"
+
+  rm_write_plan ""
+  SC_PRD="$(ot_prd_create_pi "$RM_PROJECT")"
+  a="$SC_PRD"
+  ot_plan "$a" || { sc_abort_state "$name" "PRD A never reached review (status: $(rm_prd_status "$a"))"; return; }
+  ot_project_new "$RM_SB/project-b"
+  rm_write_plan ""
+  b="$(ot_prd_create_pi "$RM_SB/project-b")"
+  ot_plan "$b" || { sc_abort_state "$name" "PRD B never reached review (status: $(rm_prd_status "$b"))"; return; }
+
+  ot_run "$a"
+  if ! rm_wait_until 120 sc_ctrl_at_least pi.starts 1; then
+    sc_abort_state "$name" "PRD A's pi worker never started (task status: $(rm_task_field "$a" status), wait reason: $(ot_task_wait_reason "$a"))"
+    return
+  fi
+  ot_run "$b"
+  if ! rm_wait_until 120 sc_ctrl_at_least pi.starts 2; then
+    sc_abort_state "$name" "PRD B's pi worker never started (task status: $(rm_task_field "$b" status), wait reason: $(ot_task_wait_reason "$b"))"
+    return
+  fi
+  if ! rm_wait_until 60 ot_each_node_holds_one; then
+    sc_abort_state "$name" "the workers are not one per node: $RM_NODE_A holds $(ot_node_held "$RM_NODE_A"), $RM_NODE_B holds $(ot_node_held "$RM_NODE_B")"
+    return
+  fi
+  local task_a task_b
+  task_a="$(rm_task_field "$a" id)"
+  task_b="$(rm_task_field "$b" id)"
+
+  SC_BEFORE="$RM_SNAP/$name.before.json"
+  ot_node_snapshot "$name-before" "$a" "$b" "$SC_BEFORE"
+  local pids_before
+  pids_before="$(ot_pi_pids | paste -sd, -)"
+
+  rm_daemon_restart || { sc_abort_state "$name" "sandbox daemon did not come back"; return; }
+  # the new daemon rebuilds the ledger from the live sessions; wait for both leases, then
+  # let any later correction settle before the snapshot
+  rm_wait_until 90 ot_leases_of "$task_a" "$task_b" || true
+  sleep 8
+  SC_AFTER_RESTART="$RM_SNAP/$name.after-restart.json"
+  ot_node_snapshot "$name-after-restart" "$a" "$b" "$SC_AFTER_RESTART"
+  SC_FINAL="$SC_AFTER_RESTART"
+  local alive=1
+  ot_pi_all_alive && alive=0
+  : >"$RM_CTRL/pi.release" # let the fake workers end before the sandbox is torn down
+
+  local before="$SC_BEFORE" after="$SC_AFTER_RESTART" pools_b pools_a nodes_b nodes_a
+  rm_check "restart_exited_on_term" "$([[ "${RM_RESTART_TERM_CLEAN:-}" == true ]] && echo 0 || echo 1)" "daemon pid ${RM_RESTART_OLD_PID:-?} down in ${RM_RESTART_DOWN_SECONDS:-?}s"
+  rm_check "daemon_replaced" "$([[ -n "${RM_RESTART_NEW_PID:-}" && "${RM_RESTART_NEW_PID:-}" != "${RM_RESTART_OLD_PID:-}" ]] && echo 0 || echo 1)" "pid ${RM_RESTART_OLD_PID:-?} -> ${RM_RESTART_NEW_PID:-?}"
+
+  pools_b="$(jq -c '[.node_pools[] | "\(.name) limit=\(.limit) held=\(.held) holders=\(.holders | join("+"))"]' "$before")"
+  pools_a="$(jq -c '[.node_pools[] | "\(.name) limit=\(.limit) held=\(.held) holders=\(.holders | join("+"))"]' "$after")"
+  rm_check "placed_one_per_node_before" "$(jq -e --arg a "node:$RM_NODE_A" --arg b "node:$RM_NODE_B" '[.node_pools[] | select(.name == $a or .name == $b) | select(.limit == 1 and .held == 1)] | length == 2' "$before" >/dev/null && echo 0 || echo 1)" "before: $pools_b"
+  rm_check "node_pools_unchanged" "$([[ "$(jq -c .node_pools "$before")" == "$(jq -c .node_pools "$after")" ]] && echo 0 || echo 1)" "before: $pools_b; after: $pools_a"
+  rm_check "each_node_still_holds_one" "$(jq -e --arg a "node:$RM_NODE_A" --arg b "node:$RM_NODE_B" '[.node_pools[] | select(.name == $a or .name == $b) | select(.held == 1)] | length == 2' "$after" >/dev/null && echo 0 || echo 1)" "after: $pools_a"
+
+  nodes_b="$(jq -c '[.leases[] | "\(.holder)@\(.node)"]' "$before")"
+  nodes_a="$(jq -c '[.leases[] | "\(.holder)@\(.node)"]' "$after")"
+  rm_check "lease_nodes_unchanged" "$([[ "$(jq -c '[.leases[] | {holder, node}]' "$before")" == "$(jq -c '[.leases[] | {holder, node}]' "$after")" ]] && echo 0 || echo 1)" "before: $nodes_b; after: $nodes_a"
+  rm_check "no_lease_node_unknown" "$(jq -e '[.leases[] | select(.node_unknown)] | length == 0' "$after" >/dev/null && echo 0 || echo 1)" "leases flagged node_unknown after: $(jq -r '[.leases[] | select(.node_unknown) | .holder] | join(",") | if . == "" then "none" else . end' "$after")"
+
+  rm_check "worker_sessions_unchanged" "$([[ "$(jq -c '[.workers[] | .session_id]' "$before")" == "$(jq -c '[.workers[] | .session_id]' "$after")" && "$(jq -r '[.workers[] | select(.session_id == "")] | length' "$before")" == 0 ]] && echo 0 || echo 1)" "worker session ids before $(jq -c '[.workers[] | .session_id]' "$before"), after $(jq -c '[.workers[] | .session_id]' "$after")"
+  rm_check "workers_not_started_twice" "$([[ "$(jq -r .pi_starts "$before")" == 2 && "$(jq -r .pi_starts "$after")" == 2 ]] && echo 0 || echo 1)" "fake pi starts: $(jq -r .pi_starts "$before") -> $(jq -r .pi_starts "$after")"
+  rm_check "worker_processes_survived" "$alive" "fake pi pids $pids_before alive after the restart: $([[ $alive == 0 ]] && echo yes || echo no)"
+  rm_check "retry_counts_unchanged" "$([[ "$(jq -c '[.workers[] | .retry_count]' "$before")" == "$(jq -c '[.workers[] | .retry_count]' "$after")" ]] && echo 0 || echo 1)" "retries $(jq -c '[.workers[] | .retry_count]' "$before") -> $(jq -c '[.workers[] | .retry_count]' "$after")"
+  rm_state_end "$SC_BEFORE" "$SC_FINAL" "PRD A and PRD B each ran a pi-prompt worker on a different one-slot node"
 }
 
 # --------------------------------------------------------------------- main ----
