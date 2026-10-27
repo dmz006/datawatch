@@ -127,8 +127,12 @@ func TestAllowedProjectRoots_AlwaysIncludesWorktreeBaseAndWorkspaceRoot(t *testi
 	cfg.Autonomous.WorktreeDir = ""
 	cfg.Session.WorkspaceRoot = ""
 	cfg.Server.AllowedProjectRoots = nil
-	if got := cfg.AllowedProjectRoots(); len(got) != 1 || got[0] != config.DefaultPRDWorktreeDir() {
-		t.Fatalf("with nothing configured the default worktree base alone is allowed, got %v", got)
+	want := config.DefaultPRDWorktreeDir()
+	if ws := config.DefaultWorkspaceRoot(); ws != "" {
+		want += "," + ws
+	}
+	if got := strings.Join(cfg.AllowedProjectRoots(), ","); got != want {
+		t.Fatalf("with nothing configured the worktree base and default workspace are allowed, got %s want %s", got, want)
 	}
 }
 

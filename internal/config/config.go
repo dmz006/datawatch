@@ -4434,14 +4434,30 @@ func DefaultPRDWorktreeDir() string {
 	return filepath.Join(home, ".datawatch", "prd-worktrees")
 }
 
+// DefaultWorkspaceRoot is the folder project directories may lie under when
+// session.workspace_root is not set: "workspace" in the user's home
+// directory. It is empty when the home directory cannot be determined.
+func DefaultWorkspaceRoot() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, "workspace")
+}
+
 // AllowedProjectRoots returns every directory a request-supplied project
 // directory may lie under: the PRD worktree base, the session workspace root
-// (when set) and server.allowed_project_roots. The first two are always in
-// the list, whatever else is configured, and whether or not an API token is
-// set. A "~" prefix in a configured root is expanded to the home directory.
+// (the default workspace folder when session.workspace_root is empty) and
+// server.allowed_project_roots. The first two are always in the list,
+// whatever else is configured, and whether or not an API token is set. A "~"
+// prefix in a configured root is expanded to the home directory.
 func (c *Config) AllowedProjectRoots() []string {
 	if c == nil {
-		return []string{DefaultPRDWorktreeDir()}
+		roots := []string{DefaultPRDWorktreeDir()}
+		if ws := DefaultWorkspaceRoot(); ws != "" {
+			roots = append(roots, ws)
+		}
+		return roots
 	}
 	base := strings.TrimSpace(c.Autonomous.WorktreeDir)
 	if base == "" {
@@ -4450,6 +4466,8 @@ func (c *Config) AllowedProjectRoots() []string {
 	roots := []string{expandHome(base)}
 	if ws := strings.TrimSpace(c.Session.WorkspaceRoot); ws != "" {
 		roots = append(roots, expandHome(ws))
+	} else if ws := DefaultWorkspaceRoot(); ws != "" {
+		roots = append(roots, ws)
 	}
 	for _, r := range c.Server.AllowedProjectRoots {
 		if r = strings.TrimSpace(r); r != "" {
