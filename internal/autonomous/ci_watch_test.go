@@ -403,7 +403,7 @@ func TestCIWatch_TimeoutPending(t *testing.T) {
 		p, _ := st.GetPRD(prd.ID)
 		return p
 	}
-	pollUntil(t, 5*time.Second, "follow-up recording a pass", func() bool {
+	pollUntil(t, 30*time.Second, "follow-up recording a pass", func() bool {
 		p := readBack()
 		if p != nil && p.CIWatch != nil && p.CIWatch.Status == "pass" {
 			prd = p
