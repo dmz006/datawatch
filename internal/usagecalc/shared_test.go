@@ -22,6 +22,8 @@ type fakeKeeper struct {
 	readings []Reading
 	credit   float64
 	gets     int
+	// legacy answers POST with the old bare 204 confirmation (no body).
+	legacy bool
 	hops     []string
 	tokens   []string
 	requests []string
@@ -90,6 +92,15 @@ func (k *fakeKeeper) handler(w http.ResponseWriter, r *http.Request) {
 			rd.ID = id
 		}
 		k.readings = append(k.readings, rd)
+		if k.legacy {
+			return // the old bare 204 confirmation, no body
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "reading": rd}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		return
 	case strings.HasPrefix(key, "DELETE /api/usage/readings/"):
 		id := strings.TrimPrefix(r.URL.Path, "/api/usage/readings/")
 		for i, rd := range k.readings {
@@ -235,8 +246,12 @@ func TestSharedSeriesKeeperIsSelf(t *testing.T) {
 
 	// Writes as keeper land in the local store.
 	third := Reading{At: storeTestNow, Percent: fptr(55), Source: SourceTyped}
-	if err := fx.series.AddReading(context.Background(), third); err != nil {
+	stored, err := fx.series.AddReading(context.Background(), third)
+	if err != nil {
 		t.Fatalf("AddReading: %v", err)
+	}
+	if stored.ID == "" || stored.At.IsZero() {
+		t.Fatalf("stored reading got %+v, want the id and time the store assigned", stored)
 	}
 	firstID := fx.store.Snapshot().Account.Readings[0].ID
 	if err := fx.series.DeleteReading(context.Background(), firstID); err != nil {
@@ -380,7 +395,7 @@ func TestSharedSeriesUnknownKeeper(t *testing.T) {
 
 	// Writes to an unknown keeper are refused and nothing lands on the local store.
 	reading := Reading{At: storeTestNow, Percent: fptr(1), Source: SourceTyped}
-	if err := fx.series.AddReading(context.Background(), reading); !errors.Is(err, ErrKeeperUnreachable) {
+	if _, err := fx.series.AddReading(context.Background(), reading); !errors.Is(err, ErrKeeperUnreachable) {
 		t.Fatalf("AddReading error = %v, want ErrKeeperUnreachable", err)
 	}
 	if err := fx.series.DeleteReading(context.Background(), seed.ID); !errors.Is(err, ErrKeeperUnreachable) {
@@ -399,12 +414,16 @@ func TestSharedSeriesWriteForwardedToKeeper(t *testing.T) {
 	fx := newSharedFixture(t, "alpha", "live", "tok")
 
 	reading := Reading{At: storeTestNow.Add(-1 * time.Hour), Percent: fptr(50), Source: SourceTyped}
-	if err := fx.series.AddReading(context.Background(), reading); err != nil {
+	stored, err := fx.series.AddReading(context.Background(), reading)
+	if err != nil {
 		t.Fatalf("AddReading: %v", err)
 	}
 	readings, _, requests := fx.keeper.state()
 	if len(readings) != 1 || !percentSame(readings[0].Percent, reading.Percent) {
 		t.Fatalf("keeper readings got %+v", readings)
+	}
+	if stored.ID == "" || stored.ID != readings[0].ID {
+		t.Fatalf("stored reading got %+v, want the keeper-assigned id %q", stored, readings[0].ID)
 	}
 	if len(requests) != 1 || !strings.Contains(requests[0], "POST /api/usage/readings") {
 		t.Fatalf("requests got %v", requests)
@@ -435,12 +454,33 @@ func TestSharedSeriesWriteForwardedToKeeper(t *testing.T) {
 	}
 }
 
+
+// TestSharedSeriesAddReadingOldKeeperShape: a keeper that answers the old bare
+// confirmation (204, no body) still confirms the write; the returned reading is
+// empty (the caller can find the stored one by a read), no error.
+func TestSharedSeriesAddReadingOldKeeperShape(t *testing.T) {
+	fx := newSharedFixture(t, "alpha", "live", "tok")
+	fx.keeper.legacy = true
+	reading := Reading{At: storeTestNow.Add(-1 * time.Hour), Percent: fptr(42), Source: SourceTyped}
+	stored, err := fx.series.AddReading(context.Background(), reading)
+	if err != nil {
+		t.Fatalf("AddReading against the old keeper shape: %v", err)
+	}
+	if stored.ID != "" {
+		t.Fatalf("stored id = %q, want empty (the old shape carries none)", stored.ID)
+	}
+	readings, _, requests := fx.keeper.state()
+	if len(readings) != 1 || !strings.Contains(requests[0], "POST /api/usage/readings") {
+		t.Fatalf("keeper got readings=%+v requests=%v", readings, requests)
+	}
+}
+
 func TestSharedSeriesWriteRefusedWhenKeeperUnreachable(t *testing.T) {
 	fx := newSharedFixture(t, "dead", "dead", "tok")
 	ctx := context.Background()
 	reading := Reading{At: storeTestNow, Percent: fptr(1), Source: SourceTyped}
 
-	if err := fx.series.AddReading(ctx, reading); !errors.Is(err, ErrKeeperUnreachable) {
+	if _, err := fx.series.AddReading(ctx, reading); !errors.Is(err, ErrKeeperUnreachable) {
 		t.Fatalf("AddReading error = %v, want ErrKeeperUnreachable", err)
 	}
 	if err := fx.series.DeleteReading(ctx, "whatever"); !errors.Is(err, ErrKeeperUnreachable) {
@@ -578,7 +618,7 @@ func TestSharedSeriesMalformedKeeperResponse(t *testing.T) {
 
 	// Writes to a denying keeper are refused; nothing lands locally.
 	reading := Reading{At: storeTestNow, Percent: fptr(3), Source: SourceTyped}
-	if err := corrupt.AddReading(context.Background(), reading); err == nil {
+	if _, err := corrupt.AddReading(context.Background(), reading); err == nil {
 		t.Fatal("AddReading should be refused")
 	}
 	if err := corrupt.DeleteReading(context.Background(), "seed-1"); err == nil {

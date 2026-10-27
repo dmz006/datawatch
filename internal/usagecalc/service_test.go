@@ -275,13 +275,19 @@ func TestServicePolicyOverrideChangesOnlyAdvice(t *testing.T) {
 		}
 	}
 
-	// An unknown policy keeps the default target instead of failing the call.
+	// A per-call policy that no variant recognizes is the caller's mistake: it is
+	// rejected, the REST layer answers 400 (smoke 82). The stored policy is a
+	// setting, so a retired value there still normalizes to the default.
 	res, err = f.svc.Advice(ctx, Options{Policy: "bogus"})
+	if err == nil || !strings.Contains(err.Error(), "unknown usage calculator policy") {
+		t.Fatalf("unknown policy: err=%v res=%v; want an unknown-policy selection error", err, res)
+	}
+	res, err = f.svc.Advice(ctx, Options{})
 	if err != nil {
-		t.Fatalf("Advice with unknown policy: %v", err)
+		t.Fatalf("no policy override: %v", err)
 	}
 	if res.Policy != PolicyUseAll {
-		t.Errorf("unknown policy: got %q; want the default %q", res.Policy, PolicyUseAll)
+		t.Errorf("no policy override: got %q; want the default %q", res.Policy, PolicyUseAll)
 	}
 }
 

@@ -199,15 +199,27 @@ func (s *Server) handleUsageReadingAdd(w http.ResponseWriter, r *http.Request) {
 			stored = &rec
 		}
 	} else {
-		err = series.AddReading(r.Context(), in)
+		// As a peer the keeper's answer carries the stored reading (id, final time).
+		// A keeper on the old {"ok":true} shape still confirms the write; the reply
+		// just omits the reading.
+		var rec usagecalc.Reading
+		rec, err = series.AddReading(r.Context(), in)
+		if err == nil {
+			stored = &rec
+		}
 	}
 	switch {
 	case err == nil:
+		w.Header().Set("Content-Type", "application/json")
 		if stored != nil {
 			s.auditUsageReadingAdded(r, *stored)
+			_ = json.NewEncoder(w).Encode(struct {
+				OK      bool               `json:"ok"`
+				Reading *usagecalc.Reading `json:"reading"`
+			}{true, stored})
+		} else {
+			_, _ = w.Write([]byte(`{"ok":true}`))
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true}`))
 	case errors.Is(err, usagecalc.ErrKeeperUnreachable):
 		http.Error(w, "usage series: the keeper refused or could not be reached; nothing was stored", http.StatusServiceUnavailable)
 	case errors.Is(err, usagecalc.ErrInvalidReading), errors.Is(err, usagecalc.ErrInvalidValue):

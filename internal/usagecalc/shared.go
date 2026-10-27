@@ -267,20 +267,36 @@ func (s *SharedSeries) fetchRecord(ctx context.Context, keeper, baseURL, token s
 	return nonNilRecord(rec), nil
 }
 
-// AddReading appends a reading to the series. As keeper the local store gets it; as a peer
-// the read is forwarded to the keeper by POST /api/usage/readings. Nothing is stored
-// locally when the keeper is unreachable: ErrKeeperUnreachable.
-func (s *SharedSeries) AddReading(ctx context.Context, r Reading) error {
+// AddReading appends a reading to the series and returns the stored reading, with the id
+// the store assigned. As keeper the local store gets it; as a peer the reading is
+// forwarded to the keeper by POST /api/usage/readings, which answers with the stored
+// reading (the wire shape the daemon's handler emits). Nothing is stored locally when the
+// keeper is unreachable: ErrKeeperUnreachable.
+func (s *SharedSeries) AddReading(ctx context.Context, r Reading) (Reading, error) {
 	if s.isKeeper() {
-		_, err := s.store.Append(r)
-		return err
+		return s.store.Append(r)
 	}
 	body, err := json.Marshal(r)
 	if err != nil {
-		return fmt.Errorf("usage series: encode the reading: %w", err)
+		return Reading{}, fmt.Errorf("usage series: encode the reading: %w", err)
 	}
-	_, err = s.writeToKeeper(ctx, http.MethodPost, "/api/usage/readings", map[string]string{"Content-Type": "application/json"}, body)
-	return err
+	respBody, err := s.writeToKeeper(ctx, http.MethodPost, "/api/usage/readings", map[string]string{"Content-Type": "application/json"}, body)
+	if err != nil {
+		return Reading{}, err
+	}
+	// A keeper without the field (the old {"ok":true} shape) still confirms the write.
+	var out struct {
+		Reading *Reading `json:"reading,omitempty"`
+	}
+	if len(respBody) > 0 {
+		if err := json.Unmarshal(respBody, &out); err != nil { // a non-JSON confirmation is still a success
+			out.Reading = nil
+		}
+	}
+	if out.Reading == nil {
+		return Reading{}, nil
+	}
+	return *out.Reading, nil
 }
 
 // DeleteReading removes a reading by ID. As keeper the local store loses it; as a peer the
@@ -319,11 +335,11 @@ func (s *SharedSeries) SetExtraCredit(ctx context.Context, points float64) error
 // writeToKeeper forwards a write to the keeper. An unreachable or denying keeper yields
 // ErrKeeperUnreachable (the caller must treat the write as refused; the local store is
 // untouched).
-func (s *SharedSeries) writeToKeeper(ctx context.Context, method, path string, hdr map[string]string, body []byte) (int, error) {
+func (s *SharedSeries) writeToKeeper(ctx context.Context, method, path string, hdr map[string]string, body []byte) ([]byte, error) {
 	keeper := s.Keeper()
 	base, token, ok := s.lookupPeer(keeper)
 	if !ok {
-		return 0, fmt.Errorf("%w: keeper %q is not a registered peer", ErrKeeperUnreachable, keeper)
+		return nil, fmt.Errorf("%w: keeper %q is not a registered peer", ErrKeeperUnreachable, keeper)
 	}
 	var rdr io.Reader
 	if body != nil {
@@ -331,7 +347,7 @@ func (s *SharedSeries) writeToKeeper(ctx context.Context, method, path string, h
 	}
 	req, err := http.NewRequestWithContext(ctx, method, base+path, rdr)
 	if err != nil {
-		return 0, fmt.Errorf("%w: %v", ErrKeeperUnreachable, err)
+		return nil, fmt.Errorf("%w: %v", ErrKeeperUnreachable, err)
 	}
 	for k, v := range hdr {
 		req.Header.Set(k, v)
@@ -341,14 +357,14 @@ func (s *SharedSeries) writeToKeeper(ctx context.Context, method, path string, h
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("%w: %v", ErrKeeperUnreachable, err)
+		return nil, fmt.Errorf("%w: %v", ErrKeeperUnreachable, err)
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return resp.StatusCode, nil
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return respBody, fmt.Errorf("keeper %q answered HTTP %d to the write", keeper, resp.StatusCode)
 	}
-	return resp.StatusCode, fmt.Errorf("keeper %q answered HTTP %d to the write", keeper, resp.StatusCode)
+	return respBody, nil
 }
 
 // readCopy returns the last copy on disk.

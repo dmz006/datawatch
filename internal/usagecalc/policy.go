@@ -25,6 +25,9 @@ func Policies() []string { return []string{PolicyUseAll, PolicyPace, PolicyFinis
 // PolicyLabel returns the display label of a policy id, or "" for an unknown id.
 func PolicyLabel(id string) string { return policyLabels[id] }
 
+// ValidPolicy reports whether id names one of the known policies.
+func ValidPolicy(id string) bool { return policyLabels[id] != "" }
+
 // normalizePolicy maps an empty or unknown id to the default, use-all.
 func normalizePolicy(id string) string {
 	if _, ok := policyLabels[id]; ok {

@@ -82,6 +82,22 @@ func TestUsageSeriesKeeperLocalCRUD(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("POST = %d: %s", rr.Code, rr.Body.String())
 	}
+	// The POST reply carries the stored reading, with the id the store assigned:
+	// an operator adding one reading can delete the exact one by that id.
+	var addResp struct {
+		OK      bool               `json:"ok"`
+		Reading *usagecalc.Reading `json:"reading"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&addResp); err != nil {
+		t.Fatalf("decode POST reply: %v (body=%s)", err, rr.Body.String())
+	}
+	if !addResp.OK || addResp.Reading == nil {
+		t.Fatalf("POST reply = %s, want ok:true with the stored reading", rr.Body.String())
+	}
+	if addResp.Reading.ID == "" || addResp.Reading.Percent == nil || *addResp.Reading.Percent != 61.5 {
+		t.Fatalf("stored reading in POST reply = %+v", addResp.Reading)
+	}
+	addedID := addResp.Reading.ID
 
 	// GET returns it in the bare record shape, stamped non-stale, and the hop-
 	// marked request (what a peer's fetch always sends) sees the same local store.
@@ -98,6 +114,9 @@ func TestUsageSeriesKeeperLocalCRUD(t *testing.T) {
 	readingID := rec.Readings[0].ID
 	if readingID == "" {
 		t.Fatal("the appended reading must carry an id")
+	}
+	if readingID != addedID {
+		t.Fatalf("GET id %q != POST reply id %q: the operator could not delete the exact reading", readingID, addedID)
 	}
 
 	hopReq := httptest.NewRequest(http.MethodGet, "/api/usage/readings", nil)
@@ -232,6 +251,18 @@ func TestUsageSeriesPeerServesKeeperAndStaleCopy(t *testing.T) {
 		federation.CapUsageRead, federation.CapUsageWrite))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("peer POST = %d: %s", rr.Code, rr.Body.String())
+	}
+	// Through the peer the reply carries the keeper's stored reading (its id),
+	// so the operator can delete the exact forwarding read.
+	var peerAdd struct {
+		OK      bool               `json:"ok"`
+		Reading *usagecalc.Reading `json:"reading"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&peerAdd); err != nil {
+		t.Fatalf("decode peer POST reply: %v (body=%s)", err, rr.Body.String())
+	}
+	if !peerAdd.OK || peerAdd.Reading == nil || peerAdd.Reading.ID == "" {
+		t.Fatalf("peer POST reply = %s, want ok:true with the keeper's stored reading id", rr.Body.String())
 	}
 	peerLocal := httptest.NewRequest(http.MethodGet, "/api/usage/readings", nil)
 	peerLocal.Header.Set(usagecalc.HeaderUsageHop, "1")

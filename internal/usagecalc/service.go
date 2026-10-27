@@ -217,6 +217,9 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 	}
 
 	policy := strings.ToLower(strings.TrimSpace(o.Policy))
+	if policy != "" && !ValidPolicy(policy) {
+		return nil, fmt.Errorf("unknown usage calculator policy %q: use one of %s", strings.TrimSpace(o.Policy), strings.Join(Policies(), ", "))
+	}
 	if policy == "" {
 		policy = cfg.Policy
 	}
@@ -336,13 +339,14 @@ func (s *Service) Readings(ctx context.Context) ([]Reading, error) {
 
 // AddReading forwards one reading to the shared series: into this daemon's store when this
 // daemon is the keeper, and to the keeper otherwise (shared.go). The reading is validated
-// and stored by the keeper's store.
-func (s *Service) AddReading(ctx context.Context, r Reading) error {
+// and stored by the keeper's store; the stored reading comes back with the id assigned
+// (by the local store on the keeper path, by the keeper's daemon on the peer path).
+func (s *Service) AddReading(ctx context.Context, r Reading) (Reading, error) {
 	if err := s.requireSeries(); err != nil {
-		return err
+		return Reading{}, err
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return Reading{}, err
 	}
 	return s.series.AddReading(ctx, r)
 }

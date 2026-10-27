@@ -4815,179 +4815,249 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-H "82. Usage calculator (advice, readings, verdict/by-lanes, policy, variant, extra credit, pasted gate, config round-trip, comm, CLI)"
-# Usage calculator surface (docs/plans/2026-10-23-usage-calculator-design.md and the
-# 2026-10-25 decisions):
+H "82. Usage calculator (advice, readings, verdict, policy/variant, extra credit, pasted gate, config, comm, CLI)"
+# Typed readings are the source for now; the advice answers with the numbers, the
+#   verdict, by_lanes, the text forms, and (when things are not set) a needs marker:
+#   GET    /api/usage/advice            [variant=V] [policy=P] [lanes=N] [cost=C] — per-call overrides
+#   GET    /api/usage/readings          full log, latest first
+#   POST   /api/usage/readings          {"at", "percent"|"spend_usd", "source"}; typed now,
+#                                       pasted | account planned; the response carries the
+#                                       stored reading (id) for precise cleanup
+#   DELETE /api/usage/readings?id=      exact removal by id
+#   PUT    /api/usage/extra-credit      ceiling = 100 points + credit; negative is refused
 #
-#   GET    /api/usage/advice            verdict, by_lanes, text.cli / text.comm
-#   POST   /api/usage/readings          source: typed is accepted; pasted/account answer 501
-#   DELETE /api/usage/readings?id=      exact-id delete (cleanup_all: usage case)
-#   PUT    /api/usage/extra-credit      ceiling = 100 points + credit
-#   GET/PUT /api/config                 usage.calculator.* round-trips and applies live
-#
-# The empty state has to answer with a needs marker (not an error), typed readings have
-# to drive verdict and by_lanes, policy and variant have to be overridable per call with
-# unknown values refused, extra credit has to shift the ceiling by exactly its amount,
-# pasted must stay a 501, and the comm and CLI text forms have to render the verdict.
+# The empty state answers with a needs marker (not an error); typed readings drive the
+# verdict and by_lanes; per-call policy and variant overrides are honored and unknown
+# values refused with 400; extra credit shifts the ceiling by exactly its amount and is
+# restored to the pre-smoke value; pasted and account sources stay 501 (planned, never
+# emulated) and unknown kinds are 400; the comm text renders within 50 columns over both
+# the advice and the test-message route; the CLI verdict is compared with the API
+# verdict, not just grepped.
 #
 # Everything this section creates is cleaned up by exact id / exact restore (cleanup_all
-# cases: usage, usage-credit, usage-variant); no name-pattern sweeps against operator
-# data. Sandbox-only assertions (4 by_lanes rows / 3 max lanes, CLI binary) are asserted
-# only when this script controls the daemon.
+# cases: usage, usage-credit, usage-variant); one reading is also deleted at the end of
+# the section through DELETE ?id= (its cleanup entry then no-ops). No name-pattern
+# sweeps, no tracker IDs in names. Sandbox-only assertions (default max_lanes, our 45%
+# reading being the newest) hold only when this script controls a fresh daemon.
 ux_adv() { curl "${curl_args[@]}" -s "$1" 2>/dev/null; }
+ux_code() { curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' "$1" 2>/dev/null || echo 000; }
 ux_num() { python3 -c "import json, sys
 try:
     print(json.load(sys.stdin)['advice']['$1'])
 except Exception:
     pass" 2>/dev/null || true; }
+ux_readid() { python3 -c 'import json, sys
+try:
+    r = (json.load(sys.stdin).get("reading") or {})
+    i = r.get("id")
+    print(i if i else "")
+except Exception:
+    pass' 2>/dev/null || true; }
+ux_verdict() { python3 -c 'import json, sys
+try:
+    print(json.load(sys.stdin)["advice"].get("verdict", ""))
+except Exception:
+    pass' 2>/dev/null || true; }
 UX_EXT=""
 [[ -n "${DW_BASE:-}" ]] && UX_EXT=1
-UX_A0=$(ux_adv "$BASE/api/usage/advice")
+
+# --- baseline advice: 200, a needs marker or a latest reading, ceiling, both texts -----
+UX_A0BODY="$TMPD/ux_a0"
+UX_A0CODE=$(curl "${curl_args[@]}" -s -o "$UX_A0BODY" -w '%{http_code}' "$BASE/api/usage/advice" 2>/dev/null || echo 000)
+UX_A0=$(cat "$UX_A0BODY" 2>/dev/null || true)
 UX_CEIL0=$(echo "$UX_A0" | ux_num ceiling); UX_CEIL0=${UX_CEIL0:-100}
 UX_CRED0=$(echo "$UX_A0" | ux_num extra_credit_points); UX_CRED0=${UX_CRED0:-0}
 add_cleanup usage-credit "$UX_CRED0"
-if echo "$UX_A0" | python3 -c '
+UX_CONF0=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
+UX_V0=$(echo "$UX_CONF0" | python3 -c 'import json, sys; v = json.load(sys.stdin)["usage"]["calculator"]["variant"]; print(v if v else "all")' 2>/dev/null || true)
+UX_V0=${UX_V0:-all}
+add_cleanup usage-variant "$UX_V0"
+if [[ "$UX_A0CODE" == "200" ]] && echo "$UX_A0" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
 a = d["advice"]
-assert a.get("needs") in ("reading", "reset", "percent") or a.get("read_at"), "neither a needs marker nor a reading"
-assert d.get("text", {}).get("comm") or d.get("text", {}).get("cli"), "no text form rendered"
+assert a.get("needs") in ("reading", "reset", "percent") or a.get("read_at"), \
+    "neither a needs marker nor a latest reading: %r" % a.get("needs")
+t = d.get("text") or {}
+assert t.get("cli") and t.get("comm"), "text forms missing"
 ' 2>/dev/null; then
-  ok "usage empty state: advice answers with a needs marker (no server error)"
+  ok "usage baseline: advice answers 200 with a needs marker or a latest reading, ceiling set, both text forms present"
 else
-  ko "usage empty state: not well-formed: $(echo "$UX_A0" | head -c 200)"
+  ko "usage baseline: not well-formed (code=$UX_A0CODE): $(head -c 200 "$UX_A0BODY" 2>/dev/null)"
 fi
+
+# --- per-call validation: unknown variant / policy / negative lanes all 400 ------------
+UX_VBAD=$(ux_code "$BASE/api/usage/advice?variant=bogus")
+UX_PBAD=$(ux_code "$BASE/api/usage/advice?policy=bogus")
+UX_LBAD=$(ux_code "$BASE/api/usage/advice?lanes=-1")
+if [[ "$UX_VBAD" == "400" && "$UX_PBAD" == "400" && "$UX_LBAD" == "400" ]]; then
+  ok "usage validation: ?variant=bogus, ?policy=bogus and ?lanes=-1 each answered 400"
+else
+  ko "usage validation: expected 400/400/400 for bogus variant / policy / negative lanes, got $UX_VBAD / $UX_PBAD / $UX_LBAD"
+fi
+
+# --- source gate: pasted + account stay planned (501); unknown kind 400 ---------------
 UX_T1=$(python3 -c 'import time; print(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 48 * 3600)))' 2>/dev/null || true)
 UX_T2=$(python3 -c 'import time; print(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 24 * 3600)))' 2>/dev/null || true)
+UX_PSB="$TMPD/ux_pasted"
+UX_PS=$(curl "${curl_args[@]}" -s -o "$UX_PSB" -w '%{http_code}' -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T2\",\"percent\":10,\"source\":\"pasted\"}" "$BASE/api/usage/readings" 2>/dev/null || echo 000)
+UX_ASB="$TMPD/ux_account"
+UX_AS=$(curl "${curl_args[@]}" -s -o "$UX_ASB" -w '%{http_code}' -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T2\",\"percent\":10,\"source\":\"account\"}" "$BASE/api/usage/readings" 2>/dev/null || echo 000)
+UX_UB="$TMPD/ux_unknown"
+UX_UK=$(curl "${curl_args[@]}" -s -o "$UX_UB" -w '%{http_code}' -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T2\",\"percent\":10,\"source\":\"carrier-pigeon\"}" "$BASE/api/usage/readings" 2>/dev/null || echo 000)
+if [[ "$UX_PS" == "501" && "$UX_AS" == "501" && "$UX_UK" == "400" ]]; then
+  ok "usage source gate: pasted=501 and account=501 (planned sources, never emulated), unknown kind=400"
+else
+  ko "usage source gate: expected pasted=501 account=501 unknown=400, got pasted=$UX_PS account=$UX_AS unknown=$UX_UK: $(head -c 120 "$UX_PSB" 2>/dev/null)"
+fi
+
+# --- two typed readings; ids captured from the POST response (fallback: list match) ----
 UX_R1=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T1\",\"percent\":30,\"source\":\"typed\"}" "$BASE/api/usage/readings" 2>/dev/null || true)
 UX_R2=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T2\",\"percent\":45,\"source\":\"typed\"}" "$BASE/api/usage/readings" 2>/dev/null || true)
-if echo "$UX_R1" | grep -q '"ok":true' && echo "$UX_R2" | grep -q '"ok":true'; then
-  ok "usage readings: two typed weekly readings accepted (source: typed)"
-else
-  ko "usage readings: typed add failed: r1=$UX_R1 r2=$UX_R2"
-fi
-UX_LIST=$(curl "${curl_args[@]}" -s "$BASE/api/usage/readings" 2>/dev/null || true)
-UX_IDS=$(echo "$UX_LIST" | UX_T1="$UX_T1" UX_T2="$UX_T2" python3 -c '
+UX_ID1=$(echo "$UX_R1" | ux_readid)
+UX_ID2=$(echo "$UX_R2" | ux_readid)
+if [[ -z "$UX_ID1" || -z "$UX_ID2" ]]; then
+  UX_LIST0=$(curl "${curl_args[@]}" -s "$BASE/api/usage/readings" 2>/dev/null || true)
+  UX_FALL=$(echo "$UX_LIST0" | UX_T1="$UX_T1" UX_T2="$UX_T2" python3 -c '
 import json, os, sys
-from datetime import datetime, timezone
+from datetime import datetime
 d = json.load(sys.stdin)
-t1 = datetime.strptime(os.environ["UX_T1"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-t2 = datetime.strptime(os.environ["UX_T2"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 def parse(v):
     return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
-i30 = i45 = None
-ids = []
-for i, r in enumerate(d.get("readings") or []):
-    if r.get("source") != "typed":
+t1 = parse(os.environ["UX_T1"]); t2 = parse(os.environ["UX_T2"])
+found = []
+for r in d.get("readings") or []:
+    if r.get("source") != "typed" or not r.get("id"):
         continue
     try:
         at = parse(r["at"])
     except Exception:
         continue
     p = r.get("percent")
-    if abs((at - t1).total_seconds()) < 3600 and p is not None and abs(p - 30) < 0.001 and i30 is None:
-        i30 = i
-        ids.append(r["id"])
-    if abs((at - t2).total_seconds()) < 3600 and p is not None and abs(p - 45) < 0.001 and i45 is None:
-        i45 = i
-        ids.append(r["id"])
-assert i30 is not None and i45 is not None and i30 < i45, (i30, i45)
-for x in ids:
-    print(x)
+    for t, want in ((t1, 30), (t2, 45)):
+        if abs((at - t).total_seconds()) < 3600 and p is not None and abs(p - want) < 0.001:
+            found.append(r["id"])
+            break
+print(" ".join(found[:2]))
 ' 2>/dev/null || true)
-if [[ -n "$UX_IDS" ]]; then
-  while IFS= read -r UX_ID; do
-    [[ -n "$UX_ID" ]] && add_cleanup usage "$UX_ID"
-  done <<< "$UX_IDS"
+  UX_ID1=${UX_ID1:-$(printf '%s' "$UX_FALL" | awk '{print $1}')}
+  UX_ID2=${UX_ID2:-$(printf '%s' "$UX_FALL" | awk '{print $2}')}
 fi
-if [[ $(printf '%s\n' "$UX_IDS" | grep -c . || true) -ge 2 ]]; then
-  ok "usage readings: GET /api/usage/readings lists both new readings (typed, oldest first)"
+if echo "$UX_R1" | grep -q '"ok":true' && echo "$UX_R2" | grep -q '"ok":true' \
+   && [[ -n "$UX_ID1" && "$UX_ID1" != "$UX_ID2" ]]; then
+  add_cleanup usage "$UX_ID1"
+  add_cleanup usage "$UX_ID2"
+  ok "usage readings: two typed readings accepted; both exact ids captured for precise cleanup"
 else
-  ko "usage readings: list does not carry both added readings in order: $(echo "$UX_LIST" | head -c 240)"
+  ko "usage readings: typed add failed or ids not retrievable: r1=$UX_R1 r2=$UX_R2"
 fi
+
+# --- GET list: both ids present, typed, one after the other in time -------------------
+UX_LIST=$(curl "${curl_args[@]}" -s "$BASE/api/usage/readings" 2>/dev/null || true)
+if [[ -n "$UX_ID1" && -n "$UX_ID2" ]] && echo "$UX_LIST" | UX_ID1="$UX_ID1" UX_ID2="$UX_ID2" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+rs = d.get("readings") or []
+ids = [r.get("id") for r in rs]
+i1, i2 = os.environ["UX_ID1"], os.environ["UX_ID2"]
+assert i1 in ids and i2 in ids, (i1, i2, ids)
+assert ids.index(i1) < ids.index(i2), (ids.index(i1), ids.index(i2))
+byid = {r.get("id"): r for r in rs}
+for x in (i1, i2):
+    r = byid[x]
+    assert r.get("source") == "typed", r
+    assert r.get("at"), r
+' 2>/dev/null; then
+  ok "usage list: GET /api/usage/readings carries both new readings as typed, oldest before newest"
+else
+  ko "usage list: both ids not present in time order: $(echo "$UX_LIST" | head -c 240)"
+fi
+
+# --- advice with readings: verdict self-consistent, by_lanes one row per lane count ----
 UX_A=$(ux_adv "$BASE/api/usage/advice")
 if echo "$UX_A" | UX_EXT="$UX_EXT" python3 -c '
 import json, os, sys
-a = json.load(sys.stdin)["advice"]
+d = json.load(sys.stdin)
+a = d["advice"]
 assert not a.get("needs"), "expected numbers after adding readings, got needs=%r" % a.get("needs")
 assert (a["verdict"] == "over") == (a["projected_end_recent"] > a["ceiling"]), (a["verdict"], a["projected_end_recent"], a["ceiling"])
 va = a.get("verdict_avg")
 if va in ("within", "over"):
     assert (va == "over") == (a["projected_end_avg"] > a["ceiling"]), (va, a["projected_end_avg"], a["ceiling"])
+assert a["recent_burn_per_24h"] >= 0 and a["week_avg_burn_per_24h"] >= 0
+if not os.environ.get("UX_EXT"):
+    # Fresh smoke daemon: our 45% reading is the newest and defaults are untouched.
+    assert abs(a["percent"] - 45) < 0.001, a["percent"]
+    assert a["max_lanes"] == 3, a["max_lanes"]
 rows = a["by_lanes"]
 assert isinstance(rows, list) and len(rows) >= 1, rows
 assert rows[0]["lanes"] == 0 and rows[-1]["lanes"] == a["max_lanes"], (a["max_lanes"], len(rows))
+if not os.environ.get("UX_EXT"):
+    assert len(rows) == a["max_lanes"] + 1, len(rows)
 assert a["chosen"]["lanes"] == a["lanes"] and a["lanes"] <= a["max_lanes"], (a["chosen"], a["lanes"])
 assert a["advice"]["headline"], "no headline"
-if not os.environ.get("UX_EXT"):
-    assert a["max_lanes"] == 3 and len(rows) == a["max_lanes"] + 1, (a["max_lanes"], len(rows))
 ' 2>/dev/null; then
-  ok "usage advice: verdict is within/over and self-consistent, by_lanes has one row per lane count, headline set"
+  ok "usage advice: verdict within/over self-consistent with the projection, by_lanes one row per lane count, chosen lane row coherent"
 else
   ko "usage advice: verdict/by_lanes not as expected: $(echo "$UX_A" | head -c 240)"
 fi
+
+# --- policy override per call: labels/lanes/finish move, the numbers do not ------------
 UX_PU=$(ux_adv "$BASE/api/usage/advice?policy=use-all")
 UX_PP=$(ux_adv "$BASE/api/usage/advice?policy=pace")
 UX_PF=$(ux_adv "$BASE/api/usage/advice?policy=finish-early")
-if echo "$UX_PU" | UX_PP="$UX_PP" UX_PF="$UX_PF" python3 -c '
-import json, os, sys
-du = json.load(sys.stdin)["advice"]
-dp = json.loads(os.environ["UX_PP"])["advice"]
-df = json.loads(os.environ["UX_PF"])["advice"]
-# The policy picks only the target/lanes advice; the numbers must be
-# identical across all three calls on the same readings.
-assert (du["percent"], du["recent_burn_per_24h"], du["ceiling"]) == (dp["percent"], dp["recent_burn_per_24h"], dp["ceiling"]) == (df["percent"], df["recent_burn_per_24h"], df["ceiling"]), "policy changed the numbers"
-assert du["advice"]["policy"] == "use-all" and dp["advice"]["policy"] == "pace" and df["advice"]["policy"] == "finish-early"
-# finish-early runs all lanes and reports when the work finishes;
-assert df["advice"]["lanes_suggested"] == df["max_lanes"], (df["advice"], df["max_lanes"])
-assert df["advice"].get("finish") is None or isinstance(df["advice"]["finish"], dict), df["advice"]
-# use-all / pace suggest the fitting lane count, never out of range.
-for x in (du, dp):
-    assert 1 <= x["advice"]["lanes_suggested"] <= x["max_lanes"], (x["advice"]["lanes_suggested"], x["max_lanes"])
-for x in (du, dp, df):
-    assert x["advice"]["headline"], x["advice"]
+if UX_PU="$UX_PU" UX_PP="$UX_PP" UX_PF="$UX_PF" python3 -c '
+import json, os
+du = json.loads(os.environ["UX_PU"])
+dp = json.loads(os.environ["UX_PP"])
+df = json.loads(os.environ["UX_PF"])
+assert du["policy"] == "use-all", du.get("policy")
+assert dp["policy"] == "pace" and df["policy"] == "finish-early"
+aw = (du["advice"], dp["advice"], df["advice"])
+assert all(w["advice"]["headline"] for w in aw), "a policy call has no headline"
+assert aw[1]["advice"]["policy"] == "pace" and aw[2]["advice"]["policy"] == "finish-early"
+def nums(w):
+    return (w["percent"], w["recent_burn_per_24h"], w["week_avg_burn_per_24h"], w["ceiling"], w["projected_end_recent"])
+n = [nums(w) for w in aw]
+assert n[0] == n[1] == n[2], "the policy must not move the numbers: " + str(n)
+# finish-early runs every lane and reports when the work finishes.
+assert aw[2]["advice"]["lanes_suggested"] == aw[2]["max_lanes"], (aw[2]["advice"]["lanes_suggested"], aw[2]["max_lanes"])
+assert aw[2]["advice"].get("finish") is None or isinstance(aw[2]["advice"]["finish"], dict)
+# use-all / pace suggest a fitting lane count, always in range.
+for w in (aw[0], aw[1]):
+    ls = w["advice"]["lanes_suggested"]
+    assert 1 <= ls <= w["max_lanes"], (ls, w["max_lanes"])
 ' 2>/dev/null; then
-  ok "usage policy: use-all / pace / finish-early override per call (labels, lanes, headline), numbers do not move"
+  ok "usage policy: use-all / pace / finish-early honored per call (labels, lanes, finish) while the numbers stay put"
 else
-  ko "usage policy: override not honored correctly (use-all=$(echo "$UX_PU" | head -c 120) ... pace=$(echo "$UX_PP" | head -c 120) ... finish-early=$(echo "$UX_PF" | head -c 120) ...)"
+  ko "usage policy: override not honored correctly (use-all=$(echo "$UX_PU" | head -c 120) | pace=$(echo "$UX_PP" | head -c 120) | finish-early=$(echo "$UX_PF" | head -c 120) ...)"
 fi
+
+# --- variant override: accepted + echoed (bogus already 400 above) --------------------
 UX_VR=$(ux_adv "$BASE/api/usage/advice?variant=lane-planner")
-UX_VB=$(curl "${curl_args[@]}" -s -o "$TMPD/ux_bogus.json" -w '%{http_code}' "$BASE/api/usage/advice?variant=bogus" 2>/dev/null || echo 000)
 if echo "$UX_VR" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
 assert d["variant"] == "lane-planner", d["variant"]
 assert d["advice"]["advice"]["headline"], "no headline"
-' 2>/dev/null && [[ "$UX_VB" == "400" ]]; then
-  ok "usage variant: ?variant=lane-planner accepted and echoed; ?variant=bogus refused with 400"
-else
-  ko "usage variant: lane-planner response=$(echo "$UX_VR" | head -c 160) bogus_status=$UX_VB"
-fi
-if echo "$UX_A" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-comm = d["text"]["comm"]
-assert comm.strip(), "empty comm text"
-lines = comm.splitlines()
-assert all(len(l) <= 50 for l in lines), max(len(l) for l in lines)
-v = d["advice"].get("verdict")
-if v in ("within", "over"):
-    label = "over budget" if v == "over" else "within budget"
-    assert label in comm, label
 ' 2>/dev/null; then
-  ok "usage comm path: text.comm renders (<= 50 columns) and carries the verdict"
+  ok "usage variant: ?variant=lane-planner accepted and echoed in the advice"
 else
-  ko "usage comm path: text.comm missing, too wide or without the verdict: $(echo "$UX_A" | head -c 240)"
+  ko "usage variant: lane-planner not honored: $(echo "$UX_VR" | head -c 160)"
 fi
+
+# --- extra credit: shifts the ceiling by exactly its amount, then restores -------------
 UX_EC1=$(curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d '{"points":80}' "$BASE/api/usage/extra-credit" 2>/dev/null || true)
+UX_EN=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"points":-5}' "$BASE/api/usage/extra-credit" 2>/dev/null || echo 000)
 UX_AC=$(ux_adv "$BASE/api/usage/advice")
-if echo "$UX_EC1" | grep -q '"ok":true' && echo "$UX_AC" | UX_CEIL0="$UX_CEIL0" python3 -c '
+if echo "$UX_EC1" | grep -q '"ok":true' && [[ "$UX_EN" == "400" ]] \
+   && echo "$UX_AC" | UX_CEIL0="$UX_CEIL0" python3 -c '
 import json, os, sys
 a = json.load(sys.stdin)["advice"]
 assert abs(a["extra_credit_points"] - 80) < 0.001, a["extra_credit_points"]
 assert abs(a["ceiling"] - (float(os.environ["UX_CEIL0"]) + 80)) < 0.001, (a["ceiling"], os.environ["UX_CEIL0"])
 ' 2>/dev/null; then
-  ok "usage extra credit: PUT 80 points raises the ceiling by exactly 80 (was $UX_CEIL0, now $(echo "$UX_AC" | ux_num ceiling))"
+  ok "usage extra credit: PUT +80 raises the ceiling by exactly 80 (was $UX_CEIL0, now $(echo "$UX_AC" | ux_num ceiling)); PUT -5 refused with 400"
   UX_EC2=$(curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d "{\"points\": $UX_CRED0}" "$BASE/api/usage/extra-credit" 2>/dev/null || true)
   UX_AR=$(ux_adv "$BASE/api/usage/advice")
   if echo "$UX_EC2" | grep -q '"ok":true' && echo "$UX_AR" | UX_CEIL0="$UX_CEIL0" python3 -c '
@@ -5000,46 +5070,121 @@ assert abs(a["ceiling"] - float(os.environ["UX_CEIL0"])) < 0.001, (a["ceiling"],
     ko "usage extra credit: restore failed (ceiling=$(echo "$UX_AR" | ux_num ceiling), wanted $UX_CEIL0)"
   fi
 else
-  ko "usage extra credit: PUT 80 points did not raise the ceiling by 80 (was $UX_CEIL0 => $(echo "$UX_AC" | ux_num ceiling)): $UX_EC1"
+  ko "usage extra credit: PUT +80 did not raise the ceiling by 80 (was $UX_CEIL0 => $(echo "$UX_AC" | ux_num ceiling)), negative status=$UX_EN: $UX_EC1"
 fi
-UX_PS_BODY="$TMPD/ux_pasted"
-UX_PS=$(curl "${curl_args[@]}" -s -o "$UX_PS_BODY" -w '%{http_code}' -X POST -H "Content-Type: application/json" -d "{\"at\":\"$UX_T2\",\"percent\":10,\"source\":\"pasted\"}" "$BASE/api/usage/readings" 2>/dev/null || echo 000)
-if [[ "$UX_PS" == "501" ]]; then
-  ok "usage readings source gate: source: pasted answers 501 Not Implemented (not worked around)"
-else
-  ko "usage readings source gate: expected 501 for source: pasted, got $UX_PS: $(head -c 160 "$UX_PS_BODY" 2>/dev/null)"
-fi
-UX_CONF0=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
-UX_V0=$(echo "$UX_CONF0" | python3 -c 'import json, sys; print(json.load(sys.stdin)["usage"]["calculator"]["variant"] or "all")' 2>/dev/null || true)
-UX_V0=${UX_V0:-all}
-add_cleanup usage-variant "$UX_V0"
+
+# --- config round-trip: stored variant applies live, then restored to the exact original
 UX_CONF1=$(curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d '{"usage.calculator.variant":"burn-ledger"}' "$BASE/api/config" 2>/dev/null || true)
+UX_ADB=""
 UX_CONF2=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
 UX_ADV=$(ux_adv "$BASE/api/usage/advice")
 if echo "$UX_CONF2" | python3 -c 'import json, sys; assert json.load(sys.stdin)["usage"]["calculator"]["variant"] == "burn-ledger"' 2>/dev/null \
    && echo "$UX_ADV" | python3 -c 'import json, sys; assert json.load(sys.stdin)["variant"] == "burn-ledger"' 2>/dev/null; then
   ok "usage config round-trip: usage.calculator.variant PUT lands in GET /api/config and applies live to advice"
-  UX_V0PUT=$(curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.variant\":\"$UX_V0\"}" "$BASE/api/config" 2>/dev/null || true)
+  curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.variant\":\"$UX_V0\"}" "$BASE/api/config" >/dev/null 2>&1
   UX_CONF3=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
-  if echo "$UX_CONF3" | UX_V0="$UX_V0" python3 -c 'import json, os, sys; assert (json.load(sys.stdin)["usage"]["calculator"]["variant"] or "all") == os.environ["UX_V0"]' 2>/dev/null; then
-    ok "usage config round-trip: variant restored to the pre-smoke value ($UX_V0)"
+  UX_ADB=$(ux_adv "$BASE/api/usage/advice")
+  if echo "$UX_CONF3" | UX_V0="$UX_V0" python3 -c 'import json, os, sys; assert (json.load(sys.stdin)["usage"]["calculator"]["variant"] or "all") == os.environ["UX_V0"]' 2>/dev/null \
+     && echo "$UX_ADB" | UX_V0="$UX_V0" python3 -c 'import json, os, sys; assert json.load(sys.stdin)["variant"] == os.environ["UX_V0"]' 2>/dev/null; then
+    ok "usage config round-trip: variant restored to the pre-smoke value ($UX_V0) and live advice follows"
   else
-    ko "usage config round-trip: variant not restored to $UX_V0: $(echo "$UX_CONF3" | head -c 160)"
+    ko "usage config round-trip: variant not restored to $UX_V0: conf=$(echo "$UX_CONF3" | head -c 160)"
   fi
 else
-  ko "usage config round-trip: variant set/change not visible or live: conf=$(echo "$UX_CONF2" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("usage", {}))' 2>/dev/null || echo ?) adv=$(echo "$UX_ADV" | head -c 120)"
+  ko "usage config round-trip: variant set/change not visible or live: conf=$(echo "$UX_CONF2" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("usage", {}))' 2>/dev/null || echo '?') adv=$(echo "$UX_ADV" | head -c 120)"
 fi
-if [[ -z "${DW_BASE:-}" && -n "${DW_CLI:-}" ]]; then
-  UX_CLI=$($DW_CLI usage advice 2>&1 | head -c 2000 || true)
-  if echo "$UX_CLI" | python3 -c '
-import sys
-out = sys.stdin.read()
-assert out.strip(), "empty output"
-assert ("over budget" in out) or ("within budget" in out) or "no recent readings" in out, out[:200]
+
+# --- comm text: <= 50 columns per line, carries the verdict language -------------------
+if echo "$UX_ADB" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+comm = d["text"]["comm"]
+assert comm.strip(), "empty comm text"
+lines = comm.splitlines()
+assert max(len(l) for l in lines) <= 50, max(len(l) for l in lines)
+v = d["advice"].get("verdict")
+if v in ("within", "over"):
+    label = "over budget" if v == "over" else "within budget"
+    assert label in comm, (v, comm[:200])
+else:
+    assert "no weekly reading" in comm or "weekly reset is not set" in comm or "weekly percentage is needed" in comm, comm[:200]
 ' 2>/dev/null; then
-    ok "usage CLI: datawatch usage advice renders the verdict (operator-readable)"
+  ok "usage comm: text.comm renders within 50 columns per line and carries the verdict language"
+else
+  ko "usage comm: text.comm missing, wider than 50 columns or without the verdict: $(echo "$UX_ADB" | head -c 240)"
+fi
+
+# --- comm path over the real route: POST /api/test/message "usage advice" --------------
+UX_TM=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" -d '{"text":"usage advice"}' "$BASE/api/test/message" 2>/dev/null || true)
+# 'REST loopback not configured' is the documented isolated-env caveat (same rule as 7aa):
+# a SKIP, not a FAIL. A missing responses array or a lost 'usage advice' input is a FAIL.
+if echo "$UX_TM" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d.get("input") == "usage advice", d.get("input")
+rs = d.get("responses") or []
+assert d.get("count") == len(rs) >= 1, (d.get("count"), rs)
+joined = "\n".join(rs)
+assert "usage advice" in joined, joined[:200]
+' 2>/dev/null; then
+  if echo "$UX_TM" | python3 -c 'import json, sys; assert "loopback" not in (json.load(sys.stdin)["responses"] or [""])[0].lower()' 2>/dev/null; then
+    if echo "$UX_TM" | python3 -c '
+import json, sys
+joined = "\n".join(json.load(sys.stdin).get("responses") or [])
+assert ("over budget" in joined) or ("within budget" in joined) or ("no weekly reading" in joined) or ("weekly reset is not set" in joined), joined[:240]
+' 2>/dev/null; then
+      ok "usage comm route: POST /api/test/message 'usage advice' replies with the verdict language"
+    else
+      ko "usage comm route: reply lacks the advice verdict/needs language: $(echo "$UX_TM" | head -c 240)"
+    fi
   else
-    ko "usage CLI: output did not render a verdict: $(echo "$UX_CLI" | head -c 240)"
+    skip "usage comm route: loopback unavailable in this env (route wired; same caveat as 7aa)"
+  fi
+else
+  ko "usage comm route: test/message reply not well-formed: $(echo "$UX_TM" | head -c 240)"
+fi
+
+# --- DELETE by exact id: one reading goes, the rest of the state stays put -------------
+UX_D1B="$TMPD/ux_del1"
+UX_D1=$(curl "${curl_args[@]}" -s -o "$UX_D1B" -w '%{http_code}' -X DELETE "$BASE/api/usage/readings?id=$UX_ID1" 2>/dev/null || echo 000)
+UX_DNF=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/usage/readings?id=u-definitely-not-there" 2>/dev/null || echo 000)
+UX_DNOID=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/usage/readings" 2>/dev/null || echo 000)
+UX_LIST2=$(curl "${curl_args[@]}" -s "$BASE/api/usage/readings" 2>/dev/null || true)
+if [[ "$UX_D1" == "200" ]] && grep -q '"ok":true' "$UX_D1B" 2>/dev/null \
+   && [[ "$UX_DNF" == "404" && "$UX_DNOID" == "400" ]] \
+   && echo "$UX_LIST2" | UX_ID1="$UX_ID1" UX_ID2="$UX_ID2" python3 -c '
+import json, os, sys
+ids = [r.get("id") for r in (json.load(sys.stdin).get("readings") or [])]
+assert os.environ["UX_ID1"] not in ids, ids
+assert os.environ["UX_ID2"] in ids, "the other reading must survive until cleanup_all sweeps it: " + str(ids)
+' 2>/dev/null; then
+  ok "usage delete: DELETE ?id= removes exactly the one reading (200 + ok), unknown id 404, missing id 400, the rest of the log untouched"
+else
+  ko "usage delete: id1=$UX_ID1 id2=$UX_ID2 delete=$UX_D1 ($(head -c 80 "$UX_D1B" 2>/dev/null)) notfound=$UX_DNF no_id=$UX_DNOID list=$(echo "$UX_LIST2" | head -c 160)"
+fi
+
+# --- CLI: renders advice and carries the SAME verdict as the API, not just any verdict --
+if [[ -z "${DW_BASE:-}" && -n "${DW_CLI:-}" ]]; then
+  UX_A_CLI=$(ux_adv "$BASE/api/usage/advice")
+  UX_VV=$(echo "$UX_A_CLI" | ux_verdict)
+  UX_CLI=$($DW_CLI usage advice 2>&1 | head -c 2000 || true)
+  UX_WANT=""
+  case "$UX_VV" in
+    over)   UX_WANT="over budget" ;;
+    within) UX_WANT="within budget" ;;
+  esac
+  if [[ -n "$UX_WANT" ]]; then
+    if printf '%s\n' "$UX_CLI" | grep -qi "verdict:" && printf '%s\n' "$UX_CLI" | grep -q "$UX_WANT"; then
+      ok "usage CLI: 'usage advice' renders a verdict line matching the API verdict ($UX_VV: $UX_WANT)"
+    else
+      ko "usage CLI: output lacked the API verdict label ($UX_WANT): $(printf '%s' "$UX_CLI" | head -c 240)"
+    fi
+  else
+    if printf '%s\n' "$UX_CLI" | grep -Eq "no weekly reading|weekly reset is not set|weekly percentage is needed"; then
+      ok "usage CLI: 'usage advice' renders the needs state matching the API (no verdict set)"
+    else
+      ko "usage CLI: output did not render a verdict/needs state: $(printf '%s' "$UX_CLI" | head -c 240)"
+    fi
   fi
 else
   skip "usage CLI: external daemon mode (DW_BASE), CLI runs against the base daemon there"
