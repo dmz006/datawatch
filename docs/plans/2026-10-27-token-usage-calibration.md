@@ -1,5 +1,7 @@
 # Claude token usage calibrated against the usage readings (2026-10-27)
 
+**Purpose, operator, 2026-10-27, quoted: "The token usage isn't for api cost calculation but to normalize the % we've been calculating so we can normalize and track pool better, not cost or api usage."** Tokens are a normalizing unit for the weekly allowance percentage. The dollar columns below are only a weighting assumption used to combine token types; the normalized unit in the next section replaces them.
+
 Operator, 2026-10-27, quoted: "all sessions should have token details, make sure we have tokens for the last week or more of work, that is the reason i stressed the calculator, tokens tie it all together".
 
 ## Where the tokens come from
@@ -43,3 +45,17 @@ The supervisor session is the largest single consumer, larger than any PRD. Most
 ## Method (rerun any time)
 
 Walk `~/.claude/projects/**/*.jsonl`, keep type assistant messages with `message.usage`, de-duplicate by (message id, request id), bucket by timestamp hour, weight per model with the rates above, and compare window sums with the readings. The supervisor watch also snapshots the datawatch counters each run into `/tmp/sv/usage-ledger.jsonl` as a cross-check. The BL472 calculator should read transcripts (or an equivalent per-message usage feed) instead of the lifetime counters.
+
+## Normalized unit (fitted, replaces the dollar weighting)
+
+Windows are the seven intervals between the operator's readings. For each candidate weighting the units per percentage point were computed per window; a good normalization gives nearly the same figure in every window (low spread, shown as the coefficient of variation).
+
+| Weighting | Spread | Units per point |
+|---|---|---|
+| output tokens only | 0.47 | 345 thousand |
+| all four token types equal | 0.34 | 70 million |
+| output plus cache writes equal | 0.44 | 2.2 million |
+| list-price ratios (Sonnet and Haiku) | 0.30 | 22.6 million |
+| best grid fit | 0.25 | 1.12 million output-equivalent tokens |
+
+Best fit: **one output token = 1 unit; one cache-write token = 0.5 unit; one cache-read token = 0.01 unit; input tokens are negligible; Haiku tokens count 0.2 of the same Sonnet token.** On that unit one percentage point is about **1.1 million units**, so the weekly allowance is about 112 million units. Caveats: only seven windows and three fitted weights (overfit risk), whole-percent readings carry up to 50 percent rounding error on a 1 to 3 point window, no Opus use appears in the data, and the weights should be refit as readings accumulate (the grid and the windows are in the method below). The BL472 calculator should store the unit definition as data so it can be refit.
