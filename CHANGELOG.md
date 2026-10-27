@@ -7,7 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Plan check flags write tasks that declare no files
 
-- **A write task with no files is now a finding.** The plan coverage check raises `write_task_without_files` for a task whose title starts with a write verb and whose `files` list is empty, unless its spec starts with `READ-ONLY:` and a reason or it is a gate, smoke or similar task; in `block` mode it stops approval until the plan is fixed or acknowledged with a note. See [autonomous planning](docs/howto/autonomous-planning.md#declaring-files-for-write-tasks).
+- **A write task with no files is now a finding.** The plan coverage check raises `write_task_without_files` for a task whose title starts with a write verb and whose `files` list is empty, unless the first line of its spec starts with `READ-ONLY:` (give a reason after it; only the marker is checked) or it is a gate, smoke or similar task; in `block` mode it stops approval until the plan is fixed or acknowledged with a note. See [autonomous planning](docs/howto/autonomous-planning.md#declaring-files-for-write-tasks).
 
 ### Voice transcription: real error causes, long-recording chunking and kept recordings
 

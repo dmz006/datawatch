@@ -279,7 +279,8 @@ for the modes and the acknowledge path.
 
 When a task changes nothing, make the **first line of its spec** `READ-ONLY:`
 followed by a reason. Only the first non-empty line counts, and the case does
-not matter:
+not matter. The check looks only at the marker, so the reason is for the people
+reading the plan and is not enforced:
 
 ```text
 READ-ONLY: audits the retry paths and reports what it finds; no file is edited.

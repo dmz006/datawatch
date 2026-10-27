@@ -2478,8 +2478,9 @@ finding is raised when all of these hold:
   `install` or `investigation` (whole words, matched on the title only).
 
 To fix it, either add the files the task will change to its `files` list, or make
-the first line of the spec `READ-ONLY:` followed by a reason when the task really
-changes nothing. In `block` mode the finding blocks approval like any other
+the first line of the spec `READ-ONLY:` when the task really changes nothing. Put
+a reason after the marker; the check looks only at the marker, so the reason is
+for the reader and is not enforced. In `block` mode the finding blocks approval like any other
 finding, and the operator clears it with the existing acknowledgement path
 below, with a note. In `warn` mode it is stored and shown while approval
 proceeds, and `off` records it only. See
