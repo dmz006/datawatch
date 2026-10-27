@@ -798,6 +798,11 @@ whisper:
   # Path to the Python virtualenv containing the whisper CLI.
   # Relative paths are resolved from the datawatch working directory.
   venv_path: .venv
+  # Longest audio slice (seconds) handed to the local whisper process in one go.
+  # Longer recordings are split and transcribed slice by slice so memory stays flat.
+  # 0 disables chunking; otherwise the value must be >= 30 (whisper's own window is 30 s).
+  # Other values are ignored when set through the API. Local whisper backend only.
+  chunk_seconds: 120
 
 # ── Vision Image Description ──
 # Describes image attachments from messaging backends (Signal, Telegram) as text.

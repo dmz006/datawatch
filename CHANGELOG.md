@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Voice transcription: real error causes, long-recording chunking and kept recordings
+
+- **Failed and slow requests are logged.** A failed `POST /api/voice/transcribe`, and any request slower than 30 s, writes one `[voice] transcribe failed:` or `[voice] transcribe slow:` line with the backend, upload size, audio length, elapsed time, cause and exit status. The transcript text is never logged.
+- **Errors name the real cause.** A failure is HTTP 502 with a JSON body `{error, cause, hint, detail, latency_ms}`. `cause` is `timeout`, `killed`, `out_of_memory`, `ffmpeg_missing`, `backend_error` or `unknown`, and `hint` is one sentence on the fix. `POST /api/voice/test` carries `cause` and `hint` too. Both OpenAPI files describe the body.
+- **Long recordings are chunked.** New setting `whisper.chunk_seconds` (default 120, `0` turns it off, otherwise 30 or more, so 1 to 29 are ignored through the API). The local whisper backend splits longer audio and transcribes it slice by slice, joining the texts, so memory stays flat. PCM WAV is split in pure Go; other formats need `ffmpeg` and are sent whole when it is missing. The setting is on every surface: YAML, CLI (`config set`), REST, MCP (`config_set`), the comm channel (`configure`) and the PWA Settings Voice Input card.
+- **The deadline scales with the audio.** A transcription gets 5 minutes, or twice the audio length when that is longer, capped at 30 minutes. A clip whose length cannot be read gets 5 minutes. The ffmpeg transcode keeps its own 5-minute budget.
+- **The PWA keeps a failed recording.** When a transcription fails, the recording stays in the page with a message for the cause in five locales, a Retry button and a Discard button, in the session input bar, in other microphone-enabled fields and on the Settings test button. Retry resends the same audio; nothing is lost until you press Discard.
+- Docs: [`howto/voice-input.md`](docs/howto/voice-input.md#long-recordings-and-memory-local-whisper) covers the memory envelope (whisper `medium` needs about 1.5 GiB for weights plus several GiB at peak, so hosts with 8 GiB or less should use `small` or `base`), the cause table and the log fields. The flow is in [`flow/voice-transcribe-flow.md`](docs/flow/voice-transcribe-flow.md).
+
 ### Large changes go to claude-code first when a judge runs
 
 - **Size-aware judge routing.** When the Automaton branch has more than `autonomous.judge_size_threshold_lines` changed lines (default 400), the judges try `claude-code` first and the other backends follow in their usual order, still one attempt per backend. On 2026-10-26 an Automaton of about 1,000 changed lines spent the whole 30-minute limit on a local judge that could not finish; a large change no longer starts on that model.

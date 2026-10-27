@@ -6237,10 +6237,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// daemon was honoring the YAML value (e.g. "ollama" → BL201
 			// inheritance silently routed through OpenWebUI's audio API).
 			// Operator-flagged after Chrome PWA audit.
-			"backend":   s.cfg.Whisper.Backend,
-			"model":     s.cfg.Whisper.Model,
-			"language":  s.cfg.Whisper.Language,
-			"venv_path": s.cfg.Whisper.VenvPath,
+			"backend":       s.cfg.Whisper.Backend,
+			"model":         s.cfg.Whisper.Model,
+			"language":      s.cfg.Whisper.Language,
+			"venv_path":     s.cfg.Whisper.VenvPath,
+			"chunk_seconds": s.cfg.Whisper.ChunkSeconds,
 		},
 		"vision": map[string]interface{}{
 			"enabled":         s.cfg.Vision.Enabled,
@@ -7744,6 +7745,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "whisper.venv_path":
 			if s := toString(v); s != "" {
 				cfg.Whisper.VenvPath = s
+			}
+		case "whisper.chunk_seconds":
+			// 0 disables chunking; whisper's own window is 30 s, so
+			// anything from 1 to 29 is skipped, not stored.
+			if n, ok := toInt(v); ok && (n == 0 || n >= 30) {
+				cfg.Whisper.ChunkSeconds = n
 			}
 		// v4.0.8 (B38) — autonomous / plugins / orchestrator keys.
 		// Without these cases the PWA + mobile-client save forms

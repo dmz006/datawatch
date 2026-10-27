@@ -210,7 +210,9 @@ curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/voice/test
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -F "audio=@/path/to/note.ogg" \
   $BASE/api/voice/transcribe
-#  → {"text":"Refactor the payment module..."}
+#  → {"transcript":"Refactor the payment module...", ...}
+#  On failure: HTTP 502 {"error","cause","hint","detail","latency_ms"}
+#  (see "When transcription fails: error causes" below).
 ```
 
 ### 5c. MCP
@@ -253,6 +255,7 @@ whisper:
   # Common:
   min_confidence: 0.6                    # below = ask operator to confirm
   max_audio_seconds: 120                 # reject longer files
+  chunk_seconds: 120                     # local whisper: slice longer audio (0 = off, else >= 30)
 ```
 
 `datawatch reload` picks up changes without restart.
@@ -341,15 +344,150 @@ surfaced (chunked retry never swallows a refusal).
   completes and transcribes.
 - **Audio duration cap: configurable** — `max_audio_seconds` (default
   120 s) rejects longer files at intake; raise it for longer notes.
-- **Backend call timeout: 5 min per transcribe request** with up to 4
-  retries on 503/504 (1 s / 2 s backoff) — a 10-minute recording only
-  succeeds if the backend transcribes at roughly ≥1× realtime; there is
-  no resumable upload, so either the full transcript comes back or the
-caller gets an error.
+- **Transcription deadline: scales with the audio.** The request gets 5
+  minutes, or twice the audio length when that is longer, capped at 30
+  minutes. A clip whose length cannot be read gets the 5-minute base.
+  The ffmpeg transcode has its own flat 5-minute budget. HTTP backends
+  also retry 503/504 up to 4 times (1 s / 2 s backoff). There is no
+  resumable upload, so either the full transcript comes back or the
+  caller gets an error (see "When transcription fails" above).
 - **PWA mic recordings:** Chrome's MediaRecorder emits webm with no
 duration metadata; the handler's ffmpeg transcode to 16 kHz mono WAV
   handles arbitrarily long streams (verified with a 65 s
   MediaRecorder-style file).
+
+## Long recordings and memory (local whisper)
+
+The local `whisper` backend loads the whole model and the whole clip into
+memory for each run. A long recording on a small host can push the machine
+into swap or get the whisper process killed. To keep memory flat, the
+daemon splits long audio before it reaches whisper.
+
+Audio longer than `whisper.chunk_seconds` (default **120**, `0` disables) is
+split into slices of at most that length. Each slice is transcribed in turn
+and the slice texts are joined with a single space, so you still get one
+transcript back. Audio that already fits in one slice is sent as is.
+
+How the split is done:
+
+- **PCM WAV** is split in pure Go, with no external tool.
+- **Any other format** (webm/opus from the browser microphone, ogg, m4a, mp3)
+  is split with `ffmpeg`. If `ffmpeg` is not on PATH the split is skipped, the
+  daemon logs `[voice] chunking skipped: ...; sending the whole file`, and the
+  whole file goes to whisper in one piece. That still works for short clips
+  but brings back the memory problem for long ones, so install `ffmpeg`.
+- A slice that fails stops the whole request. The error names the slice, for
+  example `slice 3 of 5 failed`, and the cause is classified as described below.
+
+Chunking applies only to the local `whisper` backend, including when it is the
+fallback leg of the chain described above. The HTTP backends (`openai`,
+`openai_compat`, `openwebui`, `ollama`) ignore it.
+
+`whisper.chunk_seconds` must be `0` or at least `30`, because whisper's own
+window is 30 s. A value from 1 to 29 sent through the API is ignored and the
+old value stays.
+
+### Memory envelope
+
+Model size decides how much RAM a run needs. `medium` needs about 1.5 GiB for
+the weights plus several GiB at peak while it decodes. `small` and `base`
+need far less.
+
+**A host with 8 GiB of RAM or less should use `small` or `base`.** On such a
+host `medium` can get the whisper process killed by the kernel (cause
+`killed`, below) once a long clip is under way. Shorter slices lower the
+peak too, so on a tight host you can also lower `whisper.chunk_seconds`
+(for example to 60); do not set it below 30.
+
+### The five ways to set `whisper.chunk_seconds`
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `whisper:` → `chunk_seconds: 120` |
+| **CLI** | `datawatch config set whisper.chunk_seconds 120`, then `datawatch reload` |
+| **Web UI** | Settings → General → **Voice Input (Whisper)** card → *Longest audio slice per local whisper run* |
+| **REST API** | `PUT /api/config` with `{"whisper.chunk_seconds": 120}`; `GET /api/config` returns it under `whisper.chunk_seconds` |
+| **Comm channel** | `configure whisper.chunk_seconds=120` |
+
+The value is read when the daemon builds the transcriber, so reload (or
+restart) after changing it. At startup the daemon logs
+`[voice] chunking: local whisper slices audio longer than 120s` when it is on.
+During a long request it logs `[voice] chunked: 5 slices of <=120s`.
+
+### When transcription fails: error causes
+
+`POST /api/voice/transcribe` no longer returns a bare error string. A failure
+is HTTP 502 with a JSON body:
+
+```json
+{
+  "error": "transcribe: the whisper process was killed by SIGKILL, usually the kernel out-of-memory killer",
+  "cause": "killed",
+  "hint": "Use a smaller whisper.model such as small or base, or lower whisper.chunk_seconds.",
+  "detail": "whisper failed: signal: killed",
+  "latency_ms": 41873
+}
+```
+
+`cause` is one of these values. The PWA shows a plain-language message for
+each; the table gives what it means and what to do.
+
+| `cause` | What it means | Fix |
+|---|---|---|
+| `timeout` | The request ran past its deadline, or the client went away. The deadline is 5 minutes, or twice the audio length when that is longer, capped at 30 minutes. | Record a shorter clip, use a smaller `whisper.model`, or lower `whisper.chunk_seconds`. |
+| `killed` | The whisper process ended by SIGKILL. On Linux this is almost always the kernel out-of-memory killer; `dmesg` shows `Out of memory: Killed process`. | Use `small` or `base`, lower `whisper.chunk_seconds`, or add RAM. |
+| `out_of_memory` | Whisper itself reported it ran out of memory (a Python `MemoryError`, `Cannot allocate memory`, or a GPU out-of-memory message). | Same as `killed`. |
+| `ffmpeg_missing` | `ffmpeg` is not installed or not on the daemon's PATH, and whisper needs it to read the audio. | `apt install ffmpeg` (or your package manager's equivalent), then retry. |
+| `backend_error` | Any other non-zero exit, or an HTTP error from a remote backend. | Read `detail` and the `[voice] transcribe failed:` log line, fix the backend, retry. |
+| `unknown` | The error matched nothing above. | Read the daemon log for the full error. |
+
+`hint` is one sentence of advice for that cause and `detail` is the raw backend
+error cut to 500 bytes. A recording over the upload limit is a separate case:
+HTTP 413 before any transcription starts.
+
+### Reading the voice log lines
+
+A failed request, and any request slower than 30 s even when it succeeds, writes
+one line to the daemon log. The transcript text is never logged.
+
+```
+[voice] transcribe failed: backend=whisper bytes=1843201 audio_seconds=312.4 elapsed_ms=41873 cause=killed exit=killed err=whisper failed: signal: killed
+[voice] transcribe slow: backend=whisper bytes=402112 audio_seconds=48.0 elapsed_ms=36120 cause=none exit=n/a err=
+```
+
+| Field | Meaning |
+|---|---|
+| `failed` / `slow` | `failed` means the request returned an error. `slow` means it succeeded but took longer than 30 s. |
+| `backend` | The configured `whisper.backend`. |
+| `bytes` | Size of the uploaded audio file. |
+| `audio_seconds` | Length of the audio, or `unknown` when it could not be read (not a PCM WAV and no `ffprobe`). |
+| `elapsed_ms` | Time spent in the transcriber only, not upload or ffmpeg transcode. |
+| `cause` | One of the causes above, or `none` on a slow success. |
+| `exit` | The whisper process exit status, the signal name (`killed`) when it was stopped by a signal, or `n/a` when there was no child process. |
+| `ffmpeg=missing` | Present only when the transcode step could not find `ffmpeg`. |
+| `err` | The first line of the error text. |
+
+A rule of thumb: if `elapsed_ms` is much larger than `audio_seconds` times 1000,
+the host is slower than realtime for this model and long clips will time out;
+pick a smaller model.
+
+### Failed recordings are kept in the PWA
+
+When a transcription fails in the PWA (the session input bar, any other
+microphone-enabled text field, and the Test transcription button in Settings),
+the audio is
+**kept in the browser** and a notice appears beside the input with the message
+for the cause, the line "Recording kept, nothing is lost.", and two buttons:
+
+- **Retry transcription** sends the same recording again, without re-speaking.
+  The button shows "Retrying transcription…" while it runs. If it fails again
+  the notice stays and you can retry as many times as you like.
+- **Discard recording** throws the audio away.
+
+The recording stays until you press one of them. It is held in the page's memory,
+so reloading or closing the tab loses it; retry before you leave. A retry after
+fixing the cause on the daemon (for example installing `ffmpeg` or choosing a
+smaller model and reloading) works with no new recording.
 
 ## Common pitfalls
 
@@ -362,12 +500,18 @@ duration metadata; the handler's ffmpeg transcode to 16 kHz mono WAV
 - **Audio too long.** Default cap is 120s. Raise `max_audio_seconds`
   for longer notes. Recordings longer than 30 s are transcribed in ≤30 s
   chunks automatically now — see "Long recordings (longer than 30 s)"
-  above — so a windowed backend is no longer a failure mode.
+  above — so a windowed backend is no longer a failure mode. Local whisper
+  also slices at `whisper.chunk_seconds`; see "Long recordings and memory".
+- **Whisper process killed or out of memory.** The error cause is `killed` or
+  `out_of_memory`. Use `whisper.model` `small` or `base` on hosts with 8 GiB of
+  RAM or less, or lower `whisper.chunk_seconds`.
 - **PWA mic permission denied.** Browser blocks mic access on
   non-HTTPS origins. Use `https://` (the daemon's default) — not
   `http://` redirect.
 - **OpenWebUI returns 400 "file format not supported".** Almost always actually masks a server-side engine error. Hit the endpoint with `curl` + your API key to see the real response. On ARM/Thor: it'll be the CTranslate2/CUDA error described in the OpenWebUI section above.
-- **`ffmpeg` missing.** Daemon falls back to sending the original webm/opus blob to the primary; OpenWebUI usually rejects this. Install ffmpeg (`apt install ffmpeg`) so the WAV-transcode step runs.
+- **`ffmpeg` missing.** Daemon falls back to sending the original webm/opus blob to the primary; OpenWebUI usually rejects this. Install ffmpeg (`apt install ffmpeg`) so the WAV-transcode step runs. Without it,
+  long non-WAV recordings also cannot be sliced, and a request whisper cannot read
+  fails with cause `ffmpeg_missing`.
 
 ## Linked references
 

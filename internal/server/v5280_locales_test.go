@@ -79,6 +79,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"capacity_card_title",
 		"progress_card_title",
 		"nav_sessions",
+		"voice_retry",
 		"nav_autonomous",
 		"nav_alerts",
 		"nav_settings",
