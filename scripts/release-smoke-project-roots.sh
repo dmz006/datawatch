@@ -81,25 +81,34 @@ skip_all() { # $1 = reason
 BASE="${DW_BASE:-http://127.0.0.1:9090}"
 BASE="${BASE%/}"
 
-# Host part of the URL: drop the scheme, path and userinfo, then the port.
+# Host part of the URL. Only the authority (between "://" and the first of
+# "/", "?" or "#") is considered, so a query or fragment can never smuggle a
+# fake host in. A URL carrying userinfo ("@") or a backslash is refused
+# outright: curl and a shell parser can disagree about where its host begins.
 # A bracketed IPv6 literal keeps its brackets and is unwrapped afterwards.
-HOST="${BASE#*://}"
-HOST="${HOST%%/*}"
-HOST="${HOST##*@}"
-case "$HOST" in
-  \[*) HOST="${HOST%%]*}"; HOST="${HOST#\[}" ;;
-  *)   HOST="${HOST%%:*}" ;;
+refuse() {
+  printf '[REFUSED] target daemon is not loopback: %s\n' "$BASE" >&2
+  printf 'This smoke only runs against a SANDBOX daemon (127.0.0.1/localhost/::1).\n' >&2
+  exit 2
+}
+
+case "$BASE" in
+  http://*|https://*) : ;;
+  *) refuse ;;
+esac
+AUTH="${BASE#*://}"
+AUTH="${AUTH%%[/?#]*}"
+case "$AUTH" in
+  *@*|*\\*|"") refuse ;;
+  \[*) HOST="${AUTH%%]*}"; HOST="${HOST#\[}" ;;
+  *)   HOST="${AUTH%%:*}" ;;
 esac
 HOST=$(printf '%s' "$HOST" | tr '[:upper:]' '[:lower:]')
 
 # Sandbox-only guard: refuse any non-loopback host before touching anything.
 case "$HOST" in
   127.0.0.1|localhost|"::1") : ;;
-  *)
-    printf '[REFUSED] target daemon is not loopback: %s\n' "$BASE" >&2
-    printf 'This smoke only runs against a SANDBOX daemon (127.0.0.1/localhost/::1).\n' >&2
-    exit 2
-    ;;
+  *) refuse ;;
 esac
 
 # ---------------------------------------------------------------------------
@@ -275,8 +284,6 @@ print(json.dumps({
     "backend": sys.argv[3],
     "name": sys.argv[4],
     "one_shot": True,
-    "auto_git_commit": False,
-    "auto_git_init": False,
 }))' "$TASK" "$1" "$BACKEND" "$2"
 }
 
