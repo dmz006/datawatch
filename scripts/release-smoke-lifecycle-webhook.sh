@@ -249,15 +249,15 @@ cleanup() {
   local rc=$?
   stop_receiver
   if [[ -n "$SANDBOX_PID" ]]; then
-    # Fresh-sandbox mode: the daemon is a throwaway — its config, data dir
-    # and home dir all live under $WORK, which is deleted below — so there
-    # is nothing to restore in it. End it here (recorded PID, marker-
-    # verified, waited for); td_stop_all on the shared exit traps has the
-    # same effect on paths that die before reaching this point, on the
-    # normal path it has already run first.
+    # Fresh-sandbox mode: this cleanup() runs from the library's
+    # TD_EXTRA_CLEANUP hook, i.e. AFTER td_stop_all has already ended the
+    # recorded daemon — its live sessions via its own API, then the exact
+    # PID recorded at start, marker-verified and waited for — so the stop
+    # here is belt-and-braces for a no-op. The daemon is a throwaway; its
+    # config, data dir and home dir all live under $WORK, which is deleted
+    # below. Nothing in it needs restoring.
     td_stop_one "$SANDBOX_PID" \
       || echo "WARN: sandbox daemon pid $SANDBOX_PID still running" >&2
-    echo "stopped: sandbox daemon pid $SANDBOX_PID"
     SANDBOX_PID=""
   else
     local id

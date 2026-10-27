@@ -29,10 +29,23 @@
 #                                    conditionals — safe under `set -e`)
 #   td_is_recorded <pid>             0 iff a record for this pid exists in
 #                                    this shell's scope
-#   td_install_traps ["$@"]          EXIT/INT/TERM/HUP traps that call
-#                                    td_stop_all, preserving exit status
+#   td_install_traps ["$@"]          EXIT/INT/TERM/HUP traps that, on every
+#                                    exit path, run TD_PRE_STOP_CLEANUP
+#                                    (if set), then td_stop_all, then
+#                                    TD_EXTRA_CLEANUP (if set), preserving
+#                                    exit status
 #                                    (idempotent: calling it twice does not
 #                                    clobber what a first call registered)
+#
+# Optional cleanup hooks — both names of shell functions, both run on
+# EVERY exit path (normal, failure, INT, TERM, HUP), both at most once:
+#   TD_PRE_STOP_CLEANUP  runs BEFORE td_stop_all, while the recorded
+#                        daemons are still alive: cleanup that talks to a
+#                        daemon's own API (tracked-resource deletion,
+#                        ending sessions by id) belongs here.
+#   TD_EXTRA_CLEANUP     runs AFTER td_stop_all: filesystem cleanup (scratch
+#                        dirs) that must never happen while its daemon is
+#                        still running belongs here.
 #   td_wait_port_closed <port> [timeout]   wait until nothing listens
 #
 # Ownership scope: TD_STATE_DIR is shared by a runner shell and the story
@@ -426,7 +439,21 @@ os.execvp("bash", ["bash"] + sys.argv[1:])
   return 0
 }
 
+_td_run_pre_stop_hook() {
+  # Runs the cleanup that must talk to a recorded daemon's own API
+  # (tracked-resource deletion, ending sessions by id) while the daemon
+  # is still alive. Consumed by whichever handler is reached first, so
+  # exactly one exit path runs it.
+  local hook="${TD_PRE_STOP_CLEANUP:-}"
+  TD_PRE_STOP_CLEANUP=""
+  if [[ -n "$hook" ]] && declare -f "$hook" >/dev/null 2>&1; then
+    "$hook" || true
+  fi
+  return 0
+}
+
 _td_on_exit() {
+  _td_run_pre_stop_hook
   td_stop_all
   # Story scripts may register their own cleanup (e.g. scratch dirs) here;
   # td_stop_all runs first so their functions never leak daemons.
@@ -443,11 +470,13 @@ _td_on_exit() {
 }
 
 _td_on_signal() {
-  # End every recorded daemon, then exit with the conventional 128+signal
-  # status (the EXIT trap still runs). The signal is deliberately not sent
-  # to ourselves again: its trap is still installed, so the handler would
-  # re-enter itself.
+  # Run the pre-stop hook while the daemons are still alive, end every
+  # recorded daemon, then exit with the conventional 128+signal status
+  # (the EXIT trap still runs; its pre-stop hook slot was consumed here).
+  # The signal is deliberately not sent to ourselves again: its trap is
+  # still installed, so the handler would re-enter itself.
   local sig="$1" code=1
+  _td_run_pre_stop_hook
   td_stop_all
   case "$sig" in
     HUP) code=129 ;;
