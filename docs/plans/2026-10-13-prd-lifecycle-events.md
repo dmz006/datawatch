@@ -859,9 +859,22 @@ is accepted from Phase 4.
 3. **Action subscriptions:** may a subscription carry an action
    (`send_input` text into the newly started session, as in example 1), or
    should subscriptions only notify, with the subscriber acting itself?
-4. **Scope warnings and guardrail `warn` verdicts:** should these
+4. ~~**Scope warnings and guardrail `warn` verdicts:** should these
    currently silent advisories become notifiable event kinds (opt-in), or
-   stay PWA-only?
+   stay PWA-only?~~ **Resolved (shipped in this build):** yes — the two
+   kinds are `scope_warning` (a task touched files outside its declared
+   scope; the event carries `files` and, when the finding raised an
+   alert, the PWA `?alert=<id>` link) and `guardrail_warn` (a guardrail
+   returned a `warn` outcome; the event carries the guardrail name, the
+   verdict summary/issues and the recorded decision). Both are opt-in and
+   off by default — not in the five-kind `DefaultNotifyEvents` baseline —
+   and fire only when the kind is in the Automaton's resolved set
+   (per-Automaton list > profile list > `autonomous.notify.default_events`),
+   enforced by the same dispatcher gate as the other opt-in kinds
+   (`notify_warning_kinds_test.go`, emission in
+   `lifecycle_emit_warning.go`, `lifecycle_emit_warning_test.go`). Every
+   configuration surface — YAML, CLI, PWA, REST, MCP, comm channel —
+   accepts and reports both kinds.
 5. **Outbound webhook sink:** wanted at all (Phase 5), and if so, with what
    host allow-list and secret handling?
 6. **Generic MCP clients:** is the pending-events polling tool enough, or
@@ -887,6 +900,6 @@ Recorded from the operator review of the open questions above.
 - **Q5, outbound webhook sink:** yes, with a configured host allow-list, a vault-backed secret, HMAC signing, retry then alert, and an SSRF guard. The existing Generic Webhook backend is inbound only and stays as it is.
 - **Q7, federation:** yes, Automaton events are deliverable to subscribers on federated peers through the existing federation path.
 - **Q8, sequencing with BL431:** moot, the Automation coordinator and the dispatcher have both shipped.
-- **Q4, scope warnings and guardrail warn verdicts:** yes, as opt-in event kinds (`scope_warning` and `guardrail_warn`), off by default. Held until the per-Automaton `notify_events` work ships.
+- **Q4, scope warnings and guardrail warn verdicts:** yes, as opt-in event kinds (`scope_warning` and `guardrail_warn`), off by default — **shipped in this build** (see open question 4): delivered like every other notify event, with the PWA still showing both warnings and neither kind ever blocking or altering any work.
 - **Q6, generic MCP clients:** the polling tool stays, and MCP resource subscriptions (`resources/subscribe`, `notifications/resources/updated`) will be implemented later with extensive regression testing. Held until the operator says so.
 - **Q9, BL422 follow-up:** a tier-mismatch event will probably be added as another opt-in event kind, but only after BL422's results land. At that point the design is validated against the results and added only if the results agree. Nothing is filed as a PRD until then.

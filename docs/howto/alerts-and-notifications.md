@@ -448,4 +448,5 @@ tool, and Settings > Detection timing in the PWA.
 - [howto/sessions-deep-dive](sessions-deep-dive.md)
 - [howto/alert-rules](alert-rules.md)
 - [howto/audit-logging](audit-logging.md)
+- [howto/automaton-lifecycle-subscriptions](automaton-lifecycle-subscriptions.md) — Automaton warnings (a task touching files outside its scope, a guardrail `warn` verdict) also arrive as opt-in notify events, `scope_warning` and `guardrail_warn`, deliverable to queues, sessions, alerts and comm sinks; off by default
 - [datawatch-definitions](../datawatch-definitions.md)
