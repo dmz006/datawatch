@@ -6918,6 +6918,92 @@ function _showVoiceRecordingModal() {
   });
 }
 
+// Voice transcription failure handling. A recording that fails to transcribe
+// is kept in memory (never evicted automatically) so the operator can retry
+// with the very same Blob instead of re-speaking it.
+
+// Map a failed /api/voice/transcribe response (or a status 0 network error)
+// to {cause, messageKey, detail}. Callers render t(messageKey).
+function _voiceClassifyFailure(status, bodyText) {
+  const text = typeof bodyText === 'string' ? bodyText : '';
+  if (!status) return { cause: 'network', messageKey: 'voice_error_network', detail: text };
+  if (status === 413) return { cause: 'too_large', messageKey: 'voice_error_too_large', detail: text };
+  let body = null;
+  try { body = JSON.parse(text); } catch (_) { body = null; }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { cause: 'backend_error', messageKey: 'voice_error_backend', detail: text };
+  }
+  const cause = typeof body.cause === 'string' && body.cause ? body.cause : 'unknown';
+  const detail = String(body.detail || body.error || '');
+  let messageKey = 'voice_error_backend';
+  if (cause === 'timeout') messageKey = 'voice_error_timeout';
+  else if (cause === 'killed' || cause === 'out_of_memory') messageKey = 'voice_error_killed';
+  else if (cause === 'ffmpeg_missing') messageKey = 'voice_error_ffmpeg_missing';
+  return { cause, messageKey, detail };
+}
+
+const _voiceFailed = new Map();
+let _voiceFailedSeq = 0;
+
+function _voiceKeepFailed(entry) {
+  const id = ++_voiceFailedSeq;
+  _voiceFailed.set(id, {
+    blob: entry.blob,
+    filename: entry.filename,
+    sessionId: entry.sessionId,
+    targetId: entry.targetId,
+    ts: entry.ts || Date.now(),
+    cause: entry.cause,
+  });
+  return id;
+}
+function _voiceGetFailed(id) { return _voiceFailed.get(id); }
+function _voiceDiscardFailed(id) { return _voiceFailed.delete(id); }
+function _voiceFailedCount() { return _voiceFailed.size; }
+
+// The only caller of /api/voice/transcribe. There is deliberately no
+// client-side abort timer: aborting would throw away work the server is still
+// doing; a server-side timeout comes back as cause "timeout".
+async function _voiceTranscribeBlob(blob, opts) {
+  const { filename, sessionId, targetId, keepId } = opts || {};
+  let failure;
+  try {
+    const fd = new FormData();
+    fd.append('audio', blob, filename || 'voice.webm');
+    if (sessionId) fd.append('session_id', sessionId);
+    fd.append('ts_client', String(Date.now()));
+    const token = localStorage.getItem('cs_token') || '';
+    const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+    console.log('[voice] POST /api/voice/transcribe', blob.size, 'bytes', sessionId || '');
+    const res = await fetch('/api/voice/transcribe', { method: 'POST', headers, body: fd });
+    if (res.ok) {
+      const data = await res.json();
+      if (keepId) _voiceDiscardFailed(keepId);
+      return { ok: true, transcript: (data && data.transcript) || '' };
+    }
+    let txt = '';
+    try { txt = await res.text(); } catch (_) { txt = ''; }
+    console.warn('[voice] transcribe HTTP', res.status, txt);
+    failure = _voiceClassifyFailure(res.status, txt);
+  } catch (err) {
+    console.error('[voice] transcribe error:', err);
+    failure = _voiceClassifyFailure(0, err && err.message ? err.message : String(err));
+  }
+  let id = keepId;
+  const kept = id ? _voiceGetFailed(id) : null;
+  if (kept) kept.cause = failure.cause;
+  else id = _voiceKeepFailed({ blob, filename, sessionId, targetId, ts: Date.now(), cause: failure.cause });
+  return { ok: false, cause: failure.cause, messageKey: failure.messageKey, detail: failure.detail, keepId: id };
+}
+
+async function _voiceRetry(id) {
+  const kept = _voiceGetFailed(id);
+  if (!kept) return { ok: false, cause: 'unknown', messageKey: 'voice_error_backend', detail: '', keepId: id };
+  return _voiceTranscribeBlob(kept.blob, {
+    filename: kept.filename, sessionId: kept.sessionId, targetId: kept.targetId, keepId: id,
+  });
+}
+
 async function toggleVoiceInput(sessionId) {
   const btn = document.getElementById('voiceInputBtn');
   const inputEl = document.getElementById('sessionInput');
