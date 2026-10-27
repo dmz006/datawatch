@@ -1196,7 +1196,6 @@
   "session_chip_waiting": "En espera",
   "session_chrome": "Integración con Chrome",
   "session_compute_ref_title": "Nodo de cómputo v7",
-  "session_last_activity_title": "Tiempo desde que el backend produjo salida por última vez: la única señal para sesiones headless/no interactivas (p. ej. opencode run) que no muestran actividad visible en pantalla entre generaciones",
   "session_detail_cancel_schedule": "Cancelar programación",
   "session_detail_delete_body": "El registro de sesión se eliminará del servidor. Los datos en disco se conservan. Esta acción no se puede deshacer.",
   "session_detail_delete_title": "¿Eliminar sesión?",

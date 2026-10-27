@@ -2139,7 +2139,6 @@ function updateSession(sess) {
     refreshNeedsInputBanner(sess.full_id);
     updateSessionDetailButtons(sess.full_id);
     refreshGeneratingIndicator(sess.full_id); // v5.27.7 BL208/#26
-    refreshLastActivityIndicator(held);
     _renderSessionDetailTagRow(held);
     // BL263 follow-up / v6.11.10 — operator: "Restart seemed better but
     // still had the tmux command window at bottom not return after
@@ -4195,7 +4194,6 @@ function renderSessionDetail(sessionId) {
               still show their mode (no tab system in tmux-only mode). */
             sessionMode === 'tmux' ? `<span class="mode-badge mode-${sessionMode}">${sessionMode}</span>` : ''}
           <span class="state detail-state-badge ${badgeClass}" onclick="showStateOverride('${escHtml(sessionId)}',this)" style="cursor:pointer;" title="Click to change state">${escHtml(stateText)}</span>
-          ${isActive ? `<span class="session-last-activity" data-last-activity="${escHtml(sess?.last_channel_event_at || sess?.updated_at || '')}" title="${t('session_last_activity_title')||'Time since the backend last produced any output — the only signal for headless/non-interactive sessions (e.g. opencode run) that show no visible screen activity between generations'}" style="font-size:11px;color:var(--text2);display:inline-flex;align-items:center;gap:3px;"><span class="session-last-activity-dot" style="width:6px;height:6px;border-radius:50%;background:var(--success,#22c55e);display:inline-block;"></span><span class="session-last-activity-text">–</span></span>` : ''}
           <span id="actionBtns">${actionButtons}</span>
           <!-- datawatch-app parity (D61a, 2026-10-06 gap list row 9):
                Watch toggle previously only on the list card. -->
@@ -20487,38 +20485,6 @@ function updateElapsedClocks() {
   });
 }
 setInterval(updateElapsedClocks, 1000);
-
-// "Last activity" indicator for the session detail header — the only
-// signal an operator has that a headless/non-interactive backend (e.g.
-// opencode launched via `opencode run` for one-shot PRD tasks) is still
-// alive between generations, since those sessions show no TUI redraw or
-// pane movement for minutes at a time while the model is thinking.
-// Dot color bands by staleness: green (<30s, actively producing output),
-// amber (30s-5m, normal thinking gap for slow local models), red (>5m,
-// worth checking the session hasn't stalled).
-function updateLastActivityClocks() {
-  document.querySelectorAll('.session-last-activity[data-last-activity]').forEach(el => {
-    const ts = el.getAttribute('data-last-activity');
-    const textEl = el.querySelector('.session-last-activity-text');
-    const dotEl = el.querySelector('.session-last-activity-dot');
-    if (!ts || !textEl || !dotEl) { if (textEl) textEl.textContent = 'no activity yet'; return; }
-    const secs = (Date.now() - new Date(ts).getTime()) / 1000;
-    textEl.textContent = timeAgo(ts);
-    dotEl.style.background = secs < 30 ? 'var(--success,#22c55e)' : secs < 300 ? 'var(--warning,#f59e0b)' : 'var(--error,#ef4444)';
-  });
-}
-setInterval(updateLastActivityClocks, 1000);
-
-// Patches the last-activity element's timestamp attribute in place from a
-// fresh WS session push, without a full renderSessionDetail re-render —
-// same pattern as refreshGeneratingIndicator/refreshNeedsInputBanner. The
-// 1s interval above then picks up the new value on its next tick.
-function refreshLastActivityIndicator(sess) {
-  if (!sess) return;
-  const el = document.querySelector('.session-last-activity[data-last-activity]');
-  if (!el) return;
-  el.setAttribute('data-last-activity', sess.last_channel_event_at || sess.updated_at || '');
-}
 
 function escHtml(str) {
   if (str === null || str === undefined) return '';

@@ -1161,7 +1161,6 @@
   "session_chip_done": "Done",
   "session_chip_waiting": "Waiting",
   "session_compute_ref_title": "v7 Compute Node",
-  "session_last_activity_title": "Time since the backend last produced any output — the only signal for headless/non-interactive sessions (e.g. opencode run) that show no visible screen activity between generations",
   "session_detail_cancel_schedule": "Cancel schedule",
   "session_detail_delete_body": "This removes the session record from the server. Tracking data on disk is preserved. This cannot be undone.",
   "session_detail_delete_title": "Delete session?",
