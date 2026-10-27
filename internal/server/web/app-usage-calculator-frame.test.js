@@ -184,8 +184,21 @@ test('a failed refresh keeps the last body and shows the daemon error', async ()
   s.fetch = () => Promise.resolve({ ok: false, status: 503, text() { return Promise.resolve('usage calculator: not wired on this daemon'); } });
   vm.runInContext('window.usageCalcRefresh()', s);
   await flushAsync();
-  assert.equal(vm.runInContext('window._usageCalc.error', s), 'usage calculator: not wired on this daemon');
-  assert.equal(vm.runInContext('window._usageCalc.loading', s), false);
+  const state = vm.runInContext('window._listLoaders.automation_usage.state', s);
+  assert.equal(state.error, 'usage calculator: not wired on this daemon');
+  assert.equal(state.loading, false);
+});
+
+test('the card sits right after the capacity card on the Automata tab and loads through the list loader', () => {
+  const s = loadApp();
+  const body = vm.runInContext('_automationBodyHTML()', s);
+  const cap = body.indexOf('id="automationCapacityCard"');
+  const usage = body.indexOf('id="automationUsageCard"');
+  assert.ok(cap >= 0 && usage > cap, 'usage card slot must follow the capacity card slot');
+  assert.equal(body.slice(cap, usage).split('id="').length - 1, 1, 'no other element sits between the two cards');
+  const ctl = vm.runInContext('_automationUsageLoader()', s);
+  assert.equal(vm.runInContext('window._listLoaders.automation_usage', s), ctl, 'registered under its loader key');
+  assert.equal(vm.runInContext('_automationUsageLoader()', s), ctl, 'one loader, reused');
 });
 
 test('the reading body is built from the form values and rejects an out-of-range percent', () => {

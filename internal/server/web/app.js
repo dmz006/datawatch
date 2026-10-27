@@ -23820,7 +23820,7 @@ const USAGE_CALC_COUNTER_KEY = 'datawatch.usageCalc.counts';
 const USAGE_CALC_COUNTER_ON_KEY = 'datawatch.usageCalc.countsOn';
 const USAGE_CALC_CHART_W = 320;
 const USAGE_CALC_CHART_H = 110;
-window._usageCalc = window._usageCalc || { body: null, error: '', loading: false, seq: 0, variant: '', policy: '', showCounts: false };
+window._usageCalc = window._usageCalc || { body: null, error: '', variant: '', policy: '', showCounts: false };
 
 // Browser storage is a per-viewer convenience only: every access is guarded,
 // and the card renders the same without it.
@@ -24217,15 +24217,18 @@ function _usageCalcPaceGauge(res) {
   const pos = v => Math.min(Math.max(Number(v) / ceiling, 0), 1) * W;
   const past = v => Number(v) > ceiling;
   const tick = (id, v, style) => `<line data-tick="${id}" x1="${pos(v).toFixed(2)}" x2="${pos(v).toFixed(2)}" y1="10" y2="42" style="${style}"/>`;
-  const gauge = `<svg viewBox="0 0 ${W} 60" width="100%" role="img" aria-label="${escHtml(t('usage_calc_gauge_title'))}" style="display:block;max-width:100%;">` +
+  const gauge = `<svg viewBox="0 0 ${W} 64" width="100%" role="img" aria-label="${escHtml(t('usage_calc_gauge_title'))}" style="display:block;max-width:100%;">` +
     `<rect x="0" y="18" width="${W}" height="14" rx="3" style="fill:var(--bg2,#1e1e1e);"/>` +
     `<rect data-fill="percent" x="0" y="18" width="${pos(a.percent).toFixed(2)}" height="14" rx="3" style="fill:var(--accent,#3b82f6);"/>` +
     `<rect data-zone="over" x="${W - 8}" y="18" width="8" height="14" style="fill:var(--error,#ef4444);"/>` +
     tick('pace', a.pace_line, 'stroke:var(--text,#ddd);stroke-width:2;') +
     tick('recent', a.projected_end_recent, 'stroke:var(--warning,#f59e0b);stroke-width:2;stroke-dasharray:4 3;') +
     tick('average', a.projected_end_avg, 'stroke:var(--text2,#999);stroke-width:2;stroke-dasharray:1 3;stroke-linecap:round;') +
-    ((past(a.projected_end_recent) || past(a.projected_end_avg))
-      ? `<text data-label="over-edge" x="${W}" y="58" text-anchor="end" style="font-size:10px;fill:var(--error,#ef4444);">${escHtml(t('usage_calc_gauge_over_edge', [_usageCalcNum(Math.max(a.projected_end_recent, a.projected_end_avg), 1)]))}</text>`
+    (past(a.projected_end_recent)
+      ? `<text data-label="over-edge" data-burn="recent" x="${W}" y="50" text-anchor="end" style="font-size:10px;fill:var(--error,#ef4444);">${escHtml(t('usage_calc_gauge_over_edge_recent', [_usageCalcNum(a.projected_end_recent, 1)]))}</text>`
+      : '') +
+    (past(a.projected_end_avg)
+      ? `<text data-label="over-edge" data-burn="average" x="${W}" y="59" text-anchor="end" style="font-size:10px;fill:var(--error,#ef4444);">${escHtml(t('usage_calc_gauge_over_edge_average', [_usageCalcNum(a.projected_end_avg, 1)]))}</text>`
       : '') +
     `</svg>`;
   const legend = `<div style="display:flex;flex-wrap:wrap;gap:8px 12px;font-size:11px;color:var(--text2);">` +
@@ -24271,16 +24274,19 @@ function _usageCalcPaceGauge(res) {
 // line and the two projections dashed from the newest reading to the reset.
 function usageCalcSeriesHtml(a) {
   const series = Array.isArray(a.series) ? a.series : [];
-  if (!series.length) return '';
+  if (!series.length || !(Date.parse(a.next_reset_at) > Date.parse(a.last_reset_at))) return '';
   const W = USAGE_CALC_CHART_W;
   const H = USAGE_CALC_CHART_H;
   const ceiling = a.ceiling > 0 ? a.ceiling : 100;
-  const span = (Number(a.days_since_reset) + Number(a.days_left)) * 24;
-  const x = h => Math.min(Math.max(Number(h) / span, 0), 1) * W;
+  // The horizontal axis runs from the last reset to the next reset, both read
+  // from the response; a reading sits where its own time falls between them.
+  const from = Date.parse(a.last_reset_at);
+  const to = Date.parse(a.next_reset_at);
+  const x = at => Math.min(Math.max((Date.parse(at) - from) / (to - from), 0), 1) * W;
   const y = v => H - Math.min(Math.max(Number(v) / ceiling, 0), 1) * H;
-  const pts = series.map(s => `${x(s.hours_since_reset).toFixed(2)},${y(s.percent).toFixed(2)}`);
+  const pts = series.map(s => `${x(s.at).toFixed(2)},${y(s.percent).toFixed(2)}`);
   const last = series[series.length - 1];
-  const lx = x(last.hours_since_reset).toFixed(2);
+  const lx = x(last.at).toFixed(2);
   const ly = y(last.percent).toFixed(2);
   return `<div class="usage-calc-series" style="display:flex;flex-direction:column;gap:4px;">` +
     `<div style="font-size:12px;font-weight:600;">${escHtml(t('usage_calc_series_title'))}</div>` +
@@ -24298,37 +24304,33 @@ function usageCalcSeriesHtml(a) {
 window.usageCalcRenderers['pace-gauge'] = _usageCalcPaceGauge;
 
 function usageCalcRerender() {
-  const el = document.getElementById('usageCalcCard');
-  if (!el) return;
-  el.innerHTML = window.usageCalcFrameHtml(_usageCalc.body, {
-    variant: _usageCalc.variant,
-    policy: _usageCalc.policy,
-    error: _usageCalc.error,
-    loading: _usageCalc.loading,
-  });
+  const ctl = window._listLoaders && window._listLoaders.automation_usage;
+  if (ctl) ctl.paint();
 }
 
-// One GET /api/usage/advice per refresh. A stale reply is dropped, so a slow
-// earlier request never overwrites a newer one.
-window.usageCalcRefresh = function () {
-  const state = _usageCalc;
-  const seq = ++state.seq;
-  state.loading = true;
-  state.error = '';
-  usageCalcRerender();
-  const q = state.policy ? '?policy=' + encodeURIComponent(state.policy) : '';
-  return apiFetch('/api/usage/advice' + q).then(body => {
-    if (seq !== state.seq) return;
-    state.body = body;
-    state.loading = false;
-    state.error = '';
-    usageCalcRerender();
-  }).catch(err => {
-    if (seq !== state.seq) return;
-    state.loading = false;
-    state.error = err && err.message ? err.message : String(err);
-    usageCalcRerender();
+// The usage card's loader, registered like the capacity card's: a skeleton on
+// the first load, the daemon's error plainly with Retry, and the last good body
+// kept beneath it. It does not poll; the card refreshes when the operator asks
+// (refresh, a saved reading, a changed policy). The request is one GET of
+// /api/usage/advice, with the chosen policy as a query value when one is picked.
+function _automationUsageLoader() {
+  return window._listLoaders.automation_usage || listLoader({
+    key: 'automation_usage', el: 'automationUsageCard', url: '/api/usage/advice',
+    fetch: (url, init) => {
+      const q = _usageCalc.policy ? '?policy=' + encodeURIComponent(_usageCalc.policy) : '';
+      _usageCalc.error = '';
+      return apiFetch(url + q, init).then(body => { _usageCalc.body = body; return body; });
+    },
+    failedText: msg => t('usage_calc_error', [msg]),
+    active: () => !!document.getElementById('automationUsageCard'),
+    render: body => {
+      _usageCalc.body = body;
+      return window.usageCalcFrameHtml(body, { variant: _usageCalc.variant, policy: _usageCalc.policy, error: _usageCalc.error });
+    },
   });
+}
+window.usageCalcRefresh = function () {
+  return _automationUsageLoader().load();
 };
 
 // ── Lane fill card ──────────────────────────────────────────────────────────
@@ -26540,6 +26542,7 @@ function _automationBodyHTML() {
         <div class="automata-badge-group">${statusBadges}</div>
       </div>
       <div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationUsageCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
       <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
@@ -26554,7 +26557,7 @@ function _automationMount() {
   _automationState.loaded = false;
   // The capacity card and the list load in parallel; each loader owns its
   // own loading and failed states, so one failing never blanks the other.
-  listLoaderAll([_automationCapacityLoader(), _automationLaneFillLoader(), _automationLoader()]);
+  listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationLoader()]);
   // The progress card runs on its own state-machine path; it renders when the
   // data lands and its failed state never touches the list or capacity card.
   if (typeof window.loadProgressCard === 'function') window.loadProgressCard();
@@ -26563,7 +26566,7 @@ function _automationMount() {
 // _automationStopLoaders ends the polling and tick timers of the Automation
 // list and capacity loaders. Their state stays, and load() starts them again.
 function _automationStopLoaders() {
-  ['automation', 'automation_capacity', 'automation_lane_fill'].forEach(k => {
+  ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill'].forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
   });
@@ -34986,13 +34989,6 @@ function renderObserverView() {
       </div>
 
       <div class="settings-section">
-        ${settingsSectionHeader('usage_calculator', t('usage_calc_title'), 'howto/automata-capacity.md')}
-        <div id="settings-sec-usage_calculator" style="${secContent('usage_calculator')}">
-          <div id="usageCalcCard" class="obs-panel" style="min-width:0;"></div>
-        </div>
-      </div>
-
-      <div class="settings-section">
         ${settingsSectionHeader('analytics', 'Session Analytics', 'api/sessions.md')}
         <div id="settings-sec-analytics" style="${secContent('analytics')}">
           <div id="analyticsPanel" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
@@ -35045,7 +35041,6 @@ function renderObserverView() {
   loadMemoryScopeInventory(); // GH#172 D77
   loadSchedulesList();
   loadCooldownStatus();
-  usageCalcRefresh();
   loadAnalyticsPanel();
   loadAuditPanel();
   loadKgPanel();

@@ -66,7 +66,8 @@ test('a projection past the ceiling carries the red zone and the over-the-edge l
   const html = render(s, workedExampleBody());
   assert.ok(html.includes('data-zone="over"'), 'red zone at the right edge missing');
   assert.ok(html.includes('data-label="over-edge"'), 'over-the-edge label missing');
-  assert.ok(html.includes('Over, past the edge (106.0%)'), 'over-the-edge text wrong');
+  assert.ok(html.includes('Recent burn: over, past the edge (106.0%)'), 'over-the-edge text wrong');
+  assert.ok(!html.includes('Week average: over, past the edge'), 'the within projection gets no label');
 });
 
 test('no over-the-edge label shows when both projections are within the ceiling', () => {
@@ -139,6 +140,27 @@ test('the series chart plots every reading and draws the dashed projections to t
   assert.equal(m[1].split(' ').length, 17, 'one point per reading since the reset');
   assert.ok(html.includes('data-series="recent"'), 'recent projection missing');
   assert.ok(html.includes('data-series="average"'), 'average projection missing');
+});
+
+test('the series axis runs between the two reset times of the response, never from a day total', () => {
+  const s = loadApp();
+  const pointsOf = html => html.match(/data-series="readings" points="([^"]*)"/)[1].split(' ').map(p => Number(p.split(',')[0]));
+  const plain = pointsOf(render(s, workedExampleBody()));
+  // 134.13 of the 168 hours between the resets, on a 320 wide chart.
+  assert.ok(Math.abs(plain[plain.length - 1] - 255.5) < 0.2, 'newest reading x was ' + plain[plain.length - 1]);
+  // The day figures are not read for the axis: nonsense values change nothing.
+  const skewed = pointsOf(render(s, workedExampleBody({ advice: { days_since_reset: 999, days_left: 0 } })));
+  assert.deepEqual(skewed, plain);
+});
+
+test('each projection past the ceiling gets its own label read from its own field', () => {
+  const s = loadApp();
+  const both = render(s, workedExampleBody({ advice: { projected_end_recent: 131.4, projected_end_avg: 118.2 } }));
+  assert.ok(both.includes('Recent burn: over, past the edge (131.4%)'));
+  assert.ok(both.includes('Week average: over, past the edge (118.2%)'));
+  const avgOnly = render(s, workedExampleBody({ advice: { projected_end_recent: 90.5, projected_end_avg: 118.2 } }));
+  assert.ok(!avgOnly.includes('Recent burn: over, past the edge'));
+  assert.ok(avgOnly.includes('Week average: over, past the edge (118.2%)'));
 });
 
 test('the renderer shows no NaN or undefined in the drawn text', () => {
