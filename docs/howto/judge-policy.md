@@ -221,7 +221,7 @@ which the rule applies.
 - **A judge that times out on every backend still holds the Automaton.** The
   `judge_timeout_seconds` limit, the warnings and the `needs_review` hold with
   the error alert work as described in [The needs-review hold](#the-needs-review-hold).
-  The size rule changes the order only.
+  The hold reason is `judge_timeout_hold`. The size rule changes the order only.
 - **A unit that pins its own guardrail backend is not reordered.** It keeps that
   one backend.
 - **If the lines cannot be counted** (for example the Automaton has no branch
@@ -243,8 +243,8 @@ Set it with any of the five methods:
 | Method | Where | How |
 |---|---|---|
 | YAML | `autonomous.judge_size_threshold_lines` in `config.yaml` | `autonomous:` then `judge_size_threshold_lines: 400`, and restart the daemon |
-| CLI | `datawatch autonomous config-set` with the flag `--judge-size-threshold-lines` | `datawatch autonomous config-set --judge-size-threshold-lines 400` |
-| Web UI | Settings > General > Autonomous > Judge size threshold | Enter the number of lines (0 = off) and save |
+| CLI | `datawatch autonomous config-set` with the flag `--judge-size-threshold-lines` (the CLI has no `judge-policy-set` subcommand; that verb belongs to the comm channel) | `datawatch autonomous config-set --judge-size-threshold-lines 400` |
+| Web UI | Settings > Automata > Autonomous Automata planning > Judge size threshold | Enter the number of lines (0 = off) and save |
 | REST API | `PUT /api/config` | Send the key `autonomous.judge_size_threshold_lines`, for example `{"autonomous.judge_size_threshold_lines": 400}` |
 | Comm channel | `autonomous judge-policy-set` | `autonomous judge-policy-set judge_size_threshold_lines=400` |
 
