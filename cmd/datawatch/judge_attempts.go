@@ -28,9 +28,18 @@ type judgeAttemptFn func(backend string, att *judgeAttempt) (autonomouspkg.Guard
 // backend is tried at most once. ok is false when no backend is left.
 type judgeBackendChooser func(tried []string) (backend string, ok bool)
 
+// judgeRetargetFn re-runs the judge's routing policy for a judge that waits for
+// a slot on `waiting`. left lists the backends the judge already left or tried.
+// ok is true only when the policy names another backend that has room right now.
+// It takes no lease and writes no decision log.
+type judgeRetargetFn func(waiting string, left []string) (backend, model, reason string, ok bool)
+
 // judgeAttempt is one attempt of a judge on one backend. TimedOut is set when
 // the run hit its time limit. NoSlot is set when the capacity lease could not
-// be granted in time, so the judge never ran on that backend.
+// be granted in time, so the judge never ran on that backend. Retarget, when
+// set, lets the wait for the lease move to another backend (runJudgeLeased).
+// MoveTo is the backend the wait gave up its place in the queue for, with the
+// model and reason the policy gave; empty when the wait did not move.
 type judgeAttempt struct {
 	Backend  string
 	Started  time.Time
@@ -38,6 +47,11 @@ type judgeAttempt struct {
 	Elapsed  time.Duration
 	TimedOut bool
 	NoSlot   bool
+
+	Retarget   judgeRetargetFn
+	MoveTo     string
+	MoveModel  string
+	MoveReason string
 }
 
 // judgeTryLog keeps the timed-out attempts of one judge call durable, so a
@@ -195,15 +209,45 @@ func judgeChooserFromList(backends []string) judgeBackendChooser {
 // cleared once the call finishes. A call whose every backend timed out, in this
 // run or an earlier one, holds without running the judge again. The chooser
 // must offer at least one backend on the first call of a fresh judge.
-func runJudgeAttempts(req autonomouspkg.GuardrailInvocation, choose judgeBackendChooser, limit time.Duration, alert judgeAlertFn, tries judgeTryLog, run judgeAttemptFn) (autonomouspkg.GuardrailVerdict, error) {
+//
+// retarget, when set, is handed to every attempt as att.Retarget: a judge that
+// waits for a slot may then leave its backend for one with room (see
+// runJudgeLeased). An attempt that returns with att.MoveTo set did not run: the
+// backend it left goes on the left list, one decision-log line is written
+// through pick (reason "moved from <old>: <reason>"), and the next attempt runs
+// on att.MoveTo without asking choose. The backend left is not tried and the
+// move is neither a timeout nor a missing slot. A judge never moves to a
+// backend it left, to one that timed out or lacked a slot, so it cannot flap.
+// A nil retarget keeps every wait on its own backend.
+func runJudgeAttempts(req autonomouspkg.GuardrailInvocation, choose judgeBackendChooser, limit time.Duration, alert judgeAlertFn, tries judgeTryLog, retarget judgeRetargetFn, pick judgePickFn, run judgeAttemptFn) (autonomouspkg.GuardrailVerdict, error) {
 	attempts, tried := judgeRestoredAttempts(tries, limit)
+	var left []string
 	var last autonomouspkg.GuardrailVerdict
 	var lastErr error
 	backend, ok := choose(tried)
 	for ok {
 		att := judgeAttempt{Backend: backend, Limit: limit, Started: time.Now()}
+		if retarget != nil {
+			// A wait may move to a backend that is neither one this call left nor
+			// one already tried. left and tried are read when the policy runs.
+			att.Retarget = func(waiting string, waited []string) (string, string, string, bool) {
+				excluded := append(append(append([]string(nil), waited...), left...), tried...)
+				return retarget(waiting, excluded)
+			}
+		}
 		verdict, err := run(backend, &att)
 		att.Elapsed = time.Since(att.Started)
+		if att.MoveTo != "" && !att.TimedOut && !att.NoSlot {
+			// The wait gave up its place in the queue for another backend. This is
+			// not a timeout or a slot shortage: the old backend is not tried, the
+			// chooser is not asked, and the judge runs on the target at once.
+			left = append(left, backend)
+			if pick != nil {
+				pick(att.MoveTo, att.MoveModel, fmt.Sprintf("moved from %s: %s", backend, att.MoveReason))
+			}
+			backend = att.MoveTo
+			continue
+		}
 		if !att.TimedOut && !att.NoSlot {
 			judgeClearTries(tries)
 			return verdict, err

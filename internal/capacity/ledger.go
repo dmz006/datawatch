@@ -325,6 +325,7 @@ type Ledger struct {
 	rates     map[string]RateCeiling
 	rateUse   map[string][]rateEntry
 	opt       Options
+	changed   chan struct{} // closed and replaced on every capacity change; see Changed
 
 	wedgeReported atomic.Bool // set while a lock wedge has been reported; see SnapshotWatched
 }
@@ -348,7 +349,55 @@ func New(opt Options) *Ledger {
 		rates:     map[string]RateCeiling{},
 		rateUse:   map[string][]rateEntry{},
 		opt:       opt,
+		changed:   make(chan struct{}),
 	}
+}
+
+// Changed returns a channel that is closed the next time capacity changes: a
+// Release of a holder that held a lease (also a lease reaped or given back by
+// a waiter granted as it was removed), SetLimit, SetRate and Replan. A waiter
+// removed without freeing a lease is not a change. It is a broadcast: every
+// caller holding the channel wakes together, and the ledger then installs a
+// fresh open channel. A caller that takes the channel after a change simply
+// gets that fresh one, so it must re-evaluate once right after taking it and
+// then select on it; a change between the evaluation and the select is not
+// lost, because the channel was taken before the evaluation.
+func (l *Ledger) Changed() <-chan struct{} {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.changed
+}
+
+// signalChangedLocked wakes everyone waiting on Changed. Closing a channel is
+// non-blocking, so it is safe under the lock; it is deliberately not an
+// Options callback (see the LOCK RULE).
+func (l *Ledger) signalChangedLocked() {
+	close(l.changed)
+	l.changed = make(chan struct{})
+}
+
+// WouldGrant reports whether req would be granted right now: a dry run of the
+// check a real dispatch makes, through resolveLocked, so NodeChoices, per-node
+// pools, rate ceilings and every Options backpressure hook count exactly as
+// they would for Acquire. It takes no lease, queues no waiter, and changes no
+// grant order, model affinity or rate usage. A Refresh on req runs first and
+// a stale Node is dropped, as dispatchLocked does.
+//
+// It ignores queue order on purpose: other waiters ahead of req may still be
+// granted first, so true means there is room now, not a reservation.
+func (l *Ledger) WouldGrant(req Request) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if req.Refresh != nil {
+		cur := req.Refresh()
+		req.Pools, req.Node = cur.Pools, cur.Node
+		req.NodeChoices, req.ExcludeNodes = cur.NodeChoices, cur.ExcludeNodes
+	}
+	req = req.withoutStaleNode()
+	// resolveLocked reaches rateWindowLocked, which only drops entries already
+	// outside the window (Snapshot does the same); it records no use.
+	_, why := l.resolveLocked(req)
+	return why == ""
 }
 
 // SetLimit sets a pool limit (0 or less = unlimited) and re-dispatches.
@@ -359,6 +408,7 @@ func (l *Ledger) SetLimit(pool string, limit int) {
 	} else {
 		l.limits[pool] = limit
 	}
+	l.signalChangedLocked()
 	l.dispatchLocked()
 	l.mu.Unlock()
 }
@@ -632,6 +682,7 @@ func (l *Ledger) dispatchLocked() {
 func (l *Ledger) Replan() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.signalChangedLocked()
 	l.dispatchLocked()
 }
 
@@ -753,6 +804,7 @@ func (l *Ledger) remove(w *waiter) {
 	select {
 	case <-w.grant: // granted in the same instant: give it back
 		delete(l.leases, w.req.Holder)
+		l.signalChangedLocked()
 	default:
 	}
 	l.dispatchLocked()
@@ -833,6 +885,7 @@ func (l *Ledger) Release(holder string) {
 	defer l.mu.Unlock()
 	if _, ok := l.leases[holder]; ok {
 		delete(l.leases, holder)
+		l.signalChangedLocked()
 		l.dispatchLocked()
 	}
 }
@@ -913,6 +966,7 @@ func (l *Ledger) Reap(live func(Lease) bool) []string {
 		}
 	}
 	if len(out) > 0 {
+		l.signalChangedLocked()
 		l.dispatchLocked()
 	}
 	sort.Strings(out)

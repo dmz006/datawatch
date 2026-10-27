@@ -38,6 +38,7 @@ func (l *Ledger) SetRate(pool string, c RateCeiling) {
 	} else {
 		l.rates[pool] = c
 	}
+	l.signalChangedLocked()
 	l.dispatchLocked()
 	l.mu.Unlock()
 }

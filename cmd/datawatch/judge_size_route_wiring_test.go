@@ -212,7 +212,7 @@ func TestJudgeSizeRouteEachBackendTriedOnceAndHoldStaysUnchanged(t *testing.T) {
 	var alerts []string
 	req := autonomouspkg.GuardrailInvocation{PRDID: "p1", UnitID: "u1", Guardrail: "g"}
 	verdict, err := runJudgeAttempts(req, choose, time.Minute,
-		func(level, title, body string) { alerts = append(alerts, level) }, nil,
+		func(level, title, body string) { alerts = append(alerts, level) }, nil, nil, nil,
 		func(backend string, att *judgeAttempt) (autonomouspkg.GuardrailVerdict, error) {
 			ran = append(ran, backend)
 			att.TimedOut = true

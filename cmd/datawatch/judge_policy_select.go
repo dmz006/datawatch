@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"sync/atomic"
 	"time"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
@@ -117,6 +118,28 @@ func judgeVerifierChooser(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Conf
 	return judgeVerifierChooserSized(mgr, liveCfg, unitBackend, probe, pick, judgeSize{})
 }
 
+// judgeCapacityFits is a dry run of the judge's admission: it reports whether a
+// judge lease for the unit on backend and model would be granted right now,
+// without queueing or taking a lease. A judge that waits for a slot reads it to
+// see whether another backend has room. Set by wireJudgeAdmission; nil until
+// then, and everything then fits.
+var judgeCapacityFits func(backend, model, unitID, prdID string) bool
+
+// judgeCapacityChanged returns the capacity ledger's change channel (see
+// capacity.Ledger.Changed). Set by wireJudgeAdmission; nil until then.
+var judgeCapacityChanged func() <-chan struct{}
+
+// judgeRoute is how one judge call picks its backends: Choose for each attempt,
+// Retarget for a judge that waits for a slot, and Pick, the decision-log writer
+// both use.
+type judgeRoute struct {
+	Choose judgeBackendChooser
+	// Retarget re-runs the selection for a judge waiting on one backend. nil
+	// means the judge never leaves the backend it waits on (a pinned unit).
+	Retarget judgeRetargetFn
+	Pick     judgePickFn
+}
+
 // judgeVerifierChooserSized is judgeVerifierChooser with the size rule: when
 // size.Threshold is set, the list the selector reads (the judge policy list,
 // else the verifier policy list) and the candidate pool are put in size order
@@ -126,6 +149,21 @@ func judgeVerifierChooser(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Conf
 // rule and the line count. Backends tried
 // are still excluded per call, so each is tried at most once.
 func judgeVerifierChooserSized(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Config, unitBackend string, probe func(backend, model string) bool, pick judgePickFn, size judgeSize) judgeBackendChooser {
+	return judgeVerifierRouteSized(mgr, liveCfg, unitBackend, probe, nil, pick, size).Choose
+}
+
+// judgeVerifierRouteSized builds the chooser of judgeVerifierChooserSized and
+// the retarget function that shares its selection. Policy resolution, size
+// ordering, candidate exclusion, holds and the Claude window are one function
+// (selectOnce) that both call, so a waiting judge reads the same policy the
+// first pick did. fits is the dry run of the judge's admission (nil: every
+// backend fits); only the retarget function reads it.
+//
+// The retarget function takes no lease and writes no decision log; the caller
+// records a move it acts on. Only prefer-free and balance ever move: fixed,
+// gpu-only and claude-only keep the backend they picked, as does a pick that
+// came from the unit-backend fallback.
+func judgeVerifierRouteSized(mgr *autonomouspkg.Manager, liveCfg autonomouspkg.Config, unitBackend string, probe func(backend, model string) bool, fits func(backend, model string) bool, pick judgePickFn, size judgeSize) judgeRoute {
 	verifier := effectiveVerifierPolicy(liveCfg)
 	listed := config.NormalizeJudgePolicy(liveCfg.JudgePolicy)
 	if len(listed) == 0 {
@@ -156,43 +194,91 @@ func judgeVerifierChooserSized(mgr *autonomouspkg.Manager, liveCfg autonomouspkg
 		}
 		pick = func(backend, model, reason string) { plainPick(backend, model, rule+"; "+reason) }
 	}
-	return func(tried []string) (string, bool) {
-		fallback := func(reason string) (string, bool) {
-			if len(tried) == 0 {
-				pick(unitBackend, "", reason+"; using the unit backend "+unitBackend)
-				return unitBackend, true
-			}
-			return "", false
-		}
+
+	// selectOnce runs the selection for one call. excluded lists the backends
+	// the call must not take again. exhausted is true when the policy list is
+	// used up: there is no fallback then. Otherwise a selection with no Backend
+	// says why in Reason, and the chooser falls back to the unit backend.
+	selectOnce := func(excluded []string, load *judgeRouteLoad) (sel autonomouspkg.PolicySelection, exhausted bool) {
 		backends := listed
 		if len(listed) > 0 {
-			backends = excludeBackends(listed, tried)
+			backends = excludeBackends(listed, excluded)
 			if len(backends) == 0 {
-				return "", false
+				return sel, true
 			}
 		}
 		policy := autonomouspkg.ResolvePolicyForRole(autonomouspkg.PolicyRoleJudge, verifier, backends)
 		if !verifierPolicyApplies(policy, autonomouspkg.VerifierSelectFlags{}) {
-			return fallback("judge policy does not apply")
+			return autonomouspkg.PolicySelection{Reason: "judge policy does not apply"}, false
 		}
-		left := excludeBackends(candidates, tried)
+		left := excludeBackends(candidates, excluded)
 		flags := autonomouspkg.VerifierSelectFlags{}
 		if mgr != nil {
 			flags.ClaudeHold = mgr.HeldBackends(verifierPolicyBackends(policy, left))
 		}
 		window := time.Duration(config.NormalizeVerifierPolicyClaudeCapWindow(policy.ClaudeCapWindowMinutes)) * time.Minute
 		flags.ClaudeSessionsInWindow = judgeClaudeWindow.Count(window)
+		return autonomouspkg.SelectBackendForRole(autonomouspkg.PolicyRoleJudge, verifier, backends, left, load, flags), false
+	}
+
+	// fellBack is the backend the last choose took from the unit-backend
+	// fallback, "" when the last pick came from the policy. A judge waiting on
+	// it never moves: the fallback is not a policy pick, and the policy reading
+	// differently later (the Claude window clearing, say) must not undo it.
+	var fellBack atomic.Value
+	fellBack.Store("")
+
+	choose := func(tried []string) (string, bool) {
+		fellBack.Store("")
 		load := &judgeRouteLoad{results: map[string]bool{}}
 		if probe != nil {
 			load.admit = func(backend string) bool { return probe(backend, "") }
 		}
-		sel := autonomouspkg.SelectBackendForRole(autonomouspkg.PolicyRoleJudge, verifier, backends, left, load, flags)
+		sel, exhausted := selectOnce(tried, load)
+		if exhausted {
+			return "", false
+		}
 		if sel.Backend == "" {
-			return fallback(sel.Reason)
+			if len(tried) == 0 {
+				pick(unitBackend, "", sel.Reason+"; using the unit backend "+unitBackend)
+				fellBack.Store(unitBackend)
+				return unitBackend, true
+			}
+			return "", false
 		}
 		pick(sel.Backend, sel.Model, sel.Reason)
 		return sel.Backend, true
 	}
+
+	mode, err := config.NormalizeVerifierPolicyMode(verifier.Mode)
+	if err != nil {
+		mode = config.VerifierPolicyFixed
+	}
+	movable := mode == config.VerifierPolicyPreferFree || mode == config.VerifierPolicyBalance
+	retarget := func(waiting string, left []string) (string, string, string, bool) {
+		if !movable {
+			// fixed, gpu-only and claude-only name one backend and keep it. A
+			// Claude hold or the cap landing while the judge waits would make
+			// the selector name the next entry, so the mode is checked here.
+			return "", "", "", false
+		}
+		if fb, _ := fellBack.Load().(string); fb != "" && fb == waiting {
+			return "", "", "", false
+		}
+		skip := map[string]bool{waiting: true}
+		for _, b := range left {
+			skip[b] = true
+		}
+		load := &judgeRouteLoad{results: map[string]bool{}, admit: func(backend string) bool {
+			return !skip[backend] && (fits == nil || fits(backend, ""))
+		}}
+		sel, exhausted := selectOnce(left, load)
+		if exhausted || sel.Backend == "" || skip[sel.Backend] || !load.TryAdmit(sel.Backend) {
+			return "", "", "", false
+		}
+		return sel.Backend, sel.Model, sel.Reason, true
+	}
+	return judgeRoute{Choose: choose, Retarget: retarget, Pick: pick}
 }
 
 // judgeBackendChooserFor picks how one judge call chooses its backends. Every
@@ -218,8 +304,17 @@ func judgeBackendChooserFor(ctx context.Context, mgr *autonomouspkg.Manager, req
 // otherwise empty. It is never put in front of a configured judge_policy list,
 // because the operator's list order must stand.
 func judgeBackendChooserForSize(ctx context.Context, mgr *autonomouspkg.Manager, req autonomouspkg.GuardrailInvocation, gcfg autonomouspkg.Config, unitBackend string, size judgeSize) judgeBackendChooser {
+	return judgeRouteForSize(ctx, mgr, req, gcfg, unitBackend, size).Choose
+}
+
+// judgeRouteForSize is judgeBackendChooserForSize with the retarget function
+// and the decision-log writer of the same call. A pinned unit gets no retarget
+// function: it waits for its own backend and never moves.
+func judgeRouteForSize(ctx context.Context, mgr *autonomouspkg.Manager, req autonomouspkg.GuardrailInvocation, gcfg autonomouspkg.Config, unitBackend string, size judgeSize) judgeRoute {
 	pick := judgeDecisionLog(mgr, req)
+	pinned := false
 	if pin := req.GuardrailBackend; req.GuardrailPinned && pin != "" {
+		pinned = true
 		gcfg.JudgePolicy = []string{pin}
 		unitBackend = pin
 		logged := pick
@@ -234,5 +329,13 @@ func judgeBackendChooserForSize(ctx context.Context, mgr *autonomouspkg.Manager,
 			return judgeCapacityTryAdmit(ctx, backend, model, req.UnitID, req.PRDID)
 		}
 	}
-	return judgeVerifierChooserSized(mgr, gcfg, unitBackend, probe, pick, size)
+	fits := func(backend, model string) bool {
+		f := judgeCapacityFits
+		return f == nil || f(backend, model, req.UnitID, req.PRDID)
+	}
+	route := judgeVerifierRouteSized(mgr, gcfg, unitBackend, probe, fits, pick, size)
+	if pinned {
+		route.Retarget = nil
+	}
+	return route
 }

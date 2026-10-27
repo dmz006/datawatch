@@ -203,7 +203,7 @@ func (lc *judgeLifecycle) run(ctx context.Context, req autonomouspkg.GuardrailIn
 	cfg.JudgePolicy = policy
 	choose := judgeBackendChooserFor(ctx, lc.mgr, req, cfg, policy[0])
 	alert := func(level, title, body string) { emitJudgeAlert(lc.mgr, level, title, body) }
-	return runJudgeAttempts(req, choose, lc.limit, alert, judgeTryLogFor(lc.mgr, req), lc.attempt(ctx, req))
+	return runJudgeAttempts(req, choose, lc.limit, alert, judgeTryLogFor(lc.mgr, req), nil, nil, lc.attempt(ctx, req))
 }
 
 // attempt is one judge attempt as the guardrail closure runs it: the judge's

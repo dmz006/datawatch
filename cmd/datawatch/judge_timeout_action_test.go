@@ -54,7 +54,7 @@ func TestJudgeTimeoutWarningNamesPRDBackendsAndTimeSpent(t *testing.T) {
 	var alerts []alertRecord
 	run, _ := timingOutRun("claude-code")
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-warn", Guardrail: "rules"}
-	if _, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), 30*time.Minute, recordAlerts(&alerts), nil, run); err != nil {
+	if _, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), 30*time.Minute, recordAlerts(&alerts), nil, nil, nil, run); err != nil {
 		t.Fatalf("err = %v", err)
 	}
 	if len(alerts) != 1 || alerts[0].level != "warn" {
@@ -75,7 +75,7 @@ func TestJudgeSingleBackendPolicyGetsOneAttemptThenHolds(t *testing.T) {
 	var alerts []alertRecord
 	run, tried := timingOutRun("qwen")
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-one", Guardrail: "rules"}
-	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"qwen"}), 30*time.Minute, recordAlerts(&alerts), nil, run)
+	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"qwen"}), 30*time.Minute, recordAlerts(&alerts), nil, nil, nil, run)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -98,7 +98,7 @@ func TestJudgeTimeoutFirstBackendThenSuccessRaisesOneWarning(t *testing.T) {
 	run, tried := timingOutRun("claude-code")
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-ok", Guardrail: "rules"}
 	log := &fakeJudgeTryLog{}
-	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), time.Minute, recordAlerts(&alerts), log, run)
+	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), time.Minute, recordAlerts(&alerts), log, nil, nil, run)
 	if err != nil || verdict.Outcome != "pass" {
 		t.Fatalf("verdict = %+v, err = %v; want the second backend's pass", verdict, err)
 	}
@@ -121,7 +121,7 @@ func TestJudgeAllBackendsTimeOutHoldsWithSummaryOfEveryAttempt(t *testing.T) {
 	run, _ := timingOutRun("claude-code", "qwen")
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-hold", Guardrail: "rules"}
 	log := &fakeJudgeTryLog{}
-	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), time.Minute, recordAlerts(&alerts), log, run)
+	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), time.Minute, recordAlerts(&alerts), log, nil, nil, run)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -164,7 +164,7 @@ func TestJudgeTimeoutsSurviveRestartAndSkipTheTriedBackends(t *testing.T) {
 	var alerts []alertRecord
 	run, tried := timingOutRun()
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-restart", Guardrail: "rules"}
-	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), 30*time.Minute, recordAlerts(&alerts), log, run)
+	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), 30*time.Minute, recordAlerts(&alerts), log, nil, nil, run)
 	if err != nil || verdict.Outcome != "pass" {
 		t.Fatalf("verdict = %+v, err = %v; want qwen's pass", verdict, err)
 	}
@@ -186,7 +186,7 @@ func TestJudgeRestoredTimeoutsOnEveryBackendHoldWithoutRunning(t *testing.T) {
 	var alerts []alertRecord
 	run, tried := timingOutRun()
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-held", Guardrail: "rules"}
-	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), 30*time.Minute, recordAlerts(&alerts), log, run)
+	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), 30*time.Minute, recordAlerts(&alerts), log, nil, nil, run)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -205,7 +205,7 @@ func TestJudgeHoldAlertNamesPRDBackendsAndTotalTime(t *testing.T) {
 	var alerts []alertRecord
 	run, _ := timingOutRun("claude-code", "qwen", "ollama")
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-text", Guardrail: "rules"}
-	if _, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen", "ollama"}), 30*time.Minute, recordAlerts(&alerts), nil, run); err != nil {
+	if _, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen", "ollama"}), 30*time.Minute, recordAlerts(&alerts), nil, nil, nil, run); err != nil {
 		t.Fatalf("err = %v", err)
 	}
 	last := alerts[len(alerts)-1]
@@ -224,7 +224,7 @@ func TestJudgeTryLogWriteFailureDoesNotStopTheJudge(t *testing.T) {
 	run, tried := timingOutRun("claude-code")
 	log := &fakeJudgeTryLog{err: errors.New("disk full")}
 	req := autonomouspkg.GuardrailInvocation{PRDID: "prd-io", Guardrail: "rules"}
-	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), time.Minute, recordAlerts(&alerts), log, run)
+	verdict, err := runJudgeAttempts(req, judgeChooserFromList([]string{"claude-code", "qwen"}), time.Minute, recordAlerts(&alerts), log, nil, nil, run)
 	if err != nil || verdict.Outcome != "pass" {
 		t.Fatalf("verdict = %+v, err = %v; a failed record write must not stop the next backend", verdict, err)
 	}
