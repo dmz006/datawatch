@@ -28,6 +28,9 @@ TMUX_RESTARTS, TMUX_SINCE = "3", "Tue 2026-10-20 18:46:38 EDT"
 SILENT_MIN = 60
 # Deliberately held PRDs (operator or build manager decision, with the reason in the registry).
 ACKED_RUNS = {40316827946, 40293597613, 40320408404, 40366394552, 40366382818, 40425238678}  # owasp-zap: only the "attach reports to release" step failed on a GitHub API rate limit; the scan passed (registry row 209); 40320408404 failed the version bump check on a script-only commit, fixed by exempting this script in 9.19.3; 40366394552 and 40366382818 are CodeQL Analyze (actions) runs that end red at the result upload with no error shown, tracked in BL625 (row 212); 40425238678 is CodeQL rejecting the workflow upload because GitHub default setup is also enabled (operator decision pending)
+# While the operator has not chosen between GitHub default CodeQL setup and our own workflow, every CodeQL run on main ends
+# red at the SARIF upload ("advanced configurations cannot be processed when the default setup is enabled"); set to False once decided.
+CODEQL_CONFLICT_KNOWN = True
 IGNORE = {"58aa0001", "db4b0001", "99c20001", "fdd80001", "f3420001"}  # 58aa0001 BL598 held (row 180); db4b0001 BL622 draft, not decomposed while Claude use is over the pace line (row 209); 99c20001 BL623 draft, decompose at the next hourly tick if the budget allows (row 210)
 
 
@@ -185,7 +188,7 @@ def main():
                 continue
             age = time.time() - time.mktime(time.strptime(r["createdAt"], "%Y-%m-%dT%H:%M:%SZ")) + time.timezone
             if r["status"] == "completed" and r["conclusion"] not in ("success", "skipped", "cancelled"):
-                if age < 6 * 3600 and r["databaseId"] not in ACKED_RUNS:
+                if age < 6 * 3600 and r["databaseId"] not in ACKED_RUNS and not (CODEQL_CONFLICT_KNOWN and r["workflowName"] == "CodeQL"):
                     findings.append("CI RED %s run %s (%s)" % (r["workflowName"], r["databaseId"], r["displayTitle"][:40]))
             elif r["status"] == "in_progress" and age > 150 * 60 and r["workflowName"] == "Release":
                 findings.append("CI STUCK? Release run %s in progress for %d min" % (r["databaseId"], age // 60))
