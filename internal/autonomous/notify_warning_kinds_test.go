@@ -72,6 +72,9 @@ func scopeWarnEvent(prdID string) LifecycleEvent {
 		StoryID: "story-1",
 		TaskID:  "task-1",
 		Files:   []string{"b.go"},
+		// Deep link to the alert raised alongside the warning (the
+		// shape emitScopeWarning produces from the alert id).
+		Link: "?alert=alert-42",
 	}
 }
 
@@ -126,6 +129,14 @@ func TestNotifyOptIn_SubscriptionDelivery(t *testing.T) {
 	qEvs, _, _ := queue.Pending("team", 0, 10)
 	if len(qEvs) != 1 || qEvs[0].Kind != KindScopeWarning || qEvs[0].PRDID != "prd-1" {
 		t.Errorf("queue events = %+v, want the one opt-in scope_warning", qEvs)
+	}
+	// The queued event carries the full payload: the finding files and
+	// the deep link to the alert raised alongside the warning.
+	if !reflect.DeepEqual(qEvs[0].Files, []string{"b.go"}) {
+		t.Errorf("queue[0].Files = %v, want [b.go]", qEvs[0].Files)
+	}
+	if qEvs[0].Link != "?alert=alert-42" {
+		t.Errorf("queue[0].Link = %q, want the alert deep link carried verbatim", qEvs[0].Link)
 	}
 
 	// Gated: the same subscription filters these kinds, but prd-gated's
@@ -291,5 +302,73 @@ func TestNotifyOptIn_TestFireAndDescribe(t *testing.T) {
 	}
 	if sinkLevel(guard) != "warn" {
 		t.Errorf("sinkLevel(guardrail_warn) = %q, want %q", sinkLevel(guard), "warn")
+	}
+}
+
+// TestNotifyAudit_NewKindsVerbatim — the audit event written when an
+// Automaton's (or a guardrail profile's) notify_events list changes keeps
+// the newly opted-in warning kinds verbatim, in order, in its "new"
+// detail. The audit helper is the shared fakeAuditLog from
+// notify_events_audit_test.go and the audit sites are the existing
+// SetPRDNotifyEvents / UpdateGuardrailProfile calls — this table only
+// checks the two new kinds flow through unchanged.
+func TestNotifyAudit_NewKindsVerbatim(t *testing.T) {
+	cases := []struct {
+		name    string
+		scope   string // "automaton" | "profile"
+		list    []string
+		wantNew string
+	}{
+		{"scope_warning_automaton", "automaton", []string{KindScopeWarning}, KindScopeWarning},
+		{"guardrail_warn_automaton", "automaton", []string{KindGuardrailWarn}, KindGuardrailWarn},
+		{"both_in_order_automaton", "automaton", []string{KindScopeWarning, KindGuardrailWarn, "prd.blocked"},
+			KindScopeWarning + "," + KindGuardrailWarn + ",prd.blocked"},
+		{"both_reversed_profile", "profile", []string{KindGuardrailWarn, KindScopeWarning},
+			KindGuardrailWarn + "," + KindScopeWarning},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m, _, _, _, _ := optInEngine(t)
+			fake := &fakeAuditLog{}
+			m.SetAuditFn(fake.fn)
+
+			switch c.scope {
+			case "automaton":
+				prd, err := m.CreatePRD("audit-"+c.name, t.TempDir(), "opencode", "", EffortNormal)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := m.SetPRDNotifyEvents(prd.ID, c.list); err != nil {
+					t.Fatal(err)
+				}
+				if fake.count("autonomous_notify_events_changed") != 1 {
+					t.Fatalf("audit actions = %v, want exactly one autonomous_notify_events_changed", fake.actions)
+				}
+				d := fake.details[0]
+				if d["scope"] != "automaton" || d["prd_id"] != prd.ID {
+					t.Errorf("scope/prd_id = %v/%v, want automaton/%s", d["scope"], d["prd_id"], prd.ID)
+				}
+			case "profile":
+				p, err := m.CreateGuardrailProfile("audit-"+c.name, "", nil, nil, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := m.UpdateGuardrailProfile(p.ID, p.Name, "", nil, nil, c.list); err != nil {
+					t.Fatal(err)
+				}
+				if fake.count("autonomous_notify_events_changed") != 1 {
+					t.Fatalf("audit actions = %v, want exactly one autonomous_notify_events_changed", fake.actions)
+				}
+				d := fake.details[0]
+				if d["scope"] != "profile" || d["profile_id"] != p.ID {
+					t.Errorf("scope/profile_id = %v/%v, want profile/%s", d["scope"], d["profile_id"], p.ID)
+				}
+			}
+
+			// The opt-in kinds appear verbatim, in order, in the audit "new".
+			if got := fake.details[0]["new"]; got != c.wantNew {
+				t.Errorf("audit \"new\" = %v, want %q verbatim and in order", got, c.wantNew)
+			}
+		})
 	}
 }

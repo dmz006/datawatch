@@ -46,7 +46,7 @@ func scopeCollector(t *testing.T, m *Manager) *collector {
 // event carrying the Automaton, task, finding files and the
 // undeclared_edit_detected Decision the same path recorded.
 func TestScopeWarning_EmittedOnUndeclaredEdit(t *testing.T) {
-	m, prd, task, dir, _, _ := undeclaredFixture(t, "warn", []string{"a.go"})
+	m, prd, task, dir, _, alerts := undeclaredFixture(t, "warn", []string{"a.go"})
 	col := scopeCollector(t, m)
 	workerCommit(t, dir)
 
@@ -78,6 +78,19 @@ func TestScopeWarning_EmittedOnUndeclaredEdit(t *testing.T) {
 		t.Errorf("decision = %+v, want the undeclared_edit_detected Decision", ev.Decision)
 	} else if !strings.Contains(ev.Decision.Note, "b.go") {
 		t.Errorf("decision note = %q, naming the flagged file", ev.Decision.Note)
+	}
+	// Link is non-empty: the deep link to the alert the same path raised,
+	// in the "?alert=<id>" form that DescribeLifecycleEvent renders, with
+	// the id the sink reported for that alert.
+	if ev.Link == "" {
+		t.Fatal("Link is empty, want the non-empty alert deep link \"?alert=<id>\"")
+	}
+	want := "?alert=" + alerts.lastID()
+	if ev.Link != want {
+		t.Errorf("Link = %q, want %q", ev.Link, want)
+	}
+	if !strings.Contains(DescribeLifecycleEvent(ev), ev.Link) {
+		t.Errorf("DescribeLifecycleEvent = %q, want it to carry the link %q", DescribeLifecycleEvent(ev), ev.Link)
 	}
 }
 
@@ -119,6 +132,12 @@ func TestScopeWarning_EmittedOnForeignDrift(t *testing.T) {
 		}
 		if ev.Decision == nil || ev.Decision.Kind != "file_drift_detected" {
 			t.Errorf("decision = %+v, want the file_drift_detected Decision", ev.Decision)
+		}
+		// The foreign-drift path records no alert that could be named, so
+		// the Link (whose convention is to point at the alert raised
+		// alongside the warning) stays empty.
+		if ev.Link != "" {
+			t.Errorf("Link = %q, want empty (no alert raised on this path)", ev.Link)
 		}
 	})
 

@@ -48,8 +48,9 @@ type undeclaredAlertRecorder struct {
 	alerts []string
 }
 
-func (r *undeclaredAlertRecorder) fn(level, title, body string) {
+func (r *undeclaredAlertRecorder) fn(level, title, body string) string {
 	r.alerts = append(r.alerts, level+"|"+title+"|"+body)
+	return ""
 }
 
 func TestCheckUndeclaredEdits_OffIsFullNoOp(t *testing.T) {

@@ -396,7 +396,11 @@ func (m *Manager) checkForeignFileDrift(ctx context.Context, prd *PRD, t *Task) 
 		// and after the mode handling, so it neither blocks nor alters
 		// the task. The in-run group above stays unemitted (it has no
 		// PWA warning).
-		m.emitScopeWarning(prd, t, preExisting, &preExistingDec)
+		//
+		// This path records no alert that could be named, so the event's
+		// Link stays empty (the Link convention is to point at the alert
+		// raised alongside the warning).
+		m.emitScopeWarning(prd, t, preExisting, &preExistingDec, "")
 	}
 	return blockPreExisting
 }
@@ -502,14 +506,16 @@ func (m *Manager) checkUndeclaredEdits(ctx context.Context, prd *PRD, t *Task) (
 			"mode":    mode,
 		})
 	}
+	alertID := ""
 	if alertFn != nil {
-		alertFn("warn", "Undeclared edit detected", "prd "+prd.ID+" task "+t.ID+": "+joined)
+		alertID = alertFn("warn", "Undeclared edit detected", "prd "+prd.ID+" task "+t.ID+": "+joined)
 	}
 	log.Printf("[autonomous] WARNING %s/%s undeclared edit: task edited file(s) not in its planned or generated files: %s", prd.ID, t.ID, joined)
 	// Opt-in KindScopeWarning at exactly the point the "Undeclared edit
 	// detected" warn alert is raised: informational only, raised in both
-	// warn and block mode, and the mode handling below stays as is.
-	m.emitScopeWarning(prd, t, findings, lastDecision(prd, "undeclared_edit_detected"))
+	// warn and block mode, and the mode handling below stays as is. The
+	// event's Link ("?alert=<id>") names the alert the sink recorded.
+	m.emitScopeWarning(prd, t, findings, lastDecision(prd, "undeclared_edit_detected"), alertID)
 	if mode == "block" {
 		t.Status = TaskBlocked
 		t.Error = "undeclared_edit: " + joined

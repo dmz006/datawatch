@@ -16,7 +16,12 @@ package autonomous
 // finding list and dec the Decision the same code path appended (nil
 // when none); both are copied so later mutation cannot leak into a
 // subscriber.
-func (m *Manager) emitScopeWarning(prd *PRD, t *Task, files []string, dec *Decision) {
+//
+// alertID is the id of the alert the same code path raised alongside
+// the warning ("" when the raise recorded no alert, e.g. the
+// foreign-drift check); it renders into ev.Link as the PWA deep link
+// "?alert=<id>" so the warning points at its alert.
+func (m *Manager) emitScopeWarning(prd *PRD, t *Task, files []string, dec *Decision, alertID string) {
 	if m == nil || prd == nil || t == nil {
 		return
 	}
@@ -28,12 +33,23 @@ func (m *Manager) emitScopeWarning(prd *PRD, t *Task, files []string, dec *Decis
 		StoryID:     t.StoryID,
 		TaskID:      t.ID,
 		Files:       append([]string(nil), files...),
+		Link:        alertLink(alertID),
 	}
 	if dec != nil {
 		d := *dec
 		ev.Decision = &d
 	}
 	m.emit(ev)
+}
+
+// alertLink renders the PWA deep link for a recorded alert id
+// ("?alert=<id>"); an empty id yields an empty link, which
+// DescribeLifecycleEvent omits.
+func alertLink(alertID string) string {
+	if alertID == "" {
+		return ""
+	}
+	return "?alert=" + alertID
 }
 
 // emitGuardrailWarn publishes a guardrail_warn event for the warn

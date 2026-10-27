@@ -19,10 +19,11 @@ type holdAlert struct {
 	level, title, body string
 }
 
-func (l *holdAlertLog) sink(level, title, body string) {
+func (l *holdAlertLog) sink(level, title, body string) string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.alerts = append(l.alerts, holdAlert{level, title, body})
+	return ""
 }
 
 func (l *holdAlertLog) all() []holdAlert {

@@ -14,10 +14,11 @@ type laneFillAlertSink struct {
 	list []laneFillAlertRecord
 }
 
-func (s *laneFillAlertSink) add(level, title, body string) {
+func (s *laneFillAlertSink) add(level, title, body string) string {
 	s.mu.Lock()
 	s.list = append(s.list, laneFillAlertRecord{level, title, body})
 	s.mu.Unlock()
+	return ""
 }
 
 func (s *laneFillAlertSink) all() []laneFillAlertRecord {
