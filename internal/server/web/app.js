@@ -3378,9 +3378,8 @@ window.toggleSessionWatch = function(fullId) {
   else state.watchedSessions.add(fullId);
   try { localStorage.setItem('cs_sessions_watched', JSON.stringify([...state.watchedSessions])); } catch (_) {}
   renderSessionsView();
-  // datawatch-app parity (D61a) — the watch toggle now also lives in the
-  // session detail header (previously list-card only), so toggling from
-  // there needs to refresh that view's own icon color too.
+  // Other controls in the open detail view (the Tags dropdown) call this too,
+  // so re-render that view to keep it in step.
   if (state.activeView === 'session-detail' && state.activeSession === fullId) {
     renderSessionDetail(fullId);
   }
@@ -4195,9 +4194,6 @@ function renderSessionDetail(sessionId) {
             sessionMode === 'tmux' ? `<span class="mode-badge mode-${sessionMode}">${sessionMode}</span>` : ''}
           <span class="state detail-state-badge ${badgeClass}" onclick="showStateOverride('${escHtml(sessionId)}',this)" style="cursor:pointer;" title="Click to change state">${escHtml(stateText)}</span>
           <span id="actionBtns">${actionButtons}</span>
-          <!-- datawatch-app parity (D61a, 2026-10-06 gap list row 9):
-               Watch toggle previously only on the list card. -->
-          <button class="btn-icon" onclick="toggleSessionWatch('${escHtml(sessionId)}')" style="font-size:14px;padding:0 2px;background:transparent;border:none;cursor:pointer;flex-shrink:0;${state.watchedSessions.has(sessionId)?'color:var(--accent2,#60a5fa);':'opacity:0.4;'}" title="${escHtml(state.watchedSessions.has(sessionId) ? (t('session_action_unwatch')||'Stop watching') : (t('session_action_watch')||'Watch for updates'))}">👁</button>
           <!-- GATE alpha.36 (operator 2026-05-10): Timeline + Response
                are icon-only on narrow / phone screens — labels were
                wrapping awkwardly. Tooltips carry the meaning. Right-
