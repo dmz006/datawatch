@@ -65,7 +65,9 @@
 //  7. write task files — every task whose title starts with a write verb
 //     (planWriteTaskVerbs) must declare the files it will change in
 //     FilesPlanned; FilesGenerated is verification output and does not
-//     satisfy the rule.
+//     satisfy the rule. The rule is waived for a read-only task (first
+//     spec line starts with planReadOnlyMarker), a smoke or final_gate
+//     task, and a task whose title holds a planGateTitlePhrases phrase.
 package autonomous
 
 import (
@@ -101,7 +103,8 @@ const (
 	FindingTrackerIDInName = "tracker_id_in_name"
 	// FindingWriteTaskWithoutFiles — a task whose title starts with a
 	// write verb (planWriteTaskVerbs) but whose FilesPlanned list is
-	// empty.
+	// empty, and which is not read-only, smoke, final_gate or a gate
+	// or check task by title.
 	FindingWriteTaskWithoutFiles = "write_task_without_files"
 )
 
@@ -191,7 +194,55 @@ var (
 		"Document", "Register", "Wire", "Make", "Move", "Replace",
 		"Rename", "Extend", "Remove",
 	}
+
+	// planGateTitlePhrases — phrases that mark a task as a gate or check
+	// task rather than a file-writing one. Rule 7 matches them as whole
+	// words, case-insensitively, against the task TITLE only: doc tasks
+	// often mention install or a test suite in passing in their spec, and
+	// matching the body would hide real misses.
+	planGateTitlePhrases = []string{
+		"final gate", "stability gate", "suite run", "eval", "install",
+		"investigation",
+	}
+
+	// planGateTitleRe is planGateTitlePhrases compiled as one whole-word,
+	// case-insensitive alternation; spaces in a phrase match any run of
+	// whitespace.
+	planGateTitleRe = func() *regexp.Regexp {
+		alts := make([]string, len(planGateTitlePhrases))
+		for i, p := range planGateTitlePhrases {
+			alts[i] = strings.Join(strings.Fields(regexp.QuoteMeta(p)), `\s+`)
+		}
+		return regexp.MustCompile(`(?i)\b(?:` + strings.Join(alts, "|") + `)\b`)
+	}()
 )
+
+// planReadOnlyMarker — a task whose spec's first non-empty line begins
+// with this marker (case-insensitively) is read-only and exempt from
+// rule 7. The decompose prompt quotes this marker, so the two stay in
+// step: change one, change the other.
+const planReadOnlyMarker = `READ-ONLY:`
+
+// specIsReadOnly reports whether the first non-empty line of spec,
+// trimmed, begins with planReadOnlyMarker, ignoring case. Only the first
+// non-empty line counts; the marker on a later line does not exempt.
+func specIsReadOnly(spec string) bool {
+	for _, line := range strings.Split(spec, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		return len(line) >= len(planReadOnlyMarker) &&
+			strings.EqualFold(line[:len(planReadOnlyMarker)], planReadOnlyMarker)
+	}
+	return false
+}
+
+// titleIsGateTask reports whether title contains a planGateTitlePhrases
+// phrase as whole words, ignoring case.
+func titleIsGateTask(title string) bool {
+	return planGateTitleRe.MatchString(title)
+}
 
 // titleStartsWithWriteVerb reports whether the first word of title
 // (after trimming) is one of planWriteTaskVerbs, ignoring case.
@@ -536,7 +587,9 @@ func CheckPlanStructure(prd *PRD, stories []Story) *PlanStructureReport {
 	for _, s := range stories {
 		for _, t := range s.Tasks {
 			verb, ok := writeVerbOf(t.Title)
-			if !ok || len(t.FilesPlanned) > 0 {
+			if !ok || len(t.FilesPlanned) > 0 || specIsReadOnly(t.Spec) ||
+				t.Kind == TaskKindSmoke || t.Kind == TaskKindFinalGate ||
+				titleIsGateTask(t.Title) {
 				continue
 			}
 			add(StructuralFinding{

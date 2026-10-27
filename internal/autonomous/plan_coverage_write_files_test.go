@@ -89,3 +89,78 @@ func TestTitleStartsWithWriteVerb(t *testing.T) {
 		t.Error("blank title must not match")
 	}
 }
+
+func TestWriteTaskWithoutFiles_Exemptions(t *testing.T) {
+	tests := []struct {
+		name string
+		task Task
+		want bool // true = flagged
+	}{
+		{"read-only first line", Task{ID: "t1", Title: "Update the docs", Spec: "READ-ONLY: inspection only\nlook around"}, false},
+		{"read-only after blank lines", Task{ID: "t1", Title: "Update the docs", Spec: "\n  \n  READ-ONLY: audit"}, false},
+		{"marker on later line", Task{ID: "t1", Title: "Update the docs", Spec: "Edit things.\nREAD-ONLY: nope"}, true},
+		{"marker lower case", Task{ID: "t1", Title: "Update the docs", Spec: "read-only: audit"}, false},
+		{"marker mixed case", Task{ID: "t1", Title: "Update the docs", Spec: "Read-Only: audit"}, false},
+		{"read-only without colon", Task{ID: "t1", Title: "Update the docs", Spec: "READ-ONLY audit"}, true},
+		{"empty spec", Task{ID: "t1", Title: "Update the docs"}, true},
+		{"kind smoke", Task{ID: "t1", Title: "Write the smoke check", Kind: TaskKindSmoke}, false},
+		{"kind final_gate", Task{ID: "t1", Title: "Write the gate check", Kind: TaskKindFinalGate}, false},
+		{"phrase final gate", Task{ID: "t1", Title: "Write a final gate verdict"}, false},
+		{"phrase stability gate", Task{ID: "t1", Title: "Write the stability gate report"}, false},
+		{"phrase suite run", Task{ID: "t1", Title: "Fix after suite run"}, false},
+		{"phrase eval", Task{ID: "t1", Title: "Write an eval for the planner"}, false},
+		{"phrase install", Task{ID: "t1", Title: "Update the install steps"}, false},
+		{"phrase investigation", Task{ID: "t1", Title: "Write up the investigation"}, false},
+		{"phrase upper case", Task{ID: "t1", Title: "Write the EVAL"}, false},
+		{"suite alone is not a phrase", Task{ID: "t1", Title: "Fix the failing test suite"}, true},
+		{"install in doc title word boundary", Task{ID: "t1", Title: "Update operator docs for automatic commits"}, true},
+		{"eval inside longer word", Task{ID: "t1", Title: "Write the evaluation notes"}, true},
+		{"installer is not install", Task{ID: "t1", Title: "Update the installer"}, true},
+		{"gate phrase only in spec", Task{ID: "t1", Title: "Update the docs", Spec: "Mention the install step and the suite run."}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := writeFilesFindings(tc.task)
+			if (len(got) == 1) != tc.want || len(got) > 1 {
+				t.Fatalf("want flagged=%v, got %d findings: %+v", tc.want, len(got), got)
+			}
+		})
+	}
+}
+
+func TestWriteTaskWithoutFiles_EveryGatePhraseExempts(t *testing.T) {
+	for _, phrase := range planGateTitlePhrases {
+		got := writeFilesFindings(Task{ID: "t1", Title: "Write the " + phrase + " notes"})
+		if len(got) != 0 {
+			t.Errorf("phrase %q: want no finding, got %+v", phrase, got)
+		}
+	}
+}
+
+func TestWriteTaskWithoutFiles_ReadOnlyProducesNoFinding(t *testing.T) {
+	stories := []Story{{ID: "s1", Title: "story", Tasks: []Task{{
+		ID: "t1", Title: "Update the docs", Spec: "READ-ONLY: nothing to change",
+		VerificationScriptReason: "test",
+	}}}}
+	if got := CheckPlanStructure(nil, stories).Findings; len(got) != 0 {
+		t.Fatalf("want no findings at all, got %+v", got)
+	}
+}
+
+func TestSpecIsReadOnly(t *testing.T) {
+	for spec, want := range map[string]bool{
+		"":                      false,
+		"   \n\t\n":             false,
+		"READ-ONLY: x":          true,
+		"  read-only: x":        true,
+		"READ-ONLY:":            true,
+		"READ-ONLY":             false,
+		"READ-ONLY - x":         false,
+		"a\nREAD-ONLY: x":       false,
+		"\n\nREAD-ONLY: x\nfoo": true,
+	} {
+		if got := specIsReadOnly(spec); got != want {
+			t.Errorf("specIsReadOnly(%q) = %v, want %v", spec, got, want)
+		}
+	}
+}
