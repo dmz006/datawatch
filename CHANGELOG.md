@@ -73,6 +73,12 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.23.2 — Judges use their routing and size rule unless a task or Automaton pins a backend
+
+### Fixed
+
+- The judge routing treated any resolved guardrail backend as an operator pin, so the size rule and the fallback never ran for the judges. A pin is now only an explicit task or PRD override; a global verification backend is only a default. See [howto/judge-policy.md](docs/howto/judge-policy.md).
+
 ## v9.23.1 — Voice transcription shows real error causes, chunks long recordings and keeps failed ones
 
 ### Voice transcription: real error causes, long-recording chunking and kept recordings
