@@ -1,12 +1,14 @@
 // Comm-channel verbs for the judge routing settings, under "autonomous":
 //
 //	autonomous judge-policy                                   show the judge backends and time limit
-//	autonomous judge-policy-set key=value...                  set judge_policy and/or judge_timeout_seconds
+//	autonomous judge-policy-set key=value...                  set judge_policy, judge_timeout_seconds and/or judge_size_threshold_lines
 //
-// The settings are autonomous.judge_policy and autonomous.judge_timeout_seconds
+// The settings are autonomous.judge_policy, autonomous.judge_timeout_seconds and
+// autonomous.judge_size_threshold_lines
 // and are written through PUT /api/autonomous/config, like the verifier policy
 // verbs in verifier_policy_cmd.go. An empty judge_policy follows the verifier
-// routing policy; a zero time limit means the 1800-second default.
+// routing policy; a zero time limit means the 1800-second default; a zero size
+// threshold turns the size rule off.
 
 package router
 
@@ -20,14 +22,15 @@ import (
 
 const (
 	judgePolicyShowUsage = "usage: autonomous judge-policy"
-	judgePolicySetUsage  = "usage: autonomous judge-policy-set judge_policy=<a,b> judge_timeout_seconds=<n> " +
+	judgePolicySetUsage  = "usage: autonomous judge-policy-set judge_policy=<a,b> judge_timeout_seconds=<n> judge_size_threshold_lines=<n> " +
 		"(name at least one; judge_policy is an ordered backend list, empty clears it so the judges follow the verifier routing policy; " +
-		"judge_timeout_seconds is a whole number of seconds, 0 = 1800)"
+		"judge_timeout_seconds is a whole number of seconds, 0 = 1800; " +
+		"judge_size_threshold_lines is a whole number of changed lines, 0 = size rule off, default 400)"
 )
 
 // judgePolicyConfigBody turns key=value tokens into the top-level judge keys
 // of a config body. judge_policy is a comma list (empty clears it) and
-// judge_timeout_seconds a whole number. An unknown key, a token without '=' or
+// judge_timeout_seconds and judge_size_threshold_lines whole numbers. An unknown key, a token without '=' or
 // a value that cannot parse is an error.
 func judgePolicyConfigBody(tokens []string) (map[string]any, error) {
 	body := map[string]any{}
@@ -41,7 +44,7 @@ func judgePolicyConfigBody(tokens []string) (map[string]any, error) {
 		switch k {
 		case "judge_policy":
 			body[k] = splitVerifierPolicyBackends(v)
-		case "judge_timeout_seconds":
+		case "judge_timeout_seconds", "judge_size_threshold_lines":
 			n, err := strconv.Atoi(v)
 			if err != nil || n < 0 {
 				return nil, fmt.Errorf("%s must be a whole number >= 0, got %q", k, v)
@@ -72,8 +75,9 @@ func (r *Router) autonomousJudgePolicy(args []string) {
 		var cfg map[string]json.RawMessage
 		if json.Unmarshal([]byte(out), &cfg) == nil {
 			judge := map[string]json.RawMessage{
-				"judge_policy":          cfg["judge_policy"],
-				"judge_timeout_seconds": cfg["judge_timeout_seconds"],
+				"judge_policy":               cfg["judge_policy"],
+				"judge_timeout_seconds":      cfg["judge_timeout_seconds"],
+				"judge_size_threshold_lines": cfg["judge_size_threshold_lines"],
 			}
 			if raw, err := json.Marshal(judge); err == nil {
 				out = string(raw)
