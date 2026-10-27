@@ -6069,7 +6069,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
   // event > 5 min ago, not that hooks failed). When hooks are absent or
   // stale we surface a clickable "Docs ↗" pointing to the in-PWA docs
   // viewer so the operator can fix it without leaving the page.
-  const refetch = `event.stopPropagation();renderSessionStatusBoard('${escHtml(sessionId)}')`;
+  const refetch = `event.stopPropagation();renderSessionStatusBoard('${escJsAttr(sessionId)}')`;
   const docsLink = (anchor, label) => `<a href="${escHtml(anchor)}" target="_blank" rel="noopener" style="color:var(--accent2,#60a5fa);text-decoration:none;border-bottom:1px dashed var(--accent2,#60a5fa);margin-left:6px;font-size:11px;" onclick="event.stopPropagation()">${escHtml(label)} ↗</a>`;
   const hooksDoc = '/diagrams.html#docs/howto/claude-hooks.md';
   // GH#172 D67 — one-time "hooks installed" toast for claude-code
@@ -6333,7 +6333,7 @@ function detectSessionType(board) {
 function renderSprintBreadcrumb(sprint) {
   if (!sprint) return '';
   const parts = [];
-  if (sprint.prd_id) parts.push(`<a href="javascript:void(0)" onclick="if(typeof _automataOpenDetail==='function')_automataOpenDetail('${escHtml(sprint.prd_id||'')}')" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;">${escHtml(sprint.prd_id)}</a>`);
+  if (sprint.prd_id) parts.push(`<a href="javascript:void(0)" onclick="if(typeof _automataOpenDetail==='function')_automataOpenDetail('${escJsAttr(sprint.prd_id||'')}')" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;">${escHtml(sprint.prd_id)}</a>`);
   if (sprint.sprint_id) parts.push(`<span style="font-size:11px;color:var(--text2);">${escHtml(sprint.sprint_id)}</span>`);
   if (sprint.title) parts.push(`<span style="font-size:11px;">${escHtml(sprint.title)}</span>`);
   if (!parts.length) return '';
@@ -6412,7 +6412,7 @@ function renderParentSessionLink(telemetry) {
   if (!telemetry || !telemetry.parent_session_id) return '';
   const pid = telemetry.parent_session_id;
   return `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">
-    ${escHtml(t('status_parent_session')||'Parent session:')} <a href="javascript:void(0)" onclick="navigate('session-detail','${escHtml(pid)}');switchOutputTab('status');" style="color:var(--accent2,#60a5fa);text-decoration:none;">${escHtml(pid)}</a>
+    ${escHtml(t('status_parent_session')||'Parent session:')} <a href="javascript:void(0)" onclick="navigate('session-detail','${escJsAttr(pid)}');switchOutputTab('status');" style="color:var(--accent2,#60a5fa);text-decoration:none;">${escHtml(pid)}</a>
   </div>`;
 }
 
@@ -19316,7 +19316,7 @@ function _probePickerReachability(servers) {
 function _updatePickerChipReachability(name) {
   if (typeof document === 'undefined' || !document.querySelectorAll) return;
   const unreachable = _serverReachability[name] === false;
-  document.querySelectorAll('.server-picker-bar button[data-server-name="' + name.replace(/"/g, '\\"') + '"]').forEach(btn => {
+  Array.from(document.querySelectorAll('.server-picker-bar button')).filter(btn => btn.dataset && btn.dataset.serverName === name).forEach(btn => {
     if (unreachable) {
       btn.style.opacity = '0.45';
       btn.title = t('server_chip_unreachable_tip') || 'Unreachable (click to try anyway)';
@@ -23852,7 +23852,7 @@ window.taskWaitHtml = function(task) {
   const name = nameText
     ? ` ${window.capacityNameHtml(nameText, task.short_id || task.id || task.task_id || '')}`
     : '';
-  const label = Object.prototype.hasOwnProperty.call(_TASK_WAIT_CAUSES, cause) ? _TASK_WAIT_CAUSES[cause]() : '';
+  const label = (Object.prototype.hasOwnProperty.call(_TASK_WAIT_CAUSES, cause) && typeof _TASK_WAIT_CAUSES[cause] === 'function') ? _TASK_WAIT_CAUSES[cause]() : '';
   const resetsRaw = task.wait_resets_at || task.resets_at || '';
   const resetsMs = resetsRaw ? new Date(resetsRaw).getTime() : NaN;
   const resets = Number.isNaN(resetsMs) ? '' : new Date(resetsMs).toLocaleString('en-GB', { hour12: false });

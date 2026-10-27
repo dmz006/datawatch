@@ -19,7 +19,7 @@ import (
 )
 
 // Skip records one candidate file that Keep refused to stage and why.
-// Reason is one of "size", "ignore-dir", or "pattern".
+// Reason is one of "size", "ignore-dir", "pattern", or "outside-root".
 type Skip struct {
 	File   string
 	Reason string
@@ -66,11 +66,25 @@ var Default = Policy{
 // vanished file is a harmless no-op. The returned kept slice preserves the
 // input order and holds the candidates exactly as given.
 func (p Policy) Keep(repoDir string, files []string) (kept []string, skipped []Skip) {
+	root := repoDir
+	if abs, err := filepath.Abs(repoDir); err == nil {
+		root = abs
+	}
 	for _, f := range files {
 		full := f
 		if !filepath.IsAbs(full) {
 			full = filepath.Join(repoDir, full)
 		}
+		checked, cerr := containedEntry(root, full)
+		if errors.Is(cerr, ErrPathEscapes) {
+			skipped = append(skipped, Skip{File: f, Reason: "outside-root"})
+			continue
+		}
+		if cerr != nil {
+			kept = append(kept, f)
+			continue
+		}
+		full = checked
 		info, err := os.Stat(full)
 		if err != nil {
 			kept = append(kept, f)
@@ -80,7 +94,7 @@ func (p Policy) Keep(repoDir string, files []string) (kept []string, skipped []S
 			skipped = append(skipped, Skip{File: f, Reason: "size"})
 			continue
 		}
-		if p.inIgnoredDir(repoDir, full, info.IsDir()) {
+		if p.inIgnoredDir(root, full, info.IsDir()) {
 			skipped = append(skipped, Skip{File: f, Reason: "ignore-dir"})
 			continue
 		}
@@ -161,7 +175,7 @@ func CleanTempPacks(repoDir string) (removed []string, err error) {
 		}
 		return nil, err
 	}
-	entries, err := os.ReadDir(dir)
+	entries, err := readDirWithin(repoDir, dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -192,7 +206,7 @@ func CleanTempPacks(repoDir string) (removed []string, err error) {
 			continue
 		}
 		target := filepath.Join(dir, name)
-		if rmErr := os.Remove(target); rmErr != nil {
+		if rmErr := removeWithin(dir, target); rmErr != nil {
 			if errors.Is(rmErr, os.ErrNotExist) {
 				continue
 			}
@@ -202,6 +216,60 @@ func CleanTempPacks(repoDir string) (removed []string, err error) {
 		removed = append(removed, target)
 	}
 	return removed, errors.Join(errs...)
+}
+
+// ContainedEntry is containedEntry for callers outside the package.
+func ContainedEntry(root, path string) (string, error) { return containedEntry(root, path) }
+
+// containedEntry is ContainedPath for a path that names a directory entry,
+// where the entry itself may be a symlink. A link is judged by where it
+// lies, not by where it points: when path is a symlink whose parent directory
+// is inside root, the entry is accepted, because stat-ing it follows the link
+// but listing, staging or removing it touches only the link. Any other path
+// is accepted only when ContainedPath accepts it. The returned value is the
+// checked path and is what the caller should use.
+func containedEntry(root, path string) (string, error) {
+	checked, err := ContainedPath(root, path)
+	if err == nil {
+		return checked, nil
+	}
+	if !errors.Is(err, ErrPathEscapes) {
+		return "", err
+	}
+	abs, aerr := filepath.Abs(path)
+	if aerr != nil {
+		return "", err
+	}
+	parent, perr := ContainedPath(root, filepath.Dir(abs))
+	if perr != nil {
+		return "", err
+	}
+	entry := filepath.Join(parent, filepath.Base(abs))
+	if fi, lerr := os.Lstat(entry); lerr != nil || fi.Mode()&os.ModeSymlink == 0 {
+		return "", err
+	}
+	return entry, nil
+}
+
+// readDirWithin lists dir after checking that it lies inside root. A dir
+// outside root is refused with ErrPathEscapes and nothing is read.
+func readDirWithin(root, dir string) ([]os.DirEntry, error) {
+	checked, err := ContainedPath(root, dir)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadDir(checked)
+}
+
+// removeWithin removes the entry at target after checking that it lies inside
+// root. A target outside root is refused with ErrPathEscapes and nothing is
+// removed. A symlink target is removed as a link, never followed.
+func removeWithin(root, target string) error {
+	checked, err := containedEntry(root, target)
+	if err != nil {
+		return err
+	}
+	return os.Remove(checked)
 }
 
 // InHome reports whether dir equals or lies inside the user's home directory.

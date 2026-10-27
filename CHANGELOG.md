@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### The channel bridge verifies the daemon's TLS certificate
+
+- `datawatch-channel` no longer sets `InsecureSkipVerify` on its health probe and parent posts (CodeQL `go/disabled-certificate-check`, alert 643). It trusts the daemon's own certificate as a root, read from `DATAWATCH_CA_CERT`, and the daemon sets that variable to the certificate it serves.
+- `DATAWATCH_CHANNEL_INSECURE_SKIP_VERIFY` is an explicit operator opt-in (default off) that restores the old skip and logs a warning when on. Both variables are listed in `docs/implementation.md`.
+
 ### A pi backend's node list is read from its own LLM entry
 
 - Next patch above main: a `pi` or `pi-prompt` backend takes its candidate nodes from its own LLM entry `compute_nodes`, ordered with load first and `scheduling_priority` as the tiebreak. The provider-kind lookup applies only to backends without their own node list.

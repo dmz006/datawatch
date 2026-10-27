@@ -49,6 +49,59 @@ func ResolveWithin(base, rel string) (string, error) {
 	return joined, nil
 }
 
+// ContainedPath makes root and path absolute and cleaned and returns the
+// cleaned absolute path when it is root or lies under root. An empty root and
+// a NUL byte in either value are refused. A relative path is taken against
+// the process working directory, so it is accepted only when that directory
+// is inside root; a caller that wants a path under root should join it first
+// (or use ResolveWithin, which also refuses '..').
+//
+// The check has two steps. The first is lexical: the cleaned absolute path
+// must equal root or start with root plus a path separator. This is the
+// filepath.Clean followed by a prefix test on absolute, cleaned paths that
+// the CodeQL go/path-injection query documents as a sanitizer, and it settles
+// '..' before any file is touched. The second resolves symlinks in root and
+// in the deepest existing part of path (a dangling link is followed to its
+// missing target, see evalDeepest) and requires the result to stay under the
+// resolved root, so a link inside root that points out of it is refused.
+// Nothing is created. The returned path is the cleaned lexical one, not the
+// symlink-resolved one.
+func ContainedPath(root, path string) (string, error) {
+	if strings.TrimSpace(root) == "" {
+		return "", errors.New("root directory is empty")
+	}
+	if strings.ContainsRune(root, 0) || strings.ContainsRune(path, 0) {
+		return "", fmt.Errorf("%w: path contains a NUL byte", ErrPathEscapes)
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	rootPrefix := rootAbs
+	if !strings.HasSuffix(rootPrefix, string(filepath.Separator)) {
+		rootPrefix += string(filepath.Separator)
+	}
+	if pathAbs != rootAbs && !strings.HasPrefix(pathAbs, rootPrefix) {
+		return "", fmt.Errorf("%w: %q is outside %s", ErrPathEscapes, path, rootAbs)
+	}
+	rootReal, err := evalDeepest(rootAbs)
+	if err != nil {
+		return "", err
+	}
+	pathReal, err := evalDeepest(pathAbs)
+	if err != nil {
+		return "", err
+	}
+	if !isWithin(rootReal, pathReal) {
+		return "", fmt.Errorf("%w: %q resolves outside %s", ErrPathEscapes, path, rootAbs)
+	}
+	return pathAbs, nil
+}
+
 // maxLinkHops bounds how many dangling links evalDeepest follows.
 const maxLinkHops = 40
 

@@ -37,8 +37,47 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/gitguard"
 )
+
+// errBadPathElement is returned for a name or PRD id that is not a single
+// safe path element.
+var errBadPathElement = errors.New("not a single safe path element")
+
+// validPathElement reports whether s may be used as one path element: not
+// empty, not '.', no path separator, no NUL byte and no '..'.
+func validPathElement(s string) bool {
+	return s != "" && s != "." &&
+		!strings.ContainsAny(s, "/\\\x00") &&
+		!strings.Contains(s, "..")
+}
+
+// containedElement joins the single path element name under base and checks
+// the result with gitguard.ContainedPath. name that is not a single safe path
+// element, or a result that lies outside base, is refused before any file is
+// touched. The returned path is the checked one and is what the caller must
+// use.
+func containedElement(base, name string) (string, error) {
+	if !validPathElement(name) {
+		return "", fmt.Errorf("%w: %q", errBadPathElement, name)
+	}
+	return gitguard.ContainedPath(base, filepath.Join(base, name))
+}
+
+// scratchRoot is <dataDir>/autonomous/scratch, the parent of every PRD's
+// scratch directory.
+func scratchRoot(dataDir string) string {
+	return filepath.Join(dataDir, "autonomous", "scratch")
+}
+
+// scratchPRDDir is the checked scratch directory path for prdID. prdID comes
+// from the API, so it must be one safe path element.
+func scratchPRDDir(dataDir, prdID string) (string, error) {
+	return containedElement(scratchRoot(dataDir), prdID)
+}
 
 // ScratchDir returns (creating if needed) the durable, PRD-scoped scratch
 // directory for prdID under dataDir. Safe to call repeatedly.
@@ -46,7 +85,10 @@ func ScratchDir(dataDir, prdID string) (string, error) {
 	if dataDir == "" || prdID == "" {
 		return "", fmt.Errorf("scratch dir: dataDir and prdID are both required")
 	}
-	dir := filepath.Join(dataDir, "autonomous", "scratch", prdID)
+	dir, err := scratchPRDDir(dataDir, prdID)
+	if err != nil {
+		return "", fmt.Errorf("scratch dir: %w", err)
+	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", fmt.Errorf("mkdir scratch dir: %w", err)
 	}
@@ -96,8 +138,14 @@ func MarkDecomposeOutputArtifactFailed(dataDir, prdID string) (string, error) {
 	if dataDir == "" || prdID == "" {
 		return "", fmt.Errorf("mark decompose output: dataDir and prdID are both required")
 	}
-	dir := filepath.Join(dataDir, "autonomous", "scratch", prdID)
-	src := filepath.Join(dir, decomposeOutputName)
+	dir, err := scratchPRDDir(dataDir, prdID)
+	if err != nil {
+		return "", fmt.Errorf("mark decompose output: %w", err)
+	}
+	src, err := containedElement(dir, decomposeOutputName)
+	if err != nil {
+		return "", fmt.Errorf("mark decompose output: %w", err)
+	}
 	if _, err := os.Stat(src); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", nil
@@ -129,7 +177,15 @@ func RemoveDecomposeOutputArtifact(dataDir, prdID string) {
 	if dataDir == "" || prdID == "" {
 		return
 	}
-	_ = os.Remove(filepath.Join(dataDir, "autonomous", "scratch", prdID, decomposeOutputName))
+	dir, err := scratchPRDDir(dataDir, prdID)
+	if err != nil {
+		return
+	}
+	target, err := containedElement(dir, decomposeOutputName)
+	if err != nil {
+		return
+	}
+	_ = os.Remove(target)
 }
 
 // PeekProjectFile returns the content of <projectDir>/<srcName> and true when

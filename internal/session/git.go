@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -53,7 +54,7 @@ func (g *ProjectGit) SetCommitEnv(env []string) {
 
 // commit runs git commit with the commit environment, if any.
 func (g *ProjectGit) commit(args ...string) error {
-	return runGitEnv(g.dir, g.commitEnv, append([]string{"commit"}, args...)...)
+	return runGitEnv(g.dir, g.commitEnv, append([]string{"commit"}, args...))
 }
 
 // IsRepo returns true if dir is inside a git repository.
@@ -109,13 +110,13 @@ func (g *ProjectGit) stageChanges(scope []string) error {
 		}
 		var inside []string
 		for _, d := range scope {
-			dd, aerr := filepath.Abs(d)
-			if aerr != nil {
-				fmt.Printf("[datawatch] warning: bad write scope entry %q, skipping it\n", d)
+			dd, aerr := gitguard.ContainedPath(absDir, d)
+			if errors.Is(aerr, gitguard.ErrPathEscapes) {
+				fmt.Printf("[datawatch] warning: write scope dir %s is outside repo %s — not staged by this commit\n", d, g.dir)
 				continue
 			}
-			if dd != absDir && !strings.HasPrefix(dd, absDir+string(filepath.Separator)) {
-				fmt.Printf("[datawatch] warning: write scope dir %s is outside repo %s — not staged by this commit\n", dd, g.dir)
+			if aerr != nil {
+				fmt.Printf("[datawatch] warning: bad write scope entry %q, skipping it\n", d)
 				continue
 			}
 			if _, serr := os.Stat(dd); serr != nil {
@@ -337,7 +338,11 @@ func (g *ProjectGit) unscopedChangedFiles(since time.Time) []string {
 		}
 		// mtime bounds what counts as run output. Files that no longer
 		// exist are skipped — staging a missing path would fail the add.
-		st, err := os.Stat(filepath.Join(g.dir, rel))
+		abs, err := gitguard.ContainedPath(g.dir, filepath.Join(g.dir, rel))
+		if err != nil {
+			continue
+		}
+		st, err := os.Stat(abs)
 		if err != nil {
 			continue
 		}
@@ -548,7 +553,7 @@ func (g *ProjectGit) TagCheckpoint(kind, sessionID, task string) error {
 	}
 	msg := fmt.Sprintf("datawatch %s-session checkpoint for %s: %s",
 		kind, sessionID, truncateStr(task, 60))
-	return runGit(g.dir, "tag", "-f", "-a", tag, "-m", msg)
+	return runGitEnv(g.dir, nil, []string{"tag", "-f", "-a", "-m", msg, "--"}, tag)
 }
 
 // Rollback (BL29) hard-resets the working tree to the pre-session
@@ -563,13 +568,13 @@ func (g *ProjectGit) Rollback(sessionID string, force bool) error {
 	if err := validateGitRef("tag", tag); err != nil {
 		return err
 	}
-	if _, err := gitOutput(g.dir, "rev-parse", "--verify", tag); err != nil {
+	if _, err := gitOutputOperands(g.dir, []string{"rev-parse", "--verify"}, tag); err != nil {
 		return fmt.Errorf("pre-session tag not found: %s", tag)
 	}
 	if !force && g.HasChanges() {
 		return fmt.Errorf("uncommitted changes present — pass force=true to discard")
 	}
-	return runGit(g.dir, "reset", "--hard", tag)
+	return runGitEnv(g.dir, nil, []string{"reset", "--hard"}, tag)
 }
 
 // HasChanges returns true if there are uncommitted changes in dir.
@@ -781,15 +786,15 @@ func (g *ProjectGit) PushBranch(remoteName, branch, originURL, token string) err
 	if originURL == "" {
 		// Fall back to the configured origin (no token injection — caller
 		// presumably has ambient creds).
-		return runGit(g.dir, "push", "-u", remoteName, branch)
+		return runGitEnv(g.dir, nil, []string{"push", "-u", "--"}, remoteName, branch)
 	}
 
 	// Snapshot the current origin so we can restore it on exit.
-	prevURL, _ := gitOutput(g.dir, "remote", "get-url", remoteName)
+	prevURL, _ := gitOutputOperands(g.dir, []string{"remote", "get-url", "--"}, remoteName)
 	prevURL = strings.TrimSpace(prevURL)
 
 	authURL := injectTokenIntoHTTPS(originURL, token)
-	if err := runGit(g.dir, "remote", "set-url", remoteName, authURL); err != nil {
+	if err := runGitEnv(g.dir, nil, []string{"remote", "set-url", "--"}, remoteName, authURL); err != nil {
 		return fmt.Errorf("set credential URL: %w", err)
 	}
 	defer func() {
@@ -799,10 +804,10 @@ func (g *ProjectGit) PushBranch(remoteName, branch, originURL, token string) err
 		if prevURL != "" {
 			restore = prevURL
 		}
-		_ = runGit(g.dir, "remote", "set-url", remoteName, restore)
+		_ = runGitEnv(g.dir, nil, []string{"remote", "set-url", "--"}, remoteName, restore)
 	}()
 
-	return runGit(g.dir, "push", "-u", remoteName, branch)
+	return runGitEnv(g.dir, nil, []string{"push", "-u", "--"}, remoteName, branch)
 }
 
 // injectTokenIntoHTTPS adds an HTTPS basic-auth header to an https://
@@ -833,27 +838,80 @@ func injectTokenIntoHTTPS(rawURL, token string) string {
 	return prefix + "x-access-token:" + token + "@" + rest
 }
 
-func runGit(dir string, args ...string) error {
-	return runGitEnv(dir, nil, args...)
+// checkGitOperands refuses any operand (a ref, remote name, URL or path) that
+// is empty, begins with a dash so git would read it as an option, or holds a
+// NUL or other control character. Operands travel apart from the fixed
+// subcommand and flags so that every value from outside this file passes
+// through this check before it reaches git's argv. Where git accepts it the
+// caller places "--" ahead of the operands as well.
+func checkGitOperands(operands []string) error {
+	for _, o := range operands {
+		if strings.ContainsRune(o, 0) {
+			return fmt.Errorf("invalid git operand: NUL byte")
+		}
+		if err := checkGitArg("operand", o); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// runGitEnv is runGit with extra environment entries appended to the
-// process environment.
-func runGitEnv(dir string, env []string, args ...string) error {
-	cmd := exec.Command("git", args...)
+// checkGitFixedArgs refuses a NUL byte in the subcommand and flag arguments.
+func checkGitFixedArgs(args []string) error {
+	for _, a := range args {
+		if strings.ContainsRune(a, 0) {
+			return fmt.Errorf("invalid git argument: NUL byte")
+		}
+	}
+	return nil
+}
+
+// runGit runs git with a fixed argument list (subcommand, flags and literal
+// values only). Values from outside the package go through runGitEnv as
+// operands.
+func runGit(dir string, args ...string) error {
+	return runGitEnv(dir, nil, args)
+}
+
+// runGitEnv is runGit with extra environment entries appended to the process
+// environment, and with operands (refs, remotes, URLs, paths) validated by
+// checkGitOperands and appended after args.
+func runGitEnv(dir string, env []string, args []string, operands ...string) error {
+	if err := checkGitFixedArgs(args); err != nil {
+		return err
+	}
+	if err := checkGitOperands(operands); err != nil {
+		return err
+	}
+	argv := append(append([]string{}, args...), operands...)
+	cmd := exec.Command("git", argv...)
 	cmd.Dir = dir
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("git %v in %s: %w\n%s", args, dir, err, out)
+		return fmt.Errorf("git %v in %s: %w\n%s", argv, dir, err, out)
 	}
 	return nil
 }
 
+// gitOutput runs git with a fixed argument list and returns its stdout.
 func gitOutput(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	return gitOutputOperands(dir, args)
+}
+
+// gitOutputOperands is gitOutput with operands validated by checkGitOperands
+// and appended after args.
+func gitOutputOperands(dir string, args []string, operands ...string) (string, error) {
+	if err := checkGitFixedArgs(args); err != nil {
+		return "", err
+	}
+	if err := checkGitOperands(operands); err != nil {
+		return "", err
+	}
+	argv := append(append([]string{}, args...), operands...)
+	cmd := exec.Command("git", argv...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	return string(out), err

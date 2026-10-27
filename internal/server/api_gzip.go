@@ -58,16 +58,20 @@ func (s *Server) apiGzipMiddleware(next http.Handler) http.Handler {
 func newAPIGzipHandler(settings func() (bool, int), next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		enabled, minBytes := settings()
-		if !enabled || apiGzipSkipRequest(r) {
+		if apiGzipSkipRequest(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		addVaryAcceptEncoding(w.Header())
-		if r.Method == http.MethodHead || !acceptsGzip(r) {
-			next.ServeHTTP(w, r)
-			return
+		// Handler output can echo request values; never let a browser
+		// sniff it into something renderable, whether or not it ends up
+		// compressed.
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		compress := enabled
+		if compress {
+			addVaryAcceptEncoding(w.Header())
+			compress = r.Method != http.MethodHead && acceptsGzip(r)
 		}
-		cw := &apiGzipWriter{rw: w, minBytes: minBytes}
+		cw := &apiGzipWriter{rw: w, minBytes: minBytes, noGzip: !compress}
 		defer cw.release()
 		next.ServeHTTP(cw, r)
 		cw.finish()
@@ -111,11 +115,31 @@ func apiGzipCompressibleType(ct string) bool {
 	return strings.HasPrefix(mt, "application/") && strings.HasSuffix(mt, "+json")
 }
 
+// setSafeContentType gives a response that has no Content-Type an explicit
+// one from the body's first bytes. Types a browser would render as markup
+// (HTML, XML) are replaced with text/plain, so a body that echoes request
+// input is never served as a document. Responses that already carry a
+// Content-Type or Content-Encoding, or have no body yet, are left alone.
+func setSafeContentType(h http.Header, body []byte) {
+	if len(body) == 0 || h.Get("Content-Type") != "" || h.Get("Content-Encoding") != "" {
+		return
+	}
+	ct := http.DetectContentType(body)
+	if mt, _, err := mime.ParseMediaType(ct); err == nil {
+		switch mt {
+		case "text/html", "text/xml", "image/svg+xml":
+			ct = "text/plain; charset=utf-8"
+		}
+	}
+	h.Set("Content-Type", ct)
+}
+
 // apiGzipWriter buffers the start of a response until it can decide
 // between gzip and an untouched passthrough.
 type apiGzipWriter struct {
 	rw       http.ResponseWriter
 	minBytes int
+	noGzip   bool // only guarantee an explicit Content-Type; never compress
 
 	status      int  // status the handler asked for (0 = implicit 200)
 	wroteHeader bool // handler called WriteHeader or Write
@@ -160,6 +184,12 @@ func (w *apiGzipWriter) Write(b []byte) (int, error) {
 		return w.rw.Write(b)
 	}
 	w.buf = append(w.buf, b...)
+	if w.noGzip {
+		if err := w.commitPassthrough(); err != nil {
+			return 0, err
+		}
+		return len(b), nil
+	}
 	if len(w.buf) > w.minBytes {
 		if err := w.decide(); err != nil {
 			return 0, err
@@ -190,10 +220,10 @@ func (w *apiGzipWriter) mayCompress() bool {
 // decide runs once the buffer passes the threshold.
 func (w *apiGzipWriter) decide() error {
 	h := w.rw.Header()
-	if h.Get("Content-Type") == "" && w.mayCompress() {
+	if w.mayCompress() {
 		// Same sniff net/http would apply on the first Write, done here
 		// so the gzip bytes are never what gets sniffed.
-		h.Set("Content-Type", http.DetectContentType(w.buf))
+		setSafeContentType(h, w.buf)
 	}
 	if !w.mayCompress() {
 		return w.commitPassthrough()
@@ -223,6 +253,11 @@ func (w *apiGzipWriter) commitPassthrough() error {
 		return nil
 	}
 	w.committed = true
+	if w.mayCompress() {
+		// Without this net/http sniffs the first Write itself and can
+		// pick text/html for a body that echoes request input.
+		setSafeContentType(w.rw.Header(), w.buf)
+	}
 	w.rw.WriteHeader(w.statusOrOK())
 	if len(w.buf) == 0 {
 		return nil

@@ -56,11 +56,24 @@ func NonProjectReason(dir string, homeResolver func() (string, error)) string {
 		}
 	}
 	for _, m := range projectMarkers {
-		if _, serr := os.Lstat(filepath.Join(abs, m)); serr == nil {
+		if hasMarker(abs, m) {
 			return ""
 		}
 	}
 	return "directory has no git repository and no project marker"
+}
+
+// hasMarker reports whether the project marker named marker exists directly
+// under dir. The marker path is checked to lie inside dir before it is
+// touched; a marker that would resolve outside dir is not a marker. A marker
+// that is itself a symlink counts, whatever it points at.
+func hasMarker(dir, marker string) bool {
+	checked, err := containedEntry(dir, filepath.Join(dir, marker))
+	if err != nil {
+		return false
+	}
+	_, serr := os.Lstat(checked)
+	return serr == nil
 }
 
 var (

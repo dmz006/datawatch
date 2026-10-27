@@ -3,6 +3,7 @@ package session
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -340,7 +341,8 @@ func TestStoreEncryptedRecords(t *testing.T) {
 func TestStoreOddSessionIDs(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sessions.json")
 	st, _ := NewStore(path, WithFlushInterval(0))
-	ids := []string{"host-1", "../../etc/passwd", "a/b", "ho st", "", ".", strings.Repeat("z", 300)}
+	// Safe single path elements, including ones recordFileName hashes.
+	ids := []string{"host-1", "ho st", ".", strings.Repeat("z", 300)}
 	for _, id := range ids {
 		if err := st.Save(&Session{FullID: id, ID: "1", Task: "t"}); err != nil {
 			t.Fatal(err)
@@ -354,6 +356,69 @@ func TestStoreOddSessionIDs(t *testing.T) {
 		if _, ok := re.Get(id); !ok {
 			t.Fatalf("session %q lost", id)
 		}
+	}
+}
+
+func TestCheckedRecordPathRefusesUnsafeIDs(t *testing.T) {
+	st, err := NewStore(filepath.Join(t.TempDir(), "sessions.json"), WithFlushInterval(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"", "a/b", "/abs", "../x", "..", "a..b", "../../etc/passwd", `a\b`, "a\x00b"} {
+		if p, err := st.checkedRecordPath(id); !errors.Is(err, errBadRecordID) {
+			t.Errorf("checkedRecordPath(%q) = %q, %v; want errBadRecordID", id, p, err)
+		}
+	}
+	for _, id := range []string{"host-1", "ho st", ".", "a.b", strings.Repeat("z", 300)} {
+		p, err := st.checkedRecordPath(id)
+		if err != nil {
+			t.Errorf("checkedRecordPath(%q): %v", id, err)
+			continue
+		}
+		if p != st.recordPath(id) || filepath.Dir(p) != st.recordsDir() {
+			t.Errorf("checkedRecordPath(%q) = %q, want %q inside %s", id, p, st.recordPath(id), st.recordsDir())
+		}
+	}
+}
+
+// TestStoreRefusesUnsafeIDsWithoutTouchingOutside: a record ID with a slash or
+// '..' is neither written nor removed, other sessions still persist, and a
+// file outside the records directory survives.
+func TestStoreRefusesUnsafeIDsWithoutTouchingOutside(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+	st, err := NewStore(path, WithFlushInterval(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(dir, "victim")
+	if err := os.WriteFile(victim, []byte("keep"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	bad := []string{"../victim", "a/b", "x..y", ""}
+	good := &Session{FullID: "host-ok", ID: "1", Task: "t"}
+	for _, id := range bad {
+		if err := st.Save(&Session{FullID: id, ID: "1", Task: "t"}); err != nil {
+			t.Fatalf("Save(%q) wedged the flush: %v", id, err)
+		}
+	}
+	if err := st.Save(good); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(recordFiles(t, st)); got != 1 {
+		t.Fatalf("record files = %d, want only the safe session", got)
+	}
+	for _, id := range bad {
+		if err := st.Delete(id); err != nil {
+			t.Fatalf("Delete(%q): %v", id, err)
+		}
+	}
+	if b, err := os.ReadFile(victim); err != nil || string(b) != "keep" {
+		t.Fatalf("file outside the store was touched: %q, %v", b, err)
+	}
+	re, _ := NewStore(path)
+	if _, ok := re.Get("host-ok"); !ok {
+		t.Fatal("safe session lost")
 	}
 }
 
