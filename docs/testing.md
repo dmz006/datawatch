@@ -1861,3 +1861,13 @@ curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/<prd-id>
 curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity
 # after a restart with live workers: the pool's used count equals the number of live workers, not more
 ```
+
+## TS-826 — PWA task card: wait-cause label and escaped task/board text
+
+| Field | Details |
+|-------|---------|
+| **Description** | The waiting-task line, the Automata progress bar and the chat bubble header render hostile values as text. Each known wait cause keeps its chip label. Unknown causes, including `__proto__` and `constructor`, render no chip. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR bash scripts/run-tests.sh --stories=TS-826`. 1. Open the PWA on the sandbox daemon. 2. Call `window.taskWaitHtml` for the seven known causes, five unknown causes and a task whose title, reason and cause hold an `<img onerror>` payload. 3. Call `renderProgressBar` with a payload task count and with one of two tasks completed. 4. Call `appendChatBubble` with a payload role. |
+| **Expected** | Chip labels are Pool full, Node busy, Back-off, Budget, Cool-down, Awaiting external and Tree lock. Unknown causes show only the reason text. No `img` element is created and the injected handler never runs. The normal progress bar reads `1/2 tasks · 50%`. |
+| **Actual** | Not run in the authoring worktree: Playwright resolves through a `node_modules` link that points outside the worktree and does not load, and the sandbox daemon is the installed binary, not one built from this tree. The 104 `internal/server/web/*.test.js` node suites pass, including `app-wait-reason-text.test.js` for the chip labels. |
+| **Result** | Pending a sandbox run |
