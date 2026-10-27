@@ -2349,7 +2349,7 @@
   "triage_failed": "トリアージリスト取得失敗: %1$s",
   "triage_status_failed": "失敗",
   "triage_status_blocked": "ブロック中",
-  "triage_automation": "オートメーション: %1$s",
+  "automation_triage_owner": "オートメーション: %1$s",
   "triage_member": " (メンバー %1$s)",
   "triage_failed_task": "タスク: %1$s",
   "triage_blocked_reason": "ブロック: %1$s",

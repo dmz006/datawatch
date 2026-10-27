@@ -209,7 +209,7 @@ test('a hostile list body that is not an object renders the empty state, not a t
 test('every triage_* key exists in every locale bundle with a non-empty value', () => {
   const keys = [
     'triage_card_title', 'triage_record_empty', 'triage_empty', 'triage_failed',
-    'triage_status_failed', 'triage_status_blocked', 'triage_automation', 'triage_member',
+    'triage_status_failed', 'triage_status_blocked', 'automation_triage_owner', 'triage_member',
     'triage_failed_task', 'triage_blocked_reason', 'triage_session_end_reason',
     'triage_first_seen', 'triage_alerted_at', 'triage_not_alerted',
     'triage_retry_budget', 'triage_budget_infra', 'triage_budget_content',

@@ -2349,7 +2349,7 @@
   "triage_failed": "Échec de la liste de triage : %1$s",
   "triage_status_failed": "en échec",
   "triage_status_blocked": "bloqué",
-  "triage_automation": "Automatisation : %1$s",
+  "automation_triage_owner": "Automatisation : %1$s",
   "triage_member": " (membre %1$s)",
   "triage_failed_task": "Tâche : %1$s",
   "triage_blocked_reason": "Bloqué : %1$s",

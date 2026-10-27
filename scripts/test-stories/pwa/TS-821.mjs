@@ -138,6 +138,23 @@ await runPerfStory(async (page) => {
     check(!dialogs.length, `dialog(s) fired by hostile records: ${dialogs.join('; ')}`);
     await screenshot(p, 'automation-triage-list');
 
+    // Phone width: the cards (hostile and long text included) must never push
+    // the page or a card wider than the viewport.
+    await p.setViewportSize({ width: 360, height: 740 });
+    await p.waitForTimeout(300);
+    const fit = await p.evaluate(() => ({
+      inner: window.innerWidth,
+      doc: document.documentElement.scrollWidth,
+      body: document.body.scrollWidth,
+      wide: Array.from(document.querySelectorAll('#automationTriageCard .triage-card'))
+        .filter(c => c.scrollWidth > c.clientWidth + 1 || c.getBoundingClientRect().right > window.innerWidth + 1).length,
+    }));
+    check(fit.doc <= fit.inner + 1 && fit.body <= fit.inner + 1,
+      `triage list scrolls sideways at phone width (doc ${fit.doc}, body ${fit.body}, viewport ${fit.inner})`);
+    check(fit.wide === 0, `${fit.wide} triage card(s) overflow at phone width`);
+    await screenshot(p, 'automation-triage-phone');
+    await p.setViewportSize({ width: 1280, height: 800 });
+
     // Empty state: the same slot settles on "nothing waiting" once the
     // server reports zero records.
     triageCtl.stop();

@@ -24035,7 +24035,7 @@ window.triageCardHtml = function(record) {
   const chip = `<span class="triage-status-chip triage-status-${chipName}" style="display:inline-block;padding:1px 8px;border:1px solid ${chipColor};border-radius:10px;font-size:11px;font-weight:700;color:${chipColor};">${escHtml(statusLabel)}</span>`;
   const name = `<div style="margin-top:4px;font-weight:600;overflow-wrap:anywhere;">${escHtml(record.prd_title || record.prd_id || '')} ${chip}</div>`;
   const automation = record.automation_name
-    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_automation', [record.automation_name]))}${record.member_id ? escHtml(t('triage_member', [record.member_id])) : ''}</div>`
+    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('automation_triage_owner', [record.automation_name]))}${record.member_id ? escHtml(t('triage_member', [record.member_id])) : ''}</div>`
     : '';
   const task = record.task_title
     ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_failed_task', [record.task_title]))}</div>`
