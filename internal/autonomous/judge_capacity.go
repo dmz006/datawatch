@@ -28,6 +28,10 @@ type JudgeAdmit struct {
 	// NodeOnly takes no lease at all when the entry has fewer than two nodes,
 	// so such a judge starts exactly as it did before judges held leases.
 	NodeOnly bool
+
+	// preferNode is the node of a lease the judge held on entry (set by
+	// AdmitJudge): the tie breaker when placement finds equally loaded nodes.
+	preferNode string
 }
 
 // AdmitJudge takes the capacity lease a judge runs under and returns the node
@@ -54,6 +58,15 @@ func (m *Manager) AdmitJudge(ctx context.Context, j JudgeAdmit) (string, func(),
 	choices := nodeChoicesFor(choicesFn, j.Backend, j.Model)
 	if j.NodeOnly && len(choices) < 2 {
 		return "", noop, nil
+	}
+	// A lease the judge still holds on entry belongs to an earlier run of it that
+	// never released. Acquire returns at once for a holder that is already
+	// admitted, so the respawned judge would keep that node without placement.
+	// Free it and ask placement to choose again, with the old node as the tie
+	// breaker.
+	if ls := led.LeaseOf(j.Holder); ls != nil {
+		j.preferNode = ls.Node
+		led.Release(j.Holder)
 	}
 	if j.WorkerHolder != "" {
 		if _, ok := judgeHandoff(led, keysFn, choicesFn, j.WorkerHolder, j.Holder, j.Backend, j.Model); ok {
@@ -131,7 +144,7 @@ func (m *Manager) judgeKeys(j JudgeAdmit) ([]string, string) {
 func judgeRequest(j JudgeAdmit, pools []string, node string, choices []capacity.NodeChoice, exclude []string) capacity.Request {
 	req := capacity.Request{
 		Holder: j.Holder, PRDID: j.PRDID, Priority: j.Priority, Pools: pools, Node: node,
-		Model: j.Model, Role: capacity.RoleVerifier, ExcludeNodes: exclude,
+		Model: j.Model, Role: capacity.RoleVerifier, ExcludeNodes: exclude, PreferNode: j.preferNode,
 	}
 	if len(choices) >= 2 {
 		req.NodeChoices = choices
