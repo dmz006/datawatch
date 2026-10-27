@@ -50,6 +50,19 @@ if [ -n "${TMUX:-}${TMUX_TMPDIR:-}" ]; then exec env -u TMUX -u TMUX_TMPDIR bash
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Shared daemon lifecycle (scripts/test-daemon-lib.sh): the fresh-sandbox
+# daemon started below is recorded at start and ended on EVERY exit path
+# (normal, failure, INT, TERM, HUP) — first its live sessions through the
+# daemon's own API, then the exact PID recorded at start (marker-verified,
+# waited for) — and only after that runs the cleanup() below, so the
+# scratch directory is never deleted while the daemon is still running.
+# Existing-sandbox mode (DATAWATCH_BASE set) records nothing, so the
+# daemon it drives is never touched.
+source "$REPO_ROOT/scripts/test-daemon-lib.sh"
+TD_EXTRA_CLEANUP=cleanup
+td_install_traps "$@"
+
 FRESH=0
 [[ -z "${DATAWATCH_BASE:-}" ]] && FRESH=1
 BASE="${DATAWATCH_BASE:-}"
@@ -200,7 +213,16 @@ start_sandbox() {
   HOME="$sbx/home" env -u TMUX -u TMUX_TMPDIR "$bin" start --foreground --config "$sbx/config.yaml" \
     > "$sbx/daemon.log" 2>&1 &
   SANDBOX_PID=$!
+  # Record it so every exit path (including dying mid health-wait below)
+  # ends this daemon: marker = the config path, present in the daemon's
+  # cmdline for its whole life (a recycled PID is left alone).
+  td_track_pid "$SANDBOX_PID" "$sbx/config.yaml" \
+    || die "could not record sandbox daemon pid $SANDBOX_PID for cleanup"
   BASE="https://127.0.0.1:$p_tls"
+  # Remember its API: on stop the shared library ends this daemon's live
+  # sessions through its own API before signalling the PID.
+  td_set_api "$SANDBOX_PID" "$BASE" "$TOKEN" 2>/dev/null \
+    || echo "WARN: could not record the sandbox daemon's API base" >&2
   local i
   for i in $(seq 1 120); do
     curl -skf --max-time 2 "$BASE/api/health" >/dev/null 2>&1 && break
@@ -213,9 +235,11 @@ start_sandbox() {
 }
 
 stop_sandbox() {
+  # End the recorded sandbox daemon: its live sessions via its own API, then
+  # the exact PID recorded at start (marker-verified), waited for.
   if [[ -n "$SANDBOX_PID" ]]; then
-    kill "$SANDBOX_PID" 2>/dev/null || true
-    wait "$SANDBOX_PID" 2>/dev/null || true
+    td_stop_one "$SANDBOX_PID" \
+      || echo "WARN: sandbox daemon pid $SANDBOX_PID still running" >&2
     echo "stopped: sandbox daemon pid $SANDBOX_PID"
     SANDBOX_PID=""
   fi
@@ -224,23 +248,35 @@ stop_sandbox() {
 cleanup() {
   local rc=$?
   stop_receiver
-  local id
-  for id in ${SUB_IDS[@]+"${SUB_IDS[@]}"}; do
-    api DELETE "/api/autonomous/subscriptions/$id" >/dev/null 2>&1
-  done
-  if [[ -n "$ORIG_JSON" ]]; then
-    api PUT /api/config "$ORIG_JSON" >/dev/null 2>&1
-    if [[ "$HTTP_CODE" == 200 ]]; then
-      echo "restored: autonomous.notify.webhook.* to the values found at start"
-    else
-      echo "WARN: restoring autonomous.notify.webhook.* returned $HTTP_CODE; set the keys back by hand"
+  if [[ -n "$SANDBOX_PID" ]]; then
+    # Fresh-sandbox mode: the daemon is a throwaway — its config, data dir
+    # and home dir all live under $WORK, which is deleted below — so there
+    # is nothing to restore in it. End it here (recorded PID, marker-
+    # verified, waited for); td_stop_all on the shared exit traps has the
+    # same effect on paths that die before reaching this point, on the
+    # normal path it has already run first.
+    td_stop_one "$SANDBOX_PID" \
+      || echo "WARN: sandbox daemon pid $SANDBOX_PID still running" >&2
+    echo "stopped: sandbox daemon pid $SANDBOX_PID"
+    SANDBOX_PID=""
+  else
+    local id
+    for id in ${SUB_IDS[@]+"${SUB_IDS[@]}"}; do
+      api DELETE "/api/autonomous/subscriptions/$id" >/dev/null 2>&1
+    done
+    if [[ -n "$ORIG_JSON" ]]; then
+      api PUT /api/config "$ORIG_JSON" >/dev/null 2>&1
+      if [[ "$HTTP_CODE" == 200 ]]; then
+        echo "restored: autonomous.notify.webhook.* to the values found at start"
+      else
+        echo "WARN: restoring autonomous.notify.webhook.* returned $HTTP_CODE; set the keys back by hand"
+      fi
+    fi
+    if [[ "$SECRET_MADE" == 1 ]]; then
+      api DELETE "/api/secrets/$SECRET_NAME" >/dev/null 2>&1
+      echo "removed: throwaway signing secret"
     fi
   fi
-  if [[ "$SECRET_MADE" == 1 ]]; then
-    api DELETE "/api/secrets/$SECRET_NAME" >/dev/null 2>&1
-    echo "removed: throwaway signing secret"
-  fi
-  stop_sandbox
   if [[ "${DATAWATCH_SMOKE_KEEP_WORK:-0}" == 1 ]]; then
     echo "kept scratch directory: $WORK"
   else
@@ -248,9 +284,13 @@ cleanup() {
   fi
   exit "$rc"
 }
-trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
+# The EXIT/INT/TERM/HUP traps were installed by the shared daemon
+# lifecycle library at the top of this script (TD_EXTRA_CLEANUP=cleanup):
+# on every exit path it ends the recorded fresh-sandbox daemon — first its
+# live sessions through the daemon's own API, then the exact PID it
+# started, marker-verified and waited for — and only after that runs
+# cleanup() below. Existing-sandbox mode records nothing, so the daemon it
+# drives is never touched.
 
 # ---------------------------------------------------------------------------
 # Verifier and receiver, written into the scratch directory.

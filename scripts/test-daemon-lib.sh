@@ -223,33 +223,37 @@ td_start() {
 }
 
 _td_end_sessions() {
-  # _td_end_sessions <pid> — best-effort: kill the daemon's live claude
+  # _td_end_sessions <pid> — best-effort: end the daemon's live claude
   # sessions through its own API before signalling, so state gets written
-  # even if the kill is abrupt
+  # even if the daemon kill is abrupt. The daemon's kill endpoint takes one
+  # session at a time (POST /api/sessions/kill {"id": full_id}), so list the
+  # non-terminal ones (running / waiting_input / rate_limited) and kill
+  # each of them individually.
   local base="$(_td_get "$1" "api_base")" token="$(_td_get "$1" "api_token")"
   local curl
   curl=$(readlink -f "$(command -v curl 2>/dev/null)" 2>/dev/null || command -v curl 2>/dev/null || true)
   [[ -n "$base" && -n "${curl:-}" ]] || return 0
-  local resp sessions sid
+  local resp sids sid
   if resp=$(curl -sS --max-time "$TD_API_TIMEOUT" \
       ${token:+-H "Authorization: Bearer $token"} \
-      "$base/api/sessions?running=1" 2>/dev/null); then
-    if sessions=$(echo "$resp" | python3 -c '
+      "$base/api/sessions" 2>/dev/null); then
+    if sids=$(echo "$resp" | python3 -c '
 import json,sys
 try:
     d = json.load(sys.stdin)
 except Exception:
     raise SystemExit(0)
 for item in d if isinstance(d, list) else d.get("sessions", []):
-    print(item.get("session_id"))
+    if item.get("state") in ("running", "waiting_input", "rate_limited"):
+        print(item.get("full_id") or item.get("session_id") or item.get("id") or item.get("name") or "")
 ' 2>/dev/null); then
-      for sid in $sessions; do
+      for sid in $sids; do
         [[ -n "$sid" ]] || continue
         curl -sS --max-time "$TD_API_TIMEOUT" \
           ${token:+-H "Authorization: Bearer $token"} \
           -X POST -H "Content-Type: application/json" \
-          -d '{"state":"killed"}' \
-          "$base/api/sessions/$sid/state" >/dev/null 2>&1 \
+          -d '{"id":"'$sid'"}' \
+          "$base/api/sessions/kill" >/dev/null 2>&1 \
           || echo "warn: could not end session $sid via $base" >&2
       done
     fi

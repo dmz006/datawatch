@@ -60,6 +60,24 @@ SMOKE_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_DIR=$(cd "$SMOKE_DIR/.." && pwd)
 REPO_PARENT=$(cd "$REPO_DIR/.." && pwd)
 
+# --- shared daemon lifecycle (source scripts/test-daemon-lib.sh first) ----
+# Any test daemon this script starts in local-daemon mode is ended on EVERY
+# exit path (normal, failure, INT, TERM, HUP): its live sessions are ended
+# through the daemon's own API, then its process is signalled by the exact
+# PID recorded at start (only while its recorded marker is still in the
+# cmdline). This runs BEFORE the smoke's own resource cleanup, via
+# TD_EXTRA_CLEANUP, so the daemon is already stopped before its scratch
+# data dir is removed.
+source "$SMOKE_DIR/test-daemon-lib.sh"
+smoke_extra_cleanup() {
+  # Runs on every exit, after td_stop_all has ended recorded daemons.
+  if declare -F cleanup_all >/dev/null 2>&1 && [[ -n "${TMPD:-}" ]]; then
+    cleanup_all
+  fi
+}
+TD_EXTRA_CLEANUP=smoke_extra_cleanup
+td_install_traps "$@"
+
 # --- static source lints (no daemon required) --------------------------------
 # v6.11.25 — keep docs/plans/ clean before every release.
 if [ "${DW_SKIP_TIDY_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/tidy-plans.sh" ]; then
@@ -202,6 +220,11 @@ YAML
   "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
     >"$TEST_WORK_DIR/daemon.log" 2>&1 &
   TEST_DAEMON_PID=$!
+  # Record it with the shared daemon-lifecycle library so every exit path
+  # ends it: marker = the config path, which stays in the daemon's cmdline
+  # for its whole life (recycled PIDs are left alone).
+  td_track_pid "$TEST_DAEMON_PID" "$TEST_CONFIG" \
+    || echo "warn: could not record test daemon pid $TEST_DAEMON_PID" >&2
 
   # Wait up to 30 s for the daemon to answer health.
   echo "Waiting for test daemon..."
@@ -213,7 +236,10 @@ YAML
   if [[ $_ready -eq 0 ]]; then
     echo "ERROR: test daemon did not start within 30 s. Log:" >&2
     tail -30 "$TEST_WORK_DIR/daemon.log" >&2
-    kill "$TEST_DAEMON_PID" 2>/dev/null || true
+    # End the recorded daemon (marker check + TERM + KILL + wait) before
+    # leaving; the EXIT trap would do this anyway, but do it explicitly so
+    # the data dir removal below cannot race a still-running daemon.
+    td_stop_one "$TEST_DAEMON_PID" || echo "warn: test daemon $TEST_DAEMON_PID still running" >&2
     rm -rf "$TEST_WORK_DIR"
     exit 1
   fi
@@ -222,6 +248,10 @@ YAML
 
   BASE="https://127.0.0.1:${SMOKE_TLS_PORT}"
   TOK=""   # test daemon starts with no auth token
+  # Remember its API: on stop the library ends this daemon's live sessions
+  # through the API before signalling the PID, even on abrupt exits.
+  td_set_api "$TEST_DAEMON_PID" "$BASE" "$TOK" 2>/dev/null \
+    || echo "warn: could not set the test daemon's API base" >&2
   # CLI commands use -u + --config so the TLS cert path and token are read from
   # the smoke daemon's config (not from ~/.datawatch which points at production).
   DW_CLI="$_DW_BIN --config $TEST_CONFIG -u $BASE"
@@ -357,24 +387,24 @@ except Exception:
 
   rm -rf "$TMPD" 2>/dev/null
 
-  # Shut down the test daemon and delete its data dir.
-  # Resources were already cleaned via API above; this is the final sweep.
-  if [[ -n "${TEST_DAEMON_PID:-}" ]]; then
-    kill "$TEST_DAEMON_PID" 2>/dev/null || true
-    wait "$TEST_DAEMON_PID" 2>/dev/null || true
-  fi
-  # Kill any tmux sessions the smoke daemon created (cs-dw-smoke-test-*).
-  env -u TMUX tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^cs-dw-smoke-test-' | \
-    while read -r s; do env -u TMUX tmux kill-session -t "$s" 2>/dev/null || true; done
+  # NOTE: the test daemon itself is ended by the shared daemon-lifecycle
+  # library (td_stop_all) BEFORE this cleanup runs, on every exit path:
+  # it ends the daemon's live sessions through the daemon's own API and
+  # then signals the recorded PID (marker-verified) and waits for it.
+  # No name-based kills here: the daemon owns its own sessions, and only
+  # the exact PID recorded at start is ever signalled.
   if [[ -n "${KEEP_TEST_DIR:-}" ]]; then
     echo "Test data kept: $TEST_WORK_DIR"
   else
     rm -rf "$TEST_WORK_DIR" 2>/dev/null || true
   fi
 }
-trap cleanup_all EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
+# The EXIT/INT/TERM/HUP traps were installed by the shared daemon
+# lifecycle library above (TD_EXTRA_CLEANUP=smoke_extra_cleanup): on every
+# exit path it ends the recorded test daemon — first its live sessions via
+# the daemon's own API, then the exact PID it started, marker-verified —
+# and only after that runs the smoke's tracked-resource cleanup (cleanup_all)
+# and scratch-dir removal.
 
 PASS=0
 FAIL=0
