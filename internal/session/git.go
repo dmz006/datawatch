@@ -110,7 +110,7 @@ func (g *ProjectGit) stageChanges(scope []string) error {
 		}
 		var inside []string
 		for _, d := range scope {
-			dd, aerr := gitguard.ContainedPath(absDir, d)
+			dd, aerr := containedInDir(absDir, d)
 			if errors.Is(aerr, gitguard.ErrPathEscapes) {
 				fmt.Printf("[datawatch] warning: write scope dir %s is outside repo %s — not staged by this commit\n", d, g.dir)
 				continue
@@ -338,7 +338,7 @@ func (g *ProjectGit) unscopedChangedFiles(since time.Time) []string {
 		}
 		// mtime bounds what counts as run output. Files that no longer
 		// exist are skipped — staging a missing path would fail the add.
-		abs, err := gitguard.ContainedPath(g.dir, filepath.Join(g.dir, rel))
+		abs, err := containedInDir(g.dir, filepath.Join(g.dir, rel))
 		if err != nil {
 			continue
 		}
@@ -356,6 +356,31 @@ func (g *ProjectGit) unscopedChangedFiles(since time.Time) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// containedInDir returns path cleaned and made absolute when it is root or
+// lies under root. gitguard.ContainedPath does the symlink-aware check; the
+// prefix test on the value that is returned is repeated here, behind an early
+// return, so the one path handed to os.Stat and the other file calls is the
+// one that was checked. dir carries a trailing separator while it is tested,
+// which accepts root itself and refuses a sibling that merely shares root's
+// name as a prefix.
+func containedInDir(root, path string) (string, error) {
+	contained, err := gitguard.ContainedPath(root, path)
+	if err != nil {
+		return "", err
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	sep := string(filepath.Separator)
+	rootPrefix := strings.TrimSuffix(rootAbs, sep) + sep
+	dir := strings.TrimSuffix(contained, sep) + sep
+	if !strings.HasPrefix(dir, rootPrefix) {
+		return "", fmt.Errorf("%w: %q is outside %s", gitguard.ErrPathEscapes, path, rootAbs)
+	}
+	return filepath.Clean(dir), nil
 }
 
 // stagedOnly reports whether the index holds any staged changes relative
