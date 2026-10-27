@@ -59,6 +59,33 @@ const maxVoiceUploadBytes int64 = 25 << 20
 // (~115 kbps) while still bounding pathological clients.
 const voiceUploadReadTimeout = 180 * time.Second
 
+// Transcription deadline: voiceBaseTimeout covers the ffmpeg transcode and
+// any clip of unknown or short length; a known clip gets
+// voiceTimeoutPerAudioSecond seconds of allowance per second of audio, up to
+// voiceMaxTimeout.
+const (
+	voiceBaseTimeout           = 5 * time.Minute
+	voiceTimeoutPerAudioSecond = 2
+	voiceMaxTimeout            = 30 * time.Minute
+)
+
+// voiceTranscribeTimeout returns how long a transcription may run for a clip
+// of the given length. known is false when the length could not be
+// determined, which gets the base timeout.
+func voiceTranscribeTimeout(audio time.Duration, known bool) time.Duration {
+	if !known {
+		return voiceBaseTimeout
+	}
+	d := audio * voiceTimeoutPerAudioSecond
+	if d < voiceBaseTimeout {
+		d = voiceBaseTimeout
+	}
+	if d > voiceMaxTimeout {
+		d = voiceMaxTimeout
+	}
+	return d
+}
+
 // transcribeSurface is the narrow interface the handler needs; the
 // full transcribe.Transcriber implements it. Defined here so server
 // tests can plug a fake without importing whisper/venv machinery.
@@ -164,8 +191,10 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = tmpFile.Close()
 
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
-	defer cancel()
+	// The transcode keeps the flat base budget; transcription gets its own
+	// deadline sized from the clip length below.
+	ffmpegCtx, ffmpegCancel := context.WithTimeout(r.Context(), voiceBaseTimeout)
+	defer ffmpegCancel()
 
 	// v7.0.0-alpha.14 (#237) — transcode the browser-mic blob (typically
 	// webm/opus) to 16-kHz mono WAV before handing off to the
@@ -182,7 +211,7 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 		ffmpegStart := time.Now()
 		wavPath := filepath.Join(tmpDir, "audio.wav")
 		// -y overwrite, -i input, -ac 1 mono, -ar 16000 16kHz, -c:a pcm_s16le 16-bit PCM
-		cmd := exec.CommandContext(ctx, ffmpegBin, "-y", "-i", tmpPath, "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wavPath)
+		cmd := exec.CommandContext(ffmpegCtx, ffmpegBin, "-y", "-i", tmpPath, "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wavPath)
 		if out, fferr := cmd.CombinedOutput(); fferr != nil {
 			// Transcode failed — keep original; chain fallback handles.
 			voiceLogf("[voice] ffmpeg transcode failed (%v); using original %s. bytes=%d elapsed_ms=%d ffmpeg said: %s\n",
@@ -191,6 +220,12 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 			tmpPath = wavPath
 		}
 	}
+
+	// Size the transcription deadline from the (possibly transcoded) clip so
+	// a long recording on a slow host is not cut off by a flat budget.
+	audioLen, audioKnown := transcribe.AudioDuration(r.Context(), tmpPath)
+	ctx, cancel := context.WithTimeout(r.Context(), voiceTranscribeTimeout(audioLen, audioKnown))
+	defer cancel()
 
 	transcribeStart := time.Now()
 	transcript, err := s.transcriber.Transcribe(ctx, tmpPath)
