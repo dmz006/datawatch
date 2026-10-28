@@ -50,9 +50,12 @@ test('the Tags button sits before the status dot in the header', () => {
   const install = html.indexOf('id="headerInstallBtn"');
   assert.ok(btn > install && btn < dot, 'button is after the install button and before statusDot');
   const tag = html.slice(html.lastIndexOf('<button', btn), html.indexOf('</button>', btn));
-  for (const needle of ['type="button"', 'aria-haspopup="dialog"', 'aria-expanded="false"', 'aria-controls="headerTagsMenu"', 'class="header-tags-btn"', 'data-i18n="tags_menu_button"']) {
+  for (const needle of ['type="button"', 'aria-haspopup="dialog"', 'aria-expanded="false"', 'aria-controls="headerTagsMenu"', 'class="header-tags-btn"']) {
     assert.ok(tag.includes(needle), needle);
   }
+  assert.ok(tag.includes('<svg'), 'button holds an svg icon');
+  assert.ok(!tag.includes('>Tags<'), 'button has no visible Tags text');
+  assert.ok(!tag.includes('data-i18n'), 'button carries no data-i18n');
   assert.match(html, /<div id="headerTagsMenu"[^>]*role="dialog"[^>]*aria-labelledby="headerTagsBtn"[^>]*hidden/);
   assert.ok(html.indexOf('id="headerTagsMenu"') > html.indexOf('</header>'));
 });
@@ -115,6 +118,7 @@ test('the button shows the active count: watch is one, plus each selected tag', 
   h.sb._tagsMenuRefresh();
   assert.equal(h.chip.textContent, '');
   assert.equal(h.btn.getAttribute('aria-label'), h.sb.t('tags_menu_button'));
+  assert.equal(h.btn.getAttribute('title'), h.sb.t('tags_menu_button'));
   run(h, 'state.sessionWatchFilter = true;');
   assert.equal(run(h, '_tagsMenuActiveCount()'), 1);
   run(h, "_tagBrowse.session.sel = ['aaaa0001', 'aaaa0002'];");
@@ -122,8 +126,13 @@ test('the button shows the active count: watch is one, plus each selected tag', 
   h.sb._tagsMenuRefresh();
   assert.equal(h.chip.textContent, '3');
   assert.match(h.btn.getAttribute('aria-label'), /3/);
+  assert.equal(h.btn.getAttribute('aria-label'), h.sb.t('tags_menu_button') + ' (3)');
+  assert.equal(h.btn.getAttribute('title'), h.sb.t('tags_menu_button'));
   run(h, 'state.sessionWatchFilter = false;');
   assert.equal(run(h, '_tagsMenuActiveCount()'), 2);
+  h.sb._tagsMenuRefresh();
+  assert.equal(h.chip.textContent, '2');
+  assert.equal(h.btn.getAttribute('aria-label'), h.sb.t('tags_menu_button') + ' (2)');
 });
 
 test('a tag selection restored from storage shows its count once the page has loaded', async () => {
