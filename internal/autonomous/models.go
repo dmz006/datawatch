@@ -183,7 +183,12 @@ type PRD struct {
 	// (claude won't write files); leave empty to use the session
 	// default. Per-task value takes precedence.
 	PermissionMode string    `json:"permission_mode,omitempty"`
-	Status         PRDStatus `json:"status"`
+	// ThinkingLevel — pi --thinking level override (off|minimal|low|
+	// medium|high) applied to every task whose Task.ThinkingLevel is
+	// empty. Empty = fall through to the global pi.thinking_level
+	// config. Resolution order: task -> story -> PRD -> config.
+	ThinkingLevel string    `json:"thinking_level,omitempty"`
+	Status        PRDStatus `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	// BL451 — optimistic-concurrency revision, bumped by Store.SavePRD
@@ -529,6 +534,11 @@ type Story struct {
 	Backend string `json:"backend,omitempty"`
 	Effort  Effort `json:"effort,omitempty"`
 	Model   string `json:"model,omitempty"`
+	// Story-level pi --thinking override (off|minimal|low|medium|high).
+	// Inherited by tasks in this story whose own ThinkingLevel is empty.
+	// Empty = inherit from the PRD-level value then the global
+	// pi.thinking_level config.
+	ThinkingLevel string `json:"thinking_level,omitempty"`
 	// Story-level verifier LLM override. Precedence: task → story
 	// (here) → Automaton → global autonomous verification_* config.
 	// Applies to every task in this story that has no task-level
@@ -621,6 +631,12 @@ type Task struct {
 	Backend string `json:"backend,omitempty"`
 	Effort  Effort `json:"effort,omitempty"`
 	Model   string `json:"model,omitempty"`
+	// ThinkingLevel — per-task pi --thinking override (off|minimal|low|
+	// medium|high, closed set from config.PiThinkingLevels). Most
+	// specific wins: this value beats the story- and PRD-level values
+	// and the global pi.thinking_level config. Empty = fall through
+	// the chain. Validated at the set_thinking_level write edge.
+	ThinkingLevel string `json:"thinking_level,omitempty"`
 	// ProjectDir is an optional per-task working/verification directory.
 	// Empty inherits PRD.ProjectDir. Same task > PRD precedence as the
 	// per-task LLM overrides (Backend/Effort/Model above); resolved by

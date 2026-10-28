@@ -2968,6 +2968,143 @@ func (m *Manager) SetPermissionMode(prdID, mode, actor string) (*PRD, error) {
 	return updated, nil
 }
 
+// validThinkingLevels mirrors config.PiThinkingLevels (off|minimal|low|
+// medium|high) — the closed pi --thinking set. Kept inline because the
+// autonomous package does not import internal/config. "" (unset/clear)
+// is always valid and means "fall through the chain".
+var validThinkingLevels = map[string]bool{
+	"off": true, "minimal": true, "low": true, "medium": true, "high": true,
+}
+
+func thinkingLevelInvalid(level string) error {
+	return fmt.Errorf("invalid thinking_level %q — valid values: off, minimal, low, medium, high (empty clears it)", level)
+}
+
+// SetPRDThinkingLevel sets the PRD-level pi --thinking level override,
+// inherited by every task without its own ThinkingLevel. Empty clears
+// it back to the global pi.thinking_level config.
+func (m *Manager) SetPRDThinkingLevel(prdID, level, actor string) (*PRD, error) {
+	if level != "" && !validThinkingLevels[level] {
+		return nil, thinkingLevelInvalid(level)
+	}
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	prd.ThinkingLevel = level
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_thinking_level", Actor: actor,
+		Note: fmt.Sprintf("thinking_level=%s", level),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// SetStoryThinkingLevel sets the story-level pi --thinking override,
+// inherited by tasks in the story without their own ThinkingLevel.
+// Empty clears it. Same accepted-while rule as SetStoryLLM
+// (autonomous.task_override_statuses).
+func (m *Manager) SetStoryThinkingLevel(prdID, storyID, level, actor string) (*PRD, error) {
+	if level != "" && !validThinkingLevels[level] {
+		return nil, thinkingLevelInvalid(level)
+	}
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if err := m.taskOverrideLocked(prd, prdID); err != nil {
+		return nil, err
+	}
+	found := false
+	for i := range prd.Story {
+		if prd.Story[i].ID == storyID {
+			prd.Story[i].ThinkingLevel = level
+			prd.Story[i].UpdatedAt = time.Now()
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_story_thinking_level", Actor: actor,
+		Note: fmt.Sprintf("story=%s thinking_level=%s", storyID, level),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// SetTaskThinkingLevel sets the task-level pi --thinking override —
+// the most specific override in the chain (task → story → PRD →
+// pi.thinking_level). Empty clears it. Same accepted-while rule as
+// SetTaskLLM (autonomous.task_override_statuses).
+func (m *Manager) SetTaskThinkingLevel(prdID, taskID, level, actor string) (*PRD, error) {
+	if level != "" && !validThinkingLevels[level] {
+		return nil, thinkingLevelInvalid(level)
+	}
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if err := m.taskOverrideLocked(prd, prdID); err != nil {
+		return nil, err
+	}
+	found := false
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if prd.Story[si].Tasks[ti].ID == taskID {
+				prd.Story[si].Tasks[ti].ThinkingLevel = level
+				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_task_thinking_level", Actor: actor,
+		Note: fmt.Sprintf("task=%s thinking_level=%s", taskID, level),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// resolveThinkingLevel — most-specific pi --thinking override wins:
+// per-task → per-story → per-PRD → the global pi.thinking_level value
+// (passed as `global`; the executor passes "" and lets the session
+// manager apply its configured level, keeping the single source of
+// truth in one place). Every empty level falls through to the next.
+func resolveThinkingLevel(t *Task, story *Story, prd *PRD, global string) string {
+	if t != nil && t.ThinkingLevel != "" {
+		return t.ThinkingLevel
+	}
+	if story != nil && story.ThinkingLevel != "" {
+		return story.ThinkingLevel
+	}
+	if prd != nil && prd.ThinkingLevel != "" {
+		return prd.ThinkingLevel
+	}
+	return global
+}
+
 // Pause (GH#172 D52) marks a running PRD paused. The already-live
 // executor goroutine (if any) notices this on its next result-loop
 // iteration (see executor.go's Run) and drains in-flight work without

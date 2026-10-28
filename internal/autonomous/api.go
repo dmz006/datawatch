@@ -762,6 +762,33 @@ func (a *API) SetPermissionMode(prdID, mode, actor string) (any, error) {
 	return out, err
 }
 
+// SetPRDThinkingLevel — PRD-level pi --thinking override.
+func (a *API) SetPRDThinkingLevel(prdID, level, actor string) (any, error) {
+	out, err := a.M.SetPRDThinkingLevel(prdID, level, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
+// SetStoryThinkingLevel — story-level pi --thinking override.
+func (a *API) SetStoryThinkingLevel(prdID, storyID, level, actor string) (any, error) {
+	out, err := a.M.SetStoryThinkingLevel(prdID, storyID, level, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
+// SetTaskThinkingLevel — task-level pi --thinking override.
+func (a *API) SetTaskThinkingLevel(prdID, taskID, level, actor string) (any, error) {
+	out, err := a.M.SetTaskThinkingLevel(prdID, taskID, level, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
 func (a *API) ListLearnings() []any {
 	src := a.M.Store().ListLearnings()
 	out := make([]any, len(src))

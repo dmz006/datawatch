@@ -642,6 +642,7 @@ func runWorkerBootstrapTask(mgr *session.Manager, env agentspkg.BootstrapEnv, bo
 		Effort:         boot.Effort,
 		Model:          boot.Model,
 		PermissionMode: boot.PermissionMode,
+		ThinkingLevel:  boot.ThinkingLevel,
 		OneShot:        true,
 	}
 	// Note: git commits for this worker task are automatic (the
@@ -4470,6 +4471,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					"effort":          mapEffortToSession(req.Effort), // real claude_effort pass-through is local-session-only for now
 					"permission_mode": req.PermissionMode,
 					"model":           req.Model,
+					"thinking_level":  req.ThinkingLevel,
 					// BL407 Phase 4 — the PRD's own dedicated branch
 					// name (set in Manager.Run, same idempotent
 					// assignment worktree mode's EnsureWorktree does).

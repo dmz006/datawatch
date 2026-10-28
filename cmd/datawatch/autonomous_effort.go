@@ -96,6 +96,7 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 		"effort":          mapAutonomousEffortToSession(req.Effort),
 		"permission_mode": req.PermissionMode,
 		"model":           req.Model,
+		"thinking_level":  req.ThinkingLevel, // empty = session manager's pi.thinking_level config applies
 		"lsp_language":    req.LSPLanguage,
 		"one_shot":        true,
 		"prd_id":          req.PRDID,

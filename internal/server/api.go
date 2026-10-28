@@ -690,6 +690,10 @@ type AutonomousAPI interface {
 	// GH#172 D75 — per-PRD permission_mode, inherited by tasks spawned
 	// under it as their claude-code --permission-mode default.
 	SetPermissionMode(prdID, mode, actor string) (any, error)
+	// pi --thinking level overrides (task > story > PRD > pi.thinking_level).
+	SetPRDThinkingLevel(prdID, level, actor string) (any, error)
+	SetStoryThinkingLevel(prdID, storyID, level, actor string) (any, error)
+	SetTaskThinkingLevel(prdID, taskID, level, actor string) (any, error)
 
 	// GH#172 D52 — pause/resume a running PRD without treating it as
 	// blocked or failed.
@@ -4345,6 +4349,11 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PermissionMode string `json:"permission_mode,omitempty"`
 		Model          string `json:"model,omitempty"`
 		ClaudeEffort   string `json:"claude_effort,omitempty"`
+		// ThinkingLevel — pi --thinking level override (off|minimal|low|
+		// medium|high); the autonomous executor populates it from the
+		// resolved per-task → per-story → per-PRD chain. Empty = the
+		// session manager's own pi.thinking_level config applies.
+		ThinkingLevel string `json:"thinking_level,omitempty"`
 		// v5.26.21 — autonomous PRDs with project_profile but no
 		// cluster_profile fall through here. Resolve the profile to a
 		// git URL + branch, clone into a per-session workspace, and
@@ -4683,6 +4692,14 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid effort: must be one of quick, normal, thorough", http.StatusBadRequest)
 		return
 	}
+	// thinking_level (pi --thinking) — reject invalid values outright at the
+	// write edge instead of storing a value that trips pi later.
+	if req.ThinkingLevel != "" {
+		if err := config.ValidatePiThinkingLevel(req.ThinkingLevel); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 
 	opts := &session.StartOptions{
 		Name:                  req.Name,
@@ -4694,6 +4711,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PermissionMode:        req.PermissionMode,
 		Model:                 req.Model,
 		ClaudeEffort:          req.ClaudeEffort,
+		ThinkingLevel:         req.ThinkingLevel,
 		EphemeralWorkspace:    ephemeralWorkspace,
 		Skills:                profileSkills,
 		LLMRef:                resolvedLLMRef,

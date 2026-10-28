@@ -107,6 +107,10 @@ type Agent struct {
 	Effort         string `json:"effort,omitempty"`
 	Model          string `json:"model,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
+	// ThinkingLevel — pi --thinking override (off|minimal|low|medium|high)
+	// forwarded to the worker's bootstrap response. Mirrors
+	// autonomous.SpawnRequest.ThinkingLevel on the local-session path.
+	ThinkingLevel string `json:"thinking_level,omitempty"`
 
 	// ParentAgentID is set when this agent was spawned recursively by
 	// another worker (F10 S7.4). Empty for top-level operator spawns.
@@ -191,6 +195,11 @@ type SpawnRequest struct {
 	Effort         string `json:"effort,omitempty"`
 	Model          string `json:"model,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
+	// ThinkingLevel — pi --thinking override for the worker's task
+	// session (off|minimal|low|medium|high; empty = worker falls back
+	// to its own pi.thinking_level config). Mirrors the local-session
+	// dispatch path's "thinking_level" key.
+	ThinkingLevel string `json:"thinking_level,omitempty"`
 }
 
 // Driver plugs container-platform-specific behaviour into the Manager.
@@ -532,6 +541,7 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		Effort:         req.Effort,
 		Model:          req.Model,
 		PermissionMode: req.PermissionMode,
+		ThinkingLevel:  req.ThinkingLevel,
 		project:        proj,
 		cluster:        cluster,
 	}

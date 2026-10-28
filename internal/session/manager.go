@@ -1584,6 +1584,14 @@ type StartOptions struct {
 	// the other.
 	ClaudeEffort string
 
+	// ThinkingLevel — the pi --thinking level override (off|minimal|
+	// low|medium|high, validated at the set_thinking_level write edge)
+	// resolved per-task → per-story → per-PRD by the autonomous executor.
+	// Applied in Start only to backends implementing SetThinkingLevel(string)
+	// (the pi family); other backends silently ignore it. Empty = leave the
+	// global cfg.Pi.ThinkingLevel (applied earlier in Start) as-is.
+	ThinkingLevel string
+
 	// EphemeralWorkspace (v5.26.26) — set by handleStartSession when
 	// it created ProjectDir via the project_profile clone path. Causes
 	// Manager.Delete to reap the cloned tree after the session ends.
@@ -2103,6 +2111,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		if opt.ClaudeEffort != "" {
 			if em, ok := backendObj.(interface{ SetEffort(string) }); ok {
 				em.SetEffort(opt.ClaudeEffort)
+			}
+		}
+		if opt.ThinkingLevel != "" {
+			if st, ok := backendObj.(interface{ SetThinkingLevel(string) }); ok {
+				st.SetThinkingLevel(opt.ThinkingLevel)
 			}
 		}
 		if opt.Chrome != nil {

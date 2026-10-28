@@ -784,6 +784,75 @@ func (s *Server) handleAutonomousPRDSetTaskLLM(_ context.Context, req mcpsdk.Cal
 	return textOK(string(out)), nil
 }
 
+// ----- thinking-level overrides (per-task → per-story → per-PRD → pi.thinking_level) -----
+
+func (s *Server) toolAutonomousPRDSetThinkingLevel() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_thinking_level",
+		mcpsdk.WithDescription("Set the PRD-level pi --thinking level override (off|minimal|low|medium|high). Empty string clears it (falls back to the global pi.thinking_level config). Tasks inherit unless overridden."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("thinking_level", mcpsdk.Description("thinking level: off|minimal|low|medium|high; empty clears to the global config")),
+		mcpsdk.WithString("actor", mcpsdk.Description("actor for the audit log (default operator)")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetThinkingLevel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"thinking_level": req.GetString("thinking_level", ""),
+		"actor":          req.GetString("actor", "operator"),
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_thinking_level", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDSetStoryThinkingLevel() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_story_thinking_level",
+		mcpsdk.WithDescription("Override the pi --thinking level for all tasks in one story (off|minimal|low|medium|high). Empty string clears (falls back to PRD then global)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID")),
+		mcpsdk.WithString("thinking_level", mcpsdk.Description("thinking level; empty = inherit PRD then global")),
+		mcpsdk.WithString("actor", mcpsdk.Description("actor for the audit log (default operator)")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetStoryThinkingLevel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"story_id":       req.GetString("story_id", ""),
+		"thinking_level": req.GetString("thinking_level", ""),
+		"actor":          req.GetString("actor", "operator"),
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_story_thinking_level", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDSetTaskThinkingLevel() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_task_thinking_level",
+		mcpsdk.WithDescription("Override the pi --thinking level for a single task (most specific in the chain). Empty string clears (falls back to story, PRD, then global config)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID")),
+		mcpsdk.WithString("thinking_level", mcpsdk.Description("thinking level; empty = inherit story, PRD then global")),
+		mcpsdk.WithString("actor", mcpsdk.Description("actor for the audit log (default operator)")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetTaskThinkingLevel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"task_id":        req.GetString("task_id", ""),
+		"thinking_level": req.GetString("thinking_level", ""),
+		"actor":          req.GetString("actor", "operator"),
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_task_thinking_level", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) toolAutonomousPRDSetTaskProjectDir() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_task_project_dir",
 		mcpsdk.WithDescription("BL447 — override the project directory for a single task (task > Automaton). Diff capture, scope, file drift, quality gates and the verifier all follow it. Empty string = clear (inherits the Automaton's project_dir)."),

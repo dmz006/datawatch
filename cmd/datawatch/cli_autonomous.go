@@ -90,6 +90,9 @@ Subcommands:
 		newAutonomousPRDSetLLMCmd(),
 		newAutonomousPRDSetStoryLLMCmd(),
 		newAutonomousPRDSetTaskLLMCmd(),
+		newAutonomousPRDSetThinkingLevelCmd(),
+		newAutonomousPRDSetStoryThinkingLevelCmd(),
+		newAutonomousPRDSetTaskThinkingLevelCmd(),
 		newAutonomousPRDSetTaskProjectDirCmd(),
 		newAutonomousPRDSetTaskVerificationLLMCmd(),
 		newAutonomousPRDSetStoryVerificationLLMCmd(),
@@ -577,6 +580,61 @@ func newAutonomousPRDSetTaskLLMCmd() *cobra.Command {
 	cmd.Flags().StringVar(&model, "model", "", "specific model name for this task; empty = backend default")
 	addGuardrailLLMFlags(cmd, &guardrailBackend, &guardrailModel)
 	_ = cmd.MarkFlagRequired("task")
+	return cmd
+}
+
+// newAutonomousPRDSetThinkingLevelCmd — set the PRD-level pi --thinking
+// level override (off|minimal|low|medium|high; empty clears back to the
+// global pi.thinking_level config). Tasks inherit unless overridden.
+func newAutonomousPRDSetThinkingLevelCmd() *cobra.Command {
+	var level string
+	cmd := &cobra.Command{
+		Use:   "prd-set-thinking-level <id> --level <off|minimal|low|medium|high|>",
+		Short: "Set the PRD-level pi --thinking level override. Tasks inherit unless overridden.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"thinking_level": level, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_thinking_level", body)
+		},
+	}
+	cmd.Flags().StringVar(&level, "level", "", "thinking level: off|minimal|low|medium|high (empty clears to the global pi.thinking_level config)")
+	_ = cmd.MarkFlagRequired("level")
+	return cmd
+}
+
+func newAutonomousPRDSetStoryThinkingLevelCmd() *cobra.Command {
+	var storyID, level string
+	cmd := &cobra.Command{
+		Use:   "prd-set-story-thinking-level <prd-id> --story <story-id> --level L",
+		Short: "Override the pi --thinking level for one story. Empty level clears (falls back to PRD then global).",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"story_id": storyID, "thinking_level": level, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_story_thinking_level", body)
+		},
+	}
+	cmd.Flags().StringVar(&storyID, "story", "", "story ID to override (required)")
+	cmd.Flags().StringVar(&level, "level", "", "thinking level; empty = inherit PRD then global")
+	_ = cmd.MarkFlagRequired("story")
+	_ = cmd.MarkFlagRequired("level")
+	return cmd
+}
+
+func newAutonomousPRDSetTaskThinkingLevelCmd() *cobra.Command {
+	var taskID, level string
+	cmd := &cobra.Command{
+		Use:   "prd-set-task-thinking-level <prd-id> --task <task-id> --level L",
+		Short: "Override the pi --thinking level for one task. Empty level clears (falls back to story, PRD, then global).",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"task_id": taskID, "thinking_level": level, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_thinking_level", body)
+		},
+	}
+	cmd.Flags().StringVar(&taskID, "task", "", "task ID to override (required)")
+	cmd.Flags().StringVar(&level, "level", "", "thinking level; empty = inherit story, PRD then global")
+	_ = cmd.MarkFlagRequired("task")
+	_ = cmd.MarkFlagRequired("level")
 	return cmd
 }
 
