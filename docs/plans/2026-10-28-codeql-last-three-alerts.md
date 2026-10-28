@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-28
 **Scope:** the three code-scanning alerts that remain open after the fixes described in `docs/plans/2026-10-27-codeql-local-reproduction.md`: `go/command-injection` in `internal/session/subprocess_resume.go`, `go/reflected-xss` in `internal/mcp/transport_debug.go`, and `js/insecure-randomness` in `internal/server/web/app.js`. This document is appended to by the later tasks of the same plan (fixes, final scan, verification).
-**Status:** done: the three target alerts are gone from a fresh local scan of the fixed branch tree, and no new alert (new fingerprint) appeared; one pre-existing alert only moved lines (see Re-scan).
+**Status:** Done on the branch, pending the GitHub rescan after merge: the three target alerts are gone from a fresh local scan of the fixed branch tree and no new alert appeared. GitHub still lists #661, #714 and #715 as open until it re-scans `main` after the merge. The final gate (see Final result) has two failures that are not caused by this branch.
 
 Working files live in `.datawatch/codeql/`, which is gitignored (`.gitignore` line 1), so they are not committed. The SARIF produced by the reproduction run is saved, unchanged, as `.datawatch/codeql/baseline-r3/go.sarif` and `.datawatch/codeql/baseline-r3/javascript-typescript.sarif`.
 
@@ -155,3 +155,42 @@ Rule, file and fingerprint are unchanged; the line moved by 11 because the fix i
 ### Outcome
 
 The three target alerts no longer appear in a fresh local scan, no genuinely new alert exists, and no fix was needed in this task. No suppression, query exclusion, workflow, code-scanning configuration or GitHub setting was changed. The local scan still reports alerts GitHub has dismissed (see the 2026-10-27 plan), so the remaining totals are not the open count on GitHub.
+
+## Final result
+
+Run on branch `automaton/24030001` at `57bedf450` (base `3bd9b1c95`, v9.28.0), 2026-10-27 22:37-22:51 local time, every command under `env -u TMUX -u TMUX_TMPDIR`. Nothing was changed to make a check pass: no code, test, suppression comment, query exclusion, workflow, code-scanning configuration or GitHub setting was edited in this task. The only edits are this section, the Status line, and the `make sync-docs` copy of this file into `internal/server/web/docs/`.
+
+### Gate commands
+
+| Command | Result |
+|---------|--------|
+| `go build -o /dev/null ./cmd/datawatch/` | Passes (exit 0). |
+| `go test ./internal/mcp/` | Passes in every run (`ok`, about 1.9 s). |
+| `go test ./internal/session/` | **Flaky: failed in 4 of 6 runs (two full-package runs, two single-test runs), passed in the other 2.** Every failure is `TestNoNewTmpLeakEntries`, never another session test (950 other tests passed in the full run). See below. |
+| `node --test internal/server/web/*.test.js` | **Fails: 1316 of 1317 pass.** The failure is `the removed title key is absent from every locale bundle` in `app-session-header-time-counter.test.js`. See below. |
+| `scripts/check-docs-sync.sh` | Failed before this edit with drift in only `plans/2026-10-28-codeql-last-three-alerts.md`; after this edit and `make sync-docs` it passes (see the last line of this section). |
+
+**`go test ./internal/session/`.** `TestNoNewTmpLeakEntries` runs an inner `go test ./internal/mcp/ ./internal/server/ ./internal/plugins/` and fails if that run fails. In each failing run the inner failure was `TestEndpointMeasureDeterministic` in `internal/server/perf_seed_test.go:501` ("automata list sizes differ between seeds", for example 90405 vs 90606 on one run and 90408 vs 88732 on another, against a slack of 64 bytes). Running the three inner packages directly, three times, gave two passes and one failure of that same test. The test seeds two perf servers and compares the encoded size of `/api/autonomous/prds`; the sizes vary from run to run. The file is not part of this branch's diff (the branch touches `internal/session/subprocess_*`, `manager.go`, `internal/mcp/transport_debug*`, `app.js`, `app-auto-mic-id.test.js`, docs and CHANGELOG), so this is an existing flake, not one introduced here. Runs where the inner suite passed also passed the leak check (the private temp dir was empty). It was not fixed here: that is outside this task and the test must not be weakened.
+
+**Node.** `session_last_activity_title` is still present in all five locale files (`en`, `de`, `es`, `fr`, `ja`), and the test written by task `daad0001` asserts it is absent. The key is also present in `main` and in the base commit `3bd9b1c95`, and the branch diff does not touch `internal/server/web/locales/`, so this failure exists without this branch. It was not fixed here for the same reason.
+
+### Open code-scanning alerts
+
+`gh api 'repos/dmz006/datawatch/code-scanning/alerts?state=open&per_page=100' --paginate` was reachable (exit 0) and returned exactly three open alerts, all last analysed at commit `3bd9b1c95`:
+
+| Alert | Rule | File:line (GitHub) | Why still open |
+|-------|------|--------------------|----------------|
+| #661 | `go/command-injection` | `internal/session/subprocess_resume.go:41` | Fixed on this branch, not yet merged. GitHub only re-scans after a merge to `main`. |
+| #714 | `js/insecure-randomness` | `internal/server/web/app.js:6982` | Fixed on this branch, not yet merged. Same reason. |
+| #715 | `go/reflected-xss` | `internal/mcp/transport_debug.go:128` | Fixed on this branch, not yet merged. Same reason. |
+
+No other alert is open on GitHub. No alert is open because it was dismissed upstream or because it was not fixed here: the 66 Go and 16 JavaScript/TypeScript results that the local scan still prints are alerts GitHub has already dismissed (see `docs/plans/2026-10-27-codeql-local-reproduction.md`) and are not open there.
+
+### Local scan: are #661, #714 and #715 cleared?
+
+Yes, all three are cleared. This was re-read from `.datawatch/codeql/out-r4/go.sarif` and `.datawatch/codeql/out-r4/javascript-typescript.sarif` (CodeQL CLI 2.27.3, default code-scanning suites) in this task, not only taken from the Re-scan section above: no result in either file is in `subprocess_resume.go` or `transport_debug.go`, and there is no `js/insecure-randomness` result. The Go file totals are `go/command-injection` 3 (was 4) and `go/reflected-xss` 1 (was 2), all in other files. Since that scan, the only code-scanned files that changed are none of the three alert files: the later commits changed only the CHANGELOG, the plan documents and a one-line edit to `internal/server/web/app-auto-mic-id.test.js`. The three source files are unchanged since the scan.
+
+### After the merge
+
+Once the branch is merged to `main` and the CodeQL workflow has run, #661, #714 and #715 should close on their own. If any is still open after that scan, it is a real regression and needs a new task; do not dismiss it.
+
