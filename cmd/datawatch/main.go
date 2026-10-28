@@ -4684,6 +4684,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									State:               string(s.State),
 									IdleFor:             idleFor,
 									OutputAge:           outputAge,
+									LogLastEventAge:     piLogLastEventAge(s.BackendFamily, piSessionsRoot(), taskDir, s.CreatedAt, time.Now()),
 									HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
 									Limit:               idleLimit,
 								}
@@ -4718,10 +4719,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								// whose backend was active within the threshold is not
 								// stalled, even with a silent log.
 								obs := workerStallObservation{
-									LogPath:   staleLogPath,
-									WorkDir:   taskDir,
-									Threshold: staleThreshold,
-									Now:       time.Now(),
+									LogPath:         staleLogPath,
+									WorkDir:         taskDir,
+									Threshold:       staleThreshold,
+									Now:             time.Now(),
+									LogLastEventAge: piLogLastEventAge(s.BackendFamily, piSessionsRoot(), taskDir, s.CreatedAt, time.Now()),
 									ChildAlive: func() bool {
 										return hasLiveChildProcess(s.TmuxSession)
 									},

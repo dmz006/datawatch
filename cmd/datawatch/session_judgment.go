@@ -184,6 +184,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 		startReq["effort"] = effort
 	}
 	body, _ := json.Marshal(startReq)
+	spawnedAt := time.Now()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -334,6 +335,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 						State:               s.State,
 						IdleFor:             idleFor,
 						OutputAge:           outputAge,
+						LogLastEventAge:     piLogLastEventAge(backend, piSessionsRoot(), projectDir, spawnedAt, time.Now()),
 						HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
 						Limit:               idleLimit,
 					}

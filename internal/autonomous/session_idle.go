@@ -23,12 +23,29 @@ type SessionIdleObservation struct {
 	State               string        // session state string ("waiting_input", "running", ...)
 	IdleFor             time.Duration // how long the session has been without a terminal state
 	OutputAge           time.Duration // age of the session log/mtime signal (0 if unknown)
+	LogLastEventAge     time.Duration // age of the newest event in the backend's own session log (0 if unknown)
 	HasLiveChildProcess bool          // true when a runner child (claude/pi/opencode) is alive in the pane tree
 	Limit               time.Duration // effective timeout (0 disables the detector)
 }
 
+// ActivityAge returns the age of the freshest output signal and whether one
+// is known. The backend's own log (LogLastEventAge) wins when known, because
+// it only moves when the agent does something, while the terminal signal
+// (OutputAge) stays silent for a pane that is thinking. A zero age means
+// unknown, and then the terminal signal is used.
+func (o SessionIdleObservation) ActivityAge() (time.Duration, bool) {
+	if o.LogLastEventAge > 0 {
+		return o.LogLastEventAge, true
+	}
+	if o.OutputAge > 0 {
+		return o.OutputAge, true
+	}
+	return 0, false
+}
+
 // Stalled reports whether the observed session is idle past its limit with
-// no live runner child. The reason is non-empty only when it stalls.
+// no live runner child and no output newer than the limit. The reason is
+// non-empty only when it stalls.
 func (o SessionIdleObservation) Stalled() (bool, string) {
 	if o.Limit <= 0 {
 		return false, ""
@@ -42,6 +59,10 @@ func (o SessionIdleObservation) Stalled() (bool, string) {
 		return false, ""
 	}
 	if o.IdleFor <= o.Limit {
+		return false, ""
+	}
+	// A log that keeps growing is progress even when the pane is silent.
+	if age, known := o.ActivityAge(); known && age <= o.Limit {
 		return false, ""
 	}
 	return true, fmt.Sprintf("%s (session=%s, backend=%s, model=%s, idle %s > limit %s)",
