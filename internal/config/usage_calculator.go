@@ -40,7 +40,10 @@ const (
 	UsageMaxLanesMax           = 8
 	UsageResetWeekdayDefault   = "sunday"
 	UsageResetTimeDefault      = "08:00"
-	UsageResetZoneDefault      = "UTC"
+	// UsageResetZoneDefault is intentionally empty: an unset reset zone follows
+	// the server's local zone (see ResolveUsageServerZone) rather than a fixed
+	// UTC.
+	UsageResetZoneDefault = ""
 )
 
 // UsageCalculatorConfig is the usage.calculator section. Numeric fields carry
@@ -67,8 +70,9 @@ type UsageCalculatorConfig struct {
 	// ResetTime is the 24-hour HH:MM local clock time of the reset
 	// (default 08:00).
 	ResetTime string `yaml:"reset_time,omitempty" json:"reset_time,omitempty"`
-	// ResetZone is an IANA zone name (default UTC); a fixed offset is never
-	// accepted.
+	// ResetZone is an IANA zone name; a fixed offset is never accepted. Empty
+	// (the default) means the reset follows the server's local zone, resolved
+	// at read time by EffectiveUsageResetZone.
 	ResetZone string `yaml:"reset_zone,omitempty" json:"reset_zone,omitempty"`
 	// Keeper names the federation peer that keeps the shared readings; empty
 	// means this daemon keeps them.
@@ -111,6 +115,94 @@ var (
 	// a place: "+05:00", "UTC+5", "GMT-3", "Etc/GMT+5".
 	usageFixedOffsetZone = regexp.MustCompile(`(?i)^([+-]|((etc/)?(gmt|utc)[+-]?[0-9]))`)
 )
+
+const usageLocaltimeLink = "/etc/localtime" // production path of the system local-time symlink
+
+// The three lookups ResolveUsageServerZone relies on are package variables so
+// tests can fake the host's environment. The env lookup reads TZ, the symlink
+// read resolves the production path above, and the local location is
+// time.Local ("Local" when the host zone is unknown).
+var (
+	usageServerZoneEnv   = os.Getenv
+	usageLocaltimeTarget = os.Readlink
+	usageLocalLocation   = time.Local
+)
+
+// usageCandidateZone accepts name only when it names a real IANA zone the
+// runtime can load. Empty, the host-dependent "Local" and fixed offsets are
+// rejected.
+func usageCandidateZone(name string) (string, bool) {
+	if name == "" {
+		return "", false
+	}
+	if err := ValidateUsageCalculatorResetZone(name); err != nil {
+		return "", false
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return "", false
+	}
+	return loc.String(), true
+}
+
+// usageZoneAfterZoneinfo returns the part of a local-time symlink target that
+// follows its "zoneinfo" directory element, so a target such as
+// /usr/share/zoneinfo/Europe/Lisbon yields Europe/Lisbon. It returns "" when
+// the element is missing or nothing follows it.
+func usageZoneAfterZoneinfo(target string) string {
+	parts := strings.Split(strings.TrimSpace(target), "/")
+	for i, p := range parts {
+		if p != "zoneinfo" {
+			continue
+		}
+		if i == len(parts)-1 {
+			return ""
+		}
+		return strings.Join(parts[i+1:], "/")
+	}
+	return ""
+}
+
+// ResolveUsageServerZone returns the IANA zone the host this daemon runs in, so
+// an unset reset zone can follow the server. It tries, in order: the TZ
+// environment variable, the zone encoded in the system local-time symlink's
+// target (the part after its "zoneinfo" directory element), and time.Local
+// when it names a real zone rather than "Local". Each candidate must be a zone
+// the runtime can load; a fixed offset never resolves. ok is false when no
+// candidate passes.
+func ResolveUsageServerZone() (string, bool) {
+	if z, ok := usageCandidateZone(strings.TrimSpace(usageServerZoneEnv("TZ"))); ok {
+		return z, true
+	}
+	if target, err := usageLocaltimeTarget(usageLocaltimeLink); err == nil {
+		if z, ok := usageCandidateZone(usageZoneAfterZoneinfo(target)); ok {
+			return z, true
+		}
+	}
+	if usageLocalLocation != nil {
+		if name := usageLocalLocation.String(); name != "Local" {
+			if z, ok := usageCandidateZone(name); ok {
+				return z, true
+			}
+		}
+	}
+	return "", false
+}
+
+// EffectiveUsageResetZone returns the zone the weekly reset runs in. A
+// non-empty configured zone (an explicit UTC included) is used as-is with
+// serverZone false. An unset zone follows the server (serverZone true),
+// resolved by ResolveUsageServerZone; when no candidate resolves, the zone is
+// UTC with fellBack true so the reset always stays scheduled.
+func EffectiveUsageResetZone(c UsageCalculatorConfig) (zone string, serverZone bool, fellBack bool) {
+	if z := strings.TrimSpace(c.ResetZone); z != "" {
+		return z, false, false
+	}
+	if z, ok := ResolveUsageServerZone(); ok {
+		return z, true, false
+	}
+	return "UTC", true, true
+}
 
 func usageChoice(v string, allowed []string) (string, bool) {
 	s := strings.ToLower(strings.TrimSpace(v))
@@ -317,12 +409,16 @@ func normalizeUsageCalculator(c UsageCalculatorConfig, warn func(format string, 
 		say("[warn] usage.calculator.reset_time: %q is not a 24-hour HH:MM time — using %q", c.ResetTime, d.ResetTime)
 		out.ResetTime = d.ResetTime
 	}
+	// An empty zone stays empty in the stored config: it means "follow the
+	// server" and resolves lazily through EffectiveUsageResetZone, so an
+	// invalid host TZ never raises a warning at load time. A set-but-invalid
+	// zone degrades to the server zone with the usual warning.
 	out.ResetZone = strings.TrimSpace(c.ResetZone)
-	if out.ResetZone == "" {
-		out.ResetZone = d.ResetZone
-	} else if err := ValidateUsageCalculatorResetZone(out.ResetZone); err != nil {
-		say("[warn] usage.calculator.reset_zone: %q is not an IANA zone name — using %q", c.ResetZone, d.ResetZone)
-		out.ResetZone = d.ResetZone
+	if out.ResetZone != "" {
+		if err := ValidateUsageCalculatorResetZone(out.ResetZone); err != nil {
+			say("[warn] usage.calculator.reset_zone: %q is not an IANA zone name — falling back to the server zone", c.ResetZone)
+			out.ResetZone = ""
+		}
 	}
 	out.Keeper = strings.TrimSpace(c.Keeper)
 	if err := ValidateUsageCalculatorKeeper(out.Keeper); err != nil {
@@ -334,6 +430,12 @@ func normalizeUsageCalculator(c UsageCalculatorConfig, warn func(format string, 
 
 // EffectiveUsageCalculator returns the settings a reader should act on,
 // applying the same defaults and fallbacks as config load without logging.
+// An unset ResetZone is materialised to the server zone (UTC when no server
+// zone resolves); the choice and its flags come from EffectiveUsageResetZone.
 func EffectiveUsageCalculator(c UsageCalculatorConfig) UsageCalculatorConfig {
-	return normalizeUsageCalculator(c, nil)
+	e := normalizeUsageCalculator(c, nil)
+	if e.ResetZone == "" {
+		e.ResetZone, _, _ = EffectiveUsageResetZone(e)
+	}
+	return e
 }

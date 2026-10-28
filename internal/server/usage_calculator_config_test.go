@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/router"
 )
 
@@ -84,10 +85,12 @@ func usageCalcRows() []struct {
 func TestUsageCalcConfigDefaultsOnGet(t *testing.T) {
 	s, _, _ := newMaxConcurrentTasksServer(t)
 	got := usageCalcGet(t, s)
+	// An unset reset zone follows the server's local zone, so expect the
+	// resolved effective zone rather than a fixed value.
 	want := map[string]any{
 		"variant": "all", "policy": "use-all", "safety_points": float64(5), "cost_per_task_points": 0.1,
 		"baseline_per_24h": float64(3), "max_lanes": float64(3), "reset_weekday": "sunday",
-		"reset_time": "08:00", "reset_zone": "UTC", "keeper": "",
+		"reset_time": "08:00", "reset_zone": config.EffectiveUsageCalculator(config.DefaultConfig().Usage.Calculator).ResetZone, "keeper": "",
 	}
 	for k, w := range want {
 		if got[k] != w {
