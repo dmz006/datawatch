@@ -1649,6 +1649,8 @@
   "settings_verification_timeout": "Verifier/guardrail session timeout (sec, 0=30m)",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_session_idle_timeout": "Session idle timeout (sec, 0=15min)",
+  "settings_pi_thinking_level": "Pi thinking level (empty = pi model default; off|minimal|low|medium|high)",
+  "settings_loop_detect_turns": "Worker loop detection window (turns, 0=off, default 3)",
   "compute_field_max_sessions": "Max concurrent sessions (0 = unlimited)",
   "llm_field_max_inflight": "Max in-flight autonomous sessions (0 = unlimited)",
   "stats_gpu_error_title": "GPU probe failed",

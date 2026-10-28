@@ -14277,6 +14277,13 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'pipeline.default_backend', label: 'Default backend (empty = session default)', type: 'text' },
   ]},
   // v4.0.1 — feature toggles for autonomous / plugins / orchestrator.
+  // Pi (worker backend) — knobs for pi-based autonomous workers. See
+  // "Pi worker observability" in docs/operations.md. pi.thinking_level is
+  // pi's own --thinking level (empty = pi's model default); per-task/story/
+  // PRD thinking-LLM overrides take precedence over this global default.
+  { id: 'piworker', section: 'Pi (worker backend)', docs: 'config-reference.yaml', fields: [
+    { key: 'pi.thinking_level', label: 'Thinking level for pi workers (empty = pi model default)', labelKey: 'settings_pi_thinking_level', type: 'select', options: ['', 'off', 'minimal', 'low', 'medium', 'high'] },
+  ]},
   // Each feature's full surface is REST + MCP + CLI per parity rule;
   // these Settings cards give the operator a one-click enable + links
   // to the operator docs. Field-level config stays YAML/REST/CLI.
@@ -14316,6 +14323,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.task_override_statuses', label: 'Automaton statuses that accept LLM overrides', labelKey: 'settings_task_override_statuses', type: 'text', placeholder: 'needs_review, revisions_asked, cancelled, blocked', csv: true },
     { key: 'autonomous.stale_task_seconds', label: 'Stale task timeout (sec, 0=inherit session default)', labelKey: 'settings_stale_task_seconds', type: 'number', placeholder: '0' },
     { key: 'autonomous.session_idle_timeout_seconds', label: 'Session idle timeout (sec, 0=15m)', labelKey: 'settings_session_idle_timeout', type: 'number', placeholder: '900' },
+    // Worker loop detection window: how many of the worker's most recent
+    // turns the live loop detector compares ("Pi worker observability" in
+    // docs/operations.md). 0 turns loop detection off (default 3).
+    { key: 'autonomous.loop_detect_turns', label: 'Worker loop detection window (turns, 0=off, default 3)', labelKey: 'settings_loop_detect_turns', type: 'number', placeholder: '3' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
     { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },

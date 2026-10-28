@@ -1673,6 +1673,8 @@
   "settings_verification_timeout": "Délai de la session de vérification/garde-fou (sec, 0=30min)",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_session_idle_timeout": "Délai de session inactive (sec, 0=15min)",
+  "settings_pi_thinking_level": "Niveau de réflexion pi (vide = défaut du modèle de pi ; off|minimal|low|medium|high)",
+  "settings_loop_detect_turns": "Fenêtre de détection de boucle du worker (tours, 0=désactivé, défaut 3)",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",
   "memory_scope_recall_failed": "Recall failed",

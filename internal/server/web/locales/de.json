@@ -1673,6 +1673,8 @@
   "settings_verification_timeout": "Verifizierungs-/Guardrail-Session-Timeout (Sek., 0=30min)",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_session_idle_timeout": "Sitzungs-Idle-Timeout (Sek., 0=15min)",
+  "settings_pi_thinking_level": "Pi Thinking-Stufe (leer = Modell-Standard von pi; off|minimal|low|medium|high)",
+  "settings_loop_detect_turns": "Loop-Erkennungs-Fenster des Workers (Turns, 0=aus, Standard 3)",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",
   "memory_scope_recall_failed": "Recall failed",

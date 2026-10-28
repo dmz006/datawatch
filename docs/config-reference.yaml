@@ -543,6 +543,11 @@ pi:
   binary: pi
   # Model as "provider/model" (e.g. ollama/qwen3.8:27b); empty uses pi's own default
   model: ""
+  # Level passed to pi's own --thinking flag on every pi launch (pi-prompt
+  # one-shots and pi sessions). empty = don't pass the flag (pi's model
+  # default); allowed: off, minimal, low, medium, high. Per-task/story/PRD
+  # thinking-LLM overrides take precedence over this global default.
+  thinking_level: ""
   # Terminal width
   console_cols: 0
   # Terminal height
@@ -945,6 +950,7 @@ autonomous:
   verification_timeout_seconds: 1800
   # autonomous
   session_idle_timeout_seconds: 900   # bound on one worker/verifier session sitting in waiting_input/idle with no live child process; exceeded => infra failure 'session idle without completion', alert raised, auto_fix_retries budget handles the retry
+  loop_detect_turns: 3   # pi worker observability (docs/operations.md): how many of the worker's most recent assistant turns the live loop detector compares (announce-without-acting or identical-call repeats => loop rescue); 0 = loop detection off; negative rejected
   # Stall window for a running worker, in seconds. A worker counts as stalled
   # only when, for this many seconds, it has no output, no live child process,
   # no backend activity, and no file change in its work directory. 0 or
