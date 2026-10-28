@@ -221,14 +221,57 @@ td_set_api() {
   mv "$tmp" "$rec"
 }
 
+td_probe_pid() {
+  # td_probe_pid <pid> — sets TD_PID_STATE (the process state letter) and
+  # TD_PID_STATE_RC: 0 = found, 1 = gone, 2 = not determinable (no /proc
+  # and no ps(1); the pid may or may not exist). Reads state without
+  # signalling; always returns 0 so it is safe under `set -e` anywhere.
+  TD_PID_STATE=""
+  TD_PID_STATE_RC=2
+  local pid="${1:-}" rest=""
+  if [[ -z "$pid" || ! "$pid" =~ ^[0-9]+$ ]]; then
+    return 0
+  fi
+  if [[ -r "/proc/$pid/stat" ]]; then
+    if IFS= read -r -d '' rest < "/proc/$pid/stat" 2>/dev/null; then
+      : # the whole stat line is loaded even though read exits nonzero at EOF
+    fi
+    if [[ -n "${rest:-}" ]]; then
+      rest="${rest##*) }"
+      TD_PID_STATE="${rest%% *}"
+      TD_PID_STATE_RC=0
+    else
+      TD_PID_STATE_RC=1
+    fi
+    return 0
+  fi
+  rest="$(ps -o state= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
+  if [[ -n "$rest" ]]; then
+    TD_PID_STATE="$rest"
+    TD_PID_STATE_RC=0
+    return 0
+  fi
+  if kill -0 "$pid" 2>/dev/null; then
+    TD_PID_STATE_RC=2
+  else
+    TD_PID_STATE_RC=1
+  fi
+  return 0
+}
+
 td_start() {
   # td_start <binary> <config> <logfile> [extra args...]
   # Start the daemon in the background as
   #   <binary> start --foreground --config <config> [extra args...]
   # record it, set TD_LAST_PID. The config path is the marker: it is in the
-  # daemon's cmdline for as long as the daemon runs. Under `set -e` this call
-  # must run in a failure-conditional context (it legitimately fails when the
-  # record cannot be written).
+  # daemon's cmdline for as long as the daemon runs. A start that left
+  # nothing alive (missing binary, failed log redirection, immediate exit)
+  # is reported: td_start probes the child's process state in a short window
+  # and returns the child's exit code (or 1 if it reaped itself cleanly),
+  # so the caller never mistakes a dead daemon for a running one. Under
+  # `set -e` this call must run in a failure-conditional context (it
+  # legitimately fails when the record cannot be written or the daemon dies
+  # at start).
   local bin="${1:?td_start <binary> <config> <logfile> [extra args...]}" cfg="${2:?}" log="${3:?}"
   shift 3
   if command -v setsid >/dev/null 2>&1; then
@@ -239,6 +282,51 @@ td_start() {
   local pid=$!
   TD_LAST_PID="$pid"
   td_track_pid "$TD_LAST_PID" "$cfg"
+  local i state rcstate dead=0
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    td_probe_pid "$pid"
+    state="$TD_PID_STATE"; rcstate="$TD_PID_STATE_RC"
+    case "$state" in
+      R*|S*|D*) return 0 ;;
+    esac
+    if [[ -z "$state" && "$rcstate" -eq 2 ]]; then
+      return 0
+    fi
+    if [[ "$rcstate" -eq 1 || "$state" == Z* ]]; then
+      dead=1
+      break
+    fi
+    sleep 0.05
+  done
+  if [[ "$dead" -eq 1 ]]; then
+    local code=0 realpid="" d
+    wait "$pid" 2>/dev/null && code=0 || code=$?
+    # Rare edge: the wrapper that spawned the daemon (a setsid that had to
+    # fork) can exit while the daemon itself is alive under another pid. A
+    # start that left nothing live must fail, so before failing look for the
+    # daemon under our own config marker; if it is alive, re-record it and
+    # succeed, so cleanup still owns exactly it. cmdline args are NUL
+    # separated: match the --config token first, then the exact "--config
+    # <cfg>" pair after translating NULs to spaces.
+    local d
+    for d in /proc/[0-9]*; do
+      grep -qFa -- '--config' "$d/cmdline" 2>/dev/null || continue
+      if tr '\0' ' ' < "$d/cmdline" 2>/dev/null | grep -qF -- "--config $cfg" 2>/dev/null; then
+        realpid="${d#/proc/}"
+        break
+      fi
+    done
+    if [[ -n "$realpid" ]]; then
+      TD_LAST_PID="$realpid"
+      td_track_pid "$realpid" "$cfg"
+      return 0
+    fi
+    if [[ "$code" -gt 0 ]]; then
+      return "$code"
+    fi
+    return 1
+  fi
+  return 0
 }
 
 _td_end_sessions() {

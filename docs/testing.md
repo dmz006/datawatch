@@ -160,7 +160,16 @@ two checkers plus a set of regression tests.
   the run folder exists, and the check runs at the end of the run in the
   end-of-run cleanup, after every daemon the run started has been stopped and
   before the run folder is removed — a left-behind test daemon makes the run fail
-  and shows the guard's report, whether or not every story passed.
+  and shows the guard's report, whether or not every story passed. A test daemon
+  that a *different* job starts while a run is in flight is reported as a
+  leftover for this run, by design: an unknown daemon appearing mid-run is a
+  real problem, not a false positive, and the guard's report names it (PID, age,
+  config, ports) so the responsible job can be found. When the check is run
+  against the default empty baseline on a shared host, it reports every live
+  test daemon at that moment — including the daemons of other concurrent
+  sessions — and the report says so; take a `snapshot` right before the run you
+  are investigating to tell new daemons from existing ones, and end only daemons
+  a job of your own owns (never by name search).
 - **`scripts/check-test-daemon-cleanup.sh` — the static cleanup audit, run as
   `make check-test-daemons` and included in `make lint`, in CI, and as part of
   `go test ./tests/ci/` via the regression tests.** It scans every `*.sh` under
@@ -169,8 +178,9 @@ two checkers plus a set of regression tests.
   goes through `td_start`/`td_track_pid` with the shared traps installed, or has
   its own trap naming EXIT, INT and TERM (a trap on EXIT alone fails); (2) no
   non-comment line may end processes by name — `pkill`, `killall`, `pgrep -f`,
-  `xargs kill`, or a grep-by-name feeding a kill; (3) a Go test that runs the
-  binary as a daemon must register its cleanup with `t.Cleanup` in the same file;
+  `xargs kill`, a kill whose PID came from a `pgrep` lookup, or a `ps`-and-`grep`
+  pipeline feeding a kill; (3) a Go test that runs the binary as a daemon must
+  register its cleanup with `t.Cleanup` in the same file;
   (4) a shell file that records a daemon or helper PID must make the shared traps
   active, or own the traps itself; (5) a `TD_*_CLEANUP` hook function must not
   exit with a captured `local rc=$?` (the handler must always finish with the
@@ -178,7 +188,15 @@ two checkers plus a set of regression tests.
   the verdict — `wait <pid>` may not be collapsed into 0/1 bookkeeping with no
   `rc=$?` in the file. A line whose safety cannot be expressed as one of these
   may carry the `daemon-cleanup-ok` marker with a comment explaining why it is
-  safe; a bare marker on a line that needs no exemption is itself an error.
+  safe. The marker is not a blanket exemption for its line: it exempts only
+  (a) a line that defines a banned pattern as data (an assignment), (b) the
+  daemon-start line whose ending is owned elsewhere (for example a
+  lifetime-capped `timeout` wrapper), and (c) the recorded start and end lines
+  of the daemon it names. On any other line it never authorizes an end by name
+  — a `pkill`/`killall` use, a kill found through `pgrep`, or a `ps`-and-`grep`
+  pipeline feeding a kill is reported even when the marker is present — and a
+  bare marker on a line that needs no exemption is itself an error. The same
+  marker rules apply to Go test files.
 - **Sandbox lifetime (`scripts/sec-assess/sandbox.sh`).** The sandbox daemon is
   started under `timeout(1)` with a maximum lifetime (`SANDBOX_MAX_AGE`, default
   4 hours) as a last backstop, so it ends on its own even if no trap ever runs.

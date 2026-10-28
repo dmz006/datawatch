@@ -14,8 +14,17 @@
 #   2. No non-comment line of a shell file may end processes by name:
 #      pkill, killall, `pgrep -f`, `xargs kill`, or a tmux kill-session fed by
 #      a grep over session names (a pipeline that greps a name prefix and
-#      then kills). Only a PID the script itself recorded may be signalled,
-#      and only after its live /proc/<pid>/cmdline still carries the marker.
+#      then kills), a kill whose PID list came from a name search (pgrep in
+#      any flag form, or ps piped into grep feeding a kill in the same
+#      pipeline). Only a PID the script itself recorded may be signalled,
+#      and only after its live /proc/<pid>/cmdline still carries that
+#      config.
+#   2b. Marker semantics: a line may carry the `daemon-cleanup-ok` marker
+#      when that line needs an exemption — a daemon start whose cleanup is
+#      owned elsewhere, a banned-pattern definition (an assignment holding
+#      the very words the audit bans), or a recorded-PID line. A marker on a
+#      line that needs no exemption is itself a violation, and a marker never
+#      authorizes ending a process by name on the line it sits on.
 #   3. A Go test file that runs the binary as a daemon (exec.Command or
 #      exec.CommandContext whose arguments include "start" and "--foreground")
 #      must register t.Cleanup in the same file.
@@ -34,10 +43,12 @@
 #      script's own exit status: it must not be collapsed into 0/1
 #      bookkeeping around `wait <pid>` with no `rc=$?` anywhere in the file.
 # A line may carry the `daemon-cleanup-ok` marker with a comment saying why it
-# is safe (an audit regular expression, or a long-lived sandbox start that has
-# a maximum lifetime and a wipe command); marked lines and comment-only lines
-# are skipped. The checker only reads files; it never signals any process and
-# never touches a multiplexer server.
+# is safe (an audit regular expression, or a long-lived sandbox start that
+# has a maximum lifetime and a wipe command); comment-only lines are
+# skipped. The marker's scope is rule 2b: it exempts the line it sits on
+# only when that line needs an exemption, and it never authorizes ending
+# a process by name. The checker only reads files; it never signals any
+# process and never touches a multiplexer server.
 #
 # With no arguments it scans every *.sh under scripts/ and tests/ and every
 # *_test.go under internal/, cmd/ and tests/. With arguments it checks exactly
@@ -64,6 +75,11 @@ R_PKILL='(^|[^[:alnum:]_])pkill([^[:alnum:]_]|$)' # daemon-cleanup-ok: audit reg
 R_KILLALL='(^|[^[:alnum:]_])killall([^[:alnum:]_]|$)' # daemon-cleanup-ok: audit regex for a banned word
 R_PGREP_F='(^|[^[:alnum:]_])pgrep([[:space:]]+-[A-Za-z]+)*[[:space:]]+-f' # daemon-cleanup-ok: audit regex for a name lookup
 R_XARGS_KILL='(^|[^[:alnum:]_])xargs[^|;&]*[[:space:]]+kill([^[:alnum:]_]|$)' # daemon-cleanup-ok: audit regex for a kill fed by a name lookup
+R_KILLWORD='(^|[^[:alnum:]_-])kill([^[:alnum:]_-]|$)' # daemon-cleanup-ok: a bare kill word as a pattern, the PID side of kill-by-lookup; a definition, never a call
+R_PG_ANY='(^|[^[:alnum:]_-])pgrep([^[:alnum:]_-]|$)' # daemon-cleanup-ok: the pgrep(1) word for the kill-by-lookup rule
+R_PS_WORD='(^|[^[:alnum:]_-])ps([^[:alnum:]_-]|$)' # daemon-cleanup-ok: the ps(1) word for the pipeline-kill rule
+R_GREP_ANY='(^|[^[:alnum:]_-])grep([^[:alnum:]_-]|$)' # daemon-cleanup-ok: the grep word for the pipeline-kill rule
+R_ASSIGN='^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*|export[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)=' # daemon-cleanup-ok: an assignment — a pattern definition
 R_KILLSESSION='kill-session'
 R_SESSION_GREP='grep([[:space:]]+-[A-Za-z]+)*[[:space:]]+.{0,8}\^'
 R_START_WORD='(^|[^[:alnum:]_.-])start([^[:alnum:]_]|$)'
@@ -90,7 +106,7 @@ audit_shell() {
     local -a lines=()
     mapfile -t lines < "$file"
     local n=${#lines[@]}
-    local i text
+    local i text marked is_assign exempt needed
     local daemon_line="" td_helper=0
     local td_install=0 story_lc=0 td_hook=0 localrc=0
     local waitjob=0 rc0=0 rc1=0 rcreal=0
@@ -101,32 +117,83 @@ audit_shell() {
         if [[ "$text" =~ ^[[:space:]]*# ]]; then
             continue
         fi
+        marked=0; is_assign=0; exempt=0; needed=0
         if [[ "$text" == *"$MARKER"* ]]; then
+            marked=1
+        fi
+        if [[ "$text" =~ $R_ASSIGN ]]; then
+            is_assign=1
+        fi
+        # A marker + a banned-pattern assignment is a pattern definition
+        # (this checker's own regexes, a tooling definition): exempt. On any
+        # other line the marker never authorizes an end-by-name: it is not
+        # a blanket line skip, and where the line needs no exemption at all
+        # a bare marker is itself a violation (checked after the line's own
+        # pattern classification below).
+        if [[ "$marked" -eq 1 && "$is_assign" -eq 1 ]]; then
+            exempt=1
+        fi
+        if [[ "$exempt" -eq 1 ]]; then
+            needed=1
+        elif [[ "$text" =~ $R_PKILL || "$text" =~ $R_KILLALL ]]; then
+            if [[ "$marked" -eq 1 ]]; then
+                report "$file:$((i + 1)): ends processes by name on a line carrying the daemon-cleanup-ok marker — the marker does not authorize ending a process by name (it exempts daemon starts and pattern definitions)"
+            else
+                report "$file:$((i + 1)): ends processes by name instead of signalling only a PID it recorded"
+            fi
+            continue
+        elif [[ "$text" =~ $R_PGREP_F ]]; then
+            if [[ "$marked" -eq 1 ]]; then
+                report "$file:$((i + 1)): looks up processes by name to signal them, on a line carrying the marker — the marker does not authorize a name lookup"
+            else
+                report "$file:$((i + 1)): looks up processes by name to signal them"
+            fi
+            continue
+        elif [[ "$text" =~ $R_XARGS_KILL ]]; then
+            if [[ "$marked" -eq 1 ]]; then
+                report "$file:$((i + 1)): signals processes found by a name lookup, on a line carrying the marker — the marker does not authorize that"
+            else
+                report "$file:$((i + 1)): signals processes found by a name lookup"
+            fi
+            continue
+        elif [[ "$text" =~ $R_KILLSESSION && "$text" =~ $R_SESSION_GREP ]]; then
+            if [[ "$marked" -eq 1 ]]; then
+                report "$file:$((i + 1)): kills a tmux session whose name comes from a name-prefix search, on a line carrying the marker — the marker does not authorize that"
+            else
+                report "$file:$((i + 1)): kills a tmux session whose name comes from a name-prefix search"
+            fi
             continue
         fi
-        if [[ "$text" =~ $R_PKILL ]]; then
-            report "$file:$((i + 1)): ends processes by name instead of signalling only a PID it recorded"
-            continue
-        fi
-        if [[ "$text" =~ $R_KILLALL ]]; then
-            report "$file:$((i + 1)): ends processes by name instead of signalling only a PID it recorded"
-            continue
-        fi
-        if [[ "$text" =~ $R_PGREP_F ]]; then
-            report "$file:$((i + 1)): looks up processes by name to signal them"
-            continue
-        fi
-        if [[ "$text" =~ $R_XARGS_KILL ]]; then
-            report "$file:$((i + 1)): signals processes found by a name lookup"
-            continue
-        fi
-        if [[ "$text" =~ $R_KILLSESSION && "$text" =~ $R_SESSION_GREP ]]; then
-            report "$file:$((i + 1)): kills a tmux session whose name comes from a name-prefix search"
+        # A kill whose PID came from a name search: `kill $(pgrep ...)` in
+        # any flag form, or a ps|…|grep pipeline feeding a kill in the same
+        # line. A bare recorded-PID kill (kill -n "$pid") never matches.
+        if [[ "$text" =~ $R_KILLWORD ]]; then
+            needed=1
+            if [[ "$exempt" -eq 0 && "$text" =~ $R_PG_ANY ]]; then
+                if [[ "$marked" -eq 1 ]]; then
+                    report "$file:$((i + 1)): signals a PID found by a name search (pgrep), on a line carrying the marker — the marker does not authorize that"
+                else
+                    report "$file:$((i + 1)): signals a PID found by a name search (pgrep) instead of signalling only the PID it recorded"
+                fi
+                continue
+            fi
+            if [[ "$exempt" -eq 0 && "$text" =~ $R_PS_WORD && "$text" =~ $R_GREP_ANY && "$text" == *"|"* ]]; then
+                if [[ "$marked" -eq 1 ]]; then
+                    report "$file:$((i + 1)): kills PIDs found by a ps/grep pipeline, on a line carrying the marker — the marker does not authorize that"
+                else
+                    report "$file:$((i + 1)): kills PIDs found by a ps/grep pipeline instead of signalling only the PID it recorded"
+                fi
+                continue
+            fi
         fi
         if [[ "$text" =~ $R_START_WORD && "$text" == *--foreground* ]]; then
-            if [[ -z "$daemon_line" ]]; then
+            needed=1
+            if [[ "$marked" -eq 0 && -z "$daemon_line" ]]; then
                 daemon_line="$((i + 1))"
             fi
+        fi
+        if [[ "$marked" -eq 1 && "$needed" -eq 0 ]]; then
+            report "$file:$((i + 1)): carries the marker on a line that needs no exemption — a bare marker is itself a violation (the marker must sit on a daemon start, a banned-pattern definition, or a recorded-PID line it authorizes)"
         fi
         if [[ "$text" =~ $R_TD_CALL || "$text" =~ $R_TD_TRACK ]]; then
             td_helper=1
@@ -210,14 +277,22 @@ audit_go() {
     local -a lines=()
     mapfile -t lines < "$file"
     local n=${#lines[@]}
-    local i k text win has_cleanup=0
+    local i k text win bt has_cleanup=0 marked daemon_shape inraw=0
 
     for ((i = 0; i < n; i++)); do
         text="${lines[$i]}"
-        if [[ "$text" =~ ^[[:space:]]*(//|/\*) || "$text" =~ ^[[:space:]]*\* ]]; then
+        # A backtick-delimited raw-string literal (a test's fixture body) carries
+        # marker, start and cleanup text as data, not code: an odd number of
+        # backticks on a line opens or closes one.
+        bt="${text//[^\`]/}"
+        if (( ${#bt} % 2 )); then
+            inraw=$((1 - inraw))
             continue
         fi
-        if [[ "$text" == *"$MARKER"* ]]; then
+        if (( inraw )); then
+            continue
+        fi
+        if [[ "$text" =~ ^[[:space:]]*(//|/\*) || "$text" =~ ^[[:space:]]*\* ]]; then
             continue
         fi
         if [[ "$text" == *"t.Cleanup"* ]]; then
@@ -225,13 +300,23 @@ audit_go() {
         fi
     done
 
+    inraw=0
     for ((i = 0; i < n; i++)); do
         text="${lines[$i]}"
+        bt="${text//[^\`]/}"
+        if (( ${#bt} % 2 )); then
+            inraw=$((1 - inraw))
+            continue
+        fi
+        if (( inraw )); then
+            continue
+        fi
         if [[ "$text" =~ ^[[:space:]]*(//|/\*) || "$text" =~ ^[[:space:]]*\* ]]; then
             continue
         fi
+        marked=0; daemon_shape=0
         if [[ "$text" == *"$MARKER"* ]]; then
-            continue
+            marked=1
         fi
         if [[ "$text" =~ $R_GOCMD ]]; then
             # The argument list may continue on the following lines.
@@ -240,10 +325,17 @@ audit_go() {
                 win="$win ${lines[$k]}"
             done
             if [[ "$win" == *'"start"'* ]] && [[ "$win" == *--foreground* ]]; then
-                if [[ "$has_cleanup" -eq 0 ]]; then
-                    report "$file:$((i + 1)): starts a datawatch daemon without registering a t.Cleanup that ends it"
-                fi
+                daemon_shape=1
             fi
+        fi
+        if [[ "$daemon_shape" -eq 1 ]]; then
+            if [[ "$has_cleanup" -eq 0 ]]; then
+                report "$file:$((i + 1)): starts a datawatch daemon without registering a t.Cleanup that ends it"
+            fi
+            continue
+        fi
+        if [[ "$marked" -eq 1 ]]; then
+            report "$file:$((i + 1)): carries the marker on a line that needs no exemption — a bare marker is itself a violation (it must sit on a daemon start, a banned-pattern definition, or a recorded-PID line it authorizes)"
         fi
     done
     return 0

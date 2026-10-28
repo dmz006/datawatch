@@ -424,7 +424,7 @@ func TestLeftoverDaemonGuard(t *testing.T) {
 		t.Fatalf("open baseline: %v", err)
 	}
 	if _, err := fmt.Fprintln(f, pid); err != nil {
-		f.Close()
+		_ = f.Close()
 		t.Fatalf("append baseline: %v", err)
 	}
 	if err := f.Close(); err != nil {
@@ -677,6 +677,104 @@ func TestDaemon(t *testing.T) {
 `,
 			wantFail: false,
 			needle:   "OK: no daemon cleanup violations",
+		},
+		{
+			name: "MarkerDoesNotExemptEndByName",
+			file: "markerpk.sh",
+			body: `#!/usr/bin/env bash
+# fixture: the marker on the pkill line does not authorize an end by name
+set -euo pipefail
+pkill -f "datawatch"   # daemon-cleanup-ok
+`,
+			wantFail: true,
+			needle:   "the marker does not authorize ending a process by name",
+		},
+		{
+			name: "KillFromPgrep",
+			file: "killpgrep.sh",
+			body: `#!/usr/bin/env bash
+# fixture: signals a PID found by a name search \u2014 not the PID it recorded
+set -euo pipefail
+kill -TERM "$(pgrep -x datawatch)" 2>/dev/null || true
+`,
+			wantFail: true,
+			needle:   "signals a PID found by a name search (pgrep)",
+		},
+		{
+			name: "KillFromPgrepMarked",
+			file: "killpgrepmarked.sh",
+			body: `#!/usr/bin/env bash
+# fixture: the marker does not authorize a pgrep-found kill either
+set -euo pipefail
+kill -TERM "$(pgrep -x datawatch)" 2>/dev/null || true   # daemon-cleanup-ok
+`,
+			wantFail: true,
+			needle:   "signals a PID found by a name search (pgrep), on a line carrying the marker",
+		},
+		{
+			name: "KillFromPsGrepPipe",
+			file: "psgrepkill.sh",
+			body: `#!/usr/bin/env bash
+# fixture: a ps-and-grep pipeline feeding a kill is an end found by name
+set -euo pipefail
+kill -TERM "$(ps -eo args | grep -F "datawatch start" | grep -v grep | awk '{print $1}')" 2>/dev/null || true
+`,
+			wantFail: true,
+			needle:   "kills PIDs found by a ps/grep pipeline instead of signalling only the PID it recorded",
+		},
+		{
+			name: "BareMarker",
+			file: "baremarker.sh",
+			body: `#!/usr/bin/env bash
+# fixture: a marker on a line that needs no exemption is itself a violation
+set -euo pipefail
+echo "nothing dangerous here"   # daemon-cleanup-ok
+`,
+			wantFail: true,
+			needle:   "carries the marker on a line that needs no exemption",
+		},
+		{
+			name: "PatternDefMarkedOK",
+			file: "defok.sh",
+			body: `#!/usr/bin/env bash
+# fixture: the marker on a banned-pattern definition exempts the words
+set -euo pipefail
+BANNED='pkill -f|killall'   # daemon-cleanup-ok
+`,
+			wantFail: false,
+			needle:   "OK: no daemon cleanup violations",
+		},
+		{
+			name: "RecordedPidKillMarkedOK",
+			file: "recok.sh",
+			body: `#!/usr/bin/env bash
+# fixture: the marker on the recorded start and end lines \u2014 the daemon is
+# recorded, ended by its recorded PID, and its own traps cover every path
+set -euo pipefail
+datawatch start --foreground --config ./cfg.yaml ./log &   # daemon-cleanup-ok
+pid=$!
+cleanup() {
+    kill -INT "$pid" 2>/dev/null || true    # daemon-cleanup-ok
+    kill -KILL "$pid" 2>/dev/null || true   # daemon-cleanup-ok
+}
+trap cleanup EXIT INT TERM
+`,
+			wantFail: false,
+			needle:   "OK: no daemon cleanup violations",
+		},
+		{
+			name: "GoBareMarker",
+			file: "gobare_test.go",
+			body: `package fixture
+
+import "testing"
+
+func TestMarker(t *testing.T) {
+	_ = 1 // daemon-cleanup-ok
+}
+`,
+			wantFail: true,
+			needle:   "carries the marker on a line that needs no exemption",
 		},
 	}
 

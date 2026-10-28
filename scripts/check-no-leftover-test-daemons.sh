@@ -222,6 +222,14 @@ do_check() {
         echo "  hint: every job that starts a datawatch daemon must end that"
         echo "  daemon, and every session the daemon started, on every exit"
         echo "  path - normal exit, failure and interrupt."
+        if [[ ! -s "$file" ]]; then
+            echo "  note: the baseline $file is empty, so every live test daemon"
+            echo "  right now is reported - on a shared host that includes the"
+            echo "  daemons of other concurrent sessions, not only this run."
+            echo "  Take a snapshot before the run you are investigating"
+            echo "  (snapshot <file>) to tell the new ones from the existing"
+            echo "  ones, and end only the daemons a job actually owns."
+        fi
         echo "FAIL: $ERRORS leftover test daemon(s) not in the baseline $file (live test daemons now: $n_live)"
         exit 1
     fi
