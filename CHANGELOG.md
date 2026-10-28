@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.31.3 — The per-task cost in the usage calculator shows the way you typed it
+
+- **A cost of 0.05 points no longer prints 0.1.** The per-task cost in the remaining-work estimate line used to be rounded to one decimal everywhere; it now prints as typed — up to three decimals with trailing zeros dropped, so 0.05 stays 0.05 and 0.025 shows as 0.025. This holds in the text form, the comm-channel form, and the PWA card (including the burn-ledger queue line), and the PWA card and the text/CLI forms now agree on the exact number. All the other figures in the calculator keep their one-decimal styling.
+
 ## v9.31.1 — Observer graphs and every later style rule work again
 
 - **The Observer system statistics graphs came back, along with other styling.** Since the 9.14.2 release, one closing brace was missing in the stylesheet, so every style rule after the loading-skeleton rules applied only when the browser asked for reduced motion. The Observer per-system bars showed as plain text lines, and any other screen styled by later rules lost its styling the same way. The brace is back. A new test fails if the stylesheet ever ends with an unclosed block or a media block opened inside another block.
