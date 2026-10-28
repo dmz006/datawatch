@@ -51,8 +51,17 @@ def get_json(url, timeout=6, insecure=False):
 
 
 def models(url):
+    """Names of the resident models; the working model also counts when it is loaded under its base tag with the 64k context."""
     d = get_json(url + "/api/ps")
-    return None if d is None else [m["name"] for m in d.get("models", [])]
+    if d is None:
+        return None
+    out = []
+    for m in d.get("models", []):
+        name = m["name"]
+        if name.startswith("qwen3.8:") and (m.get("context_length") or 0) >= 65536:
+            name = MODEL + ":" + name.split(":", 1)[1]
+        out.append(name)
+    return out
 
 
 def recent(ts, hours=72):
