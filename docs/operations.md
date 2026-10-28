@@ -3183,6 +3183,47 @@ autonomous:
 
 ---
 
+### Task attempt limits (autonomous.task_max_attempt_seconds, autonomous.task_no_progress_seconds)
+
+Two optional bounds on a single autonomous task attempt. Both are off by
+default (`0`); when enabled and exceeded, the worker is stopped and the
+attempt fails, then the normal retry budget (`auto_fix_retries` / the PRD's
+retry policy) handles a retry exactly like any other failed attempt.
+
+- **`task_max_attempt_seconds`** — a hard wall-clock cap on one attempt,
+  regardless of activity. If the attempt is still running when it expires,
+  it is stopped with a max-attempt failure reason. Recommended: `5400`
+  (90 minutes).
+- **`task_no_progress_seconds`** — how long an attempt may go *without
+  progress* before it is stopped. It fails with the text
+  `no progress for N seconds: no output, no file changes, no commits`. A
+  change in any of the following counts as progress:
+  - terminal output growth;
+  - a changed tracked or untracked file in the work directory (harness
+    scratch files are ignored);
+  - a new commit;
+  - a live child process using CPU.
+
+  Recommended: `1800` (30 minutes).
+
+**Work is never discarded.** Before the worker is stopped, any
+uncommitted work is saved to a ref (the same mechanism as
+`preserve_attempt_work`), so the next retry can build on it instead of
+starting from scratch.
+
+**Setting them:** any of the usual autonomous config surfaces —
+`config.yaml`, the web settings card, the REST `autonomous.*` config
+endpoints, the CLI, the comm channel, or the MCP `autonomous_config_set`
+tool.
+
+```yaml
+autonomous:
+  task_max_attempt_seconds: 5400   # wall-clock cap on one attempt; 0 = off
+  task_no_progress_seconds: 1800   # stop after N seconds with no output, file changes, commits, or CPU-using child; 0 = off
+```
+
+---
+
 ## Autonomous Prompt Injection Protection
 
 When using autonomous PRDs with user-supplied specs (especially via federation peers, comm channels, or operator-created tasks), enable the injection guard to detect and optionally block known prompt injection patterns before they reach the LLM:

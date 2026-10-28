@@ -1798,6 +1798,8 @@
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_stuck_running_seconds": "Stuck Automaton timeout (seconds)",
   "settings_stuck_running_seconds_help": "How long a running item may stay running with every task finished and no live session before the watchdog re-checks it once, then blocks it. 0 uses the default (900).",
+  "settings_task_max_attempt_seconds": "Max task attempt time (sec, 0=off)",
+  "settings_task_no_progress_seconds": "No-progress stop (sec, 0=off)",
   "settings_session_idle_timeout": "Tiempo de espera de sesión inactiva (seg, 0=15min)",
   "settings_pi_thinking_level": "Pi thinking level (empty = pi model default; off|minimal|low|medium|high)",
   "settings_loop_detect_turns": "Worker loop detection window (turns, 0=off, default 3)",

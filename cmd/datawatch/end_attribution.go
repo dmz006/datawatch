@@ -23,6 +23,7 @@ const (
 	endCallerDoneCheckpoint  = "autonomous.verifier.done-checkpoint"
 	endCallerPostWait        = "autonomous.verifier.post-wait"
 	endCallerLoopRescue      = "autonomous.worker.loop-rescue"
+	endCallerAttemptLimit    = "autonomous.worker.attempt-limit"
 	endCallerSSEWatchdog     = "autonomous.watchdog.sse-stall"
 	endCallerReconcileHost   = "autonomous.verifier-reconcile"
 	endCallerJudgeReconcile  = "autonomous.judge-reconcile"

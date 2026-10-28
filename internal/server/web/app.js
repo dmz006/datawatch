@@ -16362,6 +16362,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.verifier_no_progress_timeout_seconds', label: 'Verifier no-progress timeout (sec, 0=10min)', labelKey: 'settings_verifier_no_progress_timeout', type: 'number', placeholder: '600' },
     { key: 'autonomous.verifier_infra_escalation_threshold', label: 'Verifier infra escalation threshold (0=2)', labelKey: 'settings_verifier_infra_escalation_threshold', type: 'number', placeholder: '2' },
     { key: 'autonomous.fallback_verification_backend', label: 'Fallback verification backend (empty=claude-code)', labelKey: 'settings_fallback_verification_backend', type: 'text', placeholder: 'claude-code' },
+    { key: 'autonomous.task_max_attempt_seconds', label: 'Max task attempt time (sec, 0=off)', labelKey: 'settings_task_max_attempt_seconds', type: 'number', placeholder: '0' },
+    { key: 'autonomous.task_no_progress_seconds', label: 'No-progress stop (sec, 0=off)', labelKey: 'settings_task_no_progress_seconds', type: 'number', placeholder: '0' },
     { key: 'autonomous.session_idle_timeout_seconds', label: 'Session idle timeout (sec, 0=15m)', labelKey: 'settings_session_idle_timeout', type: 'number', placeholder: '900' },
     { key: 'autonomous.descendant_stall_seconds', label: 'Descendant stall timeout (sec, 0=45m)', labelKey: 'settings_descendant_stall_seconds', type: 'number', placeholder: '2700' },
     { key: 'autonomous.session_start_confirm_seconds', label: 'Session start confirm (seconds)', labelKey: 'settings_session_start_confirm', type: 'number', placeholder: '120' },

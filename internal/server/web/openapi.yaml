@@ -756,6 +756,11 @@ paths:
         `autonomous.stuck_running_seconds` (whole seconds >= 0, default 900; how long an
         Automaton may stay running with every task finished and no live session before the
         stuck-running watchdog re-fires its roll-up once, then blocks it; 0 uses the default),
+        `autonomous.task_max_attempt_seconds` (whole seconds >= 0, default 0 = off; wall-clock
+        cap on one task attempt, recommended 5400),
+        `autonomous.task_no_progress_seconds` (whole seconds >= 0, default 0 = off; stops an
+        attempt with no output, file change, commit or CPU-using child process for this long,
+        recommended 1800),
         `autonomous.automation.idle_alert_minutes` (whole minutes >= 0, default 0 =
         off; a negative or non-integer value is rejected with 400),
         `autonomous.automation.triage_alert_minutes` (whole minutes >= 0; an unset

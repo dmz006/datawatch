@@ -1696,6 +1696,19 @@ autonomous:
   # still stuck after a second full bound it is moved to blocked. 0 or unset
   # falls back to the 900s default (NormalizeStuckRunningSeconds).
   stuck_running_seconds: 900
+  # Wall-clock cap on one task attempt, in seconds. When it expires the
+  # attempt is stopped and failed with the max-attempt reason. 0 (the
+  # default) means off. Recommended: 5400 (90 min).
+  task_max_attempt_seconds: 0
+  # Seconds one task attempt may go without progress before it is stopped
+  # and failed ("no progress for N seconds: no output, no file changes,
+  # no commits"). Progress is any of: terminal output growth, a changed
+  # tracked or untracked file in the work directory (harness scratch files
+  # ignored), a new commit, or a live child process using CPU. 0 (the
+  # default) means off. Recommended: 1800 (30 min). In both cases the
+  # uncommitted work is saved to a ref before the worker is stopped and
+  # never discarded, and the normal retry budget applies.
+  task_no_progress_seconds: 0
   # Save a killed attempt's uncommitted work to refs/datawatch/attempts/<task>/<n>
   # and restore it on the next attempt, unless that attempt was started with
   # clean_restart (reset_task). false disables the save and restore.

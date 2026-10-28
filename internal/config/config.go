@@ -2412,6 +2412,12 @@ type AutonomousConfig struct {
 	// a second full bound in the same state moves it to blocked. A zero or
 	// negative value uses the default (see NormalizeStuckRunningSeconds).
 	StuckRunningSeconds int `yaml:"stuck_running_seconds,omitempty" json:"stuck_running_seconds,omitempty"`
+	// TaskMaxAttemptSeconds is the wall-clock cap on one task attempt. 0 (the
+	// default) means off; 5400 is recommended.
+	TaskMaxAttemptSeconds int `yaml:"task_max_attempt_seconds,omitempty" json:"task_max_attempt_seconds,omitempty"`
+	// TaskNoProgressSeconds is how many seconds one task attempt may go
+	// without progress. 0 (the default) means off; 1800 is recommended.
+	TaskNoProgressSeconds int `yaml:"task_no_progress_seconds,omitempty" json:"task_no_progress_seconds,omitempty"`
 	// PreserveAttemptWork keeps a failed attempt's worktree changes around
 	// so the next attempt can build on them. Nil (unset) means true; use
 	// PreserveAttemptWorkEnabled rather than dereferencing the pointer.

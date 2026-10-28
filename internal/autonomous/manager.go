@@ -260,6 +260,12 @@ type Config struct {
 	StuckRunningSeconds int `json:"stuck_running_seconds,omitempty"`
 	AutoFixRetries      int `json:"auto_fix_retries,omitempty"`
 
+	// TaskMaxAttemptSeconds and TaskNoProgressSeconds mirror the
+	// autonomous.task_max_attempt_seconds / task_no_progress_seconds config
+	// keys; 0 means off.
+	TaskMaxAttemptSeconds int `json:"task_max_attempt_seconds,omitempty"`
+	TaskNoProgressSeconds int `json:"task_no_progress_seconds,omitempty"`
+
 	// BL410 Phase 1 — per-category retry budgets (daemon-wide default;
 	// PRD.RetryPolicy > named RetryProfile > this). Keys: "infra",
 	// "content", "scope", "policy" (see FailureReason's doc comment for

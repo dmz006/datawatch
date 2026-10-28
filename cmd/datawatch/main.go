@@ -4305,12 +4305,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
-			ResumeMaxAgeSeconds:  acfgIn.ResumeMaxAgeSeconds,
-			StaleTaskSeconds:     acfgIn.StaleTaskSeconds,
-			StuckRunningSeconds:  acfgIn.StuckRunningSeconds,
-			AutoFixRetries:       acfgIn.AutoFixRetries,
-			VerifierDiffMaxBytes: acfgIn.VerifierDiffMaxBytes,
-			SecurityScan:         acfgIn.SecurityScan,
+			ResumeMaxAgeSeconds:   acfgIn.ResumeMaxAgeSeconds,
+			StaleTaskSeconds:      acfgIn.StaleTaskSeconds,
+			TaskMaxAttemptSeconds: acfgIn.TaskMaxAttemptSeconds,
+			TaskNoProgressSeconds: acfgIn.TaskNoProgressSeconds,
+			StuckRunningSeconds:   acfgIn.StuckRunningSeconds,
+			AutoFixRetries:        acfgIn.AutoFixRetries,
+			VerifierDiffMaxBytes:  acfgIn.VerifierDiffMaxBytes,
+			SecurityScan:          acfgIn.SecurityScan,
 			// v5.17.0 — BL191 Q4 + Q6 config bridge. The autonomous
 			// Manager has carried these fields since v5.9.0 / v5.10.0
 			// but the YAML + REST + PWA path didn't until now; pre-
@@ -4939,6 +4941,41 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// before the observation. internal/autonomous cannot see the pane or
 				// the channel, so the wait loop supplies the signal here.
 				var descendantOutputObs descendantOutputObservation
+				// Attempt-limit stopper: autonomous.task_max_attempt_seconds
+				// (wall-clock cap on one attempt) and autonomous.task_no_progress_seconds
+				// (how long an attempt may go without real progress — log growth,
+				// file changes, commits or child CPU). Unlike the other stall
+				// detectors these apply to EVERY backend unconditionally: checked
+				// on every tick, no cadence gate and no staleWorkerAppliesTo
+				// filter. The limits are read live off cfg on every tick (the REST
+				// config patch, handlePutConfig -> applyConfigPatch, mutates this
+				// same *config.Config in place), so a runtime change takes effect
+				// without a daemon restart. When both limits are 0 none of this
+				// observes or stops.
+				attemptStart := time.Now()
+				// The first observation is only worth taking when at least one
+				// limit is on right now (a limit enabled later via a runtime
+				// config patch is fine: the first tick that sees it takes a
+				// fresh observation anyway).
+				firstObs := attemptObservation{Now: attemptStart}
+				if cfg.Autonomous.TaskMaxAttemptSeconds > 0 || cfg.Autonomous.TaskNoProgressSeconds > 0 {
+					firstTmux := ""
+					if sess, sok := mgr.GetSession(task.SessionID); sok {
+						firstTmux = sess.TmuxSession
+					}
+					firstObs = buildAttemptObservation(
+						attemptStart,
+						attemptLogSizeOf,
+						workDirFingerprint,
+						childCPUTicks,
+						staleLogPath, taskDir, firstTmux,
+					)
+				}
+				attemptW := newAttemptLimitWatcher(attemptStart, firstObs, mgr, autonomousMgrRef, taskDir, task, task.SessionID)
+				// Keep each tick cheap: take a fresh observation at most every
+				// 15 seconds and reuse the previous one in between.
+				var lastAttemptObs = firstObs
+				var lastAttemptObsAt time.Time
 			waitLoop:
 				for {
 					select {
@@ -4996,6 +5033,36 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									}
 									continue
 								}
+							}
+						}
+						// Attempt-limit check: every tick, every backend. The
+						// limits are read from the live config object each tick so
+						// a runtime config patch takes effect immediately.
+						maxAttemptLimit := time.Duration(cfg.Autonomous.TaskMaxAttemptSeconds) * time.Second
+						noProgressLimit := time.Duration(cfg.Autonomous.TaskNoProgressSeconds) * time.Second
+						if maxAttemptLimit > 0 || noProgressLimit > 0 {
+							nowObs := time.Now()
+							if lastAttemptObsAt.IsZero() || nowObs.Sub(lastAttemptObsAt) >= 15*time.Second {
+								lastAttemptObs = buildAttemptObservation(
+									nowObs,
+									attemptLogSizeOf,
+									workDirFingerprint,
+									childCPUTicks,
+									staleLogPath, taskDir, s.TmuxSession,
+								)
+								lastAttemptObsAt = nowObs
+							}
+							if limErr := attemptW.check(lastAttemptObs, maxAttemptLimit, noProgressLimit); limErr != nil {
+								// check already preserved the attempt work and killed
+								// the worker session; the code after the loop returns
+								// this reason to the executor, which retries via the
+								// normal budget and finally fails the task with it.
+								log.Printf("[autonomous] attempt limit hit for session %s task %s/%s: %v",
+									task.SessionID, task.PRDID, task.ID, limErr)
+								alertspkg.EmitSystem(alertspkg.LevelError, "Task attempt limit hit",
+									fmt.Sprintf("session=%s prd=%s task=%s: %v", task.SessionID, prd.ID, task.Title, limErr))
+								stallErr = limErr
+								break waitLoop
 							}
 						}
 						if werr := nudge.Step(time.Now()); werr != nil {
