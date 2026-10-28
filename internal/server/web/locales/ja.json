@@ -2519,8 +2519,6 @@
   "tag_inherited_label": "継承",
   "tag_inherited_tip": "オートマトンから継承されています。変更はオートマトン側で行ってください",
   "tag_inherited_note": "オートマトンから継承（読み取り専用）：",
-  "tag_session_none": "タグなし",
-  "tag_session_edit": "タグを編集",
   "tag_session_edit_title": "セッションのタグ",
   "tag_session_batch_title": "%1$d 件のセッションにタグを追加",
   "settings_automata_questions_enabled": "オートマタのオペレーター質問（デフォルトではオフ）",

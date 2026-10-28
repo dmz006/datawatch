@@ -2519,8 +2519,6 @@
   "tag_inherited_label": "heredada",
   "tag_inherited_tip": "Heredada del autómata; cámbiala allí",
   "tag_inherited_note": "Heredadas del autómata (solo lectura):",
-  "tag_session_none": "Sin etiquetas",
-  "tag_session_edit": "Editar etiquetas",
   "tag_session_edit_title": "Etiquetas de la sesión",
   "tag_session_batch_title": "Añadir etiquetas a %1$d sesiones",
   "settings_automata_questions_enabled": "Preguntas del operador para autómatas (desactivado por defecto)",
