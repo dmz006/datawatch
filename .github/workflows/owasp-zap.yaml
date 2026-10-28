@@ -37,6 +37,17 @@
 #      passes 3-5 need a live target)
 #   c) continue-on-error: true on passes 3-5 (all advisory; runtime
 #      errors from a dead daemon don't block the CI gate)
+#
+# Release-attach behaviour: the "Attach ZAP reports to GitHub
+# release" step runs only for a real release tag — a plain tag name
+# or a refs/tags/* value; branch refs (refs/heads/*) are ignored, so
+# a branch ref is never passed as a tag name. It uploads the existing
+# report files with the gh CLI in a bounded retry loop with a
+# back-off (30s/60s/120s/240s), retrying only when the failure
+# output indicates the API rate limit; a rate-limit failure after the
+# retries is a warning that does not fail the run (reports remain
+# available as run artifacts), while any non-rate-limit error still
+# fails the run.
 
 name: owasp-zap
 
@@ -280,14 +291,64 @@ jobs:
             fi
             if [[ "$COMMIT_SHA" == "$SHA" ]]; then echo "$t"; fi
           done | head -1)
+          # Normalize: never emit branch refs; only plain tag names
+          # (a refs/tags/* value is accepted and stripped later).
+          case "$TAG" in
+            refs/heads/*) TAG="" ;;
+          esac
           echo "tag=${TAG:-}" >> "$GITHUB_OUTPUT"
 
       - name: Attach ZAP reports to GitHub release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
-        if: github.event_name == 'workflow_run' && steps.release_tag.outputs.tag != ''
-        with:
-          tag_name: ${{ steps.release_tag.outputs.tag }}
-          files: |
-            report_pwa-baseline.html
-            report_api-scan.html
-          fail_on_unmatched_files: false
+        if: >
+          github.event_name == 'workflow_run'
+          && steps.release_tag.outputs.tag != ''
+          && !startsWith(steps.release_tag.outputs.tag, 'refs/heads/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+        run: |
+          set -uo pipefail
+          TAG="${RELEASE_TAG#refs/tags/}"
+
+          # Only upload files that actually exist from this run.
+          FILES=()
+          for f in report_pwa-baseline.html report_api-scan.html; do
+            [ -f "$f" ] && FILES+=("$f")
+          done
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "No ZAP report files found to attach — skipping"
+            exit 0
+          fi
+
+          MAX_ATTEMPTS=5
+          DELAYS=(30 60 120 240)
+          attempt=1
+          while :; do
+            OUT=""
+            if OUT=$(gh release upload "$TAG" "${FILES[@]}" --clobber 2>&1); then
+              echo "Attached reports to release $TAG (attempt $attempt)"
+              exit 0
+            fi
+            printf '%s\n' "$OUT" >&2
+            if ! printf '%s\n' "$OUT" | grep -qiE \
+              'rate[-_ ]?limit|\b429\b'; then
+              echo "::error::Release attach failed with a non-rate-limit error; failing the run"
+              exit 1
+            fi
+            if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
+              echo "::warning::API rate limit persisted after $MAX_ATTEMPTS attempts; ZAP reports were not attached to release $TAG but remain available as the owasp-zap-reports run artifact"
+              exit 0
+            fi
+            # Bounded back-off; if the rate-limit reset time is known,
+            # never sleep less than until slightly after the reset.
+            delay="${DELAYS[ attempt - 1 ]}"
+            now=$(date +%s)
+            if RESET=$(gh api rate_limit --jq '.resources.core.reset' 2>/dev/null) \
+              && [ -n "${RESET:-}" ] && [ "$RESET" -gt "$now" ] 2>/dev/null; then
+              REMAIN=$(( RESET - now + 5 ))
+              if [ "$REMAIN" -lt "$delay" ]; then delay=$REMAIN; fi
+            fi
+            echo "Rate limited; sleeping ${delay}s before retry $((attempt + 1))/$MAX_ATTEMPTS"
+            sleep "$delay"
+            attempt=$((attempt + 1))
+          done
