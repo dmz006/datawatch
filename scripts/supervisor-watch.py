@@ -31,7 +31,7 @@ ACKED_RUNS = {40316827946, 40293597613, 40320408404, 40366394552, 40366382818, 4
 # While the operator has not chosen between GitHub default CodeQL setup and our own workflow, every CodeQL run on main ends
 # red at the SARIF upload ("advanced configurations cannot be processed when the default setup is enabled"); set to False once decided.
 CODEQL_CONFLICT_KNOWN = True
-IGNORE = {"58aa0001", "99c20001", "fdd80001", "f3420001", "6bded76a", "04b20001", "7c960001", "7e460001", "7f3e0001", "80660001", "900d0001", "95950001"}  # 04b20001 BL637 parity backfill held until the final stage before 10.0 (row 227); 6bded76a voice PRD cancelled, it ran in the main checkout (replaced by a worktree PRD, row 222); 58aa0001 BL598 held (row 180); db4b0001 BL622 draft, not decomposed while Claude use is over the pace line (row 209); 99c20001 BL623 draft, decompose at the next hourly tick if the budget allows (row 210); 7c96/7e46/7f3e/8066 final-stage placeholders (BL411, BL409, BL424, BL496) and 900d0001 BL644 design-gated, all held
+IGNORE = {"58aa0001", "99c20001", "fdd80001", "6bded76a", "04b20001", "7c960001", "7e460001", "7f3e0001", "80660001", "900d0001", "95950001"}  # 04b20001 BL637 parity backfill held until the final stage before 10.0 (row 227); 6bded76a voice PRD cancelled, it ran in the main checkout (replaced by a worktree PRD, row 222); 58aa0001 BL598 held (row 180); db4b0001 BL622 draft, not decomposed while Claude use is over the pace line (row 209); 99c20001 BL623 draft, decompose at the next hourly tick if the budget allows (row 210); 7c96/7e46/7f3e/8066 final-stage placeholders (BL411, BL409, BL424, BL496) and 900d0001 BL644 design-gated, all held
 
 
 def sh(cmd, timeout=40):
