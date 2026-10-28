@@ -133,7 +133,7 @@ Contract change: new WebSocket message `tag_update` (`{kind, tag_id?, prd_id?, s
 
 ---
 
-## Usage and cost calculator — unreleased
+## Usage and cost calculator — v9.29.0
 
 | Surface | Test name | Test conditions | Test type | Tested? | Pass/Fail? | Validated? | Notes |
 |---------|-----------|-----------------|-----------|---------|------------|------------|-------|
