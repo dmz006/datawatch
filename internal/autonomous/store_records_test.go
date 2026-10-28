@@ -511,6 +511,17 @@ func TestPRDStoreCrashSafety(t *testing.T) {
 		_ = cmd.Process.Signal(syscall.SIGKILL)
 		_ = cmd.Wait()
 
+		// The killed writer's leftovers must be old enough to count as stale.
+		recDir := filepath.Join(dir, "autonomous", prdRecordsDirName)
+		if entries, err := os.ReadDir(recDir); err == nil {
+			old := time.Now().Add(-2 * time.Hour)
+			for _, e := range entries {
+				if strings.HasPrefix(e.Name(), ".tmp-") {
+					_ = os.Chtimes(filepath.Join(recDir, e.Name()), old, old)
+				}
+			}
+		}
+
 		s, err := NewStore(dir)
 		if err != nil {
 			t.Fatalf("round %d: reload: %v", round, err)
