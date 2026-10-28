@@ -18,3 +18,20 @@ Date started: 2026-10-25. The ten open questions of `docs/plans/2026-10-23-usage
 ## Status
 
 All ten questions of the usage calculator design are answered (decisions 1 to 10). The implementation PRD can be planned from this file.
+
+## Implementation
+
+Implemented on this line (unreleased; live in the running build):
+
+- **Decision 1** — the 5-point safety margin: `safety_points` key (default 5.0, cap 50) applied under `pace to the week` (`TestPolicyPaceUsesTheSafetyMargin`).
+- **Decision 2** — the session window is secondary: the advice carries it but the headline figure is the account reading.
+- **Decision 3** — one burn-per-lane figure (`cost_per_task_points`), with the per-model split left as a place, not a field (`internal/usagecalc/model.go`).
+- **Decision 4** — no reading in the last 2 hours falls back to the week average with an on-screen notice (`TestAdviseRecentFallback`, `recent_fallback` + `no_recent_reading`).
+- **Decision 5** — typed readings built first (`internal/usagecalc/source.go`: typed now, pasted and API/account planned); the reading record carries either `percent` or `spend_usd`, never both.
+- **Decision 6** — the Run-flat-out finish line has both figures: the estimate from the queue times the cost per task and the typed overwrite, each labelled, the task count beside both (`TestAdviseRemainingWorkEstimateAndTyped`).
+- **Decision 7** — the reset is a weekday + local time + zone name, following the zone own rules across DST (`TestResetDaylightSavingChange`), stored as `reset_*` keys.
+- **Decision 8** — the series is shared across federated daemons: keeper holds `data/usage/series.json`, peers read with `usage.read` (stale-marking the last copy) and forward writes to the keeper (`TestSharedSeries*`, `TestUsageSeries*`), the `X-DataWatch-Role` hop header serving the local copy to a forwarder.
+- **Decision 9** — the extra credit is a separate figure the ceiling adds on, shown as its own line on every variant (`TestAdviseExtraCreditCeiling`, the parity "raised ceiling in every variant" test).
+- **Decision 10** — the 22:08 entry in `docs/plans/2026-10-14-concurrency-and-budget-design.md` carries the 1.41 days / 106.0 percent / 02:02 correction with the note.
+
+Every access surface is live and in the testing tracker (the *Usage and cost calculator — unreleased* section of `docs/testing-tracker.md`): the model and store in `internal/usagecalc/`, the REST layer in `internal/server/usage_calculator*.go` + `usage_readings*.go`, the CLI in `cmd/datawatch/cli_usage.go`, the comm channel in `internal/router/usage_calculator.go`, the six MCP tools in `internal/mcp/usage_calculator*.go`, the PWA card and settings card in `internal/server/web/app.js`, and the ten config keys in `internal/server/usage_calculator_config.go`. Operator-facing how-to: `docs/howto/usage-calculator.md`.
