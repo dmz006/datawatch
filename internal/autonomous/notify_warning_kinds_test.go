@@ -241,7 +241,10 @@ func TestNotifyOptIn_SubscriptionCannotWiden(t *testing.T) {
 	// delivers: the subscription narrows the kinds it wants, the resolver
 	// decides which of those the Automaton opted into — both work.
 	m.emit(startedEventNarrowed("prd-narrow"))
-	waitFor(t, "delivery of the Automaton's listed kind", func() bool { return rec.bridgeCount() == 1 })
+	waitFor(t, "delivery of the Automaton's listed kind", func() bool {
+		evs, _, _ := queue.Pending("queue", 0, 10)
+		return rec.bridgeCount() == 1 && len(evs) == 1
+	})
 	if evs, _, _ := queue.Pending("queue", 0, 10); len(evs) != 1 || evs[0].Kind != KindTaskSessionStarted {
 		t.Errorf("queue events = %+v, want the one task.session_started for the same Automaton", evs)
 	}
