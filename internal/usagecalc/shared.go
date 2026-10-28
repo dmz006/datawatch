@@ -255,7 +255,7 @@ func (s *SharedSeries) fetchRecord(ctx context.Context, keeper, baseURL, token s
 	if err != nil {
 		return AccountRecord{}, fmt.Errorf("keeper %q unreachable: %v", keeper, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		return AccountRecord{}, fmt.Errorf("keeper %q answered HTTP %d", keeper, resp.StatusCode)
@@ -359,7 +359,7 @@ func (s *SharedSeries) writeToKeeper(ctx context.Context, method, path string, h
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrKeeperUnreachable, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return respBody, fmt.Errorf("keeper %q answered HTTP %d to the write", keeper, resp.StatusCode)

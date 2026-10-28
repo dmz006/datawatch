@@ -55,7 +55,7 @@ func dailyUse(anchor resetAnchor, series []SeriesPoint, end time.Time) []DayUse 
 			Start:     start.In(anchor.loc),
 			End:       stop.In(anchor.loc),
 			Points:    percentAt(points, stop) - percentAt(points, start),
-			Estimated: !(isKnown(points, start) && isKnown(points, stop)),
+			Estimated: !isKnown(points, start) || !isKnown(points, stop),
 			Partial:   stop.Before(anchor.at(i + 1)),
 		})
 	}

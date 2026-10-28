@@ -23,7 +23,7 @@ type fakeKeeper struct {
 	credit   float64
 	gets     int
 	// legacy answers POST with the old bare 204 confirmation (no body).
-	legacy bool
+	legacy   bool
 	hops     []string
 	tokens   []string
 	requests []string
@@ -155,7 +155,9 @@ func newSharedFixture(t *testing.T, keeperName, mode, token string) *sharedFixtu
 			t.Fatalf("dead fixture: %v", err)
 		}
 		baseURL = "http://" + ln.Addr().String()
-		ln.Close()
+		if err := ln.Close(); err != nil {
+			t.Fatalf("dead fixture: %v", err)
+		}
 	}
 
 	lookup := func(name string) (string, string, bool) {
@@ -454,7 +456,6 @@ func TestSharedSeriesWriteForwardedToKeeper(t *testing.T) {
 	}
 }
 
-
 // TestSharedSeriesAddReadingOldKeeperShape: a keeper that answers the old bare
 // confirmation (204, no body) still confirms the write; the returned reading is
 // empty (the caller can find the stored one by a read), no error.
@@ -566,7 +567,9 @@ func TestSharedSeriesMalformedKeeperResponse(t *testing.T) {
 		defer mu.Unlock()
 		if r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte("{nope"))
+			if _, err := w.Write([]byte("{nope")); err != nil {
+				return
+			}
 			return
 		}
 		http.Error(w, "denied", http.StatusForbidden)

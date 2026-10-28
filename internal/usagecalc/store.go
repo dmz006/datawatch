@@ -401,7 +401,7 @@ func (s *Store) Snapshot() StoreSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c := s.data.clone()
-	return StoreSnapshot{Version: c.Version, Account: c.Account, Local: c.Local}
+	return StoreSnapshot(c)
 }
 
 // FilePath returns the store file's path, so a SharedSeries can keep its peer copy right
