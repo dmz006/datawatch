@@ -5195,11 +5195,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									// before the observation. A failed pane capture counts as
 									// not-fresh, never as a reset.
 									now := time.Now()
-									if sb, serr := mgr.CapturePaneScrollback(s.FullID, 500); serr == nil &&
-										descendantOutputObs.outputIsFresh(now, sb, s.LastChannelEventAt) {
-										descendantStallTracker.Reset(now)
-									}
-									if stalled, reason := descendantStallTick(descendantStallTracker, family, now, len(ds), logModTime, newestWorkDirMtime(taskDir)); stalled {
+									sb, serr := mgr.CapturePaneScrollback(s.FullID, 500)
+									if stalled, reason := descendantWaitStep(descendantStallTracker, &descendantOutputObs, family, now, len(ds),
+										logModTime, newestWorkDirMtime(taskDir), sb, serr == nil, s.LastChannelEventAt); stalled {
 										log.Printf("[autonomous] descendant-stall detector fired for session %s task %s/%s: %s; killing for retry",
 											task.SessionID, task.PRDID, task.ID, reason)
 										pane, paneErr := mgr.CapturePaneScrollback(s.FullID, 300)

@@ -34,7 +34,7 @@ evidence of life.
 | 1 | `DescendantStallTracker` + default/normalization in `internal/autonomous` and `internal/config` | Done |
 | 2 | Wait-loop integration in `cmd/datawatch` (family-gated `descendantStallTick`, evidence, recorded-identity kill path) | Done |
 | 3 | Surfaces: config YAML, REST `GET`/`PUT`, MCP `autonomous_config_set`, CLI `config set`, comm `configure`, PWA settings card (5 locales) | Done |
-| 4 | Tests: 23 Go test functions across 5 packages + the PWA settings field tests | Done |
+| 4 | Tests: 41 Go test functions in 5 test files across 4 packages (`cmd/datawatch`, `internal/autonomous`, `internal/server`, `internal/config`) + 3 PWA settings field tests | Done |
 | 5 | Documentation: CHANGELOG, config reference, implementation, operations, howto, API docs, MCP docs, testing tracker, this plan | Done |
 | 6 | Live validation on a real daemon (pi-prompt worker left with a live descendant) | Pending |
 
@@ -49,9 +49,9 @@ Shipped in: version at merge time (next patch above main); the entry is in `CHAN
 | CLI | Yes | Generic config-set path; document with `datawatch config set autonomous.descendant_stall_seconds 2700`. No new command or flag. |
 | comm channel | Yes | `configure autonomous.descendant_stall_seconds=2700`; the router forwards it to the REST `PUT` config endpoint (same path as every other `autonomous.*` key). No new verb. |
 | YAML/config | Yes | `autonomous.descendant_stall_seconds: 2700` in `config.yaml`, documented in `docs/config-reference.yaml`; read at attempt start, so a change applies to the next attempt without a daemon restart. |
-| PWA | Yes | Settings card field positioned directly after `session_idle_timeout_seconds`; label `settings_descendant_stall_seconds` present in all five locale bundles (en, de, es, fr, ja); covered by `app-autonomous-settings-fields.test.js` and `app-autonomous-settings-field-values.test.js`. |
-| Android | Not done — supervisor step | No contract change for the native client: the key is a daemon-side setting, and the mobile app today does not surface this key. The datawatch-app parity issue (cross-repo) is a supervisor step and is tracked separately; recorded here as pending. |
-| iPhone | Not done — supervisor step | Same as Android: no client contract change; covered by the same pending datawatch-app parity step. |
+| PWA | Yes | Settings card field positioned directly after `session_idle_timeout_seconds`; label `settings_descendant_stall_seconds` present in all five locale bundles (en, de, es, fr, ja); covered by `app-autonomous-settings-fields.test.js`. |
+| Android | Filed | No contract change for the native client: the key is a daemon-side setting. The datawatch-app parity issue is filed: datawatch-app#291 (setting field, English label, REST field, default, request for DE/ES/FR/JA translations). |
+| iPhone | Filed | Same as Android; covered by datawatch-app#291. |
 
 Nothing is excluded without a reason: the Android and iPhone rows are untouched because this
 branch changes no client-facing contract — the native client neither sends nor parses the new key,
@@ -62,10 +62,10 @@ and the setting is reachable over every surface the daemon already exposes.
 ```bash
 # Go (TMUX/TMUX_TMPDIR unset so the process-tree tests see a clean tree)
 unset TMUX TMUX_TMPDIR
-go test ./internal/autonomous/ ./internal/config/ ./internal/server/ ./cmd/datawatch/ ./internal/mcp/
+go test ./internal/autonomous/ ./internal/config/ ./internal/server/ ./cmd/datawatch/
 
 # PWA settings field tests
-node --test internal/server/web/app-autonomous-settings-fields.test.js internal/server/web/app-autonomous-settings-field-values.test.js
+node --test internal/server/web/app-autonomous-settings-fields.test.js
 
 # Docs contract for this unit
 .datawatch/verify/document-descendant-stall-bound.sh
@@ -74,8 +74,8 @@ node --test internal/server/web/app-autonomous-settings-fields.test.js internal/
 ## Completion checklist
 
 - Functionality: done per the phase table; live fire still pending (phase 6).
-- Tests: 23 Go test functions across `internal/autonomous`, `internal/config`, `internal/server`,
-  `cmd/datawatch`, `internal/mcp` — all pass; the PWA settings field tests pass. Details and the
+- Tests: 41 Go test functions in 5 test files across `cmd/datawatch`, `internal/autonomous`,
+  `internal/server`, `internal/config` (`internal/mcp` gained no test) — all pass; the PWA settings field tests pass. Details and the
   pending items (MCP schema-declaration test, live daemon fire) are in the testing-tracker section
   "Pi-prompt descendant-only stall bound (autonomous.descendant_stall_seconds)": **Tested=Yes,
   Validated=No**.
@@ -86,9 +86,9 @@ node --test internal/server/web/app-autonomous-settings-fields.test.js internal/
   `docs/api/autonomous.md` config block; `docs/mcp.md` `autonomous_config_set` parameter entry;
   `docs/testing-tracker.md` section; no tracker IDs in operator-facing docs.
 - Localization Rule: new `t('settings_descendant_stall_seconds')` key added to all five locale
-  bundles (en, de, es, fr, ja); covered by the PWA field test.
-- Mobile-Parity Rule: recorded as pending (Android, iPhone) — the datawatch-app parity issue is a
-  supervisor step (cross-repo).
+  bundles (en, de, es, fr, ja); covered by the PWA field test. The de, es, fr and ja bundles carry
+  the English string for now; the translation request is part of datawatch-app#291.
+- Mobile-Parity Rule: datawatch-app#291 filed for Android and iPhone.
 - Version bump: N/A for this unit; the release stamps the `[Unreleased]` entry and bumps both
   `Version` variables at merge.
 - Commit tag: `tracker: descendant-only stall bound`.

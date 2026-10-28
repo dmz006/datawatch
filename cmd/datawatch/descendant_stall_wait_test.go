@@ -335,11 +335,206 @@ func TestDescendantStallTrackerFreshOutputResetsTheClock(t *testing.T) {
 	// more than 6s after start (clock = latest of start and the observe) —
 	// the detector fires.
 	withoutReset := autonomouspkg.NewDescendantStallTracker(start, 6*time.Second)
-	withoutReset.Observe(start.Add(3 * time.Second), 1, time.Time{}, time.Time{})
+	withoutReset.Observe(start.Add(3*time.Second), 1, time.Time{}, time.Time{})
 	if stalled, reason := withoutReset.Observe(start.Add(10*time.Second), 1, time.Time{}, time.Time{}); !stalled {
 		t.Fatal("without a fresh-output reset the silence window must pass by and the detector must fire")
 	} else if reason == "" {
 		t.Fatal("a stalled observation must carry a reason")
+	}
+}
+
+// descendantWaitHarness drives the same per-observation path as the pi-prompt
+// wait loop over a fake worker process tree and a fake clock: the work
+// descendants come from workChildPIDs (the walk workDescendantPIDs runs after
+// reading the live tree), the log and work-directory mtimes are real files
+// stamped with fake times, and each look goes through descendantWaitStep.
+// Nothing sleeps and nothing signals a process.
+type descendantWaitHarness struct {
+	t        *testing.T
+	roots    []int
+	children map[int][]int
+	names    map[int]string
+	argv     map[int][]string
+	workDir  string
+	logPath  string
+	tracker  *autonomouspkg.DescendantStallTracker
+	obs      descendantOutputObservation
+	now      time.Time
+	pane     string
+	paneOK   bool
+	channel  time.Time
+}
+
+// newDescendantWaitHarness builds pane 100 -> bash 200 -> pi 300 -> bash 400 ->
+// sleep 500: a worker whose runner started a long-running child. The worker's
+// own channel server (600) sits below the runner too and must not count.
+func newDescendantWaitHarness(t *testing.T, limit time.Duration) *descendantWaitHarness {
+	t.Helper()
+	dir := t.TempDir()
+	start := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	h := &descendantWaitHarness{
+		t:        t,
+		roots:    []int{100},
+		children: map[int][]int{100: {200}, 200: {300}, 300: {400, 600}, 400: {500}},
+		names:    map[int]string{100: "bash", 200: "bash", 300: "pi", 400: "bash", 500: "sleep", 600: "datawatch-chann"},
+		argv: map[int][]string{
+			400: {"bash", "-c", "sleep 100000"},
+			500: {"sleep", "100000"},
+			600: {"/home/dmz/.datawatch/channel/datawatch-channel"},
+		},
+		workDir: filepath.Join(dir, "work"),
+		logPath: filepath.Join(dir, "session.log"),
+		now:     start,
+		paneOK:  true,
+	}
+	writeFile(t, filepath.Join(h.workDir, "main.go"), "package x")
+	writeFile(t, h.logPath, "log")
+	h.stamp(h.workDir+"/main.go", start)
+	h.stamp(h.logPath, start)
+	h.tracker = autonomouspkg.NewDescendantStallTracker(start, limit)
+	return h
+}
+
+func (h *descendantWaitHarness) stamp(path string, at time.Time) {
+	h.t.Helper()
+	if err := os.Chtimes(path, at, at); err != nil {
+		h.t.Fatalf("chtimes %s: %v", path, err)
+	}
+}
+
+// look advances the fake clock by d and runs one wait-loop observation.
+func (h *descendantWaitHarness) look(d time.Duration) (bool, string) {
+	h.t.Helper()
+	h.now = h.now.Add(d)
+	ds := workChildPIDs(h.roots, h.children, fakeProcessNames(h.names), fakeProcessArgv(h.argv), nil)
+	var logMod time.Time
+	if fi, err := os.Stat(h.logPath); err == nil {
+		logMod = fi.ModTime()
+	}
+	return descendantWaitStep(h.tracker, &h.obs, "pi-prompt", h.now, len(ds),
+		logMod, newestWorkDirMtime(h.workDir), h.pane, h.paneOK, h.channel)
+}
+
+func TestDescendantWaitLoopSeesSleepingChildAsWorkDescendant(t *testing.T) {
+	h := newDescendantWaitHarness(t, time.Minute)
+	ds := workChildPIDs(h.roots, h.children, fakeProcessNames(h.names), fakeProcessArgv(h.argv), nil)
+	if !ds[400] || !ds[500] {
+		t.Fatalf("work descendants = %v, want the bash child 400 and sleep 500", ds)
+	}
+	if ds[300] {
+		t.Errorf("the runner itself (300) must never be a work descendant: %v", ds)
+	}
+}
+
+func TestDescendantWaitLoopSilentChildFiresTheBound(t *testing.T) {
+	h := newDescendantWaitHarness(t, time.Minute)
+	// The child stays alive; no log write, no file change, no output.
+	for i := 0; i < 2; i++ {
+		if stalled, reason := h.look(25 * time.Second); stalled {
+			t.Fatalf("look %d at %v of silence must stay quiet: %q", i, time.Duration(i+1)*25*time.Second, reason)
+		}
+	}
+	stalled, reason := h.look(25 * time.Second) // 75s of silence > 60s limit
+	if !stalled {
+		t.Fatal("a silent child alive past the limit must fire the bound")
+	}
+	if reason == "" {
+		t.Error("a stalled observation must carry a reason")
+	}
+}
+
+func TestDescendantWaitLoopOutputKeepsTheBoundQuiet(t *testing.T) {
+	h := newDescendantWaitHarness(t, time.Minute)
+	h.pane = "line 1\n"
+	h.look(25 * time.Second) // baselines the pane
+	for i := 0; i < 6; i++ {
+		h.pane += "more output\n" // the pane grows every look
+		if stalled, reason := h.look(25 * time.Second); stalled {
+			t.Fatalf("look %d: a child whose worker keeps producing output must stay quiet: %q", i, reason)
+		}
+	}
+	// Output stops; the bound fires once silence passes the limit again.
+	var fired bool
+	for i := 0; i < 4 && !fired; i++ {
+		fired, _ = h.look(25 * time.Second)
+	}
+	if !fired {
+		t.Error("after the output stops the bound must fire")
+	}
+}
+
+func TestDescendantWaitLoopChannelEventKeepsTheBoundQuiet(t *testing.T) {
+	h := newDescendantWaitHarness(t, time.Minute)
+	h.look(25 * time.Second)
+	for i := 0; i < 6; i++ {
+		h.channel = h.now.Add(10 * time.Second) // a model event lands between looks
+		if stalled, reason := h.look(25 * time.Second); stalled {
+			t.Fatalf("look %d: model output on the channel must reset the clock: %q", i, reason)
+		}
+	}
+}
+
+func TestDescendantWaitLoopFailedPaneCaptureNeverResets(t *testing.T) {
+	h := newDescendantWaitHarness(t, time.Minute)
+	h.pane = "start"
+	h.look(25 * time.Second)
+	h.pane = "start plus lots of new output"
+	h.paneOK = false // capture failed: the growth is not observed
+	h.look(25 * time.Second)
+	if stalled, _ := h.look(25 * time.Second); !stalled {
+		t.Fatal("a failed pane capture must not count as output; 75s of silence must fire")
+	}
+}
+
+func TestDescendantWaitLoopFileChangeKeepsTheBoundQuiet(t *testing.T) {
+	h := newDescendantWaitHarness(t, time.Minute)
+	for i := 0; i < 6; i++ {
+		// The child edits a file in the work directory at each look.
+		h.stamp(h.workDir+"/main.go", h.now.Add(20*time.Second))
+		if stalled, reason := h.look(25 * time.Second); stalled {
+			t.Fatalf("look %d: a workdir file change must keep the bound quiet: %q", i, reason)
+		}
+	}
+	// Changes stop: the bound fires after the limit.
+	var fired bool
+	for i := 0; i < 4 && !fired; i++ {
+		fired, _ = h.look(25 * time.Second)
+	}
+	if !fired {
+		t.Error("after the file changes stop the bound must fire")
+	}
+}
+
+func TestDescendantWaitLoopLogWriteKeepsTheBoundQuiet(t *testing.T) {
+	h := newDescendantWaitHarness(t, time.Minute)
+	for i := 0; i < 6; i++ {
+		h.stamp(h.logPath, h.now.Add(20*time.Second))
+		if stalled, reason := h.look(25 * time.Second); stalled {
+			t.Fatalf("look %d: a log write must keep the bound quiet: %q", i, reason)
+		}
+	}
+}
+
+func TestDescendantWaitLoopNoChildNeverFires(t *testing.T) {
+	h := newDescendantWaitHarness(t, time.Minute)
+	delete(h.children, 400) // the child is gone; only the runner and its own server remain
+	h.children[300] = []int{600}
+	for i := 0; i < 8; i++ {
+		if stalled, reason := h.look(25 * time.Second); stalled {
+			t.Fatalf("look %d: with no work descendant the bound must not fire: %q", i, reason)
+		}
+	}
+}
+
+func TestDescendantWaitStepIgnoresOtherFamilies(t *testing.T) {
+	start := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	tr := autonomouspkg.NewDescendantStallTracker(start, time.Second)
+	var obs descendantOutputObservation
+	if stalled, _ := descendantWaitStep(tr, &obs, "claude-code", start.Add(time.Hour), 1, time.Time{}, time.Time{}, "pane", true, time.Time{}); stalled {
+		t.Error("a non-pi-prompt family must never stall through this detector")
+	}
+	if stalled, _ := descendantWaitStep(nil, &obs, "pi-prompt", start.Add(time.Hour), 1, time.Time{}, time.Time{}, "pane", true, time.Time{}); stalled {
+		t.Error("a nil tracker must never stall")
 	}
 }
 

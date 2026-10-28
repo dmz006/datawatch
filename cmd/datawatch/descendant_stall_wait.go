@@ -87,6 +87,25 @@ func descendantStallTick(tr *autonomouspkg.DescendantStallTracker, backendFamily
 	return tr.Observe(now, workDescendants, logModTime, workdirNewest)
 }
 
+// descendantWaitStep is one wait-loop observation of the descendant-only stall
+// detector, in the order the loop runs it: fresh output (pane growth, or a
+// channel event newer than the last look) resets the silence clock first, then
+// the tracker observes the log and work-directory mtimes. paneOK is false when
+// the pane capture failed, which counts as not-fresh, never as a reset.
+// workDescendants is the size of a readable work-descendant set; the caller
+// makes no observation at all when the tree cannot be read.
+func descendantWaitStep(tr *autonomouspkg.DescendantStallTracker, obs *descendantOutputObservation, backendFamily string,
+	now time.Time, workDescendants int, logModTime, workdirNewest time.Time,
+	pane string, paneOK bool, channelEventAt time.Time) (stalled bool, reason string) {
+	if tr == nil || backendFamily != "pi-prompt" {
+		return false, ""
+	}
+	if paneOK && obs.outputIsFresh(now, pane, channelEventAt) {
+		tr.Reset(now)
+	}
+	return descendantStallTick(tr, backendFamily, now, workDescendants, logModTime, workdirNewest)
+}
+
 // appendDescendantEvidence appends the recorded descendants' identity lines to
 // the runner evidence's process list, deduplicated by PID: a recorded PID
 // already present in Processes (for example the process walk's own entry) is
