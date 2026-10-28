@@ -3,7 +3,7 @@
 Date: 2026-10-28
 Scope: Why TestCIWatch_TimeoutPending (internal/autonomous/ci_watch_test.go) flakes
 on CI with "pollUntil: follow-up recording a pass not reached within 30s".
-Status: Investigation done; fix in the next tasks.
+Status: Done.
 
 ## Investigation
 
@@ -84,3 +84,63 @@ resulting save error.
   Rename consumes it on success).
 - Make `ciWatchFollowUp` retry/fail visibly on SavePRD errors instead of
   logging, so a lost pass is at least observable.
+
+## Final verification
+
+Ran 2026-10-28 on the fix branch (worktree e9930001), all outside tmux
+(`env -u TMUX -u TMUX_TMPDIR`). No stray files left: `git status --short`
+is clean after the runs.
+
+### Stress gate (.datawatch/verify/ci-watch-stress-gate.sh)
+
+One bounded CPU burner per core (`timeout 150 sh -c 'yes > /dev/null'`),
+then TestCIWatch with -race -shuffle=on -count=15 at -parallel 1 and 16,
+then TestPRDStore, all under load:
+
+```
+== TestCIWatch -race -shuffle=on -parallel 1 under CPU load ==
+PASS
+== TestCIWatch -race -shuffle=on -parallel 16 under CPU load ==
+PASS
+== TestPRDStore under CPU load ==
+PASS
+PASS: ci-watch-stress-gate
+```
+
+Exit code 0; no burners left alive after the gate (each ended by its own
+timeout; the script kills only the exact PIDs it recorded).
+
+### Full package, race detector (outside load)
+
+```
+$ go test -race -count=1 ./internal/autonomous/
+ok  	github.com/dmz006/datawatch/internal/autonomous	44.758s
+```
+
+Exit code 0.
+
+### Repository checks
+
+```
+$ bash scripts/check-no-unscoped-tmux.sh
+OK: no unscoped tmux kills
+
+$ bash scripts/check-no-internal-refs.sh
+✓ PASS: no internal refs in user-facing surfaces.
+```
+
+Both exit code 0.
+
+### Changed files (git diff --stat main...HEAD)
+
+```
+docs/plans/2026-10-28-ci-watch-flake.md            |  86 +++++++++++++
+internal/autonomous/ci_watch_test.go               |  15 ++-
+internal/autonomous/store_open_live_writer_test.go | 143 +++++++++++++++++++++
+internal/autonomous/store_records.go               |  14 +-
+internal/autonomous/store_records_test.go          |  11 ++
+```
+
+Exactly the expected set, plus the (untracked, gitignored)
+.datawatch/verify gate scripts. `git status --short` shows no stray probe
+tests or test binaries.
