@@ -111,7 +111,7 @@ func captureStdoutErr(t *testing.T, call func() error) (string, error) {
 	os.Stdout = w
 	defer func() { os.Stdout = old }()
 	cerr := call()
-	w.Close()
+	_ = w.Close()
 	out, _ := io.ReadAll(r)
 	return string(out), cerr
 }

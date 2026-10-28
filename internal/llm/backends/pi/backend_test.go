@@ -317,7 +317,7 @@ func TestBuildInteractiveCmd_ThinkingLevelInCmd(t *testing.T) {
 }
 
 func TestBackend_SetThinkingLevelSatisfiesSessionManagerDuckType(t *testing.T) {
-	var b llm.Backend = New("")
+	b := New("")
 	if _, ok := b.(interface{ SetThinkingLevel(string) }); !ok {
 		t.Error("Backend must satisfy interface{ SetThinkingLevel(string) } for the session manager's thinking-level path")
 	}

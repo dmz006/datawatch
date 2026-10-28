@@ -33,7 +33,7 @@ func ReadTurns(path string) ([]Turn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pilog: %w", err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	r := bufio.NewReader(f)
 	for {

@@ -11978,7 +11978,7 @@ func runSessionTail(cfg *config.Config, id string, n int, follow bool, statusInt
 	out := os.Stdout
 	if !follow {
 		if line := piTailStatusLine(sess, time.Now()); line != "" {
-			fmt.Fprintln(out, line)
+			_, _ = fmt.Fprintln(out, line)
 		}
 		return nil
 	}
@@ -11991,7 +11991,7 @@ func runSessionTail(cfg *config.Config, id string, n int, follow bool, statusInt
 		Interval:      statusInterval,
 		BackendFamily: sess.BackendFamily,
 		Progress:      func() (pilog.Progress, error) { return piTailProgress(sess) },
-		Emit:          func(line string) { fmt.Fprintln(out, line) },
+		Emit:          func(line string) { _, _ = fmt.Fprintln(out, line) },
 	}
 	ticker.Start(ctx) // immediate tick, then one line per interval until signaled
 	return nil

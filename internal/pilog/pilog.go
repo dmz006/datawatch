@@ -150,7 +150,7 @@ func Read(path string) (Progress, error) {
 	if err != nil {
 		return p, fmt.Errorf("pilog: %w", err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	r := bufio.NewReader(f)
 	for {
