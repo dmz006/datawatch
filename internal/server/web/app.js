@@ -4226,12 +4226,6 @@ function renderSessionDetail(sessionId) {
       <!-- v5.28.5 (datawatch#34) — per-session process stats panel -->
       <div id="statsPanel" class="session-stats-panel" style="display:none;"></div>
       <div id="sessionPluginWidgets" class="session-plugin-widgets" style="display:none;"></div>
-      <!-- pi live progress (BL: autonomous progress block) — below stats and the
-           plugin widgets; polls /api/sessions/{id}/progress via the shared 5s
-           interval (window._piProgressInterval), hidden until first success.
-           Kept after sessionPluginWidgets so the existing source-order tests
-           (app-session-plugin-widgets) and widget CSS anchoring stay intact. -->
-      <div id="piProgressPanel" class="session-pi-progress pi-progress-live" data-pi-progress-sid="${escHtml(sessionId)}" style="display:none;"></div>
       ${connBanner}
       ${rateLimitBanner}
       ${outputAreaHtml}
@@ -4408,7 +4402,6 @@ function renderSessionDetail(sessionId) {
   }
   loadSessionSchedules(sessionId);
   loadSessionStats(sessionId);
-  startPiProgressPolling(); // idempotent — reuses window._piProgressInterval
   refreshSessionPluginWidgets();
   // GATE alpha.36 (operator 2026-05-10): eager-fetch the status board on
   // mount so the Status tab badge dot reflects state immediately —

@@ -1895,7 +1895,6 @@
   "prd_task_projdir_label": "Directorio de proyecto (anulación)",
   "prd_task_projdir_placeholder": "hereda el directorio del Autómata",
   "prd_task_projdir_badge_title": "Anulación del directorio de proyecto por tarea",
-  "pi_progress_label": "Live progress",
   "pi_progress_loading": "Loading…",
   "pi_progress_last_event": "Last event",
   "pi_progress_turns": "Turns",

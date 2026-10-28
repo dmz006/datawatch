@@ -1895,7 +1895,6 @@
   "prd_task_projdir_label": "プロジェクトディレクトリの上書き",
   "prd_task_projdir_placeholder": "オートマトンのディレクトリを継承",
   "prd_task_projdir_badge_title": "タスクごとのプロジェクトディレクトリ上書き",
-  "pi_progress_label": "Live progress",
   "pi_progress_loading": "Loading…",
   "pi_progress_last_event": "Last event",
   "pi_progress_turns": "Turns",
