@@ -1656,6 +1656,7 @@ autonomous:
   # Backend used for that one escalated verification. Empty => claude-code.
   fallback_verification_backend: claude-code
   session_idle_timeout_seconds: 900   # bound on one worker/verifier session sitting in waiting_input/idle with no live child process; exceeded => infra failure 'session idle without completion', alert raised, auto_fix_retries budget handles the retry
+  descendant_stall_seconds: 2700   # bounds a pi-prompt worker whose only liveness is a work child process: no output, file change or log write for this long (default 2700) => reaped as an infra failure
   # A claude-code autonomous session must show a sign of work within this many
   # seconds of starting: an assistant turn, a tool call (line or spinner), a
   # process it started, a pane change or a channel event after delivery. Still

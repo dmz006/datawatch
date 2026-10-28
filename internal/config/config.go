@@ -2306,6 +2306,11 @@ type AutonomousConfig struct {
 	// process for longer than this is an infra failure. 0 or unset => 900
 	// (see NormalizeSessionIdleTimeoutSeconds).
 	SessionIdleTimeoutSeconds int `yaml:"session_idle_timeout_seconds,omitempty" json:"session_idle_timeout_seconds,omitempty"`
+	// DescendantStallSeconds bounds a pi-prompt worker whose only liveness is a
+	// work child process: if it shows no output, no file change and no log
+	// write for this long, it is stalled and is reaped as an infra failure. 0
+	// or unset => 2700 (see NormalizeDescendantStallSeconds).
+	DescendantStallSeconds int `yaml:"descendant_stall_seconds,omitempty" json:"descendant_stall_seconds,omitempty"`
 	// VerifierInfraEscalationThreshold is the count of consecutive infra
 	// verifier failures on one task after which its next verification runs on
 	// FallbackVerificationBackend. 0 or unset => 2.
