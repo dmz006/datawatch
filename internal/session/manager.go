@@ -133,45 +133,12 @@ func StripANSI(s string) string {
 	return ansiEscapeRe.ReplaceAllString(s, "")
 }
 
-// Rate limit detection patterns
-var rateLimitPatterns = []string{
-	"DATAWATCH_RATE_LIMITED:",
-	"You've hit your limit",
-	"rate limit exceeded",
-	"quota exceeded",
-	// Modern claude-code rate-limit dialog (shows a 1/2/3 menu where
-	// option 1 is "Stop and wait for limit to reset"). Detected here so
-	// the auto-select + schedule-resume flow fires immediately.
-	"usage limit will reset",
-	"Approaching usage limit",
-	"limit will reset at",
-	// v5.27.4 — operator-reported: rate-limit detection broke when
-	// claude-code switched to the "5-hour limit reached" / "weekly
-	// limit reached" phrasing. Newer claude prints both forms; the
-	// "Approaching usage limit" + "limit will reset at" patterns
-	// catch the WARN dialog (~80% of capacity) but not the actual
-	// HARD limit message that ends the session.
-	"limit reached",      // "5-hour limit reached", "Weekly limit reached"
-	"weekly usage limit", // "Weekly usage limit reached"
-	"hit weekly limit",   // "Hit weekly limit"
-	"5-hour limit",       // 5-hour-window phrasing
-	"opus limit reached", // model-specific limit phrasings
-	"sonnet limit reached",
-	// BL240 (v6.2.0) — additional patterns for missed dialogs observed 2026-05-03.
-	"claude usage limit",      // "Claude usage limits" header in newer dialogs
-	"you've exceeded",         // "You've exceeded your Claude plan"
-	"plan limit",              // "plan limit reached" variants
-	"resets at",               // "Resets at 2pm" — reset time announcement (also feeds parser)
-	"stop and wait",           // Part of the option text in some dialog formats
-	"wait for limit to reset", // Option 1 text — appears when dialog auto-wraps to next line
-	// BL262 (v6.11.3) — operator-reported 2026-05-05: "You're out of extra
-	// usage · resets 11:50am (America/New_York)". The "out of extra usage"
-	// phrasing isn't covered by any existing pattern; the existing
-	// parseClaudeClockTime "resets " marker handles the time-extraction
-	// half once the line is detected as rate-limited.
-	"out of extra usage", // "You're out of extra usage · resets ..."
-	"you're out of",      // wider catch for "You're out of credits/quota/usage" phrasings
-}
+// Rate-limit detection moved to rate_limit_lines.go: a per-backend table
+// of recorded line starts (see that file's comment for the matching rule,
+// and the testdata/rate_limit_lines README for provenance), evaluated
+// against the session's BackendFamily with an anchored (line-start) match.
+// The flat-substring check remains available when an operator configures
+// rate_limit_patterns.
 
 // Completion detection patterns. All matched against the trimmed
 // prompt line via strings.HasPrefix.
@@ -205,7 +172,9 @@ var inputNeededPatterns = []string{
 // it takes no focus and the CLI keeps working, so it must never be read as
 // a prompt, a rate limit, or a stall, and no key is sent for it (Enter
 // would submit the input box, Esc would interrupt a running turn). Matched
-// case-insensitively as substrings, like rateLimitPatterns. Each entry
+// case-insensitively as substrings against its own flat list (the
+// rate-limit table in rate_limit_lines.go is anchored and separate). Each
+// entry
 // carries the update-specific wording; the generic "Enter to confirm" /
 // "Esc to cancel" footer belongs to other dialogs and is NOT used here.
 var selfUpdatePatterns = []string{
@@ -225,11 +194,20 @@ func (m *Manager) effectivePromptPatterns() []string {
 	return promptPatterns
 }
 
+// effectiveRateLimitPatterns returns the fingerprint/audit input for the
+// effective rate-limit match set.
+//
+// Operator-configured rate_limit_patterns (config global or per-LLM) is
+// used as-is — that list keeps the flat-substring behavior for lines. When
+// unset, the built-in per-backend table (rate_limit_lines.go) is flattened
+// including the backend family names it is keyed by, so any change to a
+// built-in entry — a phrase or the backend it belongs to — recomputes the
+// patterns_version digest.
 func (m *Manager) effectiveRateLimitPatterns() []string {
 	if len(m.detection.RateLimitPatterns) > 0 {
 		return m.detection.RateLimitPatterns
 	}
-	return rateLimitPatterns
+	return builtinRateLimitPatternsFlat()
 }
 
 func (m *Manager) effectiveCompletionPatterns() []string {
@@ -7616,28 +7594,34 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		m.onRawOutput(sess, rawTrimmed)
 	}
 
-	// Check for rate limit patterns. v5.27.6 (BL215) — operator hit
-	// a real rate-limit on 2026-04-30 that datawatch missed. The
-	// previous 200-char length gate was too tight: modern claude
-	// rate-limit dialogs are paragraph-length with context (e.g.
-	// "5-hour limit reached. Use the limit reset time to plan...
-	//  Resets at 2pm. To continue working, ..."). Whole message
-	// can be 400+ chars on a single line. Raised to 1024 to keep
-	// the false-positive guard but cover the realistic message size.
-	// DATAWATCH_RATE_LIMITED protocol pattern always matches regardless.
+	// Check for rate limit patterns. v5.27.6 — the detector must also fire
+	// when the notice arrives mid-turn, not only at the prompt; the
+	// 2048-char line gate keeps the false-positive guard for
+	// paragraph-length tool output while covering real dialog sizes.
+	//
+	// The shared protocol marker fires only when the line starts with it.
+	// Otherwise the line is matched against the per-backend anchored table
+	// for this session's BackendFamily (rate_limit_lines.go); an
+	// operator-configured rate_limit_patterns keeps its classic
+	// flat-substring behavior. A line that merely quotes a phrase
+	// mid-sentence is not a detection.
 	lineLower := strings.ToLower(line)
 	isRateLimit := false
-	if strings.Contains(line, "DATAWATCH_RATE_LIMITED:") {
+	if strings.HasPrefix(lineLower, builtinRateLimitMarkerLower) {
 		isRateLimit = true
 	} else if len(line) < 2048 {
-		for _, pat := range m.effectiveRateLimitPatterns() {
-			if pat == "DATAWATCH_RATE_LIMITED:" {
-				continue
-			} // already checked above
-			if strings.Contains(lineLower, strings.ToLower(pat)) {
-				isRateLimit = true
-				break
+		if pats := m.detection.RateLimitPatterns; len(pats) > 0 {
+			for _, pat := range pats {
+				if pat == builtinRateLimitMarker {
+					continue
+				} // already checked above
+				if strings.Contains(lineLower, strings.ToLower(pat)) {
+					isRateLimit = true
+					break
+				}
 			}
+		} else {
+			isRateLimit = matchesBuiltinRateLimitLines(sess.BackendFamily, lineLower)
 		}
 	}
 	if isRateLimit {

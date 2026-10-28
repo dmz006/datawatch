@@ -565,6 +565,12 @@ func TestGetOutputMode_ACPDefaultsToChat(t *testing.T) {
 
 // ── Detection config ──
 
+// TestDefaultDetection pins the built-in detection defaults. Note the
+// rate-limit contract: the built-in default no longer seeds a flat
+// rate_limit_patterns list — when unset, the session Manager falls back
+// to its per-backend anchored table (internal/session/rate_limit_lines.go).
+// An operator-configured rate_limit_patterns keeps the flat-substring
+// behavior (see TestGetDetection_RateLimitPatternsOperatorKept).
 func TestDefaultDetection(t *testing.T) {
 	d := DefaultDetection()
 	if len(d.PromptPatterns) == 0 {
@@ -573,8 +579,8 @@ func TestDefaultDetection(t *testing.T) {
 	if len(d.CompletionPatterns) == 0 {
 		t.Error("expected non-empty completion patterns")
 	}
-	if len(d.RateLimitPatterns) == 0 {
-		t.Error("expected non-empty rate limit patterns")
+	if len(d.RateLimitPatterns) != 0 {
+		t.Errorf("built-in default RateLimitPatterns should be unset (per-backend anchored table is the fallback), got %d entries: %v", len(d.RateLimitPatterns), d.RateLimitPatterns)
 	}
 }
 
@@ -602,6 +608,25 @@ func TestGetDetection_PerBackendOverride(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected ollama override pattern '>>> ' in merged detection")
+	}
+}
+
+func TestGetDetection_RateLimitPatternsOperatorKept(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Detection.RateLimitPatterns = []string{"DATAWATCH_RATE_LIMITED:", "my custom phrase"}
+	for _, backend := range []string{"claude-code", "pi-prompt", "ollama"} {
+		got := cfg.GetDetection(backend).RateLimitPatterns
+		if len(got) != 2 || got[0] != "DATAWATCH_RATE_LIMITED:" || got[1] != "my custom phrase" {
+			t.Errorf("backend %q: expected operator rate-limit list to pass through unchanged, got %v", backend, got)
+		}
+	}
+	// And with no operator list configured, GetDetection still leaves the
+	// field unset (the per-backend anchored table applies then).
+	cfg2 := DefaultConfig()
+	for _, backend := range []string{"claude-code", "pi-prompt", "ollama"} {
+		if got := cfg2.GetDetection(backend).RateLimitPatterns; len(got) != 0 {
+			t.Errorf("backend %q: expected unset rate-limit list with no operator config, got %v", backend, got)
+		}
 	}
 }
 

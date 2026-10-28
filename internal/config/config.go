@@ -690,6 +690,11 @@ type DetectionConfig struct {
 	// CompletionPatterns indicate the session has completed.
 	CompletionPatterns []string `yaml:"completion_patterns,omitempty"`
 	// RateLimitPatterns indicate a rate limit has been hit.
+	// The built-in default leaves this unset: when no operator list is
+	// configured, the session Manager matches pane lines against its
+	// per-backend anchored table (internal/session/rate_limit_lines.go)
+	// keyed by BackendFamily. Entries set here — globally or per-LLM —
+	// keep the classic flat-substring behavior.
 	RateLimitPatterns []string `yaml:"rate_limit_patterns,omitempty"`
 	// InputNeededPatterns are explicit "needs input" markers (e.g. DATAWATCH_NEEDS_INPUT:).
 	InputNeededPatterns []string `yaml:"input_needed_patterns,omitempty"`
@@ -4058,12 +4063,12 @@ func DefaultDetection() DetectionConfig {
 		CompletionPatterns: []string{
 			"DATAWATCH_COMPLETE:",
 		},
-		RateLimitPatterns: []string{
-			"DATAWATCH_RATE_LIMITED:",
-			"You've hit your limit",
-			"rate limit exceeded",
-			"quota exceeded",
-		},
+		// RateLimitPatterns is intentionally left unset by the built-in
+		// default. When no operator list is configured (here or per-LLM),
+		// the session Manager falls back to its per-backend anchored table
+		// (internal/session/rate_limit_lines.go), keyed by BackendFamily;
+		// an operator-configured rate_limit_patterns keeps the classic
+		// flat-substring behavior.
 		InputNeededPatterns: []string{
 			"DATAWATCH_NEEDS_INPUT:",
 		},
