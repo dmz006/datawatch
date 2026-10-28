@@ -77,6 +77,16 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.28.2 — Node placement is tested against the production configuration
+
+### Node placement is tested against the production configuration
+
+- **Production-shaped unit fixtures.** The placement and adoption tests now run against the shape of the live configuration (three single-node ollama entries plus the pi-prompt entry that lists both nodes), which is the shape the earlier tests did not cover and the reason a placement defect passed its tests.
+- **A live placement story (`TS-828`).** Two pi workers must hold different nodes and a third must wait; the story runs against a sandbox daemon with two stand-in model hosts and ends everything it starts.
+- **Release smoke section 84.** The capacity ledger section of the release smoke checks the node pools and the one-engine-per-node limit on a sandbox daemon.
+- **A post-deploy invariant check.** `scripts/check-waiter-nodes.sh` is wired into the post-deploy step and reports a node over its limit with its lease holders.
+- Docs: the testing tracker has a section for the new tests and the live check.
+
 ## v9.28.1 — Test and sandbox daemons end with their jobs on every exit path
 
 ### The daemon-cleanup marker is scoped, and a dead-at-start daemon no longer reads as started
