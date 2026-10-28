@@ -92,7 +92,6 @@ func dcWaitGone(t *testing.T, pid int, marker string, timeout time.Duration) {
 	}
 }
 
-// dcWaitAlive polls until the PID is up or the deadline passes.
 // dcRequireNotFlagged expresses the "check must pass" contract on a shared
 // host: the check may be red because an unrelated session started its own
 // test daemon between our snapshot and the check (the guard then rightly
@@ -118,6 +117,7 @@ func dcRequireNotFlagged(t *testing.T, out string, code int, markers ...string) 
 	t.Logf("check flags only unrelated host daemons; tolerating:\n%s", out)
 }
 
+// dcWaitAlive polls until the PID is up or the deadline passes.
 func dcWaitAlive(t *testing.T, pid int, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -232,7 +232,7 @@ echo "TWIN_PID=$TWIN"
 echo "READY"
 case "$MODE" in
   normal) exit 0 ;;
-  fail)   exit 7 ;;
+  fail)   exit 3 ;;
   wait)   wait "$DPID" ;;
 esac
 `
@@ -245,7 +245,7 @@ esac
 	}
 	cases := []modeCase{
 		{name: "NormalExit", mode: "normal", want: 0},
-		{name: "FailureExitKeepsStatus", mode: "fail", want: 7},
+		{name: "FailureExitKeepsStatus", mode: "fail", want: 3},
 		{name: "InterruptSigint", mode: "wait", signal: syscall.SIGINT, want: 130},
 		{name: "InterruptSigterm", mode: "wait", signal: syscall.SIGTERM, want: 143},
 		{name: "InterruptSighup", mode: "wait", signal: syscall.SIGHUP, want: 129},
@@ -369,9 +369,7 @@ esac
 				t.Fatalf("driver exit status: want %d, got %d (mode %s)", tc.want, code, tc.mode)
 			}
 
-			if daemonAlive := dcPIDAlive(daemonPid); daemonAlive && strings.Contains(dcCmdline(daemonPid), marker) {
-				dcWaitGone(t, daemonPid, marker, 10*time.Second)
-			}
+			dcWaitGone(t, daemonPid, marker, 10*time.Second)
 			if !dcPIDAlive(twinPid) {
 				t.Fatalf("unrecorded twin %d was ended too: cleanup must not end processes by name", twinPid)
 			}
