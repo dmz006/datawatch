@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.31.4 — The usage calculator prints the per-task cost as typed
+
+- **A cost of 0.05 points no longer prints 0.1.** The per-task cost in the remaining-work estimate line used to be rounded to one decimal everywhere; it now prints as typed — up to three decimals with trailing zeros dropped, so 0.05 stays 0.05 and 0.025 shows as 0.025. This holds in the text form, the comm-channel form, and the PWA card (including the burn-ledger queue line), and the PWA card and the text/CLI forms now agree on the exact number. All the other figures in the calculator keep their one-decimal styling.
+
 ## v9.31.3 — Session progress strip removed; progress route fixed for non-pi sessions
 
 ### Changed
