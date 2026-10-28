@@ -37035,14 +37035,13 @@ function _sessionFind(fullId) {
   return state.sessions.find(s => s.full_id === fullId || s.id === fullId);
 }
 
-// Detail view: label, chips and an edit button that opens the picker.
+// Detail view: read-only chips; the row is hidden when the session has none.
 function _renderSessionDetailTagRow(sess) {
   const el = document.getElementById('sessionDetailTagRow');
   if (!el || !sess) return;
-  const idJ = escHtml(JSON.stringify(sess.full_id || sess.id || ''));
   const chips = _sessionTagChipsHTML(sess);
-  const none = `<span style="font-size:11px;color:var(--text2);">${escHtml(_tagT('tag_session_none', 'No tags'))}</span>`;
-  el.innerHTML = `<span style="font-size:11px;color:var(--text2);">${escHtml(_tagT('tag_edit', 'Tags'))}</span>${chips || none}<button class="btn-secondary" style="font-size:10px;padding:1px 8px;" onclick="event.stopPropagation();openSessionTagsModal(${idJ})">${escHtml(_tagT('tag_session_edit', 'Edit tags'))}</button>`;
+  el.innerHTML = chips || '';
+  el.style.display = chips ? 'flex' : 'none';
 }
 
 window.openSessionTagsModal = function(fullId) {
