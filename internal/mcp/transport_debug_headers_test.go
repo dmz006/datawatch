@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,9 @@ import (
 const (
 	sseReflected = `<script>alert(1)</script>`
 	sseEscaped   = `&lt;script&gt;alert(1)&lt;/script&gt;`
+	// sseJSONEscaped is sseReflected inside a JSON string once < and > are
+	// written as \u escapes; it decodes back to sseReflected.
+	sseJSONEscaped = `\u003cscript\u003ealert(1)\u003c/script\u003e`
 )
 
 func serveObserved(t *testing.T, h http.HandlerFunc) *httptest.ResponseRecorder {
@@ -60,16 +64,67 @@ func assertSSEWireHeaders(t *testing.T, resp *http.Response) {
 }
 
 // A handler that declares text/event-stream is the normal case (mcp-go does):
-// the payload is JSON-RPC and must arrive byte for byte.
-func TestSSEObserver_DeclaredEventStreamIsUnchanged(t *testing.T) {
+// the payload is JSON-RPC, so the markup characters leave as JSON \u escapes
+// and the client decodes exactly the value the handler wrote.
+func TestSSEObserver_DeclaredEventStreamKeepsJSONMeaning(t *testing.T) {
 	resp, body := getOnTheWire(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, `data: {"q":"`+r.URL.Query().Get("q")+`"}`+"\n\n")
+		raw, _ := json.Marshal(map[string]string{"q": r.URL.Query().Get("q")})
+		_, _ = io.WriteString(w, "data: "+string(raw)+"\n\n")
 	})
 	assertSSEWireHeaders(t, resp)
-	if want := `data: {"q":"` + sseReflected + `"}` + "\n\n"; body != want {
-		t.Fatalf("body = %q, want %q", body, want)
+	if strings.Contains(body, "<script>") {
+		t.Fatalf("raw markup on the wire: %q", body)
+	}
+	data, ok := strings.CutPrefix(strings.TrimSpace(body), "data: ")
+	if !ok {
+		t.Fatalf("body = %q, want a data: line", body)
+	}
+	var got map[string]string
+	if err := json.Unmarshal([]byte(data), &got); err != nil {
+		t.Fatalf("data line is not JSON: %v (%q)", err, body)
+	}
+	if got["q"] != sseReflected {
+		t.Fatalf("decoded q = %q, want %q", got["q"], sseReflected)
+	}
+}
+
+// The request echoes <script>alert(1)</script> into the stream the way a
+// JSON-RPC result can echo a tool argument. Whatever the handler declared (or
+// forgot to), the client gets a non-HTML type, nosniff and no raw markup.
+func TestSSEObserver_EchoedScriptNeverReachesClientRaw(t *testing.T) {
+	cases := map[string]http.HandlerFunc{
+		"declared event-stream": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, `data: {"echo":"`+r.URL.Query().Get("q")+`"}`+"\n\n")
+		},
+		"no type, implicit 200": func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.WriteString(w, r.URL.Query().Get("q"))
+		},
+		"no type, explicit 200": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, r.URL.Query().Get("q"))
+		},
+		"html type": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = io.WriteString(w, r.URL.Query().Get("q"))
+		},
+	}
+	for name, h := range cases {
+		t.Run(name, func(t *testing.T) {
+			resp, body := getOnTheWire(t, h)
+			if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "html") {
+				t.Fatalf("Content-Type %q is HTML", resp.Header.Get("Content-Type"))
+			}
+			assertSSEWireHeaders(t, resp)
+			if strings.Contains(body, "<script>") || strings.Contains(body, "</script>") {
+				t.Fatalf("raw markup in body: %q", body)
+			}
+			if !strings.Contains(body, "alert(1)") {
+				t.Fatalf("echoed value lost from body: %q", body)
+			}
+		})
 	}
 }
 
@@ -116,7 +171,7 @@ func TestSSEObserver_HTMLTypeIsReplacedAndEscaped(t *testing.T) {
 }
 
 // Chunks after the first are escaped too, including one that splits the
-// markup, and a declared stream keeps every chunk as written.
+// markup, and a declared stream escapes every chunk as JSON.
 func TestSSEObserver_ChunkedWrites(t *testing.T) {
 	chunked := func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("q")
@@ -137,7 +192,7 @@ func TestSSEObserver_ChunkedWrites(t *testing.T) {
 			chunked(w, r)
 		})
 		assertSSEWireHeaders(t, resp)
-		if want := "data: " + sseReflected + "\n\ndata: second\n\n"; body != want {
+		if want := "data: " + sseJSONEscaped + "\n\ndata: second\n\n"; body != want {
 			t.Fatalf("body = %q, want %q", body, want)
 		}
 	})
@@ -204,5 +259,21 @@ func TestSSEObserver_InformationalStatusDoesNotSkipPinning(t *testing.T) {
 	}
 	if sw.body.String() != sseEscaped {
 		t.Fatalf("body = %q, want %q", sw.body.String(), sseEscaped)
+	}
+}
+
+// Only < and > leave a declared stream as \u escapes: quotes, ampersands and
+// literal entity text in JSON strings and in plain data lines (the endpoint
+// event) arrive as written, so the framing and the decoded values hold.
+func TestSSEObserver_DeclaredStreamKeepsNonMarkupBytes(t *testing.T) {
+	const payload = "event: endpoint\ndata: /message?a=1&b=2\n\n" +
+		`data: {"s":"say \"hi\" it's &lt; & &amp; done"}` + "\n\n"
+	resp, body := getOnTheWire(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, payload)
+	})
+	assertSSEWireHeaders(t, resp)
+	if body != payload {
+		t.Fatalf("body = %q, want %q", body, payload)
 	}
 }

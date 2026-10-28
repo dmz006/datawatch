@@ -103,10 +103,10 @@ func (o *sseCloseObserver) WriteHeader(statusCode int) {
 //
 // The event payloads carry JSON-RPC results that can echo request values
 // (tool names, arguments). mcp-go sets text/event-stream itself, and a
-// stream that does is passed through byte for byte. When the handler set no
-// type or an HTML one, the type is replaced and the payload is also
-// HTML-escaped in Write, so the stream cannot be read as a document even by
-// a consumer that ignores the type.
+// stream that does keeps its JSON meaning: Write only rewrites < and > as JSON
+// \u escapes. When the handler set no type or an HTML one, the type is
+// replaced and the payload is HTML-escaped in Write, so the stream cannot be
+// read as a document even by a consumer that ignores the type.
 func (o *sseCloseObserver) hardenHeaders() {
 	if o.hardened.Swap(true) {
 		return
@@ -120,21 +120,43 @@ func (o *sseCloseObserver) hardenHeaders() {
 }
 
 // Write pins the headers before the first write (an implicit 200 never
-// calls WriteHeader) and, when the handler's type had to be overridden,
-// sends the payload HTML-escaped.
+// calls WriteHeader) and sends every payload through escapePayload, so no
+// byte reaches the client unescaped whatever type the handler declared.
 func (o *sseCloseObserver) Write(p []byte) (int, error) {
 	o.hardenHeaders()
-	if !o.escape.Load() {
-		n, err := o.w.Write(p)
-		o.observe(n, err)
-		return n, err
-	}
-	n, err := o.w.Write([]byte(html.EscapeString(string(p))))
+	n, err := o.w.Write(o.escapePayload(p))
 	o.observe(n, err)
 	if err != nil {
-		return 0, err
+		return min(n, len(p)), err
 	}
+	// The escaped form can be longer than p; report the caller's length.
 	return len(p), nil
+}
+
+// sseMarkupOnly turns the entities html.EscapeString produced back into the
+// plain characters, except for < and >, which become JSON \u escapes. & and
+// the quotes are not markup in a text/event-stream body, and putting them back
+// keeps JSON structure and URL data lines intact. The output has no < or >.
+var sseMarkupOnly = strings.NewReplacer(
+	"&lt;", `\u003c`,
+	"&gt;", `\u003e`,
+	"&amp;", "&",
+	"&#34;", `"`,
+	"&#39;", "'",
+)
+
+// escapePayload returns the form of p that is written to the client; every
+// byte goes through html.EscapeString first. When the handler's type had to be
+// overridden the bytes are not a known format and the escaped form is sent as
+// is. When the handler declared text/event-stream the bytes are JSON-RPC and
+// the escaped form is relaxed by sseMarkupOnly: the same string once the JSON
+// is decoded, with no markup character on the wire.
+func (o *sseCloseObserver) escapePayload(p []byte) []byte {
+	escaped := html.EscapeString(string(p))
+	if o.escape.Load() {
+		return []byte(escaped)
+	}
+	return []byte(sseMarkupOnly.Replace(escaped))
 }
 
 type sseFlusher interface{ Flush() }
