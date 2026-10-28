@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.31.3 — Session progress strip removed; progress route fixed for non-pi sessions
+
+### Changed
+- The live pi progress strip is no longer shown on the session detail page
+ . It had been added in v9.30.0 without discussion, takes a lot of
+  room, and on a claude-code session it was showing stale data from an
+  unrelated old pi log. The progress snapshot stays as task data on the
+  Automaton: the task card in the Status tab (automata.task_progress) keeps
+  showing it, and the REST, MCP and CLI surfaces are unchanged.
+- `GET /api/sessions/{id}/progress` now answers 404 (plain text `no session
+  log available`) for a session that is not a pi session or whose pi log
+  cannot be located, instead of `200` with a snapshot parsed from an
+  unrelated old log.
+  Log locating prefers an exact match on the session id in the log file name
+  before falling back to newest-modified, so a stale leftover log from an
+  unrelated pi session can no longer be read for another session.
+
 ## v9.31.2 — Terminal search and copy buttons removed
 
 - **The terminal search and copy buttons are gone from the PWA session toolbar.** They were never requested and had no server API behind them — they only ever worked inside the browser, so nothing on the server side changes. The font menu, the scroll-mode toggle, and the fit-to-width buttons are unchanged.
