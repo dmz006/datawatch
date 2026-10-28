@@ -1801,6 +1801,7 @@
   "settings_session_idle_timeout": "Sitzungs-Idle-Timeout (Sek., 0=15min)",
   "settings_pi_thinking_level": "Pi thinking level (empty = pi model default; off|minimal|low|medium|high)",
   "settings_loop_detect_turns": "Worker loop detection window (turns, 0=off, default 3)",
+  "settings_descendant_stall_seconds": "Descendant stall timeout (sec, 0=45min)",
   "settings_verifier_infra_escalation_threshold": "Schwelle für Verifier-Infra-Eskalation (0=2)",
   "settings_fallback_verification_backend": "Fallback-Verifikations-Backend (leer=claude-code)",
   "settings_verifier_no_progress_timeout": "Verifier-Timeout ohne Fortschritt (Sek., 0=10min)",

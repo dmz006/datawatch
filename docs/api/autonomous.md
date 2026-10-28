@@ -1555,6 +1555,7 @@ autonomous:
   verification_effort:    "normal"    # per-task/story/Automaton overrides (set_*_verification_llm) take precedence
   stale_task_seconds:     900         # activity-based stall window: no output, child process, backend activity, or file change for this long = stalled; 0 = inherit session.stale_timeout_seconds
   stuck_running_seconds:  900         # stuck-running watchdog: an Automaton running with every task finished, no live session and no live executor for this long gets its completion roll-up re-fired once, then is blocked after a second full bound; 0 = 900
+  descendant_stall_seconds: 2700      # pi-prompt only: bound on a stalled worker whose only liveness is a live working descendant process; exceeded => infrastructure failure, descendants are cleaned up, task is retried via the auto_fix_retries budget; 0 or below => use the default 2700
   preserve_attempt_work:  true        # save a killed attempt's uncommitted work to refs/datawatch/attempts/; restored on the next attempt unless clean_restart
   auto_fix_retries:       1           # re-prompt count on verifier failure
   security_scan:          true        # nightwire-port .py scanner before commit

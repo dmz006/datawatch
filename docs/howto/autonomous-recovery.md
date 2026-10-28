@@ -543,6 +543,21 @@ such start failures the task stays failed.
   `datawatch config set autonomous.session_start_confirm_seconds 300`. A value
   of `0` means "use the default".
 
+## Task failed with `descendant-only stall`
+
+A worker using a one-shot `pi` backend ended its own run, but has a still-running child process (build, test, long-running command), and for longer than `autonomous.descendant_stall_seconds` (default 2700 = 45 minutes) is not showing any other sign of life. The daemon terminates the attempt as an infrastructure failure and retries the task through the existing `auto_fix_retries` budget; as soon as that budget is exhausted, the task remains failed.
+
+Symptom: the task is reported as `failed` (or is silently retrying), its
+detail shows an error terminating with “worker was in descendant-only
+silence for …”, and the worktree may still contain the working child
+processes that attempt had been waiting for.
+
+- **Why this exists:** a `pi` run writes nothing to the log until it finishes, so the usual log-based stall check does not reach it. Without the descendant-only check, an attempt with a running work child and no other output would wait forever with no safety net.
+- **What counts as output:** a live working descendant process, a session log that is up to date, and files written to the working directory. If there is newer evidence, the clock resets.
+- **What you see:** a `Task worker descendant-only stall` alert; the task's error ends with “worker was in descendant-only silence for …”; the session's termination reason reads `descendant-only stall detector: …`; and the pane tail and the surviving descendant process are recorded on the attempt.
+- **Leftover process cleanup:** the surviving work child processes are signalled with real kernel signals, with a short grace period in between, only while they remain the recorded ones — recycled process IDs are never touched. Which ended, and which survived, are recorded.
+- **If you want a different value:** `datawatch config set autonomous.descendant_stall_seconds 5400`. A value of `0` means “use the default 2700” — this setting can not be accidentally disabled.
+
 ## Common pitfalls
 
 - **Cancelling a story mid-run and not restarting it.** The rest of the

@@ -6157,6 +6157,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// Effective value (nil -> default 3, so the key is never absent from
 			// the read surface); 0 renders as 0 = loop detection off.
 			"loop_detect_turns":                    config.LoopDetectTurnsEffective(s.cfg.Autonomous.LoopDetectTurns),
+			"descendant_stall_seconds":             s.cfg.Autonomous.DescendantStallSeconds,
 			"session_start_confirm_seconds":        s.cfg.Autonomous.SessionStartConfirmSeconds,
 			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
 			"stuck_running_seconds":                s.cfg.Autonomous.StuckRunningSeconds,
@@ -8138,6 +8139,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// config.NormalizeSessionIdleTimeoutSeconds at read time.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.SessionIdleTimeoutSeconds = n
+			}
+		case "autonomous.descendant_stall_seconds":
+			// Stored as-is; zero falls back to the default via
+			// config.NormalizeDescendantStallSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.DescendantStallSeconds = n
 			}
 		case "autonomous.verifier_infra_escalation_threshold":
 			// Zero falls back to the default via

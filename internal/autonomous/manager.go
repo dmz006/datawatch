@@ -174,6 +174,14 @@ type Config struct {
 	// exists so the handleAutonomousConfig live round-trip
 	// (internal/server/autonomous.go) does not drop the key.
 	SessionIdleTimeoutSeconds int `json:"session_idle_timeout_seconds,omitempty"`
+	// DescendantStallSeconds mirrors autonomous.descendant_stall_seconds in
+	// config. The Manager does not consume it: the daemon's pi-prompt worker
+	// wait loop reads it through the live config.Config (main.go, next to the
+	// idleTimeout / staleThreshold reads). The field exists so the
+	// handleAutonomousConfig live round-trip (internal/server/autonomous.go)
+	// carries the key instead of dropping it, like every mirrored field in
+	// this struct, and runtime changes to it apply without a daemon restart.
+	DescendantStallSeconds int `json:"descendant_stall_seconds,omitempty"`
 	// VerifierInfraEscalationThreshold and FallbackVerificationBackend mirror
 	// the autonomous.* keys of the same names in config; the daemon reads them
 	// from config.Config. They exist so the live config round-trip keeps them.

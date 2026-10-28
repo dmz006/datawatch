@@ -4292,6 +4292,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			JudgeTimeoutSeconds:              config.NormalizeJudgeTimeoutSeconds(acfgIn.JudgeTimeoutSeconds),
 			JudgeSizeThresholdLines:          acfgIn.JudgeSizeThresholdLines,
 			SessionIdleTimeoutSeconds:        acfgIn.SessionIdleTimeoutSeconds,
+			DescendantStallSeconds:           acfgIn.DescendantStallSeconds,
 			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
 			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
 			FallbackVerificationBackend:      acfgIn.FallbackVerificationBackend,
@@ -4911,6 +4912,33 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if family == "pi-prompt" {
 					exitSilenceTracker = autonomouspkg.NewExitSilenceTracker(time.Now(), idleLimit)
 				}
+				// pi-prompt descendant-only stall detector (autonomous.descendant_stall_seconds).
+				// The log-mtime check below is disabled for this family (see
+				// staleWorkerAppliesTo), leaving one hole the exit-silence detector above
+				// also leaves open: a pi run whose runner has exited but whose work
+				// descendant — a build, a test, a long command — is still alive with no
+				// other sign of life. The tracker measures silence from now, against the
+				// descendant_stall_seconds budget read from the same live config the wait
+				// loop already reads StaleTaskSeconds from (idleLimit / staleThreshold), so
+				// a runtime config change applies without a daemon restart. It fires only
+				// once the silence exceeds the limit and a live work descendant is the
+				// sole sign of life; nil for other families so descendantStallTick is a
+				// no-op for them.
+				descendantStallLimit := time.Duration(config.NormalizeDescendantStallSeconds(liveCfg.DescendantStallSeconds)) * time.Second
+				var descendantStallTracker *autonomouspkg.DescendantStallTracker
+				if family == "pi-prompt" {
+					descendantStallTracker = autonomouspkg.NewDescendantStallTracker(time.Now(), descendantStallLimit)
+				}
+				// The descendants this attempt was accounting for while awaiting results
+				// (union across observations); at stall time they are the identity that the
+				// evidence carries and the only set that the kill path signals.
+				var recordedDescendants map[int]descendantProcess
+				// Per-attempt "output is fresh" observation that feeds the
+				// descendant stall tracker (see descendantOutputObservation): a pane
+				// or the channel moving since the last look resets the silence clock
+				// before the observation. internal/autonomous cannot see the pane or
+				// the channel, so the wait loop supplies the signal here.
+				var descendantOutputObs descendantOutputObservation
 			waitLoop:
 				for {
 					select {
@@ -4961,6 +4989,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									idleSince = time.Time{}
 									if exitSilenceTracker != nil {
 										exitSilenceTracker.Reset(time.Now())
+									}
+									if descendantStallTracker != nil {
+										descendantStallTracker.Reset(time.Now())
+										descendantOutputObs.reset()
 									}
 									continue
 								}
@@ -5194,6 +5226,58 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										session.EndReason{Caller: endCallerSSEStall, Reason: sseStallEndReason(m)})
 									stallErr = fmt.Errorf("opencode SSE stall detected (line %q): %w", m.Line, autonomouspkg.ErrWorkerStalled)
 									break waitLoop
+								}
+							}
+							if descendantStallTracker != nil {
+								// Observe on this ~30s cadence. A readable work-descendant
+								// tree is a precondition: nil means the tree could not be read,
+								// no observation is made and the stall clock must not move. A
+								// fresh log write, a fresh workdir file, or fresh output —
+								// pane growth or a newer channel event — resets the silence;
+								// the detector fires once the silence exceeds the limit with
+								// a live work descendant as the sole sign of life.
+								if ds := workDescendantPIDs(s.TmuxSession, s.ProjectDir); ds != nil {
+									recordedDescendants = recordDescendants(ds, recordedDescendants)
+									var logModTime time.Time
+									if fst, serr := os.Stat(staleLogPath); serr == nil {
+										logModTime = fst.ModTime()
+									}
+									// Output is the "output resets the silence clock" liveness
+									// signal: pane (worker stdout) growth since the last look, or
+									// a channel event newer than the last look, moves the clock
+									// before the observation. A failed pane capture counts as
+									// not-fresh, never as a reset.
+									now := time.Now()
+									sb, serr := mgr.CapturePaneScrollback(s.FullID, 500)
+									if stalled, reason := descendantWaitStep(descendantStallTracker, &descendantOutputObs, family, now, len(ds),
+										logModTime, newestWorkDirMtime(taskDir), sb, serr == nil, s.LastChannelEventAt); stalled {
+										log.Printf("[autonomous] descendant-stall detector fired for session %s task %s/%s: %s; killing for retry",
+											task.SessionID, task.PRDID, task.ID, reason)
+										pane, paneErr := mgr.CapturePaneScrollback(s.FullID, 300)
+										if paneErr != nil {
+											pane = ""
+										}
+										task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession)
+										appendDescendantEvidence(task.RunnerEvidence, recordedDescendants)
+										killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID,
+											session.EndReason{Caller: endCallerDescendantStall, Reason: descendantStallEndReason(reason)})
+										// Kill ends the session, not the process tree: signal the
+										// descendants we accounted for — 5s grace, a real kernel
+										// signal, and only where the pid still carries the
+										// recorded start time. Never a name pattern.
+										ended, survivors := endRecordedDescendants(recordedDescendants, 5*time.Second,
+											func(pid int, sig syscall.Signal) error { return syscall.Kill(pid, sig) },
+											func(rec descendantProcess) bool {
+												st, ok := readProcessStartTime(rec.PID)
+												return ok && st == rec.StartTime
+											})
+										appendDescendantEvidence(task.RunnerEvidence, descendantEvidenceLines(ended))
+										appendDescendantEvidence(task.RunnerEvidence, descendantEvidenceLines(survivors))
+										alertspkg.EmitSystem(alertspkg.LevelError, "Task worker descendant-only stall",
+											fmt.Sprintf("prd=%s task=%s: %s", prd.ID, task.Title, reason))
+										stallErr = withRunnerExitStatus(autonomouspkg.DescendantStallError(reason), task.RunnerEvidence)
+										break waitLoop
+									}
 								}
 							}
 							if staleWorkerAppliesTo(family) {

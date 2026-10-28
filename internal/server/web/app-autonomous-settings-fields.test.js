@@ -440,7 +440,7 @@ test('all five label keys are non-empty strings in all five locale bundles', () 
   }
 });
 
-test('autonomous settings expose session_start_confirm_seconds right after session_idle_timeout_seconds, as a number with the label key', () => {
+test('autonomous settings expose descendant_stall_seconds right after session_idle_timeout_seconds, as a number with the label key', () => {
   const sandbox = buildSandbox();
   vm.createContext(sandbox);
   loadScript(path.join(__dirname, 'app.js'), sandbox);
@@ -451,10 +451,39 @@ test('autonomous settings expose session_start_confirm_seconds right after sessi
   assert.ok(idx >= 0, 'autonomous.session_idle_timeout_seconds missing from autonomous card fields');
   const field = fields[idx + 1];
   assert.ok(field, 'field directly after session_idle_timeout_seconds missing');
+  assert.equal(field.key, 'autonomous.descendant_stall_seconds',
+    'descendant_stall_seconds must sit directly after session_idle_timeout_seconds');
+  assert.equal(field.type, 'number');
+  assert.equal(field.labelKey, 'settings_descendant_stall_seconds');
+  const en = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', 'en.json'), 'utf8'));
+  assert.ok(typeof en.settings_descendant_stall_seconds === 'string' && en.settings_descendant_stall_seconds.length > 0,
+    'settings_descendant_stall_seconds missing from en locale');
+});
+
+test('autonomous settings expose session_start_confirm_seconds right after descendant_stall_seconds, as a number with the label key', () => {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  const fields = JSON.parse(vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields)",
+    sandbox));
+  const idx = fields.findIndex(f => f.key === 'autonomous.descendant_stall_seconds');
+  assert.ok(idx >= 0, 'autonomous.descendant_stall_seconds missing from autonomous card fields');
+  const field = fields[idx + 1];
+  assert.ok(field, 'field directly after descendant_stall_seconds missing');
   assert.equal(field.key, 'autonomous.session_start_confirm_seconds',
-    'session_start_confirm_seconds must sit directly after session_idle_timeout_seconds');
+    'session_start_confirm_seconds must sit directly after descendant_stall_seconds');
   assert.equal(field.type, 'number');
   assert.equal(field.labelKey, 'settings_session_start_confirm');
+});
+
+test('settings_descendant_stall_seconds label key is a non-empty English string in all five locale bundles', () => {
+  for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    const v = bundle.settings_descendant_stall_seconds;
+    assert.ok(typeof v === 'string' && v.length > 0,
+      'settings_descendant_stall_seconds missing or empty in ' + locale + ' locale');
+  }
 });
 
 test('settings_session_start_confirm label + help keys are non-empty strings in all five locale bundles', () => {
