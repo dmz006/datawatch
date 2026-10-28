@@ -236,6 +236,7 @@ dwp_write_config() {
     -e "s|data_dir: /data|data_dir: $DWP_DATA|g" \
     -e "s|default_project_dir: /data/projects|default_project_dir: $DWP_DATA/projects|g" \
     -e "s|port: 8080|port: $DWP_HTTP|g" \
+    -e "s|tls_enabled: true|tls_enabled: true\n  allowed_project_roots:\n    - $DWP_TMP|" \
     -e "s|tls_port: 8443|tls_port: $DWP_TLS|g" \
     -e "s|sse_port: 9090|sse_port: $DWP_MCP|g" \
     -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
@@ -434,11 +435,17 @@ dwp_run() {
   dwp_req POST /api/llms "{\"name\":\"$DWP_LLM_PROMPT\",\"kind\":\"pi-prompt\",\"max_inflight\":3,\"compute_nodes\":[\"$DWP_NODE_A\",\"$DWP_NODE_B\"]}"
   [[ "$DWP_CODE" == 2* ]] || { dwp_fail "entry $DWP_LLM_PROMPT not registered (HTTP $DWP_CODE): $DWP_BODY"; return 0; }
   # The pi and opencode entries complete the production shape; neither claims
-  # a compute node, so they take no slot in the ledger.
+  # a compute node, so they take no slot in the ledger. The daemon may already
+  # host them, migrated from the test config's legacy blocks: a conflict
+  # then means the shape is already complete, so accept it.
   dwp_req POST /api/llms "{\"name\":\"$DWP_LLM_PI\",\"kind\":\"pi\"}"
-  [[ "$DWP_CODE" == 2* ]] || { dwp_fail "entry $DWP_LLM_PI not registered (HTTP $DWP_CODE): $DWP_BODY"; return 0; }
+  if [[ "$DWP_CODE" != 2* && "$DWP_CODE" != 409 ]]; then
+    dwp_fail "entry $DWP_LLM_PI not registered (HTTP $DWP_CODE): $DWP_BODY"; return 0
+  fi
   dwp_req POST /api/llms "{\"name\":\"$DWP_LLM_OPENCODE\",\"kind\":\"opencode\"}"
-  [[ "$DWP_CODE" == 2* ]] || { dwp_fail "entry $DWP_LLM_OPENCODE not registered (HTTP $DWP_CODE): $DWP_BODY"; return 0; }
+  if [[ "$DWP_CODE" != 2* && "$DWP_CODE" != 409 ]]; then
+    dwp_fail "entry $DWP_LLM_OPENCODE not registered (HTTP $DWP_CODE): $DWP_BODY"; return 0
+  fi
 
   if ! dwp_wait_until 60 dwp_pools_ready; then
     dwp_fail "node slot limits of 1 never reached the capacity ledger"
@@ -556,13 +563,18 @@ dwp_cleanup() {
     dwp_req DELETE "/api/llms/$DWP_LLM_BRAVO"
     dwp_req DELETE "/api/llms/$DWP_LLM_DELTA"
     dwp_req DELETE "/api/llms/$DWP_LLM_PROMPT"
+    # pi and opencode may have been the daemon's own migrated entries (409 at
+    # registration); delete what the story owns either way — the daemon goes
+    # down with the story, so they are not re-checked in the listing below.
     dwp_req DELETE "/api/llms/$DWP_LLM_PI"
     dwp_req DELETE "/api/llms/$DWP_LLM_OPENCODE"
     dwp_req DELETE "/api/compute/nodes/$DWP_NODE_A"
     dwp_req DELETE "/api/compute/nodes/$DWP_NODE_B"
     dwp_req GET /api/llms
+    # pi and opencode are exempt: they may be the daemon's own migrated entries
+    # (409 at registration), not story-created ones.
     case "$DWP_BODY" in
-      *'"name":"ollama-alpha"'*|      *'"name":"ollama-bravo"'*|      *'"name":"ollama-delta"'*|      *'"name":"pi-prompt"'*|      *'"name":"pi"'*|      *'"name":"opencode"'*)
+      *'"name":"ollama-alpha"'*|      *'"name":"ollama-bravo"'*|      *'"name":"ollama-delta"'*|      *'"name":"pi-prompt"'*)
         dwp_fail "story LLM entries still listed after cleanup" ;;
     esac
     dwp_req GET /api/compute/nodes

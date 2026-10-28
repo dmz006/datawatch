@@ -486,7 +486,10 @@ budget estimate. Deliberately held PRDs are listed in `IGNORE` in the script wit
    patch for a fix or refactor; `/tmp/sv/finish-merge.sh` (lint plus full `go test` with `env -u TMUX -u TMUX_TMPDIR`);
    ship only on go exit 0 and only with a clean main checkout; `/tmp/sv/ship-merge.sh`; cancel the PRD record only
    after the ship succeeded; update the registry row; redeploy when a release or setting needs it and no worker is
-   on a final task (record in-flight sessions; resume PRDs the restart parked).
+   on a final task (record in-flight sessions; resume PRDs the restart parked). After each redeploy run
+   `scripts/check-waiter-nodes.sh` with the daemon address and token (`DATAWATCH_URL`, `DATAWATCH_TOKEN`): exit
+   status 2, or any over-limit node it reports, is a defect to triage before the next tick — the pool may briefly
+   read over limit at boot while resumed workers drain, so re-run after a minute before filing.
 7. Registry audit (`docs/plans/README.md` against reality; `scripts/branch-audit.py`; a pending branch is merged
    or recorded as dropped; every defect has a row and a draft PRD) and CI for all workflows on main and the latest
    tags (`gh run list`; read failures; security patches are consumed as soon as available, an unfixed CVE stays
