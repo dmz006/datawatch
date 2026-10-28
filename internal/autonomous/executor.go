@@ -40,6 +40,11 @@ type SpawnRequest struct {
 	Backend    string
 	Effort     Effort
 	Model      string
+	// ThinkingLevel — pi --thinking level (off|minimal|low|medium|high),
+	// resolved per-task → per-story → per-PRD by the executor. Empty =
+	// no override; the session manager then applies its configured
+	// pi.thinking_level (lowest precedence in the chain).
+	ThinkingLevel string
 	// PermissionMode (v5.27.5) — claude-code --permission-mode forwarded
 	// to the worker session. Resolved per-task → per-PRD → empty (use
 	// global cfg.Session.permission_mode default) by the executor before
@@ -1379,6 +1384,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if permMode == "" {
 				permMode = prd.PermissionMode
 			}
+			// Most-specific pi --thinking override wins: per-task →
+			// per-story → per-PRD → the session manager's configured
+			// pi.thinking_level (applied when the resolved value is empty).
+			thinkingLevel := resolveThinkingLevel(t, story, prd, "")
 			lspLang := t.LSPLanguage
 			if lspLang == "" {
 				lspLang = prd.LSPLanguage
@@ -1463,6 +1472,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				Effort:           effort,
 				Model:            model,
 				PermissionMode:   permMode,
+				ThinkingLevel:    thinkingLevel,
 				RetryHint:        m.escalationRetryHint(prd, t, hint),
 				ProjectProfile:   prd.ProjectProfile,  // v5.26.19
 				ClusterProfile:   prd.ClusterProfile,  // v5.26.19

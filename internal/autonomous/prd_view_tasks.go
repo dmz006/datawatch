@@ -12,6 +12,11 @@ type TasksView struct {
 // TaskEntry is one task's row in a TasksView. Error, Verification,
 // FailureCategory, SessionID and the failure escalation fields are omitted when
 // empty. ReviewSummary is the plain-text report of a task held for review.
+// Progress and
+// LoopingWarning are omitted when unset — i.e. for every task that is not
+// actively in progress (the store clears them at persist time), so their
+// presence is itself the signal that the task's worker is running right
+// now.
 type TaskEntry struct {
 	ID              string            `json:"id"`
 	Title           string            `json:"title"`
@@ -23,8 +28,10 @@ type TaskEntry struct {
 	// EscalationFailures counts failed attempts since the last operator action.
 	EscalationFailures int `json:"escalation_failures,omitempty"`
 	// AttemptCount is the number of recorded attempts of the task.
-	AttemptCount  int    `json:"attempt_count,omitempty"`
-	ReviewSummary string `json:"review_summary,omitempty"`
+	AttemptCount   int           `json:"attempt_count,omitempty"`
+	ReviewSummary  string        `json:"review_summary,omitempty"`
+	Progress       *TaskProgress `json:"progress,omitempty"`
+	LoopingWarning string        `json:"looping_warning,omitempty"`
 }
 
 // TaskVerification is the outcome of a task's verification. It deliberately
@@ -55,11 +62,13 @@ func BuildTasksView(prd *PRD) TasksView {
 // buildTaskEntry copies the listing fields of one task into a TaskEntry.
 func buildTaskEntry(task *Task) TaskEntry {
 	entry := TaskEntry{
-		ID:        task.ID,
-		Title:     task.Title,
-		Status:    task.Status,
-		Error:     task.Error,
-		SessionID: task.SessionID,
+		ID:             task.ID,
+		Title:          task.Title,
+		Status:         task.Status,
+		Error:          task.Error,
+		SessionID:      task.SessionID,
+		Progress:       task.Progress,
+		LoopingWarning: task.LoopingWarning,
 	}
 	if v := task.Verification; v != nil {
 		entry.Verification = &TaskVerification{

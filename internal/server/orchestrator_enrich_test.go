@@ -242,6 +242,15 @@ func (f *fakeOrchAutonomous) SetMemoryHarvest(string, bool, string, []string, in
 func (f *fakeOrchAutonomous) SetPermissionMode(string, string, string) (any, error) {
 	return nil, nil
 }
+func (f *fakeOrchAutonomous) SetPRDThinkingLevel(string, string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) SetStoryThinkingLevel(string, string, string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) SetTaskThinkingLevel(string, string, string, string) (any, error) {
+	return nil, nil
+}
 
 // GH#172 D52 — pause/resume stubs.
 func (f *fakeOrchAutonomous) Pause(string, string) (any, error)  { return nil, nil }

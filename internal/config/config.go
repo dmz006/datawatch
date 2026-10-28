@@ -752,13 +752,17 @@ type AiderConfig struct {
 // completion-detection bug class found live in opencode-acp the same night.
 // See docs/plans/2026-10-16-pi-opencode-evaluation.md (BL466).
 type PiConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	Binary      string `yaml:"binary"`
-	Model       string `yaml:"model,omitempty"` // e.g. "ollama/qwen3.8:27b"; empty uses pi's own default
-	ConsoleCols int    `yaml:"console_cols,omitempty"`
-	ConsoleRows int    `yaml:"console_rows,omitempty"`
-	OutputMode  string `yaml:"output_mode,omitempty"`
-	InputMode   string `yaml:"input_mode,omitempty"`
+	Enabled bool   `yaml:"enabled"`
+	Binary  string `yaml:"binary"`
+	Model   string `yaml:"model,omitempty"` // e.g. "ollama/qwen3.8:27b"; empty uses pi's own default
+	// ThinkingLevel is the level passed to pi's own --thinking flag on
+	// pi-prompt launches. "" = don't pass the flag (pi's model default).
+	// Allowed: off, minimal, low, medium, high — see pi_thinking_level.go.
+	ThinkingLevel string `yaml:"thinking_level,omitempty"`
+	ConsoleCols   int    `yaml:"console_cols,omitempty"`
+	ConsoleRows   int    `yaml:"console_rows,omitempty"`
+	OutputMode    string `yaml:"output_mode,omitempty"`
+	InputMode     string `yaml:"input_mode,omitempty"`
 }
 
 // PiPromptConfig holds pi-prompt (one-shot `pi --print`) LLM backend
@@ -2339,6 +2343,11 @@ type AutonomousConfig struct {
 	// unbound to any non-terminal task before the orphan sweep ends it. 0 or
 	// unset => 300 (see NormalizeOrphanGraceSeconds).
 	OrphanGraceSeconds int `yaml:"orphan_grace_seconds,omitempty" json:"orphan_grace_seconds,omitempty"`
+	// LoopDetectTurns is the worker loop-detection window (how many
+	// recent turns autonomous.DetectLoop compares). *int: nil = unset →
+	// default 3; 0 = detector OFF; n>0 = window size. Negative values are
+	// rejected — see loop_detect_turns.go.
+	LoopDetectTurns *int `yaml:"loop_detect_turns,omitempty" json:"loop_detect_turns,omitempty"`
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`
@@ -3716,6 +3725,11 @@ func (c ResultsConfig) EffectiveScheduleHistoryLimit() int {
 func DefaultConfig() *Config {
 	hostname, _ := os.Hostname()
 	home, _ := os.UserHomeDir()
+	// DefaultLoopDetectTurns is stored explicitly (not left nil) so new
+	// config files written by this binary pin the loop-detection window; a
+	// missing key in an existing file still resolves to the same default
+	// via LoopDetectTurnsEffective.
+	loopDetectTurnsDefault := DefaultLoopDetectTurns
 	return &Config{
 		Hostname:        hostname,
 		DataDir:         filepath.Join(home, ".datawatch"),
@@ -3812,6 +3826,7 @@ func DefaultConfig() *Config {
 			},
 			// Nothing declared until the operator sets a notional figure.
 			PlanTierAllocationUSD: map[string]float64{},
+			LoopDetectTurns:       &loopDetectTurnsDefault,
 			StaleTaskSeconds:      900,
 			StuckRunningSeconds:   StuckRunningDefaultSeconds,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc

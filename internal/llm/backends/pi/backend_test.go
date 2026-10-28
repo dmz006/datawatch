@@ -293,6 +293,45 @@ func TestBuildInteractiveCmd_EmptyTaskOmitsArg(t *testing.T) {
 	}
 }
 
+// TestBuildInteractiveCmd_ThinkingLevelInCmd — same guarantee in
+// interactive mode: the flag appears exactly once when set, and is absent
+// when empty.
+func TestBuildInteractiveCmd_ThinkingLevelInCmd(t *testing.T) {
+	cmd, err := buildInteractiveCmdWithAgentDir("pi", "prov/model-a", "minimal", "", "task", "/proj", "cs-abc", "")
+	if err != nil {
+		t.Fatalf("buildInteractiveCmdWithAgentDir: %v", err)
+	}
+	if !strings.Contains(cmd, "--thinking minimal ") {
+		t.Errorf("expected --thinking minimal in interactive command, got: %s", cmd)
+	}
+	if n := strings.Count(cmd, "--thinking"); n != 1 {
+		t.Errorf("expected exactly one --thinking flag, got %d in: %s", n, cmd)
+	}
+	cmd, err = buildInteractiveCmdWithAgentDir("pi", "prov/model-a", "", "", "task", "/proj", "cs-abc", "")
+	if err != nil {
+		t.Fatalf("buildInteractiveCmdWithAgentDir: %v", err)
+	}
+	if strings.Contains(cmd, "--thinking") {
+		t.Errorf("empty thinking level must add no --thinking flag, got: %s", cmd)
+	}
+}
+
+func TestBackend_SetThinkingLevelSatisfiesSessionManagerDuckType(t *testing.T) {
+	var b llm.Backend = New("")
+	if _, ok := b.(interface{ SetThinkingLevel(string) }); !ok {
+		t.Error("Backend must satisfy interface{ SetThinkingLevel(string) } for the session manager's thinking-level path")
+	}
+	bb := New("").(*Backend)
+	bb.SetThinkingLevel("low")
+	if bb.thinkingLevel != "low" {
+		t.Errorf("thinkingLevel after SetThinkingLevel = %q, want low", bb.thinkingLevel)
+	}
+	bb.SetThinkingLevel("")
+	if bb.thinkingLevel != "" {
+		t.Errorf("thinkingLevel after SetThinkingLevel(\"\") = %q, want empty", bb.thinkingLevel)
+	}
+}
+
 func TestBackend_Contract(t *testing.T) {
 	b := New("")
 	if b.Name() != "pi" {
@@ -599,3 +638,25 @@ func TestPiLoudFailureFailureLineNamesModel(t *testing.T) {
 
 // Compile-time contract check: pi.Backend must satisfy llm.Backend.
 var _ llm.Backend = New("")
+
+// TestBuildLaunchCmd_ThinkingLevelInCmd: the one-shot command carries pi's
+// --thinking flag exactly once when a level is set and none when it is empty.
+func TestBuildLaunchCmd_ThinkingLevelInCmd(t *testing.T) {
+	cmd, err := buildLaunchCmdWithAgentDir("pi", "prov/model-a", "high", "task", "/proj", "cs-abc", "")
+	if err != nil {
+		t.Fatalf("buildLaunchCmdWithAgentDir: %v", err)
+	}
+	if !strings.Contains(cmd, "--thinking high ") {
+		t.Errorf("expected --thinking high in one-shot command, got: %s", cmd)
+	}
+	if n := strings.Count(cmd, "--thinking"); n != 1 {
+		t.Errorf("expected exactly one --thinking flag, got %d in: %s", n, cmd)
+	}
+	cmd, err = buildLaunchCmd("pi", "prov/model-a", "task", "/proj", "cs-abc")
+	if err != nil {
+		t.Fatalf("buildLaunchCmd: %v", err)
+	}
+	if strings.Contains(cmd, "--thinking") {
+		t.Errorf("empty thinking level must add no --thinking flag, got: %s", cmd)
+	}
+}

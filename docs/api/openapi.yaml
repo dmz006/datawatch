@@ -723,6 +723,39 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "503":
           description: Schedule result store not available
+  /api/sessions/{id}/progress:
+    get:
+      summary: Live progress snapshot for one session
+      description: |
+        Parses the session's own pi JSONL log and returns how far it has
+        gotten: assistant turns, per-tool call counts, the most recent action
+        (tool name, arguments, and the agent's last-stated intent), and
+        cumulative tokens. Same `progress` shape the autonomous prd-get
+        returns per running task.
+      operationId: getSessionProgress
+      tags: [Sessions]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}, description: "Session ID (short or full)"}
+      responses:
+        "200":
+          description: Progress snapshot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      session_id: {type: string}
+                      full_id: {type: string}
+                      state: {type: string, description: "Session state: running, completed, failed, killed"}
+                      log_path: {type: string, description: "The JSONL log the snapshot was parsed from"}
+                  - $ref: "#/components/schemas/TaskProgress"
+        "404":
+          description: "Session not found, or the session has no log to read (non-pi backend, or log not yet flushed)"
+        "405":
+          description: Method not allowed (GET only)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /api/config:
     get:
@@ -2296,9 +2329,21 @@ paths:
         committed that are in neither the task's planned nor generated files
         (lines summed across retries). Absent when there are none. Enforcement
         is `autonomous.undeclared_edit_mode` (off|warn|block, default warn).
+        `detail` picks the response level: `full` (default) is the whole PRD;
+        `tasks` is per-task rows (id, title, status, error, verification,
+        session id) without specs or story text; `summary` is ids, titles,
+        statuses and counts.
+        Tasks that are actively running (status in_progress or verifying)
+        additionally carry `progress` — the live snapshot shown in
+        TaskProgress — and `looping_warning`, set when the worker appears to
+        re-issue the same tool call on consecutive polls. `progress` is
+        stripped the instant a task leaves the active statuses, so its
+        absence means the task's worker is not running right now.
       operationId: autonomousPRDGet
       tags: [Autonomous]
-      responses: {"200": {description: OK}, "404": {description: Not found}}
+      parameters:
+        - {name: detail, in: query, required: false, schema: {type: string, enum: [full, tasks, summary], default: full}}
+      responses: {"200": {description: OK}, "404": {description: Not found}, "400": {description: "Bad detail value (expected full, tasks or summary)"}}
     delete:
       summary: Cancel + archive a PRD
       description: |
@@ -5906,6 +5951,27 @@ components:
         status: {type: string}
         compute_node: {type: string, description: "Compute node the task's worker was started on; a daemon restart adopts the surviving worker onto it. Absent for a hosted backend or before the worker starts"}
         executor_source: {type: string, description: "task | story | prd | automation | global"}
+    TaskProgress:
+      type: object
+      description: |
+        Live progress snapshot parsed from a pi session's own JSONL log —
+        carried by autonomous tasks while they are in progress (status
+        in_progress or verifying) and returned by GET /api/sessions/{id}/progress.
+        The autonomous store forces these fields off the moment a task leaves
+        the active statuses, so their presence is the signal that the worker
+        is running right now; they are omitted from JSON otherwise.
+      required: [last_event_at, assistant_turns]
+      properties:
+        last_event_at: {type: string, format: date-time, description: "Timestamp of the newest event in the log (RFC3339)"}
+        assistant_turns: {type: integer, description: "Assistant-role messages so far (one per LLM reply, tool-calling ones included)"}
+        tool_calls:
+          type: object
+          description: Per-tool-name call counts across the log so far
+          additionalProperties: {type: integer}
+        last_tool_name: {type: string, description: "Name of the most recent tool call (omitted when none yet)"}
+        last_tool_args: {type: string, description: "Arguments of the most recent tool call as compact JSON, truncated to 500 characters"}
+        last_summary: {type: string, description: "First 200 characters of the most recent thinking or text block — the agent's own last-stated intent"}
+        tokens: {type: integer, description: "Cumulative tokens reported by the log's assistant messages"}
     SessionAutomatonDetail:
       type: object
       description: |

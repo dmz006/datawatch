@@ -564,6 +564,7 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 						State:               s.State,
 						IdleFor:             idleFor,
 						OutputAge:           outputAge,
+						LogLastEventAge:     piLogLastEventAge(backend, piSessionsRoot(), projectDir, spawnedAt, time.Now()),
 						HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession, s.ProjectDir),
 						Limit:               idleLimit,
 					}

@@ -121,6 +121,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("worker_idle_nudge_stall_seconds", mcpsdk.Description("How long, in seconds counted from the nudge, a nudged worker may stay silent before it is stopped and retried (default 600; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("session_start_confirm_seconds", mcpsdk.Description("Bound in seconds for a claude-code autonomous session to produce its first assistant output after start — a session still in waiting_input with no assistant output longer than this is a 'session never started' failure (default 120 = 2m; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("stuck_running_seconds", mcpsdk.Description("How long, in seconds, an Automaton may stay running with every task finished, no live worker session and no live executor before the stuck-running watchdog re-fires its completion roll-up once, and then blocks it after a second full bound (default 900 = 15m; 0 or negative means use the default)")),
+		mcpsdk.WithNumber("loop_detect_turns", mcpsdk.Description("Turn window the live loop detector looks over when watching a worker session (default 3; 0 turns loop detection off entirely; negative values are rejected)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
 		mcpsdk.WithNumber("capacity_rate_requests", mcpsdk.Description("Rate ceiling on each LLM: most task/verifier starts it may take per rolling window; 0 = no requests ceiling (default); negative values are rejected")),
@@ -370,6 +371,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if v := req.GetFloat("stuck_running_seconds", -1); v >= 0 {
 		body["stuck_running_seconds"] = int(v)
 	}
+	if v := req.GetFloat("loop_detect_turns", -1); v >= 0 {
+		body["loop_detect_turns"] = int(v)
+	}
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["capacity_enabled"]; ok {
 			body["capacity_enabled"] = req.GetBool("capacity_enabled", true)
@@ -523,7 +527,9 @@ func (s *Server) toolAutonomousPRDGet() mcpsdk.Tool {
 			"ci-watch then watches the new commit's CI. If you finished the work by hand, leave it blocked as the record or autonomous_prd_cancel it. "+
 			"Each task may carry foreign_file_drift (full detail only; summary and tasks omit it): a list of files the task's own commit swept in that were already uncommitted before the task started and were not in its planned files. "+
 			"This is warn-only (the task still completes) unless block_on_file_drift is on for the automaton, its guardrail profile, or the daemon, in which case the task is blocked; worktree-mode automata are never checked. "+
-			"Each finding is also recorded in the decision log with kind file_drift_detected."),
+			"Each finding is also recorded in the decision log with kind file_drift_detected. "+
+			"Tasks that are actively running (status in_progress or verifying) additionally carry progress {last_event_at, assistant_turns, tool_calls, last_tool_name, last_tool_args, last_summary, tokens} — what the worker has been doing, parsed from its own session log — and, when the worker appears to re-issue the same tool call on consecutive polls, a looping_warning string. "+
+			"The absence of the progress key means the task's worker is not currently running (it is stripped the moment a task leaves the active statuses)."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("detail", mcpsdk.Enum("summary", "tasks", "full"),
 			mcpsdk.Description("Response level: summary (default), tasks, or full. See the tool description for what each level returns.")),
@@ -1092,6 +1098,66 @@ func (s *Server) handleAutonomousPRDSetTaskLLM(_ context.Context, req mcpsdk.Cal
 		body = gb
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_task_llm", body)
+	return llmSetterResult(out, err)
+}
+
+// ----- thinking-level overrides (per-task → per-story → per-PRD → pi.thinking_level) -----
+
+func (s *Server) toolAutonomousPRDSetThinkingLevel() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_thinking_level",
+		mcpsdk.WithDescription("Set the PRD-level pi --thinking level override (off|minimal|low|medium|high). Empty string clears it (falls back to the global pi.thinking_level config). Tasks inherit unless overridden."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("thinking_level", mcpsdk.Description("thinking level: off|minimal|low|medium|high; empty clears to the global config")),
+		mcpsdk.WithString("actor", mcpsdk.Description("actor for the audit log (default operator)")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetThinkingLevel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"thinking_level": req.GetString("thinking_level", ""),
+		"actor":          req.GetString("actor", "operator"),
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_thinking_level", body)
+	return llmSetterResult(out, err)
+}
+
+func (s *Server) toolAutonomousPRDSetStoryThinkingLevel() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_story_thinking_level",
+		mcpsdk.WithDescription("Override the pi --thinking level for all tasks in one story (off|minimal|low|medium|high). Empty string clears (falls back to PRD then global)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID")),
+		mcpsdk.WithString("thinking_level", mcpsdk.Description("thinking level; empty = inherit PRD then global")),
+		mcpsdk.WithString("actor", mcpsdk.Description("actor for the audit log (default operator)")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetStoryThinkingLevel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"story_id":       req.GetString("story_id", ""),
+		"thinking_level": req.GetString("thinking_level", ""),
+		"actor":          req.GetString("actor", "operator"),
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_story_thinking_level", body)
+	return llmSetterResult(out, err)
+}
+
+func (s *Server) toolAutonomousPRDSetTaskThinkingLevel() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_task_thinking_level",
+		mcpsdk.WithDescription("Override the pi --thinking level for a single task (most specific in the chain). Empty string clears (falls back to story, PRD, then global config)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID")),
+		mcpsdk.WithString("thinking_level", mcpsdk.Description("thinking level; empty = inherit story, PRD then global")),
+		mcpsdk.WithString("actor", mcpsdk.Description("actor for the audit log (default operator)")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetTaskThinkingLevel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"task_id":        req.GetString("task_id", ""),
+		"thinking_level": req.GetString("thinking_level", ""),
+		"actor":          req.GetString("actor", "operator"),
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_task_thinking_level", body)
 	return llmSetterResult(out, err)
 }
 

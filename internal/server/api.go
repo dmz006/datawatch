@@ -815,6 +815,10 @@ type AutonomousAPI interface {
 	// GH#172 D75 — per-PRD permission_mode, inherited by tasks spawned
 	// under it as their claude-code --permission-mode default.
 	SetPermissionMode(prdID, mode, actor string) (any, error)
+	// pi --thinking level overrides (task > story > PRD > pi.thinking_level).
+	SetPRDThinkingLevel(prdID, level, actor string) (any, error)
+	SetStoryThinkingLevel(prdID, storyID, level, actor string) (any, error)
+	SetTaskThinkingLevel(prdID, taskID, level, actor string) (any, error)
 
 	// GH#172 D52 — pause/resume a running PRD without treating it as
 	// blocked or failed.
@@ -4007,6 +4011,13 @@ func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 		s.handleSessionCurrentStatus(w, r)
 		return
 	}
+	// GET /api/sessions/{id}/progress — live progress snapshot from the
+	// session's own log (turn count, tool-call breakdown, most recent
+	// action, tokens). See session_progress.go.
+	if strings.HasSuffix(path, "/progress") {
+		s.handleSessionProgress(w, r)
+		return
+	}
 	if strings.HasSuffix(path, "/children") {
 		s.handleSessionChildren(w, r)
 		return
@@ -4699,6 +4710,11 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PermissionMode string `json:"permission_mode,omitempty"`
 		Model          string `json:"model,omitempty"`
 		ClaudeEffort   string `json:"claude_effort,omitempty"`
+		// ThinkingLevel — pi --thinking level override (off|minimal|low|
+		// medium|high); the autonomous executor populates it from the
+		// resolved per-task → per-story → per-PRD chain. Empty = the
+		// session manager's own pi.thinking_level config applies.
+		ThinkingLevel string `json:"thinking_level,omitempty"`
 		// v5.26.21 — autonomous PRDs with project_profile but no
 		// cluster_profile fall through here. Resolve the profile to a
 		// git URL + branch, clone into a per-session workspace, and
@@ -5112,6 +5128,14 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid effort: must be one of quick, normal, thorough", http.StatusBadRequest)
 		return
 	}
+	// thinking_level (pi --thinking) — reject invalid values outright at the
+	// write edge instead of storing a value that trips pi later.
+	if req.ThinkingLevel != "" {
+		if err := config.ValidatePiThinkingLevel(req.ThinkingLevel); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 
 	gitFlag := false
 	if req.Git != nil {
@@ -5130,6 +5154,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PermissionMode:        req.PermissionMode,
 		Model:                 req.Model,
 		ClaudeEffort:          req.ClaudeEffort,
+		ThinkingLevel:         req.ThinkingLevel,
 		EphemeralWorkspace:    ephemeralWorkspace,
 		Skills:                profileSkills,
 		LLMRef:                resolvedLLMRef,
@@ -5992,13 +6017,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"input_mode":   s.cfg.Aider.InputMode,
 		},
 		"pi": map[string]interface{}{
-			"enabled":      s.cfg.Pi.Enabled,
-			"binary":       s.cfg.Pi.Binary,
-			"model":        s.cfg.Pi.Model,
-			"console_cols": s.cfg.Pi.ConsoleCols,
-			"console_rows": s.cfg.Pi.ConsoleRows,
-			"output_mode":  s.cfg.Pi.OutputMode,
-			"input_mode":   s.cfg.Pi.InputMode,
+			"enabled":        s.cfg.Pi.Enabled,
+			"binary":         s.cfg.Pi.Binary,
+			"model":          s.cfg.Pi.Model,
+			"thinking_level": s.cfg.Pi.ThinkingLevel,
+			"console_cols":   s.cfg.Pi.ConsoleCols,
+			"console_rows":   s.cfg.Pi.ConsoleRows,
+			"output_mode":    s.cfg.Pi.OutputMode,
+			"input_mode":     s.cfg.Pi.InputMode,
 		},
 		"pi_prompt": map[string]interface{}{
 			"enabled":      s.cfg.PiPrompt.Enabled,
@@ -6124,10 +6150,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verification_timeout_seconds": s.cfg.Autonomous.VerificationTimeoutSeconds,
 			// Judge routing: an empty judge_policy means the judges follow the verifier routing policy;
 			// the time limit shows its 30-minute default; the size threshold is the stored value (0 = off).
-			"judge_policy":                         judgePolicyForDisplay(s.cfg.Autonomous.JudgePolicy),
-			"judge_timeout_seconds":                config.NormalizeJudgeTimeoutSeconds(s.cfg.Autonomous.JudgeTimeoutSeconds),
-			"judge_size_threshold_lines":           s.cfg.Autonomous.JudgeSizeThresholdLines,
-			"session_idle_timeout_seconds":         s.cfg.Autonomous.SessionIdleTimeoutSeconds,
+			"judge_policy":                 judgePolicyForDisplay(s.cfg.Autonomous.JudgePolicy),
+			"judge_timeout_seconds":        config.NormalizeJudgeTimeoutSeconds(s.cfg.Autonomous.JudgeTimeoutSeconds),
+			"judge_size_threshold_lines":   s.cfg.Autonomous.JudgeSizeThresholdLines,
+			"session_idle_timeout_seconds": s.cfg.Autonomous.SessionIdleTimeoutSeconds,
+			// Effective value (nil -> default 3, so the key is never absent from
+			// the read surface); 0 renders as 0 = loop detection off.
+			"loop_detect_turns":                    config.LoopDetectTurnsEffective(s.cfg.Autonomous.LoopDetectTurns),
 			"session_start_confirm_seconds":        s.cfg.Autonomous.SessionStartConfirmSeconds,
 			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
 			"stuck_running_seconds":                s.cfg.Autonomous.StuckRunningSeconds,
@@ -6621,6 +6650,23 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["autonomous.questions.enabled"]; ok {
 		if _, isBool := v.(bool); !isBool {
 			http.Error(w, "autonomous.questions.enabled: must be a boolean (true or false)", http.StatusBadRequest)
+			return
+		}
+	}
+	// pi.thinking_level — pre-validate like task_override_statuses above so an
+	// unknown level rejects the whole PUT instead of silently no-op'ing in
+	// applyConfigPatch. Empty string is valid (clears the flag).
+	if raw, ok := patch["pi.thinking_level"]; ok {
+		if ls, isStr := raw.(string); !isStr || !config.IsPiThinkingLevel(ls) {
+			http.Error(w, "pi.thinking_level: use one of "+strings.Join(config.PiThinkingLevels, ", ")+" (empty clears it)", http.StatusBadRequest)
+			return
+		}
+	}
+	// autonomous.loop_detect_turns — only the integer form is accepted; 0
+	// (loop detection off) is valid.
+	if raw, ok := patch["autonomous.loop_detect_turns"]; ok {
+		if n, okInt := toInt(raw); !okInt || n < 0 {
+			http.Error(w, "autonomous.loop_detect_turns: must be a non-negative integer (0 turns loop detection off; default 3)", http.StatusBadRequest)
 			return
 		}
 	}
@@ -7528,6 +7574,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "pi.model":
 			cfg.Pi.Model = toString(v)
+		// pi.thinking_level — an empty string is a VALID value (clears the
+		// flag → pi uses its own model default). Unknown levels are rejected
+		// by handlePutConfig's pre-validation above (400), so if we get here
+		// the string is either "" or one of config.PiThinkingLevels.
+		case "pi.thinking_level":
+			if s, ok := v.(string); ok && config.IsPiThinkingLevel(s) {
+				cfg.Pi.ThinkingLevel = s
+			}
 		case "pi_prompt.enabled":
 			cfg.PiPrompt.Enabled = toBool(v)
 		case "pi_prompt.binary":
@@ -8128,6 +8182,17 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// config.NormalizeStuckRunningSeconds at read time.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.StuckRunningSeconds = n
+			}
+		// autonomous.loop_detect_turns — 0 is meaningful (loop detection
+		// OFF) and must survive the no-omitempty round-trip as 0, not be
+		// confused with "unset". A bare int would let 0 mean BOTH off and
+		// unset, hence the *int (nil = unset → default 3 via
+		// config.LoopDetectTurnsEffective). Negative values are rejected by
+		// handlePutConfig's pre-validation above (400).
+		case "autonomous.loop_detect_turns":
+			if n, ok := toInt(v); ok && n >= 0 {
+				nv := n
+				cfg.Autonomous.LoopDetectTurns = &nv
 			}
 		case "autonomous.capacity_enabled":
 			if b, ok := v.(bool); ok {

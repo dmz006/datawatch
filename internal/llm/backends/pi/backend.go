@@ -311,10 +311,15 @@ func versionOf(binary string) string {
 // sent as pi's first turn and the session stays open afterward for
 // follow-up input, same shape as claude-code/goose interactive sessions.
 type Backend struct {
-	binary      string
-	model       string // e.g. "ollama/qwen3.8:27b"; empty uses pi's own default
-	sessionName string
-	nodeHost    string // compute node address; empty uses pi's own provider table
+	binary string
+	model  string // e.g. "ollama/qwen3.8:27b"; empty uses pi's own default
+	// thinkingLevel is the value for pi's own --thinking flag
+	// ("" = don't pass the flag, pi picks its model default). Allowed:
+	// off, minimal, low, medium, high — validated by
+	// config.ValidatePiThinkingLevel at the REST/MCP/CLI write edges.
+	thinkingLevel string
+	sessionName   string
+	nodeHost      string // compute node address; empty uses pi's own provider table
 }
 
 // New creates an interactive pi backend. binary defaults to "pi".
@@ -342,6 +347,11 @@ func (b *Backend) SetModel(model string) { b.model = model }
 // sessions, so the manager sets this on every launch.
 func (b *Backend) SetNodeHost(nodeAddr string) { b.nodeHost = nodeAddr }
 
+// SetThinkingLevel implements the daemon's duck-typed `interface{
+// SetThinkingLevel(string) }` optional interface (see the pi-prompt
+// registration in cmd/datawatch/main.go). "" = unset (pi's default).
+func (b *Backend) SetThinkingLevel(level string) { b.thinkingLevel = level }
+
 // SetSessionName implements llm.Nameable. Stored verbatim and passed to pi
 // as --session-id, which both creates and resumes a session by an
 // arbitrary caller-supplied ID — unlike opencode's own "ses_"-prefixed
@@ -367,25 +377,31 @@ func (b *Backend) Version() string { return versionOf(b.binary) }
 // literal so "$pi_status" keeps real double quotes verbatim (the
 // acceptance gate matches it as a fixed string).
 func buildInteractiveCmd(binary, model, sessionID, task, projectDir, tmuxSession string) (string, error) {
-	return buildInteractiveCmdWithAgentDir(binary, model, sessionID, task, projectDir, tmuxSession, "")
+	return buildInteractiveCmdWithAgentDir(binary, model, "", sessionID, task, projectDir, tmuxSession, "")
 }
 
 // buildInteractiveCmdWithAgentDir is buildInteractiveCmd for a launch that may
 // run pi on a per-session config directory (see nodeAgentDir). An empty
 // agentDir gives exactly the command buildInteractiveCmd has always built.
-func buildInteractiveCmdWithAgentDir(binary, model, sessionID, task, projectDir, tmuxSession, agentDir string) (string, error) {
+func buildInteractiveCmdWithAgentDir(binary, model, thinkingLevel, sessionID, task, projectDir, tmuxSession, agentDir string) (string, error) {
 	if strings.TrimSpace(model) == "" {
 		return "", ErrNoModel
 	}
 	escapedDir := shellEscape(projectDir)
 	modelFlag := fmt.Sprintf("--model '%s' ", shellEscape(model))
+	thinkingFlag := ""
+	if thinkingLevel != "" {
+		// thinkingLevel is one of off|minimal|low|medium|high (validated at
+		// the config write edges), safe to interpolate.
+		thinkingFlag = fmt.Sprintf("--thinking %s ", thinkingLevel)
+	}
 	sessionFlag := ""
 	if sessionID != "" {
 		sessionFlag = fmt.Sprintf("--session-id '%s' ", shellEscape(sessionID))
 	}
 	argExpr, cleanup := taskArgExpr(tmuxSession, task)
-	return fmt.Sprintf(`cd '%s' && %s --approve %s%s%s; %spi_status=$?; %secho; if [ "$pi_status" -eq 0 ]; then echo 'DATAWATCH_COMPLETE: pi session ended'; else echo "DATAWATCH_PI_FAILED: pi exited with status $pi_status"; fi; exit "$pi_status"`,
-		escapedDir, piInvocation(binary, agentDir), modelFlag, sessionFlag, argExpr, cleanup, agentDirCleanup(agentDir)), nil
+	return fmt.Sprintf(`cd '%s' && %s --approve %s%s%s%s; %spi_status=$?; %secho; if [ "$pi_status" -eq 0 ]; then echo 'DATAWATCH_COMPLETE: pi session ended'; else echo "DATAWATCH_PI_FAILED: pi exited with status $pi_status"; fi; exit "$pi_status"`,
+		escapedDir, piInvocation(binary, agentDir), modelFlag, thinkingFlag, sessionFlag, argExpr, cleanup, agentDirCleanup(agentDir)), nil
 }
 
 // Launch starts a fresh interactive pi session. If SetSessionName was
@@ -396,7 +412,7 @@ func buildInteractiveCmdWithAgentDir(binary, model, sessionID, task, projectDir,
 // its stderr text in the returned error.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	return sendLaunch(ctx, "pi interactive launch", tmuxSession, b.nodeHost, b.model, func(agentDir string) (string, error) {
-		return buildInteractiveCmdWithAgentDir(b.binary, b.model, b.sessionName, task, projectDir, tmuxSession, agentDir)
+		return buildInteractiveCmdWithAgentDir(b.binary, b.model, b.thinkingLevel, b.sessionName, task, projectDir, tmuxSession, agentDir)
 	})
 }
 
@@ -408,16 +424,18 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 		id = b.sessionName
 	}
 	return sendLaunch(ctx, "pi interactive resume", tmuxSession, b.nodeHost, b.model, func(agentDir string) (string, error) {
-		return buildInteractiveCmdWithAgentDir(b.binary, b.model, id, task, projectDir, tmuxSession, agentDir)
+		return buildInteractiveCmdWithAgentDir(b.binary, b.model, b.thinkingLevel, id, task, projectDir, tmuxSession, agentDir)
 	})
 }
 
 // PromptBackend runs pi in --print (non-interactive, run-to-completion)
 // mode. Always requires a task.
 type PromptBackend struct {
-	binary   string
-	model    string
-	nodeHost string // compute node address; empty uses pi's own provider table
+	binary string
+	model  string
+	// thinkingLevel — see Backend.thinkingLevel's doc comment.
+	thinkingLevel string
+	nodeHost      string // compute node address; empty uses pi's own provider table
 }
 
 // NewPrompt creates a pi-prompt backend for one-shot task execution.
@@ -443,6 +461,12 @@ func (b *PromptBackend) SetModel(model string) { b.model = model }
 // SetNodeHost(string) }` optional interface, as Backend.SetNodeHost does.
 func (b *PromptBackend) SetNodeHost(nodeAddr string) { b.nodeHost = nodeAddr }
 
+// SetThinkingLevel implements the daemon's duck-typed `interface{
+// SetThinkingLevel(string) }` optional interface: one-shot pi-prompt
+// launches receive pi's own --thinking flag with this level.
+// "" = unset (pi's default).
+func (b *PromptBackend) SetThinkingLevel(level string) { b.thinkingLevel = level }
+
 func (b *PromptBackend) Version() string { return versionOf(b.binary) }
 
 // Launch runs `pi --print ... '<task>'` as a single blocking command inside
@@ -455,7 +479,7 @@ func (b *PromptBackend) Version() string { return versionOf(b.binary) }
 // one-shot task).
 func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	return sendLaunch(ctx, "pi-prompt launch", tmuxSession, b.nodeHost, b.model, func(agentDir string) (string, error) {
-		return buildLaunchCmdWithAgentDir(b.binary, b.model, task, projectDir, tmuxSession, agentDir)
+		return buildLaunchCmdWithAgentDir(b.binary, b.model, b.thinkingLevel, task, projectDir, tmuxSession, agentDir)
 	})
 }
 
@@ -482,14 +506,14 @@ func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDi
 // fallback every launch path must not take (ErrNoModel). The
 // DATAWATCH_PI_FAILED wording for other failures is unchanged.
 func buildLaunchCmd(binary, model, task, projectDir, tmuxSession string) (string, error) {
-	return buildLaunchCmdWithAgentDir(binary, model, task, projectDir, tmuxSession, "")
+	return buildLaunchCmdWithAgentDir(binary, model, "", task, projectDir, tmuxSession, "")
 }
 
 // buildLaunchCmdWithAgentDir is buildLaunchCmd for a launch that may run pi on
 // a per-session config directory (see nodeAgentDir). The directory is removed
 // right after pi's scratch files, before the outcome checks, which exit. An
 // empty agentDir gives exactly the command buildLaunchCmd has always built.
-func buildLaunchCmdWithAgentDir(binary, model, task, projectDir, tmuxSession, agentDir string) (string, error) {
+func buildLaunchCmdWithAgentDir(binary, model, thinkingLevel, task, projectDir, tmuxSession, agentDir string) (string, error) {
 	if strings.TrimSpace(model) == "" {
 		return "", ErrNoModel
 	}
@@ -500,14 +524,20 @@ func buildLaunchCmdWithAgentDir(binary, model, task, projectDir, tmuxSession, ag
 	if errOut != nil || errStatus != nil {
 		return agentDirCleanup(agentDir) + "echo 'DATAWATCH_PI_FAILED: could not create scratch file for pi output capture'; exit 1", nil
 	}
+	thinkingFlag := ""
+	if thinkingLevel != "" {
+		// thinkingLevel is one of off|minimal|low|medium|high (validated at
+		// the config write edges), safe to interpolate.
+		thinkingFlag = fmt.Sprintf("--thinking %s ", thinkingLevel)
+	}
 	argExpr, cleanup := taskArgExpr(tmuxSession, task)
 	escapedOut := shellEscape(outPath)
 	escapedStatus := shellEscape(statusPath)
-	return fmt.Sprintf("cd '%s' && { %s --print --mode text --approve %s%s; echo $? > '%s'; } | tee '%s'; "+
+	return fmt.Sprintf("cd '%s' && { %s --print --mode text --approve %s%s%s; echo $? > '%s'; } | tee '%s'; "+
 		"read dw_status < '%s'; [ -s '%s' ]; dw_has_output=$?; %srm -f '%s' '%s'; %s"+
 		"if [ \"${dw_status:-1}\" -ne 0 ]; then printf 'DATAWATCH_PI_FAILED: pi exited with status %%s (model %%s)\\n' \"${dw_status:-1}\" '%s'; exit \"${dw_status:-1}\"; fi; "+
 		"if [ \"$dw_has_output\" -ne 0 ]; then echo 'DATAWATCH_PI_FAILED: pi produced no output'; exit 1; fi; "+
 		"echo 'DATAWATCH_COMPLETE: pi done'",
-		escapedDir, piInvocation(binary, agentDir), modelFlag, argExpr, escapedStatus, escapedOut,
+		escapedDir, piInvocation(binary, agentDir), modelFlag, thinkingFlag, argExpr, escapedStatus, escapedOut,
 		escapedStatus, escapedOut, cleanup, escapedOut, escapedStatus, agentDirCleanup(agentDir), shellEscape(model)), nil
 }

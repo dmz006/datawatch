@@ -435,6 +435,18 @@ func (a *API) SetConfig(v any) error {
 			return verr
 		}
 	}
+	// loop_detect_turns — reject negatives before any merge (same probe
+	// pattern as task_override_statuses above). 0 (detector off) is valid.
+	// Inlined rather than calling config.ValidateLoopDetectTurns to keep
+	// this package's import graph free of internal/config.
+	var loopProbe struct {
+		LoopDetectTurns *int `json:"loop_detect_turns"`
+	}
+	if err := json.Unmarshal(raw, &loopProbe); err == nil {
+		if loopProbe.LoopDetectTurns != nil && *loopProbe.LoopDetectTurns < 0 {
+			return fmt.Errorf("autonomous.loop_detect_turns must be >= 0 (0 turns loop detection off; default is 3)")
+		}
+	}
 	cfg := a.M.Config()
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("config: %w", err)
@@ -1183,6 +1195,33 @@ func (a *API) SetMemoryHarvest(prdID string, enabled bool, promoteTo string, rol
 // SetPermissionMode (GH#172 D75).
 func (a *API) SetPermissionMode(prdID, mode, actor string) (any, error) {
 	out, err := a.M.SetPermissionMode(prdID, mode, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
+// SetPRDThinkingLevel — PRD-level pi --thinking override.
+func (a *API) SetPRDThinkingLevel(prdID, level, actor string) (any, error) {
+	out, err := a.M.SetPRDThinkingLevel(prdID, level, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
+// SetStoryThinkingLevel — story-level pi --thinking override.
+func (a *API) SetStoryThinkingLevel(prdID, storyID, level, actor string) (any, error) {
+	out, err := a.M.SetStoryThinkingLevel(prdID, storyID, level, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
+// SetTaskThinkingLevel — task-level pi --thinking override.
+func (a *API) SetTaskThinkingLevel(prdID, taskID, level, actor string) (any, error) {
+	out, err := a.M.SetTaskThinkingLevel(prdID, taskID, level, actor)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
 	}

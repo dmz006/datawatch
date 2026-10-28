@@ -2687,6 +2687,8 @@ function navigate(view, sessionId, fromPopstate) {
     destroyXterm(); // clean up terminal when leaving session detail
     // Clean up stats polling interval
     if (window._sessionStatsInterval) { clearInterval(window._sessionStatsInterval); window._sessionStatsInterval = null; }
+    // Clean up pi progress polling interval (PWA poll-stacking rule)
+    if (window._piProgressInterval) { clearInterval(window._piProgressInterval); window._piProgressInterval = null; }
     const statsPanel = document.getElementById('statsPanel');
     if (statsPanel && statsPanel._statsInterval) {
       clearInterval(statsPanel._statsInterval);
@@ -4224,6 +4226,12 @@ function renderSessionDetail(sessionId) {
       <!-- v5.28.5 (datawatch#34) — per-session process stats panel -->
       <div id="statsPanel" class="session-stats-panel" style="display:none;"></div>
       <div id="sessionPluginWidgets" class="session-plugin-widgets" style="display:none;"></div>
+      <!-- pi live progress (BL: autonomous progress block) — below stats and the
+           plugin widgets; polls /api/sessions/{id}/progress via the shared 5s
+           interval (window._piProgressInterval), hidden until first success.
+           Kept after sessionPluginWidgets so the existing source-order tests
+           (app-session-plugin-widgets) and widget CSS anchoring stay intact. -->
+      <div id="piProgressPanel" class="session-pi-progress pi-progress-live" data-pi-progress-sid="${escHtml(sessionId)}" style="display:none;"></div>
       ${connBanner}
       ${rateLimitBanner}
       ${outputAreaHtml}
@@ -4400,6 +4408,7 @@ function renderSessionDetail(sessionId) {
   }
   loadSessionSchedules(sessionId);
   loadSessionStats(sessionId);
+  startPiProgressPolling(); // idempotent — reuses window._piProgressInterval
   refreshSessionPluginWidgets();
   // GATE alpha.36 (operator 2026-05-10): eager-fetch the status board on
   // mount so the Status tab badge dot reflects state immediately —
@@ -13979,6 +13988,104 @@ function _renderFilesGeneratedRow(files, verificationScript, projDir, rowClass, 
        </div>`;
 }
 
+// ── pi live progress (task card + session detail) ────────────────────
+// Compact progress surface for running autonomous tasks and the session
+// detail view: relative age of the last log event, assistant turns, tool
+// call counts by name, the last tool, the agent's 200-char last-stated
+// intent (last_summary) and cumulative tokens. Data shape is
+// autonomous.TaskProgress — either the per-task `progress` field from the
+// PRD payload or GET /api/sessions/{id}/progress. A looping_warning
+// string (task-level, from the PRD payload) renders as a visible badge.
+//
+// Polling follows the PWA poll-stacking rule (BL v8.33.5, same fix as
+// window._webSearchStatsInterval): exactly one shared interval handle on
+// window._piProgressInterval is reused across repeated renders — never
+// stacked — and the tick self-stops when no progress block is mounted,
+// so navigating away leaves no idle timer behind.
+
+function renderPiProgressBlock(progress, warning) {
+  const p = (progress && typeof progress === 'object') ? progress : {};
+  const hasData = !!(p.last_event_at || p.assistant_turns
+    || (p.tool_calls && Object.keys(p.tool_calls).length)
+    || p.last_tool_name || p.last_summary || p.tokens);
+  if (!hasData) {
+    return `<span class="pi-progress-inline pi-progress-loading">${escHtml(t('pi_progress_loading') || 'Loading…')}</span>`;
+  }
+  const parts = [];
+  if (p.last_event_at) {
+    const raw = String(p.last_event_at);
+    const age = (!Number.isNaN(new Date(raw).getTime())) ? (timeAgo(raw) || raw) : raw;
+    parts.push(`<span class="pi-progress-part" title="${escHtml(raw)}">${escHtml(t('pi_progress_last_event') || 'Last event')} ${escHtml(age)}</span>`);
+  }
+  if (p.assistant_turns) {
+    parts.push(`<span class="pi-progress-part">${escHtml(t('pi_progress_turns') || 'Turns')} ${Number(p.assistant_turns) || 0}</span>`);
+  }
+  if (p.tool_calls && Object.keys(p.tool_calls).length) {
+    const tools = Object.keys(p.tool_calls).sort()
+      .map(n => `${escHtml(String(n))} ${Number(p.tool_calls[n]) || 0}`).join(' · ');
+    parts.push(`<span class="pi-progress-part" title="${escHtml(t('pi_progress_tools') || 'Tools')}">${escHtml(t('pi_progress_tools') || 'Tools')} ${tools}</span>`);
+  }
+  if (p.last_tool_name) {
+    parts.push(`<span class="pi-progress-part">${escHtml(t('pi_progress_last_tool') || 'Last tool')} ${escHtml(String(p.last_tool_name))}</span>`);
+  }
+  if (p.last_summary) {
+    const sum = String(p.last_summary).slice(0, 200);
+    parts.push(`<span class="pi-progress-part pi-progress-summary" title="${escHtml(String(p.last_summary))}">${escHtml(t('pi_progress_summary') || 'Intent')} ${escHtml(sum)}</span>`);
+  }
+  if (p.tokens) {
+    parts.push(`<span class="pi-progress-part">${escHtml(t('pi_progress_tokens') || 'Tokens')} ${Number(p.tokens) || 0}</span>`);
+  }
+  const loopBadge = warning
+    ? `<span class="pi-progress-loop-badge" title="${escHtml(String(warning))}">&#9851; ${escHtml(t('pi_progress_looping') || 'Looping')}</span>`
+    : '';
+  return `<span class="pi-progress-inline">${loopBadge}${parts.join('<span class="pi-progress-sep">·</span>')}</span>`;
+}
+
+function _piProgressStop() {
+  if (window._piProgressInterval) { clearInterval(window._piProgressInterval); window._piProgressInterval = null; }
+}
+
+function piProgressTick() {
+  const live = [];
+  try {
+    (document.querySelectorAll('.pi-progress-live') || [])
+      .forEach(el => { if (el && el.getAttribute && el.getAttribute('data-pi-progress-sid')) live.push(el); });
+  } catch (e) { live.length = 0; }
+  if (!live.length) { _piProgressStop(); return; } // nothing mounted — never keep an idle timer
+  window._piProgressInFlight = window._piProgressInFlight || new Set();
+  for (const el of live) {
+    const sid = el.getAttribute('data-pi-progress-sid');
+    if (window._piProgressInFlight.has(sid)) continue; // no overlapping fetch per source
+    window._piProgressInFlight.add(sid);
+    apiFetch('/api/sessions/' + encodeURIComponent(sid) + '/progress')
+      .then(d => {
+        if (d && typeof d === 'object') {
+          // looping_warning comes from the PRD payload (task level); the
+          // progress endpoint may not carry it, so keep the warning we saw
+          // when the task card first rendered this session. Once set it
+          // stays set for this page load — it is never cleared.
+          const warn = (d && d.looping_warning) || (window._piProgressWarnings && window._piProgressWarnings[sid]);
+          el.innerHTML = renderPiProgressBlock(d, warn);
+          if (el.style) el.style.display = '';
+        }
+      })
+      .catch(() => {}) // non-pi backends / no log yet: leave the placeholder in place
+      .then(() => { window._piProgressInFlight.delete(sid); });
+  }
+}
+
+function startPiProgressPolling() {
+  // PWA poll-stacking rule: if a render already started the shared handle
+  // (window._piProgressInterval), reuse it — never add a second interval.
+  if (window._piProgressInterval) return;
+  piProgressTick(); // first fetch immediately
+  window._piProgressInterval = setInterval(piProgressTick, 5000); // poll every 5s
+}
+window.renderPiProgressBlock = renderPiProgressBlock;
+window.piProgressTick = piProgressTick;
+window.startPiProgressPolling = startPiProgressPolling;
+window._piProgressStop = _piProgressStop;
+
 function renderTask(prd, story, task, editable) {
   // editable is now passed from caller; fall back when called standalone.
   if (typeof editable === 'undefined') {
@@ -14055,6 +14162,22 @@ function renderTask(prd, story, task, editable) {
   // v8.23.0 — session link: click navigates to the worker session.
   const sessionLink = task.session_id
     ? `<span class="prd-task-session-link" onclick="event.stopPropagation();navigate('session-detail','${escHtml(task.session_id)}')" title="${t('prd_task_view_session')||'View worker session'}">&rarr; ${escHtml(task.session_id.slice(0,4))}</span>`
+    : '';
+  // pi live progress — running tasks only. First paint from the PRD
+  // payload's per-task `progress` snapshot (server already computes it for
+  // in-progress tasks); the shared poll keeps it fresh via the worker
+  // session's own log. looping_warning renders as a badge.
+  const _piRunningTask = !!task.session_id && ['running','in_progress','verifying','running_tests'].includes(task.status || '');
+  if (_piRunningTask && task.looping_warning) {
+    // Remember the task-level warning by session id so the shared poll
+    // (session detail + repeated renders) keeps the badge visible even
+    // though /api/sessions/{id}/progress doesn't carry it itself.
+    window._piProgressWarnings = window._piProgressWarnings || {};
+    window._piProgressWarnings[String(task.session_id)] = String(task.looping_warning);
+  }
+  if (_piRunningTask) startPiProgressPolling(); // idempotent — reuses window._piProgressInterval
+  const piProgressBlock = _piRunningTask
+    ? `<span class="pi-progress-live prd-task-progress" data-pi-progress-sid="${escHtml(String(task.session_id))}">${renderPiProgressBlock(task.progress, task.looping_warning)}</span>`
     : '';
   // v8.23.0 — retry button for failed/blocked tasks while PRD is running.
   // BL382 — also add cancel-task (pending/in_progress) + requeue (completed/cancelled).
@@ -14163,7 +14286,7 @@ function renderTask(prd, story, task, editable) {
       ${statusGlyphSpan}${heldBadge}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
-      ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
+      ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
       <span class="prd-task-header-spacer"></span>
       ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
@@ -16159,6 +16282,13 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'results.schedule_history_limit', label: 'Results kept per schedule (min 1, default 20)', type: 'number', min: 1, placeholder: '20' },
   ]},
   // v4.0.1 — feature toggles for autonomous / plugins / orchestrator.
+  // Pi (worker backend) — knobs for pi-based autonomous workers. See
+  // "Pi worker observability" in docs/operations.md. pi.thinking_level is
+  // pi's own --thinking level (empty = pi's model default); per-task/story/
+  // PRD thinking-LLM overrides take precedence over this global default.
+  { id: 'piworker', section: 'Pi (worker backend)', docs: 'config-reference.yaml', fields: [
+    { key: 'pi.thinking_level', label: 'Thinking level for pi workers (empty = pi model default)', labelKey: 'settings_pi_thinking_level', type: 'select', options: ['', 'off', 'minimal', 'low', 'medium', 'high'] },
+  ]},
   // Each feature's full surface is REST + MCP + CLI per parity rule;
   // these Settings cards give the operator a one-click enable + links
   // to the operator docs. Field-level config stays YAML/REST/CLI.
@@ -16236,6 +16366,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.session_start_confirm_seconds', label: 'Session start confirm (seconds)', labelKey: 'settings_session_start_confirm', type: 'number', placeholder: '120' },
     { key: 'autonomous.worker_idle_nudge_seconds', label: 'Worker idle nudge (sec, 0=3m)', labelKey: 'settings_worker_idle_nudge', type: 'number', placeholder: '180' },
     { key: 'autonomous.worker_idle_nudge_stall_seconds', label: 'Worker stall after nudge (sec, 0=10m)', labelKey: 'settings_worker_idle_nudge_stall', type: 'number', placeholder: '600' },
+    // Worker loop detection window: how many of the worker's most recent
+    // turns the live loop detector compares ("Pi worker observability" in
+    // docs/operations.md). 0 turns loop detection off (default 3).
+    { key: 'autonomous.loop_detect_turns', label: 'Worker loop detection window (turns, 0=off, default 3)', labelKey: 'settings_loop_detect_turns', type: 'number', placeholder: '3' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
     { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },

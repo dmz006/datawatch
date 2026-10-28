@@ -317,6 +317,10 @@ type BootstrapResponse struct {
 	Effort         string `json:"effort,omitempty"`
 	Model          string `json:"model,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
+	// ThinkingLevel — pi --thinking override (off|minimal|low|medium|high)
+	// for the worker's task session; empty = worker's own pi.thinking_level
+	// config applies.
+	ThinkingLevel string `json:"thinking_level,omitempty"`
 }
 
 // BootstrapGit is the git-clone bundle delivered to the worker on
@@ -435,6 +439,7 @@ func (s *Server) handleAgentBootstrap(w http.ResponseWriter, r *http.Request) {
 		Effort:         agent.Effort,
 		Model:          agent.Model,
 		PermissionMode: agent.PermissionMode,
+		ThinkingLevel:  agent.ThinkingLevel,
 		ResultToken:    s.agentMgr.GetResultTokenFor(agent.ID),
 		Env: map[string]string{
 			"DATAWATCH_AGENT_ID": agent.ID,

@@ -3033,6 +3033,81 @@ On the Automaton JSON (`GET /api/autonomous/prds/{id}`) look at
 `gate_disagreement` (`verifier_ok`, `gate_regression`, `gate_invalid`,
 `policy`, `summary`) and `quality_gate_result`.
 
+### Pi worker observability (progress, heartbeat, loop detection)
+
+Pi-based autonomous workers (interactive `pi` and the `pi-prompt` one-shot
+backend) are watched through the worker's own session log. Pi writes that
+log natively as a stream of JSON lines (its session JSON mode); datawatch
+only ever *reads* it — it never parses the pane.
+
+**Progress.** While a pi task is running, the wait loop re-reads the log
+about every 30 seconds (`cmd/datawatch/progress_refresh.go` over
+`internal/pilog`) and turns it into a progress snapshot: last event time,
+assistant-turn count, per-tool call counts, the last tool call and its
+arguments, the last text/thinking summary (truncated to 200 characters),
+and token counts. That snapshot is what you see in the PWA PRD task
+progress block and in the task objects of the REST/MCP PRD views (the
+`progress` and `looping_warning` fields, present only on the task that
+is running right now). Nothing here requires operator action; it exists
+so a running pi worker can be told "working" from "stuck" without
+opening the pane.
+
+**Heartbeat.** Liveness is judged from the worker's own activity: the
+log still being written (or its newest event being recent), a live runner
+child process, a busy backend, or a recently changed file in the task's
+work directory. When *none* of those signals of life is present for
+longer than `autonomous.stale_task_seconds` (falling back to
+`session.stale_timeout_seconds`), the worker is stopped as an
+infrastructure failure (`worker stalled: no output, no children, no file
+changes for N seconds (stale_task_seconds=...)`) and retried through its
+existing `auto_fix_retries` budget — even though the pane may still show
+output that looks like it worked. One-shot `pi-prompt` runs skip the
+log-mtime part of this check by design: `pi --print` writes its log only
+when it finishes, so the mtime gate would report false stalls; the other
+signals still apply. `autonomous.session_idle_timeout_seconds` (above)
+covers a different case — a session that went idle instead of dying.
+
+**Loop detection and rescue.** A worker that repeats one action over and
+over is caught at two levels, both from the same log:
+
+1. **Streak warning (always on).** The same tool call with identical
+   arguments seen unchanged across three consecutive ~30 s progress
+   refreshes (about a minute of spinning) adds a `looping suspected`
+   warning to the task. Arguments that evolve (a growing offset, new
+   content) break the streak, so only genuine repetition trips it.
+2. **Live detection (tunable).** The detector looks at the worker's last
+   `autonomous.loop_detect_turns` assistant turns (default 3) and fires
+   when that window shows **announcing without acting** (a turn claims a
+   next action but calls no tool) or **repeating** the identical tool call
+   with identical arguments. A finding triggers the loop rescue, once per
+   loop: the finding is recorded, a `task.looping` event is emitted, the
+   task carries a `looping` status, and — for an interactive pi worker — a
+   corrective message is sent into the session; for a one-shot `pi-prompt`
+   worker the run is stopped and retried with the loop hint attached.
+
+**Settings.**
+
+- `autonomous.loop_detect_turns` — the window N above. `0` turns loop
+  detection **off** (the streak warning and the heartbeat keep working);
+  positive N compares the last N turns; negative values are rejected at
+  every write edge (REST, MCP, CLI, comm channel). Set it in `config.yaml`,
+  through web settings (Settings → Autonomous card, "Worker loop
+  detection window"), or `datawatch config set autonomous.loop_detect_turns 5`.
+- `pi.thinking_level` — pi's own `--thinking` level, passed on every pi
+  worker launch (pi-prompt one-shots and pi sessions). `""` (default) =
+  don't pass the flag and use pi's model default; allowed levels are
+  `off`, `minimal`, `low`, `medium`, `high`. Per-task, per-story and
+  per-PRD thinking-LLM overrides ("Set LLM" / thinking-LLM rows) take
+  precedence over this global default. Set it in `config.yaml` (`pi:`
+  section) or web settings (Settings → *Pi (worker backend)* card).
+
+```yaml
+pi:
+  thinking_level: ""        # off|minimal|low|medium|high; empty = pi model default
+autonomous:
+  loop_detect_turns: 3     # 0 = loop detection off; default 3
+```
+
 ---
 
 ## Autonomous Prompt Injection Protection

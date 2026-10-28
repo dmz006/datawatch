@@ -56,6 +56,11 @@ const (
 	// KindPRDUpdated is the generic "this PRD was persisted" notification
 	// (the WS refresh broadcast subscribes to it).
 	KindPRDUpdated = "prd.updated"
+	// KindTaskLooping fires when the executor's periodic progress poll
+	// detected a worker loop (loop_rescue.go) and the matching rescue
+	// fired (warning recorded + corrective message sent, or the one-shot
+	// worker stopped for retry). Non-status: the task stays in_progress.
+	KindTaskLooping = "task.looping"
 )
 
 // PRDStatusKind returns the event kind for a PRD entering status s,
@@ -94,15 +99,18 @@ type LifecycleEvent struct {
 	ParentPRDID string         `json:"parent_prd_id,omitempty"`
 	// AutomationID names the Automation an automation-level event is about
 	// (the child of a nested member). Empty for PRD and task events.
-	AutomationID string            `json:"automation_id,omitempty"`
-	StoryID      string            `json:"story_id,omitempty"`
-	TaskID       string            `json:"task_id,omitempty"`
-	OldStatus    string            `json:"old_status,omitempty"`
-	NewStatus    string            `json:"new_status,omitempty"`
-	SessionID    string            `json:"session_id,omitempty"`
-	Decision     *Decision         `json:"decision,omitempty"`
-	Verdict      *GuardrailVerdict `json:"verdict,omitempty"`
-	Host         string            `json:"host,omitempty"`
+	AutomationID string `json:"automation_id,omitempty"`
+	StoryID      string `json:"story_id,omitempty"`
+	TaskID       string `json:"task_id,omitempty"`
+	OldStatus    string `json:"old_status,omitempty"`
+	NewStatus    string `json:"new_status,omitempty"`
+	SessionID    string `json:"session_id,omitempty"`
+	// Details is a short, single-line description of what the event
+	// says (loop warning text for task.looping; empty for other kinds).
+	Details  string            `json:"details,omitempty"`
+	Decision *Decision         `json:"decision,omitempty"`
+	Verdict  *GuardrailVerdict `json:"verdict,omitempty"`
+	Host     string            `json:"host,omitempty"`
 	// Files, Guardrail and Link are the payload of the opt-in warning
 	// kinds (KindScopeWarning, KindGuardrailWarn): the files outside the
 	// declared scope, the guardrail name, and an optional PWA deep-link

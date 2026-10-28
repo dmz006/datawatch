@@ -236,8 +236,13 @@ type PRD struct {
 	// Set to "plan" to make the whole PRD a design-only walk
 	// (claude won't write files); leave empty to use the session
 	// default. Per-task value takes precedence.
-	PermissionMode string    `json:"permission_mode,omitempty"`
-	Status         PRDStatus `json:"status"`
+	PermissionMode string `json:"permission_mode,omitempty"`
+	// ThinkingLevel — pi --thinking level override (off|minimal|low|
+	// medium|high) applied to every task whose Task.ThinkingLevel is
+	// empty. Empty = fall through to the global pi.thinking_level
+	// config. Resolution order: task -> story -> PRD -> config.
+	ThinkingLevel string    `json:"thinking_level,omitempty"`
+	Status        PRDStatus `json:"status"`
 	// BlockedReason is a plain sentence saying why the automaton is blocked:
 	// which guardrail verdict blocked it and which judge produced it, or (B165)
 	// why the boot-resume gate parked it (stale activity, removed project
@@ -702,6 +707,11 @@ type Story struct {
 	Backend string `json:"backend,omitempty"`
 	Effort  Effort `json:"effort,omitempty"`
 	Model   string `json:"model,omitempty"`
+	// Story-level pi --thinking override (off|minimal|low|medium|high).
+	// Inherited by tasks in this story whose own ThinkingLevel is empty.
+	// Empty = inherit from the PRD-level value then the global
+	// pi.thinking_level config.
+	ThinkingLevel string `json:"thinking_level,omitempty"`
 	// Story-level verifier LLM override. Precedence: task → story
 	// (here) → Automaton → global autonomous verification_* config.
 	// Applies to every task in this story that has no task-level
@@ -898,6 +908,12 @@ type Task struct {
 	Backend string `json:"backend,omitempty"`
 	Effort  Effort `json:"effort,omitempty"`
 	Model   string `json:"model,omitempty"`
+	// ThinkingLevel — per-task pi --thinking override (off|minimal|low|
+	// medium|high, closed set from config.PiThinkingLevels). Most
+	// specific wins: this value beats the story- and PRD-level values
+	// and the global pi.thinking_level config. Empty = fall through
+	// the chain. Validated at the set_thinking_level write edge.
+	ThinkingLevel string `json:"thinking_level,omitempty"`
 	// ProjectDir is an optional per-task working/verification directory.
 	// Empty inherits PRD.ProjectDir. Same task > PRD precedence as the
 	// per-task LLM overrides (Backend/Effort/Model above); resolved by
@@ -1109,6 +1125,31 @@ type Task struct {
 	// VerificationScript behavior — it is purely metadata consumed by the
 	// structural check and surfaced in reports.
 	VerificationScriptReason string `json:"verification_script_reason,omitempty"`
+
+	// Progress — a live snapshot of the worker session's own log (read via
+	// internal/pilog) for THIS attempt: how many assistant turns it has taken,
+	// which tools it has called and how often, its most recent action, and the
+	// cumulative token count. Mirrors pilog.Progress; LastEventAt is RFC3339
+	// so it renders correctly in JSON without extra plumbing.
+	//
+	// Populated ONLY while the task is in progress: the executor's periodic
+	// session poll (waitLoop, cmd/datawatch/main.go) refreshes it every few
+	// seconds from the session's live log. Once the task leaves in-progress
+	// (completed / failed / pending / cancelled / blocked) it is cleared and
+	// must stay nil — Store enforces the invariant at persist time so the
+	// guarantee holds no matter which save path ran. prd-get surfaces it
+	// under each running task so an operator (or an MCP client) can see what
+	// the worker is actually doing right now, not just that it's in progress.
+	Progress *TaskProgress `json:"progress,omitempty"`
+
+	// LoopingWarning — set by the same poll loop that refreshes Progress when
+	// the worker's most recent action has been identical across several
+	// consecutive polls with no progress between them: a strong signal the
+	// agent is spinning on the same tool call. Free-form, human-readable, and
+	// explicitly a warning not a verdict: it never fails the task on its own,
+	// it tells a human or an LLM-supervisor where to look first. Empty
+	// normally; a still-running healthy task has no warning set.
+	LoopingWarning string `json:"looping_warning,omitempty"`
 
 	// Truncated is set only on the capped copy the default detail GET
 	// returns (see CapPRDText). It is never stored.

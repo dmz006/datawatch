@@ -170,6 +170,7 @@ func (s *Store) markPRDDirtyLocked(id string) {
 // persistPRD marks the given PRDs dirty and writes them. Callers hold s.mu.
 func (s *Store) persistPRD(ids ...string) error {
 	for _, id := range ids {
+		s.clearStaleProgressForPRD(id) // progress is only meaningful while a task is in progress
 		s.markPRDDirtyLocked(id)
 	}
 	return s.flushPRDsLocked()

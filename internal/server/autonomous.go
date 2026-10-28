@@ -2405,6 +2405,91 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_permission_mode", "automaton", id, map[string]any{"permission_mode": req.PermissionMode}) // GH#201 Phase 4
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
+	// Set the PRD-level pi --thinking level override (off|minimal|low|
+	// medium|high; empty clears). Inherited by every task without its own
+	// override. Validated in Manager.SetPRDThinkingLevel (400 on bad value).
+	case "set_thinking_level":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			ThinkingLevel string `json:"thinking_level"`
+			Actor         string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDThinkingLevel(id, req.ThinkingLevel, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "set_thinking_level", "automaton", id, map[string]any{"thinking_level": req.ThinkingLevel})
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+
+	case "set_story_thinking_level":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			StoryID       string `json:"story_id"`
+			ThinkingLevel string `json:"thinking_level"`
+			Actor         string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.StoryID == "" {
+			http.Error(w, "story_id required", http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetStoryThinkingLevel(id, req.StoryID, req.ThinkingLevel, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "set_story_thinking_level", "automaton", id, map[string]any{"story_id": req.StoryID, "thinking_level": req.ThinkingLevel})
+		s.writeAutonomousResult(w, r, updated, "", req.StoryID, "")
+
+	case "set_task_thinking_level":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			TaskID        string `json:"task_id"`
+			ThinkingLevel string `json:"thinking_level"`
+			Actor         string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.TaskID == "" {
+			http.Error(w, "task_id required", http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetTaskThinkingLevel(id, req.TaskID, req.ThinkingLevel, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "set_task_thinking_level", "automaton", id, map[string]any{"task_id": req.TaskID, "thinking_level": req.ThinkingLevel})
+		s.writeAutonomousResult(w, r, updated, req.TaskID, "", "")
+
 	// GH#172 D52 — pause a running PRD without treating it as blocked/failed.
 	case "pause":
 		if r.Method != http.MethodPost {

@@ -1095,6 +1095,7 @@ func (s *Store) load() error {
 	if err := s.loadPRDs(); err != nil {
 		return err
 	}
+	s.clearStaleProgress() // boot-time safety re-check of the progress invariant
 	if err := loadJSONL(filepath.Join(s.dir, "learnings.jsonl"), func(line []byte) error {
 		var l Learning
 		if err := json.Unmarshal(line, &l); err != nil {
@@ -1136,6 +1137,51 @@ func (s *Store) load() error {
 		return err
 	}
 	return nil
+}
+
+// clearStaleProgress enforces the task-progress invariant at persist time:
+// Progress and LoopingWarning are only ever meaningful while the task is in
+// progress (in_progress or verifying — the two states the worker can be
+// actively running in). Any terminal or waiting task must carry neither,
+// and centralizing the check here means it holds no matter which save path
+// ran — SavePRD, SaveTask, MutateTask, the executor's terminal transitions,
+// the coordinator's auto-fail, resets, cancels — instead of every caller
+// having to remember to clear the field.
+//
+// Callers must hold s.mu. The mutation is deliberate and happens before the
+// serialize step, so both the on-disk JSONL and the shared in-memory task
+// pointer (which GetPRD/BuildTasksView read straight off) end up clean.
+func (s *Store) clearStaleProgress() {
+	for _, t := range s.tasks {
+		clearTaskStaleProgress(t)
+	}
+}
+
+// clearTaskStaleProgress applies the same invariant to one task.
+func clearTaskStaleProgress(t *Task) {
+	if t == nil || progressActive(t.Status) {
+		return
+	}
+	if t.Progress != nil || t.LoopingWarning != "" {
+		t.ClearProgress()
+	}
+}
+
+// clearStaleProgressForPRD applies the invariant to the tasks of one PRD
+// (the per-record persist path writes one PRD at a time, so the whole-store
+// sweep is not needed on every save). An unknown id falls back to the
+// whole-store sweep.
+func (s *Store) clearStaleProgressForPRD(id string) {
+	p, ok := s.prds[id]
+	if !ok {
+		s.clearStaleProgress()
+		return
+	}
+	for i := range p.Story {
+		for j := range p.Story[i].Tasks {
+			clearTaskStaleProgress(&p.Story[i].Tasks[j])
+		}
+	}
 }
 
 // persistOthers rewrites the learnings, guardrail profile, tag and retry

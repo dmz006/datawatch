@@ -1691,3 +1691,99 @@ Response:
 - **Tracking:** `Task.VerifierInfraFailures` counts consecutive infra verifier results, persisted with the task; any non-infra result resets it.
 - **Decision:** `DecideVerifierBackend` in `internal/autonomous/verifier_escalation.go` is a pure function. When the count reaches the threshold and the configured backend differs from the fallback, the next verification of that task runs on the fallback backend. The switch is recorded as a `verifier_escalation` decision on the PRD and as an `autonomous.verifier_escalation` audit event. After that run, pass or fail, the count resets; no other task and no global setting changes.
 - **Hook point:** the verifier closure in `cmd/datawatch/main.go`.
+
+## Pi worker observability (progress, heartbeat, loop detection)
+
+How datawatch watches pi-based autonomous workers, and where the two
+operator knobs live. Operator-facing behavior:
+"Pi worker observability" in [`operations.md`](operations.md).
+
+### Components
+
+- **`internal/pilog`** — read-only reader over pi's native session log (a
+  stream of JSON lines written by pi itself). `LocateLog` finds the log
+  newest-for the task session under the pi sessions root; `Read` builds a
+  `pilogo.Progress` snapshot (last event time, assistant-turn count,
+  per-tool call counts, last tool name + compact args, last text/thinking
+  summary truncated to 200 chars, token counts); `ReadTurns`/`Recent`
+  expose the last N assistant turns for loop detection. datawatch never
+  writes to the log and never parses the pane.
+- **`cmd/datawatch/progress_refresh.go`** — `refreshTaskProgress` is the
+  progress + loop-detection half: locate log → read → snapshot →
+  evaluate both loop detectors. Called from the autonomous manager's wait
+  loop (`cmd/datawatch/main.go`) about every 30 seconds while a pi task is
+  running. Writes the snapshot to `Task.Progress` and, in addition to the
+  loop warning, the `autonomous` package's live detection.
+- **Heartbeat (stall) check** — `cmd/datawatch/stale_worker.go`,
+  `stall_decision.go`, `stale_evidence.go`: a worker counts as stalled
+  only when *every* signal of life is absent for longer than
+  `autonomous.stale_task_seconds` (falling back to
+  `session.stale_timeout_seconds`): no log output (log mtime *and* age of
+  the newest log event), no live runner child process, no busy backend,
+  no recently changed file in the task's work directory. The failure names
+  that evidence (`worker stalled: no output, no children, no file changes
+  for N seconds (stale_task_seconds=...)`) and wraps `ErrWorkerStalled` so
+  the executor's retry path picks it up. `staleWorkerAppliesTo` exempts
+  the `pi-prompt` family from the log-mtime part of the check: `pi
+  --print` writes its log only on completion, so the mtime gate would
+  report false stalls there.
+- **`internal/autonomous/loop_detect.go`** — `DetectLoop(turns, n)`: over
+  the last `n` assistant turns, fires `KindAnnounce` (a turn claims a next
+  action — "now i will …", "let me create/write …", "i will now …" — but
+  calls no tool) or `KindRepeat` (the identical tool + arguments repeated
+  across the window). Produces a `LoopFinding` with `Warning()`
+  (plain-language text recorded on the task) and a `Hint()`.
+- **`internal/autonomous/loop_rescue.go`** — `RescueLoop` has three parts,
+  in order: deliver the rescue (a corrective message into an input-
+capable pi session via `SendInput`, or stop the one-shot `pi-prompt`
+  session), record the loop warning on `Task.LoopingWarning`, and emit the
+  `task.looping` lifecycle event (`KindTaskLooping`). A stopped one-shot
+  run is routed into the worker's stall-retry path via `LoopRetryError`
+  (wraps `ErrWorkerStalled`, hint in the error text) so the next
+  attempt's spec carries the loop hint. Fires at most once per distinct
+  finding: an already-rescued `(session, finding-key)` pair (`kind + named-
+  action`) is reported as `skipped` without re-record, re-emit, re-send, or
+  re-stop; a failed delivery consumes no fires-once opportunity, so the
+  next poll retries cleanly.
+- **`cmd/datawatch/progress_refresh.go` streak detector** — the always-on
+  coarser warning: the same tool name + arguments unchanged across three
+  consecutive ~30 s refreshes adds `looping suspected: tool … repeated
+  across N consecutive progress refreshes` to the task. Evolving args
+  reset the streak.
+- **`internal/pilog` UI consumer** — the web progress block
+  `renderPiProgressBlock` in `internal/server/web/app.js` renders
+  `Task.Progress`: last-event age, assistant-turn count, tool-calls
+  table, last tool, last thinking/text summary, tokens, and the loop
+  warning. Pinned by `app-pi-progress.test.js` (progress keys +
+  poll-stacking guard).
+
+### Knobs
+
+- **`pi.thinking_level`** (`PiConfig.ThinkingLevel` in
+  `internal/config/config.go`, validated in `internal/config/pi_thinking_level.go`;
+  `""` → no `--thinking` flag, i.e. pi's model default; `off|minimal|low|medium|high` otherwise).
+  Applied to every pi worker launch (`cmd/datawatch/main.go` and
+  `autonomous_effort.go` build the launch request with the global
+  `pi.thinking_level`); per-task/story/PRD thinking-LLM overrides
+  (`/api/autonomous/prds/…/set_thinking*`) take precedence over the
+global default. Web surface: settings card *Pi (worker backend)*
+  (`id: 'piworker'` in `GENERAL_CONFIG_FIELDS`, `internal/server/web/app.js`)
+  with labels `settings_pi_thinking_level` in all 5 locales.
+- **`autonomous.loop_detect_turns`** (`Autonomous.LoopDetectTurns *int` in
+  `internal/config/config.go`; `internal/config/loop_detect_turns.go`:
+  `nil` → `DefaultLoopDetectTurns = 3`, `0` → detection off, `n > 0` →
+  window of n turns, negative rejected by
+  `ValidateLoopDetectTurns` at every write edge). Consumed by
+  `refreshTaskProgress` (`cmd/datawatch/progress_refresh.go`) as the
+  `DetectLoop` turn window. Web surface: the autonomous settings card
+  (`GENERAL_CONFIG_FIELDS`, `internal/server/web/app.js`) with label
+  `settings_loop_detect_turns` in all 5 locales.
+
+### Tests
+
+- `internal/autonomous/loop_detect_test.go`, `loop_rescue_test.go` — detector and rescue semantics.
+- `cmd/datawatch/progress_refresh_test.go` — refresh with `loop_detect_turns = 0` (detector off, snapshot still produced), `TestLoopDetectTurnsEffective`, `TestValidatePiThinkingLevel`.
+- `internal/autonomous/thinking_level_test.go`, `internal/session/thinking_level_passthrough_test.go` — thinking-level inheritance down to the launch.
+- `internal/server/loop_detect_thinking_test.go` — REST round-trips: `pi.thinking_level` and `autonomous.loop_detect_turns` accepted/validated through `PUT /api/config` (invalid levels rejected, wrong types rejected, `""` re-enables the pi default).
+- `internal/server/web/app-autonomous-settings-fields.test.js` — asserts `autonomous.loop_detect_turns` renders as a number with its label key, `pi.thinking_level` renders as a select offering `""/off/minimal/low/medium/high`, and both `settings_loop_detect_turns` / `settings_pi_thinking_level` labels are non-empty in en, de, es, fr, ja.
+- `internal/server/web/app-pi-progress.test.js` — the PWA progress block: the progress keys it renders and the poll-stacking guard.

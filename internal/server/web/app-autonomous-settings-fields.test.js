@@ -9,6 +9,18 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
 const { vm, buildSandbox, loadScript } = require('./testutil_browser_stub');
+const LOCALE_LIST = ['en', 'de', 'es', 'fr', 'ja'];
+const LOCALE_DIR = path.join(__dirname, 'locales');
+
+function findField(sectionId, key) {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  const json = vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === '" + sectionId + "') || {fields: []}).fields.find(f => f.key === '" + key + "') || null)",
+    sandbox);
+  return JSON.parse(json);
+}
 
 function autonomousKeys() {
   const sandbox = buildSandbox();
@@ -612,5 +624,42 @@ test('every tag-browser labelKey and the group hint exist in all five locale bun
       assert.ok(!/\bBL\d+\b|\bB\d+\b|\bGH\d+\b/.test(bundle[k]), k + ' must not contain tracker IDs (' + locale + ')');
       assert.ok(!/\bPRD\b/.test(bundle[k]), k + ' must not say PRD (' + locale + ')');
     }
+  }
+});
+
+// Pi worker observability settings (docs/operations.md "Pi worker
+// observability"): the loop-detection window on the autonomous card and
+// the global pi thinking level on its own card, rendered the same way as
+// session_idle_timeout_seconds (label + labelKey + localized label).
+
+test('autonomous settings expose loop_detect_turns as a number with a label key', () => {
+  const parsed = findField('autonomous', 'autonomous.loop_detect_turns');
+  assert.ok(parsed, 'autonomous.loop_detect_turns missing from autonomous card fields');
+  assert.equal(parsed.type, 'number');
+  assert.equal(parsed.labelKey, 'settings_loop_detect_turns');
+  const en = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, 'en.json'), 'utf8'));
+  assert.ok(typeof en.settings_loop_detect_turns === 'string' && en.settings_loop_detect_turns.length > 0,
+    'settings_loop_detect_turns missing from en locale');
+});
+
+test('pi worker card exposes pi.thinking_level as a select with the valid levels', () => {
+  const parsed = findField('piworker', 'pi.thinking_level');
+  assert.ok(parsed, 'pi.thinking_level missing from the pi worker card fields');
+  assert.equal(parsed.type, 'select');
+  // Empty = don't pass --thinking (pi's model default); then the five
+  // levels config.ValidatePiThinkingLevel accepts.
+  for (const opt of ['', 'off', 'minimal', 'low', 'medium', 'high']) {
+    assert.ok(parsed.options.includes(opt), 'pi.thinking_level select missing option: ' + JSON.stringify(opt));
+  }
+  assert.equal(parsed.labelKey, 'settings_pi_thinking_level');
+});
+
+test('pi worker observability labels are non-empty strings in all five locale bundles', () => {
+  for (const locale of LOCALE_LIST) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, locale + '.json'), 'utf8'));
+    assert.ok(typeof bundle.settings_loop_detect_turns === 'string' && bundle.settings_loop_detect_turns.length > 0,
+      'settings_loop_detect_turns missing or empty in ' + locale + ' locale');
+    assert.ok(typeof bundle.settings_pi_thinking_level === 'string' && bundle.settings_pi_thinking_level.length > 0,
+      'settings_pi_thinking_level missing or empty in ' + locale + ' locale');
   }
 });

@@ -88,6 +88,7 @@ import (
 	observerpkg "github.com/dmz006/datawatch/internal/observer"
 	observerpeerpkg "github.com/dmz006/datawatch/internal/observerpeer"
 	orchestratorpkg "github.com/dmz006/datawatch/internal/orchestrator"
+	"github.com/dmz006/datawatch/internal/pilog"
 	pipelinePkg "github.com/dmz006/datawatch/internal/pipeline"
 	pluginspkg "github.com/dmz006/datawatch/internal/plugins"
 	profilepkg "github.com/dmz006/datawatch/internal/profile"
@@ -689,6 +690,7 @@ func runWorkerBootstrapTask(mgr *session.Manager, env agentspkg.BootstrapEnv, bo
 		Effort:         boot.Effort,
 		Model:          boot.Model,
 		PermissionMode: boot.PermissionMode,
+		ThinkingLevel:  boot.ThinkingLevel,
 		OneShot:        true,
 	}
 	// Note: git commits for this worker task are automatic (the
@@ -4717,6 +4719,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					"effort":          mapEffortToSession(req.Effort), // real claude_effort pass-through is local-session-only for now
 					"permission_mode": req.PermissionMode,
 					"model":           req.Model,
+					"thinking_level":  req.ThinkingLevel,
 					// BL407 Phase 4 — the PRD's own dedicated branch
 					// name (set in Manager.Run, same idempotent
 					// assignment worktree mode's EnsureWorktree does).
@@ -4924,6 +4927,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							// The session is over: drop its scan-history entry so
 							// the fresh-tracker map cannot grow without bound.
 							sseFreshTracker.forget(s.FullID)
+							forgetLoopState(s.FullID) // worker finished: don't carry its streak into a future run
 							if s.State == session.StateComplete {
 								// Completion ends an open nudge as answered.
 								nudge.Close()
@@ -4965,6 +4969,52 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						if werr := nudge.Step(time.Now()); werr != nil {
 							stallErr = werr
 							break waitLoop
+						}
+						// Progress visibility (this PRD, task-progress endpoint
+						// work) — refresh the task's live Progress snapshot from the
+						// worker session's own log, throttled to once per ~30s so
+						// the periodic poll does not re-parse the (potentially large)
+						// session log every tick. Non-pi backends have no log here so
+						// the refresh is a no-op; pi backends get a real snapshot plus
+						// a looping warning when the identical tool call keeps
+						// repeating across polls.
+						if waitTick%10 == 0 && task.SessionID != "" { // 10 ticks ≈ 30s at the default 3s tick
+							snap, loopWarn, finding, looping := refreshTaskProgress(s, taskDir, config.LoopDetectTurnsEffective(cfg.Autonomous.LoopDetectTurns))
+							// A live loop finding (loop_detect.go over the session log's
+							// recent turns) supersedes the coarser streak-based warning
+							// for what is recorded on the task: it names the announced
+							// action and carries the corrective hint.
+							warn := loopWarn
+							if looping {
+								warn = finding.Warning()
+							}
+							if autonomousMgrRef != nil && (snap != nil || warn != "") {
+								if !autonomousMgrRef.RefreshTaskProgress(task.ID, snap, warn) {
+									log.Printf("[autonomous] progress refresh: task %s not found (skipping progress store)", task.ID)
+								}
+							}
+							// Loop rescue (loop_rescue.go): record the 'looping'
+							// warning + emit the task.looping event, then either send
+							// the corrective message (input-capable session) or stop
+							// the one-shot print worker and route the existing retry
+							// path with the finding's hint appended to the spec.
+							if looping && autonomousMgrRef != nil {
+								action, rerr := autonomousMgrRef.RescueLoop(task.ID, newLoopSessionView(s, mgr), finding)
+								if rerr != nil {
+									log.Printf("[autonomous] wait tick %d: loop rescue %s failed: %v (task %s/%s, action %q)", waitTick, action, rerr, prd.ID, task.ID, finding.Action)
+								} else {
+									log.Printf("[autonomous] wait tick %d: worker loop detected (action %q): %s (task %s/%s)", waitTick, finding.Action, action, prd.ID, task.ID)
+								}
+								if action == autonomouspkg.LoopRescueStopped {
+									// One-shot print worker (no input possible): RescueLoop
+									// stopped it above. Route the existing retry path —
+									// LoopRetryError wraps ErrWorkerStalled (retry trigger,
+									// executor.go) and carries a RetryHint naming the stuck
+									// action, which main.go prepends to the re-spawned spec.
+									stallErr = autonomouspkg.LoopRetryError(finding)
+									break waitLoop
+								}
+							}
 						}
 						// v8.36.1 — every autonomous task session spawns with
 						// one_shot=true (it's expected to run to completion via
@@ -5072,6 +5122,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									State:               string(s.State),
 									IdleFor:             idleFor,
 									OutputAge:           outputAge,
+									LogLastEventAge:     piLogLastEventAge(s.BackendFamily, piSessionsRoot(), taskDir, s.CreatedAt, time.Now()),
 									HasLiveChildProcess: idleLivenessProbe(s.BackendFamily)(s.TmuxSession, s.ProjectDir),
 									Limit:               idleLimit,
 									Nudge:               sessionNudgeNote(autonomousMgrRef, prd.ID, task.ID, task.SessionID),
@@ -5152,10 +5203,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								// whose backend was active within the threshold is not
 								// stalled, even with a silent log.
 								obs := workerStallObservation{
-									LogPath:   staleLogPath,
-									WorkDir:   taskDir,
-									Threshold: staleThreshold,
-									Now:       time.Now(),
+									LogPath:         staleLogPath,
+									WorkDir:         taskDir,
+									Threshold:       staleThreshold,
+									Now:             time.Now(),
+									LogLastEventAge: piLogLastEventAge(s.BackendFamily, piSessionsRoot(), taskDir, s.CreatedAt, time.Now()),
 									// Runner liveness, not work children: this check asks whether the
 									// worker is still running at all. An idle claude worker still reads as
 									// alive here, which keeps the pre-existing stall behaviour unchanged.
@@ -11025,10 +11077,16 @@ func newSessionCmd() *cobra.Command {
 				return err
 			}
 			n, _ := cmd.Flags().GetInt("lines")
-			return runSessionTail(cfg, args[0], n)
+			follow, _ := cmd.Flags().GetBool("follow")
+			statusInterval, _ := cmd.Flags().GetDuration("status-interval")
+			return runSessionTail(cfg, args[0], n, follow, statusInterval)
 		},
 	}
 	tailCmd.Flags().IntP("lines", "n", 20, "Number of lines to show")
+	tailCmd.Flags().BoolP("follow", "f", false,
+		"Keep running and emit one pi status line per interval (default: one-shot)")
+	tailCmd.Flags().Duration("status-interval", 60*time.Second,
+		"Interval between status lines with --follow (default 60s)")
 	sessionCmd.AddCommand(tailCmd)
 
 	// session attach <id>
@@ -11892,7 +11950,14 @@ func runSessionRestart(cfg *config.Config, idOrName string, task string) error {
 	return daemonJSON(http.MethodPost, "/api/sessions/restart", body)
 }
 
-func runSessionTail(cfg *config.Config, id string, n int) error {
+// runSessionTail shows the last N lines of the session output log, then
+// emits one one-line status for pi sessions (e.g.
+// "progress: turns=7 tools=write:2,bash:5 last=bash idle=12s"). With follow
+// it keeps emitting a status line every statusInterval until interrupted.
+// The status line goes to stdout only; it is never appended to the stored
+// session output log, so DATAWATCH_COMPLETE: completion detection is
+// unaffected.
+func runSessionTail(cfg *config.Config, id string, n int, follow bool, statusInterval time.Duration) error {
 	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
 	if err != nil {
 		return err
@@ -11907,7 +11972,29 @@ func runSessionTail(cfg *config.Config, id string, n int) error {
 	cmd := exec.Command("tail", "-n", fmt.Sprintf("%d", n), sess.LogFile)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	out := os.Stdout
+	if !follow {
+		if line := piTailStatusLine(sess, time.Now()); line != "" {
+			fmt.Fprintln(out, line)
+		}
+		return nil
+	}
+	if !session.IsPiBackendFamily(sess.BackendFamily) {
+		return fmt.Errorf("session %s is a %s session; status following only supports pi sessions", sess.ID, sess.BackendFamily)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ticker := &session.PiStatusTicker{
+		Interval:      statusInterval,
+		BackendFamily: sess.BackendFamily,
+		Progress:      func() (pilog.Progress, error) { return piTailProgress(sess) },
+		Emit:          func(line string) { fmt.Fprintln(out, line) },
+	}
+	ticker.Start(ctx) // immediate tick, then one line per interval until signaled
+	return nil
 }
 
 func runSessionAttach(cfg *config.Config, id string) error {
