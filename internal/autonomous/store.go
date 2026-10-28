@@ -937,6 +937,7 @@ func (s *Store) load() error {
 	}); err != nil {
 		return err
 	}
+	s.clearStaleProgress() // boot-time safety re-check of the progress invariant
 	if err := loadJSONL(filepath.Join(s.dir, "learnings.jsonl"), func(line []byte) error {
 		var l Learning
 		if err := json.Unmarshal(line, &l); err != nil {
@@ -970,8 +971,32 @@ func (s *Store) load() error {
 	return nil
 }
 
+// clearStaleProgress enforces the task-progress invariant at persist time:
+// Progress and LoopingWarning are only ever meaningful while the task is in
+// progress (in_progress or verifying — the two states the worker can be
+// actively running in). Any terminal or waiting task must carry neither,
+// and centralizing the check here means it holds no matter which save path
+// ran — SavePRD, SaveTask, MutateTask, the executor's terminal transitions,
+// the coordinator's auto-fail, resets, cancels — instead of every caller
+// having to remember to clear the field.
+//
+// Callers must hold s.mu. The mutation is deliberate and happens before the
+// serialize step, so both the on-disk JSONL and the shared in-memory task
+// pointer (which GetPRD/BuildTasksView read straight off) end up clean.
+func (s *Store) clearStaleProgress() {
+	for _, t := range s.tasks {
+		if t == nil || progressActive(t.Status) {
+			continue
+		}
+		if t.Progress != nil || t.LoopingWarning != "" {
+			t.ClearProgress()
+		}
+	}
+}
+
 // persist writes the in-memory state back as JSON-lines (full rewrite).
 func (s *Store) persist() error {
+	s.clearStaleProgress()
 	if err := writeJSONL(filepath.Join(s.dir, "prds.jsonl"), len(s.prds), func(emit func(any) error) error {
 		for _, p := range s.prds {
 			if err := emit(p); err != nil {

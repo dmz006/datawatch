@@ -770,6 +770,31 @@ type Task struct {
 	// judgment-only guardrail behavior is the fallback. Inert today:
 	// nothing writes or reads it yet.
 	VerificationScript string `json:"verification_script,omitempty"`
+
+	// Progress — a live snapshot of the worker session's own log (read via
+	// internal/pilog) for THIS attempt: how many assistant turns it has taken,
+	// which tools it has called and how often, its most recent action, and the
+	// cumulative token count. Mirrors pilog.Progress; LastEventAt is RFC3339
+	// so it renders correctly in JSON without extra plumbing.
+	//
+	// Populated ONLY while the task is in progress: the executor's periodic
+	// session poll (waitLoop, cmd/datawatch/main.go) refreshes it every few
+	// seconds from the session's live log. Once the task leaves in-progress
+	// (completed / failed / pending / cancelled / blocked) it is cleared and
+	// must stay nil — Store enforces the invariant at persist time so the
+	// guarantee holds no matter which save path ran. prd-get surfaces it
+	// under each running task so an operator (or an MCP client) can see what
+	// the worker is actually doing right now, not just that it's in progress.
+	Progress *TaskProgress `json:"progress,omitempty"`
+
+	// LoopingWarning — set by the same poll loop that refreshes Progress when
+	// the worker's most recent action has been identical across several
+	// consecutive polls with no progress between them: a strong signal the
+	// agent is spinning on the same tool call. Free-form, human-readable, and
+	// explicitly a warning not a verdict: it never fails the task on its own,
+	// it tells a human or an LLM-supervisor where to look first. Empty
+	// normally; a still-running healthy task has no warning set.
+	LoopingWarning string `json:"looping_warning,omitempty"`
 }
 
 // RecordAttemptCommit appends the deterministic commit sha recorded for a

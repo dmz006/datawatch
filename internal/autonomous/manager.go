@@ -2078,6 +2078,25 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 	return updated, nil
 }
 
+// RefreshTaskProgress (progress visibility) records the latest live-progress
+// snapshot for a task — read from that task's worker session's own log by the
+// executor's periodic session poll — plus the current (possibly empty)
+// looping warning. This goes through MutateTask so it is synchronized with
+// other task mutations and persisted; the Store also re-checks the
+// "in progress only" invariant at persist time.
+//
+// progress may be nil (log not locatable for this backend): in that case the
+// warning is applied but the snapshot is left untouched.
+func (m *Manager) RefreshTaskProgress(taskID string, progress *TaskProgress, warning string) bool {
+	return m.store.MutateTask(taskID, func(t *Task) {
+		if progress != nil {
+			t.SetProgress(progress, warning)
+		} else {
+			t.LoopingWarning = warning
+		}
+	})
+}
+
 // RecordUnmodifiedRetry (v9.2.1) records the audit trail for a retry that
 // passed verification via the unmodified-retry escape hatch — the retry
 // itself produced no diff, but the task's own VerificationScript re-run

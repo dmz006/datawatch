@@ -3735,6 +3735,13 @@ func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 		s.handleSessionCurrentStatus(w, r)
 		return
 	}
+	// GET /api/sessions/{id}/progress — live progress snapshot from the
+	// session's own log (turn count, tool-call breakdown, most recent
+	// action, tokens). See session_progress.go.
+	if strings.HasSuffix(path, "/progress") {
+		s.handleSessionProgress(w, r)
+		return
+	}
 	if strings.HasSuffix(path, "/children") {
 		s.handleSessionChildren(w, r)
 		return

@@ -31,7 +31,7 @@ PUT    /api/autonomous/config              replace config (full body)
 
 POST   /api/autonomous/prds                create PRD; body: {spec, project_dir, [backend], [effort]}
 GET    /api/autonomous/prds                list all PRDs newest-first
-GET    /api/autonomous/prds/{id}           one PRD with story+task tree
+GET    /api/autonomous/prds/{id}           one PRD with story+task tree; ?detail=tasks|summary for compact views
 PATCH  /api/autonomous/prds/{id}           edit PRD title + spec (non-running only); body: {title, spec, actor}     [v5.19.0]
 DELETE /api/autonomous/prds/{id}           cancel + archive (status → cancelled)
 DELETE /api/autonomous/prds/{id}?hard=true permanently delete the PRD + descendants spawned via SpawnPRD             [v5.19.0]
@@ -51,6 +51,8 @@ POST   /api/autonomous/prds/{id}/set_verification_llm        per-Automaton verif
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
 GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD                                      [v5.9.0  / BL191 Q4]
+GET    /api/sessions/{id}/progress         live progress snapshot for one session (turns, tool calls, last action,
+                                           tokens) — same `progress` shape prd-get carries per running task
 
 GET    /api/autonomous/learnings           extracted post-task learnings
 
@@ -73,6 +75,52 @@ DELETE /api/automations/{id}         delete (draft/completed/cancelled only); bo
 
 When `autonomous.enabled` is false, every endpoint returns
 `503 autonomous disabled`.
+
+### Live task progress + looping warning
+
+While a task is actively running — `status` `in_progress` or `verifying` —
+the executor's periodic session poll also parses the worker's own pi JSONL
+log and refreshes two fields that ride along in every PRD view (`prd-get`,
+`tasks` and `full` detail, MCP `autonomous_prd_get`):
+
+```json
+{
+  "id": "task-1234", "status": "in_progress",
+  "progress": {
+    "last_event_at": "2026-10-14T12:04:41Z",
+    "assistant_turns": 12,
+    "tool_calls": {"bash": 9, "write": 3},
+    "last_tool_name": "bash",
+    "last_tool_args": "{\"command\": \"go test ./...\"}",
+    "last_summary": "Now running the full test suite before wrapping up.",
+    "tokens": 48210
+  },
+  "looping_warning": "suspected looping: same call x5"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `progress.last_event_at` | Timestamp (RFC3339) of the newest event in the log — freshness is the first thing to check. |
+| `progress.assistant_turns` | Assistant-role messages so far, one per LLM reply (tool-calling ones included) — a proxy for "how much work has been attempted". |
+| `progress.tool_calls` | Per-tool-name call counts across the log so far. |
+| `progress.last_tool_name` / `last_tool_args` | The most recent tool call, with arguments as compact JSON (truncated to 500 chars). |
+| `progress.last_summary` | First 200 chars of the most recent thinking/text block — what the worker was last planning or reporting. |
+| `progress.tokens` | Cumulative tokens reported by the log's usage fields. |
+| `looping_warning` | **Omitted unless set.** The worker re-issued the same tool name + arguments on three consecutive periodic polls (~an hour of real time); treat it as "stuck, needs an operator" rather than "progressing slowly". |
+
+**Presence semantics.** The store forces both fields off the moment a task
+leaves the active statuses (and strips them at every save/load), so
+`progress` present ⇔ the worker is running right now. A `pending` task has
+neither key in JSON; a `completed` task that ran for an hour keeps none of
+its progress behind — history lives in the decisions log and the session
+log on disk, not on the task.
+
+`GET /api/sessions/{id}/progress` returns the same snapshot for any session
+(pi-family backend, or a session whose log exists), regardless of autonomous
+involvement — session id, full id, state, `log_path`, plus the fields above.
+404 when the session is unknown or has no log (non-pi backend, or log not
+yet flushed). Non-GET methods get 405.
 
 ### Clean restart on `reset_task`
 

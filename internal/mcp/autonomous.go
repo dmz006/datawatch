@@ -275,7 +275,9 @@ func (s *Server) toolAutonomousPRDGet() mcpsdk.Tool {
 			"ci-watch then watches the new commit's CI. If you finished the work by hand, leave it blocked as the record or autonomous_prd_cancel it. "+
 			"Each task may carry foreign_file_drift (full detail only; summary and tasks omit it): a list of files the task's own commit swept in that were already uncommitted before the task started and were not in its planned files. "+
 			"This is warn-only (the task still completes) unless block_on_file_drift is on for the automaton, its guardrail profile, or the daemon, in which case the task is blocked; worktree-mode automata are never checked. "+
-			"Each finding is also recorded in the decision log with kind file_drift_detected."),
+			"Each finding is also recorded in the decision log with kind file_drift_detected. "+
+			"Tasks that are actively running (status in_progress or verifying) additionally carry progress {last_event_at, assistant_turns, tool_calls, last_tool_name, last_tool_args, last_summary, tokens} — what the worker has been doing, parsed from its own session log — and, when the worker appears to re-issue the same tool call on consecutive polls, a looping_warning string. "+
+			"The absence of the progress key means the task's worker is not currently running (it is stripped the moment a task leaves the active statuses)."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("detail", mcpsdk.Enum("summary", "tasks", "full"),
 			mcpsdk.Description("Response level: summary (default), tasks, or full. See the tool description for what each level returns.")),

@@ -4622,7 +4622,24 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							continue
 						}
 						if s.State == session.StateComplete || s.State == session.StateFailed || s.State == session.StateKilled {
+							forgetLoopState(s.FullID) // worker finished: don't carry its streak into a future run
 							break waitLoop
+						}
+						// Progress visibility (this PRD, task-progress endpoint
+						// work) — refresh the task's live Progress snapshot from the
+						// worker session's own log, throttled to once per ~30s so
+						// the periodic poll does not re-parse the (potentially large)
+						// session log every tick. Non-pi backends have no log here so
+						// the refresh is a no-op; pi backends get a real snapshot plus
+							// a looping warning when the identical tool call keeps
+							// repeating across polls.
+						if waitTick%10 == 0 && task.SessionID != "" { // 10 ticks ≈ 30s at the default 3s tick
+							snap, loopWarn := refreshTaskProgress(s, taskDir)
+							if autonomousMgrRef != nil && (snap != nil || loopWarn != "") {
+								if !autonomousMgrRef.RefreshTaskProgress(task.ID, snap, loopWarn) {
+									log.Printf("[autonomous] progress refresh: task %s not found (skipping progress store)", task.ID)
+								}
+							}
 						}
 						// v8.36.1 — every autonomous task session spawns with
 						// one_shot=true (it's expected to run to completion via

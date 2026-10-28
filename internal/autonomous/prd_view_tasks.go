@@ -10,7 +10,11 @@ type TasksView struct {
 }
 
 // TaskEntry is one task's row in a TasksView. Error, Verification,
-// FailureCategory and SessionID are omitted when empty.
+// FailureCategory and SessionID are omitted when empty. Progress and
+// LoopingWarning are omitted when unset — i.e. for every task that is not
+// actively in progress (the store clears them at persist time), so their
+// presence is itself the signal that the task's worker is running right
+// now.
 type TaskEntry struct {
 	ID              string            `json:"id"`
 	Title           string            `json:"title"`
@@ -19,6 +23,8 @@ type TaskEntry struct {
 	Verification    *TaskVerification `json:"verification,omitempty"`
 	FailureCategory string            `json:"failure_category,omitempty"`
 	SessionID       string            `json:"session_id,omitempty"`
+	Progress        *TaskProgress     `json:"progress,omitempty"`
+	LoopingWarning  string            `json:"looping_warning,omitempty"`
 }
 
 // TaskVerification is the outcome of a task's verification. It deliberately
@@ -49,11 +55,13 @@ func BuildTasksView(prd *PRD) TasksView {
 // buildTaskEntry copies the listing fields of one task into a TaskEntry.
 func buildTaskEntry(task *Task) TaskEntry {
 	entry := TaskEntry{
-		ID:        task.ID,
-		Title:     task.Title,
-		Status:    task.Status,
-		Error:     task.Error,
-		SessionID: task.SessionID,
+		ID:             task.ID,
+		Title:          task.Title,
+		Status:         task.Status,
+		Error:          task.Error,
+		SessionID:      task.SessionID,
+		Progress:       task.Progress,
+		LoopingWarning: task.LoopingWarning,
 	}
 	if v := task.Verification; v != nil {
 		entry.Verification = &TaskVerification{

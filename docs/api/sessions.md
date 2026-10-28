@@ -47,6 +47,7 @@ out from this transition.
 | `POST /api/sessions/bind` | Bind a session to an ephemeral worker / agent. |
 | `GET /api/sessions/response` | Last `response` event content for one session (used by the PWA "view last response" modal). |
 | `GET /api/sessions/{id}/telemetry` | Structured telemetry for a session (tasks, guardrail verdicts, sprint, progress). |
+| `GET /api/sessions/{id}/progress` | Live progress snapshot parsed from the session's own pi log: assistant turns, tool-call counts, last action (tool, args, summary), tokens. Same shape as the `progress` field of a running autonomous task. |
 
 #### Compact session list (`view=summary`)
 
@@ -149,6 +150,44 @@ occurred; used for drill-down diagnosis.
 Timings (`started_at`, `completed_at`, `duration_ms`) are
 server-stamped on task status transitions. Hook scripts do not
 need to compute or send them.
+
+#### GET /api/sessions/{id}/progress
+
+Parses the session's own pi JSONL log and returns how far it has gotten.
+Read-only and stateless — works for any stored session whose log exists
+(pi-family backend; the log is located under the sessions root from the
+session's `project_dir` and start time). 404 when the session is unknown
+or has no log yet (other backends, or a session whose log has not been
+flushed); 405 for non-GET methods.
+
+**Response schema:**
+
+```json
+{
+  "session_id": "a3f2",
+  "full_id": "host-a3f2",
+  "state": "running",
+  "log_path": "/sessions/--home-dmz-proj--/2026-10-14T12-00-00-000Z_a3f2.jsonl",
+  "last_event_at": "2026-10-14T12:04:41Z",
+  "assistant_turns": 12,
+  "tool_calls": {"bash": 9, "write": 3},
+  "last_tool_name": "bash",
+  "last_tool_args": "{\"command\": \"go test ./...\"}",
+  "last_summary": "Now running the full test suite before wrapping up.",
+  "tokens": 48210
+}
+```
+
+`last_event_at` is the newest event's timestamp (RFC3339) — check it
+first to tell "just finished" from "still grinding". `last_summary` is the
+first 200 characters of the agent's last planning/reporting block, which is
+usually the most human-readable field here. This is the exact shape the
+autonomous executor refreshes into a task's `progress` field — see
+[autonomous.md](autonomous.md#live-task-progress--looping-warning).
+
+```bash
+curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/api/sessions/a3f2/progress"
+```
 
 ### MCP
 
