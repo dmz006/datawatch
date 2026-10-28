@@ -1773,6 +1773,8 @@
   "settings_judge_size_threshold": "Judge size threshold (lines, 0=off)",
   "settings_judge_size_threshold_help": "When the change under review is larger than this many added and deleted lines, the judge tries claude-code first, then the other backends in their usual order. Lines are counted on the Automaton branch against its merge base, with lock files left out. 0 turns this off. The default is 400.",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
+  "settings_stuck_running_seconds": "Stuck Automaton timeout (seconds)",
+  "settings_stuck_running_seconds_help": "How long an Automaton may stay running with every task finished and no live session before the watchdog re-checks it once, then blocks it. 0 uses the default (900).",
   "settings_session_idle_timeout": "Session idle timeout (sec, 0=15min)",
   "settings_verifier_infra_escalation_threshold": "Verifier infra escalation threshold (0=2)",
   "settings_fallback_verification_backend": "Fallback verification backend (empty=claude-code)",

@@ -1796,6 +1796,8 @@
   "settings_judge_size_threshold": "Judge-Größenschwelle (Zeilen, 0=aus)",
   "settings_judge_size_threshold_help": "Wenn die geprüfte Änderung mehr hinzugefügte und gelöschte Zeilen als diesen Wert umfasst, versucht der Judge zuerst claude-code und danach die anderen Backends in ihrer üblichen Reihenfolge. Die Zeilen werden auf dem Branch des Automaten gegen dessen Merge-Basis gezählt, Lock-Dateien bleiben unberücksichtigt. 0 schaltet die Funktion ab. Der Standard ist 400.",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
+  "settings_stuck_running_seconds": "Stuck Automaton timeout (seconds)",
+  "settings_stuck_running_seconds_help": "How long a running item may stay running with every task finished and no live session before the watchdog re-checks it once, then blocks it. 0 uses the default (900).",
   "settings_session_idle_timeout": "Sitzungs-Idle-Timeout (Sek., 0=15min)",
   "settings_verifier_infra_escalation_threshold": "Schwelle für Verifier-Infra-Eskalation (0=2)",
   "settings_fallback_verification_backend": "Fallback-Verifikations-Backend (leer=claude-code)",

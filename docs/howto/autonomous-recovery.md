@@ -312,6 +312,39 @@ unset uses the default). The sweep compares session ids in short form, the text 
 A session that gets bound to a task again within the grace period is left
 alone.
 
+### Stuck-running watchdog
+
+An Automaton can sit in `running` with every task finished (completed, failed
+or cancelled), no live worker, verifier or guardrail session, and no executor
+holding it, for example when the completion rollup was lost. A periodic
+watchdog, built like the orphan sweep, looks for that state. The bound is
+`autonomous.stuck_running_seconds` (default `900`, 15 minutes; `0` or a negative
+value uses the default). It is read on every pass, so a change applies without
+a restart.
+
+1. **Re-check.** The first pass that sees the Automaton in that state only
+   starts the clock. After one full bound the watchdog records a
+   `stuck_running_refire` note in the Automaton's decision history and re-runs
+   the completion rollup once, the same way boot resume does. The clock
+   restarts.
+2. **Block.** If the Automaton is still in that state after a second full
+   bound, the watchdog moves it to `blocked`. It records a
+   `stuck_running_blocked` decision with the reason, writes an audit entry
+   (`autonomous_stuck_running_blocked`, with the time stuck and the bound) and
+   fires the usual status event, so the Automaton shows as blocked in the PWA
+   and in notifications. If something else changed the Automaton at the same
+   moment, that change wins and the watchdog leaves it alone.
+
+The clock starts over whenever the state stops holding: a session starts, a
+task is reset to pending, or the Automaton leaves `running`. To clear a blocked
+Automaton, use `rejudge` (above) when every task completed, or `reset_task`
+for a task that did not.
+
+Set the bound on the PWA Settings Automata card ("Stuck Automaton timeout"),
+with `datawatch config set autonomous.stuck_running_seconds <n>`, through
+`PUT /api/config`, the MCP `config_set` tool, or `configure
+autonomous.stuck_running_seconds=<n>` in a comm channel.
+
 ### Checking this against a sandbox daemon (opt-in live test)
 
 The deterministic tests run with `go test ./internal/autonomous/`. The live

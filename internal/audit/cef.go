@@ -208,6 +208,8 @@ func cefSignature(action string) (int, string, int) {
 		return 58, "UsageExtraCreditSet", 3
 	case ActionUsageRemainingWorkSet:
 		return 59, "UsageRemainingWorkSet", 2
+	case ActionStuckRunningBlocked:
+		return 60, "AutonomousStuckRunningBlocked", 5
 	default:
 		return 0, "AuditEvent", 3
 	}

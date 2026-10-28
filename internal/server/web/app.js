@@ -16228,6 +16228,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.verification_backends', label: 'Verification backends (load-balance, comma-separated)', type: 'text', placeholder: 'ollama-datawatch, ollama-johnnyjohnny', csv: true },
     { key: 'autonomous.task_override_statuses', label: 'Automaton statuses that accept LLM overrides', labelKey: 'settings_task_override_statuses', type: 'text', placeholder: 'needs_review, revisions_asked, cancelled, blocked', csv: true },
     { key: 'autonomous.stale_task_seconds', label: 'Stale task timeout (sec, 0=inherit session default)', labelKey: 'settings_stale_task_seconds', type: 'number', placeholder: '0' },
+    { key: 'autonomous.stuck_running_seconds', label: 'Stuck Automaton timeout (seconds)', labelKey: 'settings_stuck_running_seconds', helpKey: 'settings_stuck_running_seconds_help', type: 'number', min: 0, placeholder: '900' },
     { key: 'autonomous.verifier_no_progress_timeout_seconds', label: 'Verifier no-progress timeout (sec, 0=10min)', labelKey: 'settings_verifier_no_progress_timeout', type: 'number', placeholder: '600' },
     { key: 'autonomous.verifier_infra_escalation_threshold', label: 'Verifier infra escalation threshold (0=2)', labelKey: 'settings_verifier_infra_escalation_threshold', type: 'number', placeholder: '2' },
     { key: 'autonomous.fallback_verification_backend', label: 'Fallback verification backend (empty=claude-code)', labelKey: 'settings_fallback_verification_backend', type: 'text', placeholder: 'claude-code' },

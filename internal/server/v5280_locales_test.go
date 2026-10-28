@@ -237,6 +237,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		// card title in the Automaton detail view.
 		"settings_automation_triage_alert_minutes",
 		"triage_card_title",
+		// The stuck-running watchdog bound on the Automata settings card.
+		"settings_stuck_running_seconds",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

@@ -128,6 +128,7 @@ func TestEffectiveAutonomousConfig_AutonomousConfigSetPath(t *testing.T) {
 		"verification_backends": ["live-pool-a", "live-pool-b"],
 		"planning_backend": "openwebui",
 		"stale_task_seconds": 1200,
+		"stuck_running_seconds": 1500,
 		"verifier_diff_max_bytes": 8192
 	}`))
 	if err != nil {
@@ -147,6 +148,9 @@ func TestEffectiveAutonomousConfig_AutonomousConfigSetPath(t *testing.T) {
 	}
 	if got.StaleTaskSeconds != 1200 || got.VerifierDiffMaxBytes != 8192 {
 		t.Errorf("StaleTaskSeconds/VerifierDiffMaxBytes = %d/%d, want 1200/8192", got.StaleTaskSeconds, got.VerifierDiffMaxBytes)
+	}
+	if got.StuckRunningSeconds != 1500 {
+		t.Errorf("StuckRunningSeconds = %d, want 1500", got.StuckRunningSeconds)
 	}
 	// Partial update: a field OMITTED must keep its boot value (the
 	// merge-onto-current design API.SetConfig documents).

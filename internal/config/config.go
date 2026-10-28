@@ -2392,6 +2392,12 @@ type AutonomousConfig struct {
 	// StaleTaskSeconds — default 900 seconds. A zero or negative value
 	// inherits session.stale_timeout_seconds.
 	StaleTaskSeconds int `yaml:"stale_task_seconds,omitempty" json:"stale_task_seconds,omitempty"`
+	// StuckRunningSeconds — default 900 seconds. How long a PRD may sit in
+	// running with every task terminal, no live session and no live executor
+	// before the stuck-running watchdog re-fires the completion rollup once;
+	// a second full bound in the same state moves it to blocked. A zero or
+	// negative value uses the default (see NormalizeStuckRunningSeconds).
+	StuckRunningSeconds int `yaml:"stuck_running_seconds,omitempty" json:"stuck_running_seconds,omitempty"`
 	// PreserveAttemptWork keeps a failed attempt's worktree changes around
 	// so the next attempt can build on them. Nil (unset) means true; use
 	// PreserveAttemptWorkEnabled rather than dereferencing the pointer.
@@ -3807,6 +3813,7 @@ func DefaultConfig() *Config {
 			// Nothing declared until the operator sets a notional figure.
 			PlanTierAllocationUSD: map[string]float64{},
 			StaleTaskSeconds:      900,
+			StuckRunningSeconds:   StuckRunningDefaultSeconds,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
 			// comment for why "content"/"policy" are absent here.
 			RetryPolicy:             map[string]int{"infra": 4, "scope": 0},

@@ -237,7 +237,12 @@ type Config struct {
 	// No omitempty, same round-trip reason as VerificationBackends.
 	TaskOverrideStatuses []string `json:"task_override_statuses"`
 	StaleTaskSeconds     int      `json:"stale_task_seconds,omitempty"`
-	AutoFixRetries       int      `json:"auto_fix_retries,omitempty"`
+	// StuckRunningSeconds mirrors autonomous.stuck_running_seconds: how long a
+	// PRD may sit in running with every task terminal, no live session and no
+	// live executor before the stuck-running watchdog re-fires its rollup once,
+	// then blocks it. 0 or unset => 900 (config.NormalizeStuckRunningSeconds).
+	StuckRunningSeconds int `json:"stuck_running_seconds,omitempty"`
+	AutoFixRetries      int `json:"auto_fix_retries,omitempty"`
 
 	// BL410 Phase 1 — per-category retry budgets (daemon-wide default;
 	// PRD.RetryPolicy > named RetryProfile > this). Keys: "infra",
@@ -966,6 +971,17 @@ type Manager struct {
 	// orphanFormLogged records that the orphan sweep's session-id form
 	// self-check has logged its one mismatch line. Guarded by mu.
 	orphanFormLogged bool
+
+	// stuckSeen records, per PRD, when the stuck-running watchdog first saw it
+	// running with every task terminal and nothing live; stuckRefired marks the
+	// PRDs whose rollup it has already re-fired once. stuckRefireFn re-launches
+	// the rollup the way boot-resume does and stuckExecLiveFn reports a live
+	// executor for a PRD; both are wired by API.SetExecutors. The watchdog
+	// reads the orphan sweep's clock (orphanNow). Guarded by mu.
+	stuckSeen       map[string]time.Time
+	stuckRefired    map[string]bool
+	stuckRefireFn   func(prdID string) (started bool, err error)
+	stuckExecLiveFn func(prdID string) bool
 
 	// sessionContinueFn — design §6.ii: sends a "resume" prompt to a parked
 	// worker session after an await-external cycle re-admits it. Optional.
@@ -5040,6 +5056,7 @@ func (m *Manager) run(ctx context.Context) {
 			m.status.LastTickAt = time.Now()
 			m.mu.Unlock()
 			m.sweepOrphanSessions()
+			m.sweepStuckRunning()
 		}
 	}
 }

@@ -120,6 +120,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("worker_idle_nudge_seconds", mcpsdk.Description("How long a PRD-owned claude-code worker may sit idle, in seconds, before it is sent one nudge asking it to print its completion line or continue (default 180; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("worker_idle_nudge_stall_seconds", mcpsdk.Description("How long, in seconds counted from the nudge, a nudged worker may stay silent before it is stopped and retried (default 600; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("session_start_confirm_seconds", mcpsdk.Description("Bound in seconds for a claude-code autonomous session to produce its first assistant output after start — a session still in waiting_input with no assistant output longer than this is a 'session never started' failure (default 120 = 2m; 0 or negative means use the default)")),
+		mcpsdk.WithNumber("stuck_running_seconds", mcpsdk.Description("How long, in seconds, an Automaton may stay running with every task finished, no live worker session and no live executor before the stuck-running watchdog re-fires its completion roll-up once, and then blocks it after a second full bound (default 900 = 15m; 0 or negative means use the default)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
 		mcpsdk.WithNumber("capacity_rate_requests", mcpsdk.Description("Rate ceiling on each LLM: most task/verifier starts it may take per rolling window; 0 = no requests ceiling (default); negative values are rejected")),
@@ -365,6 +366,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if v := req.GetFloat("session_start_confirm_seconds", -1); v >= 0 {
 		body["session_start_confirm_seconds"] = int(v)
+	}
+	if v := req.GetFloat("stuck_running_seconds", -1); v >= 0 {
+		body["stuck_running_seconds"] = int(v)
 	}
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["capacity_enabled"]; ok {

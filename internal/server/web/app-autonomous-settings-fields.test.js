@@ -455,6 +455,28 @@ test('settings_session_start_confirm label + help keys are non-empty strings in 
   }
 });
 
+test('autonomous settings expose stuck_running_seconds as a number with label and help keys in all five locale bundles', () => {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  const fields = JSON.parse(vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields)",
+    sandbox));
+  const field = fields.find(f => f.key === 'autonomous.stuck_running_seconds');
+  assert.ok(field, 'autonomous.stuck_running_seconds missing from autonomous card fields');
+  assert.equal(field.type, 'number');
+  assert.equal(field.labelKey, 'settings_stuck_running_seconds');
+  assert.equal(field.helpKey, 'settings_stuck_running_seconds_help');
+  for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    for (const key of ['settings_stuck_running_seconds', 'settings_stuck_running_seconds_help']) {
+      assert.ok(typeof bundle[key] === 'string' && bundle[key].length > 0,
+        key + ' missing or empty in ' + locale + ' locale');
+      assert.ok(!/\bPRDs?\b/.test(bundle[key]), key + ' must not say PRD in ' + locale + ' locale');
+    }
+  }
+});
+
 test('autonomous settings expose judge_policy and judge_timeout_seconds with label and help keys', () => {
   const sandbox = buildSandbox();
   vm.createContext(sandbox);

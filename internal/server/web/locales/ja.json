@@ -1796,6 +1796,8 @@
   "settings_judge_size_threshold": "ジャッジのサイズしきい値（行数、0=オフ）",
   "settings_judge_size_threshold_help": "レビュー対象の変更の追加行と削除行の合計がこの行数を超える場合、ジャッジはまず claude-code を試し、その後は通常の順序で他のバックエンドを試します。行数はオートマトンのブランチをマージベースと比較して数え、ロックファイルは除外します。0 でこの機能をオフにします。既定値は400です。",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
+  "settings_stuck_running_seconds": "Stuck Automaton timeout (seconds)",
+  "settings_stuck_running_seconds_help": "How long a running item may stay running with every task finished and no live session before the watchdog re-checks it once, then blocks it. 0 uses the default (900).",
   "settings_session_idle_timeout": "セッションアイドルタイムアウト（秒、0=15分）",
   "settings_verifier_infra_escalation_threshold": "検証インフラ障害エスカレーションしきい値（0=2）",
   "settings_fallback_verification_backend": "フォールバック検証バックエンド（空=claude-code）",

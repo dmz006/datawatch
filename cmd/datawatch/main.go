@@ -116,7 +116,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.29.1"
+var Version = "9.29.2"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4304,6 +4304,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// (config.Load merges over DefaultConfig()).
 			ResumeMaxAgeSeconds:  acfgIn.ResumeMaxAgeSeconds,
 			StaleTaskSeconds:     acfgIn.StaleTaskSeconds,
+			StuckRunningSeconds:  acfgIn.StuckRunningSeconds,
 			AutoFixRetries:       acfgIn.AutoFixRetries,
 			VerifierDiffMaxBytes: acfgIn.VerifierDiffMaxBytes,
 			SecurityScan:         acfgIn.SecurityScan,
