@@ -380,7 +380,7 @@ func newDescendantWaitHarness(t *testing.T, limit time.Duration) *descendantWait
 		argv: map[int][]string{
 			400: {"bash", "-c", "sleep 100000"},
 			500: {"sleep", "100000"},
-			600: {"/home/dmz/.datawatch/channel/datawatch-channel"},
+			600: {filepath.Join(dir, "channel", "datawatch-channel")},
 		},
 		workDir: filepath.Join(dir, "work"),
 		logPath: filepath.Join(dir, "session.log"),
