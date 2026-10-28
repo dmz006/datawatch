@@ -85,6 +85,15 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.28.5 — Two more CodeQL alerts are fixed and the subprocess shell stays by decision
+
+### Two more CodeQL alerts fixed in code
+
+- **MCP debug transport.** A declared event stream sent by the MCP debug transport is written as JSON-escaped bytes and the response carries `X-Content-Type-Options: nosniff`, so echoed input can no longer be read as markup (`go/reflected-xss`, alert 715). The old byte-for-byte pass-through of a declared `text/event-stream` body is gone; the testing tracker records the new wire contract.
+- **PWA dictation ids.** The ids that tie a dictation request to its reply now come from `crypto.getRandomValues` instead of `Math.random` (`js/insecure-randomness`, alert 714).
+- **Subprocess sessions are unchanged.** Alert 661 (`go/command-injection` in the subprocess launch) is dismissed as won't fix by decision: a subprocess session runs the caller's command line through `bash -c`, which is the documented feature. The reasoning and the risk acceptance are in `docs/plans/2026-10-28-codeql-alert-661-decision.md`.
+- The unused locale key `session_last_activity_title` (left over from the removed session time counter) is removed from all five bundles.
+
 ## v9.28.4 — go-jose is updated to 4.1.6 (HIGH denial of service when parsing JWKs with RSA keys)
 
 - The indirect dependency `github.com/go-jose/go-jose/v4` is updated from 4.1.4 to 4.1.6, which fixes CVE-2026-116587 (HIGH): a denial of service when parsing JSON web keys that contain RSA keys. The Trivy scan of the agent-base image found it in the `datawatch` binary and, being blocking at HIGH, failed the v9.28.3 release run before any asset was published. No code change; v9.28.3 and v9.28.4 are otherwise identical.
