@@ -4,7 +4,7 @@
 
 **Version:** current main when written (no release number is recorded in this document)
 
-**Status:** Implemented on this line and live in the running build (unreleased entry in CHANGELOG). The operator's decisions are recorded in `docs/plans/2026-10-25-usage-calculator-decisions.md`; the parity surface and implementation paths are in `## Parity surface` at the end of this document. Operator-facing guide: `docs/howto/usage-calculator.md`.
+**Status:** Implemented on this line and live in the running build: the design is in effect per the operator's decisions in `docs/plans/2026-10-25-usage-calculator-decisions.md`, and it ships in the next release above main (the merge step sets the version; the unreleased entry is in CHANGELOG). The parity surface and implementation paths are in `## Parity surface` at the end of this document. Operator-facing guide: `docs/howto/usage-calculator.md`.
 
 **Scope:** design document; the implementation now spans `internal/usagecalc/`, `internal/server/usage_calculator*.go` + `internal/server/usage_readings*.go`, `internal/router/usage_calculator.go`, `internal/mcp/usage_calculator*.go`, `cmd/datawatch/cli_usage.go`, and the usage-calculator sections of `internal/server/web/app.js`
 
@@ -559,6 +559,9 @@ The ten open questions above were settled in `docs/plans/2026-10-25-usage-calcul
 | REST API | `GET /api/usage/advice` (optional per-call `variant`/`policy`/`lanes`), `GET`/`POST /api/usage/readings`, `DELETE /api/usage/readings/<id>`, `PUT /api/usage/extra-credit`, `PUT`/`GET /api/usage/remaining-work`; the `usage.read` / `usage.write` capabilities gate the matching verbs; a JSON-lines audit event records every mutation | `internal/server/usage_calculator_advice.go`, `usage_readings.go`, `usage_calculator_config.go`, `usage_calculator.go` |
 | Comm channel | `usage`, `usage advice [variant=V] [policy=P] [lanes=N]`, `usage reading <percent> [lanes=N] [session=N]`, `usage extra <pts>`, `usage work <pts\\|clear>` — the handler proxies the daemon REST loopback and the reply is the shared 50-column text rendering, an invalid form replies with the grammar and sends nothing | `internal/router/usage_calculator.go` + `internal/router/commands.go` |
 | MCP tools | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` (plus `config_set` for the variant key) — proxies of the same REST surface, read tools capped at `usage.read`, write tools at `usage.write` | `internal/mcp/usage_calculator*.go` + `internal/federation/mcp_tool_caps.go` |
+| Android / iPhone (native clients) | **Excluded — not yet built:** the calculator has no native screens; the datawatch-app issue it needs is not filed yet (filed once the operator has chosen a variant, per the design note below the mockups), and both clients stay pending until that issue is mirrored — `❌ pending` in the Account usage calculator row of `docs/parity-status.md` | `docs/parity-status.md` |
+
+The two planned-not-built reading sources — the operator pasting a usage text and daemon-side account or API sources — are also deliberately out of this release: the reading model stays manual and typed for now, and the source gate is defined and tested so those sources can be added on top without touching the model (decision 5).
 
 Shared state, per the decisions: the readings series and extra credit live on the keeper daemon (`data/usage/series.json`, `internal/usagecalc/store.go` + `shared.go`), peers read with `usage.read` and mark a last copy as stale, writes forward to the keeper; remaining work is daemon-local. The calculator keeps its advice-only bar — it advises, it never stops or slows a lane.
 
