@@ -1888,7 +1888,6 @@
   "prd_task_projdir_label": "Répertoire de projet (surcharge)",
   "prd_task_projdir_placeholder": "hérite du répertoire de l'Automate",
   "prd_task_projdir_badge_title": "Surcharge du répertoire de projet par tâche",
-  "pi_progress_label": "Live progress",
   "pi_progress_loading": "Loading…",
   "pi_progress_last_event": "Last event",
   "pi_progress_turns": "Turns",

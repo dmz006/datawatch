@@ -731,7 +731,9 @@ paths:
         gotten: assistant turns, per-tool call counts, the most recent action
         (tool name, arguments, and the agent's last-stated intent), and
         cumulative tokens. Same `progress` shape the autonomous prd-get
-        returns per running task.
+        returns per running task. The route never reads a pi log from
+        another session: a non-pi session gets 404 even when a stale pi
+        log sits in its project directory (9.31.3).
       operationId: getSessionProgress
       tags: [Sessions]
       parameters:
@@ -751,7 +753,7 @@ paths:
                       log_path: {type: string, description: "The JSONL log the snapshot was parsed from"}
                   - $ref: "#/components/schemas/TaskProgress"
         "404":
-          description: "Session not found, or the session has no log to read (non-pi backend, or log not yet flushed)"
+          description: "Session not found; not a pi session (a stale pi log from another session is never read); or no locatable pi log (not yet flushed)"
         "405":
           description: Method not allowed (GET only)
         "401":
@@ -5964,7 +5966,10 @@ components:
         in_progress or verifying) and returned by GET /api/sessions/{id}/progress.
         The autonomous store forces these fields off the moment a task leaves
         the active statuses, so their presence is the signal that the worker
-        is running right now; they are omitted from JSON otherwise.
+        is running right now; they are omitted from JSON otherwise. It is
+        task data: the PWA shows it on the running task's card, and
+        GET /api/sessions/{id}/progress answers 404 for a non-pi session —
+        a stale pi log from another session is never read (9.31.3).
       required: [last_event_at, assistant_turns]
       properties:
         last_event_at: {type: string, format: date-time, description: "Timestamp of the newest event in the log (RFC3339)"}

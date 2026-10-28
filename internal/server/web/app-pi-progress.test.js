@@ -4,13 +4,12 @@ const path = require('path');
 const fs = require('fs');
 const { vm, buildSandbox, loadScript } = require('./testutil_browser_stub');
 
-// ── pi progress block (task card + session detail) ─────────────────────
+// ── pi progress block (Automata task card; session strip removed) ──────
 // Loads the REAL app.js into a stub browser context (testutil_browser_stub)
 // and exercises the pure rendering helper `renderPiProgressBlock` plus the
 // poll-stacking guard on window._piProgressInterval.
 
 const PROG_KEYS = [
-  'pi_progress_label',
   'pi_progress_loading',
   'pi_progress_last_event',
   'pi_progress_turns',
@@ -125,4 +124,13 @@ test('all five locale bundles carry the pi_progress_* keys', () => {
     const missing = PROG_KEYS.filter(k => bundle[k] === undefined);
     assert.deepEqual(missing, [], `bundle ${lang} missing: ${missing.join(', ')}`);
   }
+});
+
+test('session page no longer mounts the piProgressPanel live strip (task card only)', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+  assert.doesNotMatch(src, /piProgressPanel/);
+  assert.doesNotMatch(src, /session-pi-progress/);
+  // task card block stays:
+  assert.match(src, /prd-task-progress/);
+  assert.match(src, /renderPiProgressBlock/);
 });

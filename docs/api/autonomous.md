@@ -68,7 +68,8 @@ DELETE /api/autonomous/tags/{id}            409 while the tag has child tags, 40
 GET    /api/autonomous/attention           the attention group: {statuses, items}; see "Attention list" below
 GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD                                      [v5.9.0  / BL191 Q4]
 GET    /api/sessions/{id}/progress         live progress snapshot for one session (turns, tool calls, last action,
-                                           tokens) — same `progress` shape prd-get carries per running task
+                                           tokens) — same `progress` shape prd-get carries per running task;
+                                           404 for a non-pi session (never reads another session's pi log)
 
 GET    /api/autonomous/learnings           extracted post-task learnings
 GET    /api/autonomous/progress[?automation_id=&tag_id=&since=&until=]  progress metrics object (counts by kind, throughput, utilization, remaining work, completion range); since/until are YYYY-MM-DD, until is inclusive; 400 on a bad date
@@ -208,11 +209,13 @@ neither key in JSON; a `completed` task that ran for an hour keeps none of
 its progress behind — history lives in the decisions log and the session
 log on disk, not on the task.
 
-`GET /api/sessions/{id}/progress` returns the same snapshot for any session
-(pi-family backend, or a session whose log exists), regardless of autonomous
-involvement — session id, full id, state, `log_path`, plus the fields above.
-404 when the session is unknown or has no log (non-pi backend, or log not
-yet flushed). Non-GET methods get 405.
+`GET /api/sessions/{id}/progress` returns the same snapshot for any pi
+session whose log exists, regardless of autonomous involvement — session id,
+full id, state, `log_path`, plus the fields above. The route never reads a
+pi log from another session: a non-pi session gets 404 even when a stale pi
+log sits in its project directory, 405 for non-GET. The PWA shows the
+snapshot on the running task's card in the Status tab; the session view no
+longer carries a progress strip of its own (removed in 9.31.3).
 
 ### Clean restart on `reset_task`
 

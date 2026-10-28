@@ -1888,7 +1888,6 @@
   "prd_task_projdir_label": "Projektverzeichnis-Überschreibung",
   "prd_task_projdir_placeholder": "erbt Verzeichnis des Automaten",
   "prd_task_projdir_badge_title": "Projektverzeichnis-Überschreibung pro Aufgabe",
-  "pi_progress_label": "Live progress",
   "pi_progress_loading": "Loading…",
   "pi_progress_last_event": "Last event",
   "pi_progress_turns": "Turns",

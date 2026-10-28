@@ -1888,7 +1888,6 @@
   "prd_task_projdir_label": "Project dir override",
   "prd_task_projdir_placeholder": "inherits Automaton dir",
   "prd_task_projdir_badge_title": "Per-task project dir override",
-  "pi_progress_label": "Live progress",
   "pi_progress_loading": "Loading…",
   "pi_progress_last_event": "Last event",
   "pi_progress_turns": "Turns",

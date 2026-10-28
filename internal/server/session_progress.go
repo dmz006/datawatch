@@ -10,6 +10,7 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/pilog"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // piSessionsRootServer returns the directory under which pi stores its
@@ -34,6 +35,14 @@ func piSessionsRootServer() string {
 // (autonomous.TaskProgress), plus the session's own IDs, so a caller can
 // answer "what is this session actually doing right now" without having to
 // know the PRD or task at all.
+//
+// A non-pi session never returns progress — it 404s with
+// "no session log available", even when a stale pi log for the same project
+// dir could be located (BL647). A pi session's log is chosen by exact
+// session-id match in the log file name first (interactive pi sessions are
+// launched with --session-id, named from the session's recorded name), and
+// falls back to the time/project-dir lookup for sessions that recorded no id
+// (one-shot pi-prompt sessions).
 //
 // 200 → {"session_id","full_id","state", ...TaskProgress fields...}
 // 404 → session not found, or the session has no log to read (non-pi
@@ -60,7 +69,14 @@ func (s *Server) handleSessionProgress(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
-	logPath, err := pilog.LocateLog(piSessionsRootServer(), sess.ProjectDir, sess.CreatedAt)
+	// A non-pi session never has a pi log. 404 it instead of answering from
+	// a stale pi log that happens to sit in the same project dir (BL647:
+	// a claude-code session was served another session's numbers).
+	if !session.IsPiBackendFamily(sess.BackendFamily) {
+		http.Error(w, "no session log available", http.StatusNotFound)
+		return
+	}
+	logPath, err := pilog.LocateLogFor(piSessionsRootServer(), sess.ProjectDir, sess.CreatedAt, sess.Name)
 	if err != nil {
 		http.Error(w, "no session log available", http.StatusNotFound)
 		return
