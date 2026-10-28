@@ -221,26 +221,28 @@ two checkers plus a set of regression tests.
 
 ### Verified
 
-Final gate for the whole change, run on 2026-10-27. Every shell command ran
-under `env -u TMUX -u TMUX_TMPDIR`; the leftover-daemon guard's `check` ran
-against a snapshot taken at the start of the gate (`.datawatch/` run file), and
-it reported nothing new.
+Final gate for the whole change, run on 2026-10-27 (results below are from
+the gate run, not carried over). Every shell command ran under
+`env -u TMUX -u TMUX_TMPDIR`. The leftover-daemon guard's `check` ran against
+the snapshot taken at the start of the gate
+(`.datawatch/final-gate-daemon-snapshot.txt`, which held the 11 live test
+daemons already on the host), and it reported nothing new.
 
 | Check | Command | Result |
 |---|---|---|
-| Leftover-daemon snapshot (gate baseline, 11 pre-existing live test daemons on the host) | `env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-leftover-test-daemons.sh snapshot .datawatch/final-gate-daemon-snapshot.txt` | PASS |
+| Leftover-daemon snapshot (gate baseline) | `env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-leftover-test-daemons.sh snapshot .datawatch/final-gate-daemon-snapshot.txt` | PASS — "snapshot: 11 live test daemon pid(s) recorded" (pre-existing host daemons, not from this change) |
 | Static cleanup audit, whole repository | `env -u TMUX -u TMUX_TMPDIR bash scripts/check-test-daemon-cleanup.sh` | PASS — "OK: no daemon cleanup violations" |
-| Vet of the touched Go packages | `env -u TMUX -u TMUX_TMPDIR go vet ./tests/ci/ ./internal/session/` | PASS |
-| Daemon-cleanup regression tests | `env -u TMUX -u TMUX_TMPDIR go test ./tests/ci -count=1` | PASS — `ok ... tests/ci 38.963s` |
-| Session live tests | `env -u TMUX -u TMUX_TMPDIR go test ./internal/session -run Live -count=1` | PASS — `ok ... internal/session 6.437s` (live-daemon subtests SKIP by design until the live-restart flag is set) |
-| Release smoke, lifecycle helper vs a real daemon | `env -u TMUX -u TMUX_TMPDIR bash scripts/release-smoke-daemon-cleanup.sh` | PASS — 10 pass / 0 fail / 0 skip (SIGINT and SIGTERM rounds; daemon gone, port closed, guard clean) |
-| Lint recipe dry run | `env -u TMUX -u TMUX_TMPDIR make -n lint` | PASS |
-| Internal-ref leak check | `env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-internal-refs.sh` | PASS |
+| Vet of the touched Go packages | `env -u TMUX -u TMUX_TMPDIR go vet ./tests/ci/ ./internal/session/` | PASS (exit 0, no output) |
+| Daemon-cleanup regression tests | `env -u TMUX -u TMUX_TMPDIR go test ./tests/ci -count=1` | PASS — `ok ... tests/ci 38.987s` |
+| Session live tests | `env -u TMUX -u TMUX_TMPDIR go test ./internal/session -run Live -count=1` | PASS — `ok ... internal/session 6.432s` (live-daemon subtests SKIP by design until the live-restart flag is set) |
+| Release smoke, lifecycle helper vs a real daemon | `env -u TMUX -u TMUX_TMPDIR bash scripts/release-smoke-daemon-cleanup.sh` | PASS — re-run at the gate: `Summary: 10 pass / 0 fail / 0 skip`; SIGINT round: driver ended by its own trap with status 130, daemon gone, HTTP port closed, guard clean against the pre-run snapshot; SIGTERM round: status 143, same verdicts |
+| Lint recipe dry run | `env -u TMUX -u TMUX_TMPDIR make -n lint` | PASS (exit 0) |
+| Internal-ref leak check | `env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-internal-refs.sh` | PASS — "no internal refs in user-facing surfaces" |
 | Syntax of the lifecycle helper | `bash -n scripts/test-daemon-lib.sh` | PASS |
 | Syntax of the leftover-daemon guard | `bash -n scripts/check-no-leftover-test-daemons.sh` | PASS |
 | Syntax of the static cleanup audit | `bash -n scripts/check-test-daemon-cleanup.sh` | PASS |
 | Syntax of the test runner | `bash -n scripts/run-tests.sh` | PASS |
-| Diff scope vs main | `env -u TMUX -u TMUX_TMPDIR git diff --name-only $(git merge-base main HEAD) HEAD` (38 files, all in the intended set; 6 new files) | PASS — no tracker IDs or version numbers in any file name or operator-facing text added by the change |
+| Diff scope vs main | `env -u TMUX -u TMUX_TMPDIR git diff --name-only $(git merge-base main HEAD)` plus a line-by-line read of the added lines | PASS — 36 files (6 new, 30 modified), each one belonging to this change: the six new files are exactly the new helper, guard, audit, release smoke and regression tests above; the 30 modified are the daemon-starting story/e2e/matrix/sandbox/smoke/integration scripts, the session live tests, the runner, the Makefile and the docs that state the rule. No tracker id (B/BL/F series) or release version number appears in any added file or function name, in any added operator-facing (echo/ko/skip) string, or in any added doc text — the only scenario-number mentions in added lines are code comments referencing the repository's pre-existing story scenario names. Three of the added echo messages had initially carried their scenario number as a label; the labels were removed before this gate so the claim is true by inspection, not by convention |
 | Leftover-daemon guard, gate end | `env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-leftover-test-daemons.sh check .datawatch/final-gate-daemon-snapshot.txt` | PASS — "OK: no leftover test daemons", nothing new since the snapshot |
 
 ## Historical Feature Tests

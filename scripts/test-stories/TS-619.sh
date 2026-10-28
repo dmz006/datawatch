@@ -80,7 +80,7 @@ PEERCFG
       # verified gone — rm -rf never underneath a live daemon.
       dw_terminate_pid "$peer_pid" "$peer_data/config.yaml" || true
       if declare -F td_alive >/dev/null 2>&1 && td_alive "$peer_pid"; then
-        echo "TS-619: inline peer daemon $peer_pid still running after teardown; keeping scratch at $peer_data" >&2
+        echo "inline peer daemon $peer_pid still running after teardown; keeping scratch at $peer_data" >&2
         skip "inline peer daemon did not start within 15s (could not end it; scratch kept at $peer_data)"
       else
         rm -rf "$peer_data"
@@ -106,7 +106,7 @@ PEERCFG
   if [[ -n "$peer_pid" ]]; then
     dw_terminate_pid "$peer_pid" "$peer_data/config.yaml" || true
     if declare -F td_alive >/dev/null 2>&1 && td_alive "$peer_pid"; then
-      echo "TS-619: inline peer daemon $peer_pid still running after teardown; keeping scratch at $peer_data" >&2
+      echo "inline peer daemon $peer_pid still running after teardown; keeping scratch at $peer_data" >&2
       ko "inline peer daemon $peer_pid could not be ended (scratch kept at $peer_data)"
     else
       rm -rf "$peer_data" 2>/dev/null || true

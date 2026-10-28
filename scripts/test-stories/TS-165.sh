@@ -46,7 +46,7 @@ MEMYAML
   # surviving container still holds, so the story stops when it cannot be
   # ended.
   if ! dw_terminate_pid "$DOCKER_SIM_PID" "$DOCKER_SIM_DATA/config.yaml"; then
-    echo "TS-165: could not end docker-sim ($DOCKER_SIM_PID) before restart"
+    echo "could not end docker-sim ($DOCKER_SIM_PID) before restart"
     ko "docker-sim could not be ended before restart; its ports would stay in use"
     return
   fi
