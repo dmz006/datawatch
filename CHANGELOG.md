@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.30.3 — autonomous: stop a worker that is alive but making no progress
+
+- **Two new settings, both off by default:** `autonomous.task_max_attempt_seconds` caps how long a single attempt may run at all (recommended 5400), and `autonomous.task_no_progress_seconds` caps how long an attempt may go without progress (recommended 1800).
+- **Progress means the worker is visibly doing work:** new terminal output, a changed file in the work directory, a new commit, or a busy child process. None of these for the configured window counts as no progress.
+- **Uncommitted work is saved before the worker is stopped:** it is saved to a named ref, then the attempt is stopped and the task is retried, so no work is thrown away.
+- **After the retry budget is exhausted, the task fails with the reason** 'no progress for N seconds: no output, no file changes, no commits'.
+
+This is a config addition — new settings, off by default, no behavior change until enabled — so it is a patch release.
+
 ## v9.5.26 — autonomous: honor each backend's delivery mode when typing waiting tasks into tmux
 
 - **One-shot “send the task and wait for it to finish” sessions (pi --print, goose --print, aider) no longer get a second copy of the task typed into their shell (send_input)** — the daemon now asks each backend whether it accepts interactive input before typing a waiting task into the pane, so a backend that only takes its task once, at launch, can never be typed into, even if it is a brand-new backend never added to a list.
