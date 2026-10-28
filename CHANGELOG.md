@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.30.2 — ZAP report attach tolerates API throttling
+
+- **The security scan no longer goes red when GitHub throttles the report upload.** The owasp-zap workflow's last step attaches the scan reports to a release. It now runs only for a real release tag (never for a main branch run), retries with a growing wait when GitHub throttles the token, and, if the throttling persists, logs a warning and leaves the run green because the scan result is what counts; the reports stay available from the run's `owasp-zap-reports` artifact. A scan finding above the accepted thresholds, or any other upload error such as a permissions failure, still fails the run. A new section in `docs/operations.md` explains how to re-attach the reports by hand.
+
 ## v9.30.1 — Descendant-only stall bound for pi-prompt workers
 
 ### A pi-prompt worker parked behind a living child process is detected and reaped
