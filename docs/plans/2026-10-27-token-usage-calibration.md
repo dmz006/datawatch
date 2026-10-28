@@ -59,3 +59,11 @@ Windows are the seven intervals between the operator's readings. For each candid
 | best grid fit | 0.25 | 1.12 million output-equivalent tokens |
 
 Best fit: **one output token = 1 unit; one cache-write token = 0.5 unit; one cache-read token = 0.01 unit; input tokens are negligible; Haiku tokens count 0.2 of the same Sonnet token.** On that unit the windows give 0.3 to 1.6 million units per point. The mean of those ratios is 1.1 million, but the pooled figure (all units divided by all points, so large windows count more) is **about 0.65 million units per point**, which is the one to use: the weekly allowance is about **65 million units**. (Correction made at 12:35 on 2026-10-27: the first version of this note quoted the unweighted mean, which does not add back up to the 33 points used so far; the pooled figure does.) Caveats: only seven windows and three fitted weights (overfit risk), whole-percent readings carry up to 50 percent rounding error on a 1 to 3 point window, no Opus use appears in the data, and the weights should be refit as readings accumulate (the grid and the windows are in the method below). The BL472 calculator should store the unit definition as data so it can be refit.
+
+## Correction and refit, 2026-10-28 about 03:50
+
+Operator, 2026-10-28, quoted: "45 % used". The token-based estimate at 03:33 had said about 53 percent, so it was 8 points too high.
+
+Cause: the 12:35 correction on 2026-10-27 replaced the fitted figure with a "pooled" 0.65 to 0.68 million units per point, but the transcript extraction used for that pooled figure had been run with a start date of 2026-10-26, so it left out the first day of the week (sessions last modified before that date). The extraction must always start at the weekly reset (2026-10-25), which is now stated at the top of the method. With the full data: 51.0 million units since the reset for 45 points is **1.13 million units per point** (about 113 million a week), and the last window (13:55 to 03:50, 36 to 45 percent) is 11.99 million units for 9 points, 1.33 million per point. The first fit (1.1 million) was right; the weekly allowance is about 113 million units.
+
+Readings so far (EDT): 15% 10-25 19:45, 22% 10-26 06:25, 24% 10-26 13:35, 26% 10-26 19:30, 27% 10-27 04:00, 30% 10-27 07:40, 33% 10-27 10:55, 36% 10-27 13:55, 45% 10-28 03:50.
