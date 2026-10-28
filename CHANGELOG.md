@@ -77,6 +77,15 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.28.0 — The session header is cleaner and a Tags dropdown holds watching and tag filters
+
+### Session header: Tags dropdown replaces the watch eye and time counter
+
+- **Watching moved.** The session header no longer shows a time counter or a watch eye. Open the header **Tags** dropdown and use **Watch this session** (or **Stop watching this session**) under **This session**.
+- **Filters in one place.** The session list's **Watched only** toggle and tag filter are in the same dropdown, with tag checkboxes, a **match ANY** / **match ALL** switch and **Clear**. A count on the **Tags** button shows how many filters are on.
+- **Edit tags from the header.** **Edit tags of this session** in the dropdown opens the session tag editor.
+- Docs: [`howto/sessions-deep-dive.md`](docs/howto/sessions-deep-dive.md) (PWA happy path) and [`howto/automata-tags.md`](docs/howto/automata-tags.md#the-header-tags-dropdown) describe the dropdown.
+
 ## v9.27.0 — Failed and blocked Automata get a triage record, a poll-time pass and an alert
 
 ### Autonomous triage: failed and blocked Automata are recorded, alertable and readable on every surface
