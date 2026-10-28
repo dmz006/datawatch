@@ -2,9 +2,76 @@
 
 **Date:** 2026-10-28
 **Scope:** the three code-scanning alerts that remain open after the fixes described in `docs/plans/2026-10-27-codeql-local-reproduction.md`: `go/command-injection` in `internal/session/subprocess_resume.go`, `go/reflected-xss` in `internal/mcp/transport_debug.go`, and `js/insecure-randomness` in `internal/server/web/app.js`. This document is appended to by the later tasks of the same plan (fixes, final scan, verification).
-**Status:** Done on the branch, pending the GitHub rescan after merge: the three target alerts are gone from a fresh local scan of the fixed branch tree and no new alert appeared. GitHub still lists #661, #714 and #715 as open until it re-scans `main` after the merge. The final gate (see Final result) has two failures that are not caused by this branch.
+**Version:** v9.28.0 at planning; the fixes ship in the next release cut from `main` (the version bump belongs to that release commit, not to this branch).
+**Phases:** 1 reproduce the alerts (Done) · 2 subprocess launch fix (Done, with an open operator decision) · 3 MCP debug transport fix (Done) · 4 PWA id fix (Done) · 5 re-scan (Done) · 6 final gate (Done, see Final result) · 7 rework after the rules-review (Done).
+**Status:** Done on the branch, pending the GitHub rescan after merge and **one decision that is the operator's**: see the next section. The three target alerts are gone from a fresh local scan of the fixed branch tree and no new alert appeared. GitHub still lists #661, #714 and #715 as open until it re-scans `main` after the merge. For #661 the scanner stops reporting because the task now crosses a process boundary, not because the path from a request to a shell was removed.
+
+## Open decision for the operator: no shell at all versus shell semantics
+
+**The spec asked for a subprocess launch with no shell at all. This branch does not meet that.** The daemon starts no shell and builds no command line, but the helper it starts runs the task with `bash -c`, so the path from a request to a shell still exists.
+
+- **Why it was not met.** A subprocess session's task is a shell command line by design: `docs/commands.md` and `docs/datawatch-definitions.md` document `--subprocess` / `--shell` as "run via `bash -c`", and `docs/howto/result-panel.md` builds scheduled jobs on it. Running the task with no shell would mean running it as one program with arguments, which ends pipes, `&&`, `;`, redirects, variable expansion and `cd x && y` in every `!cmd` and `--shell` task. That changes a documented feature for every operator, so it was not decided inside a security-alert task. The pipeline that ran this task cannot ask the operator; the decision is recorded here instead of being made quietly.
+- **What the branch does instead.** The daemon re-runs its own binary with a fixed argument list (`<exe> __subprocess-run <rc-file> -- <task>`). Inputs are validated (empty task, NUL byte, an rc path that is not an absolute clean `.../subprocess.rc`) and the launch fails closed. The helper passes the task to `bash -c --` as a single argument. `TestSubprocessCommandRunsTaskAsShell` pins the shell semantics on purpose.
+- **What the CodeQL clearance means.** `go/command-injection` (alert #661) no longer appears in the local scan because the task reaches `bash -c` in a second process, which the scanner does not follow. That is a clearance of the finding. It is not a removal of the risk: anyone who can start a subprocess session (REST `POST /api/sessions/start`, `POST /api/schedules` with `"subprocess": true`, a chat `!cmd`, a pipeline step, a federation message) can run commands as the daemon user, exactly as before. The branch makes no claim that this exposure is smaller.
+- **Options for the operator.**
+  1. **Accept as built.** Keep shell semantics. #661 closes on the next scan. The exposure is unchanged and now written down here, in the CHANGELOG and in the code comments.
+  2. **No shell at all.** The task is split with shell-style quoting (no expansion, no operators) and run directly. Closes the path, breaks pipes, `&&`, redirects and variables in existing tasks and in the `result-panel` how-to; needs a migration note and an opt-in for operators who still want a shell.
+  3. **Keep the shell, narrow who may start one.** A config gate for subprocess sessions (off for chat, pipeline and federation callers, or token-scoped), default per the operator's choice. Keeps semantics for the people who need them; adds a config field that needs the full parity set.
+- **Until decided:** option 1 is what is on the branch. Nothing was dismissed, suppressed or excluded in CodeQL.
 
 Working files live in `.datawatch/codeql/`, which is gitignored (`.gitignore` line 1), so they are not committed. The SARIF produced by the reproduction run is saved, unchanged, as `.datawatch/codeql/baseline-r3/go.sarif` and `.datawatch/codeql/baseline-r3/javascript-typescript.sarif`.
+
+## What changed
+
+| # | Alert | Change | Files |
+|---|-------|--------|-------|
+| 1 | #661 `go/command-injection` | The daemon launches its own binary as a helper with a fixed argument list; the `bash -c` wrapper string is gone from the daemon. The helper runs the task with `bash -c` (see the open decision). Validation fails closed. | `internal/session/subprocess_resume.go`, `subprocess_helper.go`, `manager.go` |
+| 2 | #715 `go/reflected-xss` | `sseCloseObserver` sends every payload through `escapePayload`: a stream with no type or an HTML type is re-typed and HTML-escaped; a declared `text/event-stream` has `<` and `>` rewritten as JSON `\u003c` / `\u003e`. `X-Content-Type-Options: nosniff` is pinned on observed streams, and (added in the rework below) on every request the listener answers. | `internal/mcp/transport_debug.go` |
+| 3 | #714 `js/insecure-randomness` | A textarea without an id gets `_autoMicTa_<n>` from a page-level counter; `Math.random()` is gone from the voice path. | `internal/server/web/app.js` |
+| 4 | (rework) | The unused `session_last_activity_title` locale string was removed from the five locale files so the existing "removed title key is absent" test passes. | `internal/server/web/locales/*.json` |
+
+## Downstream review (Security-Fix Downstream-Review Rule)
+
+Token: `sec-downstream: reviewed`. Each fix lists the surface it touches, the call sites mapped, what each expects, and the end-to-end result. The live checks used a sandbox daemon built by `make build` on this branch (loopback, REST `18081`, MCP SSE `19091`, data under the gitignored `.datawatch/sandbox/`), never the production daemon. Commands and observed output are in `docs/testing.md` ("CodeQL alerts on subprocess launch, MCP debug transport and dictation ids") and `docs/testing-tracker.md` ("MCP debug transport: nosniff header and JSON-escaped event streams").
+
+### Fix 1: subprocess launch
+
+- **Surface:** how the daemon starts a subprocess session, what it records (`subprocess.pid`, `subprocess.rc`) and what it later reads back.
+- **Call sites mapped:** `Manager.runSubprocess` (only caller of `subprocessCommand`; writes `subprocess.pid` from `cmd.Process.Pid`); `reattachSubprocess` / `subprocessAlive` (restart path: compares `/proc/<pid>/cmdline` with the task, which the helper's argument list still contains); `readSubprocessRC` (reads the helper-written `subprocess.rc`); `subprocessEnv` (sets `cmd.Env`: the helper's `exec.Command("bash", ...)` has no `Env`, so bash inherits it, which the live run confirmed); the `init()` hook (any binary that links the session package answers to `__subprocess-run` as first argument: daemon, CLI and test binaries); the removed `subprocessWrapper` constant had no other user. The reconcile loop skips subprocess sessions (they have no tmux) and no path signals the recorded pid, so the pid now naming the helper instead of a wrapper shell changes nothing there.
+- **Dependent behaviour checked:** pipes, `&&`, `;`, exit status (`3` recorded), signal status (`128+n`), a task starting with `-`, an embedded newline, an rc directory named like shell syntax, an in-place binary upgrade (`" (deleted)"` suffix stripped). Windows and macOS builds of the touched packages compile (`GOOS=windows|darwin go build ./internal/session/ ./internal/mcp/`).
+- **End to end:** sandbox daemon, `POST /api/schedules` (`type: spawn`, `subprocess: true`) with `echo one; echo two | tr a-z A-Z && exit 3`: session `failed`, log `one` / `TWO` / `[subprocess] failed: exit status 3`, `subprocess.rc` = `3`. A restart-reattach run was not repeated live; `subprocess_resume_test.go` covers it.
+- **Not removed:** the request-to-shell path (open decision above).
+
+### Fix 2: MCP debug transport
+
+- **Surface:** response headers and event-stream bytes of the MCP SSE listener (`mcp.sse_port`).
+- **Call sites mapped:** `ObserveSSEHandler` wraps the whole listener mux. A stream request (`GET` with `Accept: text/event-stream`) goes through `sseCloseObserver` (`WriteHeader`, `Write`, `Flush`); everything else (`POST /message`, a `GET /sse` without that `Accept`, `GET /api/mcp/tools`) bypasses the observer. mcp-go writes the stream and sets `Content-Type: text/event-stream` itself. Consumers: MCP clients (Claude Code, Cursor, the channel bridge, mobile clients that use the MCP stream) which parse `data:` lines as JSON-RPC.
+- **Dependent behaviour checked:** a client that JSON-decodes sees the same value; `&`, quotes, an `endpoint` URL line and a literal `&lt;` arrive unchanged; `Write` reports the caller's byte count although the escaped form is longer; `Flush` still forwards, so the stream stays live; informational statuses do not skip pinning. A client that compared raw bytes of a `<` or `>` in a non-JSON line would see the escape; none is known, and mcp-go already writes `<` and `>` as `\u003c` / `\u003e` inside its JSON.
+- **End to end found a gap, now fixed:** the first live run showed no `nosniff` on requests that bypass the observer. `ObserveSSEHandler` now sets the header for them too, covered by `TestSSEObserver_UnwrappedRequestsCarryNoSniff` (fails without the line, passes with it). After the fix both shapes returned `nosniff`; a `tools/call` with the name `<script>alert(1)</script>` came back as `tool '\u003cscript\u003e...' not found` with no `<` or `>` in the stream, and the decoded message equalled the original.
+
+### Fix 3: dictation field ids
+
+- **Surface:** the DOM id given to a textarea by `autoAttachMics`.
+- **Call sites mapped:** `autoAttachMics` (the only place that generates it); the mic button's `data-mic-for` and its click handler (`startGenericVoiceInput(ta.id, btn)`); the `MutationObserver` that re-runs `autoAttachMics`; `micButtonHTML` (explicit ids supplied by callers, not generated); no CSS, test or server code selects `_autoMicTa_`.
+- **Dependent behaviour checked:** ids stay unique within a page load (module counter), an existing id is kept, the counter resets on reload which is harmless because the DOM is rebuilt too. The id is not a token or capability.
+- **End to end:** headless Chrome against the sandbox PWA: `_autoMicTa_1`, `_autoMicTa_2`, `keep-me`; every mic button resolves to its textarea; no page error. The microphone itself was not exercised (needs a Whisper backend and a microphone).
+
+## Parity surface
+
+The PWA, MCP and session surfaces are touched only as security hardening; no new operator-facing capability or config field is added.
+
+| Surface | Touched | Reason |
+|---------|---------|--------|
+| REST | No | No route, status or body changes. `POST /api/sessions/start` and `/api/schedules` start subprocess sessions as before. |
+| MCP | Yes (wire only) | The MCP SSE listener adds `nosniff` and escapes `<` / `>` in event streams as JSON escapes (decoded value unchanged). No tool is added or changed. See the tracker section for the contract. |
+| CLI | No | `datawatch schedule spawn --shell` behaves as before; the helper is an internal argument, not a command. |
+| comm channel | No | `!cmd` behaves as before. |
+| YAML/config | No | No field added or changed. A gate for subprocess sessions is option 3 of the open decision and would be a separate plan with the full config-parity set. |
+| PWA | Yes (internal) | Only a generated DOM id changed. Nothing operator-visible. |
+| Android | Excluded | No API or layout contract changed; no native counterpart reads these ids or the MCP stream's raw bytes. |
+| iPhone | Excluded | Same reason as Android. |
+
+**Mobile-parity decision (B4):** `mobile-parity: no datawatch-app issue needed`. The PWA change is a generated element id that no operator sees, and no REST or WebSocket contract mobile clients parse changed. The MCP stream's `<` / `>` escape does not change any decoded JSON-RPC value. The release supervisor still decides at merge whether to file a courtesy issue.
 
 ## Reproduction
 
@@ -156,41 +223,68 @@ Rule, file and fingerprint are unchanged; the line moved by 11 because the fix i
 
 The three target alerts no longer appear in a fresh local scan, no genuinely new alert exists, and no fix was needed in this task. No suppression, query exclusion, workflow, code-scanning configuration or GitHub setting was changed. The local scan still reports alerts GitHub has dismissed (see the 2026-10-27 plan), so the remaining totals are not the open count on GitHub.
 
+## Rework after the rules-review (2026-10-27, evening)
+
+The rules-review of the first pass found real problems. What was done about each, and what could not be:
+
+| Finding | Handling |
+|---------|----------|
+| Launch still runs a shell; spec step 2 not met; operator not asked; plan did not disclose it; CHANGELOG overstated | Not changed in behaviour, because removing the shell breaks documented `--shell` / `!cmd` tasks and that is the operator's call. Disclosed at the top of this plan as an open decision with three options. CHANGELOG, code comments and test comments now say the helper runs `bash -c` and that the request-to-shell path remains. |
+| Regression test not demonstrated for the subprocess change | The change fixes a scanner finding, not a behavioural bug, so base and fix run tasks identically. `TestSubprocessCommandDaemonLaunchIsNotAShell` pins the one structural difference (the daemon's launch command is the helper, not a shell, with no `-c`). Run against the base commit's sources it fails (`daemon launches a shell: "/usr/bin/bash"`); on the branch it passes. |
+| Tracker lines naming a renamed test and "byte for byte" | Updated; the row now names the three current tests and describes the JSON escape. |
+| No tracker section for the MCP wire contract (B1, checklist item 6) | Added "MCP debug transport: nosniff header and JSON-escaped event streams". Token: `tracker: MCP debug transport: nosniff header and JSON-escaped event streams`. |
+| No `docs/testing.md` entry for the three fixes | Added with description, steps, expected and actual results. |
+| Plan lacked Parity surface, Version and Phases | Added. |
+| `sec-downstream: reviewed` missing; no call-site mapping or click-through | Added (Downstream review). The end-to-end run found a real gap: requests the MCP observer does not wrap carried no `nosniff`. Fixed in `ObserveSSEHandler`, with a test that fails without the fix. |
+| Commit bodies cut off mid-sentence, "Verification: not run", no rules token; subjects use `task(24030001)` | The first-pass commits are already in the branch history and are not rewritten here (the pipeline commits automatically and this task is told not to run `git commit`, so it cannot rewrite them). That body text is produced by the pipeline's commit helper, not written by the task. The commit for this rework carries a conventional `fix(security):` subject and the tokens below. The reviewer should treat the earlier commit messages as a known pipeline limitation. |
+| `go test ./internal/session/` failed on `TestNoNewTmpLeakEntries`; not confirmed on base | Confirmed on base: see Final result. It is a `/tmp` disk-quota failure of `TestEndpointMeasureDeterministic`, not caused by this branch. |
+| Node suite had one failing test | Fixed by removing the unused `session_last_activity_title` string from the five locales. 1317 of 1317 pass. |
+| `make build` / `make lint` not run | Both run, both clean (see Final result). |
+| CodeQL CLI unpacked inside the repository instead of a new empty directory outside it | Not changed. This pipeline may only write under the project directory, so a location outside it was not available. The bundle lives in the gitignored `.datawatch/codeql/bundle/`, nothing from it is tracked, and it can be deleted with `rm -rf .datawatch/codeql`. |
+| No mobile-parity decision | Recorded in Parity surface. |
+
+Rules that fired in this rework (token `rules:`): Command Timing Rule, RTK, Git Discipline, Planning Rules, Phase Completion Checklist, General documentation checklist (items 1, 6, 7, 8), Bug testing, Security-Fix Downstream-Review Rule, Mobile-Parity Rule, per-sprint rules audit sections A and B.
+
+Per-commit tokens for this rework: `tests: see Final result (one environmental failure, confirmed on base)` · `version: N/A, release commit bumps both files` · `changelog: added` · `readme: N/A, release commit` · `backlog: N/A` · `id-check: clean` (`scripts/check-no-internal-refs.sh` passes; the matches `grep` prints in `CHANGELOG.md` are older entries) · `leak-check: clean` · `node-check: ok` · `make-build: ok` · `lint: clean` · `tracker: MCP debug transport: nosniff header and JSON-escaped event streams` · `locales: N/A, one unused string removed, nothing added` · `mobile-parity: none needed, reason in Parity surface` · `plans: N/A, scanner alerts have no B-number` · `smoke-extended: N/A, no new operator-facing surface; sandbox live checks recorded` · `sec-downstream: reviewed` · `ci: pending, nothing pushed`.
+
 ## Final result
 
-Run on branch `automaton/24030001` at `57bedf450` (base `3bd9b1c95`, v9.28.0), 2026-10-27 22:37-22:51 local time, every command under `env -u TMUX -u TMUX_TMPDIR`. Nothing was changed to make a check pass: no code, test, suppression comment, query exclusion, workflow, code-scanning configuration or GitHub setting was edited in this task. The only edits are this section, the Status line, and the `make sync-docs` copy of this file into `internal/server/web/docs/`.
+Run on branch `automaton/24030001` (base `3bd9b1c95`, v9.28.0), 2026-10-27 23:00-23:35 local time, every command under `env -u TMUX -u TMUX_TMPDIR`. No suppression comment, query exclusion, workflow, code-scanning configuration or GitHub setting was edited.
+
+### Re-scan of the final tree
+
+CodeQL CLI 2.27.3, same build modes and default suites as before, fresh databases in `.datawatch/codeql/db-r5/`, SARIF in `.datawatch/codeql/out-r5/`, compared to the baseline by (rule, file, fingerprint): Go 68 -> 66 results (`go/command-injection` 4 -> 3, `go/reflected-xss` 2 -> 1), JavaScript/TypeScript 17 -> 16 (`js/insecure-randomness` 1 -> 0). The three target results are `GONE`. No result is `NEW`. One existing result moved (`js/xss-through-dom`, `app.js` 10882 -> 10893, same fingerprint). The first attempt at this scan was discarded because a scratch copy of the base sources inside `.datawatch/` was scanned as well and doubled every count; the copy was deleted and the scan re-run. The earlier "Re-scan" section above is the scan of the first-pass tree; this one covers the code after the rework (including the `ObserveSSEHandler` header line).
 
 ### Gate commands
 
 | Command | Result |
 |---------|--------|
-| `go build -o /dev/null ./cmd/datawatch/` | Passes (exit 0). |
-| `go test ./internal/mcp/` | Passes in every run (`ok`, about 1.9 s). |
-| `go test ./internal/session/` | **Flaky: failed in 4 of 6 runs (two full-package runs, two single-test runs), passed in the other 2.** Every failure is `TestNoNewTmpLeakEntries`, never another session test (950 other tests passed in the full run). See below. |
-| `node --test internal/server/web/*.test.js` | **Fails: 1316 of 1317 pass.** The failure is `the removed title key is absent from every locale bundle` in `app-session-header-time-counter.test.js`. See below. |
-| `scripts/check-docs-sync.sh` | Failed before this edit with drift in only `plans/2026-10-28-codeql-last-three-alerts.md`; after this edit and `make sync-docs` it passes (see the last line of this section). |
+| `make build` | Passes (exit 0). It runs `make sync-docs` first. |
+| `make lint` | Passes: `golangci-lint` 0 issues, internal-ref audit, tmux and service-control audits, toolchain pins. |
+| `node --check internal/server/web/app.js` | Passes. |
+| `node --test internal/server/web/*.test.js` | Passes: 1317 of 1317. |
+| `go test ./internal/mcp/` | Passes. |
+| `go test ./internal/session/` | Passes except `TestNoNewTmpLeakEntries`, see below. |
+| `scripts/check-docs-sync.sh`, `scripts/check-no-internal-refs.sh` | Pass. |
+| `GOOS=windows` and `GOOS=darwin go build ./internal/session/ ./internal/mcp/` | Pass. |
+| Full `go test ./...` | Every package passes except as follows. A first full run had five packages fail to build and two perf tests fail, each with `disk quota exceeded` on `/tmp` (the compiler's work dir, and the perf seeds); re-running those packages passes (`cmd/datawatch`, `internal/autonomous`, `internal/mcp`, `internal/router`, `internal/server` except two perf tests), and `TestPerfSeedCounts` and `TestEndpointMeasureDeterministic` pass with `TMPDIR` pointed at a roomy directory. The only test still failing in a default run is `TestNoNewTmpLeakEntries`, which wraps `TestEndpointMeasureDeterministic`; same cause. |
 
-**`go test ./internal/session/`.** `TestNoNewTmpLeakEntries` runs an inner `go test ./internal/mcp/ ./internal/server/ ./internal/plugins/` and fails if that run fails. In each failing run the inner failure was `TestEndpointMeasureDeterministic` in `internal/server/perf_seed_test.go:501` ("automata list sizes differ between seeds", for example 90405 vs 90606 on one run and 90408 vs 88732 on another, against a slack of 64 bytes). Running the three inner packages directly, three times, gave two passes and one failure of that same test. The test seeds two perf servers and compares the encoded size of `/api/autonomous/prds`; the sizes vary from run to run. The file is not part of this branch's diff (the branch touches `internal/session/subprocess_*`, `manager.go`, `internal/mcp/transport_debug*`, `app.js`, `app-auto-mic-id.test.js`, docs and CHANGELOG), so this is an existing flake, not one introduced here. Runs where the inner suite passed also passed the leak check (the private temp dir was empty). It was not fixed here: that is outside this task and the test must not be weakened.
+**`TestNoNewTmpLeakEntries` and `TestEndpointMeasureDeterministic`.** The leak guard runs `go test ./internal/mcp/ ./internal/server/ ./internal/plugins/` in a private temp dir and fails when that inner run fails. The inner failure is always `TestEndpointMeasureDeterministic` (`internal/server/perf_seed_test.go`), and its log names the cause: `write ... disk quota exceeded` under `/tmp` while the test seeds thousands of session records. The automata-list size mismatch the first pass reported (`90408 vs 88732`) is the symptom: the second seed's records are not written, so its list is smaller. This is an environment limit of the shared `/tmp`, not this branch:
 
-**Node.** `session_last_activity_title` is still present in all five locale files (`en`, `de`, `es`, `fr`, `ja`), and the test written by task `daad0001` asserts it is absent. The key is also present in `main` and in the base commit `3bd9b1c95`, and the branch diff does not touch `internal/server/web/locales/`, so this failure exists without this branch. It was not fixed here for the same reason.
+- Run against the **base commit's** sources (extracted with `git archive 3bd9b1c95`) the test failed 6 of 6 times with the same `disk quota exceeded` lines and sizes `90405/90407/90409 vs 88732`.
+- On this branch, with `TMPDIR` pointed at a directory with room, `TestEndpointMeasureDeterministic` passed 3 of 3 (about 56 s each).
+- With the default temp dir on this branch, every other test in `internal/session`, `internal/mcp`, `internal/server` and `internal/plugins` passes; only that test, and therefore the leak guard that wraps it, fail.
+
+The leak guard itself could not be run to completion here. It was not weakened or skipped. Setting `TMPDIR` inside the worktree to dodge the quota is not a valid workaround for the whole suite: it puts "non-repo" temp dirs inside a git repository and fails unrelated tests (`TestBL10_DiffStat_NotARepo` and similar), so those results from a first attempt were discarded.
 
 ### Open code-scanning alerts
 
-`gh api 'repos/dmz006/datawatch/code-scanning/alerts?state=open&per_page=100' --paginate` was reachable (exit 0) and returned exactly three open alerts, all last analysed at commit `3bd9b1c95`:
-
-| Alert | Rule | File:line (GitHub) | Why still open |
-|-------|------|--------------------|----------------|
-| #661 | `go/command-injection` | `internal/session/subprocess_resume.go:41` | Fixed on this branch, not yet merged. GitHub only re-scans after a merge to `main`. |
-| #714 | `js/insecure-randomness` | `internal/server/web/app.js:6982` | Fixed on this branch, not yet merged. Same reason. |
-| #715 | `go/reflected-xss` | `internal/mcp/transport_debug.go:128` | Fixed on this branch, not yet merged. Same reason. |
-
-No other alert is open on GitHub. No alert is open because it was dismissed upstream or because it was not fixed here: the 66 Go and 16 JavaScript/TypeScript results that the local scan still prints are alerts GitHub has already dismissed (see `docs/plans/2026-10-27-codeql-local-reproduction.md`) and are not open there.
+Unchanged from the first pass: `gh api 'repos/dmz006/datawatch/code-scanning/alerts?state=open&per_page=100'` returned exactly #661 (`go/command-injection`), #714 (`js/insecure-randomness`) and #715 (`go/reflected-xss`), all last analysed at `3bd9b1c95`. They are open because GitHub only re-scans `main` after a merge. The 66 Go and 16 JavaScript/TypeScript results the local scan still prints are alerts GitHub has dismissed (see `docs/plans/2026-10-27-codeql-local-reproduction.md`) and are not open there.
 
 ### Local scan: are #661, #714 and #715 cleared?
 
-Yes, all three are cleared. This was re-read from `.datawatch/codeql/out-r4/go.sarif` and `.datawatch/codeql/out-r4/javascript-typescript.sarif` (CodeQL CLI 2.27.3, default code-scanning suites) in this task, not only taken from the Re-scan section above: no result in either file is in `subprocess_resume.go` or `transport_debug.go`, and there is no `js/insecure-randomness` result. The Go file totals are `go/command-injection` 3 (was 4) and `go/reflected-xss` 1 (was 2), all in other files. Since that scan, the only code-scanned files that changed are none of the three alert files: the later commits changed only the CHANGELOG, the plan documents and a one-line edit to `internal/server/web/app-auto-mic-id.test.js`. The three source files are unchanged since the scan.
+By the scanner, yes: none of the three appears in `out-r5`. For #714 and #715 the code is fixed. For #661 the finding is cleared but the path from a request to a shell remains, by design; see the open decision at the top. If #661 stays open after the merge scan, that is a real regression and needs a new task; do not dismiss it.
 
 ### After the merge
 
-Once the branch is merged to `main` and the CodeQL workflow has run, #661, #714 and #715 should close on their own. If any is still open after that scan, it is a real regression and needs a new task; do not dismiss it.
-
+Once the branch is merged to `main` and the CodeQL workflow has run, #661, #714 and #715 should close on their own. Whoever merges should read the open decision first, because closing #661 by rescan is the outcome of option 1.

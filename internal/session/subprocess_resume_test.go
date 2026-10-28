@@ -155,7 +155,10 @@ func TestSubprocessCommandConstruction(t *testing.T) {
 }
 
 // The task keeps full shell semantics (lists, && and exit status) and the
-// helper records the status.
+// helper records the status. This test pins the documented behaviour of a
+// subprocess session (`--shell`, `!cmd`): the task is a shell command line. It
+// is also the point where that behaviour and a "no shell at all" launch cannot
+// both hold; see the open decision in the plan doc for the last three alerts.
 func TestSubprocessCommandRunsTaskAsShell(t *testing.T) {
 	m := newTestManager(t)
 	sess := newDetachedSubprocess(t, m, "echo one; echo two && exit 3")

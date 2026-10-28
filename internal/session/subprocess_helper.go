@@ -20,6 +20,14 @@ import (
 // shell itself; the only shell is the one the helper starts, and it is given
 // the task as a single argument after an option terminator, never a string the
 // helper or daemon concatenated.
+//
+// This does not remove the path from a request to a shell: the task still ends
+// up as the command string of bash -c, in the helper. What it removes is the
+// daemon building or splicing a command line. A launch with no shell at all
+// would run the task as one program with arguments and drop pipes, lists and
+// && from the documented --shell and !cmd behaviour; that trade is the
+// operator's to make and is recorded as an open decision in
+// docs/plans/2026-10-28-codeql-last-three-alerts.md.
 const (
 	// subprocessHelperArg is the reserved first argument that selects the
 	// helper. The daemon passes it as exactly: <exe> subprocessHelperArg

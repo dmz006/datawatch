@@ -229,6 +229,10 @@ func ObserveSSEHandler(next http.Handler) http.Handler {
 		isStream := r.Method == http.MethodGet &&
 			strings.Contains(r.Header.Get("Accept"), "text/event-stream")
 		if !isStream {
+			// Not wrapped, so the header is set here: the same listener
+			// answers POST /message and a GET /sse that sent no Accept
+			// header, and neither may be sniffed into another type.
+			w.Header().Set("X-Content-Type-Options", "nosniff")
 			if debug {
 				log.Printf("mcp/sse: req %s %s from %.150q", r.Method, r.URL.Path, r.RemoteAddr)
 			}

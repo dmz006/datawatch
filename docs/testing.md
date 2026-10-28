@@ -1871,3 +1871,40 @@ curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity
 | **Expected** | Chip labels are Pool full, Node busy, Back-off, Budget, Cool-down, Awaiting external and Tree lock. Unknown causes show only the reason text. No `img` element is created and the injected handler never runs. The normal progress bar reads `1/2 tasks · 50%`. |
 | **Actual** | Run live on 2026-10-27 against a daemon built from this worktree (`bin/datawatch`, `go build -o bin/datawatch ./cmd/datawatch/`), headless Chromium, exit 0. Re-run at 17:21 the same day with `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh TS-826` (the command prints `daemon healthy`, then `running node TS-826.mjs`, and exits 0; no output file is kept in the repository). The 104 `internal/server/web/*.test.js` node suites also pass, including `app-wait-reason-text.test.js` for the chip labels. A first run against the older installed binary failed on the progress bar (`progress bar markup was parsed into an element`), which shows the story detects the unescaped markup. |
 | **Result** | Pass (live) |
+
+---
+
+## CodeQL alerts on subprocess launch, MCP debug transport and dictation ids
+
+Three code-scanning alerts were addressed on one branch. Each fix has its own test description, steps, expected result and actual result. The sandbox daemon in every "Steps" list is loopback only with its data under a gitignored directory, never the production daemon on `8443`. Plan and decisions: [2026-10-28-codeql-last-three-alerts.md](plans/2026-10-28-codeql-last-three-alerts.md).
+
+### Subprocess session launch (`go/command-injection`)
+
+| Field | Details |
+|-------|---------|
+| **Description** | A subprocess session (`!cmd`, `schedule spawn --shell`, `"subprocess": true`) is started by the daemon re-running its own binary as a helper with a fixed argument list. The daemon builds no command line and starts no shell; the helper runs the task with `bash -c`, so the task keeps shell semantics. Invalid input (empty task, NUL byte, unsafe rc path) is refused and nothing runs. |
+| **Steps** | 1. `env -u TMUX -u TMUX_TMPDIR go test ./internal/session/ -count=1 -run 'TestSubprocess'`. 2. Start the sandbox daemon (`bin/datawatch --config <sandbox config> start --foreground`). 3. `curl -s -X POST http://127.0.0.1:18081/api/schedules -H 'Content-Type: application/json' -d '{"type":"spawn","command":"echo one; echo two \| tr a-z A-Z && exit 3","subprocess":true,"run_at":"<now+8s RFC3339>","project_dir":"<sandbox projects dir>"}'`. 4. After 20 s read `GET /api/sessions`, `sessions/<id>/output.log` and `sessions/<id>/subprocess.rc`. 5. Stop the daemon by its recorded PID. |
+| **Expected** | Unit: the daemon's launch command is the helper binary with `__subprocess-run <rc> -- <task>` (no `-c`, not a shell); hostile tasks (semicolons, pipes, ampersands, command substitution, backticks, quotes, a newline, leading dashes) stay one argument; invalid input returns no command; the helper refuses a bad rc path or empty task with status 2 and runs nothing. Live: the session ends `failed`, the log shows `one` and `TWO`, `subprocess.rc` holds `3`. |
+| **Actual** | Unit: `go test ./internal/session/ -run TestSubprocess` passes. The new `TestSubprocessCommandDaemonLaunchIsNotAShell` fails on the base commit `3bd9b1c95` (`daemon launches a shell: "/usr/bin/bash"`) and passes on the branch. Live, 2026-10-27: session `dw-sandbox-24030001-6406` state `failed`, log `one` / `TWO` / `[subprocess] failed: exit status 3`, `subprocess.rc` = `3`. |
+| **Result** | Pass |
+| **Limit** | There is no behavioural bug to reproduce here: base code and fixed code run a task identically. The regression test pins the structural property only. The task still reaches `bash -c` inside the helper; whether to remove the shell (and with it pipes and `&&`) is an open operator decision in the plan. |
+
+### MCP debug transport (`go/reflected-xss`)
+
+| Field | Details |
+|-------|---------|
+| **Description** | The MCP SSE listener sends `X-Content-Type-Options: nosniff` on every response, and its event stream carries no raw `<` or `>` byte (JSON `<` / `>`, a no-type or HTML stream is HTML-escaped). |
+| **Steps** | 1. `env -u TMUX -u TMUX_TMPDIR go test ./internal/mcp/ -count=1`. 2. Start the sandbox daemon with `mcp.sse_enabled: true` on `127.0.0.1:19091`. 3. Open the stream: `curl -sN -D- -H 'Accept: text/event-stream' http://127.0.0.1:19091/sse` (keep it open). 4. Read the `endpoint` event, then `curl -s -X POST '<endpoint url>' -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"<script>alert(1)</script>","arguments":{}}}'`. 5. Repeat step 3 without the `Accept` header, and `curl -sI -X POST` the endpoint. |
+| **Expected** | Response headers include `content-type: text/event-stream` and `x-content-type-options: nosniff` in every shape. The reply on the stream shows the tool name as `<script>...`, with no `<` or `>` in the stream. |
+| **Actual** | Unit: `go test ./internal/mcp/` passes; `TestSSEObserver_UnwrappedRequestsCarryNoSniff` fails with the observer's non-stream header line removed and passes with it. Live, 2026-10-27 (Python client, same steps): with `Accept` the header was `nosniff` and the stream carried `tool '<script>alert(1)</script>' not found`; **without `Accept` the first run returned no `nosniff` header (FAIL)**, which was fixed in `ObserveSSEHandler` and re-run: both shapes returned `nosniff`, no `<` or `>` in the stream, decoded message equals the original. |
+| **Result** | Pass after the fix described above |
+
+### Dictation field ids (`js/insecure-randomness`)
+
+| Field | Details |
+|-------|---------|
+| **Description** | A textarea without an id gets `_autoMicTa_<n>` from a page-level counter instead of a `Math.random()` suffix. The id is only the target of the mic button's `data-mic-for`. |
+| **Steps** | 1. `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/*.test.js`. 2. Start the sandbox daemon and open `http://127.0.0.1:18081/` in a browser (user validation: open any panel with a large text box while a Whisper backend is configured, confirm the microphone button appears next to the box and starts/stops dictation). 3. For a scripted check, in the page console set `state._whisperEnabled = true`, add two `<textarea rows="3">` without an id and one with `id="keep-me"`, run `window.autoAttachMics(document.body)`. |
+| **Expected** | Ids `_autoMicTa_1`, `_autoMicTa_2`, `keep-me`; each `button[data-mic-for]` resolves to its own textarea; no console error. |
+| **Actual** | Node suite 1317 of 1317 pass (including `app-auto-mic-id.test.js`). Headless Chrome against the sandbox daemon, 2026-10-27: ids `_autoMicTa_1`, `_autoMicTa_2`, `keep-me`; all three buttons resolve; no page error. The microphone itself was not exercised (needs a Whisper backend and a microphone). |
+| **Result** | Pass (scripted); the dictation round trip is for a person with a Whisper backend to confirm |

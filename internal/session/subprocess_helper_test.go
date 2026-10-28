@@ -331,3 +331,29 @@ func TestSubprocessRunRefusesInvalidTask(t *testing.T) {
 		t.Error("no process was started, so no pid file may exist")
 	}
 }
+
+// The daemon itself never starts a shell: the program it launches for a
+// subprocess session is the helper (its own binary), and no "-c" command string
+// is in its argument list. This is the structural property the command-injection
+// fix rests on; the shell the helper starts below it is a separate, documented
+// matter (see the plan doc's open decision).
+func TestSubprocessCommandDaemonLaunchIsNotAShell(t *testing.T) {
+	m := newTestManager(t)
+	sess := newDetachedSubprocess(t, m, "echo ok")
+	cmd, err := subprocessCommand(sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch filepath.Base(cmd.Path) {
+	case "bash", "sh", "dash", "zsh", "ksh", "fish":
+		t.Errorf("daemon launches a shell: %q", cmd.Path)
+	}
+	for _, a := range cmd.Args[1:] {
+		if a == "-c" {
+			t.Errorf("daemon argument list carries -c: %q", cmd.Args)
+		}
+	}
+	if len(cmd.Args) < 2 || cmd.Args[1] != subprocessHelperArg {
+		t.Errorf("first argument must select the helper, args = %q", cmd.Args)
+	}
+}

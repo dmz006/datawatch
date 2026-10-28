@@ -1196,7 +1196,6 @@
   "session_chip_waiting": "待機中",
   "session_chrome": "Chrome統合",
   "session_compute_ref_title": "v7 コンピュートノード",
-  "session_last_activity_title": "バックエンドが最後に出力してからの経過時間 — 生成の合間に画面上の動きがないヘッドレス／非対話セッション（例: opencode run）では唯一の指標です",
   "session_detail_cancel_schedule": "スケジュールをキャンセル",
   "session_detail_delete_body": "セッションレコードがサーバーから削除されます。ディスク上のデータは保持されます。この操作は取り消せません。",
   "session_detail_delete_title": "セッションを削除しますか？",

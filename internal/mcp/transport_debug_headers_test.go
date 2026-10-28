@@ -277,3 +277,28 @@ func TestSSEObserver_DeclaredStreamKeepsNonMarkupBytes(t *testing.T) {
 		t.Fatalf("body = %q, want %q", body, payload)
 	}
 }
+
+// A request the observer does not wrap (a POST, or a GET that did not ask for
+// text/event-stream) is answered by the same listener and still carries
+// nosniff on the wire.
+func TestSSEObserver_UnwrappedRequestsCarryNoSniff(t *testing.T) {
+	srv := httptest.NewServer(ObserveSSEHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusAccepted)
+	})))
+	defer srv.Close()
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		req, err := http.NewRequest(method, srv.URL+"/message?q="+sseReflected, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("%s without an event-stream Accept: X-Content-Type-Options %q, want nosniff", method, got)
+		}
+	}
+}

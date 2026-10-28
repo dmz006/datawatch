@@ -1196,7 +1196,6 @@
   "session_chip_waiting": "Wartend",
   "session_chrome": "Chrome-Integration",
   "session_compute_ref_title": "v7 Compute-Knoten",
-  "session_last_activity_title": "Zeit seit der letzten Ausgabe des Backends — das einzige Signal für headless/nicht-interaktive Sitzungen (z. B. opencode run), die zwischen Generierungen keine sichtbare Bildschirmaktivität zeigen",
   "session_detail_cancel_schedule": "Zeitplan abbrechen",
   "session_detail_delete_body": "Der Sitzungsdatensatz wird vom Server entfernt. Daten auf der Festplatte bleiben erhalten. Das kann nicht rückgängig gemacht werden.",
   "session_detail_delete_title": "Sitzung löschen?",

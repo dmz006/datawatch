@@ -36,7 +36,10 @@ func subprocessFile(sess *Session, name string) string {
 
 // subprocessCommand builds the command for a subprocess session: this binary
 // re-executed as the helper, with the rc-file path and the task as separate
-// argv entries and no shell in between. Every value is validated first; on any
+// argv entries. The daemon starts no shell and builds no command string; the
+// helper it starts then runs the task with bash -c, because a subprocess
+// session's task is a shell command line by design. So a task still reaches a
+// shell, one process further down. Every value is validated first; on any
 // invalid input no command is returned, so nothing runs.
 //
 // The helper's command line is <exe> __subprocess-run <rc-file> -- <task>, so
