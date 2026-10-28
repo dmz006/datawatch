@@ -1754,5 +1754,14 @@
   "status_est_cost": "est.",
   "prd_task_projdir_label": "Directorio de proyecto (anulación)",
   "prd_task_projdir_placeholder": "hereda el directorio del Autómata",
-  "prd_task_projdir_badge_title": "Anulación del directorio de proyecto por tarea"
+  "prd_task_projdir_badge_title": "Anulación del directorio de proyecto por tarea",
+  "pi_progress_label": "Progreso en vivo",
+  "pi_progress_loading": "Cargando…",
+  "pi_progress_last_event": "Último evento",
+  "pi_progress_turns": "Turnos",
+  "pi_progress_tools": "Herramientas",
+  "pi_progress_last_tool": "Última herramienta",
+  "pi_progress_summary": "Intención",
+  "pi_progress_tokens": "Tokens",
+  "pi_progress_looping": "Bucle"
 }

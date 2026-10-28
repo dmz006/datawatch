@@ -1754,5 +1754,14 @@
   "status_est_cost": "est.",
   "prd_task_projdir_label": "プロジェクトディレクトリの上書き",
   "prd_task_projdir_placeholder": "オートマトンのディレクトリを継承",
-  "prd_task_projdir_badge_title": "タスクごとのプロジェクトディレクトリ上書き"
+  "prd_task_projdir_badge_title": "タスクごとのプロジェクトディレクトリ上書き",
+  "pi_progress_label": "進行状況",
+  "pi_progress_loading": "読み込み中…",
+  "pi_progress_last_event": "最後のイベント",
+  "pi_progress_turns": "ターン数",
+  "pi_progress_tools": "ツール",
+  "pi_progress_last_tool": "最後のツール",
+  "pi_progress_summary": "意図",
+  "pi_progress_tokens": "トークン数",
+  "pi_progress_looping": "ループ"
 }

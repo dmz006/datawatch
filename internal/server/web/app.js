@@ -2147,6 +2147,8 @@ function navigate(view, sessionId, fromPopstate) {
     destroyXterm(); // clean up terminal when leaving session detail
     // Clean up stats polling interval
     if (window._sessionStatsInterval) { clearInterval(window._sessionStatsInterval); window._sessionStatsInterval = null; }
+    // Clean up pi progress polling interval (PWA poll-stacking rule)
+    if (window._piProgressInterval) { clearInterval(window._piProgressInterval); window._piProgressInterval = null; }
     const statsPanel = document.getElementById('statsPanel');
     if (statsPanel && statsPanel._statsInterval) {
       clearInterval(statsPanel._statsInterval);
@@ -3460,6 +3462,12 @@ function renderSessionDetail(sessionId) {
       <!-- v5.28.5 (datawatch#34) — per-session process stats panel -->
       <div id="statsPanel" class="session-stats-panel" style="display:none;"></div>
       <div id="sessionPluginWidgets" class="session-plugin-widgets" style="display:none;"></div>
+      <!-- pi live progress (BL: autonomous progress block) — below stats and the
+           plugin widgets; polls /api/sessions/{id}/progress via the shared 5s
+           interval (window._piProgressInterval), hidden until first success.
+           Kept after sessionPluginWidgets so the existing source-order tests
+           (app-session-plugin-widgets) and widget CSS anchoring stay intact. -->
+      <div id="piProgressPanel" class="session-pi-progress pi-progress-live" data-pi-progress-sid="${escHtml(sessionId)}" style="display:none;"></div>
       ${connBanner}
       ${rateLimitBanner}
       ${outputAreaHtml}
@@ -3634,6 +3642,7 @@ function renderSessionDetail(sessionId) {
   }
   loadSessionSchedules(sessionId);
   loadSessionStats(sessionId);
+  startPiProgressPolling(); // idempotent — reuses window._piProgressInterval
   refreshSessionPluginWidgets();
   // GATE alpha.36 (operator 2026-05-10): eager-fetch the status board on
   // mount so the Status tab badge dot reflects state immediately —
@@ -12157,6 +12166,104 @@ function _renderFilesGeneratedRow(files, verificationScript, projDir, rowClass, 
        </div>`;
 }
 
+// ── pi live progress (task card + session detail) ────────────────────
+// Compact progress surface for running autonomous tasks and the session
+// detail view: relative age of the last log event, assistant turns, tool
+// call counts by name, the last tool, the agent's 200-char last-stated
+// intent (last_summary) and cumulative tokens. Data shape is
+// autonomous.TaskProgress — either the per-task `progress` field from the
+// PRD payload or GET /api/sessions/{id}/progress. A looping_warning
+// string (task-level, from the PRD payload) renders as a visible badge.
+//
+// Polling follows the PWA poll-stacking rule (BL v8.33.5, same fix as
+// window._webSearchStatsInterval): exactly one shared interval handle on
+// window._piProgressInterval is reused across repeated renders — never
+// stacked — and the tick self-stops when no progress block is mounted,
+// so navigating away leaves no idle timer behind.
+
+function renderPiProgressBlock(progress, warning) {
+  const p = (progress && typeof progress === 'object') ? progress : {};
+  const hasData = !!(p.last_event_at || p.assistant_turns
+    || (p.tool_calls && Object.keys(p.tool_calls).length)
+    || p.last_tool_name || p.last_summary || p.tokens);
+  if (!hasData) {
+    return `<span class="pi-progress-inline pi-progress-loading">${escHtml(t('pi_progress_loading') || 'Loading…')}</span>`;
+  }
+  const parts = [];
+  if (p.last_event_at) {
+    const raw = String(p.last_event_at);
+    const age = (!Number.isNaN(new Date(raw).getTime())) ? (timeAgo(raw) || raw) : raw;
+    parts.push(`<span class="pi-progress-part" title="${escHtml(raw)}">${escHtml(t('pi_progress_last_event') || 'Last event')} ${escHtml(age)}</span>`);
+  }
+  if (p.assistant_turns) {
+    parts.push(`<span class="pi-progress-part">${escHtml(t('pi_progress_turns') || 'Turns')} ${Number(p.assistant_turns) || 0}</span>`);
+  }
+  if (p.tool_calls && Object.keys(p.tool_calls).length) {
+    const tools = Object.keys(p.tool_calls).sort()
+      .map(n => `${escHtml(String(n))} ${Number(p.tool_calls[n]) || 0}`).join(' · ');
+    parts.push(`<span class="pi-progress-part" title="${escHtml(t('pi_progress_tools') || 'Tools')}">${escHtml(t('pi_progress_tools') || 'Tools')} ${tools}</span>`);
+  }
+  if (p.last_tool_name) {
+    parts.push(`<span class="pi-progress-part">${escHtml(t('pi_progress_last_tool') || 'Last tool')} ${escHtml(String(p.last_tool_name))}</span>`);
+  }
+  if (p.last_summary) {
+    const sum = String(p.last_summary).slice(0, 200);
+    parts.push(`<span class="pi-progress-part pi-progress-summary" title="${escHtml(String(p.last_summary))}">${escHtml(t('pi_progress_summary') || 'Intent')} ${escHtml(sum)}</span>`);
+  }
+  if (p.tokens) {
+    parts.push(`<span class="pi-progress-part">${escHtml(t('pi_progress_tokens') || 'Tokens')} ${Number(p.tokens) || 0}</span>`);
+  }
+  const loopBadge = warning
+    ? `<span class="pi-progress-loop-badge" title="${escHtml(String(warning))}">&#9851; ${escHtml(t('pi_progress_looping') || 'Looping')}</span>`
+    : '';
+  return `<span class="pi-progress-inline">${loopBadge}${parts.join('<span class="pi-progress-sep">·</span>')}</span>`;
+}
+
+function _piProgressStop() {
+  if (window._piProgressInterval) { clearInterval(window._piProgressInterval); window._piProgressInterval = null; }
+}
+
+function piProgressTick() {
+  const live = [];
+  try {
+    (document.querySelectorAll('.pi-progress-live') || [])
+      .forEach(el => { if (el && el.getAttribute && el.getAttribute('data-pi-progress-sid')) live.push(el); });
+  } catch (e) { live.length = 0; }
+  if (!live.length) { _piProgressStop(); return; } // nothing mounted — never keep an idle timer
+  window._piProgressInFlight = window._piProgressInFlight || new Set();
+  for (const el of live) {
+    const sid = el.getAttribute('data-pi-progress-sid');
+    if (window._piProgressInFlight.has(sid)) continue; // no overlapping fetch per source
+    window._piProgressInFlight.add(sid);
+    apiFetch('/api/sessions/' + encodeURIComponent(sid) + '/progress')
+      .then(d => {
+        if (d && typeof d === 'object') {
+          // looping_warning comes from the PRD payload (task level); the
+          // progress endpoint may not carry it, so keep the warning we saw
+          // when the task card first rendered this session. Once set it
+          // stays set for this page load — it is never cleared.
+          const warn = (d && d.looping_warning) || (window._piProgressWarnings && window._piProgressWarnings[sid]);
+          el.innerHTML = renderPiProgressBlock(d, warn);
+          if (el.style) el.style.display = '';
+        }
+      })
+      .catch(() => {}) // non-pi backends / no log yet: leave the placeholder in place
+      .then(() => { window._piProgressInFlight.delete(sid); });
+  }
+}
+
+function startPiProgressPolling() {
+  // PWA poll-stacking rule: if a render already started the shared handle
+  // (window._piProgressInterval), reuse it — never add a second interval.
+  if (window._piProgressInterval) return;
+  piProgressTick(); // first fetch immediately
+  window._piProgressInterval = setInterval(piProgressTick, 5000); // poll every 5s
+}
+window.renderPiProgressBlock = renderPiProgressBlock;
+window.piProgressTick = piProgressTick;
+window.startPiProgressPolling = startPiProgressPolling;
+window._piProgressStop = _piProgressStop;
+
 function renderTask(prd, story, task, editable) {
   // editable is now passed from caller; fall back when called standalone.
   if (typeof editable === 'undefined') {
@@ -12218,6 +12325,22 @@ function renderTask(prd, story, task, editable) {
   // v8.23.0 — session link: click navigates to the worker session.
   const sessionLink = task.session_id
     ? `<span class="prd-task-session-link" onclick="event.stopPropagation();navigate('session-detail','${escHtml(task.session_id)}')" title="${t('prd_task_view_session')||'View worker session'}">&rarr; ${escHtml(task.session_id.slice(0,4))}</span>`
+    : '';
+  // pi live progress — running tasks only. First paint from the PRD
+  // payload's per-task `progress` snapshot (server already computes it for
+  // in-progress tasks); the shared poll keeps it fresh via the worker
+  // session's own log. looping_warning renders as a badge.
+  const _piRunningTask = !!task.session_id && ['running','in_progress','verifying','running_tests'].includes(task.status || '');
+  if (_piRunningTask && task.looping_warning) {
+    // Remember the task-level warning by session id so the shared poll
+    // (session detail + repeated renders) keeps the badge visible even
+    // though /api/sessions/{id}/progress doesn't carry it itself.
+    window._piProgressWarnings = window._piProgressWarnings || {};
+    window._piProgressWarnings[String(task.session_id)] = String(task.looping_warning);
+  }
+  if (_piRunningTask) startPiProgressPolling(); // idempotent — reuses window._piProgressInterval
+  const piProgressBlock = _piRunningTask
+    ? `<span class="pi-progress-live prd-task-progress" data-pi-progress-sid="${escHtml(String(task.session_id))}">${renderPiProgressBlock(task.progress, task.looping_warning)}</span>`
     : '';
   // v8.23.0 — retry button for failed/blocked tasks while PRD is running.
   // BL382 — also add cancel-task (pending/in_progress) + requeue (completed/cancelled).
@@ -12322,7 +12445,7 @@ function renderTask(prd, story, task, editable) {
       ${statusGlyphSpan}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
-      ${llmBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}
+      ${llmBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}
       <span class="prd-task-header-spacer"></span>
       ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>

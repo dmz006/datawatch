@@ -1754,5 +1754,14 @@
   "status_est_cost": "est.",
   "prd_task_projdir_label": "Projektverzeichnis-Überschreibung",
   "prd_task_projdir_placeholder": "erbt Verzeichnis des Automaten",
-  "prd_task_projdir_badge_title": "Projektverzeichnis-Überschreibung pro Aufgabe"
+  "prd_task_projdir_badge_title": "Projektverzeichnis-Überschreibung pro Aufgabe",
+  "pi_progress_label": "Live-Fortschritt",
+  "pi_progress_loading": "Wird geladen…",
+  "pi_progress_last_event": "Letztes Ereignis",
+  "pi_progress_turns": "Runden",
+  "pi_progress_tools": "Tools",
+  "pi_progress_last_tool": "Letztes Tool",
+  "pi_progress_summary": "Absicht",
+  "pi_progress_tokens": "Tokens",
+  "pi_progress_looping": "Schleife"
 }

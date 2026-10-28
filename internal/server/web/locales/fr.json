@@ -1754,5 +1754,14 @@
   "status_est_cost": "est.",
   "prd_task_projdir_label": "Répertoire de projet (surcharge)",
   "prd_task_projdir_placeholder": "hérite du répertoire de l'Automate",
-  "prd_task_projdir_badge_title": "Surcharge du répertoire de projet par tâche"
+  "prd_task_projdir_badge_title": "Surcharge du répertoire de projet par tâche",
+  "pi_progress_label": "Progrès en direct",
+  "pi_progress_loading": "Chargement…",
+  "pi_progress_last_event": "Dernier événement",
+  "pi_progress_turns": "Tournées",
+  "pi_progress_tools": "Outils",
+  "pi_progress_last_tool": "Dernier outil",
+  "pi_progress_summary": "Intention",
+  "pi_progress_tokens": "Tokens",
+  "pi_progress_looping": "Boucle"
 }
