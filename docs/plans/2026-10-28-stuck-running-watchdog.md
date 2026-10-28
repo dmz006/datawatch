@@ -74,7 +74,7 @@ bumps the version itself, drop the bump in `cmd/datawatch/main.go` and
 ## Rule conflicts for the operator
 
 1. **Version on a feature branch.** See the section above.
-2. **Localization Rule against Terminology Rule.** The four non-English bundles (de, es, fr, ja) carry English placeholder text for `settings_stuck_running_seconds` ("Stuck run timeout (seconds)") and `settings_stuck_running_seconds_help`; they are not translated. The translations are requested in datawatch-app issue 290, and the PWA bundles will mirror them once the app sends them. The placeholders are not word-for-word the `en.json` text, because the Terminology Rule guard `TestLocales_AutomatonNeverUntranslatedOrMistranslated` fails the suite when a de, es, fr or ja value contains the English word "Automaton"; using the exact `en.json` label ("Stuck Automaton timeout (seconds)") was tried and fails that guard. The operator can settle this by exempting the placeholder keys in the guard, which is outside this change.
+2. **Localization Rule against Terminology Rule.** The four non-English bundles (de, es, fr, ja) carry the English placeholder text for `settings_stuck_running_seconds`, exactly the `en.json` value ("Stuck Automaton timeout (seconds)"); they are not translated. The translations are requested in datawatch-app issue 290, and the PWA bundles will mirror them once the app sends them. The Terminology Rule guard `TestLocales_AutomatonNeverUntranslatedOrMistranslated` would reject the English word "Automaton" in those bundles, so the guard exempts that one key through `pendingTranslationKeys`, and only while the value is exactly the `en.json` text. Remove the exemption when issue 290 delivers the translations.
 
 ## Parity surface
 

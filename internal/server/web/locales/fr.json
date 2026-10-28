@@ -1796,7 +1796,7 @@
   "settings_judge_size_threshold": "Seuil de taille du juge (lignes, 0=désactivé)",
   "settings_judge_size_threshold_help": "Quand la modification examinée dépasse ce nombre de lignes ajoutées et supprimées, le juge essaie d'abord claude-code, puis les autres backends dans leur ordre habituel. Les lignes sont comptées sur la branche de l'automate par rapport à sa base de fusion, sans les fichiers de verrouillage. 0 désactive cette option. La valeur par défaut est 400.",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
-  "settings_stuck_running_seconds": "Stuck run timeout (seconds)",
+  "settings_stuck_running_seconds": "Stuck Automaton timeout (seconds)",
   "settings_stuck_running_seconds_help": "How long a running item may stay running with every task finished and no live session before the watchdog re-checks it once, then blocks it. 0 uses the default (900).",
   "settings_session_idle_timeout": "Délai de session inactive (sec, 0=15min)",
   "settings_verifier_infra_escalation_threshold": "Seuil d'escalade des échecs infra du vérificateur (0=2)",

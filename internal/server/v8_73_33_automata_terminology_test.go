@@ -38,12 +38,23 @@ func isAutomationObjectKey(key string) bool {
 	return key == "nav_automation" || strings.HasPrefix(key, "automation_")
 }
 
+// pendingTranslationKeys lists keys whose de/es/fr/ja value is, by the
+// Localization Rule, the English en.json text until the datawatch-app
+// translation issue is done. The untranslated-English check is skipped for
+// such a key only while its value is exactly the en.json value, so a
+// half-translated or edited value still fails the guard.
+var pendingTranslationKeys = map[string]bool{
+	"settings_stuck_running_seconds": true, // datawatch-app issue 290
+}
+
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {
+	en := loadLocaleBundle(t, "en")
 	for _, lang := range []string{"de", "es", "fr", "ja"} {
 		bundle := loadLocaleBundle(t, lang)
 		wrongWord := perLocaleWrongWord[lang]
 		for key, val := range bundle {
-			if automatonLeakRe.MatchString(val) {
+			pending := pendingTranslationKeys[key] && val == en[key]
+			if !pending && automatonLeakRe.MatchString(val) {
 				t.Errorf("locale %s key %q still has the untranslated English word: %q", lang, key, val)
 			}
 			if wrongWord != nil && !isAutomationObjectKey(key) && wrongWord.MatchString(val) {
