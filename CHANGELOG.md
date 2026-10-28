@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.31.0 — Opt-in attempt time and no-progress limits for autonomous workers
+
+- **Two new settings, both off by default:** `autonomous.task_max_attempt_seconds` caps how long a single attempt may run at all (recommended 5400), and `autonomous.task_no_progress_seconds` caps how long an attempt may go without progress (recommended 1800).
+- **Progress means the worker is visibly doing work:** new terminal output, a changed file in the work directory, a new commit, or a busy child process. None of these for the configured window counts as no progress.
+- **Uncommitted work is saved before the worker is stopped:** it is saved to a named ref, then the attempt is stopped and the task is retried, so no work is thrown away.
+- **After the retry budget is exhausted, the task is held for your review** with the reason in its failure detail ('no progress for N seconds: no output, no file changes, no commits').
+
 ## v9.30.2 — ZAP report attach tolerates API throttling
 
 - **The security scan no longer goes red when GitHub throttles the report upload.** The owasp-zap workflow's last step attaches the scan reports to a release. It now runs only for a real release tag (never for a main branch run), retries with a growing wait when GitHub throttles the token, and, if the throttling persists, logs a warning and leaves the run green because the scan result is what counts; the reports stay available from the run's `owasp-zap-reports` artifact. A scan finding above the accepted thresholds, or any other upload error such as a permissions failure, still fails the run. A new section in `docs/operations.md` explains how to re-attach the reports by hand.
