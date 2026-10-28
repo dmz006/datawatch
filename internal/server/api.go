@@ -6113,6 +6113,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"judge_timeout_seconds":                config.NormalizeJudgeTimeoutSeconds(s.cfg.Autonomous.JudgeTimeoutSeconds),
 			"judge_size_threshold_lines":           s.cfg.Autonomous.JudgeSizeThresholdLines,
 			"session_idle_timeout_seconds":         s.cfg.Autonomous.SessionIdleTimeoutSeconds,
+			"descendant_stall_seconds":             s.cfg.Autonomous.DescendantStallSeconds,
 			"session_start_confirm_seconds":        s.cfg.Autonomous.SessionStartConfirmSeconds,
 			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
 			"worker_idle_nudge_seconds":            s.cfg.Autonomous.WorkerIdleNudgeSeconds,
@@ -8058,6 +8059,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// config.NormalizeSessionIdleTimeoutSeconds at read time.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.SessionIdleTimeoutSeconds = n
+			}
+		case "autonomous.descendant_stall_seconds":
+			// Stored as-is; zero falls back to the default via
+			// config.NormalizeDescendantStallSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.DescendantStallSeconds = n
 			}
 		case "autonomous.verifier_infra_escalation_threshold":
 			// Zero falls back to the default via

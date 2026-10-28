@@ -115,6 +115,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("judge_size_threshold_lines", mcpsdk.Description("Changed-line count above which the judges route by change size (default 400). 0 turns size-aware routing off. Must be a whole number of 0 or more.")),
 		mcpsdk.WithNumber("verifier_no_progress_timeout_seconds", mcpsdk.Description("Bound in seconds for a verifier session that shows no output file, no pane activity, no live runner process and no held capacity slot before it is ended as an infra failure (default 900 = 15m; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("session_idle_timeout_seconds", mcpsdk.Description("Bound for one autonomous worker/verifier session in seconds — a session sitting in waiting_input/idle with no live child process longer than this is treated as an infra failure and retried through the auto_fix_retries budget (default 900 = 15m; 0 or negative means use the default)")),
+		mcpsdk.WithNumber("descendant_stall_seconds", mcpsdk.Description("Bound in seconds for a pi-prompt autonomous worker whose only liveness is its work child process — no output, no file change and no log write for this long means the session is stalled and is reaped as an infra failure (default 2700 = 45 minutes; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("verifier_infra_escalation_threshold", mcpsdk.Description("Consecutive infra verifier failures on one task after which its next verification runs on fallback_verification_backend (default 2; 0 = default)")),
 		mcpsdk.WithString("fallback_verification_backend", mcpsdk.Description("Backend used for the one escalated verification of a task (default claude-code; empty = default)")),
 		mcpsdk.WithNumber("worker_idle_nudge_seconds", mcpsdk.Description("How long a PRD-owned claude-code worker may sit idle, in seconds, before it is sent one nudge asking it to print its completion line or continue (default 180; 0 or negative means use the default)")),
@@ -347,6 +348,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if v := req.GetFloat("session_idle_timeout_seconds", -1); v >= 0 {
 		body["session_idle_timeout_seconds"] = int(v)
+	}
+	if v := req.GetFloat("descendant_stall_seconds", -1); v >= 0 {
+		body["descendant_stall_seconds"] = int(v)
 	}
 	if v := req.GetFloat("verifier_infra_escalation_threshold", -1); v >= 0 {
 		body["verifier_infra_escalation_threshold"] = int(v)

@@ -1781,6 +1781,7 @@
   "settings_judge_size_threshold_help": "レビュー対象の変更の追加行と削除行の合計がこの行数を超える場合、ジャッジはまず claude-code を試し、その後は通常の順序で他のバックエンドを試します。行数はオートマトンのブランチをマージベースと比較して数え、ロックファイルは除外します。0 でこの機能をオフにします。既定値は400です。",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_session_idle_timeout": "セッションアイドルタイムアウト（秒、0=15分）",
+  "settings_descendant_stall_seconds": "Descendant stall timeout (sec, 0=45min)",
   "settings_verifier_infra_escalation_threshold": "検証インフラ障害エスカレーションしきい値（0=2）",
   "settings_fallback_verification_backend": "フォールバック検証バックエンド（空=claude-code）",
   "settings_verifier_no_progress_timeout": "検証セッションの無進捗タイムアウト（秒、0=10分）",

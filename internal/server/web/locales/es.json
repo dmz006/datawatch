@@ -1781,6 +1781,7 @@
   "settings_judge_size_threshold_help": "Cuando el cambio en revisión supera esta cantidad de líneas añadidas y eliminadas, el juez prueba primero claude-code y después los demás backends en su orden habitual. Las líneas se cuentan en la rama del autómata frente a su base de fusión, sin contar los archivos de bloqueo. 0 lo desactiva. El valor predeterminado es 400.",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_session_idle_timeout": "Tiempo de espera de sesión inactiva (seg, 0=15min)",
+  "settings_descendant_stall_seconds": "Descendant stall timeout (sec, 0=45min)",
   "settings_verifier_infra_escalation_threshold": "Umbral de escalada de fallos de infra del verificador (0=2)",
   "settings_fallback_verification_backend": "Backend de verificación de respaldo (vacío=claude-code)",
   "settings_verifier_no_progress_timeout": "Tiempo de espera del verificador sin progreso (seg, 0=10min)",
