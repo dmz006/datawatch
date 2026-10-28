@@ -173,12 +173,14 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    - **Text input** — narrows by session name, task, ID,
      `llm_ref`, or `compute_node_ref` substrings. Combines with the
      badge filters.
-   - **Tags** (header button) — the session list's **Watched only**
-     toggle and tag filter live in the **Tags** dropdown in the page
-     header, not in the filter bar. Open it, tick **Watched only** to
+   - **Tags** (header icon button) — the session list's **Watched only**
+     toggle and tag filter live in the dropdown behind the Tags icon
+     button in the page header, not in the filter bar. The button is a
+     tag icon with no visible word; its tooltip and accessible name
+     read **Tags**. Open it, tick **Watched only** to
      list only sessions you watch, and tick tags to list only sessions
      that carry them (**match ANY** by default; the match button
-     switches to **match ALL**). The button shows a count of the active
+     switches to **match ALL**). The icon shows a count of the active
      filters, and **Clear** in the dropdown resets the tag ticks. These
      combine with the filter bar above. See
      [`automata-tags.md`](automata-tags.md#the-header-tags-dropdown).
@@ -203,7 +205,7 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    - ⚙ `<compute-node>` purple badge (v7 Compute Node, when set).
    - Hover each for a tooltip explaining the v7 field.
    The session header has no time counter and no watch eye. Watching
-   moved into the dropdown: open **Tags** in the header and, under
+   moved into the dropdown: open the Tags icon button in the header and, under
    **This session**, press **Watch this session** (or **Stop watching
    this session**). The same section has **Edit tags of this session**.
 

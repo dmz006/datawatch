@@ -149,17 +149,33 @@ test('tree nodes show the chips of each session, parent and child', () => {
 
 // ── Detail view ──────────────────────────────────────────────────────────────
 
-test('the detail Tags row shows the chips and an edit button, or a none note', () => {
+test('the detail Tags row renders only the chips, with no edit button, none note or label', () => {
   const row = makeStubElement();
   const sb = loadApp({ byId: { sessionDetailTagRow: row } });
   sb._renderSessionDetailTagRow(sess({ tags: ['own1'], inherited_tags: ['inh1'] }));
   assert.match(row.innerHTML, /data-tag-id="own1"/);
+  assert.match(row.innerHTML, /data-tag-id="inh1"/);
   assert.match(row.innerHTML, /tag-chip-inherited/);
-  assert.match(row.innerHTML, /openSessionTagsModal\(/);
-  assert.match(row.innerHTML, />Edit tags</);
+  assert.doesNotMatch(row.innerHTML, /openSessionTagsModal/);
+  assert.doesNotMatch(row.innerHTML, /Edit tags/);
+  assert.doesNotMatch(row.innerHTML, /No tags/);
+  assert.doesNotMatch(row.innerHTML, /Tags/);
+});
+
+test('the detail Tags row is hidden and empty when the session has no tags', () => {
+  const row = makeStubElement();
+  const sb = loadApp({ byId: { sessionDetailTagRow: row } });
   sb._renderSessionDetailTagRow(sess({}));
-  assert.match(row.innerHTML, />No tags</);
-  assert.match(row.innerHTML, /openSessionTagsModal\(/);
+  assert.equal(row.innerHTML, '');
+  assert.equal(row.style.display, 'none');
+});
+
+test('the detail Tags row is shown when the session has tags', () => {
+  const row = makeStubElement();
+  const sb = loadApp({ byId: { sessionDetailTagRow: row } });
+  sb._renderSessionDetailTagRow(sess({}));
+  sb._renderSessionDetailTagRow(sess({ tags: ['own1'], inherited_tags: [] }));
+  assert.notEqual(row.style.display, 'none');
 });
 
 test('the detail view template carries the Tags row slot', () => {
@@ -430,8 +446,8 @@ test('a failed registry load does not repaint', async () => {
 // ── Locales ──────────────────────────────────────────────────────────────────
 
 const NEW_KEYS = [
-  'tag_inherited_label', 'tag_inherited_tip', 'tag_inherited_note', 'tag_session_none',
-  'tag_session_edit', 'tag_session_edit_title', 'tag_session_batch_title',
+  'tag_inherited_label', 'tag_inherited_tip', 'tag_inherited_note',
+  'tag_session_edit_title', 'tag_session_batch_title',
 ];
 
 test('the new strings exist in all five bundles, keep their placeholder and carry no tracker ID', () => {

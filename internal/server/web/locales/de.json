@@ -2535,8 +2535,6 @@
   "tag_inherited_label": "geerbt",
   "tag_inherited_tip": "Vom Automaten geerbt; dort ändern",
   "tag_inherited_note": "Vom Automaten geerbt (schreibgeschützt):",
-  "tag_session_none": "Keine Tags",
-  "tag_session_edit": "Tags bearbeiten",
   "tag_session_edit_title": "Tags der Sitzung",
   "tag_session_batch_title": "Tags zu %1$d Sitzungen hinzufügen",
   "settings_automata_questions_enabled": "Operator-Fragen für Automaten (standardmäßig aus)",

@@ -2535,8 +2535,6 @@
   "tag_inherited_label": "inherited",
   "tag_inherited_tip": "Inherited from the Automaton; change it there",
   "tag_inherited_note": "Inherited from the Automaton (read-only):",
-  "tag_session_none": "No tags",
-  "tag_session_edit": "Edit tags",
   "tag_session_edit_title": "Session tags",
   "tag_session_batch_title": "Add tags to %1$d sessions",
   "settings_automata_questions_enabled": "Operator questions for Automata (off by default)",
