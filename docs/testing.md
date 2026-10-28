@@ -95,6 +95,112 @@ When documenting a test, use this table format:
   affected file named, and that exempt locations (Go code comments, `docs/plans/`)
   still pass.
 
+## Test daemon cleanup rules
+
+Every job that starts a datawatch daemon must end that daemon, and every session the
+daemon started, on every exit path — a normal exit, a failure, and an interrupt.
+A daemon that is started and never ended holds its ports and its sessions open until
+the machine is rebooted, and the same leak keeps recurring in test and tooling
+scripts, so the rule is written down, made into a helper library, and enforced by
+two checkers plus a set of regression tests.
+
+- **What counts as a test daemon.** A datawatch daemon whose `--config` path points
+  inside throwaway space: under `/tmp` or `$TMPDIR`, or inside a `datawatch-<hex>`
+  run folder next to the repository root. Your own daemon's config sits in your data
+  directory (`~/.datawatch/...`), so the operator's daemon is never classified as a
+  test daemon and nothing here ever targets it. A multiplexer server is never
+  touched by any of these scripts.
+- **How a daemon must be ended.** By its recorded PID only, and only after its live
+  `/proc/<pid>/cmdline` has been re-read and still carries the marker recorded when
+  the daemon was started (its config path). The daemon's sessions get ended first,
+  through the daemon's own API with its bearer token, and only then is the daemon
+  signalled. Ending processes by name pattern (`pkill -f`, `pgrep -f`, `killall`,
+  pipelines that grep for a name and then kill) is banned everywhere under
+  `scripts/` and `tests/`, because such a pattern can reach the operator's daemon or
+  any other process whose command line merely mentions the word.
+- **`scripts/test-daemon-lib.sh` — the shared lifecycle helper.** A shell job that
+  starts a daemon sources it and gets the start/record/stop functions plus a set of
+  installed traps that end every recorded daemon and its sessions on every exit
+  path, in a safe order. The minimum recipe, as used by `scripts/run-tests.sh`:
+
+  ```bash
+  set -euo pipefail
+  export TD_STATE_DIR="$WORKDIR/.daemon-state"   # per-run; parallel runs don't collide
+  # shellcheck source=/dev/null
+  source "$SCRIPT_DIR/test-daemon-lib.sh"
+  TD_EXTRA_CLEANUP=my_after_stop   # optional: runs after td_stop_all, same status
+  td_install_traps "$@"            # EXIT + INT/TERM/HUP; before the daemon exists
+  td_start ./datawatch "$CFG" "$LOG" --port "$PORT" || exit 1
+  # ... exercise the daemon ...
+  td_wait_port_closed "$PORT"     # before removing the config dir, not instead of
+  ```
+
+  Functions: `td_start` (start in the background, record it, fail on startup
+  error), `td_track_pid` / `td_track_container` (record a pid that something else
+  started, e.g. a docker-compose service), `td_set_api` (base URL plus bearer token
+  so the library can end the daemon's sessions through its API before signalling
+  the pid), `td_stop_one`, `td_stop_all`, `td_stop_self`, `td_alive`, `td_is_recorded`,
+  `td_wait_port_closed`, `td_install_traps`. State (pids, config paths, session
+  tokens) is stored under `TD_STATE_DIR`, so a run that dies hard is findable later
+  by its recorded records instead of a name search. Two lifecycle hooks run around
+  `td_stop_all`: `TD_PRE_STOP_CLEANUP` (before stop, sessions still alive) and
+  `TD_EXTRA_CLEANUP` (after stop). `td_start` exits non-zero on any startup
+  failure; under `set -e` the call must be in a failing context (`td_start ... || exit 1`).
+- **`scripts/check-no-leftover-test-daemons.sh` — the leftover-daemon guard.**
+  `snapshot <file>` writes the PIDs of every live test daemon into the file;
+  `check <file>` then lists, for every live test daemon not in that file, its PID,
+  age, config path and listening TCP ports, and fails (exit 1) if there is at least
+  one. It is a read-only walk of `/proc`; it reports and never signals, and it can
+  only ever name a process that still carries a throwaway config in its live
+  command line. `make check-leftover-daemons` runs the check against the snapshot
+  named by `LEFTOVER_BASELINE`; its default baseline is empty, i.e. it reports
+  every live test daemon right now. It is not part of `make lint`, because it
+  reports the environment, not the tree. `scripts/run-tests.sh` uses it in
+  `snapshot`/`check` mode from inside the run: the snapshot is taken right after
+  the run folder exists, and the check runs at the end of the run in the
+  end-of-run cleanup, after every daemon the run started has been stopped and
+  before the run folder is removed — a left-behind test daemon makes the run fail
+  and shows the guard's report, whether or not every story passed.
+- **`scripts/check-test-daemon-cleanup.sh` — the static cleanup audit, run as
+  `make check-test-daemons` and included in `make lint`, in CI, and as part of
+  `go test ./tests/ci/` via the regression tests.** It scans every `*.sh` under
+  `scripts/` and `tests/`, and every `*_test.go` under `internal/`, `cmd/` and
+  `tests/`, and enforces: (1) a shell file that starts a daemon passes only if it
+  goes through `td_start`/`td_track_pid` with the shared traps installed, or has
+  its own trap naming EXIT, INT and TERM (a trap on EXIT alone fails); (2) no
+  non-comment line may end processes by name — `pkill`, `killall`, `pgrep -f`,
+  `xargs kill`, or a grep-by-name feeding a kill; (3) a Go test that runs the
+  binary as a daemon must register its cleanup with `t.Cleanup` in the same file;
+  (4) a shell file that records a daemon or helper PID must make the shared traps
+  active, or own the traps itself; (5) a `TD_*_CLEANUP` hook function must not
+  exit with a captured `local rc=$?` (the handler must always finish with the
+  script's own status available); (6) the exit code of a job a script waits on is
+  the verdict — `wait <pid>` may not be collapsed into 0/1 bookkeeping with no
+  `rc=$?` in the file. A line whose safety cannot be expressed as one of these
+  may carry the `daemon-cleanup-ok` marker with a comment explaining why it is
+  safe; a bare marker on a line that needs no exemption is itself an error.
+- **Sandbox lifetime (`scripts/sec-assess/sandbox.sh`).** The sandbox daemon is
+  started under `timeout(1)` with a maximum lifetime (`SANDBOX_MAX_AGE`, default
+  4 hours) as a last backstop, so it ends on its own even if no trap ever runs.
+  `start` is foreground: the lifetime ends with the daemon. `run` ends the daemon
+  and removes the sandbox folder on every exit path of the wrapped command. `wipe`
+  is the manual early-end path: it ends the daemon's sessions via its API, verifies
+  the recorded pid still carries that config path, ends the daemon by that pid, and
+  only then removes the folder.
+- **Regression tests.** `tests/ci/daemon_cleanup_test.go` keeps all of the above
+  honest. `TestDaemonCleanupHelper` drives `scripts/test-daemon-lib.sh` through a
+  fake daemon (a renamed `sleep` process); `TestLeftoverDaemonGuard` and
+  `TestLeftoverDaemonGuardListening` drive `scripts/check-no-leftover-test-daemons.sh`
+  and assert, against a real listening daemon, that a fresh daemon is detected and
+  reported, that a daemon already there when the snapshot was taken is tolerated,
+  and that nothing that isn't the test's own daemon is ever signalled; `TestDaemonCleanupAudit`
+  covers the fixtures of `scripts/check-test-daemon-cleanup.sh`; and
+  `TestRepoDaemonScriptsPassAudit` runs the audit over the whole repository and
+  fails with its output if any script or test starts a daemon it does not own on
+  every exit path. All of them run under `go test ./tests/ci/` (and therefore
+  `go test ./...`) with the multiplexer environment variables removed, and every
+  daemon they start is ended by its recorded pid before the test finishes.
+
 ## Historical Feature Tests
 
 ### 1. Splash Screen

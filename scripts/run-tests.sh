@@ -76,6 +76,22 @@ TD_EXTRA_CLEANUP=cleanup
 trap 'FAILED=1' ERR
 td_install_traps "$@"
 
+# --- leftover-daemon guard (start-of-run baseline) ---------------------------
+# Snapshot the live test daemons before the tests start anything else, so
+# daemons already alive when the run began form the baseline. At the end
+# of the run -- on every exit path -- cleanup() runs the guard's `check`
+# against this file, after every recorded daemon has been stopped and
+# before the run dir goes away, and a live test daemon that is not in the
+# baseline means this job started it and left it behind: the run fails
+# with the guard's report, all stories having passed or not.
+GUARD_SH="$SCRIPT_DIR/check-no-leftover-test-daemons.sh"
+LEFTOVER_BASELINE="$TEST_DIR/leftover-daemon-baseline"
+# A re-used (resume) run dir must not carry this marker over from the
+# earlier run -- a stale one would flag, or suppress the check of, this run.
+rm -f "$LEFTOVER_BASELINE" "$TEST_DIR/leftover-daemons-FAIL" "$TEST_DIR/.leftover-check-done" 2>/dev/null || true
+bash "$GUARD_SH" snapshot "$LEFTOVER_BASELINE" || \
+  echo "  [cleanup] warning: could not take the leftover-daemon snapshot -- the end-of-run check will report every live test daemon" >&2
+
 FAILED=0
 DAEMON_PID=""
 
@@ -503,7 +519,24 @@ cleanup() {
   dw_runner_cleanup_hooks
   stop_docker_sim
   destroy_pool
-  if [[ $FAILED -ne 0 || -n "${KEEP_TEST_DIR:-}" ]]; then
+  # Leftover-daemon guard: every daemon this run started has been stopped
+  # by now (the trap path runs td_stop_all before this hook; the normal
+  # path calls it just before this function). Report, and fail the run, if
+  # a live test daemon is around that was not in the start-of-run baseline
+  # -- i.e. this job started it and left it behind -- and keep the run dir
+  # so the leftover can be inspected and ended.
+  if [[ -f "$LEFTOVER_BASELINE" && ! -f "$TEST_DIR/.leftover-check-done" ]]; then
+    if bash "$GUARD_SH" check "$LEFTOVER_BASELINE"; then
+      :
+    else
+      echo ""
+      echo "  [cleanup] FAIL: test daemon(s) still alive after this run (guard report above)."
+      : > "$TEST_DIR/leftover-daemons-FAIL" 2>/dev/null || true
+      FAILED=1
+    fi
+    touch "$TEST_DIR/.leftover-check-done" 2>/dev/null || true
+  fi
+  if [[ $FAILED -ne 0 || -n "${KEEP_TEST_DIR:-}" || -f "$TEST_DIR/leftover-daemons-FAIL" ]]; then
     echo ""
     echo "Working dir kept: $TEST_DIR"
     echo "  Resume: DATAWATCH_TEST_ID=$RUN_ID bash scripts/run-tests.sh --resume-from=<story>"
@@ -1032,3 +1065,18 @@ if [[ $FAIL -gt 0 ]]; then
   FAILED=1
   exit 1
 fi
+
+# All stories passed. Run the end-of-run cleanup in the main flow now (the
+# EXIT trap does the identical, idempotent work on the failure and interrupt
+# paths): stop every daemon this run started, run the leftover-daemon guard
+# against the start-of-run baseline, remove the run dir -- and fail the run
+# with the guard's output if a test daemon this run started is still alive
+# after all of it.
+td_stop_all
+cleanup
+if [[ -f "$TEST_DIR/leftover-daemons-FAIL" ]]; then
+  echo ""
+  echo "FAIL: every story passed, but the run left test daemon(s) alive (guard report above)"
+  exit 1
+fi
+exit 0

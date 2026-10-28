@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: build clean install lint check-tmux check-go-pins check-internal-refs test fmt cross release release-snapshot channel-build \
+.PHONY: build clean install lint check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
@@ -232,6 +232,23 @@ clean:
 check-tmux:
 	bash scripts/check-no-unscoped-tmux.sh
 
+# Static audit: no script or test may start a datawatch daemon without
+# ending it (and the sessions it started), by its recorded PID only, on every
+# exit path; no kill-by-name pattern. See the Test daemon cleanup rules in
+# docs/testing.md and scripts/test-daemon-lib.sh.
+check-test-daemons:
+	bash scripts/check-test-daemon-cleanup.sh
+
+# Live test daemons (started with `start --foreground --config <path>` whose
+# path is under /tmp, in $TMPDIR, or in a datawatch-<hex> run folder). The
+# snapshot file is named by LEFTOVER_BASELINE; its default is a file that
+# does not exist, so an empty baseline is used and every live test daemon is
+# reported. Pass a run's baseline (its run folder's
+# leftover-daemon-baseline) to report only daemons started after the run.
+LEFTOVER_BASELINE ?= .leftover-daemon-baseline.empty
+check-leftover-daemons:
+	bash scripts/check-no-leftover-test-daemons.sh check "$(LEFTOVER_BASELINE)"
+
 check-service-scope:
 	bash scripts/check-no-production-service-control.sh
 
@@ -241,7 +258,7 @@ check-go-pins:
 check-internal-refs:
 	bash scripts/check-no-internal-refs.sh
 
-lint: check-tmux check-service-scope check-go-pins check-internal-refs
+lint: check-tmux check-test-daemons check-service-scope check-go-pins check-internal-refs
 	golangci-lint run ./...
 
 test:
