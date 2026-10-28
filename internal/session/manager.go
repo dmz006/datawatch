@@ -1850,7 +1850,7 @@ type StartOptions struct {
 	// (interactive — DATAWATCH_COMPLETE: → StateWaitingInput).
 	OneShot bool
 
-	// Subprocess — run Task as a child process (bash -c) instead of via a
+	// Subprocess — run Task as one program (no shell) instead of via a
 	// Claude Code tmux session. Completion is signaled by exit code.
 	// No TUI rendering, no DATAWATCH_COMPLETE: scraping required.
 	Subprocess bool
@@ -3737,7 +3737,7 @@ func (m *Manager) MarkInputSent(fullID string) {
 	m.mu.Unlock()
 }
 
-// runSubprocess executes sess.Task as a shell command through the fixed
+// runSubprocess executes sess.Task as one program (no shell) through the fixed
 // helper (see subprocessCommand), streaming stdout+stderr to the session log
 // file. Transitions to StateComplete on exit 0, StateFailed on non-zero exit
 // or error.

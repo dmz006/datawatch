@@ -43,7 +43,7 @@ _story_ts_799() {
   # --- spawn body builders (python keeps the nested quoting sane) ---------
   local body_a
   body_a=$(SM_NAME="$sm_name" SM_SCRATCH="$scratch" python3 - <<'PY'
-import json, os
+import json, os, shlex
 name, scratch = os.environ["SM_NAME"], os.environ["SM_SCRATCH"]
 p1 = json.dumps({"title": "first post", "status": "ok",
                  "summary": "posted via REST from the child",
@@ -65,6 +65,7 @@ task = (
     '-H "Authorization: Bearer $T" -H "Content-Type: application/json" '
     "-d '__P2__' >/dev/null 2>&1; fi; exit 0"
 ).replace("__SCRATCH__", scratch).replace("__P1__", p1).replace("__P2__", p2)
+task = "bash -c " + shlex.quote(task)  # a subprocess task is one program, no shell
 print(json.dumps({"type": "spawn", "subprocess": True, "schedule_name": name,
                   "name": name, "project_dir": "/tmp", "run_at": "now",
                   "command": task}))
@@ -73,13 +74,14 @@ PY
 
   local body_b
   body_b=$(SM_SCRATCH="$scratch" python3 - <<'PY'
-import json, os
+import json, os, shlex
 scratch = os.environ["SM_SCRATCH"]
 task = (
     "sleep 1; S=${DATAWATCH_SESSION_ID:-}; "
     "mkdir -p __SCRATCH__ 2>/dev/null; "
     "if [ -n \"$S\" ]; then printf %s \"$S\" > __SCRATCH__/sid_decoy; fi; exit 0"
 ).replace("__SCRATCH__", scratch)
+task = "bash -c " + shlex.quote(task)  # a subprocess task is one program, no shell
 print(json.dumps({"type": "spawn", "subprocess": True,
                   "name": "ts799-decoy", "project_dir": "/tmp",
                   "run_at": "now", "command": task}))

@@ -103,7 +103,7 @@ datawatch schedule spawn --shell "imap-mcp run-rules --config ~/workspace/imap.y
 ```
 
 `--shell` sets `subprocess` mode: the daemon runs the command as a
-child process (no LLM, no tmux), marks the session complete when it
+child process (one program, no shell; no LLM, no tmux), marks the session complete when it
 exits (exit 0 = complete, non-zero = failed), and injects three
 variables into the child's environment:
 
@@ -122,21 +122,36 @@ token store when the session no longer exists.
 The simplest form — the CLI picks up the session ID and credential
 from the environment:
 
+A `--shell` task is **one program with arguments, with no shell**. Quoting
+(`'…'`, `"…"`, `\`) and a leading `~/` work, but `|`, `&`, `;`, `<`, `>`,
+`( )`, `$`, backticks and newlines outside quotes are refused, and the
+session fails with a message that says so. A job with several steps goes in
+a script file, and the task runs that file:
+
 ```bash
-datawatch schedule spawn --shell '
-  code=0
-  set +e
-  imap-mcp run-rules --config ~/workspace/imap.yaml
-  code=$?
-  set -e
-  datawatch schedule-results post \
-    --title "imap-mcp run-rules" \
-    --status ok \
-    --summary "40 active rules, 2 messages actioned" \
-    --metrics "{\"rules\": 40, \"matched\": 2, \"errors\": 0, \"duration_s\": 95}"
-  exit $code
-' --path ~/workspace --schedule-name "imap-mcp run-rules" --cron "0 * * * *"
+# ~/workspace/jobs/imap-run-rules.sh  (chmod +x)
+#!/usr/bin/env bash
+code=0
+set +e
+imap-mcp run-rules --config ~/workspace/imap.yaml
+code=$?
+set -e
+datawatch schedule-results post \
+  --title "imap-mcp run-rules" \
+  --status ok \
+  --summary "40 active rules, 2 messages actioned" \
+  --metrics '{"rules": 40, "matched": 2, "errors": 0, "duration_s": 95}'
+exit $code
 ```
+
+```bash
+datawatch schedule spawn --shell "~/workspace/jobs/imap-run-rules.sh" \
+  --path ~/workspace --schedule-name "imap-mcp run-rules" --cron "0 * * * *"
+```
+
+For a one-liner that needs a pipe or `&&`, name the shell yourself, for
+example `--shell "bash -c 'make test && make lint'"`. That is an explicit
+choice of program; the launcher still starts no shell on its own.
 
 `post --file payload.json` accepts a full payload file (flags override
 its fields), and `--table '{"title":…,"columns":[…],"rows":[[…]]}'`

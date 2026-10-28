@@ -125,7 +125,9 @@ func TestSubprocessResultChildActuallyReceivesToken(t *testing.T) {
 	mgr.SetSubprocessBaseURL("http://127.0.0.1:18176")
 
 	out := filepath.Join(dataDir, "child-env.txt")
-	task := fmt.Sprintf("env | grep -E '^DATAWATCH_(SESSION_ID|BASE_URL|RESULT_TOKEN)=' > %q", out)
+	// A subprocess task is one program, so the pipe and redirect live in an
+	// explicitly named bash.
+	task := fmt.Sprintf(`bash -c 'env | grep -E "^DATAWATCH_(SESSION_ID|BASE_URL|RESULT_TOKEN)=" > %s'`, out)
 
 	projectDir := t.TempDir()
 	sess, err := mgr.Start(context.Background(), task, "", projectDir, &StartOptions{Subprocess: true, OneShot: true})

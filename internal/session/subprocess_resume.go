@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Subprocess sessions (BL462 F4) run the task as a shell command outside tmux,
+// Subprocess sessions (BL462 F4) run the task as one program (no shell) outside tmux,
 // through the fixed helper in subprocess_helper.go. When the daemon restarts,
 // the child keeps running and keeps writing to its log file, so the boot path
 // must not declare it failed while it is still alive. Two small files in the
@@ -36,11 +36,11 @@ func subprocessFile(sess *Session, name string) string {
 
 // subprocessCommand builds the command for a subprocess session: this binary
 // re-executed as the helper, with the rc-file path and the task as separate
-// argv entries. The daemon starts no shell and builds no command string; the
-// helper it starts then runs the task with bash -c, because a subprocess
-// session's task is a shell command line by design. So a task still reaches a
-// shell, one process further down. Every value is validated first; on any
-// invalid input no command is returned, so nothing runs.
+// argv entries. The daemon starts no shell and builds no command string, and
+// neither does the helper: it runs the task as one program with arguments.
+// Every value is validated first, including that the task is expressible
+// without a shell; on any invalid input no command is returned, so nothing
+// runs.
 //
 // The helper's command line is <exe> __subprocess-run <rc-file> -- <task>, so
 // subprocessAlive can still find the task in /proc/<pid>/cmdline.

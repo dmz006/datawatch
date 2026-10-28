@@ -3995,7 +3995,7 @@ H "75. Result panel — spawned subprocess posts its result; readable via schedu
 SRP_NAME="smoke-result-panel-$(date +%s)"
 SRP_SCRATCH="$(mktemp -u /tmp/datawatch-smoke-srp.XXXXXX)"
 SRP_BODY_A=$(SRP_NAME="$SRP_NAME" SRP_SCRATCH="$SRP_SCRATCH" python3 - <<'PY'
-import json, os
+import json, os, shlex
 name = os.environ["SRP_NAME"]
 scratch = os.environ["SRP_SCRATCH"]
 payload = json.dumps({"title": "Release smoke result", "status": "ok",
@@ -4011,19 +4011,21 @@ task = (
     '-H "Authorization: Bearer $T" -H "Content-Type: application/json" '
     "-d '__PAYLOAD__' >/dev/null 2>&1; fi; exit 0"
 ).replace("__SCRATCH__", scratch).replace("__PAYLOAD__", payload)
+task = "bash -c " + shlex.quote(task)  # a subprocess task is one program, no shell
 print(json.dumps({"type": "spawn", "subprocess": True, "schedule_name": name,
                   "name": name, "project_dir": "/tmp", "run_at": "now",
                   "command": task}))
 PY
 ) || true
 SRP_BODY_B=$(SRP_SCRATCH="$SRP_SCRATCH" python3 - <<'PY'
-import json, os
+import json, os, shlex
 scratch = os.environ["SRP_SCRATCH"]
 task = (
     "sleep 1; S=${DATAWATCH_SESSION_ID:-}; "
     "mkdir -p __SCRATCH__ 2>/dev/null; "
     "if [ -n \"$S\" ]; then printf %s \"$S\" > __SCRATCH__/sid_B; fi; exit 0"
 ).replace("__SCRATCH__", scratch)
+task = "bash -c " + shlex.quote(task)  # a subprocess task is one program, no shell
 print(json.dumps({"type": "spawn", "subprocess": True,
                   "name": "smoke-result-panel-decoy", "project_dir": "/tmp",
                   "run_at": "now", "command": task}))

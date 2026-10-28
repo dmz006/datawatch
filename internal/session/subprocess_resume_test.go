@@ -49,7 +49,7 @@ func waitForState(t *testing.T, m *Manager, id string, want State) *Session {
 // exit status it recorded rather than a guess.
 func TestSubprocessSurvivesDaemonRestart(t *testing.T) {
 	m := newTestManager(t)
-	sess := newDetachedSubprocess(t, m, "sleep 1; echo bl462-end")
+	sess := newDetachedSubprocess(t, m, "sleep 1")
 
 	// Start the task the way runSubprocess does, but do not wait for it:
 	// that is the state a daemon leaves behind when it is killed.
@@ -88,7 +88,7 @@ func TestSubprocessSurvivesDaemonRestart(t *testing.T) {
 // recorded, not a guessed failure.
 func TestSubprocessEndedWhileDaemonDownUsesRecordedStatus(t *testing.T) {
 	m := newTestManager(t)
-	sess := newDetachedSubprocess(t, m, "exit 3")
+	sess := newDetachedSubprocess(t, m, "false")
 	if err := os.WriteFile(subprocessFile(sess, subprocessRCFile), []byte("3\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestSubprocessGoneWithoutStatusIsNotReattached(t *testing.T) {
 // comparison finds the task, and the task stays a single argument.
 func TestSubprocessCommandConstruction(t *testing.T) {
 	m := newTestManager(t)
-	task := "echo one; echo two && exit 3"
+	task := "echo one two"
 	sess := newDetachedSubprocess(t, m, task)
 	cmd, err := subprocessCommand(sess)
 	if err != nil {
@@ -154,27 +154,22 @@ func TestSubprocessCommandConstruction(t *testing.T) {
 	}
 }
 
-// The task keeps full shell semantics (lists, && and exit status) and the
-// helper records the status. This test pins the documented behaviour of a
-// subprocess session (`--shell`, `!cmd`): the task is a shell command line. It
-// is also the point where that behaviour and a "no shell at all" launch cannot
-// both hold; see the open decision in the plan doc for the last three alerts.
-func TestSubprocessCommandRunsTaskAsShell(t *testing.T) {
+// The task runs as one program, with no shell, and the helper records its exit
+// status.
+func TestSubprocessCommandRunsTaskWithoutShell(t *testing.T) {
 	m := newTestManager(t)
-	sess := newDetachedSubprocess(t, m, "echo one; echo two && exit 3")
+	sess := newDetachedSubprocess(t, m, "ls /nonexistent-datawatch-dir")
 	cmd, err := subprocessCommand(sess)
 	if err != nil {
 		t.Fatalf("subprocessCommand: %v", err)
 	}
-	out, err := cmd.Output()
+	_, err = cmd.CombinedOutput()
 	var ee *exec.ExitError
-	if !errors.As(err, &ee) || ee.ExitCode() != 3 {
-		t.Fatalf("want exit 3, got %v", err)
+	if !errors.As(err, &ee) || ee.ExitCode() == 0 {
+		t.Fatalf("want a non-zero exit, got %v", err)
 	}
-	if string(out) != "one\ntwo\n" {
-		t.Errorf("output = %q", out)
-	}
-	if rc, ok := readSubprocessRC(sess); !ok || rc != 3 {
-		t.Errorf("recorded rc = %d ok=%v, want 3", rc, ok)
+	rc, ok := readSubprocessRC(sess)
+	if !ok || rc != ee.ExitCode() {
+		t.Errorf("recorded rc = %d ok=%v, want %d", rc, ok, ee.ExitCode())
 	}
 }

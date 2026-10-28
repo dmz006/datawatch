@@ -227,7 +227,7 @@ Spawn a fresh, independent session at a scheduled time or on a recurring cron �
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `task` | string | — | Task prompt sent to the spawned AI session |
-| `shell` | string | — | Shell command to run (`--subprocess` auto-set; no LLM). Use `--task` or `--shell`, not both. |
+| `shell` | string | — | Command to run, one program with arguments and no shell (`--subprocess` auto-set; no LLM). Use `--task` or `--shell`, not both. |
 | `path` / `dir` | string | `""` | Working directory for the session (`--path` is an alias for `--dir`) |
 | `backend` | string | `""` | LLM backend name (e.g. `claude-code`); omit for `--shell` jobs |
 | `llm_ref` | string | `""` | Unified LLM registry reference (e.g. `"claude-sonnet"`) |
@@ -239,7 +239,7 @@ Spawn a fresh, independent session at a scheduled time or on a recurring cron �
 | `cron_expr` | string | `""` | 5-field cron for recurring spawns |
 | `one_shot` | bool | `true` | Auto-terminate session on `DATAWATCH_COMPLETE:` |
 | `ephemeral` | bool | `false` | Reap workspace directory when session is deleted |
-| `subprocess` | bool | `false` | Run via `bash -c`; exit code = completion (0=complete). Auto-set by `--shell`. |
+| `subprocess` | bool | `false` | Run the task as one program with arguments, **no shell** (shell operators are refused; name `bash -c '…'` to get one); exit code = completion (0=complete). Auto-set by `--shell`. |
 
 **Overlap guard:** If the previous spawn for this schedule is still running (state not `complete`/`failed`/`killed`), the cron fire is skipped and `RunAt` advances to the next slot. This prevents stacking concurrent runs when a job takes longer than its cron interval.
 

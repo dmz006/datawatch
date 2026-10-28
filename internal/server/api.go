@@ -9592,7 +9592,7 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 			Effort     string `json:"effort"`
 			OneShot    bool   `json:"one_shot"`
 			Ephemeral  bool   `json:"ephemeral"`
-			Subprocess bool   `json:"subprocess"` // run via bash -c, exit code = completion
+			Subprocess bool   `json:"subprocess"` // run as one program (no shell), exit code = completion
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)

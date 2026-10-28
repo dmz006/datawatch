@@ -113,7 +113,7 @@ type DeferredSession struct {
 	Effort     string `json:"effort,omitempty"`     // quick/normal/thorough
 	OneShot    bool   `json:"one_shot,omitempty"`   // terminate on DATAWATCH_COMPLETE:
 	Ephemeral  bool   `json:"ephemeral,omitempty"`  // reap workspace directory on delete
-	Subprocess bool   `json:"subprocess,omitempty"` // run via bash -c, not TUI (exit code = completion)
+	Subprocess bool   `json:"subprocess,omitempty"` // run as one program (no shell), not TUI (exit code = completion)
 	Git        bool   `json:"git,omitempty"`        // opt in to git init/snapshot/commit (default false)
 	// GH#204 Phase 1 — name of the schedule entry that owns this spawn,
 	// carried server-side into the spawned session's Session.ScheduleName

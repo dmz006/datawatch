@@ -9,31 +9,71 @@ import (
 	"testing"
 )
 
-// hostileSubprocessTasks are task strings built to break out of a command
-// string: shell metacharacters, an embedded newline, and leading dashes that
-// bash (or the helper) could mistake for an option.
-var hostileSubprocessTasks = []string{
-	"echo a; echo b",
-	"echo a | cat & echo b",
-	"echo $(echo sub) `echo tick` ${HOME}",
-	"echo 'quote\" \\ back'",
-	"echo line1\necho line2",
-	"-x",
-	"--version",
-	"-c",
-	"--",
-	"-- ; echo after",
+// shellSyntaxSubprocessTasks need a shell to mean what they say. A subprocess
+// task is one program with arguments, so each is refused and nothing runs.
+// MARK stands for a file the task would create if any of it were interpreted.
+var shellSyntaxSubprocessTasks = []string{
+	"echo a; touch MARK",
+	"echo a | cat & touch MARK",
+	"echo $(touch MARK)",
+	"echo `touch MARK`",
+	"echo ${HOME}",
+	"echo $HOME",
+	"echo \"$HOME\"",
+	"echo \"`touch MARK`\"",
+	"echo a && touch MARK",
+	"echo a > MARK",
+	"cat < MARK",
+	"(touch MARK)",
+	"echo line1\ntouch MARK",
 }
 
-// A hostile task is always exactly one argv entry of a fixed program: it can
-// not change the program, add arguments, or be split by the daemon.
-func TestSubprocessCommandHostileTaskKeepsArgvShape(t *testing.T) {
+// optionLikeSubprocessTasks start with a dash. They are valid program names
+// (that simply do not exist), so they must reach exec as the program and never
+// be parsed as an option by anything in between.
+var optionLikeSubprocessTasks = []string{"-x", "--version", "-c", "--", "-n"}
+
+// Shell syntax is refused by the daemon before anything is launched, and by the
+// helper if it is ever handed such a task directly: exit 2, rc file records 2,
+// and the would-be side effect never happens.
+func TestSubprocessShellSyntaxIsRefused(t *testing.T) {
+	m := newTestManager(t)
+	for _, raw := range shellSyntaxSubprocessTasks {
+		dir := t.TempDir()
+		marker := filepath.Join(dir, "MARK")
+		task := strings.ReplaceAll(raw, "MARK", marker)
+
+		sess := newDetachedSubprocess(t, m, task)
+		if cmd, err := subprocessCommand(sess); err == nil || cmd != nil {
+			t.Errorf("task %q: want refusal and no command, got cmd=%v err=%v", raw, cmd, err)
+		}
+
+		rc := filepath.Join(dir, subprocessRCFile)
+		code, out := runHelper(t, rc, "--", task)
+		if code != subprocessHelperUsageExit {
+			t.Errorf("task %q: helper exit %d, want %d (out %q)", raw, code, subprocessHelperUsageExit, out)
+		}
+		if !strings.Contains(out, "shell syntax") && !strings.Contains(out, "backslash") {
+			t.Errorf("task %q: refusal must say why, got %q", raw, out)
+		}
+		if b, err := os.ReadFile(rc); err != nil || strings.TrimSpace(string(b)) != "2" {
+			t.Errorf("task %q: rc file = %q err=%v, want 2", raw, b, err)
+		}
+		if _, err := os.Stat(marker); err == nil {
+			t.Errorf("task %q: the task ran", raw)
+		}
+	}
+}
+
+// An option-like task is exactly one argv entry of the fixed helper and is run
+// as a program name, not as an option.
+func TestSubprocessCommandOptionLikeTaskKeepsArgvShape(t *testing.T) {
 	m := newTestManager(t)
 	exe, err := subprocessHelperExe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, task := range hostileSubprocessTasks {
+	for _, task := range optionLikeSubprocessTasks {
 		sess := newDetachedSubprocess(t, m, task)
 		cmd, err := subprocessCommand(sess)
 		if err != nil {
@@ -68,7 +108,7 @@ func TestSubprocessCommandHostileRCPathIsInert(t *testing.T) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	sess := newDetachedSubprocess(t, m, "exit 4")
+	sess := newDetachedSubprocess(t, m, "false")
 	sess.LogFile = filepath.Join(dir, "output.log")
 	sess.ProjectDir = dir
 
@@ -81,11 +121,11 @@ func TestSubprocessCommandHostileRCPathIsInert(t *testing.T) {
 	}
 	err = cmd.Run()
 	var ee *exec.ExitError
-	if !errors.As(err, &ee) || ee.ExitCode() != 4 {
-		t.Fatalf("want exit 4, got %v", err)
+	if !errors.As(err, &ee) || ee.ExitCode() != 1 {
+		t.Fatalf("want exit 1, got %v", err)
 	}
-	if rc, ok := readSubprocessRC(sess); !ok || rc != 4 {
-		t.Errorf("recorded rc = %d ok=%v, want 4", rc, ok)
+	if rc, ok := readSubprocessRC(sess); !ok || rc != 1 {
+		t.Errorf("recorded rc = %d ok=%v, want 1", rc, ok)
 	}
 	for _, name := range []string{"PWNED", "PWNED2", "PWNED3", "PWNED4"} {
 		for _, d := range []string{root, dir} {
@@ -109,7 +149,9 @@ func TestSubprocessCommandFailsClosedOnInvalidInput(t *testing.T) {
 	cases := map[string]func(*Session){
 		"empty task":      func(s *Session) { s.Task = "" },
 		"blank task":      func(s *Session) { s.Task = " \t\n" },
-		"NUL in task":     func(s *Session) { s.Task = "echo a\x00; echo b" },
+		"NUL in task":     func(s *Session) { s.Task = "echo a\x00 b" },
+		"shell syntax":    func(s *Session) { s.Task = "echo a; echo b" },
+		"open quote":      func(s *Session) { s.Task = "echo 'a" },
 		"no log file":     func(s *Session) { s.LogFile = "" },
 		"NUL in log file": func(s *Session) { s.LogFile = "/tmp/x\x00/output.log" },
 		"NUL in project":  func(s *Session) { s.ProjectDir = "/tmp/x\x00y" },
@@ -162,12 +204,12 @@ func TestSubprocessValidateRCPath(t *testing.T) {
 }
 
 func TestSubprocessValidateTask(t *testing.T) {
-	for _, ok := range []string{"x", "echo a; echo b", "-x", "a\nb"} {
+	for _, ok := range []string{"x", "echo 'a; b'", "-x", "echo \"a|b\" c\\;d", "bash -c 'a && b'"} {
 		if err := validateSubprocessTask(ok); err != nil {
 			t.Errorf("task %q rejected: %v", ok, err)
 		}
 	}
-	for _, bad := range []string{"", " ", "\n\t", "a\x00b", "\x00"} {
+	for _, bad := range []string{"", " ", "\n\t", "a\x00b", "\x00", "a\nb", "a; b", "a | b", "echo 'x", "echo \"x", "echo x\\"} {
 		if err := validateSubprocessTask(bad); err == nil {
 			t.Errorf("task %q must be rejected", bad)
 		}
@@ -243,28 +285,36 @@ func TestSubprocessHelperFailsClosedOnInvalidInput(t *testing.T) {
 	}
 }
 
-// The shell the helper starts receives the task as its command string and
-// nothing else: no extra positional parameters, and a task that looks like an
-// option is run as a command, not parsed as an option.
-func TestSubprocessHelperPassesTaskAsSingleCommandString(t *testing.T) {
+// The helper runs the task as a program with literal arguments. Quoted shell
+// syntax is data, not syntax: nothing is expanded, split on operators or
+// globbed.
+func TestSubprocessHelperRunsProgramWithLiteralArguments(t *testing.T) {
 	m := newTestManager(t)
-
-	sess := newDetachedSubprocess(t, m, `echo "args=$#"`)
-	cmd, err := subprocessCommand(sess)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(out) != "args=0\n" {
-		t.Errorf("output = %q, want args=0", out)
+	run := func(task string) (string, error) {
+		sess := newDetachedSubprocess(t, m, task)
+		cmd, err := subprocessCommand(sess)
+		if err != nil {
+			t.Fatalf("task %q: %v", task, err)
+		}
+		out, err := cmd.Output()
+		return string(out), err
 	}
 
-	// Without the "--" terminator bash would treat --version as its own
-	// option, print its version and exit 0. As a command it is not found.
-	for _, task := range []string{"--version", "-x", "-c", "--", "-n"} {
+	for task, want := range map[string]string{
+		`echo 'a; b | c && $HOME *'`:   "a; b | c && $HOME *\n",
+		`echo "a b" 'c d' e\ f ""`:     "a b c d e f \n",
+		`echo "q\"uote" "back\\slash"`: "q\"uote back\\slash\n",
+		`echo 'it'"'"'s'`:              "it's\n",
+	} {
+		out, err := run(task)
+		if err != nil || out != want {
+			t.Errorf("task %q: out %q err %v, want %q", task, out, err, want)
+		}
+	}
+
+	// A program that does not exist is 127; one that exists but is not
+	// executable is 126. Both are recorded, as a shell would report them.
+	for _, task := range optionLikeSubprocessTasks {
 		sess := newDetachedSubprocess(t, m, task)
 		cmd, err := subprocessCommand(sess)
 		if err != nil {
@@ -273,31 +323,84 @@ func TestSubprocessHelperPassesTaskAsSingleCommandString(t *testing.T) {
 		out, err := cmd.CombinedOutput()
 		var ee *exec.ExitError
 		if !errors.As(err, &ee) || ee.ExitCode() != 127 {
-			t.Errorf("task %q: want exit 127 (command not found), got %v out %q", task, err, out)
-		}
-		if strings.Contains(string(out), "GNU bash") {
-			t.Errorf("task %q was parsed as a bash option: %q", task, out)
+			t.Errorf("task %q: want exit 127 (not found), got %v out %q", task, err, out)
 		}
 		if rc, ok := readSubprocessRC(sess); !ok || rc != 127 {
 			t.Errorf("task %q: recorded rc = %d ok=%v, want 127", task, rc, ok)
 		}
 	}
-
-	// An embedded newline is part of the one command string.
-	sess = newDetachedSubprocess(t, m, "echo line1\necho line2")
-	cmd, err = subprocessCommand(sess)
+	sess := newDetachedSubprocess(t, m, "./plain-file")
+	if err := os.WriteFile(filepath.Join(sess.ProjectDir, "plain-file"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cmd, err := subprocessCommand(sess)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out, err := cmd.Output(); err != nil || string(out) != "line1\nline2\n" {
-		t.Errorf("multi-line task: out %q err %v", out, err)
+	err = cmd.Run()
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) || ee.ExitCode() != 126 {
+		t.Errorf("non-executable file: want exit 126, got %v", err)
+	}
+	if rc, ok := readSubprocessRC(sess); !ok || rc != 126 {
+		t.Errorf("non-executable file: recorded rc = %d ok=%v, want 126", rc, ok)
+	}
+}
+
+// A leading ~ is the one expansion a task gets, so paths like
+// ~/workspace/imap.yaml keep working; a ~ elsewhere in a word stays literal.
+func TestSplitSubprocessTaskExpandsOnlyLeadingTilde(t *testing.T) {
+	cases := map[string][]string{
+		`run ~/cfg.yaml`:   {"run", "/home/u/cfg.yaml"},
+		`run ~`:            {"run", "/home/u"},
+		`run a~b --x=~/y`:  {"run", "a~b", "--x=~/y"},
+		`run '~/cfg.yaml'`: {"run", "~/cfg.yaml"},
+		`run ~other/x`:     {"run", "~other/x"},
+	}
+	for task, want := range cases {
+		got, err := splitSubprocessTask(task, "/home/u")
+		if err != nil || strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+			t.Errorf("task %q: got %q err %v, want %q", task, got, err, want)
+		}
+	}
+}
+
+// The scripts that start subprocess sessions through the API quote a whole
+// script with Python's shlex.quote and name bash as the program. That form
+// (including the '"'"' sequence for an embedded single quote) must split into
+// exactly [bash -c <the script>].
+func TestSplitSubprocessTaskAcceptsShlexQuotedScript(t *testing.T) {
+	script := `sleep 1; S=${X:-}; if [ -n "$S" ]; then curl -d '{"a":1}'; fi; exit 0`
+	task := `bash -c 'sleep 1; S=${X:-}; if [ -n "$S" ]; then curl -d '"'"'{"a":1}'"'"'; fi; exit 0'`
+	got, err := splitSubprocessTask(task, "/home/u")
+	if err != nil || len(got) != 3 || got[0] != "bash" || got[1] != "-c" || got[2] != script {
+		t.Errorf("got %q err %v, want [bash -c %q]", got, err, script)
+	}
+}
+
+// An operator who wants a pipe or a list names the shell as the program. That
+// is an explicit program choice, not interpretation by the launcher.
+func TestSubprocessExplicitShellProgramStillWorks(t *testing.T) {
+	m := newTestManager(t)
+	sess := newDetachedSubprocess(t, m, `bash -c 'echo one; echo two && exit 3'`)
+	cmd, err := subprocessCommand(sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := cmd.Output()
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) || ee.ExitCode() != 3 || string(out) != "one\ntwo\n" {
+		t.Fatalf("out %q err %v, want one/two and exit 3", out, err)
+	}
+	if rc, ok := readSubprocessRC(sess); !ok || rc != 3 {
+		t.Errorf("recorded rc = %d ok=%v, want 3", rc, ok)
 	}
 }
 
 // A task ended by a signal is recorded as 128+signal, as a shell reports it.
 func TestSubprocessHelperRecordsSignalStatus(t *testing.T) {
 	m := newTestManager(t)
-	sess := newDetachedSubprocess(t, m, "kill -TERM $$")
+	sess := newDetachedSubprocess(t, m, `bash -c 'kill -TERM $$'`)
 	cmd, err := subprocessCommand(sess)
 	if err != nil {
 		t.Fatal(err)
@@ -334,9 +437,7 @@ func TestSubprocessRunRefusesInvalidTask(t *testing.T) {
 
 // The daemon itself never starts a shell: the program it launches for a
 // subprocess session is the helper (its own binary), and no "-c" command string
-// is in its argument list. This is the structural property the command-injection
-// fix rests on; the shell the helper starts below it is a separate, documented
-// matter (see the plan doc's open decision).
+// is in its argument list.
 func TestSubprocessCommandDaemonLaunchIsNotAShell(t *testing.T) {
 	m := newTestManager(t)
 	sess := newDetachedSubprocess(t, m, "echo ok")
@@ -355,5 +456,29 @@ func TestSubprocessCommandDaemonLaunchIsNotAShell(t *testing.T) {
 	}
 	if len(cmd.Args) < 2 || cmd.Args[1] != subprocessHelperArg {
 		t.Errorf("first argument must select the helper, args = %q", cmd.Args)
+	}
+}
+
+// The helper never starts a shell either. This reads the helper's source and
+// fails if a shell program or a "-c" command-string flag appears in any
+// non-comment line of the launch path, so the no-shell property cannot
+// regress without a test change.
+func TestSubprocessLaunchPathNamesNoShell(t *testing.T) {
+	for _, file := range []string{"subprocess_helper.go", "subprocess_resume.go", "subprocess_split.go"} {
+		b, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(b), "\n") {
+			code := strings.TrimSpace(line)
+			if strings.HasPrefix(code, "//") {
+				continue
+			}
+			for _, banned := range []string{`"bash"`, `"sh"`, `"dash"`, `"zsh"`, `"-c"`, `"/bin/sh"`, `"/bin/bash"`} {
+				if strings.Contains(code, banned) {
+					t.Errorf("%s:%d names a shell or -c: %s", file, i+1, code)
+				}
+			}
+		}
 	}
 }

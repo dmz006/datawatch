@@ -314,11 +314,11 @@ type Session struct {
 	// tag). Task-execution sessions leave this false.
 	SkipSnapshot bool `json:"skip_snapshot,omitempty"`
 
-	// Subprocess — when true, Task is executed directly as a child process
-	// via bash -c instead of through a Claude Code tmux session. Completion
+	// Subprocess — when true, Task is executed directly as one program with
+	// arguments (no shell) instead of through a Claude Code tmux session. Completion
 	// is signaled by exit code (0 = StateComplete, non-zero = StateFailed),
 	// not by DATAWATCH_COMPLETE: pane-scraping. No TUI rendering issues.
-	// Set by schedule spawn --subprocess for pure shell tasks.
+	// Set by schedule spawn --subprocess for pure command tasks.
 	Subprocess bool `json:"subprocess,omitempty"`
 
 	// LSPLanguage (v8.7.0) — language server preset selected at session

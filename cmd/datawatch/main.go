@@ -12641,7 +12641,7 @@ Use --cron for recurring spawns (e.g. hourly email checks, nightly reports).`,
 	cmd.Flags().String("name", "", "Human-readable name for each spawned session")
 	cmd.Flags().Bool("one-shot", true, "Auto-terminate session on DATAWATCH_COMPLETE:")
 	cmd.Flags().Bool("ephemeral", false, "Reap workspace directory when session is deleted")
-	cmd.Flags().Bool("subprocess", false, "Run task as a subprocess (bash -c); exit code signals completion. No Claude Code TUI. Recommended for pure shell tasks.")
+	cmd.Flags().Bool("subprocess", false, "Run task as a subprocess: one program with arguments, no shell (pipes, &&, ; and $ are refused; use bash -c '...' to opt in); exit code signals completion. No Claude Code TUI.")
 	return cmd
 }
 

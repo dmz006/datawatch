@@ -916,7 +916,7 @@ Includes **overlap guard**: if the previous spawn for this schedule is still run
 | Flag | Description |
 |---|---|
 | `--task` | Task prompt for the spawned AI session |
-| `--shell` | Shell command to run (sets `--subprocess` automatically; no LLM required) |
+| `--shell` | Command to run, one program with arguments and no shell (sets `--subprocess` automatically; no LLM required) |
 | `--path` | Working directory (alias for `--dir`) |
 | `--dir` | Working directory for the spawned session |
 | `--backend` | LLM backend name (e.g. `claude-code`) |
@@ -929,7 +929,7 @@ Includes **overlap guard**: if the previous spawn for this schedule is still run
 | `--name` | Human-readable name for each spawned session |
 | `--one-shot` | Auto-terminate on `DATAWATCH_COMPLETE:` (default: true) |
 | `--ephemeral` | Reap workspace directory when session is deleted |
-| `--subprocess` | Run via `bash -c`; exit code signals completion. No Claude Code TUI. |
+| `--subprocess` | Run the task as one program with arguments, **no shell**; exit code signals completion. No Claude Code TUI. Quoting (`'…'`, `"…"`, `\`) works; `\|`, `&`, `;`, `<`, `>`, `( )`, `$`, backticks and newlines outside quotes are refused. To get a shell, name it: `bash -c 'a && b'`. |
 
 A recurring spawn (`--cron`) survives a failed start: if a fire cannot start its session (for example the
 session cap is reached), the failure is recorded (`last_fire_result: failed`, `consecutive_failures`), a

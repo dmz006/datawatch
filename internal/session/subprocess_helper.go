@@ -10,24 +10,16 @@ import (
 	"syscall"
 )
 
-// A subprocess session's task is a shell command line by design: the operator
-// asks for "make test && make lint" and gets shell semantics. What must never
-// happen is the daemon assembling a shell command string around that task, so
-// the daemon starts a fixed helper instead (this binary re-executed with the
-// reserved first argument below). The helper receives the rc-file path and the
-// task as separate argv entries, runs the task, and records the exit status in
-// subprocess.rc so a daemon restart can still find it. The daemon never runs a
-// shell itself; the only shell is the one the helper starts, and it is given
-// the task as a single argument after an option terminator, never a string the
-// helper or daemon concatenated.
-//
-// This does not remove the path from a request to a shell: the task still ends
-// up as the command string of bash -c, in the helper. What it removes is the
-// daemon building or splicing a command line. A launch with no shell at all
-// would run the task as one program with arguments and drop pipes, lists and
-// && from the documented --shell and !cmd behaviour; that trade is the
-// operator's to make and is recorded as an open decision in
-// docs/plans/2026-10-28-codeql-last-three-alerts.md.
+// A subprocess session's task is one program with arguments, never a shell
+// command line. The daemon starts a fixed helper (this binary re-executed with
+// the reserved first argument below) and hands it the rc-file path and the
+// task as separate argv entries. The helper splits the task with shell-style
+// quoting only (subprocess_split.go), runs the program directly with
+// exec.Command(program, args...), and records the exit status in subprocess.rc
+// so a daemon restart can still find it. No shell is started by the daemon or
+// by the helper: pipes, lists, redirects and expansions are refused, not
+// interpreted. A task that needs them names the program that provides them,
+// e.g. bash -c 'a && b', which is then the operator's explicit choice.
 const (
 	// subprocessHelperArg is the reserved first argument that selects the
 	// helper. The daemon passes it as exactly: <exe> subprocessHelperArg
@@ -50,7 +42,8 @@ func init() {
 }
 
 // validateSubprocessTask rejects a task the helper must not run: empty (or
-// only whitespace) and anything containing a NUL byte, which no argv can carry.
+// only whitespace), anything containing a NUL byte (which no argv can carry),
+// and anything splitSubprocessTask refuses (shell syntax, bad quoting).
 func validateSubprocessTask(task string) error {
 	if strings.TrimSpace(task) == "" {
 		return errors.New("subprocess task is empty")
@@ -58,7 +51,8 @@ func validateSubprocessTask(task string) error {
 	if strings.ContainsRune(task, 0) {
 		return errors.New("subprocess task contains a NUL byte")
 	}
-	return nil
+	_, err := splitSubprocessTask(task, "")
+	return err
 }
 
 // validateSubprocessRCPath checks the rc-file path the helper will write: an
@@ -115,10 +109,16 @@ func runSubprocessHelper(args []string) int {
 		writeSubprocessRC(rcFile, subprocessHelperUsageExit)
 		return subprocessHelperUsageExit
 	}
+	home, _ := os.UserHomeDir()
+	argv, err := splitSubprocessTask(task, home)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[subprocess] refused: %v\n", err)
+		writeSubprocessRC(rcFile, subprocessHelperUsageExit)
+		return subprocessHelperUsageExit
+	}
 
-	// "--" ends bash's option parsing, so a task that starts with "-" is the
-	// command string and not an option. The task is one argv entry.
-	cmd := exec.Command("bash", "-c", "--", task)
+	// The task is a program and its arguments; there is no shell to parse it.
+	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	rc := subprocessExitStatus(cmd.Run())
@@ -128,7 +128,7 @@ func runSubprocessHelper(args []string) int {
 
 // subprocessExitStatus maps the result of running the task to a shell-style
 // exit status: the task's own code, 128+signal when a signal ended it, 127
-// when bash itself could not be started.
+// when the program was not found and 126 when it was found but cannot run.
 func subprocessExitStatus(err error) int {
 	if err == nil {
 		return 0
@@ -140,8 +140,11 @@ func subprocessExitStatus(err error) int {
 		}
 		return ee.ExitCode()
 	}
-	fmt.Fprintf(os.Stderr, "[subprocess] cannot start bash: %v\n", err)
-	return 127
+	fmt.Fprintf(os.Stderr, "[subprocess] cannot start task: %v\n", err)
+	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
+		return 127
+	}
+	return 126
 }
 
 // writeSubprocessRC records the exit status. A failure to write is reported
