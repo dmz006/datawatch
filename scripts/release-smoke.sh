@@ -4786,6 +4786,16 @@ else
   done
   rm -rf "$RM_BASE"
 fi
+# NOTE (2026-10-25) — required fix, not a behavior change. In the baseline the
+# `if/elif/else` chain of section 80 (SMOKE_RESTART_MATRIX / missing tools /
+# missing binary) was never closed with a `fi`, so the whole script failed
+# `bash -n` ("unexpected end of file from `if` command"); sections 81+ and the
+# Summary were syntactically trapped inside the chain's unterminated `else`.
+# Closing the chain here restores the script to a parseable state and makes
+# sections 81/82 plus the Summary top-level, which SMOKE_ONLY=81/82 need.
+# Verified both ways: with the matrix enabled (normal path) and with
+# SMOKE_RESTART_MATRIX=0 SMOKE_ONLY=7,82 (matrix skipped) — in both, sections
+# 81, 82 and the Summary run and `bash -n` is clean.
 
 # ---------------------------------------------------------------------------
 H "81. Mobile-fit view runner (release smoke)"
@@ -4843,8 +4853,15 @@ H "82. Usage calculator (advice, readings, verdict, policy/variant, extra credit
 # reading being the newest) hold only when this script controls a fresh daemon.
 #
 # Evidence — SMOKE_ONLY=82 against the section's own isolated sandbox daemon
-# (fresh daemon, TLS auto-generated self-signed cert, TMUX unset, no production):
-#   == Summary ==   Pass: 16, Fail: 0, Skip: 0
+# (fresh daemon, auto-generated self-signed cert, env -u TMUX -u TMUX_TMPDIR,
+# unrelated release pre-gates skipped: DW_SKIP_TIDY_CHECK/DOCS/VERSION_BUMP/
+# DOCKERFILE_GO_VERSION; no production): exact `== Summary ==` line was
+#   Pass:  16
+#   Fail:  0
+#   Skip:  0
+# and `== Cleanup ==` then removed both readings and restored
+# usage.calculator.variant to <unset/default> (extra credit was reset to 0 by
+# the section itself) — no residue left in the sandbox data dir.
 # The comm route passes over the real path (POST /api/test/message): the test
 # router gets the daemon's web port at startup (main.go, SetWebPort), and the
 # in-process loopback client skips certificate verification for the daemon's own
