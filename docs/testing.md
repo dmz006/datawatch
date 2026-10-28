@@ -62,6 +62,7 @@ When documenting a test, use this table format:
 > - [v1.3.x–v1.5.x Feature Tests](#v13x15x-feature-tests) — memory, copy, spatial, KG, encryption tests by channel
 > - [Unit Test Summary](#unit-test-summary-v151) — Go test counts per package
 > - [Historical Feature Tests](#historical-feature-tests) — numbered v0.14–v1.2 tests
+> - [Node Placement on the Production Entry Shape](testing-tracker.md#node-placement-on-the-production-entry-shape--candidates-ledger-spread-adoption--unreleased) — the placement ledger rows and the daemon-side gate in `scripts/check-waiter-nodes.sh`
 
 ---
 
