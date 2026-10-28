@@ -74,7 +74,7 @@ bumps the version itself, drop the bump in `cmd/datawatch/main.go` and
 ## Rule conflicts for the operator
 
 1. **Version on a feature branch.** See the section above.
-2. **Localization Rule against Terminology Rule.** The Localization Rule says to ship the English value as a placeholder in de, es, fr and ja when the app has no translation yet. The Terminology Rule guard, `TestLocales_AutomatonNeverUntranslatedOrMistranslated`, fails the suite when those bundles contain the English word "Automaton", and both new strings contain it. So the two strings ship as provisional translations, and datawatch-app issue 290 asks the app to send its own, which the PWA bundles will then mirror. If the operator prefers placeholders, the guard needs an exemption first.
+2. **Localization Rule against Terminology Rule.** The Localization Rule says to ship the English value as a placeholder in de, es, fr and ja when the app has no translation yet. The Terminology Rule guard, `TestLocales_AutomatonNeverUntranslatedOrMistranslated`, fails the suite when those bundles contain the English word "Automaton". Both rules are met by shipping English placeholders worded without that word ("Stuck run timeout (seconds)" and a help text that says "a running item"). The placeholder wording is not the final user-facing term, so datawatch-app issue 290 asks the app to send real translations, which the PWA bundles will then mirror.
 
 ## Parity surface
 
@@ -87,7 +87,7 @@ Full parity set: REST, MCP, CLI, comm channel, YAML/config, PWA, Android, iPhone
 | **MCP** | **Operator IDE surface** | `config_set` with the dotted key and `autonomous_config_set` with `stuck_running_seconds`. |
 | **CLI** | **Operator shell surface** | `datawatch config set autonomous.stuck_running_seconds <n>`. |
 | **comm channel** | **Operator chat surface** | `configure autonomous.stuck_running_seconds=<n>`, listed in the `configure` help text. |
-| **PWA (web)** | **Operator UI surface** | A number field on the Settings Automata card with label and help keys `settings_stuck_running_seconds` and `settings_stuck_running_seconds_help`, in the en, de, es, fr and ja bundles. DE, ES, FR and JA carry provisional translations until the app sends its own (see Localization below). |
+| **PWA (web)** | **Operator UI surface** | A number field on the Settings Automata card with label and help keys `settings_stuck_running_seconds` and `settings_stuck_running_seconds_help`, in the en, de, es, fr and ja bundles. DE, ES, FR and JA carry English placeholders until the app sends translations (see Rule conflicts above). |
 | **OpenAPI** | **Contract** | `docs/api/openapi.yaml` and `internal/server/web/openapi.yaml` document the field. |
 | **Audit** | **Core** | `autonomous_stuck_running_blocked` in JSON lines and CEF (signature 60, severity 5). |
 | **Android (datawatch-app)** | **Parity issue filed** | datawatch-app issue 290 asks for the settings field and for the app's own DE, ES, FR and JA translations of the two new keys; the request text is in `docs/plans/parity-issues/stuck-running-seconds.md`. A blocked Automaton already reaches the app through the existing status event. |
