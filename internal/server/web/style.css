@@ -6940,6 +6940,7 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .list-state-stale { color: var(--warning); }
 @media (prefers-reduced-motion: reduce) {
   .list-skel-row { animation: none; }
+}
 /* ── MOBILE-FIT: Observer "#perSystemGrid" per-system cards ─────────────────
    The JS in app.js (loadSystemStatsGrid) used to emit all of these
    declarations inline. They live here now so narrow screens can override
