@@ -16,6 +16,8 @@ committed tree. No check depends on a git-ignored script.
 | 4 | `node --check internal/server/web/app.js` and `node --test internal/server/web/*.test.js` | ok; 1421 tests, 0 fail |
 | 5 | `make check-internal-refs` | pass |
 | 6 | `env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous/ ./internal/audit/ ./internal/config/ ./internal/server/ -run 'StuckRunning\|Locales' -count=1` | exit 0 |
+| 3b | `go test ./...` re-run on the final tree (after the last fix commit) | every package ok, 0 FAIL, about 160 s |
+| 3c | `golangci-lint run ./...` on the final tree | 0 issues |
 | 7 | Smoke section 86 body against a sandbox daemon (see the tracker section) | 5 of 5 pass |
 
 ## Confirmations
