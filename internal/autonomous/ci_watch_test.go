@@ -15,6 +15,7 @@ package autonomous
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -394,12 +395,24 @@ func TestCIWatch_TimeoutPending(t *testing.T) {
 	// The store hands out shared *PRD pointers and the follow-up mutates
 	// one in place before SavePRD, so polling m.Store() would race with
 	// it. Poll what SavePRD persisted instead (a fresh Store loaded from
-	// disk); a torn read just means "not yet" and is retried.
+	// disk). This is safe: the follow-up persists with an atomic
+	// temp-file rename, and Store.loadRecords only removes temp files
+	// older than staleTempFileAge, so opening a second Store on the
+	// directory cannot destroy the in-flight write. A read that fails or
+	// finds the PRD missing therefore really does mean "not yet", and is
+	// retried below. (readBack runs on the test goroutine, so t.Logf is
+	// safe.)
+	var lastStoreErr error
 	readBack := func() *PRD {
 		st, err := NewStore(dataDir)
 		if err != nil {
+			if err.Error() != fmt.Sprint(lastStoreErr) {
+				lastStoreErr = err
+				t.Logf("read-back NewStore(%s) failed: %v (a persistent failure here would look like a silent timeout; it is not an assertion)", dataDir, err)
+			}
 			return nil
 		}
+		lastStoreErr = nil
 		p, _ := st.GetPRD(prd.ID)
 		return p
 	}
