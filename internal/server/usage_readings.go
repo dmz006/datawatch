@@ -179,6 +179,14 @@ func (s *Server) handleUsageReadingAdd(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, msg, status)
 		return
 	}
+	// A reading without an explicit time is stamped now, the shared default the
+	// CLI flag, the MCP tool, and the comm grammar all promise. The store is the
+	// authority and requires a stored time, so this single shared ingress applies
+	// the default: the surfaces that carry no time of their own (REST, MCP, comm)
+	// then match the CLI, which stamps its own now client-side.
+	if in.At.IsZero() {
+		in.At = time.Now().UTC()
+	}
 	series, err := s.usageSeries()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)

@@ -158,6 +158,69 @@ func TestUsageSeriesKeeperLocalCRUD(t *testing.T) {
 	}
 }
 
+// TestUsageReadingAddDefaultsTimeToNow pins the shared ingress default: a
+// reading with no explicit time is stamped now. The CLI stamps its own now
+// client-side; the comm and MCP surfaces carry no time of their own and the
+// bare REST body omits it, so the single shared handler must apply the default
+// (their documented "default: now") rather than fail the primary add path.
+func TestUsageReadingAddDefaultsTimeToNow(t *testing.T) {
+	dataDir := t.TempDir()
+	s := newUsageTestServer(t, dataDir, "", "", "", "")
+	before := time.Now().UTC()
+
+	capReq := func(body string) *httptest.ResponseRecorder {
+		req := withUsageCaps(httptest.NewRequest(http.MethodPost, "/api/usage/readings", nil),
+			federation.CapUsageRead, federation.CapUsageWrite)
+		req.Body = io.NopCloser(strings.NewReader(body))
+		rr := httptest.NewRecorder()
+		s.handleUsageReadings(rr, req)
+		return rr
+	}
+
+	// A percent reading with no time (what comm and MCP send, and what a bare
+	// REST body looks like) is accepted and stamped now.
+	wantBefore := before.Add(-time.Minute)
+	wantAfter := before.Add(5 * time.Minute) // store allows up to MaxFutureSkew (5m) ahead
+	rr := capReq(`{"percent":55,"source":"typed"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("POST without time = %d: %s (want 200, the time must default to now)", rr.Code, rr.Body.String())
+	}
+	var addResp struct {
+		OK      bool               `json:"ok"`
+		Reading *usagecalc.Reading `json:"reading"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&addResp); err != nil {
+		t.Fatalf("decode POST reply: %v (body=%s)", err, rr.Body.String())
+	}
+	if !addResp.OK || addResp.Reading == nil || addResp.Reading.At.IsZero() {
+		t.Fatalf("POST reply = %s, want a stored reading stamped with a time", rr.Body.String())
+	}
+	if got := addResp.Reading.At; got.Before(wantBefore) || got.After(wantAfter) {
+		t.Fatalf("defaults-time reading At = %v, want a now near %v", got, before)
+	}
+
+	// An explicit time still wins: the default only fills a zero time, so an
+	// operator back-dating a reading is not silently moved to now.
+	backfill := before.Truncate(time.Second).Add(-24 * time.Hour)
+	rr2 := capReq(`{"percent":40,"at":"` + backfill.Format(time.RFC3339) + `"}`)
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("POST with explicit time = %d: %s (want 200, an explicit time is honored)", rr2.Code, rr2.Body.String())
+	}
+	var addResp2 struct {
+		OK      bool               `json:"ok"`
+		Reading *usagecalc.Reading `json:"reading"`
+	}
+	if err := json.NewDecoder(rr2.Body).Decode(&addResp2); err != nil {
+		t.Fatalf("decode POST reply: %v (body=%s)", err, rr2.Body.String())
+	}
+	if addResp2.Reading == nil || !addResp2.Reading.At.Equal(backfill) {
+		t.Fatalf("explicit-time reading At = %+v, want the back-dated %v preserved (the now default must not override an explicit time)", addResp2.Reading, backfill)
+	}
+	if got := addResp2.Reading.At.Sub(before).Abs(); got < 20*time.Hour {
+		t.Fatalf("explicit-time reading At = %v looks like the now default %v, not the back-dated %v", addResp2.Reading.At, before, backfill)
+	}
+}
+
 func TestUsageSeriesCapabilityGates(t *testing.T) {
 	s := newUsageTestServer(t, t.TempDir(), "", "", "", "")
 
