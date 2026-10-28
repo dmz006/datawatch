@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.31.2 — Terminal search and copy buttons removed
+
+- **The terminal search and copy buttons are gone from the PWA session toolbar.** They were never requested and had no server API behind them — they only ever worked inside the browser, so nothing on the server side changes. The font menu, the scroll-mode toggle, and the fit-to-width buttons are unchanged.
+
 ## v9.31.1 — Observer graphs and every later style rule work again
 
 - **The Observer system statistics graphs came back, along with other styling.** Since the 9.14.2 release, one closing brace was missing in the stylesheet, so every style rule after the loading-skeleton rules applied only when the browser asked for reduced motion. The Observer per-system bars showed as plain text lines, and any other screen styled by later rules lost its styling the same way. The brace is back. A new test fails if the stylesheet ever ends with an unclosed block or a media block opened inside another block.
