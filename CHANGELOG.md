@@ -77,6 +77,10 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.28.3 — The daemon cleanup audit test no longer times out on a slow CI runner
+
+- The test that runs the daemon cleanup audit over the whole repository (`TestRepoDaemonScriptsPassAudit`) had a 60 second limit; the audit takes about half a minute on a developer machine and more than a minute on a loaded CI runner, so the v9.28.1 and v9.28.2 release runs failed on it. The shared command bound in `tests/ci` is now 4 minutes, which still stops a hung command. No product behaviour changes; v9.28.1 and v9.28.2 contain the same code.
+
 ## v9.28.2 — Node placement is tested against the production configuration
 
 ### Node placement is tested against the production configuration

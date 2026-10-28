@@ -144,7 +144,9 @@ func dcRun(t *testing.T, dir string, env []string, args ...string) (string, int)
 	if len(args) == 0 {
 		t.Fatal("dcRun: no command")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	// The repository-wide audit takes about half a minute on a developer machine and more than a
+	// minute on a loaded CI runner, so the bound is generous; it still stops a hung command.
+	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
