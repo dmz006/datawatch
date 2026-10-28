@@ -1672,6 +1672,8 @@
   "settings_task_override_statuses": "LLMオーバーライドを許可するオートマトンのステータス",
   "settings_verification_timeout": "検証/ガードレールセッションのタイムアウト（秒、0=30分）",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
+  "settings_task_max_attempt_seconds": "タスク試行の最大時間（秒、0=無効）",
+  "settings_task_no_progress_seconds": "進捗なしで停止（秒、0=無効）",
   "settings_session_idle_timeout": "セッションアイドルタイムアウト（秒、0=15分）",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",

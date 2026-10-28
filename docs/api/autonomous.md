@@ -302,10 +302,24 @@ autonomous:
   planning_effort:        "thorough"  # BL41 effort hint (BL304; old key decomposition_effort still accepted)
   verification_effort:    "normal"    # per-task/story/Automaton overrides (set_*_verification_llm) take precedence
   stale_task_seconds:     900         # activity-based stall window: no output, child process, backend activity, or file change for this long = stalled; 0 = inherit session.stale_timeout_seconds
+  task_max_attempt_seconds:  0        # wall-clock cap on one task attempt in seconds; 0 = off; recommended 5400
+  task_no_progress_seconds:  0        # stop an attempt after N seconds without output, file changes, commits, or a CPU-using child process; 0 = off; recommended 1800
   preserve_attempt_work:  true        # save a killed attempt's uncommitted work to refs/datawatch/attempts/; restored on the next attempt unless clean_restart
   auto_fix_retries:       1           # re-prompt count on verifier failure
   security_scan:          true        # nightwire-port .py scanner before commit
 ```
+
+### Task attempt limits (`task_max_attempt_seconds`, `task_no_progress_seconds`)
+
+Both default to `0` (off). `task_max_attempt_seconds` hard-caps one
+attempt by wall clock; `task_no_progress_seconds` stops an attempt that
+goes N seconds without progress, where progress is terminal output
+growth, a changed tracked or untracked file in the work directory (harness
+scratch files ignored), a new commit, or a live child process using CPU.
+A no-progress stop fails the attempt with `no progress for N seconds: no
+output, no file changes, no commits`. In both cases the uncommitted work
+is saved to a ref before the worker is stopped (never discarded) and the
+normal retry budget applies. Recommended values: `5400` and `1800`.
 
 ### Compute-node engine cap (`max_engines_per_node`)
 

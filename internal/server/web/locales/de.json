@@ -1672,6 +1672,8 @@
   "settings_task_override_statuses": "Automaten-Status, die LLM-Überschreibungen akzeptieren",
   "settings_verification_timeout": "Verifizierungs-/Guardrail-Session-Timeout (Sek., 0=30min)",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
+  "settings_task_max_attempt_seconds": "Max. Task-Versuchsdauer (Sek., 0=aus)",
+  "settings_task_no_progress_seconds": "Stopp bei fehlendem Fortschritt (Sek., 0=aus)",
   "settings_session_idle_timeout": "Sitzungs-Idle-Timeout (Sek., 0=15min)",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",

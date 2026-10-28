@@ -14192,6 +14192,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.verification_backends', label: 'Verification backends (load-balance, comma-separated)', type: 'text', placeholder: 'ollama-datawatch, ollama-johnnyjohnny', csv: true },
     { key: 'autonomous.task_override_statuses', label: 'Automaton statuses that accept LLM overrides', labelKey: 'settings_task_override_statuses', type: 'text', placeholder: 'needs_review, revisions_asked, cancelled, blocked', csv: true },
     { key: 'autonomous.stale_task_seconds', label: 'Stale task timeout (sec, 0=inherit session default)', labelKey: 'settings_stale_task_seconds', type: 'number', placeholder: '0' },
+    { key: 'autonomous.task_max_attempt_seconds', label: 'Max task attempt time (sec, 0=off)', labelKey: 'settings_task_max_attempt_seconds', type: 'number', placeholder: '0' },
+    { key: 'autonomous.task_no_progress_seconds', label: 'No-progress stop (sec, 0=off)', labelKey: 'settings_task_no_progress_seconds', type: 'number', placeholder: '0' },
     { key: 'autonomous.session_idle_timeout_seconds', label: 'Session idle timeout (sec, 0=15m)', labelKey: 'settings_session_idle_timeout', type: 'number', placeholder: '900' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
     // BL366 (v8.16.0) — git-diff grounding for the verifier.

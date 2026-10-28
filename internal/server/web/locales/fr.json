@@ -1672,6 +1672,8 @@
   "settings_task_override_statuses": "Statuts d'automate qui acceptent les écrasements LLM",
   "settings_verification_timeout": "Délai de la session de vérification/garde-fou (sec, 0=30min)",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
+  "settings_task_max_attempt_seconds": "Durée max. d'une tentative de tâche (sec, 0=désactivé)",
+  "settings_task_no_progress_seconds": "Arrêt pour absence de progression (sec, 0=désactivé)",
   "settings_session_idle_timeout": "Délai de session inactive (sec, 0=15min)",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",

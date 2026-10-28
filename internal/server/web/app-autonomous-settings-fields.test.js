@@ -78,3 +78,33 @@ test('autonomous settings expose session_idle_timeout_seconds as a number with a
   assert.ok(typeof en.settings_session_idle_timeout === 'string' && en.settings_session_idle_timeout.length > 0,
     'settings_session_idle_timeout missing from en locale');
 });
+
+test('autonomous settings expose both task attempt limit fields as numbers with label keys', () => {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  const run = (key) => {
+    const field = vm.runInContext(
+      "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields.find(f => f.key === '" + key + "') || null)",
+      sandbox);
+    return JSON.parse(field);
+  };
+  const maxField = run('autonomous.task_max_attempt_seconds');
+  assert.ok(maxField, 'autonomous.task_max_attempt_seconds missing from autonomous card fields');
+  assert.equal(maxField.type, 'number');
+  assert.equal(maxField.labelKey, 'settings_task_max_attempt_seconds');
+  const noProgressField = run('autonomous.task_no_progress_seconds');
+  assert.ok(noProgressField, 'autonomous.task_no_progress_seconds missing from autonomous card fields');
+  assert.equal(noProgressField.type, 'number');
+  assert.equal(noProgressField.labelKey, 'settings_task_no_progress_seconds');
+});
+
+test('settings_task_max_attempt_seconds and settings_task_no_progress_seconds exist in all five locale bundles', () => {
+  for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    assert.ok(typeof bundle.settings_task_max_attempt_seconds === 'string' && bundle.settings_task_max_attempt_seconds.length > 0,
+      'settings_task_max_attempt_seconds missing or empty in ' + locale + ' locale');
+    assert.ok(typeof bundle.settings_task_no_progress_seconds === 'string' && bundle.settings_task_no_progress_seconds.length > 0,
+      'settings_task_no_progress_seconds missing or empty in ' + locale + ' locale');
+  }
+});
