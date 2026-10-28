@@ -1,0 +1,2 @@
+-rw-r--r-- 1 dmz dmz   338 Oct 17 09:14 you're out of extra usage.txt
+⎿  the 'you're out of extra usage.txt' entry is the note file from the capture, not a pane line

@@ -168,6 +168,89 @@ func TestBuiltinRateLimitAnchoredMatching(t *testing.T) {
 	}
 }
 
+// TestRateLimitLineFixturesMatchPerBackend reads every backend fixture file
+// in testdata/rate_limit_lines (one file per backend, named
+// <backend>.txt as the README lists them), runs each captured line through
+// the same normalisation the detector applies in processOutputLine (trim of
+// surrounding whitespace + lowercase, exactly as manager.go does before the
+// line-start check), and then through the per-backend matcher for that
+// backend family. Every captured line must match for its own backend.
+func TestRateLimitLineFixturesMatchPerBackend(t *testing.T) {
+	entries, err := os.ReadDir(fixtureDir)
+	if err != nil {
+		t.Fatalf("read fixture dir: %v", err)
+	}
+	backendFixtures := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".txt") {
+			continue // ordinary/ holds the negative fixtures, not a backend
+		}
+		family := strings.TrimSuffix(e.Name(), ".txt")
+		backendFixtures++
+		lines := readFixtureLines(t, e.Name())
+		for _, line := range lines {
+			// Detector normalisation (manager.go processOutputLine): the
+			// trimmed, lowercased line is what reaches the matcher.
+			lineLower := strings.ToLower(strings.TrimSpace(line))
+			if !matchesBuiltinRateLimitLines(family, lineLower) {
+				t.Errorf("%s: captured line must match for its own backend, got miss: %q", family, line)
+			}
+		}
+	}
+	if backendFixtures == 0 {
+		t.Fatal("no backend fixture files (*.txt) found under testdata/rate_limit_lines/")
+	}
+}
+
+// TestRateLimitOrdinaryTextDoesNotMatch reads every file in
+// testdata/rate_limit_lines/ordinary/ and asserts that no line in those
+// files matches the per-backend matcher for any backend family, and that
+// none matches the protocol marker rule (no trimmed line starts with the
+// shared DATAWATCH_RATE_LIMITED marker). These are ordinary-text negative
+// cases: quotes of the list entries mid-sentence — in directory listings,
+// diffs, docs, shell transcripts, and task specs — must never fire, for
+// any backend.
+func TestRateLimitOrdinaryTextDoesNotMatch(t *testing.T) {
+	ordinaryDir := filepath.Join(fixtureDir, "ordinary")
+	entries, err := os.ReadDir(ordinaryDir)
+	if err != nil {
+		t.Fatalf("read ordinary dir: %v", err)
+	}
+	families := make([]string, 0, len(builtinRateLimitPhrases))
+	for family := range builtinRateLimitPhrases {
+		families = append(families, family)
+	}
+	ordinaryFiles := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".txt") {
+			continue
+		}
+		ordinaryFiles++
+		data, err := os.ReadFile(filepath.Join(ordinaryDir, e.Name()))
+		if err != nil {
+			t.Fatalf("read ordinary fixture %s: %v", e.Name(), err)
+		}
+		for _, raw := range strings.Split(string(data), "\n"){
+			line := raw
+			if line == "" || line == "\r" {
+				continue
+			}
+			lineLower := strings.ToLower(strings.TrimSpace(line))
+			for _, family := range families {
+				if matchesBuiltinRateLimitLines(family, lineLower) {
+					t.Errorf("%s: ordinary line must not match backend %s, but it did: %q", e.Name(), family, line)
+				}
+			}
+			if strings.HasPrefix(lineLower, builtinRateLimitMarkerLower) {
+				t.Errorf("%s: ordinary line must not match the protocol marker rule: %q", e.Name(), line)
+			}
+		}
+	}
+	if ordinaryFiles == 0 {
+		t.Fatal("no ordinary fixtures found under testdata/rate_limit_lines/ordinary/")
+	}
+}
+
 // TestBuiltinFlatFingerprintEncodesBackend guards the patterns_version
 // contract: writePatterns sorts and de-duplicates, so the flat list must
 // encode each entry's backend family — reassigning a phrase between

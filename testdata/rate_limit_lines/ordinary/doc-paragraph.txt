@@ -1,0 +1,2 @@
+When a provider throttles the API, the tool shows "5-hour limit reached ∙ resets 2pm" and pauses until the next window.
+⎿  the doc only quotes the "5-hour limit reached" line to explain throttling, it is not pane output
