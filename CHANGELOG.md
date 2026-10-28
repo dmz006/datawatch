@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.29.2 — fix(security): remove stale CVE suppressions now fixed upstream
+
+### Fixed
+- **Removed 6 .trivyignore suppression(s) with a fix now available in Debian bookworm** — found by the daily `image-refresh` recheck, which rebuilds every shipped image fresh and scans without `.trivyignore` applied. See the PR for exactly which CVEs and which images.
+
+
 ### The last three open code-scanning alerts are addressed
 
 - **Subprocess sessions run one program, with no shell. This changes what a `--shell` / `subprocess: true` task may contain.** A `schedule spawn --shell` / `"subprocess": true` task used to be handed to `bash -c`. The daemon now re-runs its own binary as a helper with a validated argument list (rc-file path, `--`, task), and the helper splits the task with shell-style quoting only (`'…'`, `"…"`, `\`, a leading `~/`) and runs the program directly. No shell is started by the daemon or the helper, so a request can no longer make the daemon interpret `|`, `&`, `;`, `<`, `>`, `( )`, `$`, backticks or a newline. A task that contains one of those outside quotes is refused: the session fails at once with `subprocess task uses shell syntax …` in its log and nothing runs. Missing programs now end with exit 127 and non-executable files with 126, as before. **Migration:** a task that needs a pipe, `&&` or a variable names the program that provides it, for example `--shell "bash -c 'make test && make lint'"`, or runs a script file; `docs/howto/result-panel.md` shows both. Existing scheduled jobs that use shell syntax need that edit; the scripts in `scripts/` that start subprocess sessions were updated. CodeQL `go/command-injection` (#661) is cleared because the path from a request to a shell is gone, not because the scanner stops following the value.
