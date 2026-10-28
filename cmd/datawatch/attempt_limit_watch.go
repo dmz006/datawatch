@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"time"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
@@ -24,6 +25,41 @@ type attemptLimitWatcher struct {
 	workDir   string
 	task      *autonomouspkg.Task
 	sessionID string
+}
+
+// attemptLogSizeOf is the default log-size provider: the current size of the
+// log file in bytes, 0 when the file cannot be stat-ed.
+func attemptLogSizeOf(path string) int64 {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return fi.Size()
+}
+
+// buildAttemptObservation assembles one attempt observation from injected
+// signal providers so the loop wiring can be tested without files, a git
+// repository or a tmux session. Empty path/dir/session arguments skip that
+// signal entirely; the providers are only called for signals that are asked
+// for, so a provider may freely assume its input is non-empty.
+func buildAttemptObservation(
+	now time.Time,
+	logSizeOf func(string) int64,
+	workDirOf func(string) (fingerprint, head string),
+	cpuOf func(string) uint64,
+	logPath, workDir, tmuxSession string,
+) attemptObservation {
+	obs := attemptObservation{Now: now}
+	if logPath != "" {
+		obs.LogSize = logSizeOf(logPath)
+	}
+	if workDir != "" {
+		obs.WorkFingerprint, obs.HeadSHA = workDirOf(workDir)
+	}
+	if tmuxSession != "" {
+		obs.ChildCPUTicks = cpuOf(tmuxSession)
+	}
+	return obs
 }
 
 // newAttemptLimitWatcher seeds the clock with the attempt start time and the

@@ -4611,6 +4611,41 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					staleLogPath = s.LogFile
 					family = s.BackendFamily
 				}
+				// Attempt-limit stopper: autonomous.task_max_attempt_seconds
+				// (wall-clock cap on one attempt) and autonomous.task_no_progress_seconds
+				// (how long an attempt may go without real progress — log growth,
+				// file changes, commits or child CPU). Unlike the other stall
+				// detectors these apply to EVERY backend unconditionally: checked
+				// on every tick, no cadence gate and no staleWorkerAppliesTo
+				// filter. The limits are read live off cfg on every tick (the REST
+				// config patch, handlePutConfig -> applyConfigPatch, mutates this
+				// same *config.Config in place), so a runtime change takes effect
+				// without a daemon restart. When both limits are 0 none of this
+				// observes or stops.
+				attemptStart := time.Now()
+				// The first observation is only worth taking when at least one
+				// limit is on right now (a limit enabled later via a runtime
+				// config patch is fine: the first tick that sees it takes a
+				// fresh observation anyway).
+				firstObs := attemptObservation{Now: attemptStart}
+				if cfg.Autonomous.TaskMaxAttemptSeconds > 0 || cfg.Autonomous.TaskNoProgressSeconds > 0 {
+					firstTmux := ""
+					if sess, sok := mgr.GetSession(task.SessionID); sok {
+						firstTmux = sess.TmuxSession
+					}
+					firstObs = buildAttemptObservation(
+						attemptStart,
+						attemptLogSizeOf,
+						workDirFingerprint,
+						childCPUTicks,
+						staleLogPath, taskDir, firstTmux,
+					)
+				}
+				attemptW := newAttemptLimitWatcher(attemptStart, firstObs, mgr, autonomousMgrRef, taskDir, task, task.SessionID)
+				// Keep each tick cheap: take a fresh observation at most every
+				// 15 seconds and reuse the previous one in between.
+				var lastAttemptObs = firstObs
+				var lastAttemptObsAt time.Time
 			waitLoop:
 				for {
 					select {
@@ -4625,6 +4660,36 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 						if s.State == session.StateComplete || s.State == session.StateFailed || s.State == session.StateKilled {
 							break waitLoop
+						}
+						// Attempt-limit check: every tick, every backend. The
+						// limits are read from the live config object each tick so
+						// a runtime config patch takes effect immediately.
+						maxAttemptLimit := time.Duration(cfg.Autonomous.TaskMaxAttemptSeconds) * time.Second
+						noProgressLimit := time.Duration(cfg.Autonomous.TaskNoProgressSeconds) * time.Second
+						if maxAttemptLimit > 0 || noProgressLimit > 0 {
+							nowObs := time.Now()
+							if lastAttemptObsAt.IsZero() || nowObs.Sub(lastAttemptObsAt) >= 15*time.Second {
+								lastAttemptObs = buildAttemptObservation(
+									nowObs,
+									attemptLogSizeOf,
+									workDirFingerprint,
+									childCPUTicks,
+									staleLogPath, taskDir, s.TmuxSession,
+								)
+								lastAttemptObsAt = nowObs
+							}
+							if limErr := attemptW.check(lastAttemptObs, maxAttemptLimit, noProgressLimit); limErr != nil {
+								// check already preserved the attempt work and killed
+								// the worker session; the code after the loop returns
+								// this reason to the executor, which retries via the
+								// normal budget and finally fails the task with it.
+								log.Printf("[autonomous] attempt limit hit for session %s task %s/%s: %v",
+									task.SessionID, task.PRDID, task.ID, limErr)
+								alertspkg.EmitSystem(alertspkg.LevelError, "Task attempt limit hit",
+									fmt.Sprintf("session=%s prd=%s task=%s: %v", task.SessionID, prd.ID, task.Title, limErr))
+								stallErr = limErr
+								break waitLoop
+							}
 						}
 						// v8.36.1 — every autonomous task session spawns with
 						// one_shot=true (it's expected to run to completion via
