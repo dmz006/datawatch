@@ -87,3 +87,49 @@ operator-facing command, option or setting changed.
 - Localization Rule: N/A, no new `t('key')` usage.
 - Version bump: N/A for this unit; the merge helper bumps both `Version` variables (`cmd/datawatch/main.go`, `internal/server/api.go`) at release.
 - Commit subjects: the first six commits of this branch used the form `task(d1d30001): ...`; they cannot be rewritten from inside the Automaton, so the merge uses a conventional subject of the form `fix(security): ...` with the trailer `tracker: Untyped markup bodies and nosniff on API responses`.
+
+## Round 3: alerts 661, 714, 715
+
+**Date:** 2026-10-27
+**Scope:** the final local scan for the last three open alerts, after their fixes on branch `automaton/24030001`: 661 `go/command-injection` (`internal/session/subprocess_resume.go`), 715 `go/reflected-xss` (`internal/mcp/transport_debug.go`) and 714 `js/insecure-randomness` (`internal/server/web/app.js`). The scan before the fixes is saved in `.datawatch/codeql/baseline-r3/` (see `docs/plans/2026-10-28-codeql-last-three-alerts.md`). The working files are in the gitignored `.datawatch/codeql/`, so they are not committed.
+
+### Commands
+
+Run from the project root, each under `env -u TMUX -u TMUX_TMPDIR`, with `CODEQL=.datawatch/codeql/bundle/codeql/codeql` (CLI 2.27.3). Both databases were rebuilt with `--overwrite`, and the same default code-scanning suites as the first scan were used (`.github/workflows/codeql.yaml` sets no `queries:` block). The output goes to `out-r3/` so the baseline files stay untouched. No query was excluded and nothing in `.github/` or the code-scanning settings changed.
+
+```bash
+env -u TMUX -u TMUX_TMPDIR $CODEQL database create .datawatch/codeql/db/go --language=go --build-mode=autobuild --source-root=. --overwrite
+env -u TMUX -u TMUX_TMPDIR $CODEQL database create .datawatch/codeql/db/javascript-typescript --language=javascript-typescript --build-mode=none --source-root=. --overwrite
+mkdir -p .datawatch/codeql/out-r3
+env -u TMUX -u TMUX_TMPDIR $CODEQL database analyze .datawatch/codeql/db/go codeql/go-queries:codeql-suites/go-code-scanning.qls --format=sarifv2.1.0 --output=.datawatch/codeql/out-r3/go.sarif
+env -u TMUX -u TMUX_TMPDIR $CODEQL database analyze .datawatch/codeql/db/javascript-typescript codeql/javascript-queries:codeql-suites/javascript-code-scanning.qls --format=sarifv2.1.0 --output=.datawatch/codeql/out-r3/javascript-typescript.sarif
+```
+
+All four commands exited 0 (Go database about 50 s; JavaScript/TypeScript database and both analyses about 108 s together). The two SARIF files were then compared with `.datawatch/codeql/baseline-r3/` by reducing each result to its rule, file and start line (`python3 -I`, `runs[0].results[].locations[0].physicalLocation`).
+
+### Before and after
+
+| Alert | Rule | File | Baseline line | After |
+|-------|------|------|---------------|-------|
+| 661 | `go/command-injection` | `internal/session/subprocess_resume.go` | 41 | Gone |
+| 715 | `go/reflected-xss` | `internal/mcp/transport_debug.go` | 128 | Gone |
+| 714 | `js/insecure-randomness` | `internal/server/web/app.js` | 6982 | Gone |
+
+Whole-scan totals (results; distinct rule/file/line triples in brackets):
+
+| Language | Baseline | After | Change |
+|----------|----------|-------|--------|
+| Go | 68 (66) | 66 (64) | `go/command-injection` 4 to 3, `go/reflected-xss` 2 to 1 |
+| JavaScript/TypeScript | 17 (16) | 16 (15) | `js/insecure-randomness` 1 to 0 |
+
+The Go difference is exactly the two triples above. The JavaScript/TypeScript difference is `js/insecure-randomness` at `app.js:6982`, plus one line-number shift described next.
+
+### Triples not in the baseline
+
+One triple in the after-scan is not literally in the baseline: `js/xss-through-dom` at `internal/server/web/app.js:10893`. It is the baseline triple at `app.js:10882` moved down by 11 lines, not a new finding. The fix for 714 added 11 lines above it (`git diff 3bd9b1c95 HEAD -U0 -- internal/server/web/app.js` shows a hunk of 11 added lines at 7204 and a one-line change at 7245/7256), and both lines hold the same statement, `fBody.innerHTML = html;`. The other `js/xss-through-dom` result (`app.js:141`) sits above the edit and did not move. Every Go triple of the after-scan is in the baseline at the same line. Allowing for that one shift, the scan has no rule/file/line triple that was not in the baseline.
+
+The rest of the whole-scan list is unchanged: it still includes alerts GitHub has dismissed (see the result section above), which a local run cannot know about.
+
+### Result
+
+The three alerts 661, 714 and 715 no longer appear in a fresh local scan with the default suites, and no new finding appeared. GitHub's default-setup scan runs only after a merge to `main`, so the three stay listed as open on GitHub until that scan has run; they are expected to close then.

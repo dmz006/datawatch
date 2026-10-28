@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### The last three open code-scanning alerts are fixed
+
+- **Subprocess sessions start through a fixed program.** A `!cmd` session is now launched by re-running the daemon's own helper with a validated argument list instead of a `bash -c` wrapper, so the launch path no longer builds a shell command line from the task (CodeQL `go/command-injection`).
+- **The MCP debug transport escapes what it echoes.** Every event-stream response is pinned to `X-Content-Type-Options: nosniff`, and a payload whose type is missing or HTML is escaped (CodeQL `go/reflected-xss`).
+- **Dictation fields get plain counter ids.** The microphone button added to a textarea without an id no longer builds that id from `Math.random()`; it is only a page element id, so a counter is enough (CodeQL `js/insecure-randomness`).
+- **Checked with a fresh local scan.** Rebuilding both CodeQL databases and re-running the default code-scanning suites no longer reports these three results and adds none. See [the local reproduction plan](docs/plans/2026-10-27-codeql-local-reproduction.md#round-3-alerts-661-714-715).
+
 ### Plan check flags write tasks that declare no files
 
 - **A write task with no files is now a finding.** The plan coverage check raises `write_task_without_files` for a task whose title starts with a write verb and whose `files` list is empty, unless the first line of its spec starts with `READ-ONLY:` or it is a gate, smoke or similar task. In `block` mode the finding stops approval until the plan is fixed or the finding is acknowledged with a note; see [autonomous planning](docs/howto/autonomous-planning.md#declaring-files-for-write-tasks).
