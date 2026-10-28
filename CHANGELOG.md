@@ -85,6 +85,13 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.28.6 — A store open no longer deletes a live writer's temporary file
+
+### A background save lost by a concurrent store open is fixed
+
+- **Root cause of the flaky `TestCIWatch_TimeoutPending`.** Opening a store (`NewStore`) deleted every `.tmp-*` file in the records directory, including the temporary file of a save in progress from another goroutine. That save then failed on its rename and, for the CI watch follow-up, was only logged, so the recorded pass was lost for good. Opening a store now removes only temporary files that are old enough to be stale, so a live writer is never disturbed.
+- Regression tests open a store beside a live writer and prove the save lands; the CI watch test reads back with clearer diagnostics. No behaviour changes for operators other than the fix.
+
 ## v9.28.5 — Two more CodeQL alerts are fixed and the subprocess shell stays by decision
 
 ### Two more CodeQL alerts fixed in code
