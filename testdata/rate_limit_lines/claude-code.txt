@@ -1,1 +1,7 @@
 ⎿  You've hit your limit · resets 10pm (America/New_York)
+5-hour limit reached ∙ resets 2pm
+Weekly limit reached
+Hit weekly limit
+Opus limit reached
+Sonnet limit reached
+You're out of extra usage · resets 11:50am (America/New_York)

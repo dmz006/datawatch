@@ -7599,13 +7599,19 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	// 2048-char line gate keeps the false-positive guard for
 	// paragraph-length tool output while covering real dialog sizes.
 	//
-	// The shared protocol marker fires only when the line starts with it.
-	// Otherwise the line is matched against the per-backend anchored table
-	// for this session's BackendFamily (rate_limit_lines.go); an
-	// operator-configured rate_limit_patterns keeps its classic
-	// flat-substring behavior. A line that merely quotes a phrase
-	// mid-sentence is not a detection.
-	lineLower := strings.ToLower(line)
+	// The line is trimmed of surrounding whitespace before any check: panes
+	// render notices indented, and an indented line still leads with the
+	// phrase after trimming, while a line that merely quotes a phrase
+	// mid-sentence never has the phrase at the start and is not a
+	// detection.
+	//
+	// The shared protocol marker fires only when the trimmed line starts
+	// with it (every backend). Otherwise the trimmed line is matched
+	// against the per-backend anchored table for this session's
+	// BackendFamily (rate_limit_lines.go). An operator-configured
+	// rate_limit_patterns keeps its classic flat-substring behavior and
+	// applies to every backend.
+	lineLower := strings.ToLower(strings.TrimSpace(line))
 	isRateLimit := false
 	if strings.HasPrefix(lineLower, builtinRateLimitMarkerLower) {
 		isRateLimit = true

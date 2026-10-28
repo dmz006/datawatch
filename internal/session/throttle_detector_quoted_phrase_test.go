@@ -1,26 +1,41 @@
-// Incident reproduction: a pi-prompt worker session that is merely
-// working on a task about throttling emits ordinary prose. One output
-// line is a normal sentence that quotes one of the rate-limit
-// detector's list entries in the middle of the sentence. The current
-// detector matches a list entry at any position in a line, so this
-// false-positives and flips the live session to rate limited, fires
-// the rate-limit listeners (which is the same hook chain the daemon
-// uses to request a usage back-off), and triggers the fallback chain.
+// BL406 Phase 1 — regression test for the false-positive incident where
+// the detector fired on a quoted phrase in a tool output line, not a
+// real throttle notice.
 //
-// This test feeds that exact line through the same output-line path
-// the daemon uses for live output (Manager.processOutputLine) and
-// asserts the false positive does NOT happen. On the current code the
-// test FAILS, because the quoted entry is matched as a substring
-// anywhere in the line.
+// A pi-prompt worker session that is merely working on a task about
+// throttling emits ordinary prose. One output line is a normal sentence
+// that quotes a rate-limit phrase in the middle of the sentence. Before
+// the per-backend anchored matchers, detection was a case-insensitive
+// substring match against a flat string list: that line matched, the
+// live session flipped to rate-limited, the rate-limit listeners
+// (the same hook chain the daemon uses to request a usage back-off)
+// fired, and the fallback chain was triggered on a healthy session.
+//
+// Anchored (line-start) per-backend matching makes the regression
+// impossible: a phrase must lead the trimmed line of this session's
+// backend family to count (see rate_limit_lines.go for rules and
+// sources). This test feeds that exact line through the same
+// output-line path the daemon uses for live output
+// (Manager.processOutputLine) and asserts, end to end, that no
+// listener fires, no fallback chain triggers, and the worker stays
+// running.
 package session
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
+// TestRateLimitDetectorIgnoresQuotedPhraseInThrottleTaskOutput pins the
+// anchored-matching contract at the end-to-end level: a line that quotes
+// a claude-code built-in phrase mid-sentence, on a pi-prompt worker,
+// must not flip state, must not fire any rate-limit listener (the
+// daemon's usage back-off rides on exactly this hook chain), and must
+// not trigger the fallback chain. The session starts running; after the
+// line it must still be running.
 func TestRateLimitDetectorIgnoresQuotedPhraseInThrottleTaskOutput(t *testing.T) {
 	mgr, _ := newTestManagerWithFake(t)
 
@@ -62,15 +77,18 @@ func TestRateLimitDetectorIgnoresQuotedPhraseInThrottleTaskOutput(t *testing.T) 
 		"bucket is drained; it outputs You've hit your limit and then sleeps for the retry " +
 		"window before attempting the next request."
 
-	// Sanity: the quoted entry really is a registered detector entry.
-	found := false
-	for _, pat := range mgr.effectiveRateLimitPatterns() {
-		if pat == "You've hit your limit" {
-			found = true
+	// Sanity: the quoted phrase really is a registered built-in detector
+	// entry (claude-code; the quoted line lands on a pi-prompt session, so
+	// per-backend scoping is what keeps it from matching).
+	sanFound := false
+	for _, p := range builtinRateLimitPhrases["claude-code"] {
+		if p == strings.ToLower("You've hit your limit") {
+			sanFound = true
+			break
 		}
 	}
-	if !found {
-		t.Fatalf("test setup: quoted phrase is not a registered rate-limit pattern")
+	if !sanFound {
+		t.Fatalf("test setup: quoted phrase is not a registered built-in rate-limit pattern")
 	}
 
 	// Feed the line through the same output-line path the daemon uses

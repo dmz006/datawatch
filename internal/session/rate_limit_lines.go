@@ -1,44 +1,55 @@
-// Package session provides the session manager. This file holds the
-// built-in rate-limit line table that replaces the old generic substring
-// list (formerly rateLimitPatterns in manager.go).
+// Package session provides the session manager. This file defines the
+// built-in per-backend rate-limit line table that replaces the former
+// generic substring list.
 //
-// Matching rule (shared by every backend)
-// ---------------------------------------
-// processOutputLine receives each already-trimmed, ANSI-stripped pane
-// line. A line is a rate-limit signal when:
+// Matching rules (apply to every backend)
+// ----------------------------------------
+// processOutputLine trims the pane line of leading and trailing
+// whitespace before any rate-limit check (see manager.go). A line is a
+// rate-limit signal when:
 //
-//  1. Shared protocol marker — the line starts with
-//     builtinRateLimitMarker (case-insensitive), regardless of backend.
-//     A line that merely quotes the marker mid-sentence does not match.
+//  1. Shared protocol marker — the trimmed line starts with
+//     builtinRateLimitMarker, case-insensitive (rule for every backend,
+//     including ones with no captured phrases yet). A line that only
+//     quotes the marker mid-sentence does not match.
 //
-//  2. Backend table — the session's BackendFamily has one or more
-//     phrases in builtinRateLimitPhrases, and the line starts with one
-//     of them, or with the family's own recorded line prefix
-//     (builtinRateLimitLinePrefix) followed by one of them, compared
-//     case-insensitively. A line that merely quotes a phrase mid-sentence
-//     is never a detection.
+//  2. Backend table — the session's BackendFamily has
+//     builtinRateLimitPhrases entries and the trimmed line starts with
+//     one of them (or with that family's documented line prefix from
+//     builtinRateLimitLinePrefix followed by one of them),
+//     case-insensitive. Comparisons are byte-exact otherwise: the table
+//     does not normalize Unicode, so each phrase carries the exact
+//     glyph it was captured with (⎿ U+237F, · U+00B7, ∙ U+22C5).
 //
-// An operator-configured rate_limit_patterns (config global or per-LLM)
-// is a separate flat list that keeps the classic substring behavior, for
-// lines under the same 2048-char gate; it is not part of this table.
+// Quoting a phrase anywhere else on the line is never a detection, for
+// any backend. An operator-configured flat list
+// (detection.rate_limit_patterns, global or per-LLM) is separate, keeps
+// the classic substring-anywhere semantics for ALL backends, and is not
+// part of this table.
 //
 // Provenance
 // ----------
-// Every phrase below comes from an in-tree record of lines claude-code
-// actually printed: the captured line in
-// testdata/rate_limit_lines/claude-code.txt, the operator-reported
-// phrasings recorded in the v5.27.4 / v6.2.0 / v6.11.3 release notes and
-// CHANGELOG entries, and the operator reproductions in the in-tree tests
-// (v5274/v5276/BL262). Nothing here is invented; phrases are recorded
-// in their original casing and compared case-insensitively.
+// Every phrase is recorded verbatim in a captured line in-tree; the
+// captured lines live one-per-line in
+// testdata/rate_limit_lines/<backend>.txt exactly as they appeared to
+// the operator, and the directory README records each line's source.
+// matchesBuiltinRateLimitLines anchors at the line start (after the
+// family's optional prefix), so a captured line that leads with a phrase
+// is detected while a line that merely quotes one is not. The old
+// v5.25.5-era seeded defaults ("rate limit exceeded", "quota exceeded",
+// "usage limit will reset", "stop and wait", "resets at", …) do not
+// lead any captured line and are no longer built in; operators who still
+// rely on them list them under detection.rate_limit_patterns and get
+// them back through the flat-substring path.
 //
-// Observed gaps
-// -------------
-// The backends below have no captured line in testdata/rate_limit_lines
-// yet, so their table entries are empty: the shared protocol marker is
-// the only built-in rule that fires for them. When a real throttle line
-// is captured for any of them, it belongs in the table with its
-// provenance recorded here.
+// Known gaps
+// ----------
+// Backends other than claude-code do not yet have a captured throttle
+// line in testdata/rate_limit_lines/, so their entries are empty: only
+// the shared protocol marker fires for them. When an operator reports a
+// real line for one, add it to the fixture (README: source) and to the
+// table — the flat-fingerprint test pins the backend association.
+
 package session
 
 import (
@@ -47,47 +58,39 @@ import (
 )
 
 // builtinRateLimitMarker is the shared explicit protocol entry: any
-// backend may emit it, and it is recognized only as a line start.
+// backend may emit it and it is recognized line-start only, after
+// trimming.
 const builtinRateLimitMarker = "DATAWATCH_RATE_LIMITED:"
 
-// builtinRateLimitMarkerLower is the lowercased comparison form of
-// builtinRateLimitMarker.
+// builtinRateLimitMarkerLower is the lowercase form used for comparison.
 const builtinRateLimitMarkerLower = "datawatch_rate_limited:"
 
-// builtinRateLimitPhrases is the built-in per-backend rate-limit line
-// table, keyed by BackendFamily. A phrase is a recorded line start from
-// the provenance sources in the file comment; matching is anchored (the
-// line starts with the phrase, or with the family's line prefix followed
-// by the phrase), case-insensitive. Empty entries are the observed gaps:
-// those backends rely on the shared protocol marker until a real line is
-// captured.
+// builtinRateLimitPhrases is the built-in leading phrases per backend
+// family, lowercased for the case-insensitive anchored match. Entries
+// are nil until the first captured line lands in
+// testdata/rate_limit_lines/<family>.txt. Every phrase must appear
+// verbatim (case-insensitively) in the recorded lines of that fixture,
+// and every fixture line must be detected by the anchored matcher —
+// both directions are enforced by TestBuiltinRateLimitFixtureDetection:
+// the fixture is the source of truth, not this table.
 var builtinRateLimitPhrases = map[string][]string{
 	"claude-code": {
-		"You've hit your limit", // testdata/rate_limit_lines/claude-code.txt: "⎿  You've hit your limit · resets 10pm (America/New_York)"
-		"rate limit exceeded",   // legacy phrasing (v5.27.4 notes; seeded default since v5.25.5)
-		"quota exceeded",        // legacy phrasing (v5.25.5 CHANGELOG; seeded default)
-		"usage limit will reset", // legacy dialog wording (v5.27.4 notes; seeded default)
-		"Approaching usage limit", // WARN dialog (~80% of capacity, v5.27.4 notes)
-		"limit will reset at", // reset-time announcement, recorded v5.27.4
-		"limit reached", // "5-hour limit reached" / "Weekly limit reached" (v5.27.4, operator-reported)
-		"Weekly limit reached", // captured v5.27.4 phrasing
-		"Weekly usage limit", // "Weekly usage limit reached" (v5.27.4)
-		"Hit weekly limit", // "Hit weekly limit" (v5.27.4)
-		"5-hour limit", // 5-hour-window phrasing (v5.27.4)
-		"opus limit reached", // model-specific phrasing (v5.27.4)
-		"sonnet limit reached", // model-specific phrasing (v5.27.4)
-		"claude usage limit", // "Claude usage limits" dialog header, observed 2026-05-03 (v6.2.0)
-		"you've exceeded", // "You've exceeded your Claude plan" (v6.2.0 record)
-		"plan limit", // "plan limit reached" variants (v6.2.0 record)
-		"resets at", // reset-time announcement, "Resets at 2pm" (v5.27.4 notes)
-		"stop and wait", // dialog option-1 text (v6.11.x record)
-		"wait for limit to reset", // option 1 text when the dialog wraps (v6.11.3 record)
-		"out of extra usage", // "You're out of extra usage · resets 11:50am (America/New_York)" (v6.11.3, operator-reported)
-		"you're out of", // wider catch: "You're out of credits/quota/usage" (v6.11.3)
+		"you've hit your limit", // claude-code.txt: "⎿  You've hit your limit · resets 10pm (America/New_York)" and the v5.27.4 release-note capture
+		"5-hour limit reached",  // claude-code.txt: "5-hour limit reached ∙ resets 2pm"
+		"weekly limit reached",  // claude-code.txt: "Weekly limit reached"
+		"hit weekly limit",      // claude-code.txt: "Hit weekly limit"
+		"opus limit reached",    // claude-code.txt: "Opus limit reached"
+		"sonnet limit reached",  // claude-code.txt: "Sonnet limit reached"
+		// "You're out of extra usage · resets 11:50am (America/New_York)"
+		// (claude-code.txt line 7) carries both of these, verbatim;
+		// the wider catch was itself recorded in-tree when it was
+		// first added: RELEASE-NOTES-v6.11.3.md:24 ("wider catch for
+		// related 'you're out of credits/quota/usage' phrasings").
+		"out of extra usage",
+		"you're out of",
 	},
-
-	// Observed gaps: no captured line for these backends yet, so only
-	// the shared protocol marker is the built-in rule today.
+	// No captured lines yet — the shared protocol marker is the only
+	// built-in detection for these backends.
 	"pi-prompt":       nil,
 	"opencode":        nil,
 	"opencode-acp":    nil,
@@ -95,60 +98,60 @@ var builtinRateLimitPhrases = map[string][]string{
 	"ollama":          nil,
 }
 
-// builtinRateLimitLinePrefix holds a backend's own error prefix exactly
-// as it appears in the captured records: for claude-code the "⎿" gutter
-// glyph plus two spaces, e.g. the fixture line "⎿  You've hit your limit
-// · resets 10pm (America/New_York)" and the operator-reproduced "⎿  You're
-// out of extra usage · resets 11:50am (America/New_York)". A captured
-// line whose phrase cannot be caught by a line-start rule alone is
-// anchored on this prefix instead: the line starts with the prefix
-// followed by one of the family's phrases.
+// builtinRateLimitLinePrefix holds the family's own recorded leading
+// gutter for its prompt-dialog lines (⎿ U+237F for the claude-code
+// dialog), byte-exact. A phrase after this prefix counts as
+// line-leading for that family only.
 var builtinRateLimitLinePrefix = map[string]string{
 	"claude-code": "⎿  ",
 }
 
-// matchesBuiltinRateLimitLines reports whether lowerLine (the pane line
-// already lowercased by the caller, and already trimmed / ANSI-stripped by
-// processOutputLine) is a built-in rate-limit signal for backend family
-// backendFamily: either the shared protocol marker at line start, or one
-// of the family's phrases at line start, or the family's recorded line
-// prefix followed by one of the family's phrases. Quoting a phrase
-// mid-sentence never matches.
-func matchesBuiltinRateLimitLines(backendFamily string, lowerLine string) bool {
-	if strings.HasPrefix(lowerLine, builtinRateLimitMarkerLower) {
+// matchesBuiltinRateLimitLines reports whether line is a built-in
+// rate-limit signal for backendFamily under the rules documented in the
+// package comment: marker line-start (every family) or anchored phrase
+// line-start (this family only), compared case-insensitively after
+// trimming surrounding whitespace.
+func matchesBuiltinRateLimitLines(backendFamily, line string) bool {
+	low := strings.ToLower(strings.TrimSpace(line))
+	if len(low) == 0 {
+		return false
+	}
+	if strings.HasPrefix(low, builtinRateLimitMarkerLower) {
 		return true
 	}
 	prefix := strings.ToLower(builtinRateLimitLinePrefix[backendFamily])
 	for _, phrase := range builtinRateLimitPhrases[backendFamily] {
-		lp := strings.ToLower(phrase)
-		if strings.HasPrefix(lowerLine, lp) {
+		if strings.HasPrefix(low, phrase) {
 			return true
 		}
-		if prefix != "" && strings.HasPrefix(lowerLine, prefix+lp) {
+		if prefix != "" && strings.HasPrefix(low, prefix+phrase) {
 			return true
 		}
 	}
 	return false
 }
 
-// builtinRateLimitPatternsFlat flattens the per-backend table into a
-// plain list for fingerprinting: the shared marker, each backend family
-// name the table is keyed by, and that family's phrases, in sorted
-// family order. Because the backend names are part of the input, any
-// change to a built-in entry — a phrase or the backend it belongs to —
-// changes the patterns_version digest (see patterns_version.go). Matching
-// itself stays per-backend: see matchesBuiltinRateLimitLines.
+// builtinRateLimitPatternsFlat flattens the built-in table for the
+// patterns_version fingerprint. Each entry encodes the backend family it
+// belongs to ("<family>|<phrase>", family prefix entries as
+// "<family>|prefix|<glyph>") so the sort+dedup in writePatterns cannot
+// erase the association: reassigning a phrase from one backend to
+// another changes the set and therefore the digest. The shared marker is
+// included once (it is shared, so it needs no family qualifier).
 func builtinRateLimitPatternsFlat() []string {
+	out := []string{builtinRateLimitMarker}
 	families := make([]string, 0, len(builtinRateLimitPhrases))
 	for family := range builtinRateLimitPhrases {
 		families = append(families, family)
 	}
 	sort.Strings(families)
-	out := make([]string, 0, 16)
-	out = append(out, builtinRateLimitMarker)
 	for _, family := range families {
-		out = append(out, family)
-		out = append(out, builtinRateLimitPhrases[family]...)
+		for _, phrase := range builtinRateLimitPhrases[family] {
+			out = append(out, family+"|"+phrase)
+		}
+		if prefix := builtinRateLimitLinePrefix[family]; prefix != "" {
+			out = append(out, family+"|prefix|"+prefix)
+		}
 	}
 	return out
 }
