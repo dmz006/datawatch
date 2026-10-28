@@ -221,6 +221,39 @@ func TestFormatRemainingWorkLines(t *testing.T) {
 	mustContainAll(t, "none", FormatCLI(none), "remaining work not set; 1 queued task")
 }
 
+// TestWorkLineCostPerTaskPrecision pins the per-task cost in the estimate line
+// at its typed value: small costs must not be rounded to one decimal (0.05 must
+// not print 0.1). The total stays on the one-decimal work figure.
+func TestWorkLineCostPerTaskPrecision(t *testing.T) {
+	queue := 4
+	cases := []struct {
+		cost float64
+		want string
+	}{
+		{0.05, "remaining work 0.2 points (estimate: 4 queued tasks at 0.05 points each)"},
+		{0.1, "remaining work 0.4 points (estimate: 4 queued tasks at 0.1 points each)"},
+		{0.025, "remaining work 0.1 points (estimate: 4 queued tasks at 0.025 points each)"},
+		{1, "remaining work 4 points (estimate: 4 queued tasks at 1 points each)"},
+	}
+	for _, tc := range cases {
+		t.Run(fmtCost(tc.cost), func(t *testing.T) {
+			w := WorkResult{InUse: WorkInUseEstimate, Points: float64(queue) * tc.cost, QueueTasks: queue, CostPerTask: tc.cost}
+			if got := workLine(w); got != tc.want {
+				t.Errorf("workLine = %q\nwant    %q", got, tc.want)
+			}
+			// The comm channel renders through the same workLine, so both forms
+			// carry the typed cost.
+			in := workedExample(t)
+			in.RemainingWork = RemainingWork{QueueTasks: queue, CostPerTask: tc.cost}
+			resp := advResp(t, in)
+			mustContainAll(t, "cli", FormatCLI(resp), tc.want)
+			mustContainAll(t, "comm", FormatComm(resp), tc.want)
+		})
+	}
+}
+
+func fmtCost(c float64) string { return strconv.FormatFloat(c, 'f', -1, 64) }
+
 func TestFormatFallbackNotice(t *testing.T) {
 	// A previous reading only 68 minutes back: the 2-hour rule sends the recent
 	// burn on the week average, with the notice instead of a second silent figure.
