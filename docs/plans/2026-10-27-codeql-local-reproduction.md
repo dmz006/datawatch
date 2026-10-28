@@ -126,16 +126,20 @@ The Go difference is exactly the two triples above. The JavaScript/TypeScript di
 
 ### Triples not in the baseline
 
-Compared literally, the after-scan has **one rule/file/line triple that is not in the baseline**: `js/xss-through-dom` at `internal/server/web/app.js:10893`. The baseline has the same rule and file at line 10882, and that triple is absent from the after-scan. The task asked for no triple outside the baseline, so this is a difference to report, and the operator decides whether to accept it.
+Compared literally by rule, file and start line, the after-scan has **one triple that is not in the baseline**: `js/xss-through-dom` at `internal/server/web/app.js:10893`. The baseline has the same rule and file at line 10882, and that triple is absent from the after-scan. No Go triple is new.
 
-The evidence that it is a line shift and not a new finding:
+That result is the baseline result moved down by 11 lines, and this was checked on CodeQL's own result identity and not inferred from the line numbers. Every SARIF result carries a `partialFingerprints.primaryLocationLineHash`, a hash of the source line that does not depend on the line number (GitHub uses it to keep an alert the same when code above it moves). Both results carry the same hash and column fingerprint (`fdbd04ea15251b02:1`, column 18), the same rule, the same file and the same message, and both lines read `fBody.innerHTML = html;`. The other `js/xss-through-dom` result (`app.js:141`) sits above the edit and did not move. The fix for the insecure-randomness alert added the 11-line `_autoMicTextareaId` helper at `app.js:7204` (`git diff 3bd9b1c95 HEAD -U0 -- internal/server/web/app.js`), which is above line 10882 and therefore moves every result below it.
 
-- The fix for 714 added 11 lines above it (`git diff 3bd9b1c95 HEAD -U0 -- internal/server/web/app.js` shows a hunk of 11 added lines at 7204 and a one-line change at 7245/7256).
-- Both lines hold the same statement, `fBody.innerHTML = html;`, and the result count for the rule is unchanged (2 before, 2 after).
-- The other `js/xss-through-dom` result (`app.js:141`) sits above the edit and did not move.
+Comparison, run with `python3 -I` over both SARIF files: results were reduced to rule, file, start line, `primaryLocationLineHash` and message text, then compared as multisets.
 
-No Go triple is new: every Go triple of the after-scan is in the baseline at the same line. The rest of the whole-scan list is unchanged: it still includes alerts GitHub has dismissed (see the result section above), which a local run cannot know about.
+| Check | Go | JavaScript/TypeScript |
+|-------|----|-----------------------|
+| Literal rule/file/line triples only in the after-scan | 0 | 1 (`js/xss-through-dom`, `app.js:10893`) |
+| Results only in the after-scan by rule, file, fingerprint and message | 0 | 0 |
+| Results only in the baseline by rule, file, fingerprint and message | 2 (`go/command-injection`, `go/reflected-xss`) | 1 (`js/insecure-randomness`) |
+
+So by the line-independent identity the after-scan is a strict subset of the baseline, and the three alerts are the only results that left it. A literal line-number comparison cannot hold for any fix that adds or removes lines above an existing result in the same file, so the one literal difference is a line shift and not a new finding.
 
 ### Result
 
-The three alerts 661, 714 and 715 no longer appear in a fresh local scan with the default suites. One result moved line (`js/xss-through-dom`, `app.js:10882` to `app.js:10893`, an 11-line shift caused by the fix for 714), so the scan is not triple-for-triple a subset of the baseline; this is the only difference and it needs the operator's acceptance. GitHub's default-setup scan runs only after a merge to `main`, so the three stay listed as open on GitHub until that scan has run; they are expected to close then.
+The three alerts 661, 714 and 715 no longer appear in a fresh local scan with the default suites, and no result appears that was not in the baseline. The only literal difference is `js/xss-through-dom` moving from `app.js:10882` to `app.js:10893` (an 11-line shift from the fix for 714), which the matching fingerprint shows is the same result. The rest of the whole-scan list is unchanged: it still includes alerts GitHub has dismissed (see the result section above), which a local run cannot know about. GitHub's default-setup scan runs only after a merge to `main`, so the three stay listed as open on GitHub until that scan has run; they are expected to close then.
