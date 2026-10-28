@@ -4949,6 +4949,81 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "83. Capacity ledger — node pools, pi leases, waiter placement"
+# Read-only checks against GET /api/capacity of the running daemon:
+# (a) no node pool holds above its limit, (b) every running pi or pi-prompt
+# lease also holds a node:<name> lease (a lease without a node placement
+# cannot be attributed to any node), (c) no request waits for a busy node
+# while another candidate node sits idle (delegated to
+# check-waiter-nodes.sh). The whole section SKIPS (not fails) when the
+# endpoint reports no capacity data or the backend is single-node.
+CAP=$(curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null || true)
+if ! echo "$CAP" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d.get("pools"),list) and isinstance(d.get("leases"),list)' 2>/dev/null; then
+  skip "capacity ledger: /api/capacity did not report capacity data"
+else
+  CNODES=$(echo "$CAP" | python3 -c 'import json,sys;print(sum(1 for p in json.load(sys.stdin).get("pools",[]) if str(p.get("name","")).startswith("node:")))' 2>/dev/null || echo 0)
+  if ! [[ "${CNODES:-0}" =~ ^[0-9]+$ ]] || [[ "${CNODES:-0}" -eq 0 ]]; then
+    skip "capacity ledger: no node pools in the snapshot (single-node backend)"
+  else
+    # 83.1 no node pool holds above its limit (limit 0 = unlimited, passes)
+    CAP_OL=$(echo "$CAP" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+for p in d.get("pools", []):
+    if not str(p.get("name", "")).startswith("node:"):
+        continue
+    lim = p.get("limit") or 0
+    used = (p.get("held") or 0) + (p.get("external") or 0)
+    if lim > 0 and used > lim:
+        print("%s holds %d of %d (held=%d external=%d)" % (p.get("name"), used, lim, p.get("held") or 0, p.get("external") or 0))' 2>/dev/null)
+    if [[ -z "${CAP_OL:-}" ]]; then
+      ok "no node pool holds above its limit"
+    else
+      ko "node pool(s) over limit: $(echo "$CAP_OL" | tr '\n' '; ')"
+    fi
+
+    # 83.2 every running pi / pi-prompt lease also holds a node:<name> lease
+    # (line 1 = count of such leases, line 2 = the ones missing a node lease)
+    CAP_PI=$(echo "$CAP" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+total, bad = 0, []
+for l in d.get("leases", []):
+    pools = [str(p) for p in l.get("pools") or []]
+    if not ({"llm:pi", "llm:pi-prompt"} & set(pools)):
+        continue
+    total += 1
+    if not any(p.startswith("node:") for p in pools):
+        bad.append(str(l.get("holder") or l.get("session_id") or "?"))
+print(total)
+print("; ".join(bad))' 2>/dev/null)
+    CAP_PI_N=$(echo "$CAP_PI" | sed -n '1p')
+    CAP_PI_BAD=$(echo "$CAP_PI" | sed -n '2p')
+    if [[ -z "${CAP_PI_BAD:-}" ]]; then
+      ok "all ${CAP_PI_N:-0} running pi/pi-prompt lease(s) hold a node lease"
+    else
+      ko "pi/pi-prompt lease(s) missing a node lease: $CAP_PI_BAD"
+    fi
+
+    # 83.3 waiter placement via check-waiter-nodes.sh (rc 2 = the daemon-bound
+    # waiter / over-limit symptom, rc 1 = the script could not fetch or parse)
+    WAITER_OUT=$(env -u TMUX -u TMUX_TMPDIR DATAWATCH_URL="${BASE%/}" DATAWATCH_TOKEN="${TOK:-}" bash "$SMOKE_DIR/check-waiter-nodes.sh" 2>&1)
+    WAITER_RC=$?
+    case "$WAITER_RC" in
+      0)
+        ok "waiter placement clean: $(echo "$WAITER_OUT" | sed -n 's/^summary: //p' | tail -1)"
+        ;;
+      2)
+        ko "waiter placement: $(echo "$WAITER_OUT" | grep -E '^ *(SYMPTOM|OVERLIMIT):' | tail -3 | tr '\n' '; ')"
+        ;;
+      *)
+        skip "waiter placement: check-waiter-nodes.sh could not report against the daemon (rc=$WAITER_RC)"
+        ;;
+    esac
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"
