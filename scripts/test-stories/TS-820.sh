@@ -281,6 +281,17 @@ FAKE_OLLAMA
 }
 
 ts817_start_daemon() {
+  # Shared lifecycle library first, so the EXIT/INT/TERM/HUP traps are in
+  # place before the daemon forks (a no-op under the e2e runner, which has
+  # already loaded the library and its traps with shared TD_STATE_DIR).
+  story_daemon_lifecycle
+  # Register this story's own cleanup — its sessions, LLM entries, Ollama
+  # stand-ins and scratch — as the hook the shared traps run after they end
+  # the recorded daemons, on failure and interrupt exits. The body's
+  # ts817_cleanup is idempotent, so running it a second time from a trap is
+  # a no-op (its steps check for what they remove; the PIDs are cleared
+  # after first use).
+  export DW_STORY_CLEANUP=ts817_cleanup
   # The daemon's own temp files (tooling directories, per-session pi agent
   # directories) land in the story's scratch area, so cleanup removes them too.
   mkdir -p "$TS817_TMP/daemon-tmp"
@@ -288,18 +299,36 @@ ts817_start_daemon() {
     TMPDIR="$TS817_TMP/daemon-tmp" \
     "$TS817_BINARY" start --foreground --config "$TS817_CFG" >> "$TS817_TMP/daemon.log" 2>&1 &
   TS817_DAEMON_PID=$!
+  # Record the daemon (PID + config-path marker) in the shared library and
+  # set its API/token so teardown destroys its sessions through its own API
+  # before signalling the recorded PID, on every exit path.
+  td_track_pid "$TS817_DAEMON_PID" "$TS817_CFG"
+  td_set_api "$TS817_DAEMON_PID" "$TEST_BASE" "$TEST_TOKEN"
+}
+
+# ts817_end_pid <pid> <marker> — end one process this story started, by the
+# recorded PID only (marker-checked). Returns 0 when it is gone, nonzero when
+# it may still be running; a PID that is already gone needs no signal.
+ts817_end_pid() {
+  local pid="$1" marker="$2"
+  [[ -n "$pid" ]] || return 0
+  td_alive "$pid" || return 0
+  dw_terminate_pid "$pid" "$marker"
 }
 
 ts817_stop_daemon() {
   [[ -n "$TS817_DAEMON_PID" ]] || return 0
-  kill "$TS817_DAEMON_PID" 2>/dev/null || true
-  local end=$((SECONDS + 20))
-  while kill -0 "$TS817_DAEMON_PID" 2>/dev/null && ((SECONDS < end)); do
-    sleep 1
-  done
-  kill -0 "$TS817_DAEMON_PID" 2>/dev/null && kill -9 "$TS817_DAEMON_PID" 2>/dev/null
-  wait "$TS817_DAEMON_PID" 2>/dev/null || true
-  TS817_DAEMON_PID=""
+  # End the daemon through its recorded PID (sessions first via its own API,
+  # then TERM/KILL only while the live cmdline still carries the recorded
+  # marker) — the shared traps do the same on failure and interrupt exits.
+  # The PID is forgotten only once the daemon is really gone: a daemon that
+  # survives keeps the scratch folder in place and is reported.
+  if ts817_end_pid "$TS817_DAEMON_PID" "$TS817_CFG"; then
+    TS817_DAEMON_PID=""
+    return 0
+  fi
+  ts817_fail "sandbox daemon $TS817_DAEMON_PID could not be ended; scratch folder $TS817_TMP kept"
+  return 1
 }
 
 # ts817_run — the story body. Every failure is recorded by ts817_fail and the
@@ -340,6 +369,14 @@ ts817_run() {
   TS817_FAKE_A_PID=$!
   env -u TMUX -u TMUX_TMPDIR python3 -I "$TS817_TMP/fake_ollama.py" "$port_b" "$TS817_NODE_B" "$TS817_LOG_B" >/dev/null 2>&1 &
   TS817_FAKE_B_PID=$!
+  # Record the stand-ins in the shared library state so the shared
+  # EXIT/INT/TERM/HUP traps end them (their recorded PID, marker-checked
+  # against the fake_ollama.py path still in their live cmdline) on every
+  # exit path — not only the body's ts817_cleanup.
+  declare -F td_track_pid >/dev/null 2>&1 && {
+    td_track_pid "$TS817_FAKE_A_PID" "$TS817_TMP/fake_ollama.py"
+    td_track_pid "$TS817_FAKE_B_PID" "$TS817_TMP/fake_ollama.py"
+  } || true
   if ! ts817_wait_until 20 ts817_fake_ready "$port_a" || ! ts817_wait_until 20 ts817_fake_ready "$port_b"; then
     ts817_fail "loopback Ollama stand-ins did not start on $port_a / $port_b"
     return 0
@@ -439,10 +476,23 @@ ts817_cleanup() {
       ts817_fail "compute nodes still listed after cleanup"
     fi
   fi
-  ts817_stop_daemon
-  [[ -n "$TS817_FAKE_A_PID" ]] && kill "$TS817_FAKE_A_PID" 2>/dev/null
-  [[ -n "$TS817_FAKE_B_PID" ]] && kill "$TS817_FAKE_B_PID" 2>/dev/null
-  wait "$TS817_FAKE_A_PID" "$TS817_FAKE_B_PID" 2>/dev/null || true
+  # Scratch is removed only when every process this story started is gone.
+  local gone=1
+  ts817_stop_daemon || gone=0
+  # End the fake ollama helpers by the PIDs this script recorded, marker-
+  # checked against their live cmdline, before the scratch tree is removed.
+  if ts817_end_pid "$TS817_FAKE_A_PID" "$TS817_TMP/fake_ollama.py"; then
+    TS817_FAKE_A_PID=""
+  else
+    ts817_fail "stand-in $TS817_FAKE_A_PID could not be ended; scratch folder $TS817_TMP kept"
+    gone=0
+  fi
+  if ts817_end_pid "$TS817_FAKE_B_PID" "$TS817_TMP/fake_ollama.py"; then
+    TS817_FAKE_B_PID=""
+  else
+    ts817_fail "stand-in $TS817_FAKE_B_PID could not be ended; scratch folder $TS817_TMP kept"
+    gone=0
+  fi
   # Only the story's own socket is probed. A stale socket file is harmless, so
   # the check is whether any session is still listed on it after cleanup.
   local sock="$TS817_SOCK" left
@@ -452,7 +502,7 @@ ts817_cleanup() {
       ts817_fail "tmux sessions still listed on the story socket after cleanup"
     fi
   fi
-  if [[ -z "${TS817_KEEP:-}" ]]; then
+  if [[ -z "${TS817_KEEP:-}" && "$gone" == 1 ]]; then
     rm -rf "$TS817_TMP"
   fi
 }

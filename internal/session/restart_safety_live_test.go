@@ -312,7 +312,7 @@ func TestBL462_DaemonRestartSurvivesLive(t *testing.T) {
 	// Production guard: without the sandbox contract (DW_BASE +
 	// DW_LIVE_SANDBOX_PID + DW_LIVE_RESTART_CMD) this test skips and never
 	// falls back to a production unit.
-	bl462SandboxRestartContract(t)
+	sandboxPID := bl462SandboxRestartContract(t)
 	c := newBL462LiveClient(t)
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Fatalf("tmux is required on the test host: %v", err)
@@ -327,16 +327,10 @@ func TestBL462_DaemonRestartSurvivesLive(t *testing.T) {
 		startBody["project_dir"] = dir
 	}
 
-	// Track the last state seen so cleanup only kills a session that is still alive.
-	var lastID, lastState string
-	t.Cleanup(func() {
-		if lastID == "" || bl462IsTerminal(lastState) {
-			return
-		}
-		if status, err := c.do(http.MethodPost, "/api/sessions/kill", map[string]string{"id": lastID}, nil); err != nil || status >= 300 {
-			t.Logf("cleanup: could not kill probe session %s (HTTP %d, err %v)", lastID, status, err)
-		}
-	})
+	// End the probe session via the daemon API — and verify the recorded
+	// sandbox daemon pid — on every exit path (pass, failure, interrupt).
+	// Registered before the first call that can create the session.
+	lc := newLiveTestCleanup(t, c, sandboxPID)
 
 	// (a) start the probe session and wait for it to be running with a tmux session.
 	if status, err := c.do(http.MethodPost, "/api/sessions/start", startBody, nil); err != nil || status >= 300 {
@@ -349,7 +343,7 @@ func TestBL462_DaemonRestartSurvivesLive(t *testing.T) {
 			return false
 		}
 		sess = s
-		lastID, lastState = s.ID, s.State
+		lc.trackSession(s)
 		return (s.State == "running" || s.State == "waiting_input") && bl462TmuxHasSession(s.TmuxSession)
 	}) {
 		t.Fatalf("probe session never reached running with a tmux session (last: id=%q state=%q tmux=%q)", sess.ID, sess.State, sess.TmuxSession)
@@ -397,7 +391,7 @@ func TestBL462_DaemonRestartSurvivesLive(t *testing.T) {
 	if !ok {
 		t.Fatalf("probe session %s is missing from the daemon after restart", sess.ID)
 	}
-	lastID, lastState = after.ID, after.State
+	lc.trackSession(after)
 	switch after.State {
 	case "running", "waiting_input":
 		// Expected: the session survived the restart.
@@ -426,15 +420,15 @@ func TestBL462_DaemonRestartSurvivesLive(t *testing.T) {
 		if !ok {
 			return false
 		}
-		lastState = s.State
+		lc.trackSession(s)
 		return bl462IsTerminal(s.State)
 	}) {
-		t.Logf("probe session still %q after %s; completion not asserted", lastState, bl462LiveCompletionWait)
+		t.Logf("probe session still %q after %s; completion not asserted", lc.sessionState, bl462LiveCompletionWait)
 		return
 	}
-	if lastState == "complete" {
+	if lc.sessionState == "complete" {
 		t.Logf("probe session reached complete")
 		return
 	}
-	t.Errorf("probe session reached terminal state %q; expected complete", lastState)
+	t.Errorf("probe session reached terminal state %q; expected complete", lc.sessionState)
 }

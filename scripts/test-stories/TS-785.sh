@@ -57,9 +57,18 @@ _story_ts_785() {
   sed -i "s|token: \"\"|token: \"$FED_PEER_TOKEN\"|" "$FED_PEER_DATA/config.yaml"
 
   mkdir -p "$FED_PEER_DATA"
-  "$TEST_BINARY" start --foreground --config "$FED_PEER_DATA/config.yaml" >> "$FED_PEER_DATA/daemon.log" 2>&1 &
-  FED_PEER_PID=$!
+  # story_daemon_lifecycle is a no-op under the e2e runner (its library and
+  # traps are already loaded, state shared via TD_STATE_DIR); in a standalone
+  # run it sources the library and installs the EXIT/INT/TERM/HUP traps so
+  # this daemon is ended here too. The daemon is intentionally kept alive
+  # after this story for TS-104/TS-105: the runner ends it through its own
+  # cleanup (stop_second_test_daemon → same recorded state, via the pidfile
+  # below) on every exit path — normal exit, failure, interrupt.
+  story_daemon_lifecycle
+  td_start "$TEST_BINARY" "$FED_PEER_DATA/config.yaml" "$FED_PEER_DATA/daemon.log"
+  FED_PEER_PID="${TD_LAST_PID:-}"
   echo "$FED_PEER_PID" > "${TEST_DIR:-$FED_PEER_DATA}/fed-peer-daemon.pid"
+  td_set_api "$FED_PEER_PID" "http://127.0.0.1:$FED_PEER_HTTP" "$FED_PEER_TOKEN"
 
   local deadline=$(( $(date +%s) + 20 )) healthy=0
   while [[ $(date +%s) -lt $deadline ]]; do

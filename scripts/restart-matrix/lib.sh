@@ -386,6 +386,12 @@ rm_launch_daemon() {
     >>"$RM_DAEMON_LOG" 2>&1 &
   RM_DAEMON_PID=$!
   echo "$RM_DAEMON_PID" >"$RM_PIDFILE"
+  # Record this sandbox's daemon in the shared lifecycle state (config path
+  # as its marker) so the shell that sourced this lib can end it later by
+  # recorded PID with a cmdline check — never by name, even on interrupt.
+  if declare -F td_track_pid >/dev/null 2>&1; then
+    td_track_pid "$RM_DAEMON_PID" "$RM_CONFIG" 2>/dev/null || true
+  fi
   if ! rm_wait_until 45 rm_healthy; then
     rm_log "sandbox daemon did not answer health; log tail:"
     tail -20 "$RM_DAEMON_LOG" >&2
@@ -926,4 +932,19 @@ rm_sandbox_finish() {
   if [[ "${RM_KEEP:-0}" != 1 && -n "${RM_SB:-}" && -d "$RM_SB" && "$RM_SB" == "$RM_ROOT"/* ]]; then
     rm -rf "$RM_SB"
   fi
+}
+
+# rm_install_traps — the daemon-cleanup safety net for every exit path.
+# EXIT covers normal exits, failures and early returns; INT, TERM and HUP must
+# each be trapped in their own right, because a signal that is neither trapped
+# nor ignored kills the shell without running the EXIT trap, leaving exactly
+# one thing alive: the sandbox daemon. All four paths run rm_sandbox_finish —
+# the same order as the happy path (end the recorded daemon pid, its sessions
+# one by one; remove the sandbox dir unless RM_KEEP=1). It is idempotent, so
+# the second run after a signal is a no-op.
+rm_install_traps() {
+  trap 'rm_sandbox_finish' EXIT
+  trap 'rm_sandbox_finish; trap - EXIT INT TERM HUP; exit 130' INT
+  trap 'rm_sandbox_finish; trap - EXIT INT TERM HUP; exit 143' TERM
+  trap 'rm_sandbox_finish; trap - EXIT INT TERM HUP; exit 129' HUP
 }

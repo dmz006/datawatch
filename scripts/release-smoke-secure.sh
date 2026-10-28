@@ -44,16 +44,44 @@ if ! command -v datawatch >/dev/null 2>&1; then
   exit 0
 fi
 
-TMPDIR=$(mktemp -d)
 PORT_TLS=18444
 PORT_HTTP=18081
-trap 'kill $DW_PID 2>/dev/null; rm -rf "$TMPDIR"' EXIT
+
+# Shared daemon lifecycle (scripts/test-daemon-lib.sh): every daemon this
+# script starts (the initial one and its restart in §5) is ended on EVERY
+# exit path (normal, failure, INT, TERM, HUP) — first its live sessions
+# through its own API, then the exact PID recorded at start (marker-
+# verified, waited for). Only after that is the scratch dir $TMPDIR
+# (which is also the daemon's data dir) removed, so the daemon never runs
+# with its data dir deleted out from under it.
+source "$(cd "$(dirname "$0")" && pwd)/test-daemon-lib.sh"
+SCRATCH=""
+secure_extra_cleanup() {
+  # Runs on every exit, after td_stop_all has ended the recorded daemon(s).
+  if [[ -n "${DW_PID:-}" ]] && kill -0 "$DW_PID" 2>/dev/null; then
+    echo "  FAIL  secured daemon ${DW_PID} still alive after cleanup" >&2
+  fi
+  if [[ -n "$SCRATCH" ]]; then rm -rf "$SCRATCH" 2>/dev/null; fi
+}
+TD_EXTRA_CLEANUP=secure_extra_cleanup
+td_install_traps "$@"
+# The scratch dir is made only after the traps are installed: when the
+# library reruns the script (to make INT trappable) a dir made earlier
+# would be orphaned by the rerun.
+SCRATCH=$(mktemp -d)
+TMPDIR="$SCRATCH"
+LOG="$TMPDIR/dw-secure.log"
 
 H "1. Bring up encrypted-mode daemon"
 DATAWATCH_DATA_DIR="$TMPDIR" datawatch start --foreground --secure \
   --bind 127.0.0.1:$PORT_HTTP --tls-port $PORT_TLS \
-  >/tmp/dw-secure.log 2>&1 &
+  >"$LOG" 2>&1 &
 DW_PID=$!
+# Record it so every exit path ends this daemon (marker = the secure-mode
+# cmdline string, present in /proc/<pid>/cmdline for its whole life).
+td_track_pid "$DW_PID" "start --foreground --secure" \
+  || echo "  FAIL  could not record daemon pid $DW_PID"
+td_set_api "$DW_PID" "https://127.0.0.1:$PORT_TLS" "" 2>/dev/null || true
 # Poll for /api/health.
 for i in $(seq 1 30); do
   if curl -sk "https://127.0.0.1:$PORT_TLS/api/health" 2>/dev/null | grep -q '"status":"ok"'; then
@@ -63,7 +91,7 @@ for i in $(seq 1 30); do
   sleep 1
 done
 if ! curl -sk "https://127.0.0.1:$PORT_TLS/api/health" 2>/dev/null | grep -q '"status":"ok"'; then
-  ko "encrypted daemon never reached ready (see /tmp/dw-secure.log)"
+  ko "encrypted daemon never reached ready (see $LOG)"
   echo ""; echo "Summary: $PASS pass / $FAIL fail / $SKIP skip"
   exit 1
 fi
@@ -108,12 +136,16 @@ else
 fi
 
 H "5. Restart preserves encrypted state"
-kill $DW_PID 2>/dev/null
-sleep 2
+# End the first daemon (recorded PID, marker-verified, waited for) BEFORE
+# the restart, so the old process is gone and the trap never holds two.
+td_stop_one "$DW_PID" || echo "  FAIL  daemon $DW_PID still running after stop"
 DATAWATCH_DATA_DIR="$TMPDIR" datawatch start --foreground --secure \
   --bind 127.0.0.1:$PORT_HTTP --tls-port $PORT_TLS \
-  >>/tmp/dw-secure.log 2>&1 &
+  >>"$LOG" 2>&1 &
 DW_PID=$!
+td_track_pid "$DW_PID" "start --foreground --secure" \
+  || echo "  FAIL  could not record restarted daemon pid $DW_PID"
+td_set_api "$DW_PID" "https://127.0.0.1:$PORT_TLS" "" 2>/dev/null || true
 for i in $(seq 1 30); do
   curl -sk "https://127.0.0.1:$PORT_TLS/api/health" 2>/dev/null | grep -q ok && break
   sleep 1

@@ -73,7 +73,7 @@ case "$HOST" in
 esac
 
 TOKEN="${DW_BASE_TOKEN:-}"
-CURL_ARGS=(-s --max-time 20)
+CURL_ARGS=(-sk --max-time 20) # -k: the sandbox daemon serves a self-signed TLS cert
 [[ -n "$TOKEN" ]] && CURL_ARGS+=(-H "Authorization: Bearer $TOKEN")
 
 # ---------------------------------------------------------------------------
@@ -140,8 +140,17 @@ REPO_URL=$(python3 -c 'import os; print(os.path.realpath("$REPO"))' 2>/dev/null 
 SID_A=""
 SID_B=""
 
+# Runs on EVERY exit path (normal, failure, INT, TERM, HUP): ends the
+# sessions this run started — by their exact recorded ids, and only for
+# those ids (the sandbox daemon is external and is never signalled by
+# this script) — then removes the scratch repo. Idempotent, so it is
+# safe to run once from the signal path and again from the EXIT trap.
 cleanup() {
-  local rc=$?
+  local rc=$? # first line: $? is still the script's own pending status
+  # Ignore further HUP/INT/TERM while cleanup is running: a second Ctrl-C
+  # mid-cleanup would `exit` from the signal handler and leave this run's
+  # sessions behind — cleanup must be allowed to finish.
+  trap '' HUP INT TERM
   for sid in "$SID_A" "$SID_B"; do
     if [[ -n "$sid" ]]; then
       curl "${CURL_ARGS[@]}" -X POST -H "Content-Type: application/json" \
@@ -155,7 +164,21 @@ cleanup() {
   fi
   exit $rc
 }
+# SIGINT/SIGTERM/SIGHUP arrive with the default bash action (no EXIT trap
+# runs), which would leave this run's sessions on the sandbox daemon and
+# the scratch repo on disk. The handlers below exit with the conventional
+# 128+signal status and the EXIT trap does the rest.
+on_signal() {
+  case "$1" in
+    HUP)  exit 129 ;;
+    INT)  exit 130 ;;
+    TERM) exit 143 ;;
+  esac
+}
 trap cleanup EXIT
+trap 'on_signal HUP' HUP
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
 
 git -C "$REPO" init -q -b main
 git -C "$REPO" config user.email "smoke@example.com"

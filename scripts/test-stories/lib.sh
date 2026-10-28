@@ -431,6 +431,144 @@ print(",".join(have))
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
+# Shared daemon lifecycle (scripts/test-daemon-lib.sh) — every story that
+# starts a datawatch daemon records it through the library so the shared
+# traps end the daemon (and its sessions through its own API) on every exit
+# path: normal exit, failure, Ctrl-C, runner exit. Under the e2e runner the
+# library and its traps are already loaded (state shared via TD_STATE_DIR),
+# so these helpers are no-ops there; standalone stories install their own.
+# ---------------------------------------------------------------------------
+
+# dw_stop_container <id-or-name> — stop and remove one Docker container by
+# the reference this script recorded for it (never by a name search). Returns
+# 0 when the container is no longer running (including "never existed" or
+# "already gone"), 1 when docker could not stop it.
+dw_stop_container() {
+  local ref="${1:-}"
+  [[ -n "$ref" ]] || return 0
+  docker inspect "$ref" >/dev/null 2>&1 || return 0
+  docker stop "$ref" >/dev/null 2>&1 || true
+  if [[ "$(docker inspect -f '{{.State.Running}}' "$ref" 2>/dev/null)" == true ]]; then
+    echo "dw_stop_container: container $ref is still running after docker stop" >&2
+    return 1
+  fi
+  docker rm -f "$ref" >/dev/null 2>&1 || true
+  return 0
+}
+
+# dw_terminate_pid <pid-or-container-id> [marker] — end a daemon this shell
+# started. A recorded value goes through the shared library (td_stop_one:
+# ends its sessions via the recorded API first, then signals, by the
+# recorded id and marker only). An unrecorded Docker container reference —
+# 12-hex short id, 64-hex full id or name — is addressed to docker with
+# dw_stop_container (a /proc signal for a container id is a no-op). An unrecorded numeric
+# process is signalled only while the marker (arg 2, non-empty) is still in
+# its live cmdline; that check guards against recycled PIDs, so an EMPTY
+# marker signals nothing and reports failure. Callers must treat a nonzero
+# result as "the daemon may still be running" and skip/ko on that basis.
+# Returns 0 only when the daemon/container is gone (or was already gone).
+dw_terminate_pid() {
+  local pid="${1:-}" marker="${2:-}" cmd end
+  [[ -n "$pid" ]] || return 0
+  if declare -F td_is_recorded >/dev/null 2>&1 && td_is_recorded "$pid"; then
+    if td_stop_one "$pid"; then return 0; fi
+    echo "dw_terminate_pid: recorded daemon $pid could not be ended (its record was kept)" >&2
+    return 1
+  elif declare -F td_stop_one >/dev/null 2>&1 \
+    && [[ -n "${TD_STATE_DIR:-}" && -f "${TD_STATE_DIR}/${pid}.rec" ]]; then
+    td_stop_one "$pid"
+    return
+  elif [[ ! "$pid" =~ ^[0-9]+$ ]]; then
+    # Not a process id: a Docker container reference (12-hex id, 64-hex id
+    # or name). Ended with docker, never with a signal.
+    dw_stop_container "$pid"
+    return
+  elif [[ "$pid" =~ ^[0-9]+$ ]]; then
+    if [[ -z "$marker" ]]; then
+      echo "dw_terminate_pid: pid $pid is not recorded and no cmdline marker was given; not signalling it" >&2
+      return 1
+    fi
+    if [[ ! -r "/proc/$pid/cmdline" ]]; then
+      return 0
+    fi
+    cmd=$({ tr '\0' ' ' < "/proc/$pid/cmdline"; } 2>/dev/null || true)
+    if [[ -n "$cmd" && "$cmd" == *"$marker"* ]]; then
+      kill -TERM "$pid" 2>/dev/null || true
+      end=$((SECONDS + 15))
+      while kill -0 "$pid" 2>/dev/null && ((SECONDS < end)); do sleep 0.2; done
+      if kill -0 "$pid" 2>/dev/null; then
+        cmd=$({ tr '\0' ' ' < "/proc/$pid/cmdline"; } 2>/dev/null || true)
+        if [[ -n "$cmd" && "$cmd" == *"$marker"* ]]; then
+          kill -KILL "$pid" 2>/dev/null || true
+          end=$((SECONDS + 5))
+          while kill -0 "$pid" 2>/dev/null && ((SECONDS < end)); do sleep 0.2; done
+        else
+          echo "dw_terminate_pid: pid $pid lost its marker ($marker) before SIGKILL; not signalling it" >&2
+          return 1
+        fi
+      fi
+      wait "$pid" 2>/dev/null || true
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "dw_terminate_pid: pid $pid survived SIGKILL" >&2
+        return 1
+      fi
+      return 0
+    fi
+    echo "dw_terminate_pid: pid $pid's cmdline does not carry '$marker'; not signalling it" >&2
+    return 1
+  fi
+  return 0
+}
+
+# _dw_channel_cleanup — end the shared-channel helper processes by the PIDs
+# this shell recorded (marker-checked). Runs from the shared library's
+# EXIT/INT/TERM/HUP handlers after td_stop_all (registered via
+# TD_EXTRA_CLEANUP when the library was loaded standalone; the e2e runner
+# keeps its own hook and these PIDs are children of the worker subshell that
+# exits anyway).
+_dw_channel_cleanup() {
+  [[ -n "${_CHAN_TAIL_PID:-}" ]] && dw_terminate_pid "$_CHAN_TAIL_PID" "tail -f /dev/null" || true
+  [[ -n "${_CHAN_PID:-}" ]] && dw_terminate_pid "$_CHAN_PID" "${_CHAN_BIN:-datawatch-channel}" || true
+  [[ -n "${_CHAN_PIPE:-}" ]] && rm -f "$_CHAN_PIPE"
+  _CHAN_PID=""; _CHAN_TAIL_PID=""; _CHAN_PIPE=""
+  return 0
+}
+
+# _dw_all_cleanup — exit-path cleanup for one shell: first the story's own
+# hook when one is named (a story that owns extra processes or scratch, e.g.
+# TS-820's stand-ins, registers its cleanup as DW_STORY_CLEANUP), then the
+# shared-channel helpers. Runs after the daemon-library traps have ended
+# every recorded daemon; also the TD_EXTRA_CLEANUP hook standalone stories
+# install (see story_daemon_lifecycle).
+_dw_all_cleanup() {
+  local hook="${DW_STORY_CLEANUP:-}"
+  if [[ -n "$hook" ]] && declare -F "$hook" >/dev/null 2>&1; then
+    "$hook" || true
+  fi
+  _dw_channel_cleanup
+  return 0
+}
+
+# story_daemon_lifecycle — make the shared daemon-library traps active for
+# this shell. No-op when the e2e runner has already sourced the library
+# (td_start exists in that case, the runner's EXIT/INT/TERM/HUP traps and
+# the shared TD_STATE_DIR cover the story); when a story runs standalone
+# (bash scripts/test-stories/TS-xxx.sh) it sources the library once, keeps
+# any pre-existing TD_EXTRA_CLEANUP hook (the runner's), and installs the
+# traps, so a failure or Ctrl-C still ends every recorded daemon, then
+# removes the library's temp state directory.
+story_daemon_lifecycle() {
+  declare -F td_start >/dev/null 2>&1 && return 0
+  local lib="$REPO_ROOT/scripts/test-daemon-lib.sh"
+  [[ -f "$lib" ]] || { echo "  [lifecycle] test-daemon-lib.sh not found at $lib" >&2; return 1; }
+  # shellcheck source=/dev/null
+  source "$lib"
+  TD_EXTRA_CLEANUP="${TD_EXTRA_CLEANUP:-_dw_all_cleanup}"
+  td_install_traps
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # start_channel_server — start datawatch-channel against the sandbox daemon,
 # bound to SESSION_ID. Returns 0 when channel_ready=true is confirmed on the
 # session; 1 otherwise (caller should skip).
@@ -451,11 +589,12 @@ print(",".join(have))
 #   resp=$(api POST /api/channel/send '{"session_id":"'"$SESSION_ID"'","text":"hi"}')
 #   stop_channel_server
 # ---------------------------------------------------------------------------
-: "${_CHAN_PID:=}"; : "${_CHAN_TAIL_PID:=}"; : "${_CHAN_PIPE:=}"
+: "${_CHAN_PID:=}"; : "${_CHAN_TAIL_PID:=}"; : "${_CHAN_PIPE:=}"; : "${_CHAN_BIN:=}"
 
 start_channel_server() {
   local chan_bin
   chan_bin=$(command -v datawatch-channel 2>/dev/null || echo "$HOME/.local/bin/datawatch-channel")
+  _CHAN_BIN="$chan_bin"
   if [[ ! -x "$chan_bin" ]]; then
     skip "datawatch-channel binary not found at $chan_bin"
     return 1
@@ -464,11 +603,17 @@ start_channel_server() {
     skip "start_channel_server: SESSION_ID not set; call ensure_test_session first"
     return 1
   fi
+  # Shared lifecycle first: standalone, this installs the EXIT/INT/TERM/HUP
+  # traps before any helper below starts, so a failure or Ctrl-C still ends
+  # them; under the e2e runner it is a no-op and the td_track records below
+  # are covered by the runner's traps.
+  story_daemon_lifecycle
 
   _CHAN_PIPE=$(mktemp -u /tmp/dw-chan-pipe-XXXXXX)
   mkfifo "$_CHAN_PIPE"
   tail -f /dev/null >"$_CHAN_PIPE" &
   _CHAN_TAIL_PID=$!
+  declare -F td_track_pid >/dev/null 2>&1 && td_track_pid "$_CHAN_TAIL_PID" "tail -f /dev/null" || true
 
   DATAWATCH_API_URL="https://127.0.0.1:${TEST_TLS_PORT:-18443}" \
   DATAWATCH_TOKEN="$TEST_TOKEN" \
@@ -476,6 +621,7 @@ start_channel_server() {
   CLAUDE_SESSION_ID="$SESSION_ID" \
   "$chan_bin" <"$_CHAN_PIPE" 2>/dev/null &
   _CHAN_PID=$!
+  declare -F td_track_pid >/dev/null 2>&1 && td_track_pid "$_CHAN_PID" "$chan_bin" || true
 
   local i
   for i in $(seq 1 20); do
@@ -494,11 +640,10 @@ start_channel_server() {
 }
 
 stop_channel_server() {
-  [[ -n "$_CHAN_TAIL_PID" ]] && kill "$_CHAN_TAIL_PID" 2>/dev/null || true
-  [[ -n "$_CHAN_PID" ]]      && kill "$_CHAN_PID"      2>/dev/null || true
-  wait "$_CHAN_TAIL_PID" "$_CHAN_PID" 2>/dev/null || true
-  [[ -n "$_CHAN_PIPE" ]]     && rm -f "$_CHAN_PIPE"
-  _CHAN_PID=""; _CHAN_TAIL_PID=""; _CHAN_PIPE=""
+  # End the helper processes by the PIDs this shell recorded, signalling
+  # each only while its live cmdline still carries the recorded marker; the
+  # same path the EXIT/INT/TERM/HUP traps take on failure or interrupt.
+  _dw_channel_cleanup
 }
 
 # ---------------------------------------------------------------------------

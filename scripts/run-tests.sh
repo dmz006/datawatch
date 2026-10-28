@@ -52,8 +52,45 @@ REPO_PARENT=$(cd "$REPO_DIR/.." && pwd)
 # don't collide. Set DATAWATCH_TEST_ID to reuse a specific prior run's dir
 # (e.g. to resume after a failure).
 RUN_ID="${DATAWATCH_TEST_ID:-$(openssl rand -hex 3)}"
+# Exported before the lifecycle library below: td_install_traps may re-run
+# this exact command line once (when SIGINT was inherited as ignored), and
+# the re-exec must land in the same run dir as the original start.
+export DATAWATCH_TEST_ID="$RUN_ID"
 TEST_DIR="$REPO_PARENT/datawatch-${RUN_ID}"
 mkdir -p "$TEST_DIR"
+
+# --- shared daemon lifecycle (test-daemon-lib) -------------------------------
+# Every daemon this harness starts must end -- the daemon itself and every
+# session it started -- on every exit path: normal exit, failure and
+# interrupt. TD_STATE_DIR lives inside this run's directory so stories
+# (even ones running in worker subshells) record their daemons in the same
+# files the runner's traps read back, and a later run can find a stale run's
+# daemon through those same records instead of searching by name.
+export TD_STATE_DIR="$TEST_DIR/.daemon-state"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/test-daemon-lib.sh"
+# Run from the library's EXIT/INT/TERM/HUP handlers after td_stop_all.
+TD_EXTRA_CLEANUP=cleanup
+# A set -e death must still count as a failure for cleanup()'s keep-dir
+# decision (the library's handler preserves the original exit status).
+trap 'FAILED=1' ERR
+td_install_traps "$@"
+
+# --- leftover-daemon guard (start-of-run baseline) ---------------------------
+# Snapshot the live test daemons before the tests start anything else, so
+# daemons already alive when the run began form the baseline. At the end
+# of the run -- on every exit path -- cleanup() runs the guard's `check`
+# against this file, after every recorded daemon has been stopped and
+# before the run dir goes away, and a live test daemon that is not in the
+# baseline means this job started it and left it behind: the run fails
+# with the guard's report, all stories having passed or not.
+GUARD_SH="$SCRIPT_DIR/check-no-leftover-test-daemons.sh"
+LEFTOVER_BASELINE="$TEST_DIR/leftover-daemon-baseline"
+# A re-used (resume) run dir must not carry this marker over from the
+# earlier run -- a stale one would flag, or suppress the check of, this run.
+rm -f "$LEFTOVER_BASELINE" "$TEST_DIR/leftover-daemons-FAIL" "$TEST_DIR/.leftover-check-done" 2>/dev/null || true
+bash "$GUARD_SH" snapshot "$LEFTOVER_BASELINE" || \
+  echo "  [cleanup] warning: could not take the leftover-daemon snapshot -- the end-of-run check will report every live test daemon" >&2
 
 FAILED=0
 DAEMON_PID=""
@@ -67,20 +104,46 @@ DAEMON_PID=""
 # copies — cleanup() deliberately keeps those on failure for --resume-from,
 # so give a real resume window before auto-reaping them) is fair game;
 # active runs are always recent.
+# _kill_orphan_daemon_for <dir> -- end the daemon a stale run left behind.
+# Only a PID that a run recorded for itself may be signalled: read the run's
+# own daemon.pid (written by start_test_daemon) and the shared state files
+# in its TD_STATE_DIR (.daemon-state/*.rec). Before signalling, the live
+# /proc/<pid>/cmdline must still carry that run's recorded config path -- a
+# recycled PID never is. With no record at all nothing is touched; an
+# unrecorded process is left running, with a warning. No process-name search
+# of any kind; this never touches a multiplexer server.
+_kill_orphan_for_pid() {
+  local pid="$1" marker="$2" where="$3" cmd
+  [[ "$pid" =~ ^[0-9]+$ && -n "$marker" ]] || return 0
+  cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+  if [[ -n "$cmd" && "$cmd" == *"$marker"* ]]; then
+    kill "$pid" 2>/dev/null || true
+  else
+    echo "  [cleanup] $where records pid $pid with marker '$marker' but its live cmdline no longer carries it; not signalling it" >&2
+  fi
+}
 _kill_orphan_daemon_for() {
-  local dir="$1" pid cmd
-  # pgrep candidates are matched to THIS dir's config path (the marker of a
-  # daemon this harness started); before signaling, re-verify the live pid's
-  # cmdline still carries it and points at a datawatch binary — a recycled
-  # pid must never be signaled from a file or pattern alone.
-  while IFS= read -r pid; do
-    [[ -n "$pid" ]] || continue
-    cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
-    case "$cmd" in
-      *datawatch*"${dir}/config.yaml"*) kill "$pid" 2>/dev/null || true;;
-      *) echo "  [cleanup] skipping pid $pid: cmdline ('$cmd') is not a datawatch daemon for ${dir}" >&2;;
-    esac
-  done < <(pgrep -f "config.*${dir}/config.yaml" 2>/dev/null || true)
+  local dir="$1" pidfile pid marker f
+  pidfile="${dir}/daemon.pid"
+  if [[ -f "$pidfile" ]]; then
+    pid=$(sed -n '1p' "$pidfile" 2>/dev/null || true)
+    marker=$(sed -n '2p' "$pidfile" 2>/dev/null || true)
+    _kill_orphan_for_pid "$pid" "$marker" "$pidfile"
+  elif [[ -d "$dir" ]] && [[ ! -e "${dir}/.daemon-state" ]]; then
+    echo "  [cleanup] $dir: no daemon record (no daemon.pid, no shared state dir); any daemon it ran is not recorded here and is left alone" >&2
+  fi
+  # Shared state files recorded through the lifecycle library (covers second
+  # and peer daemons that stories record against the run's state dir; this
+  # run's own story daemons live under the per-story owner subdirs set by
+  # the parallel workers).
+  for f in "$dir"/.daemon-state/*.rec "$dir"/.daemon-state/*/*.rec; do
+    [[ -f "$f" ]] || continue
+    pid=$(sed -n 's/^pid=//p' "$f" | sed -n 1p)
+    marker=$(sed -n 's/^marker=//p' "$f" | sed -n 1p)
+    _kill_orphan_for_pid "$pid" "$marker" "$f"
+    rm -f "$f" 2>/dev/null || true
+  done
+  return 0
 }
 for d in /tmp/dw-docker-sim-* /tmp/dw-test-[0-9]* /tmp/dw-test-sandbox-*; do
   [[ -e "$d" ]] || continue
@@ -223,8 +286,15 @@ PY2
 
   echo "Starting test daemon ($binary)..."
   mkdir -p "$TEST_DATA"
-  "$binary" start --foreground --config "$test_cfg" >> "$TEST_DATA/daemon.log" 2>&1 &
-  DAEMON_PID=$!
+  # td_start records the daemon (PID + config-path marker) in TD_STATE_DIR;
+  # the shared EXIT/INT/TERM/HUP traps end it -- sessions first, via the API
+  # recorded below -- on every exit path (normal, failure, interrupt).
+  td_start "$binary" "$test_cfg" "$TEST_DATA/daemon.log"
+  DAEMON_PID=$TD_LAST_PID
+  td_set_api "$DAEMON_PID" "${TEST_BASE:-http://127.0.0.1:$TEST_PORT}" "${TEST_TOKEN:-}"
+  # PID + config path (the reaper's marker): a later run finds this daemon
+  # through the record alone.
+  printf '%s\n%s\n' "$DAEMON_PID" "$test_cfg" > "$TEST_DIR/daemon.pid"
 
   # Poll /api/health up to 30s (use HTTPS since HTTP port redirects when TLS enabled)
   local deadline=$(( $(date +%s) + 30 ))
@@ -350,38 +420,54 @@ wait_or_kill() {
 
 stop_test_daemon() {
   if [[ -n "$DAEMON_PID" ]]; then
-    wait_or_kill "$DAEMON_PID" 15
+    # td_stop_one ends the daemon's sessions through its own API first, then
+    # signals only the recorded PID while /proc/<pid>/cmdline still carries
+    # the recorded config path. Idempotent: the shared EXIT/INT/TERM/HUP
+    # traps may already have stopped it. The daemon's own terminal service
+    # ends with the daemon itself -- this script never lists or kills session
+    # names and never touches a multiplexer server.
+    td_stop_one "$DAEMON_PID"
     DAEMON_PID=""
+    # Free-port allocation guaranteed five distinct ports above; confirm the
+    # two daemon-facing ones actually came back after the stop.
+    td_wait_port_closed "$TEST_PORT" 15 || echo "  [cleanup] warning: HTTP port $TEST_PORT still held after daemon stop" >&2
+    td_wait_port_closed "$TEST_TLS_PORT" 15 || echo "  [cleanup] warning: TLS port $TEST_TLS_PORT still held after daemon stop" >&2
   fi
   if [[ -n "$NTFY_PID" ]]; then
+    # This script's own child, recorded by PID: safe to signal directly.
     kill "$NTFY_PID" 2>/dev/null || true
+    wait "$NTFY_PID" 2>/dev/null || true
     NTFY_PID=""
   fi
-  # Kill any tmux sessions the test daemon created (cs-dw-e2e-test-*).
-  # The hostname comes from testdata/datawatch.yaml (hostname: dw-e2e-test).
-  env -u TMUX tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^cs-dw-e2e-test-' | \
-    while read -r s; do env -u TMUX tmux kill-session -t "$s" 2>/dev/null || true; done
 }
 
 stop_second_test_daemon() {
-  # TS-785 starts a real second daemon (federation E2E) and writes its PID
-  # here. Recovered-from-file the same way stop_docker_sim recovers its
-  # container/image names, so a SIGKILL'd run (DAEMON_PID lost) still gets
-  # cleaned up instead of leaking a second live daemon process.
+  # TS-785 starts a real second daemon (federation E2E). A story that records
+  # it through the shared library (td_track_pid) is already covered by the
+  # state files in TD_STATE_DIR: td_stop_all ends it, sessions first via
+  # its API, on the same exit paths as the primary daemon. Otherwise the
+  # story writes $TEST_DIR/fed-peer-daemon.pid; recover from that record and
+  # re-verify the live cmdline against the recorded config path before
+  # signalling: never signal an unrelated or recycled pid.
   local pidfile="$TEST_DIR/fed-peer-daemon.pid"
+  local pid
   if [[ -f "$pidfile" ]]; then
-    local pid cmd
-    pid=$(cat "$pidfile" 2>/dev/null || true)
-    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-      # Recovered from a file: re-verify before signaling that this live pid
-      # is the TS-785 federation daemon (a datawatch binary started against
-      # this run's own config) — never kill an unrelated or recycled pid.
-      local marker="${FED_PEER_DATA:-$(dirname "$pidfile")}/config.yaml"
-      cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
-      case "$cmd" in
-        *datawatch*"$marker"*) wait_or_kill "$pid" 10;;
-        *) echo "  [cleanup] $pidfile points at pid $pid but its cmdline ('$cmd') is not the TS-785 daemon; not killing" >&2;;
-      esac
+    pid=$(sed -n '1p' "$pidfile" 2>/dev/null || true)
+    if [[ "$pid" =~ ^[0-9]+$ ]]; then
+      if [[ -f "$TD_STATE_DIR/$pid.rec" ]]; then
+        # Route through the shared state the same way a library-recording
+        # story is: td_stop_one ends its sessions via the API, then signals
+        # the recorded PID (no-op if the traps already stopped it).
+        td_stop_one "$pid"
+      elif kill -0 "$pid" 2>/dev/null; then
+        local marker="${FED_PEER_DATA:-$(dirname "$pidfile")}/config.yaml"
+        local cmd
+        cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+        case "$cmd" in
+          *"$marker"*) wait_or_kill "$pid" 10;;
+          *) echo "  [cleanup] $pidfile points at pid $pid but its live cmdline does not carry '$marker'; not signalling it" >&2
+        esac
+      fi
     fi
   fi
   if [[ -n "${FED_PEER_DATA:-}" ]]; then
@@ -409,12 +495,48 @@ stop_docker_sim() {
   [[ -n "${DOCKER_SIM_DATA:-}" ]] && rm -rf "$DOCKER_SIM_DATA" 2>/dev/null || true
 }
 
+# dw_runner_cleanup_hooks — runner-shell cleanup for anything a story shell
+# tracked but only the story itself can name: the story hook registered in
+# DW_STORY_CLEANUP (TS-820: its sessions, LLM entries, Ollama stand-ins and
+# scratch) and the channel-server helpers when lib.sh's own cleanup is
+# visible (serial stories run in this shell). No-ops when nothing is
+# registered; every step is guarded, so it is safe to run again after the
+# shared td_stop_all of the traps has already ended the recorded daemons.
+dw_runner_cleanup_hooks() {
+  local hook="${DW_STORY_CLEANUP:-}"
+  if [[ -n "$hook" ]] && declare -F "$hook" >/dev/null 2>&1; then
+    "$hook" || true
+  fi
+  if declare -F _dw_channel_cleanup >/dev/null 2>&1; then
+    _dw_channel_cleanup || true
+  fi
+  return 0
+}
+
 cleanup() {
   stop_test_daemon
   stop_second_test_daemon
+  dw_runner_cleanup_hooks
   stop_docker_sim
   destroy_pool
-  if [[ $FAILED -ne 0 || -n "${KEEP_TEST_DIR:-}" ]]; then
+  # Leftover-daemon guard: every daemon this run started has been stopped
+  # by now (the trap path runs td_stop_all before this hook; the normal
+  # path calls it just before this function). Report, and fail the run, if
+  # a live test daemon is around that was not in the start-of-run baseline
+  # -- i.e. this job started it and left it behind -- and keep the run dir
+  # so the leftover can be inspected and ended.
+  if [[ -f "$LEFTOVER_BASELINE" && ! -f "$TEST_DIR/.leftover-check-done" ]]; then
+    if bash "$GUARD_SH" check "$LEFTOVER_BASELINE"; then
+      :
+    else
+      echo ""
+      echo "  [cleanup] FAIL: test daemon(s) still alive after this run (guard report above)."
+      : > "$TEST_DIR/leftover-daemons-FAIL" 2>/dev/null || true
+      FAILED=1
+    fi
+    touch "$TEST_DIR/.leftover-check-done" 2>/dev/null || true
+  fi
+  if [[ $FAILED -ne 0 || -n "${KEEP_TEST_DIR:-}" || -f "$TEST_DIR/leftover-daemons-FAIL" ]]; then
     echo ""
     echo "Working dir kept: $TEST_DIR"
     echo "  Resume: DATAWATCH_TEST_ID=$RUN_ID bash scripts/run-tests.sh --resume-from=<story>"
@@ -422,7 +544,11 @@ cleanup() {
     rm -rf "$TEST_DIR"
   fi
 }
-trap 'FAILED=$?; cleanup' EXIT
+# The EXIT/INT/TERM/HUP traps are installed near the top via td_install_traps:
+# they end every recorded daemon (sessions through its API first), preserve
+# this script's original exit status, keep set -e deaths countable as failure
+# (ERR trap) and then run cleanup() -- working dir, ntfy, docker-sim, worker
+# pool -- via TD_EXTRA_CLEANUP.
 
 # flush_story_cleanup — delete resources registered via add_cleanup() after
 # each serial story runs, so sessions don't accumulate and hit max_sessions.
@@ -664,16 +790,41 @@ launch_parallel() {
     export CLEANUP_LOG="$par_cleanup"
     RESULT=""
     CURRENT_STORY="$story_id"
+    # Scope the shared daemon-library state to this story: daemons this
+    # subshell starts are recorded under its owner and its EXIT trap ends
+    # them with td_stop_self — a parallel worker never leaves its daemons
+    # to the runner's traps, and never signals a sibling's or the
+    # runner's recorded daemons.
+    export TD_OWNER="$story_id"
     mkdir -p "$EVIDENCE_DIR/$story_id"
     # Trap ensures result file and semaphore release run even when the story
     # calls `exit 0` directly instead of `return` (TS-750/751/752 pattern).
-    trap 'flush_story_cleanup; printf "%s" "${RESULT:-fail}" > "$result_file"; release_worker' EXIT
+    # Order: the story's own registered cleanup, then this owner's recorded
+    # daemons (td_stop_self), then the result file and the semaphore.
+    trap 'flush_story_cleanup; dw_runner_worker_cleanup; { if declare -F td_stop_self >/dev/null 2>&1; then td_stop_self; fi; printf "%s" "${RESULT:-fail}" > "$result_file"; release_worker; }' EXIT
     # shellcheck source=/dev/null
     source "$script"
   ) &
   local pid=$!
   PAR_PIDS+=("$pid")
   PAR_STORY[$pid]="$story_id"
+}
+
+# dw_runner_worker_cleanup — exit path of a parallel story subshell, besides
+# what the shared library traps already stopped by recorded PID: the story
+# hook that the story shell registered in DW_STORY_CLEANUP (TS-820: its
+# sessions, LLM entries, Ollama stand-ins and scratch) and the channel
+# helpers recorded by lib.sh in this subshell. No-ops when nothing is
+# registered; guarded steps, so safe to run twice.
+dw_runner_worker_cleanup() {
+  local hook="${DW_STORY_CLEANUP:-}"
+  if [[ -n "$hook" ]] && declare -F "$hook" >/dev/null 2>&1; then
+    "$hook" || true
+  fi
+  if declare -F _dw_channel_cleanup >/dev/null 2>&1; then
+    _dw_channel_cleanup || true
+  fi
+  return 0
 }
 
 # Wait for all parallel jobs and collect results
@@ -914,3 +1065,18 @@ if [[ $FAIL -gt 0 ]]; then
   FAILED=1
   exit 1
 fi
+
+# All stories passed. Run the end-of-run cleanup in the main flow now (the
+# EXIT trap does the identical, idempotent work on the failure and interrupt
+# paths): stop every daemon this run started, run the leftover-daemon guard
+# against the start-of-run baseline, remove the run dir -- and fail the run
+# with the guard's output if a test daemon this run started is still alive
+# after all of it.
+td_stop_all
+cleanup
+if [[ -f "$TEST_DIR/leftover-daemons-FAIL" ]]; then
+  echo ""
+  echo "FAIL: every story passed, but the run left test daemon(s) alive (guard report above)"
+  exit 1
+fi
+exit 0

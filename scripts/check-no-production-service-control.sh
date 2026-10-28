@@ -42,7 +42,7 @@ SELF="check-no-production-service-control.sh"
 
 F1='(systemctl|smctl|launchctl|systemd)[^|;&]*[[:space:]](stop|restart|reload|kill|off)[^|;&]*[[:space:]]datawatch'
 F2='(^|[^[:alnum:]_.-])datawatch[[:space:]]+(stop|restart)([^[:alnum:]_.-]|$)'
-F3='(pkill|killall)[^&#|;]*[[:space:]]datawatch' # no '#' crossing: a pkill of another app with a datawatch mention in a trailing comment must not match
+F3='(pkill|killall)[^&#|;]*[[:space:]]datawatch' # no '#' crossing: a pkill of another app with a datawatch mention in a trailing comment must not match # daemon-cleanup-ok: the audit's own regex for a banned word
 FAM="$F1|$F2|$F3"
 
 targets=()

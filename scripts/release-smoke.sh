@@ -60,6 +60,46 @@ SMOKE_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_DIR=$(cd "$SMOKE_DIR/.." && pwd)
 REPO_PARENT=$(cd "$REPO_DIR/.." && pwd)
 
+# --- shared daemon lifecycle (source scripts/test-daemon-lib.sh first) ----
+# Any test daemon this script starts in local-daemon mode is ended on EVERY
+# exit path (normal, failure, INT, TERM, HUP): its live sessions are ended
+# through the daemon's own API, then its process is signalled by the exact
+# PID recorded at start (only while its recorded marker is still in the
+# cmdline). The library's two cleanup hooks split smoke's cleanup around
+# that stop:
+#   TD_PRE_STOP_CLEANUP (smoke_pre_stop_cleanup) runs BEFORE td_stop_all,
+#     while the daemon is still alive: cleanup_all's per-ID API deletes
+#     (sessions by id, PRDs, peers, ...) must land while the daemon is up.
+#     In external-daemon mode they are sent to the external daemon, which
+#     this script never signals.
+#   TD_EXTRA_CLEANUP (smoke_extra_cleanup) runs AFTER td_stop_all and
+#     removes the scratch dirs, so the data dir is never deleted while its
+#     daemon is still running.
+source "$SMOKE_DIR/test-daemon-lib.sh"
+smoke_pre_stop_cleanup() {
+  # API cleanup while the smoke daemon is still alive. cleanup_all only
+  # exists once the test dir is set up; guard both.
+  if declare -F cleanup_all >/dev/null 2>&1 && [[ -n "${CLEANUP_LOG:-}" ]]; then
+    cleanup_all
+  fi
+}
+smoke_extra_cleanup() {
+  # Runs on every exit, after td_stop_all has ended recorded daemons.
+  if [[ -n "${TMPD:-}" ]]; then
+    rm -rf "$TMPD" 2>/dev/null
+  fi
+  if [[ -n "${TEST_WORK_DIR:-}" ]]; then
+    if [[ -n "${KEEP_TEST_DIR:-}" ]]; then
+      echo "Test data kept: $TEST_WORK_DIR"
+    else
+      rm -rf "$TEST_WORK_DIR" 2>/dev/null || true
+    fi
+  fi
+}
+TD_PRE_STOP_CLEANUP=smoke_pre_stop_cleanup
+TD_EXTRA_CLEANUP=smoke_extra_cleanup
+td_install_traps "$@"
+
 # --- static source lints (no daemon required) --------------------------------
 # v6.11.25 — keep docs/plans/ clean before every release.
 if [ "${DW_SKIP_TIDY_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/tidy-plans.sh" ]; then
@@ -202,6 +242,11 @@ YAML
   "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
     >"$TEST_WORK_DIR/daemon.log" 2>&1 &
   TEST_DAEMON_PID=$!
+  # Record it with the shared daemon-lifecycle library so every exit path
+  # ends it: marker = the config path, which stays in the daemon's cmdline
+  # for its whole life (recycled PIDs are left alone).
+  td_track_pid "$TEST_DAEMON_PID" "$TEST_CONFIG" \
+    || echo "warn: could not record test daemon pid $TEST_DAEMON_PID" >&2
 
   # Wait up to 30 s for the daemon to answer health.
   echo "Waiting for test daemon..."
@@ -213,7 +258,10 @@ YAML
   if [[ $_ready -eq 0 ]]; then
     echo "ERROR: test daemon did not start within 30 s. Log:" >&2
     tail -30 "$TEST_WORK_DIR/daemon.log" >&2
-    kill "$TEST_DAEMON_PID" 2>/dev/null || true
+    # End the recorded daemon (marker check + TERM + KILL + wait) before
+    # leaving; the EXIT trap would do this anyway, but do it explicitly so
+    # the data dir removal below cannot race a still-running daemon.
+    td_stop_one "$TEST_DAEMON_PID" || echo "warn: test daemon $TEST_DAEMON_PID still running" >&2
     rm -rf "$TEST_WORK_DIR"
     exit 1
   fi
@@ -222,6 +270,10 @@ YAML
 
   BASE="https://127.0.0.1:${SMOKE_TLS_PORT}"
   TOK=""   # test daemon starts with no auth token
+  # Remember its API: on stop the library ends this daemon's live sessions
+  # through the API before signalling the PID, even on abrupt exits.
+  td_set_api "$TEST_DAEMON_PID" "$BASE" "$TOK" 2>/dev/null \
+    || echo "warn: could not set the test daemon's API base" >&2
   # CLI commands use -u + --config so the TLS cert path and token are read from
   # the smoke daemon's config (not from ~/.datawatch which points at production).
   DW_CLI="$_DW_BIN --config $TEST_CONFIG -u $BASE"
@@ -238,28 +290,21 @@ CLEANUP_LOG="$TMPD/cleanup.log"
 : >"$CLEANUP_LOG"
 add_cleanup() { echo "$1 $2" >> "$CLEANUP_LOG"; }
 
-# v5.26.18 — operator-reported (multiple times): smoke runs leave
-# orphaned `autonomous:*` tmux sessions because the executor goroutine
-# can have a spawn HTTP call already in flight when cancel propagates.
-# Capture a baseline of "autonomous-named" session IDs that exist
-# BEFORE smoke runs; in cleanup_all we list them again and kill any
-# new ones (i.e. created during smoke). This catches the race.
-BASELINE_AUTO_SESSIONS="$TMPD/baseline_auto.txt"
-curl_args_baseline=(-sk --max-time 10)
-[[ -n "$TOK" ]] && curl_args_baseline+=(-H "Authorization: Bearer $TOK")
-curl "${curl_args_baseline[@]}" "$BASE/api/sessions" 2>/dev/null | python3 -c '
-import json, sys
-try:
-  d = json.load(sys.stdin)
-  ss = d.get("sessions") if isinstance(d, dict) else d
-  for s in (ss or []):
-    if (s.get("name") or "").startswith("autonomous:") and s.get("state") in ("running","waiting_input","rate_limited"):
-      print(s.get("full_id",""))
-except Exception:
-  pass
-' > "$BASELINE_AUTO_SESSIONS" 2>/dev/null || : > "$BASELINE_AUTO_SESSIONS"
-
 cleanup_all() {
+  # Tracked-resource cleanup: end every session and DELETE every PRD,
+  # peer, and other entity that add_cleanup recorded at creation time, in
+  # reverse order (children before parents). Runs on EVERY exit path as
+  # the library's TD_PRE_STOP_CLEANUP hook — before td_stop_all ends the
+  # smoke daemon (local mode), and against the external daemon (external
+  # mode), which this script never signals.
+  #
+  # No name-based session sweep: the operator rule is that smoke cleans
+  # up EXACTLY what it created via add_cleanup — nothing more — and the
+  # session kills below go by the exact id recorded at creation.
+  #
+  # Scratch-dir removal (TMPD, TEST_WORK_DIR) happens in
+  # smoke_extra_cleanup, which the library runs AFTER td_stop_all, so the
+  # data dir is never deleted while its daemon still runs.
   local printed_header=0
   if [[ -s "$CLEANUP_LOG" ]]; then
     printed_header=1
@@ -293,86 +338,15 @@ cleanup_all() {
       esac
     done
   fi
-
-  # v5.26.18 — race-condition orphan sweep. After every PRD has been
-  # hard-deleted, list autonomous-named running sessions and kill any
-  # that weren't in the pre-smoke baseline (i.e. were spawned during
-  # smoke and somehow survived hard-delete's session-kill walk).
-  # Baseline tracking means real operator-initiated autonomous runs
-  # that pre-existed are NOT touched.
-  local NEW_ORPHANS
-  NEW_ORPHANS=$(curl "${curl_args[@]}" "$BASE/api/sessions" 2>/dev/null | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    ss = d.get('sessions') if isinstance(d, dict) else d
-    baseline = set()
-    try:
-        with open('$BASELINE_AUTO_SESSIONS') as f:
-            baseline = set(line.strip() for line in f if line.strip())
-    except Exception:
-        pass
-    for s in (ss or []):
-        name = (s.get('name') or '')
-        # v6.11.26 — operator-directed: sweep BOTH autonomous race-
-        # survivors AND any session named smoke-* so smoke runs never
-        # leak debug sessions into the daemon.
-        #
-        # v7.0.0-alpha.14 (operator-flagged 2026-05-09): the rule is
-        # smoke cleans up EXACTLY what it created via add_cleanup —
-        # nothing more. Earlier this version widened the sweep to
-        # include 'council-*' / 'llm_backend == council-virtual', which
-        # killed an operator-attached live session (the active host
-        # session was named with 'council-' because the operator was
-        # debugging Council Mode). Reverted: do NOT broaden the orphan
-        # sweep to entity types the operator may legitimately create.
-        # New entity types (Council runs, ComputeNodes, LLMs) MUST use
-        # add_cleanup at creation time so the tracked-cleanup loop
-        # above (cleanup_all switch) handles them. The orphan sweep
-        # below is purely a race-condition safety net for the two
-        # patterns that demonstrably leak: autonomous:* and smoke-*.
-        is_smoke = name.startswith('autonomous:') or name.startswith('smoke-')
-        if not is_smoke:
-            continue
-        # State filter only applies to autonomous race-sweep; smoke-*
-        # gets killed in any state.
-        if name.startswith('autonomous:') and s.get('state') not in ('running','waiting_input','rate_limited'):
-            continue
-        fid = s.get('full_id','')
-        if fid and fid not in baseline:
-            print(fid)
-except Exception:
-    pass
-" 2>/dev/null || true)
-  if [[ -n "$NEW_ORPHANS" ]]; then
-    if [[ "$printed_header" == "0" ]]; then
-      echo ""; echo "== Cleanup =="; printed_header=1
-    fi
-    while IFS= read -r sid; do
-      [[ -z "$sid" ]] && continue
-      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"id\":\"$sid\"}" "$BASE/api/sessions/kill" >/dev/null 2>&1
-      echo "  killed orphan smoke/autonomous session $sid"
-    done <<< "$NEW_ORPHANS"
-  fi
-
-  rm -rf "$TMPD" 2>/dev/null
-
-  # Shut down the test daemon and delete its data dir.
-  # Resources were already cleaned via API above; this is the final sweep.
-  if [[ -n "${TEST_DAEMON_PID:-}" ]]; then
-    kill "$TEST_DAEMON_PID" 2>/dev/null || true
-    wait "$TEST_DAEMON_PID" 2>/dev/null || true
-  fi
-  # Kill any tmux sessions the smoke daemon created (cs-dw-smoke-test-*).
-  env -u TMUX tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^cs-dw-smoke-test-' | \
-    while read -r s; do env -u TMUX tmux kill-session -t "$s" 2>/dev/null || true; done
-  if [[ -n "${KEEP_TEST_DIR:-}" ]]; then
-    echo "Test data kept: $TEST_WORK_DIR"
-  else
-    rm -rf "$TEST_WORK_DIR" 2>/dev/null || true
-  fi
+  return 0
 }
-trap cleanup_all EXIT
+# Traps: installed by the shared daemon-lifecycle library above — on every
+# exit path it runs smoke_pre_stop_cleanup (per-ID API cleanup while the
+# daemon is still alive), then td_stop_all (ends the daemon's live sessions
+# via its own API, then signals the recorded PID marker-verified and waits
+# for it), then smoke_extra_cleanup (scratch dirs). Nothing above signals
+# a daemon, and no session is killed by name: only the exact id recorded
+# at creation is ever sent to the API.
 
 PASS=0
 FAIL=0

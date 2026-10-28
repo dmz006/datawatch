@@ -29,6 +29,12 @@ _story_ts_619() {
       skip "could not allocate free ports for inline peer daemon"; return
     fi
 
+    # The shared lifecycle library must be loaded before anything is created:
+    # its EXIT/INT/TERM/HUP traps are what end the daemon on every exit path.
+    if ! story_daemon_lifecycle || ! declare -F td_start >/dev/null 2>&1; then
+      skip "shared daemon lifecycle library unavailable; not starting an inline peer daemon"; return
+    fi
+
     peer_data=$(mktemp -d)
 
     # Write a minimal peer config
@@ -47,10 +53,14 @@ session:
   kill_sessions_on_exit: true
 PEERCFG
 
-    # Start the peer daemon
-    "$binary" start --foreground --config "$peer_data/config.yaml" \
-      >> "$peer_data/peer.log" 2>&1 &
-    peer_pid=$!
+    # Start the peer daemon through the shared lifecycle library: td_start
+    # records it (PID + config-path marker) and the shared
+    # EXIT/INT/TERM/HUP traps end the daemon — and any session it started —
+    # on every exit path, including a story failure before the explicit
+    # stop below or a Ctrl-C.
+    td_start "$binary" "$peer_data/config.yaml" "$peer_data/peer.log"
+    peer_pid="${TD_LAST_PID:-}"
+    td_set_api "$peer_pid" "https://127.0.0.1:$peer_tls" "$peer_token"
 
     # Wait up to 15s for the peer to become healthy
     local deadline=$(( $(date +%s) + 15 ))
@@ -65,9 +75,18 @@ PEERCFG
     done
 
     if [[ $healthy -eq 0 ]]; then
-      kill "$peer_pid" 2>/dev/null || true
-      rm -rf "$peer_data"
-      skip "inline peer daemon did not start within 15s"; return
+      # End the peer by the PID we recorded (marker-checked; sessions first
+      # via its own API). The scratch folder goes only once the daemon is
+      # verified gone — rm -rf never underneath a live daemon.
+      dw_terminate_pid "$peer_pid" "$peer_data/config.yaml" || true
+      if declare -F td_alive >/dev/null 2>&1 && td_alive "$peer_pid"; then
+        echo "inline peer daemon $peer_pid still running after teardown; keeping scratch at $peer_data" >&2
+        skip "inline peer daemon did not start within 15s (could not end it; scratch kept at $peer_data)"
+      else
+        rm -rf "$peer_data"
+        skip "inline peer daemon did not start within 15s"
+      fi
+      return
     fi
 
     peer_url="https://127.0.0.1:$peer_tls"
@@ -81,11 +100,17 @@ PEERCFG
     "${peer_url}/api/proxy/llm/test-llm" 2>/dev/null || echo "000")
   save_evidence TS-619 "peer_probe_code.txt" "$code"
 
-  # Clean up inline peer if we started one
+  # Clean up inline peer if we started one — end the daemon (and its
+  # sessions, through its own API) first, verify it is actually gone, and
+  # only then remove the scratch folder.
   if [[ -n "$peer_pid" ]]; then
-    kill "$peer_pid" 2>/dev/null || true
-    wait "$peer_pid" 2>/dev/null || true
-    rm -rf "$peer_data" 2>/dev/null || true
+    dw_terminate_pid "$peer_pid" "$peer_data/config.yaml" || true
+    if declare -F td_alive >/dev/null 2>&1 && td_alive "$peer_pid"; then
+      echo "inline peer daemon $peer_pid still running after teardown; keeping scratch at $peer_data" >&2
+      ko "inline peer daemon $peer_pid could not be ended (scratch kept at $peer_data)"
+    else
+      rm -rf "$peer_data" 2>/dev/null || true
+    fi
   fi
 
   if [[ "$code" == "000" ]]; then

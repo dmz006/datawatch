@@ -175,7 +175,7 @@ func runDaemonRestartAdoptsLiveWorker(t *testing.T, backend string, minRunning t
 	// Production guard: without the full sandbox contract the shared
 	// bl462RestartCommand path skips; check it here so the test does not
 	// set up a probe PRD before discovering it cannot restart the daemon.
-	bl462SandboxRestartContract(t)
+	sandboxPID := bl462SandboxRestartContract(t)
 	c := newBL462LiveClient(t)
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Fatalf("tmux is required on the test host: %v", err)
@@ -198,17 +198,11 @@ func runDaemonRestartAdoptsLiveWorker(t *testing.T, backend string, minRunning t
 		startBody["project_dir"] = dir
 	}
 
-	var lastSess bl462LiveSession
-	t.Cleanup(func() {
-		// Kill the probe session via the API only (never a raw tmux kill),
-		// and only if it is still alive after everything below.
-		if lastSess.ID == "" || bl462IsTerminal(lastSess.State) {
-			return
-		}
-		if status, err := c.do(http.MethodPost, "/api/sessions/kill", map[string]string{"id": lastSess.ID}, nil); err != nil || status >= 300 {
-			t.Logf("cleanup: could not kill probe session %s (HTTP %d, err %v)", lastSess.ID, status, err)
-		}
-	})
+	// End the probe session via the daemon API — and verify the recorded
+	// sandbox daemon pid — on every exit path (pass, failure, interrupt).
+	// Registered before the first call that can create the PRD (and its
+	// worker session).
+	lc := newLiveTestCleanup(t, c, sandboxPID)
 
 	// (a) create the PRD.
 	var prd adoptLivePRD
@@ -309,7 +303,7 @@ func runDaemonRestartAdoptsLiveWorker(t *testing.T, backend string, minRunning t
 	if !ok {
 		t.Fatalf("worker session %s not found in /api/sessions", taskSession)
 	}
-	lastSess = sess
+	lc.trackSession(sess)
 	t.Logf("worker session %s running (state=%q tmux=%q) before restart", sess.ID, sess.State, sess.TmuxSession)
 	capturedAt := time.Now()
 	if minRunning > 0 {
@@ -322,7 +316,7 @@ func runDaemonRestartAdoptsLiveWorker(t *testing.T, backend string, minRunning t
 		if !ok {
 			t.Fatalf("worker session %s vanished before restart", taskSession)
 		}
-		lastSess = sess
+		lc.trackSession(sess)
 		if sess.State != "running" && sess.State != "waiting_input" {
 			t.Fatalf("worker session %s is %q before restart; want running/waiting_input (worker ended too early to test adoption)", sess.ID, sess.State)
 		}
@@ -376,7 +370,7 @@ func runDaemonRestartAdoptsLiveWorker(t *testing.T, backend string, minRunning t
 	if !ok {
 		t.Fatalf("worker session %s vanished from the daemon after restart", taskSession)
 	}
-	lastSess = sess
+	lc.trackSession(sess)
 	switch sess.State {
 	case "running", "waiting_input", "complete":
 		// Expected: session survived (or finished in the restart window).
@@ -405,7 +399,7 @@ func runDaemonRestartAdoptsLiveWorker(t *testing.T, backend string, minRunning t
 				t.Errorf("worker session %s vanished after restart", taskSession)
 				return true
 			}
-			lastSess = s
+			lc.trackSession(s)
 			if time.Now().Before(earliestFinish) && s.State != "running" && s.State != "waiting_input" {
 				t.Errorf("BUG: worker session %s is %q only %s after delivery; the worker is still running", s.ID, s.State, time.Since(capturedAt).Round(time.Second))
 				return true
@@ -447,7 +441,7 @@ func runDaemonRestartAdoptsLiveWorker(t *testing.T, backend string, minRunning t
 		return done
 	})
 	if s, ok := c.sessionByID(taskSession); ok {
-		lastSess = s
+		lc.trackSession(s)
 		if s.State == "killed" {
 			t.Errorf("worker session %s ended as killed; adopt-live must never kill the surviving worker", s.ID)
 		}

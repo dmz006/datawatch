@@ -58,12 +58,22 @@ free_port() {
     || cat /proc/sys/kernel/random/uuid | head -c 8
 }
 
+# --- daemon lifecycle: scripts/test-daemon-lib.sh ------------------------
+# The library owns the end path: it ends the daemon's sessions via the API
+# first (recorded token), then the daemon by its recorded pid — only after
+# its cmdline still carries the recorded marker (this run's config path).
+# Processes are never matched by name.
+TD_LIB="$SCRIPT_DIR/test-daemon-lib.sh"
+[[ -f "$TD_LIB" ]] || fail "missing shared daemon lifecycle helper: $TD_LIB"
+# shellcheck source=test-daemon-lib.sh
+. "$TD_LIB"
+
 cleanup() {
   local rc=$?
-  if [[ -n "$DAEMON_PID" ]]; then
-    kill "$DAEMON_PID" 2>/dev/null || true
-    wait "$DAEMON_PID" 2>/dev/null || true
-  fi
+  # td_stop_all covers the daemon this script started (local mode). It is a
+  # no-op in external-daemon mode (nothing recorded) and after the daemon
+  # already ended.
+  td_stop_all 2>/dev/null || true
   if [[ -n "$RUN_DIR" && -d "$RUN_DIR" ]]; then
     if [[ $rc -eq 0 ]]; then
       rm -rf "$RUN_DIR" 2>/dev/null || true
@@ -72,7 +82,13 @@ cleanup() {
     fi
   fi
 }
+# All four paths are trapped: a signal the shell does not trap kills the
+# shell without running its EXIT trap, leaving the daemon (and its sessions)
+# behind. The traps are installed before the daemon is started.
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 # --- daemon ------------------------------------------------------------------
 if [[ -n "${TEST_HTTP:-}" && -n "${TEST_TLS:-}" && -n "${TEST_TOKEN:-}" ]]; then
@@ -111,9 +127,13 @@ else
 
   mkdir -p "$RUN_DIR/data"
   echo "e2e-pwa: starting daemon ($BINARY) http=$TEST_HTTP tls=$TEST_TLS"
-  "$BINARY" start --foreground --config "$RUN_DIR/config.yaml" \
-    > "$RUN_DIR/daemon.log" 2>&1 &
-  DAEMON_PID=$!
+  # td_start records the pid with the config path as the cmdline marker, so
+  # every exit path (EXIT/INT/TERM/HUP) ends exactly this daemon — verified
+  # against its cmdline, never by name.
+  if ! DAEMON_PID="$(td_start "$BINARY" "$RUN_DIR/config.yaml" "$RUN_DIR/daemon.log")"; then
+    tail -20 "$RUN_DIR/daemon.log" 2>/dev/null >&2 || true
+    fail "failed to start the daemon (see $RUN_DIR/daemon.log)"
+  fi
 
   deadline=$(( $(date +%s) + 60 ))
   healthy=0
@@ -129,6 +149,9 @@ else
     tail -20 "$RUN_DIR/daemon.log" >&2 || true
     fail "daemon did not become healthy within 60s"
   }
+  # Record base URL + token for the exit path's API session pass.
+  td_set_api "$DAEMON_PID" "$TEST_HTTP" "$TOKEN" \
+    || echo "e2e-pwa: warn: could not record API credentials; exit path ends the daemon by pid only" >&2
   echo "e2e-pwa: daemon healthy (PID $DAEMON_PID)"
 fi
 

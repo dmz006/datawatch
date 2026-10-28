@@ -706,7 +706,7 @@ ot_main() {
 
   rm_require_tools
   rm_init_root
-  trap 'rm_sandbox_finish' EXIT
+  rm_install_traps # EXIT/INT/TERM/HUP — the sandbox is ended on every exit path
   printf 'restart matrix, other states (%s mode), records: %s\n' "$RM_MODE" "$RM_REC"
 
   for s in "${states[@]}"; do
