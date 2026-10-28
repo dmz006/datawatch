@@ -156,6 +156,10 @@ func TestRestartEcho_RealSummaryAfterEchoCompletes(t *testing.T) {
 	if cur.State != StateComplete {
 		t.Errorf("real completion after restart not detected: state=%q, want %q", cur.State, StateComplete)
 	}
+	// The end callback runs just after the state flips; wait for it on a loaded runner.
+	for wait := time.Now().Add(3 * time.Second); ended.Load() == 0 && time.Now().Before(wait); {
+		time.Sleep(25 * time.Millisecond)
+	}
 	if n := ended.Load(); n == 0 {
 		t.Error("onSessionEnd was not called for a real completion after restart")
 	}
