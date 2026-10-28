@@ -16306,6 +16306,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.lane_fill.gpu_model', label: 'Lane fill GPU model (empty = backend default)', labelKey: 'settings_lane_fill_gpu_model', type: 'text', placeholder: '' },
     { key: 'autonomous.lane_fill.claude_backend', label: 'Lane fill Claude backend (default claude-code)', labelKey: 'settings_lane_fill_claude_backend', type: 'text', placeholder: 'claude-code', default: 'claude-code' },
     { key: 'autonomous.automation.agent_insert_policy', label: 'Automation agent insert policy (allow | require_operator, default allow)', labelKey: 'settings_automation_agent_insert_policy', type: 'select', options: ['allow', 'require_operator'], default: 'allow' },
+    { key: 'autonomous.questions.enabled', label: 'Operator questions for Automata (off by default)', labelKey: 'settings_automata_questions_enabled', type: 'toggle' },
     // Progress engine parameters (0 or empty = the default shown as placeholder).
     { key: 'autonomous.progress.lanes', label: 'Progress lanes (parallel lanes of Automata used for utilization, 0 = 5)', labelKey: 'settings_progress_lanes', type: 'number', placeholder: '5', min: 0, step: 1, default: '0' },
     { key: 'autonomous.progress.inactive_gap_hours', label: 'Progress inactive gap (hours without activity that count as an inactive window, 0 = 3)', labelKey: 'settings_progress_inactive_gap_hours', type: 'number', placeholder: '3', min: 0, step: 0.5, default: '0' },

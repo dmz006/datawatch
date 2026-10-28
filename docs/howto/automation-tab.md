@@ -253,6 +253,132 @@ Tap **Reload** to load the current version, then make the change again. Nothing
 is retried for you, so a change is never applied on top of something you have
 not seen.
 
+## Questions (REST only for now)
+
+An Automaton can **raise a question** when it needs a decision it should not
+make alone, and you, the operator, **answer it** the way you like best. For now
+the question channel is on REST only: the in-PWA queue, the CLI subcommands,
+the MCP tools and answering from a comm channel all come after and build on
+exactly this surface, so the shapes below will not change under them.
+
+### Turn the channel on
+
+The channel is **off by default** behind the switch
+`autonomous.questions.enabled`. While it is off, every endpoint under
+`/api/questions` answers with a 503 that names the switch. Turn it on by
+setting the switch to `true` — the PWA Settings toggle (labeled in English,
+German, Spanish, French and Japanese), `configure` from chat, or REST:
+
+```bash
+env -u TMUX -u TMUX_TMPDIR rtk curl -sS -X PUT http://127.0.0.1:8787/api/config \
+  -H 'Content-Type: application/json' \
+  -d '{"autonomous.questions.enabled": true}'
+```
+
+The switch takes effect on the next request — no restart. Reads need the
+`autonomous:read` capability, writes (raise, answer, withdraw) need
+`autonomous:write`; local operators always pass.
+
+### Raise a question
+
+`POST /api/questions` raises one. A question carries a label, risk, a context
+(`none` when it has no work of its own), its text, a set of options (2 to 20),
+an optional recommendation, and a **required `default`** — the fallback option,
+or the word `hold`. It is required precisely so that a question always has
+some position attached and no choice is ever left silent.
+
+```bash
+env -u TMUX -u TMUX_TMPDIR rtk curl -sS -X POST http://127.0.0.1:8787/api/questions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "label": "decision",
+    "risk": "low",
+    "context": "none",
+    "text": "Should the retry keep using the free backend, or should it move to the paid one?",
+    "options": [
+      {"id": "stay-free",  "label": "Stay on the free backend"},
+      {"id": "move-paid",  "label": "Move to the paid backend now"}
+    ],
+    "recommendation": {"id": "stay-free", "rationale": "The task is close to done and the free backend is idle"},
+    "default": "stay-free"
+  }'
+```
+
+The response is the stored question with its generated id and state `open`.
+
+### Read them
+
+```bash
+# List, with filters: state, context, asker, text, limit
+env -u TMUX -u TMUX_TMPDIR rtk curl -sS 'http://127.0.0.1:8787/api/questions?state=open&limit=50'
+
+# One question (the id from the raise response — ids look like `q-0195c8e2a4b6d7f81c`)
+env -u TMUX -u TMUX_TMPDIR rtk curl -sS http://127.0.0.1:8787/api/questions/q-0195c8e2a4b6d7f81c
+
+# Its answer log, oldest first, showing which answer stands
+env -u TMUX -u TMUX_TMPDIR rtk curl -sS http://127.0.0.1:8787/api/questions/q-0195c8e2a4b6d7f81c/answers
+```
+
+### Answer — option, words, or both
+
+An answer is an **option**, your own **words** (the quote), **or both**.
+Answers are **immutable**: nothing about the question can be edited after the
+fact, and your quote is stored **verbatim, byte for byte** (no trims, no
+normalization) with its SHA-256 over exactly those bytes, so any reader can
+check later that it was never altered.
+
+```bash
+# Pick the option and add words
+env -u TMUX -u TMUX_TMPDIR rtk curl -sS -X POST http://127.0.0.1:8787/api/questions/q-0195c8e2a4b6d7f81c/answer \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "chosen_option_id": "move-paid",
+    "quote": "Move it — the deadline is tomorrow and the free backend has been thrashing",
+    "surface": "rest"
+  }'
+
+# Words alone work too; so does the option alone.
+```
+
+### Change your mind — supersede, don't edit
+
+A changed mind is a **new answer that names the one it supersedes**; the old
+one stays in the log, marked as superseded. Superseding an answer that is not
+the currently standing one is refused, as is answering a withdrawn question.
+
+```bash
+env -u TMUX -u TMUX_TMPDIR rtk curl -sS -X POST http://127.0.0.1:8787/api/questions/q-0195c8e2a4b6d7f81c/answer \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "chosen_option_id": "stay-free",
+    "quote": "Actually, hold — the paid backend has the same backlog today",
+    "supersedes": "a-0195c8e3b5c7e8a92d"
+  }'
+```
+
+### Withdraw a question that never needed answering
+
+```bash
+env -u TMUX -u TMUX_TMPDIR rtk curl -sS -X POST http://127.0.0.1:8787/api/questions/q-0195c8e2a4b6d7f81c/withdraw \
+  -H 'Content-Type: application/json' -d '{"reason": "The situation resolved while it was open"}'
+```
+
+### What the channel does not do
+
+- **No clock expiry.** A question does not time out. It sits in the channel
+  until it is answered or withdrawn; `expired` only ever appears as an
+  explicit terminal move recorded in the log, never as a timer firing.
+- **A secret answer is refused, not stored.** If your words look like a
+  credential, the answer is refused with a 422 that names the two safe routes
+  — put the value in the datawatch secrets store and reference it as
+  `${secret:name}`, or in a session-facing file — and it is never stored, the
+  audit line for the refusal never carries the text, and nothing of it is
+  echoed back to you.
+- **Every state change is audited.** Raise, answer, supersede, withdraw and
+  expire each write one line to the single audit log under its own CEF name
+  (`QuestionRaised`, `QuestionAnswered`, `AnswerSuperseded`,
+  `QuestionWithdrawn`, `QuestionExpired`, `QuestionAnswerRefused`).
+
 ## Related
 
 - [automation-queue-advance.md](automation-queue-advance.md): activating an

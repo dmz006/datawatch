@@ -2500,5 +2500,6 @@
   "tag_session_none": "Aucune étiquette",
   "tag_session_edit": "Modifier les étiquettes",
   "tag_session_edit_title": "Étiquettes de la session",
-  "tag_session_batch_title": "Ajouter des étiquettes à %1$d sessions"
+  "tag_session_batch_title": "Ajouter des étiquettes à %1$d sessions",
+  "settings_automata_questions_enabled": "Questions opérateur pour les automates (désactivé par défaut)"
 }

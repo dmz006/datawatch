@@ -432,6 +432,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)
 	apiMux.HandleFunc("/api/autonomous/subscriptions", api.handleAutonomousSubscriptions)
 	apiMux.HandleFunc("/api/autonomous/subscriptions/", api.handleAutonomousSubscriptions)
+	// Operator question channel (raise, read, answer, withdraw): one
+	// generic question record, label-is-type, never expiring. /answer,
+	// /withdraw and /answers under a question id serve the answer flow;
+	// other sub-paths 404.
+	apiMux.HandleFunc("/api/questions", api.handleQuestions)
+	apiMux.HandleFunc("/api/questions/", api.handleQuestions)
 	apiMux.HandleFunc("/api/autonomous/events", api.handleAutonomousEvents)
 	// BL427 phase 5 — receiving endpoint for peer-forwarded lifecycle events.
 	apiMux.HandleFunc(autonomous.ForwardedEventsPath, api.handleAutonomousForwardedEvents)
@@ -1148,6 +1154,12 @@ func (s *HTTPServer) SetTagRegistry(r *tagregistry.Registry, startSync func()) {
 // endpoints (handlers return 503).
 func (s *HTTPServer) SetAutonomousSubscriptions(api LifecycleSubscriptionsAPI) {
 	s.api.SetAutonomousSubscriptions(api)
+}
+
+// SetQuestions wires the operator question channel (raise + read,
+// /api/questions) into the API server.
+func (s *HTTPServer) SetQuestions(api QuestionsAPI) {
+	s.api.SetQuestions(api)
 }
 
 // SetAutonomousEvents wires the pending-events queue behind the mcp_queue

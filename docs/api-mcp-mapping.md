@@ -154,6 +154,19 @@ documenting coverage gaps and the reasoning behind them.
 | `POST /api/autonomous/prds/{id}/resolve_task_review` (body `{task_id, action, spec, backend, model, effort, files, note, actor}`) | `autonomous_prd_resolve_task_review` | Complete | `action` is `retry` or `cancel`; a 409 when the task is not held for review — [howto](howto/failure-escalation.md) |
 | `GET /api/config` and `PUT /api/config` keys `autonomous.failure_escalation.enabled`, `.max_failures`, `.steps` | `config_set` / `get_config` | Complete | `steps` takes a JSON array or the text `backend:model[@attempts],...` — [howto](howto/failure-escalation.md) |
 
+### Operator questions
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `POST /api/questions` | — | Deferred | Raise an operator question; needs the autonomous write capability. Body caps 64 KiB; the required shape is `text`, 2 to 20 options with unique ids, a `default` (an option or `hold`) and a `context` (`none`, `prd`, `task`, `proposal`, `registry_row`) with its matching link. MCP, CLI and comm rows are deferred pending the question channel's MCP and surface coverage |
+| `GET /api/questions` | — | Deferred | List, newest first: `?state=`, `?context=`, `?asker=` (exact on `asked_by`), `?text=` (case-insensitive substring over question text, option labels/tradeoffs, answer quotes), `?limit=` (default 100, capped 1000). Needs the autonomous read capability |
+| `GET /api/questions/{id}` | — | Deferred | One question + `answer_count` + `current_answer_id` in the same read |
+| `POST /api/questions/{id}/answer` | — | Deferred | Record an answer: `chosen_option_id` and/or a non-blank `quote`; `supersedes` for a changed mind (the old answer is immutable, kept in the log); `surface` (`pwa`, `android`, `ios`, `cli`, `rest`, `mcp` or `comm:<channel>`), `source_message_id`, `actor`. A secret-looking answer is 422-refused — the body carries the fixed phrase `matched: secret pattern`, the two safe routes, and `reason: secret_detected`, but no part of the submitted text and no rule name (the matched rule's name lands on the `question_answer_refused` audit entry) |
+| `POST /api/questions/{id}/withdraw` | — | Deferred | Withdraw an open question; 409 when it has already moved on |
+| `GET /api/questions/{id}/answers` | — | Deferred | The full answer log, oldest first, each answer with its derived superseded flags, plus `current_answer_id` |
+
+All rows are gated on `autonomous.questions.enabled` (off by default; `503` naming the switch while off). The rows are deferred because the MCP tools do not exist yet — the REST endpoints are implemented and live, and the switch itself is already reachable from MCP and comm (`config_set` / `configure autonomous.questions.enabled`). See [api/autonomous](api/autonomous.md#operator-question-channel) and [operations](operations.md#operator-questions).
+
 ### Automation records
 
 | API Endpoint | MCP Tool | Status | Notes |

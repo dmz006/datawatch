@@ -4560,6 +4560,174 @@ paths:
       tags: [Singletons]
       responses: {"200": {description: OK}, "503": {description: Ollama not configured}}
 
+  /api/questions:
+    post:
+      summary: Raise an operator question
+      description: |
+        Records an operator decision and returns it. Raise never blocks the
+        asker, and the question is kept until it is answered or withdrawn —
+        there is no deadline. An omitted asker and asker kind default to the
+        caller and `operator`; an omitted context is not defaulted, the body
+        must name one of `none`, `prd`, `task`, `proposal` or `registry_row`
+        (the matching link, `prd_id` / `task_id` / `proposal_path` /
+        `registry_row_key` present, `none` carrying none of them). One of the
+        options or `hold` must be named as the default, so no choice is ever
+        silent. Body cap 64 KiB; content after the JSON object is malformed.
+        Needs the autonomous write capability when called by a federated
+        peer.
+      operationId: questionRaise
+      tags: [Questions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/QuestionRaise"}
+      responses:
+        "201": {description: "The stored question record"}
+        "400": {description: "Malformed body, or a validation rule failed (every offending field named); nothing is stored", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "Federated peer lacks the autonomous write capability", content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
+        "413": {description: "Body over the 64 KiB cap", content: {"text/plain": {schema: {type: string}}}}
+        "500": {description: "The store could not append or replay the question", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off (named in the message), or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
+    get:
+      summary: List operator questions
+      description: |
+        Matches questions, newest first, with `count` (the returned length) and
+        a `questions` array (empty array, never null, when nothing matches).
+        `text` is a case-insensitive substring over the question text, the
+        option labels and tradeoffs, and the answer quotes; `asker` is an
+        exact match on `asked_by`. `limit` is a positive integer, default 100,
+        capped at 1000. Needs the autonomous read capability when called by a
+        federated peer.
+      operationId: questionList
+      tags: [Questions]
+      parameters:
+        - {name: state, in: query, required: false, schema: {type: string, enum: [open, answered, withdrawn, expired, all]}}
+        - {name: context, in: query, required: false, schema: {type: string, enum: [none, prd, task, proposal, registry_row, all]}}
+        - {name: asker, in: query, required: false, schema: {type: string}, description: "Exact match on asked_by"}
+        - {name: text, in: query, required: false, schema: {type: string}, description: "Case-insensitive substring over question text, option labels and tradeoffs, and answer quotes"}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, default: 100, maximum: 1000}}
+      responses:
+        "200": {description: "count and questions, newest first"}
+        "400": {description: "An unknown state or context (named in the error), or a limit that is not a positive integer (\"limit must be a positive integer\")", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "Federated peer lacks the autonomous read capability", content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions/{id}:
+    get:
+      summary: Read one operator question with answer metadata
+      description: |
+        The question record plus the metadata a caller needs to show "answered,
+        N times" in the same read: `answer_count` (every answer ever recorded,
+        superseded ones included — they are decided and never deleted) and
+        `current_answer_id` (the answer in force, empty when there is none).
+        The full answer log, with text, is the answers read.
+      operationId: questionGet
+      tags: [Questions]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: "question, answer_count, current_answer_id"}
+        "404": {description: Unknown question id, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions/{id}/answer:
+    post:
+      summary: Record an answer to an operator question
+      description: |
+        Records the operator's decision: a chosen option, the operator's own
+        words as `quote` (or both), and who answered. At least one of
+        `chosen_option_id` and a non-blank `quote` is required. The quote is
+        stored exactly as received — no trimming, normalising or re-encoding —
+        with its SHA-256 recorded alongside. `surface` is the surface the
+        answer arrived on: `pwa`, `android`, `ios`, `cli`, `rest`, `mcp` or
+        `comm:<channel name>`; empty defaults to `rest`.
+
+        An answer is immutable: a changed mind is a new answer that supersedes
+        the old one via `supersedes` (which must name the current answer of an
+        answered question; a supersedes on an open question is a 409 — there
+        is no current answer to replace).
+
+        An answer whose text looks like a secret is refused 422, is never
+        stored, and the response never echoes any part of the submitted text
+        — `error` is the fixed phrase `matched: secret pattern` (not the
+        name of the specific rule that matched) and `suggestion` lists the
+        two safe routes (the datawatch secrets store via ${secret:name},
+        or the filesystem); the matched rule's name is recorded in the
+        `question_answer_refused` audit entry, not in this body. Well-formed
+        ${secret:name} references pass the scan.
+
+        Body cap 64 KiB plus the 16 KiB quote cap. Needs the autonomous write
+        capability when called by a federated peer.
+      operationId: questionAnswer
+      tags: [Questions]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/QuestionAnswer"}
+      responses:
+        "201": {description: "The stored answer record (quote hash included) and the question's new state"}
+        "400": {description: "Malformed body; an unknown surface; neither an option nor a non-blank quote; an option id the question does not have; a quote that is not valid UTF-8", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "403": {description: "Federated peer lacks the autonomous write capability", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: Unknown question id, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "409": {description: "Answering a withdrawn or expired question; a supersedes on an open question (no current answer to replace); a supersedes that is absent or wrong on an answered question", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "413": {description: "Body over the cap, or a quote over 16 KiB", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "422": {description: "The answer looks like a secret — the fixed phrase and the safe routes, no echo of the submitted text; no rule name in the body", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionSecretRefusal"}}}}
+        "500": {description: "The store could not append or replay the answer", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions/{id}/withdraw:
+    post:
+      summary: Withdraw an open operator question
+      description: |
+        Withdrawing an open question closes it without an answer; a question
+        that has already moved on (answered, or withdrawn before) is refused.
+        `reason` is free text; `actor` defaults to the caller.
+        Needs the autonomous write capability when called by a federated peer.
+      operationId: questionWithdraw
+      tags: [Questions]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/QuestionWithdraw"}
+      responses:
+        "200": {description: "The question in its new state"}
+        "400": {description: Malformed body, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "403": {description: "Federated peer lacks the autonomous write capability", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: Unknown question id, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "409": {description: "The question is not open", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "413": {description: "Body over the 64 KiB cap", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "500": {description: "The store could not append or replay the withdrawal", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions/{id}/answers:
+    get:
+      summary: Read an operator question's answer log
+      description: |
+        The full answer log, oldest first, each answer carrying its derived
+        superseded state (`superseded`, `superseded_by`), plus
+        `current_answer_id` (the answer in force, empty when there is none).
+        The superseded flags are derived on read from the log; the answer
+        lines themselves never change.
+      operationId: questionAnswers
+      tags: [Questions]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: "answers (oldest first, each with derived superseded state) and current_answer_id"}
+        "404": {description: Unknown question id, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
+
 components:
   securitySchemes:
     BearerToken:
@@ -5719,3 +5887,149 @@ components:
         merge:
           description: "Set when a pending create merged into the keeper tag named in tag"
           allOf: [{$ref: "#/components/schemas/TagRegistryNote"}]
+
+    QuestionOption:
+      description: "One named option of an operator question. A question must carry 2 to 20 options with unique ids."
+      type: object
+      required: [id, label]
+      properties:
+        id: {type: string, description: "Stable option id; referenced by `default`, `recommendation.option_id` and an answer's `chosen_option_id`."}
+        label: {type: string, maxLength: 200, description: "What the option is. <= 200 bytes."}
+        tradeoffs: {type: string, maxLength: 1000, description: "What the option buys and costs, optional. <= 1000 bytes."}
+
+    Question:
+      description: |
+        One operator decision, recorded when raised and kept until answered or
+        withdrawn (no deadline). The kind of question is the `label`, not a
+        different structure; the shipped labels are decision, design review,
+        approval and information, but users may add their own. `default` is
+        the declared fallback - always an option or `hold`, never silent.
+      type: object
+      required: [id, label, text, options, default, context, asker_kind, state, created_at]
+      properties:
+        id: {type: string}
+        label: {type: string, description: "The kind of question; custom labels are accepted. Defaults to `decision`."}
+        asked_by: {type: string, description: "The asker of record."}
+        asker_kind: {type: string, enum: [session, supervisor, operator, system], description: "Who asked; defaults to `operator`."}
+        session_id: {type: string, description: "Present when the asker is a session."}
+        context: {type: string, enum: [none, prd, task, proposal, registry_row], description: "Where the decision belongs; the matching link must be present, `none` none of them."}
+        prd_id: {type: string, description: "The Automaton id, for context `prd`."}
+        task_id: {type: string, description: "The task id, for context `task`."}
+        proposal_path: {type: string, description: "A repository-relative path into the working tree, for context `proposal`."}
+        registry_row_key: {type: string, description: "The registry row key, for context `registry_row`."}
+        text: {type: string, maxLength: 8192, description: "The decision in one line. <= 8192 bytes."}
+        options:
+          type: array
+          minItems: 2
+          maxItems: 20
+          items: {$ref: "#/components/schemas/QuestionOption"}
+        recommendation:
+          type: object
+          description: "Optional, the asker's own preference."
+          properties:
+            option_id: {type: string, description: "Must exist among the options."}
+            rationale: {type: string, maxLength: 1000}
+        default: {type: string, description: "An option id or `hold` - the declared fallback when the question is never answered."}
+        risk: {type: string, enum: [normal, low], default: normal}
+        state: {type: string, enum: [open, answered, withdrawn, expired]}
+        created_at: {type: string, format: date-time}
+
+    QuestionRaise:
+      description: "The POST /api/questions body. The required shape is `text`, 2 to 20 options with unique ids, a named `default` (an option or `hold`) and a `context` (one of none, prd, task, proposal, registry_row) with its matching link."
+      type: object
+      required: [text, options, default, context]
+      properties:
+        label: {type: string, description: "Defaults to `decision`."}
+        asked_by: {type: string, description: "Defaults to the caller."}
+        asker_kind: {type: string, enum: [session, supervisor, operator, system], description: "Defaults to `operator`."}
+        session_id: {type: string}
+        context: {type: string, description: "One of none, prd, task, proposal, registry_row; an omitted context is not defaulted."}
+        prd_id: {type: string}
+        task_id: {type: string}
+        proposal_path: {type: string, description: "Must be repository-relative (no leading /, no .. segment)."}
+        registry_row_key: {type: string}
+        text: {type: string, maxLength: 8192, description: "The decision in one line. <= 8192 bytes."}
+        options:
+          type: array
+          minItems: 2
+          maxItems: 20
+          items: {$ref: "#/components/schemas/QuestionOption"}
+        recommendation:
+          type: object
+          properties:
+            option_id: {type: string, description: "Must exist among the options."}
+            rationale: {type: string, maxLength: 1000}
+        default: {type: string, description: "An option id of this question or `hold` - never silent."}
+        risk: {type: string, enum: [normal, low], description: "Defaults to `normal`."}
+
+    Answer:
+      description: |
+        One recorded answer, immutable. A changed mind is a new answer whose
+        `supersedes` names the replaced answer; superseded answers stay in the
+        log and are derived on read, never deleted. The quote is stored
+        exactly as received, with `quote_sha256` (the SHA-256 of its exact
+        bytes) recorded alongside.
+      type: object
+      required: [id, question_id, actor, surface, created_at]
+      properties:
+        id: {type: string}
+        question_id: {type: string}
+        actor: {type: string, description: "The answering party of record."}
+        surface: {type: string, description: "pwa, android, ios, cli, rest, mcp, or `comm:<channel name>`."}
+        chosen_option_id: {type: string, description: "Present when the answer picked an option."}
+        quote: {type: string, description: "The operator's own words, exactly as received. <= 16 KiB; empty when absent."}
+        quote_sha256: {type: string, description: "Lowercase hex SHA-256 of the quote's exact bytes; empty when there is no quote."}
+        supersedes: {type: string, description: "The id of the answer being replaced; present only on an answer that replaces another."}
+        source_message_id: {type: string, description: "Present when the answer came over a comm channel."}
+        created_at: {type: string, format: date-time}
+
+    AnswerView:
+      description: "An answer plus its derived superseded state, as returned by the answer log."
+      allOf:
+        - $ref: "#/components/schemas/Answer"
+        - type: object
+          properties:
+            superseded: {type: boolean, description: "True when a later answer in the log names this one as the one it replaces."}
+            superseded_by: {type: string, description: "The id of the answer that replaced it; present when superseded is true."}
+
+    QuestionAnswer:
+      description: "The POST /api/questions/{id}/answer body. At least one of chosen_option_id and a non-blank quote is required."
+      type: object
+      properties:
+        chosen_option_id: {type: string, description: "Must name an option of the question."}
+        quote: {type: string, description: "The operator's own words, stored exactly as received. <= 16384 bytes."}
+        supersedes: {type: string, description: "The id of the answer being replaced (the current answer of an answered question). On an open question a supersedes is a 409 — there is no current answer to replace."}
+        surface: {type: string, description: "pwa, android, ios, cli, rest, mcp, or `comm:<channel name>`. Defaults to `rest`; `system` is refused."}
+        source_message_id: {type: string}
+        actor: {type: string, description: "Defaults to the caller."}
+
+    QuestionWithdraw:
+      description: "The POST /api/questions/{id}/withdraw body. Both fields optional."
+      type: object
+      properties:
+        reason: {type: string, description: "Free text for the log."}
+        actor: {type: string, description: "Defaults to the caller."}
+
+    QuestionError:
+      description: "The error body of the JSON-answering question endpoints (answer, withdraw, answer log). A secret refusal is the same object with `reason` and `suggestion` added — see QuestionSecretRefusal."
+      type: object
+      required: [error]
+      properties:
+        error: {type: string, description: "A human-readable reason, e.g. `answer carries neither an option nor non-blank text`, `answer quote is not valid UTF-8`, `answer must name the answer it supersedes`, `answer supersedes the wrong target`, `question is not open`."}
+
+    QuestionSecretRefusal:
+      description: "The 422 body of POST /api/questions/{id}/answer when an answer's text looks like a secret. Nothing from the submitted text is echoed: `error` is a fixed phrase and `suggestion` the two fixed safe routes. The matched rule's name is not in this body — it is recorded on the `question_answer_refused` audit entry."
+      type: object
+      required: [error, reason, suggestion]
+      properties:
+        error:
+          type: string
+          description: "Fixed text containing the phrase `matched: secret pattern` and the two safe routes; it does not name the specific rule that matched."
+        reason:
+          type: string
+          enum: [secret_detected]
+          description: "Always `secret_detected`."
+        suggestion:
+          type: array
+          items: {type: string}
+          description: "The two safe routes: store the secret in the datawatch secrets store and refer to it as ${secret:name}; or save it on the filesystem and point the session at the file."

@@ -492,6 +492,10 @@ type Server struct {
 	// /api/autonomous/subscriptions. Wired from main.go alongside the
 	// subscription engine; nil (default) makes the handlers return 503.
 	autonomousSubs LifecycleSubscriptionsAPI
+	// questionStore — the operator question channel (raise + read)
+	// backing /api/questions. Wired from main.go alongside the daemon's
+	// data; nil (default) makes the handlers return 503.
+	questionStore QuestionsAPI
 	// mcp_queue sink read side for /api/autonomous/events; nil → 503.
 	autonomousEvents PendingEventsAPI
 	// BL427 phase 5 — receiving side of peer forwarding for
@@ -6184,6 +6188,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// rather than null. The field itself has no omitempty for the
 			// same reason (see config.AutonomousNotifyConfig).
 			"notify": defaultEventsNotifySurface(s.cfg.Autonomous.Notify),
+			// Operator-question switch. Always emitted (even when false) so
+			// the PWA settings card renders the field; the field has no
+			// omitempty for the same reason (see
+			// config.AutonomousQuestionsConfig). Surface key:
+			// autonomous.questions.enabled.
+			"questions": map[string]interface{}{
+				"enabled": s.cfg.Autonomous.Questions.Enabled,
+			},
 			"automation": map[string]interface{}{
 				"idle_alert_minutes":  s.cfg.Autonomous.Automation.IdleAlertMinutes,
 				"agent_insert_policy": s.cfg.Autonomous.Automation.EffectiveAgentInsertPolicy(),
@@ -6565,6 +6577,16 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if err := validateJudgeSizeThresholdPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	// Questions switch: autonomous.questions.enabled accepts only a JSON
+	// boolean. The CLI and the comm configure verb both send true/false as
+	// JSON literals, and a quoted string or number is not a boolean, so it
+	// rejects the whole PUT (400) rather than being stored.
+	if v, ok := patch["autonomous.questions.enabled"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			http.Error(w, "autonomous.questions.enabled: must be a boolean (true or false)", http.StatusBadRequest)
+			return
+		}
 	}
 	skipped := applyConfigPatch(s.cfg, patch)
 	// The shared tag registry follows its keeper and sync interval at runtime,
@@ -7967,6 +7989,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// webhook sink and peer forwarding read these live on every call,
 			// so no restart is needed.
 			applyLifecycleNotifyKey(&cfg.Autonomous.Notify, k, v)
+		case "autonomous.questions.enabled":
+			// Validated in handlePutConfig to a strict boolean (a non-boolean
+			// value 400s before reaching here). The /api/questions handlers
+			// read the live config on every call, so the change takes effect
+			// immediately with no daemon restart.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Questions.Enabled = b
+			}
 		case "autonomous.planning_effort", "autonomous.decomposition_effort":
 			cfg.Autonomous.PlanningEffort = toString(v)
 		case "autonomous.verification_effort":

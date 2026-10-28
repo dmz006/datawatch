@@ -4226,6 +4226,111 @@ under *Progress engine settings* in the backup section above and in
 
 ---
 
+## Operator questions
+
+A channel for the operator's own decisions that the Automata and the rest of the
+system should be able to point at: one operator question is one decision,
+recorded when it is raised and kept until it is answered or withdrawn — there
+is no deadline. Raising never blocks the asker. An answer is **immutable**: a
+changed mind is a new answer that supersedes the old one, and both stay in the
+log. The answer quote is stored exactly as received, with its SHA-256
+recorded alongside, so a decision can always be shown back word-for-word with
+proof of the bytes. API reference: [api/autonomous](api/autonomous.md#operator-question-channel).
+
+**Enabled by config.** Off by default behind `autonomous.questions.enabled`.
+All six endpoints answer `503` naming the switch while it is off; the switch
+is read live on every request, so `PUT /api/config` turns the channel on or
+off without a restart.
+
+**Body caps.** Raising: 64 KiB. Answer: 64 KiB plus a 16 KiB quote cap.
+
+**Secrets.** An answer whose text looks like a secret is refused `422`, is
+never stored, and the response never echoes any part of the submitted text —
+`error` is the fixed phrase `matched: secret pattern` (not the name of the
+specific rule that matched) and `suggestion` names the two safe routes (the
+datawatch secrets store via `${secret:name}`, or the filesystem). The matched
+rule's name goes into the `question_answer_refused` audit entry instead — and
+the submitted text goes nowhere (not the response, not the audit log, not any
+session log). Well-formed `${secret:name}` references pass the scan.
+
+**Six endpoints, four verbs + one switch.**
+
+| Endpoint | What it does |
+|---|---|
+| `POST /api/questions` | Raise a question: `text`, 2 to 20 options with unique ids, a `default` (an option or `hold`), a `context` (`none`, `prd`, `task`, `proposal`, `registry_row`) with its matching link; `asker_kind` defaults to `operator` |
+| `GET /api/questions` | List newest first: `?state=`, `?context=`, `?asker=` (exact on `asked_by`), `?text=` (case-insensitive substring over question text, option labels and tradeoffs, and answer quotes), `?limit=` (default 100, capped 1000) |
+| `GET /api/questions/{id}` | One question + `answer_count` + `current_answer_id` |
+| `POST /api/questions/{id}/answer` | Record an answer: `chosen_option_id` and/or a non-blank `quote`; `supersedes` for a changed mind; `surface` (`pwa`/`android`/`ios`/`cli`/`rest`/`mcp`/`comm:<channel>`), `source_message_id`, `actor` |
+| `POST /api/questions/{id}/withdraw` | Withdraw an open question (`reason`, `actor`); `409` when it has already moved on |
+| `GET /api/questions/{id}/answers` | The full answer log, oldest first, each answer with its derived superseded flags, plus `current_answer_id` |
+
+**The access methods.**
+
+| Task | YAML | REST | MCP | CLI / comm | PWA / Android / iOS |
+|---|---|---|---|---|---|
+| Toggle the channel | `autonomous.questions.enabled` | `PUT /api/config` | `config_set` (the generic config tool — wired; round-trip pinned in `internal/mcp/questions_config_surface_test.go`) | `datawatch config set autonomous.questions.enabled true\|false` (wired; round-trip pinned in `cmd/datawatch/questions_config_surface_test.go`); comm `configure autonomous.questions.enabled=true` (wired — the key is in the comm `configure` key set) | Settings → General toggle, labeled in all five locales (`settings_automata_questions_enabled`), round-trip covered by `internal/server/questions_settings_locale_test.go` |
+| Raise | n/a | `POST /api/questions` | deferred — no `question_raise` MCP tool yet | deferred — no CLI `ask` verb and no comm `ask` command yet | deferred — no raise form / queue view in the PWA or the companion apps yet |
+| List / read | n/a | `GET /api/questions`, `GET /api/questions/{id}` | deferred — no `list_questions` MCP tool yet | deferred — no CLI list verb yet | deferred — no queue view in the PWA or the companion apps yet |
+| Answer | n/a | `POST /api/questions/{id}/answer` | deferred — no `answer_question` MCP tool yet | deferred — no CLI `answer` verb and no comm `answer` command yet | deferred — no answer sheet in the PWA or the companion apps yet |
+| Withdraw | n/a | `POST /api/questions/{id}/withdraw` | deferred — no `withdraw_question` MCP tool yet | deferred — no CLI `retract` verb and no comm `retract` command yet | deferred — no queue view in the PWA or the companion apps yet |
+| Answer log | n/a | `GET /api/questions/{id}/answers` | deferred — no `list_answers` MCP tool yet | deferred — no CLI log verb yet | deferred — no queue view in the PWA or the companion apps yet |
+
+Deferral reasons, per AGENT.md's parity rule — every cell above states why it
+is deferred: the PWA / Android / iOS cells are the queue view (list, raise,
+answer, withdraw) that is not built in the PWA or the companion apps yet —
+tracked in [parity-status](parity-status.md); the MCP cells are the question
+tools (`question_raise`, `list_questions`, `answer_question`,
+`withdraw_question`, `list_answers`) that are not registered in the MCP
+server yet — tracked in [api-mcp-mapping](api-mcp-mapping.md#operator-questions);
+the CLI / comm cells are the `ask` / `answer` / `retract` verbs that are not
+added yet — with one exception already wired: the comm `configure`
+`autonomous.questions.enabled` key (see the Toggle row). Until those rows
+land, the channel is REST + Config.
+
+**Access control (federation).** Reads need the autonomous read capability
+(`autonomous:read`); raising, answering and withdrawing need the autonomous
+write capability (`autonomous:write`). A federated peer without the
+capability gets `403`; the capability rows are `fedCap` in the peer definition.
+
+**Storage.** One append-only JSON-lines file per host, `questions.jsonl` under
+the data directory (questions, answers and withdrawals as separate lines). It
+never loses or rewrites a line — superseded answers are derived on read from
+the log, not deleted. Back it up with the rest of the data directory.
+
+**Audit.** Every mutation is an audit event, all keyed on the question id and
+kept forever: `question_raised`; `question_answered` (the quote verbatim,
+with its SHA-256); `answer_superseded` (a later answer replaced an earlier
+one — both quotes kept verbatim); `question_withdrawn`; `question_expired`
+(a reserved state for external question sources that have deadlines — this
+channel has none, so it never fires here); and `question_answer_refused`
+(a secret refusal — the name of the matched rule only, never any part of the
+answer text). A crash or restart is recovered by replaying the append-only
+JSONL store, which is the store's own mechanism, not a separate audit entry.
+See the audit section of the API reference above.
+
+**Where to see it.**
+
+| Where | What |
+|---|---|
+| REST | The six endpoints above — every state, the whole answer log, the same JSON for every caller. |
+| Config | The one switch (`autonomous.questions.enabled`), via YAML, `PUT /api/config`, MCP `config_set` (round-trip pinned in `internal/mcp/questions_config_surface_test.go`), `datawatch config set` (round-trip pinned in `cmd/datawatch/questions_config_surface_test.go`), comm `configure`, or the PWA Settings → General toggle (all five locales). |
+| MCP / CLI / comm | The switch already works there: MCP `config_set`, `datawatch config set`, and comm `configure` (all on `autonomous.questions.enabled`). The question verbs and MCP tools — not yet; logged deferrals, same object when the rows land. |
+| Android and iOS | Not yet — the queue view (list, raise, answer) is not built in the companion apps yet. Tracked in [parity-status](parity-status.md) and [datawatch-app#283](https://github.com/dmz006/datawatch-app/issues/283). |
+
+**Monitoring (B7), n/a per item, with reasons.** This step's parity line is
+config + REST only (step 1 of the plan), so there is no channel `SystemStats`
+field, no `GET /api/<subsystem>/stats` endpoint for it, no channel stats MCP
+tool, no Monitor card, and no comm stats command. In the meantime, every
+mutation lands in the audit log under its question CEF action
+(`question_raised`, `question_answered`, `answer_superseded`,
+`question_withdrawn`, `question_answer_refused`), and queue and state counts
+are queryable through `GET /api/questions` with its `state`, `context`,
+`asker` and `limit` filters. The queue view, the surface verbs and the stats
+wiring follow in plan steps 2-3, and this is the reason recorded for
+deferring monitoring here.
+
+---
+
 ## Terminal Performance
 
 ### xterm.js load time

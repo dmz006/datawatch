@@ -4949,6 +4949,108 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "83. operator questions — /api/questions behind autonomous.questions.enabled"
+# REST-only round-trip on this script's own sandbox daemon (or the dedicated
+# DW_BASE sandbox), never production. Off by default: with the switch off every
+# endpoint is 503 and names the switch. The original switch value is read first
+# and restored at the end of the section. The throwaway question is answered
+# in 83.7, so the sandbox store holds no open smoke question afterwards.
+OQ_ORIG=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys
+try:
+  c=json.load(sys.stdin); print("true" if (c.get("autonomous",{}).get("questions",{}) or {}).get("enabled") else "false")
+except Exception:
+  print("")' 2>/dev/null || echo "")
+if [[ -z "$OQ_ORIG" ]]; then
+  skip "operator questions: GET /api/config unreadable, switch state unknown"
+else
+  oq_put() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d "{\"autonomous.questions.enabled\":$1}" "$BASE/api/config" 2>/dev/null || echo 000; }
+  oq_code() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$@" 2>/dev/null || echo 000; }
+
+  # 83.1 switch off: list and raise both 503 and the body names the switch
+  oq_put false >/dev/null
+  OQ_OFF_LIST=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/questions" 2>/dev/null || echo "")
+  OQ_OFF_POST=$(oq_code -X POST -H "Content-Type: application/json" -d '{}' "$BASE/api/questions")
+  if [[ "$(tail -n1 <<<"$OQ_OFF_LIST")" == "503" && "$OQ_OFF_POST" == "503" ]] && grep -q 'autonomous.questions.enabled' <<<"$OQ_OFF_LIST"; then
+    ok "questions: switch off -> GET and POST /api/questions are 503 naming autonomous.questions.enabled"
+  else
+    ko "questions: switch off did not 503 (list=$(tail -n1 <<<"$OQ_OFF_LIST") post=$OQ_OFF_POST)"
+  fi
+
+  # 83.2 a non-boolean value is refused and not stored
+  OQ_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.questions.enabled":"yes"}' "$BASE/api/config" 2>/dev/null || echo 000)
+  if [[ "$OQ_BAD" == "400" ]]; then
+    ok "questions: PUT /api/config with a non-boolean switch value rejected (400)"
+  else
+    ko "questions: non-boolean switch value not rejected (HTTP $OQ_BAD)"
+  fi
+
+  # 83.3 switch on: GET /api/config reads true, list is 200
+  OQ_ON_PUT=$(oq_put true)
+  OQ_ON_CFG=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("autonomous",{}).get("questions",{}).get("enabled"))' 2>/dev/null || echo "")
+  OQ_ON_LIST=$(oq_code "$BASE/api/questions")
+  if [[ "$OQ_ON_PUT" == "200" && "$OQ_ON_CFG" == "True" && "$OQ_ON_LIST" == "200" ]]; then
+    ok "questions: switch on reads back true and GET /api/questions is 200 (no restart)"
+  else
+    ko "questions: switch on (put=$OQ_ON_PUT cfg=$OQ_ON_CFG list=$OQ_ON_LIST)"
+  fi
+
+  # 83.4 raise, list, get
+  OQ_TAG="$$-$(date +%s)"
+  OQ_ID=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"label\":\"decision\",\"context\":\"none\",\"text\":\"smoke probe $OQ_TAG: cap retry backoff?\",\"options\":[{\"id\":\"yes\",\"label\":\"Yes\"},{\"id\":\"no\",\"label\":\"No\"}],\"default\":\"yes\",\"asked_by\":\"smoke\"}" \
+    "$BASE/api/questions" 2>/dev/null | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("question",{}).get("id",""))
+except Exception: print("")' 2>/dev/null || echo "")
+  if [[ -z "$OQ_ID" ]]; then
+    ko "questions: POST /api/questions returned no question id"
+  else
+    ok "questions: POST /api/questions raised a question ($OQ_ID)"
+    OQ_LISTED=$(curl "${curl_args[@]}" "$BASE/api/questions?state=open" 2>/dev/null | grep -c "$OQ_ID" || true)
+    OQ_GOT=$(oq_code "$BASE/api/questions/$OQ_ID")
+    if [[ "${OQ_LISTED:-0}" -ge 1 && "$OQ_GOT" == "200" ]]; then
+      ok "questions: raised question appears in GET /api/questions?state=open and GET /api/questions/{id} is 200"
+    else
+      ko "questions: raised question not readable (listed=$OQ_LISTED get=$OQ_GOT)"
+    fi
+
+    # 83.5 a malformed raise is a 400, an unknown id a 404
+    OQ_MAL=$(oq_code -X POST -H "Content-Type: application/json" -d '{"text":"no options"}' "$BASE/api/questions")
+    OQ_404=$(oq_code "$BASE/api/questions/q-does-not-exist-$OQ_TAG")
+    if [[ "$OQ_MAL" == "400" && "$OQ_404" == "404" ]]; then
+      ok "questions: malformed raise 400, unknown id 404"
+    else
+      ko "questions: validation statuses (malformed=$OQ_MAL unknown=$OQ_404)"
+    fi
+
+    # 83.6 an answer that looks like a secret is refused 422 and the question stays open
+    OQ_SEC=$(oq_code -X POST -H "Content-Type: application/json" -d '{"chosen_option_id":"yes","quote":"use AKIAIOSFODNN7EXAMPLE","surface":"cli"}' "$BASE/api/questions/$OQ_ID/answer")
+    OQ_STATE=$(curl "${curl_args[@]}" "$BASE/api/questions/$OQ_ID" 2>/dev/null | grep -c '"state":"open"' || true)
+    if [[ "$OQ_SEC" == "422" && "${OQ_STATE:-0}" -ge 1 ]]; then
+      ok "questions: secret-looking answer refused (422), question still open"
+    else
+      ko "questions: secret answer (HTTP $OQ_SEC, still open=$OQ_STATE)"
+    fi
+
+    # 83.7 a real answer is recorded (201) and shows in the answer log
+    OQ_ANS=$(oq_code -X POST -H "Content-Type: application/json" -d '{"chosen_option_id":"no","quote":"no, leave it uncapped","surface":"cli"}' "$BASE/api/questions/$OQ_ID/answer")
+    OQ_LOG=$(curl "${curl_args[@]}" "$BASE/api/questions/$OQ_ID/answers" 2>/dev/null | grep -c 'no, leave it uncapped' || true)
+    if [[ "$OQ_ANS" == "201" && "${OQ_LOG:-0}" -ge 1 ]]; then
+      ok "questions: answer recorded (201) and verbatim quote present in the answer log"
+    else
+      ko "questions: answer flow (HTTP $OQ_ANS, quote in log=$OQ_LOG)"
+    fi
+  fi
+
+  # 83.8 restore the original switch value; the section leaves no state behind
+  OQ_REST=$(oq_put "$OQ_ORIG")
+  if [[ "$OQ_REST" == "200" ]]; then
+    ok "questions: switch restored to $OQ_ORIG"
+  else
+    ko "questions: could not restore the switch (HTTP $OQ_REST)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

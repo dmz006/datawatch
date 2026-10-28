@@ -1867,6 +1867,268 @@ short.
 
 ---
 
+## Operator question channel
+
+An Automaton (or its session, supervisor or another operator) raises a
+decision to the operator, and the operator answers from whichever surface is
+immediately to hand. There is **one generic question record**; the kind of
+question is the `label`, not a different structure — the shipped labels are
+`decision`, `design review`, `approval` and `information`, but users may add
+their own. Questions are kept forever (no deadline, no TTL) and raise never
+blocks the questioner.
+
+**Off by default.** Every endpoint is gated on the switch
+`autonomous.questions.enabled` (see [operations](../operations.md#operator-questions)).
+While the switch is false, all six endpoints refuse with `503` and name the
+switch: `operator questions are disabled: set autonomous.questions.enabled
+to true`. The switch is read live on every request, so `PUT /api/config`
+turns the channel on or off without a restart. If the daemon cannot open the
+question store it answers `503 operator questions are not available`
+instead of serving an empty channel.
+
+### Endpoints
+
+```
+POST /api/questions               raise a question                     (autonomous:write)
+GET  /api/questions               list, filters newest first           (autonomous:read)
+GET  /api/questions/{id}         one question + answer metadata       (autonomous:read)
+POST /api/questions/{id}/answer  record an answer                     (autonomous:write)
+POST /api/questions/{id}/withdraw  withdraw an open question          (autonomous:write)
+GET  /api/questions/{id}/answers  the answer log, oldest first        (autonomous:read)
+```
+
+Auth and capabilities follow the other `/api/autonomous` routes: the local
+admin caller passes as always; a federation peer needs **`autonomous:read`**
+for the three reads and **`autonomous:write`** for raise, answer and
+withdraw (a missing capability is a `403`). Answering needs only the write
+capability — an operator authorized for the Automaton may answer from
+any communication channel, and there is no separate answering capability.
+
+Common to every endpoint: `405` for a method other than the one shaped for
+the path (the shape is learnable only through its real method), `503` while
+the switch is off, and `404` both for an unknown question id and for any
+path below one that is not one of the three named sub-paths (`/answer`,
+`/withdraw`, `/answers`) — a fixed "not here", the same for every method,
+so no client learns a false endpoint shape.
+
+### Raise — `POST /api/questions`
+
+```bash
+curl -sX POST http://localhost:7433/api/questions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "label": "decision",
+    "context": "task",
+    "task_id": "a1b2c3d4",
+    "text": "Which migration strategy for the users table?",
+    "options": [
+      {"id": "online",  "label": "online migration", "tradeoffs": "slow, zero downtime"},
+      {"id": "offline", "label": "offline migration", "tradeoffs": "fast, 10 min downtime window"}
+    ],
+    "default": "hold",
+    "recommendation": {"option_id": "online", "rationale": "the site is live 24/7"},
+    "asked_by": "session:9f8e",
+    "asker_kind": "session"
+  }'
+```
+
+201 with `{"question": {…}}`. Body caps and rules:
+
+| Field | Rule |
+|---|---|
+| `text` | required, ≤ 8192 bytes; whitespace-only is rejected |
+| `label` | ≤ 64 characters, no control characters; empty defaults to `decision` |
+| `options` | 2 to 20; unique non-empty `id` and `label` (label ≤ 200 bytes); `tradeoffs` ≤ 1000 bytes |
+| `default` | required — either an option id of this question or the word `hold`, so no choice is ever silent |
+| `recommendation` | optional; `option_id` must exist among the options; `rationale` ≤ 1000 bytes |
+| `risk` | `"normal"` (default) or `"low"` |
+| `context` | one of `none`, `prd`, `task`, `proposal`, `registry_row`; the matching link is required (`prd_id`, `task_id`, `proposal_path`, `registry_row_key`) and `none` must carry none of them. A proposal path, wherever given, must be repository-relative (no leading `/`, no `..` segment) |
+| `asker_kind` | `session`, `supervisor`, `operator` or `system`; empty defaults to `operator` |
+| `asked_by` | the asker of record; empty defaults to the caller (the audit actor) |
+
+The full body is capped at 64 KiB (`413` when exceeded, refused before the
+read runs to the end), and content after the JSON object is a `400` — a
+double-encoded or duplicated body is malformed, not silently ignored.
+Validation refusals are a `400` that names every offending field, and none of
+it is stored.
+
+### List — `GET /api/questions`
+
+200 with `{"count": N, "questions": [ … ]}`, newest first (`questions` is
+`[]`, never null, when nothing matches).
+
+| Parameter | Values |
+|---|---|
+| `state` | `open`, `answered`, `withdrawn`, `expired` or `all` (default: all) |
+| `context` | `none`, `prd`, `task`, `proposal`, `registry_row` or `all` (default: all) |
+| `asker` | exact match on `asked_by` |
+| `text` | case-insensitive substring over the question text, the option labels and tradeoffs, and the answer quotes |
+| `limit` | positive integer; default 100, silently capped at 1000 |
+
+An unknown `state` or `context` is a `400` naming the value; a `limit`
+that is not a positive integer is a `400` (`limit must be a positive
+integer`). Both are plain-text bodies — see the note under **Status codes**.
+
+### One question — `GET /api/questions/{id}`
+
+200 with the question record plus the metadata a caller needs to display
+"answered, N times" in the same read:
+
+```json
+{
+  "question": { "id": "q1", "state": "answered", "…": "…" },
+  "answer_count": 3,
+  "current_answer_id": "a3"
+}
+```
+
+`answer_count` is every answer ever recorded — superseded ones included, they
+are decided and never deleted — and `current_answer_id` is the id of the
+answer in force (empty when there is none). The full answer log, with text,
+is the answers read below. `404` for an unknown id.
+
+### Answer — `POST /api/questions/{id}/answer`
+
+```bash
+curl -sX POST http://localhost:7433/api/questions/q1/answer \
+  -H "Content-Type: application/json" \
+  -d '{"chosen_option_id": "online", "quote": "online, and schedule it for the next low-traffic window", "actor": "operator", "surface": "cli"}'
+```
+
+201 with `{"answer": {…}, "question": {…}}` — the stored answer (including
+`quote_sha256`) and the question's new state.
+
+| Field | Rule |
+|---|---|
+| `chosen_option_id` | must name an option of the question; at least one of this or a non-blank `quote` is required |
+| `quote` | the operator's own words, stored exactly as received — no trimming, normalising or re-encoding; ≤ 16384 bytes; must be valid UTF-8 (a byte string that decodes to nothing is a `400`, `answer quote is not valid UTF-8`, before anything is stored) |
+| `supersedes` | the id of the answer being replaced (see "Changed minds" below) |
+| `surface` | `pwa`, `android`, `ios`, `cli`, `rest`, `mcp` or `comm:<channel name>`; empty defaults to `rest`; anything else (including `system`) is a `400` naming the accepted set |
+| `source_message_id` | the message that carried the answer, when it came over a comm channel |
+| `actor` | the answering party of record; empty defaults to the caller (the audit actor) |
+
+**Quotes and the SHA-256.** The store records the `quote_sha256`, the
+lowercase hex SHA-256 of the exact bytes of the quote, so any later copy of a
+stored quote can be checked against the record. The quote itself is never
+derived, trimmed or altered.
+
+**Secret refusal.** An answer whose text matches a secret pattern (private
+keys, cloud key ids and secret keys, provider tokens, `sk-` keys, bearer
+tokens, `password=/token=/…` assignments, …) is **refused with `422`, never
+stored, and the response never echoes any part of the submitted text** —
+`error` is the fixed phrase `matched: secret pattern` (*not* the name of
+the specific rule that matched) and `suggestion` lists the two safe routes;
+the matched rule's name goes to the audit entry instead:
+
+```json
+{
+  "error": "Your answer was not stored because it looks like a secret (matched: secret pattern). Resend it without the secret. Two safe routes: store the secret in the datawatch secrets store and refer to it by name as ${secret:name}, or save it on the filesystem and point the session to the file.",
+  "reason": "secret_detected",
+  "suggestion": [
+    "store it in the datawatch secrets store and refer to it as ${secret:name}",
+    "save it on the filesystem and point the session to the file"
+  ]
+}
+```
+
+Well-formed `${secret:name}` references are references, not secrets, and pass
+the scan. The refusal is itself audited (event `question_answer_refused`)
+with the matched rule's name only — never with the answer's text, so a
+rejected secret leaves no copy of it in the log.
+
+### Withdraw — `POST /api/questions/{id}/withdraw`
+
+```bash
+curl -sX POST http://localhost:7433/api/questions/q1/withdraw \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "superseded by the new plan", "actor": "operator"}'
+```
+
+200 with `{"question": {…}}` in its new state. `reason` and `actor` are both
+optional; `actor` defaults to the caller. Withdrawing works only while the
+question is still `open`; withdrawing one that has already moved on is a
+`409` (the message names the state).
+
+### Answer log — `GET /api/questions/{id}/answers`
+
+200 with the full log, oldest first, each answer carrying its derived
+superseded state plus the answer in force:
+
+```json
+{
+  "answers": [
+    {"id": "a1", "question_id": "q1", "quote": "offline is fine", "superseded": true, "superseded_by": "a2", "…": "…"},
+    {"id": "a2", "question_id": "q1", "quote": "actually online", "chosen_option_id": "online", "superseded": false, "…": "…"}
+  ],
+  "current_answer_id": "a2"
+}
+```
+
+`superseded` / `superseded_by` are derived on read from the log — the answer
+lines themselves never change (see below). `404` for an unknown id.
+
+### States, immutability and changed minds
+
+A question moves `open` → `answered` or `open` → `withdrawn`; `expired` is
+the fourth state, terminal like the other two. `open` and `answered` are the
+only states that accept answers; a withdrawn question accepts none.
+
+- **Questions and answers are immutable.** The record is append-only (JSON
+  lines in `<data_dir>/questions.jsonl`); superseded answers are derived on
+  read, and nothing is ever edited or deleted. There is no TTL and no
+  expiry job — a question stays until it is answered or withdrawn.
+- **A changed mind is a new answer, not an edit.** An open question accepts
+  only an answer with no `supersedes` (carrying one is a `409` — the open
+  question has no current answer to replace, so the target is wrong), and
+  an answered question accepts only an answer whose `supersedes` names its
+  current answer — a target that is absent or different is a `409` naming
+  the answer ids. The new
+  answer becomes current; the old one stays in the log, marked superseded.
+- **No choice is silent.** A raised question must name a `default` — an
+  option or `hold` — so automation that walks past an unanswered question
+  has one declared default to act on.
+- **Raise never blocks.** Raising records the question and returns; the
+  asking side keeps running until it is answered (or the declared default is
+  honored).
+
+### Status codes
+
+| Code | When |
+|---|---|
+| 200 | list, by-id get, withdraw, answer log |
+| 201 | raise (`{question}`); answer (`{answer, question}`) |
+| 400 | malformed body (bad JSON, content after the object); a validation rule failed (every offending field named); an unknown `surface` on an answer; an answer that carries neither option nor non-blank quote; an option id the question does not have; a quote that is not valid UTF-8 (`answer quote is not valid UTF-8`); an unknown `state` / `context` filter (the value named); a `limit` that is not a positive integer (`limit must be a positive integer`) |
+| 403 | a federation peer without the capability the action needs |
+| 404 | an unknown question id; any sub-path of a question that is not /answer, /withdraw or /answers |
+| 405 | a method other than the one shaped for the path |
+| 409 | answering a withdrawn or expired question; an answer on an open question that names a supersedes (no current answer to replace); an answer on an answered question whose supersedes is absent or wrong (the answer ids named); withdrawing a question that is not open |
+| 413 | a raise or withdraw body over 64 KiB; an answer body over 64 KiB plus the quote cap; a quote over 16384 bytes |
+| 422 | an answer looks like a secret (see "Secret refusal" above) — never stored, never echoed; the body carries the fixed phrase `matched: secret pattern`, not the rule name, plus the `suggestion` routes |
+| 500 | the store could not append or replay an otherwise-valid write |
+| 503 | the `autonomous.questions.enabled` switch is off (named in the message), or the store is not wired |
+
+**Error body shape — one deliberate split, plan for it.** Raise and list
+failures come back **plain text** — the message only, no JSON wrapper (e.g.
+`limit must be a positive integer`, `options must have 2 to 20 items`).
+Answer, withdraw and the answer-log failures come back as a **JSON object
+with one `error` field** (e.g. `answer carries neither an option nor
+non-blank text`, `answer must name the answer it supersedes`, `answer
+supersedes the wrong target`, `question is not open`). A secret refusal uses that same object with `reason`
+(`secret_detected`) and `suggestion` added. `403`, `404`, `405` and `503`
+are plain text on every endpoint. Parse `Content-Type`, not the path.
+
+### Audit
+
+Each action writes an audit entry with the question's ids, the actor of
+record and the fields needed to reconstruct the decision:
+`question_raised`, `question_answered` (the quote **kept verbatim**, exactly
+as that operator wrote it), `question_withdrawn`, `question_expired`,
+`answer_superseded` when a supersede lands (the replacing answer's quote
+kept), and `question_answer_refused` for a secret refusal — the matched
+rule's name only, never the text.
+
+---
+
 ## Storage
 
 Each PRD's full state is persisted as JSON-lines under
