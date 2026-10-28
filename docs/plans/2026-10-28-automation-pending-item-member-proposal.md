@@ -18,6 +18,10 @@ An Automation member must be an existing PRD (`validateAutomationOwnership`: "me
 
 **C. Both.** B for rows that are ready to be specified, A for rows that are still waiting on a design decision.
 
+## Answers so far
+
+Q1, operator, 2026-10-28, quoted: "C and it's things are held or blocked how do w get them moving and closed?" — option C (both). Q2 and Q3 are still open, so `Confirmed: no` stays until they are answered.
+
 ## Open questions for the operator
 
 1. A, B or C?
