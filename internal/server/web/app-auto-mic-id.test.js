@@ -1,6 +1,6 @@
 // Auto-attached mic buttons give an id-less textarea a DOM id. That id is a UI
 // identifier only, so it comes from a module-level counter and must never touch
-// Math.random (CodeQL js/insecure-randomness, alert 714).
+// Math.random (the insecure-randomness rule).
 // Tests _autoMicTextareaId and the autoAttachMics call site.
 
 const test = require('node:test');

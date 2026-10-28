@@ -105,7 +105,7 @@ env -u TMUX -u TMUX_TMPDIR $CODEQL database analyze .datawatch/codeql/db/go code
 env -u TMUX -u TMUX_TMPDIR $CODEQL database analyze .datawatch/codeql/db/javascript-typescript codeql/javascript-queries:codeql-suites/javascript-code-scanning.qls --format=sarifv2.1.0 --output=.datawatch/codeql/out-r3/javascript-typescript.sarif
 ```
 
-All four commands exited 0 (Go database about 50 s; JavaScript/TypeScript database and both analyses about 108 s together). The two SARIF files were then compared with `.datawatch/codeql/baseline-r3/` by reducing each result to its rule, file and start line (`python3 -I`, `runs[0].results[].locations[0].physicalLocation`).
+Both databases were rebuilt after the last fix commit, and both analyses wrote their SARIF file to `out-r3/`. The two SARIF files were then compared with `.datawatch/codeql/baseline-r3/` by reducing each result to its rule, file and start line (`python3 -I`, `runs[0].results[].locations[0].physicalLocation`).
 
 ### Before and after
 
@@ -126,10 +126,16 @@ The Go difference is exactly the two triples above. The JavaScript/TypeScript di
 
 ### Triples not in the baseline
 
-One triple in the after-scan is not literally in the baseline: `js/xss-through-dom` at `internal/server/web/app.js:10893`. It is the baseline triple at `app.js:10882` moved down by 11 lines, not a new finding. The fix for 714 added 11 lines above it (`git diff 3bd9b1c95 HEAD -U0 -- internal/server/web/app.js` shows a hunk of 11 added lines at 7204 and a one-line change at 7245/7256), and both lines hold the same statement, `fBody.innerHTML = html;`. The other `js/xss-through-dom` result (`app.js:141`) sits above the edit and did not move. Every Go triple of the after-scan is in the baseline at the same line. Allowing for that one shift, the scan has no rule/file/line triple that was not in the baseline.
+Compared literally, the after-scan has **one rule/file/line triple that is not in the baseline**: `js/xss-through-dom` at `internal/server/web/app.js:10893`. The baseline has the same rule and file at line 10882, and that triple is absent from the after-scan. The task asked for no triple outside the baseline, so this is a difference to report, and the operator decides whether to accept it.
 
-The rest of the whole-scan list is unchanged: it still includes alerts GitHub has dismissed (see the result section above), which a local run cannot know about.
+The evidence that it is a line shift and not a new finding:
+
+- The fix for 714 added 11 lines above it (`git diff 3bd9b1c95 HEAD -U0 -- internal/server/web/app.js` shows a hunk of 11 added lines at 7204 and a one-line change at 7245/7256).
+- Both lines hold the same statement, `fBody.innerHTML = html;`, and the result count for the rule is unchanged (2 before, 2 after).
+- The other `js/xss-through-dom` result (`app.js:141`) sits above the edit and did not move.
+
+No Go triple is new: every Go triple of the after-scan is in the baseline at the same line. The rest of the whole-scan list is unchanged: it still includes alerts GitHub has dismissed (see the result section above), which a local run cannot know about.
 
 ### Result
 
-The three alerts 661, 714 and 715 no longer appear in a fresh local scan with the default suites, and no new finding appeared. GitHub's default-setup scan runs only after a merge to `main`, so the three stay listed as open on GitHub until that scan has run; they are expected to close then.
+The three alerts 661, 714 and 715 no longer appear in a fresh local scan with the default suites. One result moved line (`js/xss-through-dom`, `app.js:10882` to `app.js:10893`, an 11-line shift caused by the fix for 714), so the scan is not triple-for-triple a subset of the baseline; this is the only difference and it needs the operator's acceptance. GitHub's default-setup scan runs only after a merge to `main`, so the three stay listed as open on GitHub until that scan has run; they are expected to close then.

@@ -10,7 +10,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Subprocess sessions start through a fixed program.** A `!cmd` session is now launched by re-running the daemon's own helper with a validated argument list instead of a `bash -c` wrapper, so the launch path no longer builds a shell command line from the task (CodeQL `go/command-injection`).
 - **The MCP debug transport escapes what it echoes.** Every event-stream response is pinned to `X-Content-Type-Options: nosniff`, and a payload whose type is missing or HTML is escaped (CodeQL `go/reflected-xss`).
 - **Dictation fields get plain counter ids.** The microphone button added to a textarea without an id no longer builds that id from `Math.random()`; it is only a page element id, so a counter is enough (CodeQL `js/insecure-randomness`).
-- **Checked with a fresh local scan.** Rebuilding both CodeQL databases and re-running the default code-scanning suites no longer reports these three results and adds none. See [the local reproduction plan](docs/plans/2026-10-27-codeql-local-reproduction.md#round-3-alerts-661-714-715).
+- **Checked with a fresh local scan.** Rebuilding both CodeQL databases and re-running the default code-scanning suites no longer reports these three results. One unrelated existing `js/xss-through-dom` result only moved from line 10882 to 10893 of `app.js` because of the added lines; the plan records it for the operator to accept. See [the local reproduction plan](docs/plans/2026-10-27-codeql-local-reproduction.md#round-3-alerts-661-714-715).
 
 ### Plan check flags write tasks that declare no files
 
