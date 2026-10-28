@@ -552,6 +552,26 @@ signal:
 
 ---
 
+### Usage calculator
+
+The usage calculator advises how many lanes the weekly provider allowance can
+carry. It never stops or slows a lane. Keys live under `usage.calculator.`;
+`usage.calculator.variant` (`all` by default, or `pace-gauge`, `lane-planner`, `burn-ledger`),
+`policy`, `safety_points` (default 5), `cost_per_task_points`, `baseline_per_24h`,
+`max_lanes`, `reset_weekday`, `reset_time`, `reset_zone` (a zone name, never a
+fixed offset) and `keeper` (the federation peer that keeps the shared
+readings). Settings apply without a restart.
+
+| Method | How |
+|--------|-----|
+| **YAML config** | `usage.calculator.*` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch config set usage.calculator.<key> <value>`; `datawatch usage advice` |
+| **Web UI** | The calculator screen and its Settings fields (not yet shipped; use another method) |
+| **REST API** | `PUT /api/config` with `{"usage.calculator.<key>": value}`; `GET /api/usage/advice` |
+| **Comm channel** | `configure usage.calculator.<key>=<value>`; `usage advice` |
+
+See [howto/usage-calculator.md](howto/usage-calculator.md).
+
 ### Verifier node limit
 
 Verifier runs take a lease on the same node pool as the worker they check, and a compute node that hosts a local engine gets its pool limit from its slot count (see "Compute-node queue" below), which is the node's `session_slots` when set, otherwise one slot per GPU when the observer reports GPU data and `autonomous.max_engines_per_node` (default 1) when it does not, capped by the compute node's own `max_concurrent_sessions` when that is smaller (see `syncPools` in `cmd/datawatch/capacity_wiring.go`). A node that hosts no local engine keeps its `max_concurrent_sessions` limit. A node with one GPU therefore runs one verifier at a time, and a verification can queue behind another task's lease.
