@@ -53,7 +53,10 @@ func TestSubprocessSurvivesDaemonRestart(t *testing.T) {
 
 	// Start the task the way runSubprocess does, but do not wait for it:
 	// that is the state a daemon leaves behind when it is killed.
-	cmd := subprocessCommand(sess)
+	cmd, err := subprocessCommand(sess)
+	if err != nil {
+		t.Fatalf("subprocessCommand: %v", err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -118,15 +121,23 @@ func TestSubprocessGoneWithoutStatusIsNotReattached(t *testing.T) {
 	}
 }
 
-// subprocessCommand passes the task as one argument of the bash wrapper, so
-// the daemon's later cmdline comparison finds it, and keeps it a shell command.
+// subprocessCommand starts the fixed helper with the rc-file path and the task
+// as separate argv entries and no shell, so the daemon's later cmdline
+// comparison finds the task, and the task stays a single argument.
 func TestSubprocessCommandConstruction(t *testing.T) {
 	m := newTestManager(t)
 	task := "echo one; echo two && exit 3"
 	sess := newDetachedSubprocess(t, m, task)
-	cmd := subprocessCommand(sess)
+	cmd, err := subprocessCommand(sess)
+	if err != nil {
+		t.Fatalf("subprocessCommand: %v", err)
+	}
 
-	want := []string{"bash", "-c", subprocessWrapper, "bash", task, subprocessFile(sess, subprocessRCFile)}
+	exe, err := subprocessHelperExe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{exe, subprocessHelperArg, subprocessFile(sess, subprocessRCFile), "--", task}
 	if len(cmd.Args) != len(want) {
 		t.Fatalf("args = %q, want %q", cmd.Args, want)
 	}
@@ -135,17 +146,23 @@ func TestSubprocessCommandConstruction(t *testing.T) {
 			t.Errorf("arg %d = %q, want %q", i, cmd.Args[i], want[i])
 		}
 	}
+	if cmd.Path != exe {
+		t.Errorf("Path = %q, want %q", cmd.Path, exe)
+	}
 	if cmd.Dir != sess.ProjectDir {
 		t.Errorf("Dir = %q, want %q", cmd.Dir, sess.ProjectDir)
 	}
 }
 
 // The task keeps full shell semantics (lists, && and exit status) and the
-// wrapper records the status.
+// helper records the status.
 func TestSubprocessCommandRunsTaskAsShell(t *testing.T) {
 	m := newTestManager(t)
 	sess := newDetachedSubprocess(t, m, "echo one; echo two && exit 3")
-	cmd := subprocessCommand(sess)
+	cmd, err := subprocessCommand(sess)
+	if err != nil {
+		t.Fatalf("subprocessCommand: %v", err)
+	}
 	out, err := cmd.Output()
 	var ee *exec.ExitError
 	if !errors.As(err, &ee) || ee.ExitCode() != 3 {

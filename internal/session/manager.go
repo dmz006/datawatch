@@ -3737,9 +3737,10 @@ func (m *Manager) MarkInputSent(fullID string) {
 	m.mu.Unlock()
 }
 
-// runSubprocess executes sess.Task as a child process via bash -c,
-// streaming stdout+stderr to the session log file. Transitions to
-// StateComplete on exit 0, StateFailed on non-zero exit or error.
+// runSubprocess executes sess.Task as a shell command through the fixed
+// helper (see subprocessCommand), streaming stdout+stderr to the session log
+// file. Transitions to StateComplete on exit 0, StateFailed on non-zero exit
+// or error.
 // subprocessEnv (GH#204 Phase 1) builds the child environment for a
 // subprocess session: the daemon's own environment plus the session's
 // identity (DATAWATCH_SESSION_ID) and base URL (DATAWATCH_BASE_URL), and —
@@ -3774,7 +3775,12 @@ func (m *Manager) runSubprocess(sess *Session) {
 
 	_, _ = fmt.Fprintf(f, "[subprocess] task: %s\n[subprocess] dir: %s\n", sess.Task, sess.ProjectDir)
 
-	cmd := subprocessCommand(sess)
+	cmd, err := subprocessCommand(sess)
+	if err != nil {
+		_, _ = fmt.Fprintf(f, "\n[subprocess] refused: %v\n", err)
+		m.subprocessFinish(sess, err)
+		return
+	}
 	// GH#204 Phase 1 — identity + scope the job's result-posting credential.
 	cmd.Env = m.subprocessEnv(sess)
 	cmd.Stdout = f

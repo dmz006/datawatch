@@ -2,6 +2,7 @@ package session
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,23 +12,20 @@ import (
 	"time"
 )
 
-// Subprocess sessions (BL462 F4) run `bash -c <task>` outside tmux. When the
-// daemon restarts, the child keeps running and keeps writing to its log file,
-// so the boot path must not declare it failed while it is still alive. Two
-// small files in the session directory let a new daemon generation find it:
+// Subprocess sessions (BL462 F4) run the task as a shell command outside tmux,
+// through the fixed helper in subprocess_helper.go. When the daemon restarts,
+// the child keeps running and keeps writing to its log file, so the boot path
+// must not declare it failed while it is still alive. Two small files in the
+// session directory let a new daemon generation find it:
 //
-//   - subprocess.pid: the pid of the wrapper shell, written at start.
-//   - subprocess.rc:  the task's exit status, written by the wrapper when the
+//   - subprocess.pid: the pid of the helper process, written at start.
+//   - subprocess.rc:  the task's exit status, written by the helper when the
 //     task ends. It survives a daemon restart, so an exit can still be
 //     recorded after the goroutine that would have seen it is gone.
 
 const (
 	subprocessPIDFile = "subprocess.pid"
 	subprocessRCFile  = "subprocess.rc"
-	// subprocessWrapper runs the task as a child of the recorded shell and
-	// writes its exit status to a file, so the status is known even after
-	// the daemon that started it has exited.
-	subprocessWrapper = `bash -c "$1"; rc=$?; echo "$rc" > "$2"; exit "$rc"`
 	// subprocessWatchInterval is how often a re-attached waiter polls the pid.
 	subprocessWatchInterval = 2 * time.Second
 )
@@ -36,11 +34,52 @@ func subprocessFile(sess *Session, name string) string {
 	return filepath.Join(filepath.Dir(sess.LogFile), name)
 }
 
-// subprocessCommand builds the wrapped command for a subprocess session.
-func subprocessCommand(sess *Session) *exec.Cmd {
-	cmd := exec.Command("bash", "-c", subprocessWrapper, "bash", sess.Task, subprocessFile(sess, subprocessRCFile))
+// subprocessCommand builds the command for a subprocess session: this binary
+// re-executed as the helper, with the rc-file path and the task as separate
+// argv entries and no shell in between. Every value is validated first; on any
+// invalid input no command is returned, so nothing runs.
+//
+// The helper's command line is <exe> __subprocess-run <rc-file> -- <task>, so
+// subprocessAlive can still find the task in /proc/<pid>/cmdline.
+func subprocessCommand(sess *Session) (*exec.Cmd, error) {
+	if err := validateSubprocessTask(sess.Task); err != nil {
+		return nil, err
+	}
+	if strings.ContainsRune(sess.ProjectDir, 0) {
+		return nil, errors.New("subprocess project dir contains a NUL byte")
+	}
+	rcFile, err := subprocessRCPath(sess)
+	if err != nil {
+		return nil, err
+	}
+	exe, err := subprocessHelperExe()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(exe, subprocessHelperArg, rcFile, "--", sess.Task)
 	cmd.Dir = sess.ProjectDir
-	return cmd
+	return cmd, nil
+}
+
+// subprocessRCPath returns the absolute rc-file path for sess and checks that
+// it lies directly inside the session directory (the log file's directory).
+func subprocessRCPath(sess *Session) (string, error) {
+	if sess.LogFile == "" || strings.ContainsRune(sess.LogFile, 0) {
+		return "", errors.New("subprocess session has no valid log file")
+	}
+	// Absolute, because the helper runs in the project dir, not the daemon's.
+	dir, err := filepath.Abs(filepath.Dir(sess.LogFile))
+	if err != nil {
+		return "", fmt.Errorf("resolve session dir: %w", err)
+	}
+	rcFile := filepath.Join(dir, subprocessRCFile)
+	if rel, err := filepath.Rel(dir, rcFile); err != nil || rel != subprocessRCFile {
+		return "", fmt.Errorf("subprocess rc path %q is outside the session dir", rcFile)
+	}
+	if err := validateSubprocessRCPath(rcFile); err != nil {
+		return "", err
+	}
+	return rcFile, nil
 }
 
 // subprocessAlive reports whether pid is still running the session's task.
