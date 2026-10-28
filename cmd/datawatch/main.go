@@ -4635,7 +4635,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// a looping warning when the identical tool call keeps
 						// repeating across polls.
 						if waitTick%10 == 0 && task.SessionID != "" { // 10 ticks ≈ 30s at the default 3s tick
-							snap, loopWarn, finding, looping := refreshTaskProgress(s, taskDir)
+							snap, loopWarn, finding, looping := refreshTaskProgress(s, taskDir, config.LoopDetectTurnsEffective(cfg.Autonomous.LoopDetectTurns))
 							// A live loop finding (loop_detect.go over the session log's
 							// recent turns) supersedes the coarser streak-based warning
 							// for what is recorded on the task: it names the announced

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/pilog"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -62,7 +63,7 @@ func TestRefreshTaskProgress_LoopingLogYieldsFinding(t *testing.T) {
 	)
 
 	s := &session.Session{ID: "abcd", FullID: "host-loop1", CreatedAt: started, ProjectDir: workDir}
-	snap, warn, finding, looping := refreshTaskProgress(s, workDir)
+	snap, warn, finding, looping := refreshTaskProgress(s, workDir, config.LoopDetectTurnsEffective(nil))
 
 	if snap == nil {
 		t.Fatal("refreshTaskProgress returned no snapshot for a readable pi log")
@@ -97,7 +98,7 @@ func TestRefreshTaskProgress_ActioningLogYieldsNoFinding(t *testing.T) {
 	)
 
 	s := &session.Session{ID: "abcd", FullID: "host-act1", CreatedAt: started, ProjectDir: workDir}
-	_, _, finding, looping := refreshTaskProgress(s, workDir)
+	_, _, finding, looping := refreshTaskProgress(s, workDir, config.LoopDetectTurnsEffective(nil))
 	if looping {
 		t.Fatalf("looping = true for an acting worker: %+v", finding)
 	}
@@ -134,5 +135,72 @@ func TestRefreshTaskProgress_DetectionOffYieldsNoFinding(t *testing.T) {
 	}
 	if okOff {
 		t.Fatal("with the window off (0) no finding may fire — no rescue action")
+	}
+}
+
+func TestRefreshTaskProgress_ZeroWindowDisablesDetection(t *testing.T) {
+	// autonomous.loop_detect_turns = 0 → the poll passes 0 through and the
+	// whole Detect half is skipped (not even the log turns are read), so a
+	// looping log yields no finding and no rescue action fires.
+	root := t.TempDir()
+	t.Setenv("PI_CODING_AGENT_DIR", root)
+	workDir := filepath.Join(t.TempDir(), "taskzero")
+	started := time.Date(2026, 10, 27, 14, 0, 0, 0, time.UTC)
+	writePiLogLines(t, root, workDir, started,
+		assistantText(`Let me create the test file.`),
+		assistantText(`I will now write the implementation.`),
+		assistantText(`Next, I'll create the remaining file.`),
+	)
+
+	s := &session.Session{ID: "abcd", FullID: "host-zero1", CreatedAt: started, ProjectDir: workDir}
+	_, _, finding, looping := refreshTaskProgress(s, workDir, 0)
+	if looping {
+		t.Fatalf("looping = true with window 0: %+v", finding)
+	}
+	if finding.Action != "" {
+		t.Fatalf("finding = %+v, want zero finding with window 0", finding)
+	}
+	// The snapshot itself must still be produced — 0 disables the detector
+	// only, not progress visibility.
+	snap, _, _, _ := refreshTaskProgress(s, workDir, 0)
+	if snap == nil {
+		t.Fatal("zero-window refresh must still return a progress snapshot")
+	}
+}
+
+func TestLoopDetectTurnsEffective(t *testing.T) {
+	if got := config.LoopDetectTurnsEffective(nil); got != 3 {
+		t.Errorf("unset (nil) → %d, want default 3", got)
+	}
+	z := 0
+	if got := config.LoopDetectTurnsEffective(&z); got != 0 {
+		t.Errorf("0 → %d, want 0 (explicit off must not be treated as unset)", got)
+	}
+	n := 7
+	if got := config.LoopDetectTurnsEffective(&n); got != 7 {
+		t.Errorf("7 → %d, want 7", got)
+	}
+	neg := -2
+	if err := config.ValidateLoopDetectTurns(&neg); err == nil {
+		t.Error("negative must be rejected")
+	}
+	if err := config.ValidateLoopDetectTurns(&z); err != nil {
+		t.Errorf("zero must be allowed: %v", err)
+	}
+	if err := config.ValidateLoopDetectTurns(nil); err != nil {
+		t.Errorf("nil (unset) must be allowed: %v", err)
+	}
+}
+
+func TestValidatePiThinkingLevel(t *testing.T) {
+	for _, l := range []string{"", "off", "minimal", "low", "medium", "high"} {
+		if err := config.ValidatePiThinkingLevel(l); err != nil {
+			t.Errorf("%q must be accepted: %v", l, err)
+		}
+	}
+	for _, l := range []string{"ultra", "OFF", " xhigh", "deep", "xhigh"} {
+		if err := config.ValidatePiThinkingLevel(l); err == nil {
+			t.Errorf("%q must be rejected", l)
+		}
 	}
 }

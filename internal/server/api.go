@@ -5503,13 +5503,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"input_mode":   s.cfg.Aider.InputMode,
 		},
 		"pi": map[string]interface{}{
-			"enabled":      s.cfg.Pi.Enabled,
-			"binary":       s.cfg.Pi.Binary,
-			"model":        s.cfg.Pi.Model,
-			"console_cols": s.cfg.Pi.ConsoleCols,
-			"console_rows": s.cfg.Pi.ConsoleRows,
-			"output_mode":  s.cfg.Pi.OutputMode,
-			"input_mode":   s.cfg.Pi.InputMode,
+			"enabled":        s.cfg.Pi.Enabled,
+			"binary":         s.cfg.Pi.Binary,
+			"model":          s.cfg.Pi.Model,
+			"thinking_level": s.cfg.Pi.ThinkingLevel,
+			"console_cols":   s.cfg.Pi.ConsoleCols,
+			"console_rows":   s.cfg.Pi.ConsoleRows,
+			"output_mode":    s.cfg.Pi.OutputMode,
+			"input_mode":     s.cfg.Pi.InputMode,
 		},
 		"pi_prompt": map[string]interface{}{
 			"enabled":      s.cfg.PiPrompt.Enabled,
@@ -5601,12 +5602,15 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"task_override_statuses": autonomous.EffectiveTaskOverrideStatuses(s.cfg.Autonomous.TaskOverrideStatuses),
 			"execution_backend":      s.cfg.Autonomous.ExecutionBackend,
 			// BL304: new key + legacy alias.
-			"planning_effort":               s.cfg.Autonomous.PlanningEffort,
-			"decomposition_effort":          s.cfg.Autonomous.PlanningEffort,
-			"verification_effort":           s.cfg.Autonomous.VerificationEffort,
-			"planning_timeout_seconds":      s.cfg.Autonomous.PlanningTimeoutSeconds,
-			"verification_timeout_seconds":  s.cfg.Autonomous.VerificationTimeoutSeconds,
-			"session_idle_timeout_seconds":  s.cfg.Autonomous.SessionIdleTimeoutSeconds,
+			"planning_effort":              s.cfg.Autonomous.PlanningEffort,
+			"decomposition_effort":         s.cfg.Autonomous.PlanningEffort,
+			"verification_effort":          s.cfg.Autonomous.VerificationEffort,
+			"planning_timeout_seconds":     s.cfg.Autonomous.PlanningTimeoutSeconds,
+			"verification_timeout_seconds": s.cfg.Autonomous.VerificationTimeoutSeconds,
+			"session_idle_timeout_seconds": s.cfg.Autonomous.SessionIdleTimeoutSeconds,
+			// Effective value (nil → default 3, so the key is never absent from
+			// the read surface); 0 renders as 0 = loop detection off.
+			"loop_detect_turns":             config.LoopDetectTurnsEffective(s.cfg.Autonomous.LoopDetectTurns),
 			"capacity_enabled":              s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
 			"capacity_wait_timeout_seconds": s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
 			"capacity_gpu_util_pct":         s.cfg.Autonomous.CapacityGPUUtilPct,
@@ -5792,6 +5796,23 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		if verr := autonomous.ValidateTaskOverrideStatuses(candidate); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// pi.thinking_level — pre-validate like task_override_statuses above so an
+	// unknown level rejects the whole PUT instead of silently no-op'ing in
+	// applyConfigPatch. Empty string is valid (clears the flag).
+	if raw, ok := patch["pi.thinking_level"]; ok {
+		if ls, isStr := raw.(string); !isStr || !config.IsPiThinkingLevel(ls) {
+			http.Error(w, "pi.thinking_level: use one of "+strings.Join(config.PiThinkingLevels, ", ")+" (empty clears it)", http.StatusBadRequest)
+			return
+		}
+	}
+	// autonomous.loop_detect_turns — only the integer form is accepted; 0
+	// (loop detection off) is valid.
+	if raw, ok := patch["autonomous.loop_detect_turns"]; ok {
+		if n, okInt := toInt(raw); !okInt || n < 0 {
+			http.Error(w, "autonomous.loop_detect_turns: must be a non-negative integer (0 turns loop detection off; default 3)", http.StatusBadRequest)
 			return
 		}
 	}
@@ -6648,6 +6669,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "pi.model":
 			cfg.Pi.Model = toString(v)
+		// pi.thinking_level — an empty string is a VALID value (clears the
+		// flag → pi uses its own model default). Unknown levels are rejected
+		// by handlePutConfig's pre-validation above (400), so if we get here
+		// the string is either "" or one of config.PiThinkingLevels.
+		case "pi.thinking_level":
+			if s, ok := v.(string); ok && config.IsPiThinkingLevel(s) {
+				cfg.Pi.ThinkingLevel = s
+			}
 		case "pi_prompt.enabled":
 			cfg.PiPrompt.Enabled = toBool(v)
 		case "pi_prompt.binary":
@@ -7022,6 +7051,17 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// config.NormalizeSessionIdleTimeoutSeconds at read time.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.SessionIdleTimeoutSeconds = n
+			}
+		// autonomous.loop_detect_turns — 0 is meaningful (loop detection
+		// OFF) and must survive the no-omitempty round-trip as 0, not be
+		// confused with "unset". A bare int would let 0 mean BOTH off and
+		// unset, hence the *int (nil = unset → default 3 via
+		// config.LoopDetectTurnsEffective). Negative values are rejected by
+		// handlePutConfig's pre-validation above (400).
+		case "autonomous.loop_detect_turns":
+			if n, ok := toInt(v); ok && n >= 0 {
+				nv := n
+				cfg.Autonomous.LoopDetectTurns = &nv
 			}
 		case "autonomous.capacity_enabled":
 			if b, ok := v.(bool); ok {

@@ -82,8 +82,16 @@ type Config struct {
 	// cmd/datawatch/session_judgment.go read it from config.Config. The field
 	// exists so the handleAutonomousConfig live round-trip
 	// (internal/server/autonomous.go) does not drop the key.
-	SessionIdleTimeoutSeconds int    `json:"session_idle_timeout_seconds,omitempty"`
-	VerificationModel         string `json:"verification_model,omitempty"`
+	SessionIdleTimeoutSeconds int `json:"session_idle_timeout_seconds,omitempty"`
+	// LoopDetectTurns mirrors autonomous.loop_detect_turns in config.
+	// *int: nil = unset → default 3 (config.DefaultLoopDetectTurns);
+	// 0 = detector OFF; n>0 = window. The manager does not consume it:
+	// cmd/datawatch's worker wait loop reads it from config.Config (see
+	// LoopDetectTurnsEffective there); the field exists so the
+	// handleAutonomousConfig live round-trip
+	// (internal/server/autonomous.go) does not drop the key.
+	LoopDetectTurns   *int   `json:"loop_detect_turns,omitempty"`
+	VerificationModel string `json:"verification_model,omitempty"`
 	// VerificationBackends (v8.36.9) — see config.AutonomousConfig's doc
 	// comment. Ordered list of LLM registry names to load-balance
 	// verifier/guardrail capacity across; empty = single-backend

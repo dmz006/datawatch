@@ -2014,6 +2014,21 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 	}
 
+	// Pi family: pass the configured thinking level (pi.thinking_level) to
+	// any backend that supports pi's own --thinking flag. "" = leave unset
+	// so pi picks its model default. Both the interactive ("pi") and
+	// one-shot ("pi-prompt") variants receive it; the level is one of the
+	// closed set off|minimal|low|medium|high, validated by
+	// config.ValidatePiThinkingLevel at every config write edge.
+	if st, ok := backendObj.(interface{ SetThinkingLevel(string) }); ok {
+		switch backendName {
+		case "pi-prompt", "pi":
+			if tl := m.cfg.Pi.ThinkingLevel; tl != "" {
+				st.SetThinkingLevel(tl)
+			}
+		}
+	}
+
 	// BL363 T2+T3 — inject Goose provider/model/apikey/channel into goose family backends.
 	switch backendName {
 	case "goose", "goose-prompt":

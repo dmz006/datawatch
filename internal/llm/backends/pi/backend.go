@@ -92,9 +92,14 @@ func versionOf(binary string) string {
 // sent as pi's first turn and the session stays open afterward for
 // follow-up input, same shape as claude-code/goose interactive sessions.
 type Backend struct {
-	binary      string
-	model       string // e.g. "ollama/qwen3.8:27b"; empty uses pi's own default
-	sessionName string
+	binary string
+	model  string // e.g. "ollama/qwen3.8:27b"; empty uses pi's own default
+	// thinkingLevel is the value for pi's own --thinking flag
+	// ("" = don't pass the flag, pi picks its model default). Allowed:
+	// off, minimal, low, medium, high — validated by
+	// config.ValidatePiThinkingLevel at the REST/MCP/CLI write edges.
+	thinkingLevel string
+	sessionName   string
 }
 
 // New creates an interactive pi backend. binary defaults to "pi".
@@ -115,6 +120,11 @@ func (b *Backend) PromptRequired() bool           { return false }
 // Expects pi's own "provider/model" form, e.g. "ollama/qwen3.8:27b".
 func (b *Backend) SetModel(model string) { b.model = model }
 
+// SetThinkingLevel implements the daemon's duck-typed `interface{
+// SetThinkingLevel(string) }` optional interface (see the pi-prompt
+// registration in cmd/datawatch/main.go). "" = unset (pi's default).
+func (b *Backend) SetThinkingLevel(level string) { b.thinkingLevel = level }
+
 // SetSessionName implements llm.Nameable. Stored verbatim and passed to pi
 // as --session-id, which both creates and resumes a session by an
 // arbitrary caller-supplied ID — unlike opencode's own "ses_"-prefixed
@@ -128,19 +138,25 @@ func (b *Backend) Version() string { return versionOf(b.binary) }
 // ID (if any) accompanies --session-id. Pulled out of Launch/LaunchResume
 // so the quoting/flag logic is unit-testable without tmux or the pi
 // binary.
-func buildInteractiveCmd(binary, model, sessionID, task, projectDir, tmuxSession string) string {
+func buildInteractiveCmd(binary, model, thinkingLevel, sessionID, task, projectDir, tmuxSession string) string {
 	escapedDir := shellEscape(projectDir)
 	modelFlag := ""
 	if model != "" {
 		modelFlag = fmt.Sprintf("--model '%s' ", shellEscape(model))
+	}
+	thinkingFlag := ""
+	if thinkingLevel != "" {
+		// thinkingLevel is one of off|minimal|low|medium|high (validated at
+		// the config write edges), safe to interpolate.
+		thinkingFlag = fmt.Sprintf("--thinking %s ", thinkingLevel)
 	}
 	sessionFlag := ""
 	if sessionID != "" {
 		sessionFlag = fmt.Sprintf("--session-id '%s' ", shellEscape(sessionID))
 	}
 	argExpr, cleanup := taskArgExpr(tmuxSession, task)
-	return fmt.Sprintf("cd '%s' && %s --approve %s%s%s; %secho; echo 'DATAWATCH_COMPLETE: pi session ended'",
-		escapedDir, binary, modelFlag, sessionFlag, argExpr, cleanup)
+	return fmt.Sprintf("cd '%s' && %s --approve %s%s%s%s; %secho; echo 'DATAWATCH_COMPLETE: pi session ended'",
+		escapedDir, binary, modelFlag, thinkingFlag, sessionFlag, argExpr, cleanup)
 }
 
 // Launch starts a fresh interactive pi session. If SetSessionName was
@@ -150,7 +166,7 @@ func buildInteractiveCmd(binary, model, sessionID, task, projectDir, tmuxSession
 // MaxSendKeysCommand length guard applies and a tmux failure surfaces
 // its stderr text in the returned error.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
-	cmd := buildInteractiveCmd(b.binary, b.model, b.sessionName, task, projectDir, tmuxSession)
+	cmd := buildInteractiveCmd(b.binary, b.model, b.thinkingLevel, b.sessionName, task, projectDir, tmuxSession)
 	return llm.SendKeys(ctx, tmuxSession, cmd)
 }
 
@@ -161,7 +177,7 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 	if id == "" {
 		id = b.sessionName
 	}
-	cmd := buildInteractiveCmd(b.binary, b.model, id, task, projectDir, tmuxSession)
+	cmd := buildInteractiveCmd(b.binary, b.model, b.thinkingLevel, id, task, projectDir, tmuxSession)
 	return llm.SendKeys(ctx, tmuxSession, cmd)
 }
 
@@ -170,6 +186,8 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 type PromptBackend struct {
 	binary string
 	model  string
+	// thinkingLevel — see Backend.thinkingLevel's doc comment.
+	thinkingLevel string
 }
 
 // NewPrompt creates a pi-prompt backend for one-shot task execution.
@@ -191,6 +209,12 @@ func (b *PromptBackend) PromptRequired() bool           { return true }
 // goose use for a per-task/story/PRD model override.
 func (b *PromptBackend) SetModel(model string) { b.model = model }
 
+// SetThinkingLevel implements the daemon's duck-typed `interface{
+// SetThinkingLevel(string) }` optional interface: one-shot pi-prompt
+// launches receive pi's own --thinking flag with this level.
+// "" = unset (pi's default).
+func (b *PromptBackend) SetThinkingLevel(level string) { b.thinkingLevel = level }
+
 func (b *PromptBackend) Version() string { return versionOf(b.binary) }
 
 // Launch runs `pi --print ... '<task>'` as a single blocking command inside
@@ -202,7 +226,7 @@ func (b *PromptBackend) Version() string { return versionOf(b.binary) }
 // non-interactively (there is no human to answer an approval prompt in a
 // one-shot task).
 func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
-	cmd := buildLaunchCmd(b.binary, b.model, task, projectDir, tmuxSession)
+	cmd := buildLaunchCmd(b.binary, b.model, b.thinkingLevel, task, projectDir, tmuxSession)
 	return llm.SendKeys(ctx, tmuxSession, cmd)
 }
 
@@ -215,13 +239,19 @@ func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDi
 // via tmux send-keys has its embedded newlines submitted as literal Enter
 // keypresses mid-command, corrupting the shell command — confirmed live
 // 2026-10-16 ("These: command not found" mid-paste) before this fix.
-func buildLaunchCmd(binary, model, task, projectDir, tmuxSession string) string {
+func buildLaunchCmd(binary, model, thinkingLevel, task, projectDir, tmuxSession string) string {
 	escapedDir := shellEscape(projectDir)
 	modelFlag := ""
 	if model != "" {
 		modelFlag = fmt.Sprintf("--model '%s' ", shellEscape(model))
 	}
+	thinkingFlag := ""
+	if thinkingLevel != "" {
+		// thinkingLevel is one of off|minimal|low|medium|high (validated at
+		// the config write edges), safe to interpolate.
+		thinkingFlag = fmt.Sprintf("--thinking %s ", thinkingLevel)
+	}
 	argExpr, cleanup := taskArgExpr(tmuxSession, task)
-	return fmt.Sprintf("cd '%s' && %s --print --mode text --approve %s%s; %secho 'DATAWATCH_COMPLETE: pi done'",
-		escapedDir, binary, modelFlag, argExpr, cleanup)
+	return fmt.Sprintf("cd '%s' && %s --print --mode text --approve %s%s%s; %secho 'DATAWATCH_COMPLETE: pi done'",
+		escapedDir, binary, modelFlag, thinkingFlag, argExpr, cleanup)
 }

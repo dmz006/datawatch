@@ -14,7 +14,7 @@ import (
 // ---- PromptBackend (one-shot, --print) ----
 
 func TestBuildLaunchCmd_NoModel(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "", "do the thing", "/home/dmz/work", "cs-abc")
+	cmd := buildLaunchCmd("pi", "", "", "do the thing", "/home/dmz/work", "cs-abc")
 	if !strings.Contains(cmd, "cd '/home/dmz/work'") {
 		t.Errorf("missing cd into project dir, got: %s", cmd)
 	}
@@ -30,7 +30,7 @@ func TestBuildLaunchCmd_NoModel(t *testing.T) {
 }
 
 func TestBuildLaunchCmd_WithModel(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "ollama/qwen3.8:27b", "task text", "/proj", "cs-abc")
+	cmd := buildLaunchCmd("pi", "ollama/qwen3.8:27b", "", "task text", "/proj", "cs-abc")
 	if !strings.Contains(cmd, "--model 'ollama/qwen3.8:27b'") {
 		t.Errorf("expected --model flag with the set model, got: %s", cmd)
 	}
@@ -43,7 +43,7 @@ func TestBuildLaunchCmd_WithModel(t *testing.T) {
 // newline as a literal Enter keypress mid-command. Confirmed live
 // 2026-10-16 ("These: command not found" mid-paste) before this fix.
 func TestBuildLaunchCmd_TaskGoesThroughScratchFile(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "", "it's a test\nwith a newline", "/proj", "cs-abc")
+	cmd := buildLaunchCmd("pi", "", "", "it's a test\nwith a newline", "/proj", "cs-abc")
 	if !strings.Contains(cmd, `$(cat '`) {
 		t.Errorf("expected task text delivered via a scratch file, got: %s", cmd)
 	}
@@ -53,21 +53,21 @@ func TestBuildLaunchCmd_TaskGoesThroughScratchFile(t *testing.T) {
 }
 
 func TestBuildLaunchCmd_EscapesSingleQuotesInProjectDir(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "", "task", "/proj's/dir", "cs-abc")
+	cmd := buildLaunchCmd("pi", "", "", "task", "/proj's/dir", "cs-abc")
 	if !strings.Contains(cmd, `/proj'\''s/dir`) {
 		t.Errorf("expected single quote in project dir to be shell-escaped, got: %s", cmd)
 	}
 }
 
 func TestBuildLaunchCmd_EscapesSingleQuotesInModel(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "weird'model", "task", "/proj", "cs-abc")
+	cmd := buildLaunchCmd("pi", "weird'model", "", "task", "/proj", "cs-abc")
 	if !strings.Contains(cmd, `weird'\''model`) {
 		t.Errorf("expected single quote in model to be shell-escaped, got: %s", cmd)
 	}
 }
 
 func TestBuildLaunchCmd_EmptyTaskOmitsArg(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "", "", "/proj", "cs-abc")
+	cmd := buildLaunchCmd("pi", "", "", "", "/proj", "cs-abc")
 	if strings.Contains(cmd, "$(cat") {
 		t.Errorf("empty task must not reference a task file, got: %s", cmd)
 	}
@@ -117,7 +117,7 @@ func TestPromptBackend_SetModel(t *testing.T) {
 // pi-prompt verifier ended up launching with an unrelated ollama model.
 func TestBuildLaunchCmd_ModelPassesThroughVerbatim(t *testing.T) {
 	const model = "ollama-datawatch/qwen3.8-64k:27b"
-	cmd := buildLaunchCmd("pi", model, "some task", "work", "ses")
+	cmd := buildLaunchCmd("pi", model, "", "some task", "work", "ses")
 	want := "--model '" + model + "' "
 	if !strings.Contains(cmd, want) {
 		t.Errorf("expected exactly %q in command, got: %s", want, cmd)
@@ -130,7 +130,7 @@ func TestBuildLaunchCmd_ModelPassesThroughVerbatim(t *testing.T) {
 // TestBuildLaunchCmd_EmptyModelOmitsModelFlag: an empty model means pi
 // uses its own configured default — the intended manager fallback.
 func TestBuildLaunchCmd_EmptyModelOmitsModelFlag(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "", "some task", "work", "ses")
+	cmd := buildLaunchCmd("pi", "", "", "some task", "work", "ses")
 	if strings.Contains(cmd, "--model") {
 		t.Errorf("empty model must not add any --model flag, got: %s", cmd)
 	}
@@ -205,7 +205,7 @@ var _ llm.Backend = NewPrompt("")
 // ---- Backend (interactive) ----
 
 func TestBuildInteractiveCmd_NoSessionNoModel(t *testing.T) {
-	cmd := buildInteractiveCmd("pi", "", "", "do the thing", "/home/dmz/work", "cs-abc")
+	cmd := buildInteractiveCmd("pi", "", "", "", "do the thing", "/home/dmz/work", "cs-abc")
 	if !strings.Contains(cmd, "cd '/home/dmz/work'") {
 		t.Errorf("missing cd into project dir, got: %s", cmd)
 	}
@@ -227,7 +227,7 @@ func TestBuildInteractiveCmd_NoSessionNoModel(t *testing.T) {
 }
 
 func TestBuildInteractiveCmd_WithSessionAndModel(t *testing.T) {
-	cmd := buildInteractiveCmd("pi", "ollama/qwen3.8:27b", "johnnyjohnny-c905", "task text", "/proj", "cs-abc")
+	cmd := buildInteractiveCmd("pi", "ollama/qwen3.8:27b", "", "johnnyjohnny-c905", "task text", "/proj", "cs-abc")
 	if !strings.Contains(cmd, "--session-id 'johnnyjohnny-c905'") {
 		t.Errorf("expected --session-id with the given session name, got: %s", cmd)
 	}
@@ -237,9 +237,42 @@ func TestBuildInteractiveCmd_WithSessionAndModel(t *testing.T) {
 }
 
 func TestBuildInteractiveCmd_EmptyTaskOmitsArg(t *testing.T) {
-	cmd := buildInteractiveCmd("pi", "", "", "", "/proj", "cs-abc")
+	cmd := buildInteractiveCmd("pi", "", "", "", "", "/proj", "cs-abc")
 	if strings.Contains(cmd, "$(cat") {
 		t.Errorf("empty task must not reference a task file, got: %s", cmd)
+	}
+}
+
+// TestBuildInteractiveCmd_ThinkingLevelInCmd — same guarantee in
+// interactive mode: the flag appears exactly once when set, and is absent
+// when empty.
+func TestBuildInteractiveCmd_ThinkingLevelInCmd(t *testing.T) {
+	cmd := buildInteractiveCmd("pi", "", "minimal", "", "task", "/proj", "cs-abc")
+	if !strings.Contains(cmd, "--thinking minimal ") {
+		t.Errorf("expected --thinking minimal in interactive command, got: %s", cmd)
+	}
+	if n := strings.Count(cmd, "--thinking"); n != 1 {
+		t.Errorf("expected exactly one --thinking flag, got %d in: %s", n, cmd)
+	}
+	cmd = buildInteractiveCmd("pi", "", "", "", "task", "/proj", "cs-abc")
+	if strings.Contains(cmd, "--thinking") {
+		t.Errorf("empty thinking level must add no --thinking flag, got: %s", cmd)
+	}
+}
+
+func TestBackend_SetThinkingLevelSatisfiesSessionManagerDuckType(t *testing.T) {
+	var b llm.Backend = New("")
+	if _, ok := b.(interface{ SetThinkingLevel(string) }); !ok {
+		t.Error("Backend must satisfy interface{ SetThinkingLevel(string) } for the session manager's thinking-level path")
+	}
+	bb := New("").(*Backend)
+	bb.SetThinkingLevel("low")
+	if bb.thinkingLevel != "low" {
+		t.Errorf("thinkingLevel after SetThinkingLevel = %q, want low", bb.thinkingLevel)
+	}
+	bb.SetThinkingLevel("")
+	if bb.thinkingLevel != "" {
+		t.Errorf("thinkingLevel after SetThinkingLevel(\"\") = %q, want empty", bb.thinkingLevel)
 	}
 }
 

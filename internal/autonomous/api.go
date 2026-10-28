@@ -230,6 +230,18 @@ func (a *API) SetConfig(v any) error {
 			return verr
 		}
 	}
+	// loop_detect_turns — reject negatives before any merge (same probe
+	// pattern as task_override_statuses above). 0 (detector off) is valid.
+	// Inlined rather than calling config.ValidateLoopDetectTurns to keep
+	// this package's import graph free of internal/config.
+	var loopProbe struct {
+		LoopDetectTurns *int `json:"loop_detect_turns"`
+	}
+	if err := json.Unmarshal(raw, &loopProbe); err == nil {
+		if loopProbe.LoopDetectTurns != nil && *loopProbe.LoopDetectTurns < 0 {
+			return fmt.Errorf("autonomous.loop_detect_turns must be >= 0 (0 turns loop detection off; default is 3)")
+		}
+	}
 	cfg := a.M.Config()
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("config: %w", err)

@@ -29,17 +29,19 @@ var (
 	progressLoop   = map[string]loopState{} // keyed by session FullID
 )
 
-// loopDetectTurns is how many of the worker's most recent assistant turns
-// refreshTaskProgress feeds to autonomous.DetectLoop on each refresh.
-const loopDetectTurns = 3
-
 // refreshTaskProgress reads the worker session's log (only pi-backed
 // sessions have one; for any other backend the locate fails and this is a
 // no-op), converts it to an autonomous.TaskProgress snapshot, evaluates the
 // looping detector, and runs autonomous.DetectLoop over the recent turns.
 // Returns (nil, "", zero finding, false) when there is nothing to record —
 // callers treat that as "leave both fields as-is".
-func refreshTaskProgress(s *session.Session, workDir string) (*autonomous.TaskProgress, string, autonomous.LoopFinding, bool) {
+//
+// loopDetectTurns is the DetectLoop turn window for this refresh, from
+// autonomous.loop_detect_turns in config (0 = detector off). The caller
+// resolves the default via config.LoopDetectTurnsEffective; passed as a
+// parameter rather than a package constant so the window stays
+// operator-tunable and testable without config.
+func refreshTaskProgress(s *session.Session, workDir string, loopDetectTurns int) (*autonomous.TaskProgress, string, autonomous.LoopFinding, bool) {
 	if s == nil {
 		return nil, "", autonomous.LoopFinding{}, false
 	}
@@ -84,9 +86,11 @@ func refreshTaskProgress(s *session.Session, workDir string) (*autonomous.TaskPr
 	// coarser warning that stays on the task when no finding fires.
 	var finding autonomous.LoopFinding
 	var looping bool
-	if turns, terr := pilog.ReadTurns(path); terr == nil {
-		recent := pilog.Recent(turns, loopDetectTurns)
-		finding, looping = autonomous.DetectLoop(recent, loopDetectTurns)
+	if loopDetectTurns > 0 {
+		if turns, terr := pilog.ReadTurns(path); terr == nil {
+			recent := pilog.Recent(turns, loopDetectTurns)
+			finding, looping = autonomous.DetectLoop(recent, loopDetectTurns)
+		}
 	}
 	return snap, warn, finding, looping
 }
