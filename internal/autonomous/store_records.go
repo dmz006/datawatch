@@ -41,6 +41,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -63,6 +64,13 @@ const (
 	heavyFieldFloor = 4 << 10
 
 	sideRefPrefix = "datawatch-side-file:v1:"
+
+	// staleTempFileAge is how old a '.tmp-*' file in the records directory
+	// must be before opening the store removes it. A temp file younger than
+	// this may belong to a write still in progress in another Store or
+	// process (removing it would make its rename fail and its save lost);
+	// an older one is a leftover of an interrupted write.
+	staleTempFileAge = 10 * time.Minute
 )
 
 // heavyFieldNames are struct field names that hold outputs, checkpoints or
@@ -544,7 +552,11 @@ func (s *Store) loadRecords() error {
 	for _, e := range entries {
 		n := e.Name()
 		if strings.HasPrefix(n, ".tmp-") {
-			_ = os.Remove(filepath.Join(dir, n)) // leftover of an interrupted write
+			// Age check: a fresh temp file may belong to a write in progress
+			// in another Store or process; only old ones may go.
+			if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > staleTempFileAge {
+				_ = os.Remove(filepath.Join(dir, n)) // leftover of an interrupted write
+			}
 			continue
 		}
 		if e.IsDir() || !strings.HasSuffix(n, ".json") {

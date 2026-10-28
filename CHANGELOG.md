@@ -90,7 +90,7 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 ### Two more CodeQL alerts fixed in code
 
 - **MCP debug transport.** A declared event stream sent by the MCP debug transport is written as JSON-escaped bytes and the response carries `X-Content-Type-Options: nosniff`, so echoed input can no longer be read as markup (`go/reflected-xss`, alert 715). The old byte-for-byte pass-through of a declared `text/event-stream` body is gone; the testing tracker records the new wire contract.
-- **PWA dictation ids.** The ids that tie a dictation request to its reply now come from `crypto.getRandomValues` instead of `Math.random` (`js/insecure-randomness`, alert 714).
+- **PWA dictation ids.** A textarea without an id now gets `_autoMicTa_<n>` from a page-level counter instead of a `Math.random()` suffix (`js/insecure-randomness`, alert 714); the id only has to be unique on the page, so a counter is the right tool.
 - **Subprocess sessions are unchanged.** Alert 661 (`go/command-injection` in the subprocess launch) is dismissed as won't fix by decision: a subprocess session runs the caller's command line through `bash -c`, which is the documented feature. The reasoning and the risk acceptance are in `docs/plans/2026-10-28-codeql-alert-661-decision.md`.
 - The unused locale key `session_last_activity_title` (left over from the removed session time counter) is removed from all five bundles.
 

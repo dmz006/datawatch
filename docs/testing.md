@@ -2048,3 +2048,13 @@ Two code-scanning alerts were fixed on one branch (the third, the subprocess she
 | **Expected** | Ids `_autoMicTa_1`, `_autoMicTa_2`, `keep-me`; each `button[data-mic-for]` resolves to its own textarea; no console error. |
 | **Actual** | Node suite 1317 of 1317 pass (including `app-auto-mic-id.test.js`). Headless Chrome against the sandbox daemon, 2026-10-27: ids `_autoMicTa_1`, `_autoMicTa_2`, `keep-me`; all three buttons resolve; no page error. The microphone itself was not exercised (needs a Whisper backend and a microphone). |
 | **Result** | Pass (scripted); the dictation round trip is for a person with a Whisper backend to confirm |
+
+### Opening a store no longer deletes a live writer's temporary file
+
+| | |
+|---|---|
+| **Description** | `TestCIWatch_TimeoutPending` failed on the CI runner in about half of the recent runs ("follow-up recording a pass not reached within 30s") and never locally. |
+| **Steps** | 1. Open a store, then in one goroutine loop `NewStore(dir)` while another loops `SavePRD`. 2. Run `env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous/ -run 'TestCIWatch|TestStoreOpenBesideLiveWriter' -count=15 -race -shuffle=on`. |
+| **Expected** | Every `SavePRD` succeeds; the follow-up records its pass. |
+| **Actual** | Before the fix a large share of saves failed with a rename error naming a `.tmp-` file (the opener had deleted it); after the fix none fail and the CI watch test passes under load. |
+| **Result** | Pass |
