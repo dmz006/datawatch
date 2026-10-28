@@ -328,6 +328,41 @@ form (web UI), or pass it via API. The session is launched with `--resume <ID>`.
 The web UI **Restart** button automatically pre-fills the form with the finished
 session's details (name, task, directory, backend) and selects it in the resume dropdown.
 
+### Rate limit detection
+
+claude-code is the only backend with captured throttle lines. Every line below
+was copied verbatim from the fixtures in `testdata/rate_limit_lines/` (the
+directory README records each line's in-tree source):
+
+```
+⎿  You've hit your limit · resets 10pm (America/New_York)
+5-hour limit reached ∙ resets 2pm
+Weekly limit reached
+Hit weekly limit
+Opus limit reached
+Sonnet limit reached
+You're out of extra usage · resets 11:50am (America/New_York)
+```
+
+Before a line is matched, the detector trims surrounding whitespace and
+lowercases it, and strips ANSI cursor escapes it would otherwise misread; all
+matches are line-start anchored, so a line that merely quotes one of these
+phrases inside ordinary output does not match. The `⎿` gutter glyph plus two
+spaces that claude-code prints before secondary lines is tolerated as that
+family's own prefix. Table phrases are only checked on lines under 2048
+characters; the shared protocol line is not subject to that length gate.
+
+On top of the tool's own lines, the session carries two plain protocol lines
+the detector recognizes line-start on every backend: `DATAWATCH_RATE_LIMITED:`
+when the session reports a throttle (claude-code also writes `PAUSED.md` with
+a progress summary while paused), and `DATAWATCH_COMPLETE:` when it finishes.
+A rate-limited claude-code session is held in a paused `rate_limited` state and
+resumed on retry, not failed — it still completes normally.
+
+If you set `detection.rate_limit_patterns`, your list replaces these built-in
+matches and is applied as before: a flat substring, anywhere on the line, for
+all backends.
+
 ---
 
 ## aider
@@ -587,6 +622,15 @@ Check these in order:
   smoke test with a real git commit) completed cleanly; a full multi-task
   PRD pilot under sustained heavy tool use has not yet been run.
 
+### Rate limit detection
+
+There is no captured pi throttle line in `testdata/rate_limit_lines/` — no
+in-tree source quotes one, so no fixture exists for this family. The only
+built-in detection for `pi` and `pi-prompt` is the shared `DATAWATCH_RATE_LIMITED:`
+protocol line the session itself prints, matched line-start after trimming.
+An operator-configured `detection.rate_limit_patterns` (flat substring, all
+backends) is the escape hatch if pi starts printing a specific throttle line.
+
 ---
 
 ## Gemini CLI
@@ -772,6 +816,15 @@ lsp:
 
 - Uses the `-p`/`--print` flag for non-interactive execution
 - For interactive mode with follow-up input, use `opencode-acp` instead (see below)
+- **Rate limit detection** — there is no captured opencode throttle line in
+  `testdata/rate_limit_lines/` (this covers `opencode`, `opencode-acp` and
+  `opencode-prompt`). The opencode-specific lines recorded in-tree
+  (`SSE read timed out`, `SSE error`, …) are network/SSE stall diagnostics,
+  not throttle messages, so they are not fixtures. The only built-in
+  detection for this family is the shared `DATAWATCH_RATE_LIMITED:` protocol
+  line the session prints, matched line-start after trimming, with the same
+  quoted-phrase rule: a line that only mentions a throttle phrase in ordinary
+  output does not pause the backend.
 
 ---
 
@@ -911,6 +964,16 @@ cd <project_dir> && ollama run <model> '<task>'
 | `codellama` | 3.8 GB | Code generation |
 | `deepseek-coder` | 776 MB | Code-focused, lightweight |
 | `qwen2.5-coder` | 4.7 GB | Strong coding performance |
+
+### Rate limit detection
+
+There is no captured Ollama throttle line in `testdata/rate_limit_lines/` —
+nothing in-tree quotes one, and Ollama serves local models, so it rarely
+rate-limits at all. The only built-in detection for `ollama` is the shared
+`DATAWATCH_RATE_LIMITED:` protocol line the session prints, matched line-start
+after trimming; a line that only quotes a throttle phrase in ordinary output
+does not pause the backend. An operator-configured `detection.rate_limit_patterns`
+(flat substring, all backends) is the escape hatch.
 
 ---
 

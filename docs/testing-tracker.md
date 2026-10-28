@@ -9,6 +9,40 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Throttle line fixtures — built-in per-backend rate-limit table
+
+`testdata/rate_limit_lines/` holds the observed per-backend throttle lines, one
+captured line per fixture, copied verbatim from in-tree sources (the directory
+README records each line's source). `claude-code.txt` holds seven captured
+claude-code lines. `ordinary/` is the negative half: lines that merely quote a
+throttle phrase inside ordinary text — shell transcripts, diffs, docs, a
+file listing, a task spec — which must never fire. No fixture exists for
+`pi-prompt`, `opencode`, `opencode-acp`, `opencode-prompt` or `ollama`: no
+in-tree source quotes a verbatim throttle line for those backends, and the
+only opencode-specific lines recorded in-tree are SSE stall diagnostics, not
+throttle messages. A non-empty table entry in
+`internal/session/rate_limit_lines.go` is required to appear verbatim in a
+recorded line of its fixture, and each recorded line must be detected by its
+family's anchored matcher — both directions are enforced below; the fixture
+directory is the source of truth, not the table.
+
+| Area | Test | Test Condition | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Fixture ↔ built-in table provenance | `TestBuiltinRateLimitFixtureDetection` (`internal/session/rate_limit_lines_test.go`) | Every line of every `testdata/rate_limit_lines/*.txt` fixture is detected by its backend family's matcher; every table phrase occurs verbatim in that family's recorded lines | the two directions pin the table to the fixtures — a phrase with no fixture line fails, and a fixture line the matcher misses fails | Unit | Yes | Pass | No | `go test ./internal/session/` |
+| Per-backend fixture matching | `TestRateLimitLineFixturesMatchPerBackend` (same file) | each captured line, after the detector's normalisation (surrounding-whitespace trim + lowercase), matches its own backend's anchored matcher | a captured line fires for the backend that printed it, and only after the same trim the detector applies | Unit | Yes | Pass | No | `go test ./internal/session/` |
+
+A companion negative test, `TestRateLimitOrdinaryTextDoesNotMatch` (same file),
+reads every `ordinary/` file and asserts none of those quoted-phrase lines
+matches any backend family or the protocol-marker rule.
+
+**Tested:** Yes — `TestBuiltinRateLimitFixtureDetection` and
+`TestRateLimitLineFixturesMatchPerBackend` both pass on 2026-10-28.
+
+**Validated:** No — the live smoke run that exercises a real backend's
+throttle output is reported in the PRD report rather than in this file.
+
+---
+
 ## Pi-prompt descendant-only stall bound (autonomous.descendant_stall_seconds)
 
 New config key and stop detector (pi-prompt family only): a worker attempt whose runner has ended, whose working descendants are still alive, and has no other evidence of life is reaped as an infrastructure failure after `descendant_stall_seconds` (default 2700) and retried via the `auto_fix_retries` budget. Config surface: YAML, REST `GET`/`PUT` config, MCP `autonomous_config_set`, CLI `config set`, comm `configure`, PWA settings card (5 locales).
