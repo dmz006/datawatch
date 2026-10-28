@@ -2524,5 +2524,14 @@
   "tag_session_edit": "Modifier les étiquettes",
   "tag_session_edit_title": "Étiquettes de la session",
   "tag_session_batch_title": "Ajouter des étiquettes à %1$d sessions",
-  "settings_automata_questions_enabled": "Questions opérateur pour les automates (désactivé par défaut)"
+  "settings_automata_questions_enabled": "Questions opérateur pour les automates (désactivé par défaut)",
+  "tags_menu_button": "Étiquettes",
+  "tags_menu_close": "Fermer",
+  "tags_menu_watched_only": "Suivies uniquement",
+  "tags_menu_no_tags": "Aucune étiquette pour l'instant",
+  "tags_menu_clear": "Effacer",
+  "tags_menu_this_session": "Cette session",
+  "tags_menu_watch_this": "Suivre cette session",
+  "tags_menu_unwatch_this": "Ne plus suivre cette session",
+  "tags_menu_edit_this": "Modifier les étiquettes de cette session"
 }

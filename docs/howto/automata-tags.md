@@ -145,6 +145,27 @@ do not take a match mode.
 On a phone the tree drills down one level at a time with a breadcrumb trail and
 a **Back** row; the URL hash follows the drill-down.
 
+### The header Tags dropdown
+
+The page header has a **Tags** button. It opens a dropdown that holds the
+session list's filters and the actions for the session you have open.
+
+- **Active-filter count.** A small number on the **Tags** button counts the
+  filters in force: one for **Watched only**, plus one for each ticked tag.
+  It is empty when no filter is on.
+- **Watched only.** A checkbox at the top. Tick it to list only the sessions
+  you watch.
+- **Tags.** One checkbox per tag, in tree order. Tick several to filter the
+  session list by them. The match button switches between **match ANY**
+  (default) and **match ALL**, and **Clear** appears once a tag is ticked.
+  With no tags yet, the list reads *No tags yet*.
+- **This session.** Shown only while a session is open. **Watch this session**
+  (or **Stop watching this session**) replaces the watch eye the session
+  header used to carry, and **Edit tags of this session** opens the same
+  editor as the **Edit tags** button in [step 7](#7-tag-a-session).
+
+Press Escape, the button again, or click outside the dropdown to close it.
+
 ### 4. Primary tag (sorting only)
 
 A primary tag orders an Automaton inside each branch it appears in. It is
@@ -205,8 +226,10 @@ started it.
   drawn as dashed chips with a small *inherited* label.
 - **Inherited tags are read-only.** They change when you change the
   Automaton's tags, not on the session. The session editor never sends them.
-- **Edit a session's own tags.** Open the session; the **Tags** row under
-  the header has an **Edit tags** button. Tick the tags and press **Save**.
+- **Edit a session's own tags.** Open the session and choose **Tags → This
+  session → Edit tags of this session** in the header (see
+  [the header Tags dropdown](#the-header-tags-dropdown)), or use the **Tags**
+  row under the header, which has an **Edit tags** button. Tick the tags and press **Save**.
   The editor lists every tag and names the inherited ones below the list. If
   the server refuses a tag, the toast shows its reason.
 - **Start a session with tags.** The New Session form has a **Tags

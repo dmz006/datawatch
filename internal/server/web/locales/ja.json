@@ -2524,5 +2524,14 @@
   "tag_session_edit": "タグを編集",
   "tag_session_edit_title": "セッションのタグ",
   "tag_session_batch_title": "%1$d 件のセッションにタグを追加",
-  "settings_automata_questions_enabled": "オートマタのオペレーター質問（デフォルトではオフ）"
+  "settings_automata_questions_enabled": "オートマタのオペレーター質問（デフォルトではオフ）",
+  "tags_menu_button": "タグ",
+  "tags_menu_close": "閉じる",
+  "tags_menu_watched_only": "ウォッチ中のみ",
+  "tags_menu_no_tags": "タグはまだありません",
+  "tags_menu_clear": "クリア",
+  "tags_menu_this_session": "このセッション",
+  "tags_menu_watch_this": "このセッションをウォッチ",
+  "tags_menu_unwatch_this": "このセッションのウォッチを解除",
+  "tags_menu_edit_this": "このセッションのタグを編集"
 }

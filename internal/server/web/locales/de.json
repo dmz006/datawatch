@@ -2524,5 +2524,14 @@
   "tag_session_edit": "Tags bearbeiten",
   "tag_session_edit_title": "Tags der Sitzung",
   "tag_session_batch_title": "Tags zu %1$d Sitzungen hinzufügen",
-  "settings_automata_questions_enabled": "Operator-Fragen für Automaten (standardmäßig aus)"
+  "settings_automata_questions_enabled": "Operator-Fragen für Automaten (standardmäßig aus)",
+  "tags_menu_button": "Tags",
+  "tags_menu_close": "Schließen",
+  "tags_menu_watched_only": "Nur beobachtete",
+  "tags_menu_no_tags": "Noch keine Tags",
+  "tags_menu_clear": "Zurücksetzen",
+  "tags_menu_this_session": "Diese Sitzung",
+  "tags_menu_watch_this": "Diese Sitzung beobachten",
+  "tags_menu_unwatch_this": "Diese Sitzung nicht mehr beobachten",
+  "tags_menu_edit_this": "Tags dieser Sitzung bearbeiten"
 }

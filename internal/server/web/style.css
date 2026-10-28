@@ -198,6 +198,7 @@ body {
    row inside the viewport. */
 .header > #headerHelpLink,
 .header > #headerAlertPill,
+.header > #headerTagsBtn,
 .header > #headerFullscreenBtn {
   box-sizing: content-box;
   min-width: 44px;
@@ -220,6 +221,82 @@ body {
 .header > #headerFullscreenBtn {
   padding: 0 !important;      /* inline 4px 6px */
 }
+.header > #headerTagsBtn {
+  padding: 0 !important;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.header-tags-count:empty { display: none; }
+.header-tags-count {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent2);
+  color: var(--bg);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* Tags menu panel: fixed under the header, never wider than the viewport so a
+   320px phone gets no horizontal page scroll with it open. */
+.header-tags-menu {
+  position: fixed;
+  top: var(--header-h);
+  right: 8px;
+  width: min(340px, calc(100vw - 16px));
+  max-height: calc(100vh - var(--header-h) - 16px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  z-index: 110;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+.header-tags-menu[hidden] { display: none; }
+
+.tags-menu-section + .tags-menu-section { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.tags-menu-head { font-size: 11px; font-weight: 600; color: var(--text2); margin-bottom: 4px; }
+.tags-menu-row { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
+.tags-menu-list { max-height: 220px; overflow-y: auto; margin-bottom: 6px; }
+.tags-menu-actions { display: flex; align-items: center; gap: 6px; }
+.tags-menu-btn {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 6px 10px;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.tags-menu-actions .tags-menu-btn { width: auto; margin-top: 0; text-align: center; }
+
+/* Narrow phones (320px at 130% zoom = 246 CSS px): the Tags button would squeeze
+   the title to nothing, so tighten the row and drop the help toggle, the same
+   least-essential control the 219px rule hides. */
+@media (max-width: 279px) {
+  .header {
+    padding-left: 8px;
+    padding-right: 8px;
+    gap: 4px;
+  }
+  .header > #headerHelpLink { display: none !important; }
+}
 
 /* Extreme zoom (200% on a 320px phone = 160 CSS px): even 44px controls
    can't all fit (44×3 + 10px dot + gaps + padding > 160). The spec floor
@@ -229,6 +306,7 @@ body {
    360→180, 390→195, 412→206 CSS px.) */
 @media (max-width: 219px) {
   .header > #headerHelpLink,
+  .header > #headerTagsBtn,
   .header > #headerFullscreenBtn { display: none !important; }
 }
 

@@ -173,6 +173,15 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    - **Text input** — narrows by session name, task, ID,
      `llm_ref`, or `compute_node_ref` substrings. Combines with the
      badge filters.
+   - **Tags** (header button) — the session list's **Watched only**
+     toggle and tag filter live in the **Tags** dropdown in the page
+     header, not in the filter bar. Open it, tick **Watched only** to
+     list only sessions you watch, and tick tags to list only sessions
+     that carry them (**match ANY** by default; the match button
+     switches to **match ALL**). The button shows a count of the active
+     filters, and **Clear** in the dropdown resets the tag ticks. These
+     combine with the filter bar above. See
+     [`automata-tags.md`](automata-tags.md#the-header-tags-dropdown).
 3. Click the **+** FAB → wizard:
    - **LLM** dropdown (populated from `/api/llms`; disabled entries
      filtered out; adapter kind shown in label).
@@ -193,6 +202,11 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    - ⚡ `<llm-name>` green badge (v7 LLM registry name, when set).
    - ⚙ `<compute-node>` purple badge (v7 Compute Node, when set).
    - Hover each for a tooltip explaining the v7 field.
+   The session header has no time counter and no watch eye. Watching
+   moved into the dropdown: open **Tags** in the header and, under
+   **This session**, press **Watch this session** (or **Stop watching
+   this session**). The same section has **Edit tags of this session**.
+
    Detail view opens with three tabs:
    - **Tmux** — live xterm.js stream of the LLM's terminal. Read-only
      by default; tap the input bar to send commands. While the session

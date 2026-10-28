@@ -2524,5 +2524,14 @@
   "tag_session_edit": "Editar etiquetas",
   "tag_session_edit_title": "Etiquetas de la sesión",
   "tag_session_batch_title": "Añadir etiquetas a %1$d sesiones",
-  "settings_automata_questions_enabled": "Preguntas del operador para autómatas (desactivado por defecto)"
+  "settings_automata_questions_enabled": "Preguntas del operador para autómatas (desactivado por defecto)",
+  "tags_menu_button": "Etiquetas",
+  "tags_menu_close": "Cerrar",
+  "tags_menu_watched_only": "Solo vigiladas",
+  "tags_menu_no_tags": "Aún no hay etiquetas",
+  "tags_menu_clear": "Borrar",
+  "tags_menu_this_session": "Esta sesión",
+  "tags_menu_watch_this": "Vigilar esta sesión",
+  "tags_menu_unwatch_this": "Dejar de vigilar esta sesión",
+  "tags_menu_edit_this": "Editar las etiquetas de esta sesión"
 }

@@ -2139,7 +2139,6 @@ function updateSession(sess) {
     refreshNeedsInputBanner(sess.full_id);
     updateSessionDetailButtons(sess.full_id);
     refreshGeneratingIndicator(sess.full_id); // v5.27.7 BL208/#26
-    refreshLastActivityIndicator(held);
     _renderSessionDetailTagRow(held);
     // BL263 follow-up / v6.11.10 — operator: "Restart seemed better but
     // still had the tmux command window at bottom not return after
@@ -3059,6 +3058,7 @@ function renderSessionsView() {
   if (state.sessionWatchFilter) {
     pool = pool.filter(s => state.watchedSessions.has(s.full_id || s.id)); // GH#172 D61
   }
+  pool = _sessionTagFilter(pool);
   const visible = sortSessionsByOrder(pool);
   // Cache the done subset of the visible (filtered) set so selectAllInactive
   // and the select bar always operate on what the user can actually see.
@@ -3379,16 +3379,17 @@ window.toggleSessionWatch = function(fullId) {
   else state.watchedSessions.add(fullId);
   try { localStorage.setItem('cs_sessions_watched', JSON.stringify([...state.watchedSessions])); } catch (_) {}
   renderSessionsView();
-  // datawatch-app parity (D61a) — the watch toggle now also lives in the
-  // session detail header (previously list-card only), so toggling from
-  // there needs to refresh that view's own icon color too.
+  // Other controls in the open detail view (the Tags dropdown) call this too,
+  // so re-render that view to keep it in step.
   if (state.activeView === 'session-detail' && state.activeSession === fullId) {
     renderSessionDetail(fullId);
   }
+  if (document.getElementById('headerTagsBtn')) _tagsMenuRefresh();
 };
 
 window.toggleSessionWatchFilter = function() {
   state.sessionWatchFilter = !state.sessionWatchFilter;
+  _tagsMenuRefresh();
   renderSessionsView();
   updateAlertBadge(); // GH#192 D61a — badge reflects the new filter immediately
 };
@@ -3919,6 +3920,8 @@ function cardSendCmd(fullId, cmd) {
 
 // ── Session detail view ───────────────────────────────────────────────────────
 function renderSessionDetail(sessionId) {
+  // The open session changed, so the Tags menu button follows it.
+  _tagsMenuRefresh();
   // Reset scroll mode on re-render — prevents input bar stuck in display:none
   state._scrollMode = false;
   state._scrollUseClientHistory = false;
@@ -4195,11 +4198,7 @@ function renderSessionDetail(sessionId) {
               still show their mode (no tab system in tmux-only mode). */
             sessionMode === 'tmux' ? `<span class="mode-badge mode-${sessionMode}">${sessionMode}</span>` : ''}
           <span class="state detail-state-badge ${badgeClass}" onclick="showStateOverride('${escHtml(sessionId)}',this)" style="cursor:pointer;" title="Click to change state">${escHtml(stateText)}</span>
-          ${isActive ? `<span class="session-last-activity" data-last-activity="${escHtml(sess?.last_channel_event_at || sess?.updated_at || '')}" title="${t('session_last_activity_title')||'Time since the backend last produced any output — the only signal for headless/non-interactive sessions (e.g. opencode run) that show no visible screen activity between generations'}" style="font-size:11px;color:var(--text2);display:inline-flex;align-items:center;gap:3px;"><span class="session-last-activity-dot" style="width:6px;height:6px;border-radius:50%;background:var(--success,#22c55e);display:inline-block;"></span><span class="session-last-activity-text">–</span></span>` : ''}
           <span id="actionBtns">${actionButtons}</span>
-          <!-- datawatch-app parity (D61a, 2026-10-06 gap list row 9):
-               Watch toggle previously only on the list card. -->
-          <button class="btn-icon" onclick="toggleSessionWatch('${escHtml(sessionId)}')" style="font-size:14px;padding:0 2px;background:transparent;border:none;cursor:pointer;flex-shrink:0;${state.watchedSessions.has(sessionId)?'color:var(--accent2,#60a5fa);':'opacity:0.4;'}" title="${escHtml(state.watchedSessions.has(sessionId) ? (t('session_action_unwatch')||'Stop watching') : (t('session_action_watch')||'Watch for updates'))}">👁</button>
           <!-- GATE alpha.36 (operator 2026-05-10): Timeline + Response
                are icon-only on narrow / phone screens — labels were
                wrapping awkwardly. Tooltips carry the meaning. Right-
@@ -20492,38 +20491,6 @@ function updateElapsedClocks() {
 }
 setInterval(updateElapsedClocks, 1000);
 
-// "Last activity" indicator for the session detail header — the only
-// signal an operator has that a headless/non-interactive backend (e.g.
-// opencode launched via `opencode run` for one-shot PRD tasks) is still
-// alive between generations, since those sessions show no TUI redraw or
-// pane movement for minutes at a time while the model is thinking.
-// Dot color bands by staleness: green (<30s, actively producing output),
-// amber (30s-5m, normal thinking gap for slow local models), red (>5m,
-// worth checking the session hasn't stalled).
-function updateLastActivityClocks() {
-  document.querySelectorAll('.session-last-activity[data-last-activity]').forEach(el => {
-    const ts = el.getAttribute('data-last-activity');
-    const textEl = el.querySelector('.session-last-activity-text');
-    const dotEl = el.querySelector('.session-last-activity-dot');
-    if (!ts || !textEl || !dotEl) { if (textEl) textEl.textContent = 'no activity yet'; return; }
-    const secs = (Date.now() - new Date(ts).getTime()) / 1000;
-    textEl.textContent = timeAgo(ts);
-    dotEl.style.background = secs < 30 ? 'var(--success,#22c55e)' : secs < 300 ? 'var(--warning,#f59e0b)' : 'var(--error,#ef4444)';
-  });
-}
-setInterval(updateLastActivityClocks, 1000);
-
-// Patches the last-activity element's timestamp attribute in place from a
-// fresh WS session push, without a full renderSessionDetail re-render —
-// same pattern as refreshGeneratingIndicator/refreshNeedsInputBanner. The
-// 1s interval above then picks up the new value on its next tick.
-function refreshLastActivityIndicator(sess) {
-  if (!sess) return;
-  const el = document.querySelector('.session-last-activity[data-last-activity]');
-  if (!el) return;
-  el.setAttribute('data-last-activity', sess.last_channel_event_at || sess.updated_at || '');
-}
-
 function escHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
@@ -32132,6 +32099,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // first render. Falls through to English on fetch failure.
   initI18n().finally(() => {
     document.documentElement.setAttribute('lang', window._i18n.current);
+    // A tag selection restored from storage counts from the first paint, in the loaded language.
+    _tagsMenuRefresh();
     // If no token is stored, probe health to see if auth is required before
     // spinning up the WS. When it is, replace the splash with a token-entry
     // prompt so visitors without credentials don't see an endless loading
@@ -36773,6 +36742,116 @@ function _tagSuggestFromAlias(projectDir, projects, tags) {
   return hit ? hit.id : '';
 }
 
+// The header Tags menu: one button that opens a panel holding the session tag
+// and watch filters. The panel content comes from _tagsMenuHTML() when it exists.
+let _tagsMenuOpen = false;
+let _tagsMenuListening = false;
+
+// _tagsMenuActiveCount counts the watch filter as one plus each selected session tag.
+function _tagsMenuActiveCount() {
+  return (state.sessionWatchFilter ? 1 : 0) + _tagBrowse.session.sel.length;
+}
+
+function _tagsMenuRefresh() {
+  const btn = document.getElementById('headerTagsBtn');
+  if (!btn) return;
+  const n = _tagsMenuActiveCount();
+  const label = t('tags_menu_button');
+  const chip = document.getElementById('headerTagsCount');
+  if (chip) chip.textContent = n ? String(n) : '';
+  btn.setAttribute('aria-label', n ? label + ' (' + n + ')' : label);
+  btn.setAttribute('aria-expanded', _tagsMenuOpen ? 'true' : 'false');
+  _tagsMenuRedraw();
+}
+
+// _tagsMenuRedraw rebuilds the open panel from the existing state so its watch label,
+// Clear button and match mode follow a toggle. A panel still hidden (the registry is
+// loading) is left to toggleTagsMenu, and keyboard focus stays on the same control.
+function _tagsMenuRedraw() {
+  if (!_tagsMenuOpen || typeof _tagsMenuHTML !== 'function') return;
+  const panel = document.getElementById('headerTagsMenu');
+  if (!panel || panel.hidden) return;
+  const html = _tagsMenuHTML();
+  if (panel.innerHTML === html) return;
+  const controls = () => Array.from(panel.querySelectorAll('input,button'));
+  const at = controls().indexOf(document.activeElement);
+  panel.innerHTML = html;
+  if (at >= 0) {
+    const next = controls()[at];
+    if (next && next.focus) next.focus();
+  }
+}
+
+function _tagsMenuListen() {
+  if (_tagsMenuListening) return;
+  _tagsMenuListening = true;
+  document.addEventListener('pointerdown', ev => {
+    if (!_tagsMenuOpen) return;
+    const btn = document.getElementById('headerTagsBtn');
+    const panel = document.getElementById('headerTagsMenu');
+    const tg = ev && ev.target;
+    if ((btn && btn.contains && btn.contains(tg)) || (panel && panel.contains && panel.contains(tg))) return;
+    closeTagsMenu();
+  });
+  document.addEventListener('keydown', ev => {
+    if (!_tagsMenuOpen || !ev || ev.key !== 'Escape') return;
+    closeTagsMenu();
+    const btn = document.getElementById('headerTagsBtn');
+    if (btn && btn.focus) btn.focus();
+  });
+}
+
+function closeTagsMenu() {
+  _tagsMenuOpen = false;
+  const panel = document.getElementById('headerTagsMenu');
+  if (panel) panel.hidden = true;
+  _tagsMenuRefresh();
+}
+
+function toggleTagsMenu() {
+  if (_tagsMenuOpen) { closeTagsMenu(); return; }
+  _tagsMenuOpen = true;
+  _tagsMenuListen();
+  _tagsMenuRefresh();
+  _tagsLoad().then(() => {
+    if (!_tagsMenuOpen) return; // closed while the registry was loading
+    const panel = document.getElementById('headerTagsMenu');
+    if (!panel) return;
+    if (typeof _tagsMenuHTML === 'function') panel.innerHTML = _tagsMenuHTML();
+    panel.hidden = false;
+  });
+}
+// _tagsMenuHTML draws the Tags menu panel: the watched-only switch, the session tag
+// filter (tags in tree order, match mode, Clear) and, with a session open, the
+// watch and tag-edit actions for that session.
+function _tagsMenuHTML() {
+  const watched = `<label class="tags-menu-row"><input type="checkbox" ${state.sessionWatchFilter ? 'checked' : ''} onchange="toggleSessionWatchFilter()"><span>${escHtml(t('tags_menu_watched_only'))}</span></label>`;
+  const rows = _tagMultiRowsHTML('session');
+  const list = rows
+    ? `<div class="tags-menu-list">${rows}</div>`
+    : `<div class="tag-multi-empty">${escHtml(t('tags_menu_no_tags'))}</div>`;
+  const mode = _tagBrowseMode('session');
+  const modeLabel = mode === 'all' ? t('tag_browse_match_all') : t('tag_browse_match_any');
+  const modeBtn = `<button type="button" class="tag-mode-btn" aria-pressed="${mode === 'all'}" title="${escHtml(t('tag_browse_mode_title'))}" onclick="tagBrowseToggleMode('session')">${escHtml(modeLabel)}</button>`;
+  const clearBtn = _tagBrowseActiveCount('session')
+    ? `<button type="button" class="tags-menu-btn" onclick="tagBrowseClear('session')">${escHtml(t('tags_menu_clear'))}</button>`
+    : '';
+  const tagsSection = `<div class="tags-menu-section"><div class="tags-menu-head">${escHtml(t('tags_menu_button'))}</div>${list}<div class="tags-menu-actions">${modeBtn}${clearBtn}</div></div>`;
+  let sessionSection = '';
+  const id = state.activeView === 'session-detail' ? state.activeSession : '';
+  if (id) {
+    const idJ = escJsAttr(id);
+    const watchLabel = state.watchedSessions.has(id) ? t('tags_menu_unwatch_this') : t('tags_menu_watch_this');
+    sessionSection = `<div class="tags-menu-section"><div class="tags-menu-head">${escHtml(t('tags_menu_this_session'))}</div>` +
+      `<button type="button" class="tags-menu-btn" onclick="toggleSessionWatch('${idJ}')">${escHtml(watchLabel)}</button>` +
+      `<button type="button" class="tags-menu-btn" onclick="closeTagsMenu();openSessionTagsModal('${idJ}')">${escHtml(t('tags_menu_edit_this'))}</button></div>`;
+  }
+  return `<div class="tags-menu-section">${watched}</div>${tagsSection}${sessionSection}`;
+}
+
+window.toggleTagsMenu = toggleTagsMenu;
+window.closeTagsMenu = closeTagsMenu;
+
 const _tagsState = { list: [], byId: {}, loaded: false, untagged: null, registry: null };
 
 // _tagsLoad fetches the registry with its counts: each tag carries subtree_count
@@ -36998,6 +37077,7 @@ function _sessionTagsRefresh() {
 // _sessionTagsRepaint redraws whichever session view is on screen from the
 // sessions held in state.
 function _sessionTagsRepaint() {
+  _tagsMenuRefresh();
   if (state.activeView === 'sessions') renderSessionsView();
   else if (state.activeView === 'session-detail') _renderSessionDetailTagRow(_sessionFind(state.activeSession));
 }
@@ -37098,6 +37178,25 @@ function _tagBrowseItemSet(item, tree) {
 function _tagBrowseMatches(set, tagIds, mode) {
   if (!tagIds || !tagIds.length) return true;
   return mode === 'all' ? tagIds.every(id => set.has(id)) : tagIds.some(id => set.has(id));
+}
+
+// _sessionTagFilter keeps the sessions that pass the session tag selection. A
+// session sits under its own tags plus the ones it inherited, the same chips the
+// list shows. Selected IDs the registry does not hold are ignored, so an unloaded
+// registry or a deleted tag never hides a session. The session objects are kept.
+function _sessionTagFilter(sessions) {
+  const sel = _tagBrowse.session.sel;
+  if (!sel || !sel.length) return sessions;
+  const tree = _tagBrowseTree(_tagsState.list);
+  const tagIds = sel.filter(id => tree.byId[id]);
+  if (!tagIds.length) return sessions;
+  const mode = _tagBrowseMode('session');
+  return sessions.filter(s => {
+    const own = Array.isArray(s.tags) ? s.tags : [];
+    const inherited = Array.isArray(s.inherited_tags) ? s.inherited_tags : [];
+    const set = _tagBrowseItemSet({ tags: own.concat(inherited) }, tree);
+    return _tagBrowseMatches(set, tagIds, mode);
+  });
 }
 
 // _tagBrowseFilter keeps the items that pass every facet: the tag selection (ANY
@@ -37303,10 +37402,12 @@ function _tagBrowseLoad(scope) {
 function _tagBrowseSave(scope) {
   const sc = _tagBrowse[scope];
   try { localStorage.setItem('cs_tag_browse_' + scope, JSON.stringify({ view: sc.view, sel: sc.sel, mode: sc.mode })); } catch (_) { /* not kept */ }
+  if (scope === 'session') _tagsMenuRefresh();
 }
 const _tagBrowse = {
   automata: _tagBrowseLoad('automata'),
   automation: _tagBrowseLoad('automation'),
+  session: _tagBrowseLoad('session'),
   cfg: { defaultMode: 'any', directCounts: false, defaultView: 'auto', attentionStatuses: ['blocked', 'needs_review', 'paused'], loaded: false },
   layout: '',
 };
@@ -37721,6 +37822,17 @@ function _tagBrowseBodyHTML(scope, items, base, renderTile, emptyHtml) {
 
 // ── Facets and the filter bar ────────────────────────────────────────────────
 
+// _tagMultiRowsHTML draws one checkbox row per tag in tree order, indented by depth
+// and checked from the scope's selection. counts, when given, adds each tag's count.
+// The list facet dropdowns and the header Tags menu both draw their rows with it.
+function _tagMultiRowsHTML(scope, counts) {
+  const sc = _tagBrowse[scope];
+  return _tagTreeOrder(_tagsState.list).map(({ tag, depth }) => {
+    const count = counts ? `<span class="tag-facet-count">${counts[tag.id] || 0}</span>` : '';
+    return `<label class="tag-multi-row" style="padding-left:${depth * 14}px;"><input type="checkbox" value="${escHtml(tag.id)}" ${sc.sel.includes(tag.id) ? 'checked' : ''} onchange="tagBrowseToggleTag('${escJsAttr(scope)}','${escJsAttr(tag.id)}',this.checked)"><span class="tag-multi-name">${escHtml(tag.name)}</span>${count}</label>`;
+  }).join('');
+}
+
 // _tagFacetsHTML draws the facet controls: the tag multi-select with its ANY/ALL
 // toggle, the backend chips (Automata) and the status chips. Each option carries a
 // count from the loaded list with the other facets applied.
@@ -37731,7 +37843,7 @@ function _tagFacetsHTML(scope, tagsOpen) {
   const statusSel = scope === 'automata' ? [..._automataState.statusFilter] : [..._automationState.statusFilter];
   const mode = _tagBrowseMode(scope);
   const tagCounts = _tagBrowseCounts(_tagBrowseFilter(all, { backends: [...sc.backends], statuses: statusSel }, tree), tree);
-  const rows = _tagTreeOrder(_tagsState.list).map(({ tag, depth }) => `<label class="tag-multi-row" style="padding-left:${depth * 14}px;"><input type="checkbox" value="${escHtml(tag.id)}" ${sc.sel.includes(tag.id) ? 'checked' : ''} onchange="tagBrowseToggleTag('${escJsAttr(scope)}','${escJsAttr(tag.id)}',this.checked)"><span class="tag-multi-name">${escHtml(tag.name)}</span><span class="tag-facet-count">${tagCounts[tag.id] || 0}</span></label>`).join('');
+  const rows = _tagMultiRowsHTML(scope, tagCounts);
   const modeLabel = mode === 'all' ? t('tag_browse_match_all') : t('tag_browse_match_any');
   const tagGroup = `<div class="tag-facet-group"><details class="tag-multi"${tagsOpen ? ' open' : ''}><summary class="tag-multi-summary">${escHtml(t('tag_browse_filter_tags'))}${sc.sel.length ? ` (${sc.sel.length})` : ''}</summary><div class="tag-multi-list">${rows || `<div class="tag-multi-empty">${escHtml(t('tag_picker_empty'))}</div>`}</div></details><button type="button" class="tag-mode-btn" aria-pressed="${mode === 'all'}" title="${escHtml(t('tag_browse_mode_title'))}" onclick="tagBrowseToggleMode('${escJsAttr(scope)}')">${escHtml(modeLabel)}</button></div>`;
   let backendGroup = '';
@@ -37786,6 +37898,11 @@ function _tagFacetsRefresh(scope) {
 
 // _tagBrowseRepaint redraws a scope's list and its facets.
 function _tagBrowseRepaint(scope) {
+  if (scope === 'session') {
+    renderSessionsView();
+    _tagsMenuRefresh();
+    return;
+  }
   if (scope === 'automation') _automationRenderCards();
   else _automataRenderCards();
   _tagFacetsRefresh(scope);
