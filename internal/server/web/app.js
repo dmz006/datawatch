@@ -24372,6 +24372,16 @@ function _usageCalcNum(v, digits) {
   const n = Number(v);
   return isFinite(n) ? n.toFixed(digits === undefined ? 1 : digits) : '—';
 }
+// The per-task cost is shown as typed, on the Go text form's rule: up to
+// three decimals, trailing zeros dropped (0.05 must not print 0.1), non-finite
+// the dash the rest of the card uses.
+function _usageCalcCost(v) {
+  const n = Number(v);
+  if (!isFinite(n)) return '—';
+  let s = n.toFixed(3);
+  s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return s;
+}
 function _usageCalcClock(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(iso || ''));
   if (!m) return '';
@@ -24652,7 +24662,7 @@ function _usageCalcRemainingForm(res) {
   if (rw && rw.in_use === 'estimate') inUse = t('usage_calc_remaining_estimate');
   if (rw && rw.in_use === 'typed') inUse = t('usage_calc_remaining_typed');
   const line = rw
-    ? t('usage_calc_remaining_line', [_usageCalcNum(rw.points), inUse, String(rw.queue_tasks || 0), _usageCalcNum(rw.cost_per_task)])
+    ? t('usage_calc_remaining_line', [_usageCalcNum(rw.points), inUse, String(rw.queue_tasks || 0), _usageCalcCost(rw.cost_per_task)])
     : t('usage_calc_remaining_none');
   return `<div class="usage-calc-section" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:6px;">` +
     `<div style="font-weight:600;">${escHtml(t('usage_calc_remaining_title'))}</div>` +
@@ -25062,7 +25072,7 @@ function _usageCalcLedgerQueue(res) {
   const line = (id, text) => `<div data-queue="${id}" style="font-size:12px;">${escHtml(text)}</div>`;
   return `<div class="usage-calc-ledger-queue" style="display:flex;flex-direction:column;gap:2px;min-width:0;">` +
     `<div style="font-weight:600;font-size:13px;">${escHtml(t('usage_calc_ledger_queue_title'))}</div>` +
-    line('queued', t('usage_calc_ledger_queue_line', [String(w.queue_tasks || 0), _usageCalcNum(w.cost_per_task)])) +
+    line('queued', t('usage_calc_ledger_queue_line', [String(w.queue_tasks || 0), _usageCalcCost(w.cost_per_task)])) +
     line('estimate', hasEstimate ? t('usage_calc_ledger_queue_estimate', [_usageCalcNum(w.estimate_points)]) : t('usage_calc_ledger_queue_no_estimate')) +
     line('typed', hasTyped ? t('usage_calc_ledger_queue_typed', [_usageCalcNum(w.typed_points)]) : t('usage_calc_ledger_queue_no_typed')) +
     line('in-use', t('usage_calc_ledger_queue_in_use', [inUse])) +

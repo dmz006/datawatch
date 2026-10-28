@@ -111,7 +111,8 @@ test('the other consumers section is an honest empty state with no rows and no f
 test('the queue line shows the estimate and the typed override, and which one is in use', () => {
   const s = loadApp();
   const estimate = render(s, workedExampleBody());
-  assert.equal(dataText(estimate, 'queue', 'queued'), 'Queued Automata: 6, at 3.3 points each.');
+  // The cost shows as typed (up to three decimals, trailing zeros dropped), not rounded to a tenth.
+  assert.equal(dataText(estimate, 'queue', 'queued'), 'Queued Automata: 6, at 3.33 points each.');
   assert.match(dataText(estimate, 'queue', 'estimate'), /^Estimate: 20\.0 points/);
   assert.equal(dataText(estimate, 'queue', 'typed'), 'Typed override: none.');
   assert.equal(dataText(estimate, 'queue', 'in-use'), 'In use: the estimate.');
