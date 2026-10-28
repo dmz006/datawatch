@@ -4304,6 +4304,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// (config.Load merges over DefaultConfig()).
 			ResumeMaxAgeSeconds:  acfgIn.ResumeMaxAgeSeconds,
 			StaleTaskSeconds:     acfgIn.StaleTaskSeconds,
+			StuckRunningSeconds:  acfgIn.StuckRunningSeconds,
 			AutoFixRetries:       acfgIn.AutoFixRetries,
 			VerifierDiffMaxBytes: acfgIn.VerifierDiffMaxBytes,
 			SecurityScan:         acfgIn.SecurityScan,

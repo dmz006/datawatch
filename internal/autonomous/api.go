@@ -81,11 +81,27 @@ func (a *API) SetServerReadyCh(ch <-chan struct{}) {
 func (a *API) SetExecutors(spawn SpawnFn, verify VerifyFn) {
 	a.spawnFn = spawn
 	a.verify = verify
+	a.M.SetStuckRunningHooks(a.refireRollup, a.executorLive)
 	a.execWG.Add(1)
 	go func() {
 		defer a.execWG.Done()
 		a.resumeRunningPRDs()
 	}()
+}
+
+// refireRollup re-launches the executor for a running PRD whose tasks are all
+// terminal, the same call boot-resume makes, so Run re-fires the completion
+// rollup. A PRD with a live executor is left alone (started=false).
+func (a *API) refireRollup(id string) (bool, error) {
+	return a.runLocked(id, nil)
+}
+
+// executorLive reports whether a live executor holds the PRD's run slot.
+func (a *API) executorLive(id string) bool {
+	a.runMu.Lock()
+	defer a.runMu.Unlock()
+	_, live := a.runCancels[id]
+	return live
 }
 
 // WaitIdle cancels every live executor context and blocks until all
