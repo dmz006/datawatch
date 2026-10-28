@@ -9,6 +9,16 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Terminal toolbar: search and copy buttons removed — next patch above main
+
+The find-in-output search bar and the copy-selection button are no longer in the PWA session toolbar; they were never requested and had no server API behind them. The font menu, scroll-mode toggle and fit-to-width buttons are unchanged.
+
+**Tested:** Yes, by two means. (1) A repo-wide removal audit ([`docs/plans/assets/terminal-search-copy-removal-check.md`](plans/assets/terminal-search-copy-removal-check.md)) searched every surface — Go routes, config keys, MCP tools, CLI, OpenAPI (both files), YAML, docs/howtos, node/Go tests — and found the feature was 100% browser-side (only `app.js`, the locale bundles; `style.css` kept its shared toolbar classes), so nothing needed removing elsewhere. (2) The node tests under `internal/server/web/` pass after the removal with `env -u TMUX -u TMUX_TMPDIR node --test` (no test ever exercised these buttons; the suite guards that the surrounding toolbar, including `app-xterm-guard.test.js`, is untouched).
+
+**Validated:** No — a live browser look at the session toolbar confirming the search and copy buttons are gone and the font, scroll-mode and fit controls still work is pending.
+
+---
+
 ## Pi-prompt descendant-only stall bound (autonomous.descendant_stall_seconds)
 
 New config key and stop detector (pi-prompt family only): a worker attempt whose runner has ended, whose working descendants are still alive, and has no other evidence of life is reaped as an infrastructure failure after `descendant_stall_seconds` (default 2700) and retried via the `auto_fix_retries` budget. Config surface: YAML, REST `GET`/`PUT` config, MCP `autonomous_config_set`, CLI `config set`, comm `configure`, PWA settings card (5 locales).
