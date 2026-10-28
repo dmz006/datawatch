@@ -753,6 +753,9 @@ paths:
         `server.host`, `server.port`, `server.token`, `server.tls_enabled`,
         `autonomous.plan_coverage_check` (off|warn|block, default block),
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
+        `autonomous.stuck_running_seconds` (whole seconds >= 0, default 900; how long an
+        Automaton may stay running with every task finished and no live session before the
+        stuck-running watchdog re-fires its roll-up once, then blocks it; 0 uses the default),
         `autonomous.automation.idle_alert_minutes` (whole minutes >= 0, default 0 =
         off; a negative or non-integer value is rejected with 400),
         `autonomous.automation.triage_alert_minutes` (whole minutes >= 0; an unset

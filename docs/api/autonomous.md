@@ -1506,6 +1506,7 @@ autonomous:
   planning_effort:        "thorough"  # BL41 effort hint (BL304; old key decomposition_effort still accepted)
   verification_effort:    "normal"    # per-task/story/Automaton overrides (set_*_verification_llm) take precedence
   stale_task_seconds:     900         # activity-based stall window: no output, child process, backend activity, or file change for this long = stalled; 0 = inherit session.stale_timeout_seconds
+  stuck_running_seconds:  900         # stuck-running watchdog: an Automaton running with every task finished, no live session and no live executor for this long gets its completion roll-up re-fired once, then is blocked after a second full bound; 0 = 900
   preserve_attempt_work:  true        # save a killed attempt's uncommitted work to refs/datawatch/attempts/; restored on the next attempt unless clean_restart
   auto_fix_retries:       1           # re-prompt count on verifier failure
   security_scan:          true        # nightwire-port .py scanner before commit
