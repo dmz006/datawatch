@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.29.3 — Stuck-running Automaton watchdog
+## v9.29.2 — Stuck-running Automaton watchdog
 
 
 ### An Automaton can no longer sit silently in running
