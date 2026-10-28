@@ -10,7 +10,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Watching moved.** The session header no longer shows a time counter or a watch eye. Open the header **Tags** dropdown and use **Watch this session** (or **Stop watching this session**) under **This session**.
 - **Filters in one place.** The session list's **Watched only** toggle and tag filter are in the same dropdown, with tag checkboxes, a **match ANY** / **match ALL** switch and **Clear**. A count on the **Tags** button shows how many filters are on.
 - **Edit tags from the header.** **Edit tags of this session** in the dropdown opens the session tag editor.
-- Docs: [`howto/sessions-deep-dive.md`](docs/howto/sessions-deep-dive.md) (PWA happy path) and [`howto/automata-tags.md`](docs/howto/automata-tags.md#the-header-tags-dropdown) describe the dropdown, with two new screenshots.
+- Docs: [`howto/sessions-deep-dive.md`](docs/howto/sessions-deep-dive.md) (PWA happy path) and [`howto/automata-tags.md`](docs/howto/automata-tags.md#the-header-tags-dropdown) describe the dropdown.
 
 ### Voice transcription: real error causes, long-recording chunking and kept recordings
 
