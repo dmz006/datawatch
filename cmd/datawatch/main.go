@@ -5266,7 +5266,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										// signal, and only where the pid still carries the
 										// recorded start time. Never a name pattern.
 										ended, survivors := endRecordedDescendants(recordedDescendants, 5*time.Second,
-											func(pid int, sig syscall.Signal) error { return syscall.Kill(pid, sig) },
+											func(pid int, sig syscall.Signal) error { return syscall.Kill(pid, sig) }, // end-reason-ok: signals one recorded descendant pid after its start time matched, not a session
 											func(rec descendantProcess) bool {
 												st, ok := readProcessStartTime(rec.PID)
 												return ok && st == rec.StartTime

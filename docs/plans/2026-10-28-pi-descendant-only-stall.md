@@ -1,7 +1,7 @@
 # Pi-prompt descendant-only stall bound (autonomous.descendant_stall_seconds)
 
 **Date:** 2026-10-28
-**Version:** version at merge time (next patch above main) — no version number is set in `CHANGELOG.md` itself; the entry rides the `[Unreleased]` section and is stamped at release alongside every other entry.
+**Version:** 9.30.1 (the changelog entry is under v9.30.1).
 **Scope:** a new daemon-side stall detector for the `pi-prompt` backend family, driven by one config key. Files: `internal/autonomous/descendant_stall.go` and `_test.go`, `internal/config/descendant_stall.go` and `_test.go`, `internal/config/config.go`, `internal/server/api.go` and `descendant_stall_config_test.go`, `internal/mcp/autonomous.go`, `cmd/datawatch/main.go`, `descendant_processes.go`, `descendant_stall_wait.go`, `end_attribution.go`, their tests, `internal/server/web/app.js` plus the settings field tests and the five locale bundles (en, de, es, fr, ja). Docs: `CHANGELOG.md`, `docs/config-reference.yaml`, `docs/implementation.md`, `docs/operations.md`, `docs/howto/autonomous-recovery.md`, `docs/api/autonomous.md`, `docs/mcp.md`, `docs/testing-tracker.md`, this file.
 **Status:** code Done and documented on this branch; the live fire (a real pi-prompt worker parked behind a living child being reaped) is not yet exercised against a running daemon, so `Validated=No` in the tracker section.
 
@@ -38,7 +38,7 @@ evidence of life.
 | 5 | Documentation: CHANGELOG, config reference, implementation, operations, howto, API docs, MCP docs, testing tracker, this plan | Done |
 | 6 | Live validation on a real daemon (pi-prompt worker left with a live descendant) | Pending |
 
-Shipped in: version at merge time (next patch above main); the entry is in `CHANGELOG.md` under `[Unreleased]` and stamped at release.
+Shipped in: 9.30.1; the entry is in `CHANGELOG.md` under v9.30.1. Phase 6 (live fire on a running daemon) was not exercised before the release and stays open.
 
 ## Parity surface
 
@@ -89,6 +89,5 @@ node --test internal/server/web/app-autonomous-settings-fields.test.js
   bundles (en, de, es, fr, ja); covered by the PWA field test. The de, es, fr and ja bundles carry
   the English string for now; the translation request is part of datawatch-app#291.
 - Mobile-Parity Rule: datawatch-app#291 filed for Android and iPhone.
-- Version bump: N/A for this unit; the release stamps the `[Unreleased]` entry and bumps both
-  `Version` variables at merge.
+- Version bump: done at merge, 9.30.1 in both `Version` variables.
 - Commit tag: `tracker: descendant-only stall bound`.
