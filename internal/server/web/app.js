@@ -7201,6 +7201,17 @@ window.micButtonHTML = function(targetId) {
   return `<button type="button" class="btn-icon" data-mic-for="${escHtml(safeId)}" onclick="startGenericVoiceInput('${safeId}',this)" title="Voice input — click to start / stop" style="margin-left:4px;">&#127908;</button>`;
 };
 
+// _autoMicTextareaId returns the DOM id given to a textarea that has none so
+// its mic button can point at it through data-mic-for. It is only a UI
+// identifier (never a token, secret or capability, and nothing about it needs to
+// be unpredictable), so a module-level counter is enough and keeps
+// Math.random out of the voice path.
+let _autoMicTextareaSeq = 0;
+function _autoMicTextareaId() {
+  _autoMicTextareaSeq += 1;
+  return '_autoMicTa_' + _autoMicTextareaSeq;
+}
+
 // BL292 (v6.22.2) — auto-attach mic buttons to every large textarea that
 // doesn't already have one. Operator: "all input boxes should have mic so
 // can be done with voice prompts (standard for all large text input
@@ -7242,7 +7253,7 @@ window.autoAttachMics = function(root) {
       continue;
     }
     if (!ta.id) {
-      ta.id = '_autoMicTa_' + Math.random().toString(36).slice(2, 10);
+      ta.id = _autoMicTextareaId();
     }
     const btn = document.createElement('button');
     btn.type = 'button';

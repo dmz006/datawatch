@@ -1196,7 +1196,6 @@
   "session_chip_waiting": "En attente",
   "session_chrome": "Intégration Chrome",
   "session_compute_ref_title": "Nœud de calcul v7",
-  "session_last_activity_title": "Temps écoulé depuis la dernière sortie du backend — le seul signal pour les sessions headless/non interactives (ex. opencode run) qui n'affichent aucune activité visible entre deux générations",
   "session_detail_cancel_schedule": "Annuler la planification",
   "session_detail_delete_body": "L'enregistrement de session sera supprimé du serveur. Les données sur le disque sont préservées. Cette action est irréversible.",
   "session_detail_delete_title": "Supprimer la session ?",
