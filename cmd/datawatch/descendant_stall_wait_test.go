@@ -1,0 +1,231 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
+)
+
+// TestDescendantStallTickIsGatedByFamilyAndTracker covers the family gate on
+// the wait-loop tick: nil tracker and any non-pi-prompt family report not
+// stalled, and a non-pi-prompt family must not even move the tracker's clock
+// (its Observe must not run), so the pi-prompt detector is the only one this
+// detector can fire through.
+func TestDescendantStallTickIsGatedByFamilyAndTracker(t *testing.T) {
+	now := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
+	// Start the clock an hour behind and give a 10m limit so we can tell from
+	// the next observation whether the gated tick moved the clock.
+	tracker := autonomouspkg.NewDescendantStallTracker(now.Add(-time.Hour), 10*time.Minute)
+
+	if stalled, reason := descendantStallTick(tracker, "opencode", now, 1, time.Time{}, time.Time{}); stalled || reason != "" {
+		t.Errorf("opencode family: stalled=%v reason=%q, want no stall and empty reason", stalled, reason)
+	}
+	// If the gated tick had observed, its clock would be at now and this
+	// observation 1m later with no fresh evidence would be fresh; with the
+	// clock actually still at now-1h this observes a silence well past the
+	// limit and stalls. Stalling proves the gate kept the clock from moving.
+	stalled, _ := tracker.Observe(now.Add(time.Minute), 1, time.Time{}, time.Time{})
+	if !stalled {
+		t.Error("opencode family moved the stall clock: the follow-up observation must stall, want the clock to still be at start")
+	}
+	if stalled, reason := descendantStallTick(nil, "pi-prompt", now, 1, time.Time{}, time.Time{}); stalled || reason != "" {
+		t.Errorf("nil tracker: stalled=%v reason=%q, want no stall and empty reason", stalled, reason)
+	}
+}
+
+// TestDescendantStallTickDelegatesToTracker verifies the tick passes the
+// observation through to the tracker: live descendants plus a stale clock
+// stall once the silence outgrows the limit, the reason is the tracker's, and
+// fresh log or workdir evidence resets the silence and does not stall.
+func TestDescendantStallTickDelegatesToTracker(t *testing.T) {
+	base := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
+	tracker := autonomouspkg.NewDescendantStallTracker(base, 90*time.Second)
+
+	// Silence has outgrown the limit: the tick must declare a stall.
+	stalled, reason := descendantStallTick(tracker, "pi-prompt", base.Add(120*time.Second), 1, time.Time{}, time.Time{})
+	if !stalled {
+		t.Fatalf("stalled=%v, want true after 120s of silence past the 90s limit", stalled)
+	}
+	if !strings.Contains(reason, "descendant-only silence for 2m0s") || !strings.Contains(reason, "limit 1m30s") {
+		t.Errorf("reason = %q, want the tracker's measured silence and limit", reason)
+	}
+
+	// A fresh log write within the limit must not stall.
+	tracker = autonomouspkg.NewDescendantStallTracker(base, 90*time.Second)
+	freshLog := base.Add(60 * time.Second)
+	stalled, _ = descendantStallTick(tracker, "pi-prompt", base.Add(120*time.Second), 1, freshLog, time.Time{})
+	if stalled {
+		t.Error("stalled with a log write 60s ago, want the fresh evidence to reset the silence")
+	}
+
+	// A fresh workdir file within the limit must not stall either.
+	tracker = autonomouspkg.NewDescendantStallTracker(base, 90*time.Second)
+	freshFile := base.Add(30 * time.Second)
+	stalled, _ = descendantStallTick(tracker, "pi-prompt", base.Add(120*time.Second), 1, time.Time{}, freshFile)
+	if stalled {
+		t.Error("stalled with a workdir file touched 30s ago, want the fresh evidence to reset the silence")
+	}
+}
+
+// TestDescendantStallTickWithoutDescendantsNeverStalls covers the tracker's
+// core condition: with no work descendants there is nothing descendant-only
+// about the silence, so the detector must not fire and the clock keeps
+// tracking observations.
+func TestDescendantStallTickWithoutDescendantsNeverStalls(t *testing.T) {
+	base := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
+	tracker := autonomouspkg.NewDescendantStallTracker(base, 30*time.Second)
+
+	stalled, reason := descendantStallTick(tracker, "pi-prompt", base.Add(2*time.Minute), 0, time.Time{}, time.Time{})
+	if stalled || reason != "" {
+		t.Fatalf("0 descendants: stalled=%v reason=%q, want no stall", stalled, reason)
+	}
+	// The clock moved to the observation, so fresh evidence at the next
+	// observation is within the limit: the tick must not stall.
+	fresh := base.Add(2*time.Minute + 20*time.Second)
+	stalled, reason = descendantStallTick(tracker, "pi-prompt", base.Add(2*time.Minute+30*time.Second), 1, fresh, time.Time{})
+	if stalled || reason != "" {
+		t.Errorf("0 descendants then fresh evidence: stalled=%v reason=%q, want the clock to have moved with the observation", stalled, reason)
+	}
+}
+
+// TestDescendantStallTickResetRestartsTheClock covers the await-external
+// suppression path: after a reset the silence is measured from the reset, so
+// an immediately following observation does not inherit an old stall.
+func TestDescendantStallTickResetRestartsTheClock(t *testing.T) {
+	base := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
+	tracker := autonomouspkg.NewDescendantStallTracker(base, 90*time.Second)
+	// First a long silent window so the clock is far behind.
+	tracker.Observe(base.Add(5*time.Minute), 1, time.Time{}, time.Time{})
+
+	tracker.Reset(base.Add(5 * time.Minute))
+	stalled, _ := descendantStallTick(tracker, "pi-prompt", base.Add(5*time.Minute+30*time.Second), 1, time.Time{}, time.Time{})
+	if stalled {
+		t.Error("stalled 30s after a reset, want the reset to restart the silence clock")
+	}
+}
+
+// TestDescendantStallDisabledLimitNeverStalls covers the tracker's off-switch:
+// a non-positive limit disables detection and the detector must never fire
+// through the tick, whatever the silence. A zero configured value instead
+// reads as the documented default, so the off-switch is only reachable with a
+// non-positive duration.
+func TestDescendantStallDisabledLimitNeverStalls(t *testing.T) {
+	base := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
+	for _, limit := range []time.Duration{0, -time.Second} {
+		tracker := autonomouspkg.NewDescendantStallTracker(base, limit)
+		stalled, reason := descendantStallTick(tracker, "pi-prompt", base.Add(time.Hour), 3, base.Add(-time.Hour), time.Time{})
+		if stalled || reason != "" {
+			t.Errorf("limit=%v: stalled=%v reason=%q, want a non-positive limit to never stall", limit, stalled, reason)
+		}
+	}
+	// The configured zero value is not the off-switch: it normalizes to the
+	// documented default.
+	if got := config.NormalizeDescendantStallSeconds(0); got != config.DescendantStallDefaultSeconds {
+		t.Errorf("NormalizeDescendantStallSeconds(0) = %d, want the default %d", got, config.DescendantStallDefaultSeconds)
+	}
+}
+
+// TestDescendantStallEvidenceLinesNamesTheRecordedIdentity checks that the
+// evidence helper maps the ended/surviving slices to identity lines the
+// runner evidence can carry, and that empty lines are dropped.
+func TestDescendantStallEvidenceLinesNamesTheRecordedIdentity(t *testing.T) {
+	ended := []descendantProcess{
+		{PID: 4121, StartTime: 111, Line: "4121 111 node /usr/lib/pi"},
+		{PID: 4125, StartTime: 222, Line: "4125 222 npm exec pi"},
+	}
+	byPID := descendantEvidenceLines(ended)
+	if len(byPID) != 2 {
+		t.Fatalf("mapped %d entries, want 2", len(byPID))
+	}
+	if byPID[4121].Line != "4121 111 node /usr/lib/pi" {
+		t.Errorf("line for 4121 = %q, want the recorded identity", byPID[4121].Line)
+	}
+	if got := descendantEvidenceLines(nil); got != nil {
+		t.Errorf("nil list mapped to %v, want nil", got)
+	}
+	if got := descendantEvidenceLines([]descendantProcess{}); got != nil {
+		t.Errorf("empty list mapped to %v, want nil", got)
+	}
+}
+
+// TestDescendantStallAppendEvidenceDedupesByPID checks the evidence append:
+// a recorded descendant whose pid is already in the runner evidence's
+// process lines is not appended twice, and a non-recorded line is appended.
+func TestDescendantStallAppendEvidenceDedupesByPID(t *testing.T) {
+	ev := &autonomouspkg.RunnerEvidence{
+		Processes: []string{"4121 2000 node /usr/lib/pi"}, // same pid, different line already present
+	}
+	recs := map[int]descendantProcess{
+		4121: {PID: 4121, StartTime: 111, Line: "4121 111 node /usr/lib/pi"},
+		4125: {PID: 4125, StartTime: 222, Line: "4125 222 npm exec pi"},
+	}
+	appendDescendantEvidence(ev, recs)
+
+	if len(ev.Processes) != 2 {
+		t.Fatalf("Processes = %d entries %v, want the already-present pid deduped and the new one appended",
+			len(ev.Processes), ev.Processes)
+	}
+	joined := strings.Join(ev.Processes, "\n")
+	if strings.Count(joined, "4121") != 1 {
+		t.Errorf("pid 4121 appears %d times, want exactly one\n%v", strings.Count(joined, "4121"), ev.Processes)
+	}
+	if !strings.Contains(joined, "4125 222 npm exec pi") {
+		t.Errorf("the newly recorded descendant line is missing\n%v", ev.Processes)
+	}
+
+	// A nil evidence must be tolerated (called unconditionally after
+	// newRunnerEvidence, which can hand back nil for an empty pane+walk).
+	appendDescendantEvidence(nil, recs)
+}
+
+// TestNewestWorkDirMtimePicksTheNewestRegularFile covers the workdir
+// evidence helper: it returns the newest file mtime, skips .git, and
+// reports the zero time for an empty or absent directory so the caller can
+// tell "no evidence" from a real timestamp.
+func TestNewestWorkDirMtimePicksTheNewestRegularFile(t *testing.T) {
+	dir := t.TempDir()
+	old := time.Date(2026, 10, 26, 6, 0, 0, 0, time.UTC)
+	newer := time.Date(2026, 10, 26, 7, 0, 0, 0, time.UTC)
+
+	writeFile(t, filepath.Join(dir, "a.txt"), "old")
+	writeFile(t, filepath.Join(dir, "nested", "b.txt"), "new")
+	_ = os.MkdirAll(filepath.Join(dir, ".git", "objects"), 0o755)
+	writeFile(t, filepath.Join(dir, ".git", "objects", "pack"), "git-internal")
+	_ = os.Chtimes(filepath.Join(dir, "a.txt"), old, old)
+	_ = os.Chtimes(filepath.Join(dir, "nested", "b.txt"), newer, newer)
+
+	got := newestWorkDirMtime(dir)
+	if !got.Equal(newer) {
+		t.Errorf("newestWorkDirMtime() = %v, want the newest non-.git file mtime %v", got.UTC(), newer.UTC())
+	}
+	if got.Before(old) {
+		t.Errorf("newestWorkDirMtime() = %v is not after the older file's mtime %v", got.UTC(), old.UTC())
+	}
+
+	// .git contents are skipped: a newer .git file must not win.
+	gitNewer := newer.Add(time.Hour)
+	_ = os.Chtimes(filepath.Join(dir, ".git", "objects", "pack"), gitNewer, gitNewer)
+	if got := newestWorkDirMtime(dir); got.After(gitNewer.Add(-time.Minute)) {
+		t.Errorf("newestWorkDirMtime() = %v picked up .git content, want it skipped", got.UTC())
+	}
+
+	if got := newestWorkDirMtime(filepath.Join(dir, "nonexistent")); !got.IsZero() {
+		t.Errorf("missing directory: %v, want the zero time", got)
+	}
+}
+
+// writeFile writes content at path creating any needed parent directories.
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir for %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}

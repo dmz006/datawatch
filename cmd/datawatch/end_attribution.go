@@ -12,23 +12,24 @@ import (
 // Callers name the daemon code path that ends a session. They are recorded on
 // every end as the "by=" field of the journal line and on the session timeline.
 const (
-	endCallerNudgeStall     = "autonomous.verifier.nudge-stall"
-	endCallerSessionStart   = "autonomous.verifier.session-start"
-	endCallerWaitingInput   = "autonomous.verifier.waiting-input"
-	endCallerIdleDetector   = "autonomous.verifier.idle-detector"
-	endCallerExitSilence    = "autonomous.verifier.exit-silence"
-	endCallerSSEStall       = "autonomous.verifier.sse-stall"
-	endCallerActivityStall  = "autonomous.verifier.activity-stall"
-	endCallerDoneCheckpoint = "autonomous.verifier.done-checkpoint"
-	endCallerPostWait       = "autonomous.verifier.post-wait"
-	endCallerSSEWatchdog    = "autonomous.watchdog.sse-stall"
-	endCallerReconcileHost  = "autonomous.verifier-reconcile"
-	endCallerJudgeReconcile = "autonomous.judge-reconcile"
-	endCallerKillOnExit     = "daemon.kill-sessions-on-exit"
-	endCallerShutdown       = "daemon.shutdown"
-	endCallerExitHook       = "daemon.exit-hook-restart"
-	endCallerCLIStopAll     = "cli.session-stop-all"
-	endCallerCLIKill        = "cli.session-kill"
+	endCallerDescendantStall = "autonomous.verifier.descendant-stall"
+	endCallerNudgeStall      = "autonomous.verifier.nudge-stall"
+	endCallerSessionStart    = "autonomous.verifier.session-start"
+	endCallerWaitingInput    = "autonomous.verifier.waiting-input"
+	endCallerIdleDetector    = "autonomous.verifier.idle-detector"
+	endCallerExitSilence     = "autonomous.verifier.exit-silence"
+	endCallerSSEStall        = "autonomous.verifier.sse-stall"
+	endCallerActivityStall   = "autonomous.verifier.activity-stall"
+	endCallerDoneCheckpoint  = "autonomous.verifier.done-checkpoint"
+	endCallerPostWait        = "autonomous.verifier.post-wait"
+	endCallerSSEWatchdog     = "autonomous.watchdog.sse-stall"
+	endCallerReconcileHost   = "autonomous.verifier-reconcile"
+	endCallerJudgeReconcile  = "autonomous.judge-reconcile"
+	endCallerKillOnExit      = "daemon.kill-sessions-on-exit"
+	endCallerShutdown        = "daemon.shutdown"
+	endCallerExitHook        = "daemon.exit-hook-restart"
+	endCallerCLIStopAll      = "cli.session-stop-all"
+	endCallerCLIKill         = "cli.session-kill"
 )
 
 // sessionEnder is the slice of the session manager that ends sessions. The end
@@ -111,6 +112,13 @@ func sessionNudgeNote(mgr *autonomouspkg.Manager, prdID, taskID, sessionID strin
 // reason its tracker already measured.
 func exitSilenceEndReason(trackerReason string) string {
 	return "exit-silence detector: " + trackerReason
+}
+
+// descendantStallEndReason names the pi-prompt descendant-only stall detector
+// around the reason its tracker already measured (the measured silence, the
+// remaining work descendant and its observed identity).
+func descendantStallEndReason(trackerReason string) string {
+	return "descendant-only stall detector: " + trackerReason
 }
 
 // sseEndReasonLineCap bounds the matched line quoted in an end reason so

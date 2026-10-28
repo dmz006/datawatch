@@ -28,7 +28,7 @@ func (r *recordingEnder) EndSession(fullID string, why session.EndReason) error 
 func TestEndAttributionCallersAreNamed(t *testing.T) {
 	callers := []string{
 		endCallerNudgeStall, endCallerSessionStart, endCallerWaitingInput,
-		endCallerIdleDetector, endCallerExitSilence, endCallerSSEStall,
+		endCallerIdleDetector, endCallerDescendantStall, endCallerExitSilence, endCallerSSEStall,
 		endCallerActivityStall, endCallerDoneCheckpoint, endCallerPostWait,
 		endCallerSSEWatchdog, endCallerReconcileHost, endCallerKillOnExit,
 		endCallerShutdown, endCallerExitHook, endCallerCLIStopAll, endCallerCLIKill,
@@ -90,6 +90,11 @@ func TestEndAttributionDetectorReasonsCarryTheirNumbers(t *testing.T) {
 			name:   "waiting input",
 			reason: waitingInputEndReason(3),
 			parts:  []string{"waiting_input stall detector", "3 consecutive ticks", "threshold 3"},
+		},
+		{
+			name:   "descendant stall",
+			reason: descendantStallEndReason("no output or workdir change for 120s, limit 90s, live work descendant 4121 bash"),
+			parts:  []string{"descendant-only stall detector", "no output or workdir change for 120s", "limit 90s", "live work descendant 4121 bash"},
 		},
 		{
 			name: "sse detector",
