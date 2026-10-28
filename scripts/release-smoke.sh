@@ -4752,7 +4752,9 @@ RM_MISSING=""
 for RM_T in jq curl python3 tmux git; do
   command -v "$RM_T" >/dev/null 2>&1 || RM_MISSING="$RM_MISSING $RM_T"
 done
-if [[ "${SMOKE_RESTART_MATRIX:-1}" == "0" ]]; then
+if [[ "$SECTION_SKIP" == "1" ]]; then
+  : # SMOKE_ONLY excludes this section: do not start the throwaway restart daemons
+elif [[ "${SMOKE_RESTART_MATRIX:-1}" == "0" ]]; then
   skip "restart matrix: disabled by SMOKE_RESTART_MATRIX=0"
 elif [[ ! -x "$SMOKE_DIR/restart-matrix.sh" ]]; then
   skip "restart matrix: scripts/restart-matrix.sh not found or not executable"
@@ -4854,14 +4856,18 @@ H "82. Usage calculator (advice, readings, verdict, policy/variant, extra credit
 #
 # Evidence — SMOKE_ONLY=82 against the section's own isolated sandbox daemon
 # (fresh daemon, auto-generated self-signed cert, env -u TMUX -u TMUX_TMPDIR,
-# unrelated release pre-gates skipped: DW_SKIP_TIDY_CHECK/DOCS/VERSION_BUMP/
-# DOCKERFILE_GO_VERSION; no production): exact `== Summary ==` line was
+# unrelated release pre-gates skipped: DW_SKIP_TIDY_CHECK/DOCS_CHECK/INTERNAL_REFS_CHECK/
+# VERSION_BUMP_CHECK/DOCKERFILE_GO_VERSION_CHECK/DOCS_AS_MCP_CHECK; no production),
+# run 2026-10-28 on a freshly built binary; the exact `== Summary ==` lines were
 #   Pass:  16
 #   Fail:  0
 #   Skip:  0
-# and `== Cleanup ==` then removed both readings and restored
-# usage.calculator.variant to <unset/default> (extra credit was reset to 0 by
-# the section itself) — no residue left in the sandbox data dir.
+# and `== Cleanup ==` then deleted both readings by exact id, restored
+# usage.calculator.variant to <unset/default> and the extra credit to 0 — no
+# residue left in the sandbox data dir. The run takes about three minutes because
+# the sections before 82 still run their setup side effects under SMOKE_ONLY (only
+# their ok/ko/skip lines are muted); section 80's restart matrix, which would add
+# up to 7 x SMOKE_RESTART_TIMEOUT, is now gated on SECTION_SKIP.
 # The comm route passes over the real path (POST /api/test/message): the test
 # router gets the daemon's web port at startup (main.go, SetWebPort), and the
 # in-process loopback client skips certificate verification for the daemon's own
