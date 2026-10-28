@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.29.3 — Stuck-running Automaton watchdog
+
+
 ### An Automaton can no longer sit silently in running
 
 - **A stuck Automaton is re-checked, then blocked.** An Automaton could stay in `running` with every task finished and no active session, with nothing left to move it on. A watchdog now looks for that state. When an Automaton has stayed in it for `autonomous.stuck_running_seconds` (default 900, 15 minutes), the daemon re-runs its completion rollup once. If it is still stuck after a second full bound, the daemon moves it to `blocked`. A session that is still working, or a task that is not finished, resets the timer, and a change made by someone else at the same moment wins over the watchdog.
