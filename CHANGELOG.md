@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.30.1 — Descendant-only stall bound for pi-prompt workers
+
+### A pi-prompt worker parked behind a living child process is detected and reaped
+
+- **A new stall detector covers a hole only pi-prompt has.** A one-shot `pi --print` worker writes nothing to its log until it finishes, so the log-mtime stall check is disabled for it — and a run whose runner has exited but whose working child (a build, a test) is still alive with no other sign of life was previously invisible. A new tracker (`DescendantStallTracker`) now measures silence per `poll_interval`, resets on any log write, any workdir file change, or any sign of life, and fires when a live working descendant is the only life sign. On trip the attempt ends as an infrastructure failure, its recorded descendants are cleaned up, it alerts, and the normal stall retry path picks up the task.
+- **New setting `autonomous.descendant_stall_seconds` (default 2700).** Zero or negative values read as the default on every surface, so the detector can never be silently turned off. The key is carried by YAML, REST `GET`/`PUT` config, MCP `autonomous_config_set`, CLI `datawatch config set`, comm channel `configure`, and the PWA settings card (five locales). See [implementation](docs/implementation.md) and [operations](docs/operations.md).
+
 ## v9.30.0 — Pi worker observability: progress, stale heartbeat, loop detector and thinking level
 
 - **You can now see what a running pi worker is actually doing, without opening its pane.** While a pi task is running, the task card in the PWA and the task objects in the CLI, REST, and MCP views show a live progress snapshot (what it did last, which tools it has called and how often, its last summary, and token counts), refreshed from the worker's own session log about every 30 seconds. The same log's newest-event time also shows up in the session view and the tail, so a stuck worker is distinguishable from a working one.
