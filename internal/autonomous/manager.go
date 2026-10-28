@@ -437,6 +437,12 @@ type Manager struct {
 	// completion rollup can discount its own Rev bumps. Guarded by mu.
 	ownSaves map[string]int
 
+	// loopFired (loop_rescue.go) — loop-rescue fires-once dedup: keys are
+	// sessionID + \x00 + LoopFinding.Key(); a (session, finding) pair
+	// already rescued must not re-fire on later polls (no re-record,
+	// re-emit, re-send, or re-stop). Guarded by mu.
+	loopFired map[string]bool
+
 	// BL427 — in-process lifecycle event dispatcher (lifecycle_event.go).
 	// Has its own lock; never guarded by mu. lifecycleHost is
 	// os.Hostname, cached once.
@@ -849,7 +855,7 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 			At:    now,
 			Kind:  verifyingResolution,
 			Actor: "autonomous",
-			Note: fmt.Sprintf("boot-resume resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", completedCount, requeuedCount),
+			Note:  fmt.Sprintf("boot-resume resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", completedCount, requeuedCount),
 		})
 	}
 	if err := m.store.SavePRD(prd); err != nil {
@@ -3634,7 +3640,7 @@ func (m *Manager) reconcileStuckTasks() {
 				At:    now,
 				Kind:  verifyingResolution,
 				Actor: "autonomous",
-				Note: fmt.Sprintf("boot pass resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", verdictCompleted, verdictRequeued),
+				Note:  fmt.Sprintf("boot pass resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", verdictCompleted, verdictRequeued),
 			})
 		}
 		if err := m.store.SavePRD(prd); err != nil {

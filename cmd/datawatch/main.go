@@ -4632,13 +4632,43 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// the periodic poll does not re-parse the (potentially large)
 						// session log every tick. Non-pi backends have no log here so
 						// the refresh is a no-op; pi backends get a real snapshot plus
-							// a looping warning when the identical tool call keeps
-							// repeating across polls.
+						// a looping warning when the identical tool call keeps
+						// repeating across polls.
 						if waitTick%10 == 0 && task.SessionID != "" { // 10 ticks ≈ 30s at the default 3s tick
-							snap, loopWarn := refreshTaskProgress(s, taskDir)
-							if autonomousMgrRef != nil && (snap != nil || loopWarn != "") {
-								if !autonomousMgrRef.RefreshTaskProgress(task.ID, snap, loopWarn) {
+							snap, loopWarn, finding, looping := refreshTaskProgress(s, taskDir)
+							// A live loop finding (loop_detect.go over the session log's
+							// recent turns) supersedes the coarser streak-based warning
+							// for what is recorded on the task: it names the announced
+							// action and carries the corrective hint.
+							warn := loopWarn
+							if looping {
+								warn = finding.Warning()
+							}
+							if autonomousMgrRef != nil && (snap != nil || warn != "") {
+								if !autonomousMgrRef.RefreshTaskProgress(task.ID, snap, warn) {
 									log.Printf("[autonomous] progress refresh: task %s not found (skipping progress store)", task.ID)
+								}
+							}
+							// Loop rescue (loop_rescue.go): record the 'looping'
+							// warning + emit the task.looping event, then either send
+							// the corrective message (input-capable session) or stop
+							// the one-shot print worker and route the existing retry
+							// path with the finding's hint appended to the spec.
+							if looping && autonomousMgrRef != nil {
+								action, rerr := autonomousMgrRef.RescueLoop(task.ID, newLoopSessionView(s, mgr), finding)
+								if rerr != nil {
+									log.Printf("[autonomous] wait tick %d: loop rescue %s failed: %v (task %s/%s, action %q)", waitTick, action, rerr, prd.ID, task.ID, finding.Action)
+								} else {
+									log.Printf("[autonomous] wait tick %d: worker loop detected (action %q): %s (task %s/%s)", waitTick, finding.Action, action, prd.ID, task.ID)
+								}
+								if action == autonomouspkg.LoopRescueStopped {
+									// One-shot print worker (no input possible): RescueLoop
+									// stopped it above. Route the existing retry path —
+									// LoopRetryError wraps ErrWorkerStalled (retry trigger,
+									// executor.go) and carries a RetryHint naming the stuck
+									// action, which main.go prepends to the re-spawned spec.
+									stallErr = autonomouspkg.LoopRetryError(finding)
+									break waitLoop
 								}
 							}
 						}
