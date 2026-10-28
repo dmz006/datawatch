@@ -147,10 +147,11 @@ a **Back** row; the URL hash follows the drill-down.
 
 ### The header Tags dropdown
 
-The page header has a **Tags** button. It opens a dropdown that holds the
-session list's filters and the actions for the session you have open.
+The page header has an icon button showing a tag icon, with no visible word.
+Its accessible name and its tooltip read **Tags**. It opens a dropdown that
+holds the session list's filters and the actions for the session you have open.
 
-- **Active-filter count.** A small number on the **Tags** button counts the
+- **Active-filter count.** A small number on the tag icon button counts the
   filters in force: one for **Watched only**, plus one for each ticked tag.
   It is empty when no filter is on.
 - **Watched only.** A checkbox at the top. Tick it to list only the sessions
@@ -161,8 +162,8 @@ session list's filters and the actions for the session you have open.
   With no tags yet, the list reads *No tags yet*.
 - **This session.** Shown only while a session is open. **Watch this session**
   (or **Stop watching this session**) replaces the watch eye the session
-  header used to carry, and **Edit tags of this session** opens the same
-  editor as the **Edit tags** button in [step 7](#7-tag-a-session).
+  header used to carry, and **Edit tags of this session** opens the session
+  tag editor described in [step 7](#7-tag-a-session).
 
 Press Escape, the button again, or click outside the dropdown to close it.
 
@@ -228,8 +229,9 @@ started it.
   Automaton's tags, not on the session. The session editor never sends them.
 - **Edit a session's own tags.** Open the session and choose **Tags → This
   session → Edit tags of this session** in the header (see
-  [the header Tags dropdown](#the-header-tags-dropdown)), or use the **Tags**
-  row under the header, which has an **Edit tags** button. Tick the tags and press **Save**.
+  [the header Tags dropdown](#the-header-tags-dropdown)). The session detail
+  itself shows only the session's tag chips, with inherited ones marked
+  read-only; it has no edit control of its own. Tick the tags and press **Save**.
   The editor lists every tag and names the inherited ones below the list. If
   the server refuses a tag, the toast shows its reason.
 - **Start a session with tags.** The New Session form has a **Tags
