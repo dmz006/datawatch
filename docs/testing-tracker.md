@@ -9,6 +9,45 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Pi-prompt descendant-only stall bound (autonomous.descendant_stall_seconds)
+
+New config key and stop detector (pi-prompt family only): a worker attempt whose runner has ended, whose working descendants are still alive, and has no other evidence of life is reaped as an infrastructure failure after `descendant_stall_seconds` (default 2700) and retried via the `auto_fix_retries` budget. Config surface: YAML, REST `GET`/`PUT` config, MCP `autonomous_config_set`, CLI `config set`, comm `configure`, PWA settings card (5 locales).
+
+| Function | Test Name | Test Condition | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|------|------|------|------|---------|--------|-------------|-----------|------|
+| `DescendantStallTracker` clock | `TestDescendantStall_LimitZeroOrNegativeNeverStalls` | zero/negative limit, descendants alive, clock far past | A disabled detector never fires | Unit | Yes | Pass | No | `internal/autonomous` |
+| | `TestDescendantStall_NoDescendantsResetsClock` | descendants 0, then a later silence | descendants 0 advances the clock and returns unstalled | Unit | Yes | Pass | No | `internal/autonomous` |
+| | `TestDescendantStall_FreshLogWriteDoesNotStall` / `TestDescendantStall_FreshWorkdirFileDoesNotStall` | fresh log mtime / fresh worktree mtime, descendants alive | any new evidence moves the clock and the observation does not fire | Unit | Yes | Pass | No | `internal/autonomous` |
+| | `TestDescendantStall_NoEvidenceStallsOnlyAfterLimit` | no evidence, silence crosses limit | fires only when silence is strictly longer than the limit | Unit | Yes | Pass | No | `internal/autonomous` |
+| | `TestDescendantStall_ResetRestartsClock` | reset mid-silence | `Reset` restarts the silence clock from now | Unit | Yes | Pass | No | `internal/autonomous` |
+| Error contract | `TestDescendantStallError_WrapsErrWorkerStalled` | `errors.Is(DescendantStallError(…), ErrWorkerStalled)` | the failure path reuses the same stall sentinel as session-idle and exit-silence, so the executor's stall retry handles it identically | Unit | Yes | Pass | No | `internal/autonomous` |
+| Config normalization + YAML | `TestNormalizeDescendantStallSeconds` | zero, negative, positive inputs | zero/negative normalize to default 2700; positive passes through | Unit | Yes | Pass | No | `internal/config` |
+| | `TestDescendantStallSecondsYAMLRoundTrip` | marshal/unmarshal of the config | the key survives a YAML round trip | Unit | Yes | Pass | No | `internal/config` |
+| REST config endpoints | `TestDescendantStall_RoundTrip` | `PUT` then `GET` | written value is reflected on `GET` | Integration | Yes | Pass | No | `internal/server` |
+| | `TestDescendantStall_ZeroValueReadsBackZero` | write `0` then read back | zero is stored as zero (normalization happens at read time, not at write time) | Integration | Yes | Pass | No | `internal/server` |
+| | `TestDescendantStall_NegativeValueRejected` | write negative | `PUT` rejects with 400 and writes nothing | Integration | Yes | Pass | No | `internal/server` |
+| | `TestDescendantStall_ZeroAndNegativeNormalizeOnRead` | zero and negative in config file | both read as default 2700 | Integration | Yes | Pass | No | `internal/server` |
+| Wait-loop tick (family gate) | `TestDescendantStallTickIsGatedByFamilyAndTracker` | non-pi family / nil tracker | `descendantStallTick` is a no-op for all other backends | Unit | Yes | Pass | No | `cmd/datawatch` |
+| | `TestDescendantStallTickDelegatesToTracker` / `TestDescendantStallTickWithoutDescendantsNeverStalls` / `TestDescendantStallTickResetRestartsTheClock` / `TestDescendantStallDisabledLimitNeverStalls` | delegate, descendants 0, reset, disabled | tick behavior matches the tracker and never fires on zero descendants or a disabled limit | Unit | Yes | Pass | No | `cmd/datawatch` |
+| Evidence on the task | `TestDescendantStallEvidenceLinesNamesTheRecordedIdentity` / `TestDescendantStallAppendEvidenceDedupesByPID` | recorded PID map | evidence records the recorded identity (pid, start time, command) and de-dupes by PID | Unit | Yes | Pass | No | `cmd/datawatch` |
+| Worktree probe | `TestNewestWorkDirMtimePicksTheNewestRegularFile` | directory with mixed files | picks the newest regular file's mtime for the 4th liveness signal | Unit | Yes | Pass | No | `cmd/datawatch` |
+| Recorded identity and kill path | `TestDescendantProcessRecordingKeepsPriorDroppedFromView` / `TestDescendantProcessOnlyRecordedPIDsAreSignalled` | union across observations vs. kill scope | only PIDs observed for this attempt are ever signalled; PIDs that disappeared from the tree are not signalled | Unit | Yes | Pass | No | `cmd/datawatch`, real subprocesses |
+| | `TestDescendantProcessReusedPIDWithDifferentStartTimeIsNotSignalled` | PID recycled to a different process | start-time check: a reused PID is not signalled | Unit | Yes | Pass | No | `cmd/datawatch`, real subprocesses |
+| | `TestDescendantProcessSIGKILLEscalationEndsChildThatIgnoresTERM` | child that ignores SIGTERM ends after 5s grace | escalation to SIGKILL works on real processes | Unit | Yes | Pass | No | `cmd/datawatch`, real subprocesses |
+| | `TestDescendantProcessChildExitingOnTERMEndsWithoutSIGKILL` | child ends on SIGTERM | a compliant child is ended without escalation | Unit | Yes | Pass | No | `cmd/datawatch`, real subprocesses |
+| PWA settings field | `app-autonomous-settings-fields.test.js` | settings card render | `descendant_stall_seconds` field sits directly after `session_idle_timeout_seconds`, label present in 5 locales | Component | Yes | Pass | No | `internal/server/web/tests` |
+| PWA save/load behavior | `app-autonomous-settings-field-values.test.js` | save/load round trip | zero is read back as 0, a positive value is preserved across the settings round trip | Component | Yes | Pass | No | `internal/server/web/tests` — covers 16 fields including this one |
+| MCP tool | `descendant_stall_seconds` param in config_set | tool schema + forwarding | parameter declared (default 2700, `0`=default) and forwarded into the config PUT body | Contract | No | — | No | `internal/mcp/autonomous.go` — declared and forwarded, but no dedicated test yet (unlike `gate_disagreement` or `automation_*`); a schema-declaration test is the low-cost addition |
+| Daemon-wide behavior | — | live pi-prompt worker left with a live descendant process | end-to-end: alert fires, descendants cleaned up, task retried | System | No | — | No | Pending — needs a live pi worker to observe a real fire, not covered by unit tests |
+
+**Tested:** 23 Go test functions across 5 packages (`internal/autonomous`, `internal/config`, `internal/server`, `cmd/datawatch`, `internal/mcp`) plus 3 PWA tests (`app-autonomous-settings-fields.test.js`, `app-autonomous-settings-field-values.test.js`, settings save helper) — all pass. `go vet` clean on the touched packages. Exception: the MCP parameter itself has no dedicated test (declared and forwarded in `internal/mcp/autonomous.go`, but unlike neighboring keys such as `gate_disagreement` there is no schema-declaration test) — tracked pending below.
+
+**Validated:** No. Unit/integration tests only — the detector firing in a real daemon, cleaning up real descendants, and a retried task have not been exercised against a live pi-prompt worker. Pending: a live run where a pi-prompt worker leaves a live descendant behind and the attempt is reaped after the bound, plus the MCP schema-declaration test above.
+
+**Pending (cross-repo, supervisor step):** Android/iPhone datawatch-app — `descendant_stall_seconds` is not yet exposed on the mobile settings surface. Tracked in the Parity surface section of `docs/plans/2026-10-28-pi-descendant-only-stall.md`; the datawatch-app parity issue is a supervisor step (cross-repo).
+
+---
+
 ## Voice transcription errors and chunking
 
 `POST /api/voice/transcribe` changed its error contract. A failed transcription is HTTP 502 with a JSON body `{error, cause, hint, detail, latency_ms}`, where `cause` is `timeout`, `killed`, `out_of_memory`, `ffmpeg_missing`, `backend_error` or `unknown`. The deadline now scales with the audio (5 minutes, or twice the audio length, capped at 30 minutes). Local whisper splits audio longer than the new `whisper.chunk_seconds` (default 120, 0 disables). The PWA keeps a failed recording with Retry and Discard. A failed or slow request writes one `[voice] transcribe failed:` or `transcribe slow:` log line. The how-to is `docs/howto/voice-input.md` and the flow is `docs/flow/voice-transcribe-flow.md`.

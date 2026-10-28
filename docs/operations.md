@@ -2637,6 +2637,48 @@ autonomous:
   session_idle_timeout_seconds: 900
 ```
 
+### Descendant-only stall bound (autonomous.descendant_stall_seconds)
+
+This bounds how long a pi backend worker may show no sign of life while
+its only liveness is a work child it started. The default is 2700 seconds
+(45 minutes). It only applies to one-shot `pi` workers — a `pi` run writes
+nothing to its log until it finishes, so the usual log-based stall check
+does not reach it, and the exit-silence check does not cover the case
+where the runner has exited but a child it started (a build, a test) is
+still alive.
+
+- **What it watches:** a running worker attempt for which the descendant
+  process tree is readable, where a live descendant of the work is present,
+  and the last write to the session log, and the newest file in the
+  worker's working directory, both older than the bound. Any newer
+  evidence resets the clock.
+- **When it fires:** the live descendant count stays above zero while the
+  most recent log write and workdir file are both older than the bound.
+- **What happens when it fires:**
+  - the attempt's session is ended by the descendant-only stall detector;
+  - the work descendants that attempt was waiting for are cleaned up:
+    they get a 5-second grace period, then a real kernel signal, and only
+    where the process still carries the identity it was recorded with —
+    a recycled process id is never signalled. Which ones needed the
+    escalation, and which stayed alive, are recorded on the task along
+    with the pane tail;
+  - a `Task worker descendant-only stall` alert fires naming the PRD,
+    the task and the measured reason, and the attempt ends as an
+    infrastructure failure;
+  - the task is retried through the existing `auto_fix_retries` budget,
+    and stays failed like any other failed task once that budget is
+    spent.
+- **Setting it:** `autonomous.descendant_stall_seconds` in `config.yaml`,
+or via any other settings surface (settings card, CLI `config set`,
+comm channel `configure`, REST config `PUT`, MCP `autonomous_config_set`).
+A value of `0` or below means "use the default 2700" — the setting
+can never be accidentally disabled.
+
+```yaml
+autonomous:
+  descendant_stall_seconds: 2700
+```
+
 ### Worker idle nudge (autonomous.worker_idle_nudge_seconds, autonomous.worker_idle_nudge_stall_seconds)
 
 A claude-code worker that finishes a turn without printing its completion
