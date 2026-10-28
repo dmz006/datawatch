@@ -10,6 +10,7 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/pilog"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // piSessionsRootServer returns the directory under which pi stores its
@@ -58,6 +59,13 @@ func (s *Server) handleSessionProgress(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.manager.GetSession(id)
 	if !ok {
 		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	// A non-pi session never has a pi log. 404 it instead of answering from
+	// a stale pi log that happens to sit in the same project dir (BL647:
+	// a claude-code session was served another session's numbers).
+	if !session.IsPiBackendFamily(sess.BackendFamily) {
+		http.Error(w, "no session log available", http.StatusNotFound)
 		return
 	}
 	logPath, err := pilog.LocateLog(piSessionsRootServer(), sess.ProjectDir, sess.CreatedAt)

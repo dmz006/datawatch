@@ -307,6 +307,65 @@ func TestSessionProgressEndpoint(t *testing.T) {
 	}
 }
 
+// TestSessionProgress_NonPi: a non-pi (claude-code) session must never
+// answer from pi's log store. Even when a stale pi JSONL log exists for the
+// same project dir and the same created-at window, the endpoint responds 404
+// and carries none of that log's data (BL647: the strip on a claude-code
+// session was showing numbers from an unrelated old pi session).
+func TestSessionProgress_NonPi(t *testing.T) {
+	// PI store rooted in a temp dir, containing a pi log for exactly this
+	// project dir and a start time after the claude-code session's CreatedAt
+	// (the layout pilog.LocateLog finds: sessions/--<dir>--/<time>_<id>.jsonl).
+	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
+	s := newTestServer(t, nil, nil)
+	workDir := t.TempDir()
+
+	started, err := time.Parse(time.RFC3339, progressLogStarted)
+	if err != nil {
+		t.Fatalf("parse started: %v", err)
+	}
+	staleDir := filepath.Join(piSessionsRootServer(), pilog.ProjectDirName(workDir))
+	if err := os.MkdirAll(staleDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	stalePath := filepath.Join(staleDir, "2026-02-11T10-00-00-000Z_stalepi.jsonl")
+	if err := os.WriteFile(stalePath, []byte(progressSampleLog), 0o644); err != nil {
+		t.Fatalf("write stale pi log: %v", err)
+	}
+	if path, err := pilog.LocateLog(piSessionsRootServer(), workDir, started); err != nil {
+		t.Fatalf("fixture must be locatable by LocateLog: %v", err)
+	} else if path != stalePath {
+		t.Fatalf("fixture: LocateLog = %q, want %q", path, stalePath)
+	}
+
+	sess := &session.Session{
+		ID:            "sesscc",
+		FullID:        "testhost-sesscc",
+		ProjectDir:    workDir,
+		CreatedAt:     started,
+		UpdatedAt:     started,
+		Hostname:      "testhost",
+		State:         session.StateRunning,
+		BackendFamily: "claude-code",
+	}
+	if err := s.manager.SaveSession(sess); err != nil {
+		t.Fatalf("SaveSession: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/sesscc/progress", nil)
+	s.handleSessionProgress(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (non-pi session must not read a pi log); body %q", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, leaked := range []string{"assistant_turns", "tool_calls", "Writing hello.txt"} {
+		if strings.Contains(body, leaked) {
+			t.Errorf("404 body must not carry stale pi log data, contains %q: %s", leaked, body)
+		}
+	}
+}
+
 // plantSampleSession2 saves a second session (SaveSession upserts by ID, so
 // this gets its own ID).
 func plantSampleSession2(t *testing.T, s *Server, workDir string) string {
