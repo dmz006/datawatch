@@ -77,6 +77,29 @@ The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now s
 
 **Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
+## v9.27.0 — Failed and blocked Automata get a triage record, a poll-time pass and an alert
+
+### Autonomous triage: failed and blocked Automata are recorded, alertable and readable on every surface
+
+The autonomous engine now keeps a triage record for every Automaton that ends **failed** or **blocked**. On each coordinator tick a triage pass reads the live Automaton list and fills in, refreshes or clears one record per Automaton: which Automation and member it is, when it was first seen in that state, the failed task (name and error, truncated to 2000 chars) with the session end reason and start/retry counts, and the four retry-budget categories (infra, content, scope, policy) with their limit, used and left values. A record is kept while the Automaton stays failed or blocked, refreshed with any new information, and cleared once it leaves that state.
+
+Once a record has been sitting failed or blocked for `autonomous.automation.triage_alert_minutes` (default 30; `0` turns the alert off; the key is the single piece of triage configuration, set with `datawatch config set autonomous.automation.triage_alert_minutes <n>` or `PUT /api/config`), the engine raises one triage alert per episode through the existing lifecycle alert sink. The alert is audited and stamped on the record (`alerted_at`).
+
+The records are readable on the same channel-parity surfaces as the rest of autonomous:
+
+| Surface | Entry point |
+|---|---|
+| REST | `GET /api/autonomous/triage` — `automation_id`, `prd_id` or `status` (`failed`\|`blocked`, anything else refused); the body lists the records newest first and the alert threshold currently in force (`alert_minutes`) |
+| MCP | `autonomous_triage` — same filters, proxies the read route, needs the autonomous read capability from a federated peer |
+| CLI | `datawatch autonomous triage [--automation <id>] [--prd <id>] [--status failed\|blocked] [--json]` — a bad status is refused before anything is sent; `--json` prints the REST body untouched |
+| Comm | `autonomous triage [automation-id]` on every messaging channel (one optional positional argument, the automation id; no `prd` or `status` filter) |
+| PWA | a triage card in the Automaton detail view: status, failed task, first-seen and alert times, the four retry budgets and the notes, with wording in all five locale bundles |
+| Mobile/wear | the same `GET /api/autonomous/triage` contract, documented for Android/Wear/Auto in `docs/api/mobile-surface.md` |
+
+The triage record is a read: the pass starts, retries or edits nothing, and the retry budgets it shows are the engine's existing budgets, reused as-is.
+
+The comm-channel alert delivery changed with this: the alert body is no longer truncated at 200 characters, so every comm-channel alert (lifecycle, Automation blocked, triage, ...) now carries its full text, not just a prefix (`internal/router/router.go`, `SendAlert`). This is a behavior change for all comm alerts, not only triage. No record on a live daemon is live-verified yet, and nobody has looked at the card in a running PWA — the testing tracker marks every row `Validated: No` with the pending live checks. The operator reference for the record, the pass, the alert key and the surfaces is in `docs/operations.md`; the API contract is in `docs/api/autonomous.md`; the how-to pointer is in `docs/howto/automation-tab.md`.
+
 ## v9.26.0 — Operators can answer questions raised by Automata through a question channel
 
 ### Operator questions for the Automaton, over REST
