@@ -139,7 +139,7 @@ func TestDescendantProcessOnlyRecordedPIDsAreSignalled(t *testing.T) {
 	}
 	byPair := map[pair]int{}
 	for _, c := range calls {
-		byPair[pair{c.pid, c.sig}]++
+		byPair[pair(c)]++
 	}
 	for c := range byPair {
 		if c.pid != self {

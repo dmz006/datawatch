@@ -4928,12 +4928,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// (union across observations); at stall time they are the identity that the
 				// evidence carries and the only set that the kill path signals.
 				var recordedDescendants map[int]descendantProcess
-			// Per-attempt "output is fresh" observation that feeds the
-			// descendant stall tracker (see descendantOutputObservation): a pane
-			// or the channel moving since the last look resets the silence clock
-			// before the observation. internal/autonomous cannot see the pane or
-			// the channel, so the wait loop supplies the signal here.
-			var descendantOutputObs descendantOutputObservation
+				// Per-attempt "output is fresh" observation that feeds the
+				// descendant stall tracker (see descendantOutputObservation): a pane
+				// or the channel moving since the last look resets the silence clock
+				// before the observation. internal/autonomous cannot see the pane or
+				// the channel, so the wait loop supplies the signal here.
+				var descendantOutputObs descendantOutputObservation
 			waitLoop:
 				for {
 					select {
