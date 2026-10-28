@@ -1795,3 +1795,7 @@ Operator: "Claude is at 36%". Days since the 2026-10-25 08:00 reset: 2.25, so th
 ### Usage reading 2026-10-28 about 03:50
 
 Operator: "45 % used". Days since the 2026-10-25 08:00 reset: 2.83, so the pace line is 40.4% and the reading is 4.6 points over it. Since 36% at about 13:55 on 10-27 the burn is 9 points in 13.9 hours (about 15.5 points a day, mostly during the busy evening; the overnight rate is under 2 points an hour). Normalized units: 11.99 million for those 9 points (1.33 million per point); 51.0 million since the reset for 45 points (1.13 million per point, refit; the earlier 0.65 million figure was wrong because the extraction left out the first day). At the week-average rate of about 16 points a day the week ends near 110 percent; at the one-lane rate of about 8 a day it ends near 78 percent. The 24-hour two-lane trial ends at about 11:00 today; the operator reviews it then.
+
+### Usage reading 2026-10-28 about 05:55
+
+Operator: "Claude is at 46%". Days since the 2026-10-25 08:00 reset: 2.91, so the pace line is 41.6% and the reading is 4.4 points over it. Since 45% at about 03:50 the burn is 1 point in about 2 hours, the quiet overnight rate; the token estimate for the same span was about 0.4 points, within the rounding of whole-percent readings. The refit calibration (1.13 million units per point) tracks the readings. The 24-hour two-lane trial ends at about 11:00 today.
