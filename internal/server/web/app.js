@@ -36771,6 +36771,7 @@ function _tagsMenuRefresh() {
   const chip = document.getElementById('headerTagsCount');
   if (chip) chip.textContent = n ? String(n) : '';
   btn.setAttribute('aria-label', n ? label + ' (' + n + ')' : label);
+  btn.setAttribute('title', label);
   btn.setAttribute('aria-expanded', _tagsMenuOpen ? 'true' : 'false');
   _tagsMenuRedraw();
 }

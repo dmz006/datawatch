@@ -233,6 +233,12 @@ body {
   cursor: pointer;
   white-space: nowrap;
 }
+.header > #headerTagsBtn > svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  flex: none;
+}
 .header-tags-count:empty { display: none; }
 .header-tags-count {
   min-width: 16px;
