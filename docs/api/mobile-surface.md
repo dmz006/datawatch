@@ -413,6 +413,86 @@ management endpoints under `/api/autonomous/guardrails*`:
 Per-story approval payloads include `guardrail_verdicts` so Wear/Auto
 surfaces can surface block reasons without polling full telemetry.
 
+## Triage records (Automata surface)
+
+The triage records of the failed and blocked Automata are read from
+`GET /api/autonomous/triage` — the same contract the PWA's triage card and the CLI, MCP and comm surfaces use. It is a stable read for Android/Wear/Auto:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/autonomous/triage` | GET | List triage records, newest first, optionally filtered |
+
+Optional query params (combinable): `automation_id`, `prd_id`, `status` (`failed`\|`blocked` only; anything else is refused).
+
+Response body — `records` plus the alert threshold in force (`alert_minutes`, the
+`autonomous.automation.triage_alert_minutes` setting, default 30, `0` = off):
+
+```json
+{
+  "records": [
+    {
+      "prd_id": "d0442737d38c",
+      "prd_title": "nightly ingest",
+      "automation_id": "4522f306c266",
+      "automation_name": "nightly pipeline",
+      "member_id": "member-2",
+      "status": "failed",
+      "task_id": "task-9",
+      "task_title": "run integration tests",
+      "error": "connection refused: testdb:5432 (truncated at 2000)",
+      "blocked_reason": "waiting on operator decision",
+      "session_end_reason": "runtime error: exit 2 (truncated at 2000)",
+      "first_seen_at": "2026-10-27T09:12:44Z",
+      "updated_at": "2026-10-27T09:44:02Z",
+      "alerted_at": "2026-10-27T09:44:02Z",
+      "retry_budget": {
+        "infra":   { "limit": 3, "used": 1, "left": 2 },
+        "content": { "limit": 4, "used": 4, "left": 0 },
+        "scope":   { "limit": 2, "used": 0, "left": 2 },
+        "policy":  { "limit": 1, "used": 0, "left": 1 },
+        "ceiling_total": 10,
+        "ceiling_left": 5
+      },
+      "notes": [
+        { "at": "2026-10-27T09:12:44Z", "source": "triage", "text": "Automaton failed on task 'run integration tests'" }
+      ]
+    }
+  ],
+  "alert_minutes": 30
+}
+```
+
+Shape notes for the app team:
+
+- A record is a **read** of the engine's state: it is filled and refreshed by the
+  daemon on every coordinator tick while the Automaton stays failed or blocked, and
+  removed again when it leaves that state. Polling sees new records appear and old
+  ones disappear.
+- `retry_budget` is informational (the engine's existing budget for the four
+  categories: infra, content, scope, policy, each with `limit`, `used`, `left`;
+  plus `ceiling_total` and `ceiling_left`, the overall auto-retry ceiling —
+  `ceiling_total` is `0` when there is none).
+- `alerted_at` is absent until the triage alert for the episode has fired.
+- The strings (`error`, `session_end_reason`) are already truncated to
+  2000 chars by the daemon; treat them as hostile text and render sanitized.
+- The optional fields (`prd_title`, `automation_id`, `automation_name`, `member_id`,
+  `task_id`, `task_title`, `error`, `blocked_reason`, `session_end_reason`,
+  `alerted_at`, `notes`) are simply absent when empty — a failed record normally
+  carries the task fields and not `blocked_reason`, a blocked record the reverse.
+- `alert_minutes` rides the list body beside `records`, not on each record.
+- The record card on a client displays, in order: the Automaton name (title, or
+  id), the status chip (failed/blocked), the owning Automation name with its
+  member id when one exists, the failed task title, the task error, the block
+  reason, the session end reason, the first-seen time, the alert state (when it
+  fired, or that it has not fired yet), one row per retry-budget category (used
+  of limit, left), and the overall ceiling when one is set; values the record
+  does not carry are simply not shown (this is what the PWA's triage card renders
+  from the same contract).
+- A read that matches nothing is `records: []` with the same HTTP 200 — not an error.
+- Access follows the daemon's rules: bearer token locally, the autonomous read
+  capability for federated peers. The same endpoint is listed in the full OpenAPI
+  spec (`TriageList`/`TriageRecord` schemas).
+
 ## Session Guardrail + Live Task Tree APIs (S3)
 
 On-demand guardrail invocation for a session and real-time Status tab data:

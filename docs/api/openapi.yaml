@@ -93,6 +93,45 @@ paths:
           schema:
             type: string
             enum: [summary]
+        - name: limit
+          in: query
+          required: false
+          description: "Page size (1-500). Supplying `limit` or `cursor` implies `view=summary` and returns the paged envelope `{sessions, next_cursor, total}`. Rows are ordered by `updated_at` desc, then `full_id`."
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque `next_cursor` from the previous page. Stable across inserts; no gaps or duplicates.
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          description: Comma list of states to include (`active` expands to every non-terminal state). Implies `view=summary`.
+          schema:
+            type: string
+        - name: active
+          in: query
+          required: false
+          description: "`1` keeps only non-terminal sessions. Implies `view=summary`."
+          schema:
+            type: string
+            enum: ["1"]
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive substring match on name, id, full id and the first 256 characters of the task. Implies `view=summary`.
+          schema:
+            type: string
+        - name: If-None-Match
+          in: header
+          required: false
+          description: ETag from a previous summary or paged response; a match returns 304 with no body. The legacy full array carries no ETag.
+          schema:
+            type: string
         - name: since
           in: query
           required: false
@@ -109,8 +148,16 @@ paths:
             example: "active"
       responses:
         "200":
-          description: Array of sessions
+          description: "Array of sessions. `view=summary` (or any paging/filter parameter) returns row-only summaries (id, full_id, name, state, backend, llm_ref, project_dir, hostname, created_at, updated_at, last_activity, parent_id, est_cost_usd, tokens, scheduled_count, status_line) with no task, output, transcript or prompt context; with `limit`/`cursor` the body is `{sessions, next_cursor, total}` instead of an array. `GET /api/sessions/{id}` returns the full record."
           headers:
+            ETag:
+              description: Hash of the body (summary and paged responses only).
+              schema:
+                type: string
+            X-Datawatch-Sessions-Total:
+              description: Filtered row count (summary and paged responses).
+              schema:
+                type: integer
             X-Datawatch-Sessions-Omitted:
               description: "`view=summary` only — number of older terminal sessions dropped by the cap. Absent when nothing was dropped."
               schema:
@@ -132,8 +179,10 @@ paths:
                           items:
                             type: string
                           description: "`view=summary` only — fields that were cut. Fetch `/api/sessions/{id}` for the full record."
+        "304":
+          description: "`If-None-Match` matched the current ETag."
         "400":
-          description: Unknown `view`, unparseable `since`, or unknown/empty `states`.
+          description: Unknown `view`, unparseable `since`, unknown/empty `states` or `status`, bad `limit` or `cursor`.
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -610,6 +659,71 @@ paths:
         "404":
           description: Session not found, or a tag ID is unknown
 
+  /api/sessions/{session_id}/result:
+    post:
+      summary: Post a session's structured result
+      description: |
+        A scheduled job posts the result of its run for this session.
+        Two gates apply: the caller needs the `sessions:result_write`
+        capability, and a session-scoped credential may only post for the
+        session it belongs to (posting for any other session returns 403).
+
+        The payload must carry a non-empty `title`; `status` is either
+        absent or one of `ok` / `warn` / `error`. When the session belongs
+        to a named schedule the entry is appended to that schedule's
+        retained history (oldest evicted first past
+        `results.schedule_history_limit`). The session's status board
+        always reflects the latest result, even for unscheduled sessions.
+      operationId: postSessionResult
+      tags: [Sessions]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          description: Session ID (short or full)
+          schema:
+            type: string
+            example: "a3f2"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResultPayload"
+      responses:
+        "200":
+          description: Result accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  session_id:
+                    type: string
+                  full_id:
+                    type: string
+                  schedule_name:
+                    type: string
+                    description: Empty when the session is not bound to a named schedule
+                  stored:
+                    type: boolean
+                    description: True when the entry was written to the schedule history
+                  count:
+                    type: integer
+                    description: Number of schedule names with retained results
+        "400":
+          description: Invalid payload (typed validation error in the body)
+        "403":
+          description: Caller lacks `sessions:result_write`, or posted for a session it does not own
+        "404":
+          description: Session not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Schedule result store not available
+
   /api/config:
     get:
       summary: Get configuration
@@ -641,6 +755,9 @@ paths:
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
         `autonomous.automation.idle_alert_minutes` (whole minutes >= 0, default 0 =
         off; a negative or non-integer value is rejected with 400),
+        `autonomous.automation.triage_alert_minutes` (whole minutes >= 0; an unset
+        key reads as 30 and an explicit `0` turns triage alerts off; a negative or
+        non-integer value is rejected with 400),
         `autonomous.progress.lanes` (whole number >= 0, default 0 = 5),
         `autonomous.progress.inactive_gap_hours` (number >= 0, default 0 = 3),
         `autonomous.progress.backlog_path` (string, default docs/plans/README.md; a
@@ -652,6 +769,18 @@ paths:
         `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
         `autonomous.plan_review_mode` (off | warn | block),
         `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`,
+        `autonomous.lane_fill.mode` (off | shadow | on; empty means shadow; any other
+        value is rejected with 400), `autonomous.lane_fill.gpu_lanes` (whole number
+        >= 0, default 2), `autonomous.lane_fill.claude_lanes` (whole number >= 0,
+        default 3; 0 means no Claude lane), `autonomous.lane_fill.idle_alert_minutes`
+        (whole number >= 0, default 30; 0 = off), `autonomous.lane_fill.decompose_ahead_min`
+        (whole number >= 0, default 2), `autonomous.lane_fill.poll_seconds` (whole number
+        >= 0, default 60; values below 5 are raised to 5), `autonomous.lane_fill.gpu_backend`
+        (default pi-prompt), `autonomous.lane_fill.gpu_model` (string; empty = the
+        backend's own model), `autonomous.lane_fill.claude_backend` (default
+        claude-code). A bad lane fill value rejects the whole PUT with 400 and nothing
+        is written. GET returns the values in effect and the running planner picks up
+        changes without a restart.
         `autonomous.failure_escalation.enabled` (true|false, default true),
         `autonomous.failure_escalation.max_failures` (whole number of 1 or more, default 3),
         `autonomous.failure_escalation.steps` (a JSON array of step objects, or the text
@@ -784,6 +913,68 @@ paths:
           description: Not found
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /api/schedule-results:
+    get:
+      summary: List retained results grouped by schedule
+      description: |
+        One entry per schedule name (sorted by name) with that
+        schedule's most recent posted result, how many results are
+        retained for it, and the recent `status` values in oldest →
+        newest order (capped at 50) to drive a status sparkline.
+        Requires the `autonomous:read` capability for federation peers;
+        the operator token is always allowed.
+      operationId: listScheduleResults
+      tags: [Schedule]
+      responses:
+        "200":
+          description: Array of per-schedule result summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleResultSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Caller lacks the `autonomous:read` capability
+        "503":
+          description: Schedule result store not available
+
+  /api/schedule-results/{schedule_name}:
+    get:
+      summary: Full retained result history for one schedule
+      description: |
+        Every retained result for the named schedule, oldest first.
+        Returns 404 when the schedule has no recorded results.
+      operationId: getScheduleResultHistory
+      tags: [Schedule]
+      parameters:
+        - name: schedule_name
+          in: path
+          required: true
+          description: Schedule name results were posted under
+          schema:
+            type: string
+            example: "nightly-sweep"
+      responses:
+        "200":
+          description: Retained result entries, oldest to newest
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleResultEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Caller lacks the `autonomous:read` capability
+        "404":
+          description: No results recorded for this schedule
+        "503":
+          description: Schedule result store not available
 
   /api/servers:
     get:
@@ -953,6 +1144,68 @@ paths:
           description: Not found
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /api/autonomous/lane-fill:
+    get:
+      summary: Lane fill status
+      description: |
+        The lane fill status: the mode (off, shadow or on), each GPU and Claude lane
+        with what it runs or why it is idle, the queued Automata that could start on
+        each lane type, the evidence from the last poll (active GPU sessions and loaded
+        models), the newest planner decisions and the idle alerts. `limit` caps the
+        decision history, newest first. Needs the autonomous read capability when
+        called by a federated peer.
+      operationId: autonomousLaneFillStatus
+      tags: [Autonomous]
+      parameters:
+        - {name: limit, in: query, required: false, description: "Decisions to return, newest first; a whole number from 1 to 1000, default 50", schema: {type: integer, minimum: 1, maximum: 1000, default: 50}}
+      responses:
+        "200":
+          description: Lane fill status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LaneFillStatus"
+        "400": {description: limit is not a whole number from 1 to 1000}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/triage:
+    get:
+      summary: Triage records
+      description: |
+        The triage records of the failed and blocked Automata, newest first. Each
+        record places the Automaton in its Automation, says when it was first seen
+        failed or blocked, carries the failed task (id, name, the error and the session
+        end reason, each truncated to 2000 chars), the retry-budget categories with
+        their limit, used and left values, and the notes appended over the record's
+        life. The body also states the triage alert threshold currently in force
+        (`alert_minutes`, the `autonomous.automation.triage_alert_minutes` setting;
+        0 = off). `status` accepts only `failed` or `blocked`. A read that matches
+        nothing is an empty `records` array, not an error. Read-only; needs the
+        autonomous read capability when called by a federated peer.
+      operationId: autonomousTriage
+      tags: [Autonomous]
+      parameters:
+        - {name: automation_id, in: query, required: false, description: Records of the Automata in this Automation, schema: {type: string}}
+        - {name: prd_id, in: query, required: false, description: Only the record of this Automaton, schema: {type: string}}
+        - {name: status, in: query, required: false, description: "Only failed or blocked", schema: {type: string, enum: [failed, blocked]}}
+      responses:
+        "200":
+          description: Triage records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriageList"
+        "400": {description: status is not failed or blocked}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
 
   /api/autonomous/progress:
     get:
@@ -1148,6 +1401,14 @@ paths:
                     items:
                       type: object
                       properties:
+                        name: {type: string}
+                        limit: {type: integer}
+                        held: {type: integer}
+                        holders: {type: array, items: {type: string}}
+                        holder_names:
+                          type: array
+                          items: {type: object, additionalProperties: true}
+                          description: Resolved readable holder rows for a node pool; absent on older daemons.
                         usage:
                           allOf:
                             - {$ref: "#/components/schemas/NodeUsage"}
@@ -1289,6 +1550,33 @@ paths:
         "404": {description: Unknown Automaton id}
         "405": {description: Method not allowed}
 
+  /api/autonomous/prds/{id}/set_lane_preference:
+    post:
+      summary: Set the lane preference of an Automaton
+      description: |
+        Sets which kind of lane the Automaton should run on: `gpu`, `claude` or `any`.
+        An empty value clears the preference, which means any lane. The change is
+        recorded on the decision timeline. Needs the autonomous write capability when
+        called by a federated peer.
+      operationId: autonomousPRDSetLanePreference
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lane_preference]
+              properties:
+                lane_preference: {type: string, enum: [gpu, claude, any, ""]}
+      responses:
+        "200": {description: Updated Automaton, which carries lane_preference when one is set}
+        "400": {description: Unknown lane preference; the message names gpu, claude and any}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Unknown Automaton id}
+        "405": {description: Method not allowed}
   /api/autonomous/prds/{id}/set_tags:
     post:
       summary: Replace the tags on an Automaton
@@ -1983,6 +2271,7 @@ paths:
                 backend: {type: string}
                 effort: {type: string}
                 kind: {type: string, enum: [feature, bug, other], description: "Optional Automaton kind; omit to derive it from the title and spec"}
+                lane_preference: {type: string, enum: [gpu, claude, any, ""], description: "Optional lane preference: gpu, claude or any. Omit or leave empty for any lane. An unknown value is refused before anything is created"}
       responses: {"200": {description: OK}}
   /api/autonomous/prds/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
@@ -2270,42 +2559,163 @@ paths:
       operationId: autonomousLearnings
       tags: [Autonomous]
       responses: {"200": {description: OK}}
-
-  # ─── Lifecycle event subscriptions (BL427 phase 3) ────────────
   /api/autonomous/subscriptions:
     get:
-      summary: List persisted lifecycle event subscriptions
+      summary: List lifecycle event subscriptions
+      description: |
+        Returns the persisted lifecycle event subscriptions, optionally narrowed
+        with the `owner` query parameter. Requires the `autonomous:read`
+        capability.
       operationId: autonomousSubscriptionList
       tags: [Autonomous]
       parameters:
-        - name: owner
-          in: query
-          required: false
-          schema: {type: string}
-          description: Optional; omit for all subscriptions, set to list only those created by the named owner
+        - {name: owner, in: query, required: false, schema: {type: string}}
       responses:
-        "200": {description: "Array of subscriptions (empty array when none)"}
-        "503": {description: subscription engine not wired into this server}
+        "200": {description: "The subscription records"}
+        "503": {description: "Lifecycle subscriptions not wired"}
     post:
-      summary: Create a lifecycle event subscription (takes effect without restart)
+      summary: Create a lifecycle event subscription
+      description: |
+        Persists a new subscription (filter, sink, action, coalesce, one_shot,
+        expires_at; the server assigns the id, a client-supplied id is not
+        honoured) and returns it with 201. The new subscription takes effect
+        live, without a daemon restart. Requires the `autonomous:write`
+        capability.
       operationId: autonomousSubscriptionCreate
       tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filter, sink]
+              properties:
+                owner: {type: string, description: "Optional owner tag; also usable as the list filter."}
+                filter:
+                  type: object
+                  description: "At least one of kinds or level; level is prd|task|automation."
+                  properties:
+                    kinds: {type: array, items: {type: string}, description: "Known lifecycle event kinds."}
+                    level: {type: string}
+                    prd_id: {type: string}
+                    task_id: {type: string}
+                sink:
+                  type: object
+                  description: "comm, session, topic, alert or mcp_queue target."
+                  properties:
+                    type: {type: string}
+                    target: {type: string}
+                    text_template: {type: string}
+                    send_input: {type: boolean}
+                action: {type: object, description: "Optional labelled action text; not used by the test event."}
+                coalesce: {type: boolean, description: "Human-facing sinks batch per Automaton during a quiet window."}
+                one_shot: {type: boolean, description: "Fire once, then delete."}
+                expires_at: {type: string, format: date-time}
       responses:
-        "201": {description: Created subscription, with the server-assigned id}
-        "400": {description: "Validation message from the subscription store"}
-        "503": {description: subscription engine not wired into this server}
-  /api/autonomous/subscriptions/{id}:
-    parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
+        "201": {description: "The created subscription record"}
+        "400": {description: "Malformed body or failed validation"}
+        "503": {description: "Lifecycle subscriptions not wired"}
     delete:
       summary: Delete a lifecycle event subscription
+      description: |
+        Deletes the subscription named by the `id` query parameter and
+        returns 204. Requires the `autonomous:write` capability.
       operationId: autonomousSubscriptionDelete
       tags: [Autonomous]
+      parameters:
+        - {name: id, in: query, required: true, schema: {type: string}}
       responses:
-        "204": {description: Deleted}
-        "404": {description: Subscription id not found}
-        "405": {description: "Only DELETE is accepted on the {id} form (delete also works as DELETE ?id= on the collection path)"}
-        "503": {description: subscription engine not wired into this server}
+        "204": {description: "Deleted"}
+        "404": {description: "Unknown subscription id"}
+        "503": {description: "Lifecycle subscriptions not wired"}
+  /api/autonomous/subscriptions/{id}:
+    put:
+      summary: Replace a lifecycle subscription's mutable fields
+      description: |
+        Full replace of filter, sink, action, coalesce, one_shot and expires_at;
+        owner is kept unless supplied. The id and created_at are kept. The
+        change takes effect live. Requires the `autonomous:write` capability.
+      operationId: autonomousSubscriptionUpdate
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200": {description: "The updated subscription record"}
+        "400": {description: "Malformed body or failed validation"}
+        "403": {description: "Caller lacks the autonomous:write capability"}
+        "404": {description: "Unknown subscription id"}
+        "503": {description: "Lifecycle subscriptions not wired"}
+    delete:
+      summary: Delete a lifecycle event subscription
+      description: |
+        Deletes the subscription named in the path and returns 204. Also
+        available as `DELETE /api/autonomous/subscriptions?id=` on the
+        collection path. Requires the `autonomous:write` capability.
+      operationId: autonomousSubscriptionDeleteByPath
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "204": {description: "Deleted"}
+        "404": {description: "Unknown subscription id"}
+        "503": {description: "Lifecycle subscriptions not wired"}
+  /api/autonomous/subscriptions/{id}/test:
+    post:
+      summary: Deliver a test event to a subscription's sink
+      description: |
+        Sends a synthetic prd.updated event whose message starts with `[test] `
+        to just this subscription's sink. The action text is never used and a
+        one-shot subscription is not consumed. Requires the `autonomous:write`
+        capability.
+      operationId: autonomousSubscriptionTest
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Delivery outcome
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {type: boolean}
+                  sink: {type: string}
+                  error: {type: string}
+        "403": {description: "Caller lacks the autonomous:write capability"}
+        "404": {description: "Unknown subscription id"}
+        "503": {description: "Test delivery not available"}
+  /api/autonomous/events:
+    get:
+      summary: Poll the pending lifecycle events of a named queue
+      description: |
+        Reads the bounded pending-events queue fed by an `mcp_queue` lifecycle
+        subscription sink (the queue name is the sink target). Returns the events
+        after `since`, oldest first; pass the returned `next_cursor` back as
+        `since` on the next call. `dropped` is true when events the caller had not
+        yet seen were evicted from the queue. Requires the `autonomous:read`
+        capability. 503 when the daemon runs without the subscription engine.
+      operationId: autonomousEventsPending
+      tags: [Autonomous]
+      parameters:
+        - {name: queue, in: query, required: true, schema: {type: string}, description: "Queue name (the target of an mcp_queue subscription)"}
+        - {name: since, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}, description: "Return only events with a cursor greater than this"}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, default: 50, maximum: 200}, description: "Maximum events to return; values above 200 are capped"}
+      responses:
+        "200":
+          description: Pending events page
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PendingEventsPage"}
+        "400": {description: "Missing queue, or non-numeric since/limit"}
+        "403": {description: "Caller lacks the autonomous:read capability"}
+        "503": {description: "Pending events queue not wired"}
 
   # ─── Plugin framework (BL33, v3.11.0) ──────────────────────────
   /api/plugins:
@@ -2469,7 +2879,7 @@ paths:
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
     post:
-      summary: Create a graph from a set of BL24 PRD IDs
+      summary: Create a graph from a set of Automaton IDs
       description: "Deprecated: use 'automation import-graph' (POST /api/automations/import-graph/{graph_id}); the response carries a Deprecation header and a deprecation field."
       operationId: orchestratorGraphCreate
       deprecated: true
@@ -2558,11 +2968,25 @@ paths:
         is worked out on each read and is never stored. Each record also carries
         a computed `tags` array: the union of the tag IDs of its member Automata,
         sorted. It is read-only and is never stored on the Automation.
+        An empty store returns `[]`, never `null`. The response carries an
+        `ETag`; a matching `If-None-Match` returns 304.
       operationId: automationsList
       tags: [Automations]
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
       responses:
+        "304":
+          description: "`If-None-Match` matched the current ETag."
         "200":
           description: Array of Automations
+          headers:
+            ETag:
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -2735,10 +3159,8 @@ paths:
         Validates the Automation, marks it active and starts its entry member
         through the same approval gate used between members; if the entry
         member cannot start, the Automation becomes blocked instead. Only a
-        draft can be activated. Optional body `{"actor": "...", "reason": "...", "expected_version": N}`
-        for the audit log; actor defaults to "operator". A non-zero
-        `expected_version` that no longer matches the Automation's version is
-        rejected with 409.
+        draft can be activated. Optional body `{"actor": "...", "reason": "..."}`
+        for the audit log; actor defaults to "operator".
       operationId: automationsActivate
       tags: [Automations]
       requestBody:
@@ -2750,7 +3172,6 @@ paths:
               properties:
                 actor: {type: string}
                 reason: {type: string}
-                expected_version: {type: integer, description: "The `version` you last observed; a stale value is rejected with 409"}
       responses:
         "200":
           description: The Automation after activation (active, or blocked with its reason in the status row)
@@ -2760,27 +3181,20 @@ paths:
                 $ref: "#/components/schemas/Automation"
         "400": {description: "The Automation cannot be activated (for example it has no entry member)"}
         "404": {description: Automation not found}
-        "409": {description: "The Automation is not a draft, expected_version is stale, or it changed while it was being activated"}
         "409": {description: "The Automation is not a draft, or changed while it was being activated"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 
-  /api/automations/{id}/set_decision_assistant:
+  /api/automations/{id}/pause:
     parameters:
       - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
     post:
-      summary: Set or clear an Automation's decision assistant
+      summary: Pause an active Automation
       description: |
-        Sets or clears the optional local-model decision assistant of the
-        Automation, or, with `member_id`, of one member. It is off by default.
-        The fields replace the whole setting; `clear`, or an empty `backend`,
-        turns it off, and `clear` cannot be combined with the setting fields.
-        `mode` is `shadow` (the default) or `live`; `hooks` are `empty_edge`,
-        `skip_member`, `insert_member` and `budget_breach`; `thresholds` map a
-        hook to a confidence in (0,1] (defaults 0.9, `budget_breach` 0.95).
-        The Automation's status is not changed. `actor` and `reason` are
-        recorded in the audit log as `automation_set_decision_assistant`.
-      operationId: automationsSetDecisionAssistant
+        Moves an active Automation to paused. Members already running keep running
+        and nothing is ended; a paused Automation moves on when a member finishes
+        but starts nothing until resumed. Body: `{expected_version, actor?, reason?}`.
+      operationId: automationsPause
       tags: [Automations]
       requestBody:
         required: true
@@ -2788,31 +3202,288 @@ paths:
           application/json:
             schema:
               type: object
+              required: [expected_version]
               properties:
-                member_id: {type: string}
-                backend: {type: string}
-                model: {type: string}
-                mode: {type: string, enum: [shadow, live]}
-                hooks:
-                  type: array
-                  items: {type: string, enum: [empty_edge, skip_member, insert_member, budget_breach]}
-                thresholds:
-                  type: object
-                  additionalProperties: {type: number, exclusiveMinimum: 0, maximum: 1}
-                clear: {type: boolean}
-                expected_version: {type: integer}
-                actor: {type: string}
-                reason: {type: string}
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
       responses:
         "200":
-          description: The updated Automation
+          description: The Automation, now paused
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Automation"
-        "400": {description: "Invalid setting, or nothing to set"}
-        "404": {description: Automation or member not found}
-        "409": {description: "expected_version is stale, or the Automation is completed or cancelled"}
+        "400": {description: "Malformed body"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/resume:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Resume a paused Automation
+      description: |
+        Moves a paused Automation back to active; members that finished while it was
+        paused are routed on and the next member is started. Body:
+        `{expected_version, actor?, reason?}`.
+      operationId: automationsResume
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+      responses:
+        "200":
+          description: The Automation, now active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Malformed body"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/cancel:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Cancel an Automation
+      description: |
+        Cancels the Automation. `cancel_in_flight` is REQUIRED and has no default:
+        `true` ends the session of every in-flight member, `false` leaves in-flight
+        members running. A body without the key is a 400 naming both values. Members
+        not yet run become cancelled either way. If the Automation is cancelled but
+        ending an in-flight member session failed, the response is a 500 and the
+        Automation stays cancelled.
+      operationId: automationsCancel
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version, cancel_in_flight]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+        cancel_in_flight: {type: boolean, description: "REQUIRED. true ends the session of every in-flight member; false leaves in-flight members running"}
+      responses:
+        "200":
+          description: The Automation, now cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "cancel_in_flight is missing (the message names cancel_in_flight=true and cancel_in_flight=false), or the body is malformed"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/skip_member:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Skip an active member
+      description: |
+        Skips an active member and moves on along `edge`, as if the member had ended
+        that way. A session the member is running is not ended. In a forked
+        Automation with several active branches, `member_id` names the branch.
+      operationId: automationsSkipMember
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+        member_id: {type: string, description: "Member ID"}
+        edge: {type: string, enum: [on_complete, on_blocked, on_failed], default: on_complete}
+      responses:
+        "200":
+          description: The Automation after the skip
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Invalid edge, or member_id missing or not an active branch"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/insert_member:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Insert an Automaton member
+      description: |
+        Inserts an Automaton as a new member. On a draft it lands in the graph at once; on a
+        running Automation it is held as a pending insert until an operator approves it
+        (`approve_insert`). `reason` is required. Only one urgent insert may be pending
+        at a time. An urgent insert takes the next slot and must leave `after` empty.
+      operationId: automationsInsertMember
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version, reason, member]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+        member:
+          type: object
+          required: [prd_id]
+          properties:
+            prd_id: {type: string, description: "The member Automaton to insert"}
+            name: {type: string, description: "Optional display name"}
+        urgent: {type: boolean, description: "Take the next slot instead of the end of the chain"}
+        after: {type: string, description: "Insert directly after this member ID; empty for the end of the chain"}
+      responses:
+        "200":
+          description: The Automation after the insert (the pending insert is on the record when it was held)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "reason or member.prd_id missing, or an invalid position"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/remove_member:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Remove a member
+      description: |
+        Removes a member that has not started and has no outgoing edges. The entry
+        member, running or finished members, forks, joins and fork or join branches are
+        refused with a 409.
+      operationId: automationsRemoveMember
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version, member_id]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+        member_id: {type: string, description: "Member ID"}
+      responses:
+        "200":
+          description: The Automation without the member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "member_id missing"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/reorder_edges:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Rewire a member's edges
+      description: |
+        Rewires the three outgoing edges of a member that has not started. Each edge
+        is the member ID it now names; empty or omitted clears it. A member that is
+        running or finished is refused with a 409; unknown targets, self-edges and
+        cycles are a 400.
+      operationId: automationsReorderEdges
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version, member_id]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+        member_id: {type: string, description: "Member ID"}
+        on_complete: {type: string}
+        on_blocked: {type: string}
+        on_failed: {type: string}
+      responses:
+        "200":
+          description: The Automation with the new edges
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Unknown target, self-edge, cycle, or member_id missing"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/approve_insert:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Approve a pending inserted member
+      description: |
+        Promotes a pending insert, named by `member_id` (the pending ID returned with
+        the insert), into the graph at its reserved position. Only the operator may
+        approve; an unknown pending ID is a 409.
+      operationId: automationsApproveInsert
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version, member_id]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+        member_id: {type: string, description: "Member ID"}
+      responses:
+        "200":
+          description: The Automation with the member in the graph
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "member_id missing"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 
@@ -2867,6 +3538,56 @@ paths:
         "400": {description: "Invalid input: an unknown ceiling type, window, pacing or on-breach rule, a ceiling that is not positive, a reset field that does not fit the window, clear combined with policy fields, a declared cost without a member, or a fork or join member"}
         "404": {description: "Automation or member not found"}
         "409": {description: "expected_version is stale, the Automation is completed or cancelled, or the member has already finished"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+  /api/automations/{id}/set_decision_assistant:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Set or clear an Automation's decision assistant
+      description: |
+        Sets or clears the optional local-model decision assistant of the
+        Automation, or, with `member_id`, of one member. It is off by default.
+        The fields replace the whole setting; `clear`, or an empty `backend`,
+        turns it off, and `clear` cannot be combined with the setting fields.
+        `mode` is `shadow` (the default) or `live`; `hooks` are `empty_edge`,
+        `skip_member`, `insert_member` and `budget_breach`; `thresholds` map a
+        hook to a confidence in (0,1] (defaults 0.9, `budget_breach` 0.95).
+        The Automation's status is not changed. `actor` and `reason` are
+        recorded in the audit log as `automation_set_decision_assistant`.
+      operationId: automationsSetDecisionAssistant
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                member_id: {type: string}
+                backend: {type: string}
+                model: {type: string}
+                mode: {type: string, enum: [shadow, live]}
+                hooks:
+                  type: array
+                  items: {type: string, enum: [empty_edge, skip_member, insert_member, budget_breach]}
+                thresholds:
+                  type: object
+                  additionalProperties: {type: number, exclusiveMinimum: 0, maximum: 1}
+                clear: {type: boolean}
+                expected_version: {type: integer}
+                actor: {type: string}
+                reason: {type: string}
+      responses:
+        "200":
+          description: The updated Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Invalid setting, or nothing to set"}
+        "404": {description: Automation or member not found}
+        "409": {description: "expected_version is stale, or the Automation is completed or cancelled"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 
@@ -3763,7 +4484,7 @@ paths:
       responses: {"200": {description: Bound}, "404": {description: Session or agent not found}}
   /api/sessions/import:
     post:
-      summary: Import a single orphan session from disk (BL94)
+      summary: Import a single orphan session from disk
       operationId: sessionImport
       tags: [Sessions]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [path], properties: {path: {type: string}}}}}}
@@ -3785,7 +4506,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/reconcile:
     get:
-      summary: List orphan session directories on disk that are missing from the registry (BL93)
+      summary: List orphan session directories on disk that are missing from the registry
       operationId: sessionReconcile
       tags: [Sessions]
       responses: {"200": {description: List of orphans}}
@@ -3799,7 +4520,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/stale:
     get:
-      summary: List running sessions stuck longer than session.stale_timeout_seconds (BL40)
+      summary: List running sessions stuck longer than session.stale_timeout_seconds
       operationId: sessionsStale
       tags: [Sessions]
       parameters:
@@ -3913,7 +4634,7 @@ paths:
   # Agents
   /api/agents:
     get:
-      summary: List ephemeral agent workers (F10 sprint 3+)
+      summary: List ephemeral agent workers
       operationId: agentsList
       tags: [Agents]
       responses: {"200": {description: OK}}
@@ -3925,7 +4646,7 @@ paths:
       responses: {"200": {description: Spawned}, "400": {description: Bad Request}}
   /api/agents/audit:
     get:
-      summary: Tail of the agent-audit log (BL107) — every spawn, terminate, bootstrap event
+      summary: Tail of the agent-audit log — every spawn, terminate, bootstrap event
       operationId: agentsAudit
       tags: [Agents]
       parameters:
@@ -3936,7 +4657,7 @@ paths:
   # Channel
   /api/channel/diagnostics:
     get:
-      summary: MCP channel bridge diagnostics — bridge kind/path, per-session port and liveness (BL362)
+      summary: MCP channel bridge diagnostics — bridge kind/path, per-session port and liveness
       operationId: channelDiagnostics
       tags: [Channel]
       responses:
@@ -3959,7 +4680,7 @@ paths:
   # Devices
   /api/devices:
     get:
-      summary: List registered devices (F17 mobile registry)
+      summary: List registered devices (mobile registry)
       operationId: devicesList
       tags: [Devices]
       responses: {"200": {description: OK}}
@@ -3972,7 +4693,7 @@ paths:
       responses: {"200": {description: Registered}, "400": {description: Bad Request}}
   /api/device-aliases:
     get:
-      summary: "List device aliases for `new: @<alias>:` routing (BL31)"
+      summary: "List device aliases for `new: @<alias>:` routing"
       operationId: deviceAliasList
       tags: [Devices]
       responses: {"200": {description: OK}}
@@ -4250,7 +4971,7 @@ paths:
   # Operator-facing singletons
   /api/ask:
     post:
-      summary: Single-shot LLM ask — no session, no tmux (BL34)
+      summary: Single-shot LLM ask — no session, no tmux
       operationId: ask
       tags: [Singletons]
       requestBody:
@@ -4267,14 +4988,14 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Backend not configured}}
   /api/assist:
     post:
-      summary: Quick-response assistant (BL42) — uses the configured assistant backend
+      summary: Quick-response assistant — uses the configured assistant backend
       operationId: assist
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [text], properties: {text: {type: string}}}}}}
       responses: {"200": {description: OK}, "503": {description: Assistant backend not configured}}
   /api/audit:
     get:
-      summary: Query the operator-action audit log (BL9)
+      summary: Query the operator-action audit log
       operationId: auditQuery
       tags: [Singletons]
       parameters:
@@ -4288,7 +5009,7 @@ paths:
       responses: {"200": {description: OK}, "400": {description: since or until is not RFC 3339}}
   /api/cooldown:
     get:
-      summary: Current global rate-limit cooldown state (BL30)
+      summary: Current global rate-limit cooldown state
       operationId: cooldownGet
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -4380,19 +5101,19 @@ paths:
       responses: {"200": {description: OK}}
   /api/analytics:
     get:
-      summary: Aggregate analytics — session counts, backend distribution, cost summary (BL12)
+      summary: Aggregate analytics — session counts, backend distribution, cost summary
       operationId: analytics
       tags: [Singletons]
       responses: {"200": {description: OK}}
   /api/reload:
     post:
-      summary: Hot config reload (BL17) — equivalent to SIGHUP
+      summary: Hot config reload — equivalent to SIGHUP
       operationId: reload
       tags: [Singletons]
       responses: {"200": {description: Reloaded}, "400": {description: Config invalid}}
   /api/project/summary:
     get:
-      summary: Project overview — git status + sessions + stats (BL35)
+      summary: Project overview — git status + sessions + stats
       operationId: projectSummary
       tags: [Singletons]
       parameters:
@@ -4510,7 +5231,7 @@ paths:
 
   /api/projects:
     get:
-      summary: List project aliases (BL27)
+      summary: List project aliases
       operationId: projectsList
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -4522,7 +5243,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/templates:
     get:
-      summary: List session-start templates (BL5)
+      summary: List session-start templates
       operationId: templatesList
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -4752,6 +5473,168 @@ components:
             example: "unauthorized"
 
   schemas:
+    LaneFillStatus:
+      type: object
+      description: The lane fill status, as GET /api/autonomous/lane-fill returns it.
+      properties:
+        mode: {type: string, enum: [off, shadow, on], description: "shadow records decisions and starts nothing"}
+        last_poll_at: {type: string, format: date-time}
+        lanes:
+          type: array
+          items: {$ref: "#/components/schemas/LaneFillLane"}
+        queued_eligible:
+          type: object
+          description: Queued Automata that could start on each lane type
+          properties:
+            gpu: {type: integer}
+            claude: {type: integer}
+        evidence:
+          type: object
+          properties:
+            checked_at: {type: string, format: date-time}
+            gpu_active_sessions: {type: integer}
+            loaded_models:
+              type: array
+              items:
+                type: object
+                properties:
+                  host: {type: string}
+                  model: {type: string}
+            error: {type: string, description: "Why the last poll could not read the pool; empty when it could"}
+        decisions:
+          type: array
+          description: Planner decisions, newest first
+          items: {$ref: "#/components/schemas/LaneFillDecision"}
+        alerts:
+          type: array
+          items: {$ref: "#/components/schemas/LaneFillAlert"}
+    LaneFillLane:
+      type: object
+      properties:
+        id: {type: string}
+        type: {type: string, enum: [gpu, claude]}
+        state: {type: string, enum: [occupied, idle]}
+        occupant:
+          nullable: true
+          description: The Automaton the lane is running; null when the lane is idle
+          type: object
+          properties:
+            prd_id: {type: string}
+            title: {type: string}
+            backend: {type: string}
+        blocker: {type: string, description: Why an idle lane is not being filled}
+        eligible_waiting: {type: integer, description: Queued Automata this lane could take}
+    LaneFillDecision:
+      type: object
+      properties:
+        at: {type: string, format: date-time}
+        mode: {type: string, enum: [off, shadow, on]}
+        lane_id: {type: string}
+        lane_type: {type: string, enum: [gpu, claude]}
+        action:
+          type: string
+          enum: [start_prd, report_merge, decompose, decompose_ahead, blocked, idle]
+        prd_id: {type: string}
+        title: {type: string}
+        reason: {type: string}
+        blocker: {type: string}
+        executed: {type: boolean, description: "False in shadow mode, where the decision is recorded and nothing starts"}
+        error: {type: string}
+        repeat_count: {type: integer, description: How many polls chose the same action again}
+        last_seen_at: {type: string, format: date-time}
+    LaneFillAlert:
+      type: object
+      description: An idle lane that sat with eligible work queued past the idle alert threshold
+      properties:
+        at: {type: string, format: date-time}
+        lane_id: {type: string}
+        work: {type: string, description: Title of the work waiting for the lane}
+    TriageList:
+      type: object
+      description: |-
+        The triage record list, as GET /api/autonomous/triage returns it. `records`
+        is newest first; `alert_minutes` is the triage alert threshold currently in
+        force (the autonomous.automation.triage_alert_minutes setting; 0 = off).
+      required: [records, alert_minutes]
+      properties:
+        records:
+          type: array
+          description: Triage records, newest first; empty when nothing matches
+          items: {$ref: "#/components/schemas/TriageRecord"}
+        alert_minutes: {type: integer, description: The triage alert threshold in force in minutes; 0 = off}
+    TriageRecord:
+      type: object
+      description: |-
+        One triage record for an Automaton that ended failed or blocked, filled and
+        refreshed by the triage pass on every coordinator tick and cleared again when
+        the Automaton leaves that state.
+      required: [prd_id, status]
+      properties:
+        prd_id: {type: string, description: The Automaton}
+        prd_title: {type: string}
+        automation_id: {type: string, description: The Automation it is a member of; empty for standalone Automata}
+        automation_name: {type: string}
+        member_id: {type: string, description: The Automation member slot the Automaton holds}
+        status:
+          type: string
+          enum: [failed, blocked]
+          description: The state the record covers; cleared when the Automaton leaves it
+        task_id: {type: string, description: The task that failed; empty for blocked Automata without one}
+        task_title: {type: string}
+        blocked_reason:
+          type: string
+          description: The blocked reason recorded on the Automaton; empty for failed ones without one
+        error:
+          type: string
+          description: The failed task's error, truncated to 2000 chars by the pass
+        session_end_reason:
+          type: string
+          description: The worker session's end reason, truncated to 2000 chars by the pass
+        first_seen_at:
+          type: string
+          format: date-time
+          description: When the Automaton first ended in this failed or blocked state (its own status timestamp)
+        updated_at:
+          type: string
+          format: date-time
+          description: When the triage pass last refreshed the record
+        alerted_at:
+          nullable: true
+          description: When the triage alert for this episode fired; null until it does
+          type: string
+          format: date-time
+        retry_budget:
+          type: object
+          description: |-
+            The engine's existing retry budget, reused as-is and shown for all four
+            categories. Informational: the pass neither spends nor resets any of it.
+          properties:
+            infra: {$ref: "#/components/schemas/TriageRetryCategory"}
+            content: {$ref: "#/components/schemas/TriageRetryCategory"}
+            scope: {$ref: "#/components/schemas/TriageRetryCategory"}
+            policy: {$ref: "#/components/schemas/TriageRetryCategory"}
+            ceiling_total: {type: integer, description: The overall retry ceiling, if one is set}
+            ceiling_left: {type: integer, description: What remains of the overall ceiling}
+        notes:
+          type: array
+          description: Appended over the life of the record, oldest first
+          items: {$ref: "#/components/schemas/TriageNote"}
+    TriageRetryCategory:
+      type: object
+      description: One retry-budget category
+      required: [limit, used, left]
+      properties:
+        limit: {type: integer, description: The maximum}
+        used: {type: integer, description: What has been consumed}
+        left: {type: integer, description: What remains}
+    TriageNote:
+      type: object
+      description: One appended note on a triage record
+      required: [at, source, text]
+      properties:
+        at: {type: string, format: date-time}
+        source: {type: string, description: Who appended the note, e.g. triage}
+        text: {type: string}
     NodeUsage:
       type: object
       description: |
@@ -4806,6 +5689,20 @@ components:
               util_pct: {type: number, description: GPU utilization in percent}
               mem_used_bytes: {type: integer, description: GPU memory in use}
               mem_total_bytes: {type: integer, description: Total GPU memory}
+    PendingEventsPage:
+      type: object
+      required: [events, next_cursor, dropped]
+      properties:
+        events:
+          type: array
+          description: Lifecycle events after the requested cursor, oldest first; never null
+          items: {type: object, additionalProperties: true}
+        next_cursor:
+          type: integer
+          description: Cursor to pass as `since` on the next call
+        dropped:
+          type: boolean
+          description: True when unseen events were evicted from the bounded queue
     VerifierPolicyOverrideRequest:
       type: object
       description: |
@@ -5386,6 +6283,83 @@ components:
           type: string
           format: date-time
 
+    ResultPayload:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          description: Required heading for the result
+          example: "Nightly sweep"
+        status:
+          type: string
+          description: Absent, `ok`, `warn`, or `error`
+          enum: ["", ok, warn, error]
+        summary:
+          type: string
+          description: One-paragraph human summary (strings over 2000 chars are truncated)
+        metrics:
+          type: object
+          additionalProperties: true
+          description: Free-form key/value metrics
+          example:
+            pass: 5
+            fail: 0
+        tables:
+          type: array
+          description: Up to 20 tables of at most 100 rows
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              columns:
+                type: array
+                items:
+                  type: string
+              rows:
+                type: array
+                items:
+                  type: array
+                  items:
+                    type: string
+        markdown:
+          type: string
+          description: Optional markdown report body
+
+    ScheduleResultEntry:
+      type: object
+      description: "One posted result — the payload plus its provenance"
+      properties:
+        payload:
+          $ref: "#/components/schemas/ResultPayload"
+        session_id:
+          type: string
+          description: Session that posted the result
+        schedule_name:
+          type: string
+          description: Schedule name the session belongs to
+        posted_at:
+          type: string
+          format: date-time
+
+    ScheduleResultSummary:
+      type: object
+      description: One grouped row of the schedule-results list
+      properties:
+        schedule_name:
+          type: string
+        latest:
+          $ref: "#/components/schemas/ScheduleResultEntry"
+        count:
+          type: integer
+          description: Number of retained entries for this schedule
+        recent_statuses:
+          type: array
+          description: Recent `status` values, oldest → newest (capped at 50); empty when unset
+          items:
+            type: string
+
     RemoteServer:
       type: object
       properties:
@@ -5622,7 +6596,7 @@ components:
         edge_taken: {type: string, description: "Edge followed at last finish: on_complete | on_blocked | on_failed | skip"}
         budget_policy: {$ref: "#/components/schemas/BudgetPolicy"}
         estimated_cost_usd: {type: number, description: "Declared expected cost of a prd member's Automaton; checked against the ceiling before it starts"}
-      required: [id, status]
+      required: [id, prd_id, status]
 
     BudgetPolicy:
       type: object

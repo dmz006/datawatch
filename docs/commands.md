@@ -1096,6 +1096,7 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `progress [--json] [--automation <id>] [--tag <id>] [--since <date>] [--until <date>]` | Automata progress: counts by kind, work left (known and estimated, shown separately), the completion range with its methods, lead time and inactive windows. `--json` prints the `GET /api/autonomous/progress` body untouched; chat: `progress [automation=<id>] [tag=<id>] [since=<date>]` |
 | `progress-trend [--days <n>] [--json]` | How the completion range moved over the saved daily snapshots (1 to 365 days, default 30); `GET /api/autonomous/progress/trend`; chat: `progress trend [days]` |
 | `lane-fill [--limit <n>] [--json]` | Lane fill: each GPU and Claude lane with what it is running or why it is idle, the queued eligible counts and the newest decisions (`--limit` 1 to 1000, default 50). `--json` prints the `GET /api/autonomous/lane-fill` body untouched; a bad `--limit` is refused before anything is sent |
+| `triage [--automation <id>] [--prd <id>] [--status failed\|blocked] [--json]` | Triage records: one row per failed or blocked Automaton — identity, the failed task, first-seen and alarm times, the retry budgets shown as given, the notes, and the alarm threshold in `alert_minutes`. `--status` is `failed` or `blocked` (case-sensitive, refused locally for anything else); an empty list prints its own line. `--json` prints the `GET /api/autonomous/triage` body untouched; chat: `autonomous triage [automation-id]` (one optional positional argument, the automation id) |
 | `subscribe --on <kind> [--level prd|task] [--prd <id>] [--task <id>] --sink comm\|session\|topic\|alert --target <t> [--send <text>] [--one-shot] [--coalesce] [--expires <secs>]` | Subscribe to Automaton lifecycle events and route them to a sink (BL427 phase 3); `--on` is repeatable; shorthand words map to task kinds, full kinds pass through |
 | `unsubscribe <id>` | Delete a lifecycle-event subscription by id (BL427 phase 3) |
 | `subscriptions [--owner <owner>]` | List lifecycle-event subscriptions, optionally scoped to one owner (BL427 phase 3) |
@@ -1139,6 +1140,8 @@ and `progress trend [days]` (see their own section above), and
 Comm channels for lane fill: `autonomous lane-fill [limit]` replies with one line per lane, the queued
 eligible counts, then the newest five decisions (`limit` is how many decisions are read); and
 `autonomous set-lane-preference <prd-id> <gpu|claude|any>` sets the lane an Automaton may take.
+
+Comm channel for triage records: `autonomous triage [automation-id]` (one optional positional argument, the automation id) replies with one line per record (newest first) and the alert threshold; extra arguments are refused, the daemon's refusal (no manager) is passed through. The records are read: the daemon neither starts nor retries from one of them.
 
 Lane fill settings are configuration keys, not commands: `datawatch config set autonomous.lane_fill.mode shadow` (or `on`, or `off`), and the other `autonomous.lane_fill.*` keys. In chat, `configure autonomous.lane_fill.mode=on`. The keys and the surfaces are listed in the Lane fill section of `docs/operations.md`.
 

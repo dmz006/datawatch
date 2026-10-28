@@ -1639,6 +1639,17 @@ func (a *API) ListAutomations() []any {
 	return out
 }
 
+// ListTriageRecords + TriageAlertMinutes — the triage read surface.
+// The server's GET /api/autonomous/triage route (and the CLI and MCP
+// triage on top of it) resolve these through the interface the daemon
+// wires this API as, so the Manager's triage ledger must be reachable
+// here — without these two methods the route falls back to its
+// 503 "not wired" answer even in a running daemon.
+func (a *API) ListTriageRecords() []*TriageRecord {
+	return a.M.ListTriageRecords()
+}
+func (a *API) TriageAlertMinutes() int { return a.M.TriageAlertMinutes() }
+
 func (a *API) GetAutomation(id string) (any, bool) {
 	got, ok := a.M.GetAutomation(id)
 	if !ok {

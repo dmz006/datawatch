@@ -682,7 +682,124 @@ func (c *Coordinator) blocked(a *Automation, reason string, details map[string]a
 	}
 	d["automation_id"], d["reason"], d["actor"] = a.ID, reason, coordinatorActor
 	c.audit("automation_blocked", d)
-	c.alert("warn", "Automation blocked", fmt.Sprintf("Automation %q (%s): %s", a.Name, a.ID, reason))
+	body := fmt.Sprintf("Automation %q (%s): %s", a.Name, a.ID, reason)
+	if extra := c.blockedTaskDetails(a); extra != "" {
+		body += "\n\n" + extra
+	}
+	c.alert("warn", "Automation blocked", body)
+}
+
+// triagePass runs one poll-time triage pass over every Automaton in the
+// store, called from the coordinator's idle tick beside checkIdle and
+// checkBudget (automation_idle.go):
+//
+//   - a failed or blocked Automaton gets its stored Triage record
+//     filled in or refreshed in place (Manager.SaveTriageRecord keeps the
+//     stored FirstSeenAt, AlertedAt and append-only Notes across
+//     refreshes, so the record is never duplicated). A pass with nothing
+//     new compares first and skips the store write entirely
+//     (triageRecordUnchanged, triage_pass.go), so an unchanged record is
+//     not rewritten on every poll;
+//   - an Automaton that has left failed/blocked (completed, cancelled,
+//     archived, rejected, ...) has its record cleared (Manager.Clear-
+//     TriageRecord) and is skipped for recording;
+//   - when the record has stood for at least the live
+//     TriageAlertMinutes threshold (0 = alerts off; unset = the
+//     DefaultAutomationTriageAlertMinutes default), the pass raises
+//     exactly one triage alert for it and stamps the record's AlertedAt,
+//     so a later refresh never re-raises and a record that was cleared
+//     and later re-filed is a new episode that alerts again.
+//
+// Failed members of an Automation are skipped while the coordinator is
+// not ready yet (boot recovery may still replay those failures); a
+// standalone Automaton — or a member whose Automation no longer exists
+// — is triaged regardless.
+//
+// Verified in code before this pass was built (per field, with file
+// and line):
+//
+//   - the failed task's error — NO, the blocked alert does not carry
+//     it: the alert body is the fixed template at
+//     automation_coordinator.go:685
+//     (body := fmt.Sprintf("Automation %q (%s): %s", a.Name, a.ID,
+//     reason)), whose interpolated %s is a short step reason string
+//     such as "member run errored" or "next member X is failed"; the
+//     task's error itself (Task.Error, models.go:819) is never read on
+//     the blocked() path;
+//
+//   - the session end reason — NO, the blocked alert does not carry it
+//     either: Task.SessionEndReason (models.go:865) is stored on the
+//     Automaton's task but is likewise never interpolated into the
+//     blocked() body.
+//
+// That is why this pass's record and alert carry both explicitly, why
+// the blocked() alert above is extended with blockedTaskDetails when it
+// is known, and why the blocked alert's body stays as-is when it is not.
+func (c *Coordinator) triagePass() {
+	if c == nil || c.m == nil {
+		return
+	}
+	m := c.m
+	now := c.now()
+	threshold := time.Duration(m.Config().Automation.EffectiveTriageAlertMinutes()) * time.Minute
+
+	type dueAlert struct{ level, title, body string }
+	var due []dueAlert
+
+	automations := m.automations
+	for _, prd := range m.store.ListPRDs() {
+		switch prd.Status {
+		case PRDFailed, PRDBlocked:
+			var isMember bool
+			if prd.AutomationID != "" && automations != nil {
+				if _, ok := automations.Get(prd.AutomationID); ok {
+					isMember = true
+				}
+			}
+			if isMember && !c.Ready() {
+				continue // boot recovery may still replay this failure
+			}
+			fresh := c.triageFresh(prd, now)
+			if fresh == nil {
+				continue
+			}
+			stored := prd.Triage
+			alerting := threshold > 0 && stored != nil && stored.AlertedAt == nil &&
+				!now.Before(stored.FirstSeenAt.Add(threshold))
+			if !alerting && triageRecordUnchanged(stored, fresh) {
+				continue // nothing new — do not rewrite the stored record
+			}
+			if alerting {
+				t := now
+				fresh.AlertedAt = &t
+			}
+			if err := m.SaveTriageRecord(prd.ID, fresh); err != nil {
+				log.Printf("[autonomous] triage record for %s: %v", prd.ID, err)
+				continue
+			}
+			if alerting {
+				name := fresh.PRDTitle
+				if name == "" {
+					name = fresh.PRDID
+				}
+				due = append(due, dueAlert{
+					level: "warn",
+					title: fmt.Sprintf("Triage: Automaton %q %s", name, fresh.Status),
+					body:  triageAlertBody(fresh),
+				})
+			}
+		default:
+			if prd.Triage != nil {
+				if err := m.ClearTriageRecord(prd.ID); err != nil {
+					log.Printf("[autonomous] clear triage record for %s: %v", prd.ID, err)
+				}
+			}
+		}
+	}
+
+	for _, d := range due {
+		c.alert(d.level, d.title, d.body)
+	}
 }
 
 // memberDecision appends an automation_advance Decision to a member PRD.

@@ -516,10 +516,35 @@ type AutomationConfig struct {
 	// this long. 0 = off.
 	IdleAlertMinutes int `json:"idle_alert_minutes"`
 
+	// TriageAlertMinutes: how long (whole minutes) an Automation may sit
+	// waiting before a triage alert is raised. Pointer on purpose: an unset
+	// value (nil) reads the default DefaultAutomationTriageAlertMinutes
+	// (30), while an explicit 0 turns the triage alert off and survives a
+	// merge round trip. The poll pass reads its threshold through
+	// EffectiveTriageAlertMinutes.
+	TriageAlertMinutes *int `json:"triage_alert_minutes,omitempty"`
+
 	// AgentInsertPolicy: PolicyAllow (default, also the empty value) lets an
 	// agent insert a member directly; PolicyRequireOperator holds an agent's
 	// insert as a pending insert until an operator approves it.
 	AgentInsertPolicy string `json:"agent_insert_policy"`
+}
+
+// DefaultAutomationTriageAlertMinutes — the autonomous.automation.
+// triage_alert_minutes default: a triage alert is raised after the Automation
+// has been waiting this many whole minutes. Only an explicit 0 turns the
+// alert off.
+const DefaultAutomationTriageAlertMinutes = 30
+
+// EffectiveTriageAlertMinutes returns the triage alert threshold in effect:
+// unset (nil) reads the default of DefaultAutomationTriageAlertMinutes (30),
+// an explicit 0 turns the triage alert off. Negative values are rejected on
+// the write paths, so this never has to guess for them.
+func (c AutomationConfig) EffectiveTriageAlertMinutes() int {
+	if c.TriageAlertMinutes == nil {
+		return DefaultAutomationTriageAlertMinutes
+	}
+	return *c.TriageAlertMinutes
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.

@@ -106,7 +106,9 @@ func taskResetEndReason(prdID, taskID string) string {
 }
 
 // recordEndedSessions notes the ended session ids on the PRD (Decision) and on
-// the task (History). The caller saves.
+// the task (History), and records the end reason structurally on the task
+// (Task.SessionEndReason) so the reason is a stable field rather than
+// something readers have to re-derive from a note. The caller saves.
 func recordEndedSessions(prd *PRD, t *Task, ended []string, reason string) {
 	if len(ended) == 0 {
 		return
@@ -115,4 +117,5 @@ func recordEndedSessions(prd *PRD, t *Task, ended []string, reason string) {
 	note := fmt.Sprintf("task %s: ended live session(s) %s: %s", t.ID, strings.Join(ended, ", "), reason)
 	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "ended_sessions", Actor: "autonomous", Note: note})
 	t.History = append(t.History, TaskHistoryEntry{At: now, Note: note})
+	t.SessionEndReason = reason
 }

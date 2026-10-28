@@ -381,6 +381,11 @@ env -u TMUX -u TMUX_TMPDIR rtk curl -sS -X POST http://127.0.0.1:8787/api/questi
 
 ## Related
 
+- [Triage records](../api/autonomous.md#triage-records-get-api-autonomoustriage): the record of every failed or blocked
+  Automaton in your Automations — how the pass fills, refreshes and clears
+  it, the single alert it can raise, and where to read it (REST, MCP, CLI,
+  comm, this detail view); the operator reference is the *Triage records*
+  section of [operations.md](../operations.md)
 - [automation-queue-advance.md](automation-queue-advance.md): activating an
   Automation, automatic advance, idle alert, model defaults and the
   all-channels table

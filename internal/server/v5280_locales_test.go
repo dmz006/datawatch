@@ -232,6 +232,11 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"notify_events_opt_in_help",
 		"lifecycle_sub_form_group_warnings",
 		"lifecycle_sub_form_opt_in_hint",
+		// 2026-10-26 — autonomous triage: the settings field for
+		// `autonomous.automation.triage_alert_minutes` and the triage
+		// card title in the Automaton detail view.
+		"settings_automation_triage_alert_minutes",
+		"triage_card_title",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

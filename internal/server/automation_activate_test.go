@@ -175,3 +175,74 @@ func TestAutomationIdleAlertConfigRoundTrip(t *testing.T) {
 		t.Fatalf("live manager after autonomous-config PUT = %d, want 0", got)
 	}
 }
+
+func TestAutomationTriageAlertConfigRoundTrip(t *testing.T) {
+	s, mgr, _ := newActivateServer(t, false)
+
+	// GET /api/config: an unset (nil) value emits the effective value here,
+	// and an explicit 0 stays 0 rather than reading the 30-minute default.
+	getTriage := func() int {
+		var a struct {
+			Triage *int `json:"triage_alert_minutes"`
+		}
+		_ = json.Unmarshal(getAutonomousConfigMap(t, s)["automation"], &a)
+		if a.Triage == nil {
+			return 30 // unset: the default read
+		}
+		return *a.Triage
+	}
+	if got := getTriage(); got != 30 {
+		t.Fatalf("default triage_alert_minutes = %d, want the 30-minute default", got)
+	}
+
+	// PUT /api/config writes it, and the live manager sees the same value.
+	pcPutOK(t, s.handlePutConfig, "/api/config", map[string]any{"autonomous.automation.triage_alert_minutes": 45})
+	if got := getTriage(); got != 45 {
+		t.Fatalf("after PUT /api/config: %d, want 45", got)
+	}
+	if got := mgr.Config().Automation.EffectiveTriageAlertMinutes(); got != 45 {
+		t.Fatalf("live manager triage_alert_minutes = %d, want 45", got)
+	}
+
+	// Negative, fractional and non-numeric values are a 400 and leave the
+	// value alone, on both surfaces.
+	pcPutBad(t, s.handlePutConfig, "/api/config", map[string]any{"autonomous.automation.triage_alert_minutes": -1})
+	pcPutBad(t, s.handlePutConfig, "/api/config", map[string]any{"autonomous.automation.triage_alert_minutes": "soon"})
+	pcPutBad(t, s.handlePutConfig, "/api/config", map[string]any{"autonomous.automation.triage_alert_minutes": 1.5})
+	pcPutBad(t, s.handleAutonomousConfig, "/api/autonomous/config", map[string]any{"automation": map[string]any{"triage_alert_minutes": -5}})
+	if got := getTriage(); got != 45 {
+		t.Fatalf("rejected PUT changed the value: %d, want 45", got)
+	}
+
+	// 0 = explicit off: it is stored as 0, not skipped, on both surfaces.
+	pcPutOK(t, s.handlePutConfig, "/api/config", map[string]any{"autonomous.automation.triage_alert_minutes": 0})
+	if got := getTriage(); got != 0 {
+		t.Fatalf("after PUT 0 /api/config: %d, want 0", got)
+	}
+	if got := mgr.Config().Automation.EffectiveTriageAlertMinutes(); got != 0 {
+		t.Fatalf("live manager after PUT 0 /api/config = %d, want 0", got)
+	}
+	pcPutOK(t, s.handleAutonomousConfig, "/api/autonomous/config", map[string]any{"automation": map[string]any{"triage_alert_minutes": 90}})
+	if got := mgr.Config().Automation.EffectiveTriageAlertMinutes(); got != 90 {
+		t.Fatalf("live manager after autonomous-config PUT 90 = %d, want 90", got)
+	}
+	pcPutOK(t, s.handleAutonomousConfig, "/api/autonomous/config", map[string]any{"automation": map[string]any{"triage_alert_minutes": 0}})
+	if got := mgr.Config().Automation.EffectiveTriageAlertMinutes(); got != 0 {
+		t.Fatalf("live manager after autonomous-config PUT 0 = %d, want 0", got)
+	}
+}
+
+func TestTriageAlertUnsetDefaultsToThirtyOnConfigSurface(t *testing.T) {
+	// Fresh default config: the key is unset (nil) but GET /api/config
+	// reports the effective value — 30, never null.
+	cfg := config.DefaultConfig()
+	if got := cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(); got != config.DefaultAutomationTriageAlertMinutes {
+		t.Fatalf("DefaultConfig effective triage_alert_minutes = %d, want %d",
+			got, config.DefaultAutomationTriageAlertMinutes)
+	}
+	zero := 0
+	cfg.Autonomous.Automation.TriageAlertMinutes = &zero
+	if got := cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(); got != 0 {
+		t.Fatalf("explicit 0 effective triage_alert_minutes = %d, want 0", got)
+	}
+}

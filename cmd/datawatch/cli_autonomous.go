@@ -29,6 +29,10 @@ Subcommands:
                                   Progress counts, rates, work left and the completion range
   progress-trend [--days N] [--json]  How the completion range moved over the saved daily snapshots
   lane-fill [--limit N] [--json]  Lane fill: each lane, queued eligible counts and the newest decisions
+  triage [--automation ID] [--prd ID] [--status failed|blocked] [--json]
+                                  Triage read: the failed and blocked Automata waiting for operator triage,
+                                  newest first, beside the alert threshold — the same text the comm verb
+                                  (autonomous triage) and the triage alert show
   config-get                      Read current autonomous config
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
@@ -194,6 +198,8 @@ Subcommands:
 		newAutonomousSubscriptionUpdateCmd(),
 		newAutonomousSubscriptionTestCmd(),
 		newAutonomousEventsCmd(),
+		// Triage read (docs/plans/2026-10-26-autonomous-triage-read-route.md).
+		newAutonomousTriageCmd(),
 	)
 	return cmd
 }

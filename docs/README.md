@@ -113,6 +113,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [flow/agent-spawn-flow.md](flow/agent-spawn-flow.md) | F10 agent lifecycle — profile → spawn → bootstrap → clone → terminate → revoke → sweep |
 | [flow/lifecycle-subscription-flow.md](flow/lifecycle-subscription-flow.md) | Automata lifecycle event → dispatcher → subscription engine → comm / session (bridge, SendInput) / topic / alert / pending-events queue (`mcp_queue`) sinks; update + test-fire; outbound webhook and peer forwarding paths (both ship disabled) |
 | [flow/tag-registry-sync-flow.md](flow/tag-registry-sync-flow.md) | Shared tag registry across federated daemons: keeper and peer roles, the pull loop, forwarded writes, stale copies, pending sync, merge and removed-on-keeper notes |
+| [flow/automation-triage-flow.md](flow/automation-triage-flow.md) | Poll-time triage pass — fill/refresh/clear the stuck Automaton's triage record, one alert per episode, and the read on every surface |
 
 ---
 

@@ -16295,6 +16295,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.usage_backoff', label: 'Usage back-off (pause_backend | off, default pause_backend)', labelKey: 'settings_usage_backoff', type: 'select', options: ['pause_backend', 'off'], default: 'pause_backend' },
     { key: 'autonomous.backoff_max_wait_minutes', label: 'Usage back-off max wait (minutes when a rate limit has no reset time, default 60)', labelKey: 'settings_backoff_max_wait_minutes', type: 'number', placeholder: '60', min: 1, step: 1, default: '60' },
     { key: 'autonomous.automation.idle_alert_minutes', label: 'Automation idle alert (minutes idle before one alert, 0 = off)', labelKey: 'settings_automation_idle_alert_minutes', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
+    { key: 'autonomous.automation.triage_alert_minutes', label: 'Automation triage alert (minutes an Automation may sit waiting before a triage alert, 0 = off, default 30)', labelKey: 'settings_automation_triage_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
     // Lane fill — shadow (default) computes and records every decision and starts nothing.
     { key: 'autonomous.lane_fill.mode', label: 'Lane fill mode (off, shadow or on; default shadow)', labelKey: 'settings_lane_fill_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.lane_fill.gpu_lanes', label: 'Lane fill GPU lanes (whole number, default 2)', labelKey: 'settings_lane_fill_gpu_lanes', type: 'number', placeholder: '2', min: 0, step: 1, default: '2' },
@@ -23668,9 +23669,16 @@ function _renderDetailContent(prd) {
 
   const body = document.getElementById('automataDetailBody');
   if (!body) return;
+  // The triage slot: a stuck Automaton (failed or blocked) carries one
+  // self-contained record while it waits for the operator; when one is stored
+  // it renders above every sub-tab, so it is never lost behind a tab switch.
+  const triageSlot = (status === 'failed' || status === 'blocked')
+    ? `<div id="prdTriageCard" class="prd-capacity-slot triage-slot" style="margin-top:10px;">${window.triageCardHtml(prd.triage || null)}</div>`
+    : '';
   body.innerHTML = `<div class="prd-detail-body">
     ${header}
     ${tabStrip}
+    ${triageSlot}
     <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
   </div>`;
   _tagsLoad().then(() => _renderDetailTagRow(prd));
@@ -24218,6 +24226,99 @@ window.laneFillCardHtml = function(status) {
     _laneFillSection(t('lane_fill_lanes_heading'), lanesHtml) + queuedLine + evidence +
     _laneFillSection(t('lane_fill_decisions_heading'), decisionsHtml) +
     _laneFillSection(t('lane_fill_alerts_heading'), alertsHtml) + `</div>`;
+};
+
+// ── Triage card ─────────────────────────────────────────────────────────────
+// triageCardHtml(record) turns one triage record — the single self-contained
+// record a failed or blocked Automaton carries while it waits for operator
+// attention — into the record card: the Automaton's name, the Automation
+// that owns it when it is a member, the status chip, the failed task, its
+// error, the session end reason, the retry budget per category, the first
+// sighting and whether an alert has already been raised. A missing record
+// renders the placeholder; the loader owns the failed state. Every value is
+// escaped. The key maps hold literal locale keys, so the key-coverage guard
+// can see them.
+const TRIAGE_STATUS_KEYS = { failed: 'triage_status_failed', blocked: 'triage_status_blocked' };
+const TRIAGE_BUDGET_ROWS = [
+  ['infra', 'triage_budget_infra'],
+  ['content', 'triage_budget_content'],
+  ['scope', 'triage_budget_scope'],
+  ['policy', 'triage_budget_policy'],
+];
+// _triageKey returns the locale key for an API value, or '' for anything that
+// is not one of ours (including inherited names such as "constructor").
+function _triageKey(map, v) {
+  return (typeof v === 'string' && Object.prototype.hasOwnProperty.call(map, v)) ? map[v] : '';
+}
+// _triageTime formats a server time; the zero time the server sends when
+// unset has no clock reading, so it renders as nothing.
+function _triageTime(at) {
+  const ms = Date.parse(at);
+  return (isNaN(ms) || ms < 0) ? '' : new Date(ms).toLocaleString();
+}
+// _triageBudgetRow is one retry-budget line: how much was spent of the
+// granted amount and what is left. A granted amount of 0 means no
+// auto-retry was allowed at all, and the row says so instead of a 0/0.
+function _triageBudgetRow(label, b) {
+  const used = Number(b && b.used) || 0;
+  const limit = Number(b && b.limit) || 0;
+  const left = (Number(b && b.left) || 0);
+  const val = limit > 0 ? t('triage_budget_used_left', [used, limit, left]) : t('triage_budget_none');
+  return `<div class="triage-budget-row" style="display:flex;flex-wrap:wrap;gap:2px 10px;padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    `<span style="font-weight:600;min-width:64px;overflow-wrap:anywhere;">${escHtml(label)}</span>` +
+    `<span style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(val)}</span></div>`;
+}
+window.triageCardHtml = function(record) {
+  const head = `<div class="cap-title">${escHtml(t('triage_card_title'))}</div>`;
+  if (!record || typeof record !== 'object') {
+    return `<div class="prd-capacity-card triage-card">${head}<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_record_empty'))}</div></div>`;
+  }
+  const statusKey = _triageKey(TRIAGE_STATUS_KEYS, record.status);
+  const statusLabel = statusKey ? t(statusKey) : String(record.status || '');
+  const chipName = (statusKey === 'triage_status_failed') ? 'failed' : (statusKey === 'triage_status_blocked') ? 'blocked' : 'unknown';
+  const chipColor = statusKey === 'triage_status_failed' ? 'var(--error,#c00)' : 'var(--warning,#a06b00)';
+  const chip = `<span class="triage-status-chip triage-status-${chipName}" style="display:inline-block;padding:1px 8px;border:1px solid ${chipColor};border-radius:10px;font-size:11px;font-weight:700;color:${chipColor};">${escHtml(statusLabel)}</span>`;
+  const name = `<div style="margin-top:4px;font-weight:600;overflow-wrap:anywhere;">${escHtml(record.prd_title || record.prd_id || '')} ${chip}</div>`;
+  const automation = record.automation_name
+    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('automation_triage_owner', [record.automation_name]))}${record.member_id ? escHtml(t('triage_member', [record.member_id])) : ''}</div>`
+    : '';
+  const task = record.task_title
+    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_failed_task', [record.task_title]))}</div>`
+    : '';
+  const error = record.error
+    ? `<div class="triage-error" style="margin-top:4px;color:var(--error,#c00);white-space:pre-wrap;overflow-wrap:anywhere;">${escHtml(record.error)}</div>`
+    : '';
+  const blocked = record.blocked_reason
+    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_blocked_reason', [record.blocked_reason]))}</div>`
+    : '';
+  const ended = record.session_end_reason
+    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_session_end_reason', [record.session_end_reason]))}</div>`
+    : '';
+  const firstSeen = _triageTime(record.first_seen_at);
+  const first = firstSeen
+    ? `<div style="color:var(--text2);">${escHtml(t('triage_first_seen', [firstSeen]))}</div>`
+    : '';
+  const alertedAt = record.alerted_at ? _triageTime(record.alerted_at) : '';
+  const alert = alertedAt
+    ? `<div style="color:var(--text2);">${escHtml(t('triage_alerted_at', [alertedAt]))}</div>`
+    : `<div style="color:var(--text2);">${escHtml(t('triage_not_alerted'))}</div>`;
+  const bud = (record.retry_budget && typeof record.retry_budget === 'object') ? record.retry_budget : {};
+  const budgetHead = `<div style="margin-top:8px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(t('triage_retry_budget'))}</div>`;
+  const budgetRows = TRIAGE_BUDGET_ROWS.map(([k, key]) => _triageBudgetRow(t(key), bud[k])).join('');
+  const ceilingTotal = Number(bud.ceiling_total) || 0;
+  const ceiling = ceilingTotal > 0
+    ? `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_budget_ceiling', [Number(bud.ceiling_left) || 0, ceilingTotal]))}</div>`
+    : `<div style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('triage_budget_none'))}</div>`;
+  return `<div class="prd-capacity-card triage-card" style="min-width:0;">${head}${name}${automation}${task}${error}${blocked}${ended}${first}${alert}${budgetHead}${budgetRows}${ceiling}</div>`;
+};
+// triageListHtml is the Automation sub-tab's list renderer: the GET
+// /api/autonomous/triage body is { records: [...], alert_minutes }; it draws
+// a card per stuck Automaton, an empty state when none wait for the
+// operator. The loader still owns the loading and failed states.
+window.triageListHtml = function(body) {
+  const recs = (body && Array.isArray(body.records)) ? body.records : [];
+  return recs.map(r => window.triageCardHtml(r)).join('') ||
+    `<div class="list-state-empty triage-list-empty" style="text-align:center;padding:20px;color:var(--text2);min-width:0;">${escHtml(t('triage_empty'))}</div>`;
 };
 
 // ── Automata progress card ───────────────────────────────────────────────────
@@ -26482,6 +26583,7 @@ function _automationBodyHTML() {
       <div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
       <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>`;
@@ -26494,7 +26596,7 @@ function _automationMount() {
   _automationState.loaded = false;
   // The capacity card and the list load in parallel; each loader owns its
   // own loading and failed states, so one failing never blanks the other.
-  listLoaderAll([_automationCapacityLoader(), _automationLaneFillLoader(), _automationLoader()]);
+  listLoaderAll([_automationCapacityLoader(), _automationLaneFillLoader(), _automationTriageLoader(), _automationLoader()]);
   // The progress card runs on its own state-machine path; it renders when the
   // data lands and its failed state never touches the list or capacity card.
   if (typeof window.loadProgressCard === 'function') window.loadProgressCard();
@@ -26503,7 +26605,7 @@ function _automationMount() {
 // _automationStopLoaders ends the polling and tick timers of the Automation
 // list and capacity loaders. Their state stays, and load() starts them again.
 function _automationStopLoaders() {
-  ['automation', 'automation_capacity', 'automation_lane_fill'].forEach(k => {
+  ['automation', 'automation_capacity', 'automation_lane_fill', 'automation_triage'].forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
   });
@@ -26575,6 +26677,18 @@ function _automationLaneFillLoader() {
     failedText: msg => t('lane_fill_failed', [msg]),
     active: () => !!document.getElementById('automationLaneFillCard'),
     render: status => window.laneFillCardHtml(status),
+  });
+}
+
+// _automationTriageLoader polls the failed-and-blocked record list beside the
+// capacity and lane fill cards. Its failed state is the list loader's banner,
+// like the capacity card; one card per stuck Automaton when records exist.
+function _automationTriageLoader() {
+  return window._listLoaders.automation_triage || listLoader({
+    key: 'automation_triage', el: 'automationTriageCard', url: '/api/autonomous/triage', pollMs: 5000,
+    failedText: msg => t('triage_failed', [msg]),
+    active: () => !!document.getElementById('automationTriageCard'),
+    render: body => window.triageListHtml(body),
   });
 }
 

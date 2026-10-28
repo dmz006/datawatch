@@ -488,6 +488,17 @@ type PRD struct {
 	// acknowledgement state (nil until acknowledged). Nil = no coverage
 	// check has been stored for this PRD yet.
 	PlanCoverage *PlanCoverage `json:"plan_coverage,omitempty"`
+
+	// Triage is the single record a failed or blocked Automaton carries
+	// while it waits for operator attention (see triage_record.go): the
+	// Automaton's identity, the failed/blocked task and its error, the
+	// end reason for any session that was ended, the resolved retry
+	// budget, and the append-only notes later steps write to it. Present
+	// only while the Automaton is stuck — written when it lands in
+	// failed/blocked, refreshed (never duplicated) while it stays there,
+	// cleared when it leaves. Absent (nil) in JSON otherwise, so an
+	// healthy Automaton's stored row is byte-for-byte what it was before.
+	Triage *TriageRecord `json:"triage,omitempty"`
 }
 
 // PlanCoverage is the plan-coverage state stored on the PRD
@@ -861,6 +872,11 @@ type Task struct {
 	// alongside Error (a bare string, left untouched for existing
 	// readers). Set on the task's last failed/blocked attempt.
 	FailureReason *FailureReason `json:"failure_reason,omitempty"`
+	// SessionEndReason records why this task's live sessions were ended —
+	// set structurally by reset_ends_sessions.go whenever they are ended,
+	// so the reason is a stable field rather than only recoverable from a
+	// decision note. Blank while the task holds no ended-session record.
+	SessionEndReason string `json:"session_end_reason,omitempty"`
 	// StartFailureTail — the last 20 non-empty lines of the visible tmux
 	// pane captured at failure time, set only when a spawned session never
 	// started (sat in waiting_input without any assistant output past the
