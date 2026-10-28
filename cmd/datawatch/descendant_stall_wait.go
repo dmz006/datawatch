@@ -23,6 +23,44 @@ func workDescendantPIDs(tmuxSession, projectDir string) map[int]bool {
 	return workChildPIDs(roots, tree, resolveRunnerName, readProcessCmdline, sessionOwnMCPServers(projectDir))
 }
 
+// descendantOutputObservation remembers the wait loop's last look at the
+// pane and the channel so that fresh output — the spec's "output resets the
+// silence clock" liveness signal — resets a worker's DescendantStallTracker
+// before the next Observe. The pane is the worker's own stdout (tmux
+// scrollback); the channel event time is the model's output. Neither is
+// available to internal/autonomous, so the wait loop feeds this observation
+// and resets the tracker when either side has moved since the last look.
+type descendantOutputObservation struct {
+	lastLookAt  time.Time
+	lastPaneLen int
+}
+
+// outputIsFresh reports whether, since the last look, the pane grew or the
+// channel emitted a newer event, and then records this look (lastLookAt =
+// now; lastPaneLen = the larger of the previous and the current value, so a
+// temporarily empty pane from a failed capture does not clear the baseline
+// and a later full pane counts as growth).
+//
+// The very first observation of a zero-value reporter never reports fresh:
+// the clock must not be reset by output that is already old, which would
+// silently extend the silence window. A nil pane and a zero channel time
+// (both available) report not-fresh without touching the baseline.
+func (o *descendantOutputObservation) outputIsFresh(now time.Time, pane string, channelEventAt time.Time) bool {
+	fresh := false
+	paneGrew := pane != "" && len(pane) > o.lastPaneLen
+	if !o.lastLookAt.IsZero() {
+		fresh = paneGrew
+		if !channelEventAt.IsZero() && channelEventAt.After(o.lastLookAt) {
+			fresh = true
+		}
+	}
+	o.lastLookAt = now
+	if paneGrew {
+		o.lastPaneLen = len(pane)
+	}
+	return fresh
+}
+
 // descendantStallTick advances the descendant-only stall tracker for one
 // wait-loop observation and reports whether it has declared the run stalled.
 // Mirrors exitSilenceTick's family gate: it applies to the pi-prompt family
