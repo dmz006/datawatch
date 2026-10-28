@@ -13,24 +13,44 @@ import { runStory, connectToPWA, navigateTo, screenshot, saveLog, env } from './
 
 // The sandbox HTTP port redirects to TLS (307) and a redirect drops the
 // Authorization header, so REST calls go straight to the self-signed TLS port.
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+// The relaxed certificate check lives on this dedicated Agent, not on the whole process.
+import https from 'node:https';
+const sandboxAgent = new https.Agent({ rejectUnauthorized: false });
 const API = env.tls;
+
+// api issues one REST call to the sandbox TLS port and answers { ok, status, json() } like fetch.
+function api(path, { method = 'GET', headers: h = {}, body } = {}) {
+  return new Promise((resolve, reject) => {
+    if (body) h = { ...h, 'Content-Length': Buffer.byteLength(body) };
+    const req = https.request(new URL(path, API), { method, headers: h, agent: sandboxAgent }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json: async () => JSON.parse(text || '{}'), text: async () => text });
+      });
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
 
 const KEY = 'autonomous.questions.enabled';
 const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${env.token}` };
 
 async function readSwitch() {
-  const r = await fetch(`${API}/api/config`, { headers });
+  const r = await api('/api/config', { headers });
   if (!r.ok) throw new Error(`GET /api/config -> ${r.status}`);
   const cfg = await r.json();
   return !!(cfg.autonomous && cfg.autonomous.questions && cfg.autonomous.questions.enabled);
 }
 async function writeSwitch(v) {
-  const r = await fetch(`${API}/api/config`, { method: 'PUT', headers, body: JSON.stringify({ [KEY]: v }) });
+  const r = await api('/api/config', { method: 'PUT', headers, body: JSON.stringify({ [KEY]: v }) });
   if (!r.ok) throw new Error(`PUT /api/config ${KEY}=${v} -> ${r.status}`);
 }
 async function questionsStatus() {
-  const r = await fetch(`${API}/api/questions`, { headers });
+  const r = await api('/api/questions', { headers });
   return r.status;
 }
 async function waitFor(fn, what, timeout = 8000) {
