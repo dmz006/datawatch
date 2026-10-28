@@ -1846,6 +1846,36 @@ token-passing gaps above, and a pre-existing `Accept-Encoding` bug that
 silently corrupted every proxied script) found only by actually driving
 a real browser against this feature.
 
+### OWASP ZAP workflow and GitHub API rate limits
+
+The `owasp-zap` workflow runs after the Release workflow completes and scans
+the daemon's PWA and API surfaces with OWASP ZAP. Its last step, **Attach
+ZAP reports to GitHub release**, uploads the baseline and API-scan HTML
+reports to the GitHub release page for the tag being released. That step only
+runs for a real release tag — branch refs are normalized away and ignored, so
+a main-branch run never passes a tag name to the upload.
+
+The attach step uses the installation's GitHub token, and GitHub can answer
+"API rate limit exceeded" for it. When that happens the step retries a
+bounded number of times with a growing wait (30s, 60s, 120s, 240s, never
+sleeping less than until the reported rate-limit reset), retrying only when
+the failure looks like a rate limit. If the rate limit persists after all
+attempts, the step logs a warning and the run stays green — the **scan result
+is what counts**, and the reports remain available from the run's
+`owasp-zap-reports` artifact, which GitHub retains for 90 days. A non-rate-limit
+attach failure still fails the run, and a scan finding above the accepted
+thresholds still fails the run; only the release attach is tolerated.
+
+To attach the reports yourself, download the `owasp-zap-reports` run artifact
+and re-upload with:
+
+```bash
+gh release upload <release-tag> report_pwa-baseline.html report_api-scan.html --clobber
+```
+
+or simply re-run the workflow later, once the API rate limit is available
+again — the attach step will then complete normally.
+
 ---
 
 ## 8. Web UI Features
