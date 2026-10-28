@@ -34,9 +34,12 @@
 # Usage:
 #   env -u TMUX -u TMUX_TMPDIR bash scripts/release-smoke-daemon-cleanup.sh
 #
-# Exits 0 on full pass (or clean skip), 1 on any FAIL. Its own
-# EXIT/INT/TERM/HUP traps (installed through the same library under test)
-# end anything it started and remove the scratch dirs it made.
+# Exits 0 on full pass (or clean skip), 1 on any FAIL. This script itself
+# records the driver pid (marker: the driver script path) and the daemon
+# pid (marker: its config path) in its own state dir with td_track_pid,
+# so its OWN EXIT/INT/TERM/HUP traps (td_install_traps, the same library
+# under test) end exactly those two before TD_EXTRA_CLEANUP removes the
+# scratch dirs — even when only the smoke itself receives the signal.
 
 set -uo pipefail
 
@@ -89,6 +92,13 @@ mkdir -p "$SCRATCH_ROOT"
 # write of this smoke (both its own and the driver's records) stays local.
 export TD_STATE_DIR="$SCRATCH_ROOT/release-smoke-daemon-cleanup-state"
 
+# Same API-token substitution as start_test_daemon in scripts/run-tests.sh
+# (its default token, unless the caller already set one). The driver records
+# it with td_set_api; the smoke records it on its own daemon record too,
+# so the smoke's own td_stop_all ends the daemon's sessions first.
+TEST_TOKEN="${TEST_TOKEN:-dw-test-token-12345}"
+export TEST_TOKEN
+
 source "$LIB"
 
 # --- Its own cleanup: remove the scratch dirs it made, on EVERY exit
@@ -106,10 +116,12 @@ smoke_extra_cleanup() {
 TD_EXTRA_CLEANUP=smoke_extra_cleanup
 td_install_traps "$@"
 
-# free_port — same probing as free_port in scripts/e2e-pwa.sh
+# free_port — same probing as free_port in scripts/e2e-pwa.sh (the fallback
+# only fires when python3 is missing, which the script already skips on;
+# it is numeric, not hex like the uuid fallback used for)
 free_port() {
   python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()' 2>/dev/null \
-    || cat /proc/sys/kernel/random/uuid | head -c 8
+    || printf '%s\n' "$((20000 + RANDOM % 20000))"
 }
 
 # send_signal_recorded <pid> <sig> <marker> — signal only a PID this
@@ -138,7 +150,7 @@ write_driver() {
 #!/usr/bin/env bash
 # Child driver for release-smoke-daemon-cleanup.sh (runtime-generated).
 set -uo pipefail
-: "${B:?}" "${C:?}" "${S:?}" "${P:?}" "${LIB:?}"
+: "${B:?}" "${C:?}" "${S:?}" "${P:?}" "${T:?}" "${LIB:?}"
 export TD_STATE_DIR="$S/td-state"
 source "$LIB"
 td_install_traps
@@ -148,7 +160,9 @@ if ! td_start "$B" "$C" "$S/daemon.log"; then
   exit 1
 fi
 DP="$TD_LAST_PID"
-td_set_api "$DP" "http://127.0.0.1:${P}" ""
+# Record the API (with the config's token) so stopping ends this daemon's
+# live sessions through its own API first.
+td_set_api "$DP" "http://127.0.0.1:${P}" "${T}"
 up=0
 for i in $(seq 1 120); do
   if curl -s --max-time 2 "http://127.0.0.1:${P}/api/health" 2>/dev/null | grep -q '"status":"ok"'; then
@@ -188,9 +202,10 @@ run_round() {
     return
   fi
 
-  # Same sed substitutions as start_test_daemon in scripts/run-tests.sh,
-  # with free probed ports; TLS additionally switched off below so the
-  # /api/health probe and the port assertion run on plain HTTP.
+  # Same sed substitutions as start_test_daemon in scripts/run-tests.sh
+  # (including its TEST_TOKEN substitution), with free probed ports; TLS
+  # additionally switched off below so the /api/health probe and the port
+  # assertion run on plain HTTP.
   p1=$(free_port); p2=$(free_port); p3=$(free_port)
   p4=$(free_port); p5=$(free_port); p6=$(free_port)
   sed \
@@ -201,7 +216,7 @@ run_round() {
     -e "s|tls_enabled: true|tls_enabled: false|g" \
     -e "s|sse_port: 9090|sse_port: $p3|g" \
     -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
-    -e "s|token: \"\"|token: \"\"|g" \
+    -e "s|token: \"\"|token: \"${TEST_TOKEN}\"|g" \
     -e "s|token: \"WEBHOOK_NOAUTH\"|token: \"\"|g" \
     -e "s|listen: \"127\.0\.0\.1:19053\".*|listen: \"127.0.0.1:$p4\"|g" \
     -e "s|addr: 127\.0\.0\.1:19080|addr: 127.0.0.1:$p5|g" \
@@ -218,8 +233,15 @@ run_round() {
   fi
 
   # Run the driver in the background; its own traps handle the signal.
-  B="$BINARY" C="$cfg" S="$scr" P="$p1" LIB="$LIB" bash "$drv" >"$scr/driver.out" 2>&1 &
+  # Record the driver in THIS script's own state dir right after it
+  # starts: its marker is the driver script path, which its live
+  # /proc/<pid>/cmdline carries for its whole life (bash <path>/driver.sh).
+  # td_install_traps' td_stop_all then ends it — and, through the daemon
+  # record below, whatever it left — no matter which exit path of this
+  # script runs, before TD_EXTRA_CLEANUP touches the scratch dir.
+  B="$BINARY" C="$cfg" S="$scr" P="$p1" T="$TEST_TOKEN" LIB="$LIB" bash "$drv" >"$scr/driver.out" 2>&1 &
   dpid=$!
+  td_track_pid "$dpid" "driver.sh" || { ko "$sig: could not record the driver pid for the shared traps"; wait "$dpid" 2>/dev/null || true; return; }
 
   # Wait for the driver to report ready (it only does so once the daemon
   # answered /api/health), bounded by its own startup deadline plus slack.
@@ -241,6 +263,14 @@ run_round() {
     return
   fi
   ddaemon="$(sed -n 2p "$scr/pids")"
+
+  # Record the daemon in this script's own state dir too (marker: its
+  # config path, which its cmdline carries as long as it runs, exactly as
+  # td_start records it), with its API token so the smoke's own
+  # td_stop_all ends the daemon's sessions first and then the daemon —
+  # before smoke_extra_cleanup removes the scratch dir.
+  td_track_pid "$ddaemon" "$cfg" || ko "$sig: could not record the daemon pid for the shared traps"
+  td_set_api "$ddaemon" "http://127.0.0.1:$p1" "$TEST_TOKEN" || true
 
   if curl -s --max-time 3 "http://127.0.0.1:$p1/api/health" 2>/dev/null | grep -q '"status":"ok"'; then
     ok "$sig: daemon healthy before the signal (driver=$dpid daemon=$ddaemon port=$p1)"
