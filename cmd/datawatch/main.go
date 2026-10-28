@@ -87,6 +87,7 @@ import (
 	observerpkg "github.com/dmz006/datawatch/internal/observer"
 	observerpeerpkg "github.com/dmz006/datawatch/internal/observerpeer"
 	orchestratorpkg "github.com/dmz006/datawatch/internal/orchestrator"
+	"github.com/dmz006/datawatch/internal/pilog"
 	pipelinePkg "github.com/dmz006/datawatch/internal/pipeline"
 	pluginspkg "github.com/dmz006/datawatch/internal/plugins"
 	profilepkg "github.com/dmz006/datawatch/internal/profile"
@@ -9926,10 +9927,16 @@ func newSessionCmd() *cobra.Command {
 				return err
 			}
 			n, _ := cmd.Flags().GetInt("lines")
-			return runSessionTail(cfg, args[0], n)
+			follow, _ := cmd.Flags().GetBool("follow")
+			statusInterval, _ := cmd.Flags().GetDuration("status-interval")
+			return runSessionTail(cfg, args[0], n, follow, statusInterval)
 		},
 	}
 	tailCmd.Flags().IntP("lines", "n", 20, "Number of lines to show")
+	tailCmd.Flags().BoolP("follow", "f", false,
+		"Keep running and emit one pi status line per interval (default: one-shot)")
+	tailCmd.Flags().Duration("status-interval", 60*time.Second,
+		"Interval between status lines with --follow (default 60s)")
 	sessionCmd.AddCommand(tailCmd)
 
 	// session attach <id>
@@ -10738,7 +10745,14 @@ func runSessionRestart(cfg *config.Config, idOrName string, task string) error {
 	return daemonJSON(http.MethodPost, "/api/sessions/restart", body)
 }
 
-func runSessionTail(cfg *config.Config, id string, n int) error {
+// runSessionTail shows the last N lines of the session output log, then
+// emits one one-line status for pi sessions (e.g.
+// "progress: turns=7 tools=write:2,bash:5 last=bash idle=12s"). With follow
+// it keeps emitting a status line every statusInterval until interrupted.
+// The status line goes to stdout only; it is never appended to the stored
+// session output log, so DATAWATCH_COMPLETE: completion detection is
+// unaffected.
+func runSessionTail(cfg *config.Config, id string, n int, follow bool, statusInterval time.Duration) error {
 	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
 	if err != nil {
 		return err
@@ -10753,7 +10767,29 @@ func runSessionTail(cfg *config.Config, id string, n int) error {
 	cmd := exec.Command("tail", "-n", fmt.Sprintf("%d", n), sess.LogFile)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	out := os.Stdout
+	if !follow {
+		if line := piTailStatusLine(sess, time.Now()); line != "" {
+			fmt.Fprintln(out, line)
+		}
+		return nil
+	}
+	if !session.IsPiBackendFamily(sess.BackendFamily) {
+		return fmt.Errorf("session %s is a %s session; status following only supports pi sessions", sess.ID, sess.BackendFamily)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ticker := &session.PiStatusTicker{
+		Interval:      statusInterval,
+		BackendFamily: sess.BackendFamily,
+		Progress:      func() (pilog.Progress, error) { return piTailProgress(sess) },
+		Emit:          func(line string) { fmt.Fprintln(out, line) },
+	}
+	ticker.Start(ctx) // immediate tick, then one line per interval until signaled
+	return nil
 }
 
 func runSessionAttach(cfg *config.Config, id string) error {

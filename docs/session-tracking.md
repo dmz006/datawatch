@@ -82,6 +82,12 @@ datawatch session history a3f2
 # Follow live output
 datawatch session tail a3f2 --lines 50
 
+# Pi sessions: tail also prints one status line (e.g.
+# "progress: turns=5 tools=bash:3,edit:1,read:1 last=bash idle=42s");
+# --follow keeps re-emitting it every --status-interval (default 60s).
+# Non-pi sessions print no status line.
+datawatch session tail a3f2 --lines 50 --follow --status-interval 30s
+
 # Read the conversation
 cat conversation.md
 
