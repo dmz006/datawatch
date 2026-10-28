@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-28
 **Scope:** the three code-scanning alerts that remain open after the fixes described in `docs/plans/2026-10-27-codeql-local-reproduction.md`: `go/command-injection` in `internal/session/subprocess_resume.go`, `go/reflected-xss` in `internal/mcp/transport_debug.go`, and `js/insecure-randomness` in `internal/server/web/app.js`. This document is appended to by the later tasks of the same plan (fixes, final scan, verification).
-**Status:** in progress (reproduction done; fixes not started).
+**Status:** done: the three target alerts are gone from a fresh local scan of the fixed branch tree, and no new alert (new fingerprint) appeared; one pre-existing alert only moved lines (see Re-scan).
 
 Working files live in `.datawatch/codeql/`, which is gitignored (`.gitignore` line 1), so they are not committed. The SARIF produced by the reproduction run is saved, unchanged, as `.datawatch/codeql/baseline-r3/go.sarif` and `.datawatch/codeql/baseline-r3/javascript-typescript.sarif`.
 
@@ -93,3 +93,65 @@ The rule, file, line and code flows above were read from `.datawatch/codeql/base
 | 1 | `go/command-injection`, `subprocess_resume.go:41` | Yes |
 | 2 | `go/reflected-xss`, `transport_debug.go:128` | Yes |
 | 3 | `js/insecure-randomness`, `app.js:6982` (GitHub 6983) | Yes |
+
+## Re-scan
+
+The scan was repeated on the current branch tree (all fixes committed, working tree clean) with the same CodeQL CLI (bundle `codeql-bundle-v2.27.3`, CLI 2.27.3), the same build modes and the same default code-scanning suites as the reproduction. Fresh databases were built into `.datawatch/codeql/db-r4/` and the SARIF saved to `.datawatch/codeql/out-r4/`; the reproduction SARIF stays in `.datawatch/codeql/baseline-r3/`. All four commands exited 0 under `env -u TMUX -u TMUX_TMPDIR`:
+
+```bash
+CODEQL=.datawatch/codeql/bundle/codeql/codeql
+env -u TMUX -u TMUX_TMPDIR mkdir -p .datawatch/codeql/db-r4 .datawatch/codeql/out-r4
+env -u TMUX -u TMUX_TMPDIR $CODEQL database create .datawatch/codeql/db-r4/go --language=go --build-mode=autobuild --source-root=. --overwrite
+env -u TMUX -u TMUX_TMPDIR $CODEQL database create .datawatch/codeql/db-r4/js --language=javascript-typescript --build-mode=none --source-root=. --overwrite
+env -u TMUX -u TMUX_TMPDIR $CODEQL database analyze .datawatch/codeql/db-r4/go codeql/go-queries:codeql-suites/go-code-scanning.qls --format=sarifv2.1.0 --output=.datawatch/codeql/out-r4/go.sarif
+env -u TMUX -u TMUX_TMPDIR $CODEQL database analyze .datawatch/codeql/db-r4/js codeql/javascript-queries:codeql-suites/javascript-code-scanning.qls --format=sarifv2.1.0 --output=.datawatch/codeql/out-r4/javascript-typescript.sarif
+env -u TMUX -u TMUX_TMPDIR python3 -I .datawatch/codeql/compare.py
+```
+
+`compare.py` (gitignored with the other working files) reads `ruleId`, file, start line and `partialFingerprints` of every result in both SARIF files and matches results by (rule, file, fingerprint), never by line. Every result in both scans carries a fingerprint.
+
+### 1. Target alerts
+
+All three are absent from the new SARIF:
+
+| Alert | Baseline | Now |
+|-------|----------|-----|
+| `go/command-injection`, `internal/session/subprocess_resume.go` | line 41 | absent |
+| `go/reflected-xss`, `internal/mcp/transport_debug.go` | line 128 | absent |
+| `js/insecure-randomness`, `internal/server/web/app.js` | line 6982 | absent |
+
+### 2. New alerts, judged by fingerprint
+
+No result with a new (rule, file, fingerprint) exists in either scan. The only differences from the baseline are the three removals above and one result whose line moved:
+
+| Rule | File | Baseline line | Now | Fingerprint |
+|------|------|---------------|-----|-------------|
+| `js/xss-through-dom` | `internal/server/web/app.js` | 10882 | 10893 | identical |
+
+Rule, file and fingerprint are unchanged; the line moved by 11 because the fix inserted 11 lines earlier in `app.js`. This is the same alert as the baseline one (the same `fBody.innerHTML = html` statement), not a new one. No other result moved.
+
+### 3. Counts per rule (from the SARIF files)
+
+| Rule | Before | After |
+|------|--------|-------|
+| `go/path-injection` | 45 | 45 |
+| `go/disabled-certificate-check` | 7 | 7 |
+| `go/command-injection` | 4 | 3 |
+| `go/request-forgery` | 4 | 4 |
+| `go/clear-text-logging` | 3 | 3 |
+| `go/reflected-xss` | 2 | 1 |
+| `go/uncontrolled-allocation-size` | 2 | 2 |
+| `go/email-injection` | 1 | 1 |
+| **Go total** | **68** | **66** |
+| `js/disabling-certificate-validation` | 6 | 6 |
+| `js/incomplete-multi-character-sanitization` | 3 | 3 |
+| `js/bad-code-sanitization` | 2 | 2 |
+| `js/bad-tag-filter` | 2 | 2 |
+| `js/xss-through-dom` | 2 | 2 |
+| `js/double-escaping` | 1 | 1 |
+| `js/insecure-randomness` | 1 | 0 |
+| **JavaScript/TypeScript total** | **17** | **16** |
+
+### Outcome
+
+The three target alerts no longer appear in a fresh local scan, no genuinely new alert exists, and no fix was needed in this task. No suppression, query exclusion, workflow, code-scanning configuration or GitHub setting was changed. The local scan still reports alerts GitHub has dismissed (see the 2026-10-27 plan), so the remaining totals are not the open count on GitHub.
