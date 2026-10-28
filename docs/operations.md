@@ -1846,7 +1846,7 @@ token-passing gaps above, and a pre-existing `Accept-Encoding` bug that
 silently corrupted every proxied script) found only by actually driving
 a real browser against this feature.
 
-### OWASP ZAP workflow and GitHub API rate limits
+### OWASP ZAP workflow and GitHub API throttling
 
 The `owasp-zap` workflow runs after the Release workflow completes and scans
 the daemon's PWA and API surfaces with OWASP ZAP. Its last step, **Attach
@@ -1855,15 +1855,16 @@ reports to the GitHub release page for the tag being released. That step only
 runs for a real release tag — branch refs are normalized away and ignored, so
 a main-branch run never passes a tag name to the upload.
 
-The attach step uses the installation's GitHub token, and GitHub can answer
-"API rate limit exceeded" for it. When that happens the step retries a
-bounded number of times with a growing wait (30s, 60s, 120s, 240s, never
-sleeping less than until the reported rate-limit reset), retrying only when
-the failure looks like a rate limit. If the rate limit persists after all
-attempts, the step logs a warning and the run stays green — the **scan result
-is what counts**, and the reports remain available from the run's
-`owasp-zap-reports` artifact, which GitHub retains for 90 days. A non-rate-limit
-attach failure still fails the run, and a scan finding above the accepted
+The attach step uses the installation's GitHub token, and GitHub can throttle
+that token at times — it answers that the installation token has been
+throttled, rather than serving the upload. When that happens the step retries
+a bounded number of times with a growing wait (30s, 60s, 120s, 240s, never
+sleeping less than until the reported reset), retrying only when the response
+indicates throttling. If the token is still throttled after all attempts, the
+step logs a warning and the run stays green — the **scan result is what
+counts**, and the reports remain available from the run's `owasp-zap-reports`
+artifact, which GitHub retains for 90 days. An attach failure unrelated to
+throttling still fails the run, and a scan finding above the accepted
 thresholds still fails the run; only the release attach is tolerated.
 
 To attach the reports yourself, download the `owasp-zap-reports` run artifact
@@ -1873,8 +1874,8 @@ and re-upload with:
 gh release upload <release-tag> report_pwa-baseline.html report_api-scan.html --clobber
 ```
 
-or simply re-run the workflow later, once the API rate limit is available
-again — the attach step will then complete normally.
+or simply re-run the workflow later, once GitHub has lifted the throttling
+on the installation token — the attach step will then complete normally.
 
 ---
 
