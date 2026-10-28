@@ -366,6 +366,78 @@ func TestSessionProgress_NonPi(t *testing.T) {
 	}
 }
 
+// TestSessionProgress_ExactIDMatch: a pi session that recorded its own id
+// (interactive pi sessions are launched with --session-id, named from the
+// session's name) must get its own log even when the time-based fallback
+// would pick a different, earlier log in the same project dir.
+func TestSessionProgress_ExactIDMatch(t *testing.T) {
+	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
+	s := newTestServer(t, nil, nil)
+	workDir := t.TempDir()
+
+	started, err := time.Parse(time.RFC3339, progressLogStarted)
+	if err != nil {
+		t.Fatalf("parse started: %v", err)
+	}
+	dir := filepath.Join(piSessionsRootServer(), pilog.ProjectDirName(workDir))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// A distractor log: earliest at/after the session's start, so the old
+	// time-based rule would pick IT (and return its 1 assistant turn / 1 token).
+	distractorLog := `{"type":"message","timestamp":"2026-02-11T10:00:20Z","message":{"role":"assistant","usage":{"input":1,"output":1,"totalTokens":1},"content":[{"type":"text","text":"distractor"}]}}
+`
+	if err := os.WriteFile(filepath.Join(dir, "2026-02-11T10-00-00-000Z_otherpi.jsonl"), []byte(distractorLog), 0o644); err != nil {
+		t.Fatalf("write distractor: %v", err)
+	}
+	// The session's own log, named with its recorded id (starts later than the
+	// distractor, so only an exact-id match can find it before the fallback).
+	minePath := filepath.Join(dir, "2026-02-11T10-30-00-000Z_mysess.jsonl")
+	if err := os.WriteFile(minePath, []byte(progressSampleLog), 0o644); err != nil {
+		t.Fatalf("write own log: %v", err)
+	}
+
+	sess := &session.Session{
+		ID:            "ssessexact",
+		FullID:        "testhost-ssessexact",
+		Name:          "mysess",
+		ProjectDir:    workDir,
+		CreatedAt:     started,
+		UpdatedAt:     started,
+		Hostname:      "testhost",
+		State:         session.StateRunning,
+		BackendFamily: "pi",
+	}
+	if err := s.manager.SaveSession(sess); err != nil {
+		t.Fatalf("SaveSession: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/ssessexact/progress", nil)
+	s.handleSessionProgress(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		LogPath        string `json:"log_path"`
+		AssistantTurns int    `json:"assistant_turns"`
+		Tokens         int    `json:"tokens"`
+		LastSummary    string `json:"last_summary"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v (body %s)", err, rec.Body.String())
+	}
+	if body.LogPath != minePath {
+		t.Errorf("log_path = %q, want %q (exact session-id match must win)", body.LogPath, minePath)
+	}
+	if body.AssistantTurns != 2 || body.Tokens != 225 {
+		t.Errorf("snapshot = %d turns / %d tokens, want 2/225 (own log, not the distractor)", body.AssistantTurns, body.Tokens)
+	}
+	if strings.Contains(body.LastSummary, "distractor") {
+		t.Errorf("last_summary = %q must come from the session's own log", body.LastSummary)
+	}
+}
+
 // plantSampleSession2 saves a second session (SaveSession upserts by ID, so
 // this gets its own ID).
 func plantSampleSession2(t *testing.T, s *Server, workDir string) string {

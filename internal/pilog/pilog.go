@@ -60,10 +60,28 @@ func ProjectDirName(workDir string) string {
 // after started. It returns an error wrapping os.ErrNotExist when there is
 // no such file.
 func LocateLog(sessionsRoot, workDir string, started time.Time) (string, error) {
+	return LocateLogFor(sessionsRoot, workDir, started, "")
+}
+
+// LocateLogFor is LocateLog with one extra disambiguation rule: when
+// sessionID is non-empty (the session recorded the ID it launched pi with,
+// which pi puts in the <time>_<id> log file name), a log file named
+// <time>_<sessionID>.jsonl is preferred outright — regardless of its
+// timestamp — because it is unambiguously this session's log. Only when no
+// file carries that id does the usual earliest-time-at-or-after-started
+// rule apply. Passing "" for sessionID behaves exactly like LocateLog.
+func LocateLogFor(sessionsRoot, workDir string, started time.Time, sessionID string) (string, error) {
 	dir := filepath.Join(sessionsRoot, ProjectDirName(filepath.Clean(workDir)))
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", fmt.Errorf("pilog: read project dir: %w", err)
+	}
+	if sessionID != "" {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), "_"+sessionID+".jsonl") {
+				return filepath.Join(dir, e.Name()), nil
+			}
+		}
 	}
 	var best string
 	var bestAt time.Time

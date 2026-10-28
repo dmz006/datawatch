@@ -36,6 +36,14 @@ func piSessionsRootServer() string {
 // answer "what is this session actually doing right now" without having to
 // know the PRD or task at all.
 //
+// A non-pi session never returns progress — it 404s with
+// "no session log available", even when a stale pi log for the same project
+// dir could be located (BL647). A pi session's log is chosen by exact
+// session-id match in the log file name first (interactive pi sessions are
+// launched with --session-id, named from the session's recorded name), and
+// falls back to the time/project-dir lookup for sessions that recorded no id
+// (one-shot pi-prompt sessions).
+//
 // 200 → {"session_id","full_id","state", ...TaskProgress fields...}
 // 404 → session not found, or the session has no log to read (non-pi
 //
@@ -68,7 +76,7 @@ func (s *Server) handleSessionProgress(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no session log available", http.StatusNotFound)
 		return
 	}
-	logPath, err := pilog.LocateLog(piSessionsRootServer(), sess.ProjectDir, sess.CreatedAt)
+	logPath, err := pilog.LocateLogFor(piSessionsRootServer(), sess.ProjectDir, sess.CreatedAt, sess.Name)
 	if err != nil {
 		http.Error(w, "no session log available", http.StatusNotFound)
 		return

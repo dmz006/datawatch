@@ -114,6 +114,56 @@ func TestReadMissingFile(t *testing.T) {
 	}
 }
 
+func TestLocateLogForPrefersExactIDMatch(t *testing.T) {
+	root := t.TempDir()
+	workDir := "/home/dmz/work/demo"
+	dir := filepath.Join(root, "--home-dmz-work-demo--")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// other.jsonl is the earliest log at/after started — the fallback pick;
+	// mine.jsonl carries the session's own id but starts later.
+	for name, content := range map[string]string{
+		"2026-10-27T14-00-05-000Z_other.jsonl":   `{"type":"message"}`,
+		"2026-10-27T14-30-00-000Z_mine.jsonl":    `{"type":"message"}`,
+		"2026-10-27T13-00-00-000Z_mineold.jsonl": `ignored by both rules`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	started := time.Date(2026, 10, 27, 14, 0, 0, 0, time.UTC)
+
+	// No id recorded: unchanged fallback behavior.
+	if got, err := LocateLogFor(root, workDir, started, ""); err != nil {
+		t.Fatal(err)
+	} else if want := filepath.Join(dir, "2026-10-27T14-00-05-000Z_other.jsonl"); got != want {
+		t.Errorf("empty id fallback = %s, want %s", got, want)
+	}
+
+	// Id recorded: exact-name match wins over the earlier "other" log.
+	if got, err := LocateLogFor(root, workDir, started, "mine"); err != nil {
+		t.Fatal(err)
+	} else if want := filepath.Join(dir, "2026-10-27T14-30-00-000Z_mine.jsonl"); got != want {
+		t.Errorf("exact id = %s, want %s", got, want)
+	}
+
+	// Even when the id match is the only matching log and its timestamp sits
+	// inside (not at/after) a narrowed start window (recreated session record).
+	if got, err := LocateLogFor(root, workDir, started.Add(2*time.Hour), "mine"); err != nil {
+		t.Fatalf("exact id outside start window: %v", err)
+	} else if want := filepath.Join(dir, "2026-10-27T14-30-00-000Z_mine.jsonl"); got != want {
+		t.Errorf("exact id = %s, want %s", got, want)
+	}
+
+	// Id that matches no file: fall back to the time rule.
+	if got, err := LocateLogFor(root, workDir, started, "unknown"); err != nil {
+		t.Fatal(err)
+	} else if want := filepath.Join(dir, "2026-10-27T14-00-05-000Z_other.jsonl"); got != want {
+		t.Errorf("unknown id fallback = %s, want %s", got, want)
+	}
+}
+
 func TestProjectDirName(t *testing.T) {
 	if got, want := ProjectDirName("/home/dmz/work/demo"), "--home-dmz-work-demo--"; got != want {
 		t.Errorf("ProjectDirName = %q, want %q", got, want)
