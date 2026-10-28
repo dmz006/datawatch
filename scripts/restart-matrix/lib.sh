@@ -599,12 +599,12 @@ rm_node_stub_stop() {
 # worker slot each, an ollama entry (the engine the model's provider resolves to) and a
 # pi-prompt entry, both listing the two nodes. Returns 1 when the daemon refuses any.
 rm_pi_nodes_register() {
-  local n port models body rc=0
+  local n port models body refused=0
   for n in "$RM_NODE_A:$RM_NODE_PORT_A" "$RM_NODE_B:$RM_NODE_PORT_B"; do
     port="${n#*:}"
     rm_api POST /api/compute/nodes "$(jq -nc --arg name "${n%%:*}" --arg addr "http://127.0.0.1:$port" \
       '{name: $name, kind: "ollama", address: $addr, session_slots: 1, max_concurrent_sessions: 1}')" |
-      jq -e '.name' >/dev/null 2>&1 || { rm_log "compute node ${n%%:*} was not accepted"; rc=1; }
+      jq -e '.name' >/dev/null 2>&1 || { rm_log "compute node ${n%%:*} was not accepted"; refused=1; }
   done
   models="$(jq -nc --arg a "$RM_NODE_A" --arg b "$RM_NODE_B" --arg m "${RM_PI_MODEL#*/}" '[{node: $a, model: $m}, {node: $b, model: $m}]')"
   for n in ollama pi-prompt; do
@@ -613,9 +613,9 @@ rm_pi_nodes_register() {
     # The daemon may have created the entry itself from the config (the pi-prompt binary), so
     # replace it in place; deleting it would only tombstone it. Create it when it is absent.
     { rm_api PUT "/api/llms/$n" "$body" | jq -e '.name' >/dev/null 2>&1 ||
-      rm_api POST /api/llms "$body" | jq -e '.name' >/dev/null 2>&1; } || { rm_log "llm entry $n was not accepted"; rc=1; }
+      rm_api POST /api/llms "$body" | jq -e '.name' >/dev/null 2>&1; } || { rm_log "llm entry $n was not accepted"; refused=1; }
   done
-  return $rc
+  return $refused
 }
 
 # --------------------------------------------------------- scenario plumbing ----
