@@ -48,7 +48,7 @@ out from this transition.
 | `POST /api/sessions/bind` | Bind a session to an ephemeral worker / agent. |
 | `GET /api/sessions/response` | Last `response` event content for one session (used by the PWA "view last response" modal). |
 | `GET /api/sessions/{id}/telemetry` | Structured telemetry for a session (tasks, guardrail verdicts, sprint, progress). |
-| `GET /api/sessions/{id}/progress` | Live progress snapshot parsed from the session's own pi log: assistant turns, tool-call counts, last action (tool, args, summary), tokens. Same shape as the `progress` field of a running autonomous task. |
+| `GET /api/sessions/{id}/progress` | Live progress snapshot parsed from the session's own pi log: assistant turns, tool-call counts, last action (tool, args, summary), tokens. Same shape as the `progress` field of a running autonomous task. 404 for a non-pi session — a pi log from another session is never read. |
 
 #### Session tags
 
@@ -207,11 +207,14 @@ need to compute or send them.
 #### GET /api/sessions/{id}/progress
 
 Parses the session's own pi JSONL log and returns how far it has gotten.
-Read-only and stateless — works for any stored session whose log exists
-(pi-family backend; the log is located under the sessions root from the
-session's `project_dir` and start time). 404 when the session is unknown
-or has no log yet (other backends, or a session whose log has not been
-flushed); 405 for non-GET methods.
+Read-only and stateless — works for any stored pi session whose log exists
+(the log is located under the sessions root from the session's
+`project_dir` and start time, preferring a log whose name carries the
+session's recorded id, then the earliest log at or after the start time).
+404 when the session is unknown, is not a pi session, or has no locatable
+log (non-pi backends, or a log not yet flushed) — the route never reads a
+pi log that does not belong to the session, so a non-pi session with a
+leftover stale pi log also gets 404; 405 for non-GET methods.
 
 **Response schema:**
 

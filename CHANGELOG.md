@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.31.3 — Session progress strip removed from the session page; progress route fixed for non-pi sessions
+
+### Changed
+- The live pi progress strip is no longer shown on the session detail page
+  (BL647). It had been added in v9.30.0 without discussion, takes a lot of
+  room, and on a claude-code session it was showing stale data from an
+  unrelated old pi log. The progress snapshot stays as task data on the
+  Automaton: the task card in the Status tab (automata.task_progress) keeps
+  showing it, and the REST, MCP and CLI surfaces are unchanged.
+- `GET /api/sessions/{id}/progress` now answers 404 (plain text `no session
+  log available`) for a session that is not a pi session or whose pi log
+  cannot be located, instead of `200` with a snapshot parsed from an
+  unrelated old log.
+  Log locating prefers an exact match on the session id in the log file name
+  before falling back to newest-modified, so a stale leftover log from an
+  unrelated pi session can no longer be read for another session.
+
 ## v9.30.2 — ZAP report attach tolerates API throttling
 
 - **The security scan no longer goes red when GitHub throttles the report upload.** The owasp-zap workflow's last step attaches the scan reports to a release. It now runs only for a real release tag (never for a main branch run), retries with a growing wait when GitHub throttles the token, and, if the throttling persists, logs a warning and leaves the run green because the scan result is what counts; the reports stay available from the run's `owasp-zap-reports` artifact. A scan finding above the accepted thresholds, or any other upload error such as a permissions failure, still fails the run. A new section in `docs/operations.md` explains how to re-attach the reports by hand.

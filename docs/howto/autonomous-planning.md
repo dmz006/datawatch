@@ -441,6 +441,15 @@ the **Status** tab to see a live task tree updated in real time via WebSocket.
 Each story in the Automata detail view also shows a "● Status" quick-link to
 jump directly to that worker session's Status tab.
 
+The pi progress snapshot (assistant turns, tool-call counts, last action,
+tokens) is task data: it sits on the running task's card in this tab and on
+the task object over every surface. The session view itself no longer
+carries its own live progress strip (removed in 9.31.3 — it took a lot of
+room and once showed another session's stale pi log numbers on a non-pi
+session); for pi sessions the data is still available at
+`GET /api/sessions/{id}/progress`, which 404s for non-pi sessions rather
+than reading any log that is not the session's own.
+
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

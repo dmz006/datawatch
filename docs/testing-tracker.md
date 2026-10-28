@@ -3853,3 +3853,21 @@ An Automaton that stays `running` with every task terminal, no live session and 
 | PWA Settings field is a number with label and help keys, and both keys exist in all five bundles | `app-autonomous-settings-fields.test.js` (`internal/server/web`), `TestLocales_CommonNavKeysPresent`, `TestLocales_AllAppJSKeysExistInEnglishBundle` | `node --test internal/server/web/app-autonomous-settings-fields.test.js`; `go test ./internal/server/ -run Locales -count=1` | The autonomous card carries the field; DE, ES, FR and JA hold English placeholders, worded without the word Automaton so the terminology guard passes, until the app sends translations | Unit | Yes | Pass | No | |
 | PWA story TS-829: the field renders with its label, help and value, a typed value reaches `GET /api/config`, clearing it reads back 0 | `scripts/test-stories/TS-829.sh` with `scripts/test-stories/pwa/TS-829.mjs` | `bash scripts/run-tests.sh --stories=TS-829` against the sandbox daemon | Browser-driven Settings round trip | Live PWA | Yes (script syntax-checked with `node --check`) | Not run to completion | No | The runner fails the existing story TS-827 in the same instant (29 ms) on this host, so the browser harness could not be used here; run it where the PWA stories run before relying on it |
 | Release smoke section 86: GET exposes the field, PUT 1234 reads back, 0 is accepted, a negative is ignored, the original value is restored | `scripts/release-smoke.sh` section 86 (`SMOKE_ONLY=86`), cleanup kind `stuck-running` | Section body run against a hand-started sandbox daemon, v9.29.2 build, self-signed TLS, empty token, temporary data dir, 2026-10-28 | Live REST round trip on a real daemon | Live | Yes | Pass (5 of 5) | Yes | A full `SMOKE_ONLY=86` run through the script was not usable on this host: the sandbox daemon is gone by section 85 (section 85 fails the same way), so the section body was run alone |
+
+---
+
+## Session progress strip removal and stale-log guard (BL647) — v9.31.3
+
+The pi live progress strip is removed from the session detail page (the
+snapshot is still shown on the running task's card, and the REST/MCP/CLI
+surfaces are unchanged). `GET /api/sessions/{id}/progress` now 404s for a
+non-pi session — it never reads a pi log from another session, even a stale
+one in the same project directory — and log locating prefers an exact match
+on the session id in the log file name before the time/project rule.
+
+| Function | Test Name | Test Condition | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Non-pi session never reads a pi log | `TestSessionProgress_NonPi` (`internal/server/autonomous_progress_test.go`) | claude-code session inside the time window of a stale pi JSONL log in the same project dir | 404, and the body carries none of that log's data (no `assistant_turns`, `tool_calls`, summary text) | Integration | Yes | Pass | No | `go test ./internal/server/ -run TestSessionProgress -count=1` |
+| Exact session-id match wins (server) | `TestSessionProgress_ExactIDMatch` (same file) | a distractor older log the time-based rule would pick, and the session's own log named from its recorded name | 200 with the session's own turns/tokens/summary and `log_path`, not the distractor's | Integration | Yes | Pass | No | same command |
+| Log locating prefers exact id | `TestLocateLogForPrefersExactIDMatch` (`internal/pilog/pilog_test.go`) | a log whose name carries the session id plus an earlier "other" log; empty id; unknown id; id match outside the start window | exact name match wins; empty or unknown id falls back to the time/project rule | Unit | Yes | Pass | No | `go test ./internal/pilog/ -run TestLocateLogFor -count=1` |
+| Session page no longer mounts the strip | `app-pi-progress.test.js` — "session page no longer mounts the piProgressPanel live strip (task card only)" | static check of `app.js` source and the five locale bundles | no `piProgressPanel` / `session-pi-progress` markup; `prd-task-progress` and `renderPiProgressBlock` present for the task card; `pi_progress_*` keys still in all locales | Unit | Yes | Pass | No | `node --test internal/server/web/app-pi-progress.test.js` |
