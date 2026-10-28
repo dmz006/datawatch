@@ -168,4 +168,9 @@ const (
 	// (points) of this daemon's calculator was set, or cleared
 	// (details: cleared true, points omitted).
 	ActionUsageRemainingWorkSet = "usage_remaining_work_set"
+	// ActionStuckRunningBlocked — the stuck-running watchdog moved an Automaton
+	// that sat in running (every task terminal, no live session or executor)
+	// to blocked after re-firing the completion rollup once. Details: prd_id,
+	// caller, stuck_seconds, bound_seconds, old_status, new_status.
+	ActionStuckRunningBlocked = "autonomous_stuck_running_blocked"
 )

@@ -27,6 +27,8 @@ A daemon watchdog now catches an Automaton that sits in `running` with every tas
 
 DE, ES, FR and JA values are the ones shipped in the datawatch PWA locale files; please review them against the app's own terminology for "Automaton".
 
+The DE, ES, FR and JA values are provisional translations written on the PWA side, not English placeholders: the Terminology Rule guard (`TestLocales_AutomatonNeverUntranslatedOrMistranslated`) refuses the English word "Automaton" in those bundles, so a placeholder cannot ship for these two keys. Please send the app's own translations through the Compose Multiplatform pipeline; the PWA bundles will then mirror them in place of these values.
+
 ## Acceptance
 
 - The field appears in the app's Automata settings, reads the current value from the daemon config and writes it back through the config endpoint.

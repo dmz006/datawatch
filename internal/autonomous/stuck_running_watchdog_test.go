@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/audit"
 )
 
 // stuckWatchdogEnv is a Manager with an injectable clock, a fake session
@@ -153,8 +155,8 @@ func TestStuckRunningWatchdog_RefiresOnceThenBlocks(t *testing.T) {
 	e.mu.Lock()
 	audits := append([]string(nil), e.audits...)
 	e.mu.Unlock()
-	if len(audits) != 1 || audits[0] != "autonomous_stuck_running_blocked" {
-		t.Fatalf("audits = %v, want [autonomous_stuck_running_blocked]", audits)
+	if len(audits) != 1 || audits[0] != audit.ActionStuckRunningBlocked {
+		t.Fatalf("audits = %v, want [%s]", audits, audit.ActionStuckRunningBlocked)
 	}
 	ev := e.waitEvent(t, prd.ID, PRDBlocked)
 	if ev.OldStatus != string(PRDRunning) || ev.Decision == nil || ev.Decision.Kind != "stuck_running_blocked" {

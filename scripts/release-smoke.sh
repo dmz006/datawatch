@@ -336,6 +336,8 @@ cleanup_all() {
         usage)           UXQ=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(str(sys.argv[1])))' "$id" 2>/dev/null || echo "$id"); curl "${curl_args[@]}" -X DELETE "$BASE/api/usage/readings?id=$UXQ" >/dev/null 2>&1 && echo "  deleted usage reading $id" || echo "  (already gone) usage reading $id" ;;
         usage-credit)    [[ -n "$id" ]] && curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"points\": $id}" "$BASE/api/usage/extra-credit" >/dev/null 2>&1 && echo "  restored usage extra credit to $id" || echo "  (already gone) usage-credit $id" ;;
         usage-variant)   UC=$(echo "$id" | tr -d '"'); curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.variant\": \"$UC\"}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored usage.calculator.variant to ${UC:-<unset/default>}" || echo "  (already gone) usage-variant ${UC:-<unset/default>}" ;;
+        # Exact-value restore of autonomous.stuck_running_seconds (section 86); never a pattern sweep.
+        stuck-running)   SRV=$(echo "$id" | tr -dc '0-9'); curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"autonomous.stuck_running_seconds\": ${SRV:-0}}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored autonomous.stuck_running_seconds to ${SRV:-0}" || echo "  (already gone) stuck-running ${SRV:-0}" ;;
         # Cancel first (a draft refuses it, which is fine), then delete.
         automation)      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"cancel_in_flight":true}' "$BASE/api/automations/$id/cancel" >/dev/null 2>&1; curl "${curl_args[@]}" -X DELETE "$BASE/api/automations/$id" >/dev/null 2>&1 && echo "  removed automation $id" || echo "  (already gone) automation $id" ;;
         device)          curl "${curl_args[@]}" -X DELETE "$BASE/api/devices/$id" >/dev/null 2>&1 && echo "  removed device $id" || echo "  (already gone) device $id" ;;
@@ -5496,6 +5498,48 @@ if [[ -z "${DW_BASE:-}" && -n "${DW_CLI:-}" ]]; then
   fi
 else
   skip "usage CLI: external daemon mode (DW_BASE), CLI runs against the base daemon there"
+fi
+
+H "86. Stuck-running watchdog bound — autonomous.stuck_running_seconds on REST config"
+# The watchdog bound is an operator-facing setting. This section reads it from
+# GET /api/config, writes a new value through PUT /api/config, reads it back,
+# checks that 0 (use the default) is accepted and a negative value is ignored,
+# and restores the exact value found through add_cleanup (kind stuck-running).
+# The timing behaviour itself (re-fire once, then block) is covered by the
+# TestStuckRunningWatchdog_* tests; a smoke run must not wait out a bound.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  SR_GET() { curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);v=d.get("autonomous",{}).get("stuck_running_seconds");print("missing" if v is None else int(v))' 2>/dev/null || echo "missing"; }
+  SR_PUT() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d "{\"autonomous.stuck_running_seconds\": $1}" "$BASE/api/config" 2>/dev/null || echo "000"; }
+  SR0=$(SR_GET)
+  if [[ "$SR0" == "missing" ]]; then
+    ko "stuck-running: GET /api/config has no autonomous.stuck_running_seconds"
+  else
+    add_cleanup stuck-running "$SR0"
+    ok "stuck-running: GET /api/config exposes autonomous.stuck_running_seconds=$SR0"
+    if [[ "$(SR_PUT 1234)" == "200" && "$(SR_GET)" == "1234" ]]; then
+      ok "stuck-running: PUT /api/config 1234 reads back 1234"
+    else
+      ko "stuck-running: PUT /api/config 1234 did not read back 1234"
+    fi
+    if [[ "$(SR_PUT 0)" == "200" && "$(SR_GET)" == "0" ]]; then
+      ok "stuck-running: 0 is accepted (the default applies at read time)"
+    else
+      ko "stuck-running: PUT /api/config 0 was not accepted or did not read back 0"
+    fi
+    SR_PUT 1234 >/dev/null
+    SR_PUT -5 >/dev/null
+    if [[ "$(SR_GET)" == "1234" ]]; then
+      ok "stuck-running: a negative bound is ignored (the stored 1234 is unchanged)"
+    else
+      ko "stuck-running: a negative bound changed the stored value to $(SR_GET)"
+    fi
+    SR_PUT "$SR0" >/dev/null
+    if [[ "$(SR_GET)" == "$SR0" ]]; then
+      ok "stuck-running: the original bound $SR0 is restored"
+    else
+      ko "stuck-running: could not restore the original bound $SR0"
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------

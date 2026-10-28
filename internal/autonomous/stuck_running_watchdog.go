@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/config"
 )
 
@@ -130,7 +131,7 @@ func (m *Manager) sweepStuckRunning() {
 		log.Printf("[autonomous] stuck-running: prd=%s blocked: %s", id, reason)
 		m.recordStuckDecision(id, "stuck_running_blocked", reason)
 		if auditFn != nil {
-			auditFn("autonomous_stuck_running_blocked", map[string]any{
+			auditFn(audit.ActionStuckRunningBlocked, map[string]any{
 				"prd_id": id, "caller": stuckRunningCaller, "stuck_seconds": int(age.Seconds()),
 				"bound_seconds": int(bound.Seconds()), "old_status": string(old), "new_status": string(PRDBlocked),
 			})
