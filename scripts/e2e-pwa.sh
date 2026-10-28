@@ -130,10 +130,12 @@ else
   # td_start records the pid with the config path as the cmdline marker, so
   # every exit path (EXIT/INT/TERM/HUP) ends exactly this daemon — verified
   # against its cmdline, never by name.
-  if ! DAEMON_PID="$(td_start "$BINARY" "$RUN_DIR/config.yaml" "$RUN_DIR/daemon.log")"; then
+  # td_start sets TD_LAST_PID (it prints nothing), so it must run in this shell.
+  if ! td_start "$BINARY" "$RUN_DIR/config.yaml" "$RUN_DIR/daemon.log"; then
     tail -20 "$RUN_DIR/daemon.log" 2>/dev/null >&2 || true
     fail "failed to start the daemon (see $RUN_DIR/daemon.log)"
   fi
+  DAEMON_PID="$TD_LAST_PID"
 
   deadline=$(( $(date +%s) + 60 ))
   healthy=0
