@@ -245,6 +245,24 @@ test('a typed remaining-work body names the typed figure in every variant', () =
   assert.ok(textOf(view(s, 'burn-ledger', body)).includes('In use: the typed override.'));
 });
 
+// The per-task cost shows as typed, on the text form's rule (up to three decimals,
+// trailing zeros dropped): 0.05 must not print 0.1 in the estimate line or the
+// burn-ledger queue line.
+test('a small cost per task shows as typed in every variant, 0.05 and 0.025 alike', () => {
+  for (const cost of [0.05, 0.025]) {
+    const s = loadApp();
+    const body = policyBody('finish-early', {
+      advice: { remaining_work: { in_use: 'estimate', points: 6 * cost, estimate_points: 6 * cost, typed_points: null, queue_tasks: 6, cost_per_task: cost } },
+    });
+    for (const id of VARIANTS) {
+      const text = textOf(view(s, id, body));
+      assert.ok(text.includes(`cost per task ${cost} points`), `${id} @ ${cost}: shows the cost exactly as typed`);
+      assert.ok(!text.includes(`cost per task ${cost.toFixed(1)} points`), `${id} @ ${cost}: does not round the cost to a tenth`);
+    }
+    assert.ok(textOf(view(s, 'burn-ledger', body)).includes(`at ${cost} points each`), `${cost}: the burn-ledger queue line prices the queue as typed`);
+  }
+});
+
 test('a recent-burn fallback is stated in the burn field and by the notice in every variant', () => {
   const s = loadApp();
   const body = CASES['a recent burn that fell back to the week average']();

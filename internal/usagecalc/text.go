@@ -247,7 +247,7 @@ func workLine(w WorkResult) string {
 		return fmt.Sprintf("remaining work %s points (typed); %s", txtPoints(w.Points), queue)
 	case WorkInUseEstimate:
 		return fmt.Sprintf("remaining work %s points (estimate: %s at %s points each)",
-			txtPoints(w.Points), queue, txtPoints(w.CostPerTask))
+			txtPoints(w.Points), queue, txtCost(w.CostPerTask))
 	default:
 		return fmt.Sprintf("remaining work not set; %s", queue)
 	}
@@ -293,6 +293,28 @@ func txtPoints(v float64) string {
 		return "0"
 	}
 	return formatPoints(v)
+}
+
+// txtCost prints a per-task cost as typed: up to three decimals with trailing
+// zeros dropped (0.05, 0.1, 0.025, 1, 0). One decimal would round 0.05 up to
+// 0.1 and misprice the estimate; costs are small figures the operator chose.
+// A non-finite value prints 0, like the other display helpers.
+func txtCost(v float64) string {
+	if !finite(v) {
+		return "0"
+	}
+	s := strconv.FormatFloat(v, 'f', 3, 64)
+	if i := strings.IndexByte(s, '.'); i >= 0 {
+		j := len(s)
+		for j > i+1 && s[j-1] == '0' {
+			j--
+		}
+		s = s[:j]
+		if j == i+1 {
+			s = s[:i]
+		}
+	}
+	return s
 }
 
 // txtHours keeps the two-decimal precision the design's worked example uses
