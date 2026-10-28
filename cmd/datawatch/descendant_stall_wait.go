@@ -61,6 +61,16 @@ func (o *descendantOutputObservation) outputIsFresh(now time.Time, pane string, 
 	return fresh
 }
 
+// reset discards the baseline so the next observation re-establishes it
+// without reporting fresh against output we have already accounted for.
+// The wait loop calls it alongside DescendantStallTracker.Reset when the
+// session is parked on an external condition, so the parked session's output
+// does not double-reset the clock on re-admission.
+func (o *descendantOutputObservation) reset() {
+	o.lastLookAt = time.Time{}
+	o.lastPaneLen = 0
+}
+
 // descendantStallTick advances the descendant-only stall tracker for one
 // wait-loop observation and reports whether it has declared the run stalled.
 // Mirrors exitSilenceTick's family gate: it applies to the pi-prompt family

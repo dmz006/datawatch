@@ -219,6 +219,130 @@ func TestNewestWorkDirMtimePicksTheNewestRegularFile(t *testing.T) {
 	}
 }
 
+// TestDescendantOutputObservation* covers the fresh-output reset path the
+// wait loop feeds into DescendantStallTracker: output resets the silence
+// clock, and the baseline only ever moves forward.
+func TestDescendantOutputObservationFirstLookIsNeverFresh(t *testing.T) {
+	var obs descendantOutputObservation
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	if obs.outputIsFresh(now, "some pane content", now.Add(-time.Minute)) {
+		t.Error("first observation of an already-recorded baseline must not report fresh")
+	}
+	// The very first look records the baseline: a repeat of the same
+	// (unmoved) pane and channel time is not fresh.
+	if obs.outputIsFresh(now.Add(time.Second), "some pane content", now.Add(-time.Minute)) {
+		t.Error("same pane and channel time must not report fresh")
+	}
+}
+
+func TestDescendantOutputObservationPaneGrowthIsFresh(t *testing.T) {
+	var obs descendantOutputObservation
+	t0 := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	if obs.outputIsFresh(t0, "line one", time.Time{}) {
+		t.Fatal("baseline: first look never fresh")
+	}
+	if !obs.outputIsFresh(t0.Add(time.Minute), "line one\nline two", time.Time{}) {
+		t.Error("pane growth since the last look must report fresh")
+	}
+	// The pane has now been accounted for; the same content again is not fresh.
+	if obs.outputIsFresh(t0.Add(2*time.Minute), "line one\nline two", time.Time{}) {
+		t.Error("already-observed pane length must not report fresh again")
+	}
+}
+
+func TestDescendantOutputObservationChannelEventIsFresh(t *testing.T) {
+	var obs descendantOutputObservation
+	t0 := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	if obs.outputIsFresh(t0, "pane", time.Time{}) {
+		t.Fatal("baseline: first look never fresh")
+	}
+	// A channel event newer than the last look is output, even with an
+	// unchanged pane.
+	if !obs.outputIsFresh(t0.Add(time.Minute), "pane", t0.Add(15*time.Second)) {
+		t.Error("a channel event newer than the last look must report fresh")
+	}
+	// A channel event at or before the last look is not output.
+	if obs.outputIsFresh(t0.Add(2*time.Minute), "pane", t0.Add(15*time.Second)) {
+		t.Error("a channel event not newer than the last look must not report fresh")
+	}
+}
+
+func TestDescendantOutputObservationTemporaryEmptyPaneKeepsBaseline(t *testing.T) {
+	var obs descendantOutputObservation
+	t0 := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	if obs.outputIsFresh(t0, "12345678", time.Time{}) {
+		t.Fatal("baseline: first look never fresh")
+	}
+	// A failed capture renders as an empty pane: it must not clear the
+	// baseline (a later full pane would then count as growth).
+	if obs.outputIsFresh(t0.Add(time.Minute), "", time.Time{}) {
+		t.Error("an empty pane must not report fresh")
+	}
+	// The full pane returns with the same length: it is the already
+	// accounted-for content, not growth.
+	if obs.outputIsFresh(t0.Add(2*time.Minute), "12345678", time.Time{}) {
+		t.Error("a pane restored to its accounted-for length must not report fresh")
+	}
+	// Content beyond the baseline is growth.
+	if !obs.outputIsFresh(t0.Add(3*time.Minute), "12345678\nnew", time.Time{}) {
+		t.Error("content beyond the baseline must report fresh")
+	}
+}
+
+func TestDescendantOutputObservationReset(t *testing.T) {
+	var obs descendantOutputObservation
+	t0 := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	if obs.outputIsFresh(t0, "pane", time.Time{}) {
+		t.Fatal("baseline: first look never fresh")
+	}
+	obs.reset()
+	// After a reset the observation is zero again: the next look
+	// re-baselines and does not report fresh against already-accounted
+	// content.
+	if obs.outputIsFresh(t0.Add(time.Minute), "pane", t0.Add(-time.Second)) {
+		t.Error("after reset, the first look must re-baseline without reporting fresh")
+	}
+	if !obs.outputIsFresh(t0.Add(2*time.Minute), "pane\ngrew", t0.Add(-time.Second)) {
+		t.Error("after re-baseline, growth must report fresh")
+	}
+}
+
+func TestDescendantStallTrackerFreshOutputResetsTheClock(t *testing.T) {
+	// Wait-loop simulation: 6s limit, a live descendant (workDescendants=1),
+	// no other liveness evidence. With a fresh-output reset before the second
+	// observe the run never stalls; without the reset the second observe is
+	// past the limit and the detector fires.
+	start := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+
+	// Reset path: output at start+7s moves the clock; the observe at start+10s
+	// is 3s of silence (under the 6s limit) — not stalled even though
+	// start+10s is 10s past tracker start.
+	withReset := autonomouspkg.NewDescendantStallTracker(start, 6*time.Second)
+	if stalled, _ := withReset.Observe(start.Add(3*time.Second), 1, time.Time{}, time.Time{}); stalled {
+		t.Fatal("baseline observe must not stall")
+	}
+	obs := &descendantOutputObservation{}
+	obs.outputIsFresh(start, "", time.Time{}) // first look baselines only
+	if !obs.outputIsFresh(start.Add(7*time.Second), "pane", time.Time{}) {
+		t.Fatal("pane growth since the last look must report fresh")
+	}
+	withReset.Reset(start.Add(7 * time.Second))
+	if stalled, reason := withReset.Observe(start.Add(10*time.Second), 1, time.Time{}, time.Time{}); stalled {
+		t.Fatalf("fresh output must reset the silence clock: stalled = %q", reason)
+	}
+
+	// No-reset path: no output between observes; the observe at start+10s is
+	// more than 6s after start (clock = latest of start and the observe) —
+	// the detector fires.
+	withoutReset := autonomouspkg.NewDescendantStallTracker(start, 6*time.Second)
+	withoutReset.Observe(start.Add(3 * time.Second), 1, time.Time{}, time.Time{})
+	if stalled, reason := withoutReset.Observe(start.Add(10*time.Second), 1, time.Time{}, time.Time{}); !stalled {
+		t.Fatal("without a fresh-output reset the silence window must pass by and the detector must fire")
+	} else if reason == "" {
+		t.Fatal("a stalled observation must carry a reason")
+	}
+}
+
 // writeFile writes content at path creating any needed parent directories.
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()

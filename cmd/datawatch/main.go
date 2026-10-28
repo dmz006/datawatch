@@ -4928,6 +4928,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// (union across observations); at stall time they are the identity that the
 				// evidence carries and the only set that the kill path signals.
 				var recordedDescendants map[int]descendantProcess
+			// Per-attempt "output is fresh" observation that feeds the
+			// descendant stall tracker (see descendantOutputObservation): a pane
+			// or the channel moving since the last look resets the silence clock
+			// before the observation. internal/autonomous cannot see the pane or
+			// the channel, so the wait loop supplies the signal here.
+			var descendantOutputObs descendantOutputObservation
 			waitLoop:
 				for {
 					select {
@@ -4980,6 +4986,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									}
 									if descendantStallTracker != nil {
 										descendantStallTracker.Reset(time.Now())
+										descendantOutputObs.reset()
 									}
 									continue
 								}
@@ -5172,16 +5179,27 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								// Observe on this ~30s cadence. A readable work-descendant
 								// tree is a precondition: nil means the tree could not be read,
 								// no observation is made and the stall clock must not move. A
-								// fresh log write or fresh workdir file resets the silence; the
-								// detector fires once the silence exceeds the limit with a live
-								// work descendant as the sole sign of life.
+								// fresh log write, a fresh workdir file, or fresh output —
+								// pane growth or a newer channel event — resets the silence;
+								// the detector fires once the silence exceeds the limit with
+								// a live work descendant as the sole sign of life.
 								if ds := workDescendantPIDs(s.TmuxSession, s.ProjectDir); ds != nil {
 									recordedDescendants = recordDescendants(ds, recordedDescendants)
 									var logModTime time.Time
 									if fst, serr := os.Stat(staleLogPath); serr == nil {
 										logModTime = fst.ModTime()
 									}
-									if stalled, reason := descendantStallTick(descendantStallTracker, family, time.Now(), len(ds), logModTime, newestWorkDirMtime(taskDir)); stalled {
+									// Output is the "output resets the silence clock" liveness
+									// signal: pane (worker stdout) growth since the last look, or
+									// a channel event newer than the last look, moves the clock
+									// before the observation. A failed pane capture counts as
+									// not-fresh, never as a reset.
+									now := time.Now()
+									if sb, serr := mgr.CapturePaneScrollback(s.FullID, 500); serr == nil &&
+										descendantOutputObs.outputIsFresh(now, sb, s.LastChannelEventAt) {
+										descendantStallTracker.Reset(now)
+									}
+									if stalled, reason := descendantStallTick(descendantStallTracker, family, now, len(ds), logModTime, newestWorkDirMtime(taskDir)); stalled {
 										log.Printf("[autonomous] descendant-stall detector fired for session %s task %s/%s: %s; killing for retry",
 											task.SessionID, task.PRDID, task.ID, reason)
 										pane, paneErr := mgr.CapturePaneScrollback(s.FullID, 300)
