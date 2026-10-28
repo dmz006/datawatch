@@ -797,6 +797,16 @@ paths:
         backend entry, a negative number or an unknown `verifier_policy` key rejects
         the whole PUT with 400. The policy applies to the next verification with no
         restart.
+
+        `usage.calculator.variant` (pace-gauge | lane-planner | burn-ledger | all),
+        `usage.calculator.policy` (use-all | pace | finish-early),
+        `usage.calculator.safety_points` (number >= 0; a negative value rejects the PUT with 400),
+        `usage.calculator.cost_per_task_points` (number >= 0 points/week/task; 0 disables the
+        finish-early estimate), `usage.calculator.baseline_per_24h` (number >= 0, the idle burn),
+        `usage.calculator.max_lanes` (whole number from 1 to 8), `usage.calculator.reset_weekday`
+        (Monday..Sunday), `usage.calculator.reset_time` (HH:MM), `usage.calculator.reset_zone`
+        (IANA time zone) and `usage.calculator.keeper` (the daemon that keeps the shared record);
+        an invalid value rejects the whole PUT with 400 and nothing is written.
       operationId: updateConfig
       tags: [System]
       requestBody:
@@ -4880,6 +4890,112 @@ paths:
       operationId: usageBackoffRecheck
       tags: [Singletons]
       responses: {"200": {description: OK}}
+  /api/usage/readings:
+    get:
+      summary: The account's shared usage record — the keeper's live series, or the peer's copy of the keeper (its last known copy when the keeper is unreachable, marked stale / copied_at)
+      operationId: usageReadingsGet
+      tags: [Singletons]
+      responses: {"200": {description: OK}, "503": {description: No series locally or from the peer, or the series is not available}}
+    post:
+      summary: Append one reading to the shared record. source must be typed; pasted and account are planned and return 501. On a peer the write is forwarded to the keeper, which refuses the write when it is unreachable
+      operationId: usageReadingAdd
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [percent]
+              properties:
+                at: {type: string, format: date-time, description: Defaults to now; more than 5 minutes in the future is rejected}
+                percent: {type: number, minimum: 0, maximum: 1000}
+                source: {type: string, enum: [typed], description: empty means typed; pasted and account return 501}
+      responses:
+        "200": {description: Appended; the stored record is returned}
+        "400": {description: Invalid reading, or an unknown source}
+        "403": {description: Missing the usage write capability}
+        "501": {description: source is planned but not built yet (pasted, account)}
+        "503": {description: The keeper could not be reached (peer); nothing was stored}
+    delete:
+      summary: Remove one reading by id (operator form)
+      operationId: usageReadingDelete
+      tags: [Singletons]
+      parameters:
+        - {name: id, in: query, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Removed}
+        "400": {description: No id query parameter}
+        "404": {description: No such reading}
+  /api/usage/readings/{id}:
+    delete:
+      summary: Remove one reading by id (peer wire form)
+      operationId: usageReadingDeleteById
+      tags: [Singletons]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Removed}
+        "404": {description: No such reading}
+  /api/usage/remaining-work:
+    put:
+      summary: Set the typed remaining-work figure (daemon-local; 0 replaces the queued-tasks estimate)
+      operationId: usageRemainingWorkSet
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [points]
+              properties:
+                points: {type: number, minimum: 0}
+      responses:
+        "200": {description: Stored}
+        "400": {description: Invalid figure}
+        "503": {description: The calculator is not wired on this daemon}
+    delete:
+      summary: Clear the typed remaining-work figure (the finish-early estimate falls back to queued-task costing)
+      operationId: usageRemainingWorkClear
+      tags: [Singletons]
+      responses: {"200": {description: Cleared}, "503": {description: The calculator is not wired on this daemon}}
+  /api/usage/extra-credit:
+    put:
+      summary: Set the extra credit points (0 clears) on the shared record
+      operationId: usageExtraCreditSet
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [points]
+              properties:
+                points: {type: number}
+      responses:
+        "200": {description: Stored}
+        "400": {description: Invalid figure}
+        "503": {description: The keeper could not be reached, or the series is not available}
+  /api/usage/advice:
+    get:
+      summary: Usage calculator advice — one set of numbers, three renderings; variant and policy are independent per-call overrides, lanes and cost are the finish-early ones
+      operationId: usageAdvice
+      tags: [Singletons]
+      parameters:
+        - {name: variant, in: query, required: false, schema: {type: string, enum: [pace-gauge, lane-planner, burn-ledger, all]}}
+        - {name: policy, in: query, required: false, schema: {type: string, enum: [use-all, pace, finish-early]}}
+        - {name: lanes, in: query, required: false, schema: {type: integer, minimum: 0}}
+        - name: cost
+          in: query
+          required: false
+          schema: {type: number, minimum: 0}
+          description: Per-task cost override (points/week) for the finish-early estimate
+      responses:
+        "200": {description: The advice (numbers plus the selected rendering); carries X-Usage-Stale / X-Usage-Copied-At when the series is stale}
+        "400": {description: Unknown variant or policy, or a malformed lanes / cost value}
+        "503": {description: The calculator is not wired on this daemon}
   /api/budget:
     get:
       summary: Dollar budget state of every LLM that has a budget, or one LLM with ?llm=

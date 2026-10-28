@@ -962,4 +962,5 @@ See [`../flow/automata-capacity-flow.md`](../flow/automata-capacity-flow.md).
 ## See also
 
 - [Automata planning](autonomous-planning.md)
+- [Usage calculator](usage-calculator.md): how many lanes the weekly allowance can carry
 - [Automata DAG orchestrator](automata-orchestrator.md)

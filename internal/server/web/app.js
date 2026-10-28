@@ -16167,6 +16167,22 @@ const GENERAL_CONFIG_FIELDS = [
   { id: 'compute_pin', section: 'Compute pin keeper', fields: [
     { key: 'pin_check_seconds', label: 'Pin check interval (sec, 0 = keeper off)', labelKey: 'settings_pin_check_seconds', type: 'number', min: 0, placeholder: '300' },
   ]},
+  // Usage calculator — the weekly-allowance advice. Variant picks how the advice
+  // is drawn, policy picks the target it aims at; the rest feed the model.
+  // optionLabelKeys shows a locale label for an option whose id is not for people.
+  { id: 'usage_calculator', section: 'Usage calculator', fields: [
+    { key: 'usage.calculator.variant', label: 'Usage calculator layout (pace-gauge | lane-planner | burn-ledger | all)', labelKey: 'settings_usage_calculator_variant', type: 'select', options: ['pace-gauge', 'lane-planner', 'burn-ledger', 'all'], default: 'all' },
+    { key: 'usage.calculator.policy', label: 'Usage calculator policy', labelKey: 'settings_usage_calculator_policy', type: 'select', options: ['use-all', 'pace', 'finish-early'], default: 'use-all',
+      optionLabelKeys: { 'use-all': 'settings_usage_calculator_policy_use_all', 'pace': 'settings_usage_calculator_policy_pace', 'finish-early': 'settings_usage_calculator_policy_finish_early' } },
+    { key: 'usage.calculator.safety_points', label: 'Usage calculator safety margin (points under the pace line, 0 to 50, default 5)', labelKey: 'settings_usage_calculator_safety_points', type: 'number', placeholder: '5', min: 0, max: 50, step: 0.5, default: '5' },
+    { key: 'usage.calculator.cost_per_task_points', label: 'Usage calculator cost per task (weekly points, above 0, default 0.1)', labelKey: 'settings_usage_calculator_cost_per_task_points', type: 'number', placeholder: '0.1', min: 0.01, step: 0.01, default: '0.1' },
+    { key: 'usage.calculator.baseline_per_24h', label: 'Usage calculator idle burn (points per 24 hours, 0 to 20, default 3)', labelKey: 'settings_usage_calculator_baseline_per_24h', type: 'number', placeholder: '3', min: 0, max: 20, step: 0.5, default: '3' },
+    { key: 'usage.calculator.max_lanes', label: 'Usage calculator largest lane count (1 to 8, default 3)', labelKey: 'settings_usage_calculator_max_lanes', type: 'number', placeholder: '3', min: 1, max: 8, step: 1, default: '3' },
+    { key: 'usage.calculator.reset_weekday', label: 'Usage calculator reset weekday (default sunday)', labelKey: 'settings_usage_calculator_reset_weekday', type: 'select', options: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'], default: 'sunday' },
+    { key: 'usage.calculator.reset_time', label: 'Usage calculator reset time (24-hour HH:MM, default 08:00)', labelKey: 'settings_usage_calculator_reset_time', type: 'text', placeholder: '08:00', default: '08:00', hintKey: 'settings_usage_calculator_reset_time_hint' },
+    { key: 'usage.calculator.reset_zone', label: 'Usage calculator reset time zone (IANA name, default UTC)', labelKey: 'settings_usage_calculator_reset_zone', type: 'text', placeholder: 'America/New_York', default: 'UTC', hintKey: 'settings_usage_calculator_reset_zone_hint' },
+    { key: 'usage.calculator.keeper', label: 'Usage calculator keeper (federation peer that keeps the readings, empty = this daemon)', labelKey: 'settings_usage_calculator_keeper', type: 'text', placeholder: '', hintKey: 'settings_usage_calculator_keeper_hint' },
+  ]},
   { id: 'autonomous', section: 'Autonomous Automata planning', docs: 'howto/autonomous-planning.md', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
@@ -17093,6 +17109,25 @@ function saveOpenCodeProviderKey(provider, inputId) {
 }
 window.saveOpenCodeProviderKey = saveOpenCodeProviderKey;
 
+// Locale label for one option of a select field; an option with no entry in
+// optionLabelKeys, or whose key is missing from the bundle, shows its id.
+function _selectOptionLabel(f, option) {
+  const k = f.optionLabelKeys && f.optionLabelKeys[option];
+  if (!k) return option;
+  const v = t(k);
+  return (v && v !== k) ? v : option;
+}
+
+// Hint line under a settings field that carries a hintKey; empty when the
+// field has none or the bundle lacks the key. The line takes the full row width
+// so it wraps under the control at phone width.
+function _fieldHintHTML(f) {
+  if (!f.hintKey) return '';
+  const v = t(f.hintKey);
+  if (!v || v === f.hintKey) return '';
+  return `<div style="flex-basis:100%;font-size:10px;color:var(--text2);margin-top:4px;">${escHtml(v)}</div>`;
+}
+
 function loadGeneralConfig() {
   // Settings-tab federation pass (2026-10-08): all three were raw,
   // non-proxy-aware fetch()es with a silently-swallowed failure.
@@ -17188,11 +17223,13 @@ function loadGeneralConfig() {
           } else if (f.type === 'select') {
             const selVal = String(val);
             const opts = (f.options || []).map(o =>
-              `<option value="${escHtml(o)}" ${selVal === o || (selVal === '' && f.default !== undefined && String(f.default) === o) ? 'selected' : ''}>${escHtml(o)}</option>`
+              `<option value="${escHtml(o)}" ${selVal === o || (selVal === '' && f.default !== undefined && String(f.default) === o) ? 'selected' : ''}>${escHtml(_selectOptionLabel(f, o))}</option>`
             ).join('');
-            html += `<div class="settings-row" style="justify-content:space-between;">
+            const _selHint = _fieldHintHTML(f);
+            html += `<div class="settings-row" style="justify-content:space-between;${_selHint ? 'flex-wrap:wrap;' : ''}">
               <div class="settings-label">${escHtml(fLabel)}</div>
               <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
+              ${_selHint}
             </div>`;
           } else if (f.type === 'button') {
             // v5.19.0 — operator-reported regression: the whisper.test_button
@@ -17396,7 +17433,8 @@ function loadGeneralConfig() {
             </div>`;
           } else {
             const defVal = (val !== '' && val !== undefined) ? String(val) : (f.default !== undefined ? String(f.default) : '');
-            html += `<div class="settings-row" style="justify-content:space-between;">
+            const _inHint = _fieldHintHTML(f);
+            html += `<div class="settings-row" style="justify-content:space-between;${_inHint ? 'flex-wrap:wrap;' : ''}">
               <div class="settings-label">${escHtml(fLabel)}</div>
               <input type="${f.type}" class="form-input general-cfg-input" value="${escHtml(defVal)}"
                 ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
@@ -17404,6 +17442,7 @@ function loadGeneralConfig() {
                 ${f.max !== undefined ? 'max="' + f.max + '"' : ''}
                 ${f.step !== undefined ? 'step="' + f.step + '"' : ''}
                 onchange="saveGeneralField('${f.key}', ${f.type === 'number' ? 'Number(this.value)' : 'this.value'})" />
+              ${_inHint}
             </div>`;
           }
         }
@@ -24110,6 +24149,862 @@ window._loadPRDCapacityCard = function(prdId) {
   window._prdCapacityInterval = setInterval(render, 5000);
 };
 
+// ── Usage calculator card ───────────────────────────────────────────────────
+// The usage calculator screen (docs/plans/2026-10-23-usage-calculator-design.md;
+// operator decisions in docs/plans/2026-10-25-usage-calculator-decisions.md).
+// The card reads GET /api/usage/advice once per refresh and draws what comes
+// back. A renderer only reads fields of that body: it never computes a burn, a
+// projection, a verdict, a lane count or a day total, and it never reads a
+// reading or the policy from anywhere else. Variant renderers register in
+// window.usageCalcRenderers under their variant id.
+window.usageCalcRenderers = window.usageCalcRenderers || {};
+// A variant may add a block to the shared verdict card (usageCalcVerdictDetails) or
+// under the reading form (usageCalcInputNotes). Each hook gets the response the frame
+// has, and neither hook changes the verdict or the form.
+window.usageCalcVerdictDetails = window.usageCalcVerdictDetails || {};
+window.usageCalcInputNotes = window.usageCalcInputNotes || {};
+function _usageCalcVariantHook(hooks, variant, res) {
+  return hooks && Object.prototype.hasOwnProperty.call(hooks, variant) ? hooks[variant](res) : '';
+}
+const USAGE_CALC_VARIANTS = ['pace-gauge', 'lane-planner', 'burn-ledger'];
+const USAGE_CALC_VARIANT_KEYS = { 'pace-gauge': 'usage_calc_variant_pace_gauge', 'lane-planner': 'usage_calc_variant_lane_planner', 'burn-ledger': 'usage_calc_variant_burn_ledger' };
+const USAGE_CALC_POLICIES = ['use-all', 'pace', 'finish-early'];
+const USAGE_CALC_POLICY_KEYS = { 'use-all': 'usage_calc_policy_use_all', 'pace': 'usage_calc_policy_pace', 'finish-early': 'usage_calc_policy_finish_early' };
+const USAGE_CALC_COUNTER_KEY = 'datawatch.usageCalc.counts';
+const USAGE_CALC_COUNTER_ON_KEY = 'datawatch.usageCalc.countsOn';
+const USAGE_CALC_CHART_W = 320;
+const USAGE_CALC_CHART_H = 110;
+window._usageCalc = window._usageCalc || { body: null, error: '', variant: '', policy: '', showCounts: false };
+
+// Browser storage is a per-viewer convenience only: every access is guarded,
+// and the card renders the same without it.
+function _usageCalcStorageGet(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+function _usageCalcStorageSet(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) { /* storage blocked: nothing persists */ }
+}
+function _usageCalcStorageRemove(key) {
+  try { localStorage.removeItem(key); } catch (e) { /* storage blocked: nothing to remove */ }
+}
+
+// The view counter is off by default. It records which variant the operator
+// opened and whether the suggested lanes were used, in this browser only.
+function usageCalcCounterOn() {
+  return _usageCalcStorageGet(USAGE_CALC_COUNTER_ON_KEY) === '1';
+}
+function usageCalcCounts() {
+  let parsed = null;
+  try { parsed = JSON.parse(_usageCalcStorageGet(USAGE_CALC_COUNTER_KEY) || 'null'); } catch (e) { parsed = null; }
+  const out = {};
+  for (const v of USAGE_CALC_VARIANTS) {
+    const row = (parsed && typeof parsed === 'object' && parsed[v]) || {};
+    out[v] = { opened: Number(row.opened) || 0, used: Number(row.used) || 0 };
+  }
+  return out;
+}
+function _usageCalcCountBump(variant, field) {
+  if (!usageCalcCounterOn() || !USAGE_CALC_VARIANTS.includes(variant)) return;
+  const counts = usageCalcCounts();
+  counts[variant][field] += 1;
+  _usageCalcStorageSet(USAGE_CALC_COUNTER_KEY, JSON.stringify(counts));
+}
+window.usageCalcToggleCounter = function () {
+  if (usageCalcCounterOn()) {
+    _usageCalcStorageRemove(USAGE_CALC_COUNTER_ON_KEY);
+    _usageCalc.showCounts = false;
+  } else {
+    _usageCalcStorageSet(USAGE_CALC_COUNTER_ON_KEY, '1');
+  }
+  usageCalcRerender();
+};
+window.usageCalcShowCounts = function () {
+  _usageCalc.showCounts = !_usageCalc.showCounts;
+  usageCalcRerender();
+};
+window.usageCalcClearCounts = function () {
+  _usageCalcStorageRemove(USAGE_CALC_COUNTER_KEY);
+  usageCalcRerender();
+};
+
+// Formatting helpers. Numbers are shown as the response gives them; the
+// clock is the wall clock the daemon wrote into the timestamp, which is the
+// reset zone's own clock, so no zone is converted here.
+function _usageCalcNum(v, digits) {
+  const n = Number(v);
+  return isFinite(n) ? n.toFixed(digits === undefined ? 1 : digits) : '—';
+}
+function _usageCalcClock(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(iso || ''));
+  if (!m) return '';
+  const when = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]));
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' }).format(when);
+}
+function _usageCalcLocalInput(ms) {
+  const d = new Date(ms);
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function _usageCalcVariantList(res) {
+  return !res || res.variant === 'all' ? USAGE_CALC_VARIANTS : [res.variant];
+}
+function _usageCalcActive(variants, requested) {
+  return variants.includes(requested) ? requested : variants[0];
+}
+function _usageCalcChip(verdict) {
+  if (verdict !== 'over' && verdict !== 'within') return '';
+  const over = verdict === 'over';
+  const color = over ? 'var(--error,#ef4444)' : 'var(--success,#22c55e)';
+  const label = over ? t('usage_calc_over') : t('usage_calc_within');
+  return `<span class="usage-calc-chip ${over ? 'over' : 'within'}" style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;background:${color};">${escHtml(label)}</span>`;
+}
+function _usageCalcPolicyLabel(id) {
+  const key = USAGE_CALC_POLICY_KEYS[id];
+  return key ? t(key) : String(id || '');
+}
+function _usageCalcRunOut(at, early) {
+  if (!at) return t('usage_calc_runout_none');
+  return _usageCalcClock(at) + ' · ' + t('usage_calc_hours_early', [_usageCalcNum(early)]);
+}
+
+// Reading, policy, extra credit and remaining-work inputs are validated here so
+// the request bodies can be tested without a DOM.
+function usageCalcPointsBody(raw) {
+  const s = String(raw === undefined || raw === null ? '' : raw).trim();
+  const n = Number(s);
+  if (s === '' || !isFinite(n) || n < 0) return { error: t('usage_calc_points_range') };
+  return { body: { points: n } };
+}
+function usageCalcReadingBody(input) {
+  const percentText = String(input.percent === undefined || input.percent === null ? '' : input.percent).trim();
+  const pct = Number(percentText);
+  if (percentText === '' || !isFinite(pct) || pct < 0 || pct > 1000) return { error: t('usage_calc_percent_range') };
+  const body = { percent: pct, lanes: Number(input.lanes) || 0, source: 'typed' };
+  const sessionText = String(input.session === undefined || input.session === null ? '' : input.session).trim();
+  if (sessionText !== '') {
+    const s = Number(sessionText);
+    if (!isFinite(s) || s < 0 || s > 100) return { error: t('usage_calc_session_range') };
+    body.session_percent = s;
+  }
+  let at = input.readAt ? new Date(input.readAt) : null;
+  if (!at || isNaN(at.getTime())) at = new Date(input.now === undefined ? Date.now() : input.now);
+  body.at = at.toISOString();
+  return { body };
+}
+
+function _usageCalcMessage(text) {
+  const el = document.getElementById('usageCalcFormMsg');
+  if (el) el.textContent = text;
+}
+function _usageCalcWrite(method, path, body) {
+  const opts = { method };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  return apiFetch(path, opts)
+    .then(() => usageCalcRefresh())
+    .catch(err => {
+      _usageCalc.error = err && err.message ? err.message : String(err);
+      usageCalcRerender();
+    });
+}
+
+// The frame: verdict first, then the variant switcher and the chosen variant,
+// then the reading, policy, extra-credit, remaining-work and counter sections.
+// opts: variant (the chosen switcher id), policy, error, loading, now (ms).
+window.usageCalcFrameHtml = function (body, opts) {
+  opts = opts || {};
+  const res = body || null;
+  const variants = _usageCalcVariantList(res);
+  const active = _usageCalcActive(variants, opts.variant);
+  const parts = [];
+  parts.push(`<div class="usage-calc-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">` +
+    `<div class="usage-calc-title" style="font-weight:600;">${escHtml(t('usage_calc_title'))}</div>` +
+    `<button type="button" class="btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="usageCalcRefresh()">${escHtml(t('usage_calc_refresh'))}</button></div>`);
+  parts.push(`<div class="usage-calc-intro" style="font-size:12px;color:var(--text2);margin:4px 0 8px;">${escHtml(t('usage_calc_intro'))}</div>`);
+  if (opts.error) parts.push(`<div class="usage-calc-error" role="alert" style="color:var(--error,#ef4444);font-size:12px;margin-bottom:8px;">${escHtml(t('usage_calc_error', [opts.error]))}</div>`);
+  if (!res) {
+    if (!opts.error) parts.push(`<div class="usage-calc-loading" style="color:var(--text2);font-size:12px;">${escHtml(t('usage_calc_loading'))}</div>`);
+  } else if (res.advice && res.advice.needs) {
+    parts.push(`<div class="usage-calc-empty" style="padding:12px 0;"><div style="font-weight:600;">${escHtml(t('usage_calc_empty_title'))}</div>` +
+      `<div style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_empty_body'))}</div></div>`);
+  } else if (res.advice) {
+    parts.push(_usageCalcVerdictHtml(res, active));
+    if (variants.length > 1) parts.push(_usageCalcSwitcherHtml(variants, active));
+    parts.push(_usageCalcVariantBody(res, active, opts));
+  }
+  parts.push(_usageCalcReadingForm(res, opts));
+  if (res && res.advice && !res.advice.needs) parts.push(_usageCalcVariantHook(window.usageCalcInputNotes, active, res));
+  parts.push(_usageCalcPolicyForm(res, opts));
+  parts.push(_usageCalcExtraForm(res));
+  parts.push(_usageCalcRemainingForm(res));
+  parts.push(_usageCalcCounterHtml(res, active));
+  return `<div class="usage-calc-frame" style="display:flex;flex-direction:column;gap:12px;min-width:0;max-width:100%;overflow-wrap:anywhere;">${parts.join('')}</div>`;
+};
+
+function _usageCalcVerdictHtml(res, active) {
+  const a = res.advice;
+  const p = a.advice || {};
+  const parts = [];
+  parts.push(`<div class="usage-calc-verdict" style="display:flex;flex-direction:column;gap:6px;">`);
+  parts.push(`<div class="usage-calc-chips" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;">` +
+    `${_usageCalcChip(a.verdict)}<span style="color:var(--text2);">${escHtml(t('usage_calc_recent_burn'))}</span>` +
+    `${_usageCalcChip(a.verdict_avg)}<span style="color:var(--text2);">${escHtml(t('usage_calc_week_average'))}</span></div>`);
+  parts.push(`<div class="usage-calc-headline" style="font-weight:600;">${escHtml(p.headline || '')}</div>`);
+  if (p.lanes_suggested >= 0) {
+    parts.push(`<div><button type="button" class="btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="usageCalcUseSuggested()">` +
+      `${escHtml(t('usage_calc_use_suggested', [String(p.lanes_suggested)]))}</button></div>`);
+  }
+  if (Array.isArray(p.notes) && p.notes.length) {
+    parts.push(`<ul class="usage-calc-notes" style="margin:0;padding-left:18px;font-size:12px;color:var(--text2);">` +
+      p.notes.map(n => `<li>${escHtml(n)}</li>`).join('') + `</ul>`);
+  }
+  if (a.recent_fallback) {
+    parts.push(`<div class="usage-calc-notice" style="font-size:12px;color:var(--warning,#f59e0b);">${escHtml(a.fallback_notice || t('usage_calc_fallback_default'))}</div>`);
+  }
+  if (res.stale) {
+    parts.push(`<div class="usage-calc-stale" style="font-size:12px;color:var(--warning,#f59e0b);">` +
+      escHtml(t('usage_calc_stale', [res.keeper || t('usage_calc_keeper_generic'), _usageCalcClock(res.copied_at)])) + `</div>`);
+  }
+  if (a.session) {
+    parts.push(`<div class="usage-calc-secondary" style="font-size:12px;color:var(--text2);">` +
+      escHtml(t('usage_calc_session_secondary', [_usageCalcNum(a.session.percent, 0)])) + `</div>`);
+  }
+  parts.push(_usageCalcVariantHook(window.usageCalcVerdictDetails, active, res));
+  parts.push(`</div>`);
+  return parts.join('');
+}
+
+function _usageCalcSwitcherHtml(variants, active) {
+  const buttons = variants.map(id => {
+    const on = id === active;
+    return `<button type="button" class="usage-calc-switch${on ? ' active' : ''}" aria-pressed="${on}" ` +
+      `style="font-size:12px;padding:4px 10px;border-radius:12px;${on ? 'background:var(--accent);color:#fff;' : ''}" ` +
+      `onclick="usageCalcSetVariant('${id}')">${escHtml(t(USAGE_CALC_VARIANT_KEYS[id]))}</button>`;
+  }).join('');
+  return `<div class="usage-calc-switcher" role="group" aria-label="${escHtml(t('usage_calc_variant_label'))}" style="display:flex;flex-wrap:wrap;gap:6px;">${buttons}</div>`;
+}
+
+function _usageCalcVariantBody(res, active, opts) {
+  const registry = window.usageCalcRenderers || {};
+  if (!Object.prototype.hasOwnProperty.call(registry, active)) {
+    return `<div class="usage-calc-unavailable" style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_variant_unavailable'))}</div>`;
+  }
+  return registry[active](res, opts);
+}
+
+function _usageCalcReadingForm(res, opts) {
+  const a = res && res.advice && !res.advice.needs ? res.advice : null;
+  const max = a && a.max_lanes ? a.max_lanes : 3;
+  const lanes = a && a.lanes ? a.lanes : 0;
+  const percent = a ? _usageCalcNum(a.percent, 0) : '';
+  const now = opts.now === undefined ? Date.now() : opts.now;
+  return `<div class="usage-calc-section" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:8px;">` +
+    `<div style="font-weight:600;">${escHtml(t('usage_calc_reading_title'))}</div>` +
+    `<label style="font-size:12px;">${escHtml(t('usage_calc_percent_label'))} <input id="usageCalcPercent" type="number" min="0" max="1000" step="any" value="${escHtml(percent)}" style="width:100%;max-width:200px;"></label>` +
+    `<label style="font-size:12px;">${escHtml(t('usage_calc_session_label'))} <input id="usageCalcSession" type="number" min="0" max="100" step="any" value="" style="width:100%;max-width:200px;"></label>` +
+    `<div class="usage-calc-stepper" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;">` +
+    `<span>${escHtml(t('usage_calc_lanes_label'))}</span>` +
+    `<button type="button" id="usageCalcLanesMinus" aria-label="${escHtml(t('usage_calc_lanes_minus'))}" onclick="usageCalcStepLanes(-1)"${lanes <= 0 ? ' disabled' : ''}>−</button>` +
+    `<span id="usageCalcLanes" data-value="${lanes}" data-max="${max}" style="min-width:18px;text-align:center;">${lanes}</span>` +
+    `<button type="button" id="usageCalcLanesPlus" aria-label="${escHtml(t('usage_calc_lanes_plus'))}" onclick="usageCalcStepLanes(1)"${lanes >= max ? ' disabled' : ''}>+</button>` +
+    `<span id="usageCalcZeroNote" style="color:var(--text2);">${lanes === 0 ? escHtml(t('usage_calc_zero_lanes')) : ''}</span></div>` +
+    `<label style="font-size:12px;">${escHtml(t('usage_calc_read_at_label'))} <input id="usageCalcReadAt" type="datetime-local" value="${_usageCalcLocalInput(now)}" style="max-width:100%;"></label>` +
+    `<div><button type="button" class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="usageCalcSubmitReading()">${escHtml(t('usage_calc_save_reading'))}</button></div>` +
+    `<div id="usageCalcFormMsg" role="status" style="font-size:12px;color:var(--error,#ef4444);"></div>` +
+    `</div>`;
+}
+
+window.usageCalcStepLanes = function (delta) {
+  const el = document.getElementById('usageCalcLanes');
+  if (!el) return;
+  const cur = Number(el.getAttribute('data-value')) || 0;
+  usageCalcSetLanes(cur + delta);
+};
+function usageCalcSetLanes(n) {
+  const el = document.getElementById('usageCalcLanes');
+  if (!el) return;
+  const max = Number(el.getAttribute('data-max')) || 0;
+  const v = Math.min(max, Math.max(0, n));
+  el.setAttribute('data-value', String(v));
+  el.textContent = String(v);
+  const minus = document.getElementById('usageCalcLanesMinus');
+  if (minus) minus.disabled = v <= 0;
+  const plus = document.getElementById('usageCalcLanesPlus');
+  if (plus) plus.disabled = v >= max;
+  const zero = document.getElementById('usageCalcZeroNote');
+  if (zero) zero.textContent = v === 0 ? t('usage_calc_zero_lanes') : '';
+}
+
+window.usageCalcSubmitReading = function () {
+  const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const lanesEl = document.getElementById('usageCalcLanes');
+  const built = usageCalcReadingBody({
+    percent: val('usageCalcPercent'),
+    session: val('usageCalcSession'),
+    lanes: lanesEl ? lanesEl.getAttribute('data-value') : 0,
+    readAt: val('usageCalcReadAt'),
+    now: Date.now(),
+  });
+  if (built.error) return _usageCalcMessage(built.error);
+  return _usageCalcWrite('POST', '/api/usage/readings', built.body);
+};
+
+function _usageCalcPolicyForm(res, opts) {
+  const current = (res && res.policy) || opts.policy || 'use-all';
+  const radios = USAGE_CALC_POLICIES.map(id => {
+    const on = id === current;
+    return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;">` +
+      `<input type="radio" name="usageCalcPolicy" data-policy="${id}" value="${id}"${on ? ' checked' : ''} onchange="usageCalcSetPolicy('${id}')">` +
+      `<span>${escHtml(t(USAGE_CALC_POLICY_KEYS[id]))}</span></label>`;
+  }).join('');
+  return `<div class="usage-calc-section" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:6px;">` +
+    `<div style="font-weight:600;">${escHtml(t('usage_calc_policy_title'))}</div>` +
+    `<div role="radiogroup" aria-label="${escHtml(t('usage_calc_policy_title'))}" style="display:flex;flex-direction:column;gap:2px;">${radios}</div>` +
+    `<div style="font-size:11px;color:var(--text2);">${escHtml(t('usage_calc_policy_hint'))}</div>` +
+    `</div>`;
+}
+
+// Choosing a policy changes only the advice: it refetches with the policy
+// query value and saves nothing.
+window.usageCalcSetPolicy = function (id) {
+  if (!USAGE_CALC_POLICIES.includes(id)) return;
+  _usageCalc.policy = id;
+  return usageCalcRefresh();
+};
+
+window.usageCalcSetVariant = function (id) {
+  if (!USAGE_CALC_VARIANTS.includes(id)) return;
+  _usageCalc.variant = id;
+  _usageCalcCountBump(id, 'opened');
+  usageCalcRerender();
+};
+
+window.usageCalcUseSuggested = function () {
+  const res = _usageCalc.body;
+  if (!res || !res.advice || !res.advice.advice) return;
+  const n = res.advice.advice.lanes_suggested;
+  if (!(n >= 0)) return;
+  usageCalcSetLanes(n);
+  _usageCalcCountBump(_usageCalcActive(_usageCalcVariantList(res), _usageCalc.variant), 'used');
+};
+
+function _usageCalcExtraForm(res) {
+  const a = res && res.advice ? res.advice : null;
+  const extra = a ? (a.extra_credit_points || 0) : 0;
+  const ceiling = a && a.ceiling ? a.ceiling : 100;
+  return `<div class="usage-calc-section" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:6px;">` +
+    `<div style="font-weight:600;">${escHtml(t('usage_calc_extra_title'))}</div>` +
+    `<div class="usage-calc-extra-line" style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_extra_line', [_usageCalcNum(ceiling, 0), _usageCalcNum(extra, 0)]))}</div>` +
+    `<label style="font-size:12px;">${escHtml(t('usage_calc_extra_label'))} <input id="usageCalcExtra" type="number" min="0" step="any" value="${escHtml(String(extra))}" style="width:100%;max-width:200px;"></label>` +
+    `<div><button type="button" style="font-size:12px;padding:5px 12px;" onclick="usageCalcSaveExtraCredit()">${escHtml(t('usage_calc_extra_save'))}</button></div>` +
+    `</div>`;
+}
+window.usageCalcSaveExtraCredit = function () {
+  const el = document.getElementById('usageCalcExtra');
+  const built = usageCalcPointsBody(el ? el.value : '');
+  if (built.error) return _usageCalcMessage(built.error);
+  return _usageCalcWrite('PUT', '/api/usage/extra-credit', built.body);
+};
+
+// The remaining work is the estimate (queued tasks times the cost per task)
+// unless the operator has typed a figure. The response says which one is in use.
+function _usageCalcRemainingForm(res) {
+  const a = res && res.advice ? res.advice : null;
+  const rw = a && a.remaining_work ? a.remaining_work : null;
+  let inUse = t('usage_calc_remaining_none');
+  if (rw && rw.in_use === 'estimate') inUse = t('usage_calc_remaining_estimate');
+  if (rw && rw.in_use === 'typed') inUse = t('usage_calc_remaining_typed');
+  const line = rw
+    ? t('usage_calc_remaining_line', [_usageCalcNum(rw.points), inUse, String(rw.queue_tasks || 0), _usageCalcNum(rw.cost_per_task)])
+    : t('usage_calc_remaining_none');
+  return `<div class="usage-calc-section" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:6px;">` +
+    `<div style="font-weight:600;">${escHtml(t('usage_calc_remaining_title'))}</div>` +
+    `<div class="usage-calc-remaining" style="font-size:12px;">${escHtml(line)}</div>` +
+    `<label style="font-size:12px;">${escHtml(t('usage_calc_remaining_override_label'))} <input id="usageCalcTypedWork" type="number" min="0" step="any" value="" style="width:100%;max-width:200px;"></label>` +
+    `<div style="display:flex;gap:6px;flex-wrap:wrap;">` +
+    `<button type="button" style="font-size:12px;padding:5px 12px;" onclick="usageCalcSaveRemainingWork()">${escHtml(t('usage_calc_remaining_save_typed'))}</button>` +
+    `<button type="button" style="font-size:12px;padding:5px 12px;" onclick="usageCalcClearRemainingWork()">${escHtml(t('usage_calc_remaining_clear'))}</button>` +
+    `</div></div>`;
+}
+window.usageCalcSaveRemainingWork = function () {
+  const el = document.getElementById('usageCalcTypedWork');
+  const built = usageCalcPointsBody(el ? el.value : '');
+  if (built.error) return _usageCalcMessage(built.error);
+  return _usageCalcWrite('PUT', '/api/usage/remaining-work', built.body);
+};
+window.usageCalcClearRemainingWork = function () {
+  return _usageCalcWrite('DELETE', '/api/usage/remaining-work');
+};
+
+function _usageCalcCounterHtml(res, active) {
+  const on = usageCalcCounterOn();
+  const state = on ? t('usage_calc_counter_on') : t('usage_calc_counter_off');
+  const parts = [];
+  parts.push(`<div class="usage-calc-section" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:6px;">`);
+  parts.push(`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;">` +
+    `<span>${escHtml(t('usage_calc_counter_title'))}: ${escHtml(state)}</span>` +
+    `<button type="button" aria-pressed="${on}" style="font-size:12px;padding:4px 10px;" onclick="usageCalcToggleCounter()">${escHtml(state)}</button></div>`);
+  parts.push(`<div style="font-size:11px;color:var(--text2);">${escHtml(t('usage_calc_counter_hint'))}</div>`);
+  if (on) {
+    parts.push(`<div style="display:flex;gap:6px;flex-wrap:wrap;">` +
+      `<button type="button" style="font-size:12px;padding:4px 10px;" onclick="usageCalcShowCounts()">${escHtml(t('usage_calc_counter_show'))}</button>` +
+      `<button type="button" style="font-size:12px;padding:4px 10px;" onclick="usageCalcClearCounts()">${escHtml(t('usage_calc_counter_clear'))}</button></div>`);
+    if (_usageCalc.showCounts) {
+      const counts = usageCalcCounts();
+      parts.push(USAGE_CALC_VARIANTS.map(v => {
+        const c = counts[v];
+        return `<div style="font-size:12px;">${escHtml(t('usage_calc_counter_row', [t(USAGE_CALC_VARIANT_KEYS[v]), String(c.opened), String(c.used)]))}</div>`;
+      }).join(''));
+    }
+  }
+  parts.push(`</div>`);
+  return parts.join('');
+}
+
+// The pace-gauge variant: one bar from 0 to the ceiling with the weekly percent
+// filled, a solid tick for the pace line and dashed and dotted ticks for the
+// two projections at the reset, a red zone at the right edge for projections
+// past the ceiling, then the reading fields, the chosen-lanes line and the
+// series chart. Every number is read from the response.
+// The reading fields in their shared order, each read from the response. The
+// pace-gauge body and the lane planner's collapsible list both draw these rows.
+function usageCalcFieldRowsHtml(res) {
+  const a = res.advice;
+  const p = a.advice || {};
+  const fields = [
+    [t('usage_calc_field_read'), `${_usageCalcNum(a.percent, 0)}% · ${_usageCalcClock(a.read_at)}`],
+    [t('usage_calc_field_days'), t('usage_calc_days', [_usageCalcNum(a.days_since_reset, 2)])],
+    [t('usage_calc_field_pace'), `${_usageCalcNum(a.pace_line)}% · ` + (a.ahead_of_pace ? t('usage_calc_ahead_of_pace') : t('usage_calc_headroom', [_usageCalcNum(a.headroom)]))],
+    [t('usage_calc_field_burn'), `${t('usage_calc_recent_burn')} ${_usageCalcNum(a.recent_burn_per_24h)}` +
+      (a.recent_fallback ? ` (${t('usage_calc_burn_fallback')})` : '') +
+      ` · ${t('usage_calc_week_average')} ${_usageCalcNum(a.week_avg_burn_per_24h)}`],
+    [t('usage_calc_field_projected'), `${t('usage_calc_recent_burn')} ${_usageCalcNum(a.projected_end_recent)}% · ${t('usage_calc_week_average')} ${_usageCalcNum(a.projected_end_avg)}%`],
+    [t('usage_calc_field_runout'), `${t('usage_calc_recent_burn')}: ${_usageCalcRunOut(a.run_out_at_recent, a.hours_early_recent)} · ` +
+      `${t('usage_calc_week_average')}: ${_usageCalcRunOut(a.run_out_at_avg, a.hours_early_avg)}`],
+    [t('usage_calc_field_verdict'), `${_usageCalcChip(a.verdict)} ${_usageCalcChip(a.verdict_avg)}`],
+    [t('usage_calc_field_lanes'), t('usage_calc_lanes_policy', [String(a.lanes), _usageCalcPolicyLabel(res.policy)])],
+    [t('usage_calc_field_advice'), escHtml(p.headline || '')],
+  ];
+  return fields.map(([label, value], i) =>
+    `<div data-field="${i}" style="display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border,#2a2a2a);">` +
+    `<span style="min-width:110px;color:var(--text2);">${escHtml(label)}</span>` +
+    `<span style="flex:1;min-width:0;overflow-wrap:anywhere;">${value}</span></div>`).join('');
+}
+
+function _usageCalcPaceGauge(res) {
+  const a = res.advice;
+  const ceiling = a.ceiling > 0 ? a.ceiling : 100;
+  const W = USAGE_CALC_CHART_W;
+  const pos = v => Math.min(Math.max(Number(v) / ceiling, 0), 1) * W;
+  const past = v => Number(v) > ceiling;
+  const tick = (id, v, style) => `<line data-tick="${id}" x1="${pos(v).toFixed(2)}" x2="${pos(v).toFixed(2)}" y1="10" y2="42" style="${style}"/>`;
+  const gauge = `<svg viewBox="0 0 ${W} 64" width="100%" role="img" aria-label="${escHtml(t('usage_calc_gauge_title'))}" style="display:block;max-width:100%;">` +
+    `<rect x="0" y="18" width="${W}" height="14" rx="3" style="fill:var(--bg2,#1e1e1e);"/>` +
+    `<rect data-fill="percent" x="0" y="18" width="${pos(a.percent).toFixed(2)}" height="14" rx="3" style="fill:var(--accent,#3b82f6);"/>` +
+    `<rect data-zone="over" x="${W - 8}" y="18" width="8" height="14" style="fill:var(--error,#ef4444);"/>` +
+    tick('pace', a.pace_line, 'stroke:var(--text,#ddd);stroke-width:2;') +
+    tick('recent', a.projected_end_recent, 'stroke:var(--warning,#f59e0b);stroke-width:2;stroke-dasharray:4 3;') +
+    tick('average', a.projected_end_avg, 'stroke:var(--text2,#999);stroke-width:2;stroke-dasharray:1 3;stroke-linecap:round;') +
+    (past(a.projected_end_recent)
+      ? `<text data-label="over-edge" data-burn="recent" x="${W}" y="50" text-anchor="end" style="font-size:10px;fill:var(--error,#ef4444);">${escHtml(t('usage_calc_gauge_over_edge_recent', [_usageCalcNum(a.projected_end_recent, 1)]))}</text>`
+      : '') +
+    (past(a.projected_end_avg)
+      ? `<text data-label="over-edge" data-burn="average" x="${W}" y="59" text-anchor="end" style="font-size:10px;fill:var(--error,#ef4444);">${escHtml(t('usage_calc_gauge_over_edge_average', [_usageCalcNum(a.projected_end_avg, 1)]))}</text>`
+      : '') +
+    `</svg>`;
+  const legend = `<div style="display:flex;flex-wrap:wrap;gap:8px 12px;font-size:11px;color:var(--text2);">` +
+    `<span>${escHtml(t('usage_calc_gauge_now', [_usageCalcNum(a.percent, 0)]))}</span>` +
+    `<span>${escHtml(t('usage_calc_gauge_pace', [_usageCalcNum(a.pace_line)]))}</span>` +
+    `<span>${escHtml(t('usage_calc_gauge_recent', [_usageCalcNum(a.projected_end_recent)]))}</span>` +
+    `<span>${escHtml(t('usage_calc_gauge_average', [_usageCalcNum(a.projected_end_avg)]))}</span>` +
+    `<span>${escHtml(t('usage_calc_extra_line', [_usageCalcNum(ceiling, 0), _usageCalcNum(a.extra_credit_points || 0, 0)]))}</span></div>`;
+
+  const rows = usageCalcFieldRowsHtml(res);
+
+  let chosen = '';
+  if (a.chosen) {
+    chosen = `<div data-chosen="lanes" style="font-size:12px;">` +
+      escHtml(t('usage_calc_chosen_line', [String(a.chosen.lanes), _usageCalcNum(a.chosen.burn_per_24h), _usageCalcNum(a.chosen.projected_end) + '%'])) +
+      (a.chosen.lanes === 0 ? ` <span style="color:var(--text2);">${escHtml(t('usage_calc_zero_lanes'))}</span>` : '') + `</div>`;
+  }
+
+  return `<div class="usage-calc-pace-gauge" style="display:flex;flex-direction:column;gap:8px;min-width:0;">` +
+    `<div style="font-weight:600;font-size:13px;">${escHtml(t('usage_calc_gauge_title'))}</div>` +
+    gauge + legend + rows + chosen + usageCalcSeriesHtml(a) +
+    `</div>`;
+}
+
+// The readings since the reset, each at its hours since the reset, with the pace
+// line and the two projections dashed from the newest reading to the reset.
+function usageCalcSeriesHtml(a) {
+  const series = Array.isArray(a.series) ? a.series : [];
+  if (!series.length || !(Date.parse(a.next_reset_at) > Date.parse(a.last_reset_at))) return '';
+  const W = USAGE_CALC_CHART_W;
+  const H = USAGE_CALC_CHART_H;
+  const ceiling = a.ceiling > 0 ? a.ceiling : 100;
+  // The horizontal axis runs from the last reset to the next reset, both read
+  // from the response; a reading sits where its own time falls between them.
+  const from = Date.parse(a.last_reset_at);
+  const to = Date.parse(a.next_reset_at);
+  const x = at => Math.min(Math.max((Date.parse(at) - from) / (to - from), 0), 1) * W;
+  const y = v => H - Math.min(Math.max(Number(v) / ceiling, 0), 1) * H;
+  const pts = series.map(s => `${x(s.at).toFixed(2)},${y(s.percent).toFixed(2)}`);
+  const last = series[series.length - 1];
+  const lx = x(last.at).toFixed(2);
+  const ly = y(last.percent).toFixed(2);
+  return `<div class="usage-calc-series" style="display:flex;flex-direction:column;gap:4px;">` +
+    `<div style="font-size:12px;font-weight:600;">${escHtml(t('usage_calc_series_title'))}</div>` +
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escHtml(t('usage_calc_series_title'))}" style="display:block;max-width:100%;">` +
+    `<line data-series="pace" x1="0" y1="${H}" x2="${W}" y2="${y(100).toFixed(2)}" style="stroke:var(--text2,#999);stroke-width:1;"/>` +
+    `<polyline data-series="readings" points="${pts.join(' ')}" style="fill:none;stroke:var(--accent,#3b82f6);stroke-width:2;"/>` +
+    `<line data-series="recent" x1="${lx}" y1="${ly}" x2="${W}" y2="${y(a.projected_end_recent).toFixed(2)}" style="stroke:var(--warning,#f59e0b);stroke-width:2;stroke-dasharray:4 3;"/>` +
+    `<line data-series="average" x1="${lx}" y1="${ly}" x2="${W}" y2="${y(a.projected_end_avg).toFixed(2)}" style="stroke:var(--text2,#999);stroke-width:2;stroke-dasharray:1 3;"/>` +
+    `</svg>` +
+    `<div style="display:flex;flex-wrap:wrap;gap:8px 12px;font-size:11px;color:var(--text2);">` +
+    `<span>${escHtml(t('usage_calc_series_pace'))}</span><span>${escHtml(t('usage_calc_series_projection'))}</span></div>` +
+    `</div>`;
+}
+
+window.usageCalcRenderers['pace-gauge'] = _usageCalcPaceGauge;
+
+// The lane-planner variant. The verdict card carries a collapsible list of the
+// reading fields and the burn-per-lane note sits under the input form (both through
+// the hooks above). The body is a table with one row for each lane count the response
+// gives, a finish line for Run flat out, and a week timeline. A row fits when its
+// projected end is within policy_target, which the response names; a null target
+// reads running. Nothing here computes a burn, a projection, a verdict or a lane count.
+const USAGE_CALC_LANE_COLORS = ['var(--text2,#999)', 'var(--accent,#3b82f6)', 'var(--warning,#f59e0b)', 'var(--error,#ef4444)'];
+const USAGE_CALC_LANE_CELL = 'padding:4px 3px;border-bottom:1px solid var(--border,#2a2a2a);text-align:left;vertical-align:top;overflow-wrap:anywhere;';
+const USAGE_CALC_LANE_TL = { w: 320, h: 196, left: 36, right: 308, top: 18, bottom: 168 };
+const USAGE_CALC_DAY_MS = 24 * 60 * 60 * 1000;
+
+function _usageCalcLaneBadge(key) {
+  return `<span class="usage-calc-lane-badge" style="display:inline-block;margin:2px 4px 0 0;padding:1px 6px;border:1px solid var(--border,#444);border-radius:10px;font-size:11px;font-weight:600;">${escHtml(t(key))}</span>`;
+}
+
+function _usageCalcLaneTargetLine(res) {
+  const target = (res.advice.advice || {}).policy_target;
+  if (target === null || target === undefined) return t('usage_calc_lane_target_none');
+  const key = res.policy === 'pace' ? 'usage_calc_lane_target_pace' : 'usage_calc_lane_target_use_all';
+  return t(key, [_usageCalcNum(target, Number.isInteger(target) ? 0 : 1)]);
+}
+
+// The finish line reads the finish block. A no-burn finish has no time to show, so it
+// gets its wording and never a figure.
+function _usageCalcLaneFinishLine(res) {
+  const f = (res.advice.advice || {}).finish;
+  if (!f) return t('usage_calc_lane_finish_needs_work');
+  if (f.no_burn) return t('usage_calc_lane_finish_no_burn');
+  if (!f.at) return t('usage_calc_lane_finish_needs_work');
+  const at = _usageCalcClock(f.at);
+  return f.before_allowance
+    ? t('usage_calc_lane_finish_within', [at, _usageCalcNum(f.spare_points)])
+    : t('usage_calc_lane_finish_late', [at]);
+}
+
+// A row fits when its projected end is within the policy target. Under Run flat out
+// there is no target, so every row reads running.
+function _usageCalcLaneFit(row, target) {
+  if (target === null || target === undefined) return { cls: 'running', color: 'var(--text2,#999)', text: t('usage_calc_lane_running') };
+  return row.projected_end <= target
+    ? { cls: 'fits', color: 'var(--success,#22c55e)', text: t('usage_calc_lane_fits') }
+    : { cls: 'over', color: 'var(--error,#ef4444)', text: t('usage_calc_lane_over') };
+}
+
+function _usageCalcLaneTable(res) {
+  const a = res.advice;
+  const p = a.advice || {};
+  const rows = Array.isArray(a.by_lanes) ? a.by_lanes : [];
+  if (!rows.length) return '';
+  const advised = p.lanes_suggested;
+  const chosen = a.chosen ? a.chosen.lanes : null;
+  const head = ['usage_calc_lane_col_lanes', 'usage_calc_lane_col_burn', 'usage_calc_lane_col_end',
+    'usage_calc_lane_col_runout', 'usage_calc_lane_col_early', 'usage_calc_lane_col_fit']
+    .map(key => `<th scope="col" style="${USAGE_CALC_LANE_CELL}font-weight:600;color:var(--text2);">${escHtml(t(key))}</th>`).join('');
+  const body = rows.map(row => {
+    const badges = [];
+    if (row.lanes === 0) badges.push(_usageCalcLaneBadge('usage_calc_lane_badge_never'), _usageCalcLaneBadge('usage_calc_lane_badge_operator'));
+    if (row.lanes === advised) badges.push(_usageCalcLaneBadge('usage_calc_lane_badge_advised'));
+    if (row.lanes === chosen) badges.push(_usageCalcLaneBadge('usage_calc_lane_badge_chosen'));
+    const fit = _usageCalcLaneFit(row, p.policy_target);
+    const runOut = row.run_out_at ? _usageCalcClock(row.run_out_at) : t('usage_calc_runout_none');
+    const early = row.run_out_at ? _usageCalcNum(row.hours_early) : t('usage_calc_lane_none');
+    const marks = (row.lanes === advised ? ' data-advised="true"' : '') + (row.lanes === chosen ? ' data-chosen="true"' : '');
+    return `<tr data-lanes="${row.lanes}"${marks}>` +
+      `<td style="${USAGE_CALC_LANE_CELL}"><span style="font-weight:600;">${row.lanes}</span><div>${badges.join('')}</div></td>` +
+      `<td style="${USAGE_CALC_LANE_CELL}">${_usageCalcNum(row.burn_per_24h)}</td>` +
+      `<td style="${USAGE_CALC_LANE_CELL}">${_usageCalcNum(row.projected_end)}%</td>` +
+      `<td style="${USAGE_CALC_LANE_CELL}">${escHtml(runOut)}</td>` +
+      `<td style="${USAGE_CALC_LANE_CELL}">${escHtml(early)}</td>` +
+      `<td style="${USAGE_CALC_LANE_CELL}color:${fit.color};font-weight:600;" data-fit="${fit.cls}">${escHtml(fit.text)}</td></tr>`;
+  }).join('');
+  return `<table class="usage-calc-lane-table" style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px;">` +
+    `<caption style="caption-side:top;text-align:left;font-size:13px;font-weight:600;padding-bottom:4px;">${escHtml(t('usage_calc_lane_table_title'))}</caption>` +
+    `<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+// The calendar date of an ISO timestamp as a UTC day number, so the tick labels follow
+// the reset's own wall clock and no offset is applied.
+function _usageCalcDayBase(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : NaN;
+}
+function _usageCalcWeekday(ms) {
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' }).format(new Date(ms));
+}
+
+// The week from the last reset to the next. Each lane count is one line from the newest
+// reading: to the reset at its projected end, or to its run-out point, where it reaches
+// the ceiling. A tick falls every 24 hours.
+function _usageCalcLaneTimeline(res) {
+  const a = res.advice;
+  const rows = Array.isArray(a.by_lanes) ? a.by_lanes : [];
+  const from = Date.parse(a.last_reset_at);
+  const to = Date.parse(a.next_reset_at);
+  const readAt = Date.parse(a.read_at);
+  if (!(to > from) || isNaN(readAt)) return '';
+  const { w, h, left, right, top, bottom } = USAGE_CALC_LANE_TL;
+  const ceiling = a.ceiling > 0 ? a.ceiling : 100;
+  const X = ms => left + Math.min(Math.max((ms - from) / (to - from), 0), 1) * (right - left);
+  const Y = v => bottom - Math.min(Math.max(Number(v) / ceiling, 0), 1) * (bottom - top);
+  const x0 = X(readAt).toFixed(2);
+  const y0 = Y(a.percent).toFixed(2);
+
+  const readings = (Array.isArray(a.series) ? a.series : [])
+    .map(s => `${X(Date.parse(s.at)).toFixed(2)},${Y(s.percent).toFixed(2)}`).join(' ');
+  const lines = rows.map(row => {
+    const runs = !!row.run_out_at;
+    const x1 = runs ? X(Date.parse(row.run_out_at)) : X(to);
+    const y1 = runs ? Y(ceiling) : Y(row.projected_end);
+    const color = USAGE_CALC_LANE_COLORS[row.lanes % USAGE_CALC_LANE_COLORS.length];
+    const label = runs
+      ? t('usage_calc_lane_line_runout', [String(row.lanes), _usageCalcClock(row.run_out_at)])
+      : t('usage_calc_lane_line_label', [String(row.lanes)]);
+    const lx = (runs ? x1 - 6 : right - 2).toFixed(2);
+    const ly = (runs ? y1 - 7 : y1 - 4).toFixed(2);
+    return `<line data-lane-line="${row.lanes}" x1="${x0}" y1="${y0}" x2="${x1.toFixed(2)}" y2="${y1.toFixed(2)}" style="stroke:${color};stroke-width:2;"/>` +
+      (runs ? `<circle data-run-out="${row.lanes}" cx="${x1.toFixed(2)}" cy="${y1.toFixed(2)}" r="4" style="fill:${color};"/>` : '') +
+      `<text x="${lx}" y="${ly}" text-anchor="end" style="font-size:10px;fill:${color};">${escHtml(label)}</text>`;
+  }).join('');
+
+  const base = _usageCalcDayBase(a.last_reset_at);
+  const ticks = [];
+  for (let k = 0; from + k * USAGE_CALC_DAY_MS <= to; k++) {
+    const x = X(from + k * USAGE_CALC_DAY_MS).toFixed(2);
+    const anchor = k === 0 ? 'start' : (from + (k + 1) * USAGE_CALC_DAY_MS > to ? 'end' : 'middle');
+    const day = isNaN(base) ? '' : _usageCalcWeekday(base + k * USAGE_CALC_DAY_MS);
+    ticks.push(`<line data-tick-day="${k}" x1="${x}" y1="${bottom}" x2="${x}" y2="${bottom + 4}" style="stroke:var(--text2,#999);"/>` +
+      `<text x="${x}" y="${h - 10}" text-anchor="${anchor}" style="font-size:10px;fill:var(--text2,#999);">${escHtml(day)}</text>`);
+  }
+
+  const budget = `<line x1="${left}" y1="${Y(ceiling).toFixed(2)}" x2="${right}" y2="${Y(ceiling).toFixed(2)}" style="stroke:var(--text2,#999);stroke-dasharray:5 3;"/>`;
+  const axes = `<line x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}" style="stroke:var(--text2,#999);"/>` +
+    `<line x1="${left}" y1="${top}" x2="${left}" y2="${bottom}" style="stroke:var(--text2,#999);"/>`;
+  const scale = `<text x="${left - 4}" y="${bottom + 3}" text-anchor="end" style="font-size:10px;fill:var(--text2,#999);">0</text>` +
+    `<text x="${left - 4}" y="${Y(ceiling).toFixed(2)}" text-anchor="end" style="font-size:10px;fill:var(--text2,#999);">${escHtml(_usageCalcNum(ceiling, 0))}</text>`;
+  const now = `<line x1="${x0}" y1="${top}" x2="${x0}" y2="${bottom}" style="stroke:var(--text,#ddd);stroke-dasharray:2 2;"/>` +
+    `<text x="${(X(readAt) - 3).toFixed(2)}" y="${top - 6}" text-anchor="end" style="font-size:10px;fill:var(--text,#ddd);">${escHtml(t('usage_calc_lane_timeline_now', [_usageCalcClock(a.read_at)]))}</text>` +
+    `<circle cx="${x0}" cy="${y0}" r="4" style="fill:var(--accent,#3b82f6);"/>`;
+
+  return `<div class="usage-calc-lane-timeline" style="display:flex;flex-direction:column;gap:4px;min-width:0;">` +
+    `<div style="font-weight:600;font-size:13px;">${escHtml(t('usage_calc_lane_timeline_title'))}</div>` +
+    `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${escHtml(t('usage_calc_lane_timeline_aria'))}" style="display:block;max-width:100%;">` +
+    budget +
+    `<polyline data-series="readings" points="${readings}" style="fill:none;stroke:var(--accent,#3b82f6);stroke-width:2;"/>` +
+    lines + now + ticks.join('') + axes + scale +
+    `</svg>` +
+    `<div style="font-size:11px;color:var(--text2);">${escHtml(t('usage_calc_lane_timeline_hint'))}</div></div>`;
+}
+
+function _usageCalcLanePlanner(res) {
+  return `<div class="usage-calc-lane-planner" style="display:flex;flex-direction:column;gap:10px;min-width:0;max-width:100%;">` +
+    `<div class="usage-calc-lane-target" style="font-size:12px;color:var(--text2);">${escHtml(_usageCalcLaneTargetLine(res))}</div>` +
+    (res.policy === 'finish-early' ? `<div class="usage-calc-lane-finish" style="font-size:12px;font-weight:600;">${escHtml(_usageCalcLaneFinishLine(res))}</div>` : '') +
+    _usageCalcLaneTable(res) +
+    _usageCalcLaneTimeline(res) +
+    `</div>`;
+}
+
+// The verdict card's collapsible list of the reading fields, closed until opened.
+function _usageCalcLaneVerdictDetails(res) {
+  return `<details class="usage-calc-lane-fields" style="font-size:12px;">` +
+    `<summary style="cursor:pointer;color:var(--text2);">${escHtml(t('usage_calc_lane_fields_summary'))}</summary>` +
+    `<div style="margin-top:6px;">${usageCalcFieldRowsHtml(res)}</div></details>`;
+}
+
+// The burn-per-lane note under the input form: inferred, so it is recalibrated at each reading.
+function _usageCalcLaneInputNote(res) {
+  return `<div class="usage-calc-lane-per-lane" style="font-size:12px;color:var(--text2);">` +
+    `${escHtml(t('usage_calc_lane_per_lane_note', [_usageCalcNum(res.advice.per_lane_per_24h)]))}</div>`;
+}
+
+window.usageCalcRenderers['lane-planner'] = _usageCalcLanePlanner;
+window.usageCalcVerdictDetails['lane-planner'] = _usageCalcLaneVerdictDetails;
+window.usageCalcInputNotes['lane-planner'] = _usageCalcLaneInputNote;
+
+// The burn-ledger variant. The chart draws one bar for each day the response gives, flagged
+// estimated where a day boundary fell between readings. No split by kind of work is drawn,
+// because no session attribution exists, so each day is one total. The cost table reads
+// by_lanes (the measured burn and the planning burn of each lane count), the queue line reads
+// remaining_work, the consumers section is an empty state, and the text forms are the body's
+// own strings. Nothing here computes a burn, a day total, a lane count or a figure.
+const USAGE_CALC_LEDGER_W = 320;
+const USAGE_CALC_LEDGER_H = 132;
+
+function _usageCalcLedgerChart(res) {
+  const days = Array.isArray(res.advice.daily) ? res.advice.daily : [];
+  const head = `<div style="font-weight:600;font-size:13px;">${escHtml(t('usage_calc_ledger_chart_title'))}</div>` +
+    `<div style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_ledger_chart_note'))}</div>`;
+  const kind = `<div class="usage-calc-ledger-kind" style="font-size:11px;color:var(--text2);">${escHtml(t('usage_calc_ledger_kind_note'))}</div>`;
+  if (!days.length) {
+    return `<div class="usage-calc-ledger-chart" style="display:flex;flex-direction:column;gap:6px;min-width:0;">${head}` +
+      `<div class="usage-calc-ledger-daily-empty" style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_ledger_daily_empty'))}</div>${kind}</div>`;
+  }
+  const W = USAGE_CALC_LEDGER_W;
+  const H = USAGE_CALC_LEDGER_H;
+  const top = 16;
+  const base = H - 30;
+  // The tallest entry sets the scale of the drawing; the scale is not shown as a figure.
+  const scale = Math.max(...days.map(d => Number(d.points) || 0), 1);
+  const slot = W / days.length;
+  const barW = Math.min(slot * 0.6, 48);
+  const bars = days.map((d, i) => {
+    const pts = Number(d.points) || 0;
+    const h = Math.max(pts / scale, 0) * (base - top);
+    const x = i * slot + (slot - barW) / 2;
+    const cx = (x + barW / 2).toFixed(2);
+    const startDay = _usageCalcDayBase(d.start);
+    const day = isFinite(startDay) ? _usageCalcWeekday(startDay) : '';
+    const title = d.estimated
+      ? t('usage_calc_ledger_bar_title_estimated', [day, _usageCalcNum(pts)])
+      : t('usage_calc_ledger_bar_title', [day, _usageCalcNum(pts)]);
+    const style = d.estimated
+      ? 'fill:var(--accent,#3b82f6);fill-opacity:0.35;stroke:var(--accent,#3b82f6);stroke-width:1.5;stroke-dasharray:4 2;'
+      : 'fill:var(--accent,#3b82f6);';
+    return `<g data-day="${i}"${d.estimated ? ' data-estimated="true"' : ''}${d.partial ? ' data-partial="true"' : ''}>` +
+      `<title>${escHtml(title)}</title>` +
+      `<rect data-points="${escHtml(String(d.points))}" x="${x.toFixed(2)}" y="${(base - h).toFixed(2)}" width="${barW.toFixed(2)}" height="${h.toFixed(2)}" style="${style}"/>` +
+      `<text x="${cx}" y="${(base - h - 3).toFixed(2)}" text-anchor="middle" style="font-size:10px;fill:var(--text,#ddd);">${escHtml(_usageCalcNum(pts))}</text>` +
+      `<text x="${cx}" y="${base + 13}" text-anchor="middle" style="font-size:10px;fill:var(--text2,#999);">${escHtml(day)}</text>` +
+      (d.partial ? `<text x="${cx}" y="${base + 25}" text-anchor="middle" style="font-size:9px;fill:var(--text2,#999);">${escHtml(t('usage_calc_ledger_day_partial'))}</text>` : '') +
+      `</g>`;
+  }).join('');
+  return `<div class="usage-calc-ledger-chart" style="display:flex;flex-direction:column;gap:6px;min-width:0;">${head}` +
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escHtml(t('usage_calc_ledger_chart_aria'))}" style="display:block;max-width:100%;">` +
+    `<line x1="0" y1="${base}" x2="${W}" y2="${base}" style="stroke:var(--border,#444);stroke-width:1;"/>` +
+    bars + `</svg>${kind}</div>`;
+}
+
+function _usageCalcLedgerCostTable(res) {
+  const rows = Array.isArray(res.advice.by_lanes) ? res.advice.by_lanes : [];
+  if (!rows.length) {
+    return `<div class="usage-calc-ledger-cost-empty" style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_ledger_cost_empty'))}</div>`;
+  }
+  const head = ['usage_calc_ledger_cost_col_lanes', 'usage_calc_ledger_cost_col_measured', 'usage_calc_ledger_cost_col_planning']
+    .map(key => `<th scope="col" style="${USAGE_CALC_LANE_CELL}font-weight:600;color:var(--text2);">${escHtml(t(key))}</th>`).join('');
+  const body = rows.map(row => {
+    const lanes = escHtml(String(row.lanes));
+    return `<tr data-lanes="${lanes}">` +
+      `<td style="${USAGE_CALC_LANE_CELL}font-weight:600;">${lanes}</td>` +
+      `<td data-measured="${lanes}" style="${USAGE_CALC_LANE_CELL}">${_usageCalcNum(row.burn_per_24h)}</td>` +
+      `<td data-planning="${lanes}" style="${USAGE_CALC_LANE_CELL}">${_usageCalcNum(row.planning_burn_per_24h)}</td></tr>`;
+  }).join('');
+  return `<table class="usage-calc-ledger-cost" style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px;">` +
+    `<caption style="caption-side:top;text-align:left;font-size:13px;font-weight:600;padding-bottom:4px;">${escHtml(t('usage_calc_ledger_cost_title'))}</caption>` +
+    `<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+// The queue line reads remaining_work: the queued count, the cost per task, the estimate and
+// the typed override, and which of the two the run-flat-out figure is using.
+function _usageCalcLedgerQueue(res) {
+  const w = res.advice.remaining_work || {};
+  const hasEstimate = w.estimate_points !== undefined && w.estimate_points !== null;
+  const hasTyped = w.typed_points !== undefined && w.typed_points !== null;
+  const inUse = w.in_use === 'typed' ? t('usage_calc_ledger_in_use_typed')
+    : w.in_use === 'estimate' ? t('usage_calc_ledger_in_use_estimate') : t('usage_calc_ledger_in_use_none');
+  const line = (id, text) => `<div data-queue="${id}" style="font-size:12px;">${escHtml(text)}</div>`;
+  return `<div class="usage-calc-ledger-queue" style="display:flex;flex-direction:column;gap:2px;min-width:0;">` +
+    `<div style="font-weight:600;font-size:13px;">${escHtml(t('usage_calc_ledger_queue_title'))}</div>` +
+    line('queued', t('usage_calc_ledger_queue_line', [String(w.queue_tasks || 0), _usageCalcNum(w.cost_per_task)])) +
+    line('estimate', hasEstimate ? t('usage_calc_ledger_queue_estimate', [_usageCalcNum(w.estimate_points)]) : t('usage_calc_ledger_queue_no_estimate')) +
+    line('typed', hasTyped ? t('usage_calc_ledger_queue_typed', [_usageCalcNum(w.typed_points)]) : t('usage_calc_ledger_queue_no_typed')) +
+    line('in-use', t('usage_calc_ledger_queue_in_use', [inUse])) +
+    `</div>`;
+}
+
+// No consumer registry exists yet, so the section says so and draws no rows or figures.
+function _usageCalcLedgerConsumers() {
+  return `<div class="usage-calc-ledger-consumers" style="display:flex;flex-direction:column;gap:4px;min-width:0;">` +
+    `<div style="font-weight:600;font-size:13px;">${escHtml(t('usage_calc_ledger_consumers_title'))}</div>` +
+    `<div class="usage-calc-ledger-consumers-empty" style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_ledger_consumers_empty'))}</div>` +
+    `</div>`;
+}
+
+// The text forms are the body's own strings (usagecalc.FormatCLI and FormatComm), drawn as
+// they are, so the preview cannot disagree with the CLI or the comm channel.
+function _usageCalcLedgerText(res) {
+  const tf = res.text || {};
+  const form = (key, id, body) => `<div data-text="${id}" style="display:flex;flex-direction:column;gap:2px;min-width:0;">` +
+    `<div style="font-size:12px;font-weight:600;">${escHtml(t(key))}</div>` +
+    `<pre style="margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;">${escHtml(body || t('usage_calc_ledger_text_empty'))}</pre></div>`;
+  return `<div class="usage-calc-ledger-text" style="display:flex;flex-direction:column;gap:6px;min-width:0;">` +
+    `<div style="font-weight:600;font-size:13px;">${escHtml(t('usage_calc_ledger_text_title'))}</div>` +
+    form('usage_calc_ledger_text_cli', 'cli', tf.cli) + form('usage_calc_ledger_text_comm', 'comm', tf.comm) +
+    `</div>`;
+}
+
+function _usageCalcBurnLedger(res) {
+  return `<div class="usage-calc-burn-ledger" style="display:flex;flex-direction:column;gap:14px;min-width:0;max-width:100%;">` +
+    _usageCalcLedgerChart(res) +
+    `<div class="usage-calc-ledger-costs" style="display:flex;flex-direction:column;gap:6px;min-width:0;">` +
+    _usageCalcLedgerCostTable(res) +
+    `<div style="font-size:11px;color:var(--text2);">${escHtml(t('usage_calc_ledger_cost_note'))}</div>` +
+    _usageCalcLedgerQueue(res) +
+    `</div>` +
+    _usageCalcLedgerConsumers() +
+    _usageCalcLedgerText(res) +
+    `</div>`;
+}
+
+// The verdict card's reading fields, open from the start. The design puts the reading fields in
+// the ledger's first card, and they are the same rows the other two variants draw, so a reading
+// reads the same in all three.
+function _usageCalcLedgerVerdictDetails(res) {
+  return `<div class="usage-calc-ledger-fields" style="margin-top:4px;">${usageCalcFieldRowsHtml(res)}</div>`;
+}
+
+window.usageCalcRenderers['burn-ledger'] = _usageCalcBurnLedger;
+window.usageCalcVerdictDetails['burn-ledger'] = _usageCalcLedgerVerdictDetails;
+
+function usageCalcRerender() {
+  const ctl = window._listLoaders && window._listLoaders.automation_usage;
+  if (ctl) ctl.paint();
+}
+
+// The usage card's loader, registered like the capacity card's: a skeleton on
+// the first load, the daemon's error plainly with Retry, and the last good body
+// kept beneath it. It does not poll; the card refreshes when the operator asks
+// (refresh, a saved reading, a changed policy). The request is one GET of
+// /api/usage/advice, with the chosen policy as a query value when one is picked.
+function _automationUsageLoader() {
+  return window._listLoaders.automation_usage || listLoader({
+    key: 'automation_usage', el: 'automationUsageCard', url: '/api/usage/advice',
+    fetch: (url, init) => {
+      const q = _usageCalc.policy ? '?policy=' + encodeURIComponent(_usageCalc.policy) : '';
+      _usageCalc.error = '';
+      return apiFetch(url + q, init).then(body => { _usageCalc.body = body; return body; });
+    },
+    failedText: msg => t('usage_calc_error', [msg]),
+    active: () => !!document.getElementById('automationUsageCard'),
+    render: body => {
+      _usageCalc.body = body;
+      return window.usageCalcFrameHtml(body, { variant: _usageCalc.variant, policy: _usageCalc.policy, error: _usageCalc.error });
+    },
+  });
+}
+window.usageCalcRefresh = function () {
+  return _automationUsageLoader().load();
+};
+
 // ── Lane fill card ──────────────────────────────────────────────────────────
 // laneFillCardHtml(status) turns the decoded GET /api/autonomous/lane-fill body
 // into the Automation sub-tab's lane card: the mode, one row per lane, the
@@ -26559,6 +27454,7 @@ function _automationBodyHTML() {
           `<input id="automationSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_filter_search'))}" aria-label="${escHtml(t('automation_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomationSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">`)}
       </div>
       <div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationUsageCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
       <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
@@ -26574,7 +27470,7 @@ function _automationMount() {
   _automationState.loaded = false;
   // The capacity card and the list load in parallel; each loader owns its
   // own loading and failed states, so one failing never blanks the other.
-  listLoaderAll([_automationCapacityLoader(), _automationLaneFillLoader(), _automationTriageLoader(), _automationLoader()]);
+  listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationTriageLoader(), _automationLoader()]);
   // The progress card runs on its own state-machine path; it renders when the
   // data lands and its failed state never touches the list or capacity card.
   if (typeof window.loadProgressCard === 'function') window.loadProgressCard();
@@ -26583,7 +27479,7 @@ function _automationMount() {
 // _automationStopLoaders ends the polling and tick timers of the Automation
 // list and capacity loaders. Their state stays, and load() starts them again.
 function _automationStopLoaders() {
-  ['automation', 'automation_capacity', 'automation_lane_fill', 'automation_triage'].forEach(k => {
+  ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage'].forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
   });

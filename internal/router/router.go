@@ -1155,6 +1155,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleUsageBackoff(cmd)
 	case CmdBudget:
 		r.handleBudget(cmd)
+	case CmdUsage:
+		r.handleUsage(cmd)
 	case CmdStale:
 		r.handleStale(cmd)
 	case CmdPeers:

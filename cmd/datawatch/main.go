@@ -401,6 +401,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newFederationCmd(),      // BL316 S2 — federation peer and group registry
 		newCapacityCmd(),        // capacity admission ledger status
 		newBudgetCmd(),          // per-LLM dollar budget status
+		newUsageCmd(),           // weekly usage allowance: advice, readings, extra credit, remaining work
 		newAlertRulesCmd(),      // S14b — per-pod alert rules + observer-driven autoscaling
 		newMemoryCmd(),          // v7.0.0 S5 — scope-hierarchy memory
 		newMarketplaceCmd(),     // alpha.33 #244 — Ollama marketplace
@@ -6415,6 +6416,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// into the ledger above. Idle (no HTTP, no blocking) unless a peer
 			// opted in AND a match was confirmed by the operator.
 			wireFingerprint(ctx, cfg, httpServer, capLedger)
+			// Usage calculator advice service (design decision 6): composes the live
+			// config, the shared readings series and the daemon-local typed figure,
+			// and prices the finish-early estimate from the daemon's queued tasks.
+			// Serves GET /api/usage/advice and PUT/DELETE /api/usage/remaining-work.
+			if err := httpServer.AttachUsageCalculator(usagecalcQueue{m: amgr}); err != nil {
+				log.Printf("[usage] wire calculator advice service: %v", err)
+			}
 			// Pin keepers re-pin each pinned compute node's model after ollama drops it.
 			stopPinKeepers := startPinKeepers(ctx, cfg, computeReg, alertStore, capLedger)
 			go func() {

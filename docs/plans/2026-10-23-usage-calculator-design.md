@@ -4,9 +4,9 @@
 
 **Version:** current main when written (no release number is recorded in this document)
 
-**Status:** Design only. No implementation. The operator compares the variants and chooses.
+**Status:** Implemented on this line and live in the running build: the design is in effect per the operator's decisions in `docs/plans/2026-10-25-usage-calculator-decisions.md`, and it ships in the next release above main (the merge step sets the version; the unreleased entry is in CHANGELOG). The parity surface and implementation paths are in `## Parity surface` at the end of this document. Operator-facing guide: `docs/howto/usage-calculator.md`.
 
-**Scope:** documents and mockup pages under docs/plans/ only
+**Scope:** design document; the implementation now spans `internal/usagecalc/`, `internal/server/usage_calculator*.go` + `internal/server/usage_readings*.go`, `internal/router/usage_calculator.go`, `internal/mcp/usage_calculator*.go`, `cmd/datawatch/cli_usage.go`, and the usage-calculator sections of `internal/server/web/app.js`
 
 ## Purpose and scope
 
@@ -485,7 +485,7 @@ The build follows the Configuration Accessibility Rule and the Mobile-Parity Rul
 - **CLI command:** `datawatch usage advice`, beside `cmd/datawatch/cli_budget.go`.
 - **Comm channel command:** `usage advice`, in `internal/router/commands.go`.
 - **Docs and howto pages:** a section in `docs/operations.md` and `docs/setup.md` with the five-method table, and a howto page that `docs/howto/automata-capacity.md` links to, since that page already covers the back-off and the budget.
-- **Mobile tracking issue:** one datawatch-app issue for Android and iPhone, filed once the operator has chosen a variant. The Mobile-Parity Rule requires it for any operator-visible change. This pass files none and does not choose.
+- **Mobile tracking issue:** one datawatch-app issue for Android and iPhone, filed once the operator has chosen a variant — filed 2026-10-25: scope [app#286](https://github.com/dmz006/datawatch-app/issues/286) and locale keys [app#287](https://github.com/dmz006/datawatch-app/issues/287); the client contract is `docs/plans/2026-10-25-usage-calculator-mobile-contract.md`. The Mobile-Parity Rule requires it for any operator-visible change. This pass files none and does not choose.
 
 ### 6. Federation: open question for the operator
 
@@ -546,3 +546,23 @@ The choice of variant is the operator's choice. This design pass does not pick a
 8. Does a reading belong to one daemon, or to the shared account across federated daemons? The answer decides where the series is stored and whether the REST read needs a federation capability guard, as section 6 of "Shipping variants side by side behind a setting" describes.
 9. How should bought extra credit, as on 2026-10-17, appear next to the weekly allowance? A top-up can take the account past 100 percent, but the verdict and the run-out figures assume a ceiling at 100 and the model has no field for extra credit.
 10. Should the older reading entry for the 22:08 reading be corrected? The entry under "Inflight caps set to match the lane model" in `docs/plans/2026-10-14-concurrency-and-budget-design.md` gives 1.39 days, 105 percent and a run out around 05:00, while the timestamps give 1.41 days, 106.0 percent and 02:02, as the worked example notes.
+
+## Parity surface
+
+The ten open questions above were settled in `docs/plans/2026-10-25-usage-calculator-decisions.md`, and the result is a single daemon-computed model every access surface renders — the same numbers from all of them, by construction and by test (`internal/usagecalc` parity tests, the 21 node parity tests over the shared `usage-calculator-fixture.js`, and the browser story TS-819):
+
+| Access method | What it shows and does | Where |
+|---|---|---|
+| YAML / config on all five surfaces | the ten `usage.calculator.*` keys — `variant`, `policy`, `safety_points`, `cost_per_task_points`, `baseline_per_24h`, `max_lanes`, `reset_weekday`, `reset_time`, `reset_zone`, `keeper` — each PUT-able individually or together; an invalid key rejects the whole patch, none applies | `internal/usagecalc` defaults + `internal/server/usage_calculator_config.go` (apply-then-confirm, the budget-block pattern) |
+| CLI | `datawatch usage advice [--variant V] [--policy P] [--lanes N] [--json]` (per-call overrides, validated locally, never stored), `usage reading add --percent \\| --spend-usd [flags]`, `usage reading list`, `usage reading delete <id>`, `usage extra-credit <pts>`, `usage remaining-work <pts\\|clear>` | `cmd/datawatch/cli_usage.go` (thin proxy of the daemon, `cli_usage_test.go`) |
+| Web UI (PWA) | the usage-calculator card on the Automation sub-tab: verdict chip (policy + verdict + the one burn figure), the three-variant switcher (`all` shows every layout over the same reading), the last-copy marker and week-average notice, zero-lanes as operator choice; the settings card with exactly the ten keys, saving a field issues `PUT /api/config` with the dotted key | the usage-calculator sections of `internal/server/web/app.js` |
+| REST API | `GET /api/usage/advice` (optional per-call `variant`/`policy`/`lanes`), `GET`/`POST /api/usage/readings`, `DELETE /api/usage/readings/<id>`, `PUT /api/usage/extra-credit`, `PUT`/`GET /api/usage/remaining-work`; the `usage.read` / `usage.write` capabilities gate the matching verbs; a JSON-lines audit event records every mutation | `internal/server/usage_calculator_advice.go`, `usage_readings.go`, `usage_calculator_config.go`, `usage_calculator.go` |
+| Comm channel | `usage`, `usage advice [variant=V] [policy=P] [lanes=N]`, `usage reading <percent> [lanes=N] [session=N]`, `usage extra <pts>`, `usage work <pts\\|clear>` — the handler proxies the daemon REST loopback and the reply is the shared 50-column text rendering, an invalid form replies with the grammar and sends nothing | `internal/router/usage_calculator.go` + `internal/router/commands.go` |
+| MCP tools | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` (plus `config_set` for the variant key) — proxies of the same REST surface, read tools capped at `usage.read`, write tools at `usage.write` | `internal/mcp/usage_calculator*.go` + `internal/federation/mcp_tool_caps.go` |
+| Android / iPhone (native clients) | **Pending — issue filed:** the calculator has no native screens yet; the datawatch-app issues are [app#286](https://github.com/dmz006/datawatch-app/issues/286) (scope, filed 2026-10-25) and [app#287](https://github.com/dmz006/datawatch-app/issues/287) (locale keys), both mirrored by the contract in `docs/plans/2026-10-25-usage-calculator-mobile-contract.md` — `❌ pending` in the Account usage calculator row of `docs/parity-status.md` | `docs/parity-status.md` |
+
+The two planned-not-built reading sources — the operator pasting a usage text and daemon-side account or API sources — are also deliberately out of this release: the reading model stays manual and typed for now, and the source gate is defined and tested so those sources can be added on top without touching the model (decision 5).
+
+Shared state, per the decisions: the readings series and extra credit live on the keeper daemon (`data/usage/series.json`, `internal/usagecalc/store.go` + `shared.go`), peers read with `usage.read` and mark a last copy as stale, writes forward to the keeper; remaining work is daemon-local. The calculator keeps its advice-only bar — it advises, it never stops or slows a lane.
+
+Coverage: the `## Usage and cost calculator — unreleased` section of `docs/testing-tracker.md` (plus the MCP and comm-channel detail sections below it), live evidence in release smoke section 82 (record run `smoke-20261028T031253-2859890`, pass), and the operator-facing how-to `docs/howto/usage-calculator.md`.

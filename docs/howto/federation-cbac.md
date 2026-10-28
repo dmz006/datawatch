@@ -72,20 +72,20 @@ datawatch federation peer test peer-alpha
 
 | Group | Key capabilities |
 |---|---|
-| `monitor` | health:read, analytics:read, sessions/agents/alerts list |
+| `monitor` | health:read, analytics:read, sessions/agents/alerts list, usage:read |
 | `session-viewer` | sessions:list/read, agents:list/read |
 | `session-operator` | session-viewer + write/kill/input + pipeline start/cancel |
 | `inference-admin` | llms:*, compute:* |
 | `config-reader` | config:read, docs:read |
-| `config-admin` | config:read/write |
-| `analytics-viewer` | analytics:read, dashboard:read, audit:read |
+| `config-admin` | config:read/write, usage:read/write |
+| `analytics-viewer` | analytics:read, dashboard:read, audit:read, usage:read |
 | `autonomous-operator` | autonomous:list/read/write/run |
 | `council-operator` | council:list/read/run |
-| `federation-peer` | health:read, federation:self |
+| `federation-peer` | health:read, federation:self, usage:read |
 | `comm-bridge` | sessions:list/read/input, comm:read/write, alerts:list/read |
-| `session-default` | Design A3's per-session scoped-credential default — sessions/agents, queue, results, memory, comm, docs, autonomous-read, pipelines, council; NOT secrets/config-write/federation/tailscale/LLM-registry/plugin-install |
-| `read-only` | all :read/:list caps across every surface |
-| `full-control` | all 56 capabilities |
+| `session-default` | Design A3's per-session scoped-credential default — sessions/agents, queue, results, memory, comm, docs, autonomous-read, pipelines, council, usage:read/write; NOT secrets/config-write/federation/tailscale/LLM-registry/plugin-install |
+| `read-only` | all :read/:list caps across every surface, incl. usage:read |
+| `full-control` | all 58 capabilities |
 
 **`federation-peer` is intentionally minimal as of v9.0.0 (SEC-009, breaking
 change)** — a newly registered peer can check daemon health and read its own
@@ -99,7 +99,7 @@ needs (see "Grant specific capabilities" above).
 
 ### Individual surface:action capabilities
 
-56 individual capabilities across 21 surfaces:
+58 individual capabilities across 22 surfaces:
 
 ```
 sessions:list   sessions:read   sessions:write  sessions:kill  sessions:input
@@ -121,6 +121,7 @@ dashboard:read  dashboard:write
 queue:read      queue:write
 results:list    results:read    results:write
 memory:read     memory:write
+usage:read      usage:write
 ```
 
 `queue:*` and `results:*` were added in v8.39.24 (Design A2 audit) — the
@@ -129,6 +130,18 @@ durable work queue (`/api/queue*`) and structured agent result store
 
 `memory:*` was added in v8.39.25 (Design A3) to scope the memory_* MCP
 tools for the new `session-default` group.
+
+`usage:*` adds the usage-calculator readings series federation: the daemon
+named by `usage.calculator.keeper` keeps the series and answers
+`GET`/`POST /api/usage/readings`, `DELETE /api/usage/readings/{id}` and
+`PUT /api/usage/extra-credit` for peers; the other daemons read through the
+keeper (hop-marked requests always serve the keeper's local store) and
+forward writes to it. `usage:read` is granted to the read groups
+(`monitor`, `analytics-viewer`, `federation-peer`, `session-default`,
+`read-only`), `usage:write` to the config/admin groups
+(`config-admin`, `session-default`, `full-control`). A peer with
+`usage:read` cannot append or delete readings — grant `usage:write`
+deliberately.
 
 ### Design A3 — per-session scoped credential
 

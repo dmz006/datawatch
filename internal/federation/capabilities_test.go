@@ -29,6 +29,9 @@ func TestResolve_BuiltinGroup(t *testing.T) {
 	if !hasCap(federation.CapHealthRead) {
 		t.Errorf("monitor should include %s", federation.CapHealthRead)
 	}
+	if !hasCap(federation.CapUsageRead) {
+		t.Errorf("monitor should include %s", federation.CapUsageRead)
+	}
 	if !hasCap(federation.CapSessionsList) {
 		t.Errorf("monitor should include %s", federation.CapSessionsList)
 	}
@@ -119,6 +122,8 @@ func TestFullControl_HasAll(t *testing.T) {
 		federation.CapQueueRead, federation.CapQueueWrite,
 		federation.CapResultsList, federation.CapResultsRead, federation.CapResultsWrite,
 		federation.CapPluginRead, federation.CapPluginWrite,
+		// Federated usage calculator series.
+		federation.CapUsageRead, federation.CapUsageWrite,
 	}
 	for _, c := range must {
 		if !has[c] {
@@ -153,6 +158,7 @@ func TestFederationPeer_DefaultCaps(t *testing.T) {
 		federation.CapAlertsList, federation.CapAlertsRead,
 		federation.CapDashboardRead,
 		federation.CapFederationList, federation.CapFederationRead,
+		federation.CapUsageRead, federation.CapUsageWrite,
 	}
 	for _, c := range noLonger {
 		if has[c] {
@@ -254,6 +260,43 @@ func TestPluginCaps_NotInDefaultPresets(t *testing.T) {
 			if c == federation.CapPluginRead || c == federation.CapPluginWrite {
 				t.Errorf("builtin group %q should NOT include %s", g.Name, c)
 			}
+		}
+	}
+}
+
+// TestUsageCapabilityGroups — the shared usage calculator series splits
+// into usage:read (a peer reading the keeper's readings) and usage:write
+// (a peer forwarding writes to the keeper). Presets grant them the same
+// way as their read/write ancestors: read-only presets grant read, the
+// config + session operational grants grant both, and the minimal peer
+// default grants neither.
+func TestUsageCapabilityGroups(t *testing.T) {
+	cases := []struct {
+		group    string
+		required string
+		want     bool
+	}{
+		{"monitor", federation.CapUsageRead, true},
+		{"monitor", federation.CapUsageWrite, false},
+		{"read-only", federation.CapUsageRead, true},
+		{"read-only", federation.CapUsageWrite, false},
+		{"analytics-viewer", federation.CapUsageRead, true},
+		{"analytics-viewer", federation.CapUsageWrite, false},
+		{"config-admin", federation.CapUsageRead, true},
+		{"config-admin", federation.CapUsageWrite, true},
+		{"session-default", federation.CapUsageRead, true},
+		{"session-default", federation.CapUsageWrite, true},
+		{"session-viewer", federation.CapUsageRead, false},
+		{"session-viewer", federation.CapUsageWrite, false},
+		{"federation-peer", federation.CapUsageRead, false},
+		{"federation-peer", federation.CapUsageWrite, false},
+		{"full-control", federation.CapUsageRead, true},
+		{"full-control", federation.CapUsageWrite, true},
+	}
+	for _, tc := range cases {
+		granted := federation.Resolve([]string{tc.group}, nil)
+		if got := federation.Check(granted, tc.required); got != tc.want {
+			t.Errorf("%s: %s = %v, want %v", tc.group, tc.required, got, tc.want)
 		}
 	}
 }

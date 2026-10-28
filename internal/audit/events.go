@@ -148,4 +148,24 @@ const (
 	// Details: question_id, actor, surface, reason, pattern (the name of
 	// the matched rule only, NEVER the text).
 	ActionQuestionAnswerRefused = "question_answer_refused"
+	// Usage-calculator record mutations (Design 8 / Decision 9). Each is
+	// emitted once, on the daemon that stores the write — the keeper for the
+	// shared series, the daemon itself for its local remaining-work figure.
+	//
+	// ActionUsageReadingAdded — a typed usage reading was saved to the shared
+	// record. Subject: the reading's id. Details: source, at (RFC 3339), and
+	// whichever figures the reading carried (percent, spend_usd,
+	// session_percent, lanes).
+	ActionUsageReadingAdded = "usage_reading_added"
+	// ActionUsageReadingDeleted — a usage reading was deleted from the shared
+	// record (the operator correcting a typed mistake). Subject: the deleted
+	// reading's id.
+	ActionUsageReadingDeleted = "usage_reading_deleted"
+	// ActionUsageExtraCreditSet — the bought extra credit was set (points, 0
+	// or more). Details: points.
+	ActionUsageExtraCreditSet = "usage_extra_credit_set"
+	// ActionUsageRemainingWorkSet — the typed remaining-work figure
+	// (points) of this daemon's calculator was set, or cleared
+	// (details: cleared true, points omitted).
+	ActionUsageRemainingWorkSet = "usage_remaining_work_set"
 )

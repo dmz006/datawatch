@@ -159,6 +159,8 @@ can prefer a GPU lane, a Claude lane or either. It never merges and never holds
 GPU work because of Claude usage limits — see
 [automation-lane-fill.md](docs/howto/automation-lane-fill.md).
 
+- **Usage calculator** — type a reading of your weekly provider allowance and get advice on whether you are within budget and what each lane count costs; it only advises and never stops a lane. See [usage-calculator.md](docs/howto/usage-calculator.md).
+
 **v9.0.0 — Memory Lifecycle Complete.** The
 first major version since the memory-scope/lifecycle work landed:
 per-session and shared memory scopes, seeding/harvest/archive across

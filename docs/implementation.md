@@ -179,6 +179,35 @@ Config: `autonomous.usage_backoff` (`pause_backend` | `off`, default `pause_back
 `/api/usage-backoff`, `usage_backoff_*` MCP tools, `datawatch usage-backoff`, comm
 `usage_backoff`. See `docs/howto/automata-capacity.md`.
 
+Usage calculator settings (`internal/config/usage_calculator.go`): the `usage.calculator`
+block holds `variant` (`pace-gauge` | `lane-planner` | `burn-ledger` | `all`, default `all`),
+`policy` (`use-all` | `pace` | `finish-early`, default `use-all`), `safety_points` (0 to 50,
+default 5), `cost_per_task_points` (above 0, default 0.1, a starting figure to calibrate
+against readings), `baseline_per_24h` (0 to 20, default 3), `max_lanes` (1 to 8, default 3),
+`reset_weekday` (`sunday`..`saturday`, default `sunday`), `reset_time` (24-hour `HH:MM`,
+default `08:00`), `reset_zone` (IANA zone name, default `UTC`; a fixed offset or an unknown
+name is rejected) and `keeper` (federation peer that keeps the shared readings; empty means
+this daemon). Normalisation, `ValidateUsageCalculator*` and `EffectiveUsageCalculator` follow
+`usage_backoff.go`. A saved value that is no longer allowed falls back to its default, and a
+retired `variant` falls back to `all` with one log line. All keys are settable at runtime:
+`GET`/`PUT /api/config` (`internal/server/usage_calculator_config.go`, a 400 on an invalid
+value), comm `configure usage.calculator.<key>=<value>`, the generic `config_set` tool and
+CLI `datawatch config set`. The PWA Settings fields are a later change.
+
+Shared readings federation (`internal/usagecalc/shared.go`,
+`internal/server/usage_readings.go`): `usage.calc.SharedSeries` wires one daemon's local
+store to the federation — with an empty `keeper` the daemon keeps the series; otherwise
+it reads the series from the keeper daemon and forwards the writes there, holding the
+last on-disk copy (served stale-flagged when the keeper is down, decision 8). The REST
+surface: `GET /api/usage/readings` (read), `POST /api/usage/readings`,
+`DELETE /api/usage/readings/{id}`, and `PUT /api/usage/extra-credit` (write), gated on
+`federation.CapUsageRead`/`CapUsageWrite`. Requests carrying `X-Usage-Hop: 1` (sent by a
+peer's fetch) always see the keeper's local store, whatever that daemon's own keeper
+setting says — the read can never re-forward. A write that cannot reach the keeper is
+refused whole and stored locally nowh ere (`usagecalc.ErrKeeperUnreachable`). A stale
+read carries `X-Usage-Stale` / `X-Usage-Copied-At` response headers; the body is always
+the same bare record. Server-side tests are in `internal/server/usage_readings_test.go`.
+
 LLM role tags (`internal/inference/role_resolve.go`, `role_contention.go`): `llms[].roles`
 is an open set of strings (trimmed, lower-cased, de-duplicated; empty rejected). An
 explicit per-call-site backend or model always wins; otherwise the entry claiming the role

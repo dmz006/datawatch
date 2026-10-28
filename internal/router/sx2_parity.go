@@ -9,6 +9,7 @@ package router
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,7 +26,20 @@ import (
 )
 
 // commHTTP is the shared HTTP client for in-process REST calls.
-var commHTTP = &http.Client{Timeout: 60 * time.Second}
+//
+// The loopback targets 127.0.0.1 on this process's own listeners, and under
+// tls_enabled the plain port 302-redirects to the daemon's own (often
+// auto-generated, self-signed) TLS port — so certificate verification cannot
+// succeed there even in a fully isolated sandbox. The call stays on the host
+// and reaches our own process, so skipping verification is the same trust
+// posture the smoke/CLI checks already take (curl -sk on the local daemon);
+// it changes nothing for a non-TLS loopback.
+var commHTTP = &http.Client{
+	Timeout: 60 * time.Second,
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // 127.0.0.1 loopback to this process's own listener
+	},
+}
 
 // commGet calls GET <local>/<path> and returns the body.
 func (r *Router) commGet(path string, q url.Values) (string, error) {

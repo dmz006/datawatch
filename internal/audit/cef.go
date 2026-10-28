@@ -200,6 +200,14 @@ func cefSignature(action string) (int, string, int) {
 		return 54, "AnswerSuperseded", 4
 	case ActionQuestionAnswerRefused:
 		return 55, "QuestionAnswerRefused", 6
+	case ActionUsageReadingAdded:
+		return 56, "UsageReadingAdded", 3
+	case ActionUsageReadingDeleted:
+		return 57, "UsageReadingDeleted", 4
+	case ActionUsageExtraCreditSet:
+		return 58, "UsageExtraCreditSet", 3
+	case ActionUsageRemainingWorkSet:
+		return 59, "UsageRemainingWorkSet", 2
 	default:
 		return 0, "AuditEvent", 3
 	}

@@ -2157,6 +2157,53 @@ tailscale:
     allowed_peers: []          # node names/tags that need access to the dw mesh
     managed_tags: []           # ACL tags owned by datawatch; default: 4 dw tags
 
+# ── Usage and cost calculator ──
+# Settings for the weekly usage calculator. Every key is optional and settable
+# at runtime without a restart. A saved value that is no longer allowed (for
+# example a retired variant) falls back to its default and the daemon logs one
+# line saying so. Access methods for every key below:
+#   YAML          this block in ~/.datawatch/config.yaml
+#   REST API      PUT /api/config with {"usage.calculator.<key>": value};
+#                 GET /api/config returns the effective values under
+#                 usage.calculator. An invalid value is a 400 and changes nothing.
+#   Comm channel  `configure usage.calculator.<key>=<value>`
+#   MCP           the generic config_set tool, key usage.calculator.<key>
+#   CLI           `datawatch config set usage.calculator.<key> <value>`
+#   Web UI        the Settings field arrives with the calculator screen; until
+#                 then use one of the methods above.
+usage:
+  calculator:
+    # Layout shown: pace-gauge | lane-planner | burn-ledger | all. Default all
+    # (the three side by side; the operator picks one later).
+    variant: all
+    # Advice target: use-all (run until the allowance is used up), pace (aim
+    # safety_points under the pace line) or finish-early (run flat out until
+    # the remaining work is done). Default use-all.
+    policy: use-all
+    # Margin under the pace line for the pace policy, in points of the weekly
+    # allowance. 0 to 50, default 5.
+    safety_points: 5
+    # Weekly points one queued task is estimated to cost, used to compute the
+    # remaining work for finish-early. Above 0, default 0.1. A starting figure:
+    # calibrate it against real readings.
+    cost_per_task_points: 0.1
+    # Idle burn in points per 24 hours with no lane running. 0 to 20, default 3.
+    baseline_per_24h: 3
+    # Largest lane count the planner offers. 1 to 8, default 3.
+    max_lanes: 3
+    # When the weekly allowance resets: a weekday (sunday..saturday), a local
+    # 24-hour HH:MM clock time and an IANA zone name. The zone's own rules are
+    # followed, so a daylight saving change stays correct. A fixed UTC offset
+    # such as +05:00 or Etc/GMT-5 is never accepted; an unknown zone name is
+    # rejected. Defaults: sunday, 08:00, UTC.
+    reset_weekday: sunday
+    reset_time: "08:00"
+    reset_zone: UTC
+    # Name of the federation peer that keeps the shared readings (the weekly
+    # allowance belongs to the account, not to one daemon). Empty means this
+    # daemon keeps them.
+    keeper: ""
+
 # ── Plugin Framework (BL33 — v3.11.0) ──
 # Subprocess plugins discovered under <data_dir>/plugins/<name>/ with
 # manifest.yaml + executable entry. Line-oriented JSON-RPC over stdio.

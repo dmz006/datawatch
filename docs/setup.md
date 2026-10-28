@@ -537,6 +537,33 @@ See [docs/memory.md](memory.md) for full memory documentation.
 
 ---
 
+## Usage calculator setup (optional)
+
+To get lane advice against your provider's weekly allowance, set the reset
+moment to match what the provider shows, then choose a policy. Choose the
+layout with `usage.calculator.variant`; leave it on `all` to compare the three
+PWA variants for a full Sunday-to-Sunday week before picking one.
+
+```yaml
+usage:
+  calculator:
+    variant: all
+    policy: pace
+    reset_weekday: sunday
+    reset_time: "08:00"
+    reset_zone: America/New_York
+```
+
+| Method | How |
+|--------|-----|
+| **YAML config** | `usage.calculator.*` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch config set usage.calculator.<key> <value>`; `datawatch usage advice` |
+| **Web UI** | The calculator screen and its Settings fields (not yet shipped; use another method) |
+| **REST API** | `PUT /api/config` with `{"usage.calculator.<key>": value}`; `GET /api/usage/advice` |
+| **Comm channel** | `configure usage.calculator.<key>=<value>`; `usage advice` |
+
+See [howto/usage-calculator.md](howto/usage-calculator.md).
+
 ## Troubleshooting
 
 ### signal-cli fails to start

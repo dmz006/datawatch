@@ -124,6 +124,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		// Shared Automata and Automation tile: the open and overflow actions.
 		"work_tile_open",
 		"work_tile_more",
+		"settings_usage_calculator_variant",
 		// v5.28.1 — universal yes/no + loading + no-alerts placeholder.
 		// Datawatch-specific keys not yet in Android — pending mirror
 		// pull (see datawatch-app#39).

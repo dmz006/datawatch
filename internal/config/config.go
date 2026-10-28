@@ -462,6 +462,10 @@ type Config struct {
 	// through every config channel per the parity rule.
 	Autonomous AutonomousConfig `yaml:"autonomous,omitempty" json:"autonomous,omitempty"`
 
+	// Usage holds the usage and cost calculator settings (usage.calculator.*).
+	// All keys are reachable through every config channel per the parity rule.
+	Usage UsageConfig `yaml:"usage,omitempty" json:"usage,omitempty"`
+
 	// Plugins (BL33, v3.11.0) — subprocess plugin framework.
 	// Disabled by default. See docs/api/plugins.md.
 	Plugins PluginsConfig `yaml:"plugins,omitempty" json:"plugins,omitempty"`
@@ -3779,6 +3783,7 @@ func DefaultConfig() *Config {
 			OllamaChunkTimeoutSec:  1200,
 			OllamaHeaderTimeoutSec: 900,
 		},
+		Usage: UsageConfig{Calculator: DefaultUsageCalculator()},
 		Autonomous: AutonomousConfig{
 			AutoFixRetries:          1,
 			MaxConcurrentTasks:      1,
@@ -4226,6 +4231,7 @@ func applyDefaults(cfg *Config) {
 	}
 	cfg.Autonomous.UsageBackoff = normalizeUsageBackoff(cfg.Autonomous.UsageBackoff)
 	cfg.Autonomous.BackoffMaxWaitMinutes = normalizeBackoffMaxWaitMinutes(cfg.Autonomous.BackoffMaxWaitMinutes)
+	cfg.Usage.Calculator = normalizeUsageCalculator(cfg.Usage.Calculator, usageCalculatorLogf)
 	if cfg.Autonomous.RoleScanIntervalSeconds < 1 {
 		cfg.Autonomous.RoleScanIntervalSeconds = RoleScanIntervalDefaultSeconds
 	}

@@ -292,6 +292,13 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/profiles/clusters", api.handleClusterProfiles)
 	apiMux.HandleFunc("/api/profiles/clusters/", api.handleClusterProfiles)
 
+	// Shared usage-calculator readings series (keeper/peer federation, decision 8).
+	apiMux.HandleFunc("/api/usage/readings", api.handleUsageReadings)
+	apiMux.HandleFunc("/api/usage/readings/", api.handleUsageReadingDelete)
+	apiMux.HandleFunc("/api/usage/extra-credit", api.handleUsageExtraCredit)
+	apiMux.HandleFunc("/api/usage/advice", api.handleUsageAdvice)
+	apiMux.HandleFunc("/api/usage/remaining-work", api.handleUsageRemainingWork)
+
 	// F10 sprint 3 — agent lifecycle routes.
 	apiMux.HandleFunc("/api/agents/audit", api.handleAgentAudit)     // BL107
 	apiMux.HandleFunc("/api/agents/peer/send", api.handlePeerSend)   // BL104

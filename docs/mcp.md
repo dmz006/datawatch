@@ -250,6 +250,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
 | Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_triage`, `autonomous_prd_set_lane_preference`, `capacity_status` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
+| Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
@@ -1403,6 +1404,143 @@ List the results posted by scheduled jobs.
 | `schedule_name` | string | No | When set: the full retained history for just that schedule (oldest → newest). When omitted: one summary per schedule — latest result, retained entry count, and the recent status sequence that powers the sparkline. |
 
 ---
+
+## Usage Calculator
+
+The account usage calculator: a shared usage-readings series plus one advice
+result saying how many lanes can still run and when the cycle ends. Advice
+only — the calculator never stops or slows lanes. The readings series is
+shared across federated daemons through a keeper; a peer forwards writes to
+the keeper (stored once). A read served from the last on-disk copy because
+the keeper could not be reached carries the stale markers (`stale`,
+`stale_reason`, `copied_at`).
+
+Variant and policy are independent: the variant picks the answer shape, the
+policy picks the spend target. Where both are stored and passed, the tool
+argument overrides the stored setting for this one call only.
+
+### `usage_advice`
+
+One advice result: the latest reading of the shared series (percent and/or
+spend, when, session percent, lanes), the extra credit and effective
+ceiling, lane choice (recent lanes and the max), the pace line and headroom
+after the safety margin, the one burn figure (the weekly average, with a
+fallback notice when the recent window fell back to 48h), the projected end
+of cycle per burn line, run-out warnings, the finish-early estimate (queue ×
+per-task cost vs the typed remaining work) under the run-flat-out policy, and
+the plain-English advice block naming the formulas used.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `variant` | string | No | Answer shape; overrides the stored variant for this call only |
+| `policy` | string | No | Spend target; overrides the stored policy for this call only |
+| `lanes` | number | No | Whole number of 0 or more; overrides the stored max lanes for this call only |
+| `cost` | number | No | Points of 0 or more; the per-task cost used for the finish-early estimate |
+
+Reads (`usage:read`).
+
+### `usage_readings`
+
+The shared readings series: the readings the account has been measured at
+(percent and/or spend, when, session percent, lanes, source), the bought
+extra credit, and the per-policy remaining-work figure. No parameters.
+
+Reads (`usage:read`).
+
+### `usage_reading_add`
+
+Append one reading to the shared series.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `percent` | number | One of | 0–100, the account's own number. Exactly one of `percent` / `spend_usd`; both or neither is rejected |
+| `spend_usd` | number | One of | 0 or more. Exactly one of `percent` / `spend_usd` |
+| `at` | string | No | RFC 3339 time; now when omitted |
+| `session_percent` | number | No | 0–100, the account's session number (the secondary reading) |
+| `lanes` | number | No | 0 or more, the lanes that were in play when the reading was taken |
+
+Writes (`usage:write`). The source is the built (typed) kind; the planned
+pasted and account kinds are not built yet (they answer 501 at REST) and are
+never sent by the tool.
+
+### `usage_reading_delete`
+
+Delete one reading from the shared series by its id (see `usage_readings`).
+Unknown id answers 404; the storing daemon audits the operation.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | Yes | Reading id to delete |
+
+Writes (`usage:write`).
+
+### `usage_extra_credit_set`
+
+Set the bought extra credit, in points of the weekly allowance (0 or more),
+on the shared series: the effective ceiling is the weekly allowance plus this
+figure, per policy. A setting, never a reading — it stays out of the readings
+series and is shown only as its own setting. 0 is a valid setting (nothing
+extra bought).
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `points` | number | Yes | 0 or more, in points of the weekly allowance |
+
+Writes (`usage:write`).
+
+### `usage_remaining_work_set`
+
+Set the operator's typed remaining work, in points of the weekly allowance
+(0 or more), under the run-flat-out policy: the finish-early estimate
+compares the queue estimate (this daemon's unfinished tasks × the per-task
+cost) against this typed figure, and the typed figure replaces the queue
+estimate once present. A setting, never a reading: daemon-local only, it
+never enters the shared series and is never sent to another daemon.
+
+`points` is optional: omit it, or pass it as `null`, to clear the typed
+figure — the setting is removed and the finish-early estimate falls back to
+the queue estimate.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `points` | number | No | 0 or more, the typed remaining work in points; omit or pass `null` to clear |
+
+Writes (`usage:write`).
+
+### Examples
+
+One call per tool:
+
+```
+usage_advice(lanes=5, cost=2.5)
+usage_advice(variant="pace-gauge", policy="run-flat-out")
+usage_readings()
+usage_reading_add(percent=42.5, at="2026-12-15T09:00:00Z", session_percent=33, lanes=2)
+usage_reading_add(spend_usd=6.75)
+usage_reading_delete(id="r-8f2c1d")
+usage_extra_credit_set(points=25)
+usage_remaining_work_set(points=15.5)
+usage_remaining_work_set()            # points omitted — clears the typed figure
+usage_remaining_work_set(points=null) # same, explicit
+```
+
+The calculator variant and policy are plain daemon configuration, so they are
+set with the general `config_set` tool, not a usage tool:
+
+```
+config_set(key="usage.calculator.variant", value="pace-gauge")
+config_set(key="usage.calculator.policy", value="run-flat-out")
+```
 
 ## Example Workflows in Cursor
 

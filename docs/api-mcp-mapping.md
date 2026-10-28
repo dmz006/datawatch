@@ -244,6 +244,18 @@ All rows are gated on `autonomous.questions.enabled` (off by default; `503` nami
 | `DELETE /api/usage-backoff` | `usage_backoff_clear` | Complete | Clear one backend, or all |
 | `POST /api/usage-backoff/recheck` | `usage_backoff_recheck` | Complete | Record rate-limit patterns and the current `claude_cli_version` as rechecked (clears `patterns_stale`) |
 
+### Usage calculator
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/usage/advice` | `usage_advice` | Complete | One advice result (latest reading, ceiling with extra credit, lane choice, headroom after the safety margin, one burn figure, projected cycle end, run-out warnings, finish-early estimate, plain-English advice block). Optional query parameters `variant=`, `policy=`, `lanes=`, `cost=` override the stored settings for this one call only; variant and policy are independent |
+| `GET /api/usage/readings` | `usage_readings` | Complete | The shared readings series (percent and/or spend, when, session percent, lanes, source), the bought extra credit, and the per-policy remaining-work figure; shared across federated daemons through a keeper, stale reads carry `stale`/`stale_reason`/`copied_at` |
+| `POST /api/usage/readings` | `usage_reading_add` | Complete | Exactly one figure — `percent` (0–100) or `spend_usd` (>= 0); optional `at` (RFC 3339), `session_percent` (0–100), `lanes` (>= 0). Source defaults to the built (typed) kind; pasted/account kinds answer 501. Stored once when forwarded by a peer |
+| `DELETE /api/usage/readings/{id}` | `usage_reading_delete` | Complete | Delete one reading by id; 404 on an unknown id; audited by the storing daemon; the id is URL-escaped so it stays one path segment |
+| `PUT /api/usage/extra-credit` | `usage_extra_credit_set` | Complete | `{"points": <0 or more>}`: the bought extra credit on the shared series; effective ceiling = weekly allowance + extra credit. A setting, never a reading |
+| `PUT /api/usage/remaining-work` | `usage_remaining_work_set` | Complete | `{"points": <0 or more>}`: the typed remaining work under the run-flat-out policy; the finish-early estimate = queue × per-task cost vs this figure. `{"points":null}` clears the typed figure — the tool omits `points`, or passes it as null. Daemon-local, never part of the shared series |
+| `PUT /api/config` key `usage.calculator.variant` (and `usage.calculator.policy`) | `config_set` | Complete | the calculator's stored variant/policy are ordinary daemon configuration, set through the general config tool: `{ "usage.calculator.variant": "pace-gauge" }`, with the same validation as REST |
+
 ### Per-LLM dollar budget
 
 | API Endpoint | MCP Tool | Status | Notes |

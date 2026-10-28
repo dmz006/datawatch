@@ -150,6 +150,9 @@ Selected core tools:
 | `exit_hook_list` / `exit_hook_add` / `exit_hook_delete` / `exit_hook_enable` / `exit_hook_disable` | Session exit hooks (BL356) |
 | `queue_push` / `queue_claim` / `queue_complete` / `queue_fail` / `queue_list` | Distributed work queue (BL357) |
 | `discussion_subscribe` / `discussion_unsubscribe` / `discussion_subscriptions` | Discussion subscriptions (BL358) |
+| `usage_advice` / `usage_readings` | Account usage calculator: the one advice result (lane choice, headroom, projected cycle end, run-out warnings, finish-early estimate, plain-English advice block) and the shared usage readings series |
+| `usage_reading_add` / `usage_reading_delete` | Record (percent or spend, when, session percent, lanes) or delete one reading of the shared series |
+| `usage_extra_credit_set` / `usage_remaining_work_set` | Set the bought extra credit (shared setting) and the typed remaining work (daemon-local, run-flat-out policy) |
 | `result_put` / `result_get` / `result_list` / `result_delete` | Result store (BL360) |
 | `post_result` / `schedule_results_list` | Scheduled-job result panel — post a session's structured result (same contract as `POST /api/sessions/{id}/result`) and list per-schedule retained history (same as `GET /api/schedule-results`) |
 | `channel_info` | Channel bridge status for the current session |
