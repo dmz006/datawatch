@@ -241,3 +241,139 @@ func TestVerifierWaitNoRunningTaskNotFlagged(t *testing.T) {
 		t.Fatalf("prdVerifierWait = true with no running task, want false; reason = %q", reason)
 	}
 }
+
+// waitingOccupant is a lane occupant waiting on a verifier slot.
+func waitingOccupant(id string) *LaneOccupant {
+	return &LaneOccupant{
+		PRDID: id, Title: "waiting " + id, Backend: "claude-code",
+		WaitingOnVerifier: true, WaitReason: "waiting for a capacity slot to finish verification",
+	}
+}
+
+// TestVerifierWaitWorkingClaudeLaneStaysOccupied: a Claude lane with one
+// working task (an occupant with no verifier wait) stays occupied and
+// receives no start — the required proof that a lane with one working task is
+// still counted occupied.
+func TestVerifierWaitWorkingClaudeLaneStaysOccupied(t *testing.T) {
+	cfg := laneFillTestConfig()
+	cfg.GPULanes = 0
+	cfg.ClaudeLanes = 1
+	lanes := testLanes(0, 1)
+	lanes[0].Occupant = &LaneOccupant{PRDID: "w1", Title: "w1", Backend: "claude-code"}
+	ds := plan(cfg, lanes, []LaneFillCandidate{readyCand("r1", "", 0, 0)})
+	if got := len(actions(ds, LaneFillActionStartPRD)); got != 0 {
+		t.Fatalf("a Claude lane with one working occupant got %d start(s), want 0: %v", got, summarize(ds))
+	}
+	if lanes[0].Occupant == nil || lanes[0].Occupant.PRDID != "w1" {
+		t.Fatalf("working lane no longer occupied: %+v", lanes[0].Occupant)
+	}
+}
+
+// TestVerifierWaitWaitingClaudeLaneCountsFree: a Claude lane whose only
+// occupant waits on a verifier slot counts free, and a ready Automaton is
+// planned onto it.
+func TestVerifierWaitWaitingClaudeLaneCountsFree(t *testing.T) {
+	cfg := laneFillTestConfig() // count_verifier_wait unset means on
+	cfg.GPULanes = 0
+	cfg.ClaudeLanes = 1
+	lanes := testLanes(0, 1)
+	lanes[0].Occupant = waitingOccupant("w1")
+	ds := plan(cfg, lanes, []LaneFillCandidate{readyCand("r1", "", 0, 0)})
+	d := byLane(t, ds, "claude-1")
+	if d.Action != LaneFillActionStartPRD || d.PRDID != "r1" {
+		t.Fatalf("waiting Claude lane planned %+v, want start of r1: %v", d, summarize(ds))
+	}
+}
+
+// TestVerifierWaitingClaudeCapBoundsWorking: with one Claude lane, one working
+// and one waiting occupant plan no start — and the waiting occupant, listed
+// first, is the one that ends up in Extra, never the working one; with one
+// waiting and none working exactly one start is planned.
+func TestVerifierWaitClaudeCapBoundsWorking(t *testing.T) {
+	cfg := laneFillTestConfig()
+	cfg.GPULanes = 0
+	cfg.ClaudeLanes = 1
+	running := []LaneOccupant{*waitingOccupant("wa"), {PRDID: "wk", Title: "wk", Backend: "claude-code"}}
+	model := BuildLanes(cfg, running, LaneEvidence{})
+	if model.Lanes[0].Occupant == nil || model.Lanes[0].Occupant.PRDID != "wk" {
+		t.Fatalf("working occupant not placed first: lane %+v, extra %v", model.Lanes[0], model.Extra)
+	}
+	if len(model.Extra) != 1 || model.Extra[0].PRDID != "wa" {
+		t.Fatalf("waiting occupant pushed the working one out: extra = %v", model.Extra)
+	}
+	ds := plan(cfg, model.Lanes, []LaneFillCandidate{readyCand("r1", "", 0, 0)})
+	if got := len(actions(ds, LaneFillActionStartPRD)); got != 0 {
+		t.Fatalf("one working and one waiting occupant got %d start(s), want 0: %v", got, summarize(ds))
+	}
+
+	lanes := testLanes(0, 1)
+	lanes[0].Occupant = waitingOccupant("w1")
+	ds = plan(cfg, lanes, []LaneFillCandidate{readyCand("r1", "", 0, 0)})
+	if got := len(actions(ds, LaneFillActionStartPRD)); got != 1 {
+		t.Fatalf("one waiting and none working got %d start(s), want 1: %v", got, summarize(ds))
+	}
+}
+
+// TestVerifierWaitClaudeCapAcrossPolls: across two simulated polls the working
+// Claude occupants never exceed claude_lanes — poll one plans the start on the
+// waiting lane, and once it lands as a working occupant poll two plans nothing
+// behind the still-waiting occupant.
+func TestVerifierWaitClaudeCapAcrossPolls(t *testing.T) {
+	cfg := laneFillTestConfig()
+	cfg.GPULanes = 0
+	cfg.ClaudeLanes = 1
+	working := 0
+	for i, wantStarts := range []int{1, 0} {
+		poll := i + 1
+		var running []LaneOccupant
+		if working > 0 {
+			running = append(running, LaneOccupant{PRDID: "wk", Title: "wk", Backend: "claude-code"})
+		}
+		running = append(running, *waitingOccupant("wa"))
+		model := BuildLanes(cfg, running, LaneEvidence{})
+		ds := plan(cfg, model.Lanes, []LaneFillCandidate{readyCand("r1", "", 0, 0)})
+		got := len(actions(ds, LaneFillActionStartPRD))
+		if got != wantStarts {
+			t.Fatalf("poll %d (working=%d) planned %d start(s), want %d: %v",
+				poll, working, got, wantStarts, summarize(ds))
+		}
+		if working+got > cfg.EffectiveClaudeLanes() {
+			t.Fatalf("poll %d: working Claude occupants would be %d, cap is %d",
+				poll, working+got, cfg.EffectiveClaudeLanes())
+		}
+		working += got // the poll's starts land as working occupants
+	}
+}
+
+// TestVerifierWaitOffLeavesClaudeLaneBusy: with count_verifier_wait false the
+// waiting occupant's lane is no longer free, so the ready Automaton plans
+// nothing there.
+func TestVerifierWaitOffLeavesClaudeLaneBusy(t *testing.T) {
+	cfg := laneFillTestConfig()
+	cfg.GPULanes = 0
+	cfg.ClaudeLanes = 1
+	off := false
+	cfg.CountVerifierWait = &off
+	lanes := testLanes(0, 1)
+	lanes[0].Occupant = waitingOccupant("w1")
+	ds := plan(cfg, lanes, []LaneFillCandidate{readyCand("r1", "", 0, 0)})
+	if got := len(actions(ds, LaneFillActionStartPRD)); got != 0 {
+		t.Fatalf("count_verifier_wait off still planned %d start(s) on the waiting lane, want 0: %v", got, summarize(ds))
+	}
+}
+
+// TestVerifierWaitGPULaneStaysOccupied: the rule is about Claude usage, and
+// GPU work costs no Claude usage — a GPU lane whose occupant waits on a
+// verifier slot stays occupied.
+func TestVerifierWaitGPULaneStaysOccupied(t *testing.T) {
+	cfg := laneFillTestConfig()
+	cfg.GPULanes = 1
+	cfg.ClaudeLanes = 0
+	lanes := testLanes(1, 0)
+	lanes[0].Occupant = &LaneOccupant{PRDID: "g1", Title: "g1", Backend: "pi-prompt",
+		WaitingOnVerifier: true, WaitReason: "waiting for a capacity slot to finish verification"}
+	ds := plan(cfg, lanes, []LaneFillCandidate{readyCand("r1", "", 0, 0)})
+	if got := len(actions(ds, LaneFillActionStartPRD)); got != 0 {
+		t.Fatalf("a GPU lane with a waiting occupant got %d start(s), want 0: %v", got, summarize(ds))
+	}
+}

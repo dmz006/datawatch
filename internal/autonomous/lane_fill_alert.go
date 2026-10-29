@@ -67,7 +67,10 @@ func (c *Coordinator) laneFillCheckAlerts(cfg LaneFillConfig, lanes []Lane, cand
 	for _, lane := range lanes {
 		seen[lane.ID] = struct{}{}
 		work, ok := laneFillEligibleFor(cfg, lane, cands)
-		if lane.Occupant != nil || !ok {
+		// A lane is free for work by the one rule in laneFree: a Claude lane
+		// whose occupant waits on a verifier slot can still idle-alert with an
+		// Automaton holding it, because it is free for a new start.
+		if !laneFree(cfg, lane) || !ok {
 			delete(c.lf.workSince, lane.ID)
 			delete(c.lf.alerted, lane.ID)
 			continue

@@ -180,7 +180,10 @@ func LaneTypeForBackend(cfg LaneFillConfig, backend string) (LaneType, bool) {
 // places the running Automata in them.
 //
 // A running Automaton takes the first idle lane of the type its backend maps
-// to (see LaneTypeForBackend). Ones beyond the lane count of their type are
+// to (see LaneTypeForBackend). Working occupants are placed before
+// verifier-waiting ones, within each lane type and the same order inside each
+// group, so a waiting Automaton never pushes a working one into Extra or
+// hides a working lane. Ones beyond the lane count of their type are
 // extra occupants, and ones on any other backend occupy no lane; neither ever
 // creates an idle lane. GPU occupancy is the larger of the Automaton
 // occupants and the live evidence count, so a session on the pool that
@@ -201,6 +204,11 @@ func BuildLanes(cfg LaneFillConfig, running []LaneOccupant, evidence LaneEvidenc
 
 	ordered := append([]LaneOccupant(nil), running...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].PRDID < ordered[j].PRDID })
+	// Working occupants before verifier-waiting ones; the stable sort keeps
+	// the order above inside each group.
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return !ordered[i].WaitingOnVerifier && ordered[j].WaitingOnVerifier
+	})
 
 	gpuOccupants := 0
 	for _, occ := range ordered {
@@ -234,6 +242,21 @@ func BuildLanes(cfg LaneFillConfig, running []LaneOccupant, evidence LaneEvidenc
 		}
 	}
 	return model
+}
+
+// laneFree says whether a lane is free for a new start: it has no occupant,
+// or its occupant is an Automaton waiting on a verifier slot, the lane is a
+// Claude lane and the count_verifier_wait rule is on — a waiting occupant
+// holds the lane without spending Claude usage. A GPU lane never frees under
+// the rule, because GPU work costs no Claude usage. Both the planner and the
+// idle alert test a lane for busy with this one helper.
+func laneFree(cfg LaneFillConfig, lane Lane) bool {
+	if lane.Occupant == nil {
+		return true
+	}
+	return lane.Occupant.WaitingOnVerifier &&
+		lane.Type == LaneTypeClaude &&
+		cfg.EffectiveCountVerifierWait()
 }
 
 // placeOccupant puts occ in the first idle lane of type t. It reports false
@@ -399,8 +422,15 @@ func PlanLaneFill(in LaneFillInput) []LaneFillDecision {
 		}
 	}
 
+	// A lane is busy by the one rule in laneFree: a Claude lane whose occupant
+	// waits on a verifier slot is free for a new start when the rule is on, and
+	// every other occupied lane is busy. Free Claude lanes are therefore
+	// claude_lanes minus the working Claude occupants minus the starts planned
+	// on earlier lanes in this poll, which bounds working Claude Automata;
+	// waiting ones never count against the cap because a working occupant is
+	// always placed before a waiting one (BuildLanes).
 	for _, lane := range lanes {
-		if lane.Occupant != nil {
+		if !laneFree(cfg, lane) {
 			continue
 		}
 		if lane.Type == LaneTypeGPU && in.EvidenceErr != "" && lane.Blocker == "" {
