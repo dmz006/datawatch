@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/federation"
@@ -405,7 +406,31 @@ func (s *Server) handleQuestionList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleQuestionGet implements GET /api/questions/{id}.
+// polledAnswerSummary is the current answer's summary on the polled GET
+// read: the answer id, the chosen option, the verbatim quote exactly as
+// stored (never trimmed or re-encoded), the answering actor and surface,
+// and when it was recorded. The asker that cannot subscribe reads this
+// back from GET /api/questions/{id} — the default return path — instead
+// of waiting on the event queue.
+type polledAnswerSummary struct {
+	ID             string     `json:"id"`
+	ChosenOptionID string     `json:"chosen_option_id,omitempty"`
+	Quote          string     `json:"quote,omitempty"`
+	Actor          string     `json:"actor,omitempty"`
+	Surface        string     `json:"surface,omitempty"`
+	CreatedAt      *time.Time `json:"created_at,omitempty"`
+}
+
+// handleQuestionGet implements GET /api/questions/{id}: the question
+// (state, priority, return_path included on the record itself) plus the
+// answer metadata, so an asker that cannot subscribe polls this one read
+// for the whole return path. An answered question carries, in the same
+// read, the answer count (every answer ever recorded, including
+// superseded ones — they are decided, never deleted), the currently
+// effective answer's id, and its summary (id, chosen option, verbatim
+// quote, actor, surface, created_at); a question with no answer yet
+// carries "answer": null. The full answer log is its own read: GET the
+// question's answers path.
 func (s *Server) handleQuestionGet(w http.ResponseWriter, r *http.Request, id string) {
 	id = strings.TrimSpace(id)
 	q, ok := s.questionStore.Get(id)
@@ -414,22 +439,26 @@ func (s *Server) handleQuestionGet(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 
-	// An answered question carries, in the same read, the metadata a UI
-	// needs to show "answered, N answers so far" without a second call:
-	// the answer count (every answer ever recorded, including superseded
-	// ones — they are decided, never deleted) and the currently
-	// effective answer's id. The full answer log (text included) is its
-	// own read: GET the question's answers path.
 	count := s.questionStore.AnswerCount(id)
 	currentID := ""
+	var summary any // null (not omit) while the question has no answer
 	if a, ok := s.questionStore.CurrentAnswer(id); ok {
 		currentID = a.ID
+		summary = &polledAnswerSummary{
+			ID:             a.ID,
+			ChosenOptionID: a.ChosenOptionID,
+			Quote:          a.Quote,
+			Actor:          a.Actor,
+			Surface:        a.Surface,
+			CreatedAt:      a.CreatedAt,
+		}
 	}
 
 	writeJSONOK(w, map[string]any{
 		"question":          q,
 		"answer_count":      count,
 		"current_answer_id": currentID,
+		"answer":            summary,
 	})
 }
 
