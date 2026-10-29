@@ -2722,9 +2722,17 @@ func ValidateUndeclaredEditMode(mode string) error {
 const DefaultAutomationTriageAlertMinutes = 30
 
 type AutonomousAutomationConfig struct {
-	IdleAlertMinutes   int    `yaml:"idle_alert_minutes" json:"idle_alert_minutes"`
-	TriageAlertMinutes *int   `yaml:"triage_alert_minutes,omitempty" json:"triage_alert_minutes,omitempty"`
-	AgentInsertPolicy  string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
+	IdleAlertMinutes   int  `yaml:"idle_alert_minutes" json:"idle_alert_minutes"`
+	TriageAlertMinutes *int `yaml:"triage_alert_minutes,omitempty" json:"triage_alert_minutes,omitempty"`
+	// RepoCIWatch — the repo CI watch knobs
+	// (autonomous.automation.repo_ci_watch.*). See RepoCIWatchConfig: the
+	// defaults are applied only in its Effective* accessors, and the bad
+	// values (a mode other than off|shadow|on, delete_superseded other
+	// than report|delete, a non-absolute repository path, a poll interval
+	// below 60, a negative alert/tag threshold, a hung threshold below 1)
+	// are refused on every write path.
+	RepoCIWatch       RepoCIWatchConfig `yaml:"repo_ci_watch" json:"repo_ci_watch"`
+	AgentInsertPolicy string            `yaml:"agent_insert_policy" json:"agent_insert_policy"`
 }
 
 // autonomous.lane_fill.mode values and defaults.
@@ -3018,6 +3026,212 @@ func (c AutonomousProgressConfig) validate() error {
 
 // intPtr is the tiny pointer helper for pointer-to-int config fields.
 func intPtr(v int) *int { return &v }
+
+// Repo CI watch — the autonomous.automation.repo_ci_watch knobs. The
+// constants and validation here mirror internal/autonomous
+// (RepoCIWatchConfig) so the YAML/config-load surface and the REST write
+// paths refuse the same bad values; the config package must not import
+// that one (the daemon bridges it).
+const (
+	// RepoCIWatchModeOff/Shadow/On — the legal repo CI watch modes.
+	RepoCIWatchModeOff    = "off"
+	RepoCIWatchModeShadow = "shadow"
+	RepoCIWatchModeOn     = "on"
+	// RepoCIWatchDeleteSupersededReport/Delete — the legal
+	// delete_superseded values.
+	RepoCIWatchDeleteSupersededReport = "report"
+	RepoCIWatchDeleteSupersededDelete = "delete"
+
+	// RepoCIWatchDefaultPollSeconds / RepoCIWatchMinPollSeconds — the
+	// poll interval default (unset) and minimum.
+	RepoCIWatchDefaultPollSeconds = 300
+	RepoCIWatchMinPollSeconds     = 60
+	// RepoCIWatchDefaultTagCount — how many newest release tags are
+	// watched by default (unset). An explicit 0 means none.
+	RepoCIWatchDefaultTagCount = 5
+	// RepoCIWatchDefaultHungAfterMinutes /
+	// RepoCIWatchMinHungAfterMinutes — the hung-run threshold default
+	// (unset) and minimum.
+	RepoCIWatchDefaultHungAfterMinutes = 60
+	RepoCIWatchMinHungAfterMinutes     = 1
+)
+
+// DefaultRepoCIWatchSecurityWorkflows — the default repo CI watch
+// security workflow names (applies when security_workflows is unset).
+var DefaultRepoCIWatchSecurityWorkflows = []string{
+	"CodeQL",
+	"dependency-review",
+	"owasp-zap",
+	"secret-scan",
+	"security-scan",
+}
+
+// ValidateRepoCIWatchMode accepts the three legal repo CI watch modes
+// (off, shadow, on; case-insensitive, trimmed; empty = unset = off) and
+// rejects every other value.
+func ValidateRepoCIWatchMode(mode string) error {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", RepoCIWatchModeOff, RepoCIWatchModeShadow, RepoCIWatchModeOn:
+		return nil
+	default:
+		return fmt.Errorf("autonomous.automation.repo_ci_watch.mode: %q is not a valid value (must be %q, %q or %q)",
+			mode, RepoCIWatchModeOff, RepoCIWatchModeShadow, RepoCIWatchModeOn)
+	}
+}
+
+// ValidateRepoCIWatchDeleteSuperseded accepts the two legal
+// delete_superseded values (report, delete; case-insensitive, trimmed;
+// empty = unset = report) and rejects every other value.
+func ValidateRepoCIWatchDeleteSuperseded(v string) error {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", RepoCIWatchDeleteSupersededReport, RepoCIWatchDeleteSupersededDelete:
+		return nil
+	default:
+		return fmt.Errorf("autonomous.automation.repo_ci_watch.delete_superseded: %q is not a valid value (must be %q or %q)",
+			v, RepoCIWatchDeleteSupersededReport, RepoCIWatchDeleteSupersededDelete)
+	}
+}
+
+// RepoCIWatchConfig — mirror of autonomous.RepoCIWatchConfig
+// (autonomous.automation.repo_ci_watch.*). AlertMinutes and TagCount are
+// pointers on purpose: unset (nil) reads the 30-minute and 5-tag
+// defaults, while an explicit 0 turns the alert off / watches no tags
+// and survives a merge round trip. The Effective* accessors apply every
+// default in one place, so no call site hard-codes one.
+type RepoCIWatchConfig struct {
+	Mode              string   `yaml:"mode" json:"mode"`
+	Repos             []string `yaml:"repos" json:"repos"`
+	PollSeconds       int      `yaml:"poll_seconds" json:"poll_seconds"`
+	AlertMinutes      *int     `yaml:"alert_minutes,omitempty" json:"alert_minutes,omitempty"`
+	TagCount          *int     `yaml:"tag_count,omitempty" json:"tag_count,omitempty"`
+	HungAfterMinutes  int      `yaml:"hung_after_minutes" json:"hung_after_minutes"`
+	SecurityWorkflows []string `yaml:"security_workflows" json:"security_workflows"`
+	DeleteSuperseded  string   `yaml:"delete_superseded" json:"delete_superseded"`
+}
+
+// EffectiveMode returns the mode in effect; an empty value reads the
+// off default. Bad values are refused on the write paths.
+func (c RepoCIWatchConfig) EffectiveMode() string {
+	mode := strings.ToLower(strings.TrimSpace(c.Mode))
+	if mode == "" {
+		return RepoCIWatchModeOff
+	}
+	return mode
+}
+
+// EffectiveRepos returns the watched repository paths: the configured
+// list, or an empty slice when unset (nothing is watched). Repositories
+// are never inferred from the working directory.
+func (c RepoCIWatchConfig) EffectiveRepos() []string {
+	if c.Repos == nil {
+		return []string{}
+	}
+	return c.Repos
+}
+
+// EffectivePollSeconds returns the poll interval in effect; an unset (0)
+// value reads the 300-second default. A value below 60 is refused on the
+// write paths. (An unset read of 0 is normalized to the default.
+// Sub-60 values are refused at the write path.)
+//
+// NOTE: an explicit 0 also reads the default — the minimum (60) makes
+// 0 not a meaningful stored value.
+func (c RepoCIWatchConfig) EffectivePollSeconds() int {
+	if c.PollSeconds == 0 {
+		return RepoCIWatchDefaultPollSeconds
+	}
+	return c.PollSeconds
+}
+
+// EffectiveAlertMinutes returns the alert threshold in effect: unset
+// (nil) reads DefaultAutomationTriageAlertMinutes (30), an explicit 0
+// turns the alert off. Negative values are refused on the write paths.
+func (c RepoCIWatchConfig) EffectiveAlertMinutes() int {
+	if c.AlertMinutes == nil {
+		return DefaultAutomationTriageAlertMinutes
+	}
+	return *c.AlertMinutes
+}
+
+// EffectiveTagCount returns how many newest release tags to watch: unset
+// (nil) reads the 5-tag default, an explicit 0 means none. Negative
+// values are refused on the write paths.
+func (c RepoCIWatchConfig) EffectiveTagCount() int {
+	if c.TagCount == nil {
+		return RepoCIWatchDefaultTagCount
+	}
+	return *c.TagCount
+}
+
+// EffectiveHungAfterMinutes returns the hung-run threshold in effect;
+// an unset (0) value reads the 60-minute default. A value below 1 is
+// refused on the write paths.
+func (c RepoCIWatchConfig) EffectiveHungAfterMinutes() int {
+	if c.HungAfterMinutes == 0 {
+		return RepoCIWatchDefaultHungAfterMinutes
+	}
+	return c.HungAfterMinutes
+}
+
+// EffectiveSecurityWorkflows returns the security workflow names to
+// watch: the configured list (an explicitly empty list means none), or
+// DefaultRepoCIWatchSecurityWorkflows when unset (nil).
+func (c RepoCIWatchConfig) EffectiveSecurityWorkflows() []string {
+	if c.SecurityWorkflows == nil {
+		return DefaultRepoCIWatchSecurityWorkflows
+	}
+	return c.SecurityWorkflows
+}
+
+// EffectiveDeleteSuperseded returns the superseded-run policy in effect;
+// an empty value reads the report default. Bad values are refused on the
+// write paths.
+func (c RepoCIWatchConfig) EffectiveDeleteSuperseded() string {
+	v := strings.ToLower(strings.TrimSpace(c.DeleteSuperseded))
+	if v == "" {
+		return RepoCIWatchDeleteSupersededReport
+	}
+	return v
+}
+
+// validateRepoCIWatch checks one RepoCIWatchConfig the same way the REST
+// write paths do, so a config file load refuses the same bad values.
+func validateRepoCIWatch(c RepoCIWatchConfig) error {
+	if err := ValidateRepoCIWatchMode(c.Mode); err != nil {
+		return err
+	}
+	for _, r := range c.Repos {
+		path := strings.TrimSpace(r)
+		if len(path) <= 1 || !strings.HasPrefix(path, "/") {
+			return fmt.Errorf("autonomous.automation.repo_ci_watch.repos: %q must be an absolute path (repositories are never inferred from the working directory)", r)
+		}
+	}
+	if c.PollSeconds > 0 && c.PollSeconds < RepoCIWatchMinPollSeconds {
+		return fmt.Errorf("autonomous.automation.repo_ci_watch.poll_seconds: %d must be a whole number >= %d (unset reads the %d-second default)",
+			c.PollSeconds, RepoCIWatchMinPollSeconds, RepoCIWatchDefaultPollSeconds)
+	}
+	if c.AlertMinutes != nil && *c.AlertMinutes < 0 {
+		return fmt.Errorf("autonomous.automation.repo_ci_watch.alert_minutes: %d must be a whole number >= 0 (0 = alert off, unset reads the %d-minute default)",
+			*c.AlertMinutes, DefaultAutomationTriageAlertMinutes)
+	}
+	if c.TagCount != nil && *c.TagCount < 0 {
+		return fmt.Errorf("autonomous.automation.repo_ci_watch.tag_count: %d must be a whole number >= 0 (0 = none, unset reads the %d default)",
+			*c.TagCount, RepoCIWatchDefaultTagCount)
+	}
+	if c.HungAfterMinutes > 0 && c.HungAfterMinutes < RepoCIWatchMinHungAfterMinutes {
+		return fmt.Errorf("autonomous.automation.repo_ci_watch.hung_after_minutes: %d must be a whole number >= %d (unset reads the %d-minute default)",
+			c.HungAfterMinutes, RepoCIWatchMinHungAfterMinutes, RepoCIWatchDefaultHungAfterMinutes)
+	}
+	if err := ValidateRepoCIWatchDeleteSuperseded(c.DeleteSuperseded); err != nil {
+		return err
+	}
+	for _, w := range c.SecurityWorkflows {
+		if strings.TrimSpace(w) == "" {
+			return errors.New("autonomous.automation.repo_ci_watch.security_workflows: workflow names must be non-empty")
+		}
+	}
+	return nil
+}
 
 // autonomous.automation.agent_insert_policy values.
 const (
@@ -4410,6 +4624,9 @@ func validateLoaded(cfg *Config) error {
 	if t := cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(); t < 0 {
 		return fmt.Errorf("autonomous.automation.triage_alert_minutes: %d must be a whole number >= 0 (0 = off, default %d)",
 			t, DefaultAutomationTriageAlertMinutes)
+	}
+	if err := validateRepoCIWatch(cfg.Autonomous.Automation.RepoCIWatch); err != nil {
+		return err
 	}
 	if err := cfg.Autonomous.LaneFill.validate(); err != nil {
 		return err

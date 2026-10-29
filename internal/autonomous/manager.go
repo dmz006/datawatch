@@ -551,6 +551,11 @@ type AutomationConfig struct {
 	// EffectiveTriageAlertMinutes.
 	TriageAlertMinutes *int `json:"triage_alert_minutes,omitempty"`
 
+	// RepoCIWatch: the repo CI watch knobs (autonomous.automation.
+	// repo_ci_watch.*). Defaults are applied only in the Effective*
+	// accessors in repo_ci_watch_config.go. See RepoCIWatchConfig.
+	RepoCIWatch RepoCIWatchConfig `json:"repo_ci_watch"`
+
 	// AgentInsertPolicy: PolicyAllow (default, also the empty value) lets an
 	// agent insert a member directly; PolicyRequireOperator holds an agent's
 	// insert as a pending insert until an operator approves it.

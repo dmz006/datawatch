@@ -6270,6 +6270,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// default, an explicit 0 stays 0 (the triage alert off).
 				"triage_alert_minutes": s.cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(),
 				"agent_insert_policy":  s.cfg.Autonomous.Automation.EffectiveAgentInsertPolicy(),
+				// Effective values: unset fields read their defaults in one place
+				// (Effective* accessors), so GET never emits a zero that reads
+				// a different default.
+				"repo_ci_watch": repoCIWatchSurface(s.cfg.Autonomous.Automation.RepoCIWatch),
 			},
 			"lane_fill": laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
 			"progress": map[string]interface{}{
@@ -6561,6 +6565,16 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
+	}
+	// Repo CI watch (autonomous.automation.repo_ci_watch.*): every key is
+	// checked before anything is applied, so one bad value (a mode other
+	// than off|shadow|on, a delete_superseded other than report|delete, a
+	// non-absolute repository path, a poll interval below 60, a negative
+	// alert/tag threshold, a hung threshold below 1) rejects the whole
+	// PUT rather than being skipped.
+	if verr := validateRepoCIWatchPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
 	}
 	// Lane fill: every autonomous.lane_fill.* value is checked before
 	// anything is applied, so one bad value rejects the whole PUT.
@@ -8046,6 +8060,18 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if validateAgentInsertPolicy(v) == nil {
 				cfg.Autonomous.Automation.AgentInsertPolicy = toString(v)
 			}
+		case "autonomous.automation.repo_ci_watch.mode",
+			"autonomous.automation.repo_ci_watch.repos",
+			"autonomous.automation.repo_ci_watch.poll_seconds",
+			"autonomous.automation.repo_ci_watch.alert_minutes",
+			"autonomous.automation.repo_ci_watch.tag_count",
+			"autonomous.automation.repo_ci_watch.hung_after_minutes",
+			"autonomous.automation.repo_ci_watch.security_workflows",
+			"autonomous.automation.repo_ci_watch.delete_superseded":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applyRepoCIWatchValue(&cfg.Autonomous.Automation.RepoCIWatch,
+				strings.TrimPrefix(k, repoCIWatchKeyPrefix), v)
 		case laneFillKeyPrefix + "mode", laneFillKeyPrefix + "gpu_lanes", laneFillKeyPrefix + "claude_lanes",
 			laneFillKeyPrefix + "idle_alert_minutes", laneFillKeyPrefix + "decompose_ahead_min",
 			laneFillKeyPrefix + "poll_seconds", laneFillKeyPrefix + "gpu_backend",
@@ -8953,6 +8979,166 @@ func validateTriageAlertMinutes(v interface{}) error {
 		return fmt.Errorf("autonomous.automation.triage_alert_minutes: must be a whole number >= 0 (0 = off, default %d)", config.DefaultAutomationTriageAlertMinutes)
 	}
 	return nil
+}
+
+// repoCIWatchKeyPrefix — the REST key prefix for the repo CI watch knobs
+// (autonomous.automation.repo_ci_watch.*).
+const repoCIWatchKeyPrefix = "autonomous.automation.repo_ci_watch."
+
+// repoCIWatchSurface builds the GET /api/config surface for the repo CI
+// watch, emitting effective values: unset (nil / zero / empty) fields read
+// their defaults from the Effective* accessors, and an explicit alert 0
+// stays 0 (the alert off).
+func repoCIWatchSurface(c config.RepoCIWatchConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"mode":               c.EffectiveMode(),
+		"repos":              c.EffectiveRepos(),
+		"poll_seconds":       c.EffectivePollSeconds(),
+		"alert_minutes":      c.EffectiveAlertMinutes(),
+		"tag_count":          c.EffectiveTagCount(),
+		"hung_after_minutes": c.EffectiveHungAfterMinutes(),
+		"security_workflows": c.EffectiveSecurityWorkflows(),
+		"delete_superseded":  c.EffectiveDeleteSuperseded(),
+	}
+}
+
+// parseRepoCIWatchWhole accepts a whole number for one repo CI watch key
+// (the CLI and the comm channel may send plain ints or JSON numbers;
+// fractional, string and missing values are refused with a clear error).
+func parseRepoCIWatchWhole(field string, v interface{}) (int, error) {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) {
+		return 0, fmt.Errorf("%s%s: must be a whole number", repoCIWatchKeyPrefix, field)
+	}
+	return int(f), nil
+}
+
+// validateRepoCIWatchPatch checks every autonomous.automation.repo_ci_watch.*
+// value present in the patch before anything is applied, so one bad value
+// rejects the whole PUT rather than being silently skipped. It runs the
+// same rules the config-load path runs (config.validateRepoCIWatch), so a
+// bad value is refused consistently on every write path.
+func validateRepoCIWatchPatch(patch map[string]interface{}) error {
+	if v, ok := patch[repoCIWatchKeyPrefix+"mode"]; ok {
+		if str, isStr := v.(string); !isStr || config.ValidateRepoCIWatchMode(str) != nil {
+			return fmt.Errorf("%smode: must be %q, %q or %q",
+				repoCIWatchKeyPrefix, config.RepoCIWatchModeOff, config.RepoCIWatchModeShadow, config.RepoCIWatchModeOn)
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"delete_superseded"]; ok {
+		if str, isStr := v.(string); !isStr || config.ValidateRepoCIWatchDeleteSuperseded(str) != nil {
+			return fmt.Errorf("%sdelete_superseded: must be %q or %q",
+				repoCIWatchKeyPrefix, config.RepoCIWatchDeleteSupersededReport, config.RepoCIWatchDeleteSupersededDelete)
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"repos"]; ok {
+		arr, isArr := v.([]interface{})
+		if !isArr {
+			return fmt.Errorf("%srepos: must be a list of absolute repository paths (unset means nothing is watched)", repoCIWatchKeyPrefix)
+		}
+		for i, item := range arr {
+			path, isStr := item.(string)
+			p := strings.TrimSpace(path)
+			if !isStr || len(p) <= 1 || !strings.HasPrefix(p, "/") {
+				return fmt.Errorf("%srepos[%d]: %v must be an absolute path (repositories are never inferred from the working directory)",
+					repoCIWatchKeyPrefix, i, item)
+			}
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"poll_seconds"]; ok {
+		n, err := parseRepoCIWatchWhole("poll_seconds", v)
+		if err != nil {
+			return err
+		}
+		if n < config.RepoCIWatchMinPollSeconds {
+			return fmt.Errorf("%spoll_seconds: %d must be a whole number >= %d (unset reads the %d-second default)",
+				repoCIWatchKeyPrefix, n, config.RepoCIWatchMinPollSeconds, config.RepoCIWatchDefaultPollSeconds)
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"alert_minutes"]; ok {
+		n, err := parseRepoCIWatchWhole("alert_minutes", v)
+		if err != nil {
+			return err
+		}
+		if n < 0 {
+			return fmt.Errorf("%salert_minutes: %d must be a whole number >= 0 (0 = alert off, unset reads the %d-minute default)",
+				repoCIWatchKeyPrefix, n, config.DefaultAutomationTriageAlertMinutes)
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"tag_count"]; ok {
+		n, err := parseRepoCIWatchWhole("tag_count", v)
+		if err != nil {
+			return err
+		}
+		if n < 0 {
+			return fmt.Errorf("%stag_count: %d must be a whole number >= 0 (0 = none, unset reads the %d default)",
+				repoCIWatchKeyPrefix, n, config.RepoCIWatchDefaultTagCount)
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"hung_after_minutes"]; ok {
+		n, err := parseRepoCIWatchWhole("hung_after_minutes", v)
+		if err != nil {
+			return err
+		}
+		if n < config.RepoCIWatchMinHungAfterMinutes {
+			return fmt.Errorf("%shung_after_minutes: %d must be a whole number >= %d (unset reads the %d-minute default)",
+				repoCIWatchKeyPrefix, n, config.RepoCIWatchMinHungAfterMinutes, config.RepoCIWatchDefaultHungAfterMinutes)
+		}
+	}
+	if v, ok := patch[repoCIWatchKeyPrefix+"security_workflows"]; ok {
+		if _, isArr := v.([]interface{}); !isArr {
+			return fmt.Errorf("%ssecurity_workflows: must be a list of workflow names (an empty list means none)", repoCIWatchKeyPrefix)
+		}
+	}
+	return nil
+}
+
+// applyRepoCIWatchValue stores one repo CI watch value (validated above in
+// handlePutConfig; a value that fails the check here is left unchanged).
+func applyRepoCIWatchValue(rcw *config.RepoCIWatchConfig, field string, v interface{}) {
+	switch field {
+	case "mode":
+		str := toString(v)
+		if config.ValidateRepoCIWatchMode(str) == nil {
+			rcw.Mode = str
+		}
+	case "delete_superseded":
+		str := toString(v)
+		if config.ValidateRepoCIWatchDeleteSuperseded(str) == nil {
+			rcw.DeleteSuperseded = str
+		}
+	case "repos":
+		if arr, ok := toStringArray(v); ok {
+			rcw.Repos = arr
+		}
+	case "security_workflows":
+		if arr, ok := toStringArray(v); ok {
+			rcw.SecurityWorkflows = arr
+		}
+	case "poll_seconds":
+		if n, err := parseRepoCIWatchWhole("poll_seconds", v); err == nil && n >= config.RepoCIWatchMinPollSeconds {
+			rcw.PollSeconds = n
+		}
+	case "hung_after_minutes":
+		if n, err := parseRepoCIWatchWhole("hung_after_minutes", v); err == nil && n >= config.RepoCIWatchMinHungAfterMinutes {
+			rcw.HungAfterMinutes = n
+		}
+	case "alert_minutes":
+		// A pointer on purpose: an explicit 0 (the alert off) must be stored
+		// as such, not dropped as a zero.
+		if n, err := parseRepoCIWatchWhole("alert_minutes", v); err == nil && n >= 0 {
+			rcw.AlertMinutes = &n
+		}
+	case "tag_count":
+		// A pointer on purpose: an explicit 0 (no tags watched) must be
+		// stored as such, not dropped as a zero.
+		if n, err := parseRepoCIWatchWhole("tag_count", v); err == nil && n >= 0 {
+			rcw.TagCount = &n
+		}
+	}
 }
 
 // validateAgentInsertPolicy checks autonomous.automation.agent_insert_policy:
