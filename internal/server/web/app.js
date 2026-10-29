@@ -27784,6 +27784,176 @@ window.refreshAutomationQuestions = function() {
   if (ctl) ctl.load();
 };
 
+// ════════════════════════════════════════════════════════════════════════════
+// v1 question answer form — window.openQuestion(id)
+//
+// The queue card's row button hands off here. It loads GET
+// /api/questions/{id} (question plus the current answer metadata in one
+// read) and opens the answer dialog in the Automation view, on the same
+// showModal helper the other Automation dialogs use. The form shows the
+// question text, the options as radio choices with their trade-offs, the
+// recommendation (option label and rationale), the default as a translated
+// line naming the option or hold, and a free-text box. An already answered
+// question also shows the current answer's quote and a line saying the new
+// answer replaces it. Confirm posts to POST /api/questions/{id}/answer with
+// surface pwa, chosen_option_id (only when a choice was made) and the quote
+// exactly as typed — newlines and leading spaces included; only a fully
+// blank value counts as no text. Supersedes carries the current answer's id
+// when the question is already answered and is omitted otherwise, so a
+// changed mind is a new answer on the wire, never an edit. The client
+// refuses to submit with neither a choice nor non-blank text; server errors
+// (409 the question is no longer open, 400 the server refusing a
+// secret-looking text and naming the safe routes) show the server's message
+// in the form and keep the dialog open. On success the dialog closes and
+// the queue card refreshes through window.refreshAutomationQuestions when
+// it exists.
+// ════════════════════════════════════════════════════════════════════════════
+
+// _questionAnswerOptionLabel resolves a name inside the question's options
+// to its display label; no match (or no label) gives '' so the caller falls
+// back to the name itself.
+function _questionAnswerOptionLabel(options, name) {
+  const n = String(name == null ? '' : name);
+  if (!n) return '';
+  const opt = (Array.isArray(options) ? options : []).find(o => o && String(o.id) === n);
+  return opt && opt.label ? String(opt.label) : '';
+}
+window._questionAnswerOptionLabel = _questionAnswerOptionLabel;
+
+// _questionAnswerBody builds the exact POST /api/questions/{id}/answer body.
+// chosen_option_id is present only when a choice was made; the quote is
+// carried verbatim (a blank value is the "no text" case, and the server
+// applies that rule — this client never trims it); supersedes is present
+// only for an already answered question, named after the current answer.
+function _questionAnswerBody(currentAnswerId, chosenOptionId, quote) {
+  const body = { surface: 'pwa' };
+  if (chosenOptionId) body.chosen_option_id = String(chosenOptionId);
+  body.quote = quote == null ? '' : String(quote);
+  if (currentAnswerId) body.supersedes = String(currentAnswerId);
+  return body;
+}
+window.questionAnswerBody = _questionAnswerBody;
+
+// _questionAnswerErrorMessage pulls the human message out of a failed
+// automationRequest error: the server speaks {"error": "..."} JSON, and
+// anything that is not that shape is shown as-is.
+function _questionAnswerErrorMessage(err) {
+  const raw = ((err && (err.message || String(err))) || String(err || 'error')) + '';
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj.error === 'string' && obj.error) return obj.error;
+  } catch (e) { /* a plain-text message: use raw */ }
+  return raw;
+}
+window._questionAnswerErrorMessage = _questionAnswerErrorMessage;
+
+// _questionAnswerSubmit posts the answer and resolves on success. It fails
+// with the server's message preserved for _questionAnswerErrorMessage.
+function _questionAnswerSubmit(id, currentAnswerId, chosenOptionId, quote) {
+  return automationRequest('POST', '/api/questions/' + encodeURIComponent(String(id)) + '/answer',
+    _questionAnswerBody(currentAnswerId, chosenOptionId, quote));
+}
+window._questionAnswerSubmit = _questionAnswerSubmit;
+
+// _questionAnswerBodyHTML is the dialog body: question text, options as
+// radios with trade-offs, the recommendation, the translated default line
+// (option label or hold), the free-text box, and — when the question is
+// already answered — the current answer's quote with the replaces-it line.
+function _questionAnswerBodyHTML(q, answer) {
+  const options = Array.isArray(q.options) ? q.options : [];
+  let html = `<div class="question-answer-text" style="font-size:13px;color:var(--text);overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(q.text || '')}</div>`;
+  if (options.length) {
+    html += '<div class="question-answer-options" style="margin-top:10px;">';
+    options.forEach(o => {
+      const trade = (o && o.tradeoffs)
+        ? `<div style="margin:2px 0 0 20px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(o.tradeoffs)}</div>`
+        : '';
+      html += `<label class="question-answer-option" style="display:block;margin:4px 0;" title="${escHtml((o && o.tradeoffs) || '')}">`
+        + `<input type="radio" name="questionAnswerChoice" value="${escHtml(o && o.id ? o.id : '')}"> ${escHtml((o && (o.label || o.id)) || '')}`
+        + trade + '</label>';
+    });
+    html += '</div>';
+  }
+  const rec = (q.recommendation && typeof q.recommendation === 'object') ? q.recommendation : null;
+  if (rec && rec.option_id) {
+    const name = String(rec.option_id);
+    const label = _questionAnswerOptionLabel(options, name) || name;
+    html += `<div class="question-answer-rec" style="margin-top:8px;font-size:12px;color:var(--text);">`
+      + `<span style="font-weight:600;">${escHtml(t('automation_questions_answer_rec', [label]))}</span>`
+      + (rec.rationale ? ` — ${escHtml(rec.rationale)}` : '') + '</div>';
+  }
+  const defName = String(q.default == null ? '' : q.default);
+  // The record's default is an option id or the word hold; hold is shown
+  // as-is, an option by its label (falling back to the raw name).
+  const defLabel = (defName && defName !== 'hold') ? (_questionAnswerOptionLabel(options, defName) || defName) : 'hold';
+  html += `<div class="question-answer-default" style="margin-top:2px;font-size:12px;color:var(--text2);">${escHtml(t('automation_questions_answer_default', [defLabel]))}</div>`;
+  html += `<div style="margin-top:10px;">`
+    + `<label class="question-answer-quote-label" style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('automation_questions_answer_quote_label'))}</label>`
+    + '<textarea id="questionAnswerQuote" class="form-input question-answer-quote" rows="3" style="width:100%;box-sizing:border-box;font-size:12px;"></textarea></div>';
+  if (answer && typeof answer === 'object') {
+    const quote = answer.quote == null ? '' : String(answer.quote);
+    html += `<div class="question-answer-current" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;font-size:12px;">`
+      + `<div class="question-answer-current-quote" style="color:var(--text);overflow-wrap:anywhere;">${escHtml(t('automation_questions_answer_current'))}: ${escHtml(quote)}</div>`
+      + `<div class="question-answer-supersedes-note" style="margin-top:4px;color:var(--text2);">${escHtml(t('automation_questions_answer_supersedes_note'))}</div>`
+      + '</div>';
+  }
+  html += '<div id="questionAnswerError" class="question-answer-error" role="alert" style="color:var(--error);font-size:12px;margin-top:8px;"></div>';
+  return html;
+}
+window._questionAnswerBodyHTML = _questionAnswerBodyHTML;
+
+// window.openQuestion(id) is the hand-off target of the queue card's row
+// buttons (the card guards the call so it still works while this function
+// is absent, e.g. on an old cached bundle). Opens the answer dialog; the
+// dialog's confirm does the validation, the post and the close — it never
+// submits a promise, because showModal closes whenever onConfirm does not
+// return false, so while the server is answering the dialog stays open and
+// the close happens only after the answer is recorded.
+window.openQuestion = function(id) {
+  const qid = String(id == null ? '' : id);
+  return automationRequest('GET', '/api/questions/' + encodeURIComponent(qid)).then(payload => {
+    const body0 = (payload && typeof payload === 'object') ? payload : {};
+    const q = (body0.question && typeof body0.question === 'object') ? body0.question : {};
+    const answer = (body0.answer && typeof body0.answer === 'object') ? body0.answer : null;
+    const currentAnswerId = String(body0.current_answer_id || (answer && answer.id) || '');
+    showModal({
+      title: t('automation_questions_answer_title', [String(q.id || qid)]),
+      body: _questionAnswerBodyHTML(q, answer),
+      confirmLabel: t('automation_questions_answer_submit'),
+      onConfirm: () => {
+        const picked = (typeof document.querySelector === 'function')
+          ? document.querySelector('input[name="questionAnswerChoice"]:checked')
+          : null;
+        const chosen = (picked && picked.value) ? String(picked.value) : '';
+        const box = document.getElementById('questionAnswerQuote');
+        const quote = (box && typeof box.value === 'string') ? box.value : ''; // verbatim: newlines, leading spaces
+        const errEl = document.getElementById('questionAnswerError');
+        if (!chosen && quote.trim() === '') {
+          // Neither a choice nor non-blank text: refuse client side, and
+          // keep the dialog open saying so in the translated line.
+          if (errEl) errEl.innerHTML = escHtml(t('automation_questions_answer_required'));
+          return false;
+        }
+        if (errEl) errEl.innerHTML = '';
+        _questionAnswerSubmit(qid, currentAnswerId, chosen, quote).then(() => {
+          const modal = document.getElementById('genericModal');
+          if (modal && modal.remove) modal.remove();
+          if (typeof window.refreshAutomationQuestions === 'function') window.refreshAutomationQuestions();
+        }).catch(err => {
+          // Server errors — 409 no longer open, 400 secret-looking text
+          // (the refusal names the safe routes) — show the server's
+          // message in the form; the dialog stays open to try again.
+          if (errEl) errEl.innerHTML = escHtml(_questionAnswerErrorMessage(err));
+          return false;
+        });
+        return false;
+      },
+    });
+  }).catch(err => {
+    showToast(_questionAnswerErrorMessage(err), 'error');
+  });
+};
+
 // The empty state shows only after a load that succeeded with zero
 // Automations: not before the first load completes, not from cached data, and
 // not while the last load failed.

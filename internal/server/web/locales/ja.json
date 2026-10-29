@@ -2711,5 +2711,13 @@
   "automation_questions_open": "回答する",
   "automation_questions_empty": "未解決の質問はありません",
   "automation_questions_disabled": "オペレーター質問は無効になっています：質問スイッチがオフです。",
-  "automation_questions_failed": "未解決の質問の読み込みに失敗しました: %1$s"
+  "automation_questions_failed": "未解決の質問の読み込みに失敗しました: %1$s",
+  "automation_questions_answer_title": "質問 %1$s に回答する",
+  "automation_questions_answer_rec": "推奨: %1$s",
+  "automation_questions_answer_default": "既定: %1$s",
+  "automation_questions_answer_quote_label": "テキストでの回答（選択肢を選ぶ場合は省略可）",
+  "automation_questions_answer_current": "現在の回答",
+  "automation_questions_answer_supersedes_note": "この回答は、現在の回答と置き換えます。",
+  "automation_questions_answer_required": "送信する前に、選択肢を選択するか回答を入力してください。",
+  "automation_questions_answer_submit": "回答"
 }

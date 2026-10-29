@@ -2711,5 +2711,13 @@
   "automation_questions_open": "Responder",
   "automation_questions_empty": "No hay preguntas abiertas",
   "automation_questions_disabled": "Las preguntas del operador están desactivadas: el conmutador de preguntas está desactivado.",
-  "automation_questions_failed": "Fallo al cargar las preguntas abiertas: %1$s"
+  "automation_questions_failed": "Fallo al cargar las preguntas abiertas: %1$s",
+  "automation_questions_answer_title": "Responder a la pregunta %1$s",
+  "automation_questions_answer_rec": "Recomendado: %1$s",
+  "automation_questions_answer_default": "Predeterminada: %1$s",
+  "automation_questions_answer_quote_label": "Su respuesta en texto (opcional si elige una opción)",
+  "automation_questions_answer_current": "Respuesta actual",
+  "automation_questions_answer_supersedes_note": "Esta respuesta sustituye a la respuesta actual.",
+  "automation_questions_answer_required": "Elija una opción o escriba una respuesta antes de enviar.",
+  "automation_questions_answer_submit": "Responder"
 }

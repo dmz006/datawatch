@@ -2711,5 +2711,13 @@
   "automation_questions_open": "Beantworten",
   "automation_questions_empty": "Keine offenen Fragen",
   "automation_questions_disabled": "Operatorfragen sind derzeit deaktiviert: der Fragen-Schalter ist aus.",
-  "automation_questions_failed": "Offene Fragen fehlgeschlagen: %1$s"
+  "automation_questions_failed": "Offene Fragen fehlgeschlagen: %1$s",
+  "automation_questions_answer_title": "Frage %1$s beantworten",
+  "automation_questions_answer_rec": "Empfohlen: %1$s",
+  "automation_questions_answer_default": "Standard: %1$s",
+  "automation_questions_answer_quote_label": "Ihre Antwort als Text (optional, wenn Sie eine Option wählen)",
+  "automation_questions_answer_current": "Aktuelle Antwort",
+  "automation_questions_answer_supersedes_note": "Diese Antwort ersetzt die aktuelle Antwort.",
+  "automation_questions_answer_required": "Wählen Sie eine Option oder geben Sie eine Antwort ein, bevor Sie absenden.",
+  "automation_questions_answer_submit": "Antworten"
 }

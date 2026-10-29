@@ -2711,5 +2711,13 @@
   "automation_questions_open": "Répondre",
   "automation_questions_empty": "Aucune question ouverte",
   "automation_questions_disabled": "Les questions opérateur sont actuellement désactivées : le commutateur des questions est hors.",
-  "automation_questions_failed": "Échec du chargement des questions ouvertes : %1$s"
+  "automation_questions_failed": "Échec du chargement des questions ouvertes : %1$s",
+  "automation_questions_answer_title": "Répondre à la question %1$s",
+  "automation_questions_answer_rec": "Recommandé : %1$s",
+  "automation_questions_answer_default": "Défaut : %1$s",
+  "automation_questions_answer_quote_label": "Votre réponse par texte (facultatif si vous choisissez une option)",
+  "automation_questions_answer_current": "Réponse actuelle",
+  "automation_questions_answer_supersedes_note": "Cette réponse remplace la réponse actuelle.",
+  "automation_questions_answer_required": "Choisissez une option ou saisissez une réponse avant d’envoyer.",
+  "automation_questions_answer_submit": "Répondre"
 }
