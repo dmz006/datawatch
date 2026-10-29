@@ -71,6 +71,14 @@ type LaneOccupant struct {
 	PRDID   string `json:"prd_id"`
 	Title   string `json:"title"`
 	Backend string `json:"backend"`
+	// WaitingOnVerifier says the lane is occupied but not advancing: the
+	// Automaton has running tasks and every one of them is blocked waiting
+	// for a verifier slot (see lane_fill_verifier_wait.go). Zero means the
+	// lane is working or holds no running task.
+	WaitingOnVerifier bool `json:"waiting_on_verifier,omitempty"`
+	// WaitReason is the readable reason text of a blocked waiter, set with
+	// WaitingOnVerifier.
+	WaitReason string `json:"wait_reason,omitempty"`
 }
 
 // LaneFillCandidate is a plain snapshot of one Automaton, as far as lane fill

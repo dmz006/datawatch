@@ -478,14 +478,14 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 		backend := c.laneFillWorkerBackend(r, execution)
 		switch {
 		case laneFillRunning(r.status):
-			running = append(running, LaneOccupant{PRDID: r.id, Title: r.title, Backend: backend})
+			running = append(running, c.laneFillVerifierWait(LaneOccupant{PRDID: r.id, Title: r.title, Backend: backend}))
 			c.laneFillForgetStart(r.id)
 			continue
 		case laneFillTerminal(r.status):
 			continue
 		}
 		if s, ok := started[r.id]; ok && now.Sub(s.at) < grace {
-			running = append(running, LaneOccupant{PRDID: r.id, Title: s.title, Backend: s.backend})
+			running = append(running, c.laneFillVerifierWait(LaneOccupant{PRDID: r.id, Title: s.title, Backend: s.backend}))
 			continue
 		}
 		if NormalizePRDStatus(r.status) == PRDPlanning {
