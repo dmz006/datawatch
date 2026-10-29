@@ -1637,6 +1637,12 @@ When adding a new LLM backend:
   must be in `config.DefaultDetection()` (config.go) and editable via Settings → Detection Filters.
 - When adding a new LLM backend or pattern, add it to `DefaultDetection()` defaults, never to
   `manager.go` directly. Users can override patterns in their config.yaml or per-LLM detection config.
+- **Exception: rate-limit (throttle) lines.** These are a built-in per-backend table in
+  `internal/session/rate_limit_lines.go`, not a `DefaultDetection()` list, and
+  `detection.rate_limit_patterns` ships unset (a deliberate decision, see
+  `docs/operations.md`). A new phrase needs a recorded line in `testdata/rate_limit_lines/`
+  and goes in that table for the backend that prints it; an operator list in config still
+  replaces the table with flat-substring matching.
 
 ## Decision Making
 

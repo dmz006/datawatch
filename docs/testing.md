@@ -2025,6 +2025,37 @@ curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity
 
 ---
 
+## TS-831 — PWA Detection Filters card: built-in per-backend default
+
+| Field | Details |
+|-------|---------|
+| **Description** | With no operator rate-limit list, the daemon applies its built-in per-backend table. The Settings → Detection Filters card says so instead of listing a flat set of phrases as defaults. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh TS-831`. 1. Save the current `detection.rate_limit_patterns` through `PUT /api/config` and set it to an empty list. 2. Open Settings → Detection Filters in the PWA. 3. Save a one-entry list through the API and reload the card. 4. Restore the saved list. |
+| **Expected** | Step 2: the Rate Limit Patterns section shows the translated built-in table badge and hint, no phrase rows, no remove button and no "N defaults" count. Step 3: the section shows the entry, the "1 custom" badge, one row and no hint. |
+| **Actual** | Run live on 2026-10-28 against a sandbox daemon built from this branch, headless Chromium, exit 0 (1 of 1 story passed). |
+| **Result** | Pass (live) |
+
+### New Go and node tests for the per-backend anchored throttle matching
+
+| Test | File | What it pins |
+|------|------|--------------|
+| `TestBuiltinRateLimitFixtureDetection` | `internal/session/rate_limit_lines_test.go` | every fixture line is detected by its backend family, and every table phrase occurs in that family's recorded lines |
+| `TestBuiltinRateLimitAnchoredMatching` | `internal/session/rate_limit_lines_test.go` | line-start matching per backend family |
+| `TestRateLimitClaudeDialogEntries` | `internal/session/rate_limit_lines_test.go` | the usage-dialog entries still detect for claude-code and for no other backend |
+| `TestRateLimitLineFixturesMatchPerBackend` | `internal/session/rate_limit_lines_test.go` | each captured line matches its own backend after the detector's normalisation |
+| `TestRateLimitOrdinaryTextDoesNotMatch` | `internal/session/rate_limit_lines_test.go` | quoted-phrase lines in `testdata/rate_limit_lines/ordinary/` match no backend |
+| `TestBuiltinFlatFingerprintEncodesBackend` | `internal/session/rate_limit_lines_test.go` | the patterns version digest changes when a phrase moves between backends |
+| `TestRateLimitDefaultWiringAndScoping` | `internal/session/rate_limit_lines_test.go` | an unset operator config produces the built-in table, scoped per backend |
+| `TestRateLimitOperatorFlatListKeepsSubstringBehavior` | `internal/session/rate_limit_lines_test.go` | an operator list keeps flat-substring matching for every backend |
+| `TestRateLimitDetectorIgnoresQuotedPhraseInThrottleTaskOutput` | `internal/session/throttle_detector_quoted_phrase_test.go` | the incident: a quoted phrase mid-sentence on a pi-prompt worker changes no state and fires no listener, back-off or fallback; fail-before evidence is in `docs/plans/assets/throttle-detector-fail-before.md` |
+| `TestRateLimitDetector_5hWeeklyModernPhrasings` / `TestRateLimitDetector_LongLineGuard` | `internal/session/v5274_ratelimit_modern_test.go` | the modern 5-hour and weekly phrasings and the long-line guard, rewritten against the per-backend matcher |
+| `TestGetDetection_RateLimitPatternsOperatorKept` | `internal/config/config_test.go` | an operator list in the config is returned unchanged |
+| `app-detection-filters.test.js` (5 tests) | `internal/server/web/` | the card shows no flat default phrases, shows the built-in hint only while no list is set, keeps the other sections' defaults, and the two new keys exist in all five locales |
+
+Counts: 12 new Go test functions in 4 test files (the 2 rewritten ones included), 1 new node test file with 5 tests, 1 new browser story (TS-831). The fixture directory `testdata/rate_limit_lines/` is described in its own README.
+
+---
+
 ## CodeQL alerts on the MCP debug transport and dictation ids
 
 Two code-scanning alerts were fixed on one branch (the third, the subprocess shell alert, was dismissed by the operator's decision and has no code change; see the plan). Each fix has its own test description, steps, expected result and actual result. The sandbox daemon in every "Steps" list is loopback only with its data under a gitignored directory, never the production daemon on `8443`. Plan and decisions: [2026-10-28-codeql-last-three-alerts.md](plans/2026-10-28-codeql-last-three-alerts.md).

@@ -1,0 +1,2 @@
++		{"claude-code", "Weekly limit reached"},
+⎿  the added test string quotes the "weekly limit reached" capture for the table

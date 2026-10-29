@@ -1655,6 +1655,8 @@
   "automata_detail_readonly_dirs": "Read-only dirs",
   "settings_detection_alert_settle": "Alert settle (sec):",
   "settings_detection_alert_repeat": "Alert repeat (sec):",
+  "settings_detection_rate_limit_builtin": "built-in table",
+  "settings_detection_rate_limit_builtin_hint": "No list is set, so the built-in per-backend table applies: each backend is matched only on its own throttle line, at the start of the line. Adding a pattern here replaces the table with a plain substring list for all backends.",
   "capacity_card_title": "Capacity",
   "capacity_waiting": "Waiting",
   "capacity_no_limit": "no limit",

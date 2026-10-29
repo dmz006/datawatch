@@ -1,0 +1,6 @@
+The dashboard shows Approaching usage limit in amber when a seat passes 80% of its quota.
+Release notes: the parser also reads "your usage limit will reset at 9pm" and the "limit will reset at" form.
+The weekly usage limit page lists plan reset details; nothing is printed to the pane for it.
+Reviewer comment: choose "stop and wait" only if the schedule allows, otherwise "wait for limit to reset" costs a day.
+Stop and think about the plan before editing the matcher.
+Resets the counter at midnight, so a retry loop never sees a stale value.

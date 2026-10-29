@@ -731,6 +731,8 @@ detection:
   # Patterns indicating session completed
   completion_patterns: "[]"
   # Patterns indicating rate limit hit
+  # (the shipped default is the built-in per-backend table in
+  # internal/session/rate_limit_lines.go; a non-empty list replaces it)
   rate_limit_patterns: "[]"
   # Explicit protocol markers for input needed
   input_needed_patterns: "[]"

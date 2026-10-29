@@ -114,8 +114,8 @@ func TestParseRateLimitResetTime_ClaudeNewFormat(t *testing.T) {
 //
 //	"You're out of extra usage · resets 11:50am (America/New_York)"
 //
-// Verifies (1) the new "out of extra usage" trigger pattern is in
-// rateLimitPatterns AND (2) parseRateLimitResetTime extracts the time.
+// Verifies (1) the recorded "out of extra usage" line starts match in
+// the claude-code table AND (2) parseRateLimitResetTime extracts the time.
 // The parser already had the "resets " marker from BL185, so the time
 // half is unchanged; this test ensures regression safety.
 func TestParseRateLimitResetTime_BL262OutOfExtraUsage(t *testing.T) {
@@ -144,12 +144,12 @@ func TestParseRateLimitResetTime_BL262OutOfExtraUsage(t *testing.T) {
 func TestRateLimitPatterns_BL262(t *testing.T) {
 	must := []string{"out of extra usage", "you're out of"}
 	have := map[string]bool{}
-	for _, p := range rateLimitPatterns {
+	for _, p := range builtinRateLimitPhrases["claude-code"] {
 		have[p] = true
 	}
 	for _, w := range must {
 		if !have[w] {
-			t.Errorf("rateLimitPatterns missing BL262 pattern %q", w)
+			t.Errorf("claude-code rate-limit table missing BL262 phrase %q", w)
 		}
 	}
 }
