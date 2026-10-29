@@ -23,10 +23,10 @@ func TestLifecycleSubscriptionForm_KindListMatchesKnownEventKinds(t *testing.T) 
 		t.Fatal("_LIFECYCLE_SUB_KIND_GROUPS not found in web/app.js")
 	}
 	got := map[string]bool{}
-	// Kinds are prd.<status>, task.<status> or a bare opt-in warning kind;
-	// the group label keys (lifecycle_sub_form_*) share the quoted shape and
-	// are skipped.
-	for _, m := range regexp.MustCompile(`'((?:(?:prd|task)\.)?[a-z_]+)'`).FindAllSubmatch(block[1], -1) {
+	// Kinds are prd.<status>, task.<status> or a bare kind (opt-in
+	// warning, session, question); the group label keys (lifecycle_sub_form_*)
+	// share the quoted shape and are skipped.
+	for _, m := range regexp.MustCompile(`'((?:(?:prd|task|question)\.)?[a-z_]+)'`).FindAllSubmatch(block[1], -1) {
 		if strings.HasPrefix(string(m[1]), "lifecycle_sub_form_") {
 			continue
 		}

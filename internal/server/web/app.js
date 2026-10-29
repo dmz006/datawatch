@@ -26567,7 +26567,8 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
     'task.cancelled', 'task.waiting_capacity', 'task.awaiting_approval',
     'task.review_needed']],
   ['lifecycle_sub_form_group_other', 'Other', [
-    'task.session_started', 'task.session_cleared', 'prd.updated']],
+    'task.session_started', 'task.session_cleared', 'prd.updated',
+    'question.answered', 'question.withdrawn']],
   ['lifecycle_sub_form_group_warnings', 'Warnings (opt-in)', [
     'scope_warning', 'guardrail_warn']],
 ];

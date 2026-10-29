@@ -74,6 +74,10 @@ var KnownEventKinds = func() map[string]bool {
 		KindScopeWarning:       true,
 		KindGuardrailWarn:      true,
 		KindPRDUpdated:         true,
+		// The operator-question kinds are subscribable but never in the
+		// default set: a subscriber lists them explicitly.
+		KindQuestionAnswered:  true,
+		KindQuestionWithdrawn: true,
 	}
 	for _, s := range []PRDStatus{
 		PRDDraft, PRDPlanning, PRDNeedsReview, PRDApproved, PRDRevisionsAsked,

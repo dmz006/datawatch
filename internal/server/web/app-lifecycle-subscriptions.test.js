@@ -277,8 +277,8 @@ test('lifecycle subscriptions form: the sink picker offers webhook and peer afte
   assert.deepEqual([...run(s.sandbox, `_LIFECYCLE_SUB_SINKS`)], order);
   assert.match(html, /<option value="comm" selected>/);
   const kinds = run(s.sandbox, `_LIFECYCLE_SUB_KINDS`);
-  assert.equal(kinds.length, 31);
-  for (const k of ['prd.draft', 'prd.paused', 'task.awaiting_approval', 'task.review_needed', 'task.session_started', 'task.session_cleared', 'scope_warning', 'guardrail_warn', 'prd.updated']) {
+  assert.equal(kinds.length, 33);
+  for (const k of ['prd.draft', 'prd.paused', 'task.awaiting_approval', 'task.review_needed', 'task.session_started', 'task.session_cleared', 'scope_warning', 'guardrail_warn', 'prd.updated', 'question.answered', 'question.withdrawn']) {
     assert.ok(kinds.includes(k), k);
     assert.ok(html.includes(k), k);
   }
