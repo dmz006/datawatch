@@ -42,6 +42,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -334,6 +335,49 @@ func TestVerifierWaitSmokeLive(t *testing.T) {
 	default:
 		t.Fatalf("lane fill mode %q is not off, shadow or on", st.Mode)
 	}
+
+	// Wire-level presence of the verifier-wait surface's field names —
+	// asserted on the raw JSON so the key names themselves are what the live
+	// check stands behind, independent of the Go types above.
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(body, &wire); err != nil {
+		t.Fatalf("/api/autonomous/lane-fill (wire map) does not parse: %v", err)
+	}
+	for _, want := range []string{"mode", "lanes", "queued_eligible", "evidence", "decisions", "alerts"} {
+		if _, ok := wire[want]; !ok {
+			t.Fatalf("/api/autonomous/lane-fill lacks top-level key %q (keys %v)", want, wireKeys(wire))
+		}
+	}
+	var qe struct {
+		GPU    *int `json:"gpu"`
+		Claude *int `json:"claude"`
+	}
+	if err := json.Unmarshal(wire["queued_eligible"], &qe); err != nil {
+		t.Fatalf("queued_eligible does not parse: %v (raw %q)", err, wire["queued_eligible"])
+	}
+	if qe.GPU == nil || *qe.GPU < 0 || qe.Claude == nil || *qe.Claude < 0 {
+		t.Errorf("queued_eligible.gpu / queued_eligible.claude must be present, non-negative ints (raw %q)",
+			wire["queued_eligible"])
+	}
+	if !jsonStartsWith(wire["evidence"], '{') {
+		t.Errorf("evidence is not a JSON object (raw %q)", wire["evidence"])
+	}
+	for _, list := range []string{"decisions", "alerts"} {
+		if !jsonStartsWith(wire[list], '[') {
+			t.Errorf("%s is not a JSON list (raw %q)", list, wire[list])
+		}
+	}
+	var wireLanes []map[string]json.RawMessage
+	if err := json.Unmarshal(wire["lanes"], &wireLanes); err != nil {
+		t.Fatalf("lanes is not a JSON list: %v (raw %q)", err, wire["lanes"])
+	}
+	for i, wl := range wireLanes {
+		for _, want := range []string{"id", "type", "state", "eligible_waiting"} {
+			if _, ok := wl[want]; !ok {
+				t.Errorf("lanes[%d] lacks key %q (keys %v)", i, want, wireKeys(wl))
+			}
+		}
+	}
 	waiting := 0
 	for i := range st.Lanes {
 		l := &st.Lanes[i]
@@ -345,6 +389,9 @@ func TestVerifierWaitSmokeLive(t *testing.T) {
 		}
 		if l.WaitingOnVerifier {
 			waiting++
+			if l.WaitReason == "" {
+				t.Errorf("lane %s is waiting_on_verifier but reports no wait_reason: %+v", l.ID, l)
+			}
 		}
 	}
 	for i, d := range st.Decisions {
@@ -379,14 +426,33 @@ func TestVerifierWaitSmokeLive(t *testing.T) {
 	}
 	cwRaw, ok := lf["count_verifier_wait"]
 	if !ok {
-		t.Fatal("/api/config autonomous.lane_fill has no count_verifier_wait key")
+		t.Fatalf("/api/config autonomous.lane_fill has no count_verifier_wait key (raw %q)", string(lfRaw))
 	}
 	var cw bool
 	if err := json.Unmarshal(cwRaw, &cw); err != nil {
 		t.Fatalf("autonomous.lane_fill.count_verifier_wait = %s is not a boolean", cwRaw)
 	}
-	t.Logf("sandbox config: autonomous.lane_fill.count_verifier_wait=%v (unset defaults to true)", cw)
 	if !cw {
-		t.Log("note: the sandbox daemon has count_verifier_wait set to false; the default-true check passes only on a daemon that never set it")
+		t.Fatalf("autonomous.lane_fill.count_verifier_wait = false, want the shipped default true "+
+			"(the sandbox leaves the key unset; raw %q)", string(lfRaw))
 	}
+	t.Logf("sandbox config: autonomous.lane_fill.count_verifier_wait = %t (shipped default; the sandbox leaves the key unset)", cw)
+}
+
+// jsonStartsWith reports whether a raw JSON value begins with startTok
+// after whitespace.
+func jsonStartsWith(raw json.RawMessage, startTok byte) bool {
+	s := strings.TrimSpace(string(raw))
+	return len(s) > 0 && s[0] == startTok
+}
+
+// wireKeys returns the sorted key names of a raw JSON object map, for
+// error messages.
+func wireKeys(m map[string]json.RawMessage) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
