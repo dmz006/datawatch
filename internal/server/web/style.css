@@ -686,6 +686,41 @@ body {
   }
 }
 
+/* Second row of sub-tabs (Automation | Automata | Templates) — sits directly
+   below the first sub-tab bar and shares its look: same padding, bottom
+   border and background. Unlike the first bar it never scrolls horizontally
+   on a phone: the buttons flex to fill the width evenly and long labels
+   truncate with an ellipsis instead of overflowing. */
+.automation-subtabs {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  overflow: hidden;          /* no horizontal scroll — flex children fit the row */
+  box-sizing: border-box;
+  max-width: 100%;
+}
+.automation-subtabs .output-tab {
+  flex: 1 1 0;               /* all buttons share the row evenly */
+  min-width: 0;
+  margin-right: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;   /* long label truncates instead of pushing the row */
+  white-space: nowrap;
+}
+
+/* Phone width: three sub-tabs must fit in a single row at 360 px (and even at
+   320 px) with 40 px tap targets and no horizontal page scroll — the first
+   and second sub-tab rows stack without either one spilling sideways. */
+@media (max-width: 600px), (pointer: coarse) {
+  .automation-subtabs .output-tab {
+    min-height: 40px;
+    min-width: 64px;
+    box-sizing: border-box;
+  }
+}
+
 /* Filter bar */
 .automata-filter-bar {
   display: flex;
