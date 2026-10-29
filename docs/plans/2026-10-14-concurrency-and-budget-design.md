@@ -1815,3 +1815,7 @@ Calibration data (transcripts since the 2026-10-25 08:00 EDT reset, normalized u
 Time zone for other users: `reset_zone` is settable on YAML, REST (a bad name is refused with "not an IANA zone name"), the CLI, the PWA settings card and the comm channel, and `docs/howto/usage-calculator.md` tells users to use a zone name, never an offset. The default stays UTC, which is wrong for most users; whether the default should be the daemon's own time zone is an open question for the operator.
 
 Time zone default for other users, operator 2026-10-28, quoted: "Default to zone server is in". The calculator's reset zone default becomes the zone the daemon runs in (registry row 241); an explicit value, including UTC, always wins.
+
+### Usage reading 2026-10-29 about 03:46
+
+Operator: "Claude is at 53%, pi only is good, what else is needed to get everything done, are automation ask done, how many prd and bugs left to 10.0?" The reading was typed into the usage calculator at 03:46 EDT. The calculator then showed: pace line 54.3 points at 3.82 days elapsed (the reset is Sunday 08:00 EST), so 53% is 1.3 points under the line; recent burn 7.6 points per 24 h, week average 13.9; projected end 77.4% at the recent burn and 97.6% at the week average, both within budget, nothing running out before the reset. The supervisor's own estimate overnight was 51 to 52%. The "pi only is good" part answers the eval matrix question: the matrix runs on pi workers only, the opencode roles are dropped (registry row 243).
