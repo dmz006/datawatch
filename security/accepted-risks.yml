@@ -233,27 +233,6 @@ entries:
     validated_by: "claude-session"
     reason: "No fix available in Debian bookworm: security-tracker.debian.org/tracker/CVE-2026-55453 (checked 2026-10-21) lists bookworm 2.4.2-3+deb12u9 as vulnerable with no fixed version (Debian bug 1150560); fixed only in sid 2.4.20-1. Review by 2026-11-20 and remove once Debian ships a bookworm cups update (see docs/plans/2026-10-21-trivy-aider-parent-full.md)."
 
-  - id: cve/CVE-2025-26625
-    kind: container
-    package: "git-lfs"
-    version: "3.3.0-1+deb12u1"
-    severity: high
-    images:
-      - agent-base
-      - agent-gemini
-      - agent-aider
-      - parent-full
-    impact:
-      traced: true
-      reachable: "yes"
-      method: "grep of Dockerfiles, entrypoint and Go sources for lfs and git clone/pull; docker run --network none on the built agent-base image to read /etc/gitconfig and git-lfs dpkg contents; internal/agents/worker_clone.go read; CVE description read"
-      analysis: "CVE-2025-26625: git-lfs can be made to write or read outside the repo through a crafted symlink/pointer when it checks out LFS objects from a hostile repository or LFS server. Dockerfile.agent-base line 146 installs git-lfs, so all four images carry it. Running the built image shows /etc/gitconfig already contains filter.lfs.clean, filter.lfs.smudge, filter.lfs.process and filter.lfs.required=true, so git invokes git-lfs automatically on any checkout of a repo whose .gitattributes marks files filter=lfs, without anyone typing git lfs. internal/agents/worker_clone.go runs git clone (optionally --branch) and git pull --ff-only into the worker workspace, and the agent sessions run git themselves, so the vulnerable code path is reachable. No datawatch Go source, script or entrypoint calls git lfs explicitly (grep for lfs in cmd/internal/scripts/docker found only the Dockerfile install line). Exposure is limited: the clone URL is the operator-configured project remote (resp.Git.URL), so exploitation needs an operator to point a project at an attacker-controlled LFS-enabled remote. Reachable but low likelihood; keep the suppression until Debian ships a bookworm fix."
-    first_added: "2026-05-31"
-    added: "2026-05-31"
-    expires: "2026-06-30"
-    validated_by: "claude-session"
-    reason: "No fix available in Debian bookworm as of this migration; re-check each release cycle (BL398 Phase 1's live rescan baseline)."
-
   - id: cve/CVE-2026-7210
     kind: container
     package: "python3.11, libpython3.11-*"
@@ -1461,23 +1440,6 @@ entries:
     validated_by: "claude-session"
     reason: "No fix available in Debian bookworm. NOT independently traced (self-admitted caveat) -- re-review should actually trace which TLS call path agent-gemini's code uses, the way CVE-2026-19445 was traced this session."
 
-  - id: cve/CVE-2026-93748
-    kind: container
-    package: "http-cache-semantics (npm)"
-    version: "4.2.0"
-    severity: high
-    images:
-      - agent-gemini
-    impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "Information disclosure via the max-stale cache-control directive. Transitive dependency of @google/gemini-cli's own package.json. Whether any gemini-cli dependency path actually exercises max-stale-aware caching against attacker-influenced content (vs. just Google's own API responses) was not independently traced."
-    first_added: "2026-10-03"
-    added: "2026-10-03"
-    expires: "2026-11-02"
-    validated_by: "claude-session"
-    reason: "No newer published npm version exists as of this migration. NOT independently traced (self-admitted caveat). Unlike most entries here this is an actively maintained package, not a slow Debian backport -- check for a fix each cycle, not just on expiry."
-
   - id: cve/CVE-2026-19445
     kind: container
     package: "libpython3.11-minimal"
@@ -1497,35 +1459,6 @@ entries:
     validated_by: "claude-session"
     reason: "No fix available in Debian bookworm. Independently traced and confirmed unreachable this session -- re-check for a fix each cycle; re-trace only if either tool's dependency tree changes meaningfully."
 
-  - id: cve/CVE-2026-77214
-    kind: container
-    package: "libexpat1"
-    version: "2.5.0-1+deb12u4"
-    severity: high
-    images:
-      - agent-base
-      - agent-gemini
-      - agent-aider
-      - parent-full
-    impact:
-      traced: true
-      reachable: "no"
-      method: "ldd scan of every executable in a networkless container (docker run --entrypoint /bin/sh --network none) to find every real linker to libexpat1, then traced each caller's actual invocation path"
-      analysis: "Heap buffer over-read in XML_ParseBuffer, triggered by malformed/attacker-controlled XML. Scanned every file in the image for a dynamic link to libexpat1: only /usr/lib/git-core/git-http-push links it. That binary is git's legacy dumb-HTTP/WebDAV push path, superseded by the smart-HTTP protocol git push has used by default since ~2010; it is never invoked by any datawatch code path, the image's own git usage, or a normal `git push` to a modern remote (GitHub/GitLab/etc. all serve smart HTTP). Even in the dumb-HTTP case the exposure is on push, not fetch, requiring the operator's own configured remote to be malicious -- not an attacker-controlled input."
-    first_added: "2026-10-08"
-    added: "2026-10-08"
-    expires: "2027-01-06"
-    validated_by: "claude-session"
-    reason: "Found live by image-refresh.yaml's blocking scan (new since the BL398 migration baseline -- not in the original 70). No fix available in Debian bookworm. Independently traced and confirmed unreachable this session."
-
-
-  # --- code-scanning: GitHub-dismissed alerts migrated from BL394's own
-  # review (docs/plans/2026-10-03-bl394-security-findings-review.md) into
-  # this structured registry -- not new analysis. Each entry's `impact.
-  # analysis` is the real dismissal comment recorded on GitHub at the time
-  # each alert was actually reviewed and dismissed (pulled verbatim via
-  # `gh api repos/dmz006/datawatch/code-scanning/alerts/<n>`), so `added`
-  # below is each alert's real `dismissed_at` date, not today's date.
   - id: code-scanning/526
     kind: code-scanning
     package: "js/xss"
@@ -3518,63 +3451,6 @@ entries:
     reason: >-
       false positive -- see impact.analysis for the full dismissal record
 
-  - id: cve/CVE-2026-91403
-    kind: container
-    package: "openjdk-17-jre-headless"
-    version: "17.0.20.1+1-1~deb12u1"
-    severity: critical
-    images:
-      - parent-full
-    impact:
-      traced: true
-      reachable: "no"
-      method: "source grep of every java invocation in the repository (source trace; not a container linker scan)"
-      analysis: "The JRE is installed in parent-full for one reason only: to run signal-cli (see the comment above the install line in Dockerfile.parent-full). A source trace of the repository shows java is started only by internal/signal (signalcli.go, javafix.go). CVE-2026-91403 distrusts eMudhra intermediate CA certificates; it affects signal-cli only if the Signal service chain used an eMudhra intermediate, and Signal pins its own trust root, so it does not. CVE-2026-91415 is a font-rendering hardening fix (Oracle CPU 2026-10); it needs AWT text rendering, and signal-cli is a headless messaging client that never renders text. Both paths are unreachable from datawatch code."
-    first_added: "2026-10-22"
-    added: "2026-10-24"
-    expires: "2027-01-22"
-    validated_by: "claude-session"
-    reason: "No fix available in Debian bookworm (status affected, no fixed version). Found live by the Release workflow blocking parent-full scan on the 9.5.93 tag. Moved from a hand edit of .trivyignore into this registry on 2026-10-24. Re-check for a fix each cycle; re-trace only if signal-cli use of the JRE changes."
-
-  - id: cve/CVE-2026-91415
-    kind: container
-    package: "openjdk-17-jre-headless"
-    version: "17.0.20.1+1-1~deb12u1"
-    severity: high
-    images:
-      - parent-full
-    impact:
-      traced: true
-      reachable: "no"
-      method: "source grep of every java invocation in the repository (source trace; not a container linker scan)"
-      analysis: "The JRE is installed in parent-full for one reason only: to run signal-cli (see the comment above the install line in Dockerfile.parent-full). A source trace of the repository shows java is started only by internal/signal (signalcli.go, javafix.go). CVE-2026-91403 distrusts eMudhra intermediate CA certificates; it affects signal-cli only if the Signal service chain used an eMudhra intermediate, and Signal pins its own trust root, so it does not. CVE-2026-91415 is a font-rendering hardening fix (Oracle CPU 2026-10); it needs AWT text rendering, and signal-cli is a headless messaging client that never renders text. Both paths are unreachable from datawatch code."
-    first_added: "2026-10-22"
-    added: "2026-10-24"
-    expires: "2027-01-22"
-    validated_by: "claude-session"
-    reason: "No fix available in Debian bookworm (status affected, no fixed version). Same package and trace as CVE-2026-91403. Moved from a hand edit of .trivyignore into this registry on 2026-10-24."
-
-  - id: cve/CVE-2026-111497
-    kind: container
-    package: "libbrotli1"
-    version: "1.0.9-2+b6"
-    severity: critical
-    images:
-      - agent-base
-    impact:
-      traced: true
-      reachable: "no"
-      method: "ldd scan in a networkless container of the built agent-base image (docker run --entrypoint /bin/sh --network none)"
-      analysis: "A buffer overflow in the Brotli decoder, reachable only when something decodes attacker-supplied Brotli data. ldd scan of every executable and shared library in the agent-base image found exactly these linkers to libbrotlidec: /usr/bin/curl, libcurl and libcurl-gnutls, and git's HTTP helpers (git-remote-http, git-http-fetch, git-http-push, git-imap-send). Nothing else in the image, and no datawatch code, decodes Brotli. The data reaches the decoder only if an HTTP server the tool talks to answers with Content-Encoding br: curl asks for it only with --compressed (no datawatch script uses it) and git's HTTP transport accepts whatever libcurl supports, so the exposure is a git remote that the operator configured and that is controlled by an attacker, over a TLS connection the attacker cannot alter in transit. The remotes agents use are the operator's own (GitHub and local mirrors). Not exploitable without a hostile remote."
-    first_added: "2026-10-23"
-    added: "2026-10-24"
-    expires: "2027-01-22"
-    validated_by: "claude-session"
-    reason: "No fix available in Debian bookworm (status affected). Found live by the Release workflow blocking agent-base scan on the 9.5.111 tag. Moved from a hand edit of .trivyignore into this registry on 2026-10-24. Re-check for a fix each cycle; re-trace only if a new Brotli-linked tool is added to the image."
-
-  # --- code-scanning: alerts triaged as dismiss in the path-injection and
-  # certificate/sanitization decision lists under docs/plans/. Alerts fixed
-  # in code have no entry here. The operator applies the GitHub dismissals.
   - id: code-scanning/630
     kind: code-scanning
     package: "js sanitization (test file)"
