@@ -12,8 +12,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## v9.31.3 — Session progress strip removed; progress route fixed for non-pi sessions
 
 ### Changed
-- The live pi progress strip is no longer shown on the session detail page
- . It had been added in v9.30.0 without discussion, takes a lot of
+- The live pi progress strip is no longer shown on the session detail page. It had been added in v9.30.0 without discussion, takes a lot of
   room, and on a claude-code session it was showing stale data from an
   unrelated old pi log. The progress snapshot stays as task data on the
   Automaton: the task card in the Status tab (automata.task_progress) keeps
