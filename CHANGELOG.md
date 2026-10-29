@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.32.0 — The calculator reset zone follows the server by default
+
+### Changed
+
+- **The usage calculator's reset now follows your server's time zone by default.** Leaving the reset time zone empty (the new default) means the reset runs at its time in the zone the daemon runs in — it was pinned to Sunday 08:00 UTC. The daemon picks up the zone from the `TZ` environment variable, falling back to the zone named in the system local-time symlink, then the runtime's local zone. If none can be found, the reset falls back to UTC and the advice now says so and points at the key to set. Any zone you set explicitly (a plain `UTC` included) always wins over the server's zone and is never rewritten. The effective zone is shown as the server's zone in the PWA settings card (empty field with the zone as placeholder and a note), in `GET /api/config` (`reset_zone_source` `server`, `reset_zone_fell_back` on the UTC fallback), in `datawatch config get` (the zone printed as `<zone> (server zone)`), and in the calculator advice's text (the reset line carries `(server zone)`) and JSON (`zone` plus `server_zone: true`).
+
 ## v9.31.6 — Throttle detection matches each backend own error line
 
 ### Changed
