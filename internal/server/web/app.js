@@ -22846,7 +22846,7 @@ function _automataSyncFab(tab) {
 }
 
 // _automataSyncActions shows the action buttons that belong to the tab:
-// select, filter, history and watch for Automata; filter, history and new for
+// select, filter, history and watch for Automata; filter and history for
 // Automation; none of them for Templates.
 function _automataSyncActions(tab) {
   const show = {
@@ -22856,7 +22856,6 @@ function _automataSyncActions(tab) {
     automataWatchFilterBtn: tab === 'automata',
     automationFilterBtn: tab === 'automation',
     automationHistoryBtn: tab === 'automation',
-    automationNewBtn: tab === 'automation',
   };
   Object.keys(show).forEach(id => {
     const el = document.getElementById(id);
@@ -27501,14 +27500,13 @@ window.automationRequest = automationRequest;
 const _AUTOMATION_STATUSES = ['draft', 'active', 'paused', 'blocked', 'completed', 'cancelled'];
 
 // The Automation sub-tab's action buttons, drawn into the Automata tab bar:
-// filter, history and new. They are hidden on the other sub-tabs.
+// filter and history. They are hidden on the other sub-tabs.
 function _automationActionButtonsHTML(visible) {
   const st = _automationState;
   const hide = visible ? '' : 'display:none;';
   const historyTitle = escHtml(st.historyOn ? t('automation_hide_history') : t('automation_show_history'));
   return `<button id="automationFilterBtn" class="automata-action-btn ${st.filterOpen ? 'active' : ''}" onclick="toggleAutomationFilter()" title="${escHtml(t('automation_filter_toggle'))}" aria-label="${escHtml(t('automation_filter_toggle'))}" style="${hide}">⊞</button>
-        <button id="automationHistoryBtn" class="automata-action-btn ${st.historyOn ? 'active' : ''}" onclick="toggleAutomationHistory()" title="${historyTitle}" aria-label="${historyTitle}" style="${hide}">⏱</button>
-        <button id="automationNewBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${hide}" onclick="if (typeof openAutomationForm === 'function') openAutomationForm()">＋ ${escHtml(t('automation_new'))}</button>`;
+        <button id="automationHistoryBtn" class="automata-action-btn ${st.historyOn ? 'active' : ''}" onclick="toggleAutomationHistory()" title="${historyTitle}" aria-label="${historyTitle}" style="${hide}">⏱</button>`;
 }
 
 // The Automation sub-tab's body: the filter bar, the capacity and progress
