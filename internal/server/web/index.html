@@ -120,9 +120,8 @@
            (Safari/iOS has its own separate Share-sheet install flow). -->
       <button id="headerInstallBtn" onclick="installPWA()" title="Install app" aria-label="Install app" style="display:none;background:transparent;border:none;color:inherit;font-size:17px;cursor:pointer;padding:4px 6px;opacity:0.85;">&#11015;</button>
       <!-- Tags menu — one header control for the session tag and watch filters.
-           The glyph is a filled tag icon (Tags glyph) drawn by style.css, not an outline.
            JavaScript sets the aria-label (with the active count) and the count chip. -->
-      <button id="headerTagsBtn" class="header-tags-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="headerTagsMenu" onclick="toggleTagsMenu()"><svg width="22" height="22" viewBox="0 0 24 24" class="header-tags-icon" aria-hidden="true" focusable="false"><path class="header-tags-icon-body" d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle class="header-tags-icon-hole" cx="7" cy="7" r="2"/><path class="header-tags-icon-shine" d="M4.9 4.6h3.1"/></svg><span id="headerTagsCount" class="header-tags-count"></span></button>
+      <button id="headerTagsBtn" class="header-tags-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="headerTagsMenu" onclick="toggleTagsMenu()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.5"/></svg><span id="headerTagsCount" class="header-tags-count"></span></button>
       <span class="status-dot" id="statusDot" title="Long-press to reconnect + check for app update"></span>
     </header>
 

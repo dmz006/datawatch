@@ -196,10 +196,10 @@ body {
    can't all fit, so the least-essential ones (help toggle, fullscreen
    toggle) are hidden there — status dot, alert pill and the title keep the
    row inside the viewport. */
-.header > #headerTagsBtn,
+.header > #headerHelpLink,
 .header > #headerAlertPill,
-.header > #headerFullscreenBtn,
-.header > #headerHelpLink, {
+.header > #headerTagsBtn,
+.header > #headerFullscreenBtn {
   box-sizing: content-box;
   min-width: 44px;
   min-height: 44px;
@@ -234,87 +234,21 @@ body {
   white-space: nowrap;
 }
 .header > #headerTagsBtn > svg {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   display: block;
   flex: none;
 }
-/* Header Tags icon — filled drawing, all colour from theme tokens (no literals).
-   Fill token choice: WCAG contrast of the body fill against the header
-   background var(--bg2). Formula: contrast = (Llighter + 0.05) / (Ldarker + 0.05)
-   with L = 0.2126R + 0.7152G + 0.0722B over sRGB channels linearized per WCAG.
-     --accent  #7c3aed on #1a1d27 (dark)  = 2.95:1  ✗ below 3:1
-     --accent2 #a855f7 on #1a1d27 (dark)  = 4.25:1  ✓
-     --accent2 #7c3aed on #f1f5f9 (light) = 5.20:1  ✓
-   So the body fills with var(--accent2) — ≥3:1 in both themes. */
-.header-tags-icon {
-  display: block;
-}
-.header-tags-icon-body {
-  fill: var(--accent2);
-  stroke: color-mix(in srgb, var(--accent2) 70%, var(--bg));
-  stroke-width: 1;
-  stroke-linejoin: round;
-}
-.header-tags-icon-hole {
-  fill: color-mix(in srgb, var(--accent2) 30%, var(--text));
-}
-.header-tags-icon-shine {
-  fill: none;
-  stroke: color-mix(in srgb, var(--text) 35%, transparent);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-}
-.header > #headerTagsBtn { position: relative; }
 .header-tags-count:empty { display: none; }
 .header-tags-count {
-  position: absolute;
-  top: 4px;
-  right: 4px;
   min-width: 16px;
   padding: 0 4px;
   border-radius: 8px;
   background: var(--accent2);
   color: var(--bg);
-  /* token-colored ring keeps the accent2 badge readable on the accent2 icon fill */
-  box-shadow: 0 0 0 2px var(--bg2);
   font-size: 11px;
   line-height: 16px;
   text-align: center;
-}
-
-/* Tags button interaction states: hover lift, keyboard focus ring, and the
-   is-active class (toggled by _tagsMenuRefresh) while the menu is open or a
-   tag filter is applied. All colours come from theme tokens (no literals),
-   and the only animated properties are colours — under prefers-reduced-motion
-   the transitions drop out and only the instant colour change remains. */
-.header > #headerTagsBtn:hover {
-  background: color-mix(in srgb, var(--accent2) 12%, transparent);
-  border-radius: 8px;
-}
-.header > #headerTagsBtn:hover .header-tags-icon-body {
-  fill: color-mix(in srgb, var(--accent2) 85%, var(--text));
-  stroke: color-mix(in srgb, var(--accent2) 55%, var(--text));
-}
-.header > #headerTagsBtn:focus-visible {
-  outline: 2px solid var(--accent2);
-  outline-offset: 2px;
-  border-radius: 8px;
-}
-.header > #headerTagsBtn.is-active {
-  background: color-mix(in srgb, var(--accent2) 18%, transparent);
-  border-radius: 8px;
-}
-.header > #headerTagsBtn.is-active .header-tags-icon-body {
-  fill: color-mix(in srgb, var(--accent2) 70%, var(--text));
-  stroke: color-mix(in srgb, var(--accent2) 50%, var(--text));
-}
-/* The .header-tags-count badge sits on top of these fills and keeps its own
-   token background plus the 2px var(--bg2) ring, so it stays readable in the
-   hover and active states without any changes here. */
-@media (prefers-reduced-motion: no-preference) {
-  .header > #headerTagsBtn { transition: background-color 120ms ease; }
-  .header-tags-icon-body { transition: fill 120ms ease, stroke 120ms ease; }
 }
 
 /* Tags menu panel: fixed under the header, never wider than the viewport so a
