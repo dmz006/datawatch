@@ -1292,12 +1292,31 @@ function handleMessage(msg) {
       }
       break;
     }
-    case 'question_raised':
-      // Operator question channel: an Automaton raised a question. The
-      // frame is acknowledged and deliberately not rendered yet — the
-      // question UI consumes this message in a later step. Until then it
-      // must be a no-op, never an error.
+    case 'question_raised': {
+      // Operator question channel: an Automaton raised a question (the
+      // return-path event for a successful POST /api/questions). Live
+      // refresh: while the Automation view is mounted — the questions
+      // card element exists — re-request the queue now through
+      // window.refreshAutomationQuestions so the new question appears
+      // before the next poll tick, and notice it through the same alert
+      // dock path the PWA uses for other live events (the needs_input
+      // case surfaces its message via showToast). The notice names the
+      // new question's label, falling back to its id; the dock render
+      // escapes the message (escHtml), so a hostile label never lands as
+      // live HTML. A frame with missing fields never throws: every field
+      // is read defensively, and with no name at all there is simply no
+      // notice. With the view unmounted this is a complete no-op — no
+      // request, no notice.
+      if (document.getElementById('automationQuestionsCard') &&
+          typeof window.refreshAutomationQuestions === 'function') {
+        window.refreshAutomationQuestions();
+        const qr = (msg.data && typeof msg.data === 'object') ? msg.data : {};
+        const _qstr = (v) => ((typeof v === 'string' || typeof v === 'number') ? String(v).trim() : '');
+        const qname = _qstr(qr.label) || _qstr(qr.id);
+        if (qname) showToast(t('automation_questions_raised', [qname]), 'info', 5000);
+      }
       break;
+    }
     case 'hello_ack':
       // Reply to our hello. Only 'window' changes the frames we get; an
       // older daemon (or one that echoes another mode) keeps the legacy

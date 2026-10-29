@@ -2712,6 +2712,7 @@
   "automation_questions_empty": "Keine offenen Fragen",
   "automation_questions_disabled": "Operatorfragen sind derzeit deaktiviert: der Fragen-Schalter ist aus.",
   "automation_questions_failed": "Offene Fragen fehlgeschlagen: %1$s",
+  "automation_questions_raised": "Neue Frage: %1$s",
   "automation_questions_answer_title": "Frage %1$s beantworten",
   "automation_questions_answer_rec": "Empfohlen: %1$s",
   "automation_questions_answer_default": "Standard: %1$s",

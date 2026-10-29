@@ -2712,6 +2712,7 @@
   "automation_questions_empty": "未解決の質問はありません",
   "automation_questions_disabled": "オペレーター質問は無効になっています：質問スイッチがオフです。",
   "automation_questions_failed": "未解決の質問の読み込みに失敗しました: %1$s",
+  "automation_questions_raised": "新しい質問: %1$s",
   "automation_questions_answer_title": "質問 %1$s に回答する",
   "automation_questions_answer_rec": "推奨: %1$s",
   "automation_questions_answer_default": "既定: %1$s",

@@ -2712,6 +2712,7 @@
   "automation_questions_empty": "No hay preguntas abiertas",
   "automation_questions_disabled": "Las preguntas del operador están desactivadas: el conmutador de preguntas está desactivado.",
   "automation_questions_failed": "Fallo al cargar las preguntas abiertas: %1$s",
+  "automation_questions_raised": "Pregunta nueva: %1$s",
   "automation_questions_answer_title": "Responder a la pregunta %1$s",
   "automation_questions_answer_rec": "Recomendado: %1$s",
   "automation_questions_answer_default": "Predeterminada: %1$s",

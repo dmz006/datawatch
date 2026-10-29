@@ -2712,6 +2712,7 @@
   "automation_questions_empty": "Aucune question ouverte",
   "automation_questions_disabled": "Les questions opérateur sont actuellement désactivées : le commutateur des questions est hors.",
   "automation_questions_failed": "Échec du chargement des questions ouvertes : %1$s",
+  "automation_questions_raised": "Nouvelle question : %1$s",
   "automation_questions_answer_title": "Répondre à la question %1$s",
   "automation_questions_answer_rec": "Recommandé : %1$s",
   "automation_questions_answer_default": "Défaut : %1$s",
