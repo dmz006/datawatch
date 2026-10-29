@@ -45,6 +45,14 @@ const (
 	storeLineAnswerRecorded    = "answer_recorded"
 	storeLineQuestionWithdrawn = "question_withdrawn"
 	storeLineQuestionExpired   = "question_expired"
+	// storeLineQuestionEventEmitted marks that the lifecycle event for one
+	// answer (its answer_id) or one withdrawal (answer_id empty) of the
+	// question was enqueued into the event queue: the daemon writes it
+	// after the emit, and replay records it, so a later
+	// ReconcileEmittedEvents run cannot emit the same event twice. Older
+	// stores (or a crash between the answer and the marker) simply lack
+	// the line; that is exactly what the startup reconcile repairs.
+	storeLineQuestionEventEmitted = "question_event_emitted"
 	// storeLineCrashResidue marks the line just before it as the abandoned
 	// fragment of a write that never finished (a crash or a failed partial
 	// write). The file is append-only, so the fragment cannot be cut away;
@@ -73,6 +81,11 @@ type questionStoreRecord struct {
 	// DiscardedBytes is set on a crash_residue line: the byte length of the
 	// abandoned fragment on the line before it.
 	DiscardedBytes int `json:"discarded_bytes,omitempty"`
+	// AnswerID and EventKind are set on a question_event_emitted line: the
+	// answer the question.answered event named (empty for
+	// question.withdrawn) and the event kind.
+	AnswerID  string `json:"answer_id,omitempty"`
+	EventKind string `json:"event_kind,omitempty"`
 }
 
 // QuestionStore holds the raised questions and their answers, backed by one
@@ -92,9 +105,28 @@ type QuestionStore struct {
 	answers   map[string]*Answer   // id -> the stored, immutable record
 	answerIDs map[string][]string  // question id -> answer ids, oldest first
 
+	// eventEmitted records the question_event_emitted markers: keyed by
+	// questionEventKey (question, kind, answer). Replay sets it for stored
+	// markers; MarkEventEmitted sets it for ones this instance wrote.
+	eventEmitted map[string]bool
+	// withdrawMeta remembers the actor and reason each question was
+	// withdrawn with, so its question.withdrawn event names them even when
+	// it is rebuilt at a later reconcile.
+	withdrawMeta map[string]questionWithdrawMeta
+
+	// eventSink, when non-nil, receives the question's lifecycle event on
+	// answer and withdrawal (question_events.go); nil emits nothing.
+	eventSink QuestionEventSink
+
 	// writeFn writes one chunk to the open append file; a test replaces it
 	// to simulate a write that fails part way.
 	writeFn func(f *os.File, b []byte) (int, error)
+}
+
+// questionWithdrawMeta is the (actor, reason) of a question's withdrawal.
+type questionWithdrawMeta struct {
+	actor  string
+	reason string
 }
 
 // NewQuestionStore opens (or starts, when the file is missing) the
@@ -113,6 +145,8 @@ func NewQuestionStore(path string) (*QuestionStore, error) {
 		questions:     make(map[string]*Question),
 		answers:       make(map[string]*Answer),
 		answerIDs:     make(map[string][]string),
+		eventEmitted:  make(map[string]bool),
+		withdrawMeta:  make(map[string]questionWithdrawMeta),
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -191,6 +225,10 @@ func parseStoreRecord(line string) (questionStoreRecord, error) {
 		if rec.QuestionID == "" {
 			return rec, errors.New("line is missing question_id")
 		}
+	case storeLineQuestionEventEmitted:
+		if rec.QuestionID == "" || rec.EventKind == "" {
+			return rec, errors.New("question_event_emitted line is missing question_id or event_kind")
+		}
 	case storeLineCrashResidue:
 		if rec.DiscardedBytes <= 0 {
 			return rec, errors.New("crash_residue line is missing discarded_bytes")
@@ -218,10 +256,17 @@ func (s *QuestionStore) applyRecord(rec questionStoreRecord) {
 		if q := s.questions[rec.QuestionID]; q != nil {
 			q.State = QuestionWithdrawn
 		}
+		if rec.Actor != "" || rec.Reason != "" {
+			meta := s.withdrawMeta[rec.QuestionID]
+			meta.actor, meta.reason = rec.Actor, rec.Reason
+			s.withdrawMeta[rec.QuestionID] = meta
+		}
 	case storeLineQuestionExpired:
 		if q := s.questions[rec.QuestionID]; q != nil {
 			q.State = QuestionExpired
 		}
+	case storeLineQuestionEventEmitted:
+		s.eventEmitted[questionEventKey(rec.QuestionID, rec.EventKind, rec.AnswerID)] = true
 	}
 }
 
@@ -443,6 +488,18 @@ func (s *QuestionStore) Answer(questionID string, a Answer) (Answer, error) {
 	} else {
 		s.emitAudit(audit.ActionQuestionAnswered, details)
 	}
+	// The lifecycle event fires here, after the record is durable, through
+	// the same dispatcher and per-subscriber pending queue as every other
+	// kind; the marker then proves it went in (exactly once; see
+	// question_events.go). A superseding answer fires a new event for itself
+	// — the earlier one stays in the record, never edited. With no sink
+	// wired (the daemon's switch off) neither happens: no event, no marker.
+	ev := BuildQuestionAnsweredEvent(q, &a)
+	if s.fireQuestionEvent(ev) {
+		// A marker-write failure only defers the event (a later reconcile
+		// re-fires it); the answer record stands.
+		_ = s.MarkEventEmitted(ev)
+	}
 	return a, nil
 }
 
@@ -458,6 +515,12 @@ func (s *QuestionStore) Withdraw(id, actor, reason string) (Question, error) {
 		"actor":       actor,
 		"reason":      reason,
 	})
+	// The lifecycle event, same path as the answer: fire, and mark only if
+	// it fired; with no sink (switch off) neither happens.
+	ev := BuildQuestionWithdrawnEvent(&out, actor, reason)
+	if s.fireQuestionEvent(ev) {
+		_ = s.MarkEventEmitted(ev)
+	}
 	return out, nil
 }
 

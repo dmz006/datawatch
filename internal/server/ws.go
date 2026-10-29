@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/gorilla/websocket"
@@ -24,6 +25,7 @@ const (
 	MsgSessionState   MessageType = "session_state"   // one session updated
 	MsgOutput         MessageType = "output"          // new output lines
 	MsgNeedsInput     MessageType = "needs_input"     // session waiting for input
+	MsgQuestionRaised MessageType = "question_raised" // operator question channel: a question was raised (return-path event for POST /api/questions)
 	MsgNotification   MessageType = "notification"    // general text notification
 	MsgError          MessageType = "error"           // error message
 	MsgAlert          MessageType = "alert"           // system alert from filter engine
@@ -85,6 +87,19 @@ type OutputData struct {
 type NeedsInputData struct {
 	SessionID string `json:"session_id"`
 	Prompt    string `json:"prompt"`
+}
+
+// QuestionRaisedData carries a successful operator question raise to
+// connected clients. It is the return-path event for POST
+// /api/questions: the polled GET still exists, this only removes the
+// need to wait on it.
+type QuestionRaisedData struct {
+	ID       string                      `json:"id"`
+	Label    string                      `json:"label,omitempty"`
+	Text     string                      `json:"text"`
+	Options  []autonomous.QuestionOption `json:"options,omitempty"`
+	Priority string                      `json:"priority,omitempty"`
+	Context  string                      `json:"context,omitempty"`
 }
 
 // ChatMessageData carries a structured chat message for chat-mode sessions.
@@ -348,6 +363,15 @@ func (h *Hub) BroadcastRawOutput(sessionID string, lines []string) {
 // BroadcastNeedsInput notifies clients that a session needs input
 func (h *Hub) BroadcastNeedsInput(sessionID, prompt string) {
 	h.Broadcast(MsgNeedsInput, NeedsInputData{SessionID: sessionID, Prompt: prompt})
+}
+
+// BroadcastQuestionRaised sends a question_raised message to all
+// connected clients for one successful POST /api/questions (the
+// return-path event). Non-blocking: it enqueues on the hub broadcast
+// channel and drops if that channel is full, so a slow client can never
+// wedge the raise.
+func (h *Hub) BroadcastQuestionRaised(data QuestionRaisedData) {
+	h.Broadcast(MsgQuestionRaised, data)
 }
 
 // BroadcastChatMessage sends a structured chat message for chat-mode

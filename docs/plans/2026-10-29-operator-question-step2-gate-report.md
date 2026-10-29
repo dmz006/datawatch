@@ -1,0 +1,196 @@
+# Operator question channel — Step 2 gate verification report
+
+Date: 2026-10-29 · Branch: `automaton/e0830001`
+
+## Parity surface
+
+The gate covers every surface Step 2 touches: config (all five surfaces), REST, MCP, CLI, comm, WebSocket, PWA with five locale bundles, and the datawatch-app parity record (issue 283).
+
+Scope of verification: the Step 2 deliverable of the operator question channel
+(announce routes: WebSocket event, comm messaging, alert, audited question
+events, polled GET, the opt-in per-question session return line, the three
+notification toggles reachable from every config surface, the five locale
+bundles, the documentation set, and the datawatch-app parity record). Step 1
+(channels, config switch, store, REST) already shipped and is re-verified here
+only to the extent the tests touch it.
+
+Operator decisions applied throughout: questions never expire by a clock;
+the return path default is **event plus polled GET**, and the per-question
+session return line is opt-in.
+
+## Commands run
+
+All shell commands ran under `env -u TMUX -u TMUX_TMPDIR`. No tmux server
+command was run and nothing was killed by name. The only processes stopped
+were the throwaway sandbox daemons of the live check, each by its exact PID
+(see "Live check" below); the production daemon was never touched.
+
+| # | Command | Result |
+|---|---------|--------|
+| 1 | `env -u TMUX -u TMUX_TMPDIR go build ./internal/... ./cmd/...` | **PASS** (exit 0, no output) |
+| 2 | `env -u TMUX -u TMUX_TMPDIR go vet ./internal/autonomous/ ./internal/server/ ./internal/router/ ./internal/mcp/ ./internal/config/` | **PASS** (exit 0, no output) |
+| 3 | `env -u TMUX -u TMUX_TMPDIR go test -count=1 -run Question ./internal/autonomous/` | **PASS** — 127 `--- PASS` lines (top-level + subtests), 0 failures, `ok ... 0.316s` |
+| 4 | `env -u TMUX -u TMUX_TMPDIR go test -count=1 -run Question ./internal/server/` | **PASS** — 75 `--- PASS` lines, 0 failures, `ok ... 3.307s` |
+| 5 | `env -u TMUX -u TMUX_TMPDIR go test -count=1 -run Question ./internal/router/` | **PASS** — 7 `--- PASS` lines, 0 failures, `ok ... 0.022s` |
+| 6 | `env -u TMUX -u TMUX_TMPDIR go test -count=1 -run Question ./internal/mcp/` | **PASS** — 3 `--- PASS` lines, 0 failures, `ok ... 0.008s` |
+| 7 | `env -u TMUX -u TMUX_TMPDIR go test -count=1 -run Question ./internal/config/` | **PASS** — 8 `--- PASS` lines, 0 failures, `ok ... 0.002s` |
+| 8 | `env -u TMUX -u TMUX_TMPDIR go test -count=1 -run Question ./cmd/datawatch/` | **PASS** — 5 `--- PASS` lines, 0 failures, `ok ... 0.119s` |
+| 9 | `env -u TMUX -u TMUX_TMPDIR go test -count=1 -run 'TestLocales' -v ./internal/server/` (locale guard) | **PASS** — 7/7 top-level tests: `TestLocales_AllPresent`, `TestLocales_ParityWithEnglish`, `TestLocales_CommonNavKeysPresent`, `TestLocales_AllAppJSKeysExistInEnglishBundle`, `TestLocales_AutomatonNeverUntranslatedOrMistranslated`, `TestLocales_AutomationKeyExemptionIsNarrow`, `TestLocales_PRDNeverUserFacing`; `ok ... 0.096s` |
+| 10 | `env -u TMUX -u TMUX_TMPDIR bash scripts/check-docs-sync.sh` | **FAIL on first run, then PASS** — see "Docs sync" below |
+| 11 | `env -u TMUX -u TMUX_TMPDIR gofmt -l` over every Go file this branch touches | **PASS** — prints nothing (two files, `internal/autonomous/lifecycle_event.go` and `internal/server/question_polled_get_test.go`, were reformatted with `gofmt -w` first) |
+| 12 | `env -u TMUX -u TMUX_TMPDIR go build ./...` and `go vet` on the touched packages (autonomous, server, config, router, mcp, `cmd/datawatch`) | **PASS** (exit 0, no output) |
+| 13 | `env -u TMUX -u TMUX_TMPDIR golangci-lint run` on the same packages | **PASS** — `0 issues.` |
+| 14 | `node --test internal/server/web/app-lifecycle-subscriptions.test.js` (the touched node test) | **PASS** — 45 tests, 0 failed |
+| 15 | `env -u TMUX -u TMUX_TMPDIR go test ./...` (the full suite, includes `tests/ci` with the section-count guard) | **PASS — exit status 0**; 82 packages `ok`, none failed, 171 s |
+| 16 | `DW_BASE=<throwaway sandbox daemon> SMOKE_ONLY=87 bash scripts/release-smoke.sh` (the new section 87, unrelated pre-gates skipped by their `DW_SKIP_*` switches) | **PASS** — 10 passed, 0 failed, 0 skipped; the cleanup block then restored the switch and the three toggles, deleted the subscription and marked the alert read, each by exact id |
+
+Every command above is green in its final state. The incidents to record:
+
+### Defects the live check found (both fixed in this branch)
+
+1. **Live enable did not attach the event sink.** The sink for
+   `question.answered` / `question.withdrawn` was attached only at daemon
+   start, so turning `autonomous.questions.enabled` on while the daemon ran
+   dropped both events until a restart. Fix: `QuestionStore.ApplyEventSwitch`
+   (`internal/autonomous/question_events.go`) is the one place the switch
+   reaches the sink; the daemon calls it at start and the config write path
+   calls it again through `Server.SetQuestionEventsSwitch` whenever the
+   switch changes (on attaches and reconciles, off drops the sink). The test
+   fixture no longer attaches the sink itself: it starts with the switch off
+   and flips it through `PUT /api/config`
+   (`TestQuestionStep2SwitchOn_LiveFlip_FansOutAndEmits`,
+   `TestQuestionStep2SwitchFlipOff_DropsEventSink`).
+2. **A real subscription never received the question events.** The unit
+   tests read a fake queue. Against the real subscription engine the markers
+   were written but the queue stayed empty, because the notify-set gate
+   (`Manager.NotifyEventAllowed`) checked the two kinds against the global
+   default set, which does not list them. Fix: the two kinds are exempt from
+   that gate (`TestQuestionEventsNotGatedByNotifySet`).
+
+### Live check: events survive a restart exactly once
+
+A throwaway sandbox daemon (own data dir, own config, autonomous enabled, an
+`mcp_queue` subscription for the two kinds), driven over REST. Q1 is answered
+and Q2 withdrawn; the events are read from `GET /api/autonomous/events` and
+the marker lines counted in the question store file.
+
+| Phase | Result |
+|---|---|
+| A. Start with the switch **off**, flip it on through `PUT /api/config`, answer Q1 (201), withdraw Q2 (200) | Q1 answered = 1, Q2 withdrawn = 1; 2 marker lines |
+| B. Stop the daemon by its exact PID, start it again, markers intact | 0 and 0 (the pending queue is in memory; nothing is re-sent); 2 marker lines |
+| C. Stop, delete the marker lines from the store file (the crash window between the record and the send), start | Q1 answered = 1, Q2 withdrawn = 1 — each delivered once at boot; 2 marker lines written |
+| D. Stop and start again | 0 and 0; still 2 marker lines |
+
+Every sandbox daemon was stopped by exact PID and confirmed gone; none was
+left running. The matching tracker rows are flipped to Validated; no other
+row was.
+
+### Smoke script note
+
+Section 87 needs the subscription engine for its events check and skips only
+those checks without it. It was run in external-daemon mode against the
+throwaway daemon above. In the script's own-sandbox mode the late sections
+read no config at all (the pre-existing section 86 fails the same way there),
+so section 87 was not validated in that mode.
+
+### Docs sync (command 10)
+
+- First run: **FAILED**, exit 1, with:
+  `ERROR: embedded PWA docs drift from docs/` and
+  `>f+++++++++ plans/parity-issues/operator-question-step2-notifications.md`.
+- Diagnosis (faithfully): the parity record was committed under `docs/` in
+  the previous task, but the generated embedded copy under
+  `internal/server/web/docs/` (gitignored, regenerated at `make build` /
+  `make sync-docs` time) was stale. The script's own message says to run
+  `make sync-docs` and re-stage.
+- Action taken: `env -u TMUX -u TMUX_TMPDIR make sync-docs` (exit 0). This
+  only regenerates the gitignored embedded copy from `docs/` — it changes no
+  source file and touches nothing outside this work's documents.
+- Second run: **PASS** — `docs/ and internal/server/web/docs in sync.`, exit 0.
+
+No other command failed; nothing else was fixed.
+
+## Scope checklist
+
+Every item below is proven by a committed test (all passing under commands 3–8
+or 9 above) and/or a committed file.
+
+| Scope item | Proven by |
+|------------|-----------|
+| **WebSocket** | `internal/server/question_raise_dispatch.go:70` — `s.hub.BroadcastQuestionRaised(QuestionRaisedData{...})` on raise; PWA consumes it in `internal/server/web/app.js` (`case 'question_raised'`, line 1295). Tests: `TestQuestionRaiseNotify_HubAndRouterEachCalledOnce` (`internal/server/question_raise_notify_test.go`), `TestQuestionStep2SwitchOn_LiveFlip_FansOutAndEmits` (`internal/server/question_step2_switch_off_test.go`). |
+| **Messaging (comm)** | `internal/server/question_raise_dispatch.go:80-87` — messaging group dispatch, gated on `EffectiveNotifyMessaging()`; message text built in `internal/router/question_notify.go`. Tests: `TestQuestionRaiseNotify_MessagingToggleOffSuppressesRoute`, `TestQuestionRaiseNotify_RouterReceivesExactlyOne`, `TestQuestionRaiseNotify_TextNamesIDNumberedOptionsAndAnswerRoutes`, `TestQuestionRaiseNotify_TextWithoutOptions`. |
+| **Alert** | `internal/server/question_raise_dispatch.go:88-114` (alert gate at line 94, high-priority questions only) — `alertStore.Add(alerts.LevelWarn, ...)` + `s.hub.BroadcastAlert(a)`, high-priority questions only, gated on `EffectiveNotifyAlert()`. Tests: `TestQuestionRaiseNotify_AlertOnlyWhenHighPriority`, `TestQuestionRaiseNotify_AlertToggleOffSuppressesAlert`. |
+| **Question events (audit / pending-events)** | `internal/autonomous/question_events.go` (event emission for answer/withdraw/supersede); `internal/server/question_events_emit_test.go`: `TestQuestionEventEmitAnswer`, `..._Withdraw`, `..._SupersedingAnswer`, `..._MarkerPreventsDuplicatesAfterReopen`, `..._CrashRepairedOnce`, `TestQuestionEventEmitSwitchOff`. `internal/server/web/app.js:26580` includes `question.answered` / `question.withdrawn` in the pending-events kinds. |
+| **Polled GET (default return path)** | `internal/server/questions.go` (QuestionsAPI list/get/answers) + `internal/server/question_polled_get_test.go`: `TestQuestionPolledGetOpenNoAnswer`, `..._AnsweredShowsAnswer`, `..._SupersededShowsLatest`, `..._WithdrawnState`, `TestQuestionPolledGetEventsReadReturnsQuestionAnswered`, `TestQuestionPolledGetSwitchOffReturns503`. This is the default path per the operator decision: event plus polled GET require no opt-in. |
+| **Return path line (opt-in per question)** | `internal/autonomous/question_return_path.go` + `internal/autonomous/question_return_path_test.go`: `TestQuestionReturnPathMarkerPrefix`, `..._JSONFields`, `..._MultilineQuoteStaysOneLine`, `TestQuestionReturnPathGoneSessionLeavesAnswerQueued`, `TestQuestionReturnPathOffSendsNothing` (line not sent when off), `TestQuestionReturnPathSupersedingAnswerSendsNewLine`. Opt-in shape pinned by `TestQuestionPriorityReturnPathReturnPathRequiresSession` (`internal/autonomous/questions_step2_fields_test.go`). Default-on surface toggle `autonomous.questions.return_path`: `AutonomousQuestionsConfig.EffectiveReturnPath()` (`internal/config/config.go:3178`), `TestQuestionNotifyConfig_ExplicitFalseSurvivesRoundTrip/return_path`. |
+| **Toggles on every surface** | Config core: `config.AutonomousQuestionsConfig` + `Effective*` helpers (`internal/config/config.go:3135-3181`), read live per request — tests `TestQuestionsConfig_DisabledByDefault`, `TestQuestionsConfig_YAMLRoundTripKeepsBothValues`, `TestQuestionNotifyConfig_DefaultsOnWhenKeyAbsent`, `TestQuestionNotifyConfig_ExplicitFalseSurvivesRoundTrip` (messaging/alert/return_path), `TestQuestionNotifyConfig_EffectiveHelpersNilIsOn`. PWA Settings card: `internal/server/web/app.js:16382-16385` (all four keys: `enabled`, `notify_messaging`, `notify_alert`, `return_path`). REST config: `TestQuestionNotifyConfig_RESTGetDefaultsOn`, `..._RESTPutThenGetRoundTrip`, `..._RESTNonBooleanRejected`. MCP: `TestQuestionNotifyConfigSurface_SetToggles` (`internal/mcp/question_notify_config_surface_test.go`). CLI: `TestQuestionNotifyConfigSurface_SetToggles`, `..._GetReadsToggles`, `TestQuestionsCLIConfigSetTogglesChannel` (`cmd/datawatch/`). Comm channel: `TestQuestionNotifyConfigSurface_ConfigureApplyPath`, `..._MentionedInConfigureHelpAndList` (`internal/router/`). 503-when-off: `TestQuestionRaiseNotify_SwitchOffSuppressesEverything`, `TestQuestionStep2SwitchOff_FireNothing` (proving "when the switch is off nothing in this work may fire"). |
+| **Locale keys** | `settings_automata_questions_enabled`, `settings_automata_questions_notify_messaging`, `settings_automata_questions_notify_alert`, `settings_automata_questions_return_path` present in all five bundles (`internal/server/web/locales/{en,de,fr,es,ja}.json` — each gains the keys in the settings-card commit). Tests: `TestQuestionsSettings_LocaleKeyInAllBundles`, `TestQuestionNotifySettingsLocale` (`internal/server/questions_settings_locale_test.go`), plus the locale guards in row 9 above (parity, no untranslated terms, PRD never user-facing). |
+| **Docs** | `docs/howto/operator-questions-notifications.md` (new), `docs/api/autonomous.md`, `docs/api/openapi.yaml` (`/api/questions`, `questionRaise`, Questions tag), `docs/config-reference.yaml` (autonomous.questions block with all four keys), `docs/implementation.md`, `docs/operations.md`, `docs/parity-status.md`, `docs/testing-tracker.md`, `docs/api-mcp-mapping.md`, `docs/howto/README.md`, `CHANGELOG.md`. `scripts/check-docs-sync.sh` final state: PASS. |
+| **Parity record** | `docs/plans/parity-issues/operator-question-step2-notifications.md` (datawatch-app issue 283 filed and verified open per its commit). This is the file that caused the stale-embedded-copy failure in command 10, resolved via `make sync-docs`. |
+
+## Constraint compliance (this session)
+
+- No tmux server commands; every shell command under `env -u TMUX -u TMUX_TMPDIR`.
+- No `pkill` / `kill` by name; no production daemon restart (the sandbox daemons of the live check were stopped by exact PID).
+- No tracker IDs (BL-style numbers) introduced in this report or touched code; no PRD-wording in user-facing text (enforced by `TestLocales_PRDNeverUserFacing`, `TestLocales_AutomatonNeverUntranslatedOrMistranslated` — passing).
+- The throttle detector list is never named here; where relevant it is only "the list entries".
+- When the channel switch is off: nothing fires — pinned by `TestQuestionRaiseNotify_SwitchOffSuppressesEverything` and `TestQuestionStep2SwitchOff_FireNothing`; REST endpoints refuse with 503 — pinned by `TestQuestionPolledGetSwitchOffReturns503` and the Step 1 `questions_config_switch` tests.
+- The only remediation performed was `make sync-docs`, the exact remedy the failing check printed; it regenerates a gitignored artifact from already-committed docs and changes no source.
+
+## Verdict
+
+Gate **PASS**: build 0, vet 0, golangci-lint 0 issues, gofmt clean, the full
+`go test ./...` exit status 0, smoke section 87 10 of 10, locale guards 7/7,
+docs sync in sync after regeneration, and the live restart check showing each
+answered and withdrawn event delivered exactly once. All ten scope items carry
+committed proof.
+
+## Second corrective round: results
+
+Fixes in this round: (1) browser story `TS-833` for the three notification toggles on the settings card, recorded in `docs/testing-tracker.md` and `docs/testing.md`; (2) the word PRD replaced with Automaton in the operator-facing text this branch added or changed (`docs/howto/operator-questions-notifications.md`, `docs/api/autonomous.md`, `docs/testing-tracker.md`, and the `configure` help text in `internal/router/router.go`); (3) the how-to named an MCP tool `config_get` that is not registered, so it now names `get_config` (which takes a `section` argument, not a key) in its front matter and two sentences, and the tracker row names `get_config` too. Every other MCP tool name in the docs, how-to, changelog and tracker text this branch changed was checked against the tools registered in `internal/mcp` and exists.
+
+Every command ran under `env -u TMUX -u TMUX_TMPDIR`.
+
+| Gate | Command | Exit | Result |
+|------|---------|------|--------|
+| Browser story | `bash scripts/e2e-pwa.sh TS-833` (isolated sandbox daemon built from this branch, never production) | 0 | 1 of 1 story passed |
+| gofmt | `gofmt -l` on every Go file the branch touched | 0 | no files listed |
+| go vet | `go vet ./cmd/datawatch/ ./internal/autonomous/ ./internal/config/ ./internal/mcp/ ./internal/router/ ./internal/server/` | 0 | clean |
+| golangci-lint | `golangci-lint run` on the same packages | 0 | 0 issues |
+| Node tests | `node --test internal/server/web/app-lifecycle-subscriptions.test.js internal/server/web/app-autonomous-settings-fields.test.js` | 0 | 95 of 95 pass |
+| Full Go tests | `go test ./... -count=1` | 0 | 82 packages ok, no FAIL line |
+| After `make sync-docs` | `go test ./tests/ci ./internal/server ./internal/router -count=1` | 0 | all three ok |
+
+Notes: a first run of `TS-833` against the older installed binary timed out waiting for the toggle rows (it predates them); the passing run used `bin/datawatch` built from this tree. `npm ci` in the story folder replaced the committed `node_modules` link with a real folder; the link was restored, so the working tree carries no change there. `make sync-docs` regenerated the gitignored embedded docs copy after the how-to edits. One older tracker row (the usage calculator reset-zone contract, not touched by this branch) still says `config_get`; it was left as found.
+
+## Third corrective round: results
+
+Scope: the one leftover of the second corrective round. The configure help text in `internal/router/router.go` (both the short usage and the full key list) still named the unit of work with lowercase placeholders; `set-verifier-policy <prd>`, `set-task-verifier-policy <prd> <task>` and `set-primary <prd-id>` now read `<automaton>`, `<automaton> <task>` and `<automaton-id>`. The `prd.*` event kind names and the `autonomous.per_prd_guardrails` key stay as written, because they are the real identifiers an operator types. A fresh scan of every operator-facing line this branch added (docs/howto, docs/operations.md, docs/api, README.md, CHANGELOG.md, the locale files, the PWA strings, the CLI help) found the word only inside literal API values (the `prd` question context level and the event kinds). Every MCP tool name the how-to, changelog, tracker and API text names was compared with the tools registered in `internal/mcp`: `config_set`, `get_config`, `autonomous_subscribe` and `autonomous_subscriptions` all exist; nothing else needed correcting.
+
+Every command ran under `env -u TMUX -u TMUX_TMPDIR`.
+
+| Gate | Command | Exit | Result |
+|------|---------|------|--------|
+| gofmt | `gofmt -l` on every Go file the branch touched plus `internal/router/router.go` | 0 | no files listed |
+| go vet | `go vet` on `./cmd/datawatch/ ./internal/autonomous/ ./internal/config/ ./internal/mcp/ ./internal/router/ ./internal/server/` | 0 | clean |
+| golangci-lint | `golangci-lint run` on the same packages | 0 | 0 issues |
+| Node tests | `node --test internal/server/web/app-lifecycle-subscriptions.test.js internal/server/web/app-autonomous-settings-fields.test.js` | 0 | 95 of 95 pass |
+| Full Go tests | `go test ./...` | 0 | 82 packages ok, no FAIL line |
+| Build | `go build -o bin/datawatch ./cmd/datawatch/` | 0 | built from this tree |
+| Browser story | `bash scripts/e2e-pwa.sh TS-833` (isolated sandbox daemon, never production) | 0 | 1 of 1 story passed |
+
+Note: the story run's `npm ci` replaced the tracked `node_modules` link in the story folder with a directory; the link was restored with `git checkout` so the tree carries no change there.
+
+## Fourth corrective round: documentation results
+
+Scope: documentation only, no code and no test changed. The howto index entry was already in `docs/howto/README.md`; added the entry to the `howto/` line of `docs/README.md`. Added the Question, Answer and Return-path line definitions to `docs/datawatch-definitions.md`, the question notification and return-path sequence to `docs/flow/input-required-flow.md`, a Monitoring line to the CHANGELOG entry, and registry row 246 to `docs/plans/README.md`.
+
+Every command ran under `env -u TMUX -u TMUX_TMPDIR`.
+
+| Gate | Command | Exit | Result |
+|------|---------|------|--------|
+| Internal-reference audit | `bash scripts/check-no-internal-refs.sh` | 0 | PASS, no internal refs in user-facing surfaces (run under `sh` it exits 2 with a syntax error, because the script needs bash) |
+| Docs sync check, first run | `sh scripts/check-docs-sync.sh` | 1 | embedded copy was stale for the three edited docs |
+| Docs sync | `make sync-docs` | 0 | embedded copy refreshed |
+| Docs sync check, second run | `sh scripts/check-docs-sync.sh` | 0 | docs/ and internal/server/web/docs in sync |
+| CI tests | `go test ./tests/ci -count=1` | 0 | ok |

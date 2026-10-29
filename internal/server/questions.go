@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/federation"
@@ -116,6 +117,13 @@ type raiseQuestionBody struct {
 	Recommendation *autonomous.QuestionRecommendation `json:"recommendation"`
 	Default        string                             `json:"default"`
 	Risk           string                             `json:"risk"`
+	// Priority is empty, normal or high (the store validates it and a value
+	// outside the set is a 400 naming the field). ReturnPath opts this one
+	// question in to the session line and, when true, the store requires a
+	// session_id; an omitted value keeps the default return path (event plus
+	// polled GET) only.
+	Priority   string `json:"priority"`
+	ReturnPath bool   `json:"return_path"`
 }
 
 // SetQuestions wires the operator question channel into the server for
@@ -126,6 +134,47 @@ func (s *Server) SetQuestions(api QuestionsAPI) {
 		return
 	}
 	s.questionStore = api
+}
+
+// SetQuestionAnswerReturnPath wires the per-question opt-in session line:
+// when an answer is recorded and the question opted in with both switches
+// on, one line of DATAWATCH_ANSWER: is delivered into the asking session.
+// nil (the default) = no session line. Neither case blocks or fails the
+// answer call — the event plus polled GET return path stands regardless.
+func (s *Server) SetQuestionAnswerReturnPath(d *autonomous.QuestionAnswerReturnPath) {
+	if s == nil {
+		return
+	}
+	s.questionAnswerReturnPath = d
+}
+
+// HTTPServer delegate, so main.go can wire it through the same variable it
+// already uses for SetQuestions.
+func (s *HTTPServer) SetQuestionAnswerReturnPath(d *autonomous.QuestionAnswerReturnPath) {
+	if s == nil || s.api == nil {
+		return
+	}
+	s.api.SetQuestionAnswerReturnPath(d)
+}
+
+// SetQuestionEventsSwitch binds the function that applies the
+// autonomous.questions.enabled switch to the store's lifecycle-event sink.
+// A config write that changes the switch calls it with the new value, which
+// is how a live enable starts the question.answered and question.withdrawn
+// events without a restart. nil (the default) = nothing to apply.
+func (s *Server) SetQuestionEventsSwitch(fn func(enabled bool)) {
+	if s == nil {
+		return
+	}
+	s.questionEventsSwitch = fn
+}
+
+// HTTPServer delegate for SetQuestionEventsSwitch.
+func (s *HTTPServer) SetQuestionEventsSwitch(fn func(enabled bool)) {
+	if s == nil || s.api == nil {
+		return
+	}
+	s.api.SetQuestionEventsSwitch(fn)
 }
 
 // questionsPath maps a request path onto the one surface shape it names.
@@ -285,6 +334,8 @@ func (s *Server) handleQuestionRaise(w http.ResponseWriter, r *http.Request) {
 		Recommendation: reqBody.Recommendation,
 		Default:        reqBody.Default,
 		Risk:           strings.TrimSpace(reqBody.Risk),
+		Priority:       strings.TrimSpace(reqBody.Priority),
+		ReturnPath:     reqBody.ReturnPath,
 	}
 	if q.AskedBy == "" {
 		q.AskedBy = actor
@@ -315,6 +366,13 @@ func (s *Server) handleQuestionRaise(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]any{"question": raised})
+
+	// Fan-out: WS broadcast + messaging group + (high priority, on and in
+	// range) an alert. Reads the switch/toggles live, non-blocking, and a
+	// no-op when the operator is in a non-interactive state or if the
+	// channel is off. The raise is already persisted and on its way back
+	// out as the 201 response, so none of this can delay or fail it.
+	s.notifyQuestionRaised(raised)
 }
 
 // handleQuestionList implements GET /api/questions.
@@ -368,7 +426,31 @@ func (s *Server) handleQuestionList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleQuestionGet implements GET /api/questions/{id}.
+// polledAnswerSummary is the current answer's summary on the polled GET
+// read: the answer id, the chosen option, the verbatim quote exactly as
+// stored (never trimmed or re-encoded), the answering actor and surface,
+// and when it was recorded. The asker that cannot subscribe reads this
+// back from GET /api/questions/{id} — the default return path — instead
+// of waiting on the event queue.
+type polledAnswerSummary struct {
+	ID             string     `json:"id"`
+	ChosenOptionID string     `json:"chosen_option_id,omitempty"`
+	Quote          string     `json:"quote,omitempty"`
+	Actor          string     `json:"actor,omitempty"`
+	Surface        string     `json:"surface,omitempty"`
+	CreatedAt      *time.Time `json:"created_at,omitempty"`
+}
+
+// handleQuestionGet implements GET /api/questions/{id}: the question
+// (state, priority, return_path included on the record itself) plus the
+// answer metadata, so an asker that cannot subscribe polls this one read
+// for the whole return path. An answered question carries, in the same
+// read, the answer count (every answer ever recorded, including
+// superseded ones — they are decided, never deleted), the currently
+// effective answer's id, and its summary (id, chosen option, verbatim
+// quote, actor, surface, created_at); a question with no answer yet
+// carries "answer": null. The full answer log is its own read: GET the
+// question's answers path.
 func (s *Server) handleQuestionGet(w http.ResponseWriter, r *http.Request, id string) {
 	id = strings.TrimSpace(id)
 	q, ok := s.questionStore.Get(id)
@@ -377,22 +459,26 @@ func (s *Server) handleQuestionGet(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 
-	// An answered question carries, in the same read, the metadata a UI
-	// needs to show "answered, N answers so far" without a second call:
-	// the answer count (every answer ever recorded, including superseded
-	// ones — they are decided, never deleted) and the currently
-	// effective answer's id. The full answer log (text included) is its
-	// own read: GET the question's answers path.
 	count := s.questionStore.AnswerCount(id)
 	currentID := ""
+	var summary any // null (not omit) while the question has no answer
 	if a, ok := s.questionStore.CurrentAnswer(id); ok {
 		currentID = a.ID
+		summary = &polledAnswerSummary{
+			ID:             a.ID,
+			ChosenOptionID: a.ChosenOptionID,
+			Quote:          a.Quote,
+			Actor:          a.Actor,
+			Surface:        a.Surface,
+			CreatedAt:      a.CreatedAt,
+		}
 	}
 
 	writeJSONOK(w, map[string]any{
 		"question":          q,
 		"answer_count":      count,
 		"current_answer_id": currentID,
+		"answer":            summary,
 	})
 }
 
@@ -508,6 +594,19 @@ func (s *Server) handleQuestionAnswer(w http.ResponseWriter, r *http.Request, id
 	q, ok := s.questionStore.Get(id)
 	if !ok {
 		q = autonomous.Question{ID: id, State: autonomous.QuestionAnswered}
+	}
+
+	// Per-question opt-in session line (the question raised with
+	// return_path true, the autonomous.questions switch and its
+	// return_path toggle both on, read live): one line of
+	// DATAWATCH_ANSWER: into the asking session, best-effort — it runs in
+	// its own goroutine, and a gone session or a failed send is a single
+	// daemon-log line, never an error here. The answer is already
+	// recorded; the event plus polled GET still carry it either way.
+	if d := s.questionAnswerReturnPath; d != nil {
+		d.Send(q, stored,
+			s.cfg == nil || s.cfg.Autonomous.Questions.Enabled,
+			s.cfg == nil || s.cfg.Autonomous.Questions.EffectiveReturnPath())
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

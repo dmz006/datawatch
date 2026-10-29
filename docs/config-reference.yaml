@@ -1345,23 +1345,43 @@ autonomous:
       # autonomous.notify.forwarding.attempt_timeout_seconds — bound on one
       # attempt. Default 10.
       attempt_timeout_seconds: 10
-  # ── Automaton operator-question endpoints ──
-  # Gate for the /api/questions REST endpoints (raise, list, answer,
-  # withdraw). While false the questions endpoints refuse service.
-  # Default false (off): the daemon ships with the question API closed.
-  # The REST endpoints exist now; the MCP tool, the dedicated CLI
-  # command, the comm verb and the question queues in the PWA and the
-  # mobile apps follow in a later step.
-  # Settable through every config surface:
-  #   config file:                              this file
-  #   datawatch config set autonomous.questions.enabled true|false
-  #   PUT /api/config {"autonomous.questions.enabled": true}
-  #   comm channel:                             configure autonomous.questions.enabled=true
-  #   PWA:                                      Settings → General → questions card
-  # A change takes effect immediately, no restart needed.
+  # ── Operator question channel ──
+  # The question channel is the operator path for a question an Automaton
+  # asks at decision time: POST /api/questions (plus list, get, answer,
+  # withdraw, answers). While false every /api/questions endpoint refuses
+  # service, a raise announces nothing, the question.answered /
+  # question.withdrawn events never fire, and an answer delivers no session
+  # line. Everything else in the daemon is untouched while it is off.
+  # Default false (off): the daemon ships with the channel closed.
+  # Every key below is settable through the config file, PUT /api/config
+  # (dotted keys), the MCP config tools, `datawatch config set`, a comm
+  # channel `configure` instruction, and the PWA settings card (Settings →
+  # the Autonomous section, the four question rows); a change takes effect
+  # immediately, no restart needed.
   questions:
-    # autonomous.questions.enabled — gate for the /api/questions endpoints.
+    # autonomous.questions.enabled — the channel switch (off = nothing in
+    # this section has any effect).
     enabled: false
+    # autonomous.questions.notify_messaging — while the channel is on,
+    # send one line per successful raise to every active messaging
+    # route. True when the key is absent. Off: the raise still stores
+    # and the WebSocket message and (for a high-priority raise) the
+    # alert still fire.
+    notify_messaging: true
+    # autonomous.questions.notify_alert — while the channel is on, record
+    # a warning-level alert in the alert store (and broadcast it) for
+    # every high-priority raise. Normal-priority raises never alert.
+    # True when the key is absent.
+    notify_alert: true
+    # autonomous.questions.return_path — while the channel is on, allow a
+    # raise that opts in (return_path: true + session_id at raise time)
+    # to receive one DATAWATCH_ANSWER: line in the asking session when
+    # its answer is recorded. The default return path for every
+    # question — the question_raised WebSocket message plus polling
+    # GET /api/questions/{id} (which carries the answer once recorded) —
+    # is always on regardless of this key; it only gates the opt-in
+    # session line. True when the key is absent.
+    return_path: true
   # Daemon-wide default for how many independent tasks of one Automaton run
   # at once. An Automaton's own max_concurrent_tasks overrides it. 1 = one
   # task at a time (sequential). Tasks of different Automata are not limited

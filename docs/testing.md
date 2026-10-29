@@ -1204,7 +1204,7 @@ default. Recorded as a follow-up in the backlog.
 | `node --check internal/server/web/app.js` | PASS |
 | `make build` | PASS (`bin/datawatch` → `datawatch v9.0.82`) |
 | `make install` + `systemctl --user restart datawatch` | PASS (`datawatch version` → `datawatch v9.0.82`; `/api/info` → `9.0.82`) |
-| `bash scripts/release-smoke.sh` (own isolated sandbox daemon, `TMUX` unset) | PASS — `== Summary ==` Pass: 217, Fail: 0, Skip: 35 (109 numbered sections at the time of that run; as of 2026-10-28 the script carries 87 top-level numbered section headers, incl. the usage calculator section 85 and the stuck-running watchdog bound section 86; section 73 covers capabilities, the summary list, alert counts and API gzip) |
+| `bash scripts/release-smoke.sh` (own isolated sandbox daemon, `TMUX` unset) | PASS — `== Summary ==` Pass: 217, Fail: 0, Skip: 35 (109 numbered sections at the time of that run; as of 2026-10-28 the script carries 88 top-level numbered section headers, incl. the usage calculator section 85, the stuck-running watchdog bound section 86 and the operator questions step 2 section 87 (notification toggles, the answered and withdrawn events through the events read, the return-path record, the polled single GET); section 73 covers capabilities, the summary list, alert counts and API gzip) |
 
 ## v9.0.83 — Session-tracker git growth: output.log out of history, no implicit auto-gc (2026-10-14)
 
@@ -2073,6 +2073,18 @@ curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity
 | `app-detection-filters.test.js` (5 tests) | `internal/server/web/` | the card shows no flat default phrases, shows the built-in hint only while no list is set, keeps the other sections' defaults, and the two new keys exist in all five locales |
 
 Counts: 12 new Go test functions in 4 test files (the 2 rewritten ones included), 1 new node test file with 5 tests, 1 new browser story (TS-831). The fixture directory `testdata/rate_limit_lines/` is described in its own README.
+
+---
+
+## TS-833 — PWA operator-question notification toggles
+
+| Field | Details |
+|-------|---------|
+| **Description** | The Automata settings card carries three toggles under the operator-question switch: `autonomous.questions.notify_messaging`, `autonomous.questions.notify_alert` and `autonomous.questions.return_path`. All three are on by default. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh TS-833`. 1. Save the three values and set all three to true through `PUT /api/config`. 2. Open Settings, Automata tab, and read each toggle row. 3. For each toggle in turn, click it off, read `GET /api/config`, reload the card, then click it on again. 4. Restore the saved values. |
+| **Expected** | Step 2: every row has a translated label and is checked. Step 3: after the click the key reads false and the other two still read true; after a reload the toggle shows unchecked; the second click makes the key read true again. Step 4: the daemon holds the values it had before the run. |
+| **Actual** | Run live on 2026-10-29 against an isolated sandbox daemon built from this branch (`go build -o bin/datawatch ./cmd/datawatch/`), headless Chromium, exit 0 (1 of 1 story passed). |
+| **Result** | Pass (live) |
 
 ---
 

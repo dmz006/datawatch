@@ -57,6 +57,15 @@ const (
 	QuestionRiskNormal = "normal"
 )
 
+// Question priority levels. Empty means normal; high is the only other
+// value. Priority is a separate field from Risk: the risk says how
+// dangerous a wrong answer is, the priority says how urgently an operator
+// should look at the question.
+const (
+	QuestionPriorityNormal = "normal"
+	QuestionPriorityHigh   = "high"
+)
+
 // DefaultQuestionLabels is the shipped set of question labels. The label is
 // a label, not a different structure, and users may add their own, so the
 // list is a default, not an allow-list.
@@ -109,8 +118,15 @@ type Question struct {
 	Recommendation *QuestionRecommendation `json:"recommendation,omitempty"`
 	Default        string                  `json:"default"`
 	Risk           string                  `json:"risk,omitempty"`
-	CreatedAt      *time.Time              `json:"created_at,omitempty"`
-	State          QuestionState           `json:"state,omitempty"`
+	// Priority is empty, normal or high (validated); it is separate from
+	// Risk. ReturnPath opts this one question in to the per-question
+	// session line: the default return path (event plus polled GET) is
+	// always there, and ReturnPath true may add the JSON line into the
+	// asking session, so it requires the SessionID that line goes to.
+	CreatedAt  *time.Time    `json:"created_at,omitempty"`
+	State      QuestionState `json:"state,omitempty"`
+	Priority   string        `json:"priority,omitempty"`
+	ReturnPath bool          `json:"return_path"`
 }
 
 // Answer is an immutable reply to a question, stored with the operator's
@@ -169,9 +185,11 @@ var (
 // question or the word hold, so no choice is ever silent; a recommendation,
 // when given, names an option that exists; the context is one of the known
 // kinds and carries the matching link (and none carries none of them); a
-// proposal path, when present, is repository-relative; and every field fits
-// its cap. The state is never taken from the input; the store sets it, so
-// q.State is ignored here.
+// proposal path, when present, is repository-relative; the priority is empty
+// or one of its two values (it is a separate field from the risk); a
+// question that opts into the session-line return path names the session it
+// goes to; and every field fits its cap. The state is never taken from the
+// input; the store sets it, so q.State is ignored here.
 func ValidateNewQuestion(q *Question) error {
 	if q == nil {
 		return fmt.Errorf("%w: question is nil", ErrInvalidQuestion)
@@ -204,6 +222,20 @@ func ValidateNewQuestion(q *Question) error {
 	}
 	if risk != QuestionRiskLow && risk != QuestionRiskNormal {
 		add("risk is %q; it must be %q or %q", risk, QuestionRiskLow, QuestionRiskNormal)
+	}
+
+	// Priority: empty (normal), normal or high; anything else is refused.
+	// It is a separate field from the risk and is never derived from it.
+	if q.Priority != "" && q.Priority != QuestionPriorityNormal && q.Priority != QuestionPriorityHigh {
+		add("priority is %q; it must be empty, %q or %q", q.Priority, QuestionPriorityNormal, QuestionPriorityHigh)
+	}
+
+	// Return path: the event plus polled GET is the default return path and
+	// is always available; the session line is the per-question opt-in that
+	// ReturnPath true switches on, and that line has nowhere to go without
+	// the asking session.
+	if q.ReturnPath && q.SessionID == "" {
+		add("return_path requires session_id: a question that opts into the session line must name the asking session")
 	}
 
 	// Text is required and capped.

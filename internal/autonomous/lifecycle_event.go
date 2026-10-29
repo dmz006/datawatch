@@ -61,6 +61,15 @@ const (
 	// fired (warning recorded + corrective message sent, or the one-shot
 	// worker stopped for retry). Non-status: the task stays in_progress.
 	KindTaskLooping = "task.looping"
+	// KindQuestionAnswered fires when an open operator question is
+	// answered. Non-status: it names the question (QuestionID) and the
+	// answer record (AnswerID). A question never expires by a clock, so
+	// there is no question.expired kind and never will be.
+	KindQuestionAnswered = "question.answered"
+	// KindQuestionWithdrawn fires when an open operator question is
+	// withdrawn before an answer. Non-status: QuestionID names the
+	// withdrawn question; AnswerID is empty.
+	KindQuestionWithdrawn = "question.withdrawn"
 )
 
 // PRDStatusKind returns the event kind for a PRD entering status s,
@@ -102,9 +111,14 @@ type LifecycleEvent struct {
 	AutomationID string `json:"automation_id,omitempty"`
 	StoryID      string `json:"story_id,omitempty"`
 	TaskID       string `json:"task_id,omitempty"`
-	OldStatus    string `json:"old_status,omitempty"`
-	NewStatus    string `json:"new_status,omitempty"`
-	SessionID    string `json:"session_id,omitempty"`
+	// QuestionID and AnswerID name the operator question and the answer
+	// record the event is about (kinds question.answered /
+	// question.withdrawn). Empty for every other kind.
+	QuestionID string `json:"question_id,omitempty"`
+	AnswerID   string `json:"answer_id,omitempty"`
+	OldStatus  string `json:"old_status,omitempty"`
+	NewStatus  string `json:"new_status,omitempty"`
+	SessionID  string `json:"session_id,omitempty"`
 	// Details is a short, single-line description of what the event
 	// says (loop warning text for task.looping; empty for other kinds).
 	Details  string            `json:"details,omitempty"`

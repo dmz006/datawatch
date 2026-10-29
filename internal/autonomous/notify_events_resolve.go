@@ -175,6 +175,12 @@ func (m *Manager) NotifyEventAllowed(ev LifecycleEvent) bool {
 	if !KnownEventKinds[ev.Kind] || ev.Kind == KindPRDUpdated {
 		return true
 	}
+	// The operator-question kinds belong to no Automaton's notify set: a
+	// subscriber lists them explicitly in its filter (they are never in the
+	// default set), so the resolved set must not drop them.
+	if ev.Kind == KindQuestionAnswered || ev.Kind == KindQuestionWithdrawn {
+		return true
+	}
 	if m.store != nil && ev.PRDID != "" {
 		if prd, ok := m.store.GetPRD(ev.PRDID); ok && prd != nil {
 			return notifySetContains(m.ResolveNotifyEvents(prd).Events, ev.Kind)

@@ -5511,17 +5511,23 @@ paths:
     get:
       summary: Read one operator question with answer metadata
       description: |
-        The question record plus the metadata a caller needs to show "answered,
-        N times" in the same read: `answer_count` (every answer ever recorded,
-        superseded ones included — they are decided and never deleted) and
-        `current_answer_id` (the answer in force, empty when there is none).
-        The full answer log, with text, is the answers read.
+        The question record (state, priority, return_path, options and the
+        asker's recommendation included on the record itself) plus a caller's
+        full return path in the same read: `answer_count` (every answer ever
+        recorded, superseded ones included — they are decided and never
+        deleted), `current_answer_id` (the answer in force, empty when
+        there is none) and `answer` — null while the question has no
+        answer, otherwise the standing answer's summary (id, chosen
+        option, the verbatim quote exactly as stored, actor, surface,
+        created_at). An asker that cannot subscribe polls this one read
+        for the whole return path. The full answer log, with text, is the
+        answers read.
       operationId: questionGet
       tags: [Questions]
       parameters:
         - {name: id, in: path, required: true, schema: {type: string}}
       responses:
-        "200": {description: "question, answer_count, current_answer_id"}
+        "200": {description: "question (state, priority, return_path included on the record), answer_count, current_answer_id, and the standing answer's summary, or null while it has no answer"}
         "404": {description: Unknown question id, content: {"text/plain": {schema: {type: string}}}}
         "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
         "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
@@ -7100,6 +7106,8 @@ components:
             rationale: {type: string, maxLength: 1000}
         default: {type: string, description: "An option id or `hold` - the declared fallback when the question is never answered."}
         risk: {type: string, enum: [normal, low], default: normal}
+        priority: {type: string, enum: [normal, high], description: "How urgently an operator should act; omitted means `normal` (separate from `risk`, which says how dangerous a wrong answer is). A `high` raise additionally lands in the alert store while the channel is on."}
+        return_path: {type: boolean, default: false, description: "This question opted in to the single `DATAWATCH_ANSWER:` line delivered to its `session_id` when the answer is recorded (needs `autonomous.questions.return_path` on). Default no: the return path is the events plus polling GET."}
         state: {type: string, enum: [open, answered, withdrawn, expired]}
         created_at: {type: string, format: date-time}
 
@@ -7130,6 +7138,8 @@ components:
             rationale: {type: string, maxLength: 1000}
         default: {type: string, description: "An option id of this question or `hold` - never silent."}
         risk: {type: string, enum: [normal, low], description: "Defaults to `normal`."}
+        priority: {type: string, enum: [normal, high], description: "Defaults to `normal` (empty accepted). A `high` raise additionally lands in the alert store while the channel is on; anything else is a 400 naming the field."}
+        return_path: {type: boolean, default: false, description: "Opt this one question in to the single `DATAWATCH_ANSWER:` line into its `session_id` at answer time (needs `autonomous.questions.return_path` on). Default false - the default return path is the events plus polling GET /api/questions/{id}."}
 
     Answer:
       description: |

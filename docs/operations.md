@@ -4533,7 +4533,36 @@ proof of the bytes. API reference: [api/autonomous](api/autonomous.md#operator-q
 **Enabled by config.** Off by default behind `autonomous.questions.enabled`.
 All six endpoints answer `503` naming the switch while it is off; the switch
 is read live on every request, so `PUT /api/config` turns the channel on or
-off without a restart.
+off without a restart. While the switch is off, none of the notification
+routes below fire at all — no WebSocket message, no messaging line, no
+alert, no event, no session line.
+
+**Notifications (step 2 of the channel).** Once the switch is on, three
+optional toggles decide what the operator hears (all three default on when
+the key is absent — the keys are `autonomous.questions.notify_messaging`,
+`autonomous.questions.notify_alert` and `autonomous.questions.return_path`,
+all readable/writable through the same config routes as the switch):
+
+| Toggle | Default | When it fires | What lands |
+|---|---|---|---|
+| `notify_messaging` | on | every raise | one line in each active messaging group (the `[hostname] question <id> — <label>`, a `(high priority)` marker, the text, the numbered options, and the REST + PWA answer routes); a missing comm backend is a silent no-op |
+| `notify_alert` | on | every raise **with `priority: high`** | one warning-level alert in `GET /api/alerts`, titled `Operator question raised (high priority): <id> — <label>`; normal-priority raises never alert |
+| `return_path` | on | an answer on a question raised with `return_path: true` (and a `session_id`) | exactly one `DATAWATCH_ANSWER: {…}` line delivered into that session through its input path — the JSON carries the question id, answer id, chosen option, the verbatim quote (JSON-escaped, never multi-line), actor, timestamp. The payload is exactly these six fields — `question_id`, `answer_id`, `chosen_option`, `quote`, `actor`, `at` — and the line is fired exactly once per answer (a superseding answer fires its own). |
+
+The WebSocket `question_raised` message to connected PWA/hub clients needs
+no toggle — it rides the always-on hub once the raise is stored. The
+**default return path is always the events-plus-polling path**: the
+`question_raised` message, the lifecycle events `question.answered` and
+`question.withdrawn` (in the closed kinds set, so a lifecycle subscription
+with `filter.kinds` may name them — exactly-once delivery, re-fired at
+startup for any recorded-but-never-delivered event), and polling
+`GET /api/questions/{id}`, which answers `answer_count`,
+`current_answer_id` and the standing answer's summary (verbatim
+quote, actor, surface) in one read. The session line above is an
+**opt-in per question** on top of that, not the default: a question raised
+without `return_path: true` (or a daemon with no router wired for the line)
+never gets it, and a lost delivery is one daemon warning, never a retry.
+How-to: [howto/operator-questions-notifications](howto/operator-questions-notifications.md).
 
 **Body caps.** Raising: 64 KiB. Answer: 64 KiB plus a 16 KiB quote cap.
 
@@ -4552,7 +4581,7 @@ session log). Well-formed `${secret:name}` references pass the scan.
 |---|---|
 | `POST /api/questions` | Raise a question: `text`, 2 to 20 options with unique ids, a `default` (an option or `hold`), a `context` (`none`, `prd`, `task`, `proposal`, `registry_row`) with its matching link; `asker_kind` defaults to `operator` |
 | `GET /api/questions` | List newest first: `?state=`, `?context=`, `?asker=` (exact on `asked_by`), `?text=` (case-insensitive substring over question text, option labels and tradeoffs, and answer quotes), `?limit=` (default 100, capped 1000) |
-| `GET /api/questions/{id}` | One question + `answer_count` + `current_answer_id` |
+| `GET /api/questions/{id}` | One question (state, `priority`, `return_path` on the record) + `answer_count` + `current_answer_id` + the standing answer's summary (`answer`, or `null` while it has no answer) — the asker's polling read |
 | `POST /api/questions/{id}/answer` | Record an answer: `chosen_option_id` and/or a non-blank `quote`; `supersedes` for a changed mind; `surface` (`pwa`/`android`/`ios`/`cli`/`rest`/`mcp`/`comm:<channel>`), `source_message_id`, `actor` |
 | `POST /api/questions/{id}/withdraw` | Withdraw an open question (`reason`, `actor`); `409` when it has already moved on |
 | `GET /api/questions/{id}/answers` | The full answer log, oldest first, each answer with its derived superseded flags, plus `current_answer_id` |

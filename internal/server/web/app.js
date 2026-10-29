@@ -1292,6 +1292,12 @@ function handleMessage(msg) {
       }
       break;
     }
+    case 'question_raised':
+      // Operator question channel: an Automaton raised a question. The
+      // frame is acknowledged and deliberately not rendered yet — the
+      // question UI consumes this message in a later step. Until then it
+      // must be a no-op, never an error.
+      break;
     case 'hello_ack':
       // Reply to our hello. Only 'window' changes the frames we get; an
       // older daemon (or one that echoes another mode) keeps the legacy
@@ -16374,6 +16380,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.lane_fill.claude_backend', label: 'Lane fill Claude backend (default claude-code)', labelKey: 'settings_lane_fill_claude_backend', type: 'text', placeholder: 'claude-code', default: 'claude-code' },
     { key: 'autonomous.automation.agent_insert_policy', label: 'Automation agent insert policy (allow | require_operator, default allow)', labelKey: 'settings_automation_agent_insert_policy', type: 'select', options: ['allow', 'require_operator'], default: 'allow' },
     { key: 'autonomous.questions.enabled', label: 'Operator questions for Automata (off by default)', labelKey: 'settings_automata_questions_enabled', type: 'toggle' },
+    { key: 'autonomous.questions.notify_messaging', label: 'Notify on question asked and answered (on by default)', labelKey: 'settings_automata_questions_notify_messaging', type: 'toggle' },
+    { key: 'autonomous.questions.notify_alert', label: 'Alert on high-priority questions (on by default)', labelKey: 'settings_automata_questions_notify_alert', type: 'toggle' },
+    { key: 'autonomous.questions.return_path', label: 'Allow the per-question session return line on top of the event plus polled answer path (on by default)', labelKey: 'settings_automata_questions_return_path', type: 'toggle' },
     // Progress engine parameters (0 or empty = the default shown as placeholder).
     { key: 'autonomous.progress.lanes', label: 'Progress lanes (parallel lanes of Automata used for utilization, 0 = 5)', labelKey: 'settings_progress_lanes', type: 'number', placeholder: '5', min: 0, step: 1, default: '0' },
     { key: 'autonomous.progress.inactive_gap_hours', label: 'Progress inactive gap (hours without activity that count as an inactive window, 0 = 3)', labelKey: 'settings_progress_inactive_gap_hours', type: 'number', placeholder: '3', min: 0, step: 0.5, default: '0' },
@@ -26567,7 +26576,8 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
     'task.cancelled', 'task.waiting_capacity', 'task.awaiting_approval',
     'task.review_needed']],
   ['lifecycle_sub_form_group_other', 'Other', [
-    'task.session_started', 'task.session_cleared', 'prd.updated']],
+    'task.session_started', 'task.session_cleared', 'prd.updated',
+    'question.answered', 'question.withdrawn']],
   ['lifecycle_sub_form_group_warnings', 'Warnings (opt-in)', [
     'scope_warning', 'guardrail_warn']],
 ];

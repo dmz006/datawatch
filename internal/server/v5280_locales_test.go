@@ -165,6 +165,9 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"prd_requeue_task_label",
 		// Operator-question channel (plan 2026-10-25) — PWA Settings toggle copy.
 		"settings_automata_questions_enabled",
+		"settings_automata_questions_notify_messaging",
+		"settings_automata_questions_notify_alert",
+		"settings_automata_questions_return_path",
 		"prd_cancel_task",
 		"prd_cancel_task_confirm",
 		"prd_cancel_task_ok",

@@ -1,7 +1,7 @@
 # Operator decision channel: proposal
 
 Date: 2026-10-25
-Status: in progress. All open points below were decided by the operator on 2026-10-25. Step 1 (config switch, question store, audit actions, REST, config accessibility) is implemented in this branch with its tests, the operator docs, the curl walkthrough, the PWA settings toggle and the locale key in all five bundles; Steps 2-5 follow the order in this document. The mobile surfaces are tracked externally in datawatch-app#283 (filed 2026-10-25, verified open 2026-10-27 — title: "feat(questions): operator question channel — queue view, answer sheet + settings toggle").
+Status: in progress. All open points below were decided by the operator on 2026-10-25. Step 1 (config switch, question store, audit actions, REST, config accessibility) and Step 2 (notifications and the return path: the raise announcement, the answered and withdrawn events, the polled single-question GET, the opt-in session line and the three notification toggles) are implemented in this branch with their tests, the operator docs, the how-to, the PWA settings toggles and the locale keys in all five bundles; Steps 3-5 follow the order in this document. The mobile surfaces are tracked externally in datawatch-app#283 (filed 2026-10-25, verified open 2026-10-27 — title: "feat(questions): operator question channel — queue view, answer sheet + settings toggle").
 
 Confirmed: yes
 
@@ -143,6 +143,8 @@ Parity surface: config and REST now. MCP, CLI, comm, PWA and mobile are deferred
 
 ### Step 2: notifications and the return path
 
+Status: implemented. Where this text differs from the operator's decision items, the corrections in "Step 2 disagreements with the decision items" below are what was built (no `question.expired`, the session line is opt-in per question, the raise announcement fires on ask only).
+
 Builds:
 - On raise: a WebSocket message beside needs_input, a messaging-group notification sent through the existing router send path with the question id and numbered options, and an alert through the existing alert path for questions marked high priority.
 - On answer, withdrawal or expiry: lifecycle events question.answered, question.withdrawn and question.expired, delivered through the pending events queue and to subscribers. Subscriptions accept the new kinds.
@@ -153,6 +155,18 @@ Builds:
 Depends on: Step 1.
 
 Parity surface: config (notification toggles), REST (events and single-question GET), MCP and CLI and comm (subscriptions accept the new kinds, with no new command), WebSocket message type (consumed by the PWA in Step 3), and push through the existing device registration. Client code follows in Step 3.
+
+### Step 2 disagreements with the decision items
+
+This section lists every place Step 2's text differs from the decision items in `docs/plans/2026-10-14-automation-orchestration-design.md` (the Operator decision channel section, items 1 to 24). Where they differ, the decisions win and Step 2 must be read and built as corrected here.
+
+1. **`question.expired` is NOT built (items 2 and 4).** Items 2 and 4 are explicit: questions never expire by a clock, and item 4 closes the earlier open point about a deadline and its expiry behaviour outright. Step 2's "On answer, withdrawal or expiry: … question.expired" is therefore wrong: there is no `question.expired` event, no expiry transition into the expired state, and no deadline-driven state change. A question stays open until it is answered, withdrawn or skipped. Step 1's `question_expired` audit action is corrected by the same decision.
+2. **The return path default is event plus polled GET, with the session line opt-in per question (item 22).** The default is the lifecycle event on the existing event queue plus the polled GET endpoint, and it needs no change to the asker's session. The JSON line into the asking session (`DATAWATCH_ANSWER:` plus one line of JSON) is an opt-in the question takes, for askers that cannot poll, so answers stay out of the terminal unless asked for. Step 2's present ordering inverts this: it presents the polled single-question GET as the fallback and the session push as the general option, instead of the event plus polled GET being the default and the session line being per-question opt-in.
+3. **Notifications fire on ask, answer and skip (item 11).** Item 11 says an open question raises a notification through the existing notification channels when it is asked and when it is answered or skipped, for every open question, with no repeated messages and no expiry text. Step 2 instead alerts only "questions marked high priority" at ask time and says nothing about answering or skipping. "Skip" is also missing from Step 2's event list entirely: it covers answer, withdrawal and expiry, where the decisions provide a skip flow (items 2, 5a, 10 and 11). A skip applies to the one question it is given on, never to the whole Automaton, and wide skipping is available only when that option is enabled in Automation (off by default); the record then shows the answer as a supervisor decision made on the operator's skip, with its reasoning.
+4. **Two new fields on the record: `priority` and `return_path`.** Step 2 refers to "questions marked high priority" and to the session push being opt-in "when the question asks for it", but section 3's record names neither. The question record gains a `priority` field (Step 2's alert rule needs a settable level; item 8's per-question level is one the asker may raise and never lower) and a `return_path` field (item 22's per-question opt-in for the session line). Both are recorded on the question so both behaviours are data on the record, not implicit.
+5. **The chat reply selection verbs are Step 3, and decided (item 23).** Item 23 closes the reply rule that Step 3 still points at as the open point on comm replies: each notification carries the question id and numbered options; a bare reply is accepted only when exactly one question is open for that channel; with several open it is refused and the list is sent back; free text is accepted with the option so the operator's exact words stay the quotation. The comm verbs that implement that selection (`question list`, `question show`, `question answer`) are built in Step 3. Step 2's only obligation on this point is the notification content: the question id and numbered options.
+
+Every other line of Step 2 agrees with the decisions and stands: the WebSocket message beside needs_input, the subscriptions accepting the new kinds, the polled GET endpoint existing at all (items 2 and 22), the asker continuing other work while a question is open, and "raising never blocks" (items 2 and 12).
 
 ### Step 3: the surfaces
 

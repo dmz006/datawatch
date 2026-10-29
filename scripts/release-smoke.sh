@@ -341,6 +341,13 @@ cleanup_all() {
         usage-zone)      URZ=$(echo "$id" | tr -d ' '); [[ -n "$URZ" ]] || URZ='""'; curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.reset_zone\": $URZ}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored usage.calculator.reset_zone to ${URZ:-<unset/default>}" || echo "  (already gone) usage-zone" ;;
         # Exact-value restore of autonomous.stuck_running_seconds (section 86); never a pattern sweep.
         stuck-running)   SRV=$(echo "$id" | tr -dc '0-9'); curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"autonomous.stuck_running_seconds\": ${SRV:-0}}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored autonomous.stuck_running_seconds to ${SRV:-0}" || echo "  (already gone) stuck-running ${SRV:-0}" ;;
+        # Section 87 (operator questions step 2): the lifecycle subscription is deleted by its
+        # exact id, each config key the section changed is restored to the exact value read
+        # first (id is key=value, value a JSON literal), and the alert it raised is marked
+        # read by its exact id (the alert store has no delete; a smoke daemon is discarded).
+        qsub)            curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/subscriptions/$id" >/dev/null 2>&1 && echo "  removed question subscription $id" || echo "  (already gone) question subscription $id" ;;
+        qcfg)            QCK="${id%%=*}"; QCV="${id#*=}"; curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"$QCK\": $QCV}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored $QCK to $QCV" || echo "  (already gone) qcfg $id" ;;
+        qalert)          curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"id\":\"$id\"}" "$BASE/api/alerts" >/dev/null 2>&1 && echo "  marked alert $id read" || echo "  (already gone) alert $id" ;;
         # Cancel first (a draft refuses it, which is fine), then delete.
         automation)      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"cancel_in_flight":true}' "$BASE/api/automations/$id/cancel" >/dev/null 2>&1; curl "${curl_args[@]}" -X DELETE "$BASE/api/automations/$id" >/dev/null 2>&1 && echo "  removed automation $id" || echo "  (already gone) automation $id" ;;
         device)          curl "${curl_args[@]}" -X DELETE "$BASE/api/devices/$id" >/dev/null 2>&1 && echo "  removed device $id" || echo "  (already gone) device $id" ;;
@@ -5624,6 +5631,189 @@ if [[ "$SECTION_SKIP" != "1" ]]; then
       ok "stuck-running: the original bound $SR0 is restored"
     else
       ko "stuck-running: could not restore the original bound $SR0"
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "87. operator questions step 2 — notification toggles, answered/withdrawn events, return path, polled GET"
+# Step 2 of the question channel on this script's own sandbox daemon (or the
+# dedicated DW_BASE sandbox), never production. It reads the switch and the three
+# notify toggles first and add_cleanup restores each exact value; the one
+# lifecycle subscription it creates (an mcp_queue sink, so the events read can
+# see the events) is deleted by its exact id; the high-priority alert is marked
+# read by its exact id. Every question it raises is answered or withdrawn, so no
+# open smoke question is left behind (questions are never deleted by design).
+# The events part needs the subscription engine (autonomous enabled on the
+# daemon); without it the section skips only those checks.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  Q2_JSON() { python3 -c 'import json,sys
+try:
+  d=json.load(sys.stdin)
+  for k in sys.argv[1].split("."):
+    d=d.get(k) if isinstance(d,dict) else None
+  print("" if d is None else (str(d).lower() if isinstance(d,bool) else d))
+except Exception:
+  print("")' "$1" 2>/dev/null || echo ""; }
+  Q2_CFG() { curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | Q2_JSON "autonomous.questions.$1"; }
+  Q2_PUT() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d "{\"autonomous.questions.$1\":$2}" "$BASE/api/config" 2>/dev/null || echo 000; }
+  Q2_CODE() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$@" 2>/dev/null || echo 000; }
+  Q2_RAISE() { curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$1" "$BASE/api/questions" 2>/dev/null | Q2_JSON "question.id"; }
+
+  Q2_SW0=$(Q2_CFG enabled)
+  Q2_TOGGLES="notify_messaging notify_alert return_path"
+  declare -A Q2_ORIG
+  Q2_READ_OK=1
+  [[ -n "$Q2_SW0" ]] || Q2_READ_OK=0
+  for t in $Q2_TOGGLES; do Q2_ORIG[$t]=$(Q2_CFG "$t"); [[ -n "${Q2_ORIG[$t]}" ]] || Q2_READ_OK=0; done
+  if [[ "$Q2_READ_OK" != "1" ]]; then
+    skip "questions step 2: GET /api/config does not expose the switch and the three toggles (enabled='$Q2_SW0' messaging='${Q2_ORIG[notify_messaging]}' alert='${Q2_ORIG[notify_alert]}' return_path='${Q2_ORIG[return_path]}')"
+  else
+    add_cleanup qcfg "autonomous.questions.enabled=$Q2_SW0"
+    for t in $Q2_TOGGLES; do add_cleanup qcfg "autonomous.questions.$t=${Q2_ORIG[$t]}"; done
+
+    # 87.1 each toggle: boolean write reads back, non-boolean is refused (400) and not stored
+    Q2_TOG_OK=1
+    for t in $Q2_TOGGLES; do
+      [[ "$(Q2_PUT "$t" false)" == "200" && "$(Q2_CFG "$t")" == "false" ]] || Q2_TOG_OK=0
+      [[ "$(Q2_PUT "$t" '"no"')" == "400" && "$(Q2_CFG "$t")" == "false" ]] || Q2_TOG_OK=0
+      [[ "$(Q2_PUT "$t" true)" == "200" && "$(Q2_CFG "$t")" == "true" ]] || Q2_TOG_OK=0
+    done
+    if [[ "$Q2_TOG_OK" == "1" ]]; then
+      ok "questions step 2: notify_messaging, notify_alert and return_path each write false, read back, refuse a non-boolean (400) and write true"
+    else
+      ko "questions step 2: a notification toggle did not round-trip through PUT/GET /api/config"
+    fi
+
+    # 87.2 switch on, then the one subscription the events read needs (exact id recorded)
+    Q2_TAG="$$-$(date +%s)"
+    Q2_QUEUE="smoke-q2-$Q2_TAG"
+    Q2_SWON=$(Q2_PUT enabled true)
+    Q2_SUB=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d "{\"filter\":{\"kinds\":[\"question.answered\",\"question.withdrawn\"]},\"sink\":{\"type\":\"mcp_queue\",\"target\":\"$Q2_QUEUE\"}}" \
+      "$BASE/api/autonomous/subscriptions" 2>/dev/null | Q2_JSON "id")
+    [[ -n "$Q2_SUB" ]] && add_cleanup qsub "$Q2_SUB"
+    if [[ "$Q2_SWON" != "200" ]]; then
+      ko "questions step 2: could not turn the switch on (HTTP $Q2_SWON)"
+    else
+      # 87.3 validation on the new record fields: an unknown priority is 400, and a
+      # question that opts into the session line without naming a session is 400
+      Q2_OPTS='"options":[{"id":"yes","label":"Yes"},{"id":"no","label":"No"}],"default":"yes","context":"none","asked_by":"smoke"'
+      Q2_BADPRI=$(Q2_CODE -X POST -H "Content-Type: application/json" -d "{\"label\":\"decision\",\"text\":\"smoke $Q2_TAG bad priority\",$Q2_OPTS,\"priority\":\"urgent\"}" "$BASE/api/questions")
+      Q2_BADRP=$(Q2_CODE -X POST -H "Content-Type: application/json" -d "{\"label\":\"decision\",\"text\":\"smoke $Q2_TAG no session\",$Q2_OPTS,\"return_path\":true}" "$BASE/api/questions")
+      if [[ "$Q2_BADPRI" == "400" && "$Q2_BADRP" == "400" ]]; then
+        ok "questions step 2: an unknown priority and return_path without a session_id are both refused (400)"
+      else
+        ko "questions step 2: record-field validation (priority=$Q2_BADPRI return_path-without-session=$Q2_BADRP)"
+      fi
+
+      # 87.4 a high-priority raise alerts; a normal one does not (announce route, alert leg)
+      Q2_HI=$(Q2_RAISE "{\"label\":\"decision\",\"text\":\"smoke $Q2_TAG high priority\",$Q2_OPTS,\"priority\":\"high\"}")
+      Q2_NO=$(Q2_RAISE "{\"label\":\"decision\",\"text\":\"smoke $Q2_TAG normal priority\",$Q2_OPTS}")
+      if [[ -z "$Q2_HI" || -z "$Q2_NO" ]]; then
+        ko "questions step 2: could not raise the high and normal probe questions"
+      else
+        Q2_ALERT_ID=""
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+          Q2_ALERT_ID=$(curl "${curl_args[@]}" "$BASE/api/alerts" 2>/dev/null | python3 -c 'import json,sys
+want=sys.argv[1]
+try:
+  for a in json.load(sys.stdin).get("alerts") or []:
+    if want in (a.get("title") or ""): print(a.get("id","")); break
+except Exception: pass' "Operator question raised (high priority): $Q2_HI" 2>/dev/null || echo "")
+          [[ -n "$Q2_ALERT_ID" ]] && break
+          sleep 0.5
+        done
+        Q2_NO_ALERT=$(curl "${curl_args[@]}" "$BASE/api/alerts" 2>/dev/null | grep -c "$Q2_NO" || true)
+        if [[ -n "$Q2_ALERT_ID" ]]; then
+          add_cleanup qalert "$Q2_ALERT_ID"
+        fi
+        if [[ -n "$Q2_ALERT_ID" && "${Q2_NO_ALERT:-0}" -eq 0 ]]; then
+          ok "questions step 2: the high-priority raise left one alert naming its id; the normal raise left none"
+        else
+          ko "questions step 2: alert leg (high alert id='${Q2_ALERT_ID}', normal-question alert lines=${Q2_NO_ALERT:-0})"
+        fi
+
+        # 87.5 the polled single GET: no answer yet, then the standing answer's summary
+        Q2_GET0=$(curl "${curl_args[@]}" "$BASE/api/questions/$Q2_HI" 2>/dev/null)
+        Q2_CNT0=$(Q2_JSON answer_count <<<"$Q2_GET0"); Q2_ST0=$(Q2_JSON question.state <<<"$Q2_GET0"); Q2_PRI=$(Q2_JSON question.priority <<<"$Q2_GET0")
+        Q2_ANS=$(Q2_CODE -X POST -H "Content-Type: application/json" -d '{"chosen_option_id":"no","quote":"no, keep it as is","surface":"cli"}' "$BASE/api/questions/$Q2_HI/answer")
+        Q2_GET1=$(curl "${curl_args[@]}" "$BASE/api/questions/$Q2_HI" 2>/dev/null)
+        Q2_CNT1=$(Q2_JSON answer_count <<<"$Q2_GET1"); Q2_CUR=$(Q2_JSON current_answer_id <<<"$Q2_GET1"); Q2_QUOTE=$(Q2_JSON answer.quote <<<"$Q2_GET1")
+        if [[ "$Q2_ST0" == "open" && "$Q2_PRI" == "high" && "${Q2_CNT0:-0}" == "0" && "$Q2_ANS" == "201" && "$Q2_CNT1" == "1" && -n "$Q2_CUR" && "$Q2_QUOTE" == "no, keep it as is" ]]; then
+          ok "questions step 2: the polled GET shows an open question with no answer, then answer_count 1, current_answer_id and the verbatim quote"
+        else
+          ko "questions step 2: polled GET (state=$Q2_ST0 priority=$Q2_PRI count0=$Q2_CNT0 answer=$Q2_ANS count1=$Q2_CNT1 current=$Q2_CUR quote='$Q2_QUOTE')"
+        fi
+
+        # 87.6 withdraw the normal question (it was never answered)
+        Q2_WD=$(Q2_CODE -X POST -H "Content-Type: application/json" -d '{"actor":"smoke","reason":"probe done"}' "$BASE/api/questions/$Q2_NO/withdraw")
+        [[ "$Q2_WD" == "200" ]] && ok "questions step 2: the normal probe question was withdrawn (200)" || ko "questions step 2: withdraw returned HTTP $Q2_WD"
+
+        # 87.7 the events read: exactly one question.answered and one question.withdrawn
+        if [[ -z "$Q2_SUB" ]]; then
+          skip "questions step 2: no lifecycle subscription (autonomous disabled on this daemon); answered/withdrawn events not read"
+        else
+          Q2_EV_A=0; Q2_EV_W=0
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            Q2_EVS=$(curl "${curl_args[@]}" "$BASE/api/autonomous/events?queue=$Q2_QUEUE&limit=200" 2>/dev/null)
+            Q2_EV_A=$(python3 -c 'import json,sys
+try: print(sum(1 for e in json.load(sys.stdin).get("events") or [] if e.get("kind")=="question.answered" and e.get("question_id")==sys.argv[1]))
+except Exception: print(0)' "$Q2_HI" <<<"$Q2_EVS" 2>/dev/null || echo 0)
+            Q2_EV_W=$(python3 -c 'import json,sys
+try: print(sum(1 for e in json.load(sys.stdin).get("events") or [] if e.get("kind")=="question.withdrawn" and e.get("question_id")==sys.argv[1]))
+except Exception: print(0)' "$Q2_NO" <<<"$Q2_EVS" 2>/dev/null || echo 0)
+            [[ "$Q2_EV_A" -ge 1 && "$Q2_EV_W" -ge 1 ]] && break
+            sleep 0.5
+          done
+          if [[ "$Q2_EV_A" == "1" && "$Q2_EV_W" == "1" ]]; then
+            ok "questions step 2: GET /api/autonomous/events carries exactly one question.answered and one question.withdrawn for the probes"
+          else
+            ko "questions step 2: events read (answered=$Q2_EV_A withdrawn=$Q2_EV_W, want 1 and 1)"
+          fi
+        fi
+      fi
+
+      # 87.8 the return-path line: a question that opts in with a session that is gone is
+      # accepted, and its answer is still recorded (a lost line is one daemon warning,
+      # never a failed answer). The delivered line itself is pinned by the
+      # TestQuestionReturnPath* unit tests; a smoke run starts no worker session.
+      Q2_RP=$(Q2_RAISE "{\"label\":\"decision\",\"text\":\"smoke $Q2_TAG return path\",$Q2_OPTS,\"session_id\":\"smoke-gone-$Q2_TAG\",\"return_path\":true}")
+      if [[ -z "$Q2_RP" ]]; then
+        ko "questions step 2: a return_path question naming a session was not accepted"
+      else
+        Q2_RPA=$(Q2_CODE -X POST -H "Content-Type: application/json" -d '{"chosen_option_id":"yes","quote":"yes","surface":"cli"}' "$BASE/api/questions/$Q2_RP/answer")
+        Q2_RPN=$(curl "${curl_args[@]}" "$BASE/api/questions/$Q2_RP" 2>/dev/null | Q2_JSON answer_count)
+        if [[ "$Q2_RPA" == "201" && "$Q2_RPN" == "1" ]]; then
+          ok "questions step 2: a return_path answer with its session gone still records (201, answer_count 1)"
+        else
+          ko "questions step 2: return_path answer (HTTP $Q2_RPA, answer_count=$Q2_RPN)"
+        fi
+      fi
+
+      # 87.9 a flip off then on again over PUT /api/config: the endpoints follow it at once
+      Q2_OFF=$(Q2_PUT enabled false); Q2_OFFC=$(Q2_CODE "$BASE/api/questions")
+      Q2_ON=$(Q2_PUT enabled true); Q2_ONC=$(Q2_CODE "$BASE/api/questions")
+      if [[ "$Q2_OFF" == "200" && "$Q2_OFFC" == "503" && "$Q2_ON" == "200" && "$Q2_ONC" == "200" ]]; then
+        ok "questions step 2: switching off 503s the endpoints and switching on serves them again, no restart"
+      else
+        ko "questions step 2: live switch (off put=$Q2_OFF list=$Q2_OFFC, on put=$Q2_ON list=$Q2_ONC)"
+      fi
+    fi
+
+    # 87.10 restore: delete the subscription now by its exact id, then the exact config
+    # values read first (add_cleanup repeats both on any abnormal exit)
+    if [[ -n "$Q2_SUB" ]]; then
+      Q2_SDEL=$(Q2_CODE -X DELETE "$BASE/api/autonomous/subscriptions/$Q2_SUB")
+      [[ "$Q2_SDEL" == "204" ]] && ok "questions step 2: the smoke subscription was deleted by its exact id" || ko "questions step 2: subscription delete returned HTTP $Q2_SDEL"
+    fi
+    Q2_RESTORE_OK=1
+    for t in $Q2_TOGGLES; do [[ "$(Q2_PUT "$t" "${Q2_ORIG[$t]}")" == "200" ]] || Q2_RESTORE_OK=0; done
+    [[ "$(Q2_PUT enabled "$Q2_SW0")" == "200" ]] || Q2_RESTORE_OK=0
+    if [[ "$Q2_RESTORE_OK" == "1" ]]; then
+      ok "questions step 2: the switch ($Q2_SW0) and the three toggles are restored to the values read first"
+    else
+      ko "questions step 2: could not restore the switch and toggles"
     fi
   fi
 fi

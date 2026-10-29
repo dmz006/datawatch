@@ -6598,7 +6598,43 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					if lifecycleAuditFn != nil {
 						qstore.SetAuditFn(lifecycleAuditFn)
 					}
+					// The question lifecycle events (question.answered /
+					// question.withdrawn) fire through the same dispatcher and
+					// the engine's per-subscriber queue as every other kind:
+					// the store builds and fires them on answer and withdrawal,
+					// then marks the record so the exactly-once guarantee holds.
+					// The switch decides whether the sink is wired at all: off
+					// means no event and no reconcile. It is applied here at
+					// start and again by the server whenever a config write
+					// changes autonomous.questions.enabled, so a live enable
+					// needs no restart.
+					applyQuestionEvents := func(enabled bool) {
+						qstore.ApplyEventSwitch(enabled, amgr.EmitQuestionEvent, log.Printf)
+					}
+					applyQuestionEvents(cfg.Autonomous.Questions.Enabled)
+					httpServer.SetQuestionEventsSwitch(applyQuestionEvents)
 					httpServer.SetQuestions(qstore)
+					// Question-raise notification (the "notify" legs beside the
+					// channel): the server dispatches non-blockingly on each
+					// successful raise — WS broadcast for the PWA, this fan-out to
+					// the active messaging groups (same notify_exclude rules as the
+					// lifecycle CommSink), and a high-priority-only alert. The
+					// autonomous.questions switch and the notify_* toggles are
+					// read live per raise, so nothing here fires while off.
+					httpServer.SetQuestionRaiseNotifier(questionRaiseNotifier{routers: routers, cfg: cfg})
+					// Per-question opt-in session line on answer (the question
+					// raised with return_path true): one line of DATAWATCH_ANSWER:
+					// into the asking session, through the same send the daemon
+					// uses for operator input. The sender is bound behind a small
+					// seam so the tests fake it; delivery never blocks or fails
+					// the answer call — a gone session or a failed send is one
+					// line in this log, and the answer stays in the store.
+					httpServer.SetQuestionAnswerReturnPath(autonomouspkg.NewQuestionAnswerReturnPath(
+						func(sessionID, line string) error {
+							return mgr.SendInput(sessionID, line, "questions-answer")
+						},
+						log.Printf,
+					))
 				}
 				// BL427 (phase 5) — POST /api/autonomous/events/forward: a peer's
 				// forwarded event is re-emitted into this daemon's dispatcher.
