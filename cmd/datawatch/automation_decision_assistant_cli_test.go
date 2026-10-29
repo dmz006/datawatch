@@ -22,7 +22,7 @@ func TestAutomationCLIDecisionAssistant(t *testing.T) {
 		if err := run("set-decision-assistant", "ab12", "--backend", "pi-prompt", "--model", "qwen3.8:27b"); err != nil {
 			t.Fatal(err)
 		}
-		check(path, map[string]any{"backend": "pi-prompt", "model": "qwen3.8:27b"})
+		check(path, map[string]any{"backend": "pi-prompt", "model": "qwen3.8:27b", "expected_version": float64(9)})
 	})
 	t.Run("full", func(t *testing.T) {
 		if err := run("set-decision-assistant", "ab12", "--backend", "pi-prompt", "--model", "m", "--mode", "live",
@@ -41,13 +41,13 @@ func TestAutomationCLIDecisionAssistant(t *testing.T) {
 		if err := run("set-decision-assistant", "ab12", "--clear"); err != nil {
 			t.Fatal(err)
 		}
-		check(path, map[string]any{"clear": true})
+		check(path, map[string]any{"clear": true, "expected_version": float64(9)})
 	})
 	t.Run("empty backend clears", func(t *testing.T) {
 		if err := run("set-decision-assistant", "ab12", "--backend", ""); err != nil {
 			t.Fatal(err)
 		}
-		check(path, map[string]any{"backend": ""})
+		check(path, map[string]any{"backend": "", "expected_version": float64(9)})
 	})
 }
 

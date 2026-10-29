@@ -60,8 +60,9 @@ Subcommands:
                       --member, --clear)
   import-graph <graph-id>  Turn an orchestrator graph into a draft Automation (--dry-run previews it)
 
-Every control takes --actor, --reason and --expected-version; a stale
-expected version is refused with HTTP 409.`,
+Every control takes --actor, --reason and --expected-version; when the flag
+is omitted the CLI reads the current version first, and a stale expected
+version is refused with HTTP 409.`,
 	}
 	cmd.AddCommand(newAutomationListCmd())
 	cmd.AddCommand(newAutomationGetCmd())
@@ -355,7 +356,7 @@ type automationControlFlags struct {
 func (f *automationControlFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.actor, "actor", "", "Who is acting (default operator)")
 	cmd.Flags().StringVar(&f.reason, "reason", "", "Reason, recorded in the audit trail")
-	cmd.Flags().Int64Var(&f.expectedVersion, "expected-version", 0, "Refuse (HTTP 409) unless the Automation is at this version")
+	cmd.Flags().Int64Var(&f.expectedVersion, "expected-version", 0, "Refuse (HTTP 409) unless the Automation is at this version; when the flag is omitted the CLI reads the current version first")
 }
 
 // body starts the request body with the shared fields that were set.
@@ -391,9 +392,24 @@ var automationControlOps = map[string]string{
 	"set-decision-assistant": "set_decision_assistant",
 }
 
-// runAutomationControl posts a control request for a subcommand verb and
+// resolveAutomationVersion reads the Automation's current stored version via
+// GET /api/automations/<id>. A failure (for example a 404 for an unknown
+// Automation) is returned as the error.
+func resolveAutomationVersion(id string) (int64, error) {
+	raw, err := automationAPI(http.MethodGet, "/api/automations/"+url.PathEscape(id), nil)
+	if err != nil {
+		return 0, err
+	}
+	var a automationView
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return 0, fmt.Errorf("decode automation: %w", err)
+	}
+	return a.Version, nil
+}
+
+// postAutomationControl posts a control request for a subcommand verb and
 // prints the updated Automation.
-func runAutomationControl(id, verb string, body map[string]any) error {
+func postAutomationControl(id, verb string, body map[string]any) error {
 	raw, err := automationAPI(http.MethodPost, "/api/automations/"+url.PathEscape(id)+"/"+automationControlOps[verb], body)
 	if err != nil {
 		return err
@@ -403,6 +419,50 @@ func runAutomationControl(id, verb string, body map[string]any) error {
 		return fmt.Errorf("decode automation: %w", err)
 	}
 	return printAutomation(os.Stdout, a)
+}
+
+// runAutomationControl posts a control request for a subcommand verb and
+// prints the updated Automation. Without an explicit expected_version (the
+// flag omitted) it is an implicit version: read the stored version with
+// resolveAutomationVersion, send it, and if the POST is refused with a 409
+// version mismatch re-read the version and post again exactly once. A GET
+// failure is returned without any POST. An explicit expected_version
+// (including an explicit 0) is sent as is: no GET and no retry, so a stale
+// explicit version is still refused with the daemon's 409 message. The
+// caller's body map is never modified.
+func runAutomationControl(id, verb string, body map[string]any) error {
+	if _, explicit := body["expected_version"]; explicit {
+		return postAutomationControl(id, verb, body)
+	}
+	version, err := resolveAutomationVersion(id)
+	if err != nil {
+		return err
+	}
+	sent := make(map[string]any, len(body)+1)
+	for k, v := range body {
+		sent[k] = v
+	}
+	sent["expected_version"] = version
+	err = postAutomationControl(id, verb, sent)
+	if !isAutomationVersionConflict(err) {
+		return err
+	}
+	fresh, getErr := resolveAutomationVersion(id)
+	if getErr != nil {
+		return getErr
+	}
+	sent["expected_version"] = fresh
+	return postAutomationControl(id, verb, sent)
+}
+
+// isAutomationVersionConflict reports whether err is the daemon's
+// optimistic-lock refusal for a control POST.
+func isAutomationVersionConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "HTTP 409") && strings.Contains(msg, "version mismatch")
 }
 
 func newAutomationPauseCmd() *cobra.Command {

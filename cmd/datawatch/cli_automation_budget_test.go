@@ -84,25 +84,25 @@ func TestAutomationSetBudgetCLI(t *testing.T) {
 			"--window", "automation", "--on-breach", "block", "--estimated-cost-usd", "2.5")
 		check(t, map[string]any{
 			"member_id": "m2", "ceiling_type": "dollar", "ceiling_value": 5.5, "window": "automation",
-			"on_breach": "block", "estimated_cost_usd": 2.5,
+			"on_breach": "block", "estimated_cost_usd": 2.5, "expected_version": float64(8),
 		})
 	})
 
 	t.Run("estimated cost alone, zero removes it", func(t *testing.T) {
 		run(t, "set-budget", "ab12", "--member", "m2", "--estimated-cost-usd", "0")
-		check(t, map[string]any{"member_id": "m2", "estimated_cost_usd": float64(0)})
+		check(t, map[string]any{"member_id": "m2", "estimated_cost_usd": float64(0), "expected_version": float64(8)})
 	})
 
 	t.Run("month window anchors", func(t *testing.T) {
 		run(t, "set-budget", "ab12", "--ceiling-type", "dollar", "--ceiling-value", "100", "--window", "month", "--reset-day", "15")
-		check(t, map[string]any{"ceiling_type": "dollar", "ceiling_value": float64(100), "window": "month", "reset_day": float64(15)})
+		check(t, map[string]any{"ceiling_type": "dollar", "ceiling_value": float64(100), "window": "month", "reset_day": float64(15), "expected_version": float64(8)})
 	})
 
 	t.Run("clear", func(t *testing.T) {
 		run(t, "set-budget", "ab12", "--clear", "--expected-version", "8")
 		check(t, map[string]any{"clear": true, "expected_version": float64(8)})
 		run(t, "set-budget", "ab12", "--member", "m2", "--clear")
-		check(t, map[string]any{"clear": true, "member_id": "m2"})
+		check(t, map[string]any{"clear": true, "member_id": "m2", "expected_version": float64(8)})
 	})
 
 	t.Run("a refusal carries the daemon message", func(t *testing.T) {

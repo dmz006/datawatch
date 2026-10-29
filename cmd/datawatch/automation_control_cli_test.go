@@ -75,21 +75,21 @@ func TestAutomationCLIControl(t *testing.T) {
 			}
 		}
 		run(t, "cancel", "ab12", "--cancel-in-flight=false")
-		check(t, "/api/automations/ab12/cancel", map[string]any{"cancel_in_flight": false})
+		check(t, "/api/automations/ab12/cancel", map[string]any{"cancel_in_flight": false, "expected_version": float64(8)})
 	})
 
 	t.Run("pause and resume", func(t *testing.T) {
 		run(t, "pause", "ab12", "--reason", "hold for review")
-		check(t, "/api/automations/ab12/pause", map[string]any{"reason": "hold for review"})
+		check(t, "/api/automations/ab12/pause", map[string]any{"reason": "hold for review", "expected_version": float64(8)})
 		run(t, "resume", "ab12")
-		check(t, "/api/automations/ab12/resume", map[string]any{})
+		check(t, "/api/automations/ab12/resume", map[string]any{"expected_version": float64(8)})
 	})
 
 	t.Run("skip", func(t *testing.T) {
 		run(t, "skip", "ab12", "m2")
-		check(t, "/api/automations/ab12/skip_member", map[string]any{"member_id": "m2", "edge": "on_complete"})
+		check(t, "/api/automations/ab12/skip_member", map[string]any{"member_id": "m2", "edge": "on_complete", "expected_version": float64(8)})
 		run(t, "skip", "ab12", "m2", "--edge", "on_failed")
-		check(t, "/api/automations/ab12/skip_member", map[string]any{"member_id": "m2", "edge": "on_failed"})
+		check(t, "/api/automations/ab12/skip_member", map[string]any{"member_id": "m2", "edge": "on_failed", "expected_version": float64(8)})
 		c.gotPath = ""
 		if err := runCmd(t, newAutomationCmd(), "skip", "ab12", "m2", "--edge", "sideways"); err == nil || c.gotPath != "" {
 			t.Errorf("bad --edge: err = %v, path = %q", err, c.gotPath)
@@ -99,7 +99,7 @@ func TestAutomationCLIControl(t *testing.T) {
 	t.Run("insert", func(t *testing.T) {
 		run(t, "insert", "ab12", "prd-9", "--reason", "fix the flaky step", "--urgent", "--after", "m2")
 		check(t, "/api/automations/ab12/insert_member", map[string]any{
-			"member": map[string]any{"prd_id": "prd-9"}, "urgent": true, "after": "m2", "reason": "fix the flaky step",
+			"member": map[string]any{"prd_id": "prd-9"}, "urgent": true, "after": "m2", "reason": "fix the flaky step", "expected_version": float64(8),
 		})
 		c.gotPath = ""
 		if err := runCmd(t, newAutomationCmd(), "insert", "ab12", "prd-9"); err == nil || c.gotPath != "" {
@@ -109,13 +109,13 @@ func TestAutomationCLIControl(t *testing.T) {
 
 	t.Run("remove", func(t *testing.T) {
 		run(t, "remove", "ab12", "m3")
-		check(t, "/api/automations/ab12/remove_member", map[string]any{"member_id": "m3"})
+		check(t, "/api/automations/ab12/remove_member", map[string]any{"member_id": "m3", "expected_version": float64(8)})
 	})
 
 	t.Run("edges", func(t *testing.T) {
 		run(t, "edges", "ab12", "m2", "--on-complete", "m4", "--on-failed", "m5")
 		check(t, "/api/automations/ab12/reorder_edges", map[string]any{
-			"member_id": "m2", "on_complete": "m4", "on_blocked": "", "on_failed": "m5",
+			"member_id": "m2", "on_complete": "m4", "on_blocked": "", "on_failed": "m5", "expected_version": float64(8),
 		})
 		c.gotPath = ""
 		if err := runCmd(t, newAutomationCmd(), "edges", "ab12", "m2"); err == nil || c.gotPath != "" {
@@ -125,7 +125,7 @@ func TestAutomationCLIControl(t *testing.T) {
 
 	t.Run("approve", func(t *testing.T) {
 		run(t, "approve", "ab12", "m6")
-		check(t, "/api/automations/ab12/approve_insert", map[string]any{"member_id": "m6"})
+		check(t, "/api/automations/ab12/approve_insert", map[string]any{"member_id": "m6", "expected_version": float64(8)})
 	})
 
 	t.Run("version conflict is an error", func(t *testing.T) {
