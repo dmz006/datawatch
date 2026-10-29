@@ -185,8 +185,9 @@ block holds `variant` (`pace-gauge` | `lane-planner` | `burn-ledger` | `all`, de
 default 5), `cost_per_task_points` (above 0, default 0.1, a starting figure to calibrate
 against readings), `baseline_per_24h` (0 to 20, default 3), `max_lanes` (1 to 8, default 3),
 `reset_weekday` (`sunday`..`saturday`, default `sunday`), `reset_time` (24-hour `HH:MM`,
-default `08:00`), `reset_zone` (IANA zone name, default `UTC`; a fixed offset or an unknown
-name is rejected) and `keeper` (federation peer that keeps the shared readings; empty means
+default `08:00`), `reset_zone` (IANA zone name, default empty — empty means the zone the
+daemon runs in, falling back to `UTC`; a fixed offset or an unknown name is rejected) and
+`keeper` (federation peer that keeps the shared readings; empty means
 this daemon). Normalisation, `ValidateUsageCalculator*` and `EffectiveUsageCalculator` follow
 `usage_backoff.go`. A saved value that is no longer allowed falls back to its default, and a
 retired `variant` falls back to `all` with one log line. All keys are settable at runtime:

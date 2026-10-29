@@ -16310,7 +16310,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'usage.calculator.max_lanes', label: 'Usage calculator largest lane count (1 to 8, default 3)', labelKey: 'settings_usage_calculator_max_lanes', type: 'number', placeholder: '3', min: 1, max: 8, step: 1, default: '3' },
     { key: 'usage.calculator.reset_weekday', label: 'Usage calculator reset weekday (default sunday)', labelKey: 'settings_usage_calculator_reset_weekday', type: 'select', options: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'], default: 'sunday' },
     { key: 'usage.calculator.reset_time', label: 'Usage calculator reset time (24-hour HH:MM, default 08:00)', labelKey: 'settings_usage_calculator_reset_time', type: 'text', placeholder: '08:00', default: '08:00', hintKey: 'settings_usage_calculator_reset_time_hint' },
-    { key: 'usage.calculator.reset_zone', label: 'Usage calculator reset zone (IANA name; empty follows the server)', labelKey: 'settings_usage_calculator_reset_zone', type: 'text', placeholder: 'America/New_York', hintKey: 'settings_usage_calculator_reset_zone_hint' },
+    { key: 'usage.calculator.reset_zone', label: "Usage calculator reset time zone (IANA name; empty follows the server's zone)", labelKey: 'settings_usage_calculator_reset_zone', type: 'text', placeholder: 'America/New_York', hintKey: 'settings_usage_calculator_reset_zone_hint' },
     { key: 'usage.calculator.keeper', label: 'Usage calculator keeper (federation peer that keeps the readings, empty = this daemon)', labelKey: 'settings_usage_calculator_keeper', type: 'text', placeholder: '', hintKey: 'settings_usage_calculator_keeper_hint' },
   ]},
   { id: 'autonomous', section: 'Autonomous Automata planning', docs: 'howto/autonomous-planning.md', fields: [
