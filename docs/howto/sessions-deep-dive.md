@@ -176,8 +176,13 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    - **Tags** (header icon button) — the session list's **Watched only**
      toggle and tag filter live in the dropdown behind the Tags icon
      button in the page header, not in the filter bar. The button is a
-     tag icon with no visible word; its tooltip and accessible name
-     read **Tags**. Open it, tick **Watched only** to
+     tag icon with no visible word: a solid tag filled in the theme
+     accent color, with a lighter hole and a subtle darker edge, that
+     reads clearly on both the dark and the light theme. It looks
+     brighter when the dropdown is open or a tag filter is on, it
+     carries a count badge while filters are active, and it shows a
+     visible focus ring for keyboard users. Its tooltip and accessible
+     name read **Tags**. Open it, tick **Watched only** to
      list only sessions you watch, and tick tags to list only sessions
      that carry them (**match ANY** by default; the match button
      switches to **match ALL**). The icon shows a count of the active
@@ -205,7 +210,9 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    - ⚙ `<compute-node>` purple badge (v7 Compute Node, when set).
    - Hover each for a tooltip explaining the v7 field.
    The session header has no time counter and no watch eye. Watching
-   moved into the dropdown: open the Tags icon button in the header and, under
+   moved into the dropdown: open the Tags icon button in the header (the
+   solid tag in the accent color, shown brighter while the dropdown is
+   open) and, under
    **This session**, press **Watch this session** (or **Stop watching
    this session**). The same section has **Edit tags of this session**.
 
