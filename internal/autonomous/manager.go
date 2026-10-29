@@ -760,8 +760,9 @@ type Manager struct {
 	cfg         Config
 	store       *Store
 	automations *AutomationStore
-	dataDir     string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
-	templates   *TemplateStore // BL221 (v6.2.0) — dedicated template store
+	repoCIWatch *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
+	dataDir     string            // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
+	templates   *TemplateStore    // BL221 (v6.2.0) — dedicated template store
 	decompose   DecomposeFn
 	guardrail   GuardrailFn
 	planReview  PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
@@ -1824,6 +1825,10 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	if err != nil {
 		return nil, err
 	}
+	repoWatch, err := NewRepoCIWatchStore(st.dir)
+	if err != nil {
+		return nil, err
+	}
 	types := make([]AutomatonType, len(builtinTypes))
 	copy(types, builtinTypes)
 	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
@@ -1831,6 +1836,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 		cfg:         cfg,
 		store:       st,
 		automations: automs,
+		repoCIWatch: repoWatch,
 		dataDir:     dataDir,
 		templates:   newTemplateStore(dataDir),
 		decompose:   decompose,
@@ -5848,4 +5854,45 @@ func (m *Manager) SetPRDRetryPolicy(prdID, profile string, policy map[string]int
 // GetGuardrailProfile (BL303 S2 T05) returns one profile by ID.
 func (m *Manager) GetGuardrailProfile(id string) (*GuardrailProfile, bool) {
 	return m.store.GetGuardrailProfile(id)
+}
+
+// ListRepoCIWatchRecords returns deep copies of all repo CI watch
+// records currently stored, newest FirstSeenAt first — the whole list
+// for a repository with a clean head is empty.
+func (m *Manager) ListRepoCIWatchRecords() []*RepoCIWatchRecord {
+	if m.repoCIWatch == nil {
+		return []*RepoCIWatchRecord{}
+	}
+	return m.repoCIWatch.List()
+}
+
+// SaveRepoCIWatchRecord persists rec under its composite key (insert or
+// refresh), guarded by the store's mutex, and returns a deep copy of
+// the stored record.
+func (m *Manager) SaveRepoCIWatchRecord(rec *RepoCIWatchRecord) (*RepoCIWatchRecord, error) {
+	if m.repoCIWatch == nil {
+		return nil, errors.New("repo ci watch: no store available")
+	}
+	return m.repoCIWatch.Save(rec)
+}
+
+// AppendRepoCIWatchNote writes one annotation to the existing record
+// under key (source names the writing step, text is the note body); it
+// never creates one. The store's guard serializes the append with any
+// concurrent save, so the append-only invariant holds.
+func (m *Manager) AppendRepoCIWatchNote(key, source, text string) (*RepoCIWatchRecord, error) {
+	if m.repoCIWatch == nil {
+		return nil, errors.New("repo ci watch: no store available")
+	}
+	return m.repoCIWatch.AppendNote(key, source, text)
+}
+
+// ClearRepoCIWatchRecord removes the record under key — e.g. when a
+// failing run goes green — and persists the change; a missing record
+// is an error.
+func (m *Manager) ClearRepoCIWatchRecord(key string) error {
+	if m.repoCIWatch == nil {
+		return errors.New("repo ci watch: no store available")
+	}
+	return m.repoCIWatch.Delete(key)
 }
