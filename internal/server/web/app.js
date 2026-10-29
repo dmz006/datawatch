@@ -27767,10 +27767,10 @@ function _automationLoader() {
     afterPaint: () => {
       if (_automationState.detailId) renderAutomationStrip();
       _tagFacetsRefresh('automation');
-      // Refresh the progress card on each 30-second automation poll; the guard
-      // makes this a no-op while its slot is not on the page (the Chains
-      // sub-tab), and the card's own refetch guard covers a recent load.
-      if (typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
+      // Refresh the progress card on each 30-second automation poll; the
+      // sub-tab guard makes this a no-op while the card lives on the
+      // Overview sub-tab, and the card's own refetch guard covers a recent load.
+      if (_automationState.subtab === 'overview' && typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
     },
   });
 }
