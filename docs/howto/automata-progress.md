@@ -278,7 +278,7 @@ written.
 
 | What you want | YAML | CLI | Web UI | REST | Chat |
 |---|---|---|---|---|---|
-| Read the numbers | - | `datawatch autonomous progress [--automation ID] [--tag ID] [--since D] [--until D] [--json]` | Automation sub-tab > *Progress* card, at the top of the sub-tab below the filter bar and the *Capacity* card | `GET /api/autonomous/progress` | `progress [automation=ID] [tag=ID] [since=D] [until=D]` |
+| Read the numbers | - | `datawatch autonomous progress [--automation ID] [--tag ID] [--since D] [--until D] [--json]` | Automation sub-tab > *Overview* > *Progress* card, beside the *Capacity* card | `GET /api/autonomous/progress` | `progress [automation=ID] [tag=ID] [since=D] [until=D]` |
 | Read the trend | - | `datawatch autonomous progress-trend [--days N] [--json]` | *Trend* section of the card | `GET /api/autonomous/progress/trend?days=N` | `progress trend [days]` |
 | Set an Automaton kind | - | `datawatch autonomous prd-set-kind ID KIND` | Automaton settings > *Kind* | `POST /api/autonomous/prds/{id}/set_kind` | `autonomous set-kind ID KIND` |
 | Change a setting | `autonomous.progress.*` | `datawatch config set autonomous.progress.lanes 5` | Settings > General > Autonomous > *Progress ...* | `PUT /api/config` `{"autonomous.progress.lanes": 5}` | `configure autonomous.progress.lanes=5` |
@@ -296,7 +296,7 @@ Automata carrying one tag. A bad date is refused (HTTP 400).
 
 | Where | What you see |
 |---|---|
-| Web UI, Automation sub-tab | The *Progress* card at the top of the Automation sub-tab, below the filter bar and the *Capacity* card, above the Automation list: the kind table, work left, completion range with methods and drivers, throughput, utilization, inactive windows, unfiled backlog count and the trend. It loads when the sub-tab is selected and stops refreshing when you leave — nothing keeps polling after that — and it is not shown on the Automata or Templates sub-tabs. It keeps the last good data and says so when a refresh fails or the data is over five minutes old. |
+| Web UI, Automation sub-tab | The *Progress* card on the **Overview** sub-tab of the Automation sub-tab, beside the *Capacity* card (the list itself is on the **Chains** sub-tab): the kind table, work left, completion range with methods and drivers, throughput, utilization, inactive windows, unfiled backlog count and the trend. It loads when the sub-tab is selected and stops refreshing when you leave — nothing keeps polling after that — and it is not shown on the Automata or Templates sub-tabs. It keeps the last good data and says so when a refresh fails or the data is over five minutes old. |
 | `datawatch autonomous progress` | The status table as text (`--json` for the raw object). |
 | `datawatch autonomous progress-trend` | The saved snapshots and the direction. |
 | Chat channels | `progress` and `progress trend` reply with the same text as the CLI. |

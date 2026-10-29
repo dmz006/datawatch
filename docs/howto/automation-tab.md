@@ -10,7 +10,14 @@ steer chains of Automata. It is the first sub-tab of the **Automata** tab: open
 Automata in the bottom navigation and Automation is selected on the sub-tab bar,
 left of **Automata** and **Templates**. It shows every Automation as a card, draws the chain
 of the one you open as a strip, and puts the controls (pause, resume, cancel,
-skip, insert, remove, edit edges) next to the members they act on.
+skip, insert, remove, edit edges) next to the members they act on. Inside the
+Automation sub-tab, a second row of sub-tabs splits the view: **Overview**, with
+the Progress card, the Capacity and queue card, and the other summary cards that
+sit with them; and **Chains**, with the status badges, the search and filter
+bar, the list of Automations, and the open Automation with its pipeline strip
+and controls. Chains is the one open by default. A **Questions** sub-tab will
+join the second row when the question queue lands; no Questions sub-tab exists
+today.
 
 ## What an Automation is
 
@@ -29,25 +36,32 @@ that connect them.
 ## Opening it, the remembered sub-tab and saved links
 
 - **First visit.** Tapping Automata in the bottom navigation opens on the
-  Automation sub-tab. Tap **Automata** or **Templates** on the sub-tab bar to
-  switch; the action buttons at the right of the bar (select, filter, history,
-  watch, new) change with the sub-tab, and so does the round action button.
+  Automation sub-tab, on its Chains sub-tab. Tap **Automata** or **Templates**
+  on the sub-tab bar, or **Overview** or **Chains** on the second row under it,
+  to switch. There is no New Automation button in the bar: an Automation is
+  created with the round button at the bottom right, or with **＋ Create
+  Automation** on the empty state, both opening the same form. The action
+  buttons at the right of the bar (select, filter, history, watch) change with
+  the sub-tab, and so does the round button; on the Automation sub-tab, filter
+  and history show on Chains, because both act on the list.
 - **Remembered sub-tab.** While the web app stays open, the sub-tab you chose
-  stays selected when you leave the Automata tab and come back. A fresh load of
-  the page always starts on Automation again: storing the last chosen sub-tab
-  across loads is switched off until the operator decides how it should behave.
+  stays selected when you leave the Automata tab and come back. The same rule
+  holds on the second row: the sub-tab you chose is kept while the page stays
+  open, and a fresh load of the page starts the view on Chains again. Storing a
+  chosen sub-tab across loads is switched off until the operator decides how it
+  should behave.
 - **Saved links.** A link to `#automation` opens the Automata tab on the
-  Automation sub-tab and shows its list. `#automation/<id>` and
-  `?automation=<id>` do the same and open that Automation. Older links and
+  Automation sub-tab, on Chains, and shows its list. `#automation/<id>` and
+  `?automation=<id>` land the same way and open that Automation. Older links and
   history entries that name the Automation view land in the same place, and the
   back control on a member's Automaton page returns to the Automation that holds
-  it.
+  it, on Chains.
 - **Subsystem off.** When the autonomous subsystem is not enabled, the
   Automation sub-tab is not offered and every one of these links lands on the
   Automata sub-tab.
-- **Phone width.** On a narrow screen the sub-tab bar wraps the action buttons
-  onto a second row instead of scrolling or clipping, and every sub-tab and
-  action button is at least 40 px tall and wide enough to tap.
+- **Phone width.** On a narrow screen the two rows of sub-tabs fit at 360 px
+  without scrolling or clipping, and every sub-tab in both rows is at least
+  40 px tall and wide enough to tap.
 
 ## Base requirements
 
@@ -57,27 +71,36 @@ that connect them.
 
 ## The list
 
-Open the Automation sub-tab to see one card per Automation, ordered by status
-(active, blocked, paused, draft, completed, cancelled) and then by name.
+On the Chains sub-tab, one card per Automation, ordered by status (active,
+blocked, paused, draft, completed, cancelled) and then by name.
 
-### Capacity and queue card
+### The needs-attention card
 
-Above the list sits the same capacity and queue summary card the Automata
-sub-tab shows: the pools and their usage, any usage back-off, budgets, and the
-Automata waiting for capacity. It loads in parallel with the list and has its
-own loading skeleton and, if the request fails, its own error with a Retry
-button; a failed card never blanks the list, and a failed list never blanks the
-card.
+On Chains, between the filter bar and the list, sits the needs-attention card:
+one card per Automaton that needs an operator because it failed or is blocked,
+with the reason it needs attention. While nothing is stuck it shows a one-line
+empty note. See the *Triage records* entry under [Related](#related) for the
+record itself and how it fills and clears.
+
+### The Overview cards
+
+On the Overview sub-tab sit the summary cards: the Progress card, the same
+capacity and queue summary card the Automata sub-tab shows (the pools and their
+usage, any usage back-off, budgets, and the Automata waiting for capacity), and
+the other summary cards that sit with them. Each card loads with its own
+loading skeleton and, if the request fails, its own error with a Retry button;
+a failed card never blanks the list, and a failed list never blanks the cards.
 
 ### The empty state
 
 When the list loads successfully and there are no Automations at all, the
 sub-tab shows **No Automations yet**, a one-line explanation (an Automation chains
-Automata; an Automaton is a single planned unit of work) and a **Create
-Automation** button that opens the same form as **＋ New Automation**. It never
-appears while the list is still loading or after a load that failed; a failed
-load shows the error and Retry instead. If Automations exist but the filters
-hide them all, you see the plain "No Automations yet" line without the button.
+Automata; an Automaton is a single planned unit of work) and a **＋ Create
+Automation** button that opens the same form as the round **New Automation**
+button at the bottom right. It never appears while the list is still loading or
+after a load that failed; a failed load shows the error and Retry instead. If
+Automations exist but the filters hide them all, you see the plain "No
+Automations yet" line without the button.
 
 ### Filtering
 
@@ -149,8 +172,9 @@ the most recent **decisions** (what changed, who did it and when).
 
 ## Creating and editing
 
-Tap **＋ New Automation** on the list. The same form edits an existing
-Automation.
+Create an Automation with the round button at the bottom right, or with
+**＋ Create Automation** on the empty state; both open the same form. The same
+form edits an existing Automation.
 
 1. Give it a **name** and, if you like, a description.
 2. **Add Automaton** to pick members. The picker lists your Automata and greys
