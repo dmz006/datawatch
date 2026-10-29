@@ -1382,6 +1382,34 @@ autonomous:
     # is always on regardless of this key; it only gates the opt-in
     # session line. True when the key is absent.
     return_path: true
+    # autonomous.questions.decision_gate — the decision gate. A task whose
+    # spec names an operator decision waits, instead of running, until
+    # that decision has been answered on the question channel. On when the
+    # key is absent. The gate only sees decisions while the question
+    # channel above is on (decisions are raised and answered through it),
+    # so keep the channel on whenever the gate is on. Turning the gate off
+    # sends any task it is holding back to pending and stops further
+    # waiting.
+    # Change it with PUT /api/config {"autonomous.questions.decision_gate": false},
+    # the comm channel (`configure autonomous.questions.decision_gate=false`),
+    # the CLI (`datawatch config set autonomous.questions.decision_gate false`)
+    # or the MCP config_set tool (key autonomous.questions.decision_gate,
+    # value false). Takes effect at once, no restart needed.
+    decision_gate: true
+    # autonomous.questions.decision_gate_mode — what the gate does when it is
+    # on. "shadow" (the default, and what the first release ships with):
+    # the gate works out which tasks it would hold and records that once
+    # per task on the Automaton's decision log, but holds nothing, so you
+    # can watch it before trusting it. "on": a task waiting on an
+    # unanswered decision is actually held until the answer arrives; its
+    # dependents wait behind it. Any other value is refused
+    # (PUT /api/config answers 400 and changes nothing).
+    # Change it with PUT /api/config {"autonomous.questions.decision_gate_mode": "on"},
+    # the comm channel (`configure autonomous.questions.decision_gate_mode=on`),
+    # the CLI (`datawatch config set autonomous.questions.decision_gate_mode on`)
+    # or the MCP config_set tool (key autonomous.questions.decision_gate_mode,
+    # value on). Takes effect at once, no restart needed.
+    decision_gate_mode: shadow
   # Daemon-wide default for how many independent tasks of one Automaton run
   # at once. An Automaton's own max_concurrent_tasks overrides it. 1 = one
   # task at a time (sequential). Tasks of different Automata are not limited

@@ -3192,6 +3192,13 @@ func (q AutonomousQuestionsConfig) EffectiveDecisionGateMode() string {
 	return q.DecisionGateMode
 }
 
+// ValidateDecisionGateMode refuses a decision_gate_mode other than shadow, on
+// or empty (empty reads as shadow). It is the one rule the config file load,
+// PUT /api/config and every surface that rides it share.
+func ValidateDecisionGateMode(mode string) error {
+	return AutonomousQuestionsConfig{DecisionGateMode: mode}.validate()
+}
+
 // validate refuses a decision_gate_mode other than shadow or on.
 func (q AutonomousQuestionsConfig) validate() error {
 	switch q.DecisionGateMode {
