@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_triage`, `autonomous_prd_set_lane_preference`, `capacity_status` |
+| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_triage`, `autonomous_decisions`, `autonomous_prd_set_lane_preference`, `capacity_status` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
@@ -362,6 +362,21 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   A wrong `status` comes back as a tool error with the daemon's message. Needs the autonomous read capability when called by a federated peer.
+- **`autonomous_decisions`** — read the operator decisions, newest first. Each entry carries the decision `id`, the `question` and `label`, the `state` (`open`, `answered`, `withdrawn` or `expired`), `asked_by` and `asked_at`, the Automaton it belongs to (`prd_id`), `task_ids` (the tasks of that Automaton whose spec names the decision), `waiting_task_ids` and `waiting_tasks` (the ones held on it right now, each with its `wait_reason`) and `answer`. `answer` is `null` until the decision is answered; then it holds the answer `id`, the operator's words verbatim in `quote`, `quote_sha256`, `actor`, `surface` and `answered_at`. Read-only: it never raises, answers or withdraws a decision. Returns the same object as `GET /api/autonomous/decisions`. How an Automaton task waits on a decision is in [howto/automaton-operator-decisions](howto/automaton-operator-decisions.md).
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `prd_id` | no | only the decisions linked to this Automaton |
+  | `state` | no | `open`, `answered`, `withdrawn` or `expired` (anything else is refused) |
+  | `limit` | no | at most this many decisions, newest first; default 100, maximum 1000 |
+
+  ```
+  autonomous_decisions()
+  autonomous_decisions(state="open")
+  autonomous_decisions(prd_id="d0442737d38c", state="answered", limit=20)
+  ```
+
+  A wrong `state` or a `limit` that is not a positive whole number comes back as a tool error with the daemon's message. Needs the autonomous read capability when called by a federated peer.
 - **`autonomous_prd_set_lane_preference`** — set which lane an Automaton may take: `gpu`, `claude` or `any`. Takes `id` and `lane_preference`; an empty `lane_preference` clears the setting, which means `any`. An unknown value is refused. Proxies `POST /api/autonomous/prds/{id}/set_lane_preference`. Needs the autonomous write capability when called by a federated peer.
 
   | Parameter | Required | Description |

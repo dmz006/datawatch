@@ -11,7 +11,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [setup.md](setup.md) | Full installation and initial configuration guide |
 | [commands.md](commands.md) | Complete command reference (messaging and CLI) |
 | [pwa-setup.md](pwa-setup.md) | Progressive Web App setup via Tailscale |
-| [howto/](howto/README.md) | Practical walkthroughs — autonomous planning, PRD-DAG, container workers, pipeline chaining, cross-agent memory, Automata lifecycle subscriptions (incl. PWA tab and polling queue), and the outbound webhook and peer-forwarding sinks (`howto/automaton-lifecycle-webhooks.md`, disabled until enabled), and operator question notifications and the return path (`howto/operator-questions-notifications.md`) |
+| [howto/](howto/README.md) | Practical walkthroughs — autonomous planning, PRD-DAG, container workers, pipeline chaining, cross-agent memory, Automata lifecycle subscriptions (incl. PWA tab and polling queue), and the outbound webhook and peer-forwarding sinks (`howto/automaton-lifecycle-webhooks.md`, disabled until enabled), and operator question notifications and the return path (`howto/operator-questions-notifications.md`), and operator decisions and the decision gate (`howto/automaton-operator-decisions.md`) |
 
 ## Backends
 
