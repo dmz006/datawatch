@@ -634,6 +634,9 @@ def thinking_disp(lvl):
 
 def build_cell_row(cell, cell_dir, task, worker_sess, verifier_sess, used_model, model_source, art):
     notes = [f"used_model source: {model_source}"]
+    if not used_model:
+        notes.append("used model unconfirmed: the worker session record is gone from the daemon and the "
+                     "post-run llm_test reported none — the requested model is not evidence of the used one")
     identity = classify_identity(cell["expected_model"], used_model)
     tpd = (task or {}).get("project_dir") or None
     # Verifier/diff path: verifier session cwd when one ran, else the worker session's cwd.
@@ -660,15 +663,22 @@ def build_cell_row(cell, cell_dir, task, worker_sess, verifier_sess, used_model,
     # the task never reaches 'completed'. If the driver sees any of those
     # indicators, the cell is an infrastructure failure: keep the evidence on
     # the row, but never a pass/fail model_result.
-    failed_status = (task or {}).get("status") in ("failed", "blocked", "cancelled")
+    # Any task status other than completed counts: review_needed (held after
+    # repeated failed attempts, e.g. a model the placed node does not host)
+    # is the common one and must not read as a model fail.
+    task_status = (task or {}).get("status")
+    failed_status = bool(task_status) and task_status != "completed"
     failed_session = worker_sess is not None and (
         worker_sess.get("state") in ("failed", "killed")
         or int(worker_sess.get("failure_exit_code") or 0) != 0)
+    invalid_reason = None
     if failed_status or failed_session:
+        invalid_reason = "worker did not complete"
         notes.append("worker did not complete (task "
                      + repr((task or {}).get("status"))
                      + ", session state " + repr((worker_sess or {}).get("state"))
                      + ", failure_exit_code " + repr((worker_sess or {}).get("failure_exit_code"))
+                     + (", task error " + repr(task["error"]) if (task or {}).get("error") else "")
                      + ") — invalid cell: infrastructure failure, not a model result")
     model_result = None if (failed_status or failed_session) else classify_result(identity, integrity, art.get("verify_exit"))
     return {
@@ -677,7 +687,7 @@ def build_cell_row(cell, cell_dir, task, worker_sess, verifier_sess, used_model,
         "self_reported_model": self_rep, "verification_integrity": integrity,
         "resolved_dir": _real(resolved), "task_project_dir": tpd, "artifact_check": art,
         "thinking_level": cell.get("thinking_level"),
-        "model_result": model_result,
+        "model_result": model_result, "invalid_reason": invalid_reason,
         "task_status": (task or {}).get("status"), "session_id": (task or {}).get("session_id"),
         "notes": "; ".join(notes),
     }
@@ -731,7 +741,8 @@ def cmd_collect(a):
 def build_results(st):
     pf = st.get("preflight") or {}
     return {"run_id": st.get("run_id"), "preflight": pf.get("rows") or [], "preflight_passed": preflight_passed(st),
-            "prd_id": st.get("eval_prd_id"), "cells": (st.get("collected") or {}).get("cells") or []}
+            "prd_id": st.get("eval_prd_id"), "run_notes": st.get("run_notes") or [],
+            "cells": (st.get("collected") or {}).get("cells") or []}
 
 
 def render_md(doc, m):
@@ -740,6 +751,12 @@ def render_md(doc, m):
            "## Preflight", "", "| role | llm | expected | used | ok |", "|---|---|---|---|---|"]
     for r in doc["preflight"]:
         out.append(f"| {r['role']} | {r['llm']} | {r['expected_model']} | {r['used_model']} | {'yes' if r['ok'] else 'NO'} |")
+    if doc.get("run_notes"):
+        out += ["", "## Run notes", ""] + [f"- {n}" for n in doc["run_notes"]]
+    dead = [x for x in doc["cells"] if x.get("invalid_reason")]
+    out += ["", "## Invalid cells (worker did not complete)", "",
+            "Not model results: the worker died before doing the task, so nothing about the model is measured.", ""]
+    out += [f"- {x['role']}-{x['task_type']}: task status `{x['task_status']}`; {x['notes']}" for x in dead] or ["None."]
     wrong = [x for x in doc["cells"] if x["model_identity"] != "ok"]
     out += ["", "## Wrong model cells", ""]
     out += [f"- {x['role']}-{x['task_type']}: expected `{x['expected_model']}`, used `{x['used_model']}` "
@@ -859,6 +876,10 @@ def cmd_self_test(_a):
                            "session_record.model", good_art)
         check(r["model_result"] is None and "not a model result" in r["notes"],
               "blocked task (e.g. the drift guard in r8) -> invalid cell, never pass/fail")
+        r = build_cell_row(cell, cdir, {**task, "status": "review_needed"}, ws, None, base["model"],
+                           "session_record.model", {"verify_exit": 1, "new_commits": 0})
+        check(r["model_result"] is None and "not a model result" in r["notes"],
+              "review_needed task (held after repeated early failures) -> invalid cell, never a model fail")
         # MODEL-IDENTITY.txt: evidence, not the judge. Absent -> self_reported_model
         # null and identity still decided by the used model; present -> recorded,
         # and a self-report neither creates nor cancels the used-model verdict.
