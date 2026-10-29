@@ -66,8 +66,8 @@ func unknownLanePreferenceMsg(pref string) string {
 // validateLaneFillValue checks one autonomous.lane_fill.<field> value. The mode
 // must be off, shadow or on; the lane counts, the idle alert minutes, the
 // decompose-ahead minimum and the poll interval are whole numbers >= 0; the
-// backends and the model are strings. A field this does not know is not
-// checked here.
+// backends and the model are strings; the verifier-wait rule is a boolean.
+// A field this does not know is not checked here.
 func validateLaneFillValue(field string, v any) error {
 	switch field {
 	case "mode":
@@ -76,6 +76,10 @@ func validateLaneFillValue(field string, v any) error {
 			return fmt.Errorf("%smode: must be \"off\", \"shadow\" or \"on\"", laneFillKeyPrefix)
 		}
 		return config.ValidateLaneFillMode(str)
+	case "count_verifier_wait":
+		if _, ok := v.(bool); !ok {
+			return fmt.Errorf("%scount_verifier_wait: must be true or false", laneFillKeyPrefix)
+		}
 	case "gpu_lanes", "claude_lanes", "idle_alert_minutes", "decompose_ahead_min", "poll_seconds":
 		if !isWholeNonNegative(v) {
 			return fmt.Errorf("%s%s: must be a whole number >= 0", laneFillKeyPrefix, field)
@@ -105,6 +109,12 @@ func applyLaneFillValue(c *config.AutonomousLaneFillConfig, field string, v any)
 	if field == "mode" {
 		if str, ok := v.(string); ok && config.ValidateLaneFillMode(str) == nil {
 			c.Mode = str
+		}
+		return
+	}
+	if b, ok := v.(bool); ok {
+		if field == "count_verifier_wait" {
+			c.CountVerifierWait = &b
 		}
 		return
 	}
@@ -150,6 +160,7 @@ func laneFillConfigSurface(c config.AutonomousLaneFillConfig) map[string]interfa
 		"gpu_backend":         c.EffectiveGPUBackend(),
 		"gpu_model":           c.GPUModel,
 		"claude_backend":      c.EffectiveClaudeBackend(),
+		"count_verifier_wait": c.EffectiveCountVerifierWait(),
 	}
 }
 
