@@ -135,6 +135,27 @@ func (s *Server) SetQuestions(api QuestionsAPI) {
 	s.questionStore = api
 }
 
+// SetQuestionAnswerReturnPath wires the per-question opt-in session line:
+// when an answer is recorded and the question opted in with both switches
+// on, one line of DATAWATCH_ANSWER: is delivered into the asking session.
+// nil (the default) = no session line. Neither case blocks or fails the
+// answer call — the event plus polled GET return path stands regardless.
+func (s *Server) SetQuestionAnswerReturnPath(d *autonomous.QuestionAnswerReturnPath) {
+	if s == nil {
+		return
+	}
+	s.questionAnswerReturnPath = d
+}
+
+// HTTPServer delegate, so main.go can wire it through the same variable it
+// already uses for SetQuestions.
+func (s *HTTPServer) SetQuestionAnswerReturnPath(d *autonomous.QuestionAnswerReturnPath) {
+	if s == nil || s.api == nil {
+		return
+	}
+	s.api.SetQuestionAnswerReturnPath(d)
+}
+
 // questionsPath maps a request path onto the one surface shape it names.
 // kind is "collection" (POST raise / GET list), "get" (GET by id),
 // "answer" (POST /{id}/answer), "withdraw" (POST /{id}/withdraw) or
@@ -524,6 +545,19 @@ func (s *Server) handleQuestionAnswer(w http.ResponseWriter, r *http.Request, id
 	q, ok := s.questionStore.Get(id)
 	if !ok {
 		q = autonomous.Question{ID: id, State: autonomous.QuestionAnswered}
+	}
+
+	// Per-question opt-in session line (the question raised with
+	// return_path true, the autonomous.questions switch and its
+	// return_path toggle both on, read live): one line of
+	// DATAWATCH_ANSWER: into the asking session, best-effort — it runs in
+	// its own goroutine, and a gone session or a failed send is a single
+	// daemon-log line, never an error here. The answer is already
+	// recorded; the event plus polled GET still carry it either way.
+	if d := s.questionAnswerReturnPath; d != nil {
+		d.Send(q, stored,
+			s.cfg == nil || s.cfg.Autonomous.Questions.Enabled,
+			s.cfg == nil || s.cfg.Autonomous.Questions.EffectiveReturnPath())
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

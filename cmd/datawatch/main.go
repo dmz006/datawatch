@@ -6627,6 +6627,19 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					// autonomous.questions switch and the notify_* toggles are
 					// read live per raise, so nothing here fires while off.
 					httpServer.SetQuestionRaiseNotifier(questionRaiseNotifier{routers: routers, cfg: cfg})
+					// Per-question opt-in session line on answer (the question
+					// raised with return_path true): one line of DATAWATCH_ANSWER:
+					// into the asking session, through the same send the daemon
+					// uses for operator input. The sender is bound behind a small
+					// seam so the tests fake it; delivery never blocks or fails
+					// the answer call — a gone session or a failed send is one
+					// line in this log, and the answer stays in the store.
+					httpServer.SetQuestionAnswerReturnPath(autonomouspkg.NewQuestionAnswerReturnPath(
+						func(sessionID, line string) error {
+							return mgr.SendInput(sessionID, line, "questions-answer")
+						},
+						log.Printf,
+					))
 				}
 				// BL427 (phase 5) — POST /api/autonomous/events/forward: a peer's
 				// forwarded event is re-emitted into this daemon's dispatcher.

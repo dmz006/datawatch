@@ -510,6 +510,11 @@ type Server struct {
 	// wired by main.go via SetQuestionRaiseNotifier; nil (default) = no
 	// messaging fan-out (the WS + alert parts do not need it).
 	questionRaiseNotifier QuestionRaiseNotifier
+	// questionAnswerReturnPath — the per-question opt-in session line on
+	// answer (one line of DATAWATCH_ANSWER: into the asking session); wired
+	// by main.go via SetQuestionAnswerReturnPath; nil (default) = no
+	// session line (the event plus polled GET still carry the answer).
+	questionAnswerReturnPath *autonomous.QuestionAnswerReturnPath
 	// mcp_queue sink read side for /api/autonomous/events; nil → 503.
 	autonomousEvents PendingEventsAPI
 	// BL427 phase 5 — receiving side of peer forwarding for
