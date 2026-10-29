@@ -29,6 +29,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -203,7 +204,7 @@ def preflight_row(role, resp=None, err=None):
     used = (resp or {}).get("used_model")
     ok = err is None and used == role["model"]
     return {"role": role["role"], "llm": role["llm"], "expected_model": role["model"],
-            "used_model": used, "ok": ok, "error": err}
+            "thinking_level": role.get("thinking_level"), "used_model": used, "ok": ok, "error": err}
 
 
 def preflight_passed(st):
@@ -247,21 +248,71 @@ def classify_result(identity, integrity, verify_exit):
 # preflight
 # --------------------------------------------------------------------------
 
-# Cold-load on the shared GPU node can outlast the Client's default 60s read
-# timeout (observed 3 consecutive preflight runs 2026-10-15, a different role
-# timing out each time, not a broken model) — give this specific call more
-# headroom than other, already-warm API calls get.
-PREFLIGHT_TEST_TIMEOUT_S = 240
+# Cold-loading a 27-35B model on the shared GPU node can take many minutes
+# (the first pi run after an eviction waits for Ollama to pull the weights into
+# VRAM before it emits a token), and the 60 s default HTTP timeout failed
+# preflight on a different role in 3 consecutive runs (2026-10-15) even though
+# nothing was broken. Both the start call and the poll-to-completion deadline of
+# one preflight run therefore get this much headroom; never lower it below 600.
+PREFLIGHT_RUN_TIMEOUT_S = 900
+PREFLIGHT_POLL_S = 5
+SESSION_TERMINAL = ("complete", "failed", "killed")
 
 
 def llm_test(c, name):
-    return c.post(f"/api/llms/{name}/test", {"prompt": PREFLIGHT_PROMPT}, timeout=PREFLIGHT_TEST_TIMEOUT_S)
+    """Post-run fallback only (cmd_collect, when a session record carries no model).
+    Preflight no longer uses this — see pi_preflight_run."""
+    return c.post(f"/api/llms/{name}/test", {"prompt": PREFLIGHT_PROMPT}, timeout=PREFLIGHT_RUN_TIMEOUT_S)
+
+
+def preflight_start_body(role, project_dir):
+    """Request body for the preflight one-shot: the same fields the autonomous
+    executor sends for a pi-prompt task (registry entry as `backend`, bare model,
+    per-role thinking level), with every git side effect off."""
+    body = {"task": PREFLIGHT_PROMPT, "project_dir": project_dir, "backend": role["llm"],
+            "model": role["model"], "name": f"eval-preflight-{role['role']}", "one_shot": True,
+            "skip_snapshot": True, "git": False, "scrub_tmux_env": True}
+    if role.get("thinking_level"):
+        body["thinking_level"] = role["thinking_level"]
+    return body
+
+
+def pi_preflight_run(c, role, project_dir, timeout_s=PREFLIGHT_RUN_TIMEOUT_S, poll_s=PREFLIGHT_POLL_S,
+                     sleep=time.sleep):
+    """ONE real pi-prompt one-shot through the daemon for this role. Returns
+    {"used_model", "state", "session_id"} where used_model is the model the
+    daemon's session record reports. The session is always ended through the
+    API by its exact full id, whatever the outcome."""
+    sess = c.post("/api/sessions/start", preflight_start_body(role, project_dir), timeout=timeout_s)
+    sid = sess.get("full_id") or sess.get("id")
+    if not sid:
+        raise EvalError(f"session start for {role['llm']}: no session id in response: {str(sess)[:200]}")
+    try:
+        deadline = time.time() + timeout_s
+        while True:
+            idx, _ = sessions_index(c)
+            cur = idx.get(sid) or sess
+            state = cur.get("state")
+            if state in SESSION_TERMINAL:
+                break
+            if time.time() > deadline:
+                raise EvalError(f"preflight session {sid} for {role['llm']} still {state!r} after {timeout_s}s")
+            sleep(poll_s)
+        if state != "complete":
+            raise EvalError(f"preflight session {sid} for {role['llm']} ended {state!r}, expected 'complete'")
+        return {"used_model": cur.get("model") or None, "state": state, "session_id": sid}
+    finally:
+        try:
+            c.post("/api/sessions/kill", {"id": sid}, timeout=60)
+        except EvalError as e:  # already ended on its own is fine; report anything else
+            log(f"preflight session {sid}: end via API: {e}")
 
 
 def render_preflight_table(rows):
-    lines = [f"{'role':<20} {'llm':<28} {'expected':<16} {'used':<16} ok   error"]
+    lines = [f"{'role':<20} {'llm':<28} {'expected':<16} {'thinking':<9} {'used':<16} ok   error"]
     for r in rows:
-        lines.append(f"{r['role']:<20} {r['llm']:<28} {r['expected_model']:<16} {str(r['used_model']):<16} "
+        lines.append(f"{r['role']:<20} {r['llm']:<28} {r['expected_model']:<16} "
+                     f"{thinking_disp(r.get('thinking_level')):<9} {str(r['used_model']):<16} "
                      f"{'yes' if r['ok'] else 'NO ':<4} {(r.get('error') or '')[:160]}")
     return "\n".join(lines)
 
@@ -272,12 +323,21 @@ def cmd_preflight(a):
     st.setdefault("started_at", now_iso())
     st.setdefault("run_date", _dt.date.today().isoformat())
     c = Client()
+    scratch = os.path.join(run_dir(m, a.run_id), "preflight-scratch")
+    os.makedirs(scratch, exist_ok=True)
     rows = []
+    seen = {}  # one real run per distinct (llm, model, thinking level)
     for role in m["roles"]:
-        try:
-            rows.append(preflight_row(role, resp=llm_test(c, role["llm"])))
-        except EvalError as e:
-            rows.append(preflight_row(role, err=str(e)))
+        key = (role["llm"], role["model"], role.get("thinking_level"))
+        if key not in seen:
+            log(f"preflight {role['role']}: pi-prompt one-shot on {role['llm']} / {role['model']} "
+                f"(thinking {thinking_disp(role.get('thinking_level'))})")
+            try:
+                seen[key] = (pi_preflight_run(c, role, scratch), None)
+            except EvalError as e:
+                seen[key] = (None, str(e))
+        resp, err = seen[key]
+        rows.append(preflight_row(role, resp=resp, err=err))
     passed = all(r["ok"] for r in rows)
     st["preflight"] = {"at": now_iso(), "rows": rows, "passed": passed}
     save_state(m, a.run_id, st)
@@ -715,6 +775,56 @@ def cmd_self_test(_a):
         except EvalError:
             blocked = True
         check(blocked, "missing preflight blocks create-prd")
+
+        check(all("thinking_level" in x for x in rows), "preflight rows record the role thinking level")
+        tbl = render_preflight_table(rows)
+        check("thinking" in tbl.splitlines()[0] and (m["roles"][0].get("thinking_level") or "default") in tbl,
+              "preflight table shows the thinking level")
+        check(PREFLIGHT_RUN_TIMEOUT_S >= 600, "preflight per-call timeout covers a cold model load")
+
+        class StubClient:
+            """Fake daemon: records calls; the started session reports `model` and ends in `final`."""
+            def __init__(self, model, final="complete", polls_running=1):
+                self.model, self.final, self.left, self.calls = model, final, polls_running, []
+
+            def post(self, path, body=None, timeout=None):
+                self.calls.append((path, body, timeout))
+                if path == "/api/sessions/start":
+                    return {"id": "ab12", "full_id": "host-ab12", "state": "running", "model": body["model"]}
+                return {"status": "ok"}
+
+            def get(self, path, timeout=None):
+                state = "running" if self.left > 0 else self.final
+                self.left -= 1
+                return {"sessions": [{"id": "ab12", "full_id": "host-ab12", "state": state, "model": self.model}]}
+
+        role0 = m["roles"][0]
+        sc = StubClient(role0["model"])
+        resp = pi_preflight_run(sc, role0, tmp, sleep=lambda _s: None)
+        start = sc.calls[0]
+        check(start[0] == "/api/sessions/start" and start[1]["backend"] == role0["llm"]
+              and start[1]["model"] == role0["model"] and start[1]["one_shot"] is True
+              and start[1].get("thinking_level") == role0.get("thinking_level"),
+              "preflight starts a one-shot on the role's llm, model and thinking level")
+        check(start[2] >= 600, "preflight start call uses the long cold-load timeout")
+        check(sc.calls[-1] == ("/api/sessions/kill", {"id": "host-ab12"}, 60), "preflight ends the exact session id")
+        check(preflight_row(role0, resp=resp)["ok"], "matching reported model -> preflight row ok")
+        wrong = pi_preflight_run(StubClient("gpt-oss:20b"), role0, tmp, sleep=lambda _s: None)
+        check(not preflight_row(role0, resp=wrong)["ok"], "different reported model -> preflight row not ok")
+        sc = StubClient(role0["model"], final="failed")
+        try:
+            pi_preflight_run(sc, role0, tmp, sleep=lambda _s: None)
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok and sc.calls[-1][0] == "/api/sessions/kill", "failed preflight session raises and is still ended")
+        sc = StubClient(role0["model"], polls_running=10 ** 9)
+        try:
+            pi_preflight_run(sc, role0, tmp, timeout_s=0, sleep=lambda _s: None)
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok and sc.calls[-1][0] == "/api/sessions/kill", "timed-out preflight session raises and is still ended")
 
         doc = {"run_id": "t", "prd_id": "p", "preflight": rows, "preflight_passed": True,
                "cells": [build_cell_row({**cell, "role": ro["role"], "task_type": tt}, cdir, task, ws, None,

@@ -25,7 +25,7 @@ usage() {
   cat <<EOF
 Usage: $SELF <subcommand> [options]
 
-  preflight   --run-id ID   llm test each role; used_model must equal expected model exactly
+  preflight   --run-id ID   one real pi-prompt one-shot per role (its model + thinking level); reported model must equal expected exactly
   setup       --run-id ID   seed one cell dir per role x task type from each task type's baseline
   create-prd  --run-id ID   ONE scratch Automaton, 1 story, one task per cell (refuses unless preflight passed)
   run         --run-id ID [--timeout S] [--poll S]   approve + run, poll until terminal

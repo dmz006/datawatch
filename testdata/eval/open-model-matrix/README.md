@@ -21,6 +21,18 @@ in the non-executor roles (see `docs/plans/2026-10-15-bl449-open-model-matrix.md
 | qwen3-coder-next | `pi-node-b-gpu-q3cn` | `qwen3-coder-next:q4_K_M` | node-b |
 | qwen3.5 | `pi-node-a-gpu-q35` | `qwen3.5:35b` | node-a |
 
+## Preflight
+
+`preflight` runs ONE real pi-prompt one-shot through the daemon for each
+distinct role/model (`POST /api/sessions/start` with the role's registry entry
+as `backend`, its `model` and its `thinking_level`), polls the session to a
+terminal state, and requires the model the session record reports to equal the
+role's expected model exactly. The per-call timeout is 900 s (never below 600)
+so a cold model load does not fail a healthy role. The preflight session is
+ended through the API by its exact id afterwards, and the printed table shows
+each role's thinking level. `create-prd` and `run` refuse unless every row
+passed.
+
 ## Thinking level (pi) per role
 
 Each role carries a `thinking_level` field: executors pin `minimal`, while
