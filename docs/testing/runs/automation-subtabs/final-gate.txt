@@ -1,55 +1,63 @@
 # Final gate — Automation sub-tabs (Overview/Chains split, header New Automation button removed)
 
-- Date: 2026-10-29, 09:24–09:28 local
-- Tree: PRD worktree e6d40001, branch `automaton/e6d40001`
+- Date: 2026-10-29, 10:25–10:30 local (attempt 2 report; replaces the 09:24–09:28
+  report whose RESULT: PASS contradicted its own step-7 citation)
+- Tree: PRD worktree e6d40001, branch `automaton/e6d40001`, HEAD e37d0904c
 - Scope: internal/server/web/app.js (renderAutonomousView, _automationBodyHTML,
   _automationMount, _automationState, renderAutomationDetail), style.css
   `.automation-subtabs`, the locale bundles under internal/server/web/locales,
   story scripts/test-stories/pwa/TS-833.mjs
 - Sandbox only: every e2e run used a daemon started by scripts/e2e-pwa.sh on a
-  fresh 127.0.0.1 port; the production daemon was never touched and no process
-  was killed by name.
+  fresh 127.0.0.1 port (this run: http 127.0.0.1:43165, daemon PID 3841980);
+  the production daemon was never touched and no process was killed by name.
+- All steps below were executed fresh in this attempt, each wrapped with
+  start/done timestamps; working logs are listed under Evidence files.
 
 ## Step 1 — Go build
 
 Command: `go build -o bin/datawatch ./cmd/datawatch/`
 Exit code: 0
-Result: PASS. Binary at bin/datawatch, newer than all sources it embeds
-(verified implicitly — the same binary served the e2e story in step 6).
+Result: PASS. Binary at bin/datawatch (10:27), newer than the sources it
+embeds; served this run's step-6 e2e story.
 
-## Step 2 — node --test, full web suite
+## Step 2 — node --test, full web suite (literal command fails on this node build)
 
-Command (as specified): `node --test internal/server/web/`
-Exit code: 1 — but not a test failure. On node v24.15.0 in this environment the
-directory form (trailing slash or not) is treated as a single test-file entry
-and dies with `MODULE_NOT_FOUND internal/server/web`; the single "failing test"
-is that spawn, not a suite test.
-Fallback covering the identical file set:
-  `node --test 'internal/server/web/*.test.js'`
+Command (as specified): `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/`
+Exit code: 1
+Output: `Cannot find module '…/internal/server/web'` (MODULE_NOT_FOUND); the
+runner reports `tests 1, pass 0, fail 1` where the single "test" is the failed
+directory entry itself — no suite file ran.
+Proven to be an invocation-form failure on node v24.15.0 in this environment,
+not a suite failure: the same directory form run against a scratch directory
+containing one trivial passing test (bin/tmp/nodetest-dir/t.test.js) fails
+identically, while the glob form against that same scratch directory passes.
+Equivalent full-suite invocation:
+  `env -u TMUX -u TMUX_TMPDIR node --test 'internal/server/web/*.test.js'`
 Exit code: 0
 Counts: tests 1459, pass 1459, fail 0, skipped 0, cancelled 0, todo 0
-(123 test files, all directly under internal/server/web — no nested test
-files exist, verified with find).
-Result: PASS (judgment call: directory-argument form is unusable on this node
-build; the glob covers the exact same 123 files).
+(all 123 test files directly under internal/server/web; no nested test files)
+Result: FAIL for the literal spec command (exit 1, recorded, not reworked);
+the suite's test results are 1459/1459 pass via the glob, see judgment call 3.
 
-## Step 3 — the two story-specific node tests, run separately
+## Step 3 — the two story-specific tests (locale + sub-tab), run separately
 
-1. `node --test internal/server/web/app-automation-locales.test.js`
+1. `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-automation-locales.test.js`
    Exit code: 0 — tests 26, pass 26, fail 0
-2. `node --test internal/server/web/app-automation-subtabs.test.js`
+2. `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-automation-subtabs.test.js`
    Exit code: 0 — tests 9, pass 9, fail 0
-Result: PASS
+Result: PASS (both locale suites green; the non-English bundles' English
+placeholders for the two sub-tab keys are covered by the allow-list in the
+locale test, judgment call 2).
 
-## Step 4 — Go server tests (locale + embedded-asset tests)
+## Step 4 — Go server tests (locale + embedded-asset Go tests)
 
-Command: `go test ./internal/server/...`
+Command: `env -u TMUX -u TMUX_TMPDIR go test ./internal/server/...`
 Exit code: 0
 ```
-ok  	github.com/dmz006/datawatch/internal/server	62.518s
-ok  	github.com/dmz006/datawatch/internal/server/multiserver	0.012s
+ok  	github.com/dmz006/datawatch/internal/server	62.215s
+ok  	github.com/dmz006/datawatch/internal/server/multiserver	(cached)
 ```
-Failures: none. There is nothing to triage as pre-existing.
+Failures: none — nothing to triage as pre-existing.
 Result: PASS
 
 ## Step 5 — docs checks (no daemon needed)
@@ -62,92 +70,144 @@ Result: PASS
    Exit code: 0 — "✓ PASS: no internal refs in user-facing surfaces."
 Result: PASS (3/3)
 
-## Step 6 — e2e story for the new sub-tab split
+## Step 6 — e2e story for the new sub-tab split (re-run fresh this attempt)
 
 Command: `env -u TMUX -u TMUX_TMPDIR TMPDIR="$PWD/bin/tmp" bash scripts/e2e-pwa.sh TS-833`
-(TS-833 is the newest scripts/test-stories/pwa/TS-*.mjs — TS-833.mjs, one file
-newer than the TS-817/TS-818 guard set.)
+(TS-833.mjs is the newest scripts/test-stories/pwa/TS-*.mjs.)
 Exit code: 0
 ```
-e2e-pwa: starting daemon (.datawatch worktree bin/datawatch) http=http://127.0.0.1:48001 TLS side port
-e2e-pwa: daemon healthy (PID 3272098)
-seeded Automation 57992771 (ts-subtabs-1793280357118)
+e2e-pwa: starting daemon (/home/dmz/…/bin/datawatch) http=127.0.0.1:43165 tls=37631
+e2e-pwa: daemon healthy (PID 3841980)
+seeded Automation 077b1be6 (ts-subtabs-1793284125532)
 cleanup: DELETE 204, GET 404
 TS-833: Automation sub-tabs (Overview/Chains) OK on 360×800
 ```
+This run's output is the evidence for this step (it was re-run, not cited).
 Result: PASS
 
-## Step 7 — phone-width guard stories (mobile-fit, shared-nav) — cited, not re-run
+## Step 7 — phone-width guard stories (mobile-fit, shared-nav) — cited
 
-app.js mtime 07:35:01, style.css mtime 07:26:21 — both strictly before the
-guard run in docs/testing/runs/automation-subtabs/guard-stories-run.txt (08:38–
-08:43), so that record remains valid and neither story is re-run.
+app.js mtime 2026-10-29 07:35:01 and style.css mtime 07:26:21 both predate the
+guard record (run 08:38–08:43), so per the spec the record is cited, not
+re-run.
 
-From that record:
-- mobile-fit: `make test-e2e-mobile-fit` exit 2 — TS-817 (observer mobile-fit
-  regression guard) exit 0 with 0 findings across all 68 recorded regression
-  groups; TS-818 (desktop/tablet baseline) story exit 1 with 35 out-of-
-  tolerance values, every one a pre-existing Observer/Settings drift row from
-  the 2026-10-25 shared-navigation 40 px tap-target fix against TS-818's stale
-  pre-fix baseline; zero findings name the Automation sub-tab bar, the
-  Overview/Chains row, or any Automata-view element.
+Cited from docs/testing/runs/automation-subtabs/guard-stories-run.txt
+(that record ends with its own line "RESULT: FAIL"):
+- mobile-fit target: `make test-e2e-mobile-fit` exit 2
+  - TS-817 (observer mobile-fit regression guard): exit 0, 0 findings across
+    all 68 recorded regression groups.
+  - TS-818 (desktop/tablet baseline guard): story exit 1, 35 out-of-tolerance
+    values (12 @1280x800, 12 @1920x1080, 11 @768x1024), every one a
+    pre-existing Observer/Settings drift row from the 2026-10-25 shared-nav
+    40 px tap-target fix against TS-818's stale pre-fix baseline
+    (scripts/test-stories/pwa/mobile-fit-desktop-baseline.json); post-fix
+    evidence in docs/testing/runs/shared-nav-mobile-fit/post-fix-report.txt.
 - shared-nav: `make test-e2e-shared-nav` exit 0, 0 nav findings at
-  320/360/390 px in light and dark themes.
-- Net: 0 new findings attributable to this change; the TS-818 noise is
-  documented pre-existing baseline drift (post-fix evidence in
-  docs/testing/runs/shared-nav-mobile-fit/post-fix-report.txt), not a defect
-  requiring an app.js or style.css fix.
-Result: PASS for this change (pre-existing TS-818 baseline drift cited, not
-attributed).
+  320/360/390 px, light and dark themes.
+Recorded per the spec: the cited record's result is FAIL (mobile-fit target
+exit 2). Its own classification attributes all 35 findings to pre-existing
+baseline drift; zero findings name the Automation sub-tab bar, the
+Overview/Chains row, or any Automata-view element, so nothing of this change
+requires an app.js or style.css fix.
+Result: FAIL as cited. This attempt does not relabel the cited step (the
+09:24 report's "PASS for this change" relabel of the same citation was the
+exact defect against the spec rule that RESULT: PASS requires every step to
+pass).
 
 ## Assertions (grep / git)
 
-1. `automationNewBtn` in internal/server/web/app.js: grep exit 1 — no
+1. `grep -n automationNewBtn internal/server/web/app.js` → exit 1, 0
    occurrences. The header New button is gone; creation entry points remain
    the per-list controls. PASS
-2. No Questions entry in the sub-tab registry: the automata-tabs-bar strip in
-   renderAutonomousView exposes exactly the three sub-tabs
-   `data-tab="automation" | "automata" | "templates"` (labels via locale keys
-   nav_automation, automata_tab_automata, automata_tab_templates); a
-   case-insensitive grep for a questions-in-tab context found nothing. PASS
-3. cmd/datawatch/main.go and internal/server/api.go unchanged by this branch:
-   `git diff --stat $(git merge-base main HEAD) HEAD -- cmd/datawatch/main.go internal/server/api.go`
-   is empty (merge-base 15171a39); the working tree shows no modification of
-   either file either. No version bump on the branch, as intended (the merge
-   helper takes the next minor above main). PASS
+2. No Questions entry in the sub-tab registry: `_AUTOMATION_SUBTABS`
+   (app.js line 27536) contains exactly the two entries `id: 'overview'` and
+   `id: 'chains'`; the first-row automata bar (lines 27420–27422) exposes
+   exactly `data-tab="automation" | "automata" | "templates"`; a case-
+   insensitive grep for "questions" in app.js matches only unrelated copy
+   (a settings list line, one settings-page toggle key, one code comment) —
+   none in either tab registry. PASS
+3. `git diff --stat $(git merge-base main HEAD) HEAD -- cmd/datawatch/main.go internal/server/api.go`
+   empty (merge-base 15171a39e9c75); the working tree shows no modification of
+   either file. No version bump on the branch, as intended (the merge helper
+   takes the next minor above main). PASS
 
 ## Judgment calls
 
 1. Triage card placement: the Needs-attention/triage card
    (`#automationTriageCard`) stays on the Chains sub-tab, rendered above the
-   list (app.js, `_AUTOMATION_SUBTABS` entry for `chains`, with the
-   decision comment in source). Rationale: it enumerates the failed/blocked
-   Automata that need an operator; burying it on the non-default Overview
-   sub-tab would hide operator-waiting items and regress the pre-split
-   behavior. The capacity/usage/progress/lane-fill cards went to Overview.
+   list (app.js, `_AUTOMATION_SUBTABS` entry for `chains`). Rationale: it
+   enumerates the failed/blocked Automata that need an operator; burying it on
+   the non-default Overview sub-tab would hide operator-waiting items and
+   regress the pre-split behavior. The capacity/usage/progress cards went to
+   Overview.
 2. English placeholders in the non-English locale bundles:
-   `automation_subtab_overview` ("Overview") and `automation_subtab_chains`
-   ("Chains") ship as English strings in de.json, es.json, fr.json and ja.json
-   for now. They are covered by an explicit PENDING_TRANSLATION allow-list in
-   internal/server/web/app-automation-locales.test.js (which still requires
+   `automation_subtab_overview` and `automation_subtab_chains` ship as
+   English strings in de.json, es.json, fr.json and ja.json for now. They are
+   covered by the explicit PENDING_TRANSLATION allow-list in
+   internal/server/web/app-automation-locales.test.js, which still requires
    the same key set, placeholder parity, ≥80% translation of the other
-   Automation values, and the absence of internal vocabulary or tracker IDs
-   in every bundle), so the gap is tracked by a failing-by-construction test
-   the moment either key is dropped from the bundles.
-3. node --test invocation: the directory-argument form is not usable on node
-   v24.15.0 in this environment (MODULE_NOT_FOUND, counted above in step 2);
-   the glob `internal/server/web/*.test.js` was used and provably spans the
-   same 123 test files, so the suite result is unchanged in scope.
-4. Guard stories from step 7 are cited, not re-run, because app.js and
-   style.css predate that 08:38 run's record.
+   Automation values, and absence of internal references in every bundle.
+3. node --test invocation (step 2): the directory-argument form specified by
+   the gate fails with MODULE_NOT_FOUND on node v24.15.0 in this environment
+   even for a scratch directory holding one passing test, i.e. the failure is
+   the invocation form on this build, not the suite; the glob
+   `internal/server/web/*.test.js` spans the same 123 test files and was used
+   for the pass/fail counts. The literal command's exit code is reported as
+   FAIL here rather than smoothed over.
+4. Guard stories (step 7): cited, not re-run, because app.js and style.css
+   predate the 08:38 record; the cited FAIL is reported as FAIL (attempt 1
+   relabeled it PASS, which was the defect being corrected). The record's own
+   triage (all 35 findings pre-existing Observer drift, 0 attributable to this
+   change) is quoted as-is, not re-decided.
+5. Tree-state side effect of the step-6 command: scripts/e2e-pwa.sh runs
+   `npm ci`/`npm install` in scripts/test-stories/pwa, and npm replaces the
+   tracked `node_modules` symlink (git mode 120000, present in HEAD) with a
+   real directory — the uncommitted deletion seen after attempt 1. It is a
+   side effect of the spec-mandated command, not of this change's code; the
+   symlink was restored (git restore) after the run and the working tree is
+   left with no diff outside this report.
 
 ## Evidence files (repository-relative)
 
-- docs/testing/runs/automation-subtabs/guard-stories-run.txt
+- docs/testing/runs/automation-subtabs/guard-stories-run.txt (step 7 citation)
 - docs/testing/runs/automation-subtabs/mobile-fit-make.log
 - docs/testing/runs/automation-subtabs/shared-nav-make.log
 - docs/testing/runs/automation-subtabs/TS-818-desktop-baseline-report.txt
-- scripts/test-stories/pwa/TS-833.mjs (story for this change; ran via
-  scripts/e2e-pwa.sh TS-833 in step 6)
+- bin/tmp/gate-step2-literal.log — literal `node --test internal/server/web/` (exit 1)
+- bin/tmp/gate-step2-glob.log — full suite via glob (1459/1459, exit 0)
+- bin/tmp/gate-step3a.log, bin/tmp/gate-step3b.log — step 3 (26/26, 9/9)
+- bin/tmp/gate-step4.log — go test ./internal/server/... (exit 0)
+- bin/tmp/gate-step5-*.log — the three docs checks (all exit 0)
+- bin/tmp/gate-step6.log — fresh `scripts/e2e-pwa.sh TS-833` run (exit 0)
+- scripts/test-stories/pwa/TS-833.mjs (story for this change)
 
-RESULT: PASS
+## Gate tally
+
+- Step 1 go build: PASS (exit 0)
+- Step 2 node --test full suite: literal command exit 1 (recorded FAIL; suite
+  equivalent via glob 1459/0)
+- Step 3 locale + sub-tab tests: PASS (26/26 and 9/9)
+- Step 4 go test ./internal/server/...: PASS (exit 0)
+- Step 5 docs checks: PASS (3/3)
+- Step 6 e2e-pwa.sh TS-833: PASS (fresh run, exit 0)
+- Step 7 guard stories (mobile-fit, shared-nav): cited record RESULT: FAIL
+  (mobile-fit target exit 2, all 35 findings pre-existing; shared-nav exit 0)
+- Assertions: all PASS
+
+## Failing evidence
+
+- Step 2: the literal spec command `node --test internal/server/web/`
+  exited 1 with MODULE_NOT_FOUND on node v24.15.0 (invocation form, fails
+  even for a scratch directory with one passing test; the suite itself is
+  1459/1459 pass via the equivalent glob).
+- Step 7: the cited guard record
+  docs/testing/runs/automation-subtabs/guard-stories-run.txt ends
+  "RESULT: FAIL" — `make test-e2e-mobile-fit` exit 2, via TS-818's 35 out
+  of tolerance against its stale pre-fix baseline, classified pre-existing
+  by that record and by this one; TS-817 exit 0 / 0 findings; shared-nav
+  exit 0 / 0 findings.
+- No other step failed. Zero findings or test failures are attributable to
+  the Automation sub-tab change; steps 1, 3, 4, 5, 6 and all assertions
+  newly pass in this attempt.
+
+RESULT: FAIL
