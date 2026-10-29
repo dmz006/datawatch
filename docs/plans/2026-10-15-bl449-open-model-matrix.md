@@ -218,17 +218,44 @@ helpers.
 - A valid run. Spec steps 3–5 (per-cell dual verdict and model identity
   from real execution) have no valid data yet. The three-verdict
   separation exists in the driver, and its self-test passes, but no real
-  run has exercised it.
-- r6's remaining follow-ups:
-  - an opencode-path preflight: one real `opencode run` per role;
-  - the opencode one-shot wrapper must not emit `DATAWATCH_COMPLETE` when
-    `opencode run` fails;
+  run has exercised it. Findings from the only real round to date:
+
+  ### Findings — pi-r1 (2026-10-29, results in
+  `docs/testing/runs/2026-10-29-open-model-matrix/`)
+
+  Preflight passed for four of the five tracked roles (`base`,
+  `qwen3-coder`, `qwen3-coder-next`, `qwen3.5`; the `swift-1.5-qwen38-27b`
+  role was not in the local matrix for this run). Every one of the 16
+  cells ran at thinking level **`minimal`** (pinned per role). No cell
+  produced a valid score: all 12 `qwen3-coder` / `qwen3-coder-next` /
+  `qwen3.5` cells — analysis, scripting, docs and review alike — are
+  **invalid, not model results**: the daemon placed each worker on a node
+  that does not host its model, so the worker died about 12 s per attempt
+  with a model-not-found 404, made no commit beyond the baseline, and was
+  held for operator review after three failed attempts; there is no
+  per-task node pin for the shared registry entry. The four `base`
+  (`qwen3.8:27b`) cells ran to completion on all four task types, but
+  their worker and verifier session records were already gone from the
+  daemon at collect time, so `model_identity` is unknown (self-reports
+  match the expected model but are not evidence) and
+  `verification_integrity` is suspect — they are reported **untrusted**,
+  not as pass/fail results. To get a valid run: declare which node hosts
+  which model (or allow a per-task node pin), reset the held tasks, and
+  collect while the session records are still present.
+- ~~r6's remaining follow-ups~~ — **superseded by the pi-only scope**
+  (2026-10-18 backend switch; the opencode lane is out of scope):
+  - ~~an opencode-path preflight: one real `opencode run` per role~~;
+  - ~~the opencode one-shot wrapper must not emit `DATAWATCH_COMPLETE` when
+    `opencode run` fails~~;
   - `collect` must resolve worker sessions by id instead of the trimmed
-    `/api/sessions` list.
+    `/api/sessions` list — kept, and pi-lane-relevant (pi-r1's base cells
+    lost their session records before collect).
 - A unit test for the v9.1.4 `handleStartSession` normalisation.
 - r8 follow-ups:
-  - find why node-a fast/mid opencode sessions die in 3–7 s even though
-    preflight `llm_test` passes (v9.1.4 did not fix it);
+  - ~~find why node-a fast/mid opencode sessions die in 3–7 s even though
+    preflight `llm_test` passes (v9.1.4 did not fix it)~~ — **superseded
+    by the pi-only scope**; the r8 evidence remains history, and the pi
+    lane has its own node-placement issue (Findings above) instead;
   - the executor's file-drift guard must not block on files the task spec
     requires the worker to commit.
 
