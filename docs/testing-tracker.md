@@ -30,13 +30,18 @@ directory is the source of truth, not the table.
 |---|---|---|---|---|---|---|---|---|
 | Fixture ↔ built-in table provenance | `TestBuiltinRateLimitFixtureDetection` (`internal/session/rate_limit_lines_test.go`) | Every line of every `testdata/rate_limit_lines/*.txt` fixture is detected by its backend family's matcher; every table phrase occurs verbatim in that family's recorded lines | the two directions pin the table to the fixtures — a phrase with no fixture line fails, and a fixture line the matcher misses fails | Unit | Yes | Pass | No | `go test ./internal/session/` |
 | Per-backend fixture matching | `TestRateLimitLineFixturesMatchPerBackend` (same file) | each captured line, after the detector's normalisation (surrounding-whitespace trim + lowercase), matches its own backend's anchored matcher | a captured line fires for the backend that printed it, and only after the same trim the detector applies | Unit | Yes | Pass | No | `go test ./internal/session/` |
+| Detection Filters card, browser | `TS-831` | sandbox daemon, Settings → Detection Filters, no operator rate-limit list, then a one-entry list | with no list the Rate Limit Patterns section shows the translated built-in table badge and hint, no phrase rows, no remove button and no "N defaults" count; after an operator list is saved it shows the custom entry, the "1 custom" badge and no hint; the original list is restored at the end | E2E (browser) | Yes | Pass (1 of 1 story) | No | `scripts/test-stories/pwa/TS-831.mjs`, run with `bash scripts/e2e-pwa.sh TS-831` against a sandbox daemon built from this branch |
+| Detection Filters card, node | `app-detection-filters.test.js` (`internal/server/web/`) | card render with and without an operator list; locale bundles | no flat default phrases are displayed, the built-in hint shows only while no list is set, the other three sections keep their defaults, and the two new keys exist in all five locales | Unit | Yes | Pass (5 of 5) | No | `node --test internal/server/web/app-detection-filters.test.js` |
+| Incident regression | `TestRateLimitDetectorIgnoresQuotedPhraseInThrottleTaskOutput` (`internal/session/throttle_detector_quoted_phrase_test.go`) | a pi-prompt worker prints a sentence that quotes a claude-code list entry mid-line | no state change, no listener call, no usage back-off, no fallback chain | Unit | Yes | Pass | No | fail-before evidence in `docs/plans/assets/throttle-detector-fail-before.md` |
 
 A companion negative test, `TestRateLimitOrdinaryTextDoesNotMatch` (same file),
 reads every `ordinary/` file and asserts none of those quoted-phrase lines
 matches any backend family or the protocol-marker rule.
 
 **Tested:** Yes — `TestBuiltinRateLimitFixtureDetection` and
-`TestRateLimitLineFixturesMatchPerBackend` both pass on 2026-10-28.
+`TestRateLimitLineFixturesMatchPerBackend` both pass on 2026-10-28; the browser
+story `TS-831` passed (1 of 1) against the sandbox daemon and the five tests in
+`app-detection-filters.test.js` pass.
 
 **Validated:** No — the live smoke run that exercises a real backend's
 throttle output is reported in the PRD report rather than in this file.
