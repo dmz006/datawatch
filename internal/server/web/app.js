@@ -2550,6 +2550,9 @@ function navigate(view, sessionId, fromPopstate) {
   // the sub-tab and continues as the Automata view.
   if (view === 'automation') {
     _automataState.tab = 'automation';
+    // Every way in by link lands on Chains; only the Automata tab tap in
+    // the bottom navigation keeps the remembered second-row sub-tab.
+    _automationState.subtab = 'chains';
     view = 'autonomous';
   }
   // Close the new-session modal on any navigation (Escape or nav tap).
@@ -22855,7 +22858,7 @@ function _automataSyncFab(tab) {
 }
 
 // _automataSyncActions shows the action buttons that belong to the tab:
-// select, filter, history and watch for Automata; filter, history and new for
+// select, filter, history and watch for Automata; filter and history for
 // Automation; none of them for Templates.
 function _automataSyncActions(tab) {
   const show = {
@@ -22863,9 +22866,8 @@ function _automataSyncActions(tab) {
     automataFilterBtn: tab === 'automata',
     automataHistoryBtn: tab === 'automata',
     automataWatchFilterBtn: tab === 'automata',
-    automationFilterBtn: tab === 'automation',
-    automationHistoryBtn: tab === 'automation',
-    automationNewBtn: tab === 'automation',
+    automationFilterBtn: tab === 'automation' && _automationState.subtab === 'chains',
+    automationHistoryBtn: tab === 'automation' && _automationState.subtab === 'chains',
   };
   Object.keys(show).forEach(id => {
     const el = document.getElementById(id);
@@ -23388,7 +23390,12 @@ function openAutomataHowto() {
 window.openAutomataHowto = openAutomataHowto;
 
 function _toggleAutonomousFilters() {
-  if (_automataNormalizeTab() === 'automation') toggleAutomationFilter();
+  if (_automataNormalizeTab() === 'automation') {
+    // Filter acts on the list, so it lives on the Chains sub-tab: switch to
+    // Chains first when the second row is on Overview, then toggle.
+    if (_automationState.subtab !== 'chains') switchAutomationSubtab('chains');
+    toggleAutomationFilter();
+  }
   else toggleAutomataFilter();
 }
 window._toggleAutonomousFilters = _toggleAutonomousFilters;
@@ -27325,6 +27332,9 @@ window.proposeScanRules = function(prdId) {
 function _backToAutomataList() {
   // An Automaton opened from an Automation goes back to that Automation.
   const returnAutomationId = window._automationReturnId || null;
+  // Returning to an Automation lands on Chains; openAutomationLink below
+  // does the same, this just keeps the list consistent if it is skipped.
+  if (returnAutomationId) _automationState.subtab = 'chains';
   // GATE alpha.36 (operator 2026-05-10): renderAutonomousView() alone
   // doesn't reset the PWA banner (back chevron, title, search icon)
   // OR the bottom-nav highlight. Operator hit "back goes to list but
@@ -27471,6 +27481,10 @@ const _automationState = {
   loaded: false,
   detailId: null,
   detail: null,
+  // The selected second-row sub-tab. Plain module state, not localStorage:
+  // it is kept while the page stays open and a fresh load starts on Chains,
+  // the same remembered-sub-tab rule the Automata sub-tab bar documents.
+  subtab: 'chains',
   search: '',
   statusFilter: new Set(['draft', 'active', 'paused', 'blocked', 'completed']),
   historyOn: false,
@@ -27511,55 +27525,127 @@ window.automationRequest = automationRequest;
 const _AUTOMATION_STATUSES = ['draft', 'active', 'paused', 'blocked', 'completed', 'cancelled'];
 
 // The Automation sub-tab's action buttons, drawn into the Automata tab bar:
-// filter, history and new. They are hidden on the other sub-tabs.
+// filter and history. They are hidden on the other sub-tabs and while the
+// second row is off Chains: both act on the list.
 function _automationActionButtonsHTML(visible) {
   const st = _automationState;
+  if (!visible || st.subtab !== 'chains') visible = false;
   const hide = visible ? '' : 'display:none;';
   const historyTitle = escHtml(st.historyOn ? t('automation_hide_history') : t('automation_show_history'));
   return `<button id="automationFilterBtn" class="automata-action-btn ${st.filterOpen ? 'active' : ''}" onclick="toggleAutomationFilter()" title="${escHtml(t('automation_filter_toggle'))}" aria-label="${escHtml(t('automation_filter_toggle'))}" style="${hide}">⊞</button>
-        <button id="automationHistoryBtn" class="automata-action-btn ${st.historyOn ? 'active' : ''}" onclick="toggleAutomationHistory()" title="${historyTitle}" aria-label="${historyTitle}" style="${hide}">⏱</button>
-        <button id="automationNewBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${hide}" onclick="if (typeof openAutomationForm === 'function') openAutomationForm()">＋ ${escHtml(t('automation_new'))}</button>`;
+        <button id="automationHistoryBtn" class="automata-action-btn ${st.historyOn ? 'active' : ''}" onclick="toggleAutomationHistory()" title="${historyTitle}" aria-label="${historyTitle}" style="${hide}">⏱</button>`;
 }
 
-// The Automation sub-tab's body: the filter bar, the capacity and progress
-// cards and the list panel.
-function _automationBodyHTML() {
-  const st = _automationState;
-  return `<div id="automationFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
+// _AUTOMATION_SUBTABS is the registry of the second-row sub-tabs of the
+// Automation sub-tab. Every entry carries its body builder and its mount()
+// and stop() for its loaders, and the bar, switchAutomationSubtab and
+// _automationMount all read from this registry — so a third sub-tab later
+// is one new entry and no change to the mechanism.
+const _AUTOMATION_DEFAULT_SUBTAB = 'chains';
+
+const _AUTOMATION_SUBTABS = [
+  {
+    id: 'overview',
+    labelKey: 'automation_subtab_overview',
+    bodyHTML: () => `<div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationUsageCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
+      <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
+      <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+    mount() {
+      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader()]);
+      // The progress card renders into its slot on this sub-tab; it has no
+      // listLoader of its own, so nothing for stop() to end.
+      if (typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
+    },
+    stop() { _automationStopLoaders(['automation_capacity', 'automation_usage', 'automation_lane_fill']); },
+  },
+  {
+    id: 'chains',
+    labelKey: 'automation_subtab_chains',
+    bodyHTML: () => {
+      const st = _automationState;
+      return `<div id="automationFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
         ${_tagFilterBarHTML('automation',
           `<input id="automationSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_filter_search'))}" aria-label="${escHtml(t('automation_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomationSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">`)}
       </div>
-      <div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationUsageCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
-      <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
-      <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <!-- Needs-attention/triage card: judgment call — it lists the failed
+           and blocked records that need an operator, so it stays on Chains,
+           above the list. Moving it behind the non-default Overview sub-tab
+           would hide items waiting on the operator and be a regression. -->
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
       <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>`;
+    },
+    mount() {
+      listLoaderAll([_automationLoader(), _automationTriageLoader()]);
+    },
+    stop() { _automationStopLoaders(['automation', 'automation_triage']); },
+  },
+];
+
+// The second-row sub-tab bar: the fixed automation-subtabs classes and the
+// data-subtab attribute are the contract for the styles, the node tests and
+// the browser story, so they do not move.
+function _automationSubtabsBarHTML() {
+  const st = _automationState;
+  return `<div class="output-tabs automation-subtabs" role="tablist">`
+    + _AUTOMATION_SUBTABS.map(s => `
+        <button class="output-tab ${st.subtab === s.id ? 'active' : ''}" role="tab" aria-selected="${st.subtab === s.id ? 'true' : 'false'}" data-subtab="${s.id}" onclick="switchAutomationSubtab('${s.id}')">${escHtml(t(s.labelKey))}</button>`).join('')
+    + `
+      </div>`;
 }
 
-// _automationMount starts the loaders for the markup _automationBodyHTML drew.
+// The Automation sub-tab's body: the second-row sub-tab bar first, then the
+// body of the sub-tab that is selected.
+function _automationBodyHTML() {
+  const st = _automationState;
+  const def = _AUTOMATION_SUBTABS.find(s => s.id === st.subtab)
+    || _AUTOMATION_SUBTABS.find(s => s.id === _AUTOMATION_DEFAULT_SUBTAB)
+    || _AUTOMATION_SUBTABS[0];
+  return _automationSubtabsBarHTML()
+    + `\n      ` + def.bodyHTML();
+}
+
+// _automationMount starts only the loaders of the second-row sub-tab the
+// markup drew; the other sub-tab's loaders stay stopped, so theirs neither
+// run nor paint while hidden.
 function _automationMount() {
   // A fresh render has not loaded anything yet: the empty state waits for a
   // load that succeeds after this point.
   _automationState.loaded = false;
-  // The capacity card and the list load in parallel; each loader owns its
-  // own loading and failed states, so one failing never blanks the other.
-  listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationTriageLoader(), _automationLoader()]);
-  // The progress card runs on its own state-machine path; it renders when the
-  // data lands and its failed state never touches the list or capacity card.
-  if (typeof window.loadProgressCard === 'function') window.loadProgressCard();
+  const def = _AUTOMATION_SUBTABS.find(s => s.id === _automationState.subtab) || _AUTOMATION_SUBTABS[0];
+  def.mount();
 }
 
 // _automationStopLoaders ends the polling and tick timers of the Automation
-// list and capacity loaders. Their state stays, and load() starts them again.
-function _automationStopLoaders() {
-  ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage'].forEach(k => {
+// loaders. Called with no keys it stops all of them (leaving the Automation
+// sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
+// state stays, and the sub-tab's mount() starts them again.
+function _automationStopLoaders(keys) {
+  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage'];
+  (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
   });
 }
+
+// switchAutomationSubtab switches the second-row sub-tab. Unknown ids are
+// ignored. It stops the loaders of the sub-tab being left, redraws the
+// Automation body for the selected sub-tab (the filter, search and history
+// state lives in _automationState, so it survives the redraw) and syncs the
+// action buttons so filter and history show on Chains only.
+function switchAutomationSubtab(id) {
+  const def = _AUTOMATION_SUBTABS.find(s => s.id === id);
+  if (!def) return;
+  if (_automataNormalizeTab() !== 'automation') return;
+  const prev = _AUTOMATION_SUBTABS.find(s => s.id === _automationState.subtab);
+  if (prev && prev !== def) prev.stop();
+  _automationState.subtab = id;
+  renderAutonomousView();
+  _automataSyncActions('automation');
+}
+window.switchAutomationSubtab = switchAutomationSubtab;
 
 // renderAutomationView shows the Automation list: the Automata view with its
 // Automation sub-tab selected. The create form and the detail page draw over
@@ -27691,9 +27777,10 @@ function _automationLoader() {
     afterPaint: () => {
       if (_automationState.detailId) renderAutomationStrip();
       _tagFacetsRefresh('automation');
-      // Refresh the progress card on each 30-second automation poll; its own
-      // refetch guard makes this a no-op if it loaded very recently.
-      if (typeof window.loadProgressCard === 'function') window.loadProgressCard();
+      // Refresh the progress card on each 30-second automation poll; the
+      // sub-tab guard makes this a no-op while the card lives on the
+      // Overview sub-tab, and the card's own refetch guard covers a recent load.
+      if (_automationState.subtab === 'overview' && typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
     },
   });
 }
@@ -28552,6 +28639,7 @@ function _automationDetailBackHTML() {
 
 function openAutomationDetail(id) {
   const st = _automationState;
+  st.subtab = 'chains'; // an open Automation always belongs to Chains
   if (st.detailId !== id) st.expanded.clear();
   st.detailId = id;
   return renderAutomationDetail(id);
@@ -28563,6 +28651,7 @@ window.openAutomationDetail = openAutomationDetail;
 // With no id it lands on the sub-tab's list.
 function openAutomationLink(id) {
   _automataState.tab = 'automation';
+  _automationState.subtab = 'chains'; // links always land on Chains
   navigate('autonomous');
   if (!id) return Promise.resolve();
   return openAutomationDetail(id);
@@ -28632,6 +28721,7 @@ window.renderAutomationStrip = renderAutomationStrip;
 function automationDetailBack() {
   _automationState.detailId = null;
   _automationState.detail = null;
+  _automationState.subtab = 'chains'; // back from the detail page lands on Chains
   closeAutomationMemberDrawer();
   renderAutomationView();
 }

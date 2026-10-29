@@ -1,0 +1,52 @@
+mobile-fit desktop/tablet baseline report
+generated_at: 2026-10-29T12:42:43.710Z
+meta.story: TS-818
+meta.seed: three-peers
+meta.view: observer
+meta.theme: dark
+meta.zoom: 100
+meta.tolerance: 2px | 1% of baseline
+
+totals: 35 out-of-tolerance value(s) across 3 viewport(s)
+  1280x800: FAIL (38 tracked selectors, 12 outside tolerance)
+  1920x1080: FAIL (38 tracked selectors, 12 outside tolerance)
+  768x1024: FAIL (38 tracked selectors, 11 outside tolerance)
+
+failures:
+  [1280x800] .settings-section-title[0] height 35 -> 40 (allowed 2)
+  [1280x800] #perSystemGrid y 119 -> 124 (allowed 2)
+  [1280x800] #perSystemGrid>card[0] y 127 -> 132 (allowed 2)
+  [1280x800] #perSystemGrid>card[1] y 305 -> 310 (allowed 3.05)
+  [1280x800] #perSystemGrid>card[2] y 476 -> 481 (allowed 4.76)
+  [1280x800] #statsPanel height 926 -> 949 (allowed 9.26)
+  [1280x800] #ebpfStatusBlock y 1748 -> 1776 (allowed 17.48)
+  [1280x800] #ebpfNetworkBlock y 1809 -> 1837 (allowed 18.09)
+  [1280x800] #peerResourceBlock y 2365 -> 2393 (allowed 23.65)
+  [1280x800] #observerPeersBlock y 2659 -> 2687 (allowed 26.59)
+  [1280x800] #envelopesBlock y 2258 -> 2286 (allowed 22.58)
+  [1280x800] #backendHealthBlock y 2107 -> 2135 (allowed 21.07)
+  [1920x1080] .settings-section-title[0] height 35 -> 40 (allowed 2)
+  [1920x1080] #perSystemGrid y 119 -> 124 (allowed 2)
+  [1920x1080] #perSystemGrid>card[0] y 127 -> 132 (allowed 2)
+  [1920x1080] #perSystemGrid>card[1] y 305 -> 310 (allowed 3.05)
+  [1920x1080] #perSystemGrid>card[2] y 476 -> 481 (allowed 4.76)
+  [1920x1080] #statsPanel height 926 -> 949 (allowed 9.26)
+  [1920x1080] #ebpfStatusBlock y 1748 -> 1776 (allowed 17.48)
+  [1920x1080] #ebpfNetworkBlock y 1809 -> 1837 (allowed 18.09)
+  [1920x1080] #peerResourceBlock y 2365 -> 2393 (allowed 23.65)
+  [1920x1080] #observerPeersBlock y 2659 -> 2687 (allowed 26.59)
+  [1920x1080] #envelopesBlock y 2258 -> 2286 (allowed 22.58)
+  [1920x1080] #backendHealthBlock y 2107 -> 2135 (allowed 21.07)
+  [768x1024] .settings-section-title[0] height 35 -> 40 (allowed 2)
+  [768x1024] #perSystemGrid y 119 -> 124 (allowed 2)
+  [768x1024] #perSystemGrid>card[0] y 127 -> 132 (allowed 2)
+  [768x1024] #perSystemGrid>card[1] y 305 -> 310 (allowed 3.05)
+  [768x1024] #perSystemGrid>card[2] y 476 -> 481 (allowed 4.76)
+  [768x1024] #statsPanel height 1125 -> 1148 (allowed 11.25)
+  [768x1024] #ebpfStatusBlock y 1947 -> 1975 (allowed 19.47)
+  [768x1024] #ebpfNetworkBlock y 2008 -> 2036 (allowed 20.08)
+  [768x1024] #peerResourceBlock y 2564 -> 2592 (allowed 25.64)
+  [768x1024] #envelopesBlock y 2457 -> 2485 (allowed 24.57)
+  [768x1024] #backendHealthBlock y 2306 -> 2334 (allowed 23.06)
+
+result: FAIL - 35 tracked value(s) outside tolerance

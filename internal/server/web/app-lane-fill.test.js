@@ -210,6 +210,8 @@ test('a hostile evidence error is escaped', () => {
 
 test('the Automation body mounts the lane card beside the capacity card', () => {
   const sandbox = loadApp();
+  // Both cards live on the Overview sub-tab; select it before rendering the body.
+  vm.runInContext("_automationState.subtab = 'overview'", sandbox);
   const body = vm.runInContext('_automationBodyHTML()', sandbox);
   const cap = body.indexOf('id="automationCapacityCard"');
   const lanes = body.indexOf('id="automationLaneFillCard"');

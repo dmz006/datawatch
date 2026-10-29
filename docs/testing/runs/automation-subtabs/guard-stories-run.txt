@@ -1,0 +1,110 @@
+# Phone-width guard stories — run record (PRD e6d40001, Automation sub-tabs)
+
+- Date: 2026-10-29, 08:38–08:43 local (0400 UTC-4)
+- Tree: PRD worktree e6d40001 (HEAD 166a29f), the change under test is the
+  Automation sub-tab split (second sub-tab row Overview | Chains; header
+  New Automation button removed) in scripts + internal/server/web/app.js
+  and the `.automation-subtabs` styles in internal/server/web/style.css.
+- Binary: `bin/datawatch` rebuilt in an earlier task of this run sequence;
+  verified newer than internal/server/web/app.js before running (no
+  rebuild needed for this task). Both stories ran against an isolated
+  sandbox daemon started by scripts/e2e-pwa.sh on fresh 127.0.0.1 ports —
+  never the production daemon, no process killed by name.
+
+## Commands and exit codes
+
+1. `mkdir -p bin/tmp` (prerequisite, ok)
+2. `env -u TMUX -u TMUX_TMPDIR TMPDIR="$PWD/bin/tmp" make test-e2e-mobile-fit`
+   → exit 2
+   Stories: TS-817, TS-818
+     - TS-817 (observer mobile-fit regression guard): exit 0
+     - TS-818 (desktop/tablet baseline guard): story exit 1, which failed
+       the make target (make exit 2)
+3. `env -u TMUX -u TMUX_TMPDIR TMPDIR="$PWD/bin/tmp" make test-e2e-shared-nav`
+   → exit 0
+   Story: shared-nav (group shared-nav, shared-nav-mobile-fit gate)
+
+## Findings
+
+### TS-817 — 0 findings
+
+68 recorded regression groups replayed (95 cells + 1 named scenario +
+3 interactions); every cell produced 0 findings. Story verdict:
+"PASS: none of the 68 recorded regression groups reproduce". Compared
+with the baseline in docs/testing/runs/observer-mobile-fit/ (repro-report:
+29,968 findings in 68 groups recorded 2026-10-23): the recorded
+phone-width regressions are all fixed and none reproduces. New findings:
+none. This story does not open the Automata view (Observer scope #view),
+so it neither exercises the Automation sub-tab bar nor the new second
+sub-tab row, and it raises no finding on them.
+
+### TS-818 — 35 findings, all pre-existing
+
+35 tracked values outside tolerance (12 at 1280x800, 12 at 1920x1080,
+11 at 768x1024). Every finding is in the Observer / Settings view
+(`.settings-section-title[0]`, `#perSystemGrid` and the blocks below it):
+
+- root cause of every row: `.settings-section-title[0]` height
+  35 → 40 px (the 40 px minimum tap-target fix from the
+  2026-10-25 shared-navigation work, commit a7cc30e4, style rule
+  `.settings-section-toggle { min-height: 40px; /* 40 px minimum
+  tap target; the Observer section header was 35 px */ }`);
+- the remaining 34 rows are the same 5 px vertical shift of the blocks
+  below that header (`#perSystemGrid` and the observer/ebpf/peer/envelope
+  /backend-health blocks), i.e. a direct consequence of the one 5 px
+  growth.
+
+Classification: PRE-EXISTING, not a defect of this change.
+Evidence:
+- docs/testing/runs/shared-nav-mobile-fit/post-fix-report.txt records the
+  exact same row after the fix ("div.settings-section-title...
+  35 px tall -> 40 px tall", "Three rows changed size (still flagged at
+  the 44 px probe threshold)", "all upward toward 40 px");
+- docs/testing.md (shared-nav section) documents the 40 px tap-target
+  intent;
+- this change's only style.css delta introduces the new
+  `.automation-subtabs` class (commit f6bc68e08), which no tracked
+  selector in TS-818 matches; TS-818 measures the Observer view, while
+  the Automation sub-tab bar and the new row live in the Automata view.
+New findings attributable to this change: none (no finding names the
+Automation sub-tab bar, the Overview/Chains row, or any Automata-view
+element).
+
+### shared-nav (group shared-nav) — 0 findings
+
+Gate pass, 0 nav findings (clipped text, sub-44 px tap targets, overlap)
+at 320/360/390 px in light and dark themes. Matches the post-fix
+baseline in docs/testing/runs/shared-nav-mobile-fit/post-fix-report.txt
+(0 nav findings after the 2026-10-25 fix; nav scrollWidth == clientWidth
+at all widths). The change under test adds one row inside #view (the
+second sub-tab bar), which the shared-nav gate's bottom-nav scope does
+not cover; the gate itself is clean, and TS-817's full-page #view replay
+raised no phone-width finding on the Automata view either. New findings:
+none.
+
+## New vs pre-existing
+
+- New (defects of this change, on the Automation sub-tab bar or the new
+  second sub-tab row): 0.
+- Pre-existing: 35 (all TS-818 Observer drift rows, explained above,
+  recorded in the shared-nav post-fix baseline as the intended 35 → 40 px
+  tap-target fix; the stale pre-fix baseline of TS-818 predates that fix).
+- TS-817 exits 0 on this tree because the phone-width regressions it
+  guards are fixed; the failure of the mobile-fit target comes entirely
+  from TS-818's stale pre-fix baseline.
+
+## Evidence in this directory
+
+- mobile-fit-make.log — full output of `make test-e2e-mobile-fit`
+  (TS-817 per-cell lines + TS-818 report)
+- shared-nav-make.log — full output of `make test-e2e-shared-nav`
+- TS-818-desktop-baseline-report.txt — the TS-818 out-of-tolerance report
+
+RESULT: FAIL (evidence: `make test-e2e-mobile-fit` exit 2 — TS-817 exit 0
+with 0 findings, TS-818 story exit 1 with 35 out-of-tolerance values, all
+pre-existing Observer drift from the 2026-10-25 shared-nav 40 px tap-target
+fix against TS-818's stale pre-fix baseline in
+scripts/test-stories/pwa/mobile-fit-desktop-baseline.json; `make
+test-e2e-shared-nav` exit 0 with 0 nav findings; no finding on the
+Automation sub-tab bar or the new second sub-tab row, so nothing of this
+change requires a fix in app.js or style.css)

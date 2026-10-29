@@ -2050,6 +2050,8 @@
   "settings_plan_tier_allocation_usd": "Plan tier allocation (USD per tier; 0 = not declared)",
   "settings_plan_tier_allocation_hint": "Only feeds the estimated allocation share shown on a budget; it never blocks anything. 0 or a blank tier means no figure.",
   "nav_automation": "Automation",
+  "automation_subtab_overview": "Overview",
+  "automation_subtab_chains": "Chains",
   "automation_status_draft": "Draft",
   "automation_status_active": "Active",
   "automation_status_paused": "Paused",

@@ -127,3 +127,62 @@ test('the default sub-tab on a first visit is Automation', () => {
   assert.equal(run(sb, '_AUTOMATA_DEFAULT_TAB'), 'automation');
   assert.equal(tabState(sb), 'automation');
 });
+
+// Member page back control: an Automaton opened from a member strip carries
+// the Automation id through _backToAutomataList and back returns to that
+// Automation, while plain list-to-detail navigation still goes to the list.
+
+test('a back from the member Automaton page returns to the Automation, not the list', () => {
+  const { sb } = loadView();
+  run(sb, "_automationState.detailId = 'a3'");
+  const log = [];
+  sb.renderPRDDetailView = id => { log.push(['detail', id]); };
+  sb.openAutomationMemberPRD('m2aaaaaaaaaaaa');
+  assert.deepEqual(log, [['detail', 'm2aaaaaaaaaaaa']]);
+  assert.equal(run(sb, 'window._automationReturnId'), 'a3', 'the Automation is remembered after the member page opens');
+  // Now the operator taps the back control on the Automaton page.
+  const back = [];
+  sb.openAutomationDetail = id => { run(sb, '_automationState.detailId = ' + JSON.stringify(id)); back.push(['open', id]); };
+  sb._backToAutomataList();
+  assert.deepEqual(back, [['open', 'a3']], 'back opens the Automation again');
+  assert.equal(run(sb, '_automataState.tab'), 'automation');
+  assert.equal(run(sb, '_automationState.detailId'), 'a3');
+  assert.equal(run(sb, '_automataDetailId'), null, 'the PRD detail state is cleared');
+});
+
+test('the back control of a plain list to detail navigation goes back to the list', () => {
+  const { sb } = loadView();
+  run(sb, '_automataDetailId = "p7"'); // as renderPRDDetailView would leave it
+  assert.equal(run(sb, 'window._automationReturnId || null'), null, 'no Automation was the entry point');
+  const opened = [];
+  sb.openAutomationDetail = id => { opened.push(id); };
+  sb._backToAutomataList();
+  assert.deepEqual(opened, [], 'no Automation is reopened');
+  assert.equal(run(sb, 'state.activeView'), 'autonomous');
+  assert.equal(run(sb, '_automataDetailId'), null);
+});
+
+test('leaving the Automata view clears the member return id', () => {
+  const { sb } = loadView();
+  run(sb, "_automationState.detailId = 'a5'");
+  sb.window._automationReturnId = 'a5'; // as openAutomationMemberPRD sets it
+  assert.equal(run(sb, 'window._automationReturnId'), 'a5');
+  sb.navigate('sessions');
+  assert.equal(run(sb, 'window._automationReturnId'), null, 'a later back cannot resurrect the Automation');
+});
+
+test('with no Automation open, a member to Automaton trip is plain navigation', () => {
+  const { sb } = loadView();
+  assert.equal(run(sb, '_automationState.detailId'), null);
+  const log = [];
+  sb.renderPRDDetailView = id => { log.push(['detail', id]); };
+  sb.openAutomationMemberPRD('m2aaaaaaaaaaaa');
+  assert.deepEqual(log, [['detail', 'm2aaaaaaaaaaaa']]);
+  assert.equal(run(sb, 'window._automationReturnId'), null, 'nothing to return to');
+  const opened = [];
+  sb.openAutomationDetail = id => { opened.push(id); };
+  sb._backToAutomataList();
+  assert.deepEqual(opened, [], 'back goes to the list exactly like plain navigation');
+  assert.equal(run(sb, 'state.activeView'), 'autonomous');
+  assert.equal(run(sb, '_automataDetailId'), null);
+});

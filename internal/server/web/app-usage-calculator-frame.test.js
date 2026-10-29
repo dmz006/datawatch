@@ -192,6 +192,8 @@ test('a failed refresh keeps the last body and shows the daemon error', async ()
 
 test('the card sits right after the capacity card on the Automata tab and loads through the list loader', () => {
   const s = loadApp();
+  // Both cards live on the Overview sub-tab; select it before rendering the body.
+  vm.runInContext("_automationState.subtab = 'overview'", s);
   const body = vm.runInContext('_automationBodyHTML()', s);
   const cap = body.indexOf('id="automationCapacityCard"');
   const usage = body.indexOf('id="automationUsageCard"');

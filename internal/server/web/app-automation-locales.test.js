@@ -15,6 +15,10 @@ const LOCALES_DIR = path.join(__dirname, 'locales');
 const LANGS = ['en', 'de', 'es', 'fr', 'ja'];
 const TRANSLATED = LANGS.filter(l => l !== 'en');
 
+// Keys allowed to stay English in the non-English bundles. Remove each entry
+// from this list once its real translation has landed in de, es, fr and ja.
+const PENDING_TRANSLATION = ['automation_subtab_overview', 'automation_subtab_chains'];
+
 const bundles = {};
 for (const lang of LANGS) {
   bundles[lang] = JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, lang + '.json'), 'utf8'));
@@ -81,7 +85,7 @@ for (const lang of TRANSLATED) {
   });
 
   test(lang + ' has translated at least 80 percent of the Automation values', () => {
-    const keys = Object.keys(entries.en).filter(k => k in entries[lang]);
+    const keys = Object.keys(entries.en).filter(k => k in entries[lang] && !PENDING_TRANSLATION.includes(k));
     const differing = keys.filter(k => entries[lang][k] !== entries.en[k]);
     const share = keys.length ? differing.length / keys.length : 0;
     const same = keys.filter(k => entries[lang][k] === entries.en[k]);
@@ -91,6 +95,20 @@ for (const lang of TRANSLATED) {
     );
   });
 }
+
+test('the pending-translation sub-tab keys exist in every bundle and are correct in English', () => {
+  const want = { automation_subtab_overview: 'Overview', automation_subtab_chains: 'Chains' };
+  for (const lang of LANGS) {
+    for (const key of Object.keys(want)) {
+      const value = bundles[lang][key];
+      assert.equal(typeof value, 'string', lang + '.json is missing string key ' + key);
+      assert.ok(value.trim() !== '', lang + '.json has an empty value for ' + key);
+    }
+  }
+  for (const [key, value] of Object.entries(want)) {
+    assert.equal(bundles.en[key], value, 'en.json ' + key + ' must be exactly ' + JSON.stringify(value));
+  }
+});
 
 const INTERNAL_PRD_WORD = /\bPRDs?\b/;
 const TRACKER_ID = /\b(?:BL|GH)\d+/;

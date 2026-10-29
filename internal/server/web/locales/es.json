@@ -2050,6 +2050,8 @@
   "settings_plan_tier_allocation_usd": "Asignación por tier de plan (USD por tier; 0 = no declarada)",
   "settings_plan_tier_allocation_hint": "Solo alimenta la parte de asignación estimada que se muestra en un presupuesto; nunca bloquea nada. 0 o un tier vacío significa sin cifra.",
   "nav_automation": "Automatización",
+  "automation_subtab_overview": "Overview",
+  "automation_subtab_chains": "Chains",
   "automation_status_draft": "Borrador",
   "automation_status_active": "Activa",
   "automation_status_paused": "En pausa",

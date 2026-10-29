@@ -52,9 +52,16 @@ test('the Automation endpoint is not fetched until the sub-tab is selected', asy
 
   sb.switchAutomataTab('automation');
   await flushAsync(30);
-  assert.equal(count(calls, AUTOMATION), 1, 'selecting the sub-tab loads the Automations');
-  assert.ok(count(calls, PROGRESS) >= 1, 'the progress card loads with the Automation sub-tab');
-  assert.ok(run(sb, 'window._listLoaders.automation_capacity') && run(sb, 'window._listLoaders.automation'), 'both Automation loaders start with the sub-tab');
+  assert.equal(count(calls, AUTOMATION), 1, 'selecting the sub-tab loads the Automations on Chains');
+  assert.equal(count(calls, PROGRESS), 0, 'the progress card waits for the Overview sub-tab');
+  assert.ok(run(sb, 'window._listLoaders.automation'), 'the Chains loader starts with the sub-tab');
+
+  sb.switchAutomationSubtab('overview');
+  await flushAsync(30);
+  assert.ok(count(calls, PROGRESS) >= 1, 'selecting Overview loads the progress card');
+  assert.ok(count(calls, CAPACITY) >= 1, 'selecting Overview loads the capacity card');
+  assert.ok(run(sb, 'window._listLoaders.automation'), 'the Chains loader keeps its state after the switch');
+  assert.ok(run(sb, 'window._listLoaders.automation_capacity'), 'the Overview loader starts with the sub-tab');
 });
 
 test('the Templates sub-tab does not fetch the Automation endpoint either', async () => {
@@ -116,6 +123,10 @@ test('leaving the Automation sub-tab stops its polling and selecting it starts i
   sb.renderAutonomousView();
   await flushAsync(30);
   assert.equal(run(sb, 'window._listLoaders.automation.state.stopped'), false);
+  // Overview's loaders start when the operator selects the Overview sub-tab.
+  sb.switchAutomationSubtab('overview');
+  await flushAsync(30);
+  assert.equal(run(sb, 'window._listLoaders.automation_capacity.state.stopped'), false, 'the Overview loader runs while Overview is selected');
   sb.switchAutomataTab('automata');
   await flushAsync(30);
   assert.equal(run(sb, 'window._listLoaders.automation.state.stopped'), true);
@@ -123,6 +134,7 @@ test('leaving the Automation sub-tab stops its polling and selecting it starts i
   assert.equal(run(sb, 'window._listLoaders.automation.state.pollTimer'), null, 'no refresh timer outside the sub-tab');
   const before = count(calls, AUTOMATION);
   sb.switchAutomataTab('automation');
+  sb.switchAutomationSubtab('chains');
   await flushAsync(30);
   assert.equal(count(calls, AUTOMATION) - before, 1);
   assert.equal(run(sb, 'window._listLoaders.automation.state.stopped'), false);
@@ -144,7 +156,7 @@ test('a refresh while another sub-tab shows does not touch the Automation endpoi
 // the budget and admission data for the list cards, not the capacity card,
 // which lives on the Automation sub-tab only. The progress card has no such
 // second consumer and must therefore load with the Automation sub-tab alone.)
-test('the progress card loads with the Automation sub-tab only', async () => {
+test('the progress card loads with the Overview sub-tab only', async () => {
   const { sb, calls } = load();
   run(sb, "_automataState.tab = 'automata'");
   sb.renderAutonomousView();
@@ -155,8 +167,11 @@ test('the progress card loads with the Automation sub-tab only', async () => {
   assert.equal(count(calls, PROGRESS), 0, 'the Templates sub-tab requests no progress');
   sb.switchAutomataTab('automation');
   await flushAsync(30);
-  assert.equal(count(calls, PROGRESS), 1, 'selecting the Automation sub-tab requests the progress once');
-  assert.ok(count(calls, CAPACITY) >= 1, 'the capacity card loads with the Automation sub-tab');
+  assert.equal(count(calls, PROGRESS), 0, 'the Chains sub-tab requests no progress');
+  sb.switchAutomationSubtab('overview');
+  await flushAsync(30);
+  assert.ok(count(calls, PROGRESS) >= 1, 'selecting Overview requests the progress card');
+  assert.ok(count(calls, CAPACITY) >= 1, 'the capacity card loads with the Overview sub-tab');
 });
 
 test('leaving the Automation sub-tab clears every interval it started', async () => {
@@ -190,10 +205,11 @@ test('a progress fetch that lands after the operator left the Automation sub-tab
     if (u.startsWith('/api/autonomous/progress') && !u.includes('trend')) return pending;
     return done();
   };
-  sb.renderAutonomousView(); // default sub-tab is Automation, so the fetch starts
+  sb.renderAutonomousView(); // default sub-tab is Chains, so the fetch does not start yet
+  sb.switchAutomationSubtab('overview'); // Overview's mount starts it while it is pending
   await flushAsync(30);
   const paintedAtStart = els.progressCard.innerHTML;
-  assert.notEqual(paintedAtStart, '', 'the slot showed a state on the Automation sub-tab');
+  assert.notEqual(paintedAtStart, '', 'the slot showed a state on the Overview sub-tab');
   sb.switchAutomataTab('automata');
   await flushAsync(30);
   // The late answer carries a body the loader rejects (not an object); the point

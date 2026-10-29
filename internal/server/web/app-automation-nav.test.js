@@ -74,10 +74,11 @@ test('the action buttons follow the selected sub-tab', () => {
   const { sb, out } = loadView();
   const shown = (html, id) => !new RegExp('id="' + id + '"[^>]*style="[^"]*display:none').test(html);
   sb.renderAutonomousView();
-  for (const id of ['automationFilterBtn', 'automationHistoryBtn', 'automationNewBtn']) assert.ok(shown(out.view, id), id + ' shown on Automation');
+  for (const id of ['automationFilterBtn', 'automationHistoryBtn']) assert.ok(shown(out.view, id), id + ' shown on Automation');
+  assert.doesNotMatch(out.view, /automationNewBtn/);
   for (const id of ['automataSelectBtn', 'automataFilterBtn', 'automataHistoryBtn', 'automataWatchFilterBtn']) assert.ok(!shown(out.view, id), id + ' hidden on Automation');
   sb.switchAutomataTab('automata');
-  for (const id of ['automationFilterBtn', 'automationHistoryBtn', 'automationNewBtn']) assert.ok(!shown(out.view, id), id + ' hidden on Automata');
+  for (const id of ['automationFilterBtn', 'automationHistoryBtn']) assert.ok(!shown(out.view, id), id + ' hidden on Automata');
   for (const id of ['automataSelectBtn', 'automataFilterBtn', 'automataHistoryBtn', 'automataWatchFilterBtn']) assert.ok(shown(out.view, id), id + ' shown on Automata');
 });
 
