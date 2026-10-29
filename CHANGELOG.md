@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.31.5 — The Windows build works again, and a test now guards it
+
+- **The release build for Windows was failing, so most recent releases had no downloadable files.** The descendant-stall change in 9.30.1 signalled a recorded child process with a call that exists only on Linux and macOS, so the Windows build stopped compiling. Linux tests never saw it. The call now goes through the portable process API, which behaves the same on Linux and macOS and returns an error on Windows instead of failing the build. A new test cross-compiles the daemon for Windows and macOS on every test run, so a platform-specific call can no longer slip through.
+
 ## v9.31.4 — The usage calculator prints the per-task cost as typed
 
 - **A cost of 0.05 points no longer prints 0.1.** The per-task cost in the remaining-work estimate line used to be rounded to one decimal everywhere; it now prints as typed — up to three decimals with trailing zeros dropped, so 0.05 stays 0.05 and 0.025 shows as 0.025. This holds in the text form, the comm-channel form, and the PWA card (including the burn-ledger queue line), and the PWA card and the text/CLI forms now agree on the exact number. All the other figures in the calculator keep their one-decimal styling.

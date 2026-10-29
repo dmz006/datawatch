@@ -3889,3 +3889,9 @@ on the session id in the log file name before the time/project rule.
 | Exact session-id match wins (server) | `TestSessionProgress_ExactIDMatch` (same file) | a distractor older log the time-based rule would pick, and the session's own log named from its recorded name | 200 with the session's own turns/tokens/summary and `log_path`, not the distractor's | Integration | Yes | Pass | No | same command |
 | Log locating prefers exact id | `TestLocateLogForPrefersExactIDMatch` (`internal/pilog/pilog_test.go`) | a log whose name carries the session id plus an earlier "other" log; empty id; unknown id; id match outside the start window | exact name match wins; empty or unknown id falls back to the time/project rule | Unit | Yes | Pass | No | `go test ./internal/pilog/ -run TestLocateLogFor -count=1` |
 | Session page no longer mounts the strip | `app-pi-progress.test.js` — "session page no longer mounts the piProgressPanel live strip (task card only)" | static check of `app.js` source and the five locale bundles | no `piProgressPanel` / `session-pi-progress` markup; `prd-task-progress` and `renderPiProgressBlock` present for the task card; `pi_progress_*` keys still in all locales | Unit | Yes | Pass | No | `node --test internal/server/web/app-pi-progress.test.js` |
+
+## Release cross-build guard
+
+| Item | Test | Scenario | Type | Pass |
+|---|---|---|---|---|
+| The daemon builds for the release targets | `TestMainBuildsForReleaseTargets` in `tests/ci/cross_build_test.go` | Cross-compiles `./cmd/datawatch/` for windows/amd64, windows/arm64 and darwin/arm64 with the output discarded. It fails on the code from before 9.31.5 (`undefined: syscall.Kill` for Windows) and passes after the signalling went through `os.Process.Signal`. Skipped under `-short` or when the generated docs index is absent. | Go integration | Pass |

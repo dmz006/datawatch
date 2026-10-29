@@ -195,3 +195,16 @@ func endRecordedDescendants(
 	}
 	return ended, survivors
 }
+
+// signalRecordedPID sends sig to one recorded descendant pid. It goes
+// through os.FindProcess and Process.Signal instead of syscall.Kill so the
+// command still builds for Windows, where syscall.Kill does not exist and
+// a signal other than a kill simply returns an error.
+// end-reason-ok: signals one recorded descendant pid after its start time matched, not a session
+func signalRecordedPID(pid int, sig syscall.Signal) error {
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	return p.Signal(sig)
+}
