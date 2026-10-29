@@ -2702,5 +2702,14 @@
   "usage_calc_ledger_text_title": "Text form",
   "usage_calc_ledger_text_cli": "CLI",
   "usage_calc_ledger_text_comm": "Comm channel",
-  "usage_calc_ledger_text_empty": "No text form in this response."
+  "usage_calc_ledger_text_empty": "No text form in this response.",
+  "automation_questions_title": "Open questions",
+  "automation_questions_search": "Search open questions",
+  "automation_questions_by": "by",
+  "automation_questions_high": "high",
+  "automation_questions_age": "asked %1$s ago",
+  "automation_questions_open": "Answer",
+  "automation_questions_empty": "No open questions",
+  "automation_questions_disabled": "Operator questions are currently disabled: the question switch is off.",
+  "automation_questions_failed": "Open questions failed: %1$s"
 }

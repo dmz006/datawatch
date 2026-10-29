@@ -27534,6 +27534,13 @@ function _automationBodyHTML() {
       <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationQuestionsCard" class="prd-capacity-card questions-card" style="margin:6px 8px 0;min-width:0;">
+        <div class="cap-title">${escHtml(t('automation_questions_title'))}</div>
+        <div style="margin:4px 0 6px;">
+          <input id="automationQuestionsSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_questions_search'))}" aria-label="${escHtml(t('automation_questions_search'))}" onkeydown="onAutomationQuestionsSearchKeydown(event)" oninput="onAutomationQuestionsSearchInput(this.value)" style="width:100%;box-sizing:border-box;font-size:12px;">
+        </div>
+        <div id="automationQuestionsBody"></div>
+      </div>
       <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>`;
@@ -27546,7 +27553,7 @@ function _automationMount() {
   _automationState.loaded = false;
   // The capacity card and the list load in parallel; each loader owns its
   // own loading and failed states, so one failing never blanks the other.
-  listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationTriageLoader(), _automationLoader()]);
+  listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationTriageLoader(), _automationQuestionsLoader(), _automationLoader()]);
   // The progress card runs on its own state-machine path; it renders when the
   // data lands and its failed state never touches the list or capacity card.
   if (typeof window.loadProgressCard === 'function') window.loadProgressCard();
@@ -27555,7 +27562,7 @@ function _automationMount() {
 // _automationStopLoaders ends the polling and tick timers of the Automation
 // list and capacity loaders. Their state stays, and load() starts them again.
 function _automationStopLoaders() {
-  ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage'].forEach(k => {
+  ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage', 'automation_questions'].forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
   });
@@ -27641,6 +27648,141 @@ function _automationTriageLoader() {
     render: body => window.triageListHtml(body),
   });
 }
+
+// Open-questions queue card: its own listLoader on
+// GET /api/questions?state=open&limit=50, with the same poll interval as the
+// capacity, lane fill and triage cards. The card is read-only — it never
+// POSTs. A row button hands off to window.openQuestion(id), which the answer
+// form task writes; the inline call is guarded so the card still works while
+// that function is absent.
+const _automationQuestionsState = { searchText: '' };
+let _automationQuestionsSearchTimer = null;
+
+// _automationQuestionsListFetch is the loader's fetch override. It builds the
+// full URL itself (the loader's url field is the no-search form) so a paused
+// search is committed on Enter as well as after the input pause. A 503 from
+// the list route means the questions switch is off: resolve a disabled
+// sentinel instead of failing, so the card paints only the disabled text.
+function _automationQuestionsListFetch(opts) {
+  const base = '/api/questions?state=open&limit=50';
+  const text = (_automationQuestionsState.searchText || '').trim();
+  const path = text ? base + '&text=' + encodeURIComponent(text) : base;
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const srv = state.activeServer;
+  const isRemote = srv && srv !== 'local' && srv !== 'all';
+  const url = isRemote ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
+  const o = { method: 'GET', headers };
+  if (opts && opts.signal) o.signal = opts.signal;
+  return fetch(url, o).then(r => {
+    if (r.status === 503) return { __automationQuestionsDisabled: true };
+    if (r.ok) return r.json();
+    return r.text().then(tx => Promise.reject(new Error(tx || r.statusText)));
+  });
+}
+
+// _automationQuestionsAgeText is a compact age label (s/m/h/d) from the
+// question's created_at; a zero or invalid created_at gives an empty label.
+function _automationQuestionsAgeText(q) {
+  if (!q || !q.created_at) return '';
+  const ms = Date.now() - new Date(q.created_at).getTime();
+  if (!isFinite(ms) || ms < 0) return '';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm';
+  const h = Math.floor(m / 60);
+  if (h < 48) return h + 'h';
+  return Math.floor(h / 24) + 'd';
+}
+
+// _automationQuestionsRowHtml draws one row: the question id, its label (when
+// set), the visible high-priority marker, the escaped question text, the asker
+// and the age, and the hand-off button. Rows keep the route's order — the
+// card never reorders on the client.
+function _automationQuestionsRowHtml(q) {
+  const id = String(q.id == null ? '' : q.id);
+  const high = q.priority === 'high'
+    ? `<span class="questions-priority-high" style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 6px;">${escHtml(t('automation_questions_high'))}</span>`
+    : '';
+  const age = _automationQuestionsAgeText(q);
+  const ageHtml = age ? escHtml(t('automation_questions_age', [age])) : '';
+  return `<div class="questions-queue-row" data-question-id="${escHtml(id)}" style="border-top:1px solid var(--border);padding:8px 2px;display:flex;flex-direction:column;gap:4px;">` +
+    `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
+      `<span class="questions-id" style="font-weight:600;font-size:12px;">${escHtml(id)}</span>` +
+      (q.label ? `<span class="questions-label" style="font-size:12px;color:var(--text);">${escHtml(q.label)}</span>` : '') +
+      high +
+    `</div>` +
+    (q.text ? `<div class="questions-text" style="font-size:12px;color:var(--text);overflow-wrap:anywhere;">${escHtml(q.text)}</div>` : '') +
+    `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
+      `<span class="questions-meta" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_questions_by'))} ${escHtml(q.asked_by || '')}${ageHtml ? ' · ' + ageHtml : ''}</span>` +
+      `<button type="button" class="btn-secondary questions-open-btn" style="font-size:11px;padding:3px 10px;margin-left:auto;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escHtml(id)}')">${escHtml(t('automation_questions_open'))}</button>` +
+    `</div>` +
+    `</div>`;
+}
+
+// window.questionsCardHtml(body) turns the decoded GET /api/questions body
+// ({count, questions}) — or the 503 disabled sentinel — into the card body.
+window.questionsCardHtml = function(body) {
+  if (!body || body.__automationQuestionsDisabled) {
+    return `<div style="color:var(--text2);">${escHtml(t('automation_questions_disabled'))}</div>`;
+  }
+  const list = Array.isArray(body) ? body : (body && Array.isArray(body.questions) ? body.questions : []);
+  if (!list.length) {
+    return `<div style="color:var(--text2);">${escHtml(t('automation_questions_empty'))}</div>`;
+  }
+  return `<div class="questions-queue-list">${list.map(_automationQuestionsRowHtml).join('')}</div>`;
+};
+
+// _automationQuestionsLoader polls the open question list beside the capacity,
+// lane fill and triage cards. Its failed state is the list loader's banner,
+// like the capacity card.
+function _automationQuestionsLoader() {
+  return window._listLoaders.automation_questions || listLoader({
+    key: 'automation_questions', el: 'automationQuestionsBody', url: '/api/questions?state=open&limit=50', pollMs: 5000,
+    fetch: (url, opts) => _automationQuestionsListFetch(opts),
+    failedText: msg => t('automation_questions_failed', [msg]),
+    active: () => !!document.getElementById('automationQuestionsBody'),
+    render: body => window.questionsCardHtml(body),
+  });
+}
+
+// Search: a short pause coalesces the keystrokes and Enter commits at once;
+// each commit re-requests the list with the text parameter. Never one request
+// per keystroke.
+function _automationQuestionsSearchCancelTimer() {
+  if (_automationQuestionsSearchTimer) { clearTimeout(_automationQuestionsSearchTimer); _automationQuestionsSearchTimer = null; }
+}
+function _automationQuestionsSearchCommit() {
+  const ctl = window._listLoaders && window._listLoaders.automation_questions;
+  if (ctl) ctl.load();
+}
+function onAutomationQuestionsSearchInput(val) {
+  _automationQuestionsState.searchText = val;
+  _automationQuestionsSearchCancelTimer();
+  _automationQuestionsSearchTimer = setTimeout(() => {
+    _automationQuestionsSearchTimer = null;
+    _automationQuestionsSearchCommit();
+  }, 400);
+}
+window.onAutomationQuestionsSearchInput = onAutomationQuestionsSearchInput;
+function onAutomationQuestionsSearchKeydown(e) {
+  if (!e || (e.key !== 'Enter' && e.key !== 'search')) return;
+  const el = document.getElementById('automationQuestionsSearch');
+  if (el && el.value) _automationQuestionsState.searchText = el.value;
+  _automationQuestionsSearchCancelTimer();
+  _automationQuestionsSearchCommit();
+}
+window.onAutomationQuestionsSearchKeydown = onAutomationQuestionsSearchKeydown;
+
+// window.refreshAutomationQuestions is the live refresh entry point the live
+// refresh task calls to re-request the queue immediately, before the next
+// poll tick.
+window.refreshAutomationQuestions = function() {
+  const ctl = window._listLoaders && window._listLoaders.automation_questions;
+  if (ctl) ctl.load();
+};
 
 // The empty state shows only after a load that succeeded with zero
 // Automations: not before the first load completes, not from cached data, and

@@ -2702,5 +2702,14 @@
   "usage_calc_ledger_text_title": "Text form",
   "usage_calc_ledger_text_cli": "CLI",
   "usage_calc_ledger_text_comm": "Comm channel",
-  "usage_calc_ledger_text_empty": "No text form in this response."
+  "usage_calc_ledger_text_empty": "No text form in this response.",
+  "automation_questions_title": "未解決の質問",
+  "automation_questions_search": "未解決の質問を検索",
+  "automation_questions_by": "依頼者",
+  "automation_questions_high": "高優先",
+  "automation_questions_age": "%1$s 前",
+  "automation_questions_open": "回答する",
+  "automation_questions_empty": "未解決の質問はありません",
+  "automation_questions_disabled": "オペレーター質問は無効になっています：質問スイッチがオフです。",
+  "automation_questions_failed": "未解決の質問の読み込みに失敗しました: %1$s"
 }
