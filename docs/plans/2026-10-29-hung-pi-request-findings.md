@@ -1,6 +1,6 @@
 # Hung pi-prompt request investigation — findings (PRD f3420001)
 
-Two hung pi-prompt sessions (ab4c, ef70) on Ollama node `100.64.0.20:11434`, model
+Two hung pi-prompt sessions (ab4c, ef70) on Ollama node `<node-address>:11434`, model
 `qwen3.8-64k:27b`, local time 2026-10-28. Everything below was gathered through the local
 datawatch daemon's own read-only interfaces: daemon REST `https://127.0.0.1:8443`
 (`/api/sessions?limit=300`, `/api/sessions/timeline` at internal/server/server.go:255,
@@ -9,14 +9,14 @@ internal/server/server.go:385, `/api/observer/envelopes` at internal/server/serv
 the MCP bridge `POST /api/mcp/call` (internal/server/api.go:1242) using the `session_output`,
 `session_children` and `session_timeline` tools defined in internal/mcp/server.go (lines 384,
 1703, handler at line 2294). One additional read-only stats probe was run directly against the
-node's Ollama (`GET http://100.64.0.20:11434/api/ps`); no generation requests were ever sent.
+node's Ollama (`GET http://<node-address>:11434/api/ps`); no generation requests were ever sent.
 Statements from the incident background are marked *operator recollection* where they are not
 verifiable through the interfaces.
 
 ## Scope
 
 PRD **f3420001**, task **bd730001**, story **bd300001**; worktree
-`/home/dmz/.datawatch/prd-worktrees/f3420001` (this directory). The PRD's subject is the
+`<home>/.datawatch/prd-worktrees/f3420001` (this directory). The PRD's subject is the
 descendant-only stall detector whose implementation lives in cmd/datawatch/descendant_stall_wait.go,
 cmd/datawatch/descendant_processes.go and cmd/datawatch/exit_silence_wait.go, specified in
 docs/plans/2026-10-28-pi-descendant-only-stall.md; the incident investigated here is the live
@@ -29,8 +29,8 @@ hang that this PRD category targets. In scope:
   after ab4c's kill, terminal state 10:35:14 (-04:00) — the ~1 h 04 m hang.
 
 Both records show `one_shot=true`, `backend_family=pi-prompt`, `model=ollama/qwen3.8-64k:27b`,
-`node_address=http://datawatch:11434`, `compute_node_ref=datawatch`. The per-session pane
-logs referenced by the records (`/home/dmz/.datawatch/sessions/johnnyjohnny-ab4c/output.log`,
+`node_address=<compute-node>`, `compute_node_ref=<compute-node>`. The per-session pane
+logs referenced by the records (`<home>/.datawatch/sessions/johnnyjohnny-ab4c/output.log`,
 `.../johnnyjohnny-ef70/output.log`) sit outside this worktree and were not read (rule 2).
 Out of scope: anything needing generation requests, files outside the worktree, code changes.
 
@@ -55,7 +55,7 @@ bd730001):
 - Final pane content (`session_output` tail): the whole wrapper command, then exactly two
   lines: `DATAWATCH_PI_FAILED: pi exited with status 143 (model ollama/qwen3.8-64k:27b)` and
   `logout`. The wrapper is the template in internal/llm/backends/pi/backend.go:516-563
-  (`buildLaunchCmdWithAgentDir`): `cd '/home/dmz/.datawatch/prd-worktrees/f3420001' && {
+  (`buildLaunchCmdWithAgentDir`): `cd '<home>/.datawatch/prd-worktrees/f3420001' && {
   PI_CODING_AGENT_DIR='/tmp/datawatch-pi-agent-cs-johnnyjohnny-ab4c-2690530149' pi --print
   --mode text --approve --model 'ollama/qwen3.8-64k:27b' "$(cat
   '/tmp/datawatch-pi-task-cs-johnnyjohnny-ab4c-151365485.txt')"; echo $? >
@@ -91,7 +91,7 @@ bd730001):
   `2026-10-28T09:30:52.578014283-04:00` — **86 ms after ab4c's kill timestamp**, i.e. the
   automatic retry. `updated_at = 2026-10-28T10:35:14.156294913-04:00`; `last_channel_event_at
   = 10:35:05.27685298`. `diff_summary = "1 file(s), +38/-0"`, workdir
-  `/home/dmz/.datawatch/prd-worktrees/f3420001` (this directory). `one_shot=true`, same node
+  `<home>/.datawatch/prd-worktrees/f3420001` (this directory). `one_shot=true`, same node
   and model as ab4c.
 - Timeline (`session_timeline`, 4 entries): `2026-10-28T13:30:52Z created`;
   `13:30:58Z running → waiting_input`, whose needs-input content is the wrapped *wrapper
@@ -143,7 +143,7 @@ than a genuine question to the user; it predates the 120 s "session never starte
 
 ## Runner and model state
 
-Facts from the interfaces (node `datawatch`, PRD f3420001):
+Facts from the interfaces (node `<compute-node>`, PRD f3420001):
 
 - Runner: `pi-prompt` is one-shot, non-interactive (internal/llm/backends/pi/backend.go:15;
   internal/llm/backends/pi/backend_test.go:98 asserts `SupportsInteractiveInput()==false`).
@@ -161,8 +161,8 @@ Facts from the interfaces (node `datawatch`, PRD f3420001):
   tracking this PRD reworks lives in cmd/datawatch/descendant_stall_wait.go,
   cmd/datawatch/descendant_processes.go, cmd/datawatch/exit_silence_wait.go
   (docs/plans/2026-10-28-pi-descendant-only-stall.md).
-- Node registry (node `datawatch`, `/api/compute/nodes`): kind `ollama`, address
-  `http://datawatch:11434`, `node_pinned_model=qwen3.8-64k:27b`,
+- Node registry (node `<compute-node>`, `/api/compute/nodes`): kind `ollama`, address
+  `<compute-node>`, `node_pinned_model=qwen3.8-64k:27b`,
   `max_concurrent_sessions=1` (so ab4c and ef70 serialized on one slot),
   `scheduling_priority=90`.
 - Node detail (`compute_node_detail`, queried 2026-10-29 14:52 local): aarch64 14 cores,
@@ -171,14 +171,14 @@ Facts from the interfaces (node `datawatch`, PRD f3420001):
   422.06/1005.31 GB (41.97%), uptime 643,281 s ≈ 7.4 days (booted ≈2026-10-22, i.e. **not
   rebooted between or after the hang window**). Envelope: backend:ollama RSS ≈13.8 GB,
   pids [3379173, 2780756]; container `c3dda340918d` = the node's datawatch daemon.
-- Model state (read-only `GET http://100.64.0.20:11434/api/ps`, 2026-10-29 14:52):
+- Model state (read-only `GET http://<node-address>:11434/api/ps`, 2026-10-29 14:52):
   `qwen3.8-64k:27b` loaded — 27.3B params, Q4_K_M, 17.95 GB, context 65536,
   `expires_at 2319-02-08` (i.e. keep_alive −1, persistent); also `nomic-embed-text:latest`
   and `Gemma3:12b` loaded. This matches the operator recollection that recovery left the model
   reloaded with keep_alive −1.
 - The daemon-side `ollama_stats` tool (handleOllamaStats, internal/mcp/memory_tools.go:753-766;
   fetchOllamaStatsHTTP, internal/mcp/memory_tools.go:45) queries the daemon's configured
-  local Ollama host, not node `datawatch` — for the node, its own `/api/ps` is authoritative.
+  local Ollama host, not node `<compute-node>` — for the node, its own `/api/ps` is authoritative.
 - Operator recollection (not verifiable since generation was prohibited): the 5-token probe
   to `qwen3.8-64k:27b` timed out at 60 s in both windows while a different model answered in
   7 s; node CPU ≈0% and GPU ≈0% during the hangs; unloading (keep_alive 0) and reloading
@@ -198,10 +198,10 @@ logs or server-side request records were available through any sanctioned interf
    `f3420001`, `bd730001`, `keep_alive` or `timeout` → the 2026-10-28 07:51-10:35 window was
    rotated/truncated before this investigation; the only "hunger" evidence there is the
    `[recovery] … (state=waiting_input)` screen-capture mechanism for later sessions.
-   Per-session logs named in the records (`/home/dmz/.datawatch/sessions/johnnyjohnny-ab4c/output.log`,
+   Per-session logs named in the records (`<home>/.datawatch/sessions/johnnyjohnny-ab4c/output.log`,
    `.../johnnyjohnny-ef70/output.log`) are outside the project worktree and were
    intentionally not read (rule 2).
-2. **Ollama server logs on 100.64.0.20** — no sanctioned interface exposes them; the
+2. **Ollama server logs on <node-address>** — no sanctioned interface exposes them; the
    server-side hang point (which request held the queue, first-token timeout) cannot be pinned.
 3. **pi transcripts** — the wrapper (internal/llm/backends/pi/backend.go:516-563) deletes
    `PI_CODING_AGENT_DIR` (`/tmp/datawatch-pi-agent-cs-johnnyjohnny-ab4c-2690530149` and
@@ -379,3 +379,18 @@ the inference runtime. The two live-incident facts that most constrain the choic
 sibling models answering while the pinned model times out, and node CPU/GPU at
 idle during the hang — both point at the instance state on the node, neither at
 what the pi client is doing, and that is the narrowest claim the evidence supports.
+
+## Parity surface
+
+No surface changes are made by this investigation and proposal. Each surface is
+intentionally excluded (this is an investigation and a proposal, so no implementation
+surface is touched):
+
+- **REST** — no new endpoints or config fields; nothing to expose.
+- **MCP** — no new tools or tool-schema fields added.
+- **CLI** — no new flags or commands added.
+- **Comm channel** — no new events emitted beyond existing session/timeline events.
+- **YAML/config** — no new config keys introduced.
+- **PWA** — no settings-form or test changes.
+- **Android** — not affected; investigation/proposal only.
+- **iPhone** — not affected; investigation/proposal only.

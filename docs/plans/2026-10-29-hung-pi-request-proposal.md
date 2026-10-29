@@ -180,3 +180,18 @@ Which option do you prefer?
 3. Retry on a stronger backend (option 3)
 4. Node-instance recovery, unload/reload (option 4)
 5. Let's chat about this instead.
+
+## Parity surface
+
+No surface changes are made by this investigation and proposal. Each surface is
+intentionally excluded (this is an investigation and a proposal, so no implementation
+surface is touched):
+
+- **REST** — no new endpoints or config fields; nothing to expose.
+- **MCP** — no new tools or tool-schema fields added.
+- **CLI** — no new flags or commands added.
+- **Comm channel** — no new events emitted beyond existing session/timeline events.
+- **YAML/config** — no new config keys introduced.
+- **PWA** — no settings-form or test changes.
+- **Android** — not affected; investigation/proposal only.
+- **iPhone** — not affected; investigation/proposal only.
