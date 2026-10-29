@@ -22,3 +22,7 @@ One member: BL610 Step 2 (PRD `e0830001`, 14 tasks). Step 3 is to be inserted wi
 | 2026-10-29 05:09 | The member id had to be written by hand (an 8-hex string). Whether the API generates one when it is left out was not tried. | untested |
 
 Further rows are added as the run goes on: completion and advance, what the Automation's default backend does to the member's tasks, how a held or failed task shows at the Automation level, and what the supervisor watch does and does not see for a PRD that an Automation runs.
+
+| 2026-10-29 05:54 | `automation insert` without `--expected-version` was refused with a 409 ("expected version 0, current version is 3"): the CLI sends 0 when the flag is omitted instead of reading the current version. Retrying with `--expected-version 3` worked and the insert was held as a pending insert for the operator's approval (member id `9c30ef8e`, status pending), as the design says for any insert into an active Automation. | defect: the CLI should default the version to the current one (or fetch it) |
+| 2026-10-29 05:54 | `automation get` and `automation status` show no pending inserts (the PENDING column read 0 while one was pending; the pending insert is visible only in the REST body under `pending_inserts`). | defect: the CLI tables and the status line should show pending inserts and how to approve them |
+| 2026-10-29 05:54 | A held draft PRD was inserted as a member to represent a step that must wait; it is held by the pending-insert approval, not by the PRD being a draft. | works, a clean way to represent a held step |
