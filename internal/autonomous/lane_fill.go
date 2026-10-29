@@ -145,19 +145,24 @@ type LaneFillInput struct {
 // filled by the coordinator, not the planner. RepeatCount and LastSeenAt let
 // the coordinator collapse the same decision seen on consecutive polls.
 type LaneFillDecision struct {
-	At          time.Time      `json:"at"`
-	Mode        LaneFillMode   `json:"mode"`
-	LaneID      string         `json:"lane_id"`
-	LaneType    LaneType       `json:"lane_type"`
-	Action      LaneFillAction `json:"action"`
-	PRDID       string         `json:"prd_id"`
-	Title       string         `json:"title"`
-	Reason      string         `json:"reason"`
-	Blocker     string         `json:"blocker"`
-	Executed    bool           `json:"executed"`
-	Error       string         `json:"error"`
-	RepeatCount int            `json:"repeat_count"`
-	LastSeenAt  time.Time      `json:"last_seen_at"`
+	At       time.Time      `json:"at"`
+	Mode     LaneFillMode   `json:"mode"`
+	LaneID   string         `json:"lane_id"`
+	LaneType LaneType       `json:"lane_type"`
+	Action   LaneFillAction `json:"action"`
+	PRDID    string         `json:"prd_id"`
+	Title    string         `json:"title"`
+	Reason   string         `json:"reason"`
+	Blocker  string         `json:"blocker"`
+	// WaitReason, when set, names the basis a decision rests on: the reason
+	// the lane's occupant reports while waiting on a verifier slot (see
+	// LaneOccupant), which is what made the lane count available. So the
+	// record shows why the decision was made, not only what it did.
+	WaitReason  string    `json:"wait_reason,omitempty"`
+	Executed    bool      `json:"executed"`
+	Error       string    `json:"error"`
+	RepeatCount int       `json:"repeat_count"`
+	LastSeenAt  time.Time `json:"last_seen_at"`
 }
 
 // LaneTypeForBackend says which lane type a worker backend occupies:
@@ -242,6 +247,31 @@ func BuildLanes(cfg LaneFillConfig, running []LaneOccupant, evidence LaneEvidenc
 		}
 	}
 	return model
+}
+
+// laneFillLaneStatusView renders one lane for the status view: idle and
+// occupied keep their meaning, a lane the verifier-wait rule counts
+// available gets state waiting_verifier, and a lane whose occupant waits on
+// a verifier slot carries its waiting_on_verifier flag and the occupant's
+// wait_reason, so the operator sees the difference between a lane that works
+// and one that waits.
+func laneFillLaneStatusView(cfg LaneFillConfig, l Lane, eligibleWaiting int) LaneFillLaneStatus {
+	state := "idle"
+	if l.Occupant != nil {
+		state = "occupied"
+		if l.Occupant.WaitingOnVerifier && l.Type == LaneTypeClaude && cfg.EffectiveCountVerifierWait() {
+			state = "waiting_verifier"
+		}
+	}
+	ls := LaneFillLaneStatus{
+		ID: l.ID, Type: l.Type, State: state, Occupant: l.Occupant,
+		Blocker: l.Blocker, EligibleWaiting: eligibleWaiting,
+	}
+	if l.Occupant != nil && l.Occupant.WaitingOnVerifier {
+		ls.WaitingOnVerifier = true
+		ls.WaitReason = l.Occupant.WaitReason
+	}
+	return ls
 }
 
 // laneFree says whether a lane is free for a new start: it has no occupant,
@@ -416,10 +446,18 @@ func PlanLaneFill(in LaneFillInput) []LaneFillDecision {
 	var pending []pendingIdle
 
 	newDecision := func(l Lane, a LaneFillAction) LaneFillDecision {
-		return LaneFillDecision{
+		d := LaneFillDecision{
 			At: in.Now, Mode: mode, LaneID: l.ID, LaneType: l.Type, Action: a,
 			RepeatCount: 1, LastSeenAt: in.Now,
 		}
+		// A lane decision on a lane the verifier-wait rule counted available
+		// carries the waiting occupant's reason — that is why the lane was
+		// free in the first place, and the record keeps the basis with the
+		// decision.
+		if l.Occupant != nil && l.Occupant.WaitingOnVerifier {
+			d.WaitReason = l.Occupant.WaitReason
+		}
+		return d
 	}
 
 	// A lane is busy by the one rule in laneFree: a Claude lane whose occupant
