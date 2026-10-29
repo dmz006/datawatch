@@ -58,9 +58,9 @@ func laneFillLaneText(l LaneFillLaneStatus) string {
 		if l.Occupant.WaitingOnVerifier {
 			// A lane that works and a lane that waits must read differently.
 			if r := strings.TrimSpace(l.Occupant.WaitReason); r != "" {
-				s += fmt.Sprintf(", waiting on a verifier slot: %s", r)
+				s += fmt.Sprintf(", waiting on verifier: %s", r)
 			} else {
-				s += ", waiting on a verifier slot"
+				s += ", waiting on verifier"
 			}
 		}
 	case l.Blocker != "":
