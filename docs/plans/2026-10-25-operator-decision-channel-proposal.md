@@ -396,3 +396,7 @@ Operator answers to the two open points above, 2026-10-25 (quoted: "1 marker wit
 8. PASS — no "PRD" or "Automation" wording in the CHANGELOG entry, the questions rows of `docs/operations.md` and `docs/api/autonomous.md`, or the locale string; operator-facing text says Automaton/Automata.
 
 Commands (env -u TMUX -u TMUX_TMPDIR): gofmt -l FAIL (`internal/server/repair_depends_on_error_test.go`, the same file as check 7; `cmd/datawatch-channel/main.go` and `internal/mcp/transport_debug.go` also listed, not part of the questions work), go build PASS, go vet PASS, go test ./internal/server/ -run 'Locale|Question' PASS.
+
+## Step 2 filed 2026-10-29
+
+Operator, 2026-10-29, quoted: "Yes, file step 2 now, and why did it not get done, that was 2 or more days ago". Step 2 (notifications and the return path) is filed as draft PRD `e0830001` (registry row 246). Step 3 (the surfaces: the PWA question queue and answer form, CLI, MCP and comm answering) is the step that lets the operator answer in the PWA; it depends on Steps 1 and 2 and waits for the operator's go-ahead. Steps 4 and 5 still need re-confirmation. Why Step 2 was not filed at the Step 1 merge on 2026-10-27: the confirmation covered Step 1 only ("Steps 2 to 5 are filed one at a time"), the supervisor listed Steps 2 to 5 as design-gated although Steps 2 and 3 had full designs and needed only a filing and a go-ahead, and no checklist step made the supervisor file or ask about the next step when a step shipped.
