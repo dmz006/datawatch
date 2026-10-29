@@ -2076,6 +2076,23 @@ Counts: 12 new Go test functions in 4 test files (the 2 rewritten ones included)
 
 ---
 
+## TS-833 — PWA Automation view: the Overview and Chains sub-tabs on a 360 px phone
+
+| Field | Details |
+|-------|---------|
+| **Description** | The Automation sub-tab of the Automata view now carries a second row of exactly two sub-tabs: **Overview** (the Progress card, the Capacity and queue card and the summary cards that sit with them) and **Chains** (the status badges, the search and filter bar, the Automation cards, and the open Automation with its pipeline strip and controls). Chains is the default and is where every saved `#automation` link, the `#automation/<id>` route and the back control from a member page land. The sub-tab bar no longer carries a New Automation button; the round create button and the empty-state create button still both open the same form. There is no Questions sub-tab in either row. |
+| **Tags** | `surface:pwa` `feature:automation` `group:automation` |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh TS-833`. 1. Seed one Automation through the API on the sandbox daemon. 2. Open the PWA at a 360×800 phone viewport and read the two sub-tab rows. 3. Switch to Overview and back to Chains. 4. Open the seeded Automation's detail, go back to the list, and open the `#automation/<id>` route. 5. Remove the seeded Automation. |
+| **Expected** | Both rows render (Automation/Automata/Templates plus Overview/Chains), every sub-tab is at least 40 px tall and inside the 360 px viewport with no horizontal overflow. Overview shows the capacity and progress cards and hides the detail panel; Chains shows the seeded card with its status badge and the filter toggle. The detail page draws over the whole view, the back control returns to the list on Chains, and the `#automation/<id>` route draws the full-page detail. No New Automation header button; the round create button and the empty-state create button remain. |
+| **Actual** | Run live on 2026-10-29 against a sandbox daemon built from this branch (`go build -o bin/datawatch ./cmd/datawatch/`), headless Chromium. The first run was exit 2 (story skipped, not a product defect): the story's `api()` helper used Node `fetch` against the plaintext origin, whose loopback API call is 307-redirected to the daemon's self-signed TLS port that Node `fetch` refuses. Fixed in the story only (the helper now calls the TLS origin over a dedicated `rejectUnauthorized: false` https agent, the same pattern as the sibling automation stories); the re-run was exit 0 (1 of 1 story passed), and `bash scripts/e2e-pwa.sh group:automation` passed with 1 passed, 0 failed, 0 skipped. Screenshots: `tmp-evidence/TS-833/01-automation-chains.png`, `tmp-evidence/TS-833/02-automation-overview.png`, `tmp-evidence/TS-833/03-automation-detail.png`, `tmp-evidence/TS-833/04-back-to-chain.png`, `tmp-evidence/TS-833/05-route-automation-detail.png` (plus `tmp-evidence/TS-833/evidence.txt`, `automation-subtabs-evidence.json` and `console-errors.txt`). At 360×800 the two sub-tab rows fit with no horizontal overflow, every sub-tab at least 40 px tall and inside the viewport. |
+| **Result** | Pass (live) |
+
+Guard-story re-run, 2026-10-29 (this tree): `make test-e2e-mobile-fit` — TS-817 exit 0 with 0 findings (68 recorded regression groups, none reproduces), TS-818 story exit 1 (make exit 2) with 35 out-of-tolerance values, all pre-existing Observer-view drift from the 2026-10-25 shared-navigation work's 40 px tap-target fix against TS-818's stale pre-fix baseline, none naming the sub-tab rows or any Automata-view element; `make test-e2e-shared-nav` exit 0 with 0 nav findings at 320/360/390 px. Node tests: `app-automation-subtabs.test.js` 9 of 9, `app-automation-subtab-routes.test.js` 16 of 16 and `app-automation-subtab-load.test.js` 12 of 12 pass under `node --test`, and the whole `internal/server/web` node suite passes 1459 of 1459 on 2026-10-29.
+
+Counts: 1 new node test file (9 tests), 7 node test files updated for the new structure in the Automata sub-tab suite, 1 new browser story (TS-833).
+
+---
+
 ## CodeQL alerts on the MCP debug transport and dictation ids
 
 Two code-scanning alerts were fixed on one branch (the third, the subprocess shell alert, was dismissed by the operator's decision and has no code change; see the plan). Each fix has its own test description, steps, expected result and actual result. The sandbox daemon in every "Steps" list is loopback only with its data under a gitignored directory, never the production daemon on `8443`. Plan and decisions: [2026-10-28-codeql-last-three-alerts.md](plans/2026-10-28-codeql-last-three-alerts.md).

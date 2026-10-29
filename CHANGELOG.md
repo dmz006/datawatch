@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The Automation view is organised behind sub-tabs.** The Automation sub-tab now carries a second row of sub-tabs: **Overview**, with the Progress card, the Capacity and queue card and the summary cards that sit with them, and **Chains**, with the status badges, the search and filter bar, your Automations, and the open Automation with its pipeline strip and controls. Chains is the one open by default, and it is where your saved Automation links and the back control from a member's page land.
+- **The New Automation button is no longer in the view header.** Creating an Automation is unchanged: the round button at the bottom right and the **＋ Create Automation** button on the empty state both still open the same form.
+- **The two rows of sub-tabs fit on a phone.** At 360 px both rows fit without scrolling or clipping, and every sub-tab is at least 40 px tall.
+
 ## v9.32.0 — The calculator reset zone follows the server by default
 
 ### Changed
