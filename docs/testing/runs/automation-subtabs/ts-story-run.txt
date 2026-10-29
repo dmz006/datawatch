@@ -1,0 +1,82 @@
+TS-833 browser story run record — Automation sub-tabs (Overview/Chains)
+=======================================================================
+
+Date: 2026-10-29 (UTC-04:00 / EDT), session h-ba90
+Story: scripts/test-stories/pwa/TS-833.mjs (newest TS-* story added by this
+change; branch ts-833-automation-subtabs)
+
+Build command
+-------------
+  go build -o bin/datawatch ./cmd/datawatch/          # exit 0
+
+E2E commands + exit codes (run in order)
+----------------------------------------
+  1. env -u TMUX -u TMUX_TMPDIR TMPDIR="$PWD/bin/tmp" bash scripts/e2e-pwa.sh TS-833
+     exit 2 (story SKIP, initial run)
+     Cause: not a product defect. The story's api() helper used Node's
+     global fetch against the plaintext origin (env.http). The sandbox
+     daemon serves with TLS enabled, and a loopback POST to
+     /api/automations is not on the daemon's loopback-bypass allow-list,
+     so it is 307-redirected to the self-signed HTTPS port; Node fetch
+     refuses the cert ("self-signed certificate"), the request dies with
+     "fetch failed", and the story skipped with exit 2. The sibling
+     automation stories (TS-821/822/824/827/829/830/831) all avoid this
+     by calling the TLS origin through a dedicated
+     https.Agent({ rejectUnauthorized: false }).
+
+  2. (fix — story only) scripts/test-stories/pwa/TS-833.mjs: api() now
+     calls the sandbox TLS origin (env.tls) over a dedicated
+     rejectUnauthorized:false https agent, same pattern as the sibling
+     stories. No daemon, app.js or style.css changes were needed.
+
+  3. env -u TMUX -u TMUX_TMPDIR TMPDIR="$PWD/bin/tmp" bash scripts/e2e-pwa.sh TS-833
+     exit 0 (PASS)
+
+  4. env -u TMUX -u TMUX_TMPDIR TMPDIR="$PWD/bin/tmp" bash scripts/e2e-pwa.sh group:automation
+     exit 0 (PASS)
+     run-all: group automation (1 stories)
+     TS-833 PASS (exit 0)
+     summary: 1 passed, 0 failed, 0 skipped, 1 total
+
+Story's printed checks (every run, exit-0 runs verbatim)
+--------------------------------------------------------
+  seeded Automation 9fe9d2d5 (ts-subtabs-1793276970436)
+  cleanup: DELETE 204, GET 404
+  TS-833: Automation sub-tabs (Overview/Chains) OK on 360×800
+(The story's check() assertions throw on failure; all passed in every
+exit-0 run, including: two-row tab bar rendered (Automation/Automata/
+Templates + Overview/Chains), every tab ≥40×40 and inside the 360px
+viewport with no horizontal overflow, Overview shows capacity + progress
+cards and hides the detail panel, Chains shows the seeded card with the
+Draft badge and the "Toggle Automation filters" button, the detail page
+renders behind the rows, "← Back to Automations" returns to the list,
+and the #automation/<id> route draws the full-page detail.)
+
+Generated screenshot names (repo-relative paths)
+------------------------------------------------
+  tmp-evidence/TS-833/01-automation-chains.png
+  tmp-evidence/TS-833/02-automation-overview.png
+  tmp-evidence/TS-833/03-automation-detail.png
+  tmp-evidence/TS-833/04-back-to-chain.png
+  tmp-evidence/TS-833/05-route-automation-detail.png
+  (evidence companions: tmp-evidence/TS-833/evidence.txt,
+   automation-subtabs-evidence.json, console-errors.txt)
+  Note: e2e-pwa.sh generates each run's screenshots into a per-run
+  sandbox evidence directory and removes it on a passing run; the
+  tracked copies above are the story's evidence set at repo-relative
+  paths (last regenerated during this development).
+
+RESULT: PASS — TS-833 exit 0; group:automation 1 passed, 0 failed,
+0 skipped (exit 0). One story-side defect fixed minimally (api() helper
+TLS origin handling, matching the sibling stories). No product code
+(app.js/style.css) defects found: all story checks passed unmodified.
+
+Environment side note
+---------------------
+The worktree's scripts/test-stories/pwa/node_modules was a self-
+referencing symlink (node_modules -> itself), so the e2e script's
+"[ -d node_modules ] || npm install" ran npm install and replaced it
+with a local real node_modules (playwright, playwright-core). This is
+an environment-setup side effect of running the e2e script in this
+worktree; the story and daemon behaved identically. No other tree or
+production changes were made.

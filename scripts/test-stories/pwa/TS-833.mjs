@@ -23,6 +23,7 @@
 //
 // tags: surface:pwa feature:automation group:automation
 //
+import https from 'node:https';
 import { screenshot, saveLog, env } from './lib.mjs';
 import { runPerfStory, openPWA, check, saveJson, skipStory, noHorizontalOverflow } from './perf-lib.mjs';
 
@@ -40,16 +41,36 @@ const evidence = {
   cleanup: null,
 };
 
-// --- API (sandbox: http with the token; 503 = autonomous subsystem off) ----
+// --- API (sandbox: token auth; 503 = autonomous subsystem off) ----
+// The sandbox serves a self-signed certificate. Go to the TLS origin over a
+// dedicated agent that skips verification only (the same pattern as the other
+// automation stories); the plaintext origin 307-redirects loopback API calls
+// to that self-signed https port, which Node's fetch refuses outright.
+const sandboxAgent = new https.Agent({ rejectUnauthorized: false });
+
+function sandboxRequest(method, path, body) {
+  return new Promise((resolve, reject) => {
+    const data = body === undefined || body === null ? null : JSON.stringify(body);
+    const headers = { Authorization: `Bearer ${env.token}` };
+    if (data !== null) {
+      headers['Content-Type'] = 'application/json';
+      headers['Content-Length'] = Buffer.byteLength(data);
+    }
+    const req = https.request(new URL(path, env.tls), { method, headers, agent: sandboxAgent }, (res) => {
+      let text = '';
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => resolve({ status: res.statusCode, text }));
+    });
+    req.on('error', reject);
+    if (data !== null) req.write(data);
+    req.end();
+  });
+}
 
 async function api(path, method = 'GET', body = null) {
-  const res = await fetch(env.http + path, {
-    method,
-    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + env.token },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const res = await sandboxRequest(method, path, body);
   let json = null;
-  try { json = await res.json(); } catch { /* 204 etc. */ }
+  try { json = JSON.parse(res.text); } catch { /* 204, empty or non-JSON body */ }
   return { status: res.status, body: json };
 }
 
@@ -150,7 +171,7 @@ runPerfStory(async (page) => {
   try {
     mk = await api('/api/automations', 'POST', { name: NAME, project_dir: '.', actor: 'operator', reason: REASON });
   } catch (e) {
-    await skipStory(`daemon unreachable at ${env.http}: ${e.message}`);
+    await skipStory(`daemon unreachable at ${env.tls}: ${e.message}`);
   }
   if (mk.status === 503) await skipStory('autonomous subsystem disabled (POST /api/automations → 503)');
   const id = (mk.body && (mk.body.id || (mk.body.automation && mk.body.automation.id))) || null;
