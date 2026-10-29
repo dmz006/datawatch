@@ -35,3 +35,10 @@ D: collapse the two summary cards, default the list to what needs attention (Act
 ## Parity surface
 
 PWA only for layout; locale keys for any new sub-tab or collapse label in all five bundles; a datawatch-app issue only if the mobile app mirrors the Automation screen layout.
+
+## Operator direction 2026-10-29 (second message)
+
+Operator, quoted: "In automation there is a new automation button in the header that could be removed qnd sub tabs made there, we have a create button at bottom right still". Verified in the code: the Automation sub-tab has three ways to create an Automation: the **New Automation** button in the sub-tab bar header (`automationNewBtn`, shown only on the Automation sub-tab), the round create button at the bottom right (the same form, same label), and the empty-state **Create Automation** button that appears only when no Automation exists. The header button is therefore a duplicate of the round button. The direction is: remove the header button and use sub-tabs to organise the Automation view. This points to option A (sub-tabs by purpose) with the header button removed; which sub-tabs, and what moves into each, is not yet decided.
+
+Question for the operator, one at a time: remove the header **New Automation** button and make the Automation view's sub-tabs Overview (the Progress and Capacity cards), Chains (the list and the open Automation) and, when step 3 lands, Questions: yes, or name different sub-tabs?
+
