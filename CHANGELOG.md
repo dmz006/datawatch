@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Leaving `--expected-version` off an Automation control command no longer fails with a version mismatch.** The control commands (`datawatch automation` insert, pause, resume, skip, remove, edges, approve, cancel and the settings commands) now read the Automation's current version first and send that, so an omitted version works against a live Automation; if the Automation's version moved between the read and the write, the command reads it again and retries once instead of failing. A version you type yourself is still checked, and a stale one is still refused with the daemon's message.
+- **`datawatch automation get` and `datawatch automation status` now list pending inserts.** Each pending insert is shown with its member id, the Automaton, the reason it is held and the exact approve command to run (rows without pending inserts print none). The PENDING count in `automation status` now includes the held inserts, and the PWA's Automation status line shows the same count, with a pending insert row per insert that carries the member id, the Automaton, the reason and an Approve control.
+
 ## v9.32.0 — The calculator reset zone follows the server by default
 
 ### Changed
