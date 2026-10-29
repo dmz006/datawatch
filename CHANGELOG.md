@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The header Tags button now shows a filled, colored tag with a lighter hole instead of a thin outline.** It reads clearly next to the alerts bell in both the dark and the light theme. The button looks brighter while the Tags dropdown is open or a tag filter is on, shows a visible focus ring, and the count badge stays readable on top of it. The button's name, tooltip, keyboard use and dropdown are unchanged.
+
 ## v9.32.0 — The calculator reset zone follows the server by default
 
 ### Changed
