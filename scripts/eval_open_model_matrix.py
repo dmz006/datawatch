@@ -1,4 +1,6 @@
-"""Open-model matrix eval driver (4 pi-prompt roles x 4 task types = 16 cells).
+"""Open-model matrix eval driver (roles x task types = cells; the tracked matrix
+is 5 pi-prompt roles — baseline plus execution-role candidates — x 4 task types
+= 20 cells).
 
 Run as `python3 -I scripts/eval_open_model_matrix.py <subcommand>`; normally
 via scripts/eval-open-model-matrix.sh. Stdlib only.
@@ -64,9 +66,34 @@ def matrix_path():
     return local if os.path.exists(local) else os.path.join(REPO, MATRIX_REL)
 
 
+# The baseline role: its executor cells run like any other role, and it also
+# holds the scratch Automaton's decompose / validate / guardrail roles.
+BASELINE_ROLE = "base"
+# Allowed pi thinking levels — mirrors internal/config/pi_thinking_level.go.
+# Per-role `thinking_level` (executor) and top-level `prd_thinking_level`
+# (non-executor duties) may each be null (= leave pi on its own default).
+THINKING_LEVELS = ("off", "minimal", "low", "medium", "high")
+
+
 def _check_matrix(m):
-    if len(m.get("roles", [])) != 4 or len(m.get("task_types", [])) != 4:
-        raise EvalError("matrix.json must define exactly 4 roles and 4 task_types")
+    roles = m.get("roles") or []
+    if not roles:
+        raise EvalError("matrix.json must define at least one role")
+    names = [r.get("role") for r in roles]
+    if BASELINE_ROLE not in names:
+        raise EvalError(f"matrix.json must define the {BASELINE_ROLE!r} role (it holds the decompose/validate/"
+                        "guardrail roles in addition to executing cells)")
+    if len(names) != len(set(names)):
+        raise EvalError("matrix.json role names must be unique")
+    if not m.get("task_types"):
+        raise EvalError("matrix.json must define task_types")
+    allowed = "null or: " + "|".join(THINKING_LEVELS)
+    if m.get("prd_thinking_level") is not None and m["prd_thinking_level"] not in THINKING_LEVELS:
+        raise EvalError(f"prd_thinking_level {m['prd_thinking_level']!r} not allowed ({allowed})")
+    for r in roles:
+        lvl = r.get("thinking_level")
+        if lvl is not None and lvl not in THINKING_LEVELS:
+            raise EvalError(f"role {r.get('role')!r}: thinking_level {lvl!r} not allowed ({allowed})")
     return m
 
 
@@ -164,7 +191,8 @@ def cells(m):
     for r in m["roles"]:
         for tt in m["task_types"]:
             yield {"name": f"{r['role']}-{tt}", "role": r["role"], "llm": r["llm"],
-                   "expected_model": r["model"], "task_type": tt}
+                   "expected_model": r["model"], "task_type": tt,
+                   "thinking_level": r.get("thinking_level")}
 
 
 # --------------------------------------------------------------------------
@@ -181,7 +209,7 @@ def preflight_row(role, resp=None, err=None):
 def preflight_passed(st):
     pf = st.get("preflight") or {}
     rows = pf.get("rows") or []
-    return bool(pf.get("passed")) and len(rows) == 4 and all(r.get("ok") for r in rows)
+    return bool(pf.get("passed")) and len(rows) >= 1 and all(r.get("ok") for r in rows)
 
 
 def require_preflight(st):
@@ -257,7 +285,7 @@ def cmd_preflight(a):
     if not passed:
         raise EvalError("PREFLIGHT FAILED — at least one role did not report used_model == expected model; "
                         "nothing further will run for this run-id")
-    log("PREFLIGHT OK — all 4 roles answered on their expected model")
+    log(f"PREFLIGHT OK — all {len(rows)} roles answered on their expected model")
 
 
 # --------------------------------------------------------------------------
@@ -319,18 +347,33 @@ def cmd_create_prd(a):
     pid = prd["id"]
     st["eval_prd_id"] = pid
     save_state(m, a.run_id, st)
+    # Non-executor duties (decompose/validate/guardrail) ride the PRD-level pi
+    # thinking level. Applied only when the matrix sets one; null (the tracked
+    # matrix's choice) leaves pi on its own default for those roles.
+    if m.get("prd_thinking_level"):
+        prd_action(c, pid, "set_thinking_level", {"thinking_level": m["prd_thinking_level"], "actor": ACTOR})
+        log(f"PRD-level thinking level set to {m['prd_thinking_level']}")
     # Operator-reported 2026-10-15: this whole matrix is meant to be
     # Claude-free, but decompose (planning) and the per-task guardrail
     # verifier both silently defaulted to the global claude-code setting
-    # — only the 16 cells' own workers were ever actually local. Pin both
-    # to a local model before decomposing. decompose needs real codebase
-    # tool access (headless ollama/openwebui can't explore the repo), so
-    # it uses the matrix's own largest, most-exercised role; the verifier
-    # is a cheap/quick confirmation only (the real pass/fail signal is the
-    # deterministic verify script), so it uses the cheap fast role.
-    decompose_llm = next(r["llm"] for r in m["roles"] if r["role"] == "decompose-validate")
-    guardrail_llm = next(r["llm"] for r in m["roles"] if r["role"] == "fast")
-    guardrail_model = next(r["model"] for r in m["roles"] if r["role"] == "fast")
+    # — only the cells' own workers were ever actually local. Pin both
+    # to a local model before decomposing. In the tracked matrix the
+    # baseline role holds the decompose/validate/guardrail roles: decompose
+    # needs real codebase tool access (headless ollama/openwebui can't
+    # explore the repo), so it uses the matrix's own largest,
+    # most-exercised model; the guardrail verifier is a cheap/quick
+    # confirmation only (the real pass/fail signal is the deterministic
+    # verify script) and rides the same local model here.
+    def role_by_name(n):
+        for r in m["roles"]:
+            if r["role"] == n:
+                return r
+        raise EvalError(f"matrix.json has no role {n!r}; it is required for this step")
+
+    base = role_by_name(BASELINE_ROLE)
+    decompose_llm = base["llm"]
+    guardrail_llm = base["llm"]
+    guardrail_model = base["model"]
     # set_llm (decomposition_profile) works pre-decompose (draft), but
     # set_verification_llm requires needs_review/revisions_asked/cancelled
     # — it has to wait until after decompose lands.
@@ -348,7 +391,8 @@ def cmd_create_prd(a):
     prd_action(c, pid, "set_memory_seed", {"enabled": False, "actor": ACTOR})
     prd_action(c, pid, "set_memory_harvest", {"enabled": False, "actor": ACTOR})
     prd = prd_action(c, pid, "add_story", {"title": "[eval] open-model-matrix cells",
-                                          "description": "16 cells: 4 pi-prompt roles x 4 task types", "actor": ACTOR})
+                                          "description": f"{len(want)} cells: {len(m['roles'])} roles x "
+                                                         f"{len(m['task_types'])} task types", "actor": ACTOR})
     stories = prd.get("stories") or []
     if len(stories) != 1:
         raise EvalError(f"expected exactly 1 story after add_story, got {len(stories)}")
@@ -369,6 +413,11 @@ def cmd_create_prd(a):
         # registry entry name (a pi-prompt entry) goes there; model pins it.
         prd_action(c, pid, "set_task_llm", {"task_id": tid, "backend": cell["llm"],
                                             "model": cell["expected_model"], "actor": ACTOR})
+        # Per-task thinking-level override: applied only when the role pins a
+        # level (null = leave pi on its own default).
+        if sc.get("thinking_level"):
+            prd_action(c, pid, "set_task_thinking_level",
+                       {"task_id": tid, "thinking_level": sc["thinking_level"], "actor": ACTOR})
         sc.update({"task_id": tid, "story_id": sid})
         save_state(m, a.run_id, st)
         log(f"task {tid} <- {cell['name']}")
@@ -383,11 +432,13 @@ def cmd_create_prd(a):
             errs.append(f"{cell['name']}: llm {t.get('backend')}/{t.get('model')} != {cell['llm']}/{cell['expected_model']}")
         if _real(t.get("project_dir")) != _real(os.path.join(REPO, sc["dir"])):
             errs.append(f"{cell['name']}: project_dir {t.get('project_dir')!r} != cell dir")
-    if len(tasks) != 16:
-        errs.append(f"Automaton has {len(tasks)} tasks, expected 16")
+        if (t.get("thinking_level") or "") != (sc.get("thinking_level") or ""):
+            errs.append(f"{cell['name']}: thinking_level {t.get('thinking_level')!r} != {sc.get('thinking_level')!r}")
+    if len(tasks) != len(want):
+        errs.append(f"Automaton has {len(tasks)} tasks, expected {len(want)}")
     if errs:
         raise EvalError("scratch Automaton verification failed:\n  " + "\n  ".join(errs))
-    log(f"CREATE-PRD OK — {pid} with 16 tasks, left at needs_review")
+    log(f"CREATE-PRD OK — {pid} with {len(want)} tasks, left at needs_review")
 
 
 def assert_scratch(c, st):
@@ -453,6 +504,11 @@ def artifact_check(cell_dir, baseline_commit, verify_script, log_path):
     return out
 
 
+def thinking_disp(lvl):
+    """Report display: a null/absent level means pi kept its own default."""
+    return lvl if lvl else "default"
+
+
 def build_cell_row(cell, cell_dir, task, worker_sess, verifier_sess, used_model, model_source, art):
     notes = [f"used_model source: {model_source}"]
     identity = classify_identity(cell["expected_model"], used_model)
@@ -478,6 +534,7 @@ def build_cell_row(cell, cell_dir, task, worker_sess, verifier_sess, used_model,
         "expected_model": cell["expected_model"], "used_model": used_model, "model_identity": identity,
         "self_reported_model": self_rep, "verification_integrity": integrity,
         "resolved_dir": _real(resolved), "task_project_dir": tpd, "artifact_check": art,
+        "thinking_level": cell.get("thinking_level"),
         "model_result": classify_result(identity, integrity, art.get("verify_exit")),
         "task_status": (task or {}).get("status"), "session_id": (task or {}).get("session_id"),
         "notes": "; ".join(notes),
@@ -554,6 +611,13 @@ def render_md(doc, m):
     for r in m["roles"]:
         vals = [(idx.get((r["role"], t)) or {}).get("model_result") or "—" for t in types]
         out.append(f"| {r['role']} | " + " | ".join(vals) + " |")
+    out += ["", "## Thinking level actually used", "" ,
+           "`default` = the level was left at pi's own default (null in the matrix).", ""]
+    out.append("| role | " + " | ".join(types) + " |")
+    out.append("|---|" + "---|" * len(types))
+    for r in m["roles"]:
+        vals = [thinking_disp((idx.get((r["role"], t)) or {}).get("thinking_level")) for t in types]
+        out.append(f"| {r['role']} | " + " | ".join(vals) + " |")
     return "\n".join(out) + "\n"
 
 
@@ -617,6 +681,7 @@ def cmd_self_test(_a):
         r = build_cell_row(cell, cdir, task, ws, None, "qwen3:1.7b", "session_record.model", good_art)
         check(r["model_identity"] == "ok" and r["verification_integrity"] == "ok" and r["model_result"] == "pass",
               "correct cell -> pass")
+        check(r["thinking_level"] is None, "cell row records thinking_level (null when the role leaves pi's default)")
         r = build_cell_row(cell, cdir, task, ws, None, "granite4.2:8b", "session_record.model", good_art)
         check(r["model_identity"] == "wrong_model" and r["model_result"] is None,
               "wrong used_model -> wrong_model, model_result null")
@@ -656,7 +721,31 @@ def cmd_self_test(_a):
                                         "qwen3:1.7b", "s", good_art) for ro in m["roles"] for tt in m["task_types"]]}
         md = render_md(doc, m)
         check(all(s in md for s in ("## Preflight", "## Wrong model cells", "## Suspect integrity cells",
-                                    "## Model results")), "report has all sections")
+                                    "## Model results", "## Thinking level actually used")), "report has all sections")
+        check("default" in md.split("## Thinking level actually used")[1], "unpinned thinking level renders as 'default'")
+
+        badm = {**m, "roles": m["roles"][:-1] + [dict(m["roles"][-1], thinking_level="xhigh")],
+                "prd_thinking_level": None}
+        try:
+            _check_matrix(badm)
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok, "invalid thinking_level rejected by _check_matrix")
+        nobase = {**m, "roles": [dict(r, role=r["role"] + "-x") for r in m["roles"]]}
+        try:
+            _check_matrix(nobase)
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok, "missing baseline role rejected by _check_matrix")
+        empty = {**m, "roles": []}
+        try:
+            _check_matrix(empty)
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok, "empty roles list rejected by _check_matrix")
 
         local = {**m, "roles": [{**r, "llm": f"pi-host{i}-x", "node": f"host{i}"}
                                 for i, r in enumerate(m["roles"])]}
