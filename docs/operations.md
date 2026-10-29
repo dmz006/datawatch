@@ -4390,6 +4390,8 @@ is in [howto/automata-capacity.md](howto/automata-capacity.md).
 
 Lane fill keeps the GPU and Claude lanes busy. On every poll the planner looks at the lanes and the queue and decides what each idle lane should start. It is in **shadow** mode by default: it records every decision it would make and starts nothing. Switch `autonomous.lane_fill.mode` to `on` only after the shadow comparison in [howto/automation-lane-fill.md](howto/automation-lane-fill.md) has passed.
 
+**Verifier-wait lane.** A lane whose occupant is running but all of its work is stalled waiting on a verification slot is not idle: the status shows it as `state: "waiting_verifier"` with `waiting_on_verifier: true` and the `wait_reason` from the wait queue, the lane line reads "waiting on verifier: <reason>", and the idle-lane alert names the wait and its reason before it fires. With `autonomous.lane_fill.count_verifier_wait` on (the default) such a Claude lane counts available, because the waiting occupant is not spending Claude usage; `false` keeps it busy. In shadow mode this counts nothing as a start and records a would-start, as with every other lane fill decision. See [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
+
 | Key | Default | Meaning |
 |---|---|---|
 | `autonomous.lane_fill.mode` | `shadow` | `off` (nothing runs), `shadow` (decide and record, start nothing) or `on` (carry the decisions out). |
