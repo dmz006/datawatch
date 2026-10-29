@@ -2050,6 +2050,8 @@
   "settings_plan_tier_allocation_usd": "Plan-Stufen-Zuteilung (USD pro Stufe; 0 = nicht angegeben)",
   "settings_plan_tier_allocation_hint": "Speist nur den geschätzten Zuteilungsanteil eines Budgets; blockiert nie etwas. 0 oder eine leere Stufe bedeutet keine Angabe.",
   "nav_automation": "Automatisierung",
+  "automation_subtab_overview": "Overview",
+  "automation_subtab_chains": "Chains",
   "automation_status_draft": "Entwurf",
   "automation_status_active": "Aktiv",
   "automation_status_paused": "Pausiert",
