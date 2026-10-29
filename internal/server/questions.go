@@ -116,6 +116,13 @@ type raiseQuestionBody struct {
 	Recommendation *autonomous.QuestionRecommendation `json:"recommendation"`
 	Default        string                             `json:"default"`
 	Risk           string                             `json:"risk"`
+	// Priority is empty, normal or high (the store validates it and a value
+	// outside the set is a 400 naming the field). ReturnPath opts this one
+	// question in to the session line and, when true, the store requires a
+	// session_id; an omitted value keeps the default return path (event plus
+	// polled GET) only.
+	Priority   string `json:"priority"`
+	ReturnPath bool   `json:"return_path"`
 }
 
 // SetQuestions wires the operator question channel into the server for
@@ -285,6 +292,8 @@ func (s *Server) handleQuestionRaise(w http.ResponseWriter, r *http.Request) {
 		Recommendation: reqBody.Recommendation,
 		Default:        reqBody.Default,
 		Risk:           strings.TrimSpace(reqBody.Risk),
+		Priority:       strings.TrimSpace(reqBody.Priority),
+		ReturnPath:     reqBody.ReturnPath,
 	}
 	if q.AskedBy == "" {
 		q.AskedBy = actor
