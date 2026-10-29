@@ -16310,7 +16310,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'usage.calculator.max_lanes', label: 'Usage calculator largest lane count (1 to 8, default 3)', labelKey: 'settings_usage_calculator_max_lanes', type: 'number', placeholder: '3', min: 1, max: 8, step: 1, default: '3' },
     { key: 'usage.calculator.reset_weekday', label: 'Usage calculator reset weekday (default sunday)', labelKey: 'settings_usage_calculator_reset_weekday', type: 'select', options: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'], default: 'sunday' },
     { key: 'usage.calculator.reset_time', label: 'Usage calculator reset time (24-hour HH:MM, default 08:00)', labelKey: 'settings_usage_calculator_reset_time', type: 'text', placeholder: '08:00', default: '08:00', hintKey: 'settings_usage_calculator_reset_time_hint' },
-    { key: 'usage.calculator.reset_zone', label: 'Usage calculator reset time zone (IANA name, default UTC)', labelKey: 'settings_usage_calculator_reset_zone', type: 'text', placeholder: 'America/New_York', default: 'UTC', hintKey: 'settings_usage_calculator_reset_zone_hint' },
+    { key: 'usage.calculator.reset_zone', label: 'Usage calculator reset zone (IANA name; empty follows the server)', labelKey: 'settings_usage_calculator_reset_zone', type: 'text', placeholder: 'America/New_York', hintKey: 'settings_usage_calculator_reset_zone_hint' },
     { key: 'usage.calculator.keeper', label: 'Usage calculator keeper (federation peer that keeps the readings, empty = this daemon)', labelKey: 'settings_usage_calculator_keeper', type: 'text', placeholder: '', hintKey: 'settings_usage_calculator_keeper_hint' },
   ]},
   { id: 'autonomous', section: 'Autonomous Automata planning', docs: 'howto/autonomous-planning.md', fields: [
@@ -17570,17 +17570,33 @@ function loadGeneralConfig() {
                 onchange="saveGeneralField('${f.key}', this.value)">${escHtml(String(val || ''))}</textarea>
             </div>`;
           } else {
-            const defVal = (val !== '' && val !== undefined) ? String(val) : (f.default !== undefined ? String(f.default) : '');
+            // The usage calculator's reset zone is special: an empty value
+            // means "follow the daemon's local zone". When the config GET
+            // reports the zone as server-sourced, keep the input empty, show
+            // the effective zone as placeholder and note the source — saving
+            // the server's zone into the config would pin it.
+            let defVal = (val !== '' && val !== undefined) ? String(val) : (f.default !== undefined ? String(f.default) : '');
+            let zPlaceholder = (f.placeholder || '');
+            let zNote = '';
+            if (f.key === 'usage.calculator.reset_zone') {
+              const _uc = (cfg && cfg.usage && cfg.usage.calculator) || {};
+              if (_uc.reset_zone_source === 'server') {
+                defVal = '';
+                if (_uc.reset_zone) zPlaceholder = String(_uc.reset_zone);
+                zNote = 'server zone \u2014 empty in the config; the reset follows this daemon\u0027s local time zone';
+              }
+            }
             const _inHint = _fieldHintHTML(f);
-            html += `<div class="settings-row" style="justify-content:space-between;${_inHint ? 'flex-wrap:wrap;' : ''}">
+            const _zNoteHTML = zNote ? `<div style="font-size:10px;color:var(--text2);width:100%;">${escHtml(zNote)}</div>` : '';
+            html += `<div class="settings-row" style="justify-content:space-between;${(_inHint || _zNoteHTML) ? 'flex-wrap:wrap;' : ''}">
               <div class="settings-label">${escHtml(fLabel)}</div>
               <input type="${f.type}" class="form-input general-cfg-input" value="${escHtml(defVal)}"
-                ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
+                ${zPlaceholder ? 'placeholder="' + escHtml(zPlaceholder) + '"' : ''}
                 ${f.min !== undefined ? 'min="' + f.min + '"' : ''}
                 ${f.max !== undefined ? 'max="' + f.max + '"' : ''}
                 ${f.step !== undefined ? 'step="' + f.step + '"' : ''}
                 onchange="saveGeneralField('${f.key}', ${f.type === 'number' ? 'Number(this.value)' : 'this.value'})" />
-              ${_inHint}
+              ${_inHint}${_zNoteHTML}
             </div>`;
           }
         }

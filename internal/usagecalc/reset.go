@@ -16,6 +16,15 @@ type ResetSpec struct {
 	Weekday time.Weekday `json:"weekday"`
 	Clock   string       `json:"clock"` // HH:MM, 24-hour
 	Zone    string       `json:"zone"`  // IANA name such as America/New_York
+
+	// ServerZone marks that Zone is the daemon's local zone: the operator
+	// left the zone unset and the reset follows the machine's clock, so the
+	// advice and the text forms render the zone with the "(server zone)"
+	// marker. FellBack marks that even the server's zone could not be
+	// resolved and Zone fell back to UTC; the advice carries a note telling
+	// the operator to set the zone explicitly then.
+	ServerZone bool
+	FellBack   bool
 }
 
 // resetAnchor is a ResetSpec resolved against one moment: the calendar date of the most

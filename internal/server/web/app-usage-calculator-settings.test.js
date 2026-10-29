@@ -150,3 +150,53 @@ test('the section renders its fields: policy labels, saved value selected, hints
   assert.ok(html.includes('Leave empty to keep the readings on this daemon.'), 'keeper hint missing');
   assert.ok(!html.includes('settings_usage_calculator_'), 'a raw locale key leaked into the markup');
 });
+
+test('an unset zone renders empty with the effective zone as placeholder and a server-zone note', async () => {
+  const holder = makeStubElement();
+  const sandbox = loadApp({ byId: { gcfg_usage_calculator: holder } });
+  sandbox.fetch = (url) => Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(url === '/api/config'
+      ? { usage: { calculator: { policy: 'pace', reset_zone: 'America/New_York', reset_zone_source: 'server' } } }
+      : {}),
+  });
+  vm.runInContext('loadGeneralConfig()', sandbox);
+  await flushAsync(30);
+  const html = String(holder.innerHTML || '');
+  // The zone input carries the save handler and the effective-zone
+  // placeholder, and the note says the reset follows this daemon's zone.
+  const zoneParts = html.split("saveGeneralField('usage.calculator.reset_zone', this.value)");
+  assert.ok(zoneParts.length > 1, 'the reset_zone field did not render');
+  const handlerAt = html.indexOf("saveGeneralField('usage.calculator.reset_zone', this.value)");
+  const fieldHtml = html.substring(Math.max(0, handlerAt - 600), handlerAt);
+  assert.match(fieldHtml, /placeholder="America\/New_York"/, 'effective zone placeholder: ' + fieldHtml);
+  assert.ok(html.includes('server zone'), 'server-zone note missing: ' + html);
+  // Saving with the input empty puts back empty, never a rewritten default.
+  const calls = [];
+  sandbox.fetch = (url, init) => {
+    calls.push({ url, init });
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+  };
+  vm.runInContext("saveGeneralField('usage.calculator.reset_zone', '')", sandbox);
+  await flushAsync();
+  assert.equal(calls.length, 1);
+  assert.deepEqual(JSON.parse(calls[0].init.body), { 'usage.calculator.reset_zone': '' });
+});
+
+test('a configured zone renders its saved value without the server-zone note', async () => {
+  const holder = makeStubElement();
+  const sandbox = loadApp({ byId: { gcfg_usage_calculator: holder } });
+  sandbox.fetch = (url) => Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(url === '/api/config'
+      ? { usage: { calculator: { policy: 'pace', reset_zone: 'UTC', reset_zone_source: 'configured' } } }
+      : {}),
+  });
+  vm.runInContext('loadGeneralConfig()', sandbox);
+  await flushAsync(30);
+  const html = String(holder.innerHTML || '');
+  assert.match(html, /value="UTC"/ , 'the pinned zone should be the input value: ' + html);
+  assert.ok(!html.includes('server zone'), 'configured zone wrongly shows the server-zone note');
+});

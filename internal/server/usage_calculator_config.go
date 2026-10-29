@@ -162,6 +162,10 @@ func applyUsageCalculatorPatchKey(c *config.UsageCalculatorConfig, fullKey strin
 			c.ResetTime = d.ResetTime
 		}
 	case "reset_zone":
+		// Keep "" as "": an empty zone means "follow the daemon's local zone
+		// at read time" and is resolved by EffectiveUsageResetZone, never
+		// rewritten to a stored default. An explicit zone ("UTC" included)
+		// is stored as-is and sticks.
 		if s := strings.TrimSpace(toString(v)); s != "" {
 			c.ResetZone = s
 		} else {
@@ -181,9 +185,18 @@ func applyUsageCalculatorPatchKey(c *config.UsageCalculatorConfig, fullKey strin
 }
 
 // usageCalculatorForDisplay renders the EFFECTIVE settings for GET
-// /api/config, so an unset config shows its defaults.
+// /api/config, so an unset config shows its defaults. The reset zone is the
+// effective one: the operator's set zone, or the daemon's local zone when the
+// operator left it unset (reset_zone_source "server"), or UTC when no zone
+// resolved (reset_zone_fell_back true). A set zone reads back as stored, so
+// resetting the key to "" goes through the PUT, never here.
 func usageCalculatorForDisplay(c config.UsageCalculatorConfig) map[string]interface{} {
 	e := config.EffectiveUsageCalculator(c)
+	zone, serverZone, fellBack := config.EffectiveUsageResetZone(c)
+	source := "configured"
+	if serverZone {
+		source = "server"
+	}
 	return map[string]interface{}{
 		"variant":              e.Variant,
 		"policy":               e.Policy,
@@ -193,7 +206,9 @@ func usageCalculatorForDisplay(c config.UsageCalculatorConfig) map[string]interf
 		"max_lanes":            e.MaxLanes,
 		"reset_weekday":        e.ResetWeekday,
 		"reset_time":           e.ResetTime,
-		"reset_zone":           e.ResetZone,
+		"reset_zone":           zone,
+		"reset_zone_source":    source,
+		"reset_zone_fell_back": fellBack,
 		"keeper":               e.Keeper,
 	}
 }

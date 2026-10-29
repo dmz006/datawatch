@@ -10863,6 +10863,17 @@ func runConfigGet(cfg *config.Config, key string) error {
 	if v == nil {
 		return fmt.Errorf("config key %q not found", key)
 	}
+	// usage.calculator.reset_zone: when the operator left the zone unset,
+	// the effective value is the daemon's local zone and the display marks
+	// that source so the operator knows it follows the server, not the config.
+	if key == "usage.calculator.reset_zone" {
+		if zone, ok := v.(string); ok {
+			if src, ok2 := lookupConfigKey(full, "usage.calculator.reset_zone_source").(string); ok2 && src == "server" {
+				fmt.Println(zone + " (server zone)")
+				return nil
+			}
+		}
+	}
 	out, _ := json.MarshalIndent(v, "", "  ")
 	fmt.Println(string(out))
 	return nil

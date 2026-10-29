@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -96,6 +97,63 @@ func TestUsageCalcAdviceErrorPaths(t *testing.T) {
 		if rr := doUsage(t, s, http.MethodGet, c.req, "", s.handleUsageAdvice); rr.Code != c.want {
 			t.Errorf("%s: %d, want %d: %s", c.name, rr.Code, c.want, rr.Body.String())
 		}
+	}
+}
+
+// TestUsageCalcAdviceServerZone pins the server-zone markers end to end:
+// the zone unset, the host zone faked via TZ, so the served advice reports
+// the effective zone with server_zone true both in the numbers and in both
+// text forms, and the config endpoint marks the same answer as server-sourced.
+func TestUsageCalcAdviceServerZone(t *testing.T) {
+	t.Setenv("TZ", "America/New_York")
+	s := newUsageCalcServer(t)
+	if rr := doUsage(t, s, http.MethodPost, "/api/usage/readings",
+		jsonMarshalUsage(t, usagecalc.Reading{At: time.Now().UTC().Add(-time.Hour), Percent: fptrUsage(61.5), Source: usagecalc.SourceTyped}), s.handleUsageReadings); rr.Code != http.StatusOK {
+		t.Fatalf("POST reading = %d: %s", rr.Code, rr.Body.String())
+	}
+	rr := doUsage(t, s, http.MethodGet, "/api/usage/advice", "", s.handleUsageAdvice)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET advice = %d: %s", rr.Code, rr.Body.String())
+	}
+	var res usagecalc.AdviceResult
+	if err := json.Unmarshal(rr.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode advice: %v", err)
+	}
+	if res.Advice.Zone != "America/New_York" || !res.Advice.ServerZone {
+		t.Errorf("advice zone/server_zone = %q/%v, want America/New_York/true", res.Advice.Zone, res.Advice.ServerZone)
+	}
+	for name, form := range map[string]string{"cli": res.Text.CLI, "comm": res.Text.Comm} {
+		if !strings.Contains(form, "(server zone)") {
+			t.Errorf("%s form lacks the server-zone marker:\n%s", name, form)
+		}
+		if strings.Contains(form, "fell back to UTC") {
+			t.Errorf("%s form carries a fallback note it should not:", name)
+		}
+	}
+	got := usageCalcGet(t, s)
+	if got["reset_zone"] != "America/New_York" || got["reset_zone_source"] != "server" || got["reset_zone_fell_back"] != false {
+		t.Errorf("config block = %#v, want the same server zone marked as such", got)
+	}
+
+	// An explicit zone pins the advice too and clears the marker. A second,
+	// file-backed server: the config PUT needs a config path to persist to.
+	s2 := newUsageCalcServer(t)
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	s2.cfgPath = cfgPath
+	putJSON(t, s2.handlePutConfig, "/api/config", map[string]any{usageCalcPrefix + "reset_zone": "Europe/London"})
+	rr = doUsage(t, s2, http.MethodGet, "/api/usage/advice", "", s2.handleUsageAdvice)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET advice = %d: %s", rr.Code, rr.Body.String())
+	}
+	var res2 usagecalc.AdviceResult
+	if err := json.Unmarshal(rr.Body.Bytes(), &res2); err != nil {
+		t.Fatalf("decode advice: %v", err)
+	}
+	if res2.Advice.Zone != "Europe/London" || res2.Advice.ServerZone {
+		t.Errorf("advice zone/server_zone = %q/%v, want Europe/London/false", res2.Advice.Zone, res2.Advice.ServerZone)
+	}
+	if strings.Contains(res2.Text.CLI, "(server zone)") {
+		t.Errorf("pinned form still carries the server-zone marker:\n%s", res2.Text.CLI)
 	}
 }
 

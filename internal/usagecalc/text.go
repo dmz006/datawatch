@@ -150,6 +150,9 @@ func readLine(ad Advice) string {
 	reset := "not set"
 	if ad.NextResetAt != nil {
 		reset = clockStr(*ad.NextResetAt)
+		if ad.ServerZone {
+			reset += " (server zone)"
+		}
 	}
 	return fmt.Sprintf("usage: %s%% read %s, reset %s (%s days left)",
 		txtPoints(ad.Percent),
