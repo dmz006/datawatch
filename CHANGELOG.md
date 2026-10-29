@@ -20,6 +20,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.35.0 — Operator decisions and the design-point gate
+
+### Added
+
+- **Operators can make an Automaton task wait for their answer.** A decision now has an id and, once answered, your words quoted exactly as you wrote them. A task whose spec names an open decision is kept from starting, says why in one sentence, and starts by itself the moment the decision is answered. The gate begins in shadow mode: it only records what it would have held, so you can watch it before you switch it on. You can read the decisions, their answers and the tasks waiting on them over REST, MCP, the CLI, chat and the web UI.
+
 ## v9.34.3 — Open-model matrix on pi workers only
 
 ### Changed
