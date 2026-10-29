@@ -33,3 +33,5 @@ Further rows are added as the run goes on: completion and advance, what the Auto
 
 
 - 2026-10-29 10:37: when the PRD record of a finished member is cancelled after the ship, the Automation turns `blocked` ("member cancelled outside the Automation") instead of completed, so it needs a manual cancel. The coordinator does not merge or ship, so the ship-then-cancel order of the merge procedure always ends this way. Same defect as the earlier cancel finding; completing the member on ship would remove it.
+
+- 2026-10-29 15:33: the auto-fix task generated from a rules-review verdict on the hung-request PRD again quoted absolute paths (the home directory) from the findings, so the scope lint refused to spawn it and the PRD failed with its Automation blocked. Fixed by rewriting the task spec without the paths and resetting the task. The generator should paraphrase paths the way it should paraphrase throttle phrases; the reopened PRD is not followed by its blocked Automation, so the Automation needs a manual cancel when the PRD ends.
