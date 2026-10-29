@@ -482,6 +482,20 @@ def cmd_create_prd(a):
         save_state(m, a.run_id, st)
         log(f"task {tid} <- {cell['name']}")
     prd_set_title(c, pid, f"{TITLE_PREFIX} {a.run_id}")
+    # r8 run-3 lesson (8 of 20 cells lost): the file-drift guard compared the
+    # cells' own commits against the PRD project pinned at creation (this whole
+    # checkout) and refused the spec-required commit of review-verdict.json —
+    # the verdicts were missing, workers' work was dropped, and those cells
+    # produced no model result. Pin the PRD write scope to exactly the cell
+    # dirs (absolute, as the daemon requires; per internal/autonomous/scope.go,
+    # EffectiveTaskReadDirs includes the write dirs, so reads on them come
+    # free), so the spec-required commits land instead of tripping drift
+    # detection.
+    abs_cell_dirs = [os.path.realpath(os.path.join(REPO, st["cells"][x["name"]]["dir"])) for x in want]
+    prd_action(c, pid, "set_dirs", {"read_dirs": abs_cell_dirs, "write_dirs": abs_cell_dirs, "actor": ACTOR})
+    st["set_dirs"] = abs_cell_dirs
+    save_state(m, a.run_id, st)
+    log(f"PRD dirs pinned to {len(abs_cell_dirs)} cell dirs (drift guard accepts the cell commits)")
     prd = prd_get(c, pid)
     tasks = {t["id"]: t for (_, _, _, t) in all_tasks(prd)}
     errs = []
@@ -543,6 +557,29 @@ def session_model(sess):
     return sess.get("model") or None
 
 
+def session_by_id(c, sid):
+    """Resolve one session by its (full) id via a bare GET /api/sessions/{id}
+    (internal/server/api.go: handleSessionSubpath -> GetSessionOrArchived). The
+    /api/sessions list response is trimmed (last-N window): by collect time the
+    worker and verifier sessions are usually long terminal, so they need not
+    appear in the list even though they are still resolvable by id — that gap
+    is what cost eight cells their used_model / integrity signal after the run
+    of 2026-10-28 (r8). The direct id GET is the primary path; only when it
+    404s (session gone from the store too) do we fall back to the list, so
+    `None` still means 'gone from the daemon' and collect notes it."""
+    if not sid:
+        return None
+    try:
+        data = c.get(f"/api/sessions/{sid}")
+    except EvalError as e:
+        if "HTTP 404" not in str(e):
+            raise  # 404 means 'not found'; anything else is a real error — don't mask it
+        log(f"session {sid} not found by id (404); falling back to the sessions list")
+        idx, _ = sessions_index(c)
+        return idx.get(sid)
+    return data if isinstance(data, dict) and (data.get("id") or data.get("full_id")) else None
+
+
 def artifact_check(cell_dir, baseline_commit, verify_script, log_path):
     """Independent of the daemon: new commit(s) in the cell's own repo + per-type verifier exit."""
     out = {"cell_repo_head": None, "new_commits": None, "verify_exit": None}
@@ -589,13 +626,32 @@ def build_cell_row(cell, cell_dir, task, worker_sess, verifier_sess, used_model,
             self_rep = f.read().strip()[:200] or None
     if art.get("new_commits") == 0:
         notes.append("no new commit beyond baseline in cell repo")
+    # A failed worker is not a model outcome. The pi one-shot wrapper emits the
+    # completion marker only on a clean exit with output — a non-zero exit or
+    # an empty run emits a failure marker instead (enforced by the pi backend
+    # Go tests' non-zero-exit and zero-exit-no-output cases), the daemon flips
+    # the session to 'failed' and records a non-zero failure_exit_code, and
+    # the task never reaches 'completed'. If the driver sees any of those
+    # indicators, the cell is an infrastructure failure: keep the evidence on
+    # the row, but never a pass/fail model_result.
+    failed_status = (task or {}).get("status") in ("failed", "blocked", "cancelled")
+    failed_session = worker_sess is not None and (
+        worker_sess.get("state") in ("failed", "killed")
+        or int(worker_sess.get("failure_exit_code") or 0) != 0)
+    if failed_status or failed_session:
+        notes.append("worker did not complete (task "
+                     + repr((task or {}).get("status"))
+                     + ", session state " + repr((worker_sess or {}).get("state"))
+                     + ", failure_exit_code " + repr((worker_sess or {}).get("failure_exit_code"))
+                     + ") — invalid cell: infrastructure failure, not a model result")
+    model_result = None if (failed_status or failed_session) else classify_result(identity, integrity, art.get("verify_exit"))
     return {
         "role": cell["role"], "llm": cell["llm"], "task_type": cell["task_type"],
         "expected_model": cell["expected_model"], "used_model": used_model, "model_identity": identity,
         "self_reported_model": self_rep, "verification_integrity": integrity,
         "resolved_dir": _real(resolved), "task_project_dir": tpd, "artifact_check": art,
         "thinking_level": cell.get("thinking_level"),
-        "model_result": classify_result(identity, integrity, art.get("verify_exit")),
+        "model_result": model_result,
         "task_status": (task or {}).get("status"), "session_id": (task or {}).get("session_id"),
         "notes": "; ".join(notes),
     }
@@ -608,15 +664,18 @@ def cmd_collect(a):
     c = Client()
     pid, prd = assert_scratch(c, st)
     tasks = {t["id"]: t for (_, _, _, t) in all_tasks(prd)}
-    sidx, _ = sessions_index(c)
     fallback = {}
     rows = []
     for cell in cells(m):
         sc = st["cells"].get(cell["name"]) or {}
         t = tasks.get(sc.get("task_id")) or {}
-        ws = sidx.get(t.get("session_id")) if t.get("session_id") else None
+        # Resolve the worker / verifier sessions by id (direct GET), not via
+        # the sessions list; the list fallback lives inside session_by_id and
+        # fires only on a 404, so `None` here means the session is genuinely
+        # gone from the daemon.
+        ws = session_by_id(c, t.get("session_id"))
         vid = (t.get("verification") or {}).get("verifier_id")
-        vs = sidx.get(vid) if vid else None
+        vs = session_by_id(c, vid)
         used, source = session_model(ws), "session_record.model"
         if used is None:
             if cell["llm"] not in fallback:
@@ -756,6 +815,52 @@ def cmd_self_test(_a):
         r = build_cell_row(cell, cdir, task, ws, None, "qwen3:1.7b", "session_record.model",
                            {"verify_exit": 1, "new_commits": 0})
         check(r["model_result"] == "fail", "missing artifact -> fail")
+        r = build_cell_row(cell, cdir, {**task, "status": "failed"},
+                           {"project_dir": cdir, "state": "failed", "failure_exit_code": 2},
+                           None, "qwen3:1.7b", "session_record.model", good_art)
+        check(r["model_result"] is None and "not a model result" in r["notes"],
+              "failed worker (task failed + session failed + non-zero exit) -> invalid cell, never pass/fail")
+        r = build_cell_row(cell, cdir, {**task, "status": "blocked"}, None, None, "qwen3:1.7b",
+                           "session_record.model", good_art)
+        check(r["model_result"] is None and "not a model result" in r["notes"],
+              "blocked task (e.g. the drift guard in r8) -> invalid cell, never pass/fail")
+
+        role0model = m["roles"][0]["model"]
+        class HitClient:
+            """Direct id GET succeeds; anything else (incl. the list) must not be touched."""
+            def __init__(self):
+                self.calls = []
+            def get(self, path, timeout=None):
+                self.calls.append(path)
+                if path == "/api/sessions/host-1":
+                    return {"id": "h1", "full_id": "host-1", "state": "complete", "model": role0model}
+                raise AssertionError(f"unexpected GET {path} on a direct hit")
+        hc = HitClient()
+        hit = session_by_id(hc, "host-1")
+        check((hit or {}).get("model") == role0model and hc.calls == ["/api/sessions/host-1"],
+              "session_by_id resolves via the direct id GET without touching the sessions list")
+        class MissClient:
+            """Direct id GET 404s; only then may the sessions list be consulted."""
+            def get(self, path, timeout=None):
+                if path == "/api/sessions/host-9":
+                    raise EvalError("GET /api/sessions/host-9: HTTP 404: 404 page not found")
+                if path == "/api/sessions":
+                    return {"sessions": [{"id": "h9", "full_id": "host-9", "state": "complete",
+                                          "model": "qwen3:1.7b"}]}
+                raise AssertionError(f"unexpected GET {path}")
+        check((session_by_id(MissClient(), "host-9") or {}).get("model") == "qwen3:1.7b",
+              "404 on the direct GET falls back to the sessions list")
+        class Other4xx:
+            def get(self, path, timeout=None):
+                raise EvalError("GET /api/sessions/host-1: HTTP 502: bad gateway")
+        try:
+            session_by_id(Other4xx(), "host-1")
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok, "non-404 lookup errors propagate instead of being read as 'session gone'")
+        check(session_by_id(MissClient(), None) is None and session_by_id(MissClient(), "") is None,
+              "no id -> None without any network call")
 
         rows = [preflight_row(x, resp={"used_model": x["model"]}) for x in m["roles"]]
         check(preflight_passed({"preflight": {"rows": rows, "passed": True}}), "matching preflight passes")
