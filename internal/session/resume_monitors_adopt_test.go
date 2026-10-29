@@ -205,6 +205,11 @@ func TestResumeMonitorsAdopts_RealSummaryStillCompletes(t *testing.T) {
 	if cur.State != StateComplete {
 		t.Errorf("real completion not detected after adoption: state=%q, want %q", cur.State, StateComplete)
 	}
+	// The state flips to complete before the end callback runs; wait for it
+	// instead of reading the counter at the instant the state changed.
+	for wait := time.Now().Add(3 * time.Second); ended.Load() == 0 && time.Now().Before(wait); {
+		time.Sleep(20 * time.Millisecond)
+	}
 	if ended.Load() == 0 {
 		t.Error("onSessionEnd not called for a real completion")
 	}
