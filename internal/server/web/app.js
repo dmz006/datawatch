@@ -28399,11 +28399,12 @@ function _automationPendingInsertsHTML(a) {
   const rows = pending.map(p => {
     const label = String(p.name || p.prd_id || p.id || '');
     const by = p.actor ? `<span class="automation-pending-insert-by">${escHtml(t('automation_pending_insert_by', [p.actor]))}</span>` : '';
+    const ids = `<span class="automation-pending-insert-ids">${escHtml(t('automation_pending_insert_ids', [p.id, p.prd_id]))}</span>`;
     const reason = p.reason ? `<span class="automation-pending-insert-reason">${escHtml(p.reason)}</span>` : '';
     const approve = _AUTOMATION_EDITABLE_STATUSES.includes(String(a.status || ''))
       ? `<button type="button" class="btn-secondary automation-approve-insert" data-insert-id="${escHtml(p.id)}" onclick="automationApproveInsert('${escJsAttr(p.id)}')">${escHtml(t('automation_approve_insert'))}</button>`
       : '';
-    return `<li class="automation-pending-insert" data-insert-id="${escHtml(p.id)}"><span class="automation-pending-insert-name">${escHtml(label)}</span>${by}${reason}${approve}</li>`;
+    return `<li class="automation-pending-insert" data-insert-id="${escHtml(p.id)}"><span class="automation-pending-insert-name">${escHtml(label)}</span>${by}${ids}${reason}${approve}</li>`;
   }).join('');
   return _automationDetailSection('automation_pending_inserts', `<ul class="automation-pending-inserts">${rows}</ul>`);
 }

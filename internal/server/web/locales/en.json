@@ -2127,6 +2127,7 @@
   "automation_join_waiting": "Join waiting: %1$d of %2$d branches finished",
   "automation_pending_inserts": "Pending inserts",
   "automation_pending_insert_by": "Requested by %1$s",
+  "automation_pending_insert_ids": "Member %1$s · Automaton %2$s",
   "automation_decisions": "Recent decisions",
   "automation_member_details": "Details",
   "automation_member_drawer_title": "Member details",

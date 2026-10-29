@@ -2127,6 +2127,7 @@
   "automation_join_waiting": "合流待ち: %1$d / %2$d ブランチが完了",
   "automation_pending_inserts": "保留中の挿入",
   "automation_pending_insert_by": "依頼者: %1$s",
+  "automation_pending_insert_ids": "メンバー %1$s · Automaton %2$s",
   "automation_decisions": "最近の判断",
   "automation_member_details": "詳細",
   "automation_member_drawer_title": "メンバーの詳細",
