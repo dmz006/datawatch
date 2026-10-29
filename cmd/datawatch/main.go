@@ -6619,6 +6619,14 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						}
 					}
 					httpServer.SetQuestions(qstore)
+					// Question-raise notification (the "notify" legs beside the
+					// channel): the server dispatches non-blockingly on each
+					// successful raise — WS broadcast for the PWA, this fan-out to
+					// the active messaging groups (same notify_exclude rules as the
+					// lifecycle CommSink), and a high-priority-only alert. The
+					// autonomous.questions switch and the notify_* toggles are
+					// read live per raise, so nothing here fires while off.
+					httpServer.SetQuestionRaiseNotifier(questionRaiseNotifier{routers: routers, cfg: cfg})
 				}
 				// BL427 (phase 5) — POST /api/autonomous/events/forward: a peer's
 				// forwarded event is re-emitted into this daemon's dispatcher.

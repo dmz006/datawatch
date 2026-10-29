@@ -506,6 +506,10 @@ type Server struct {
 	// backing /api/questions. Wired from main.go alongside the daemon's
 	// data; nil (default) makes the handlers return 503.
 	questionStore QuestionsAPI
+	// questionRaiseNotifier — the raise fan-out to the messaging group,
+	// wired by main.go via SetQuestionRaiseNotifier; nil (default) = no
+	// messaging fan-out (the WS + alert parts do not need it).
+	questionRaiseNotifier QuestionRaiseNotifier
 	// mcp_queue sink read side for /api/autonomous/events; nil → 503.
 	autonomousEvents PendingEventsAPI
 	// BL427 phase 5 — receiving side of peer forwarding for

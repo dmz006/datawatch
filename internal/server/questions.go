@@ -324,6 +324,13 @@ func (s *Server) handleQuestionRaise(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]any{"question": raised})
+
+	// Fan-out: WS broadcast + messaging group + (high priority, on and in
+	// range) an alert. Reads the switch/toggles live, non-blocking, and a
+	// no-op when the operator is in a non-interactive state or if the
+	// channel is off. The raise is already persisted and on its way back
+	// out as the 201 response, so none of this can delay or fail it.
+	s.notifyQuestionRaised(raised)
 }
 
 // handleQuestionList implements GET /api/questions.
