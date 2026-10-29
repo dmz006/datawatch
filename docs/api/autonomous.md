@@ -954,6 +954,14 @@ the state has already moved.
   when no cursor is active. A client that draws a fork/join Automation
   should read `active_cursors` and `join_wait`, not `current_member_id`
   alone.
+- `pending_members` counts members not yet started plus every held
+  pending insert. When at least one insert is held, the row also carries
+  an optional `pending_inserts` list: one entry per pending insert with
+  the same fields as the Automation record's `pending_inserts` (`id`,
+  `prd_id`, `name`, `urgent`, `after_member_id`, `actor`, `reason`,
+  `added_at`, `status`), omitted when there are none. The change is
+  additive, so Android and iOS keep reading `pending_members` unchanged;
+  `pending_inserts` is simply a new optional field on the row.
 
 ```json
 {
@@ -1192,7 +1200,10 @@ belong to another Automation that has not ended.
   the insert is always held as a **pending insert**: it appears in the
   Automation's `pending_inserts` (`id`, `prd_id`, `name`, `urgent`,
   `after_member_id`, `actor`, `reason`, `added_at`, `status: pending`),
-  and the Automation keeps advancing without it. It enters the graph, at
+  and the Automation keeps advancing without it. It is also visible on the
+  Automation's `GET /api/autonomous/status` row: `pending_members` counts
+  it, and the optional `pending_inserts` list carries it (see **Status**),
+  until approved. It enters the graph, at
   the position reserved for it, when the operator calls `approve_insert`
   with `member_id` set to the pending insert's `id`. The endpoint requires
   a `reason`. A `completed` or `cancelled` Automation refuses an insert.
