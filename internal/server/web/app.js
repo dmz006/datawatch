@@ -1064,7 +1064,7 @@ function listLoader(opts) {
   const now = opts.now || (() => Date.now());
   const doFetch = opts.fetch || ((u, o) => apiFetch(u, o));
   const st = {
-    key, seq: 0, ctrl: null, loading: false, loadedOnce: false, data: null, hasData: false,
+    key, opts, seq: 0, ctrl: null, loading: false, loadedOnce: false, data: null, hasData: false,
     at: 0, fromCache: false, error: '', pollTimer: null, tickTimer: null, stopped: false,
   };
   const cached = _listCacheRead(key);

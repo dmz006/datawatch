@@ -110,12 +110,19 @@ test('v1 question-queue: card renders open questions with escaped hostile text',
     };
     const ctl = vmmod.runInContext('_automationQuestionsLoader()', s2);
     await ctl.load();
-    const html = ctl.html();
+    const disabledDiv = '<div style="color:var(--text2);">' + en.automation_questions_disabled + '</div>';
+    // Render contract: the 503 sentinel paints exactly the disabled text —
+    // no rows, no failed banner.
     assert.equal(
-      html,
-      '<div style="color:var(--text2);">' + en.automation_questions_disabled + '</div>',
-      'disabled state shows exactly the disabled text, nothing else: ' + html
+      vmmod.runInContext('window.questionsCardHtml({ __automationQuestionsDisabled: true })', s2),
+      disabledDiv,
+      'disabled render is exactly the disabled text'
     );
+    const html = ctl.html();
+    assert.ok(ctl.state.data && ctl.state.data.__automationQuestionsDisabled, '503 resolved to the disabled sentinel: ' + JSON.stringify(ctl.state.data));
+    assert.ok(html.includes(disabledDiv), 'card body shows the disabled text: ' + html);
+    assert.ok(!html.includes('questions-queue-row'), 'no rows in the disabled state');
+    assert.ok(!html.includes('list-state-failed'), 'not an error state');
     assert.ok(calls.length >= 1, 'the disabled state came from a GET');
     assert.ok(calls.every(c => c.method === 'GET'), 'the card never POSTs: ' + JSON.stringify(calls));
     ctl.stop();
@@ -177,33 +184,44 @@ test('v1 question-queue: card renders open questions with escaped hostile text',
     vmmod.createContext(s7);
     loadScript(APP_JS, s7);
     s7._i18n.bundle = en;
+    // A hidden page does not poll (app.js gates polling on visibility), so
+    // the only re-requests below come from the search commit itself.
+    s7.document.visibilityState = 'hidden';
     const urls = [];
     s7.fetch = (url, o) => { urls.push(String(url)); return okList([q({})]); };
     s7.setTimeout = (fn, ms) => setTimeout(fn, Math.min(ms, 300));
     s7.clearTimeout = (id) => clearTimeout(id);
     const ctl = vmmod.runInContext('_automationQuestionsLoader()', s7);
-    await ctl.load();
-    const before = urls.length;
-    vmmod.runInContext("onAutomationQuestionsSearchInput('gpu'); onAutomationQuestionsSearchInput('gpu-q')", s7);
-    await new Promise(r => setImmediate(r));
-    await new Promise(r => setImmediate(r));
-    assert.equal(urls.length, before, 'no request per keystroke: ' + JSON.stringify(urls));
-    await new Promise(r => setTimeout(r, 450));
-    await flushAsync(6);
-    assert.equal(urls.length, before + 1, 'exactly one re-request after the pause: ' + JSON.stringify(urls));
-    assert.ok(urls[before].includes('/api/questions?state=open&limit=50&text=gpu-q'),
-      'the paused search committed the current value: ' + JSON.stringify(urls));
-    ctl.stop();
+    try {
+      await ctl.load();
+      const before = urls.length;
+      vmmod.runInContext("onAutomationQuestionsSearchInput('gpu'); onAutomationQuestionsSearchInput('gpu-q')", s7);
+      await new Promise(r => setImmediate(r));
+      await new Promise(r => setImmediate(r));
+      assert.equal(urls.length, before, 'no request per keystroke: ' + JSON.stringify(urls));
+      await new Promise(r => setTimeout(r, 450));
+      await flushAsync(6);
+      assert.equal(urls.length, before + 1, 'exactly one re-request after the pause: ' + JSON.stringify(urls));
+      assert.ok(urls[before].includes('/api/questions?state=open&limit=50&text=gpu-q'),
+        'the paused search committed the current value: ' + JSON.stringify(urls));
+    } finally {
+      ctl.stop(); // never leak the (real, host-side) poll/search timers
+    }
   });
 
   test('window.refreshAutomationQuestions is exposed for the live refresh task', async () => {
     const s8 = loadApp();
     assert.equal(typeof s8.refreshAutomationQuestions, 'function', 'refreshAutomationQuestions exposed');
-    let hits = 0;
-    s8.fetch = () => { hits += 1; return okList([q({})]); };
-    s8.refreshAutomationQuestions();
-    await flushAsync(6);
-    assert.equal(hits, 1, 'refresh re-requests the queue');
+    const ctl = vmmod.runInContext('_automationQuestionsLoader()', s8);
+    try {
+      let hits = 0;
+      s8.fetch = () => { hits += 1; return okList([q({})]); };
+      s8.refreshAutomationQuestions();
+      await flushAsync(6);
+      assert.equal(hits, 1, 'refresh re-requests the queue');
+    } finally {
+      ctl.stop();
+    }
   });
 
   test('the card sits in the Automation body beside the other cards', () => {
