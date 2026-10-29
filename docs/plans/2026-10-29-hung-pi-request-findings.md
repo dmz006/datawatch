@@ -225,3 +225,157 @@ logs or server-side request records were available through any sanctioned interf
    cmd/datawatch/exit_silence_wait.go; the descendant-only detector of PRD f3420001 in
    cmd/datawatch/descendant_stall_wait.go) did not fire earlier — the daemon log window is
    rotated (gap 1) and no other record of those decisions survives.
+
+
+## Generation limit
+
+No generation limit is sent on the pi-prompt → node request path — no `num_predict`,
+no `max_tokens`, no equivalent field, anywhere in the launch machinery. The complete
+launch the daemon builds is
+
+    pi --print --mode text --approve --model '<provider/model>' [--thinking <level>] '<task>'
+
+assembled by `buildLaunchCmdWithAgentDir` in `internal/llm/backends/pi/backend.go`.
+The only tunables that travel with the request are `--model` (mandatory — an empty
+model is refused by `ErrNoModel` in the same file) and `--thinking`
+(`off|minimal|low|medium|high`), which sets pi's *thinking level*, not a length cap.
+The request body itself is constructed by pi (`github.com/earendil-works/pi`), outside
+this repo: the daemon hands it a per-session agent directory whose only mutation is
+`nodeHostProviderTable` (`internal/llm/backends/pi/backend.go`), and that function
+replaces exactly one key of the named provider entry, `baseUrl`
+(`nodeBaseURL` = node address + `/v1`), leaving every other key of the table untouched.
+So any output-length cap in the final `/api/chat` body (Ollama's field for it is
+`num_predict`) comes from pi's own defaults or from the operator's `models.json`,
+never from datawatch code. Repository-wide, the string `num_predict` appears in no Go
+file; `max_tokens` appears only in unrelated daemon-owned adapters that are not on the
+pi → node path — `internal/inference/adapters/claude.go` (4096 for the Claude
+adapter), `internal/vision/service.go` (512), and `internal/mcp/sampling.go` (a
+sampling-trigger field). The daemon's own Ollama backend
+(`internal/llm/backends/ollama/backend.go`, `Launch`) is likewise just
+`ollama run <model>` with no token cap, and the one Ollama HTTP body the daemon
+constructs — the model-load request in `internal/inference/model_load.go`
+(`requestLoad`) — carries `keep_alive` (`loadKeepAlive = "10m"`), which is a
+resident-model retention, not a generation length. Net: the daemon neither caps nor
+relaxes the output length of the hung request; the exact limit field is whatever pi
+chose, and datawatch sends none.
+
+## Why the detectors stayed quiet
+
+The worker in the hung window had exactly the shape the code calls out as "running":
+a live pi runner process, zero work descendants ("pi generates or stalls with no child
+process at all", per the `hasLiveChildProcess` doc in
+`cmd/datawatch/session_idle_probe.go`), an open socket to the node, and no output,
+because a one-shot run writes nothing until it completes (the `staleWorkerAppliesTo`
+comment in `cmd/datawatch/stale_worker.go`). Every detector's fire condition is
+*runner death + silence*, *children + silence*, *state flip + stale output*, or
+*error text + family match* — none of which that shape satisfies. Detector by
+detector, the signal and the condition under which it stays quiet:
+
+- **Session-idle detector** — `internal/autonomous/session_idle.go`
+  (`SessionIdleObservation.Stalled`), evaluated from the wait loop in
+  `cmd/datawatch/main.go` (the `idleFor > idleLimit` block). Signals: pane wait-state
+  (`waiting_input`/`idle`), `HasLiveChildProcess` — for pi-prompt that probe is
+  `hasLiveRunnerProcess`, per `idleLivenessProbe` in `cmd/datawatch/exit_silence_wait.go` —
+  idle duration, pane-log age (`OutputAge`), and the pi session-log age.
+  `Stalled()` returns false while the runner is alive; a live, wedged, output-less pi
+  is "live" in exactly this sense, so the detector sits out the whole hang and is only
+  the last thing that ends the session once its gates align (it is the caller that
+  actually ended both incident sessions, per the Gaps section).
+- **pi session-log age** — `piLogLastEventAge`, `cmd/datawatch/pi_log_age.go`.
+  Signal: age of the last event in the pi session log under the agent directory.
+  It is *not a detector* — it feeds `SessionIdleObservation.LogLastEventAge`
+  (`main.go`, idle-evidence block). During a wedged first request the initial events'
+  age simply grows (or it reads 0 if no log is found), and on its own it never ends
+  anything. Guard: pi families only.
+- **Exit-silence** — `cmd/datawatch/exit_silence_wait.go` +
+  `internal/autonomous/exit_silence.go` (pi-prompt only, same limit budget as the
+  idle limit, `main.go` idle setup). Signal: `hasLiveRunnerProcess` + tmux-log mtime.
+  `Observe` returns "not stalled" on every tick while `runnerAlive` — a wedged pi is
+  alive, so its clock is reset forever; by design this detector catches the opposite
+  state, "pi finished and emitted nothing".
+- **Descendant stall (PRD f3420001)** — `cmd/datawatch/descendant_stall_wait.go` +
+  `internal/autonomous/descendant_stall.go`, default 2700 s
+  (`internal/config/descendant_stall.go`). Signal: number of *work* descendants
+  (MCP/channel servers excluded), log mtime, newest workdir mtime. `Observe` returns
+  not-stalled whenever `workDescendants == 0`. A wedged pi with no work children
+  matches "zero descendants" and is explicitly the case built *not* to fire: the
+  detector targets "runner exited with a hung child", the inverse of a live wedged
+  runner.
+- **stale-worker log-mtime** — `staleWorkerCheck`, `cmd/datawatch/stale_worker.go`.
+  Signal: tmux log file mtime. `staleWorkerAppliesTo` excludes pi-prompt on purpose
+  because `pi --print` produces no tmux log before it completes, so the file is silent
+  by construction. `main.go` still calls the check, but only to populate `OutputAge`
+  for the idle observation — it cannot kill the session itself for this family.
+- **SSE stall** — `cmd/datawatch/sse_stall.go`. Signal: a fresh provider-error line in
+  the pane (the `sseStallPatterns` list: `SSE Timeout`, `connection refused`, ...).
+  Double-quiet: `sseStallAppliesTo` gates the detector to opencode* families (the
+  comment states pi-prompt is deliberately out), and a wedged pi emits no lines at
+  all, so there is no candidate text to match either.
+- **One-shot no-output** — `internal/autonomous/one_shot_no_output.go`. Not a live
+  detector: `OneShotNoOutputError` is the error type for one-shot decompose/verify
+  sessions that have *already terminated* (timeout or terminal) with no output file.
+  A hung session with an open connection never reaches that branch, so by
+  construction it is silent during the hang.
+- **Probe layer** — `cmd/datawatch/session_idle_probe.go`: `hasLiveChildProcess` /
+  `hasLiveRunnerProcess`. Not a detector, but the substrate: the child probe
+  documents that an idle worker's runner stays alive and a live runner is not
+  "work", and every probe failure reports false, so liveness is the one fact these
+  paths treat as progress.
+- **Verifier no-progress watchdog** — `internal/autonomous/verifier_watchdog.go` +
+  `internal/config/verifier_no_progress_timeout.go` (default 900 s, normalized via
+  `session_judgment.go`). Signals: output file present, pane marker change,
+  `RunnerAlive`, `ActiveRequest`, capacity-slot state. `Decide` counts `RunnerAlive`
+  as fresh progress and resets the clock each tick, so a live wedged validator pi
+  also keeps this watchdog quiet; `ActiveRequest` (model loaded and serving at probe
+  time) is the only signal in the set that touches the node side, and it is about
+  the model being resident, not about the request in flight.
+
+Common thread: across all nine, "runner still alive" is counted as evidence of
+work, and no detector reads the socket, the node, or the request in flight. The
+wedged state — request admitted, zero tokens, socket open, both ends alive — matches
+none of the fire conditions, which is why nothing fires during the hang and the
+session-idle detector is the only path that eventually ends it.
+
+## Explanation
+
+Of the three candidate mechanisms, the evidence in the preceding Evidence and
+Runner-and-model-state sections supports **client-side wait on a wedged model
+instance** — the pi clients blocked reading a response the node's qwen instance
+never produced — and it rules out the other two on the recorded facts. Runaway
+generation is refuted by the node-side window: ~0% CPU and ~0% utilization (per the
+Runner and model state section and gap 4 on metrics resolution), and by the pane
+record — across hours, no session in either log shows any model output during the
+wedged window, which a generating instance would stream through `tee` into the pane
+(the pi-prompt launch tees stdout, `buildLaunchCmdWithAgentDir` in
+`internal/llm/backends/pi/backend.go`). A wedged-runner hypothesis — the pi process
+or its event loop itself broken, independent of the node — is not supported either:
+a fresh 5-token probe from a different client times out on the same pinned model
+while a sibling model on the same node answers in ~7 s (Runner and model state), so
+the wedge is per model instance, not per client process; and recovery came from the
+node side (unload/reload of the instance), not from anything done to the clients.
+The instance-wedge is also why the detectors stayed quiet: every fire condition in
+`internal/autonomous` (see the previous section) keys off liveness, descendants,
+log mtimes, state, or error text — all of which a "request admitted, zero tokens,
+socket open, both ends alive" state satisfies as benign. What the current evidence
+cannot confirm, needed to distinguish the three cleanly: (1) an Ollama
+server-side request/connection log for the qwen instance — whether pi's request was
+in-flight/queued there at all (gap 2: the server log is a separate concern) — which
+separates "request wedged on the node" from "client waiting for a request that is
+not on the node"; (2) node-side socket state during the wedged window (packet
+capture or TCP stats) to show the request reached the server and read the socket;
+(3) engine-level token counters or a first/last-token marker for the instance, to
+settle runaway generation independently of the host-level CPU sample (gap 4: node
+metrics resolution and collection); (4) a client-side process capture of the wedged
+pi during the window (stack/strace, or the blocked file descriptor), to confirm the
+runner was in a read on the request socket rather than locally deadlocked — the
+daemon-side liveness probes in `cmd/datawatch/session_idle_probe.go` only say "alive
+or not"; and (5) the discriminating recovery experiment: whether *killing* the
+in-flight request (rather than a full unload/reload, the recovery actually used in
+the Runner and model state section) frees the instance — if a request kill suffices,
+the wedge is state in the instance's queue/worker (consistent with
+`internal/inference/model_load.go`'s `keep_alive` residency model, where a loaded
+instance holds its slot); if only a full unload recovers it, the wedge is deeper in
+the inference runtime. The two live-incident facts that most constrain the choice —
+sibling models answering while the pinned model times out, and node CPU/GPU at
+idle during the hang — both point at the instance state on the node, neither at
+what the pi client is doing, and that is the narrowest claim the evidence supports.
