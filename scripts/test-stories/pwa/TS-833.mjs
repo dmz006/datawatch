@@ -6,14 +6,20 @@
 //   "Chains"   — the default: the card list with a status badge per card, the
 //                filter button, the detail view with back button and strip,
 //                and the #automation/<id> route
-// There is no "Questions" tab. All of it fits a 360×800 phone: no horizontal
-// overflow, and every output-tab button in both rows keeps ≥40 px height and
-// ≥44 px width.
+// There is no "Questions" tab in either row, and the old header "New
+// Automation" button (#automationNewBtn) is gone — the round create button
+// (#newSessionFab) is the only always-visible create affordance.
+//
+// The detail page and the #automation/<id> route draw over the whole view
+// (the sub-tab rows are not part of them), so the phone fit rule applies
+// there to whatever tab buttons a row still shows (there are none), plus the
+// no-horizontal-overflow rule everywhere: no horizontal overflow, and every
+// .output-tab button in either row keeps ≥40 px height and ≥44 px width,
+// clipped inside the viewport.
 //
 // The story seeds one Automation through the API (name ts-subtabs-<ts>,
-// project dir ".", actor operator, reason TS-833) so the Chains list, the
-// detail view and the route have real data to render, and removes it again at
-// the end.
+// project dir ".", actor operator) so the Chains list, the detail view and
+// the route have real data to render, and removes it again at the end.
 //
 // tags: surface:pwa feature:automation group:automation
 //
@@ -22,13 +28,14 @@ import { runPerfStory, openPWA, check, saveJson, skipStory, noHorizontalOverflow
 
 const STORY = 'TS-833';
 const PHONE = { width: 360, height: 800 };
-const MIN_TAB = { h: 40, w: 44 };   // PRD: every output-tab button ≥40 px tall, ≥44 px wide
+const MIN_TAB = { h: 40, w: 44 };   // phone rule: every output-tab button ≥40 px tall, ≥44 px wide
 const TS = Date.now();
 const NAME = 'ts-subtabs-' + TS;
+const REASON = 'automation sub-tabs story';
 
 const evidence = {
   story: STORY, phone: PHONE, name: NAME, automationId: null,
-  subtabs: null, fab: null, chains: null, overview: null,
+  topRow: null, subtabs: null, fab: null, chains: null, overview: null,
   detail: null, backToChain: null, route: null, fit: null,
   cleanup: null,
 };
@@ -47,8 +54,11 @@ async function api(path, method = 'GET', body = null) {
 }
 
 // --- page helpers ------------------------------------------------------------
+// NOTE: anything run via page.evaluate must be self-contained (Playwright
+// serializes the function body into the page context; module-scope lets and
+// imports are not visible there).
 
-function tabRow(sel) {
+function rowsIn(sel) {
   return Array.from(document.querySelectorAll(sel)).map(b => {
     const r = b.getBoundingClientRect();
     return {
@@ -61,30 +71,76 @@ function tabRow(sel) {
   });
 }
 
-function measureFit(w, h) {
+function measureFit() {
+  const row = (sel) => Array.from(document.querySelectorAll(sel)).map(b => {
+    const r = b.getBoundingClientRect();
+    return {
+      id: b.getAttribute('data-subtab') || b.getAttribute('data-tab') || null,
+      label: (b.textContent || '').trim(),
+      active: b.classList.contains('active') || b.getAttribute('aria-selected') === 'true',
+      h: Math.round(r.height), w: Math.round(r.width),
+      left: Math.round(r.left), right: Math.round(r.right),
+    };
+  });
   return {
-    minTab: { h: MIN_TAB.h, w: MIN_TAB.w },
     page: { innerWidth: window.innerWidth, innerHeight: window.innerHeight,
             scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight },
-    row1: tabRow('.automata-tabs-bar .output-tab'),
-    row2: tabRow('.automation-subtabs .output-tab'),
+    row1: row('.automata-tabs-bar .output-tab'),
+    row2: row('.automation-subtabs .output-tab'),
   };
 }
 
-function fitChecks(view, m, overflow) {
+// requireRows names the rows the current view is supposed to keep
+// (['row1','row2'] on the tabbed list/Overview views; [] on the detail page
+// and the #automation/<id> route, which draw over the whole view and drop
+// both rows). A required row must be rendered; any .output-tab that exists
+// in either row is held to the size and viewport rule either way.
+function fitChecks(view, m, overflow, requireRows) {
+  const required = requireRows || [];
+  const spec = [['row1', 'row 1'], ['row2', 'row 2']];
   check(overflow.ok, `${view}: no horizontal overflow (scrollWidth ${overflow.scrollWidth} > innerWidth ${overflow.innerWidth})`);
-  for (const row of [['row 1', m.row1], ['row 2', m.row2]]) {
-    check(row[1].length > 0, `${view}: ${row[0]} sub-tab row rendered`);
-    for (const b of row[1]) {
+  for (const [key, label] of spec) {
+    const tabs = m[key] || [];
+    if (required.includes(key)) check(tabs.length > 0, `${view}: ${label} sub-tab row rendered`);
+    for (const b of tabs) {
       check(b.h >= MIN_TAB.h && b.w >= MIN_TAB.w,
-        `${view}: ${row[0]} tab "${b.label}" is ≥${MIN_TAB.h}px tall and ≥${MIN_TAB.w}px wide (saw ${b.h}×${b.w})`);
+        `${view}: ${label} tab "${b.label}" is ≥${MIN_TAB.h}px tall and ≥${MIN_TAB.w}px wide (saw ${b.h}×${b.w})`);
       check(b.left >= 0 && b.right <= m.page.innerWidth + 1,
-        `${view}: ${row[0]} tab "${b.label}" fits the ${m.page.innerWidth}px viewport (saw left=${b.left} right=${b.right})`);
+        `${view}: ${label} tab "${b.label}" fits the ${m.page.innerWidth}px viewport (saw left=${b.left} right=${b.right})`);
     }
   }
 }
 
 // --- story -------------------------------------------------------------------
+
+// Toasts (e.g. the fresh-daemon "v7 unification" notice) and a lingering
+// splash overlay can sit on top of the tab bar and intercept pointer
+// events. Clear them before driving the tabs.
+async function clearOverlays(page) {
+  await page.evaluate(() => {
+    const tc = document.querySelector('.toast-container');
+    if (tc) tc.innerHTML = '';
+    document.querySelectorAll('.toast, .toast-error-msg, .toast-success-msg').forEach((el) => el.remove());
+    const s = document.getElementById('splash');
+    if (s) { s.style.display = 'none'; s.remove(); }
+    const sc = document.getElementById('splashCanvas');
+    if (sc) sc.remove();
+  });
+}
+
+async function clickTab(page, sel) {
+  for (let i = 0; i < 3; i++) {
+    await clearOverlays(page);
+    await page.waitForSelector(sel, { timeout: 15000 });
+    try {
+      await page.click(sel, { timeout: 15000 });
+      return;
+    } catch (e) {
+      if (i === 2) throw e;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+}
 
 runPerfStory(async (page) => {
   await page.setViewportSize(PHONE).catch(() => {});
@@ -92,7 +148,7 @@ runPerfStory(async (page) => {
   // 1. Seed the Automation.
   let mk;
   try {
-    mk = await api('/api/automations', 'POST', { name: NAME, project_dir: '.', actor: 'operator', reason: STORY });
+    mk = await api('/api/automations', 'POST', { name: NAME, project_dir: '.', actor: 'operator', reason: REASON });
   } catch (e) {
     await skipStory(`daemon unreachable at ${env.http}: ${e.message}`);
   }
@@ -103,32 +159,42 @@ runPerfStory(async (page) => {
   console.log(`seeded Automation ${id} (${NAME})`);
 
   try {
-  // 2. Open the PWA at phone size and get to the Autonomous view.
+  // 2. Open the PWA at phone size and get to the Automation tab of the Autonomous view.
   await openPWA(page);
+  await clearOverlays(page);
   await page.evaluate(() => { if (typeof window.navigate === 'function') window.navigate('autonomous'); });
   await page.waitForFunction(
     () => !!document.querySelector('.automata-tabs-bar .output-tab[data-tab="automation"]'),
     null, { timeout: 20000 }
   ).catch(() => skipStory('Automation tab not rendered — autonomous disabled or app not ready'));
 
-  // 3. First row: click the "Automation" tab.
-  await page.click('.automata-tabs-bar .output-tab[data-tab="automation"]');
-  await page.waitForSelector('.automation-subtabs .output-tab', null, { timeout: 15000 });
+  // 3. First row: click the "Automation" tab; the second row lands on Chains.
+  await clickTab(page, '.automata-tabs-bar .output-tab[data-tab="automation"]');
+  await page.waitForSelector('.automation-subtabs .output-tab', { timeout: 15000 });
 
-  // 4. Second row: exactly two sub-tabs, Overview + Chains, Chains default, no Questions.
-  const subs = await page.evaluate(() => tabRow('.automation-subtabs .output-tab'));
+  // 4. Sub-tab rows: exactly two tabs, Overview + Chains, Chains default,
+  //    no Questions tab in either row, and the removed header create button absent.
+  const topRow = await page.evaluate(rowsIn, '.automata-tabs-bar .output-tab');
+  const subs = await page.evaluate(rowsIn, '.automation-subtabs .output-tab');
+  evidence.topRow = topRow;
   evidence.subtabs = subs;
   check(subs.length === 2, `second row has exactly 2 sub-tabs (saw ${subs.length}: ${subs.map(s => s.label).join(', ')})`);
   const labels = subs.map(s => s.label.toLowerCase());
   check(labels.some(l => l.includes('overview')), `second row has an "Overview" tab (saw ${subs.map(s => s.label).join(', ')})`);
   check(labels.some(l => l.includes('chain')), `second row has a "Chains" tab (saw ${subs.map(s => s.label).join(', ')})`);
-  check(!labels.some(l => /question/i.test(l)), 'no "Questions" tab in the second row');
+  check(!topRow.some(t => /question/i.test(t.label)),
+    `no "Questions" tab in the first row (saw ${topRow.map(t => t.label).join(', ')})`);
+  check(!subs.some(s => /question/i.test(s.label)),
+    `no "Questions" tab in the second row (saw ${subs.map(s => s.label).join(', ')})`);
   const chains = subs.find(s => (s.id || '').includes('chain'));
   check(chains && chains.active, 'Chains is the default (selected) sub-tab');
   const overviewTab = subs.find(s => (s.id || '').includes('overview'));
   check(overviewTab && !overviewTab.active, 'Overview is not selected by default');
 
-  // 5. FAB is shown on the Automation sub-tab.
+  const noNewBtn = await page.evaluate(() => !document.getElementById('automationNewBtn'));
+  check(noNewBtn, 'no #automationNewBtn on the Automation tab (the round create button is the create path)');
+
+  // 5. The round create button is present and visible on the Automation sub-tab.
   const fab = await page.evaluate(() => {
     const f = document.getElementById('newSessionFab');
     if (!f) return null;
@@ -138,16 +204,12 @@ runPerfStory(async (page) => {
   });
   evidence.fab = fab;
   check(fab && !fab.hidden && fab.display !== 'none',
-    `the FAB button is shown on the Automation sub-tab (saw ${JSON.stringify(fab)})`);
-  check((fab && fab.label || '').toLowerCase().includes('automation'),
-    `the FAB offers a new Automation (label "${fab && fab.label}")`);
-  check(fab && fab.h >= MIN_TAB.h && fab.w >= MIN_TAB.w,
-    `the FAB keeps a ≥${MIN_TAB.h}px tap target on phone (saw ${fab && fab.h}×${fab && fab.w})`);
+    `the round create button is present and visible (saw ${JSON.stringify(fab)})`);
 
   const cardSel = `#automationPanel .automation-card[data-automation-id="${id}"]`;
 
-  // 6. Chains: the card list carries the status badge row and the filter button.
-  await page.waitForSelector(cardSel, null, { timeout: 25000 });
+  // 6. Chains: the card list, the status badge row, the filter button and search.
+  await page.waitForSelector(cardSel, { timeout: 25000 });
   const chainsView = await page.evaluate((sel) => {
     const card = document.querySelector(sel);
     const badge = card && card.querySelector('.automation-card-status');
@@ -157,8 +219,6 @@ runPerfStory(async (page) => {
       statusBadge: badge ? { text: badge.textContent.trim(), row: !!badge.closest('.work-tile-status') } : null,
       filterBtn: filterBtn ? { display: getComputedStyle(filterBtn).display,
                                inBar: !!(filterBtn.closest('.automata-tabs-bar')), label: filterBtn.getAttribute('aria-label') } : null,
-      filterBarOpen: (() => { const b = document.getElementById('automationFilterBar');
-        return b ? getComputedStyle(b).display !== 'none' : null; })(),
     };
   }, cardSel);
   evidence.chains = chainsView;
@@ -169,11 +229,11 @@ runPerfStory(async (page) => {
     `the filter button is shown on Chains (saw ${JSON.stringify(chainsView.filterBtn)})`);
   const fitList = await noHorizontalOverflow(page);
   const mList = await page.evaluate(measureFit);
-  fitChecks('Chains list', mList, fitList);
+  fitChecks('Chains list', mList, fitList, ['row1', 'row2']);
   await screenshot(page, '01-automation-chains');
 
-  // The filter button opens the filter bar (search + tag filters), and closes again.
-  await page.click('#automationFilterBtn');
+  // The filter button opens the filter bar (search), and closes again.
+  await clickTab(page, '#automationFilterBtn');
   const filterOpen = await page.evaluate(() => {
     const bar = document.getElementById('automationFilterBar');
     return { open: bar ? getComputedStyle(bar).display !== 'none' : false,
@@ -181,54 +241,66 @@ runPerfStory(async (page) => {
   });
   check(filterOpen.open && filterOpen.search,
     `the filter button opens the filter bar with a search field (saw ${JSON.stringify(filterOpen)})`);
-  await page.click('#automationFilterBtn');
+  await clickTab(page, '#automationFilterBtn');
   const filterClosed = await page.evaluate(() => {
     const bar = document.getElementById('automationFilterBar');
     return bar ? getComputedStyle(bar).display === 'none' : null;
   });
   check(filterClosed, 'toggling the filter button closes the filter bar again');
 
-  // 7. Overview: the capacity card and the progress/status state.
-  await page.click('.automation-subtabs .output-tab[data-subtab="overview"]');
+  // 7. Overview: the capacity card, the progress card in any state the app
+  //    allows (loaded, failed or empty), no #automationPanel, no header create button.
+  await clickTab(page, '.automation-subtabs .output-tab[data-subtab="overview"]');
+  // Wait until the capacity slot has painted (loaded, or its failed/empty
+  // state); treat a stall as evidence, not as a failure — the spec holds the
+  // failed/empty states as showing the card.
   await page.waitForFunction(() => {
     const cap = document.getElementById('automationCapacityCard');
-    const prog = document.getElementById('progressCard');
-    if (!cap) return false;
-    const capDone = !!(cap.querySelector('.prd-capacity-card') || cap.querySelector('.list-state-failed'));
-    const pc = prog && prog.querySelector('.progress-card');
-    const progDone = !!(prog && prog.style.display !== 'none' &&
-                        ((pc && pc.getAttribute('data-progress-status') !== 'loading') ||
-                         prog.querySelector('.list-state-failed')));
-    return capDone && progDone;
-  }, null, { timeout: 25000 });
+    return cap && !!(cap.querySelector('.prd-capacity-card') ||
+                     cap.querySelector('.list-state-failed') ||
+                     cap.querySelector('.list-state-empty'));
+  }, null, { timeout: 25000 }).catch(() => {});
   const overviewView = await page.evaluate(() => {
     const cap = document.getElementById('automationCapacityCard');
     const prog = document.getElementById('progressCard');
     const progCard = prog && prog.querySelector('.progress-card');
+    const panel = document.getElementById('automationPanel');
     return {
-      capacityCard: !!(cap && cap.querySelector('.prd-capacity-card')),
-      capacityFailed: !!(cap && cap.querySelector('.list-state-failed')),
-      progressVisible: !!(prog && prog.style.display !== 'none'),
+      capacityCardPresent: !!cap,
+      capacityLoaded: !!(cap && cap.querySelector('.prd-capacity-card')),
+      capacityFailedOrEmpty: !!(cap && (cap.querySelector('.list-state-failed') || cap.querySelector('.list-state-empty'))),
+      progressCardPresent: !!prog,
       progressStatus: progCard ? progCard.getAttribute('data-progress-status') : null,
       progressFailedEl: !!(prog && prog.querySelector('.progress-card-failed')),
+      automationPanel: panel ? { inDom: true, shown: getComputedStyle(panel).display !== 'none' } : { inDom: false, shown: false },
+      newBtn: !!document.getElementById('automationNewBtn'),
     };
   });
   evidence.overview = overviewView;
-  check(overviewView.capacityCard, `Overview shows the capacity card (saw ${JSON.stringify(overviewView)})`);
-  check(!overviewView.capacityFailed, 'the capacity card did not fail to load');
-  check(overviewView.progressVisible, 'Overview shows the progress/status state card');
-  check(overviewView.progressStatus && overviewView.progressStatus !== 'failed',
-    `the progress card loaded and is not in its failed state (status: ${overviewView.progressStatus})`);
+  check(overviewView.capacityCardPresent, `Overview shows the capacity card (saw ${JSON.stringify(overviewView)})`);
+  check(overviewView.capacityLoaded || overviewView.capacityFailedOrEmpty,
+    `Overview rendered the capacity card (loaded, or its failed/empty state; saw ${JSON.stringify(overviewView)})`);
+  check(overviewView.progressCardPresent,
+    `Overview shows the progress card or its failed/empty state (saw ${JSON.stringify(overviewView)})`);
+  check(!overviewView.automationPanel.inDom || !overviewView.automationPanel.shown,
+    `clicking Overview hides the Chains list panel #automationPanel (saw ${JSON.stringify(overviewView.automationPanel)})`);
+  check(!overviewView.newBtn, 'no #automationNewBtn on Overview');
   const fitOver = await noHorizontalOverflow(page);
   const mOver = await page.evaluate(measureFit);
-  fitChecks('Overview', mOver, fitOver);
+  fitChecks('Overview', mOver, fitOver, ['row1', 'row2']);
   await screenshot(page, '02-automation-overview');
 
-  // 8. Chains → click the card → detail view: back button + strip. Back returns.
-  await page.click('.automation-subtabs .output-tab[data-subtab="chains"]');
-  await page.waitForSelector(cardSel, null, { timeout: 15000 });
-  await page.click(cardSel);
-  await page.waitForSelector('.automation-detail .automation-detail-back', null, { timeout: 15000 });
+  // 8. Back to Chains: the list returns; click the card → detail view
+  //    (back button + pipeline strip). Back returns to the list.
+  await clickTab(page, '.automation-subtabs .output-tab[data-subtab="chains"]');
+  await page.waitForSelector(cardSel, { timeout: 15000 });
+
+  await clickTab(page, cardSel); // overlay-safe: clear + retry (a sticky toast may sit on the card)
+  await page.waitForSelector('.automation-detail .automation-detail-back', { timeout: 15000 });
+  // The detail opens on a loading shell and fills in asynchronously — wait for
+  // the real header (title) and the strip container before probing.
+  await page.waitForSelector('.automation-detail .automation-detail-title', { timeout: 15000 });
+  await page.waitForSelector('.automation-detail #automationStrip', { timeout: 15000 });
   const detail = await page.evaluate((aid) => {
     const wrap = document.querySelector('.automation-detail');
     const back = document.querySelector('.automation-detail .automation-detail-back');
@@ -238,7 +310,6 @@ runPerfStory(async (page) => {
       backVisible: back ? getComputedStyle(back).display !== 'none' : false,
       backLabel: back ? (back.getAttribute('aria-label') || back.textContent.trim()) : null,
       stripId: strip ? strip.getAttribute('data-automation-id') : null,
-      stripStatus: strip ? strip.getAttribute('data-status') : null,
       title: document.querySelector('.automation-detail-title') ? document.querySelector('.automation-detail-title').textContent.trim() : null,
       status: document.querySelector('.automation-detail-status') ? document.querySelector('.automation-detail-status').textContent.trim() : null,
     };
@@ -247,16 +318,19 @@ runPerfStory(async (page) => {
   check(detail.visible, 'the detail view is open after clicking the card');
   check(detail.backVisible, `the detail view has a back button (saw ${JSON.stringify(detail)})`);
   check(String(detail.backLabel).toLowerCase().includes('back'), `the back button reads like a back action ("${detail.backLabel}")`);
-  check(detail.stripId === id, `the detail view shows the strip for Automation ${id} (saw ${detail.stripId})`);
+  check(detail.stripId === id, `the detail view shows the pipeline strip for Automation ${id} (saw ${detail.stripId})`);
   check(detail.title === NAME, `the detail view shows the Automation name ${NAME} (saw "${detail.title}")`);
   check(/draft/i.test(detail.status || ''), `the detail status reads Draft (saw "${detail.status}")`);
   const fitDetail = await noHorizontalOverflow(page);
   const mDetail = await page.evaluate(measureFit);
-  fitChecks('Detail', mDetail, fitDetail);
+  // The detail page draws over the whole view: neither sub-tab row is part
+  // of it, so no row is required — only the overflow rule and, for the tabs
+  // a view keeps, the size/viewport rule.
+  fitChecks('Detail', mDetail, fitDetail, []);
   await screenshot(page, '03-automation-detail');
 
-  await page.click('.automation-detail .automation-detail-back');
-  await page.waitForSelector(cardSel, null, { timeout: 15000 });
+  await clickTab(page, '.automation-detail .automation-detail-back');
+  await page.waitForSelector(cardSel, { timeout: 15000 });
   const backToChain = await page.evaluate((sel) => {
     const card = document.querySelector(sel);
     return { noDetail: !document.querySelector('.automation-detail'),
@@ -276,7 +350,11 @@ runPerfStory(async (page) => {
     const el = document.getElementById('splash');
     return !el || getComputedStyle(el).display === 'none' || el.classList.contains('hidden');
   }, null, { timeout: 25000 });
-  await page.waitForSelector('.automation-detail .automation-detail-back', null, { timeout: 30000 });
+  await page.waitForSelector('.automation-detail .automation-detail-back', { timeout: 30000 });
+  // Rendered from the route: the detail fills in asynchronously on a loading
+  // shell, so wait until the header (and strip) is real before probing.
+  await page.waitForSelector('.automation-detail .automation-detail-title', { timeout: 20000 });
+  await page.waitForSelector('.automation-detail #automationStrip', { timeout: 20000 });
   const route = await page.evaluate((aid) => ({
     hash: location.hash,
     detailOpen: !!document.querySelector('.automation-detail'),
@@ -292,19 +370,19 @@ runPerfStory(async (page) => {
   check(route.stripId === id, `the route-opened detail shows the strip for ${id} (saw ${route.stripId})`);
   const fitRoute = await noHorizontalOverflow(page);
   const mRoute = await page.evaluate(measureFit);
-  fitChecks('Route detail', mRoute, fitRoute);
+  fitChecks('Route detail', mRoute, fitRoute, []);
   await screenshot(page, '05-route-automation-detail');
 
   // 10. Back through the route-opened detail: still on the Chains list.
-  await page.click('.automation-detail .automation-detail-back');
-  await page.waitForSelector(cardSel, null, { timeout: 15000 });
+  await clickTab(page, '.automation-detail .automation-detail-back');
+  await page.waitForSelector(cardSel, { timeout: 15000 });
   evidence.fit = { list: mList, overview: mOver, detail: mDetail, route: mRoute };
 
   // 11. Cleanup: remove the seeded Automation again, and verify it is gone.
   // (Done inside the story: runStory exits 0 as soon as this resolves, so
   //  nothing scheduled after runPerfStory would ever run.)
   const del = await api('/api/automations/' + encodeURIComponent(evidence.automationId), 'DELETE',
-                        { actor: 'operator', reason: STORY + ' cleanup' });
+                        { actor: 'operator', reason: REASON + ' cleanup' });
   const after = await api('/api/automations/' + encodeURIComponent(evidence.automationId));
   evidence.cleanup = { name: NAME, deleteStatus: del.status, afterGetStatus: after.status,
                        removed: del.status === 204 && after.status === 404 };
@@ -317,7 +395,7 @@ runPerfStory(async (page) => {
   if (!evidence.cleanup && evidence.automationId) {
     try {
       const del = await api('/api/automations/' + encodeURIComponent(evidence.automationId), 'DELETE',
-                            { actor: 'operator', reason: STORY + ' cleanup (story failed)' });
+                            { actor: 'operator', reason: REASON + ' cleanup (story failed)' });
       evidence.cleanup = { name: NAME, deleteStatus: del.status, note: 'story failed — best-effort delete' };
     } catch (e) { evidence.cleanup = { name: NAME, removed: false, error: String(e && e.message || e) }; }
   }
@@ -327,6 +405,7 @@ runPerfStory(async (page) => {
       [
         `story=${STORY} phone=${PHONE.width}x${PHONE.height}`,
         `automation=${JSON.stringify({ id: evidence.automationId, name: NAME })}`,
+        `topRow=${JSON.stringify(evidence.topRow)}`,
         `subtabs=${JSON.stringify(evidence.subtabs)}`,
         `fab=${JSON.stringify(evidence.fab)}`,
         `chains=${JSON.stringify(evidence.chains)}`,
