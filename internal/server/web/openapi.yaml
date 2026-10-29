@@ -1199,6 +1199,41 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/decisions:
+    get:
+      summary: Operator decisions
+      description: |
+        The operator decisions, newest first. Each entry carries the decision's id,
+        question, label, state (`open`, `answered`, `withdrawn` or `expired`), who
+        asked it and when, the Automaton it belongs to, the tasks of that Automaton
+        whose spec names it (`task_ids`), the ones held on it right now
+        (`waiting_task_ids` and `waiting_tasks` with each task's wait reason) and the
+        current answer. `answer` is null until the decision is answered; then it holds
+        the answer id, the operator's words verbatim in `quote`, the sha256 of the
+        quote, the actor, the surface and the time. A withdrawn or expired decision is
+        listed with that state. The filters are exact matches and combine; a filter
+        that matches nothing is an empty `decisions` array, not an error. Read-only;
+        needs the autonomous read capability when called by a federated peer.
+      operationId: autonomousDecisions
+      tags: [Autonomous]
+      parameters:
+        - {name: prd_id, in: query, required: false, description: Only the decisions linked to this Automaton, schema: {type: string}}
+        - {name: state, in: query, required: false, description: Only decisions in this state, schema: {type: string, enum: [open, answered, withdrawn, expired]}}
+        - {name: limit, in: query, required: false, description: "At most this many decisions; a positive whole number, default 100, a value above 1000 is capped to 1000, not refused", schema: {type: integer, minimum: 1, default: 100}}
+      responses:
+        "200":
+          description: The decisions, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecisionLine"
+        "400": {description: "state is not open, answered, withdrawn or expired, or limit is not a positive whole number"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: "Autonomous is disabled, or the question store is not available"}
+
   /api/autonomous/triage:
     get:
       summary: Triage records
@@ -5332,6 +5367,78 @@ components:
         at: {type: string, format: date-time}
         lane_id: {type: string}
         work: {type: string, description: Title of the work waiting for the lane}
+    DecisionLine:
+      type: object
+      description: The operator decisions, as GET /api/autonomous/decisions returns them.
+      required: [decisions]
+      properties:
+        decisions:
+          type: array
+          description: Newest first; empty when nothing matches
+          items: {$ref: "#/components/schemas/DecisionLineEntry"}
+    DecisionLineEntry:
+      type: object
+      description: One operator decision.
+      properties:
+        id: {type: string, description: "The decision id (q- followed by lowercase hex)"}
+        question: {type: string, description: The question text}
+        label: {type: string, description: "Short label such as decision or approval; may be empty"}
+        state: {type: string, enum: [open, answered, withdrawn, expired]}
+        asked_by: {type: string}
+        asked_at: {type: string, format: date-time, nullable: true}
+        prd_id: {type: string, description: "The Automaton the decision belongs to; empty when it is not linked to one"}
+        task_ids:
+          type: array
+          description: Tasks of that Automaton whose spec names this decision; always an array
+          items: {type: string}
+        waiting_task_ids:
+          type: array
+          description: The tasks among task_ids that are held on the decision right now (status waiting_decision); always an array
+          items: {type: string}
+        waiting_tasks:
+          type: array
+          description: The same held tasks with the reason each one shows; always an array
+          items: {$ref: "#/components/schemas/DecisionLineWait"}
+        answer:
+          allOf:
+            - {$ref: "#/components/schemas/DecisionLineAnswer"}
+          nullable: true
+          description: The current answer; null until the decision is answered
+    DecisionLineWait:
+      type: object
+      properties:
+        task_id: {type: string}
+        wait_reason: {type: string, description: "The plain sentence the held task shows, naming the decision and, while it is open, the first 160 characters of the question"}
+    DecisionLineAnswer:
+      type: object
+      properties:
+        id: {type: string, description: Answer id}
+        quote: {type: string, description: "The operator's words exactly as stored; never trimmed, cut or re-cased"}
+        quote_sha256: {type: string, description: The sha256 recorded with the quote}
+        actor: {type: string}
+        surface: {type: string, description: The surface the answer came from}
+        answered_at: {type: string, format: date-time, nullable: true}
+    AutomatonDecisionLogEntry:
+      type: object
+      description: |
+        One entry of an Automaton's decision log (the `decisions` array on the
+        Automaton). Entries for operator decisions add `question_id`, `answer_id`
+        and `decision_state`; each is left out when empty. Show an unknown `kind`
+        as plain text.
+      properties:
+        at: {type: string, format: date-time}
+        kind:
+          type: string
+          description: |
+            What the entry records. Among the kinds: `operator_decision` (a decision
+            was raised for the Automaton), `operator_answer` (it was answered) and
+            `decision_gate_shadow` (in shadow mode, a task the gate would have held;
+            written once per task and reason).
+        actor: {type: string, description: "operator, autonomous or verifier"}
+        note: {type: string}
+        question_id: {type: string, description: "The operator decision the entry records"}
+        answer_id: {type: string, description: "The answer the entry records; answer entries only"}
+        decision_state: {type: string, enum: [open, answered, withdrawn, expired], description: "The decision state the entry stands for"}
     TriageList:
       type: object
       description: |-
