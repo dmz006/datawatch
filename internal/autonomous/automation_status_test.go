@@ -19,6 +19,18 @@ func setIdle(t *testing.T, h *coordHarness, a *Automation, status AutomationStat
 	}
 }
 
+// autoSummary returns a's status row, read through the real status path.
+func autoSummary(t *testing.T, m *Manager, a *Automation) AutomationStatusSummary {
+	t.Helper()
+	for _, s := range m.Status().Automations {
+		if s.ID == a.ID {
+			return s
+		}
+	}
+	t.Fatalf("automation %s missing from status", a.ID)
+	return AutomationStatusSummary{}
+}
+
 func TestAutomationStatusSummaryFields(t *testing.T) {
 	h := newCoordHarness(t, 3)
 	a := h.force(h.makeAuto([][3]string{{"m1", "", ""}, {"m2", "", ""}}, 3))
@@ -43,7 +55,8 @@ func TestAutomationStatusSummaryFields(t *testing.T) {
 
 func TestAutomationStatusCountsPendingInserts(t *testing.T) {
 	h := newCoordHarness(t, 3)
-	a := h.force(h.makeAuto([][3]string{{"m1", "", ""}, {"m2", "", ""}}, 3))
+	// a: one not-started member (m1) plus two held inserts.
+	a := h.force(h.makeAuto([][3]string{{"m1", "", ""}}, 2))
 	_, err := h.m.automations.Update(a.ID, 0, func(a *Automation) error {
 		a.PendingInserts = []PendingInsert{
 			{ID: "ins1", PRDID: h.prds[1].ID, Actor: "operator", AddedAt: time.Now(), Status: MemberPending},
@@ -54,35 +67,84 @@ func TestAutomationStatusCountsPendingInserts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := h.m.Status().Automations[0]
-	// Two pending members plus two held inserts.
-	if s.PendingMembers != 4 {
-		t.Fatalf("pending_members=%d, want 2 members + 2 inserts", s.PendingMembers)
+	s := autoSummary(t, h.m, a)
+	// One not-started member plus two held inserts.
+	if s.PendingMembers != 3 {
+		t.Fatalf("pending_members=%d, want 1 member + 2 inserts", s.PendingMembers)
+	}
+	// An Automation with no inserts is unchanged: only its not-started members count.
+	b, err := h.m.CreateAutomation(AutomationInput{Name: "plain", Members: []AutomationMember{{ID: "x0", PRDID: h.prds[2].ID}}}, "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sb := autoSummary(t, h.m, b)
+	if sb.PendingMembers != 1 {
+		t.Fatalf("no-insert pending_members=%d, want 1 not-started member only", sb.PendingMembers)
+	}
+	if len(sb.PendingInserts) != 0 {
+		t.Fatalf("no-insert summary lists inserts: %+v", sb.PendingInserts)
 	}
 }
 
 func TestAutomationStatusPendingInsertsListed(t *testing.T) {
 	h := newCoordHarness(t, 2)
 	a := h.force(h.makeAuto(nil, 1))
-	held := PendingInsert{ID: "ins1", PRDID: h.prds[0].ID, Name: "new step", Urgent: true, Actor: "operator", Reason: "operator asked", AddedAt: time.Now(), Status: MemberPending}
+	first := PendingInsert{ID: "ins1", PRDID: h.prds[0].ID, Actor: "operator", Reason: "operator asked", AddedAt: time.Now(), Status: MemberPending}
+	second := PendingInsert{ID: "ins2", PRDID: h.prds[1].ID, Urgent: true, Actor: "session:x", Reason: "recovery", AddedAt: time.Now(), Status: MemberPending}
 	_, err := h.m.automations.Update(a.ID, 0, func(a *Automation) error {
-		a.PendingInserts = append(a.PendingInserts, held)
+		a.PendingInserts = []PendingInsert{first, second}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := h.m.Status().Automations[0]
-	if len(s.PendingInserts) != 1 ||
-		s.PendingInserts[0].ID != held.ID || s.PendingInserts[0].PRDID != held.PRDID ||
-		s.PendingInserts[0].Name != held.Name || s.PendingInserts[0].Urgent != held.Urgent ||
-		s.PendingInserts[0].Actor != held.Actor || s.PendingInserts[0].Reason != held.Reason ||
-		!s.PendingInserts[0].AddedAt.Equal(held.AddedAt) || s.PendingInserts[0].Status != held.Status {
-		t.Fatalf("pending_inserts=%+v, want %+v", s.PendingInserts, held)
+	s := autoSummary(t, h.m, a)
+	if len(s.PendingInserts) != 2 ||
+		s.PendingInserts[0].ID != first.ID || s.PendingInserts[0].PRDID != first.PRDID ||
+		s.PendingInserts[0].Actor != first.Actor || s.PendingInserts[0].Reason != first.Reason ||
+		s.PendingInserts[1].ID != second.ID || s.PendingInserts[1].PRDID != second.PRDID ||
+		s.PendingInserts[1].Actor != second.Actor || s.PendingInserts[1].Reason != second.Reason {
+		t.Fatalf("pending_inserts=%+v, want %+v then %+v", s.PendingInserts, first, second)
 	}
+
+	// On the wire: pending_inserts is an array carrying the same fields in order.
+	raw, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	wireList, _ := wire["pending_inserts"].([]any)
+	if len(wireList) != 2 {
+		t.Fatalf("wire pending_inserts=%v", wire["pending_inserts"])
+	}
+	w0, _ := wireList[0].(map[string]any)
+	w1, _ := wireList[1].(map[string]any)
+	if w0 == nil || w1 == nil ||
+		w0["id"] != first.ID || w0["prd_id"] != first.PRDID || w0["actor"] != first.Actor || w0["reason"] != first.Reason ||
+		w1["id"] != second.ID || w1["prd_id"] != second.PRDID || w1["actor"] != second.Actor || w1["reason"] != second.Reason {
+		t.Fatalf("wire order %+v %+v", w0, w1)
+	}
+
+	// With no inserts the key is omitted, not an empty array.
+	b, err := h.m.CreateAutomation(AutomationInput{Name: "plain", Members: []AutomationMember{{ID: "x0", PRDID: h.prds[1].ID}}}, "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawB, _ := json.Marshal(autoSummary(t, h.m, b))
+	var wireB map[string]any
+	if err := json.Unmarshal(rawB, &wireB); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := wireB["pending_inserts"]; ok {
+		t.Fatalf("wire without inserts carries pending_inserts: %s", rawB)
+	}
+
 	// The summary carries a copy: mutating it must not touch the stored record.
 	s.PendingInserts[0].Actor = "mutated"
-	if stored, _ := h.m.GetAutomation(a.ID); len(stored.PendingInserts) != 1 || stored.PendingInserts[0].Actor != "operator" {
+	if stored, _ := h.m.GetAutomation(a.ID); len(stored.PendingInserts) != 2 || stored.PendingInserts[0].Actor != "operator" {
 		t.Fatalf("stored record mutated through the summary: %+v", stored.PendingInserts)
 	}
 }
