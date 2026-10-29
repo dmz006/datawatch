@@ -642,6 +642,7 @@ type QuestionFilter struct {
 	State   QuestionState
 	Context string
 	Asker   string // exact match on AskedBy
+	PRDID   string // exact match on the Automaton the question is linked to
 	Text    string
 	Limit   int
 }
@@ -661,6 +662,9 @@ func (s *QuestionStore) List(f QuestionFilter) []Question {
 			continue
 		}
 		if f.Asker != "" && q.AskedBy != f.Asker {
+			continue
+		}
+		if f.PRDID != "" && q.PRDID != f.PRDID {
 			continue
 		}
 		if lowerText != "" && !strings.Contains(s.textHaystack(q), lowerText) {
