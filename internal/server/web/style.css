@@ -283,6 +283,40 @@ body {
   text-align: center;
 }
 
+/* Tags button interaction states: hover lift, keyboard focus ring, and the
+   is-active class (toggled by _tagsMenuRefresh) while the menu is open or a
+   tag filter is applied. All colours come from theme tokens (no literals),
+   and the only animated properties are colours — under prefers-reduced-motion
+   the transitions drop out and only the instant colour change remains. */
+.header > #headerTagsBtn:hover {
+  background: color-mix(in srgb, var(--accent2) 12%, transparent);
+  border-radius: 8px;
+}
+.header > #headerTagsBtn:hover .header-tags-icon-body {
+  fill: color-mix(in srgb, var(--accent2) 85%, var(--text));
+  stroke: color-mix(in srgb, var(--accent2) 55%, var(--text));
+}
+.header > #headerTagsBtn:focus-visible {
+  outline: 2px solid var(--accent2);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.header > #headerTagsBtn.is-active {
+  background: color-mix(in srgb, var(--accent2) 18%, transparent);
+  border-radius: 8px;
+}
+.header > #headerTagsBtn.is-active .header-tags-icon-body {
+  fill: color-mix(in srgb, var(--accent2) 70%, var(--text));
+  stroke: color-mix(in srgb, var(--accent2) 50%, var(--text));
+}
+/* The .header-tags-count badge sits on top of these fills and keeps its own
+   token background plus the 2px var(--bg2) ring, so it stays readable in the
+   hover and active states without any changes here. */
+@media (prefers-reduced-motion: no-preference) {
+  .header > #headerTagsBtn { transition: background-color 120ms ease; }
+  .header-tags-icon-body { transition: fill 120ms ease, stroke 120ms ease; }
+}
+
 /* Tags menu panel: fixed under the header, never wider than the viewport so a
    320px phone gets no horizontal page scroll with it open. */
 .header-tags-menu {
