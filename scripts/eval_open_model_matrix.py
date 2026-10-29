@@ -244,6 +244,22 @@ def classify_result(identity, integrity, verify_exit):
     return "pass" if verify_exit == 0 else "fail"
 
 
+def check_write_scope(cells, write_dirs):
+    """Drift-guard precheck (r8 lesson): a cell that commits a spec-required
+    file in its own dir must have that dir inside the PRD's pinned write scope,
+    or the drift guard refuses the commit and the cell loses its model result.
+    Pure helper: `cells` is a list of {"name", "dir"} dicts, `write_dirs` the
+    directory paths the PRD pins; raises EvalError naming every cell whose own
+    dir is not covered. Paths are compared after realpath, so relative and
+    symlinked forms both count."""
+    scope = {_real(d) for d in write_dirs}
+    missing = [f"{c.get('name') or '?'} (dir {c.get('dir')})" for c in cells
+               if _real(c.get("dir")) not in scope]
+    if missing:
+        raise EvalError(f"write scope omits cell dir(s): {', '.join(missing)} — a spec-required "
+                        f"commit inside one of them would be refused by the drift guard")
+
+
 # --------------------------------------------------------------------------
 # preflight
 # --------------------------------------------------------------------------
@@ -508,6 +524,11 @@ def cmd_create_prd(a):
             errs.append(f"{cell['name']}: project_dir {t.get('project_dir')!r} != cell dir")
         if (t.get("thinking_level") or "") != (sc.get("thinking_level") or ""):
             errs.append(f"{cell['name']}: thinking_level {t.get('thinking_level')!r} != {sc.get('thinking_level')!r}")
+    try:
+        check_write_scope([{"name": x["name"], "dir": st["cells"][x["name"]]["dir"]} for x in want],
+                          prd.get("write_dirs") or [])
+    except EvalError as e:
+        errs.append(str(e))
     if len(tasks) != len(want):
         errs.append(f"Automaton has {len(tasks)} tasks, expected {len(want)}")
     if errs:
@@ -790,40 +811,67 @@ def cmd_self_test(_a):
 
     with tempfile.TemporaryDirectory() as tmp:
         parent = os.path.join(tmp, "run")
-        cdir = os.path.join(parent, "cpu-docs")
+        # The pi-path fixtures derive from the tracked pi matrix (base role and
+        # one other candidate role), not from the retired opencode-era names.
+        base = next(r for r in m["roles"] if r["role"] == BASELINE_ROLE)
+        other_model = next((r["model"] for r in m["roles"] if r["role"] != BASELINE_ROLE),
+                           base["model"] + "-alt")
+        cell = {"role": base["role"], "llm": base["llm"], "expected_model": base["model"],
+                "task_type": m["task_types"][0]}
+        cdir = os.path.join(parent, f"{cell['role']}-{cell['task_type']}")
         os.makedirs(cdir)
-        cell = {"role": "cpu", "llm": "pi-x", "expected_model": "qwen3:1.7b", "task_type": "docs"}
         good_art = {"verify_exit": 0, "new_commits": 1}
         task = {"project_dir": cdir, "status": "completed"}
-        ws = {"project_dir": cdir, "model": "qwen3:1.7b"}
+        ws = {"project_dir": cdir, "model": base["model"]}
 
-        r = build_cell_row(cell, cdir, task, ws, None, "qwen3:1.7b", "session_record.model", good_art)
+        r = build_cell_row(cell, cdir, task, ws, None, base["model"], "session_record.model", good_art)
         check(r["model_identity"] == "ok" and r["verification_integrity"] == "ok" and r["model_result"] == "pass",
               "correct cell -> pass")
         check(r["thinking_level"] is None, "cell row records thinking_level (null when the role leaves pi's default)")
-        r = build_cell_row(cell, cdir, task, ws, None, "granite4.2:8b", "session_record.model", good_art)
+        r_pin = build_cell_row({**cell, "thinking_level": "minimal"}, cdir, task, ws, None, base["model"],
+                               "session_record.model", good_art)
+        check(r_pin["thinking_level"] == "minimal", "cell row records the pinned thinking_level")
+        r = build_cell_row(cell, cdir, task, ws, None, other_model, "session_record.model", good_art)
         check(r["model_identity"] == "wrong_model" and r["model_result"] is None,
               "wrong used_model -> wrong_model, model_result null")
         r = build_cell_row(cell, cdir, task, ws, None, None, "none", good_art)
         check(r["model_identity"] == "unknown" and r["model_result"] is None, "unknown model -> never a pass")
-        r = build_cell_row(cell, cdir, {"project_dir": parent}, {"project_dir": parent}, None, "qwen3:1.7b",
+        r = build_cell_row(cell, cdir, {"project_dir": parent}, {"project_dir": parent}, None, base["model"],
                            "session_record.model", good_art)
         check(r["verification_integrity"] == "suspect" and r["model_result"] is None,
               "ProjectDir points to parent -> suspect, model_result null")
-        r = build_cell_row(cell, cdir, task, ws, {"project_dir": parent}, "qwen3:1.7b", "session_record.model", good_art)
+        r = build_cell_row(cell, cdir, task, ws, {"project_dir": parent}, base["model"], "session_record.model", good_art)
         check(r["verification_integrity"] == "suspect", "verifier ran in parent dir -> suspect")
-        r = build_cell_row(cell, cdir, task, ws, None, "qwen3:1.7b", "session_record.model",
+        r = build_cell_row(cell, cdir, task, ws, None, base["model"], "session_record.model",
                            {"verify_exit": 1, "new_commits": 0})
         check(r["model_result"] == "fail", "missing artifact -> fail")
         r = build_cell_row(cell, cdir, {**task, "status": "failed"},
                            {"project_dir": cdir, "state": "failed", "failure_exit_code": 2},
-                           None, "qwen3:1.7b", "session_record.model", good_art)
+                           None, base["model"], "session_record.model", good_art)
         check(r["model_result"] is None and "not a model result" in r["notes"],
               "failed worker (task failed + session failed + non-zero exit) -> invalid cell, never pass/fail")
-        r = build_cell_row(cell, cdir, {**task, "status": "blocked"}, None, None, "qwen3:1.7b",
+        r = build_cell_row(cell, cdir, {**task, "status": "blocked"}, None, None, base["model"],
                            "session_record.model", good_art)
         check(r["model_result"] is None and "not a model result" in r["notes"],
               "blocked task (e.g. the drift guard in r8) -> invalid cell, never pass/fail")
+        # MODEL-IDENTITY.txt: evidence, not the judge. Absent -> self_reported_model
+        # null and identity still decided by the used model; present -> recorded,
+        # and a self-report neither creates nor cancels the used-model verdict.
+        check(not os.path.exists(os.path.join(cdir, IDENTITY_FILE)), "fixture cell dir starts without MODEL-IDENTITY.txt")
+        r = build_cell_row(cell, cdir, task, ws, None, base["model"], "session_record.model", good_art)
+        check(r["self_reported_model"] is None and r["model_identity"] == "ok" and r["model_result"] == "pass",
+              "MODEL-IDENTITY.txt absent -> self_reported_model null, identity still decided by the used model (pass stands)")
+        with open(os.path.join(cdir, IDENTITY_FILE), "w", encoding="utf-8") as f:
+            f.write("claimed-model-alternate\n")
+        r = build_cell_row(cell, cdir, task, ws, None, base["model"], "session_record.model", good_art)
+        check(r["self_reported_model"] == "claimed-model-alternate" and r["model_identity"] == "ok"
+              and r["model_result"] == "pass",
+              "self-report is recorded but identity still comes from the used model (ok/pass unchanged)")
+        r = build_cell_row(cell, cdir, task, ws, None, other_model, "session_record.model", good_art)
+        check(r["self_reported_model"] == "claimed-model-alternate" and r["model_identity"] == "wrong_model"
+              and r["model_result"] is None,
+              "a self-report alone cannot rescue a wrong used_model (stays wrong_model, result null)")
+        os.unlink(os.path.join(cdir, IDENTITY_FILE))
 
         role0model = m["roles"][0]["model"]
         class HitClient:
@@ -846,9 +894,9 @@ def cmd_self_test(_a):
                     raise EvalError("GET /api/sessions/host-9: HTTP 404: 404 page not found")
                 if path == "/api/sessions":
                     return {"sessions": [{"id": "h9", "full_id": "host-9", "state": "complete",
-                                          "model": "qwen3:1.7b"}]}
+                                          "model": other_model}]}
                 raise AssertionError(f"unexpected GET {path}")
-        check((session_by_id(MissClient(), "host-9") or {}).get("model") == "qwen3:1.7b",
+        check((session_by_id(MissClient(), "host-9") or {}).get("model") == other_model,
               "404 on the direct GET falls back to the sessions list")
         class Other4xx:
             def get(self, path, timeout=None):
@@ -864,7 +912,7 @@ def cmd_self_test(_a):
 
         rows = [preflight_row(x, resp={"used_model": x["model"]}) for x in m["roles"]]
         check(preflight_passed({"preflight": {"rows": rows, "passed": True}}), "matching preflight passes")
-        bad = rows[:3] + [preflight_row(m["roles"][3], resp={"used_model": "gpt-oss:20b"})]
+        bad = rows[:3] + [preflight_row(m["roles"][3], resp={"used_model": other_model})]
         st_bad = {"preflight": {"rows": bad, "passed": all(x["ok"] for x in bad)}}
         try:
             require_preflight(st_bad)
@@ -914,7 +962,7 @@ def cmd_self_test(_a):
         check(start[2] >= 600, "preflight start call uses the long cold-load timeout")
         check(sc.calls[-1] == ("/api/sessions/kill", {"id": "host-ab12"}, 60), "preflight ends the exact session id")
         check(preflight_row(role0, resp=resp)["ok"], "matching reported model -> preflight row ok")
-        wrong = pi_preflight_run(StubClient("gpt-oss:20b"), role0, tmp, sleep=lambda _s: None)
+        wrong = pi_preflight_run(StubClient(other_model), role0, tmp, sleep=lambda _s: None)
         check(not preflight_row(role0, resp=wrong)["ok"], "different reported model -> preflight row not ok")
         sc = StubClient(role0["model"], final="failed")
         try:
@@ -933,7 +981,7 @@ def cmd_self_test(_a):
 
         doc = {"run_id": "t", "prd_id": "p", "preflight": rows, "preflight_passed": True,
                "cells": [build_cell_row({**cell, "role": ro["role"], "task_type": tt}, cdir, task, ws, None,
-                                        "qwen3:1.7b", "s", good_art) for ro in m["roles"] for tt in m["task_types"]]}
+                                        base["model"], "s", good_art) for ro in m["roles"] for tt in m["task_types"]]}
         md = render_md(doc, m)
         check(all(s in md for s in ("## Preflight", "## Wrong model cells", "## Suspect integrity cells",
                                     "## Model results", "## Thinking level actually used")), "report has all sections")
@@ -961,6 +1009,27 @@ def cmd_self_test(_a):
         except EvalError:
             ok = True
         check(ok, "empty roles list rejected by _check_matrix")
+
+        # Drift guard: a cell whose own dir is outside the pinned write scope is
+        # rejected by the pure helper (and by create-prd's final verification).
+        scope_cells = [{"name": f"{base['role']}-{tt}", "dir": os.path.join(REPO, ".datawatch", "eval", "scope-" + tt)}
+                       for tt in m["task_types"]]
+        check_write_scope(scope_cells, [c["dir"] for c in scope_cells])  # full scope -> accepted, no raise
+        check_write_scope(scope_cells, [c["dir"] for c in scope_cells] + [os.path.join(REPO, "elsewhere")])
+        check(True, "check_write_scope tolerates extra write dirs")
+        try:
+            check_write_scope(scope_cells, [c["dir"] for c in scope_cells[1:]])
+            ok = False
+        except EvalError as e:
+            msg = str(e)
+            ok = f"{base['role']}-{m['task_types'][0]}" in msg and f"scope-{m['task_types'][0]}" in msg
+        check(ok, "write scope omitting a cell's own dir -> check_write_scope rejects and names it")
+        try:
+            check_write_scope(scope_cells, [])
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok, "empty write scope -> check_write_scope rejects")
 
         local = {**m, "roles": [{**r, "llm": f"pi-host{i}-x", "node": f"host{i}"}
                                 for i, r in enumerate(m["roles"])]}
