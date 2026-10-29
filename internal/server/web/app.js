@@ -2544,6 +2544,9 @@ function navigate(view, sessionId, fromPopstate) {
   // the sub-tab and continues as the Automata view.
   if (view === 'automation') {
     _automataState.tab = 'automation';
+    // Every way in by link lands on Chains; only the Automata tab tap in
+    // the bottom navigation keeps the remembered second-row sub-tab.
+    _automationState.subtab = 'chains';
     view = 'autonomous';
   }
   // Close the new-session modal on any navigation (Escape or nav tap).
@@ -27319,6 +27322,9 @@ window.proposeScanRules = function(prdId) {
 function _backToAutomataList() {
   // An Automaton opened from an Automation goes back to that Automation.
   const returnAutomationId = window._automationReturnId || null;
+  // Returning to an Automation lands on Chains; openAutomationLink below
+  // does the same, this just keeps the list consistent if it is skipped.
+  if (returnAutomationId) _automationState.subtab = 'chains';
   // GATE alpha.36 (operator 2026-05-10): renderAutonomousView() alone
   // doesn't reset the PWA banner (back chevron, title, search icon)
   // OR the bottom-nav highlight. Operator hit "back goes to list but
@@ -28623,6 +28629,7 @@ function _automationDetailBackHTML() {
 
 function openAutomationDetail(id) {
   const st = _automationState;
+  st.subtab = 'chains'; // an open Automation always belongs to Chains
   if (st.detailId !== id) st.expanded.clear();
   st.detailId = id;
   return renderAutomationDetail(id);
@@ -28634,6 +28641,7 @@ window.openAutomationDetail = openAutomationDetail;
 // With no id it lands on the sub-tab's list.
 function openAutomationLink(id) {
   _automataState.tab = 'automation';
+  _automationState.subtab = 'chains'; // links always land on Chains
   navigate('autonomous');
   if (!id) return Promise.resolve();
   return openAutomationDetail(id);
@@ -28703,6 +28711,7 @@ window.renderAutomationStrip = renderAutomationStrip;
 function automationDetailBack() {
   _automationState.detailId = null;
   _automationState.detail = null;
+  _automationState.subtab = 'chains'; // back from the detail page lands on Chains
   closeAutomationMemberDrawer();
   renderAutomationView();
 }
