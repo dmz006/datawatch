@@ -2076,6 +2076,18 @@ Counts: 12 new Go test functions in 4 test files (the 2 rewritten ones included)
 
 ---
 
+## TS-833 — PWA operator-question notification toggles
+
+| Field | Details |
+|-------|---------|
+| **Description** | The Automata settings card carries three toggles under the operator-question switch: `autonomous.questions.notify_messaging`, `autonomous.questions.notify_alert` and `autonomous.questions.return_path`. All three are on by default. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh TS-833`. 1. Save the three values and set all three to true through `PUT /api/config`. 2. Open Settings, Automata tab, and read each toggle row. 3. For each toggle in turn, click it off, read `GET /api/config`, reload the card, then click it on again. 4. Restore the saved values. |
+| **Expected** | Step 2: every row has a translated label and is checked. Step 3: after the click the key reads false and the other two still read true; after a reload the toggle shows unchecked; the second click makes the key read true again. Step 4: the daemon holds the values it had before the run. |
+| **Actual** | Run live on 2026-10-29 against an isolated sandbox daemon built from this branch (`go build -o bin/datawatch ./cmd/datawatch/`), headless Chromium, exit 0 (1 of 1 story passed). |
+| **Result** | Pass (live) |
+
+---
+
 ## CodeQL alerts on the MCP debug transport and dictation ids
 
 Two code-scanning alerts were fixed on one branch (the third, the subprocess shell alert, was dismissed by the operator's decision and has no code change; see the plan). Each fix has its own test description, steps, expected result and actual result. The sandbox daemon in every "Steps" list is loopback only with its data under a gitignored directory, never the production daemon on `8443`. Plan and decisions: [2026-10-28-codeql-last-three-alerts.md](plans/2026-10-28-codeql-last-three-alerts.md).

@@ -144,3 +144,21 @@ Gate **PASS**: build 0, vet 0, golangci-lint 0 issues, gofmt clean, the full
 docs sync in sync after regeneration, and the live restart check showing each
 answered and withdrawn event delivered exactly once. All ten scope items carry
 committed proof.
+
+## Second corrective round: results
+
+Fixes in this round: (1) browser story `TS-833` for the three notification toggles on the settings card, recorded in `docs/testing-tracker.md` and `docs/testing.md`; (2) the word PRD replaced with Automaton in the operator-facing text this branch added or changed (`docs/howto/operator-questions-notifications.md`, `docs/api/autonomous.md`, `docs/testing-tracker.md`, and the `configure` help text in `internal/router/router.go`); (3) the how-to named an MCP tool `config_get` that is not registered, so it now names `get_config` (which takes a `section` argument, not a key) in its front matter and two sentences, and the tracker row names `get_config` too. Every other MCP tool name in the docs, how-to, changelog and tracker text this branch changed was checked against the tools registered in `internal/mcp` and exists.
+
+Every command ran under `env -u TMUX -u TMUX_TMPDIR`.
+
+| Gate | Command | Exit | Result |
+|------|---------|------|--------|
+| Browser story | `bash scripts/e2e-pwa.sh TS-833` (isolated sandbox daemon built from this branch, never production) | 0 | 1 of 1 story passed |
+| gofmt | `gofmt -l` on every Go file the branch touched | 0 | no files listed |
+| go vet | `go vet ./cmd/datawatch/ ./internal/autonomous/ ./internal/config/ ./internal/mcp/ ./internal/router/ ./internal/server/` | 0 | clean |
+| golangci-lint | `golangci-lint run` on the same packages | 0 | 0 issues |
+| Node tests | `node --test internal/server/web/app-lifecycle-subscriptions.test.js internal/server/web/app-autonomous-settings-fields.test.js` | 0 | 95 of 95 pass |
+| Full Go tests | `go test ./... -count=1` | 0 | 82 packages ok, no FAIL line |
+| After `make sync-docs` | `go test ./tests/ci ./internal/server ./internal/router -count=1` | 0 | all three ok |
+
+Notes: a first run of `TS-833` against the older installed binary timed out waiting for the toggle rows (it predates them); the passing run used `bin/datawatch` built from this tree. `npm ci` in the story folder replaced the committed `node_modules` link with a real folder; the link was restored, so the working tree carries no change there. `make sync-docs` regenerated the gitignored embedded docs copy after the how-to edits. One older tracker row (the usage calculator reset-zone contract, not touched by this branch) still says `config_get`; it was left as found.

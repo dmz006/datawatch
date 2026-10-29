@@ -4,9 +4,9 @@ docs:
   topics: [autonomous, operator-questions, notifications, websockets, subscriptions, comm]
 exec_params: []
 exec_steps:
-  - tool: config_get
+  - tool: get_config
     description: Read the operator question channel switches and their three notification toggles (all default on when the key is absent, the switch itself off)
-    args: {key: "autonomous.questions.notify_alert"}
+    args: {section: "autonomous"}
     read_only: true
   - tool: autonomous_subscriptions
     description: List the persisted lifecycle subscriptions that already catch question.answered and question.withdrawn
@@ -69,7 +69,7 @@ not read them — the question events ride exactly those rails.
   messaging announcement has nowhere to go and is skipped silently; the
   WebSocket, alert and event paths are unaffected.
 - Any of the ordinary ways to turn settings on and off — YAML config,
-  the REST settings endpoint, the MCP `config_set`/`config_get` tools,
+  the REST settings endpoint, the MCP `config_set`/`get_config` tools,
   `datawatch` CLI, a comm channel `configure` instruction, or the PWA
   settings card. All of them work; the PWA card is the only surface with a
   ready-made checkbox for this feature.
@@ -113,7 +113,7 @@ autonomous:
 |---|---|
 | YAML | as above, under `autonomous.questions` in the daemon config file. |
 | REST | `curl -sk -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"autonomous.questions.enabled": true}' https://localhost:8443/api/config` |
-| MCP | `config_set(key="autonomous.questions.enabled", value=true)` — then `config_get(key="autonomous.questions.notify_alert")` reads a toggle back. |
+| MCP | `config_set(key="autonomous.questions.enabled", value=true)` — then `get_config(section="autonomous")` reads the toggles back under `questions`. |
 | CLI | `datawatch config set autonomous.questions.enabled true` — and, to quiet an announce, `datawatch config set autonomous.questions.notify_messaging false`; read either one back with `datawatch config get <key>`. |
 | Comm channel | `configure autonomous.questions.enabled=true` (all three toggles are listed in the daemon's `configure` help text). |
 | PWA | **Settings → Autonomous Automata planning**: the four checkboxes — *Operator questions for Automata (off by default)*, *Notify on question asked and answered (on by default)*, *Alert on high-priority questions (on by default)*, and *Allow the per-question session return line on top of the event plus polled answer path (on by default)*. Flip the first one and the channel starts announcing from the next raise. |
@@ -308,7 +308,7 @@ curl -s -X POST "$BASE/api/questions/q_7d21c9e8f43c/withdraw" \
 
 | Kind | Fired when | Carries |
 |---|---|---|
-| `question.answered` | an open question's state becomes `answered` — first answer or a superseding one | the question id, the answer id it names, the chosen option, the actor, one-line details ("question q_… answered, option cap, by operator"), and the PRD/task ids when the question named them. |
+| `question.answered` | an open question's state becomes `answered` — first answer or a superseding one | the question id, the answer id it names, the chosen option, the actor, one-line details ("question q_… answered, option cap, by operator"), and the Automaton and task ids when the question named them. |
 | `question.withdrawn` | an open question's state becomes `withdrawn` | the question id, the actor, the reason (when given), one-line details. |
 
 Both are regular lifecycle events: they ride the same per-subscriber queue
@@ -317,7 +317,7 @@ across a daemon restart — the store keeps an emit marker per question (and
 per answer), and a startup reconcile re-fires exactly the ones that were
 recorded but never delivered. The event's `details` is one bounded line
 (capped at 512 characters) naming the question, the answer's option and
-actor; the event carries the PRD and task ids when the question named
+actor; the event carries the Automaton and task ids when the question named
 them, which is what routes it into the right scope. With the channel
 switch off, neither event fires — though the answer and withdrawal are
 still recorded either way, and readable by polling.
@@ -336,7 +336,7 @@ curl -s -X POST "$BASE/api/autonomous/subscriptions" \
 ```
 
 **MCP** (the ordinary `autonomous_subscribe`; the kinds accept the two
-question kinds alongside the task and PRD kinds):
+question kinds alongside the task and Automaton kinds):
 
 ```
 autonomous_subscribe(kinds="question.answered,question.withdrawn", sink_type="comm", sink_target="my-group")

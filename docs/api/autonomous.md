@@ -2264,7 +2264,7 @@ every sink type — rides them, and the kinds are in the closed
 
 | Kind | Fires when | What the subscriber sees |
 |---|---|---|
-| `question.answered` | an `open` question's state becomes `answered` — first answer or a superseding one | the question id, the answer id, the chosen option, the actor, one-line details (capped at 512 characters, no newlines), and the PRD/task/session ids when the question named them (the level is `task` when the question carries a `task_id`, else `prd`) |
+| `question.answered` | an `open` question's state becomes `answered` — first answer or a superseding one | the question id, the answer id, the chosen option, the actor, one-line details (capped at 512 characters, no newlines), and the Automaton/task/session ids when the question named them (the level is `task` when the question carries a `task_id`, else `prd`) |
 | `question.withdrawn` | an `open` question's state becomes `withdrawn` | the question id, the actor, the `reason` (when given), one-line details, the same link ids |
 
 Exactly-once is guaranteed by the event sink, not by the caller: the
