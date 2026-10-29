@@ -1,5 +1,5 @@
 # Run with: bash scripts/eval-open-model-matrix.sh (no shebang: repo lint forbids literal system-binary paths).
-# Open-model matrix eval driver (4 opencode roles x 4 task types = 16 cells).
+# Open-model matrix eval driver (roles x task types = cells; tracked matrix: 5 roles x 4 = 20).
 #
 # Fixture:  testdata/eval/open-model-matrix/matrix.json (specs/verifiers from
 #           testdata/eval/model-tiering)
@@ -25,9 +25,9 @@ usage() {
   cat <<EOF
 Usage: $SELF <subcommand> [options]
 
-  preflight   --run-id ID   llm test each role; used_model must equal expected model exactly
-  setup       --run-id ID   seed 16 cell dirs from each task type's baseline
-  create-prd  --run-id ID   ONE scratch Automaton, 1 story, 16 tasks (refuses unless preflight passed)
+  preflight   --run-id ID   one real pi-prompt one-shot per role (its model + thinking level); reported model must equal expected exactly
+  setup       --run-id ID   seed one cell dir per role x task type from each task type's baseline
+  create-prd  --run-id ID   ONE scratch Automaton, 1 story, one task per cell (refuses unless preflight passed)
   run         --run-id ID [--timeout S] [--poll S]   approve + run, poll until terminal
   collect     --run-id ID   per-cell model_identity / verification_integrity / artifact_check / model_result
   report      --run-id ID   write results.json + results.md

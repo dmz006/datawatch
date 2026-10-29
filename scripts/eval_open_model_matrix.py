@@ -1,4 +1,6 @@
-"""Open-model matrix eval driver (4 opencode roles x 4 task types = 16 cells).
+"""Open-model matrix eval driver (roles x task types = cells; the tracked matrix
+is 5 pi-prompt roles — baseline plus execution-role candidates — x 4 task types
+= 20 cells).
 
 Run as `python3 -I scripts/eval_open_model_matrix.py <subcommand>`; normally
 via scripts/eval-open-model-matrix.sh. Stdlib only.
@@ -27,6 +29,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -64,9 +67,34 @@ def matrix_path():
     return local if os.path.exists(local) else os.path.join(REPO, MATRIX_REL)
 
 
+# The baseline role: its executor cells run like any other role, and it also
+# holds the scratch Automaton's decompose / validate / guardrail roles.
+BASELINE_ROLE = "base"
+# Allowed pi thinking levels — mirrors internal/config/pi_thinking_level.go.
+# Per-role `thinking_level` (executor) and top-level `prd_thinking_level`
+# (non-executor duties) may each be null (= leave pi on its own default).
+THINKING_LEVELS = ("off", "minimal", "low", "medium", "high")
+
+
 def _check_matrix(m):
-    if len(m.get("roles", [])) != 4 or len(m.get("task_types", [])) != 4:
-        raise EvalError("matrix.json must define exactly 4 roles and 4 task_types")
+    roles = m.get("roles") or []
+    if not roles:
+        raise EvalError("matrix.json must define at least one role")
+    names = [r.get("role") for r in roles]
+    if BASELINE_ROLE not in names:
+        raise EvalError(f"matrix.json must define the {BASELINE_ROLE!r} role (it holds the decompose/validate/"
+                        "guardrail roles in addition to executing cells)")
+    if len(names) != len(set(names)):
+        raise EvalError("matrix.json role names must be unique")
+    if not m.get("task_types"):
+        raise EvalError("matrix.json must define task_types")
+    allowed = "null or: " + "|".join(THINKING_LEVELS)
+    if m.get("prd_thinking_level") is not None and m["prd_thinking_level"] not in THINKING_LEVELS:
+        raise EvalError(f"prd_thinking_level {m['prd_thinking_level']!r} not allowed ({allowed})")
+    for r in roles:
+        lvl = r.get("thinking_level")
+        if lvl is not None and lvl not in THINKING_LEVELS:
+            raise EvalError(f"role {r.get('role')!r}: thinking_level {lvl!r} not allowed ({allowed})")
     return m
 
 
@@ -164,7 +192,8 @@ def cells(m):
     for r in m["roles"]:
         for tt in m["task_types"]:
             yield {"name": f"{r['role']}-{tt}", "role": r["role"], "llm": r["llm"],
-                   "expected_model": r["model"], "task_type": tt}
+                   "expected_model": r["model"], "task_type": tt,
+                   "thinking_level": r.get("thinking_level")}
 
 
 # --------------------------------------------------------------------------
@@ -175,13 +204,13 @@ def preflight_row(role, resp=None, err=None):
     used = (resp or {}).get("used_model")
     ok = err is None and used == role["model"]
     return {"role": role["role"], "llm": role["llm"], "expected_model": role["model"],
-            "used_model": used, "ok": ok, "error": err}
+            "thinking_level": role.get("thinking_level"), "used_model": used, "ok": ok, "error": err}
 
 
 def preflight_passed(st):
     pf = st.get("preflight") or {}
     rows = pf.get("rows") or []
-    return bool(pf.get("passed")) and len(rows) == 4 and all(r.get("ok") for r in rows)
+    return bool(pf.get("passed")) and len(rows) >= 1 and all(r.get("ok") for r in rows)
 
 
 def require_preflight(st):
@@ -215,25 +244,96 @@ def classify_result(identity, integrity, verify_exit):
     return "pass" if verify_exit == 0 else "fail"
 
 
+def check_write_scope(cells, write_dirs):
+    """Drift-guard precheck (r8 lesson): a cell that commits a spec-required
+    file in its own dir must have that dir inside the PRD's pinned write scope,
+    or the drift guard refuses the commit and the cell loses its model result.
+    Pure helper: `cells` is a list of {"name", "dir"} dicts, `write_dirs` the
+    directory paths the PRD pins; raises EvalError naming every cell whose own
+    dir is not covered. Paths are compared after realpath, so relative and
+    symlinked forms both count."""
+    scope = {_real(d) for d in write_dirs}
+    missing = [f"{c.get('name') or '?'} (dir {c.get('dir')})" for c in cells
+               if _real(c.get("dir")) not in scope]
+    if missing:
+        raise EvalError(f"write scope omits cell dir(s): {', '.join(missing)} — a spec-required "
+                        f"commit inside one of them would be refused by the drift guard")
+
+
 # --------------------------------------------------------------------------
 # preflight
 # --------------------------------------------------------------------------
 
-# Cold-load on the shared GPU node can outlast the Client's default 60s read
-# timeout (observed 3 consecutive preflight runs 2026-10-15, a different role
-# timing out each time, not a broken model) — give this specific call more
-# headroom than other, already-warm API calls get.
-PREFLIGHT_TEST_TIMEOUT_S = 240
+# Cold-loading a 27-35B model on the shared GPU node can take many minutes
+# (the first pi run after an eviction waits for Ollama to pull the weights into
+# VRAM before it emits a token), and the 60 s default HTTP timeout failed
+# preflight on a different role in 3 consecutive runs (2026-10-15) even though
+# nothing was broken. Both the start call and the poll-to-completion deadline of
+# one preflight run therefore get this much headroom; never lower it below 600.
+PREFLIGHT_RUN_TIMEOUT_S = 900
+PREFLIGHT_POLL_S = 5
+SESSION_TERMINAL = ("complete", "failed", "killed")
 
 
 def llm_test(c, name):
-    return c.post(f"/api/llms/{name}/test", {"prompt": PREFLIGHT_PROMPT}, timeout=PREFLIGHT_TEST_TIMEOUT_S)
+    """Post-run fallback only (cmd_collect, when a session record carries no model).
+    Preflight no longer uses this — see pi_preflight_run."""
+    return c.post(f"/api/llms/{name}/test", {"prompt": PREFLIGHT_PROMPT}, timeout=PREFLIGHT_RUN_TIMEOUT_S)
+
+
+def preflight_start_body(role, project_dir):
+    """Request body for the preflight one-shot: the same fields the autonomous
+    executor sends for a pi-prompt task (registry entry as `backend`, bare model,
+    per-role thinking level), with every git side effect off."""
+    body = {"task": PREFLIGHT_PROMPT, "project_dir": project_dir, "backend": role["llm"],
+            "model": role["model"], "name": f"eval-preflight-{role['role']}", "one_shot": True,
+            "skip_snapshot": True, "git": False, "scrub_tmux_env": True}
+    if role.get("thinking_level"):
+        body["thinking_level"] = role["thinking_level"]
+    # Operator node pick: the daemon otherwise defaults to the entry's first
+    # compute node, which may not host the role's model. `node` in the local
+    # matrix is the real node name here; it doubles as the redaction key.
+    if role.get("node"):
+        body["compute_node"] = role["node"]
+    return body
+
+
+def pi_preflight_run(c, role, project_dir, timeout_s=PREFLIGHT_RUN_TIMEOUT_S, poll_s=PREFLIGHT_POLL_S,
+                     sleep=time.sleep):
+    """ONE real pi-prompt one-shot through the daemon for this role. Returns
+    {"used_model", "state", "session_id"} where used_model is the model the
+    daemon's session record reports. The session is always ended through the
+    API by its exact full id, whatever the outcome."""
+    sess = c.post("/api/sessions/start", preflight_start_body(role, project_dir), timeout=timeout_s)
+    sid = sess.get("full_id") or sess.get("id")
+    if not sid:
+        raise EvalError(f"session start for {role['llm']}: no session id in response: {str(sess)[:200]}")
+    try:
+        deadline = time.time() + timeout_s
+        while True:
+            idx, _ = sessions_index(c)
+            cur = idx.get(sid) or sess
+            state = cur.get("state")
+            if state in SESSION_TERMINAL:
+                break
+            if time.time() > deadline:
+                raise EvalError(f"preflight session {sid} for {role['llm']} still {state!r} after {timeout_s}s")
+            sleep(poll_s)
+        if state != "complete":
+            raise EvalError(f"preflight session {sid} for {role['llm']} ended {state!r}, expected 'complete'")
+        return {"used_model": cur.get("model") or None, "state": state, "session_id": sid}
+    finally:
+        try:
+            c.post("/api/sessions/kill", {"id": sid}, timeout=60)
+        except EvalError as e:  # already ended on its own is fine; report anything else
+            log(f"preflight session {sid}: end via API: {e}")
 
 
 def render_preflight_table(rows):
-    lines = [f"{'role':<20} {'llm':<28} {'expected':<16} {'used':<16} ok   error"]
+    lines = [f"{'role':<20} {'llm':<28} {'expected':<16} {'thinking':<9} {'used':<16} ok   error"]
     for r in rows:
-        lines.append(f"{r['role']:<20} {r['llm']:<28} {r['expected_model']:<16} {str(r['used_model']):<16} "
+        lines.append(f"{r['role']:<20} {r['llm']:<28} {r['expected_model']:<16} "
+                     f"{thinking_disp(r.get('thinking_level')):<9} {str(r['used_model']):<16} "
                      f"{'yes' if r['ok'] else 'NO ':<4} {(r.get('error') or '')[:160]}")
     return "\n".join(lines)
 
@@ -244,12 +344,21 @@ def cmd_preflight(a):
     st.setdefault("started_at", now_iso())
     st.setdefault("run_date", _dt.date.today().isoformat())
     c = Client()
+    scratch = os.path.join(run_dir(m, a.run_id), "preflight-scratch")
+    os.makedirs(scratch, exist_ok=True)
     rows = []
+    seen = {}  # one real run per distinct (llm, model, thinking level)
     for role in m["roles"]:
-        try:
-            rows.append(preflight_row(role, resp=llm_test(c, role["llm"])))
-        except EvalError as e:
-            rows.append(preflight_row(role, err=str(e)))
+        key = (role["llm"], role["model"], role.get("thinking_level"))
+        if key not in seen:
+            log(f"preflight {role['role']}: pi-prompt one-shot on {role['llm']} / {role['model']} "
+                f"(thinking {thinking_disp(role.get('thinking_level'))})")
+            try:
+                seen[key] = (pi_preflight_run(c, role, scratch), None)
+            except EvalError as e:
+                seen[key] = (None, str(e))
+        resp, err = seen[key]
+        rows.append(preflight_row(role, resp=resp, err=err))
     passed = all(r["ok"] for r in rows)
     st["preflight"] = {"at": now_iso(), "rows": rows, "passed": passed}
     save_state(m, a.run_id, st)
@@ -257,7 +366,7 @@ def cmd_preflight(a):
     if not passed:
         raise EvalError("PREFLIGHT FAILED — at least one role did not report used_model == expected model; "
                         "nothing further will run for this run-id")
-    log("PREFLIGHT OK — all 4 roles answered on their expected model")
+    log(f"PREFLIGHT OK — all {len(rows)} roles answered on their expected model")
 
 
 # --------------------------------------------------------------------------
@@ -319,18 +428,33 @@ def cmd_create_prd(a):
     pid = prd["id"]
     st["eval_prd_id"] = pid
     save_state(m, a.run_id, st)
+    # Non-executor duties (decompose/validate/guardrail) ride the PRD-level pi
+    # thinking level. Applied only when the matrix sets one; null (the tracked
+    # matrix's choice) leaves pi on its own default for those roles.
+    if m.get("prd_thinking_level"):
+        prd_action(c, pid, "set_thinking_level", {"thinking_level": m["prd_thinking_level"], "actor": ACTOR})
+        log(f"PRD-level thinking level set to {m['prd_thinking_level']}")
     # Operator-reported 2026-10-15: this whole matrix is meant to be
     # Claude-free, but decompose (planning) and the per-task guardrail
     # verifier both silently defaulted to the global claude-code setting
-    # — only the 16 cells' own workers were ever actually local. Pin both
-    # to a local model before decomposing. decompose needs real codebase
-    # tool access (headless ollama/openwebui can't explore the repo), so
-    # it uses the matrix's own largest, most-exercised role; the verifier
-    # is a cheap/quick confirmation only (the real pass/fail signal is the
-    # deterministic verify script), so it uses the cheap fast role.
-    decompose_llm = next(r["llm"] for r in m["roles"] if r["role"] == "decompose-validate")
-    guardrail_llm = next(r["llm"] for r in m["roles"] if r["role"] == "fast")
-    guardrail_model = next(r["model"] for r in m["roles"] if r["role"] == "fast")
+    # — only the cells' own workers were ever actually local. Pin both
+    # to a local model before decomposing. In the tracked matrix the
+    # baseline role holds the decompose/validate/guardrail roles: decompose
+    # needs real codebase tool access (headless ollama/openwebui can't
+    # explore the repo), so it uses the matrix's own largest,
+    # most-exercised model; the guardrail verifier is a cheap/quick
+    # confirmation only (the real pass/fail signal is the deterministic
+    # verify script) and rides the same local model here.
+    def role_by_name(n):
+        for r in m["roles"]:
+            if r["role"] == n:
+                return r
+        raise EvalError(f"matrix.json has no role {n!r}; it is required for this step")
+
+    base = role_by_name(BASELINE_ROLE)
+    decompose_llm = base["llm"]
+    guardrail_llm = base["llm"]
+    guardrail_model = base["model"]
     # set_llm (decomposition_profile) works pre-decompose (draft), but
     # set_verification_llm requires needs_review/revisions_asked/cancelled
     # — it has to wait until after decompose lands.
@@ -348,7 +472,8 @@ def cmd_create_prd(a):
     prd_action(c, pid, "set_memory_seed", {"enabled": False, "actor": ACTOR})
     prd_action(c, pid, "set_memory_harvest", {"enabled": False, "actor": ACTOR})
     prd = prd_action(c, pid, "add_story", {"title": "[eval] open-model-matrix cells",
-                                          "description": "16 cells: 4 opencode roles x 4 task types", "actor": ACTOR})
+                                          "description": f"{len(want)} cells: {len(m['roles'])} roles x "
+                                                         f"{len(m['task_types'])} task types", "actor": ACTOR})
     stories = prd.get("stories") or []
     if len(stories) != 1:
         raise EvalError(f"expected exactly 1 story after add_story, got {len(stories)}")
@@ -366,13 +491,32 @@ def cmd_create_prd(a):
         tid = new[0]["id"]
         prd_action(c, pid, "set_task_project_dir", {"task_id": tid, "project_dir": cdir, "actor": ACTOR})
         # set_task_llm's `backend` is validated against the LLM registry, so the
-        # registry entry name (an opencode-kind entry) goes there; model pins it.
+        # registry entry name (a pi-prompt entry) goes there; model pins it.
         prd_action(c, pid, "set_task_llm", {"task_id": tid, "backend": cell["llm"],
                                             "model": cell["expected_model"], "actor": ACTOR})
+        # Per-task thinking-level override: applied only when the role pins a
+        # level (null = leave pi on its own default).
+        if sc.get("thinking_level"):
+            prd_action(c, pid, "set_task_thinking_level",
+                       {"task_id": tid, "thinking_level": sc["thinking_level"], "actor": ACTOR})
         sc.update({"task_id": tid, "story_id": sid})
         save_state(m, a.run_id, st)
         log(f"task {tid} <- {cell['name']}")
     prd_set_title(c, pid, f"{TITLE_PREFIX} {a.run_id}")
+    # r8 run-3 lesson (8 of 20 cells lost): the file-drift guard compared the
+    # cells' own commits against the PRD project pinned at creation (this whole
+    # checkout) and refused the spec-required commit of review-verdict.json —
+    # the verdicts were missing, workers' work was dropped, and those cells
+    # produced no model result. Pin the PRD write scope to exactly the cell
+    # dirs (absolute, as the daemon requires; per internal/autonomous/scope.go,
+    # EffectiveTaskReadDirs includes the write dirs, so reads on them come
+    # free), so the spec-required commits land instead of tripping drift
+    # detection.
+    abs_cell_dirs = [os.path.realpath(os.path.join(REPO, st["cells"][x["name"]]["dir"])) for x in want]
+    prd_action(c, pid, "set_dirs", {"read_dirs": abs_cell_dirs, "write_dirs": abs_cell_dirs, "actor": ACTOR})
+    st["set_dirs"] = abs_cell_dirs
+    save_state(m, a.run_id, st)
+    log(f"PRD dirs pinned to {len(abs_cell_dirs)} cell dirs (drift guard accepts the cell commits)")
     prd = prd_get(c, pid)
     tasks = {t["id"]: t for (_, _, _, t) in all_tasks(prd)}
     errs = []
@@ -383,11 +527,18 @@ def cmd_create_prd(a):
             errs.append(f"{cell['name']}: llm {t.get('backend')}/{t.get('model')} != {cell['llm']}/{cell['expected_model']}")
         if _real(t.get("project_dir")) != _real(os.path.join(REPO, sc["dir"])):
             errs.append(f"{cell['name']}: project_dir {t.get('project_dir')!r} != cell dir")
-    if len(tasks) != 16:
-        errs.append(f"Automaton has {len(tasks)} tasks, expected 16")
+        if (t.get("thinking_level") or "") != (sc.get("thinking_level") or ""):
+            errs.append(f"{cell['name']}: thinking_level {t.get('thinking_level')!r} != {sc.get('thinking_level')!r}")
+    try:
+        check_write_scope([{"name": x["name"], "dir": st["cells"][x["name"]]["dir"]} for x in want],
+                          prd.get("write_dirs") or [])
+    except EvalError as e:
+        errs.append(str(e))
+    if len(tasks) != len(want):
+        errs.append(f"Automaton has {len(tasks)} tasks, expected {len(want)}")
     if errs:
         raise EvalError("scratch Automaton verification failed:\n  " + "\n  ".join(errs))
-    log(f"CREATE-PRD OK — {pid} with 16 tasks, left at needs_review")
+    log(f"CREATE-PRD OK — {pid} with {len(want)} tasks, left at needs_review")
 
 
 def assert_scratch(c, st):
@@ -432,6 +583,29 @@ def session_model(sess):
     return sess.get("model") or None
 
 
+def session_by_id(c, sid):
+    """Resolve one session by its (full) id via a bare GET /api/sessions/{id}
+    (internal/server/api.go: handleSessionSubpath -> GetSessionOrArchived). The
+    /api/sessions list response is trimmed (last-N window): by collect time the
+    worker and verifier sessions are usually long terminal, so they need not
+    appear in the list even though they are still resolvable by id — that gap
+    is what cost eight cells their used_model / integrity signal after the run
+    of 2026-10-28 (r8). The direct id GET is the primary path; only when it
+    404s (session gone from the store too) do we fall back to the list, so
+    `None` still means 'gone from the daemon' and collect notes it."""
+    if not sid:
+        return None
+    try:
+        data = c.get(f"/api/sessions/{sid}")
+    except EvalError as e:
+        if "HTTP 404" not in str(e):
+            raise  # 404 means 'not found'; anything else is a real error — don't mask it
+        log(f"session {sid} not found by id (404); falling back to the sessions list")
+        idx, _ = sessions_index(c)
+        return idx.get(sid)
+    return data if isinstance(data, dict) and (data.get("id") or data.get("full_id")) else None
+
+
 def artifact_check(cell_dir, baseline_commit, verify_script, log_path):
     """Independent of the daemon: new commit(s) in the cell's own repo + per-type verifier exit."""
     out = {"cell_repo_head": None, "new_commits": None, "verify_exit": None}
@@ -453,8 +627,16 @@ def artifact_check(cell_dir, baseline_commit, verify_script, log_path):
     return out
 
 
+def thinking_disp(lvl):
+    """Report display: a null/absent level means pi kept its own default."""
+    return lvl if lvl else "default"
+
+
 def build_cell_row(cell, cell_dir, task, worker_sess, verifier_sess, used_model, model_source, art):
     notes = [f"used_model source: {model_source}"]
+    if not used_model:
+        notes.append("used model unconfirmed: the worker session record is gone from the daemon and the "
+                     "post-run llm_test reported none — the requested model is not evidence of the used one")
     identity = classify_identity(cell["expected_model"], used_model)
     tpd = (task or {}).get("project_dir") or None
     # Verifier/diff path: verifier session cwd when one ran, else the worker session's cwd.
@@ -473,12 +655,39 @@ def build_cell_row(cell, cell_dir, task, worker_sess, verifier_sess, used_model,
             self_rep = f.read().strip()[:200] or None
     if art.get("new_commits") == 0:
         notes.append("no new commit beyond baseline in cell repo")
+    # A failed worker is not a model outcome. The pi one-shot wrapper emits the
+    # completion marker only on a clean exit with output — a non-zero exit or
+    # an empty run emits a failure marker instead (enforced by the pi backend
+    # Go tests' non-zero-exit and zero-exit-no-output cases), the daemon flips
+    # the session to 'failed' and records a non-zero failure_exit_code, and
+    # the task never reaches 'completed'. If the driver sees any of those
+    # indicators, the cell is an infrastructure failure: keep the evidence on
+    # the row, but never a pass/fail model_result.
+    # Any task status other than completed counts: review_needed (held after
+    # repeated failed attempts, e.g. a model the placed node does not host)
+    # is the common one and must not read as a model fail.
+    task_status = (task or {}).get("status")
+    failed_status = bool(task_status) and task_status != "completed"
+    failed_session = worker_sess is not None and (
+        worker_sess.get("state") in ("failed", "killed")
+        or int(worker_sess.get("failure_exit_code") or 0) != 0)
+    invalid_reason = None
+    if failed_status or failed_session:
+        invalid_reason = "worker did not complete"
+        notes.append("worker did not complete (task "
+                     + repr((task or {}).get("status"))
+                     + ", session state " + repr((worker_sess or {}).get("state"))
+                     + ", failure_exit_code " + repr((worker_sess or {}).get("failure_exit_code"))
+                     + (", task error " + repr(task["error"]) if (task or {}).get("error") else "")
+                     + ") — invalid cell: infrastructure failure, not a model result")
+    model_result = None if (failed_status or failed_session) else classify_result(identity, integrity, art.get("verify_exit"))
     return {
         "role": cell["role"], "llm": cell["llm"], "task_type": cell["task_type"],
         "expected_model": cell["expected_model"], "used_model": used_model, "model_identity": identity,
         "self_reported_model": self_rep, "verification_integrity": integrity,
         "resolved_dir": _real(resolved), "task_project_dir": tpd, "artifact_check": art,
-        "model_result": classify_result(identity, integrity, art.get("verify_exit")),
+        "thinking_level": cell.get("thinking_level"),
+        "model_result": model_result, "invalid_reason": invalid_reason,
         "task_status": (task or {}).get("status"), "session_id": (task or {}).get("session_id"),
         "notes": "; ".join(notes),
     }
@@ -491,15 +700,18 @@ def cmd_collect(a):
     c = Client()
     pid, prd = assert_scratch(c, st)
     tasks = {t["id"]: t for (_, _, _, t) in all_tasks(prd)}
-    sidx, _ = sessions_index(c)
     fallback = {}
     rows = []
     for cell in cells(m):
         sc = st["cells"].get(cell["name"]) or {}
         t = tasks.get(sc.get("task_id")) or {}
-        ws = sidx.get(t.get("session_id")) if t.get("session_id") else None
+        # Resolve the worker / verifier sessions by id (direct GET), not via
+        # the sessions list; the list fallback lives inside session_by_id and
+        # fires only on a 404, so `None` here means the session is genuinely
+        # gone from the daemon.
+        ws = session_by_id(c, t.get("session_id"))
         vid = (t.get("verification") or {}).get("verifier_id")
-        vs = sidx.get(vid) if vid else None
+        vs = session_by_id(c, vid)
         used, source = session_model(ws), "session_record.model"
         if used is None:
             if cell["llm"] not in fallback:
@@ -529,7 +741,8 @@ def cmd_collect(a):
 def build_results(st):
     pf = st.get("preflight") or {}
     return {"run_id": st.get("run_id"), "preflight": pf.get("rows") or [], "preflight_passed": preflight_passed(st),
-            "prd_id": st.get("eval_prd_id"), "cells": (st.get("collected") or {}).get("cells") or []}
+            "prd_id": st.get("eval_prd_id"), "run_notes": st.get("run_notes") or [],
+            "cells": (st.get("collected") or {}).get("cells") or []}
 
 
 def render_md(doc, m):
@@ -538,6 +751,12 @@ def render_md(doc, m):
            "## Preflight", "", "| role | llm | expected | used | ok |", "|---|---|---|---|---|"]
     for r in doc["preflight"]:
         out.append(f"| {r['role']} | {r['llm']} | {r['expected_model']} | {r['used_model']} | {'yes' if r['ok'] else 'NO'} |")
+    if doc.get("run_notes"):
+        out += ["", "## Run notes", ""] + [f"- {n}" for n in doc["run_notes"]]
+    dead = [x for x in doc["cells"] if x.get("invalid_reason")]
+    out += ["", "## Invalid cells (worker did not complete)", "",
+            "Not model results: the worker died before doing the task, so nothing about the model is measured.", ""]
+    out += [f"- {x['role']}-{x['task_type']}: task status `{x['task_status']}`; {x['notes']}" for x in dead] or ["None."]
     wrong = [x for x in doc["cells"] if x["model_identity"] != "ok"]
     out += ["", "## Wrong model cells", ""]
     out += [f"- {x['role']}-{x['task_type']}: expected `{x['expected_model']}`, used `{x['used_model']}` "
@@ -553,6 +772,13 @@ def render_md(doc, m):
     idx = {(x["role"], x["task_type"]): x for x in doc["cells"]}
     for r in m["roles"]:
         vals = [(idx.get((r["role"], t)) or {}).get("model_result") or "—" for t in types]
+        out.append(f"| {r['role']} | " + " | ".join(vals) + " |")
+    out += ["", "## Thinking level actually used", "" ,
+           "`default` = the level was left at pi's own default (null in the matrix).", ""]
+    out.append("| role | " + " | ".join(types) + " |")
+    out.append("|---|" + "---|" * len(types))
+    for r in m["roles"]:
+        vals = [thinking_disp((idx.get((r["role"], t)) or {}).get("thinking_level")) for t in types]
         out.append(f"| {r['role']} | " + " | ".join(vals) + " |")
     return "\n".join(out) + "\n"
 
@@ -607,34 +833,112 @@ def cmd_self_test(_a):
 
     with tempfile.TemporaryDirectory() as tmp:
         parent = os.path.join(tmp, "run")
-        cdir = os.path.join(parent, "cpu-docs")
+        # The pi-path fixtures derive from the tracked pi matrix (base role and
+        # one other candidate role), not from the retired opencode-era names.
+        base = next(r for r in m["roles"] if r["role"] == BASELINE_ROLE)
+        other_model = next((r["model"] for r in m["roles"] if r["role"] != BASELINE_ROLE),
+                           base["model"] + "-alt")
+        cell = {"role": base["role"], "llm": base["llm"], "expected_model": base["model"],
+                "task_type": m["task_types"][0]}
+        cdir = os.path.join(parent, f"{cell['role']}-{cell['task_type']}")
         os.makedirs(cdir)
-        cell = {"role": "cpu", "llm": "opencode-x", "expected_model": "qwen3:1.7b", "task_type": "docs"}
         good_art = {"verify_exit": 0, "new_commits": 1}
         task = {"project_dir": cdir, "status": "completed"}
-        ws = {"project_dir": cdir, "model": "qwen3:1.7b"}
+        ws = {"project_dir": cdir, "model": base["model"]}
 
-        r = build_cell_row(cell, cdir, task, ws, None, "qwen3:1.7b", "session_record.model", good_art)
+        r = build_cell_row(cell, cdir, task, ws, None, base["model"], "session_record.model", good_art)
         check(r["model_identity"] == "ok" and r["verification_integrity"] == "ok" and r["model_result"] == "pass",
               "correct cell -> pass")
-        r = build_cell_row(cell, cdir, task, ws, None, "granite4.2:8b", "session_record.model", good_art)
+        check(r["thinking_level"] is None, "cell row records thinking_level (null when the role leaves pi's default)")
+        r_pin = build_cell_row({**cell, "thinking_level": "minimal"}, cdir, task, ws, None, base["model"],
+                               "session_record.model", good_art)
+        check(r_pin["thinking_level"] == "minimal", "cell row records the pinned thinking_level")
+        r = build_cell_row(cell, cdir, task, ws, None, other_model, "session_record.model", good_art)
         check(r["model_identity"] == "wrong_model" and r["model_result"] is None,
               "wrong used_model -> wrong_model, model_result null")
         r = build_cell_row(cell, cdir, task, ws, None, None, "none", good_art)
         check(r["model_identity"] == "unknown" and r["model_result"] is None, "unknown model -> never a pass")
-        r = build_cell_row(cell, cdir, {"project_dir": parent}, {"project_dir": parent}, None, "qwen3:1.7b",
+        r = build_cell_row(cell, cdir, {"project_dir": parent}, {"project_dir": parent}, None, base["model"],
                            "session_record.model", good_art)
         check(r["verification_integrity"] == "suspect" and r["model_result"] is None,
               "ProjectDir points to parent -> suspect, model_result null")
-        r = build_cell_row(cell, cdir, task, ws, {"project_dir": parent}, "qwen3:1.7b", "session_record.model", good_art)
+        r = build_cell_row(cell, cdir, task, ws, {"project_dir": parent}, base["model"], "session_record.model", good_art)
         check(r["verification_integrity"] == "suspect", "verifier ran in parent dir -> suspect")
-        r = build_cell_row(cell, cdir, task, ws, None, "qwen3:1.7b", "session_record.model",
+        r = build_cell_row(cell, cdir, task, ws, None, base["model"], "session_record.model",
                            {"verify_exit": 1, "new_commits": 0})
         check(r["model_result"] == "fail", "missing artifact -> fail")
+        r = build_cell_row(cell, cdir, {**task, "status": "failed"},
+                           {"project_dir": cdir, "state": "failed", "failure_exit_code": 2},
+                           None, base["model"], "session_record.model", good_art)
+        check(r["model_result"] is None and "not a model result" in r["notes"],
+              "failed worker (task failed + session failed + non-zero exit) -> invalid cell, never pass/fail")
+        r = build_cell_row(cell, cdir, {**task, "status": "blocked"}, None, None, base["model"],
+                           "session_record.model", good_art)
+        check(r["model_result"] is None and "not a model result" in r["notes"],
+              "blocked task (e.g. the drift guard in r8) -> invalid cell, never pass/fail")
+        r = build_cell_row(cell, cdir, {**task, "status": "review_needed"}, ws, None, base["model"],
+                           "session_record.model", {"verify_exit": 1, "new_commits": 0})
+        check(r["model_result"] is None and "not a model result" in r["notes"],
+              "review_needed task (held after repeated early failures) -> invalid cell, never a model fail")
+        # MODEL-IDENTITY.txt: evidence, not the judge. Absent -> self_reported_model
+        # null and identity still decided by the used model; present -> recorded,
+        # and a self-report neither creates nor cancels the used-model verdict.
+        check(not os.path.exists(os.path.join(cdir, IDENTITY_FILE)), "fixture cell dir starts without MODEL-IDENTITY.txt")
+        r = build_cell_row(cell, cdir, task, ws, None, base["model"], "session_record.model", good_art)
+        check(r["self_reported_model"] is None and r["model_identity"] == "ok" and r["model_result"] == "pass",
+              "MODEL-IDENTITY.txt absent -> self_reported_model null, identity still decided by the used model (pass stands)")
+        with open(os.path.join(cdir, IDENTITY_FILE), "w", encoding="utf-8") as f:
+            f.write("claimed-model-alternate\n")
+        r = build_cell_row(cell, cdir, task, ws, None, base["model"], "session_record.model", good_art)
+        check(r["self_reported_model"] == "claimed-model-alternate" and r["model_identity"] == "ok"
+              and r["model_result"] == "pass",
+              "self-report is recorded but identity still comes from the used model (ok/pass unchanged)")
+        r = build_cell_row(cell, cdir, task, ws, None, other_model, "session_record.model", good_art)
+        check(r["self_reported_model"] == "claimed-model-alternate" and r["model_identity"] == "wrong_model"
+              and r["model_result"] is None,
+              "a self-report alone cannot rescue a wrong used_model (stays wrong_model, result null)")
+        os.unlink(os.path.join(cdir, IDENTITY_FILE))
+
+        role0model = m["roles"][0]["model"]
+        class HitClient:
+            """Direct id GET succeeds; anything else (incl. the list) must not be touched."""
+            def __init__(self):
+                self.calls = []
+            def get(self, path, timeout=None):
+                self.calls.append(path)
+                if path == "/api/sessions/host-1":
+                    return {"id": "h1", "full_id": "host-1", "state": "complete", "model": role0model}
+                raise AssertionError(f"unexpected GET {path} on a direct hit")
+        hc = HitClient()
+        hit = session_by_id(hc, "host-1")
+        check((hit or {}).get("model") == role0model and hc.calls == ["/api/sessions/host-1"],
+              "session_by_id resolves via the direct id GET without touching the sessions list")
+        class MissClient:
+            """Direct id GET 404s; only then may the sessions list be consulted."""
+            def get(self, path, timeout=None):
+                if path == "/api/sessions/host-9":
+                    raise EvalError("GET /api/sessions/host-9: HTTP 404: 404 page not found")
+                if path == "/api/sessions":
+                    return {"sessions": [{"id": "h9", "full_id": "host-9", "state": "complete",
+                                          "model": other_model}]}
+                raise AssertionError(f"unexpected GET {path}")
+        check((session_by_id(MissClient(), "host-9") or {}).get("model") == other_model,
+              "404 on the direct GET falls back to the sessions list")
+        class Other4xx:
+            def get(self, path, timeout=None):
+                raise EvalError("GET /api/sessions/host-1: HTTP 502: bad gateway")
+        try:
+            session_by_id(Other4xx(), "host-1")
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok, "non-404 lookup errors propagate instead of being read as 'session gone'")
+        check(session_by_id(MissClient(), None) is None and session_by_id(MissClient(), "") is None,
+              "no id -> None without any network call")
 
         rows = [preflight_row(x, resp={"used_model": x["model"]}) for x in m["roles"]]
         check(preflight_passed({"preflight": {"rows": rows, "passed": True}}), "matching preflight passes")
-        bad = rows[:3] + [preflight_row(m["roles"][3], resp={"used_model": "gpt-oss:20b"})]
+        bad = rows[:3] + [preflight_row(m["roles"][3], resp={"used_model": other_model})]
         st_bad = {"preflight": {"rows": bad, "passed": all(x["ok"] for x in bad)}}
         try:
             require_preflight(st_bad)
@@ -651,24 +955,119 @@ def cmd_self_test(_a):
             blocked = True
         check(blocked, "missing preflight blocks create-prd")
 
+        check(all("thinking_level" in x for x in rows), "preflight rows record the role thinking level")
+        tbl = render_preflight_table(rows)
+        check("thinking" in tbl.splitlines()[0] and (m["roles"][0].get("thinking_level") or "default") in tbl,
+              "preflight table shows the thinking level")
+        check(PREFLIGHT_RUN_TIMEOUT_S >= 600, "preflight per-call timeout covers a cold model load")
+
+        class StubClient:
+            """Fake daemon: records calls; the started session reports `model` and ends in `final`."""
+            def __init__(self, model, final="complete", polls_running=1):
+                self.model, self.final, self.left, self.calls = model, final, polls_running, []
+
+            def post(self, path, body=None, timeout=None):
+                self.calls.append((path, body, timeout))
+                if path == "/api/sessions/start":
+                    return {"id": "ab12", "full_id": "host-ab12", "state": "running", "model": body["model"]}
+                return {"status": "ok"}
+
+            def get(self, path, timeout=None):
+                state = "running" if self.left > 0 else self.final
+                self.left -= 1
+                return {"sessions": [{"id": "ab12", "full_id": "host-ab12", "state": state, "model": self.model}]}
+
+        role0 = m["roles"][0]
+        sc = StubClient(role0["model"])
+        resp = pi_preflight_run(sc, role0, tmp, sleep=lambda _s: None)
+        start = sc.calls[0]
+        check(start[0] == "/api/sessions/start" and start[1]["backend"] == role0["llm"]
+              and start[1]["model"] == role0["model"] and start[1]["one_shot"] is True
+              and start[1].get("thinking_level") == role0.get("thinking_level"),
+              "preflight starts a one-shot on the role's llm, model and thinking level")
+        check(start[2] >= 600, "preflight start call uses the long cold-load timeout")
+        check(sc.calls[-1] == ("/api/sessions/kill", {"id": "host-ab12"}, 60), "preflight ends the exact session id")
+        check(preflight_row(role0, resp=resp)["ok"], "matching reported model -> preflight row ok")
+        wrong = pi_preflight_run(StubClient(other_model), role0, tmp, sleep=lambda _s: None)
+        check(not preflight_row(role0, resp=wrong)["ok"], "different reported model -> preflight row not ok")
+        sc = StubClient(role0["model"], final="failed")
+        try:
+            pi_preflight_run(sc, role0, tmp, sleep=lambda _s: None)
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok and sc.calls[-1][0] == "/api/sessions/kill", "failed preflight session raises and is still ended")
+        sc = StubClient(role0["model"], polls_running=10 ** 9)
+        try:
+            pi_preflight_run(sc, role0, tmp, timeout_s=0, sleep=lambda _s: None)
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok and sc.calls[-1][0] == "/api/sessions/kill", "timed-out preflight session raises and is still ended")
+
         doc = {"run_id": "t", "prd_id": "p", "preflight": rows, "preflight_passed": True,
                "cells": [build_cell_row({**cell, "role": ro["role"], "task_type": tt}, cdir, task, ws, None,
-                                        "qwen3:1.7b", "s", good_art) for ro in m["roles"] for tt in m["task_types"]]}
+                                        base["model"], "s", good_art) for ro in m["roles"] for tt in m["task_types"]]}
         md = render_md(doc, m)
         check(all(s in md for s in ("## Preflight", "## Wrong model cells", "## Suspect integrity cells",
-                                    "## Model results")), "report has all sections")
+                                    "## Model results", "## Thinking level actually used")), "report has all sections")
+        check("default" in md.split("## Thinking level actually used")[1], "unpinned thinking level renders as 'default'")
 
-        local = {**m, "roles": [{**r, "llm": f"opencode-host{i}-x", "node": f"host{i}"}
+        badm = {**m, "roles": m["roles"][:-1] + [dict(m["roles"][-1], thinking_level="xhigh")],
+                "prd_thinking_level": None}
+        try:
+            _check_matrix(badm)
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok, "invalid thinking_level rejected by _check_matrix")
+        nobase = {**m, "roles": [dict(r, role=r["role"] + "-x") for r in m["roles"]]}
+        try:
+            _check_matrix(nobase)
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok, "missing baseline role rejected by _check_matrix")
+        empty = {**m, "roles": []}
+        try:
+            _check_matrix(empty)
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok, "empty roles list rejected by _check_matrix")
+
+        # Drift guard: a cell whose own dir is outside the pinned write scope is
+        # rejected by the pure helper (and by create-prd's final verification).
+        scope_cells = [{"name": f"{base['role']}-{tt}", "dir": os.path.join(REPO, ".datawatch", "eval", "scope-" + tt)}
+                       for tt in m["task_types"]]
+        check_write_scope(scope_cells, [c["dir"] for c in scope_cells])  # full scope -> accepted, no raise
+        check_write_scope(scope_cells, [c["dir"] for c in scope_cells] + [os.path.join(REPO, "elsewhere")])
+        check(True, "check_write_scope tolerates extra write dirs")
+        try:
+            check_write_scope(scope_cells, [c["dir"] for c in scope_cells[1:]])
+            ok = False
+        except EvalError as e:
+            msg = str(e)
+            ok = f"{base['role']}-{m['task_types'][0]}" in msg and f"scope-{m['task_types'][0]}" in msg
+        check(ok, "write scope omitting a cell's own dir -> check_write_scope rejects and names it")
+        try:
+            check_write_scope(scope_cells, [])
+            ok = False
+        except EvalError:
+            ok = True
+        check(ok, "empty write scope -> check_write_scope rejects")
+
+        local = {**m, "roles": [{**r, "llm": f"pi-host{i}-x", "node": f"host{i}"}
                                 for i, r in enumerate(m["roles"])]}
         public = load_public_matrix()
-        raw = {"cells": [{"llm": "opencode-host0-x", "node": "host0",
-                          "notes": "opencode-host0-x on host0, not opencode-host0-xl",
+        raw = {"cells": [{"llm": "pi-host0-x", "node": "host0",
+                          "notes": "pi-host0-x on host0, not pi-host0-xl",
                           "task_project_dir": os.path.join(REPO, ".datawatch", "eval", "c")}]}
         red = redact(raw, local, public)["cells"][0]
         pl = public["roles"][0]["llm"]
         check(red["llm"] == pl and red["node"] == public["roles"][0]["node"],
               "redact maps local llm/node names to tracked placeholders")
-        check(red["notes"] == f"{pl} on host0, not opencode-host0-xl",
+        check(red["notes"] == f"{pl} on host0, not pi-host0-xl",
               "redact replaces whole llm names only; node names only in node fields")
         check(red["task_project_dir"] == os.path.join(".datawatch", "eval", "c"),
               "redact makes in-repo paths repo-relative")
