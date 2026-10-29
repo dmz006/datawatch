@@ -41,6 +41,52 @@ func TestAutomationStatusSummaryFields(t *testing.T) {
 	}
 }
 
+func TestAutomationStatusCountsPendingInserts(t *testing.T) {
+	h := newCoordHarness(t, 3)
+	a := h.force(h.makeAuto([][3]string{{"m1", "", ""}, {"m2", "", ""}}, 3))
+	_, err := h.m.automations.Update(a.ID, 0, func(a *Automation) error {
+		a.PendingInserts = []PendingInsert{
+			{ID: "ins1", PRDID: h.prds[1].ID, Actor: "operator", AddedAt: time.Now(), Status: MemberPending},
+			{ID: "ins2", PRDID: h.prds[2].ID, Urgent: true, Actor: "session:x", AddedAt: time.Now(), Status: MemberPending},
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := h.m.Status().Automations[0]
+	// Two pending members plus two held inserts.
+	if s.PendingMembers != 4 {
+		t.Fatalf("pending_members=%d, want 2 members + 2 inserts", s.PendingMembers)
+	}
+}
+
+func TestAutomationStatusPendingInsertsListed(t *testing.T) {
+	h := newCoordHarness(t, 2)
+	a := h.force(h.makeAuto(nil, 1))
+	held := PendingInsert{ID: "ins1", PRDID: h.prds[0].ID, Name: "new step", Urgent: true, Actor: "operator", Reason: "operator asked", AddedAt: time.Now(), Status: MemberPending}
+	_, err := h.m.automations.Update(a.ID, 0, func(a *Automation) error {
+		a.PendingInserts = append(a.PendingInserts, held)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := h.m.Status().Automations[0]
+	if len(s.PendingInserts) != 1 ||
+		s.PendingInserts[0].ID != held.ID || s.PendingInserts[0].PRDID != held.PRDID ||
+		s.PendingInserts[0].Name != held.Name || s.PendingInserts[0].Urgent != held.Urgent ||
+		s.PendingInserts[0].Actor != held.Actor || s.PendingInserts[0].Reason != held.Reason ||
+		!s.PendingInserts[0].AddedAt.Equal(held.AddedAt) || s.PendingInserts[0].Status != held.Status {
+		t.Fatalf("pending_inserts=%+v, want %+v", s.PendingInserts, held)
+	}
+	// The summary carries a copy: mutating it must not touch the stored record.
+	s.PendingInserts[0].Actor = "mutated"
+	if stored, _ := h.m.GetAutomation(a.ID); len(stored.PendingInserts) != 1 || stored.PendingInserts[0].Actor != "operator" {
+		t.Fatalf("stored record mutated through the summary: %+v", stored.PendingInserts)
+	}
+}
+
 func TestAutomationStatusIdleSecondsAndBlockedReason(t *testing.T) {
 	h := newCoordHarness(t, 2)
 	a := h.force(h.makeAuto([][3]string{{"m1", "", ""}}, 2))
