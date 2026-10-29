@@ -20,6 +20,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.34.2 — Automation CLI reads the current version and shows pending inserts
+
+### Fixed
+
+- **Leaving `--expected-version` off an Automation control command no longer fails with a version mismatch.** The control commands (`datawatch automation` insert, pause, resume, skip, remove, edges, approve, cancel and the settings commands) now read the Automation's current version first and send that, so an omitted version works against a live Automation; if the Automation's version moved between the read and the write, the command reads it again and retries once instead of failing. A version you type yourself is still checked, and a stale one is still refused with the daemon's message.
+- **`datawatch automation get` and `datawatch automation status` now list pending inserts.** Each pending insert is shown with its member id, the Automaton, the reason it is held and the exact approve command to run (rows without pending inserts print none). The PENDING count in `automation status` now includes the held inserts, and the PWA's Automation status line shows the same count, with a pending insert row per insert that carries the member id, the Automaton, the reason and an Approve control.
+
 ## v9.34.1 — Header Tags icon redraw
 
 ### Changed
