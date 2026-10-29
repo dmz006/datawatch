@@ -1163,6 +1163,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handlePeers(cmd)
 	case CmdAutonomous:
 		r.handleAutonomous(cmd)
+	case CmdQuestion:
+		r.handleQuestion(cmd)
 	case CmdAudit:
 		r.handleAudit(cmd)
 	// BL220 — Configuration Accessibility Rule gap closures.
@@ -1241,6 +1243,15 @@ func (r *Router) handleMessage(msg messaging.Message) {
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
+		// Operator questions (decision item 23) — bare-reply rule: when
+		// exactly one question is open, a plain option number/label
+		// answers it; with several open it is refused and the open
+		// questions listed. Not a bare reply, or the daemon is
+		// unreachable: fall through to the existing plain-text handling.
+		if r.tryQuestionBareReply(msg.Text) {
+			return
+		}
+
 		// BL244 — plugin-declared comm commands take priority over implicit send.
 		if r.pluginReg != nil {
 			parts := strings.Fields(msg.Text)
