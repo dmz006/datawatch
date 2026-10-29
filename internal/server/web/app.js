@@ -27535,7 +27535,10 @@ function _automationBodyHTML() {
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
       <div id="automationQuestionsCard" class="prd-capacity-card questions-card" style="margin:6px 8px 0;min-width:0;">
-        <div class="cap-title">${escHtml(t('automation_questions_title'))}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="cap-title">${escHtml(t('automation_questions_title'))}</div>
+          <button type="button" id="automationQuestionsHistoryBtn" class="btn-secondary questions-history-btn" title="${escHtml(t('automation_questions_history'))}" onclick="if (typeof toggleAutomationQuestionsHistory === 'function') toggleAutomationQuestionsHistory()" style="margin-left:auto;font-size:11px;padding:2px 10px;">${escHtml(t('automation_questions_history'))}</button>
+        </div>
         <div style="margin:4px 0 6px;">
           <input id="automationQuestionsSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_questions_search'))}" aria-label="${escHtml(t('automation_questions_search'))}" onkeydown="onAutomationQuestionsSearchKeydown(event)" oninput="onAutomationQuestionsSearchInput(this.value)" style="width:100%;box-sizing:border-box;font-size:12px;">
         </div>
@@ -27655,7 +27658,10 @@ function _automationTriageLoader() {
 // POSTs. A row button hands off to window.openQuestion(id), which the answer
 // form task writes; the inline call is guarded so the card still works while
 // that function is absent.
-const _automationQuestionsState = { searchText: '' };
+const _automationQuestionsState = { searchText: '', history: false, historyList: [] };
+// Exposed so tests and the history toggle can inspect/flip the mode without
+// re-rendering the whole card.
+window._automationQuestionsState = _automationQuestionsState;
 let _automationQuestionsSearchTimer = null;
 
 // _automationQuestionsListFetch is the loader's fetch override. It builds the
@@ -27664,22 +27670,42 @@ let _automationQuestionsSearchTimer = null;
 // the list route means the questions switch is off: resolve a disabled
 // sentinel instead of failing, so the card paints only the disabled text.
 function _automationQuestionsListFetch(opts) {
-  const base = '/api/questions?state=open&limit=50';
+  // In history mode the same search field filters both decided states:
+  // the text parameter rides on each of the two state requests.
   const text = (_automationQuestionsState.searchText || '').trim();
-  const path = text ? base + '&text=' + encodeURIComponent(text) : base;
+  const textQ = text ? '&text=' + encodeURIComponent(text) : '';
   const token = localStorage.getItem('cs_token') || '';
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = 'Bearer ' + token;
   const srv = state.activeServer;
   const isRemote = srv && srv !== 'local' && srv !== 'all';
-  const url = isRemote ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
   const o = { method: 'GET', headers };
   if (opts && opts.signal) o.signal = opts.signal;
-  return fetch(url, o).then(r => {
-    if (r.status === 503) return { __automationQuestionsDisabled: true };
-    if (r.ok) return r.json();
-    return r.text().then(tx => Promise.reject(new Error(tx || r.statusText)));
-  });
+  const one = qs => {
+    const path = '/api/questions?' + qs;
+    const url = isRemote ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
+    return fetch(url, o).then(r => {
+      if (r.status === 503) return { __automationQuestionsDisabled: true };
+      if (r.ok) return r.json();
+      return r.text().then(tx => Promise.reject(new Error(tx || r.statusText)));
+    });
+  };
+  if (_automationQuestionsState.history) {
+    // History: the two decided states on the same route, merged and
+    // dated, newest first (the history ordering is the card's own).
+    return Promise.all([one('state=answered&limit=50' + textQ), one('state=withdrawn&limit=50' + textQ)]).then(res => {
+      if (res.some(r => r && r.__automationQuestionsDisabled)) return { __automationQuestionsDisabled: true };
+      const list = [];
+      res.forEach(r => {
+        (Array.isArray(r) ? r : (r && Array.isArray(r.questions) ? r.questions : [])).forEach(q => { if (q) list.push(q); });
+      });
+      const ts = x => { const n = new Date(x.created_at).getTime(); return isFinite(n) && n > 0 ? n : 0; };
+      list.sort((a, b) => ts(b) - ts(a)); // newest first
+      _automationQuestionsState.historyList = list;
+      return { count: list.length, questions: list };
+    });
+  }
+  return one('state=open&limit=50' + textQ);
 }
 
 // _automationQuestionsAgeText is a compact age label (s/m/h/d) from the
@@ -27744,7 +27770,9 @@ function _automationQuestionsLoader() {
     fetch: (url, opts) => _automationQuestionsListFetch(opts),
     failedText: msg => t('automation_questions_failed', [msg]),
     active: () => !!document.getElementById('automationQuestionsBody'),
-    render: body => window.questionsCardHtml(body),
+    render: body => _automationQuestionsState.history
+      ? window.questionsHistoryHtml(body)
+      : window.questionsCardHtml(body),
   });
 }
 
@@ -27953,6 +27981,173 @@ window.openQuestion = function(id) {
     showToast(_questionAnswerErrorMessage(err), 'error');
   });
 };
+
+// ════════════════════════════════════════════════════════════════════════════
+// v1 question history — the History control on the question card
+//
+// The same card and the same search field, a different list: switched on,
+// the card shows the recently decided questions — the two decided states on
+// the same route, GET /api/questions?state=answered and
+// GET /api/questions?state=withdrawn, merged and dated, newest first. A row
+// shows the question id, its label (when set), the escaped text, its state
+// and its date. The history is read-only: a row never carries an answer
+// control, and the dialog a row opens never renders an answer form — the
+// history only ever holds decided states, never open.
+//
+// Clicking a row loads GET /api/questions/{id}/answers and shows the answer
+// log in a dialog, oldest first (the server's order): every answer's quote
+// verbatim in an escaped <pre> (never markup), the chosen option's label,
+// the actor, the surface and the time; a superseded answer carries a
+// Superseded badge naming the superseded_by answer, and the currently
+// effective answer carries the Current marker.
+// ════════════════════════════════════════════════════════════════════════════
+
+// _questionsHistoryDateText is the row date label: the question's local
+// calendar date (YYYY-MM-DD). A missing or invalid timestamp gives ''.
+function _questionsHistoryDateText(iso) {
+  if (iso == null || iso === '') return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const p = n => (n < 10 ? '0' + n : '' + n);
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+window._questionsHistoryDateText = _questionsHistoryDateText;
+
+// _questionsHistoryTimeText is the log entry's time label: the answer's
+// local date and hour (YYYY-MM-DD HH:MM). A missing or invalid timestamp
+// gives ''.
+function _questionsHistoryTimeText(iso) {
+  const date = _questionsHistoryDateText(iso);
+  if (!date) return '';
+  const d = new Date(iso);
+  const p = n => (n < 10 ? '0' + n : '' + n);
+  return date + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+window._questionsHistoryTimeText = _questionsHistoryTimeText;
+
+// _questionsHistoryRowHtml draws one history row: the question id, its
+// label (when set), its state, the escaped text and the date. The row is
+// read-only: no button, no input, no answer control of any kind — the only
+// affordance is clicking the row to open the answer log.
+function _questionsHistoryRowHtml(q) {
+  const id = String(q.id == null ? '' : q.id);
+  const st = String(q.state == null ? '' : q.state);
+  const stateKey = st === 'answered' ? 'automation_questions_history_answered'
+    : st === 'withdrawn' ? 'automation_questions_history_withdrawn'
+    : null;
+  const stateLabel = stateKey ? t(stateKey) : (st || '');
+  const askDate = _questionsHistoryDateText(q.created_at);
+  return `<div class="questions-history-row" data-question-id="${escHtml(id)}" data-state="${escHtml(st)}" style="border-top:1px solid var(--border);padding:8px 2px;display:flex;flex-direction:column;gap:4px;cursor:pointer;" onclick="if (typeof window.openQuestionHistory === 'function') window.openQuestionHistory('${escHtml(id)}')">` +
+    `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
+      `<span class="questions-history-id" style="font-weight:600;font-size:12px;">${escHtml(id)}</span>` +
+      (q.label ? `<span class="questions-history-label" style="font-size:12px;color:var(--text);">${escHtml(q.label)}</span>` : '') +
+      (stateLabel ? `<span class="questions-history-state${stateKey ? ' questions-history-state-' + escHtml(st) : ''}" style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;">${escHtml(stateLabel)}</span>` : '') +
+    `</div>` +
+    (q.text ? `<div class="questions-history-text" style="font-size:12px;color:var(--text);overflow-wrap:anywhere;">${escHtml(q.text)}</div>` : '') +
+    (askDate ? `<div class="questions-history-date" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_questions_history_date', [askDate]))}</div>` : '') +
+    `</div>`;
+}
+
+// window.questionsHistoryHtml(body) turns the decoded history list — the
+// merged answered+withdrawn questions, or the 503 disabled sentinel — into
+// the card body, in the newest-first order the fetch produced.
+window.questionsHistoryHtml = function(body) {
+  if (!body || body.__automationQuestionsDisabled) {
+    return `<div style="color:var(--text2);">${escHtml(t('automation_questions_disabled'))}</div>`;
+  }
+  const list = Array.isArray(body) ? body : (body && Array.isArray(body.questions) ? body.questions : []);
+  if (!list.length) {
+    return `<div style="color:var(--text2);">${escHtml(t('automation_questions_history_list_empty'))}</div>`;
+  }
+  return `<div class="questions-history-list">${list.map(h => _questionsHistoryRowHtml(h || {})).join('')}</div>`;
+};
+
+// _questionsHistoryBodyHTML is the dialog body: the answer log, oldest
+// first. Each entry shows the quote verbatim in an escaped <pre> (never
+// markup), then the chosen option's label, the actor, the surface and the
+// time; a superseded entry carries the Superseded badge naming
+// superseded_by, and the entry whose id is current_answer_id carries the
+// Current marker. This is a log, not a form: no radio, no textarea, no
+// submit — the history never offers the answer control, and a withdrawn
+// question shows only its state here.
+function _questionsHistoryBodyHTML(payload, question) {
+  const p = (payload && typeof payload === 'object') ? payload : {};
+  let answers = (p.answers && Array.isArray(p.answers)) ? p.answers : [];
+  if (!answers.length && Array.isArray(payload)) answers = payload;
+  const currentId = String(p.current_answer_id != null ? p.current_answer_id : '');
+  if (!answers.length) {
+    return `<div class="questions-history-no-answers" style="font-size:12px;color:var(--text2);">${escHtml(t('automation_questions_history_no_answers'))}</div>`;
+  }
+  const options = (question && Array.isArray(question.options)) ? question.options : [];
+  const entries = answers.map(a => {
+    const ea = (a && typeof a === 'object') ? a : {};
+    const aid = String(ea.id != null ? ea.id : '');
+    const quote = ea.quote != null ? String(ea.quote) : '';
+    const chosenID = String(ea.chosen_option_id != null ? ea.chosen_option_id : '');
+    // The option's label (the raw id when the question carries no such
+    // option), exactly like the answer dialog resolves choices.
+    const chosenLabel = chosenID ? (_questionAnswerOptionLabel(options, chosenID) || chosenID) : '';
+    const time = _questionsHistoryTimeText(ea.created_at);
+    let marks = '';
+    if (currentId && aid === currentId) {
+      marks += `<span class="questions-history-current" style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 6px;">${escHtml(t('automation_questions_history_current'))}</span>`;
+    }
+    if (ea.superseded === true) {
+      marks += `<span class="questions-history-superseded" title="${escHtml(String(ea.superseded_by != null ? ea.superseded_by : ''))}" style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;">${escHtml(t('automation_questions_history_superseded', [String(ea.superseded_by != null ? ea.superseded_by : '')]))}</span>`;
+    }
+    return `<div class="questions-history-entry" data-answer-id="${escHtml(aid)}" style="margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:8px;">` +
+      (quote !== '' ? `<pre class="questions-history-quote" style="margin:0 0 6px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);">${escHtml(quote)}</pre>` : '') +
+      (chosenLabel ? `<div class="questions-history-chosen" style="font-size:12px;color:var(--text);margin-bottom:2px;">${escHtml(t('automation_questions_history_chosen', [chosenLabel]))}</div>` : '') +
+      `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--text2);">` +
+        `<span class="questions-history-actor">${escHtml(t('automation_questions_history_actor', [String(ea.actor != null ? ea.actor : '')]))}</span>` +
+        `<span class="questions-history-surface">${escHtml(t('automation_questions_history_surface', [String(ea.surface != null ? ea.surface : '')]))}</span>` +
+        (time ? `<span class="questions-history-time">${escHtml(t('automation_questions_history_time', [time]))}</span>` : '') +
+        marks +
+      `</div>` +
+      `</div>`;
+  }).join('');
+  return `<div class="questions-history-log" style="max-height:50vh;overflow-y:auto;">${entries}</div>`;
+}
+window._questionsHistoryBodyHTML = _questionsHistoryBodyHTML;
+
+// window.openQuestionHistory(id) is the hand-off target of the history
+// rows. It loads GET /api/questions/{id}/answers and shows the answer log
+// in a dialog — the log is the whole dialog: there is no option radio and
+// no quote box, so a decided question (answered or withdrawn) never shows
+// an answer form. Option labels resolve from the history list the row came
+// from (the list items carry the question's options).
+window.openQuestionHistory = function(id) {
+  const qid = String(id == null ? '' : id);
+  const stateRef = _automationQuestionsState;
+  return automationRequest('GET', '/api/questions/' + encodeURIComponent(qid) + '/answers').then(payload => {
+    const question = (Array.isArray(stateRef.historyList) ? stateRef.historyList : []).find(q => q && String(q.id) === qid) || null;
+    showModal({
+      title: t('automation_questions_history_title', [question && question.id != null ? String(question.id) : qid]),
+      body: _questionsHistoryBodyHTML(payload, question),
+    });
+  }).catch(err => {
+    showToast(_questionAnswerErrorMessage(err), 'error');
+  });
+};
+
+// toggleAutomationQuestionsHistory flips the card between the open queue
+// and the history, re-requests through the card's own loader (the same
+// search text applies to both lists), and marks the button active.
+function toggleAutomationQuestionsHistory() {
+  const state2 = _automationQuestionsState;
+  state2.history = !state2.history;
+  if (state2.history) state2.historyList = [];
+  const btn = document.getElementById('automationQuestionsHistoryBtn');
+  if (btn && btn.classList) btn.classList.toggle('active', state2.history);
+  const ctl = window._listLoaders && window._listLoaders.automation_questions;
+  if (ctl) ctl.load();
+}
+window.toggleAutomationQuestionsHistory = (() => {
+  if (typeof window.toggleAutomationQuestionsHistory !== 'function') {
+    window.toggleAutomationQuestionsHistory = toggleAutomationQuestionsHistory;
+  }
+  return window.toggleAutomationQuestionsHistory;
+})();
 
 // The empty state shows only after a load that succeeded with zero
 // Automations: not before the first load completes, not from cached data, and

@@ -2719,5 +2719,18 @@
   "automation_questions_answer_current": "Respuesta actual",
   "automation_questions_answer_supersedes_note": "Esta respuesta sustituye a la respuesta actual.",
   "automation_questions_answer_required": "Elija una opción o escriba una respuesta antes de enviar.",
-  "automation_questions_answer_submit": "Responder"
+  "automation_questions_answer_submit": "Responder",
+  "automation_questions_history": "Historial",
+  "automation_questions_history_list_empty": "Sin preguntas respondidas o retiradas",
+  "automation_questions_history_answered": "respondida",
+  "automation_questions_history_withdrawn": "retirada",
+  "automation_questions_history_date": "el %1$s",
+  "automation_questions_history_time": "a las %1$s",
+  "automation_questions_history_title": "Pregunta %1$s — registro de respuestas",
+  "automation_questions_history_no_answers": "No hay respuestas registradas para esta pregunta.",
+  "automation_questions_history_chosen": "Elegida: %1$s",
+  "automation_questions_history_actor": "por %1$s",
+  "automation_questions_history_surface": "vía %1$s",
+  "automation_questions_history_superseded": "Reemplazada por %1$s",
+  "automation_questions_history_current": "Actual"
 }

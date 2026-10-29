@@ -2719,5 +2719,18 @@
   "automation_questions_answer_current": "現在の回答",
   "automation_questions_answer_supersedes_note": "この回答は、現在の回答と置き換えます。",
   "automation_questions_answer_required": "送信する前に、選択肢を選択するか回答を入力してください。",
-  "automation_questions_answer_submit": "回答"
+  "automation_questions_answer_submit": "回答",
+  "automation_questions_history": "履歴",
+  "automation_questions_history_list_empty": "回答済み・取り下げ済みの質問はありません",
+  "automation_questions_history_answered": "回答済み",
+  "automation_questions_history_withdrawn": "取り下げ済み",
+  "automation_questions_history_date": "日付: %1$s",
+  "automation_questions_history_time": "時刻: %1$s",
+  "automation_questions_history_title": "質問 %1$s — 回答ログ",
+  "automation_questions_history_no_answers": "この質問には回答が記録されていません。",
+  "automation_questions_history_chosen": "選択: %1$s",
+  "automation_questions_history_actor": "回答者: %1$s",
+  "automation_questions_history_surface": "経路: %1$s",
+  "automation_questions_history_superseded": "差し替え済み: %1$s",
+  "automation_questions_history_current": "現在"
 }

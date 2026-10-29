@@ -2719,5 +2719,18 @@
   "automation_questions_answer_current": "Current answer",
   "automation_questions_answer_supersedes_note": "This answer replaces the current one.",
   "automation_questions_answer_required": "Pick an option or type an answer before submitting.",
-  "automation_questions_answer_submit": "Answer"
+  "automation_questions_answer_submit": "Answer",
+  "automation_questions_history": "History",
+  "automation_questions_history_list_empty": "No answered or withdrawn questions",
+  "automation_questions_history_answered": "answered",
+  "automation_questions_history_withdrawn": "withdrawn",
+  "automation_questions_history_date": "on %1$s",
+  "automation_questions_history_time": "at %1$s",
+  "automation_questions_history_title": "Question %1$s — answer log",
+  "automation_questions_history_no_answers": "No answers recorded for this question.",
+  "automation_questions_history_chosen": "Chosen: %1$s",
+  "automation_questions_history_actor": "by %1$s",
+  "automation_questions_history_surface": "via %1$s",
+  "automation_questions_history_superseded": "Superseded by %1$s",
+  "automation_questions_history_current": "Current"
 }

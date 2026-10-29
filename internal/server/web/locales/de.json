@@ -2719,5 +2719,18 @@
   "automation_questions_answer_current": "Aktuelle Antwort",
   "automation_questions_answer_supersedes_note": "Diese Antwort ersetzt die aktuelle Antwort.",
   "automation_questions_answer_required": "Wählen Sie eine Option oder geben Sie eine Antwort ein, bevor Sie absenden.",
-  "automation_questions_answer_submit": "Antworten"
+  "automation_questions_answer_submit": "Antworten",
+  "automation_questions_history": "Verlauf",
+  "automation_questions_history_list_empty": "Keine beantworteten oder zurückgezogenen Fragen",
+  "automation_questions_history_answered": "beantwortet",
+  "automation_questions_history_withdrawn": "zurückgezogen",
+  "automation_questions_history_date": "am %1$s",
+  "automation_questions_history_time": "um %1$s",
+  "automation_questions_history_title": "Frage %1$s — Antwortverlauf",
+  "automation_questions_history_no_answers": "Keine Antworten für diese Frage vorhanden.",
+  "automation_questions_history_chosen": "Gewählt: %1$s",
+  "automation_questions_history_actor": "von %1$s",
+  "automation_questions_history_surface": "über %1$s",
+  "automation_questions_history_superseded": "Ersetzt durch %1$s",
+  "automation_questions_history_current": "Aktuell"
 }
