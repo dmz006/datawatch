@@ -4563,6 +4563,7 @@ quote, actor, surface) in one read. The session line above is an
 without `return_path: true` (or a daemon with no router wired for the line)
 never gets it, and a lost delivery is one daemon warning, never a retry.
 How-to: [howto/operator-questions-notifications](howto/operator-questions-notifications.md).
+**Answering (this step):** open the queue, pick an option or type your words, and read the record back — from every surface: [howto/operator-questions-answering](howto/operator-questions-answering.md).
 
 **Body caps.** Raising: 64 KiB. Answer: 64 KiB plus a 16 KiB quote cap.
 
@@ -4591,23 +4592,31 @@ session log). Well-formed `${secret:name}` references pass the scan.
 | Task | YAML | REST | MCP | CLI / comm | PWA / Android / iOS |
 |---|---|---|---|---|---|
 | Toggle the channel | `autonomous.questions.enabled` | `PUT /api/config` | `config_set` (the generic config tool — wired; round-trip pinned in `internal/mcp/questions_config_surface_test.go`) | `datawatch config set autonomous.questions.enabled true\|false` (wired; round-trip pinned in `cmd/datawatch/questions_config_surface_test.go`); comm `configure autonomous.questions.enabled=true` (wired — the key is in the comm `configure` key set) | Settings → General toggle, labeled in all five locales (`settings_automata_questions_enabled`), round-trip covered by `internal/server/questions_settings_locale_test.go` |
-| Raise | n/a | `POST /api/questions` | deferred — no `question_raise` MCP tool yet | deferred — no CLI `ask` verb and no comm `ask` command yet | deferred — no raise form / queue view in the PWA or the companion apps yet |
-| List / read | n/a | `GET /api/questions`, `GET /api/questions/{id}` | deferred — no `list_questions` MCP tool yet | deferred — no CLI list verb yet | deferred — no queue view in the PWA or the companion apps yet |
-| Answer | n/a | `POST /api/questions/{id}/answer` | deferred — no `answer_question` MCP tool yet | deferred — no CLI `answer` verb and no comm `answer` command yet | deferred — no answer sheet in the PWA or the companion apps yet |
-| Withdraw | n/a | `POST /api/questions/{id}/withdraw` | deferred — no `withdraw_question` MCP tool yet | deferred — no CLI `retract` verb and no comm `retract` command yet | deferred — no queue view in the PWA or the companion apps yet |
-| Answer log | n/a | `GET /api/questions/{id}/answers` | deferred — no `list_answers` MCP tool yet | deferred — no CLI log verb yet | deferred — no queue view in the PWA or the companion apps yet |
+| Raise | n/a | `POST /api/questions` | `question_raise` (registered) | `datawatch question raise --text … --option id=label …` (no comm raise verb yet) | the Automation tab's queue card lists open questions; the raise form is not in the PWA or the companion apps yet |
+| List / read | n/a | `GET /api/questions`, `GET /api/questions/{id}` | `question_list`, `question_get` | `datawatch question list …`, `datawatch question show <id>`; comm `question list`, `question show <id>` | the Automation tab's queue card, with search |
+| Answer | n/a | `POST /api/questions/{id}/answer` | `question_answer` | `datawatch question answer <id> --option <id> [--text "…"]`; comm `question answer <id> <N\|option id> [quote…]` (and the bare-reply rule when exactly one question is open) | **Answer** on a row — pick an option or type the quote — in the Automation tab's queue card |
+| Withdraw | n/a | `POST /api/questions/{id}/withdraw` | `question_withdraw` | `datawatch question withdraw <id> --reason …` (no comm withdraw verb yet) | not in the PWA or the companion apps yet — CLI / MCP / REST |
+| Answer log | n/a | `GET /api/questions/{id}/answers` | `question_get` (the standing answer's summary); the full log is the REST route | `datawatch question show <id>` (the standing answer); the full log is the REST route | the queue card's **History** — full log with the **Current** / **Superseded** markers |
 
-Deferral reasons, per AGENT.md's parity rule — every cell above states why it
-is deferred: the PWA / Android / iOS cells are the queue view (list, raise,
-answer, withdraw) that is not built in the PWA or the companion apps yet —
-tracked in [parity-status](parity-status.md); the MCP cells are the question
-tools (`question_raise`, `list_questions`, `answer_question`,
-`withdraw_question`, `list_answers`) that are not registered in the MCP
-server yet — tracked in [api-mcp-mapping](api-mcp-mapping.md#operator-questions);
-the CLI / comm cells are the `ask` / `answer` / `retract` verbs that are not
-added yet — with one exception already wired: the comm `configure`
-`autonomous.questions.enabled` key (see the Toggle row). Until those rows
-land, the channel is REST + Config.
+Parity, per AGENT.md's rule, per cell above: the switch, the six REST routes and
+the PWA queue card (Automation tab: queue search, answer sheet, history with the
+answer log) are wired; the MCP question tools (`question_raise`, `question_list`,
+`question_get`, `question_answer`, `question_withdraw` — mappings in
+[api-mcp-mapping](api-mcp-mapping.md#operator-questions)) and the CLI / comm
+verbs (`datawatch question …`; comm `question list` / `show` / `answer` + the
+bare-reply rule) are wired too. The companion apps (Android / iOS) still owe the
+queue view (list, raise, answer) — tracked in
+[parity-status](parity-status.md) ([datawatch-app#283](https://github.com/dmz006/datawatch-app/issues/283)).
+
+**Answering by surface** — the queue, the options, your words, and the record:
+
+| Surface | How you answer |
+|---|---|
+| **PWA** | Automation tab → *Operator questions* card → **Answer** on a row — pick an option or type your words in the quote field → submit; **History** for the answer log (the earlier answers stay, marked *Superseded by …*) |
+| **CLI** | `datawatch question answer <id> --option <id> [--text "…"]`; `datawatch question withdraw <id> --reason …` removes an open question |
+| **MCP** | `question_answer` — `chosen_option_id` (or `null`) and/or `quote`; `question_withdraw` while it is still open |
+| **Comm channel** | `question answer <id> <option number or id> [quote…]`; with exactly one open question a bare reply also works (first word the option number, or the whole message an exact option label) |
+| **REST API** | `POST /api/questions/{id}/answer` with `{"chosen_option_id": "proceed", "quote": "…"}` |
 
 **Access control (federation).** Reads need the autonomous read capability
 (`autonomous:read`); raising, answering and withdrawing need the autonomous
@@ -4636,7 +4645,7 @@ See the audit section of the API reference above.
 |---|---|
 | REST | The six endpoints above — every state, the whole answer log, the same JSON for every caller. |
 | Config | The one switch (`autonomous.questions.enabled`), via YAML, `PUT /api/config`, MCP `config_set` (round-trip pinned in `internal/mcp/questions_config_surface_test.go`), `datawatch config set` (round-trip pinned in `cmd/datawatch/questions_config_surface_test.go`), comm `configure`, or the PWA Settings → General toggle (all five locales). |
-| MCP / CLI / comm | The switch already works there: MCP `config_set`, `datawatch config set`, and comm `configure` (all on `autonomous.questions.enabled`). The question verbs and MCP tools — not yet; logged deferrals, same object when the rows land. |
+| MCP / CLI / comm | The switch and the verbs both work there: MCP `config_set` plus the `question_*` tools, `datawatch question list \| show \| answer \| withdraw \| raise` and `datawatch config set`, and comm `question list / show / answer` (plus the bare-reply rule) and `configure` — all on the same object. |
 | Android and iOS | Not yet — the queue view (list, raise, answer) is not built in the companion apps yet. Tracked in [parity-status](parity-status.md) and [datawatch-app#283](https://github.com/dmz006/datawatch-app/issues/283). |
 
 **Monitoring (B7), n/a per item, with reasons.** This step's parity line is
@@ -4647,9 +4656,10 @@ mutation lands in the audit log under its question CEF action
 (`question_raised`, `question_answered`, `answer_superseded`,
 `question_withdrawn`, `question_answer_refused`), and queue and state counts
 are queryable through `GET /api/questions` with its `state`, `context`,
-`asker` and `limit` filters. The queue view, the surface verbs and the stats
-wiring follow in plan steps 2-3, and this is the reason recorded for
-deferring monitoring here.
+`asker` and `limit` filters. The queue view and the surface verbs shipped
+with this channel (see the answering how-to above); what is deferred here is
+the channel's own statistics wiring, and that is the reason recorded for
+deferring monitoring.
 
 ---
 
