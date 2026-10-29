@@ -3,7 +3,9 @@
 Test data only: nothing here is read by the daemon, and creating it changes no
 default, daemon config or automaton-level LLM setting. It defines a second eval
 grid over the open (pi-prompt/Ollama) models, reusing the Claude tiering eval's
-task fixtures unchanged.
+task fixtures unchanged. The grid is **pi-only**: every role runs through the pi
+backend, and the old opencode lane is out of scope (it was retired when this
+matrix was re-scoped; nothing in this directory references it anymore).
 
 ## Shape: 20 cells
 
