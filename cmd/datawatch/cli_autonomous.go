@@ -33,6 +33,10 @@ Subcommands:
                                   Triage read: the failed and blocked Automata waiting for operator triage,
                                   newest first, beside the alert threshold — the same text the comm verb
                                   (autonomous triage) and the triage alert show
+  decisions [automaton-id] [--state open|answered|withdrawn|expired] [--limit N] [--json]
+                                  Decision line: the operator decisions, newest first, one line each with
+                                  the question, the answer and any task held on it — the same text the
+                                  comm verb (autonomous decisions) shows
   config-get                      Read current autonomous config
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
@@ -203,6 +207,7 @@ Subcommands:
 		newAutonomousEventsCmd(),
 		// Triage read (docs/plans/2026-10-26-autonomous-triage-read-route.md).
 		newAutonomousTriageCmd(),
+		newAutonomousDecisionsCmd(),
 	)
 	return cmd
 }

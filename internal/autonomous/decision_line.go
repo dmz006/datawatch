@@ -26,6 +26,12 @@ type DecisionLineAnswer struct {
 	AnsweredAt  *time.Time `json:"answered_at"`
 }
 
+// DecisionLineWait is a task held on a decision, with the reason it shows.
+type DecisionLineWait struct {
+	TaskID     string `json:"task_id"`
+	WaitReason string `json:"wait_reason"`
+}
+
 // DecisionLineEntry is one decision on the line.
 type DecisionLineEntry struct {
 	ID             string              `json:"id"`
@@ -37,6 +43,7 @@ type DecisionLineEntry struct {
 	PRDID          string              `json:"prd_id"`
 	TaskIDs        []string            `json:"task_ids"`
 	WaitingTaskIDs []string            `json:"waiting_task_ids"`
+	WaitingTasks   []DecisionLineWait  `json:"waiting_tasks"`
 	Answer         *DecisionLineAnswer `json:"answer"`
 }
 
@@ -51,13 +58,16 @@ func BuildDecisionLine(f QuestionFilter, store DecisionLineStore, lookup func(pr
 		return out
 	}
 	// One Automaton is read once however many of its decisions are listed.
-	type taskRefs struct{ named, waiting map[string][]string }
+	type taskRefs struct {
+		named   map[string][]string
+		waiting map[string][]DecisionLineWait
+	}
 	cache := map[string]*taskRefs{}
 	refsFor := func(prdID string) *taskRefs {
 		if r, ok := cache[prdID]; ok {
 			return r
 		}
-		r := &taskRefs{named: map[string][]string{}, waiting: map[string][]string{}}
+		r := &taskRefs{named: map[string][]string{}, waiting: map[string][]DecisionLineWait{}}
 		cache[prdID] = r
 		if prdID == "" || lookup == nil {
 			return r
@@ -72,7 +82,7 @@ func BuildDecisionLine(f QuestionFilter, store DecisionLineStore, lookup func(pr
 				for _, ref := range DecisionRefs(t.Spec) {
 					r.named[ref] = append(r.named[ref], t.ID)
 					if normTaskStatus(t.Status) == TaskWaitingDecision {
-						r.waiting[ref] = append(r.waiting[ref], t.ID)
+						r.waiting[ref] = append(r.waiting[ref], DecisionLineWait{TaskID: t.ID, WaitReason: t.WaitReason})
 					}
 				}
 			}
@@ -91,7 +101,11 @@ func BuildDecisionLine(f QuestionFilter, store DecisionLineStore, lookup func(pr
 			AskedAt:        q.CreatedAt,
 			PRDID:          q.PRDID,
 			TaskIDs:        append([]string{}, refs.named[q.ID]...),
-			WaitingTaskIDs: append([]string{}, refs.waiting[q.ID]...),
+			WaitingTaskIDs: []string{},
+			WaitingTasks:   append([]DecisionLineWait{}, refs.waiting[q.ID]...),
+		}
+		for _, w := range e.WaitingTasks {
+			e.WaitingTaskIDs = append(e.WaitingTaskIDs, w.TaskID)
 		}
 		if q.State == QuestionAnswered {
 			if a, ok := store.CurrentAnswer(q.ID); ok {
