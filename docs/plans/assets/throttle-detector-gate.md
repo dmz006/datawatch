@@ -165,3 +165,19 @@ that is outside this gate's check and outside this task's scope.
 Per the gate rules, the gofmt failure is reported, not repaired.
 
 result: fail
+
+## Later corrective round
+
+The results above are the gate run as recorded. A later corrective round
+changed two things that affect them: the gofmt finding in check 1 was fixed,
+and the version handling in check 8 was superseded — this feature branch does
+not edit either `Version` variable and carries its CHANGELOG entry under the
+`Unreleased` heading (the merge helper stamps the version), so the
+"v9.30.3" figures in check 8 no longer describe the branch tree.
+
+## Parity surface
+
+Detection internals plus one settings-card default: the session manager's
+output-line path, `config.DefaultDetection()` and the PWA Detection Filters
+card. REST/MCP/CLI/comm-channel shapes are unchanged; the mobile client's
+Settings card default is tracked in `docs/plans/parity-issues/`.

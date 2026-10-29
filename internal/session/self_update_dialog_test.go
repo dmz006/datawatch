@@ -113,10 +113,9 @@ func TestSelfUpdatePatterns_NotInPromptOrRateLimitLists(t *testing.T) {
 	if matched, _ := m.matchPromptInLines([]string{line}, 10); matched != "" {
 		t.Errorf("update notice classified as a prompt (matched %q)", matched)
 	}
-	lower := strings.ToLower(line)
-	for _, pat := range m.effectiveRateLimitPatterns() {
-		if strings.Contains(lower, strings.ToLower(pat)) {
-			t.Errorf("update notice matches rate-limit pattern %q", pat)
+	for family := range builtinRateLimitPhrases {
+		if matchesBuiltinRateLimitLines(family, line) {
+			t.Errorf("update notice matches the %s rate-limit table", family)
 		}
 	}
 }

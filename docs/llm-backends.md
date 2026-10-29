@@ -330,26 +330,20 @@ session's details (name, task, directory, backend) and selects it in the resume 
 
 ### Rate limit detection
 
-claude-code is the only backend with captured throttle lines. Every line below
-was copied verbatim from the fixtures in `testdata/rate_limit_lines/` (the
-directory README records each line's in-tree source):
-
-```
-⎿  You've hit your limit · resets 10pm (America/New_York)
-5-hour limit reached ∙ resets 2pm
-Weekly limit reached
-Hit weekly limit
-Opus limit reached
-Sonnet limit reached
-You're out of extra usage · resets 11:50am (America/New_York)
-```
+claude-code is the only backend with captured throttle lines. The built-in
+phrases are the usage-limit lines of its own limit messages and usage dialog
+(the hard-limit lines, the extra-usage line, the approaching-limit warning, the
+reset-time announcements and the stop-and-wait menu option). Every one is
+recorded verbatim, with its in-tree source, in the fixtures under
+`testdata/rate_limit_lines/` and the directory README.
 
 Before a line is matched, the detector trims surrounding whitespace and
 lowercases it, and strips ANSI cursor escapes it would otherwise misread; all
 matches are line-start anchored, so a line that merely quotes one of these
 phrases inside ordinary output does not match. The `⎿` gutter glyph plus two
-spaces that claude-code prints before secondary lines is tolerated as that
-family's own prefix. Table phrases are only checked on lines under 2048
+spaces that claude-code prints before secondary lines, and the numbered menu
+rows of its usage dialog (with or without the `❯` cursor), are tolerated as
+that family's own prefixes. Table phrases are only checked on lines under 2048
 characters; the shared protocol line is not subject to that length gate.
 
 On top of the tool's own lines, the session carries two plain protocol lines

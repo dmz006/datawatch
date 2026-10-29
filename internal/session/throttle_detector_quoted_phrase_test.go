@@ -72,7 +72,8 @@ func TestRateLimitDetectorIgnoresQuotedPhraseInThrottleTaskOutput(t *testing.T) 
 	// what the GitHub-token-throttled security workflow prints when
 	// the API is exhausted. The sentence quotes one of the detector's
 	// list entries verbatim in the middle of the line (the entry is
-	// also one of the RateLimitPatterns defaults in internal/config).
+	// a phrase of the claude-code built-in table; the generic list that
+	// once held it for every backend was removed).
 	line := "I checked what the GitHub-token-throttled security workflow prints when the API " +
 		"bucket is drained; it outputs You've hit your limit and then sleeps for the retry " +
 		"window before attempting the next request."

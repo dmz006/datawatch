@@ -5,9 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.30.3 — Throttle detection now needs the backend's own error line at the start of the line
-
-### Throttle detection now matches only a backend's own error line at the start of the line
+### Changed
 
 - **Throttle detection now looks for each backend's own error line at the start of the line.** Instead of searching anywhere in a backend's output for a throttle phrase, detection now matches the backend's own error message and only when the phrase begins that line, so the decision is based on what the backend is actually reporting rather than on anything printed around it.
 - **Ordinary output that quotes a throttle phrase no longer pauses a backend.** A log line, echo, or result that merely mentions a throttle phrase in the middle of a sentence is treated as data now, so a backend is no longer throttled by its own text quoting a phrase.
@@ -15,10 +13,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **An operator's `rate_limit_patterns` override is applied as before and replaces the built-in matches.** When an operator sets their own patterns, they fully take the place of the built-in list — and, like everything else now, each operator pattern is matched at the start of a line as well.
 - **After upgrading, the usage back-off status shows the patterns as stale until an operator rechecks them.** Because a stored pattern that was not checked against the new start-of-the-line rule may no longer mean what it did before, the status flags the patterns as stale and asks an operator to reconfirm them rather than silently trusting old values.
 - **Back-off durations are unchanged.** The lengths of time a backend backs off are the same as before; only what triggers the detection changed.
-
-## v9.30.2 — ZAP report attach tolerates API throttling
-
-- **The security scan no longer goes red when GitHub throttles the report upload.** The owasp-zap workflow's last step attaches the scan reports to a release. It now runs only for a real release tag (never for a main branch run), retries with a growing wait when GitHub throttles the token, and, if the throttling persists, logs a warning and leaves the run green because the scan result is what counts; the reports stay available from the run's `owasp-zap-reports` artifact. A scan finding above the accepted thresholds, or any other upload error such as a permissions failure, still fails the run. A new section in `docs/operations.md` explains how to re-attach the reports by hand.
+- **The built-in throttle list is now a per-backend table, and the shipped `rate_limit_patterns` default is empty.** The generic default list is gone; the Settings Detection Filters card shows that the built-in table applies instead of listing old phrases, and saving the card does not bring the generic list back. The claude-code usage-dialog lines (the approaching-limit warning, the reset-time announcement and the stop-and-wait menu option) stay detected, anchored to that backend's own dialog lines. A short section in `docs/operations.md` records the decision.
 
 ## v9.30.1 — Descendant-only stall bound for pi-prompt workers
 

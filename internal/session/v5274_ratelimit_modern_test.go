@@ -9,9 +9,11 @@ package session
 // the line start (case-insensitive, after the family's recorded "⎿  "
 // gutter), so only lines that LEAD with a recorded phrase are
 // detections — the recordings are in testdata/rate_limit_lines/ with
-// per-line provenance in the README. Phrasings from the era before any of
-// those in-tree recordings (e.g. "rate limit exceeded", "quota exceeded")
-// are no longer built in: they belong to the operator-configured flat
+// per-line provenance in the README. The usage-dialog lines of the former
+// generic list stay detections for claude-code (their dedicated table
+// test is TestRateLimitClaudeDialogEntries). Phrasings that no in-tree
+// capture attributes to any backend (e.g. "rate limit exceeded",
+// "quota exceeded") are no longer built in: they belong to the operator-configured flat
 // list, whose classic substring-anywhere semantics for all backends are
 // pinned by TestRateLimitOperatorFlatListKeepsSubstringBehavior in
 // rate_limit_lines_test.go.
@@ -54,6 +56,10 @@ func TestRateLimitDetector_5hWeeklyModernPhrasings(t *testing.T) {
 		{"opus-reached", "Opus limit reached", true},
 		{"sonnet-reached", "Sonnet limit reached", true},
 		{"gutter-form", "⎿  You've hit your limit ∙ resets 10pm (America/New_York)", true},
+		// The dialog-tier lines the pre-change suite asserted as true.
+		{"warn-tier", "Approaching usage limit", true},
+		{"limit-will-reset-at", "limit will reset at 9pm", true},
+		{"weekly-usage-limit-reset", "Weekly usage limit reached. Resets in 2 days.", true},
 		{"protocol-marker", "DATAWATCH_RATE_LIMITED: resets 2026-10-28T16:00:00Z", true},
 
 		// False positives: a phrase quoted somewhere else on the line is
@@ -90,5 +96,18 @@ func TestRateLimitDetector_LongLineGuard(t *testing.T) {
 	// The shared protocol marker is not subject to the gate.
 	if !matchesRateLimit("DATAWATCH_RATE_LIMITED: resets 2026-10-28T16:00:00Z") {
 		t.Error("protocol marker must detect regardless of the gate")
+	}
+}
+
+func TestParseRateLimitResetTime_ModernResetMarker(t *testing.T) {
+	// "5-hour limit reached ∙ resets 2pm" — the parser's family-2
+	// "resets " marker should still find the clock token.
+	line := "5-hour limit reached ∙ resets 2pm"
+	got := parseRateLimitResetTime(line)
+	if got.IsZero() {
+		t.Fatalf("expected reset time parsed from %q, got zero", line)
+	}
+	if got.Hour() != 14 || got.Minute() != 0 {
+		t.Errorf("got hour=%d minute=%d want 14:00 (2pm)", got.Hour(), got.Minute())
 	}
 }

@@ -1,6 +1,6 @@
 # Throttle-detector live validation
 
-Date: 2026-10-28 (host `johnnyjohnny`, datawatch `9.30.3`, commit `da44be860`)
+Date: 2026-10-28 (the daemon host, branch build, commit `da44be860`)
 Scope: live end-to-end check that a line *quoting* one of the rate-limit
 detector's list entries mid-sentence does **not** trip the detector on a
 live pi-prompt session and does **not** activate a usage back-off. This run
@@ -11,15 +11,14 @@ changed no source files and did not attempt to produce a real throttle.
 - Branch binary built in the project worktree: `go build -o datawatch
   ./cmd/datawatch/` (commit `da44be860`, 2026-10-28).
 - Sandbox under an **allowed project root** that is **git-ignored**:
-  `/home/dmz/workspace/.datawatch-test-throttle/live/` — `workspace/.gitignore:14`
-  matches `.datawatch-test-*`, so `git -C /home/dmz check-ignore -v` reports
-  it as ignored and it never appears in `git status`. Config
+  `<sandbox dir>/live/` — the workspace `.gitignore` matches
+  `.datawatch-test-*`, so `git check-ignore -v` reports it as ignored and it never appears in `git status`. Config
   (`.../live/config.yaml`) has an isolated `data_dir`, `server` on
   `127.0.0.1:18219` (no `server.token`, so REST probes needed no bearer
   auth), `session.llm_backend: pi-prompt`, and a `project_dir` at
   `.../live/project` — an **empty plain directory, not a checkout and not a
   git repository of its own** (the daemon's `allowed_project_roots` are
-  `/home/dmz/.datawatch/prd-worktrees` and `/home/dmz/workspace`; earlier
+  the PRD worktree root and the workspace root; earlier
   attempts with a scratch path outside both roots were refused verbatim:
   `project dir refused: project directory is outside the allowed project
   roots ... add a root with server.allowed_project_roots`, which is why the
@@ -29,7 +28,7 @@ changed no source files and did not attempt to produce a real throttle.
   `td_set_api`). Started with `env -u TMUX -u TMUX_TMPDIR` and an isolated
   `TD_STATE_DIR`/`TD_OWNER` so no sibling test-daemon state is touched.
 - pi backend check: installed — `pi` v1.3.0 at
-  `/home/dmz/.nvm/versions/node/v24.15.0/bin/pi`. Model:
+  `<node bin dir>/pi`. Model:
   `ollama/qwen3.8-64k:27b` (local Ollama at 127.0.0.1:11434; verified
   present before the run). No backend substitution.
 
@@ -37,11 +36,9 @@ changed no source files and did not attempt to produce a real throttle.
 
 The registered list entry quoted by the test line is the **first phrase of
 the `claude-code` backend family** in
-`internal/session/rate_limit_lines.go` → `builtinRateLimitPhrases`:
-
-```
-you've hit your limit
-```
+`internal/session/rate_limit_lines.go` → `builtinRateLimitPhrases` (its
+verbatim text is the first entry of that table and of
+`testdata/rate_limit_lines/claude-code.txt`; it is not repeated here).
 
 The file's package comment states the matching rules that make this test
 meaningful: a line is a built-in signal only when the trimmed line **starts
@@ -65,11 +62,11 @@ tr -d '\0' < /proc/3185782/cmdline        # marker re-verified at start
 ```
 
 Observed cmdline at start:
-`/home/dmz/.datawatch/prd-worktrees/ea7c0001/datawatch start --foreground
---config /home/dmz/workspace/.datawatch-test-throttle/live/config.yaml
+`<worktree>/datawatch start --foreground
+--config <sandbox dir>/live/config.yaml
 --no-mcp`
 
-`GET /api/health` → `"status":"ok"`, `"version":"9.30.3"`, REST listener
+`GET /api/health` → `"status":"ok"`, `"version":"<build version>"`, REST listener
 `loopback:true`.
 `GET /api/backends` → `{"active":"pi-prompt","llm":[{"name":"claude-code","available":true,"enabled":true}]}`
 
@@ -92,20 +89,20 @@ curl -s -X POST http://127.0.0.1:18219/api/sessions/start \
   -H 'Content-Type: application/json' \
   -d '{"task":"When you receive a message, respond with the single word ok
       and nothing else, then stay idle.",
-       "project_dir":"/home/dmz/workspace/.datawatch-test-throttle/live/project",
+       "project_dir":"<sandbox dir>/live/project",
        "backend":"pi-prompt","model":"ollama/qwen3.8-64k:27b",
        "name":"throttle-live-quoted-line"}'
 ```
 
-Observed: session `65aa` (`johnnyjohnny-65aa`), `backend_family:
-"pi-prompt"`, `state: "running"`, pane `cs-johnnyjohnny-65aa`,
+Observed: session `65aa` (`<host>-65aa`), `backend_family:
+"pi-prompt"`, `state: "running"`, pane `cs-<host>-65aa`,
 `one_shot: true`, `input_mode: "tmux"`.
 
 ### 3. Send the quoted line as input
 
 The line is an ordinary sentence about a throttle bug that quotes the
 claude-code list entry verbatim **in the middle of the sentence** (the entry
-is `you've hit your limit`). Neither it nor the shared marker sits at the
+is the first claude-code list entry). Neither it nor the shared marker sits at the
 line start, and the session family (`pi-prompt`) has no phrase table — this
 is exactly the combination the anchored, per-backend matcher must not fire
 on:
@@ -113,23 +110,23 @@ on:
 ```
 curl -s -X POST http://127.0.0.1:18219/api/sessions/send \
   -H 'Content-Type: application/json' \
-  -d '{"session_id":"johnnyjohnny-65aa",
+  -d '{"session_id":"<host>-65aa",
        "text":"While debugging the throttle bug, I saw the retry log print
-       \"you'\'ve hit your limit\" before the wait window began.",
+       \"<first claude-code list entry>\" before the wait window began.",
        "source":"throttle-live-validation"}'
 ```
 
-Observed: `{"ok":true,"session_id":"johnnyjohnny-65aa"}`.
+Observed: `{"ok":true,"session_id":"<host>-65aa"}`.
 
 Delivery was then verified in the session's pane output
-(`.../data/sessions/johnnyjohnny-65aa/output.log`); the exact line is
+(`.../data/sessions/<host>-65aa/output.log`); the exact line is
 present verbatim as typed into the pane (this is the line the detector's
 output-line path scanned; the shell echo `While: command not found` after
 it is the pane treating the sentence as a shell word, expected and
 harmless):
 
 ```
-...$ While debugging the throttle bug, I saw the retry log print "you've hit your limit" before the wait window began.
+...$ While debugging the throttle bug, I saw the retry log print "<first claude-code list entry>" before the wait window began.
 ```
 
 ### 4. Usage back-off status and session state after (immediately, and
@@ -161,7 +158,7 @@ the pane returned to the prompt). It never entered any
 | Usage back-off after t+20 s | still clear | still clear (`"active":[]`) |
 | Session state after | not rate-limited | `running` → `complete` (normal one-shot finish) |
 
-The mid-sentence quote of the list entry `you've hit your limit` on a
+The mid-sentence quote of the first claude-code list entry on a
 pi-prompt session did not activate the detector: no back-off appeared at
 either probe and the session did not flip to the rate-limited state —
 consistent with the anchored, per-backend matching documented in
@@ -170,7 +167,7 @@ consistent with the anchored, per-backend matching documented in
 ## Cleanup
 
 - Session `65aa` ended via REST: `POST /api/sessions/kill`
-  (`{"session_id":"johnnyjohnny-65aa"}`) → `{"status":"ok"}`;
+  (`{"session_id":"<host>-65aa"}`) → `{"status":"ok"}`;
   `GET /api/sessions` afterwards shows only that session in state
   `complete` (no new sessions were created by the run).
 - Daemon stopped **only via its recorded PID**: `td_stop_one 3185782` — the
@@ -180,9 +177,15 @@ consistent with the anchored, per-backend matching documented in
   (`curl: (7) Failed to connect`).
 - Leftover check against the pre-start baseline (12 unrelated operator
   daemons, recorded and untouched): **no leftover test daemons**.
-- Sandbox tree at `/home/dmz/workspace/.datawatch-test-throttle/`
+- Sandbox tree at `<sandbox dir>/`
   (config, project dir, data dir, daemon log, evidence snapshot) was removed
-  after the evidence was written up; `git -C /home/dmz status` is clean and
+  after the evidence was written up; `git status` of the workspace is clean and
   the scratch paths were git-ignored the whole time.
 
 result: pass
+
+## Parity surface
+
+Detection internals only: the validation touches the session manager's
+output-line path and the REST `/api/usage-backoff`, `/api/sessions` and
+`/api/health` reads. No PWA, mobile, MCP, CLI or comm-channel surface changes.

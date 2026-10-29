@@ -35,6 +35,13 @@ normalized), so a fixture and its table phrase must carry the same glyph.
 | 5 | `claude-code.txt` | `Opus limit reached` | `RELEASE-NOTES-v5.27.4.md:44` (same section, printed as "Opus limit reached" / "Sonnet limit reached") | Same incident: model-specific limit phrasings. |
 | 6 | `claude-code.txt` | `Sonnet limit reached` | `RELEASE-NOTES-v5.27.4.md:44` (same section) | Same incident: model-specific limit phrasings. |
 | 7 | `claude-code.txt` | `You're out of extra usage · resets 11:50am (America/New_York)` | `CHANGELOG.md:14569` (BL262 operator-reported line); also `docs/plans/historical-releasenotes/RELEASE-NOTES-v6.11.2.md:56` and `RELEASE-NOTES-v6.11.3.md:14`; `internal/session/ratelimit_parser_test.go:113-128` includes the `⎿`-prefixed form | BL262 extra-usage exhaustion line. |
+| 8 | `claude-code.txt` | `Approaching usage limit` | pre-change tree (merge-base `4f7d91309`): `internal/session/v5274_ratelimit_modern_test.go:58` (the old suite asserted it as a true detection); `internal/session/manager.go:146` (old list entry, WARN-tier dialog) | claude-code usage-dialog WARN line, restored after the anchored matcher first dropped it. Test string reused verbatim. |
+| 9 | `claude-code.txt` | `Your usage limit will reset at 9pm (America/Los_Angeles).` | pre-change `internal/session/ratelimit_parser_test.go:27`; `manager.go:6785` ("Claude prose" comment) | claude-code prose form of the reset announcement; also the leading-phrase source for the `usage limit will reset` entries. |
+| 10 | `claude-code.txt` | `limit will reset at 9pm` | pre-change `internal/session/v5274_ratelimit_modern_test.go:59` (asserted true by the old suite) | Old test string, reused verbatim as the leading-phrase source for `limit will reset at`. |
+| 11 | `claude-code.txt` | `Weekly usage limit reached. Resets in 2 days.` | pre-change `internal/session/v5274_ratelimit_modern_test.go:53` (asserted true by the old suite) and `:100` | Old test string for the `weekly usage limit` entry. |
+| 12 | `claude-code.txt` | `❯ 1. Stop and wait for limit to reset` | pre-change `internal/session/self_update_dialog_test.go:85`; `manager.go:7667` (auto-accept comment) | Option 1 of the claude-code usage dialog, with the `❯` (U+276F) cursor row; anchored through the family's menu-row prefixes. |
+| 13 | `claude-code.txt` | `wait for limit to reset` | pre-change `manager.go:166` (old list entry, commented "Option 1 text — appears when dialog auto-wraps to next line"); `RELEASE-NOTES-v6.2.0.md:121` (BL240) | The wrapped continuation of option 1 (line 12). The text is the old list entry itself; no wider capture exists in-tree. |
+| 14 | `claude-code.txt` | `Resets at 2pm` | pre-change `manager.go:164` (old list entry, commented `"Resets at 2pm" — reset time announcement`); `RELEASE-NOTES-v5.27.6.md` (BL215 dialog text) | Reset-time announcement line of the dialog. |
 
 ### Secondary in-tree references (corroboration, not fixtures)
 
@@ -74,8 +81,8 @@ Pipeline for each line in `processOutputLine` (`internal/session/manager.go`):
    still anchors at its first non-blank character.
 3. **Matching (`internal/session/rate_limit_lines.go`)** — line-start anchored,
    case-insensitive, per-backend: the protocol marker (every backend) or a
-   phrase from the family's table, optionally after the family's `⎿  ` gutter
-   prefix. A line that merely quotes a phrase mid-sentence never matches.
+   phrase from the family's table, optionally after one of the family's
+   documented prefixes (the `⎿  ` gutter and the `❯ 1. ` / `1. ` menu rows). A line that merely quotes a phrase mid-sentence never matches.
 4. **Length gate** — table-phrase matching only runs on lines with
    `len(line) < 2048`; the `DATAWATCH_RATE_LIMITED:` protocol marker always
    matches regardless.

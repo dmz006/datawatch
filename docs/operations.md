@@ -2263,6 +2263,43 @@ detection:
 
 Sessions with `output_mode: chat` skip tmux capture-pane and idle timeout prompt detection entirely. Chat sessions use their conversation manager for state — the tmux pane is a fallback log, not the interactive surface.
 
+## Rate-limit detection: the built-in per-backend table
+
+Rate-limit (throttle) detection no longer starts from a generic list of phrases
+that applies to every backend. The built-in matching is a table in the daemon,
+keyed by backend family (`internal/session/rate_limit_lines.go`), and a phrase
+counts only when the backend's own throttle line begins with it (after
+surrounding whitespace is trimmed). A line that merely quotes a phrase in the
+middle of a sentence — a log, an echoed command, a doc paragraph — never
+pauses a backend. The shared `DATAWATCH_RATE_LIMITED:` protocol line is the one
+rule that applies to every backend, also line-start only.
+
+### This is a deliberate decision
+
+- **The table replaces the generic list.** The former built-in default for
+  `detection.rate_limit_patterns` was removed from `config.DefaultDetection()`;
+  the field is now unset out of the box. The table lives in code, next to the
+  fixtures that justify each entry (`testdata/rate_limit_lines/`), because a
+  phrase is only trustworthy together with the backend that prints it and the
+  line it was captured from. A flat editable list cannot carry that
+  association.
+- **Operator patterns still work.** If you set `detection.rate_limit_patterns`
+  (globally or per LLM, from the file, `PUT /api/config`, a comm channel or
+  Settings → Detection Filters), your list replaces the built-in table and is
+  applied as before: a flat, case-insensitive substring match anywhere on the
+  line, for every backend. Clear the list and the built-in table applies again.
+- **Saving the settings card does not bring the generic list back.** The card
+  shows no phrases and a note that the built-in table applies while no list is
+  set. Only a pattern you add yourself is written to the config.
+- **Adding a phrase for a backend.** Record the line in
+  `testdata/rate_limit_lines/<backend>.txt` with its source in the directory
+  README, then add the phrase to the table; a test checks both directions.
+  Backends with no captured line rely on the protocol line or on an operator
+  list until one is recorded.
+
+After an upgrade the usage back-off status reports the pattern fingerprint as
+stale until it is rechecked (`POST /api/usage-backoff/recheck`).
+
 ---
 
 ## PWA connection stability (cellular / Tailscale)

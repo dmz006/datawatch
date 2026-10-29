@@ -15,9 +15,9 @@
 //
 //  2. Backend table — the session's BackendFamily has
 //     builtinRateLimitPhrases entries and the trimmed line starts with
-//     one of them (or with that family's documented line prefix from
-//     builtinRateLimitLinePrefix followed by one of them),
-//     case-insensitive. Comparisons are byte-exact otherwise: the table
+//     one of them (or with one of that family's documented line
+//     prefixes from builtinRateLimitLinePrefixes followed by one of
+//     them), case-insensitive. Comparisons are byte-exact otherwise: the table
 //     does not normalize Unicode, so each phrase carries the exact
 //     glyph it was captured with (⎿ U+237F, · U+00B7, ∙ U+22C5).
 //
@@ -35,12 +35,15 @@
 // the operator, and the directory README records each line's source.
 // matchesBuiltinRateLimitLines anchors at the line start (after the
 // family's optional prefix), so a captured line that leads with a phrase
-// is detected while a line that merely quotes one is not. The old
-// v5.25.5-era seeded defaults ("rate limit exceeded", "quota exceeded",
-// "usage limit will reset", "stop and wait", "resets at", …) do not
-// lead any captured line and are no longer built in; operators who still
-// rely on them list them under detection.rate_limit_patterns and get
-// them back through the flat-substring path.
+// is detected while a line that merely quotes one is not. The claude-code
+// usage-dialog entries of the former generic list (the warning, the
+// reset-time announcement and the stop-and-wait menu option) are part of
+// the claude-code table: each is anchored to a line that dialog prints.
+// The generic seeds that no in-tree capture attributes to any backend
+// (the plain "rate limit exceeded" / "quota exceeded" wordings) are no
+// longer built in; operators who still rely on them list them under
+// detection.rate_limit_patterns and get them back through the
+// flat-substring path.
 //
 // Known gaps
 // ----------
@@ -88,6 +91,18 @@ var builtinRateLimitPhrases = map[string][]string{
 		// related 'you're out of credits/quota/usage' phrasings").
 		"out of extra usage",
 		"you're out of",
+		// The claude-code usage dialog. The WARN tier and the HARD-limit
+		// dialog print these as their own lines (fixtures: claude-code.txt
+		// lines 8-14); the menu option is anchored through the family's
+		// menu-row prefixes below.
+		"approaching usage limit",
+		"your usage limit will reset",
+		"usage limit will reset",
+		"limit will reset at",
+		"weekly usage limit",
+		"stop and wait",
+		"wait for limit to reset",
+		"resets at",
 	},
 	// No captured lines yet — the shared protocol marker is the only
 	// built-in detection for these backends.
@@ -98,12 +113,13 @@ var builtinRateLimitPhrases = map[string][]string{
 	"ollama":          nil,
 }
 
-// builtinRateLimitLinePrefix holds the family's own recorded leading
-// gutter for its prompt-dialog lines (⎿ U+237F for the claude-code
-// dialog), byte-exact. A phrase after this prefix counts as
-// line-leading for that family only.
-var builtinRateLimitLinePrefix = map[string]string{
-	"claude-code": "⎿  ",
+// builtinRateLimitLinePrefixes holds the family's own recorded leading
+// glyphs for its prompt-dialog lines, byte-exact: the output gutter
+// (⎿ U+237F) and the numbered menu rows of the usage dialog, where the
+// selected row carries the ❯ (U+276F) cursor. A phrase after one of these
+// prefixes counts as line-leading for that family only.
+var builtinRateLimitLinePrefixes = map[string][]string{
+	"claude-code": {"⎿  ", "❯ 1. ", "1. "},
 }
 
 // matchesBuiltinRateLimitLines reports whether line is a built-in
@@ -119,13 +135,14 @@ func matchesBuiltinRateLimitLines(backendFamily, line string) bool {
 	if strings.HasPrefix(low, builtinRateLimitMarkerLower) {
 		return true
 	}
-	prefix := strings.ToLower(builtinRateLimitLinePrefix[backendFamily])
 	for _, phrase := range builtinRateLimitPhrases[backendFamily] {
 		if strings.HasPrefix(low, phrase) {
 			return true
 		}
-		if prefix != "" && strings.HasPrefix(low, prefix+phrase) {
-			return true
+		for _, prefix := range builtinRateLimitLinePrefixes[backendFamily] {
+			if strings.HasPrefix(low, strings.ToLower(prefix)+phrase) {
+				return true
+			}
 		}
 	}
 	return false
@@ -149,7 +166,7 @@ func builtinRateLimitPatternsFlat() []string {
 		for _, phrase := range builtinRateLimitPhrases[family] {
 			out = append(out, family+"|"+phrase)
 		}
-		if prefix := builtinRateLimitLinePrefix[family]; prefix != "" {
+		for _, prefix := range builtinRateLimitLinePrefixes[family] {
 			out = append(out, family+"|prefix|"+prefix)
 		}
 	}

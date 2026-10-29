@@ -32372,7 +32372,9 @@ function loadDetectionFilters() {
     const builtinDefaults = {
       prompt_patterns: ['? ', '> ', '$ ', '# ', '[y/N]', '[Y/n]', 'Do you want to', 'Allow ', 'Trust ', '(y/n)', 'Would you like', 'Proceed?', 'Enter to confirm', '❯', 'Ask anything', '>>> '],
       completion_patterns: ['DATAWATCH_COMPLETE:'],
-      rate_limit_patterns: ['DATAWATCH_RATE_LIMITED:', "You've hit your limit", 'rate limit exceeded', 'quota exceeded'],
+      // No flat default: when unset, the daemon's built-in per-backend table
+      // applies (see the hint rendered below), so nothing is listed here.
+      rate_limit_patterns: [],
       input_needed_patterns: ['DATAWATCH_NEEDS_INPUT:'],
     };
     // Debounce/cooldown numeric settings
@@ -32409,6 +32411,7 @@ function loadDetectionFilters() {
       const isUsingDefaults = patterns.length === 0;
       const displayPatterns = isUsingDefaults ? defaults : patterns;
       const id = 'det_' + s.key;
+      const usesBuiltinTable = isUsingDefaults && s.key === 'rate_limit_patterns';
       const items = displayPatterns.map((p, i) =>
         `<div class="det-item" style="display:flex;align-items:center;gap:4px;padding:2px 0;">
           <span style="flex:1;font-size:10px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${isUsingDefaults ? 'opacity:0.5;' : ''}" title="${escHtml(p)}">${escHtml(p)}</span>
@@ -32418,8 +32421,9 @@ function loadDetectionFilters() {
       html += `<div style="padding:6px 12px;border-bottom:1px solid var(--border);">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div style="font-size:11px;color:var(--text2);font-weight:600;">${s.label}</div>
-          <span style="font-size:9px;color:var(--text2);">${isUsingDefaults ? defaults.length + ' defaults' : patterns.length + ' custom'}</span>
+          <span style="font-size:9px;color:var(--text2);">${usesBuiltinTable ? escHtml(t('settings_detection_rate_limit_builtin') || 'built-in table') : isUsingDefaults ? defaults.length + ' defaults' : patterns.length + ' custom'}</span>
         </div>
+        ${usesBuiltinTable ? `<div class="det-builtin-hint" style="font-size:9px;color:var(--text2);margin:4px 0;">${escHtml(t('settings_detection_rate_limit_builtin_hint') || 'No list is set, so the built-in per-backend table applies.')}</div>` : ''}
         <div id="${id}" style="max-height:120px;overflow-y:auto;margin:4px 0;">${items}</div>
         <div style="display:flex;gap:4px;margin-top:4px;">
           <input type="text" class="form-input" id="${id}_add" placeholder="Add pattern..." style="flex:1;font-size:10px;padding:2px 6px;" />

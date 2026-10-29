@@ -5,3 +5,10 @@ Hit weekly limit
 Opus limit reached
 Sonnet limit reached
 You're out of extra usage · resets 11:50am (America/New_York)
+Approaching usage limit
+Your usage limit will reset at 9pm (America/Los_Angeles).
+limit will reset at 9pm
+Weekly usage limit reached. Resets in 2 days.
+❯ 1. Stop and wait for limit to reset
+wait for limit to reset
+Resets at 2pm

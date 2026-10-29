@@ -168,6 +168,61 @@ func TestBuiltinRateLimitAnchoredMatching(t *testing.T) {
 	}
 }
 
+// TestRateLimitClaudeDialogEntries pins both directions for the claude-code
+// usage-dialog entries that the anchored matcher once dropped: the lines
+// the old suite asserted as true (the strings are the old test strings and
+// the recorded dialog lines in testdata/rate_limit_lines/claude-code.txt)
+// must detect for claude-code, and ordinary text using the same words must
+// not detect for any backend, nor may the claude-code lines detect for a
+// backend that does not print them.
+func TestRateLimitClaudeDialogEntries(t *testing.T) {
+	cases := []struct {
+		name   string
+		family string
+		line   string
+		want   bool
+	}{
+		// True: dialog lines, bare and indented, for claude-code.
+		{"warn-tier", "claude-code", "Approaching usage limit", true},
+		{"warn-tier-indented", "claude-code", "   Approaching usage limit", true},
+		{"prose-form", "claude-code", "Your usage limit will reset at 9pm (America/Los_Angeles).", true},
+		{"usage-limit-will-reset", "claude-code", "usage limit will reset at 9pm", true},
+		{"limit-will-reset-at", "claude-code", "limit will reset at 9pm", true},
+		{"weekly-usage-limit", "claude-code", "Weekly usage limit reached. Resets in 2 days.", true},
+		{"menu-selected-row", "claude-code", "❯ 1. Stop and wait for limit to reset", true},
+		{"menu-plain-row", "claude-code", "  1. Stop and wait for limit to reset", true},
+		{"menu-bare-option", "claude-code", "Stop and wait for limit to reset", true},
+		{"menu-wrapped-tail", "claude-code", "wait for limit to reset", true},
+		{"reset-announcement", "claude-code", "Resets at 2pm", true},
+		{"gutter-form", "claude-code", "⎿  Resets at 2pm", true},
+
+		// False: the same words inside ordinary text.
+		{"quoted-warn", "claude-code", "The dashboard shows Approaching usage limit in amber when a seat passes 80% of its quota.", false},
+		{"quoted-prose", "claude-code", "Release notes: the parser also reads \"your usage limit will reset at 9pm\"", false},
+		{"quoted-weekly", "claude-code", "The weekly usage limit page lists plan reset details", false},
+		{"quoted-menu", "claude-code", "Reviewer comment: choose \"stop and wait\" only if the schedule allows", false},
+		{"quoted-wrapped", "claude-code", "otherwise \"wait for limit to reset\" costs a day", false},
+		{"stop-and-think", "claude-code", "Stop and think about the plan before editing the matcher.", false},
+		{"resets-the-counter", "claude-code", "Resets the counter at midnight, so a retry loop never sees a stale value.", false},
+		{"model-prose-line", "claude-code", "● The dialog prints Approaching usage limit before the hard stop", false},
+		{"numbered-list-prose", "claude-code", "2. Stop and wait", false},
+
+		// False: the claude-code dialog lines do not detect for a backend
+		// that does not print them.
+		{"pi-warn", "pi-prompt", "Approaching usage limit", false},
+		{"pi-menu", "pi-prompt", "❯ 1. Stop and wait for limit to reset", false},
+		{"opencode-reset", "opencode", "Resets at 2pm", false},
+		{"ollama-weekly", "ollama", "Weekly usage limit reached. Resets in 2 days.", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := matchesBuiltinRateLimitLines(tc.family, tc.line); got != tc.want {
+				t.Errorf("matchesBuiltinRateLimitLines(%q, %q) = %v, want %v", tc.family, tc.line, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestRateLimitLineFixturesMatchPerBackend reads every backend fixture file
 // in testdata/rate_limit_lines (one file per backend, named
 // <backend>.txt as the README lists them), runs each captured line through
@@ -230,7 +285,7 @@ func TestRateLimitOrdinaryTextDoesNotMatch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read ordinary fixture %s: %v", e.Name(), err)
 		}
-		for _, raw := range strings.Split(string(data), "\n"){
+		for _, raw := range strings.Split(string(data), "\n") {
 			line := raw
 			if line == "" || line == "\r" {
 				continue
@@ -290,10 +345,13 @@ func TestBuiltinFlatFingerprintEncodesBackend(t *testing.T) {
 		t.Error("adding a phrase must change the flat fingerprint")
 	}
 
-	// Removing one changes it similarly.
+	// Removing it again restores the digest of the moved-phrase state.
+	withOllama := fingerprintPatterns(builtinRateLimitPatternsFlat())
 	builtinRateLimitPhrases["ollama"] = nil
-	_, hadPrefix := builtinRateLimitLinePrefix["claude-code"]
-	if !hadPrefix {
+	if got := fingerprintPatterns(builtinRateLimitPatternsFlat()); got == withOllama {
+		t.Error("removing a phrase must change the flat fingerprint")
+	}
+	if len(builtinRateLimitLinePrefixes["claude-code"]) == 0 {
 		t.Fatal("test precondition: claude-code gutter prefix present")
 	}
 }
