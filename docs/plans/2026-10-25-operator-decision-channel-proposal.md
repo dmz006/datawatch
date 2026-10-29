@@ -414,3 +414,9 @@ Commands (env -u TMUX -u TMUX_TMPDIR): gofmt -l FAIL (`internal/server/repair_de
 ## Step 2 filed 2026-10-29
 
 Operator, 2026-10-29, quoted: "Yes, file step 2 now, and why did it not get done, that was 2 or more days ago". Step 2 (notifications and the return path) is filed as draft PRD `e0830001` (registry row 246). Step 3 (the surfaces: the PWA question queue and answer form, CLI, MCP and comm answering) is the step that lets the operator answer in the PWA; it depends on Steps 1 and 2 and waits for the operator's go-ahead. Steps 4 and 5 still need re-confirmation. Why Step 2 was not filed at the Step 1 merge on 2026-10-27: the confirmation covered Step 1 only ("Steps 2 to 5 are filed one at a time"), the supervisor listed Steps 2 to 5 as design-gated although Steps 2 and 3 had full designs and needed only a filing and a go-ahead, and no checklist step made the supervisor file or ask about the next step when a step shipped.
+
+## Scope correction for Steps 4 and 5, 2026-10-29
+
+Operator, 2026-10-29, quoted: "Agent.md is datawatch specific rules we are using as a model and building into datawatch for others, don't over state it since other won't have those rules but will have design driven questions in their automation".
+
+Consequences recorded: Step 4 ships as a product feature that works for any project, with no dependence on this repository's AGENT.md or project rules, and it no longer writes a proposal file's `Confirmed` line (that convention is this project's own, set by hand). Step 5 is an edit of this project's own rules file, not a product feature; it has no product surface and is done by the supervisor after Step 4 is in use. Step 4 is filed as draft PRD `f1f200be`.
