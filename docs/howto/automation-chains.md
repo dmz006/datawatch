@@ -163,9 +163,12 @@ way:
 
 ## 6. Control operations
 
-Every control call takes the Automation's current `version` (CLI:
-`--expected-version`) and is refused with HTTP 409 if it moved since you read
-it. `--actor` and `--reason` are recorded in the audit trail.
+Every control call is checked against the Automation's current `version`
+(CLI: `--expected-version`). Left out, the CLI reads the Automation's
+current version first and uses it, retrying the call once if the version
+moved in between. A `--expected-version` you supply yourself is sent as is,
+and a stale one is still refused with HTTP 409 either way. `--actor` and
+`--reason` are recorded in the audit trail.
 
 | Operation | CLI | MCP | REST (`/api/automations/{id}/...`) | Allowed when |
 |---|---|---|---|---|
@@ -193,8 +196,12 @@ datawatch automation insert <id> <automaton> --urgent --reason "hotfix first"
 datawatch automation cancel <id> --cancel-in-flight false
 ```
 
-An insert made by an agent can be held for your approval:
-`datawatch automation approve <id> <member>` (MCP `automation_approve_insert`).
+An insert made by an agent can be held for your approval. `datawatch
+automation get` and `datawatch automation status` list each pending insert
+with its member id, its `prd_id`, and the reason it was held, and show the
+command that approves it —
+`datawatch automation approve <automation id> <member id>`
+(MCP `automation_approve_insert`).
 
 ## 7. The Automation tab in the web UI
 

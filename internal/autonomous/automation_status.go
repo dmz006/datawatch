@@ -56,6 +56,11 @@ func (m *Manager) automationStatusSummaries(now time.Time) []AutomationStatusSum
 				s.PendingMembers++
 			}
 		}
+		if len(a.PendingInserts) > 0 {
+			s.PendingInserts = make([]PendingInsert, len(a.PendingInserts))
+			copy(s.PendingInserts, a.PendingInserts)
+			s.PendingMembers += len(a.PendingInserts)
+		}
 		if mem := legacyCursorMember(a); mem != nil {
 			s.CurrentMemberID = mem.ID
 			s.CurrentPRDID = mem.PRDID

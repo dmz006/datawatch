@@ -2129,6 +2129,7 @@
   "automation_join_waiting": "Unión en espera: %1$d de %2$d ramas terminadas",
   "automation_pending_inserts": "Inserciones pendientes",
   "automation_pending_insert_by": "Solicitado por %1$s",
+  "automation_pending_insert_ids": "Miembro %1$s · autómata %2$s",
   "automation_decisions": "Decisiones recientes",
   "automation_member_details": "Detalles",
   "automation_member_drawer_title": "Detalles del miembro",

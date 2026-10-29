@@ -60,8 +60,9 @@ Subcommands:
                       --member, --clear)
   import-graph <graph-id>  Turn an orchestrator graph into a draft Automation (--dry-run previews it)
 
-Every control takes --actor, --reason and --expected-version; a stale
-expected version is refused with HTTP 409.`,
+Every control takes --actor, --reason and --expected-version; when the flag
+is omitted the CLI reads the current version first, and a stale expected
+version is refused with HTTP 409.`,
 	}
 	cmd.AddCommand(newAutomationListCmd())
 	cmd.AddCommand(newAutomationGetCmd())
@@ -287,16 +288,22 @@ func newAutomationStatusCmd() *cobra.Command {
 
 // automationStatusRow is one entry of automations[] in GET /api/autonomous/status.
 type automationStatusRow struct {
-	ID              string  `json:"id"`
-	Name            string  `json:"name"`
-	Status          string  `json:"status"`
-	CurrentMemberID string  `json:"current_member_id"`
-	CurrentPRDTitle string  `json:"current_prd_title"`
-	PendingMembers  int     `json:"pending_members"`
-	IdleSeconds     int64   `json:"idle_seconds"`
-	BlockedReason   string  `json:"blocked_reason"`
-	SpentUSD        float64 `json:"spent_usd"`
-	CeilingDisplay  string  `json:"ceiling_display"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Status          string `json:"status"`
+	CurrentMemberID string `json:"current_member_id"`
+	CurrentPRDTitle string `json:"current_prd_title"`
+	// PendingMembers is the PENDING column. The daemon now counts held agent
+	// inserts (pending inserts) in pending_members as well as members that
+	// have not started, so this column includes the inserts.
+	PendingMembers int     `json:"pending_members"`
+	IdleSeconds    int64   `json:"idle_seconds"`
+	BlockedReason  string  `json:"blocked_reason"`
+	SpentUSD       float64 `json:"spent_usd"`
+	CeilingDisplay string  `json:"ceiling_display"`
+	// PendingInserts are the row's held inserts awaiting an operator's
+	// approval; empty when the row has none.
+	PendingInserts []autonomous.PendingInsert `json:"pending_inserts"`
 }
 
 func printAutomationStatus(w io.Writer, rows []automationStatusRow) error {
@@ -321,7 +328,28 @@ func printAutomationStatus(w io.Writer, rows []automationStatusRow) error {
 		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n", r.ID, r.Name, r.Status, current, r.PendingMembers, idle, spend, dashIfEmpty(r.BlockedReason))
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	// Below the table, each row that has pending inserts gets a blank line,
+	// a "Pending inserts of <id> (<name>):" header and the shared
+	// writePendingInserts table (member id, PRD, reason, approve command).
+	// Rows without pending inserts print nothing extra.
+	for _, r := range rows {
+		if len(r.PendingInserts) == 0 {
+			continue
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "Pending inserts of %s (%s):\n", r.ID, r.Name); err != nil {
+			return err
+		}
+		if err := writePendingInserts(w, r.ID, r.PendingInserts); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func newAutomationActivateCmd() *cobra.Command {
@@ -355,7 +383,7 @@ type automationControlFlags struct {
 func (f *automationControlFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.actor, "actor", "", "Who is acting (default operator)")
 	cmd.Flags().StringVar(&f.reason, "reason", "", "Reason, recorded in the audit trail")
-	cmd.Flags().Int64Var(&f.expectedVersion, "expected-version", 0, "Refuse (HTTP 409) unless the Automation is at this version")
+	cmd.Flags().Int64Var(&f.expectedVersion, "expected-version", 0, "Refuse (HTTP 409) unless the Automation is at this version; when the flag is omitted the CLI reads the current version first")
 }
 
 // body starts the request body with the shared fields that were set.
@@ -391,9 +419,24 @@ var automationControlOps = map[string]string{
 	"set-decision-assistant": "set_decision_assistant",
 }
 
-// runAutomationControl posts a control request for a subcommand verb and
+// resolveAutomationVersion reads the Automation's current stored version via
+// GET /api/automations/<id>. A failure (for example a 404 for an unknown
+// Automation) is returned as the error.
+func resolveAutomationVersion(id string) (int64, error) {
+	raw, err := automationAPI(http.MethodGet, "/api/automations/"+url.PathEscape(id), nil)
+	if err != nil {
+		return 0, err
+	}
+	var a automationView
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return 0, fmt.Errorf("decode automation: %w", err)
+	}
+	return a.Version, nil
+}
+
+// postAutomationControl posts a control request for a subcommand verb and
 // prints the updated Automation.
-func runAutomationControl(id, verb string, body map[string]any) error {
+func postAutomationControl(id, verb string, body map[string]any) error {
 	raw, err := automationAPI(http.MethodPost, "/api/automations/"+url.PathEscape(id)+"/"+automationControlOps[verb], body)
 	if err != nil {
 		return err
@@ -403,6 +446,50 @@ func runAutomationControl(id, verb string, body map[string]any) error {
 		return fmt.Errorf("decode automation: %w", err)
 	}
 	return printAutomation(os.Stdout, a)
+}
+
+// runAutomationControl posts a control request for a subcommand verb and
+// prints the updated Automation. Without an explicit expected_version (the
+// flag omitted) it is an implicit version: read the stored version with
+// resolveAutomationVersion, send it, and if the POST is refused with a 409
+// version mismatch re-read the version and post again exactly once. A GET
+// failure is returned without any POST. An explicit expected_version
+// (including an explicit 0) is sent as is: no GET and no retry, so a stale
+// explicit version is still refused with the daemon's 409 message. The
+// caller's body map is never modified.
+func runAutomationControl(id, verb string, body map[string]any) error {
+	if _, explicit := body["expected_version"]; explicit {
+		return postAutomationControl(id, verb, body)
+	}
+	version, err := resolveAutomationVersion(id)
+	if err != nil {
+		return err
+	}
+	sent := make(map[string]any, len(body)+1)
+	for k, v := range body {
+		sent[k] = v
+	}
+	sent["expected_version"] = version
+	err = postAutomationControl(id, verb, sent)
+	if !isAutomationVersionConflict(err) {
+		return err
+	}
+	fresh, getErr := resolveAutomationVersion(id)
+	if getErr != nil {
+		return getErr
+	}
+	sent["expected_version"] = fresh
+	return postAutomationControl(id, verb, sent)
+}
+
+// isAutomationVersionConflict reports whether err is the daemon's
+// optimistic-lock refusal for a control POST.
+func isAutomationVersionConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "HTTP 409") && strings.Contains(msg, "version mismatch")
 }
 
 func newAutomationPauseCmd() *cobra.Command {
@@ -843,6 +930,9 @@ type automationView struct {
 	// Budget is the computed budget view; absent when the Automation has no
 	// budget policy in play.
 	Budget *autonomous.BudgetView `json:"budget"`
+	// PendingInserts are member inserts held for an operator's approval (agent
+	// inserts that are not yet visible in the graph).
+	PendingInserts []autonomous.PendingInsert `json:"pending_inserts"`
 	// DecisionAssistant is the Automation-level decision assistant; absent when off.
 	DecisionAssistant *autonomous.DecisionAssistant `json:"decision_assistant"`
 }
@@ -892,11 +982,38 @@ func printAutomation(w io.Writer, a automationView) error {
 	if err := tw.Flush(); err != nil {
 		return err
 	}
+	if err := writePendingInserts(w, a.ID, a.PendingInserts); err != nil {
+		return err
+	}
 	if a.Budget != nil {
 		_, err := fmt.Fprint(w, autonomous.FormatAutomationBudgetText(*a.Budget))
 		return err
 	}
 	return nil
+}
+
+// writePendingInserts prints the Automation's pending inserts: one "Pending
+// inserts: none" line when there are none, otherwise a "Pending inserts: N"
+// count line and a table. MEMBER is the insert's ID (the member ID the insert
+// gets when approved), AUTOMATON the PRD it runs, REASON the recorded reason,
+// and APPROVE WITH the exact command that approves it. It is a top-level
+// helper reused by the status task.
+func writePendingInserts(w io.Writer, automationID string, inserts []autonomous.PendingInsert) error {
+	if len(inserts) == 0 {
+		_, err := fmt.Fprintln(w, "Pending inserts: none")
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "Pending inserts: %d\n", len(inserts)); err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "MEMBER\tAUTOMATON\tREASON\tAPPROVE WITH")
+	for _, p := range inserts {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+			p.ID, dashIfEmpty(p.PRDID), dashIfEmpty(strings.Join(strings.Fields(p.Reason), " ")),
+			fmt.Sprintf("datawatch automation approve %s %s", automationID, p.ID))
+	}
+	return tw.Flush()
 }
 
 // decisionAssistantText is the one-line summary of a decision assistant

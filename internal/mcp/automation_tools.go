@@ -122,7 +122,7 @@ func (s *Server) handleAutomationCreate(_ context.Context, req mcpsdk.CallToolRe
 
 func (s *Server) toolAutomationGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("automation_get",
-		mcpsdk.WithDescription("Get an Automation by ID (status, members, edges, budget policy, execution defaults) together with its budget view: spend against the ceiling, the window and reset time, whether it resumes by itself, and the estimate and peer notes."),
+		mcpsdk.WithDescription("Get an Automation by ID (status, members, edges, budget policy, execution defaults) together with its budget view: spend against the ceiling, the window and reset time, whether it resumes by itself, and the estimate and peer notes. The result also lists pending_inserts (each with id, which is the member id to pass to automation_approve_insert, prd_id, reason and actor) for inserts held for the operator's approval."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automation ID.")),
 	)
 }

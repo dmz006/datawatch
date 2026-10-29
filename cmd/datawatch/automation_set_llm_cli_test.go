@@ -58,7 +58,7 @@ func TestAutomationCLISetLLM(t *testing.T) {
 		}
 		check("/api/automations/ab12/set_llm", map[string]any{
 			"backend": "pi", "model": "qwen3.8:27b", "effort": "high",
-			"planning_backend": "claude-code", "planning_model": "opus",
+			"planning_backend": "claude-code", "planning_model": "opus", "expected_version": float64(9),
 		})
 	})
 
@@ -66,14 +66,14 @@ func TestAutomationCLISetLLM(t *testing.T) {
 		if err := run("set-llm", "ab12", "--model", "sonnet"); err != nil {
 			t.Fatal(err)
 		}
-		check("/api/automations/ab12/set_llm", map[string]any{"model": "sonnet"})
+		check("/api/automations/ab12/set_llm", map[string]any{"model": "sonnet", "expected_version": float64(9)})
 	})
 
 	t.Run("an empty value clears", func(t *testing.T) {
 		if err := run("set-llm", "ab12", "--model", "", "--planning-backend="); err != nil {
 			t.Fatal(err)
 		}
-		check("/api/automations/ab12/set_llm", map[string]any{"model": "", "planning_backend": ""})
+		check("/api/automations/ab12/set_llm", map[string]any{"model": "", "planning_backend": "", "expected_version": float64(9)})
 	})
 
 	t.Run("no setting flag fails", func(t *testing.T) {
@@ -121,7 +121,7 @@ func TestAutomationCLISetVerificationLLM(t *testing.T) {
 			t.Fatal(err)
 		}
 		check("/api/automations/ab12/set_verification_llm", map[string]any{
-			"backend": "claude-code", "model": "haiku", "effort": "low",
+			"backend": "claude-code", "model": "haiku", "effort": "low", "expected_version": float64(9),
 		})
 	})
 
@@ -129,14 +129,14 @@ func TestAutomationCLISetVerificationLLM(t *testing.T) {
 		if err := run("set-verification-llm", "ab12", "--effort", "medium"); err != nil {
 			t.Fatal(err)
 		}
-		check("/api/automations/ab12/set_verification_llm", map[string]any{"effort": "medium"})
+		check("/api/automations/ab12/set_verification_llm", map[string]any{"effort": "medium", "expected_version": float64(9)})
 	})
 
 	t.Run("an empty value clears", func(t *testing.T) {
 		if err := run("set-verification-llm", "ab12", "--backend", ""); err != nil {
 			t.Fatal(err)
 		}
-		check("/api/automations/ab12/set_verification_llm", map[string]any{"backend": ""})
+		check("/api/automations/ab12/set_verification_llm", map[string]any{"backend": "", "expected_version": float64(9)})
 	})
 
 	t.Run("no setting flag fails", func(t *testing.T) {

@@ -1479,18 +1479,22 @@ const NotifyStatusMaxOverrides = 100
 // AutomationStatusSummary is one Automation's row in LoopStatus. SpentUSD,
 // CeilingDisplay and Budget are filled when the Automation has a budget policy.
 type AutomationStatusSummary struct {
-	ID              string     `json:"id"`
-	Name            string     `json:"name"`
-	Status          string     `json:"status"`
-	CurrentMemberID string     `json:"current_member_id,omitempty"`
-	CurrentPRDID    string     `json:"current_prd_id,omitempty"`
-	CurrentPRDTitle string     `json:"current_prd_title,omitempty"`
-	PendingMembers  int        `json:"pending_members"`
-	IdleSince       *time.Time `json:"idle_since,omitempty"`
-	IdleSeconds     int64      `json:"idle_seconds,omitempty"`
-	BlockedReason   string     `json:"blocked_reason,omitempty"`
-	SpentUSD        float64    `json:"spent_usd,omitempty"`
-	CeilingDisplay  string     `json:"ceiling_display,omitempty"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Status          string `json:"status"`
+	CurrentMemberID string `json:"current_member_id,omitempty"`
+	CurrentPRDID    string `json:"current_prd_id,omitempty"`
+	CurrentPRDTitle string `json:"current_prd_title,omitempty"`
+	// PendingMembers counts members not started plus inserts held for the
+	// operator's approval.
+	PendingMembers int `json:"pending_members"`
+	// PendingInserts lists the inserts held for the operator's approval.
+	PendingInserts []PendingInsert `json:"pending_inserts,omitempty"`
+	IdleSince      *time.Time      `json:"idle_since,omitempty"`
+	IdleSeconds    int64           `json:"idle_seconds,omitempty"`
+	BlockedReason  string          `json:"blocked_reason,omitempty"`
+	SpentUSD       float64         `json:"spent_usd,omitempty"`
+	CeilingDisplay string          `json:"ceiling_display,omitempty"`
 	// Budget is the computed budget view: spend, window, reset, hold, the
 	// stored breach state and the estimated allocation figure.
 	Budget *BudgetView `json:"budget,omitempty"`

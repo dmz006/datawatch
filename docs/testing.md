@@ -2150,3 +2150,83 @@ Two code-scanning alerts were fixed on one branch (the third, the subprocess she
 | **Expected** | Every `SavePRD` succeeds; the follow-up records its pass. |
 | **Actual** | Before the fix a large share of saves failed with a rename error naming a `.tmp-` file (the opener had deleted it); after the fix none fail and the CI watch test passes under load. |
 | **Result** | Pass |
+
+---
+
+## Automation CLI version handling and pending inserts (cde90001, 2026-10-29)
+
+Two defects found in the first real Automation runs, plus the feature they exposed: the
+`datawatch automation <control>` commands that omit `--expected-version` now read the
+Automation's current version first and, on a 409 version conflict, read it once more and
+retry exactly once (a concurrent run changed the Automation in the meantime). An explicit
+`--expected-version` stays strict: the given number is sent unchanged, no implicit read, and
+a 409 is reported as a conflict — never retried silently. A failed version read stops
+before any POST. In parallel, `automation get` / `automation status` now show each held
+pending insert — member id, Automaton PRD id, requester, reason — and the PWA renders the
+same rows with an Approve control while the Automation is editable.
+
+Plan: [2026-10-29-automation-cli-status-gaps-final-gate-report.md](plans/2026-10-29-automation-cli-status-gaps-final-gate-report.md).
+Mobile-app parity is tracked separately: [parity-issues/automation-pending-insert-parity.md](plans/parity-issues/automation-pending-insert-parity.md).
+
+### New Go CLI tests (built binary, fake REST server)
+
+| Test | File | What it pins |
+|------|------|--------------|
+| `TestAutomationCLIDefaultVersionReadsCurrent` | `cmd/datawatch/automation_default_version_cli_test.go` | omitting `--expected-version` reads `GET /api/automations/<id>` and posts the current version |
+| `TestAutomationCLIDefaultVersionRetriesOnceOnRace` | `cmd/datawatch/automation_default_version_cli_test.go` | a 409 on the first POST triggers exactly one re-read and exactly one retry |
+| `TestAutomationCLIDefaultVersionGivesUpAfterOneRetry` | `cmd/datawatch/automation_default_version_cli_test.go` | a second 409 is reported, never retried a third time |
+| `TestAutomationCLIExplicitStaleVersionStillRefused` | `cmd/datawatch/automation_explicit_version_cli_test.go` | an explicit stale `--expected-version` is refused with a conflict, with no implicit GET and no retry |
+| `TestAutomationCLIExplicitVersionIsSentUnchanged` | `cmd/datawatch/automation_explicit_version_cli_test.go` | the explicit version reaches the POST body unchanged, even when the daemon reports a different current version |
+| `TestAutomationCLIGetShowsPendingInserts` | `cmd/datawatch/automation_get_pending_cli_test.go` | `automation get` lists every held insert with its member id, PRD id, requester and reason |
+| `TestAutomationCLIGetNoPendingInserts` | `cmd/datawatch/automation_get_pending_cli_test.go` | with no held inserts the output carries no insert section and no stray count |
+| `TestAutomationCLIStatusShowsPendingInserts` | `cmd/datawatch/automation_status_pending_cli_test.go` | `automation status` lists held inserts and words the daemon-side waiting count |
+| `TestAutomationCLIStatusPendingColumnCountsInserts` | `cmd/datawatch/automation_status_pending_cli_test.go` | the summary column counts each held insert exactly once |
+
+Runs of these are covered end-to-end by story TS-837 (below) against the same binary.
+
+### New node tests
+
+| Test | File | What it pins |
+|------|------|--------------|
+| `app-automation-pending-status.test.js` (3 tests) | `internal/server/web/` | the status row words `waiting: 3` from `pending_members`, a pending-insert row carries the member id · PRD id · reason · Approve control, and hostile text in id/name/actor/reason is escaped by the real `escHtml`/`escJsAttr` |
+
+### TS-836 — PWA: pending-insert rows render as escaped text with an Approve control
+
+| Field | Details |
+|-------|---------|
+| **Description** | On the Automation surface, each held pending insert renders as one row of escaped text — `Member <id> · Automaton <prd_id>`, the requester and the reason — with a single Approve control while the Automation is editable; a finished Automation shows the ids but no control; no held inserts renders nothing. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh TS-836`. 1. Load the PWA against a sandbox daemon with the token. 2. Render an active Automation with one pending insert through the real `window._automationPendingInsertsHTML` and check the row contents, the ids span, the requester, the reason and the Approve `onclick` argument. 3. Repeat with a hostile insert id (`<img src=x onerror=alert(1)>`) and assert nothing parses as markup and the handler argument still round-trips the raw id. 4. Repeat on a `completed` Automation and with an empty `pending_inserts` list. 5. Check the loop-status row words `waiting: 3` / `idle: 10m` from the daemon-side fields. |
+| **Expected** | Steps 2–4: row content, ids, requester and reason are visible as text; the Approve control exists exactly on editable statuses and its handler is one call whose argument is the raw id; hostile input creates no `<img>` element and no extra controls; a finished Automation has no Approve control; an empty list renders nothing. Step 5: the status line contains `waiting: 3` and `idle: 10m`. |
+| **Actual** | Run live on 2026-10-29 against the branch-built daemon (`./bin/datawatch start --foreground`), headless Chrome via Playwright, exit 0. |
+| **Result** | Pass (live) |
+
+### TS-837 — CLI: the built binary enforces version discipline on an Automation control
+
+| Field | Details |
+|-------|---------|
+| **Description** | The compiled `bin/datawatch automation pause` binary, pointed at a stub daemon that bumps the stored version on a concurrent read: (A) with no `--expected-version` it re-reads on 409 and retries exactly once; (B) with an explicit stale `--expected-version` it is refused with no implicit GET and no retry; (C) with the explicit current version it posts once; (D) when the version read fails it stops before any POST. |
+| **Steps** | 1. Build: `go build -o bin/datawatch ./cmd/datawatch/`. 2. `env -u TMUX -u TMUX_TMPDIR TEST_BINARY=$PWD/bin/datawatch bash scripts/test-stories/TS-837.sh` (the story runs its own Python stub daemon on a loopback port and asserts on the per-request log). |
+| **Expected** | A: two POSTs, the second carrying the re-read version, exactly one 409. B: the explicit version sent unchanged, a conflict reported, no `GET /api/automations/…` before the POST. C: one POST carrying the explicit version. D: zero POSTs, the error names the failed read. |
+| **Actual** | Run live on 2026-10-29: all four sections pass (A implicit retry, B stale refused, C current accepted, D failed GET stops). |
+| **Result** | Pass (live) |
+
+### How to run
+
+```sh
+# unit + regression tests
+env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestAutomationCLI' -count=1
+env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-automation-pending-status.test.js
+
+# stories (build the binary first)
+go build -o bin/datawatch ./cmd/datawatch/
+env -u TMUX -u TMUX_TMPDIR bash scripts/test-stories/TS-837.sh
+env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh TS-836
+```
+
+Counts: 9 new Go test functions in 4 test files, 1 new node test file with 3 tests, 2 new
+stories (TS-836 PWA, TS-837 CLI). The locale entries the rows use
+(`automation_pending_inserts`, `automation_pending_insert_by`, `automation_pending_insert_ids`,
+`automation_approve_insert`) are checked by the locale guard
+(`TestLocales_AutomatonNeverUntranslatedOrMistranslated`, EN/DE/ES/FR/JA bundles), which
+refuses the English word "Automaton" in the four non-EN bundles: de `Automat`, es
+`autómata`, fr `automate`, ja `オートマトン`.
