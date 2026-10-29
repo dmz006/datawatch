@@ -180,3 +180,17 @@ Every command ran under `env -u TMUX -u TMUX_TMPDIR`.
 | Browser story | `bash scripts/e2e-pwa.sh TS-833` (isolated sandbox daemon, never production) | 0 | 1 of 1 story passed |
 
 Note: the story run's `npm ci` replaced the tracked `node_modules` link in the story folder with a directory; the link was restored with `git checkout` so the tree carries no change there.
+
+## Fourth corrective round: documentation results
+
+Scope: documentation only, no code and no test changed. The howto index entry was already in `docs/howto/README.md`; added the entry to the `howto/` line of `docs/README.md`. Added the Question, Answer and Return-path line definitions to `docs/datawatch-definitions.md`, the question notification and return-path sequence to `docs/flow/input-required-flow.md`, a Monitoring line to the CHANGELOG entry, and registry row 246 to `docs/plans/README.md`.
+
+Every command ran under `env -u TMUX -u TMUX_TMPDIR`.
+
+| Gate | Command | Exit | Result |
+|------|---------|------|--------|
+| Internal-reference audit | `bash scripts/check-no-internal-refs.sh` | 0 | PASS, no internal refs in user-facing surfaces (run under `sh` it exits 2 with a syntax error, because the script needs bash) |
+| Docs sync check, first run | `sh scripts/check-docs-sync.sh` | 1 | embedded copy was stale for the three edited docs |
+| Docs sync | `make sync-docs` | 0 | embedded copy refreshed |
+| Docs sync check, second run | `sh scripts/check-docs-sync.sh` | 0 | docs/ and internal/server/web/docs in sync |
+| CI tests | `go test ./tests/ci -count=1` | 0 | ok |
