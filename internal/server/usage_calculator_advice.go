@@ -44,22 +44,35 @@ var usageWeekday = map[string]time.Weekday{
 
 // UsageCalculatorSettings maps one effective calculator config into the service's live
 // settings. All of the config's numeric fields already carry defaults after
-// EffectiveUsageCalculator, so the service keeps them as-is; an empty weekday, clock or
-// zone leaves that part of the reset to the reset spec's own validation.
+// EffectiveUsageCalculator. The reset zone is the effective one from
+// EffectiveUsageResetZone: the operator's set zone, or the daemon's local zone when the
+// operator left it unset, or UTC as a last resort. The serverZone and fellBack
+// markers ride along so the advice can show the "(server zone)" marker and note
+// the UTC fallback.
+// UsageCalculatorSettings maps one calculator config into the service's live
+// settings. It takes the config as stored (defaults and the effective reset
+// zone are applied here, not by the caller): an unset zone follows
+// EffectiveUsageResetZone, so the advice sees the effective zone with the
+// serverZone and fellBack markers telling the UI and the text renderings to
+// show the "(server zone)" mark and name the UTC fallback.
 func UsageCalculatorSettings(c config.UsageCalculatorConfig) usagecalc.Settings {
-	safety := c.SafetyPoints
-	baseline := c.BaselinePer24h
+	e := config.EffectiveUsageCalculator(c)
+	zone, serverZone, fellBack := config.EffectiveUsageResetZone(c)
+	safety := e.SafetyPoints
+	baseline := e.BaselinePer24h
 	return usagecalc.Settings{
-		Variant:        c.Variant,
-		Policy:         c.Policy,
-		CostPerTask:    c.CostPerTaskPoints,
-		MaxLanes:       c.MaxLanes,
+		Variant:        e.Variant,
+		Policy:         e.Policy,
+		CostPerTask:    e.CostPerTaskPoints,
+		MaxLanes:       e.MaxLanes,
 		SafetyPoints:   &safety,
 		BaselinePer24h: &baseline,
 		Reset: usagecalc.ResetSpec{
-			Weekday: usageWeekday[strings.ToLower(strings.TrimSpace(c.ResetWeekday))],
-			Clock:   strings.TrimSpace(c.ResetTime),
-			Zone:    strings.TrimSpace(c.ResetZone),
+			Weekday:    usageWeekday[strings.ToLower(strings.TrimSpace(e.ResetWeekday))],
+			Clock:      strings.TrimSpace(e.ResetTime),
+			Zone:       zone,
+			ServerZone: serverZone,
+			FellBack:   fellBack,
 		},
 	}
 }
@@ -107,7 +120,7 @@ func (s *Server) AttachUsageCalculator(queue usagecalc.QueueCounter) error {
 		if s.cfg == nil {
 			return usagecalc.Settings{}
 		}
-		return UsageCalculatorSettings(config.EffectiveUsageCalculator(s.cfg.Usage.Calculator))
+		return UsageCalculatorSettings(s.cfg.Usage.Calculator)
 	}
 	s.SetUsageCalculator(usagecalc.NewService(series, store, settings, queue))
 	return nil

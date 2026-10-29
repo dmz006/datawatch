@@ -67,13 +67,41 @@ recomputes from the rest.
 
 ## The weekly reset
 
-The reset is entered as a **weekday, a local clock time and a time zone name**,
-for example Sunday 08:00 in `America/New_York`. A fixed offset such as `+05:00`
-is not accepted, because a fixed offset is wrong for half the year once
-daylight saving time starts or ends. A zone name follows the zone's own rules,
-so the countdown stays correct across the change. The keys are
+The reset is **Sunday 08:00** in the configured reset zone, entered as a
+weekday, a local clock time and a time zone name (the keys
 `usage.calculator.reset_weekday`, `reset_time` and `reset_zone`; match them to
-what your provider actually shows.
+what your provider actually shows).
+
+By default `reset_zone` is *empty*, which means **follow the zone the daemon
+runs in** — an example being Sunday 08:00 in `America/New_York` on a daemon
+whose zone is `America/New_York`. The zone is resolved when the reset runs,
+in this order: the `TZ` environment variable, then the zone named in the
+system local-time symlink (`/etc/localtime` into `zoneinfo/Area/City`), then
+the Go runtime's local zone. The resolved zone is a proper IANA zone name,
+so it follows the zone's own rules: a fixed offset such as `+05:00` is wrong
+for half the year once daylight saving time starts or ends, but a zone name
+keeps the countdown correct across the change.
+
+If no zone can be resolved on the host, the reset **falls back to UTC**: the
+reset runs in UTC and the advice carries a note saying the zone fell back to
+UTC and pointing at `usage.calculator.reset_zone`, so you can pin it. That
+note appears in every rendering (CLI, comm channel, JSON, PWA).
+
+An **explicit zone name always wins**, a plain `UTC` included: whatever
+IANA name you set is used as-is and is never rewritten to the server's zone.
+`Local` is refused because it is just the server's zone under another name,
+which is what the empty value already means.
+
+**Where to see the effective zone.** When the config's zone is empty, the
+surfaces show the *effective* zone marked as the server's zone, not a blank
+value:
+
+| Surface | What it shows |
+|---|---|
+| PWA (settings → “Usage calculator reset time zone”) | the input stays empty, the effective zone appears as placeholder text, and a note says the zone is the server's (empty in the config) |
+| `GET /api/config` | `usage.calculator.reset_zone` = the effective zone, with `reset_zone_source` of `server` (or `configured` when you set it explicitly) and `reset_zone_fell_back` `true` on the UTC fallback |
+| `datawatch config get usage.calculator.reset_zone` | the zone with a marker, e.g. `America/New_York (server zone)` when server-resolved, or just the zone name when set explicitly |
+| Calculator advice (text + JSON) | the text forms put `(server zone)` on the reset time; the JSON carries `zone` plus `"server_zone": true` |
 
 ## The 2-hour notice
 

@@ -104,10 +104,15 @@ test('every label, option label and hint key exists in all five locale bundles',
     for (const k of keys) {
       assert.ok(typeof b[k] === 'string' && b[k].length > 0, k + ' missing or empty in ' + locale);
     }
+    // The server-zone note is a rendered surface key of the reset_zone row,
+    // not a field label, so it is checked here rather than from the section.
+    const note = b.settings_usage_calculator_reset_zone_server_note;
+    assert.ok(typeof note === 'string' && note.length > 0, 'settings_usage_calculator_reset_zone_server_note missing or empty in ' + locale);
   }
   const en = bundle('en');
   assert.match(en.settings_usage_calculator_reset_zone_hint, /America\/New_York/);
   assert.match(en.settings_usage_calculator_keeper_hint, /empty/i);
+  assert.match(en.settings_usage_calculator_reset_zone_server_note, /server zone/i);
 });
 
 test('saving a field issues PUT /api/config with the dotted key', async () => {
@@ -149,4 +154,54 @@ test('the section renders its fields: policy labels, saved value selected, hints
   assert.ok(html.includes('America/New_York'), 'zone value or hint missing');
   assert.ok(html.includes('Leave empty to keep the readings on this daemon.'), 'keeper hint missing');
   assert.ok(!html.includes('settings_usage_calculator_'), 'a raw locale key leaked into the markup');
+});
+
+test('an unset zone renders empty with the effective zone as placeholder and a server-zone note', async () => {
+  const holder = makeStubElement();
+  const sandbox = loadApp({ byId: { gcfg_usage_calculator: holder } });
+  sandbox.fetch = (url) => Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(url === '/api/config'
+      ? { usage: { calculator: { policy: 'pace', reset_zone: 'America/New_York', reset_zone_source: 'server' } } }
+      : {}),
+  });
+  vm.runInContext('loadGeneralConfig()', sandbox);
+  await flushAsync(30);
+  const html = String(holder.innerHTML || '');
+  // The zone input carries the save handler and the effective-zone
+  // placeholder, and the note says the reset follows this daemon's zone.
+  const zoneParts = html.split("saveGeneralField('usage.calculator.reset_zone', this.value)");
+  assert.ok(zoneParts.length > 1, 'the reset_zone field did not render');
+  const handlerAt = html.indexOf("saveGeneralField('usage.calculator.reset_zone', this.value)");
+  const fieldHtml = html.substring(Math.max(0, handlerAt - 600), handlerAt);
+  assert.match(fieldHtml, /placeholder="America\/New_York"/, 'effective zone placeholder: ' + fieldHtml);
+  assert.ok(html.includes('server zone'), 'server-zone note missing: ' + html);
+  // Saving with the input empty puts back empty, never a rewritten default.
+  const calls = [];
+  sandbox.fetch = (url, init) => {
+    calls.push({ url, init });
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+  };
+  vm.runInContext("saveGeneralField('usage.calculator.reset_zone', '')", sandbox);
+  await flushAsync();
+  assert.equal(calls.length, 1);
+  assert.deepEqual(JSON.parse(calls[0].init.body), { 'usage.calculator.reset_zone': '' });
+});
+
+test('a configured zone renders its saved value without the server-zone note', async () => {
+  const holder = makeStubElement();
+  const sandbox = loadApp({ byId: { gcfg_usage_calculator: holder } });
+  sandbox.fetch = (url) => Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(url === '/api/config'
+      ? { usage: { calculator: { policy: 'pace', reset_zone: 'UTC', reset_zone_source: 'configured' } } }
+      : {}),
+  });
+  vm.runInContext('loadGeneralConfig()', sandbox);
+  await flushAsync(30);
+  const html = String(holder.innerHTML || '');
+  assert.match(html, /value="UTC"/ , 'the pinned zone should be the input value: ' + html);
+  assert.ok(!html.includes('server zone'), 'configured zone wrongly shows the server-zone note');
 });

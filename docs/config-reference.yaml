@@ -2223,10 +2223,11 @@ usage:
     # 24-hour HH:MM clock time and an IANA zone name. The zone's own rules are
     # followed, so a daylight saving change stays correct. A fixed UTC offset
     # such as +05:00 or Etc/GMT-5 is never accepted; an unknown zone name is
-    # rejected. Defaults: sunday, 08:00, UTC.
+    # rejected. Defaults: sunday, 08:00, empty (empty means the zone the
+    # daemon runs in, falling back to UTC).
     reset_weekday: sunday
     reset_time: "08:00"
-    reset_zone: UTC
+    reset_zone: ""
     # Name of the federation peer that keeps the shared readings (the weekly
     # allowance belongs to the account, not to one daemon). Empty means this
     # daemon keeps them.

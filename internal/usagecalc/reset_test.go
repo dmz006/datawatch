@@ -1,16 +1,99 @@
 package usagecalc
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 )
 
+// TestResetServerZoneAdvice pins the server-zone markers: when the operator
+// left the zone unset, the advice reports the effective zone with
+// server_zone true, carries no fallen-back note, and both text forms show
+// the "(server zone)" marker at the reset time.
+func TestResetServerZoneAdvice(t *testing.T) {
+	r := sundayEight()
+	r.ServerZone = true
+	in := Input{Readings: []Reading{percentReading(at(t, 2026, 10, 23, 22, 8), 72)}, Reset: r, Lanes: 1}
+	a := Advise(in)
+	if a.Needs != "" {
+		t.Fatalf("Needs = %q, want none", a.Needs)
+	}
+	if a.Zone != "America/New_York" {
+		t.Errorf("zone = %q, want America/New_York", a.Zone)
+	}
+	if !a.ServerZone {
+		t.Errorf("server_zone = false, want true")
+	}
+	var m map[string]interface{}
+	b, err := json.Marshal(a)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if m["zone"] != "America/New_York" {
+		t.Errorf("json zone = %v, want America/New_York", m["zone"])
+	}
+	if m["server_zone"] != true {
+		t.Errorf("json server_zone = %v, want true", m["server_zone"])
+	}
+	for name, form := range map[string]string{"cli": FormatCLI(AdviceResult{Advice: a}), "comm": FormatComm(AdviceResult{Advice: a})} {
+		want := "(server zone)"
+		if name == "cli" {
+			want = "Sun 08:00 EDT (server zone)" // no wrap on the CLI line
+		}
+		if !strings.Contains(form, want) {
+			t.Errorf("%s form lacks the server-zone marker:\n%s", name, form)
+		}
+	}
+	for _, n := range a.Advice.Notes {
+		if strings.Contains(n, "fell back to UTC") {
+			t.Errorf("unexpected fallback note: %q", n)
+		}
+	}
+}
+
+// TestResetZoneFellBackNote pins the last-resort path: the daemon's local
+// zone could not be resolved, the reset ran in UTC and the advice names the
+// key to set, on every line of every rendering.
+func TestResetZoneFellBackNote(t *testing.T) {
+	r := ResetSpec{Weekday: time.Sunday, Clock: "08:00", Zone: "UTC", ServerZone: true, FellBack: true}
+	in := Input{Readings: []Reading{percentReading(time.Date(2026, 10, 23, 22, 8, 0, 0, time.UTC), 72)}, Reset: r, Lanes: 1}
+	a := Advise(in)
+	var found bool
+	for _, n := range a.Advice.Notes {
+		if strings.Contains(n, "fell back to UTC") && strings.Contains(n, "usage.calculator.reset_zone") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no fallback note among %v", a.Advice.Notes)
+	}
+	if a.Zone != "UTC" || !a.ServerZone {
+		t.Errorf("zone/server_zone = %q/%v, want UTC/true", a.Zone, a.ServerZone)
+	}
+	b, _ := json.Marshal(a) //nolint:errcheck
+	var m map[string]interface{}
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if m["zone"] != "UTC" || m["server_zone"] != true {
+		t.Errorf("json zone/server_zone = %v/%v, want UTC/true", m["zone"], m["server_zone"])
+	}
+	for _, form := range []string{FormatCLI(AdviceResult{Advice: a}), FormatComm(AdviceResult{Advice: a})} {
+		if !strings.Contains(form, "fell back to UTC") {
+			t.Errorf("form lacks the fallback note:\n%s", form)
+		}
+	}
+}
+
 func TestResetSpecValidate(t *testing.T) {
 	ok := []ResetSpec{
-		{time.Sunday, "08:00", "America/New_York"},
-		{time.Saturday, "23:59", "UTC"},
-		{time.Wednesday, "00:00", "Asia/Kolkata"},
+		{Weekday: time.Sunday, Clock: "08:00", Zone: "America/New_York"},
+		{Weekday: time.Saturday, Clock: "23:59", Zone: "UTC"},
+		{Weekday: time.Wednesday, Clock: "00:00", Zone: "Asia/Kolkata"},
 	}
 	for _, r := range ok {
 		if err := r.Validate(); err != nil {
@@ -18,20 +101,20 @@ func TestResetSpecValidate(t *testing.T) {
 		}
 	}
 	bad := map[string]ResetSpec{
-		"weekday low":      {time.Weekday(-1), "08:00", "UTC"},
-		"weekday high":     {time.Weekday(7), "08:00", "UTC"},
-		"clock empty":      {time.Sunday, "", "UTC"},
-		"clock no colon":   {time.Sunday, "0800", "UTC"},
-		"clock short":      {time.Sunday, "8:00", "UTC"},
-		"clock long":       {time.Sunday, "08:000", "UTC"},
-		"clock letters":    {time.Sunday, "ab:cd", "UTC"},
-		"clock plus sign":  {time.Sunday, "+8:00", "UTC"},
-		"clock hour 24":    {time.Sunday, "24:00", "UTC"},
-		"clock minute 60":  {time.Sunday, "08:60", "UTC"},
-		"zone empty":       {time.Sunday, "08:00", ""},
-		"zone local":       {time.Sunday, "08:00", "Local"},
-		"zone unknown":     {time.Sunday, "08:00", "Mars/Olympus_Mons"},
-		"zone fixed style": {time.Sunday, "08:00", "UTC-4 hours"},
+		"weekday low":      {Weekday: time.Weekday(-1), Clock: "08:00", Zone: "UTC"},
+		"weekday high":     {Weekday: time.Weekday(7), Clock: "08:00", Zone: "UTC"},
+		"clock empty":      {Weekday: time.Sunday, Clock: "", Zone: "UTC"},
+		"clock no colon":   {Weekday: time.Sunday, Clock: "0800", Zone: "UTC"},
+		"clock short":      {Weekday: time.Sunday, Clock: "8:00", Zone: "UTC"},
+		"clock long":       {Weekday: time.Sunday, Clock: "08:000", Zone: "UTC"},
+		"clock letters":    {Weekday: time.Sunday, Clock: "ab:cd", Zone: "UTC"},
+		"clock plus sign":  {Weekday: time.Sunday, Clock: "+8:00", Zone: "UTC"},
+		"clock hour 24":    {Weekday: time.Sunday, Clock: "24:00", Zone: "UTC"},
+		"clock minute 60":  {Weekday: time.Sunday, Clock: "08:60", Zone: "UTC"},
+		"zone empty":       {Weekday: time.Sunday, Clock: "08:00", Zone: ""},
+		"zone local":       {Weekday: time.Sunday, Clock: "08:00", Zone: "Local"},
+		"zone unknown":     {Weekday: time.Sunday, Clock: "08:00", Zone: "Mars/Olympus_Mons"},
+		"zone fixed style": {Weekday: time.Sunday, Clock: "08:00", Zone: "UTC-4 hours"},
 	}
 	for name, r := range bad {
 		if err := r.Validate(); err == nil {

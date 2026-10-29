@@ -14,7 +14,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+	_ "time/tzdata"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/router"
 )
 
@@ -84,10 +86,12 @@ func usageCalcRows() []struct {
 func TestUsageCalcConfigDefaultsOnGet(t *testing.T) {
 	s, _, _ := newMaxConcurrentTasksServer(t)
 	got := usageCalcGet(t, s)
+	// An unset reset zone follows the server's local zone, so expect the
+	// resolved effective zone rather than a fixed value.
 	want := map[string]any{
 		"variant": "all", "policy": "use-all", "safety_points": float64(5), "cost_per_task_points": 0.1,
 		"baseline_per_24h": float64(3), "max_lanes": float64(3), "reset_weekday": "sunday",
-		"reset_time": "08:00", "reset_zone": "UTC", "keeper": "",
+		"reset_time": "08:00", "reset_zone": config.EffectiveUsageCalculator(config.DefaultConfig().Usage.Calculator).ResetZone, "keeper": "",
 	}
 	for k, w := range want {
 		if got[k] != w {
@@ -277,3 +281,46 @@ func TestUsageCalcConfigToolPath(t *testing.T) {
 		}
 	}
 }
+
+// TestUsageCalcConfigResetZoneServerSource pins part (b): with the zone left
+// unset, GET reports the daemon's effective zone marked as server-sourced;
+// an explicit zone (an explicit UTC included) reads back exactly as saved and
+// marked configured; resetting the key to "" clears it and it follows the
+// server again — nothing is ever rewritten to a stored default.
+func TestUsageCalcConfigResetZoneServerSource(t *testing.T) {
+	t.Setenv("TZ", "America/New_York")
+	s, _, cfgPath := newMaxConcurrentTasksServer(t)
+
+	check := func(source, zone any, fellBack bool) {
+		t.Helper()
+		got := usageCalcGet(t, s)
+		if got["reset_zone"] != zone || got["reset_zone_source"] != source || got["reset_zone_fell_back"] != fellBack {
+			t.Fatalf("reset_zone block = %#v, want zone=%v source=%v fell_back=%v", got, zone, source, fellBack)
+		}
+	}
+
+	z, _, _ := config.EffectiveUsageResetZone(config.UsageCalculatorConfig{})
+	check("server", z, false)
+
+	putJSON(t, s.handlePutConfig, "/api/config", map[string]any{usageCalcPrefix + "reset_zone": "UTC"})
+	check("configured", "UTC", false)
+	if raw, err := os.ReadFile(cfgPath); err != nil {
+		t.Fatalf("config not saved: %v", err)
+	} else if !strings.Contains(string(raw), "reset_zone: UTC") {
+		t.Fatalf("config.yaml did not pin the explicit UTC:\n%s", raw)
+	}
+
+	putJSON(t, s.handlePutConfig, "/api/config", map[string]any{usageCalcPrefix + "reset_zone": ""})
+	check("server", z, false)
+	if raw, err := os.ReadFile(cfgPath); err != nil {
+		t.Fatalf("config not saved: %v", err)
+	} else if strings.Contains(string(raw), "reset_zone: UTC") {
+		t.Fatalf("resetting the zone to empty kept the old value:\n%s", raw)
+	}
+}
+
+// The fell-back-to-UTC path (no zone candidate resolves) is pinned where the
+// fakes live rather than on this host: config.TestEffectiveUsageResetZoneInvalidTZFallsBack
+// (UTC + fellBack) and usagecalc.TestResetZoneFellBackNote (the advice note).
+// The display field is a plain passthrough of EffectiveUsageResetZone, as
+// exercised by TestUsageCalcConfigResetZoneServerSource above.

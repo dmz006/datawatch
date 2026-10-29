@@ -10863,9 +10863,26 @@ func runConfigGet(cfg *config.Config, key string) error {
 	if v == nil {
 		return fmt.Errorf("config key %q not found", key)
 	}
-	out, _ := json.MarshalIndent(v, "", "  ")
-	fmt.Println(string(out))
+	fmt.Println(formatConfigGetOutput(full, key, v))
 	return nil
+}
+
+// formatConfigGetOutput renders one config key for `config get <key>`.
+// It is a pure function of the daemon's GET /api/config body so the source
+// marker can be tested without a daemon: usage.calculator.reset_zone prints
+// the effective zone with a "(server zone)" suffix when the operator left
+// the zone unset (reset_zone_source == "server"); every other key and a
+// configured zone print the value itself.
+func formatConfigGetOutput(full map[string]interface{}, key string, v interface{}) string {
+	if key == "usage.calculator.reset_zone" {
+		if zone, ok := v.(string); ok {
+			if src, ok2 := lookupConfigKey(full, "usage.calculator.reset_zone_source").(string); ok2 && src == "server" {
+				return zone + " (server zone)"
+			}
+		}
+	}
+	out, _ := json.MarshalIndent(v, "", "  ")
+	return string(out)
 }
 
 // putConfig POSTs/PUTs a single-field config update to the daemon.

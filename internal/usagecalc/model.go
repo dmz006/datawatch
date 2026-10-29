@@ -173,6 +173,14 @@ type Advice struct {
 	LastResetAt    *time.Time `json:"last_reset_at,omitempty"`
 	NextResetAt    *time.Time `json:"next_reset_at,omitempty"`
 
+	// Zone is the IANA zone the weekly reset runs in (effective value): the
+	// operator's set zone, or the daemon's local zone when the operator left
+	// it unset. ServerZone is true in that latter case — the zone follows
+	// the server, so the text forms carry the "(server zone)" marker and the
+	// settings UI shows it as unset rather than saving the server's zone.
+	Zone       string `json:"zone,omitempty"`
+	ServerZone bool   `json:"server_zone"`
+
 	ExtraCreditPoints float64 `json:"extra_credit_points"`
 	Ceiling           float64 `json:"ceiling"`
 	Lanes             int     `json:"lanes"`
@@ -353,6 +361,9 @@ func Advise(in Input) Advice {
 		Advice:            PolicyAdvice{Policy: cfg.policy, Notes: []string{operatorChoosesNote}},
 	}
 
+	out.Zone = in.Reset.Zone
+	out.ServerZone = in.Reset.ServerZone
+
 	if err := in.Reset.Validate(); err != nil {
 		return out.needing(NeedsReset, "Set the weekly reset as a weekday, an HH:MM time and a time zone name.")
 	}
@@ -396,6 +407,12 @@ func Advise(in Input) Advice {
 	out.Daily = dailyUse(anchor, out.Series, newest.At)
 
 	out.Advice = adviseByPolicy(cfg, &out, newest.At, anchor.loc)
+	if in.Reset.FellBack {
+		// After the policy notes: the daemon's local zone could not be resolved
+		// and the reset ran in UTC, so the operator must pin the zone.
+		out.Advice.Notes = append(out.Advice.Notes,
+			"the reset zone fell back to UTC because the daemon's local zone could not be resolved; set usage.calculator.reset_zone explicitly to pin it")
+	}
 	return out
 }
 

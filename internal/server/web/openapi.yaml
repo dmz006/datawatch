@@ -812,9 +812,17 @@ paths:
         `usage.calculator.cost_per_task_points` (number >= 0 points/week/task; 0 disables the
         finish-early estimate), `usage.calculator.baseline_per_24h` (number >= 0, the idle burn),
         `usage.calculator.max_lanes` (whole number from 1 to 8), `usage.calculator.reset_weekday`
-        (Monday..Sunday), `usage.calculator.reset_time` (HH:MM), `usage.calculator.reset_zone`
-        (IANA time zone) and `usage.calculator.keeper` (the daemon that keeps the shared record);
-        an invalid value rejects the whole PUT with 400 and nothing is written.
+        (sunday..saturday), `usage.calculator.reset_time` (HH:MM, 24-hour),
+        `usage.calculator.reset_zone` (IANA time zone name; empty means "follow the daemon's
+        local zone" and PUTs back empty — saving "UTC" pins UTC) and `usage.calculator.keeper`
+        (the daemon that keeps the shared record); an invalid value rejects the whole PUT
+        with 400 and nothing is written. GET returns, alongside `usage.calculator.reset_zone`
+        (the effective zone), `usage.calculator.reset_zone_source` (`configured` when the
+        operator set the zone, `server` when it follows the daemon's local zone) and
+        `usage.calculator.reset_zone_fell_back` (true when no zone could be resolved and the
+        reset runs in UTC; the `/api/usage/advice` result then carries a note under
+        `notes` telling the operator to set the zone explicitly, and its `zone` field
+        reports the effective zone with `server_zone` set when the operator left it unset).
       operationId: updateConfig
       tags: [System]
       requestBody:

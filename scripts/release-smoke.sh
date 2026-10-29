@@ -336,6 +336,9 @@ cleanup_all() {
         usage)           UXQ=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(str(sys.argv[1])))' "$id" 2>/dev/null || echo "$id"); curl "${curl_args[@]}" -X DELETE "$BASE/api/usage/readings?id=$UXQ" >/dev/null 2>&1 && echo "  deleted usage reading $id" || echo "  (already gone) usage reading $id" ;;
         usage-credit)    [[ -n "$id" ]] && curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"points\": $id}" "$BASE/api/usage/extra-credit" >/dev/null 2>&1 && echo "  restored usage extra credit to $id" || echo "  (already gone) usage-credit $id" ;;
         usage-variant)   UC=$(echo "$id" | tr -d '"'); curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.variant\": \"$UC\"}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored usage.calculator.variant to ${UC:-<unset/default>}" || echo "  (already gone) usage-variant ${UC:-<unset/default>}" ;;
+        # Exact-value restore of usage.calculator.reset_zone (section 85): the id carries
+        # the raw JSON token (\"Zone\" or "") so an unset zone restores to "', never a guessed one.
+        usage-zone)      URZ=$(echo "$id" | tr -d ' '); [[ -n "$URZ" ]] || URZ='""'; curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.reset_zone\": $URZ}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored usage.calculator.reset_zone to ${URZ:-<unset/default>}" || echo "  (already gone) usage-zone" ;;
         # Exact-value restore of autonomous.stuck_running_seconds (section 86); never a pattern sweep.
         stuck-running)   SRV=$(echo "$id" | tr -dc '0-9'); curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "{\"autonomous.stuck_running_seconds\": ${SRV:-0}}" "$BASE/api/config" >/dev/null 2>&1 && echo "  restored autonomous.stuck_running_seconds to ${SRV:-0}" || echo "  (already gone) stuck-running ${SRV:-0}" ;;
         # Cancel first (a draft refuses it, which is fine), then delete.
@@ -5399,6 +5402,89 @@ if echo "$UX_CONF2" | python3 -c 'import json, sys; assert json.load(sys.stdin)[
   fi
 else
   ko "usage config round-trip: variant set/change not visible or live: conf=$(echo "$UX_CONF2" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("usage", {}))' 2>/dev/null || echo '?') adv=$(echo "$UX_ADV" | head -c 120)"
+fi
+
+# --- reset-zone contract: config display shows the effective zone + source, advice
+#     carries zone + server_zone, both texts carry the "(server zone)" marker only when
+#     the zone follows the daemon (never a bare value it chose); an explicit zone pins.
+UX_ZBASE=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
+UX_ZADV=$(ux_adv "$BASE/api/usage/advice")
+# The decisive assertion set (config/advice consistency + text marker when server-sourced):
+if echo "$UX_ZBASE" | UX_ZADV="" python3 -c '
+import json, sys
+c = json.load(sys.stdin)["usage"]["calculator"]
+assert isinstance(c.get("reset_zone"), str) and c["reset_zone"], "reset_zone display missing: %r" % c.get("reset_zone")
+assert c.get("reset_zone_source") in ("configured", "server"), "bad source: %r" % c.get("reset_zone_source")
+assert isinstance(c.get("reset_zone_fell_back"), bool), "fell_back flag missing"
+' 2>/dev/null \
+   && echo "$UX_ZBASE" | UX_ZADV="$UX_ZADV" python3 -c '
+import json, os, sys
+c = json.load(sys.stdin)["usage"]["calculator"]
+adv = json.loads(os.environ["UX_ZADV"])
+a = adv["advice"]
+assert a.get("zone") == c["reset_zone"], "advice zone %r != config %r" % (a.get("zone"), c["reset_zone"])
+assert a.get("server_zone") == (c["reset_zone_source"] == "server"), "advice server_zone %r inconsistent" % a.get("server_zone")
+marker = "(server zone)"
+for name, form in (("cli", adv["text"]["cli"]), ("comm", adv["text"]["comm"])):
+    if c["reset_zone_source"] == "server":
+        assert marker in form, "%s form lacks the server-zone marker: %s" % (name, form[:160])
+' 2>/dev/null; then
+  ok "usage reset-zone: config GET shows the effective zone with reset_zone_source/fell_back; advice zone + server_zone agree with it; the texts mark the zone as the daemon's when the operator left it unset"
+else
+  ko "usage reset-zone: contract fields inconsistent: conf=$(echo "$UX_ZBASE" | head -c 160) adv=$(echo "$UX_ZADV" | head -c 160)"
+fi
+if curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"usage.calculator.reset_zone":"America/New_York"}' "$BASE/api/config" 2>/dev/null | grep -q '^2' \
+   && curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys; c=json.load(sys.stdin)["usage"]["calculator"]; assert c["reset_zone"]=="America/New_York" and c["reset_zone_source"]=="configured"' 2>/dev/null \
+   && UX_ZS=$(ux_adv "$BASE/api/usage/advice") \
+   && echo "$UX_ZS" | python3 -c 'import json,sys; a=json.load(sys.stdin)["advice"]; assert a["zone"]=="America/New_York" and a["server_zone"] is False' 2>/dev/null \
+   && echo "$UX_ZS" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "(server zone)" not in d["text"]["cli"] and "(server zone)" not in d["text"]["comm"]' 2>/dev/null; then
+  ok "usage reset-zone: an explicit zone (America/New_York) pins — source configured, marker gone from advice zone/text"
+else
+  ko "usage reset-zone: explicit zone pin failed — see responses above"
+fi
+# Restore the pre-smoke stored state: an effective source "server" means the zone was
+# unset (empty PUT), a source "configured" means the displayed zone IS the stored one.
+UX_ZSRC0=$(echo "$UX_ZBASE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["usage"]["calculator"].get("reset_zone_source",""))' 2>/dev/null || true)
+UX_ZZONE0=$(echo "$UX_ZBASE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["usage"]["calculator"].get("reset_zone",""))' 2>/dev/null || true)
+if [[ "$UX_ZSRC0" == "server" ]]; then UX_ZRESTORE='""'; else UX_ZRESTORE="\"$UX_ZZONE0\""; fi
+add_cleanup usage-zone "$UX_ZRESTORE"
+curl "${curl_args[@]}" -s -X PUT -H "Content-Type: application/json" -d "{\"usage.calculator.reset_zone\":$UX_ZRESTORE}" "$BASE/api/config" >/dev/null 2>&1
+UX_ZR=$(curl "${curl_args[@]}" -s "$BASE/api/config" 2>/dev/null || true)
+UX_ZRA=$(ux_adv "$BASE/api/usage/advice")
+if echo "$UX_ZR" | UX_ZRA="$UX_ZRA" python3 -c '
+import json, os, sys
+c = json.load(sys.stdin)["usage"]["calculator"]
+adv = json.loads(os.environ["UX_ZRA"])
+assert adv["advice"].get("zone") == c["reset_zone"], "advice zone %r != config %r after restore" % (adv["advice"].get("zone"), c["reset_zone"])
+assert adv["advice"].get("server_zone") == (c["reset_zone_source"] == "server")
+if c["reset_zone_source"] == "server":
+    for name in ("cli", "comm"):
+        assert "(server zone)" in adv["text"][name], "%s form lost the server-zone marker after restore" % name
+' 2>/dev/null; then
+  ok "usage reset-zone: restore lands — config and advice match again (stored value: ${UX_ZRESTORE:-<unset>})"
+else
+  ko "usage reset-zone: restore inconsistent: conf=$(echo "$UX_ZR" | head -c 160) adv=$(echo "$UX_ZRA" | head -c 160)"
+fi
+# --- CLI config get: the zone marker lives in the CLI too (sandbox daemon + CLI binary) --
+if [[ -z "${DW_BASE:-}" && -n "${DW_CLI:-}" ]]; then
+  UX_CG1=$($DW_CLI config get usage.calculator.reset_zone 2>&1 | head -c 400 || true)
+  # After the restore above: a server-sourced zone carries the marker, a configured one does not.
+  UX_ZSRC1=$(echo "$UX_ZR" | python3 -c 'import json,sys; print(json.load(sys.stdin)["usage"]["calculator"].get("reset_zone_source",""))' 2>/dev/null || true)
+  if [[ "$UX_ZSRC1" == "server" ]]; then
+    if printf '%s\n' "$UX_CG1" | grep -q "(server zone)"; then
+      ok "usage CLI config get: reset_zone shows '<zone> (server zone)' when the zone follows the daemon"
+    else
+      ko "usage CLI config get: expected the (server zone) marker: $(printf '%s' "$UX_CG1" | head -c 240)"
+    fi
+  else
+    if ! printf '%s\n' "$UX_CG1" | grep -q "(server zone)" && printf '%s\n' "$UX_CG1" | grep -q "$UX_ZZONE0"; then
+      ok "usage CLI config get: a configured reset_zone prints the value without the marker"
+    else
+      ko "usage CLI config get: configured zone output unexpected: $(printf '%s' "$UX_CG1" | head -c 240)"
+    fi
+  fi
+else
+  skip "usage CLI config get: external daemon mode (DW_BASE) or no CLI binary"
 fi
 
 # --- comm text: <= 50 columns per line, carries the verdict language -------------------
