@@ -9,7 +9,7 @@ Lands in the next minor release above main at the time the change merges. The mo
 
 ## What changed in datawatch
 
-An Automaton task whose spec names an operator decision id (a token of the form `q-` followed by at least 20 lowercase hex characters) now waits until that decision is answered. The daemon exposes one read of all operator decisions, a new task status for a task held on one, and two config keys. The PWA already renders all of this; the apps need to match it.
+An Automaton task whose spec names an operator decision id (a token of the form `q-` followed by at least 20 lowercase hex characters) now waits until that decision is answered. The daemon exposes one read of all operator decisions, a new task status for a task held on one, and two config keys. The PWA renders the decision card and the new status; the apps need to match it.
 
 ## REST contract
 
@@ -66,7 +66,9 @@ The same data is on MCP as the `autonomous_decisions` tool, on the CLI, and on t
 
 ### Decision log fields
 
-Each entry on the Automaton decision log (`GET /api/autonomous/prds/{id}/decisions`) can now carry three optional fields that link it to an operator decision:
+Each entry on the Automaton decision log can now carry three optional fields that link it to an operator decision:
+
+The decision log is the `decisions` array on the Automaton JSON, returned by `GET /api/autonomous/prds/{id}`; there is no separate route for it.
 
 | Field | Notes |
 |---|---|
@@ -74,7 +76,7 @@ Each entry on the Automaton decision log (`GET /api/autonomous/prds/{id}/decisio
 | `answer_id` | The answer the entry records (answer entries only). |
 | `decision_state` | The decision state the entry stands for: `open`, `answered`, `withdrawn` or `expired`. |
 
-New entry kinds: `operator_decision`, `operator_answer`, `decision_gate_hold` and `decision_gate_shadow`. The fields are omitted when empty. A client that shows the log should render an unknown kind as plain text rather than failing.
+New entry kinds: `operator_decision`, `operator_answer` and `decision_gate_shadow`. The fields are omitted when empty. A client that shows the log should render an unknown kind as plain text rather than failing.
 
 ### Task status `waiting_decision`
 
@@ -93,12 +95,13 @@ Locale keys the PWA added (English values; the other locales carry placeholders)
 
 ## Decision line the apps should render
 
-On the Automaton detail screen, a read-only card titled "Decisions" fed by `GET /api/autonomous/decisions?prd_id=<id>`. One row per decision, in the order returned:
+On the Automaton detail screen, a read-only card titled "Decisions" fed by `GET /api/autonomous/decisions?prd_id=<id>`. It shows one line per decision, in the order returned. Each line carries:
 
-1. The decision id and a state chip (open, answered, withdrawn or expired). Open uses a warning colour, answered a success colour, the rest a neutral colour.
-2. The question text.
-3. For an answered decision: "Answer <answer id>", "by <actor>", the answered time, and the quote verbatim in a block quote, preserving line breaks.
-4. For each task held on the decision: the task id and its wait reason.
+- The decision id and its state (open, answered, withdrawn or expired). Open uses a warning colour, answered a success colour, the rest a neutral colour.
+- For an answered decision, the answer quote verbatim, preserving line breaks.
+- For a decision that holds a task, the waiting task reason (`wait_reason`).
+
+The line may wrap at phone width, but it stays one line item per decision. The question text and the answer's id, actor and time are on the same record and may be shown as secondary detail.
 
 An empty list shows "No decisions yet". A failed fetch leaves the card empty with no error block; the card is a convenience read. Ignore a response that arrives after the screen moved to another Automaton. Every value must be escaped or treated as plain text, and long ids and questions must wrap at phone width.
 
@@ -110,8 +113,8 @@ Settings: add the two config keys to the Automata settings card, next to the oth
 
 ### Android
 
-- [ ] The Automaton detail shows the Decisions card from `GET /api/autonomous/decisions?prd_id=<id>` with one row per decision as described above.
-- [ ] State chip, question, answer id, actor, answered time and the verbatim quote render for an answered decision; the quote is not trimmed or shortened.
+- [ ] The Automaton detail shows the Decisions card from `GET /api/autonomous/decisions?prd_id=<id>` with one line per decision as described above.
+- [ ] State and the verbatim quote render for an answered decision, and the waiting task reason renders for a held one; the quote is not trimmed or shortened.
 - [ ] A task with status `waiting_decision` renders with its own label, glyph and `wait_reason`, and counts as active, not finished.
 - [ ] An unknown task status or decision-log kind does not crash the screen.
 - [ ] The Automata settings card has a toggle for `autonomous.questions.decision_gate` (absent reads as on) and a shadow/on choice for `autonomous.questions.decision_gate_mode` (empty reads as shadow), saved through `PUT /api/config`.
@@ -122,8 +125,8 @@ Settings: add the two config keys to the Automata settings card, next to the oth
 ### iPhone/iOS
 
 - [ ] Same list as Android, checked at the narrowest supported iPhone width.
-- [ ] Dynamic Type at the largest size keeps the chip, id and quote readable without horizontal scroll.
-- [ ] VoiceOver reads each row as state, question, then answer.
+- [ ] Dynamic Type at the largest size keeps the state, id and quote readable without horizontal scroll.
+- [ ] VoiceOver reads each line as state, then quote, then waiting task reason.
 
 ## Ships in shadow mode
 
@@ -149,7 +152,7 @@ Lands in the next minor release above main at the time the change merges. The mo
 
 ## What changed in datawatch
 
-An Automaton task whose spec names an operator decision id (a token of the form `q-` followed by at least 20 lowercase hex characters) now waits until that decision is answered. The daemon exposes one read of all operator decisions, a new task status for a task held on one, and two config keys. The PWA already renders all of this; the apps need to match it.
+An Automaton task whose spec names an operator decision id (a token of the form `q-` followed by at least 20 lowercase hex characters) now waits until that decision is answered. The daemon exposes one read of all operator decisions, a new task status for a task held on one, and two config keys. The PWA renders the decision card and the new status; the apps need to match it.
 
 ## REST contract
 
@@ -206,7 +209,9 @@ The same data is on MCP as the `autonomous_decisions` tool, on the CLI, and on t
 
 ### Decision log fields
 
-Each entry on the Automaton decision log (`GET /api/autonomous/prds/{id}/decisions`) can now carry three optional fields that link it to an operator decision:
+Each entry on the Automaton decision log can now carry three optional fields that link it to an operator decision:
+
+The decision log is the `decisions` array on the Automaton JSON, returned by `GET /api/autonomous/prds/{id}`; there is no separate route for it.
 
 | Field | Notes |
 |---|---|
@@ -214,7 +219,7 @@ Each entry on the Automaton decision log (`GET /api/autonomous/prds/{id}/decisio
 | `answer_id` | The answer the entry records (answer entries only). |
 | `decision_state` | The decision state the entry stands for: `open`, `answered`, `withdrawn` or `expired`. |
 
-New entry kinds: `operator_decision`, `operator_answer`, `decision_gate_hold` and `decision_gate_shadow`. The fields are omitted when empty. A client that shows the log should render an unknown kind as plain text rather than failing.
+New entry kinds: `operator_decision`, `operator_answer` and `decision_gate_shadow`. The fields are omitted when empty. A client that shows the log should render an unknown kind as plain text rather than failing.
 
 ### Task status `waiting_decision`
 
@@ -233,12 +238,13 @@ Locale keys the PWA added (English values; the other locales carry placeholders)
 
 ## Decision line the apps should render
 
-On the Automaton detail screen, a read-only card titled "Decisions" fed by `GET /api/autonomous/decisions?prd_id=<id>`. One row per decision, in the order returned:
+On the Automaton detail screen, a read-only card titled "Decisions" fed by `GET /api/autonomous/decisions?prd_id=<id>`. It shows one line per decision, in the order returned. Each line carries:
 
-1. The decision id and a state chip (open, answered, withdrawn or expired). Open uses a warning colour, answered a success colour, the rest a neutral colour.
-2. The question text.
-3. For an answered decision: "Answer <answer id>", "by <actor>", the answered time, and the quote verbatim in a block quote, preserving line breaks.
-4. For each task held on the decision: the task id and its wait reason.
+- The decision id and its state (open, answered, withdrawn or expired). Open uses a warning colour, answered a success colour, the rest a neutral colour.
+- For an answered decision, the answer quote verbatim, preserving line breaks.
+- For a decision that holds a task, the waiting task reason (`wait_reason`).
+
+The line may wrap at phone width, but it stays one line item per decision. The question text and the answer's id, actor and time are on the same record and may be shown as secondary detail.
 
 An empty list shows "No decisions yet". A failed fetch leaves the card empty with no error block; the card is a convenience read. Ignore a response that arrives after the screen moved to another Automaton. Every value must be escaped or treated as plain text, and long ids and questions must wrap at phone width.
 
@@ -250,8 +256,8 @@ Settings: add the two config keys to the Automata settings card, next to the oth
 
 ### Android
 
-- [ ] The Automaton detail shows the Decisions card from `GET /api/autonomous/decisions?prd_id=<id>` with one row per decision as described above.
-- [ ] State chip, question, answer id, actor, answered time and the verbatim quote render for an answered decision; the quote is not trimmed or shortened.
+- [ ] The Automaton detail shows the Decisions card from `GET /api/autonomous/decisions?prd_id=<id>` with one line per decision as described above.
+- [ ] State and the verbatim quote render for an answered decision, and the waiting task reason renders for a held one; the quote is not trimmed or shortened.
 - [ ] A task with status `waiting_decision` renders with its own label, glyph and `wait_reason`, and counts as active, not finished.
 - [ ] An unknown task status or decision-log kind does not crash the screen.
 - [ ] The Automata settings card has a toggle for `autonomous.questions.decision_gate` (absent reads as on) and a shadow/on choice for `autonomous.questions.decision_gate_mode` (empty reads as shadow), saved through `PUT /api/config`.
@@ -262,8 +268,8 @@ Settings: add the two config keys to the Automata settings card, next to the oth
 ### iPhone/iOS
 
 - [ ] Same list as Android, checked at the narrowest supported iPhone width.
-- [ ] Dynamic Type at the largest size keeps the chip, id and quote readable without horizontal scroll.
-- [ ] VoiceOver reads each row as state, question, then answer.
+- [ ] Dynamic Type at the largest size keeps the state, id and quote readable without horizontal scroll.
+- [ ] VoiceOver reads each line as state, then quote, then waiting task reason.
 
 ## Ships in shadow mode
 
