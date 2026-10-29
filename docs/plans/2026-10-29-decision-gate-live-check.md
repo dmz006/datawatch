@@ -1,93 +1,187 @@
 # Decision gate — sandbox live check
 
-Date: 2026-10-29 · Branch: `automaton/f1f20053` (tree at commit `0890c7380`)
+Date: 2026-10-29 · Branch: `automaton/f1f20053` (tree at commit `bf3155901`)
 
-Sandbox daemon: `datawatch v9.34.3`, built from this worktree with
-`go build -o <scratch>/bin/datawatch ./cmd/datawatch/`, started with
-`start --foreground --config <scratch>/config.yaml`. The scratch folder was
-`.datawatch/live-check/` under the project directory (git-ignored; deleted at
-the end). The production daemon and its service unit were never touched.
+**Sandbox daemon: `datawatch v9.34.3`** (`GET /api/health` read `"version":"9.34.3"`), built from this worktree
+with `go build -o .datawatch/live-check/bin/datawatch ./cmd/datawatch/`. It ran from its own config and data
+directory under `.datawatch/live-check/` (git-ignored, deleted at the end). The production daemon and its
+service unit were never touched.
 
-This is the live check the Testing Tracker Rules ask for: a feature that gates
-work and persists state, run against a real daemon, not unit fakes.
-
-## Sandbox setup
-
-| Item | Value |
-|---|---|
-| Daemon | own config and data dir under the scratch folder; REST `127.0.0.1:18710` (plain HTTP), MCP SSE `127.0.0.1:18711`; `session.llm_backend: shell`; `auto_git_init` and `auto_git_commit` off |
-| Channels | turned on through `PUT /api/config` with `{"autonomous.enabled": true, "autonomous.questions.enabled": true}` (reply `{"status":"ok"}`); `GET /api/config` then read `decision_gate: true`, `decision_gate_mode: shadow` |
-| tmux | none reachable. The daemon was started with a stub `tmux` first on its `PATH` that answers `-V` and fails every other call, so no tmux server could be started by the check. The daemon logged `TMUX_TMPDIR was unset — using dedicated socket ...` (it computes that path at start); every tmux call it made hit the stub |
-| Planner | the only REST path from `draft` to `needs_review` (which unlocks `add_story`/`add_task`) is a real decompose. A 40-line Ollama stand-in on loopback (`127.0.0.1:18730`, answers `POST /api/generate` with a fixed JSON plan) served as the planner, registered as compute node `datawatch-ollama` (kind `ollama`) behind the migrated `ollama` LLM entry. The plan has one story and the task spec names the question id |
-| Data created | Automaton `14bd0001` (task `7cb00002`), question `q-18e3216c4b139225f927` (context `prd`, `prd_id` `14bd0001`, options `reuse`/`new`, default `hold`); for step (d) Automaton `fa630001` with two tasks, a withdrawn question `q-18e321dafbb3d36d87ff` and the never-raised id `q-0123456789abcdef0123`, plus one unrelated question. No production data was read or reused |
-| Backend | none. A worker session needs tmux, so a task that passes the gate fails at its start attempt with `spawn: session start: 500 Internal Server Error — create tmux session: exit status 1` |
-
-## Commands run
-
-All shell commands ran under `env -u TMUX -u TMUX_TMPDIR`. No tmux server
-command was run, nothing was killed by name, and every process was stopped by
-its exact PID.
-
-| # | Command | Used for |
-|---|---|---|
-| 1 | `go build -o .datawatch/live-check/bin/datawatch ./cmd/datawatch/` | build the sandbox daemon |
-| 2 | `datawatch start --foreground --config .datawatch/live-check/config.yaml` | sandbox daemon (PIDs 915344, 939165, 969883 over three starts) |
-| 3 | `PUT /api/config` `{"autonomous.enabled": true, "autonomous.questions.enabled": true}` | channels on |
-| 4 | `POST /api/autonomous/prds`, `POST /api/questions`, `POST /api/autonomous/prds/{id}/decompose`, `.../plan_coverage/acknowledge`, `.../approve`, `.../run` | create the Automaton and the question, plan, approve, run |
-| 5 | `PUT /api/config` `{"autonomous.questions.decision_gate_mode": "on"}` | step (b) |
-| 6 | `POST /api/autonomous/prds/14bd0001/reset_task` | put the failed task back to pending (see step b) |
-| 7 | `GET /api/autonomous/decisions?prd_id=...`, `GET /api/autonomous/prds/{id}` | REST reads |
-| 8 | `datawatch --config <cfg> --url http://127.0.0.1:18710 autonomous decisions 14bd0001` | CLI read |
-| 9 | `datawatch --config <cfg> mcp` (stdio), JSON-RPC `initialize` then `tools/call` `autonomous_decisions {"prd_id":"14bd0001","state":"open"}` | MCP read |
-| 10 | `POST /api/test/message` `{"text":"autonomous decisions 14bd0001"}` | comm read (runs the router verb) |
-| 11 | `POST /api/questions/{id}/answer` with a multi-line quote | step (c) |
-| 12 | `POST /api/questions/{id}/withdraw`, answer attempts on the withdrawn and unknown ids | step (d) |
-| 13 | `DELETE /api/autonomous/prds/{id}?hard=true` (after `.../cancel` for `fa630001`), `POST /api/sessions/delete` for the two failed sessions, `DELETE /api/compute/nodes/datawatch-ollama` | cleanup through the API |
-| 14 | `kill 969883`, `kill 999783` (final sandbox daemon, final stand-in), each followed by `kill -0` | stop by exact PID |
-| 15 | `bash scripts/check-no-leftover-test-daemons.sh check <empty file>` | leftover-daemon scan |
+This is the live check the Testing Tracker Rules ask for: a feature that gates work and persists state, run
+against a running daemon rather than unit fakes. Every shell command ran under `env -u TMUX -u TMUX_TMPDIR`;
+no tmux server command was run; nothing was killed by name, only by exact PID.
 
 ## Results
 
-### (a) Shadow mode, gate on
+One line per step.
 
-Result: PASS — with `decision_gate: true` and `decision_gate_mode: shadow`, `run` did not hold task `7cb00002`: it went straight to its start attempt; the Automaton log gained exactly one `decision_gate_shadow` entry (`would hold: operator decision q-18e3216c4b139225f927 is waiting for an answer: Live check: use the existing table or add a new one? (task 7cb00002)`, `decision_state: open`), and the decision line showed the question `open` with `task_ids: ["7cb00002"]`, `waiting_task_ids: []`, `answer: null`.
+- (a) Shadow mode, gate on — Result: PASS — `run` did not hold the task (it went straight to its start attempt), the Automaton log gained one `decision_gate_shadow` entry, and the decision line read `open`.
+- (b) Mode `on` — Result: PASS — the task became `waiting_decision` with its reason in `wait_reason`, and the same reason was read on REST, MCP, the CLI and comm; comm read it on the default empty `server.token` only, and with a token set comm is refused with HTTP 401 (Finding 1).
+- (c) Answer with a quote — Result: PASS — the task left `waiting_decision` and reached its start attempt within 51 ms of the answer with no `run` call, and the decision line showed `answered` with the quote verbatim; the backend part (a worker session running) was NOT RUN because the sandbox has no tmux or worker backend.
+- (d) Withdrawn decision and unknown id — Result: PASS — a task naming a withdrawn decision and a task naming an unknown id both became and stayed `waiting_decision`, through an answer attempt on each (409 and 404), an unrelated answer and a 36 s wait.
 
-Observed: the task then failed on the stubbed tmux (no backend, see setup). After `reset_task` the executor scanned the task a second time still in shadow mode, and the log still held one entry (the dedup works against a live store).
+## Evidence
+
+### (a) Shadow mode
+
+`autonomous.questions.decision_gate` read `true` and `decision_gate_mode` read `shadow` (the defaults). `run` on
+Automaton `696c0001` at 19:00:22.398 was followed 6 ms later by the log entry `decision_gate_shadow` with note
+`would hold: operator decision q-18e32248ba3b521bad29 is waiting for an answer: Live check: use the existing table or add a new one? (task d9d80001)`
+and `decision_state: open`. The task was not held. It failed at its start attempt, because the sandbox has no
+tmux (below). The decision line then read `state: open`, `task_ids: ["d9d80001"]`, `waiting_task_ids: []`,
+`answer: null`. A second shadow scan to test the once-per-task dedup was not done in this run.
 
 ### (b) Mode `on`
 
-Result: PASS — after `PUT /api/config {"autonomous.questions.decision_gate_mode": "on"}` (read back as `on`) and `reset_task`, task `7cb00002` became `waiting_decision` with `wait_reason` = `operator decision q-18e3216c4b139225f927 is waiting for an answer: Live check: use the existing table or add a new one?`, and that same reason was read on REST, MCP, the CLI and comm; one warning alert (`Automaton task waiting for a decision`) was raised and stayed at one after a daemon restart.
+`PUT /api/config {"autonomous.questions.decision_gate_mode": "on"}` read back as `on`. After `reset_task`
+the task `d9d80001` was `waiting_decision` with `wait_reason` = `operator decision q-18e32248ba3b521bad29 is waiting for an answer: Live check: use the existing table or add a new one?`.
+The alert `Automaton task waiting for a decision` was raised.
 
 | Surface | What it returned |
 |---|---|
-| REST | `GET /api/autonomous/prds/14bd0001` task `status: waiting_decision`, `wait_reason` as above; `GET /api/autonomous/decisions?prd_id=14bd0001&state=open` `waiting_tasks[0].wait_reason` identical |
-| MCP | `autonomous_decisions` over stdio: `isError` unset, `waiting_task_ids ["7cb00002"]`, same `wait_reason` |
-| CLI | `q-18e3216c4b139225f927 open Live check: use the existing table or add a new one? \| waiting: task 7cb00002 (operator decision q-18e3216c4b139225f927 is waiting for an answer: Live check: use the existing table or add a new one?)` |
-| comm | the router reply `[dw-decision-live-check] autonomous decisions` followed by the same line as the CLI |
+| REST | `GET /api/autonomous/decisions?prd_id=696c0001&state=open`: `waiting_task_ids ["d9d80001"]`, `waiting_tasks[0].wait_reason` identical to the reason above |
+| MCP | `autonomous_decisions {"prd_id":"696c0001","state":"open"}` over stdio (`datawatch mcp`): the same object, same reason |
+| CLI | `q-18e32248ba3b521bad29 open Live check: use the existing table or add a new one? \| waiting: task d9d80001 (operator decision q-18e32248ba3b521bad29 is waiting for an answer: Live check: use the existing table or add a new one?)` |
+| comm | `POST /api/test/message {"text":"autonomous decisions 696c0001"}` ran the router verb; reply `[dw-live-check] autonomous decisions` plus the same line as the CLI |
 
-Notes on how this ran:
+The mode has to be `on` before the executor scans the task: a task that already passed the gate in shadow mode
+has already started, so the failed task from (a) was put back to pending with `reset_task` after the switch.
 
-- The mode must be `on` before the executor scans the task: a task that already passed the gate in shadow mode has already started. The failed task from step (a) was put back to pending with `reset_task` after the mode was switched, and the executor then parked it.
-- **Finding (not fixed, not part of this task):** the first comm read returned `HTTP 401: unauthorized` while `server.token` was set. The router's loopback helper `commGet` (`internal/router/sx2_parity.go`) sends no `Authorization` header, so every comm verb built on it (133 call sites) is refused by a daemon with a server token. The comm read in this report was taken after restarting the sandbox daemon with an empty `server.token`. The restart also showed the held task and its reason surviving a daemon restart (`boot-resume ... re-launched executor`, task still `waiting_decision`).
+**Finding 1 (not fixed, outside this task).** The comm loopback helper `commGet` in
+`internal/router/sx2_parity.go` calls `commHTTP.Get(u)` and sends no `Authorization` header. `server.token` is
+optional and empty by default, so comm worked above. After the daemon was restarted with `server.token` set
+(`config-token.yaml`), the same comm read returned `[dw-live-check] autonomous decisions failed` /
+`HTTP 401: unauthorized`, while REST with the bearer token worked. Every comm verb built on `commGet` is
+refused by a token-secured daemon, not only this one. Step (b) is counted PASS for the default configuration and
+that limit is stated in its line; it is the gate's own comm read that was observed, not a fault in the gate.
 
 ### (c) Answer releases the task
 
-Result: PASS — `POST /api/questions/q-18e3216c4b139225f927/answer` (201) with the quote `Add a new table.\nKeep the old one read-only. Café — "quoted" & <b>raw</b>` moved the task out of `waiting_decision` about 70 ms later (answer stored 18:48:55.916, task seen failed at 18:48:55.988 by a 50 ms poll) with no `run` call (the Automaton log's `run` entries were 4 before the answer and 4 after), and the decision line then showed `state: answered`, no waiting tasks, answer `a-18e321b489f4551fd28f` by `operator` via `cli`, the quote byte-for-byte equal to the one sent and `quote_sha256` equal to the SHA-256 of that text; the CLI and comm replies print the same quote.
+Quote sent: `Add a new table.\nKeep the old one read-only. Café — "quoted" & <b>raw</b>` (a real newline, non-ASCII
+and HTML characters), through `POST /api/questions/q-18e32248ba3b521bad29/answer` (201), answer id
+`a-18e3225e4c63b8918674`, actor `operator`, surface `cli`. A 20 ms poll of the task and the log's `run` count:
 
-Result: NOT RUN — the backend part (the released task actually running a worker session): the sandbox has no tmux and no worker backend, so the start attempt failed with `spawn: session start: 500 Internal Server Error — create tmux session: exit status 1`. The status record up to the start attempt is `waiting_decision` → (start attempt) → `failed`; the intermediate `pending`/`running` states fell between 50 ms polls. That the task reached its start attempt without a manual `run` is what the gate promises; a worker running to completion was not observed.
+| Time | Task status | `run` entries in the Automaton log |
+|---|---|---|
+| 19:01:04.046 | `waiting_decision` | 2 |
+| 19:01:05.027 | answer stored | — |
+| 19:01:05.078 | `in_progress` | 2 |
+| 19:01:05.119 | `failed` | 2 |
+
+So the task left the hold and began its start attempt within 51 ms of the stored answer, with no `run` call
+(the count stayed at 2). The start attempt then failed with `spawn: session start: 500 Internal Server Error — create tmux session: exit status 1`:
+the sandbox has no tmux and no worker backend (a stub `tmux` first on the daemon's `PATH` answers `-V` and fails
+everything else, so the check could not start a tmux server). The backend part, a released task running a
+worker to completion, was therefore not run.
+
+The decision line then read `state: answered`, `waiting_task_ids: []`, with the answer `quote` equal to the sent
+text and `quote_sha256` = `8ce9693f91d1b02ee4d76169413d437084bfb8190aaaef723aac4f7ae5c78b19`, the SHA-256 of that
+text. The CLI and comm replies print the same quote after `| answer a-18e3225e4c63b8918674 by operator:`. (REST JSON
+escapes `&`, `<` and `>` as `&`, `<`, `>`; decoded, the strings are equal.) The first answer
+attempt had a malformed JSON body (unescaped quotes) and was refused with 400, and the task stayed held until the
+corrected request.
 
 ### (d) Withdrawn and unknown ids
 
-Result: PASS — on Automaton `fa630001` (mode `on`), a task naming the withdrawn decision `q-18e321dafbb3d36d87ff` and a task naming the unknown id `q-0123456789abcdef0123` both became `waiting_decision` with the reasons `operator decision q-18e321dafbb3d36d87ff was withdrawn without an answer` and `operator decision q-0123456789abcdef0123 was not found`, and both stayed held after an answer attempt on the withdrawn id (409 `question is not open`), an answer attempt on the unknown id (404 `unknown question`), an unrelated question answered on the same Automaton, and a 36 s wait past the 30 s re-check; the alert count was one per held task (3 in all with step b's).
+Automaton `798e0001`, mode `on`. Task `3a6c0001` named the withdrawn decision `q-18e3226a36b0ef591a6f`, and task
+`a0050001` named `q-0123456789abcdef0123`, which was never raised. Three seconds after `run`:
+
+- `3a6c0001` `waiting_decision`: `operator decision q-18e3226a36b0ef591a6f was withdrawn without an answer`
+- `a0050001` `waiting_decision`: `operator decision q-0123456789abcdef0123 was not found`
+
+An answer attempt on the withdrawn id returned 409, one on the unknown id returned 404, and an answer on the
+unrelated question `q-18e3226a37c145b56c42` (same Automaton) returned 201. After a further 36 s (past the 30 s
+re-check) both tasks were unchanged. The alert count for `Automaton task waiting for a decision` was 3 (one per
+held task, three tasks held in all). After the daemon restart for Finding 1 both tasks were still
+`waiting_decision` with the same reasons.
+
+## Commands run
+
+`B=http://127.0.0.1:18710`. The daemon started with `PATH=$PWD/.datawatch/live-check/stub:$PATH` so its `tmux` is the stub. Bodies are shown as sent.
+
+Sandbox config (`.datawatch/live-check/config.yaml`): `session.llm_backend: shell` with `auto_git_init` and `auto_git_commit` false; `server` on `127.0.0.1:18710`, plain HTTP, `token: ""`; `mcp` SSE on `127.0.0.1:18711`; `autonomous.enabled: true`, `planning_backend: ollama`; `ollama.host: http://127.0.0.1:18730`; its own `data_dir` and project dir under the scratch folder.
+
+```bash
+# setup
+go build -o .datawatch/live-check/bin/datawatch ./cmd/datawatch/
+python3 .datawatch/live-check/standin.py &            # planner stand-in on 127.0.0.1:18730, answers POST /api/generate with a fixed one-story plan (PID 1074756)
+.datawatch/live-check/bin/datawatch start --foreground --config .datawatch/live-check/config.yaml   # PID 1074757
+
+# channels on, through the config API
+curl -s -X PUT -H "Content-Type: application/json" -d '{"autonomous.enabled": true, "autonomous.questions.enabled": true}' $B/api/config
+
+# Automaton 1, its question, its plan
+curl -s -X POST -H "Content-Type: application/json" -d '{"spec":"Live check of the decision gate: add the sessions table.","title":"dw-decision-live-check","project_dir":"<worktree>/.datawatch/live-check/proj","backend":"shell"}' $B/api/autonomous/prds          # -> 696c0001
+curl -s -X POST -H "Content-Type: application/json" -d '{"label":"decision","context":"prd","prd_id":"696c0001","text":"Live check: use the existing table or add a new one?","options":[{"id":"reuse","label":"reuse the table","tradeoffs":"no migration"},{"id":"new","label":"add a new table","tradeoffs":"a migration"}],"default":"hold","asked_by":"operator","asker_kind":"operator"}' $B/api/questions   # -> q-18e32248ba3b521bad29
+curl -s -X POST -H "Content-Type: application/json" -d '{"name":"datawatch-ollama","kind":"ollama","address":"http://127.0.0.1:18730"}' $B/api/compute/nodes
+curl -s -X POST -H "Content-Type: application/json" -d '{}' $B/api/autonomous/prds/696c0001/decompose         # stand-in plan; the task spec names the question id
+curl -s -X POST -H "Content-Type: application/json" -d '{"actor":"operator","note":"live check"}' $B/api/autonomous/prds/696c0001/plan_coverage/acknowledge
+curl -s -X POST -H "Content-Type: application/json" -d '{"actor":"operator","note":"live check"}' $B/api/autonomous/prds/696c0001/approve
+
+# (a) shadow mode, gate on
+curl -s -X POST -H "Content-Type: application/json" -d '{}' $B/api/autonomous/prds/696c0001/run
+curl -s "$B/api/autonomous/decisions?prd_id=696c0001"
+
+# (b) mode on, then the reason on every surface
+curl -s -X PUT -H "Content-Type: application/json" -d '{"autonomous.questions.decision_gate_mode": "on"}' $B/api/config
+curl -s -X POST -H "Content-Type: application/json" -d '{"task_id":"d9d80001"}' $B/api/autonomous/prds/696c0001/reset_task
+curl -s "$B/api/autonomous/decisions?prd_id=696c0001&state=open"                                               # REST
+.datawatch/live-check/bin/datawatch --config .datawatch/live-check/config.yaml --url $B autonomous decisions 696c0001   # CLI
+curl -s -X POST -H "Content-Type: application/json" -d '{"text":"autonomous decisions 696c0001"}' $B/api/test/message   # comm
+# MCP, over stdio: these three JSON-RPC lines piped into `datawatch --config ... --url $B mcp`
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"live-check","version":"1"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"autonomous_decisions","arguments":{"prd_id":"696c0001","state":"open"}}}
+
+# (c) answer with a quote (body in answer.json: chosen_option_id new, the quote above, actor operator, surface cli)
+python3 .datawatch/live-check/poll.py &              # prints the task status and the `run` count on every change, every 20 ms
+curl -s -X POST -H "Content-Type: application/json" --data-binary @.datawatch/live-check/answer.json $B/api/questions/q-18e32248ba3b521bad29/answer
+curl -s "$B/api/autonomous/decisions?prd_id=696c0001"; datawatch ... autonomous decisions 696c0001; curl ... $B/api/test/message   # answered line on REST, CLI, comm
+
+# (d) Automaton 2
+curl -s -X POST -H "Content-Type: application/json" -d '{"spec":"Live check of the decision gate, held cases.","title":"dw-decision-live-check-held","project_dir":"<worktree>/.datawatch/live-check/proj","backend":"shell"}' $B/api/autonomous/prds     # -> 798e0001
+curl -s -X POST -H "Content-Type: application/json" -d '{"label":"decision","context":"prd","prd_id":"798e0001","text":"<text>","options":[{"id":"a","label":"A","tradeoffs":"x"},{"id":"b","label":"B","tradeoffs":"y"}],"default":"hold","asked_by":"operator","asker_kind":"operator"}' $B/api/questions   # twice -> q-18e3226a36b0ef591a6f (withdrawn next), q-18e3226a37c145b56c42 (unrelated)
+curl -s -X POST -H "Content-Type: application/json" -d '{}' $B/api/questions/q-18e3226a36b0ef591a6f/withdraw
+curl -s -X POST -H "Content-Type: application/json" -d '{}' $B/api/autonomous/prds/798e0001/decompose         # task 3a6c0001 names the withdrawn id
+curl -s -X POST -H "Content-Type: application/json" -d '{"story_id":"s1","title":"Second gated task","spec":"Wire the gate. This follows operator decision q-0123456789abcdef0123.","actor":"operator"}' $B/api/autonomous/prds/798e0001/add_task
+curl -s -X POST -H "Content-Type: application/json" -d '{"actor":"operator","note":"live check"}' $B/api/autonomous/prds/798e0001/plan_coverage/acknowledge
+curl -s -X POST -H "Content-Type: application/json" -d '{"actor":"operator","note":"live check"}' $B/api/autonomous/prds/798e0001/approve
+curl -s -X POST -H "Content-Type: application/json" -d '{}' $B/api/autonomous/prds/798e0001/run
+curl -s -o /dev/null -w "HTTP %{http_code}" -X POST -H "Content-Type: application/json" -d '{"chosen_option_id":"a","quote":"too late","actor":"operator","surface":"cli"}' $B/api/questions/q-18e3226a36b0ef591a6f/answer     # 409
+curl -s -o /dev/null -w "HTTP %{http_code}" -X POST -H "Content-Type: application/json" -d '{"chosen_option_id":"a","quote":"nothing","actor":"operator","surface":"cli"}' $B/api/questions/q-0123456789abcdef0123/answer         # 404
+curl -s -o /dev/null -w "HTTP %{http_code}" -X POST -H "Content-Type: application/json" -d '{"chosen_option_id":"b","quote":"unrelated","actor":"operator","surface":"cli"}' $B/api/questions/q-18e3226a37c145b56c42/answer         # 201
+
+# Finding 1: restart with server.token set, then the comm read
+kill 1074757
+.datawatch/live-check/bin/datawatch start --foreground --config .datawatch/live-check/config-token.yaml      # PID 1112304
+curl -s -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"text":"autonomous decisions 798e0001"}' $B/api/test/message   # comm: HTTP 401: unauthorized
+
+# cleanup through the API (bearer token on each)
+curl -s -X POST -H "Content-Type: application/json" -d '{"id":"dw-live-check-0be1"}' $B/api/sessions/delete   # and dw-live-check-d62e
+curl -s -X POST -H "Content-Type: application/json" -d '{}' $B/api/autonomous/prds/798e0001/cancel
+curl -s -X DELETE "$B/api/autonomous/prds/696c0001?hard=true"; curl -s -X DELETE "$B/api/autonomous/prds/798e0001?hard=true"
+curl -s -X DELETE $B/api/compute/nodes/datawatch-ollama
+
+# stop by exact PID
+kill 1112304; kill 1074756
+```
+
+## Deviations from a clean run
+
+These all happened in the sandbox and were cleaned up with it:
+
+- A first question was raised with a placeholder `prd_id` before any Automaton existed, `q-18e322465362bee6490d`, and withdrawn at once. It is not used by any step.
+- The first decompose returned 503 (`compute node "datawatch-ollama": compute node not found`), so the stand-in was registered as that compute node and decompose was run again.
+- An Automaton `05ae0001` was created for step (d), a question call without `options` was refused with 400, and `05ae0001` was hard-deleted unused; `798e0001` replaced it.
+- The first answer request in (c) was malformed and refused with 400, see (c).
 
 ## Cleanup
 
-- Sandbox daemon stopped by exact PID (`kill 969883`, confirmed gone with `kill -0`; the two earlier starts, PIDs 915344 and 939165, were stopped the same way before each restart). The stand-in was stopped by PID too (933783, then 999783). Ports 18710, 18711 and 18730 were confirmed closed, and a read-only scan of `/proc` found no process still naming the scratch folder. The stdio `datawatch mcp` run exited on its own (exit 0).
-- Records removed through the API: both Automata (`14bd0001`, `fa630001`, hard delete), the two failed sessions the start attempts created, and compute node `datawatch-ollama`. The three questions and the alerts have no delete route; they lived in the sandbox data dir and went with it.
-- The scratch folder `.datawatch/live-check/` (config, data dir, binary, stub `tmux`, stand-in, scratch project dir) was deleted. `git status` was clean afterwards.
-- `scripts/check-no-leftover-test-daemons.sh` was run against an empty baseline and listed 12 test daemons, all days old and with configs under other `/tmp` paths: none started by this check, none touched. The sandbox daemon is not among them.
-- Side effect to be aware of: on its first start the daemon logged `[channel] cleaned up 1 stale MCP registration(s)`, which is the channel bridge tidying a registration outside the project directory. The check did not read or write it.
+- Sandbox daemon stopped by exact PID: `kill 1074757` for the first start and `kill 1112304` for the token start, each confirmed gone with `kill -0`; the second was signalled only after `ps -p` showed its command line named the sandbox config. The stand-in was stopped as `kill 1074756` and confirmed gone. Ports 18710, 18711 and 18730 were confirmed closed, and `ps` listed no process running the sandbox binary or stand-in.
+- Records removed through the API: both Automata (hard delete), the two failed sessions the start attempts created, and compute node `datawatch-ollama`; a final `GET /api/sessions` read `[]` and `GET /api/autonomous/prds` read `{"prds":[],"total":0}`. The four questions and the alerts have no delete call that was used; they lived in the sandbox data dir and went with it.
+- The scratch folder `.datawatch/live-check/` (config, data dir, binary, stub `tmux`, stand-in, poll script, project dir) was deleted, and `git status` was clean before this report was written.
+- On its first start the daemon logged `[channel] cleaned up 1 stale MCP registration(s)`: the channel bridge tidying a registration outside the project directory. The check did not read or write it.
 
 ## Not covered
 
-The Web UI (the Decisions card, the `Waiting for a decision` label) was not driven; its row in the tracker stays at Validated No. The datawatch-app screens are covered by the parity issue, not here. A released task running on a real worker backend is the NOT RUN part of step (c).
+The Web UI (the Decisions card, the `Waiting for a decision` label) was not driven; its rows in the tracker stay at Validated No, as do the config-key rows for MCP, CLI, comm and the Web UI settings and the config unit row. The datawatch-app screens are covered by the parity issue, not here. A released task running on a real worker backend is the NOT RUN part of step (c). Not exercised live: the gate switched off, the two-reason join, `limit` and the 400/403/503 cases of the read route, and a second shadow scan for dedup.
