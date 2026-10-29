@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.31.6 — Throttle detection matches each backend own error line
+
+### Changed
+
+- **Throttle detection now looks for each backend's own error line at the start of the line.** Instead of searching anywhere in a backend's output for a throttle phrase, detection now matches the backend's own error message and only when the phrase begins that line, so the decision is based on what the backend is actually reporting rather than on anything printed around it.
+- **Ordinary output that quotes a throttle phrase no longer pauses a backend.** A log line, echo, or result that merely mentions a throttle phrase in the middle of a sentence is treated as data now, so a backend is no longer throttled by its own text quoting a phrase.
+- **The explicit protocol marker is also matched only at the start of a line.** The dedicated marker a backend can emit to declare a throttle is now recognized only when it opens the line, the same way the built-in error matches behave.
+- **An operator's `rate_limit_patterns` override is applied as before and replaces the built-in matches.** When an operator sets their own patterns, they fully take the place of the built-in list — and, like everything else now, each operator pattern is matched at the start of a line as well.
+- **After upgrading, the usage back-off status shows the patterns as stale until an operator rechecks them.** Because a stored pattern that was not checked against the new start-of-the-line rule may no longer mean what it did before, the status flags the patterns as stale and asks an operator to reconfirm them rather than silently trusting old values.
+- **Back-off durations are unchanged.** The lengths of time a backend backs off are the same as before; only what triggers the detection changed.
+- **The built-in throttle list is now a per-backend table, and the shipped `rate_limit_patterns` default is empty.** The generic default list is gone; the Settings Detection Filters card shows that the built-in table applies instead of listing old phrases, and saving the card does not bring the generic list back. The claude-code usage-dialog lines (the approaching-limit warning, the reset-time announcement and the stop-and-wait menu option) stay detected, anchored to that backend's own dialog lines. A short section in `docs/operations.md` records the decision.
+
 ## v9.31.5 — The Windows build works again, and a test now guards it
 
 - **The release build for Windows was failing, so most recent releases had no downloadable files.** The descendant-stall change in 9.30.1 signalled a recorded child process with a call that exists only on Linux and macOS, so the Windows build stopped compiling. Linux tests never saw it. The call now goes through the portable process API, which behaves the same on Linux and macOS and returns an error on Windows instead of failing the build. A new test cross-compiles the daemon for Windows and macOS on every test run, so a platform-specific call can no longer slip through.
