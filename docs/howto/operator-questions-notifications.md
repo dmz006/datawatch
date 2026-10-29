@@ -42,7 +42,7 @@ chose at raise time:
    summary (chosen option, the verbatim quote, actor, when). This path
    needs nothing from the asker.
 2. **The opt-in line — a single `DATAWATCH_ANSWER:` line dropped into the
-   asker's session.** One per question, only when the question was raised
+   asker's session.** One per answer, only when the question was raised
    with `return_path: true` *and* the daemon's `autonomous.questions`
    switch and `return_path` toggle are both on. A session that has gone
    away by then simply gets nothing: the answer stays in the store, the
@@ -286,7 +286,7 @@ curl -s -X POST "$BASE/api/questions/q_7d21c9e8f43c/answer" \
     "quote": "Cap it — unbounded backoff wedged the worker in prod",
     "actor": "operator"
   }'
-# → 201, the recorded answer (id, surfaces, the quote exactly as received)
+# → 201, the recorded answer plus the question's new state
 ```
 
 `chosen_option_id` names the option, `quote` is your verbatim text (the
@@ -447,7 +447,7 @@ the answer is recorded, JSON-escaped so a multi-line quote never breaks
 it into several lines:
 
 ```
-DATAWATCH_ANSWER: {"question_id":"q_7d21c9e8f43c","answer_id":"a2","chosen_option":"cap","quote":"Cap it — unbounded backoff wedged the worker in prod","actor":"operator","surface":"pwa","at":"2026-10-27T09:41:00Z"}
+DATAWATCH_ANSWER: {"question_id":"q_7d21c9e8f43c","answer_id":"a2","chosen_option":"cap","quote":"Cap it — unbounded backoff wedged the worker in prod","actor":"operator","at":"2026-10-27T09:41:00Z"}
 ```
 
 The fields:
@@ -456,19 +456,19 @@ The fields:
 |---|---|
 | `question_id` | the question this answer stands for. |
 | `answer_id` | this answer's id (a supersede sends a new line with the new id). |
-| `chosen_option` | the option id, when the answer picked one; absent otherwise. |
-| `quote` | the verbatim quote, when given. |
-| `actor` / `surface` | who answered, on which surface. |
+| `chosen_option` | the option id the answer picked; empty when it was answered with a quote alone. |
+| `quote` | the verbatim quote, exactly as it was received. |
+| `actor` | who answered. |
 | `at` | when it was recorded (RFC 3339). |
 
-The marker `DATAWATCH_ANSWER:` is the same family as
+`DATAWATCH_ANSWER:` is the same family as
 `DATAWATCH_COMPLETE:` and `DATAWATCH_NEEDS_INPUT:` — a single-token
-prefix an asker can grep for — but it is a **distinct** marker: output
-scanners check `DATAWATCH_COMPLETE:` first, then `DATAWATCH_NEEDS_INPUT:`,
-then this one, so a session that completes while carrying an answer never
-confuses the two. The line never repeats the daemon's prompt markers
-elsewhere, and a gone session costs the asker exactly one warning log
-line in the daemon (no retry, no repeated warnings).
+prefix an asker can grep for — but it is a **distinct** marker: the three
+prefixes are separate strings, so a session that completes while carrying
+an answer can never be mistaken for one of the other two. The line is
+appended to the session's output and never injected as input, and a gone
+session costs the asker exactly one warning log line in the daemon (no
+retry, no repeated warnings).
 
 ### What a session that receives it should do
 
@@ -521,4 +521,4 @@ in the PWA settings card.
 - [Automaton lifecycle webhooks and peer forwarding](automaton-lifecycle-webhooks.md) — the two sinks that send events out of this daemon; question kinds are accepted.
 - [Alerts and notifications](alerts-and-notifications.md) — the alert the high-priority raise lands in.
 - [Operator decision channel (proposal)](../plans/2026-10-25-operator-decision-channel-proposal.md) — the design this step implements.
-- REST details: [API → autonomous.md](../api/autonomous.md) "Operator question channel" section; OpenAPI: [openapi.yaml](../api/openapi.yaml) schemas `Question`, `QuestionRaise`, `Answer`, `Event`.
+- REST details: [API → autonomous.md](../api/autonomous.md) "Operator question channel" section; OpenAPI: [openapi.yaml](../api/openapi.yaml) schemas `Question`, `QuestionRaise`, `Answer`, `QuestionAnswer`.

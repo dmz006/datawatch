@@ -4547,7 +4547,7 @@ all readable/writable through the same config routes as the switch):
 |---|---|---|---|
 | `notify_messaging` | on | every raise | one line in each active messaging group (the `[hostname] question <id> — <label>`, a `(high priority)` marker, the text, the numbered options, and the REST + PWA answer routes); a missing comm backend is a silent no-op |
 | `notify_alert` | on | every raise **with `priority: high`** | one warning-level alert in `GET /api/alerts`, titled `Operator question raised (high priority): <id> — <label>`; normal-priority raises never alert |
-| `return_path` | on | an answer on a question raised with `return_path: true` (and a `session_id`) | exactly one `DATAWATCH_ANSWER: {…}` line into that session's output — the JSON carries the question id, answer id, chosen option, the verbatim quote (JSON-escaped, never multi-line), actor, surface, timestamp |
+| `return_path` | on | an answer on a question raised with `return_path: true` (and a `session_id`) | exactly one `DATAWATCH_ANSWER: {…}` line into that session's output — the JSON carries the question id, answer id, chosen option, the verbatim quote (JSON-escaped, never multi-line), actor, timestamp. The payload is exactly these six fields — `question_id`, `answer_id`, `chosen_option`, `quote`, `actor`, `at` — and the line is fired exactly once per answer (a superseding answer fires its own). |
 
 The WebSocket `question_raised` message to connected PWA/hub clients needs
 no toggle — it rides the always-on hub once the raise is stored. The
@@ -4557,7 +4557,7 @@ no toggle — it rides the always-on hub once the raise is stored. The
 with `filter.kinds` may name them — exactly-once delivery, re-fired at
 startup for any recorded-but-never-delivered event), and polling
 `GET /api/questions/{id}`, which answers `answer_count`,
-`current_answer_id` and the standing answer's summary (verbatime
+`current_answer_id` and the standing answer's summary (verbatim
 quote, actor, surface) in one read. The session line above is an
 **opt-in per question** on top of that, not the default: a question raised
 without `return_path: true` (or a daemon with no router wired for the line)

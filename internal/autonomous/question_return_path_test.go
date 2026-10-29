@@ -18,7 +18,6 @@ type returnPathSenderFake struct {
 	lines []string
 	err   error
 	done  chan string
-	calls int
 }
 
 func newReturnPathSenderFake(err error) *returnPathSenderFake {

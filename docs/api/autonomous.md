@@ -2279,12 +2279,13 @@ nothing twice).
 instant it is stored:
 
 ```
-DATAWATCH_ANSWER: {"question_id":"q1","answer_id":"a3","chosen_option":"online","quote":"online, and schedule it for the next low-traffic window","actor":"operator","surface":"cli","at":"2026-11-01T08:00:00Z"}
+DATAWATCH_ANSWER: {"question_id":"q1","answer_id":"a3","chosen_option":"online","quote":"online, and schedule it for the next low-traffic window","actor":"operator","at":"2026-11-01T08:00:00Z"}
 ```
 
 It is a single physical line (the quote is JSON-escaped inside it, never
-multi-line), carries the option id, the answer id, the verbatim quote,
-who answered, on which surface, and when — nothing else. A question is
+multi-line), carrying the question id, the answer id, the chosen option
+(empty when the answer was a quote alone), the verbatim quote, who
+answered and when — no other fields. A question is
 **not** re-opened on a re-answer; every one of the above is fire-and-
 forget: a session that has gone away costs the asker one daemon warning
 line (the answer is already stored, nothing is queued for later delivery,
