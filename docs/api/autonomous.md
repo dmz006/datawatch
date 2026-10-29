@@ -2064,6 +2064,9 @@ curl -sX POST http://localhost:7433/api/questions \
 | `default` | required — either an option id of this question or the word `hold`, so no choice is ever silent |
 | `recommendation` | optional; `option_id` must exist among the options; `rationale` ≤ 1000 bytes |
 | `risk` | `"normal"` (default) or `"low"` |
+| `priority` | `"normal"` (default) or `"high"`; empty accepted and means `normal`. Separate from `risk`: the risk says how dangerous a wrong answer is, the priority says how urgently an operator should act. A `high` raise additionally lands in the alert store (see "Notifications", below); anything else is a `400` naming the field |
+| `return_path` | boolean, default `false`. Opt this one question into the single `DATAWATCH_ANSWER:` line delivered to its `session_id` when the answer is recorded; needs `autonomous.questions.return_path` on. `false` (the default) uses the events-plus-polling path |
+| `session_id` | the session that asked, when `asker_kind` is `session`; required together with `return_path: true` |
 | `context` | one of `none`, `prd`, `task`, `proposal`, `registry_row`; the matching link is required (`prd_id`, `task_id`, `proposal_path`, `registry_row_key`) and `none` must carry none of them. A proposal path, wherever given, must be repository-relative (no leading `/`, no `..` segment) |
 | `asker_kind` | `session`, `supervisor`, `operator` or `system`; empty defaults to `operator` |
 | `asked_by` | the asker of record; empty defaults to the caller (the audit actor) |
@@ -2093,20 +2096,34 @@ integer`). Both are plain-text bodies — see the note under **Status codes**.
 
 ### One question — `GET /api/questions/{id}`
 
-200 with the question record plus the metadata a caller needs to display
-"answered, N times" in the same read:
+200 with the question record (state, `priority`, `return_path`, options and
+the asker's recommendation included on the record itself) plus the answer
+path in the same read:
 
 ```json
 {
-  "question": { "id": "q1", "state": "answered", "…": "…" },
+  "question": { "id": "q1", "state": "answered", "priority": "high", "…": "…" },
   "answer_count": 3,
-  "current_answer_id": "a3"
+  "current_answer_id": "a3",
+  "answer": {
+    "id": "a3",
+    "chosen_option_id": "online",
+    "quote": "online, and schedule it for the next low-traffic window",
+    "actor": "operator",
+    "surface": "cli",
+    "created_at": "2026-11-01T08:00:00Z"
+  }
 }
 ```
 
 `answer_count` is every answer ever recorded — superseded ones included, they
 are decided and never deleted — and `current_answer_id` is the id of the
-answer in force (empty when there is none). The full answer log, with text,
+answer in force (empty when there is none). While the question has no
+answer, `current_answer_id` is empty and `answer` is `null`; once it does,
+`answer` is the standing answer's summary — id, chosen option, the
+**verbatim quote exactly as stored** (never trimmed or re-encoded), who
+answered, on which surface, and when. An asker that cannot subscribe polls
+this one read for the whole return path. The full answer log, with text,
 is the answers read below. `404` for an unknown id.
 
 ### Answer — `POST /api/questions/{id}/answer`
@@ -2212,6 +2229,70 @@ only states that accept answers; a withdrawn question accepts none.
 - **Raise never blocks.** Raising records the question and returns; the
   asking side keeps running until it is answered (or the declared default is
   honored).
+
+### Notifications: the raise announces, the answer and withdrawal fire events
+
+The channel is not only a store: while `autonomous.questions.enabled` is on,
+each state change reaches operators through the daemon's existing routes,
+and each is gated on its own toggle (all three default on when the key is
+absent; with the switch off, nothing in this section fires at all).
+
+**On raise — three announces, one per route** (fan-out after the raise is
+stored; a refused raise announces nothing):
+
+1. **WebSocket** — every connected client's hub receives `question_raised`
+   in data form `{id, label, text, options, priority, context}`. This is
+   the PWA's live feed; no other client is in the picture for the line.
+2. **Messaging group** — `autonomous.questions.notify_messaging` (on by
+default): one line per active messaging route, the hostname, question id
+   and label, the priority, the text and the numbered option labels, plus
+   the pointer that answers post to `POST /api/questions/{id}/answer` (or
+   the PWA). Refused silently when no comm router backend is configured;
+   WS and alert are unaffected.
+3. **Alert** — `autonomous.questions.notify_alert` (on by default) and
+   **`priority: "high"` only**: one **warning-level** alert in the alert
+   store (`GET /api/alerts`), titled
+   `Operator question raised (high priority): <question-id> — <label>`,
+   with the text and the option labels in the body, broadcast to the same
+   WebSocket hub and surfaced by the PWA's alert dock. Normal-priority
+   raises never alert. One-way: it says nothing back to the asker.
+
+**On answer and on withdrawal — lifecycle events**, on the ordinary
+lifecycle event rails (subscribing on any surface — REST/MCP/CLI/comm,
+every sink type — rides them, and the kinds are in the closed
+`KnownEventKinds` set, so a subscription's `filter.kinds` may name them):
+
+| Kind | Fires when | What the subscriber sees |
+|---|---|---|
+| `question.answered` | an `open` question's state becomes `answered` — first answer or a superseding one | the question id, the answer id, the chosen option, the actor, one-line details (capped at 512 characters, no newlines), and the PRD/task/session ids when the question named them (the level is `task` when the question carries a `task_id`, else `prd`) |
+| `question.withdrawn` | an `open` question's state becomes `withdrawn` | the question id, the actor, the `reason` (when given), one-line details, the same link ids |
+
+Exactly-once is guaranteed by the event sink, not by the caller: the
+store stamps an emit marker at record time, and a startup reconcile
+re-fires exactly the events that were recorded but never delivered (a
+daemon restart between record and fire loses nothing, and delivers
+nothing twice).
+
+**The opt-in session line** (`return_path` on the raise +
+`autonomous.questions.return_path` on): when an answer is recorded,
+**exactly one line** is appended to the asking session's output, the
+instant it is stored:
+
+```
+DATAWATCH_ANSWER: {"question_id":"q1","answer_id":"a3","chosen_option":"online","quote":"online, and schedule it for the next low-traffic window","actor":"operator","surface":"cli","at":"2026-11-01T08:00:00Z"}
+```
+
+It is a single physical line (the quote is JSON-escaped inside it, never
+multi-line), carries the option id, the answer id, the verbatim quote,
+who answered, on which surface, and when — nothing else. A question is
+**not** re-opened on a re-answer; every one of the above is fire-and-
+forget: a session that has gone away costs the asker one daemon warning
+line (the answer is already stored, nothing is queued for later delivery,
+and there is no retry).
+The default return path — the `question_raised` WebSocket message, the
+`question.answered` event, and polling `GET /api/questions/{id}` for the
+answer summary — is always on and is what every asker gets even when
+it does not opt in.
 
 ### Status codes
 

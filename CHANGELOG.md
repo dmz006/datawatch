@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Operators are now told when an Automaton needs a decision, and the asker hears the answer back.** With the operator-question channel (still behind its off-by-default switch), every question an Automaton raises is announced three ways at once: a live `question_raised` message to any open PWA, one line in every active messaging group (who asked, the question, the numbered options, and where to answer), and — for a high-priority question raised with `priority: "high"` — an alert with the operator's name in it that sits in the alert list until you deal with it. Answering or withdrawing an open question fires a `question.answered` / `question.withdrawn` event that you can subscribe to like any other Automaton lifecycle event (comm, topic, alert, webhook, MCP queue or peer), delivered exactly once even if the daemon restarts between the record and the send.
+- **The asker has one read to poll for the answer.** `GET /api/questions/{id}` now also carries `answer_count`, `current_answer_id` and the standing answer's summary (the verbatim quote, who answered and where). This is the default return path: an automated session that asks can subscribe to the answer event and poll this read, and it works with no extra settings. A session gone is gone — an asking session that no longer exists costs nothing; the answer is stored and readable any time.
+- **Opt-in: the answer lands as one line in the session that asked.** A question raised with `return_path: true` (which names the asking session) gets, on the first answer, exactly one `DATAWATCH_ANSWER: {…}` line written into that session — a marker a line-based reader can grep, then a one-line JSON with the question id, answer id, chosen option, the verbatim quote, the actor and the surface. It never crosses a new line, even if the quote does; a later (superseding) answer sends a fresh line. Best-effort: a lost line is one daemon warning, never a retry — the answer is always in the store and the event, whatever happened to the line.
+- **Three new config keys, all on by default, all switchable from every surface:** `autonomous.questions.notify_messaging`, `autonomous.questions.notify_alert` and `autonomous.questions.return_path` turn each announce route off by itself. All four (the channel switch plus the three) are reachable the same way the rest of the config is — PWA Settings (the "Autonomous Automata planning" section), REST config, MCP `config_set`, `datawatch config set`, and the comm channel. While the channel switch is off, none of this fires at all; flip it on and it is live on the next question, no restart.
+
+### Changed
+
+- **High-priority questions now raise an alert; normal ones do not.** Raising with `priority: "high"` makes the question's alert line stand out in the alert history and name the operator who should act. `priority` is only how urgent the operator should be — it does not change how risky a wrong answer is (that stays in `risk`) and does not gate answering, withdrawing or polling.
+
 ## v9.32.0 — The calculator reset zone follows the server by default
 
 ### Changed
