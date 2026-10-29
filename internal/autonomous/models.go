@@ -49,7 +49,7 @@ func NormalizePRDStatus(s PRDStatus) PRDStatus {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -67,6 +67,13 @@ type Decision struct {
 	// visible inline in this append-only log without opening a nested
 	// Verdict/Verification struct.
 	FailureCategory string `json:"failure_category,omitempty"`
+	// QuestionID, AnswerID and DecisionState link an operator_decision or
+	// operator_answer entry to the operator question it records: the
+	// question id, the answer id (answers only) and the question state the
+	// entry stands for (open | answered | withdrawn | expired).
+	QuestionID    string `json:"question_id,omitempty"`
+	AnswerID      string `json:"answer_id,omitempty"`
+	DecisionState string `json:"decision_state,omitempty"`
 }
 
 // GateDisagreement is the record of a verifier/quality-gate disagreement

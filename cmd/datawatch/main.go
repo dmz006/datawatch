@@ -6598,6 +6598,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					if lifecycleAuditFn != nil {
 						qstore.SetAuditFn(lifecycleAuditFn)
 					}
+					// Every question raised with an Automaton id lands on that
+					// Automaton's decision log, and its answer as a second
+					// entry; the store calls this after each change, outside
+					// its lock.
+					qstore.SetChangeHook(amgr.RecordQuestionChange)
 					// The question lifecycle events (question.answered /
 					// question.withdrawn) fire through the same dispatcher and
 					// the engine's per-subscriber queue as every other kind:

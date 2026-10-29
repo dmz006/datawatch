@@ -118,6 +118,10 @@ type QuestionStore struct {
 	// answer and withdrawal (question_events.go); nil emits nothing.
 	eventSink QuestionEventSink
 
+	// changeHook, when non-nil, is told of each successful Raise, Answer,
+	// Withdraw and Expire after the store lock is released (SetChangeHook).
+	changeHook func(QuestionChange)
+
 	// writeFn writes one chunk to the open append file; a test replaces it
 	// to simulate a write that fails part way.
 	writeFn func(f *os.File, b []byte) (int, error)
@@ -169,6 +173,46 @@ func (s *QuestionStore) SetAuditFn(fn func(action string, details map[string]any
 	s.mu.Lock()
 	s.auditFn = fn
 	s.mu.Unlock()
+}
+
+// Question change kinds reported to the change hook.
+const (
+	QuestionChangeRaised    = "raised"
+	QuestionChangeAnswered  = "answered"
+	QuestionChangeWithdrawn = "withdrawn"
+	QuestionChangeExpired   = "expired"
+)
+
+// QuestionChange describes one successful change to a question. Kind is one
+// of the QuestionChange constants and Question is the question after the
+// change. Answer is the recorded answer for answered and nil otherwise.
+// Actor is who made a withdrawal and Reason why it was made or the question
+// expired; both are empty for the other kinds.
+type QuestionChange struct {
+	Kind     string
+	Question Question
+	Answer   *Answer
+	Actor    string
+	Reason   string
+}
+
+// SetChangeHook wires a callback invoked after each successful Raise, Answer,
+// Withdraw and Expire, once the record is durable. It is called outside the
+// store lock, so it may call back into the store; a nil fn disables it.
+func (s *QuestionStore) SetChangeHook(fn func(QuestionChange)) {
+	s.mu.Lock()
+	s.changeHook = fn
+	s.mu.Unlock()
+}
+
+// emitChange invokes the change hook outside the store lock.
+func (s *QuestionStore) emitChange(c QuestionChange) {
+	s.mu.Lock()
+	fn := s.changeHook
+	s.mu.Unlock()
+	if fn != nil {
+		fn(c)
+	}
 }
 
 // replay rebuilds the in-memory view from the file bytes. It is called only
@@ -402,6 +446,7 @@ func (s *QuestionStore) Raise(q Question) (Question, error) {
 		"default":      q.Default,
 		"text":         q.Text,
 	})
+	s.emitChange(QuestionChange{Kind: QuestionChangeRaised, Question: q})
 	return q, nil
 }
 
@@ -469,6 +514,7 @@ func (s *QuestionStore) Answer(questionID string, a Answer) (Answer, error) {
 	s.answers[a.ID] = &stored
 	s.answerIDs[questionID] = append(s.answerIDs[questionID], a.ID)
 	q.State = QuestionAnswered
+	changed := *q
 	s.mu.Unlock()
 
 	// The write came first; emit exactly one audit entry per answer — the
@@ -500,6 +546,8 @@ func (s *QuestionStore) Answer(questionID string, a Answer) (Answer, error) {
 		// re-fires it); the answer record stands.
 		_ = s.MarkEventEmitted(ev)
 	}
+	answered := a
+	s.emitChange(QuestionChange{Kind: QuestionChangeAnswered, Question: changed, Answer: &answered})
 	return a, nil
 }
 
@@ -521,6 +569,7 @@ func (s *QuestionStore) Withdraw(id, actor, reason string) (Question, error) {
 	if s.fireQuestionEvent(ev) {
 		_ = s.MarkEventEmitted(ev)
 	}
+	s.emitChange(QuestionChange{Kind: QuestionChangeWithdrawn, Question: out, Actor: actor, Reason: reason})
 	return out, nil
 }
 
@@ -540,6 +589,7 @@ func (s *QuestionStore) Expire(id, reason string) (Question, error) {
 		"question_id": id,
 		"reason":      reason,
 	})
+	s.emitChange(QuestionChange{Kind: QuestionChangeExpired, Question: out, Reason: reason})
 	return out, nil
 }
 
