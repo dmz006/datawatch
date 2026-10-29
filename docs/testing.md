@@ -2045,6 +2045,18 @@ curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity
 
 ---
 
+## TS-825 — Header Tags icon and the header Tags dropdown (sandbox daemon)
+
+| Field | Details |
+|-------|---------|
+| **Description** | The PWA header Tags button is a single filled Tags icon (colour only from theme tokens, no hex colours in the markup or CSS) with a count badge, and it opens the header Tags dropdown: **Watched only**, the tag checkboxes, and the **This session** section on a session detail. |
+| **Steps** | 1. Tags icon: `node --test internal/server/web/app-header-tags-icon.test.js` from the repository root — covers the icon being present, token-only colours, no hex or rgb()/rgba() values, 3 to 1 contrast in both the dark and the light theme, the `is-active` class toggling with the dropdown, hover/focus/active states and the badge. 2. Tags dropdown: `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh TS-825` — the sandbox daemon, two tags and one tagged plus one untagged session are created through the sandbox API, the dropdown is exercised at a 360 px phone viewport, then the filters are reset and every fixture removed. 3. Guards: re-run `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh TS-817`, `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh TS-818` and `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh shared-nav-mobile-fit` against a fresh sandbox daemon for each. |
+| **Expected** | The node test passes; the story exits 0 with the count updating as filters apply and no horizontal overflow at 360 px; the dropdown closes on an outside click and on Escape; TS-817 reports none of the 68 recorded regression groups reproducing and shared-nav reports 0 nav findings at phone widths. |
+| **Actual** | TS-825 run live on 2026-10-29: exit 0, all story PASS lines — report kept at `docs/testing/runs/header-tags-icon/ts825-run.md`. Guard re-run: TS-817 PASS (99 scenarios, 0 findings) and shared-nav-mobile-fit PASS (gate pass, 0 nav findings at phone widths) with the icon present; TS-818 FAILed on 35 tracked values, triaged as a stale desktop baseline that predates a reviewed 40 px tap-target change (not the icon) and recorded, not hidden — `docs/testing/runs/header-tags-icon/guard-stories-run.md`. The node Tags icon test currently fails 0 of 7 in this worktree because the tree's `index.html`/`style.css` hold the old outline icon (a later commit restored the old assets); a passing run on the filled icon is owed. |
+| **Result** | TS-825 dropdown: Pass (validated). TS-817 and shared-nav guards: Pass (validated). TS-818: Fail — pre-existing baseline drift, baseline re-record owed. Tags icon node test: owed (pending in this tree) |
+
+---
+
 ## TS-831 — PWA Detection Filters card: built-in per-backend default
 
 | Field | Details |
