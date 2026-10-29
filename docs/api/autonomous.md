@@ -1551,6 +1551,90 @@ The fields are copied from the live Automaton at the last pass, not derived: `pr
 
 The route is read-only and a sibling of the lane-fill read under the same access rules: bearer-authenticated locally, and it needs the autonomous read **capability** when called by a federated peer. Its surfaces are the REST route above, the MCP tool `autonomous_triage` (the same three filters, proxying the route), the CLI (`datawatch autonomous triage [--automation <id>] [--prd <id>] [--status failed|blocked] [--json]`), the comm verb (`autonomous triage [automation-id]`, one optional positional argument: the Automation id), the PWA triage card in the Automaton detail view, and the same contract documented for the mobile and wear surfaces in [mobile-surface.md](mobile-surface.md). The record card on each client displays, in order: the Automaton name (title, or id), the status chip (failed/blocked), the owning Automation name with its member id when one exists, the failed task title, the task error, the blocked reason, the session end reason, the first-seen time, whether the alert has fired and when, one row per retry-budget category (used of limit, left), and the overall retry ceiling when one is set; values the record does not carry are simply not shown. Triage has exactly one configuration key, `autonomous.automation.triage_alert_minutes`. The record shape is in `internal/server/web/openapi.yaml` (`TriageList`, `TriageRecord`).
 
+## Operator decisions (`GET /api/autonomous/decisions`)
+
+An operator decision is a question raised on the [operator question channel](#operator-question-channel) that an Automaton task can wait on. This route is the one read of them: every decision with its state, its answer and the tasks that name it or are held on it. The operator how-to is [howto/automaton-operator-decisions.md](../howto/automaton-operator-decisions.md); the operator reference is in [docs/operations.md](../operations.md) (section *Decision gate*).
+
+```
+GET /api/autonomous/decisions
+    ?prd_id=<automaton-id>
+    ?state=open | answered | withdrawn | expired
+    ?limit=<n>
+
+200: { "decisions": [ { ... } ] }
+```
+
+| Parameter | Type | Meaning |
+|---|---|---|
+| `prd_id` | string, optional | Only the decisions linked to this Automaton. An id that matches nothing gives an empty list. |
+| `state` | string, optional | Only decisions in this state: `open`, `answered`, `withdrawn` or `expired`. Any other value is a 400. |
+| `limit` | integer, optional | At most this many decisions, newest first. A positive whole number; default 100, maximum 1000 (a larger value is capped). Zero, a negative number or a non-number is a 400. |
+
+The filters are exact matches and combine. A read that matches nothing is `{"decisions": []}`, not a 404.
+
+A decision (newest first in `decisions`):
+
+```json
+{
+  "id": "q-3f9a1c7e5b2d4a60c8e1",
+  "question": "Use the existing session table or add a new one?",
+  "label": "decision",
+  "state": "answered",
+  "asked_by": "automaton",
+  "asked_at": "2026-10-29T12:00:00Z",
+  "prd_id": "d0442737d38c",
+  "task_ids": ["task-4", "task-7"],
+  "waiting_task_ids": [],
+  "waiting_tasks": [],
+  "answer": {
+    "id": "a-91b0c2d3e4f5",
+    "quote": "Add a new table.\nKeep the old one read-only.",
+    "quote_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "actor": "operator",
+    "surface": "pwa",
+    "answered_at": "2026-10-29T12:05:00Z"
+  }
+}
+```
+
+| Field | Notes |
+|---|---|
+| `id` | The decision id: `q-` followed by lowercase hex. |
+| `question`, `label` | The question text and its short label (may be empty). |
+| `state` | `open`, `answered`, `withdrawn` or `expired`. A withdrawn or expired decision is listed too. |
+| `asked_by`, `asked_at` | Who raised it and when. |
+| `prd_id` | The Automaton the decision belongs to; empty when it is not linked to one. |
+| `task_ids` | The tasks of that Automaton whose spec names the decision. Always an array. |
+| `waiting_task_ids` | The tasks among them that are held on it right now (status `waiting_decision`). Always an array. |
+| `waiting_tasks` | The same held tasks as `{task_id, wait_reason}`. Always an array. |
+| `answer` | `null` until the decision is answered; then the current answer: `id`, `quote`, `quote_sha256`, `actor`, `surface`, `answered_at`. |
+
+`answer.quote` is the operator's words exactly as stored. Show it as it is; do not trim, cut, re-wrap or change its case.
+
+**Status codes.**
+
+| Code | When |
+|---|---|
+| 200 | the decisions, possibly an empty array |
+| 400 | `state` is not one of the four states; `limit` is not a positive whole number |
+| 401 | the bearer token is missing or wrong |
+| 403 | a federated peer without the autonomous read capability |
+| 405 | a method other than GET |
+| 503 | the Automaton engine is not running, or the question store is not available |
+
+Errors are plain text, the message only. The route is read-only and writes nothing.
+
+**A held task.** A task whose spec names a decision id that has no answer has the status `waiting_decision` while the gate is on (`autonomous.questions.decision_gate_mode: on`). The Automaton JSON (`GET /api/autonomous/prds/{id}`) shows it on the task: `status: "waiting_decision"` and `wait_reason`, one plain sentence such as `operator decision q-3f9a1c7e5b2d4a60c8e1 is waiting for an answer: Use the existing session table or add a new one?` (an open decision's question is cut to its first 160 characters; a withdrawn or expired one reads `operator decision <id> was withdrawn without an answer`, and an unknown id `operator decision <id> was not found`). When the decision is answered the task returns to `pending` on its own and `wait_reason` clears. The Automaton's decision log (the `decisions` array on the same JSON) gains the entry kinds `operator_decision`, `operator_answer` and `decision_gate_shadow`, and its entries can carry three optional fields that link them to a decision: `question_id`, `answer_id` (answer entries only) and `decision_state`. They are left out when empty; show an unknown kind as plain text.
+
+**Configuration.** Two keys under `autonomous.questions`, both read live:
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `autonomous.questions.decision_gate` | boolean | on when absent | Whether the gate looks at task specs at all. |
+| `autonomous.questions.decision_gate_mode` | string | `shadow` when empty | `shadow` records what would be held and holds nothing; `on` holds the task. Any other value is refused with 400 by `PUT /api/config` and nothing changes. |
+
+**Surfaces.** The same read is on MCP as `autonomous_decisions` (same three filters), on the CLI as `datawatch autonomous decisions [automaton-id] [--state open|answered|withdrawn|expired] [--limit N] [--json]`, on the comm channel as `autonomous decisions [automaton-id]` (the newest ten) and in the PWA as the Decisions card on the Automaton detail. The record shape is in `docs/api/openapi.yaml` (`DecisionLine`, `DecisionLineEntry`).
+
 ## Configuration
 
 Per the no-hard-coded-config rule, every knob is reachable from
@@ -1880,6 +1964,7 @@ datawatch autonomous tag-registry-dismiss <note-id>
 datawatch autonomous prd-set-tags <prd-id> --tags <id1,id2>   # empty value clears
 datawatch autonomous prd-create "Fix the retry loop" --kind bug   # optional; omit to derive the kind
 datawatch autonomous prd-set-kind <id> <feature|bug|other>
+datawatch autonomous decisions [automaton-id] [--state open|answered|withdrawn|expired] [--limit N] [--json]   # operator decisions, newest first
 datawatch autonomous learnings
 ```
 
@@ -1902,6 +1987,7 @@ operator-facing AI can drive the autonomous loop end-to-end:
 | `autonomous_prd_run`        | kick executor |
 | `autonomous_prd_cancel`     | cancel + archive |
 | `autonomous_learnings`      | list learnings |
+| `autonomous_decisions`      | the operator decisions, newest first, with their tasks and answers (read; `prd_id`, `state`, `limit`) |
 | `autonomous_tag_list` / `_tag_create` / `_tag_rename` / `_tag_set_parent` / `_tag_set_color` / `_tag_delete` | Automata tag registry; see [howto/automata-tags](../howto/automata-tags.md) |
 | `autonomous_prd_set_tags`   | replace an Automaton's tags (`tag_ids_json`) and/or set its primary tag (`primary_tag_id`; alone it keeps the tags) |
 | `autonomous_tag_list` with `counts` | adds the subtree and direct counts (Automata and sessions) and the untagged totals |
@@ -1946,6 +2032,7 @@ autonomous tag-registry-dismiss 9f8e7d6c
 autonomous tag-create "Mobile App" parent=1a2b3c4d
 autonomous set-tags abcd1234 1a2b3c4d,5e6f7a8b
 autonomous set-kind abcd1234 bug
+autonomous decisions abcd1234
 ```
 
 `guardrail_backend=` / `guardrail_model=` tokens can be appended to

@@ -4653,6 +4653,46 @@ deferring monitoring here.
 
 ---
 
+## Decision gate
+
+A task whose spec names an [operator decision](howto/automaton-operator-decisions.md) id (`q-` followed by at least 20 lowercase hex characters) does not start until that decision is answered. The gate is the check that does this. It reads the question store, so it only sees decisions raised through the [operator question channel](#operator-questions): keep `autonomous.questions.enabled` on whenever the gate is on. How-to for operators: [howto/automaton-operator-decisions.md](howto/automaton-operator-decisions.md). API reference: [api/autonomous](api/autonomous.md#operator-decisions-get-apiautonomousdecisions).
+
+**Holds.** Before a pending or queued task starts, the gate checks each decision id the spec names. An answered decision passes. An open one holds the task. A withdrawn or expired one holds it too, since it has no answer, and so does an id the store does not know. A held task has the status `waiting_decision` and a `wait_reason` sentence naming the decision (for an open one, with the first 160 characters of the question). It has not started and is not counted as a failure or a retry. Tasks that depend on it wait behind it, and the Automaton stays running while it waits. An answer wakes the Automaton at once; a 30-second re-check covers a withdrawal, a cancelled task and an answer that lands between the check and the wait. When every decision the spec names is answered the task goes back to `pending` by itself and `wait_reason` clears. Turning the gate off, or setting the mode to `shadow`, also sends a held task back to `pending` on the next check. A task whose spec names no decision is never affected, and the separate text `HOLD` line rule is untouched.
+
+**Shadow mode.** The gate ships in `shadow`: it works out which tasks it would hold and holds none. For each such task it adds one `decision_gate_shadow` entry to the Automaton's decision log (note: `would hold: <reason> (task <id>)`), once per task and reason, however many times it checks. Shadow mode raises no alert and changes no task status. Read the entries on `GET /api/autonomous/prds/{id}` (the `decisions` array) or on the Decisions tab of the Automaton, and switch the mode to `on` when they match what you expect. Going back to `shadow` is the way to stop all holds without turning the gate off.
+
+**The alert.** When a task first enters the hold (mode `on` only) the daemon raises one warning alert titled `Automaton task waiting for a decision`. The body names the Automaton (id and title), the task (id and title), the reason, and says the task starts by itself once the decision is answered. It goes through the same alert sink as the other Automaton alerts, so it reaches the alert list, connected clients and the configured routes. It is raised when the task enters the hold, not on each later check and not when the reason text changes while the task stays held; a task released and held again raises it again. Nothing is raised when no alert sink is wired.
+
+**Config.** Two keys under `autonomous.questions`, read at the moment a task is about to start, so a change needs no restart:
+
+| Key | Default | Allowed |
+|---|---|---|
+| `autonomous.questions.decision_gate` | on when absent | `true` or `false` |
+| `autonomous.questions.decision_gate_mode` | `shadow` when empty | `shadow` or `on`; anything else is refused with 400 and nothing changes |
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous:` → `questions:` → `decision_gate` and `decision_gate_mode` |
+| **CLI** | `datawatch config set autonomous.questions.decision_gate_mode on`; `datawatch config set autonomous.questions.decision_gate false` |
+| **Web UI** | Settings → **Autonomous Automata planning** → *Hold a task on an unanswered decision it names* and *Decision gate mode* |
+| **REST API** | `PUT /api/config` with `{"autonomous.questions.decision_gate_mode": "on"}` or `{"autonomous.questions.decision_gate": false}` |
+| **Comm channel** | `configure autonomous.questions.decision_gate_mode=on` |
+| **MCP** | `config_set` with the key and value |
+
+**Where to see it.**
+
+| Location | What you see |
+|----------|-------------|
+| **Web UI** | the Decisions card on the Automaton detail; *Waiting for a decision* and the reason under a held task; the alert |
+| **REST API** | `GET /api/autonomous/decisions`; `status` and `wait_reason` per task on `GET /api/autonomous/prds/{id}`; `decision_gate_shadow` entries in its `decisions` log |
+| **MCP** | `autonomous_decisions` |
+| **CLI** | `datawatch autonomous decisions [automaton-id] [--state ...] [--limit N] [--json]` |
+| **Comm channel** | `autonomous decisions [automaton-id]` |
+
+**Access control.** The read needs the autonomous read capability when called by a federated peer. The gate and the config keys are local to the daemon that runs the Automaton.
+
+**Monitoring: n/a, with reasons.** The gate adds no subsystem with a state of its own to gauge: a held task is visible as a task status, the shadow record is on the decision log and the one alert covers the first hold.
+
 ## Terminal Performance
 
 ### xterm.js load time

@@ -6263,6 +6263,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"notify_messaging": s.cfg.Autonomous.Questions.EffectiveNotifyMessaging(),
 				"notify_alert":     s.cfg.Autonomous.Questions.EffectiveNotifyAlert(),
 				"return_path":      s.cfg.Autonomous.Questions.EffectiveReturnPath(),
+				// Decision gate: effective values (on, and shadow, when absent).
+				"decision_gate":      s.cfg.Autonomous.Questions.EffectiveDecisionGate(),
+				"decision_gate_mode": s.cfg.Autonomous.Questions.EffectiveDecisionGateMode(),
 			},
 			"automation": map[string]interface{}{
 				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
@@ -6683,12 +6686,27 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		"autonomous.questions.notify_messaging",
 		"autonomous.questions.notify_alert",
 		"autonomous.questions.return_path",
+		"autonomous.questions.decision_gate",
 	} {
 		if v, ok := patch[k]; ok {
 			if _, isBool := v.(bool); !isBool {
 				http.Error(w, k+": must be a boolean (true or false)", http.StatusBadRequest)
 				return
 			}
+		}
+	}
+	// The decision gate mode is shadow or on. Anything else rejects the whole
+	// PUT before a value is applied, by the same rule the config file load
+	// uses.
+	if v, ok := patch["autonomous.questions.decision_gate_mode"]; ok {
+		mode, isStr := v.(string)
+		if !isStr {
+			http.Error(w, "autonomous.questions.decision_gate_mode: must be \"shadow\" or \"on\"", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateDecisionGateMode(mode); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
 		}
 	}
 	// pi.thinking_level — pre-validate like task_override_statuses above so an
@@ -8156,6 +8174,19 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				case "autonomous.questions.return_path":
 					cfg.Autonomous.Questions.ReturnPath = &b
 				}
+			}
+		case "autonomous.questions.decision_gate":
+			// Validated in handlePutConfig to a strict boolean. Stored as *bool
+			// so an explicit false is distinguishable from an absent key
+			// (which stays on). The gate reads the live config on every pass,
+			// so no restart is needed.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Questions.DecisionGate = &b
+			}
+		case "autonomous.questions.decision_gate_mode":
+			// Validated in handlePutConfig to shadow or on.
+			if mode, ok := v.(string); ok {
+				cfg.Autonomous.Questions.DecisionGateMode = mode
 			}
 		case "autonomous.planning_effort", "autonomous.decomposition_effort":
 			cfg.Autonomous.PlanningEffort = toString(v)

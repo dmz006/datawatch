@@ -3161,6 +3161,52 @@ type AutonomousQuestionsConfig struct {
 	// is always available, and the flag only PERMITS the per-question
 	// opt-in session line on top of it.
 	ReturnPath *bool `yaml:"return_path" json:"return_path"`
+
+	// DecisionGate is on by default when the key is absent (nil): a task
+	// spec that names an operator decision id waits until that decision
+	// is answered. No omitempty, same reasoning as the toggles above.
+	DecisionGate *bool `yaml:"decision_gate" json:"decision_gate"`
+	// DecisionGateMode is "shadow" (the default when empty: the gate
+	// reports what it would hold but holds nothing) or "on".
+	DecisionGateMode string `yaml:"decision_gate_mode" json:"decision_gate_mode"`
+}
+
+// Decision gate modes (autonomous.questions.decision_gate_mode).
+const (
+	DecisionGateModeShadow = "shadow"
+	DecisionGateModeOn     = "on"
+)
+
+// EffectiveDecisionGate reports whether the decision gate is enabled.
+// Absent (nil) is on.
+func (q AutonomousQuestionsConfig) EffectiveDecisionGate() bool {
+	return q.DecisionGate == nil || *q.DecisionGate
+}
+
+// EffectiveDecisionGateMode returns the decision gate mode: shadow when
+// the value is empty, otherwise the value as set.
+func (q AutonomousQuestionsConfig) EffectiveDecisionGateMode() string {
+	if q.DecisionGateMode == "" {
+		return DecisionGateModeShadow
+	}
+	return q.DecisionGateMode
+}
+
+// ValidateDecisionGateMode refuses a decision_gate_mode other than shadow, on
+// or empty (empty reads as shadow). It is the one rule the config file load,
+// PUT /api/config and every surface that rides it share.
+func ValidateDecisionGateMode(mode string) error {
+	return AutonomousQuestionsConfig{DecisionGateMode: mode}.validate()
+}
+
+// validate refuses a decision_gate_mode other than shadow or on.
+func (q AutonomousQuestionsConfig) validate() error {
+	switch q.DecisionGateMode {
+	case "", DecisionGateModeShadow, DecisionGateModeOn:
+		return nil
+	}
+	return fmt.Errorf("autonomous.questions.decision_gate_mode: invalid value %q (valid values: %q, %q, or empty for %q)",
+		q.DecisionGateMode, DecisionGateModeShadow, DecisionGateModeOn, DecisionGateModeShadow)
 }
 
 // EffectiveNotifyMessaging reports whether the operator is notified when
@@ -4415,6 +4461,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.Autonomous.Progress.validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.Questions.validate(); err != nil {
 		return err
 	}
 	// 2026-10-17 plan-review gate: mode must be empty/off/warn/block.
