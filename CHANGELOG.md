@@ -20,6 +20,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.34.3 — Open-model matrix on pi workers only
+
+### Changed
+
+- **The open-model eval matrix now runs on pi workers only.** Every cell in the open-model grid — the `qwen3.8:27b` baseline plus the other execution-role candidates — now goes through the pi backend instead of the old second backend; the grid definition, driver and fixtures are re-pointed and the retired backend names are gone from them. Each role carries its own pi thinking level (the executor roles pin `minimal`), the level is applied per task and recorded on every cell result row, and a pi-path preflight now runs one real pi worker per role before anything else and refuses to start the run unless the model each session reports matches the role's expected model exactly. The first valid report of a pi run is in `docs/testing/runs/2026-10-29-open-model-matrix/`: preflight passed for all four roles present on the local node set (all cells ran at thinking `minimal`); the report's per-cell notes are the record — the twelve candidate-model cells were invalid on infrastructure (workers were placed on a node that does not host their model and died at start, held for review — not model results), and the four baseline cells ran to completion but are shown untrusted rather than scored because their session records were gone at collect time, so no cell has a trustworthy pass/fail yet.
+
 ## v9.34.2 — Automation CLI reads the current version and shows pending inserts
 
 ### Fixed
