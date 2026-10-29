@@ -6598,6 +6598,26 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					if lifecycleAuditFn != nil {
 						qstore.SetAuditFn(lifecycleAuditFn)
 					}
+					// The question lifecycle events (question.answered /
+					// question.withdrawn) fire through the same dispatcher and
+					// the engine's per-subscriber queue as every other kind:
+					// the store builds and fires them on answer and withdrawal,
+					// then marks the record so the exactly-once guarantee holds.
+					// The switch off means the sink is not wired at all — no
+					// event, and no startup reconcile, either.
+					if cfg.Autonomous.Questions.Enabled {
+						qstore.SetEventSink(amgr.EmitQuestionEvent)
+						// Startup reconcile: replay rebuilt the view, so any
+						// answered or withdrawn question lacking its marker fired
+						// nowhere — a crash in the window between the record and
+						// the enqueue. Re-fire each exactly once, then mark it.
+						for _, ev := range qstore.ReconcileEmittedEvents() {
+							amgr.EmitQuestionEvent(ev)
+							if !qstore.MarkEventEmitted(ev) {
+								log.Printf("[warn] question store: marker for reconciled event %s (question %s): will re-fire next start", ev.Kind, ev.QuestionID)
+							}
+						}
+					}
 					httpServer.SetQuestions(qstore)
 				}
 				// BL427 (phase 5) — POST /api/autonomous/events/forward: a peer's

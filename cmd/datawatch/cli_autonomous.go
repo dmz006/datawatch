@@ -1479,6 +1479,7 @@ Valid kinds:
   task.in_progress task.pending task.queued task.review_needed task.running_tests
   task.session_cleared task.session_started task.verifying task.waiting_capacity
   scope_warning guardrail_warn
+  question.answered question.withdrawn
 
 Opt-in kinds (off by default, list them to turn them on):
   task.session_started task.session_cleared scope_warning guardrail_warn
