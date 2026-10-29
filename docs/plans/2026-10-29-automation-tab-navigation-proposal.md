@@ -42,3 +42,6 @@ Operator, quoted: "In automation there is a new automation button in the header 
 
 Question for the operator, one at a time: remove the header **New Automation** button and make the Automation view's sub-tabs Overview (the Progress and Capacity cards), Chains (the list and the open Automation) and, when step 3 lands, Questions: yes, or name different sub-tabs?
 
+## Decision 2026-10-29
+
+Operator, quoted: "Yes, do those sub-tabs and remove the header button". Decided: remove the header New Automation button; give the Automation view the sub-tabs Overview (Progress and Capacity cards) and Chains (the list and the open Automation), with Questions added when step 3 of the decision channel lands. Filed as draft PRD `e6d40001` (registry row 249). Option A with the header button removed.
