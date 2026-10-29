@@ -25,6 +25,8 @@ Scope: `MOBILE_FIT_SCOPE=#view` (official TS-817 invocation). Baseline re-record
   - Exit code: 0
 - shared-nav-mobile-fit: `gate pass, 0 nav findings at phone widths`
   - Exit code: 0
+  - Re-verified 2026-10-29 via the canonical invocation `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh shared-nav-mobile-fit` (external-daemon mode) against `bin/datawatch` (datawatch v9.32.0, healthy `/api/health`, random 127.0.0.1 ports 20390/17105): gate pass, 0 nav findings at 320x568, 360x740, 390x844 in light and dark. Evidence: `evidence/shared-nav-mobile-fit.log`, `evidence/shared-nav-mobile-fit-report.json` (`daemon_version: datawatch v9.32.0`), runner trace `evidence/shared-nav-e2e-run.log`.
+  - Note: `shared-nav-mobile-fit.mjs` IS present in this branch (added in `cccbd9f08`) and it is the script this invocation ran — a gate wrapper around `shared-nav-mobile-fit-probe.mjs` in gate mode (per `docs/plans/2026-10-25-shared-nav-mobile-fit.md`). The `substitute_for: "… (absent from this branch)"` field in the JSON is a stale constant embedded in the probe source; earlier run records that repeated it as a claim about this run were wrong.
 
 ## Node unit tests (6 files, 55 tests — all pass)
 

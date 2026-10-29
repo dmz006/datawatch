@@ -2,7 +2,7 @@
   "story": "shared-nav-mobile-fit",
   "mode": "gate",
   "substitute_for": "scripts/test-stories/pwa/shared-nav-mobile-fit.mjs (absent from this branch)",
-  "daemon_version": "unknown",
+  "daemon_version": "datawatch v9.32.0",
   "gate": "pass",
   "checks": {
     "clipped-text": "nav label text extends past the visible nav bar, so it is cut off by the nav scroller",
