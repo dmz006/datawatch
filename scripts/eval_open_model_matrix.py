@@ -290,6 +290,11 @@ def preflight_start_body(role, project_dir):
             "skip_snapshot": True, "git": False, "scrub_tmux_env": True}
     if role.get("thinking_level"):
         body["thinking_level"] = role["thinking_level"]
+    # Operator node pick: the daemon otherwise defaults to the entry's first
+    # compute node, which may not host the role's model. `node` in the local
+    # matrix is the real node name here; it doubles as the redaction key.
+    if role.get("node"):
+        body["compute_node"] = role["node"]
     return body
 
 
