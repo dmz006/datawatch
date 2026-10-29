@@ -20,6 +20,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.34.1 — Header Tags icon redraw
+
+### Changed
+
+- **The header Tags button now shows a filled, colored tag with a lighter hole instead of a thin outline.** It reads clearly next to the alerts bell in both the dark and the light theme. The button looks brighter while the Tags dropdown is open or a tag filter is on, shows a visible focus ring, and the count badge stays readable on top of it. The button's name, tooltip, keyboard use and dropdown are unchanged.
+
 ## v9.34.0 — Automation view sub-tabs: Overview and Chains
 
 ### Changed
