@@ -37839,6 +37839,7 @@ function _tagsMenuRefresh() {
   btn.setAttribute('aria-label', n ? label + ' (' + n + ')' : label);
   btn.setAttribute('title', label);
   btn.setAttribute('aria-expanded', _tagsMenuOpen ? 'true' : 'false');
+  btn.classList.toggle('is-active', _tagsMenuOpen || n > 0);
   _tagsMenuRedraw();
 }
 

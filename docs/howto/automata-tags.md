@@ -148,7 +148,11 @@ a **Back** row; the URL hash follows the drill-down.
 ### The header Tags dropdown
 
 The page header has an icon button showing a tag icon, with no visible word.
-Its accessible name and its tooltip read **Tags**. It opens a dropdown that
+The tag is a solid tag filled in the theme accent color, with a lighter hole and a
+subtle darker edge, so it reads clearly on both the dark and the light theme.
+It looks brighter when the dropdown is open or a tag filter is on, it carries a
+count badge while filters are active, and it shows a visible focus ring for
+keyboard users. Its accessible name and its tooltip read **Tags**. It opens a dropdown that
 holds the session list's filters and the actions for the session you have open.
 
 - **Active-filter count.** A small number on the tag icon button counts the

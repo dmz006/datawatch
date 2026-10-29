@@ -1,0 +1,1314 @@
+{
+  "generated_at": "2026-10-29T16:41:28.388Z",
+  "meta": {
+    "story": "TS-817",
+    "views": [
+      "observer"
+    ],
+    "profile": "quick",
+    "scope": [
+      "#view"
+    ],
+    "regression_guard": true,
+    "recorded_groups": 68,
+    "recorded_source": "docs/testing/runs/observer-mobile-fit/repro-report.json"
+  },
+  "summary": {
+    "total": 0,
+    "by_check": {},
+    "scenarios": 99,
+    "scenarios_with_findings": 0,
+    "groups": 0
+  },
+  "groups": [],
+  "findings": [],
+  "runs": [
+    {
+      "scenario": "no-peers@320x568/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@320x568/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@320x568/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@320x568/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@320x568/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@320x568/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@320x568/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@320x568/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@320x568/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@320x568/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@320x568/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@320x568/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@320x568/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@320x568/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@320x568/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@360x740/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@360x740/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@360x740/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@360x740/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@360x740/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@360x740/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@360x740/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@360x740/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@360x740/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@360x740/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@360x740/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@360x740/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@360x740/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@360x740/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@360x740/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@390x844/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@390x844/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@390x844/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@390x844/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@390x844/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@390x844/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@390x844/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@390x844/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@390x844/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@390x844/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@390x844/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@390x844/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@390x844/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@390x844/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@390x844/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@768x1024/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@768x1024/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@768x1024/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@768x1024/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@768x1024/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@768x1024/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@768x1024/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@768x1024/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@768x1024/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@768x1024/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@768x1024/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@768x1024/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@768x1024/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@768x1024/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@768x1024/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 768,
+        "height": 1024,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@740x360/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@740x360/dark/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@740x360/dark/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@740x360/dark/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@740x360/dark/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@740x360/dark/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@740x360/dark/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@740x360/dark/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@740x360/dark/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@740x360/dark/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@740x360/dark/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@740x360/dark/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@740x360/dark/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@740x360/dark/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@740x360/dark/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 740,
+        "height": 360,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@360x740/light/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "one-peer@360x740/light/z100",
+      "view": "observer",
+      "state": "one-peer",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@360x740/light/z100",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ten-peers@360x740/light/z100",
+      "view": "observer",
+      "state": "ten-peers",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "long-hostname@360x740/light/z100",
+      "view": "observer",
+      "state": "long-hostname",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-errored@360x740/light/z100",
+      "view": "observer",
+      "state": "peer-errored",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-no-gpu@360x740/light/z100",
+      "view": "observer",
+      "state": "peer-no-gpu",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "peer-multi-gpu@360x740/light/z100",
+      "view": "observer",
+      "state": "peer-multi-gpu",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-unavailable@360x740/light/z100",
+      "view": "observer",
+      "state": "ebpf-unavailable",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-many-processes@360x740/light/z100",
+      "view": "observer",
+      "state": "ebpf-many-processes",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "ebpf-long-names@360x740/light/z100",
+      "view": "observer",
+      "state": "ebpf-long-names",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-empty@360x740/light/z100",
+      "view": "observer",
+      "state": "sessions-empty",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "sessions-large@360x740/light/z100",
+      "view": "observer",
+      "state": "sessions-large",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "stats-failed@360x740/light/z100",
+      "view": "observer",
+      "state": "stats-failed",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "numbers-large@360x740/light/z100",
+      "view": "observer",
+      "state": "numbers-large",
+      "theme": "light",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@360x740/dark/z200",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@390x844/dark/z200",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@320x568/dark/z130",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 130,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "three-peers@320x568/dark/z200",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 200,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "no-peers@568x320/dark/z100",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 568,
+        "height": 320,
+        "orientation": "landscape"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "system-stats-phone",
+      "view": "observer",
+      "state": "three-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 360,
+        "height": 740,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "interaction:section-collapse-expand",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "interaction:refresh",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    },
+    {
+      "scenario": "interaction:rerender-timers",
+      "view": "observer",
+      "state": "no-peers",
+      "theme": "dark",
+      "zoom": 100,
+      "viewport": {
+        "width": 320,
+        "height": 568,
+        "orientation": "portrait"
+      },
+      "findings": []
+    }
+  ]
+}
