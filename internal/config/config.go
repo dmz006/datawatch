@@ -3142,6 +3142,44 @@ type AutonomousNotifyConfig struct {
 // the previous value untouched on unmarshal.
 type AutonomousQuestionsConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// The three toggles below default ON when the key is absent. Go's zero
+	// value (false) is indistinguishable from an explicit false, so they
+	// are pointers: nil means "key absent, use the ON default". None of
+	// them carries omitempty, for the same reason Enabled does not: an
+	// operator's explicit false must survive a YAML/JSON round trip and a
+	// PUT /api/config write instead of being elided on marshal and leaving
+	// the previous value untouched on unmarshal.
+	//
+	// NotifyMessaging is on when a question is asked and answered: the
+	// operator is notified at both moments.
+	NotifyMessaging *bool `yaml:"notify_messaging" json:"notify_messaging"`
+	// NotifyAlert fires only for high priority questions; it is on by
+	// default.
+	NotifyAlert *bool `yaml:"notify_alert" json:"notify_alert"`
+	// ReturnPath is on by default: the event plus polled GET return path
+	// is always available, and the flag only PERMITS the per-question
+	// opt-in session line on top of it.
+	ReturnPath *bool `yaml:"return_path" json:"return_path"`
+}
+
+// EffectiveNotifyMessaging reports whether the operator is notified when
+// a question is asked and when it is answered. Absent (nil) is on.
+func (q AutonomousQuestionsConfig) EffectiveNotifyMessaging() bool {
+	return q.NotifyMessaging == nil || *q.NotifyMessaging
+}
+
+// EffectiveNotifyAlert reports whether alerts fire for high priority
+// questions. Absent (nil) is on.
+func (q AutonomousQuestionsConfig) EffectiveNotifyAlert() bool {
+	return q.NotifyAlert == nil || *q.NotifyAlert
+}
+
+// EffectiveReturnPath reports whether the return path is permitted: the
+// event plus polled GET is always there; when this is on the per-question
+// session line may be opted in. Absent (nil) is on.
+func (q AutonomousQuestionsConfig) EffectiveReturnPath() bool {
+	return q.ReturnPath == nil || *q.ReturnPath
 }
 
 // DefaultPendingEventsMax is the pending_events_max fallback.

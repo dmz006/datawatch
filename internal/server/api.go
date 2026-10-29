@@ -6236,13 +6236,19 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// rather than null. The field itself has no omitempty for the
 			// same reason (see config.AutonomousNotifyConfig).
 			"notify": defaultEventsNotifySurface(s.cfg.Autonomous.Notify),
-			// Operator-question switch. Always emitted (even when false) so
-			// the PWA settings card renders the field; the field has no
-			// omitempty for the same reason (see
-			// config.AutonomousQuestionsConfig). Surface key:
-			// autonomous.questions.enabled.
+			// Operator-question switch and its notify toggles. Always emitted
+			// (even when false) so the PWA settings card renders the fields;
+			// the fields have no omitempty for the same reason (see
+			// config.AutonomousQuestionsConfig). Surface keys:
+			// autonomous.questions.enabled, .notify_messaging, .notify_alert,
+			// .return_path (the toggles report their effective value, which
+			// defaults on when the key is absent; an explicit false shows
+			// false).
 			"questions": map[string]interface{}{
-				"enabled": s.cfg.Autonomous.Questions.Enabled,
+				"enabled":          s.cfg.Autonomous.Questions.Enabled,
+				"notify_messaging": s.cfg.Autonomous.Questions.EffectiveNotifyMessaging(),
+				"notify_alert":     s.cfg.Autonomous.Questions.EffectiveNotifyAlert(),
+				"return_path":      s.cfg.Autonomous.Questions.EffectiveReturnPath(),
 			},
 			"automation": map[string]interface{}{
 				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
@@ -6654,6 +6660,21 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		if _, isBool := v.(bool); !isBool {
 			http.Error(w, "autonomous.questions.enabled: must be a boolean (true or false)", http.StatusBadRequest)
 			return
+		}
+	}
+	// The question notify toggles accept only a JSON boolean too: the same
+	// whole-PUT rejection as the switch, so a quoted string or number 400s
+	// rather than being stored.
+	for _, k := range []string{
+		"autonomous.questions.notify_messaging",
+		"autonomous.questions.notify_alert",
+		"autonomous.questions.return_path",
+	} {
+		if v, ok := patch[k]; ok {
+			if _, isBool := v.(bool); !isBool {
+				http.Error(w, k+": must be a boolean (true or false)", http.StatusBadRequest)
+				return
+			}
 		}
 	}
 	// pi.thinking_level — pre-validate like task_override_statuses above so an
@@ -8099,6 +8120,23 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// immediately with no daemon restart.
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.Questions.Enabled = b
+			}
+		case "autonomous.questions.notify_messaging",
+			"autonomous.questions.notify_alert",
+			"autonomous.questions.return_path":
+			// Validated in handlePutConfig to a strict boolean (a non-boolean
+			// value 400s before reaching here). Stored as *bool so an explicit
+			// false is distinguishable from an absent key (which stays on);
+			// readers use the Effective* helpers.
+			if b, ok := v.(bool); ok {
+				switch k {
+				case "autonomous.questions.notify_messaging":
+					cfg.Autonomous.Questions.NotifyMessaging = &b
+				case "autonomous.questions.notify_alert":
+					cfg.Autonomous.Questions.NotifyAlert = &b
+				case "autonomous.questions.return_path":
+					cfg.Autonomous.Questions.ReturnPath = &b
+				}
 			}
 		case "autonomous.planning_effort", "autonomous.decomposition_effort":
 			cfg.Autonomous.PlanningEffort = toString(v)
