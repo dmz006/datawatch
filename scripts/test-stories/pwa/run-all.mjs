@@ -15,6 +15,7 @@
 //   node run-all.mjs --group wire             — run the websocket byte-budget group (TS-816)
 //   node run-all.mjs --group shared-nav       — run the shared navigation phone-width scenario
 //   node run-all.mjs --group usage            — run the usage calculator group (TS-819, TS-832)
+//   node run-all.mjs --group automation       — run the automation sub-tabs group (TS-833)
 
 import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
@@ -32,6 +33,7 @@ const GROUPS = {
   wire: ['TS-816'],
   'shared-nav': ['shared-nav-mobile-fit'],
   usage: ['TS-819', 'TS-832'],
+  automation: ['TS-833'],
 };
 
 // Scenarios outside the TS-*.mjs naming that the default run also discovers.
