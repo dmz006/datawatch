@@ -14006,7 +14006,7 @@ function renderTask(prd, story, task, editable) {
   state._prdTaskExpanded = state._prdTaskExpanded || {};
   // Default expansion: active/running tasks open so progress is visible without a click.
   if (!(taskID in state._prdTaskExpanded)) {
-    const activeTaskStatuses = ['running','in_progress','verifying','running_tests','waiting_capacity','blocked','failed','awaiting_approval','review_needed'];
+    const activeTaskStatuses = ['running','in_progress','verifying','running_tests','waiting_capacity','waiting_decision','blocked','failed','awaiting_approval','review_needed'];
     state._prdTaskExpanded[taskID] = activeTaskStatuses.includes(task.status || '');
   }
   const isExpanded = !!state._prdTaskExpanded[taskID];
@@ -14119,13 +14119,18 @@ function renderTask(prd, story, task, editable) {
     : '';
 
   // Status glyph for the collapsed header row.
-  const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○', verifying: '⟳', running_tests: '🧪', blocked: '⛔', waiting_capacity: '⏳', awaiting_approval: '⏸', review_needed: '⚑'})[task.status] || '';
-  const _waitTitle = task.status === 'waiting_capacity'
-    ? (t('prd_task_waiting_capacity')||'Waiting for capacity') + (task.wait_reason ? ': ' + task.wait_reason : '')
+  const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○', verifying: '⟳', running_tests: '🧪', blocked: '⛔', waiting_capacity: '⏳', waiting_decision: '❓', awaiting_approval: '⏸', review_needed: '⚑'})[task.status] || '';
+  // A waiting task shows its status label and the reason it waits; the label
+  // depends on what it waits for (a free slot or an operator decision).
+  const _waitLabel = task.status === 'waiting_capacity' ? (t('prd_task_waiting_capacity')||'Waiting for capacity')
+    : task.status === 'waiting_decision' ? (t('prd_task_waiting_decision')||'Waiting for a decision')
+    : '';
+  const _waitTitle = _waitLabel
+    ? _waitLabel + (task.wait_reason ? ': ' + task.wait_reason : '')
     : '';
   const statusGlyphSpan = statusGlyph
     ? `<span class="prd-task-status-glyph status-${escHtml(task.status||'')}"${_waitTitle ? ` title="${escHtml(_waitTitle)}"` : ''}>${statusGlyph}</span>`
-      + (task.status === 'waiting_capacity' ? `<span class="prd-task-wait-badge" title="${escHtml(_waitTitle)}">${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}</span>` : '')
+      + (_waitLabel ? `<span class="prd-task-wait-badge" title="${escHtml(_waitTitle)}">${escHtml(_waitLabel)}</span>` : '')
     : '';
 
   // Expanded body: always rendered in DOM (hidden when collapsed) so
@@ -14179,7 +14184,7 @@ function renderTask(prd, story, task, editable) {
   }
   const expandedBody = `<div class="prd-task-expanded-body"${isExpanded ? '' : ' hidden'}>
     ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
-    ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason" style="min-width:0;overflow-wrap:anywhere;">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + window.taskWaitHtml(task) : ''}</div>` : ''}
+    ${_waitLabel ? `<div class="prd-task-wait-reason" style="min-width:0;overflow-wrap:anywhere;">${task.status === 'waiting_decision' ? '&#10067;' : '&#9203;'} ${escHtml(_waitLabel)}${task.wait_reason ? ': ' + window.taskWaitHtml(task) : ''}</div>` : ''}
     ${window.taskHoldsHtml(task)}
     ${_taskReviewPanelHTML(prd, task)}
     ${errRow}${verifRow}
@@ -16386,6 +16391,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.questions.notify_messaging', label: 'Notify on question asked and answered (on by default)', labelKey: 'settings_automata_questions_notify_messaging', type: 'toggle' },
     { key: 'autonomous.questions.notify_alert', label: 'Alert on high-priority questions (on by default)', labelKey: 'settings_automata_questions_notify_alert', type: 'toggle' },
     { key: 'autonomous.questions.return_path', label: 'Allow the per-question session return line on top of the event plus polled answer path (on by default)', labelKey: 'settings_automata_questions_return_path', type: 'toggle' },
+    { key: 'autonomous.questions.decision_gate', label: 'Hold a task on an unanswered decision it names (on by default)', labelKey: 'settings_automata_questions_decision_gate', type: 'toggle' },
+    { key: 'autonomous.questions.decision_gate_mode', label: 'Decision gate mode (shadow only records, on holds the task, default shadow)', labelKey: 'settings_automata_questions_decision_gate_mode', type: 'select', options: ['shadow', 'on'], default: 'shadow' },
     // Progress engine parameters (0 or empty = the default shown as placeholder).
     { key: 'autonomous.progress.lanes', label: 'Progress lanes (parallel lanes of Automata used for utilization, 0 = 5)', labelKey: 'settings_progress_lanes', type: 'number', placeholder: '5', min: 0, step: 1, default: '0' },
     { key: 'autonomous.progress.inactive_gap_hours', label: 'Progress inactive gap (hours without activity that count as an inactive window, 0 = 3)', labelKey: 'settings_progress_inactive_gap_hours', type: 'number', placeholder: '3', min: 0, step: 0.5, default: '0' },
@@ -22241,7 +22248,7 @@ function renderDependencyGraph(prd) {
   const width = padLeft * 2 + stories.length * colWidth;
   const height = padTop + headerH + maxRows * rowHeight + padTop;
 
-  const statusColor = { completed: 'var(--success,#22c55e)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', failed: 'var(--error,#ef4444)', blocked: 'var(--error,#ef4444)', review_needed: 'var(--warning,#f59e0b)' };
+  const statusColor = { completed: 'var(--success,#22c55e)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', waiting_decision: 'var(--warning,#f59e0b)', failed: 'var(--error,#ef4444)', blocked: 'var(--error,#ef4444)', review_needed: 'var(--warning,#f59e0b)' };
   const colorFor = sts => statusColor[sts] || 'var(--text2)';
 
   // id -> {x, y, w, h, title, status} for every task, so edges (which
@@ -23517,7 +23524,7 @@ function _liveUpdateDetail(prd) {
 }
 
 function _taskStatusIcon(status) {
-  const icons = { completed: '✓', in_progress: '▶', running: '▶', verifying: '⟳', running_tests: '🧪', waiting_capacity: '⏳', failed: '✗', blocked: '✗', review_needed: '⚑', cancelled: '○', pending: '○' };
+  const icons = { completed: '✓', in_progress: '▶', running: '▶', verifying: '⟳', running_tests: '🧪', waiting_capacity: '⏳', waiting_decision: '❓', failed: '✗', blocked: '✗', review_needed: '⚑', cancelled: '○', pending: '○' };
   return icons[status] || '○';
 }
 
@@ -23544,7 +23551,7 @@ function renderDetailStoriesTree(prd) {
     const taskRows = tasks.map((t, ti) => {
       const sts = t.status || t.Status || 'pending';
       const icon = _taskStatusIcon(sts);
-      const iconColor = { completed: 'var(--success)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', failed: 'var(--error)', blocked: 'var(--error)', review_needed: 'var(--warning,#f59e0b)' }[sts] || 'var(--text2)';
+      const iconColor = { completed: 'var(--success)', in_progress: 'var(--accent)', running: 'var(--accent)', verifying: 'var(--accent)', running_tests: 'var(--accent)', waiting_capacity: 'var(--warning,#f59e0b)', waiting_decision: 'var(--warning,#f59e0b)', failed: 'var(--error)', blocked: 'var(--error)', review_needed: 'var(--warning,#f59e0b)' }[sts] || 'var(--text2)';
       const sessionLink = t.session_id
         ? `<span class="prd-task-session" onclick="event.stopPropagation();navigate('session-detail','${escHtml(t.session_id)}')" title="Go to session">→ session</span>`
         : '';
@@ -23768,8 +23775,10 @@ function _renderDetailContent(prd) {
     ${header}
     ${tabStrip}
     ${triageSlot}
+    <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
     <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
   </div>`;
+  window.loadDecisionLineCard(prd.id);
   _tagsLoad().then(() => _renderDetailTagRow(prd));
   // GATE alpha.36 (operator 2026-05-10): hoist the title + back into
   // the PWA banner header (matches session-detail behavior).
@@ -25274,6 +25283,68 @@ window.triageListHtml = function(body) {
   const recs = (body && Array.isArray(body.records)) ? body.records : [];
   return recs.map(r => window.triageCardHtml(r)).join('') ||
     `<div class="list-state-empty triage-list-empty" style="text-align:center;padding:20px;color:var(--text2);min-width:0;">${escHtml(t('triage_empty'))}</div>`;
+};
+
+// decisionLineHtml(decisions) is the read-only decision line card on the
+// Automaton detail: GET /api/autonomous/decisions?prd_id=<id> answers
+// { decisions: [...] }, newest first, and every decision renders one line —
+// its id, its state, the question, and for an answered decision the answer id,
+// who answered, when, and the quote exactly as stored (escaped, never
+// trimmed or cut). An empty list renders the empty state. Every value is
+// escaped. The map holds literal locale keys, so the key-coverage guard can
+// see them.
+const DECISION_STATE_KEYS = {
+  open: 'decision_state_open',
+  answered: 'decision_state_answered',
+  withdrawn: 'decision_state_withdrawn',
+  expired: 'decision_state_expired',
+};
+function _decisionLineRow(d) {
+  const stateKey = _triageKey(DECISION_STATE_KEYS, d && d.state);
+  const stateText = stateKey ? t(stateKey) : String((d && d.state) || '');
+  const chipColor = d && d.state === 'answered' ? 'var(--success,#22c55e)'
+    : d && d.state === 'open' ? 'var(--warning,#f59e0b)' : 'var(--text2)';
+  const chip = `<span class="decision-state-chip decision-state-${escHtml(String((d && d.state) || '').replace(/[^a-z_]/g, ''))}" style="display:inline-block;padding:1px 8px;border:1px solid ${chipColor};border-radius:10px;font-size:11px;font-weight:700;color:${chipColor};">${escHtml(stateText)}</span>`;
+  const head = `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-width:0;"><code class="decision-id" style="overflow-wrap:anywhere;">${escHtml(d.id || '')}</code>${chip}</div>`;
+  const question = `<div class="decision-question" style="overflow-wrap:anywhere;">${escHtml(d.question || '')}</div>`;
+  let answer = '';
+  const a = d.answer;
+  if (a && typeof a === 'object') {
+    const when = a.answered_at ? _triageTime(a.answered_at) : '';
+    const meta = [t('decision_answer_id', [a.id || '']), a.actor ? t('decision_answer_actor', [a.actor]) : '', when]
+      .filter(Boolean).map(escHtml).join(' · ');
+    answer = `<div class="decision-answer-meta" style="color:var(--text2);overflow-wrap:anywhere;">${meta}</div>` +
+      `<blockquote class="decision-quote" style="margin:2px 0 0;padding:2px 8px;border-left:2px solid var(--border);white-space:pre-wrap;overflow-wrap:anywhere;">${escHtml(a.quote == null ? '' : String(a.quote))}</blockquote>`;
+  }
+  return `<div class="decision-line-row" style="padding:4px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">${head}${question}${answer}</div>`;
+}
+window.decisionLineHtml = function(decisions) {
+  const head = `<div class="cap-title">${escHtml(t('decision_line_title'))}</div>`;
+  const list = Array.isArray(decisions) ? decisions.filter(d => d && typeof d === 'object') : [];
+  if (list.length === 0) {
+    return `<div class="prd-capacity-card decision-line-card" style="min-width:0;">${head}<div class="decision-line-empty" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('decision_line_empty'))}</div></div>`;
+  }
+  return `<div class="prd-capacity-card decision-line-card" style="min-width:0;">${head}${list.map(_decisionLineRow).join('')}</div>`;
+};
+// loadDecisionLineCard(prdID) fills the detail's #prdDecisionLine slot. A
+// failed fetch leaves the slot empty — the card is a convenience read, so it
+// never shows an error block — and an answer that arrives after the detail
+// moved to another Automaton is dropped.
+window.loadDecisionLineCard = function(prdID) {
+  if (!prdID) return Promise.resolve();
+  const live = () => {
+    const el = document.getElementById('prdDecisionLine');
+    return el && el.getAttribute('data-prd') === String(prdID) ? el : null;
+  };
+  return apiFetch('/api/autonomous/decisions?prd_id=' + encodeURIComponent(prdID))
+    .then(body => {
+      const el = live();
+      if (el) el.innerHTML = window.decisionLineHtml(body && body.decisions);
+    })
+    .catch(() => {
+      const el = live();
+      if (el) el.innerHTML = '';
+    });
 };
 
 // ── Automata progress card ───────────────────────────────────────────────────
