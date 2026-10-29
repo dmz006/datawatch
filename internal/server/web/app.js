@@ -17583,7 +17583,7 @@ function loadGeneralConfig() {
               if (_uc.reset_zone_source === 'server') {
                 defVal = '';
                 if (_uc.reset_zone) zPlaceholder = String(_uc.reset_zone);
-                zNote = 'server zone \u2014 empty in the config; the reset follows this daemon\u0027s local time zone';
+                zNote = t('settings_usage_calculator_reset_zone_server_note');
               }
             }
             const _inHint = _fieldHintHTML(f);

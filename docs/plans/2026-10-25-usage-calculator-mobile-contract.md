@@ -79,6 +79,8 @@ The `advice` object — the result body of this call, with the resolved policy o
 | `per_lane_per_24h` | number | the one burn figure per lane, inferred from the readings |
 | `by_model` | map (absent when none) | per-model burn, when recorded |
 | `baseline_per_24h` | number | the idle baseline |
+| `zone` | string (absent when none) | the IANA zone the weekly reset runs in (effective value): the operator's set zone, or the daemon's local zone when they left it unset |
+| `server_zone` | bool | true when the operator left the zone unset, so the reset follows the daemon's local time zone |
 | `by_lanes` | array | one `LaneRow` per lane count 0 through `max_lanes` |
 | `chosen` | object (absent when none) | the `LaneRow` of the operator's own lane count |
 | `remaining_work` | object | `{ in_use, points, estimate_points, typed_points, queue_tasks, cost_per_task }` — `in_use` is `estimate`, `typed` or `none`; see Screen behaviour |
@@ -186,7 +188,7 @@ All keys live under `usage.calculator.` in the daemon configuration (`~/.datawat
 | `usage.calculator.max_lanes` | whole number, 1 to 8 | `3` | the largest lane count the planner offers |
 | `usage.calculator.reset_weekday` | `sunday` … `saturday` | `sunday` | the reset weekday |
 | `usage.calculator.reset_time` | 24-hour `HH:MM` | `08:00` | the reset clock time |
-| `usage.calculator.reset_zone` | IANA zone name (fixed offsets rejected) | `UTC` | the reset time zone |
+| `usage.calculator.reset_zone` | IANA zone name (fixed offsets rejected) | empty | the reset time zone; empty follows the zone the daemon runs in (falling back to UTC when that cannot be resolved). GET /api/config shows the effective zone plus `reset_zone_source` (`configured` or `server`) and `reset_zone_fell_back` (bool) beside it; saving empty clears the stored zone back to the server default |
 | `usage.calculator.keeper` | peer name (letters, digits, dot, dash, underscore) | empty | the federation peer that keeps the shared readings; empty means this daemon |
 
 An invalid value at a settings surface is a 400 and changes nothing; an invalid *saved* value degrades to its default with a warning at daemon start.
@@ -275,6 +277,7 @@ The English bundle (`internal/server/web/locales/en.json`) carries the key set b
 | `settings_usage_calculator_reset_time_hint` | Local clock time of the weekly reset, for example 08:00. |
 | `settings_usage_calculator_reset_zone` | Usage calculator reset time zone (IANA name; empty follows the server's zone) |
 | `settings_usage_calculator_reset_zone_hint` | An IANA zone name such as America/New_York. Empty uses the zone the daemon runs in, falling back to UTC if that cannot be found. A fixed offset such as +02:00 is not accepted. |
+| `settings_usage_calculator_reset_zone_server_note` | server zone — empty in the config; the reset follows this daemon's local time zone (shown under the reset zone input exactly when `reset_zone_source` is `server`) |
 | `settings_usage_calculator_keeper` | Usage calculator keeper (federation peer that keeps the readings, empty = this daemon) |
 | `settings_usage_calculator_keeper_hint` | Name of a federation peer. Leave empty to keep the readings on this daemon. |
 

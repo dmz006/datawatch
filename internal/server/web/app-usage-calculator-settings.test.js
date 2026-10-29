@@ -104,10 +104,15 @@ test('every label, option label and hint key exists in all five locale bundles',
     for (const k of keys) {
       assert.ok(typeof b[k] === 'string' && b[k].length > 0, k + ' missing or empty in ' + locale);
     }
+    // The server-zone note is a rendered surface key of the reset_zone row,
+    // not a field label, so it is checked here rather than from the section.
+    const note = b.settings_usage_calculator_reset_zone_server_note;
+    assert.ok(typeof note === 'string' && note.length > 0, 'settings_usage_calculator_reset_zone_server_note missing or empty in ' + locale);
   }
   const en = bundle('en');
   assert.match(en.settings_usage_calculator_reset_zone_hint, /America\/New_York/);
   assert.match(en.settings_usage_calculator_keeper_hint, /empty/i);
+  assert.match(en.settings_usage_calculator_reset_zone_server_note, /server zone/i);
 });
 
 test('saving a field issues PUT /api/config with the dotted key', async () => {

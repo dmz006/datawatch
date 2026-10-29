@@ -324,4 +324,3 @@ func TestUsageCalcConfigResetZoneServerSource(t *testing.T) {
 // (UTC + fellBack) and usagecalc.TestResetZoneFellBackNote (the advice note).
 // The display field is a plain passthrough of EffectiveUsageResetZone, as
 // exercised by TestUsageCalcConfigResetZoneServerSource above.
-

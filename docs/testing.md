@@ -709,6 +709,26 @@ These tests were validated during development and remain passing:
 | 1 | Detect person names | Unit: "Alice Smith" extracted as person | PASS |
 | 2 | Detect tool names | Unit: Go, Docker, PostgreSQL detected | PASS |
 
+### Usage Calculator — Reset Zone (server default)
+
+Unset `usage.calculator.reset_zone` follows the daemon's local time zone rather than a
+pinned UTC. The operator can always tell a zone they chose from one the daemon
+picked: the config shows the effective zone plus its source, the advice and both
+text renderings mark a server-sourced zone as `(server zone)`, and the UI keeps the
+input empty with the effective zone as a placeholder. A configured zone is plain
+and always pinned.
+
+| # | Surface | Test | What it pins | Result |
+|---|---------|------|--------------|--------|
+| 1 | config | `go test ./internal/config/ -run 'TestEffectiveUsageResetZone'` | unset → daemon zone; explicit zone wins; invalid zone falls back; all four cases | PASS |
+| 2 | CLI | `go test ./cmd/datawatch/ -run TestFormatConfigGetOutput` | `config get …reset_zone` carries the `(server zone)` marker only when the daemon chose it | PASS |
+| 3 | server | `go test ./internal/server/ -run 'TestUsageCalc(AdviceServerZone|ConfigResetZoneServerSource)'` | advice `zone`/`server_zone` and config `reset_zone_source`/`reset_zone_fell_back` agree | PASS |
+| 4 | usagecalc | `go test ./internal/usagecalc/ -run 'TestReset.*Zone'` | reset lands in the effective zone; the UTC fallback is named only when it happened | PASS |
+| 5 | web | `node --test internal/server/web/app-usage-calculator-settings.test.js` | settings card shows the effective zone as placeholder + note only when server-sourced | PASS |
+| 6 | locale | `go test ./internal/server/ -run 'TestLocales_(AllPresent|ParityWithEnglish)'` | the reset-zone note key is present and human-translated in en/de/es/fr/ja | PASS |
+| 7 | PWA | PWA story **TS-831** (group `usage`) | phone viewport: empty input, effective-zone placeholder, server-zone note; pin/unset round-trip via the API | PASS |
+| 8 | smoke | `scripts/release-smoke.sh` section 85 (reset-zone contract block) | live daemon: config/advice consistency, marker on both texts when the operator left the zone unset, explicit zone pins, restore lands | PASS |
+
 ### Unit Test Summary (v5.26.3)
 
 **1395 tests across 58 packages — all passing.**

@@ -1244,8 +1244,8 @@ autonomous:
   # field above) both carry the same label, a pending "shared billing account"
   # match appears that you confirm or reject; confirming changes nothing here.
   # See docs/howto/federation-fingerprint.md.
-    #   reset_zone:    IANA zone name for the anchors above; empty = the zone
-    #                  the daemon runs in, falling back to UTC.
+    #   reset_zone:    IANA zone name for the anchors above; unset = the
+    #                  daemon's local zone.
     #
     # A member may also carry `estimated_cost_usd` (>= 0, members that run an
     # Automaton only): the expected cost, used to hold a start that would cross

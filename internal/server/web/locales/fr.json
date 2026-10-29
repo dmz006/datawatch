@@ -1312,6 +1312,7 @@
   "settings_usage_calculator_reset_time_hint": "Local clock time of the weekly reset, for example 08:00.",
   "settings_usage_calculator_reset_zone": "Usage calculator reset time zone (IANA name; empty follows the server's zone)",
   "settings_usage_calculator_reset_zone_hint": "An IANA zone name such as America/New_York. Empty uses the zone the daemon runs in, falling back to UTC if that cannot be found. A fixed offset such as +02:00 is not accepted.",
+  "settings_usage_calculator_reset_zone_server_note": "zone du serveur — vide dans la configuration ; le reset suit la zone horaire locale de ce démon",
   "settings_usage_calculator_keeper": "Usage calculator keeper (federation peer that keeps the readings, empty = this daemon)",
   "settings_usage_calculator_keeper_hint": "Name of a federation peer. Leave empty to keep the readings on this daemon.",
   "settings_backoff_max_wait_minutes": "Attente maximale selon l'usage (minutes lorsqu'une limite de débit n'indique pas d'heure de réinitialisation, par défaut 60)",

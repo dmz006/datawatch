@@ -1,67 +1,91 @@
-# datawatch-app issue: changed i18n keys for usage calculator reset zone parity
+# Parity issue draft — usage calculator: server zone default (datawatch-app)
 
-File this in **datawatch-app** (the mobile client is the source of truth for
-translations). Title:
+File: **datawatch-app** — the issue is already filed as **datawatch-app#297**
+(open); update it with the surfaces below instead of filing a second one.
 
-> feat(i18n): add changed keys for usage calculator reset zone parity
+## Changed UI surfaces
 
-Per AGENT.md step 4 ("always file a datawatch-app issue"), body:
+The usage calculator settings surface gains the time-zone row, and the daemon's
+advice and config responses gain new fields for it. datawatch-app must mirror
+all of it, not just the two locale strings:
 
----
+- `datawatch-app/src/app/screens/SettingsScreen.tsx` — General tab, "Usage
+  calculator" section: the time-zone input (label `settings_usage_calculator_reset_zone`,
+  hint `settings_usage_calculator_reset_zone_hint`, placeholder
+  `America/New_York` when the daemon shows the zone as a suggestion).
+- `datawatch-app/src/i18n/`: the three new keys `en.json`, `de.json`, `es.json`,
+  `fr.json`, `ja.json` (the label, the hint and the server-zone note).
 
-## (a) The changed keys + new EN values + context
+### New locale keys to add (three)
 
-Both keys already exist in the mobile locale bundles (introduced with the
-v9.31.1 calculator settings card); this release **changes the English
-values**, and the DE/ES/FR/JA bundles need to be re-mirrored from the new
-English so all four languages carry the new meaning.
+```
+"settings_usage_calculator_reset_zone": "Usage calculator reset time zone (IANA name; empty follows the server's zone)"
+"settings_usage_calculator_reset_zone_hint": "An IANA zone name such as America/New_York. Empty uses the zone the daemon runs in, falling back to UTC if that cannot be found. A fixed offset such as +02:00 is not accepted."
+"settings_usage_calculator_reset_zone_server_note": "server zone — empty in the config; the reset follows this daemon's local time zone"
+```
 
-**Screen:** PWA Settings → General → "Usage calculator reset time zone"
-field — the label above the input and the hint below it (mobile equivalents:
-the settings screen that carries the usage calculator zone field).
+### API contract surfaces (the new fields)
 
-| Key | New EN value |
-|---|---|
-| `settings_usage_calculator_reset_zone` | `Usage calculator reset time zone (IANA name; empty follows the server's zone)` |
-| `settings_usage_calculator_reset_zone_hint` | `An IANA zone name such as America/New_York. Empty uses the zone the daemon runs in, falling back to UTC if that cannot be found. A fixed offset such as +02:00 is not accepted.` |
+The daemon changed two responses; the native client reads them, so they are
+parity surfaces too (contract:
+`docs/plans/2026-10-25-usage-calculator-mobile-contract.md`):
 
-Old EN values (for the diff, from v9.31.1):
+- **GET /api/config** — `usage.calculator.reset_zone` default changed from
+  `UTC` to **empty** (empty = the zone the daemon runs in, falling back to
+  UTC). Two display fields appear beside it: `usage.calculator.reset_zone_source`
+  (`"configured"` when the operator set a zone, `"server"` when the value
+  follows the daemon's local zone) and `usage.calculator.reset_zone_fell_back`
+  (bool; true only when no zone could be resolved and UTC stood in). Saving
+  empty (`PUT /api/config` with `""`) restores the server default — the same
+  rule as the PWA: the input saves the value the operator typed, never a
+  rewritten default.
+- **GET /api/usage/advice** — the advice object reports the zone it ran in:
+  `zone` (string; the effective IANA zone, the operator's set zone or the
+  daemon's local zone) and `server_zone` (bool; true when the operator left
+  the zone unset, so the reset follows the daemon's local time zone).
 
-| Key | Old EN value |
-|---|---|
-| `settings_usage_calculator_reset_zone` | `Usage calculator reset time zone (IANA name, default UTC)` |
-| `settings_usage_calculator_reset_zone_hint` | `An IANA zone name such as America/New_York. A fixed offset such as +02:00 is not accepted.` |
+## Parity surface
 
-**Meaning to carry into the translations** (the whole point of the change):
-an empty value no longer means a fixed default — it means *follow the zone
-the daemon runs in*, resolved from the daemon's `TZ` environment variable,
-then the system local-time zone, falling back to UTC when none resolves.
-An explicit IANA name (a plain `UTC` included) always wins over the server's
-zone and is never rewritten. Fixed offsets and `Local` are not accepted.
+The reset-zone row on the settings surface (label, hint, placeholder and the
+"server zone" note shown exactly when `reset_zone_source` is `server`), plus
+the two API contract surfaces above, must behave identically in
+`datawatch-app` and in the PWA (this repo, `internal/server/web`) and
+`datawatch-desktop` (`app/renderer/src`):
 
-## (b) Parent release that introduced them
+```
+PWA:                internal/server/web (usage calculator section, Settings > General)
+datawatch-app:      src/app/screens/SettingsScreen.tsx
+datawatch-desktop:  app/renderer/src  (usage calculator settings card)
+```
 
-- Keys first shipped in **v9.31.1** (calculator settings card, locale keys
-  added then with the old "default UTC" wording).
-- The changed EN values above ship in the next minor release (pending bump
-  to v9.32.0 in the parent repo, per the `BUMP=minor` note in that
-  CHANGELOG entry).
+Verify by reading the current source of each (the PWA implementation in this
+branch is the reference) before filing or updating the issue; the rule: what
+the user sees and saves on one surface, the other surfaces show and save
+identically.
 
-## (c) Translation request
+## How to verify
 
-Please provide **DE, ES, FR and JA** translations of both keys through the
-same Compose-Multiplatform pipeline, mirroring the parent's new English
-wording for the *meaning* (empty = follows the daemon's zone; explicit
-zone incl. `UTC` always wins; fixed offsets rejected) rather than
-machine-translating the old strings. Keep `America/New_York` and `+02:00`
-untranslated, as in the existing bundles.
+1. `en.json` carries `settings_usage_calculator_reset_zone`,
+   `settings_usage_calculator_reset_zone_hint` and
+   `settings_usage_calculator_reset_zone_server_note`.
+2. `SettingsScreen.tsx` renders the field bound to `usage.calculator.reset_zone`
+   with the label and hint keys, and shows the server-zone note under the
+   input when `reset_zone_source === "server"` (no note when a zone is
+   configured).
+3. Saving an empty value sends `""` for `usage.calculator.reset_zone` and does
+   not fill in the effective zone; the daemon then reports the server zone
+   again with `reset_zone_source: "server"`.
+4. The advice screen renders `zone` (and that it is the server's, when
+   `server_zone` is true) from `GET /api/usage/advice`.
 
----
+## Context / links
 
-## Filing notes (for the parent operator)
-
-- Repo for the issue: `datawatch-app` (mobile client, source of truth for
-  translations).
-- Link this issue from the parent release notes of the bumping release.
-- The parent's locale-guard test already covers the usage-calculator
-  settings keys; no guard change needed in the parent for this parity task.
+- daemon-side code in this repo: `internal/config` (usage calculator config),
+  `internal/server` (advice + config API), `internal/server/web` (PWA
+  settings card), `internal/usagecalc` (the reset-zone math).
+- PWA tests that pin the behaviour:
+  `internal/server/web/app-usage-calculator-settings.test.js` (field list,
+  placeholder/note rendering, empty-save semantics).
+- Mobile contract (updated): `docs/plans/2026-10-25-usage-calculator-mobile-contract.md`.
+- datawatch-app#297 — this surface set (open; update the issue body with the
+  third key and the API contract section above).
