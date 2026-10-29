@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+<!-- Entry task notes: operator-visible default change; merge with BUMP=minor. -->
+
+### Changed
+
+- **The usage calculator's reset now follows your server's time zone by default.** Leaving the reset time zone empty (the new default) means the reset runs at its time in the zone the daemon runs in — it was pinned to Sunday 08:00 UTC. The daemon picks up the zone from the `TZ` environment variable, falling back to the zone named in the system local-time symlink, then the runtime's local zone. If none can be found, the reset falls back to UTC and the advice now says so and points at the key to set. Any zone you set explicitly (a plain `UTC` included) always wins over the server's zone and is never rewritten. The effective zone is shown as the server's zone in the PWA settings card (empty field with the zone as placeholder and a note), in `GET /api/config` (`reset_zone_source` `server`, `reset_zone_fell_back` on the UTC fallback), in `datawatch config get` (the zone printed as `<zone> (server zone)`), and in the calculator advice's text (the reset line carries `(server zone)`) and JSON (`zone` plus `server_zone: true`).
+
 ## v9.31.1 — Observer graphs and every later style rule work again
 
 - **The Observer system statistics graphs came back, along with other styling.** Since the 9.14.2 release, one closing brace was missing in the stylesheet, so every style rule after the loading-skeleton rules applied only when the browser asked for reduced motion. The Observer per-system bars showed as plain text lines, and any other screen styled by later rules lost its styling the same way. The brace is back. A new test fails if the stylesheet ever ends with an unclosed block or a media block opened inside another block.
