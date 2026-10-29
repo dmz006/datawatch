@@ -50,10 +50,10 @@ func polledRaise(t *testing.T, s *Server) string {
 			{"id": "yes", "label": "Yes, cap it"},
 			{"id": "no", "label": "No"},
 		},
-		"default":        "yes",
-		"asked_by":       "poller-session",
-		"asker_kind":     "session",
-		"session_id":     "sess_poll",
+		"default":    "yes",
+		"asked_by":   "poller-session",
+		"asker_kind": "session",
+		"session_id": "sess_poll",
 	}
 	b, err := json.Marshal(body)
 	if err != nil {

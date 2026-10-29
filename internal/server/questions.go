@@ -157,6 +157,26 @@ func (s *HTTPServer) SetQuestionAnswerReturnPath(d *autonomous.QuestionAnswerRet
 	s.api.SetQuestionAnswerReturnPath(d)
 }
 
+// SetQuestionEventsSwitch binds the function that applies the
+// autonomous.questions.enabled switch to the store's lifecycle-event sink.
+// A config write that changes the switch calls it with the new value, which
+// is how a live enable starts the question.answered and question.withdrawn
+// events without a restart. nil (the default) = nothing to apply.
+func (s *Server) SetQuestionEventsSwitch(fn func(enabled bool)) {
+	if s == nil {
+		return
+	}
+	s.questionEventsSwitch = fn
+}
+
+// HTTPServer delegate for SetQuestionEventsSwitch.
+func (s *HTTPServer) SetQuestionEventsSwitch(fn func(enabled bool)) {
+	if s == nil || s.api == nil {
+		return
+	}
+	s.api.SetQuestionEventsSwitch(fn)
+}
+
 // questionsPath maps a request path onto the one surface shape it names.
 // kind is "collection" (POST raise / GET list), "get" (GET by id),
 // "answer" (POST /{id}/answer), "withdraw" (POST /{id}/withdraw) or

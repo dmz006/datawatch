@@ -1,6 +1,10 @@
 # Operator question channel — Step 2 gate verification report
 
-Date: 2026-10-29 · Session: johnnyjohnny-5d3b · Branch: `automaton/e0830001`
+Date: 2026-10-29 · Branch: `automaton/e0830001`
+
+## Parity surface
+
+The gate covers every surface Step 2 touches: config (all five surfaces), REST, MCP, CLI, comm, WebSocket, PWA with five locale bundles, and the datawatch-app parity record (issue 283).
 
 Scope of verification: the Step 2 deliverable of the operator question channel
 (announce routes: WebSocket event, comm messaging, alert, audited question
@@ -17,8 +21,9 @@ session return line is opt-in.
 ## Commands run
 
 All shell commands ran under `env -u TMUX -u TMUX_TMPDIR`. No tmux server
-command was run, no process was killed, and no daemon was restarted (the
-"live flip" tests below assert exactly that the switch is read per request).
+command was run and nothing was killed by name. The only processes stopped
+were the throwaway sandbox daemons of the live check, each by its exact PID
+(see "Live check" below); the production daemon was never touched.
 
 | # | Command | Result |
 |---|---------|--------|
@@ -32,8 +37,61 @@ command was run, no process was killed, and no daemon was restarted (the
 | 8 | `env -u TMUX -u TMUX_TMPDIR go test -count=1 -run Question ./cmd/datawatch/` | **PASS** — 5 `--- PASS` lines, 0 failures, `ok ... 0.119s` |
 | 9 | `env -u TMUX -u TMUX_TMPDIR go test -count=1 -run 'TestLocales' -v ./internal/server/` (locale guard) | **PASS** — 7/7 top-level tests: `TestLocales_AllPresent`, `TestLocales_ParityWithEnglish`, `TestLocales_CommonNavKeysPresent`, `TestLocales_AllAppJSKeysExistInEnglishBundle`, `TestLocales_AutomatonNeverUntranslatedOrMistranslated`, `TestLocales_AutomationKeyExemptionIsNarrow`, `TestLocales_PRDNeverUserFacing`; `ok ... 0.096s` |
 | 10 | `env -u TMUX -u TMUX_TMPDIR bash scripts/check-docs-sync.sh` | **FAIL on first run, then PASS** — see "Docs sync" below |
+| 11 | `env -u TMUX -u TMUX_TMPDIR gofmt -l` over every Go file this branch touches | **PASS** — prints nothing (two files, `internal/autonomous/lifecycle_event.go` and `internal/server/question_polled_get_test.go`, were reformatted with `gofmt -w` first) |
+| 12 | `env -u TMUX -u TMUX_TMPDIR go build ./...` and `go vet` on the touched packages (autonomous, server, config, router, mcp, `cmd/datawatch`) | **PASS** (exit 0, no output) |
+| 13 | `env -u TMUX -u TMUX_TMPDIR golangci-lint run` on the same packages | **PASS** — `0 issues.` |
+| 14 | `node --test internal/server/web/app-lifecycle-subscriptions.test.js` (the touched node test) | **PASS** — 45 tests, 0 failed |
+| 15 | `env -u TMUX -u TMUX_TMPDIR go test ./...` (the full suite, includes `tests/ci` with the section-count guard) | **PASS — exit status 0**; 82 packages `ok`, none failed, 171 s |
+| 16 | `DW_BASE=<throwaway sandbox daemon> SMOKE_ONLY=87 bash scripts/release-smoke.sh` (the new section 87, unrelated pre-gates skipped by their `DW_SKIP_*` switches) | **PASS** — 10 passed, 0 failed, 0 skipped; the cleanup block then restored the switch and the three toggles, deleted the subscription and marked the alert read, each by exact id |
 
-Every command above is green in its final state. One honest incident to record:
+Every command above is green in its final state. The incidents to record:
+
+### Defects the live check found (both fixed in this branch)
+
+1. **Live enable did not attach the event sink.** The sink for
+   `question.answered` / `question.withdrawn` was attached only at daemon
+   start, so turning `autonomous.questions.enabled` on while the daemon ran
+   dropped both events until a restart. Fix: `QuestionStore.ApplyEventSwitch`
+   (`internal/autonomous/question_events.go`) is the one place the switch
+   reaches the sink; the daemon calls it at start and the config write path
+   calls it again through `Server.SetQuestionEventsSwitch` whenever the
+   switch changes (on attaches and reconciles, off drops the sink). The test
+   fixture no longer attaches the sink itself: it starts with the switch off
+   and flips it through `PUT /api/config`
+   (`TestQuestionStep2SwitchOn_LiveFlip_FansOutAndEmits`,
+   `TestQuestionStep2SwitchFlipOff_DropsEventSink`).
+2. **A real subscription never received the question events.** The unit
+   tests read a fake queue. Against the real subscription engine the markers
+   were written but the queue stayed empty, because the notify-set gate
+   (`Manager.NotifyEventAllowed`) checked the two kinds against the global
+   default set, which does not list them. Fix: the two kinds are exempt from
+   that gate (`TestQuestionEventsNotGatedByNotifySet`).
+
+### Live check: events survive a restart exactly once
+
+A throwaway sandbox daemon (own data dir, own config, autonomous enabled, an
+`mcp_queue` subscription for the two kinds), driven over REST. Q1 is answered
+and Q2 withdrawn; the events are read from `GET /api/autonomous/events` and
+the marker lines counted in the question store file.
+
+| Phase | Result |
+|---|---|
+| A. Start with the switch **off**, flip it on through `PUT /api/config`, answer Q1 (201), withdraw Q2 (200) | Q1 answered = 1, Q2 withdrawn = 1; 2 marker lines |
+| B. Stop the daemon by its exact PID, start it again, markers intact | 0 and 0 (the pending queue is in memory; nothing is re-sent); 2 marker lines |
+| C. Stop, delete the marker lines from the store file (the crash window between the record and the send), start | Q1 answered = 1, Q2 withdrawn = 1 — each delivered once at boot; 2 marker lines written |
+| D. Stop and start again | 0 and 0; still 2 marker lines |
+
+Every sandbox daemon was stopped by exact PID and confirmed gone; none was
+left running. The matching tracker rows are flipped to Validated; no other
+row was.
+
+### Smoke script note
+
+Section 87 needs the subscription engine for its events check and skips only
+those checks without it. It was run in external-daemon mode against the
+throwaway daemon above. In the script's own-sandbox mode the late sections
+read no config at all (the pre-existing section 86 fails the same way there),
+so section 87 was not validated in that mode.
 
 ### Docs sync (command 10)
 
@@ -67,13 +125,13 @@ or 9 above) and/or a committed file.
 | **Return path line (opt-in per question)** | `internal/autonomous/question_return_path.go` + `internal/autonomous/question_return_path_test.go`: `TestQuestionReturnPathMarkerPrefix`, `..._JSONFields`, `..._MultilineQuoteStaysOneLine`, `TestQuestionReturnPathGoneSessionLeavesAnswerQueued`, `TestQuestionReturnPathOffSendsNothing` (line not sent when off), `TestQuestionReturnPathSupersedingAnswerSendsNewLine`. Opt-in shape pinned by `TestQuestionPriorityReturnPathReturnPathRequiresSession` (`internal/autonomous/questions_step2_fields_test.go`). Default-on surface toggle `autonomous.questions.return_path`: `AutonomousQuestionsConfig.EffectiveReturnPath()` (`internal/config/config.go:3178`), `TestQuestionNotifyConfig_ExplicitFalseSurvivesRoundTrip/return_path`. |
 | **Toggles on every surface** | Config core: `config.AutonomousQuestionsConfig` + `Effective*` helpers (`internal/config/config.go:3135-3181`), read live per request — tests `TestQuestionsConfig_DisabledByDefault`, `TestQuestionsConfig_YAMLRoundTripKeepsBothValues`, `TestQuestionNotifyConfig_DefaultsOnWhenKeyAbsent`, `TestQuestionNotifyConfig_ExplicitFalseSurvivesRoundTrip` (messaging/alert/return_path), `TestQuestionNotifyConfig_EffectiveHelpersNilIsOn`. PWA Settings card: `internal/server/web/app.js:16382-16385` (all four keys: `enabled`, `notify_messaging`, `notify_alert`, `return_path`). REST config: `TestQuestionNotifyConfig_RESTGetDefaultsOn`, `..._RESTPutThenGetRoundTrip`, `..._RESTNonBooleanRejected`. MCP: `TestQuestionNotifyConfigSurface_SetToggles` (`internal/mcp/question_notify_config_surface_test.go`). CLI: `TestQuestionNotifyConfigSurface_SetToggles`, `..._GetReadsToggles`, `TestQuestionsCLIConfigSetTogglesChannel` (`cmd/datawatch/`). Comm channel: `TestQuestionNotifyConfigSurface_ConfigureApplyPath`, `..._MentionedInConfigureHelpAndList` (`internal/router/`). 503-when-off: `TestQuestionRaiseNotify_SwitchOffSuppressesEverything`, `TestQuestionStep2SwitchOff_FireNothing` (proving "when the switch is off nothing in this work may fire"). |
 | **Locale keys** | `settings_automata_questions_enabled`, `settings_automata_questions_notify_messaging`, `settings_automata_questions_notify_alert`, `settings_automata_questions_return_path` present in all five bundles (`internal/server/web/locales/{en,de,fr,es,ja}.json` — each gains the keys in the settings-card commit). Tests: `TestQuestionsSettings_LocaleKeyInAllBundles`, `TestQuestionNotifySettingsLocale` (`internal/server/questions_settings_locale_test.go`), plus the locale guards in row 9 above (parity, no untranslated terms, PRD never user-facing). |
-| **Docs** | `docs/howto/operator-questions-notifications.md` (524 lines, new), `docs/api/autonomous.md`, `docs/api/openapi.yaml` (`/api/questions`, `questionRaise`, Questions tag), `docs/config-reference.yaml` (autonomous.questions block with all four keys), `docs/implementation.md`, `docs/operations.md`, `docs/parity-status.md`, `docs/testing-tracker.md` (66 lines added), `docs/api/ask.md`, `docs/api-mcp-mapping.md`, `docs/howto/README.md`, `CHANGELOG.md`. `scripts/check-docs-sync.sh` final state: PASS. |
-| **Parity record** | `docs/plans/parity-issues/operator-question-step2-notifications.md` (153 lines; datawatch-app issue 283 filed and verified open per its commit). This is the file that caused the stale-embedded-copy failure in command 10, resolved via `make sync-docs`. |
+| **Docs** | `docs/howto/operator-questions-notifications.md` (new), `docs/api/autonomous.md`, `docs/api/openapi.yaml` (`/api/questions`, `questionRaise`, Questions tag), `docs/config-reference.yaml` (autonomous.questions block with all four keys), `docs/implementation.md`, `docs/operations.md`, `docs/parity-status.md`, `docs/testing-tracker.md`, `docs/api-mcp-mapping.md`, `docs/howto/README.md`, `CHANGELOG.md`. `scripts/check-docs-sync.sh` final state: PASS. |
+| **Parity record** | `docs/plans/parity-issues/operator-question-step2-notifications.md` (datawatch-app issue 283 filed and verified open per its commit). This is the file that caused the stale-embedded-copy failure in command 10, resolved via `make sync-docs`. |
 
 ## Constraint compliance (this session)
 
 - No tmux server commands; every shell command under `env -u TMUX -u TMUX_TMPDIR`.
-- No `pkill` / `kill` by name; no daemon restart.
+- No `pkill` / `kill` by name; no production daemon restart (the sandbox daemons of the live check were stopped by exact PID).
 - No tracker IDs (BL-style numbers) introduced in this report or touched code; no PRD-wording in user-facing text (enforced by `TestLocales_PRDNeverUserFacing`, `TestLocales_AutomatonNeverUntranslatedOrMistranslated` — passing).
 - The throttle detector list is never named here; where relevant it is only "the list entries".
 - When the channel switch is off: nothing fires — pinned by `TestQuestionRaiseNotify_SwitchOffSuppressesEverything` and `TestQuestionStep2SwitchOff_FireNothing`; REST endpoints refuse with 503 — pinned by `TestQuestionPolledGetSwitchOffReturns503` and the Step 1 `questions_config_switch` tests.
@@ -81,6 +139,8 @@ or 9 above) and/or a committed file.
 
 ## Verdict
 
-Gate **PASS**: build 0, vet 0, `go test -run Question` green across all six
-packages (225 PASS lines total, 0 failures), locale guards 7/7, docs sync in
-sync after regeneration. All ten scope items carry committed proof.
+Gate **PASS**: build 0, vet 0, golangci-lint 0 issues, gofmt clean, the full
+`go test ./...` exit status 0, smoke section 87 10 of 10, locale guards 7/7,
+docs sync in sync after regeneration, and the live restart check showing each
+answered and withdrawn event delivered exactly once. All ten scope items carry
+committed proof.

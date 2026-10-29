@@ -169,3 +169,21 @@ func TestQuestionEventKindsJSONShape(t *testing.T) {
 		}
 	}
 }
+
+// TestQuestionEventsNotGatedByNotifySet: the operator-question kinds are
+// listed by the subscriber, never by an Automaton's notify set, so the gate
+// every subscription delivery runs through lets them pass under the default
+// set (which does not name them), with or without a PRD id on the event.
+func TestQuestionEventsNotGatedByNotifySet(t *testing.T) {
+	m := newEmitManager(t, DefaultConfig(), nil)
+	t.Cleanup(func() { m.lifecycleBus().Close() })
+	for _, kind := range []string{KindQuestionAnswered, KindQuestionWithdrawn} {
+		if !m.NotifyEventAllowed(LifecycleEvent{Kind: kind, QuestionID: "q-1"}) {
+			t.Errorf("%s with no PRD was dropped by the notify set", kind)
+		}
+		prd := newEmitPRD(t, m, PRDActive)
+		if !m.NotifyEventAllowed(LifecycleEvent{Kind: kind, QuestionID: "q-1", PRDID: prd.ID}) {
+			t.Errorf("%s naming PRD %s was dropped by the notify set", kind, prd.ID)
+		}
+	}
+}

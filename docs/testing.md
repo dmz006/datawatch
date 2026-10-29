@@ -1204,7 +1204,7 @@ default. Recorded as a follow-up in the backlog.
 | `node --check internal/server/web/app.js` | PASS |
 | `make build` | PASS (`bin/datawatch` → `datawatch v9.0.82`) |
 | `make install` + `systemctl --user restart datawatch` | PASS (`datawatch version` → `datawatch v9.0.82`; `/api/info` → `9.0.82`) |
-| `bash scripts/release-smoke.sh` (own isolated sandbox daemon, `TMUX` unset) | PASS — `== Summary ==` Pass: 217, Fail: 0, Skip: 35 (109 numbered sections at the time of that run; as of 2026-10-28 the script carries 87 top-level numbered section headers, incl. the usage calculator section 85 and the stuck-running watchdog bound section 86; section 73 covers capabilities, the summary list, alert counts and API gzip) |
+| `bash scripts/release-smoke.sh` (own isolated sandbox daemon, `TMUX` unset) | PASS — `== Summary ==` Pass: 217, Fail: 0, Skip: 35 (109 numbered sections at the time of that run; as of 2026-10-28 the script carries 88 top-level numbered section headers, incl. the usage calculator section 85, the stuck-running watchdog bound section 86 and the operator questions step 2 section 87 (notification toggles, the answered and withdrawn events through the events read, the return-path record, the polled single GET); section 73 covers capabilities, the summary list, alert counts and API gzip) |
 
 ## v9.0.83 — Session-tracker git growth: output.log out of history, no implicit auto-gc (2026-10-14)
 

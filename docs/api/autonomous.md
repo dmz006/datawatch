@@ -2275,8 +2275,8 @@ nothing twice).
 
 **The opt-in session line** (`return_path` on the raise +
 `autonomous.questions.return_path` on): when an answer is recorded,
-**exactly one line** is appended to the asking session's output, the
-instant it is stored:
+**exactly one line** is delivered to the asking session through its input
+path (the daemon's own operator-input send), the instant it is stored:
 
 ```
 DATAWATCH_ANSWER: {"question_id":"q1","answer_id":"a3","chosen_option":"online","quote":"online, and schedule it for the next low-traffic window","actor":"operator","at":"2026-11-01T08:00:00Z"}

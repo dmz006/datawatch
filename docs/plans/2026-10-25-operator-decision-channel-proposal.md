@@ -1,7 +1,7 @@
 # Operator decision channel: proposal
 
 Date: 2026-10-25
-Status: in progress. All open points below were decided by the operator on 2026-10-25. Step 1 (config switch, question store, audit actions, REST, config accessibility) is implemented in this branch with its tests, the operator docs, the curl walkthrough, the PWA settings toggle and the locale key in all five bundles; Steps 2-5 follow the order in this document. The mobile surfaces are tracked externally in datawatch-app#283 (filed 2026-10-25, verified open 2026-10-27 — title: "feat(questions): operator question channel — queue view, answer sheet + settings toggle").
+Status: in progress. All open points below were decided by the operator on 2026-10-25. Step 1 (config switch, question store, audit actions, REST, config accessibility) and Step 2 (notifications and the return path: the raise announcement, the answered and withdrawn events, the polled single-question GET, the opt-in session line and the three notification toggles) are implemented in this branch with their tests, the operator docs, the how-to, the PWA settings toggles and the locale keys in all five bundles; Steps 3-5 follow the order in this document. The mobile surfaces are tracked externally in datawatch-app#283 (filed 2026-10-25, verified open 2026-10-27 — title: "feat(questions): operator question channel — queue view, answer sheet + settings toggle").
 
 Confirmed: yes
 
@@ -142,6 +142,8 @@ Likely new files, none of which exist yet and all created by this step: internal
 Parity surface: config and REST now. MCP, CLI, comm, PWA and mobile are deferred to Step 3 with the reason recorded in section 5.
 
 ### Step 2: notifications and the return path
+
+Status: implemented. Where this text differs from the operator's decision items, the corrections in "Step 2 disagreements with the decision items" below are what was built (no `question.expired`, the session line is opt-in per question, the raise announcement fires on ask only).
 
 Builds:
 - On raise: a WebSocket message beside needs_input, a messaging-group notification sent through the existing router send path with the question id and numbered options, and an alert through the existing alert path for questions marked high priority.

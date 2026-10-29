@@ -74,7 +74,7 @@ not read them — the question events ride exactly those rails.
   settings card. All of them work; the PWA card is the only surface with a
   ready-made checkbox for this feature.
 - For the return line: a **live datawatch session** to receive it (the
-  question's `session_id`), and that session's output stream checked for a
+  question's `session_id`), and that session's input read for a
   line beginning `DATAWATCH_ANSWER:`.
 
 ## Setup: turning the channel on, and the three announces
@@ -90,7 +90,9 @@ The four switches, in `autonomous.questions`:
 
 All four are read **live**: changing any of them takes effect from the
 next question onwards, no restart, and the PWA settings card flips each
-with a checkbox.
+with a checkbox. Turning `enabled` on also attaches the answered and
+withdrawn event sink at that moment (the config write calls it), so those
+two events start without a restart too; turning it off drops the sink.
 
 ### All the ways to turn it on
 
@@ -442,8 +444,8 @@ queued for later delivery; the line is fire-and-forget.
 
 ### The line
 
-Exactly **one line**, appended to the asker's session output the instant
-the answer is recorded, JSON-escaped so a multi-line quote never breaks
+Exactly **one line**, delivered into the asker's session through its input
+path the instant the answer is recorded, JSON-escaped so a multi-line quote never breaks
 it into several lines:
 
 ```
@@ -466,7 +468,8 @@ The fields:
 prefix an asker can grep for — but it is a **distinct** marker: the three
 prefixes are separate strings, so a session that completes while carrying
 an answer can never be mistaken for one of the other two. The line is
-appended to the session's output and never injected as input, and a gone
+delivered through the session input path as one marked line (the same send
+the daemon uses for operator input), and a gone
 session costs the asker exactly one warning log line in the daemon (no
 retry, no repeated warnings).
 

@@ -1,5 +1,9 @@
 # Operator-question Step 2: notifications — parity comment for datawatch-app #283
 
+## Parity surface
+
+Mobile app (datawatch-app issue 283): the `question_raised` WebSocket message, the `question.answered` / `question.withdrawn` event kinds, the polled single-question GET, the `DATAWATCH_ANSWER:` marker and four new locale keys. Server side, REST, MCP, CLI, comm and PWA are done in this branch.
+
 The switch for the channel (`autonomous.questions.enabled`) is Step 1 and already ships
 off. This note documents Step 2 — the notification surfaces the app must handle and the
 three toggles that gate them. All of it is gated on that one switch: with it off, none
@@ -129,7 +133,7 @@ All values are JSON strings; `at` is RFC 3339 UTC.
 The marker is distinct from, and is never read as, the existing `DATAWATCH_COMPLETE:` and
 `DATAWATCH_NEEDS_INPUT:` markers. Delivery is best-effort and can never block or fail the
 answer — the event and the polled GET still carry the answer either way. If the app
-renders the asking session's output it may see this line; treat it as an informational
+renders the asking session's transcript it may see this line; treat it as an informational
 marker, not a session completion and not an input request.
 
 ### Acceptance
@@ -147,7 +151,14 @@ marker, not a session completion and not an input request.
 
 - Comment URL: https://github.com/dmz006/datawatch-app/issues/283#issuecomment-6494958004
 - Posted: 2026-10-29 11:05 UTC (datawatch-app issue 283)
-- Via: `gh issue comment 283 -R dmz006/datawatch-app --body-file /tmp/dw-qstep2-body.md`
+- Via: `gh issue comment 283 -R dmz006/datawatch-app --body-file <comment-body-file>`
 - Note: the capture+display double-run briefly created a duplicate
   (comment 6494958355), which was deleted; exactly one comment remains and its body is
   byte-identical to the section above (verified via the public comments API).
+
+## Follow-up comment: locale keys
+
+- Comment URL: https://github.com/dmz006/datawatch-app/issues/283#issuecomment-6495646301
+- Posted: 2026-10-29 (datawatch-app issue 283)
+- Content: the four question settings keys with their English values (`settings_automata_questions_enabled` from Step 1, plus the three new `settings_automata_questions_notify_messaging`, `settings_automata_questions_notify_alert` and `settings_automata_questions_return_path`), asking for DE, ES, FR and JA translations of the three new keys.
+- Via: `gh issue comment 283 -R dmz006/datawatch-app --body-file <comment-body-file>`

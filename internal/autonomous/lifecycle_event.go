@@ -116,9 +116,9 @@ type LifecycleEvent struct {
 	// question.withdrawn). Empty for every other kind.
 	QuestionID string `json:"question_id,omitempty"`
 	AnswerID   string `json:"answer_id,omitempty"`
-	OldStatus    string `json:"old_status,omitempty"`
-	NewStatus    string `json:"new_status,omitempty"`
-	SessionID    string `json:"session_id,omitempty"`
+	OldStatus  string `json:"old_status,omitempty"`
+	NewStatus  string `json:"new_status,omitempty"`
+	SessionID  string `json:"session_id,omitempty"`
 	// Details is a short, single-line description of what the event
 	// says (loop warning text for task.looping; empty for other kinds).
 	Details  string            `json:"details,omitempty"`

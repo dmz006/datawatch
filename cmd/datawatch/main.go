@@ -6603,21 +6603,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					// the engine's per-subscriber queue as every other kind:
 					// the store builds and fires them on answer and withdrawal,
 					// then marks the record so the exactly-once guarantee holds.
-					// The switch off means the sink is not wired at all — no
-					// event, and no startup reconcile, either.
-					if cfg.Autonomous.Questions.Enabled {
-						qstore.SetEventSink(amgr.EmitQuestionEvent)
-						// Startup reconcile: replay rebuilt the view, so any
-						// answered or withdrawn question lacking its marker fired
-						// nowhere — a crash in the window between the record and
-						// the enqueue. Re-fire each exactly once, then mark it.
-						for _, ev := range qstore.ReconcileEmittedEvents() {
-							amgr.EmitQuestionEvent(ev)
-							if !qstore.MarkEventEmitted(ev) {
-								log.Printf("[warn] question store: marker for reconciled event %s (question %s): will re-fire next start", ev.Kind, ev.QuestionID)
-							}
-						}
+					// The switch decides whether the sink is wired at all: off
+					// means no event and no reconcile. It is applied here at
+					// start and again by the server whenever a config write
+					// changes autonomous.questions.enabled, so a live enable
+					// needs no restart.
+					applyQuestionEvents := func(enabled bool) {
+						qstore.ApplyEventSwitch(enabled, amgr.EmitQuestionEvent, log.Printf)
 					}
+					applyQuestionEvents(cfg.Autonomous.Questions.Enabled)
+					httpServer.SetQuestionEventsSwitch(applyQuestionEvents)
 					httpServer.SetQuestions(qstore)
 					// Question-raise notification (the "notify" legs beside the
 					// channel): the server dispatches non-blockingly on each

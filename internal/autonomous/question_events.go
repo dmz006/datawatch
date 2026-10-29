@@ -134,6 +134,27 @@ func (s *QuestionStore) SetEventSink(fn QuestionEventSink) {
 	s.mu.Unlock()
 }
 
+// ApplyEventSwitch is the one place the autonomous.questions.enabled switch
+// reaches the store's event sink, at daemon start and again whenever the
+// setting changes while the daemon runs. On: the sink is wired to emit, then
+// the reconcile re-fires every answered or withdrawn question lacking its
+// marker (a crash window, or a record written while the switch was off) once
+// and marks it. Off: the sink is dropped, so no event fires and no marker is
+// written. logf reports a marker that could not be written; it may be nil.
+func (s *QuestionStore) ApplyEventSwitch(enabled bool, emit QuestionEventSink, logf func(format string, args ...any)) {
+	if !enabled {
+		s.SetEventSink(nil)
+		return
+	}
+	s.SetEventSink(emit)
+	for _, ev := range s.ReconcileEmittedEvents() {
+		emit(ev)
+		if !s.MarkEventEmitted(ev) && logf != nil {
+			logf("[warn] question store: marker for reconciled event %s (question %s): will re-fire next start", ev.Kind, ev.QuestionID)
+		}
+	}
+}
+
 // fireQuestionEvent invokes the sink, if wired, outside the store lock and
 // reports whether the event was fired (false when no sink is set — the
 // daemon's switch-off: no event, and therefore no marker and no claim of

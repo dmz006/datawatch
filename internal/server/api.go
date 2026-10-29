@@ -515,6 +515,11 @@ type Server struct {
 	// by main.go via SetQuestionAnswerReturnPath; nil (default) = no
 	// session line (the event plus polled GET still carry the answer).
 	questionAnswerReturnPath *autonomous.QuestionAnswerReturnPath
+	// questionEventsSwitch applies autonomous.questions.enabled to the
+	// store's lifecycle-event sink (wired when on, dropped when off). The
+	// daemon binds it at start; a config write that changes the switch calls
+	// it, so a live enable attaches the sink with no restart. Nil = none.
+	questionEventsSwitch func(enabled bool)
 	// mcp_queue sink read side for /api/autonomous/events; nil → 503.
 	autonomousEvents PendingEventsAPI
 	// BL427 phase 5 — receiving side of peer forwarding for
@@ -6704,6 +6709,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	skipped := applyConfigPatch(s.cfg, patch)
+	// The question lifecycle events follow the switch at runtime: a flip
+	// attaches (or drops) the store's event sink, so no restart is needed.
+	if _, ok := patch["autonomous.questions.enabled"]; ok && s.questionEventsSwitch != nil {
+		s.questionEventsSwitch(s.cfg.Autonomous.Questions.Enabled)
+	}
 	// The shared tag registry follows its keeper and sync interval at runtime,
 	// so a change made here needs no restart.
 	for _, k := range []string{"autonomous.tags.registry_keeper", "autonomous.tags.registry_sync_seconds"} {

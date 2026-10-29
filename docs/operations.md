@@ -4537,7 +4537,7 @@ off without a restart. While the switch is off, none of the notification
 routes below fire at all — no WebSocket message, no messaging line, no
 alert, no event, no session line.
 
-**Notifications (step 1 of the channel).** Once the switch is on, three
+**Notifications (step 2 of the channel).** Once the switch is on, three
 optional toggles decide what the operator hears (all three default on when
 the key is absent — the keys are `autonomous.questions.notify_messaging`,
 `autonomous.questions.notify_alert` and `autonomous.questions.return_path`,
@@ -4547,7 +4547,7 @@ all readable/writable through the same config routes as the switch):
 |---|---|---|---|
 | `notify_messaging` | on | every raise | one line in each active messaging group (the `[hostname] question <id> — <label>`, a `(high priority)` marker, the text, the numbered options, and the REST + PWA answer routes); a missing comm backend is a silent no-op |
 | `notify_alert` | on | every raise **with `priority: high`** | one warning-level alert in `GET /api/alerts`, titled `Operator question raised (high priority): <id> — <label>`; normal-priority raises never alert |
-| `return_path` | on | an answer on a question raised with `return_path: true` (and a `session_id`) | exactly one `DATAWATCH_ANSWER: {…}` line into that session's output — the JSON carries the question id, answer id, chosen option, the verbatim quote (JSON-escaped, never multi-line), actor, timestamp. The payload is exactly these six fields — `question_id`, `answer_id`, `chosen_option`, `quote`, `actor`, `at` — and the line is fired exactly once per answer (a superseding answer fires its own). |
+| `return_path` | on | an answer on a question raised with `return_path: true` (and a `session_id`) | exactly one `DATAWATCH_ANSWER: {…}` line delivered into that session through its input path — the JSON carries the question id, answer id, chosen option, the verbatim quote (JSON-escaped, never multi-line), actor, timestamp. The payload is exactly these six fields — `question_id`, `answer_id`, `chosen_option`, `quote`, `actor`, `at` — and the line is fired exactly once per answer (a superseding answer fires its own). |
 
 The WebSocket `question_raised` message to connected PWA/hub clients needs
 no toggle — it rides the always-on hub once the raise is stored. The

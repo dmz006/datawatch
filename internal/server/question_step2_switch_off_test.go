@@ -40,10 +40,10 @@ type qstep2Fix struct {
 }
 
 // qstep2New builds the fixture with the questions switch in `enabled`.
-// The event sink is wired regardless of the switch — the daemon's sink
-// wiring is the operator's call at startup — so the "off produces
-// nothing" assertions are the strongest possible: every sink is
-// connected and none of them may ever hear a thing.
+// The event sink follows the switch through the same two calls the
+// daemon makes (ApplyEventSwitch at start, bound to the server so a
+// config write re-applies it) — it is never attached unconditionally, so
+// a live flip is the only thing that connects it.
 func qstep2New(t *testing.T, enabled bool) *qstep2Fix {
 	t.Helper()
 	cfg := &config.Config{Autonomous: config.AutonomousConfig{
@@ -68,7 +68,9 @@ func qstep2New(t *testing.T, enabled bool) *qstep2Fix {
 		Kinds: []string{autonomous.KindQuestionAnswered, autonomous.KindQuestionWithdrawn},
 	}, queue.push)
 	t.Cleanup(cancel)
-	st.SetEventSink(mgr.EmitQuestionEvent)
+	applyEvents := func(on bool) { st.ApplyEventSwitch(on, mgr.EmitQuestionEvent, t.Logf) }
+	applyEvents(enabled)
+	s.SetQuestionEventsSwitch(applyEvents)
 
 	nf := &questionNotifyFake{}
 	s.SetQuestionRaiseNotifier(nf)
@@ -261,6 +263,27 @@ func TestQuestionStep2SwitchOn_LiveFlip_FansOutAndEmits(t *testing.T) {
 	}
 	if got := len(f.ast.List()); got != 2 {
 		t.Fatalf("alerts = %d, want 2 (one per high-priority raise)", got)
+	}
+}
+
+// TestQuestionStep2SwitchFlipOff_DropsEventSink: flipping the switch on
+// and then off through PUT /api/config drops the sink again, so an answer
+// recorded on the store afterwards fires no event and writes no marker.
+func TestQuestionStep2SwitchFlipOff_DropsEventSink(t *testing.T) {
+	f := qstep2New(t, false)
+	putJSON(t, f.s.handlePutConfig, "/api/config", map[string]any{"autonomous.questions.enabled": true})
+	putJSON(t, f.s.handlePutConfig, "/api/config", map[string]any{"autonomous.questions.enabled": false})
+
+	id := qstep2Seed(t, f).ID
+	if _, err := f.store.Answer(id, autonomous.Answer{ChosenOptionID: "yes", Actor: "operator"}); err != nil {
+		t.Fatalf("store answer: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if got := len(f.queue.all()); got != 0 {
+		t.Fatalf("events after flip off = %d, want 0", got)
+	}
+	if got := markerLineCount(t, f.path); got != 0 {
+		t.Fatalf("marker lines after flip off = %d, want 0", got)
 	}
 }
 

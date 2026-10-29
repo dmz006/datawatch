@@ -63,13 +63,9 @@ func TestQuestionStep2Restarts_AnsweredEventExactlyOnce(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reopen store: %v", err)
 		}
-		st.SetEventSink(mgr.EmitQuestionEvent)
-		for _, ev := range st.ReconcileEmittedEvents() {
-			mgr.EmitQuestionEvent(ev)
-			if !st.MarkEventEmitted(ev) {
-				t.Fatalf("mark reconciled event %s: the daemon's own log says it will re-fire next start", ev.Kind)
-			}
-		}
+		// The daemon's start path: the switch is on, so the sink is
+		// wired and the unmarked records re-fire once.
+		st.ApplyEventSwitch(true, mgr.EmitQuestionEvent, t.Fatalf)
 		return capture
 	}
 
