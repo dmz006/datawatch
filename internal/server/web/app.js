@@ -16381,6 +16381,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.lane_fill.gpu_backend', label: 'Lane fill GPU backend (default pi-prompt)', labelKey: 'settings_lane_fill_gpu_backend', type: 'text', placeholder: 'pi-prompt', default: 'pi-prompt' },
     { key: 'autonomous.lane_fill.gpu_model', label: 'Lane fill GPU model (empty = backend default)', labelKey: 'settings_lane_fill_gpu_model', type: 'text', placeholder: '' },
     { key: 'autonomous.lane_fill.claude_backend', label: 'Lane fill Claude backend (default claude-code)', labelKey: 'settings_lane_fill_claude_backend', type: 'text', placeholder: 'claude-code', default: 'claude-code' },
+    { key: 'autonomous.lane_fill.count_verifier_wait', label: 'Lane fill count verifier wait (on by default)', labelKey: 'settings_lane_fill_count_verifier_wait', type: 'toggle' },
     { key: 'autonomous.automation.agent_insert_policy', label: 'Automation agent insert policy (allow | require_operator, default allow)', labelKey: 'settings_automation_agent_insert_policy', type: 'select', options: ['allow', 'require_operator'], default: 'allow' },
     { key: 'autonomous.questions.enabled', label: 'Operator questions for Automata (off by default)', labelKey: 'settings_automata_questions_enabled', type: 'toggle' },
     { key: 'autonomous.questions.notify_messaging', label: 'Notify on question asked and answered (on by default)', labelKey: 'settings_automata_questions_notify_messaging', type: 'toggle' },
@@ -25127,17 +25128,25 @@ function _laneFillModeHtml(mode) {
 }
 function _laneFillLaneHtml(l) {
   const occupied = l.state === 'occupied';
+  const waitingVerifier = l.state === 'waiting_verifier';
   const typeKey = _laneFillKey(LANE_FILL_TYPE_KEYS, l.type);
   const typeLabel = typeKey ? t(typeKey) : String(l.type || '');
-  const stateLabel = t(occupied ? 'lane_fill_state_occupied' : 'lane_fill_state_idle');
+  const stateLabel = t(waitingVerifier ? 'lane_fill_state_waiting_verifier'
+    : (occupied ? 'lane_fill_state_occupied' : 'lane_fill_state_idle'));
   const waiting = Number(l.eligible_waiting) > 0
     ? `<span class="lane-fill-waiting" style="color:var(--accent2,var(--text));font-weight:600;">&#9203; ${escHtml(t('lane_fill_waiting', [Number(l.eligible_waiting)]))}</span>` : '';
-  const occupant = occupied && l.occupant
+  // A lane that works and a lane that waits must read differently: show why
+  // the verifier slot is taken, escaped. Absent or empty reason = label only.
+  const waitReason = waitingVerifier
+    ? String(l.wait_reason || (l.occupant && l.occupant.wait_reason) || '').trim() : '';
+  const waitReasonHtml = waitReason
+    ? `<span class="lane-fill-wait-reason" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('lane_fill_waiting_verifier_reason', [waitReason]))}</span>` : '';
+  const occupant = (occupied || waitingVerifier) && l.occupant
     ? [l.occupant.title, l.occupant.backend].filter(Boolean).join(' · ') : '';
   const blocker = l.blocker ? `<div style="color:var(--text2);">${escHtml(t('lane_fill_blocked', [l.blocker]))}</div>` : '';
   return `<div class="lane-fill-lane" style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;padding:4px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
     `<span style="font-weight:600;overflow-wrap:anywhere;">${escHtml(l.id)} · ${escHtml(typeLabel)}</span>` +
-    `<span>${escHtml(stateLabel)}</span>${waiting}` +
+    `<span>${escHtml(stateLabel)}</span>${waiting}${waitReasonHtml}` +
     `<div style="flex-basis:100%;min-width:0;overflow-wrap:anywhere;">${occupant ? `<div>${escHtml(occupant)}</div>` : ''}${blocker}</div></div>`;
 }
 function _laneFillDecisionHtml(d) {

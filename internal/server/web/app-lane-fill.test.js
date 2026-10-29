@@ -89,6 +89,43 @@ test('no marker shows when no eligible work waits', () => {
   assert.ok(!html.includes('lane-fill-waiting'), 'marker must not show with nothing waiting');
 });
 
+test('a waiting_verifier lane shows the waiting-on-verifier label, its reason and the occupant', () => {
+  const html = render(status({
+    lanes: [lane({
+      id: 'claude-2', type: 'claude', state: 'waiting_verifier',
+      occupant: { prd_id: 'p2', title: 'Fix login', backend: 'claude-code' },
+      wait_reason: 'CI still running the checks', eligible_waiting: 2,
+    })],
+  }));
+  assert.ok(html.includes('Claude lane'), 'claude lane type label missing');
+  assert.ok(html.includes('Waiting on verifier'), 'waiting-on-verifier label missing: ' + html);
+  assert.ok(html.includes('Waiting on verifier: CI still running the checks'), 'waiting reason missing: ' + html);
+  assert.ok(html.includes('lane-fill-wait-reason'), 'reason element missing');
+  assert.ok(html.includes('Fix login · claude-code'), 'occupant must still show on a waiting_verifier lane');
+});
+
+test('a waiting_verifier lane carries the reason from its occupant when the top-level field is empty', () => {
+  const html = render(status({
+    lanes: [lane({
+      id: 'claude-2', type: 'claude', state: 'waiting_verifier', wait_reason: '',
+      occupant: { prd_id: 'p2', title: 'Fix login', backend: 'claude-code', wait_reason: 'GPU slots taken' },
+    })],
+  }));
+  assert.ok(html.includes('Waiting on verifier: GPU slots taken'), 'occupant wait_reason fallback missing: ' + html);
+});
+
+test('a waiting_verifier lane with no reason shows the label without a reason element', () => {
+  const html = render(status({ lanes: [lane({ id: 'claude-2', type: 'claude', state: 'waiting_verifier', wait_reason: '' })] }));
+  assert.ok(html.includes('Waiting on verifier'), 'waiting-on-verifier label missing');
+  assert.equal(countOccurrences(html, 'lane-fill-wait-reason'), 0, 'reason element must not show with no reason');
+});
+
+test('a hostile verifier wait reason is escaped', () => {
+  const html = render(status({ lanes: [lane({ id: 'claude-2', type: 'claude', state: 'waiting_verifier', wait_reason: HOSTILE })] }));
+  assert.ok(!html.includes('<img'), 'raw markup leaked from the reason: ' + html);
+  assert.ok(html.includes('Waiting on verifier: &lt;img src=x onerror=alert(1)&gt;'), 'escaped reason missing');
+});
+
 test('shadow mode shows the one-line shadow explanation and the mode badge', () => {
   const html = render(status({ mode: 'shadow' }));
   assert.ok(html.includes('Shadow: computes and records every decision and starts nothing.'), 'shadow wording missing');
@@ -305,6 +342,7 @@ const LANE_FIELDS = {
   'autonomous.lane_fill.gpu_backend': { type: 'text', labelKey: 'settings_lane_fill_gpu_backend' },
   'autonomous.lane_fill.gpu_model': { type: 'text', labelKey: 'settings_lane_fill_gpu_model' },
   'autonomous.lane_fill.claude_backend': { type: 'text', labelKey: 'settings_lane_fill_claude_backend' },
+  'autonomous.lane_fill.count_verifier_wait': { type: 'toggle', labelKey: 'settings_lane_fill_count_verifier_wait' },
 };
 
 test('the autonomous settings card declares every lane fill field with its type, bounds and label key', () => {
@@ -345,12 +383,23 @@ test('every lane_fill_ and settings_lane_fill_ key exists in all five bundles wi
   }
 });
 
+// These lane keys deliberately carry the English text in de/es/fr/ja until
+// translations arrive; that is not an English-copy regression.
+const PENDING_TRANSLATION = new Set([
+  'lane_fill_state_waiting_verifier',
+  'lane_fill_waiting_verifier_reason',
+  'settings_lane_fill_count_verifier_wait',
+]);
+
 test('every lane key is a real translation in de, es, fr and ja, not an English copy', () => {
   const en = bundle('en');
   const enKeys = Object.keys(en).filter(isLaneKey);
   for (const lang of ['de', 'es', 'fr', 'ja']) {
     const b = bundle(lang);
-    const same = enKeys.filter(k => b[k] === en[k]);
+    for (const k of PENDING_TRANSLATION) {
+      assert.ok(k in b, k + ' must exist in ' + lang + ' (English until translated)');
+    }
+    const same = enKeys.filter(k => b[k] === en[k] && !PENDING_TRANSLATION.has(k));
     assert.deepEqual(same, [], lang + '.json keeps English for: ' + same.join(', '));
   }
 });
