@@ -58,8 +58,9 @@ and triage cards:
    high-priority questions. The card refreshes on its own (it polls every
    five seconds) and updates the moment you answer or a worker raises —
    no reload needed.
-2. **Find the question.** Type in the search box; the list narrows as you
-   type, and pressing Enter opens the first match.
+2. **Find the question.** Type in the search box; the search commits after a
+   short pause (or immediately when you press Enter) and re-requests the
+   list narrowed to matching questions — then answer from the row.
 3. **Open a question.** Click **Answer** on a row. The sheet shows the
    question, its numbered options, the worker's recommended option, and
    the default option (the one chosen if you submit without picking).
@@ -74,7 +75,7 @@ and triage cards:
 6. **Read the log.** Click **History** on the card. Answered and
    withdrawn questions list there; each opens with its full answer log —
    every answer with the chosen option, the actor, the surface
-   (`web`, `cli`, `mcp`, `comm:<channel>`), the time, and the
+   (`pwa`, `cli`, `rest`, `mcp`, `comm:<channel>`), the time, and the
    **Current** / **Superseded** markers.
 7. If the channel is off, the card says so and points at the
    `autonomous.questions.enabled` config key.
@@ -114,11 +115,11 @@ loopback, the same as the other comm-parity surfaces):
 
 | Tool | Does |
 |------|------|
-| `question_raise` | Raises a question — text, options (at least two), optional default, priority `low`/`normal`/`high`; the daemon returns the stored question with its id |
-| `question_list` | The queue — optional `state` (`open`, `answered`, `withdrawn`, `expired`, or `all`, default open), `context`, `asker`, `text` and `limit` — returns `{count, questions}` |
+| `question_raise` | Raises a question — text, options (at least two), an optional `default` option id, and priority `normal`/`high` (default `normal`); the daemon returns the stored question with its id |
+| `question_list` | The queue — optional `state` (`open`, `answered`, `withdrawn`, `expired`, or `all`; omitted = all states), `context`, `asker`, `text` and `limit` (the maximum to return) — returns `{count, questions}` |
 | `question_get` | One question with `answer_count`, `current_answer_id`, and the current answer's summary if it exists |
-| `question_answer` | Records the answer — `chosen_option_id` (or `null`) and/or `quote`, plus an optional `superseded_answer_id` to say which answer this replaces; the daemon returns the stored answer with the question's new state |
-| `question_withdraw` | Withdraws an open question — `id` and a `reason`; the daemon returns the question marked `withdrawn` |
+| `question_answer` | Records the answer — `chosen_option_id` and/or `quote` (at least one), plus the optional `supersedes` id when answering a question that already has a current answer; the daemon returns the stored answer with the question's new state |
+| `question_withdraw` | Withdraws an open question — `id` and `actor` (required), plus an optional `reason`; the daemon returns the question marked `withdrawn` |
 
 ## Chat channel (comm)
 
@@ -150,12 +151,12 @@ The routes (all return `503` naming the switch while the channel is off):
 
 | Route | Body |
 |-------|------|
-| `GET /api/questions` | — list. Optional filters: `state` (`open`\|`answered`\|`withdrawn`\|`expired`\|`all`, default `open`), `context`, `asker`, `text`, `limit` (default 50; 0 = unbounded) |
+| `GET /api/questions` | — list. Optional filters: `state` (`open`\|`answered`\|`withdrawn`\|`expired`\|`all`; omit for all states), `context`, `asker`, `text`, `limit` (a positive integer — `0` and below are a 400; omitted means the daemon default of 100, capped at 1000) |
 | `GET /api/questions/{id}` | — the question plus `answer_count`, `current_answer_id`, and the current answer's summary if one exists |
-| `POST /api/questions` | raise: `{"text": "Which model for the retry?", "options": [{"id": "fast", "label": "The fast model"}, {"id": "big", "label": "The large model"}], "default_option_id": "big", "priority": "high", "context": {"automaton_id": "a71"}}` |
-| `POST /api/questions/{id}/answer` | answer: `{"chosen_option_id": "fast", "quote": "cost matters more here today", "surface": "cli"}` |
+| `POST /api/questions` | raise — `text`, `options` (at least one), `default` (the option id chosen when you submit without picking), `priority` (`normal` or `high`), and `context` must name a kind — `none`, `prd`, `task`, `proposal` or `registry_row` — with its matching link (`prd_id`, `task_id`, `proposal_path`, `registry_row_key`): `{"text": "Which model for the retry?", "options": [{"id": "fast", "label": "The fast model"}, {"id": "big", "label": "The large model"}], "default": "big", "priority": "high", "context": "none"}` |
+| `POST /api/questions/{id}/answer` | answer: `{"chosen_option_id": "fast", "quote": "cost matters more here today", "surface": "cli"}` (at least one of `chosen_option_id` or `quote`; `supersedes` when replacing a current answer) |
 | `POST /api/questions/{id}/withdraw` | withdraw: `{"reason": "answered in the session instead"}` |
-| `GET /api/questions/{id}/answers` | — the full answer log, newest first (each entry has option, quote, surface, actor, `createdAt`, and `supersededBy`) |
+| `GET /api/questions/{id}/answers` | — the full answer log, oldest first (each entry has option, quote, surface, actor, and its derived `superseded` / `superseded_by` state) |
 
 ```bash
 curl -s -X POST http://localhost:8443/api/questions/q12/answer \
