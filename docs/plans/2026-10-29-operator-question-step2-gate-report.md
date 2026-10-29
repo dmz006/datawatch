@@ -162,3 +162,21 @@ Every command ran under `env -u TMUX -u TMUX_TMPDIR`.
 | After `make sync-docs` | `go test ./tests/ci ./internal/server ./internal/router -count=1` | 0 | all three ok |
 
 Notes: a first run of `TS-833` against the older installed binary timed out waiting for the toggle rows (it predates them); the passing run used `bin/datawatch` built from this tree. `npm ci` in the story folder replaced the committed `node_modules` link with a real folder; the link was restored, so the working tree carries no change there. `make sync-docs` regenerated the gitignored embedded docs copy after the how-to edits. One older tracker row (the usage calculator reset-zone contract, not touched by this branch) still says `config_get`; it was left as found.
+
+## Third corrective round: results
+
+Scope: the one leftover of the second corrective round. The configure help text in `internal/router/router.go` (both the short usage and the full key list) still named the unit of work with lowercase placeholders; `set-verifier-policy <prd>`, `set-task-verifier-policy <prd> <task>` and `set-primary <prd-id>` now read `<automaton>`, `<automaton> <task>` and `<automaton-id>`. The `prd.*` event kind names and the `autonomous.per_prd_guardrails` key stay as written, because they are the real identifiers an operator types. A fresh scan of every operator-facing line this branch added (docs/howto, docs/operations.md, docs/api, README.md, CHANGELOG.md, the locale files, the PWA strings, the CLI help) found the word only inside literal API values (the `prd` question context level and the event kinds). Every MCP tool name the how-to, changelog, tracker and API text names was compared with the tools registered in `internal/mcp`: `config_set`, `get_config`, `autonomous_subscribe` and `autonomous_subscriptions` all exist; nothing else needed correcting.
+
+Every command ran under `env -u TMUX -u TMUX_TMPDIR`.
+
+| Gate | Command | Exit | Result |
+|------|---------|------|--------|
+| gofmt | `gofmt -l` on every Go file the branch touched plus `internal/router/router.go` | 0 | no files listed |
+| go vet | `go vet` on `./cmd/datawatch/ ./internal/autonomous/ ./internal/config/ ./internal/mcp/ ./internal/router/ ./internal/server/` | 0 | clean |
+| golangci-lint | `golangci-lint run` on the same packages | 0 | 0 issues |
+| Node tests | `node --test internal/server/web/app-lifecycle-subscriptions.test.js internal/server/web/app-autonomous-settings-fields.test.js` | 0 | 95 of 95 pass |
+| Full Go tests | `go test ./...` | 0 | 82 packages ok, no FAIL line |
+| Build | `go build -o bin/datawatch ./cmd/datawatch/` | 0 | built from this tree |
+| Browser story | `bash scripts/e2e-pwa.sh TS-833` (isolated sandbox daemon, never production) | 0 | 1 of 1 story passed |
+
+Note: the story run's `npm ci` replaced the tracked `node_modules` link in the story folder with a directory; the link was restored with `git checkout` so the tree carries no change there.
