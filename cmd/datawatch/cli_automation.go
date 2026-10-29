@@ -903,6 +903,9 @@ type automationView struct {
 	// Budget is the computed budget view; absent when the Automation has no
 	// budget policy in play.
 	Budget *autonomous.BudgetView `json:"budget"`
+	// PendingInserts are member inserts held for an operator's approval (agent
+	// inserts that are not yet visible in the graph).
+	PendingInserts []autonomous.PendingInsert `json:"pending_inserts"`
 	// DecisionAssistant is the Automation-level decision assistant; absent when off.
 	DecisionAssistant *autonomous.DecisionAssistant `json:"decision_assistant"`
 }
@@ -952,11 +955,38 @@ func printAutomation(w io.Writer, a automationView) error {
 	if err := tw.Flush(); err != nil {
 		return err
 	}
+	if err := writePendingInserts(w, a.ID, a.PendingInserts); err != nil {
+		return err
+	}
 	if a.Budget != nil {
 		_, err := fmt.Fprint(w, autonomous.FormatAutomationBudgetText(*a.Budget))
 		return err
 	}
 	return nil
+}
+
+// writePendingInserts prints the Automation's pending inserts: one "Pending
+// inserts: none" line when there are none, otherwise a "Pending inserts: N"
+// count line and a table. MEMBER is the insert's ID (the member ID the insert
+// gets when approved), AUTOMATON the PRD it runs, REASON the recorded reason,
+// and APPROVE WITH the exact command that approves it. It is a top-level
+// helper reused by the status task.
+func writePendingInserts(w io.Writer, automationID string, inserts []autonomous.PendingInsert) error {
+	if len(inserts) == 0 {
+		_, err := fmt.Fprintln(w, "Pending inserts: none")
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "Pending inserts: %d\n", len(inserts)); err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "MEMBER\tAUTOMATON\tREASON\tAPPROVE WITH")
+	for _, p := range inserts {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+			p.ID, dashIfEmpty(p.PRDID), dashIfEmpty(strings.Join(strings.Fields(p.Reason), " ")),
+			fmt.Sprintf("datawatch automation approve %s %s", automationID, p.ID))
+	}
+	return tw.Flush()
 }
 
 // decisionAssistantText is the one-line summary of a decision assistant
