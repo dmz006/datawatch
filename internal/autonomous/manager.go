@@ -1027,6 +1027,12 @@ type Manager struct {
 	// raising a warning alongside the alert can link the event to it.
 	alertSink func(level, title, body string) (id string)
 
+	// decisionStore and decisionGateCfg feed the decision gate
+	// (decision_gate_hold.go). Guarded by mu. A nil store reads as no
+	// decisions on file; a nil config function leaves the gate off.
+	decisionStore   *QuestionStore
+	decisionGateCfg func() config.AutonomousQuestionsConfig
+
 	// attemptClock — the time source for failure escalation attempt records
 	// and review holds (attemptNow). Nil reads the wall clock; tests inject a
 	// fake so attempt durations are exact. Set before the Manager runs.

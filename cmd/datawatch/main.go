@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -6275,6 +6276,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					return autonomousGuardrailAttempt(ctx, req, gcfg, backend, att)
 				})
 		}
+		var questionAPI atomic.Pointer[autonomouspkg.API]
 		if amgr, err := autonomouspkg.NewManager(expandHome(cfg.DataDir), amgrCfg, decomposeFn); err != nil {
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
@@ -6602,7 +6604,22 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					// Automaton's decision log, and its answer as a second
 					// entry; the store calls this after each change, outside
 					// its lock.
-					qstore.SetChangeHook(amgr.RecordQuestionChange)
+					//
+					// An answer also reaches the Automaton API, which wakes the
+					// executor holding a task that waits on the decision. The API
+					// is built further down, so the hook reads it from a pointer
+					// set once it exists.
+					qstore.SetChangeHook(func(c autonomouspkg.QuestionChange) {
+						amgr.RecordQuestionChange(c)
+						if api := questionAPI.Load(); api != nil {
+							api.OnQuestionChange(c)
+						}
+					})
+					// The decision gate reads the same store, and the live
+					// autonomous.questions config on every scan.
+					amgr.SetDecisionGate(qstore, func() config.AutonomousQuestionsConfig {
+						return cfg.Autonomous.Questions
+					})
 					// The question lifecycle events (question.answered /
 					// question.withdrawn) fire through the same dispatcher and
 					// the engine's per-subscriber queue as every other kind:
@@ -6827,6 +6844,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				})
 			}
 			aAPI := autonomouspkg.NewAPI(amgr)
+			questionAPI.Store(aAPI)
 			aAPI.SetStoreSideFileCapKB(cfg.Session.EffectiveStoreSideFileCapKB())
 			// Automation coordinator: advances an Automation's cursor from
 			// member lifecycle events (nil-safe if it could not be built).

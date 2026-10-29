@@ -383,7 +383,21 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			// tasks stay pending, and the first task that is neither runs
 			// next. The check also runs after the last task, so a decision
 			// made during it is not lost before the walk returns.
-			if reviewWakeNudged(wake) {
+			nudged := reviewWakeNudged(wake)
+			// The walk is done but a task waits on an operator decision. The
+			// executor stays alive and walks again when the decision is
+			// answered, so the task starts with no second Run.
+			if !nudged && i >= len(order) && m.decisionWaitPending(prd) {
+				if awaitDecisionAnswer(ctx, wake) {
+					if st, ok := m.prdStatusOf(prdID); !ok || st != PRDRunning {
+						return nil
+					}
+					nudged = true
+				} else if err := ctx.Err(); err != nil {
+					return err
+				}
+			}
+			if nudged {
 				if latest, _ := m.store.GetPRD(prdID); latest != nil {
 					prd = latest
 				}
@@ -454,6 +468,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				}
 				m.releaseCapacity(t.ID)
 				failedIDs[tid] = true
+			} else if m.decisionGateHold(prd, t) {
+				// The spec names a decision that is not answered. The task
+				// stays parked and its dependents wait behind it.
+				heldIDs[tid] = true
+				continue
 			} else {
 				// Mark the owning story in_progress when its first task begins.
 				if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
@@ -626,6 +645,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if t == nil {
 					continue
 				}
+				// A task whose spec names an unanswered decision stays parked.
+				// It never completes, so its dependents never become ready.
+				if m.decisionGateHold(prd, t) {
+					continue
+				}
 				if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
 					m.store.WithLock(func() { s.Status = StoryInProgress })
 					_ = m.store.SavePRD(prd)
@@ -749,6 +773,21 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if reviewWakeNudged(wake) {
 					reviewDecisions()
 					continue
+				}
+				// A task waits on an operator decision. Wait for the answer
+				// instead of leaving; reviewDecisions launches the task once
+				// the gate lets it through.
+				if m.decisionWaitPending(prd) {
+					if awaitDecisionAnswer(ctx, wake) {
+						if st, ok := m.prdStatusOf(prdID); !ok || st != PRDRunning {
+							return nil
+						}
+						reviewDecisions()
+						continue
+					}
+					if err := ctx.Err(); err != nil {
+						return err
+					}
 				}
 				// No ready tasks and nothing in-flight — dependency deadlock
 				// should not happen with a valid topo sort.
