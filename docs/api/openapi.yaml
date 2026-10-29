@@ -5690,7 +5690,7 @@ components:
       properties:
         id: {type: string}
         type: {type: string, enum: [gpu, claude]}
-        state: {type: string, enum: [occupied, idle]}
+        state: {type: string, enum: [occupied, idle, waiting_verifier], description: "waiting_verifier: a Claude lane whose Automaton waits on a verifier slot and the verifier-wait rule counts available"}
         occupant:
           nullable: true
           description: The Automaton the lane is running; null when the lane is idle
@@ -5699,7 +5699,11 @@ components:
             prd_id: {type: string}
             title: {type: string}
             backend: {type: string}
+            waiting_on_verifier: {type: boolean, description: "True when its work is all blocked waiting for a verifier slot"}
+            wait_reason: {type: string, description: "The occupant's readable wait reason, present with waiting_on_verifier"}
         blocker: {type: string, description: Why an idle lane is not being filled}
+        waiting_on_verifier: {type: boolean, description: "True when the lane's occupant is blocked waiting for a verifier slot"}
+        wait_reason: {type: string, description: "The occupant's readable wait reason, present with waiting_on_verifier"}
         eligible_waiting: {type: integer, description: Queued Automata this lane could take}
     LaneFillDecision:
       type: object
@@ -5715,6 +5719,7 @@ components:
         title: {type: string}
         reason: {type: string}
         blocker: {type: string}
+        wait_reason: {type: string, description: "The waiting occupant's reason, present when the decision rests on a lane the verifier-wait rule counted available"}
         executed: {type: boolean, description: "False in shadow mode, where the decision is recorded and nothing starts"}
         error: {type: string}
         repeat_count: {type: integer, description: How many polls chose the same action again}
