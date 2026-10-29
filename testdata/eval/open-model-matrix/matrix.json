@@ -1,9 +1,9 @@
 {
   "roles": [
-    {"role": "cpu", "llm": "opencode-node-a-cpu", "model": "qwen3:1.7b", "node": "node-a-cpu"},
-    {"role": "fast", "llm": "opencode-node-a-fast", "model": "qwen3:8b", "node": "node-a"},
-    {"role": "mid", "llm": "opencode-node-a-gpu", "model": "mistral-small3.2", "node": "node-a"},
-    {"role": "decompose-validate", "llm": "opencode-node-b-gpu", "model": "gpt-oss:120b", "node": "node-b"}
+    {"role": "cpu", "llm": "pi-node-a-cpu", "model": "qwen3:1.7b", "node": "node-a-cpu"},
+    {"role": "fast", "llm": "pi-node-a-fast", "model": "qwen3:8b", "node": "node-a"},
+    {"role": "mid", "llm": "pi-node-a-gpu", "model": "mistral-small3.2", "node": "node-a"},
+    {"role": "decompose-validate", "llm": "pi-node-b-gpu", "model": "gpt-oss:120b", "node": "node-b"}
   ],
   "task_types": ["analysis", "scripting", "docs", "review"],
   "fixtures_from": "testdata/eval/model-tiering",

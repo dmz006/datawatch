@@ -1,4 +1,4 @@
-"""Open-model matrix eval driver (4 opencode roles x 4 task types = 16 cells).
+"""Open-model matrix eval driver (4 pi-prompt roles x 4 task types = 16 cells).
 
 Run as `python3 -I scripts/eval_open_model_matrix.py <subcommand>`; normally
 via scripts/eval-open-model-matrix.sh. Stdlib only.
@@ -348,7 +348,7 @@ def cmd_create_prd(a):
     prd_action(c, pid, "set_memory_seed", {"enabled": False, "actor": ACTOR})
     prd_action(c, pid, "set_memory_harvest", {"enabled": False, "actor": ACTOR})
     prd = prd_action(c, pid, "add_story", {"title": "[eval] open-model-matrix cells",
-                                          "description": "16 cells: 4 opencode roles x 4 task types", "actor": ACTOR})
+                                          "description": "16 cells: 4 pi-prompt roles x 4 task types", "actor": ACTOR})
     stories = prd.get("stories") or []
     if len(stories) != 1:
         raise EvalError(f"expected exactly 1 story after add_story, got {len(stories)}")
@@ -366,7 +366,7 @@ def cmd_create_prd(a):
         tid = new[0]["id"]
         prd_action(c, pid, "set_task_project_dir", {"task_id": tid, "project_dir": cdir, "actor": ACTOR})
         # set_task_llm's `backend` is validated against the LLM registry, so the
-        # registry entry name (an opencode-kind entry) goes there; model pins it.
+        # registry entry name (a pi-prompt entry) goes there; model pins it.
         prd_action(c, pid, "set_task_llm", {"task_id": tid, "backend": cell["llm"],
                                             "model": cell["expected_model"], "actor": ACTOR})
         sc.update({"task_id": tid, "story_id": sid})
@@ -609,7 +609,7 @@ def cmd_self_test(_a):
         parent = os.path.join(tmp, "run")
         cdir = os.path.join(parent, "cpu-docs")
         os.makedirs(cdir)
-        cell = {"role": "cpu", "llm": "opencode-x", "expected_model": "qwen3:1.7b", "task_type": "docs"}
+        cell = {"role": "cpu", "llm": "pi-x", "expected_model": "qwen3:1.7b", "task_type": "docs"}
         good_art = {"verify_exit": 0, "new_commits": 1}
         task = {"project_dir": cdir, "status": "completed"}
         ws = {"project_dir": cdir, "model": "qwen3:1.7b"}
@@ -658,17 +658,17 @@ def cmd_self_test(_a):
         check(all(s in md for s in ("## Preflight", "## Wrong model cells", "## Suspect integrity cells",
                                     "## Model results")), "report has all sections")
 
-        local = {**m, "roles": [{**r, "llm": f"opencode-host{i}-x", "node": f"host{i}"}
+        local = {**m, "roles": [{**r, "llm": f"pi-host{i}-x", "node": f"host{i}"}
                                 for i, r in enumerate(m["roles"])]}
         public = load_public_matrix()
-        raw = {"cells": [{"llm": "opencode-host0-x", "node": "host0",
-                          "notes": "opencode-host0-x on host0, not opencode-host0-xl",
+        raw = {"cells": [{"llm": "pi-host0-x", "node": "host0",
+                          "notes": "pi-host0-x on host0, not pi-host0-xl",
                           "task_project_dir": os.path.join(REPO, ".datawatch", "eval", "c")}]}
         red = redact(raw, local, public)["cells"][0]
         pl = public["roles"][0]["llm"]
         check(red["llm"] == pl and red["node"] == public["roles"][0]["node"],
               "redact maps local llm/node names to tracked placeholders")
-        check(red["notes"] == f"{pl} on host0, not opencode-host0-xl",
+        check(red["notes"] == f"{pl} on host0, not pi-host0-xl",
               "redact replaces whole llm names only; node names only in node fields")
         check(red["task_project_dir"] == os.path.join(".datawatch", "eval", "c"),
               "redact makes in-repo paths repo-relative")

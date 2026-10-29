@@ -2,7 +2,7 @@
 
 Test data only: nothing here is read by the daemon, and creating it changes no
 default, daemon config or automaton-level LLM setting. It defines a second eval
-grid over the open (opencode/Ollama) models, reusing the Claude tiering eval's
+grid over the open (pi-prompt/Ollama) models, reusing the Claude tiering eval's
 task fixtures unchanged.
 
 ## Shape: 16 cells
@@ -11,10 +11,10 @@ task fixtures unchanged.
 
 | Role | LLM registry entry (placeholder) | Model | Node (placeholder) |
 |---|---|---|---|
-| cpu | `opencode-node-a-cpu` | `qwen3:1.7b` | node-a-cpu |
-| fast | `opencode-node-a-fast` | `granite4.2:8b` | node-a |
-| mid | `opencode-node-a-gpu` | `granite4.2:30b` | node-a |
-| decompose-validate | `opencode-node-b-gpu` | `gpt-oss:120b` | node-b |
+| cpu | `pi-node-a-cpu` | `qwen3:1.7b` | node-a-cpu |
+| fast | `pi-node-a-fast` | `granite4.2:8b` | node-a |
+| mid | `pi-node-a-gpu` | `granite4.2:30b` | node-a |
+| decompose-validate | `pi-node-b-gpu` | `gpt-oss:120b` | node-b |
 
 The LLM/node names above are placeholders. Your own registry entry and
 compute-node names go in a local matrix that is never committed:
@@ -35,7 +35,7 @@ Task types: `analysis`, `scripting`, `docs`, `review`.
 
 **No effort axis.** `matrix.json` has `"effort_axis": null` on purpose: effort
 is a claude-code-only control (see
-`docs/plans/2026-10-14-recurring-model-eval-design.md`). opencode cells pass no
+`docs/plans/2026-10-14-recurring-model-eval-design.md`). Matrix cells pass no
 effort anywhere.
 
 ## Reuse of the model-tiering fixtures
@@ -77,7 +77,7 @@ Mirrors the tiering eval's isolation (BL422):
 Every cell records three independent outcomes:
 
 1. **`model_identity`** — did the cell actually run on the role's model/node
-   (e.g. opencode/Ollama logs show `granite4.2:30b` on the mid role's node), or is it
+   (e.g. pi/Ollama logs show `granite4.2:30b` on the mid role's node), or is it
    suspect / wrong-model (fallback, different model loaded, wrong node)?
 2. **`verification_integrity`** — did the verifier run cleanly against an
    untampered cell (cell isolated, verifier and fixtures unmodified, verifier

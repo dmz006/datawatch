@@ -1,5 +1,5 @@
 # Run with: bash scripts/eval-open-model-matrix.sh (no shebang: repo lint forbids literal system-binary paths).
-# Open-model matrix eval driver (4 opencode roles x 4 task types = 16 cells).
+# Open-model matrix eval driver (4 pi-prompt roles x 4 task types = 16 cells).
 #
 # Fixture:  testdata/eval/open-model-matrix/matrix.json (specs/verifiers from
 #           testdata/eval/model-tiering)
