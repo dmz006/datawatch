@@ -620,6 +620,13 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousSubscriptionUpdate(), tracked(s.handleAutonomousSubscriptionUpdate))
 	mcpSrv.AddTool(s.toolAutonomousSubscriptionTest(), tracked(s.handleAutonomousSubscriptionTest))
 	mcpSrv.AddTool(s.toolAutonomousEventsPending(), tracked(s.handleAutonomousEventsPending))
+	// Operator question channel (proxy /api/questions — internal/server/questions.go).
+	// The trailing comment is the MCP tool name each AddTool registers.
+	mcpSrv.AddTool(s.toolQuestionRaise(), tracked(s.handleQuestionRaise))       // "question_raise"
+	mcpSrv.AddTool(s.toolQuestionList(), tracked(s.handleQuestionList))         // "question_list"
+	mcpSrv.AddTool(s.toolQuestionGet(), tracked(s.handleQuestionGet))           // "question_get"
+	mcpSrv.AddTool(s.toolQuestionAnswer(), tracked(s.handleQuestionAnswer))     // "question_answer"
+	mcpSrv.AddTool(s.toolQuestionWithdraw(), tracked(s.handleQuestionWithdraw)) // "question_withdraw"
 	mcpSrv.AddTool(s.toolAutonomousLearnings(), tracked(s.handleAutonomousLearnings))
 	mcpSrv.AddTool(s.toolAutonomousPRDChildren(), tracked(s.handleAutonomousPRDChildren))
 	// BL221 (v6.2.0) Phase 3 — scan framework tools.
