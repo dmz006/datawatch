@@ -288,16 +288,22 @@ func newAutomationStatusCmd() *cobra.Command {
 
 // automationStatusRow is one entry of automations[] in GET /api/autonomous/status.
 type automationStatusRow struct {
-	ID              string  `json:"id"`
-	Name            string  `json:"name"`
-	Status          string  `json:"status"`
-	CurrentMemberID string  `json:"current_member_id"`
-	CurrentPRDTitle string  `json:"current_prd_title"`
-	PendingMembers  int     `json:"pending_members"`
-	IdleSeconds     int64   `json:"idle_seconds"`
-	BlockedReason   string  `json:"blocked_reason"`
-	SpentUSD        float64 `json:"spent_usd"`
-	CeilingDisplay  string  `json:"ceiling_display"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Status          string `json:"status"`
+	CurrentMemberID string `json:"current_member_id"`
+	CurrentPRDTitle string `json:"current_prd_title"`
+	// PendingMembers is the PENDING column. The daemon now counts held agent
+	// inserts (pending inserts) in pending_members as well as members that
+	// have not started, so this column includes the inserts.
+	PendingMembers int     `json:"pending_members"`
+	IdleSeconds    int64   `json:"idle_seconds"`
+	BlockedReason  string  `json:"blocked_reason"`
+	SpentUSD       float64 `json:"spent_usd"`
+	CeilingDisplay string  `json:"ceiling_display"`
+	// PendingInserts are the row's held inserts awaiting an operator's
+	// approval; empty when the row has none.
+	PendingInserts []autonomous.PendingInsert `json:"pending_inserts"`
 }
 
 func printAutomationStatus(w io.Writer, rows []automationStatusRow) error {
@@ -322,7 +328,28 @@ func printAutomationStatus(w io.Writer, rows []automationStatusRow) error {
 		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n", r.ID, r.Name, r.Status, current, r.PendingMembers, idle, spend, dashIfEmpty(r.BlockedReason))
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	// Below the table, each row that has pending inserts gets a blank line,
+	// a "Pending inserts of <id> (<name>):" header and the shared
+	// writePendingInserts table (member id, PRD, reason, approve command).
+	// Rows without pending inserts print nothing extra.
+	for _, r := range rows {
+		if len(r.PendingInserts) == 0 {
+			continue
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "Pending inserts of %s (%s):\n", r.ID, r.Name); err != nil {
+			return err
+		}
+		if err := writePendingInserts(w, r.ID, r.PendingInserts); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func newAutomationActivateCmd() *cobra.Command {
