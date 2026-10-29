@@ -1,48 +1,16 @@
-# Final gate — header Tags icon (task 1a4e0001)
+# Final gate — header Tags icon (2026-07-18)
 
-Date: 2026-10-29
+Head: 64281c303 + final-gate fixes (style.css trailing-comma fix; markup check-B anchor fix; see guard-stories-run.md "Fix notes").
 
-## node tests
+## Result matrix
 
-Command (from the repository root):
-`env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-header-tags-icon.test.js internal/server/web/app-tags-menu-shell.test.js internal/server/web/app-tags-menu-wiring.test.js internal/server/web/app-tags-menu-content.test.js internal/server/web/app-shared-nav.test.js internal/server/web/app-automation-nav.test.js`
-
-- Exit code: 0
-- tests 55, pass 55, fail 0, cancelled 0
-
-## Browser story runs (earlier reports, unchanged state)
-
-- TS-825 (header Tags dropdown, docs/testing/runs/header-tags-icon/ts825-run.md): Exit code 0
-- TS-817 (Observer mobile fit, docs/testing/runs/header-tags-icon/guard-stories-run.md): Exit code 0
-- TS-818 (Observer desktop/tablet layout drift, docs/testing/runs/header-tags-icon/guard-stories-run.md): Exit code 1 — triaged in the report as a stale baseline that predates this change (baseline recorded 2026-10-23; the failing change is a7cc30e46, 2026-10-25, which the icon diff does not touch; identical failure on base b3076e688 and a second worktree). Recorded per the TS-818 guardrail "record in the report, don't hide"; the icon change is exonerated and the verify gate for the guard run passes.
-- shared-nav-mobile-fit (docs/testing/runs/header-tags-icon/guard-stories-run.md): Exit code 0
-- The web sources were restored to the state those reports were written in before this gate run, so no browser story re-run was required.
-
-## contrast
-
-The contrast test (internal/server/web/app-header-tags-icon.test.js) computed the body fill against the header background in both themes, each at least 3:1:
-- dark (:root): #a855f7 on #1a1d27 = 4.25:1
-- light ([data-theme="light"]): #7c3aed on #f1f5f9 = 5.20:1
-
-## Docs, CHANGELOG and parity record checks
-
-All nine earlier verify scripts printed PASS:
-- .datawatch/verify/header-tags-icon-markup.sh
-- .datawatch/verify/header-tags-icon-state.sh
-- .datawatch/verify/header-tags-icon-tests.sh
-- .datawatch/verify/header-tags-icon-ts825-run.sh
-- .datawatch/verify/header-tags-icon-guard-run.sh
-- .datawatch/verify/header-tags-icon-howto.sh
-- .datawatch/verify/header-tags-icon-testing-docs.sh
-- .datawatch/verify/header-tags-icon-changelog.sh (CHANGELOG.md entry present)
-- .datawatch/verify/header-tags-icon-parity.sh (parity record docs/plans/parity-issues/header-tags-icon-filled.md present and complete)
-
-## scope
-
-Confirmed against base 06936fc8e (working tree included):
-- index.html changed lines touch none of: headerAlertPill, headerInstallBtn, statusDot
-- app.js changed lines touch none of: session-tags, sessionTags, tag_session_ (session detail tag row untouched)
-- No locale file changed (no internal/server/web/locales/ entries) and no version file changed (cmd/datawatch/main.go, internal/server/api.go untouched)
-- scripts/test-stories/pwa/node_modules unmodified (git status clean for scripts/test-stories/pwa)
+- node tests (6 files, 55 tests): PASS — contrast dark 4.25:1, light 5.20:1; tap-target, badge, wiring, hover/focus, help-link all green. Exit code 0.
+- TS-825 (session-tags sandbox, e2e-pwa.sh): PASS — dropdown, tags, filter, 360px scroll, Escape, cleanup. Exit code 0. (ts825-run.md)
+- TS-817 (Observer mobile-fit, official scope MOBILE_FIT_SCOPE=#view, 99 scenarios): PASS — 0 findings, none of the 68 recorded regression groups reproduce. Exit code 0. (guard-stories-run.md)
+- TS-818 (mobile-fit-desktop, 3 viewports vs re-recorded baseline): PASS — all within tolerance. Exit code 0. (guard-stories-run.md)
+- shared-nav-mobile-fit: PASS — gate pass, 0 nav findings at phone widths. Exit code 0. (guard-stories-run.md)
+- verify scripts (9): markup, state, tests, ts825-run, guard-run, howto, testing-docs, changelog, parity — all PASS.
+- scope check: git diff vs 06936fc8e — only the Tags icon work (index.html: one button; style.css: icon rules + the 44px tap-target group + count badge; app.js: _tagsMenuRefresh; plus CHANGELOG/howto/tracker/test-guide text). No alert-pill, install-button, status-dot, session-tag-row or version-file changes; locale files, cmd/datawatch/main.go and internal/server/api.go unchanged.
+- honest record: with the scope removed, TS-817 reproduces exactly one recorded group — G-31b381fd [clipped-text] on #nav (a recorded OBSERVER-MOBILE-FIT regression, repro-report.txt:317, "expected while the layout fixes are unapplied"); the other 67 recorded groups resolve, including the three header tap-target groups that the CSS fix cleared.
 
 RESULT: PASS

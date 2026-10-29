@@ -199,7 +199,7 @@ body {
 .header > #headerTagsBtn,
 .header > #headerAlertPill,
 .header > #headerFullscreenBtn,
-.header > #headerHelpLink, {
+.header > #headerHelpLink {
   box-sizing: content-box;
   min-width: 44px;
   min-height: 44px;
