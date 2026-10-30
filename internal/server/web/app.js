@@ -22669,10 +22669,10 @@ function showModal({ title, body, confirmLabel, cancelLabel, onConfirm }) {
   const modal = document.createElement('div');
   modal.id = 'genericModal';
   modal.className = 'confirm-modal-overlay';
-  modal.innerHTML = `<div class="confirm-modal" style="max-width:500px;width:95%;">
-    <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:12px;">${escHtml(title)}</div>
-    <div style="margin-bottom:14px;">${body}</div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
+  modal.innerHTML = `<div class="confirm-modal generic-modal" style="max-width:500px;width:95%;">
+    <div class="generic-modal-title" style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:12px;">${escHtml(title)}</div>
+    <div class="generic-modal-body" style="margin-bottom:14px;">${body}</div>
+    <div class="generic-modal-actions" style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="btn-secondary" style="font-size:12px;padding:4px 16px;" onclick="document.getElementById('genericModal').remove()">${escHtml(cancelLabel || t('action_cancel') || 'Cancel')}</button>
       <button class="btn-primary" style="font-size:12px;padding:4px 16px;" id="genericModalConfirmBtn">${escHtml(confirmLabel || t('action_ok') || 'OK')}</button>
     </div>
@@ -22683,6 +22683,26 @@ function showModal({ title, body, confirmLabel, cancelLabel, onConfirm }) {
     if (onConfirm && onConfirm() !== false) modal.remove();
     else if (!onConfirm) modal.remove();
   };
+  // Keep the dialog inside the visible area when the on-screen keyboard or
+  // mobile browser bars shrink the viewport. The dialog is removed from several
+  // places, so the handler unhooks itself once it is no longer the open one.
+  const vv = window.visualViewport;
+  if (vv) {
+    const fit = () => {
+      if (document.getElementById('genericModal') !== modal) {
+        vv.removeEventListener('resize', fit);
+        vv.removeEventListener('scroll', fit);
+        return;
+      }
+      modal.style.setProperty('--generic-modal-vvh', vv.height + 'px');
+      modal.style.top = vv.offsetTop + 'px';
+      modal.style.height = vv.height + 'px';
+      modal.style.bottom = 'auto';
+    };
+    vv.addEventListener('resize', fit);
+    vv.addEventListener('scroll', fit);
+    fit();
+  }
 }
 window.showModal = showModal;
 
