@@ -590,6 +590,26 @@ type AutomationConfig struct {
 	// round trip. Zero, negative and above-1 values are refused on the write
 	// paths and on config load.
 	CreateSearchThreshold *float64 `json:"create_search_threshold,omitempty"`
+
+	// Cleanup — the safe-to-delete cleanup keys (autonomous.automation.*).
+	// CleanupMode: off | report | on. Empty (the zero value) or an
+	// unrecognized value reads as report via EffectiveCleanupMode — unlike
+	// the merge-pending and search-before-create modes, an unknown word is
+	// not a write-path error.
+	CleanupMode string `json:"cleanup_mode,omitempty"`
+
+	// CleanupRetentionHours: zero or a negative value reads the config
+	// package default of 24 via EffectiveCleanupRetentionHours.
+	CleanupRetentionHours int `json:"cleanup_retention_hours,omitempty"`
+
+	// CleanupMaxRemovalsPerPass: zero or a negative value reads the config
+	// package default of 10 via EffectiveCleanupMaxRemovalsPerPass.
+	CleanupMaxRemovalsPerPass int `json:"cleanup_max_removals_per_pass,omitempty"`
+
+	// DiskAlertPercent: zero (unset) reads the config package default of 85,
+	// and the EffectiveDiskAlertPercent accessor clamps any other value into
+	// 1..100.
+	DiskAlertPercent int `json:"disk_alert_percent,omitempty"`
 }
 
 // DefaultAutomationTriageAlertMinutes — the autonomous.automation.
@@ -647,6 +667,55 @@ func (c AutomationConfig) EffectiveMergePendingAlertMinutes() int {
 		return config.DefaultAutomationMergePendingAlertMinutes
 	}
 	return *c.MergePendingAlertMinutes
+}
+
+// EffectiveCleanupMode returns the cleanup mode in effect: an empty value
+// and any unrecognized value read config.CleanupModeReport; off and on are
+// explicit operator choices.
+func (c AutomationConfig) EffectiveCleanupMode() string {
+	switch c.CleanupMode {
+	case config.CleanupModeOff, config.CleanupModeOn:
+		return c.CleanupMode
+	default:
+		return config.CleanupModeReport
+	}
+}
+
+// EffectiveCleanupRetentionHours returns the cleanup retention window in
+// whole hours: zero or a negative value reads
+// config.DefaultAutomationCleanupRetentionHours (24).
+func (c AutomationConfig) EffectiveCleanupRetentionHours() int {
+	if c.CleanupRetentionHours <= 0 {
+		return config.DefaultAutomationCleanupRetentionHours
+	}
+	return c.CleanupRetentionHours
+}
+
+// EffectiveCleanupMaxRemovalsPerPass returns the per-pass removal cap: zero
+// or a negative value reads config.DefaultAutomationCleanupMaxRemovalsPerPass
+// (10).
+func (c AutomationConfig) EffectiveCleanupMaxRemovalsPerPass() int {
+	if c.CleanupMaxRemovalsPerPass <= 0 {
+		return config.DefaultAutomationCleanupMaxRemovalsPerPass
+	}
+	return c.CleanupMaxRemovalsPerPass
+}
+
+// EffectiveDiskAlertPercent returns the disk-usage alert percent in effect:
+// zero (unset) reads config.DefaultAutomationDiskAlertPercent (85), and any
+// other value is clamped into 1..100.
+func (c AutomationConfig) EffectiveDiskAlertPercent() int {
+	p := c.DiskAlertPercent
+	if p == 0 {
+		return config.DefaultAutomationDiskAlertPercent
+	}
+	if p < 1 {
+		p = 1
+	}
+	if p > 100 {
+		p = 100
+	}
+	return p
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.

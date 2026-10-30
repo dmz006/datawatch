@@ -4381,6 +4381,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				MergePendingAlertMinutes: acfgIn.Automation.MergePendingAlertMinutes,
 				CreateSearchMode:         acfgIn.Automation.CreateSearchMode,
 				CreateSearchThreshold:    acfgIn.Automation.CreateSearchThreshold,
+				// Cleanup keys: the effective defaults (report, 24, 10, 85)
+				// resolve in the manager's Effective* accessors, so the bridge
+				// copies raw values and lets unset stay unset.
+				CleanupMode:               acfgIn.Automation.CleanupMode,
+				CleanupRetentionHours:     acfgIn.Automation.CleanupRetentionHours,
+				CleanupMaxRemovalsPerPass: acfgIn.Automation.CleanupMaxRemovalsPerPass,
+				DiskAlertPercent:          acfgIn.Automation.DiskAlertPercent,
 				// security failure mode (autonomous.automation.security_failure.mode)
 				SecurityFailure: autonomouspkg.SecurityFailureConfig{Mode: acfgIn.Automation.SecurityFailure.Mode},
 				// repo CI watch block (autonomous.automation.repo_ci_watch.*):

@@ -85,6 +85,10 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("lane_fill_claude_backend", mcpsdk.Description("LLM backend the Claude lanes run (default claude-code).")),
 		mcpsdk.WithString("automation_create_search_mode", mcpsdk.Description("Search-before-create mode: off never searches before creating an Automation, shadow (the default) searches and surfaces over-duplicate warnings, on searches and holds an over-duplicate creation back to the operator.")),
 		mcpsdk.WithNumber("automation_create_search_threshold", mcpsdk.Description("Over-duplication threshold in the open-closed interval (0, 1]; unset keeps the 0.5 default.")),
+		mcpsdk.WithString("automation_cleanup_mode", mcpsdk.Description("Safe-to-delete cleanup mode: off (no cleanup pass), report (the default; records and reports only) or on. An empty or unrecognized value reads as report, unlike the other enum modes.")),
+		mcpsdk.WithNumber("automation_cleanup_retention_hours", mcpsdk.Description("How long a removal candidate may sit unused in whole hours before it counts as retained for cleanup. Zero or negative keeps the 24-hour default.")),
+		mcpsdk.WithNumber("automation_cleanup_max_removals_per_pass", mcpsdk.Description("Maximum removals one cleanup pass may perform. Zero or negative keeps the 10 default.")),
+		mcpsdk.WithNumber("automation_disk_alert_percent", mcpsdk.Description("Disk-usage percent at or above which a disk alert is raised. Unset keeps the 85 default; other values are clamped to 1-100.")),
 		mcpsdk.WithString("automation_agent_insert_policy", mcpsdk.Description("What happens when an agent session inserts a member into an Automation: allow (the default) lets a draft insert land at once, require_operator holds every agent insert until an operator approves it.")),
 		mcpsdk.WithNumber("progress_lanes", mcpsdk.Description("Number of parallel lanes the progress figures assume (autonomous.progress.lanes). Whole number >= 0; 0 = 5.")),
 		mcpsdk.WithNumber("progress_inactive_gap_hours", mcpsdk.Description("Hours without activity that count as an inactive window in the progress figures (autonomous.progress.inactive_gap_hours). Number >= 0; 0 = 3.")),
@@ -257,9 +261,25 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		if _, ok := args["automation_create_search_threshold"]; ok {
 			auto["create_search_threshold"] = req.GetFloat("automation_create_search_threshold", 0)
 		}
+		// Cleanup keys (autonomous.automation.cleanup_*, disk_alert_percent).
+		// Presence-aware so an explicit 0 is sent: the server-side Effective*
+		// accessors resolve 0/unset to the defaults (24 hours, 10 removals,
+		// 85 percent) and an unknown mode word to report.
+		if _, ok := args["automation_cleanup_retention_hours"]; ok {
+			auto["cleanup_retention_hours"] = req.GetFloat("automation_cleanup_retention_hours", 0)
+		}
+		if _, ok := args["automation_cleanup_max_removals_per_pass"]; ok {
+			auto["cleanup_max_removals_per_pass"] = req.GetFloat("automation_cleanup_max_removals_per_pass", 0)
+		}
+		if _, ok := args["automation_disk_alert_percent"]; ok {
+			auto["disk_alert_percent"] = req.GetFloat("automation_disk_alert_percent", 0)
+		}
 	}
 	if v := req.GetString("automation_create_search_mode", ""); v != "" {
 		auto["create_search_mode"] = v
+	}
+	if v := req.GetString("automation_cleanup_mode", ""); v != "" {
+		auto["cleanup_mode"] = v
 	}
 	if v := req.GetString("automation_merge_pending_mode", ""); v != "" {
 		auto["merge_pending_mode"] = v

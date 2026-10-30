@@ -137,6 +137,19 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					AgentInsertPolicy     *string  `json:"agent_insert_policy"`
 					CreateSearchMode      *string  `json:"create_search_mode"`
 					CreateSearchThreshold *float64 `json:"create_search_threshold"`
+					// Cleanup keys (cleanup_mode, cleanup_retention_hours,
+					// cleanup_max_removals_per_pass, disk_alert_percent).
+					// Declared here only so a type mismatch (a string in a
+					// numeric key, an object in the mode) is caught by the
+					// unmarshal and answered with a 400; any value of the right
+					// type is accepted — an empty or unknown cleanup_mode word
+					// reads as report, zero/negative numbers read their
+					// defaults, and the alert percent is clamped to 1..100 by
+					// the Effective* accessors.
+					CleanupMode               *string  `json:"cleanup_mode"`
+					CleanupRetentionHours     *float64 `json:"cleanup_retention_hours"`
+					CleanupMaxRemovalsPerPass *float64 `json:"cleanup_max_removals_per_pass"`
+					DiskAlertPercent          *float64 `json:"disk_alert_percent"`
 				}
 				if json.Unmarshal(rawAuto, &auto) != nil {
 					http.Error(w, "automation: must be an object", http.StatusBadRequest)
