@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/testhome"
 )
 
 func TestDeriveSessionUUID_Deterministic(t *testing.T) {
@@ -147,6 +148,7 @@ func TestResumeKeepsTask_Interface(t *testing.T) {
 // must succeed, and the recorded command must be short and carry only the
 // cat-file expression — with the scratch file on disk holding the full text.
 func TestLaunchResume_BigTaskSucceedsViaScratchFile(t *testing.T) {
+	testhome.PrivateTmp(t) // scratch task file is removed with the test's temp dir
 	argvFile := startFakeTmux(t, false)
 	task := strings.Repeat("a", 40*1024)
 
@@ -208,6 +210,7 @@ func TestLaunchResume_EmptyTaskCarriesNoTaskText(t *testing.T) {
 // below the limit, and both the --resume and the --session-id halves must
 // reference the SAME scratch file.
 func TestLaunchResume_NineKBTaskIncident(t *testing.T) {
+	testhome.PrivateTmp(t) // scratch task file is removed with the test's temp dir
 	argvFile := startFakeTmux(t, false)
 	task := strings.Repeat("x", 9000)
 
@@ -244,6 +247,7 @@ func TestLaunchResume_NineKBTaskIncident(t *testing.T) {
 // "command too long" on stderr must surface that exact text in the returned
 // error (via llm.SendKeys' stderr capture), not a bare "exit status 1".
 func TestLaunchResume_TmuxFailureSurfacesStderr(t *testing.T) {
+	testhome.PrivateTmp(t) // scratch task file is removed with the test's temp dir
 	startFakeTmux(t, true)
 	err := backendOf().LaunchResume(context.Background(), "small task", "cs-failcase", t.TempDir(), "/nonexistent/log", "failsess-0001")
 	if err == nil {
@@ -258,6 +262,7 @@ func TestLaunchResume_TmuxFailureSurfacesStderr(t *testing.T) {
 // at claude with its exact text — read back from the scratch file — and the
 // DATAWATCH_COMPLETE echo is preserved at the tail.
 func TestLaunch_ShortTaskDeliveredViaFile(t *testing.T) {
+	testhome.PrivateTmp(t) // scratch task file is removed with the test's temp dir
 	argvFile := startFakeTmux(t, false)
 	task := "it's a short task\nwith quotes and a newline"
 	if len(task) >= 4096 {

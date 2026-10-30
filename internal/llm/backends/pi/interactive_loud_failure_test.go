@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/testhome"
 )
 
 // runInteractiveCmdWithStubPi runs the command buildInteractiveCmd
@@ -50,6 +52,7 @@ func runInteractiveCmdWithStubPi(t *testing.T, stubBody, model string) (string, 
 // gated on the zero-exit conditional, the failure line must name pi's
 // status, and the command must terminate by propagating pi's status.
 func TestBuildInteractiveCmd_CompletionOnlyOnZeroExit(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
 	cmd, err := buildInteractiveCmd("pi", "prov/model-a", "", "do the thing", "/proj", "cs-abc")
 	if err != nil {
 		t.Fatalf("buildInteractiveCmd: %v", err)

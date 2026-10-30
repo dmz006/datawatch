@@ -137,6 +137,20 @@ func pinIfExists(env, dir string) {
 	}
 }
 
+// PrivateTmp points TMPDIR at a test-scoped directory for the duration of
+// t's test. Scratch files the code under test creates via os.CreateTemp or
+// os.MkdirTemp (the backend task scratch files are the canonical example)
+// then land in a tree t.TempDir already guarantees will be removed even when
+// the test fails partway, instead of orphaning in the operator's $TMPDIR.
+// Must not be called from a parallel test (t.Setenv restriction).
+// Returns the private directory.
+func PrivateTmp(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+	return dir
+}
+
 // TmuxDirMarker is a file TmuxIsolation writes inside the throwaway
 // TMUX_TMPDIR, so a test can prove a candidate TMUX_TMPDIR was created for
 // this test run (and is therefore safe) rather than pointing at a live
