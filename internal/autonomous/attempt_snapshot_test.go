@@ -146,7 +146,14 @@ func TestAttemptSnapshotCleansUpTempDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	before := attemptTempEntries(t, "attempt-snapshot-")
+	// Point the temp dir at a private empty area. The system temp dir is
+	// shared with every other test binary `go test ./...` runs at the
+	// same time (cmd/datawatch snapshots there too), and a snapshot
+	// another process has in flight owns an attempt-snapshot-* dir until
+	// it finishes — scanning the shared dir mistook that for a leak.
+	tmpArea := t.TempDir()
+	t.Setenv("TMPDIR", tmpArea)
+
 	ref, err := SnapshotAttemptWork(context.Background(), dir, "task-cleanup", 1)
 	if err != nil {
 		t.Fatalf("SnapshotAttemptWork: %v", err)
@@ -155,9 +162,7 @@ func TestAttemptSnapshotCleansUpTempDir(t *testing.T) {
 		t.Fatal("expected a snapshot ref for a dirty tree")
 	}
 	for name := range attemptTempEntries(t, "attempt-snapshot-") {
-		if _, existedBefore := before[name]; !existedBefore {
-			t.Errorf("SnapshotAttemptWork left temp dir %s behind — best-effort cleanup did not run", name)
-		}
+		t.Errorf("SnapshotAttemptWork left temp dir %s behind — best-effort cleanup did not run", name)
 	}
 }
 

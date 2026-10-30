@@ -1906,3 +1906,21 @@ func (a *API) ListRepoCIWatchRecords() []*RepoCIWatchRecord {
 func (a *API) RepoCIWatchStatus() RepoCIWatchStatus {
 	return a.M.RepoCIWatchStatus()
 }
+
+// SupervisorWatchStatus is the supervisor watch read view in force: the
+// mode (off, shadow or on — an unset mode reads shadow), the instant
+// the coordinator last polled (the zero time when it never has), the
+// stored findings (open first, most recently seen first) and the
+// comparison view (last comparison, days of full agreement, the last
+// comparison's one-sided differences). Serves
+// GET /api/autonomous/supervisor-watch.
+func (a *API) SupervisorWatchStatus() SupervisorWatchStatus {
+	return a.M.SupervisorWatchStatus()
+}
+
+// SupervisorWatchStats is the numeric monitoring view of the supervisor
+// watch (mode, poll age, finding counts, days of full agreement).
+// Serves GET /api/autonomous/supervisor-watch/stats.
+func (a *API) SupervisorWatchStats() SupervisorWatchStats {
+	return a.M.SupervisorWatchStatus().Stats(time.Now())
+}

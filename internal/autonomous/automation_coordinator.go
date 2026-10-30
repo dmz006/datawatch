@@ -84,6 +84,9 @@ type Coordinator struct {
 	laneFillDone chan struct{}
 	laneFillTick time.Duration
 
+	// supervisor watch (see supervisor_watch_pass.go):
+	supervisorWatchLastPoll time.Time
+
 	// mp is the merge-pending pass state (merge_pending_pass.go): the
 	// in-memory comparison cache and shadow bookkeeping. Its zero value is
 	// ready to use.

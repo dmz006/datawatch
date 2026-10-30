@@ -39,6 +39,7 @@ func (c *Coordinator) idleLoop(stop <-chan struct{}, tick time.Duration) {
 			c.questionPass(ctx)
 			c.repoCIWatchPass()     // repo CI watch (repo_ci_watch_poll.go)
 			c.securityFailurePass() // security failure pass over the watch's records (security_failure_pass.go)
+			c.supervisorWatchPass() // supervisor watch: host / work / worktree checks (supervisor_watch_pass.go)
 		}
 	}
 }

@@ -4521,6 +4521,59 @@ The security workflow set is read from `autonomous.automation.repo_ci_watch.secu
 
 ---
 
+## Supervisor watch (`autonomous.automation.supervisor_watch`)
+
+The supervisor watch is the daemon-side version of the supervisor script (`scripts/supervisor-watch.py`). On every coordinator poll, with no model call, it runs fourteen checks — twelve that the script also runs, plus `worktree_not_registered` and `verify_script_not_executable`, which only the watch has and the comparison therefore shows as *only the watch* — and keeps one finding per kind and subject. The script also checks things the watch does not yet (an unreachable model host, node balancing, capacity lease holds, placement, commits ahead of origin); see [howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md) for the differences to expect in the comparison. The kinds are `tmux_restart`, `daemon_inactive`, `model_not_resident`, `task_failed`, `task_review_needed`, `automaton_not_merged`, `idle_lane_eligible_work`, `worktree_no_gomod`, `worktree_not_registered`, `worktree_silent`, `verify_script_not_executable`, `main_checkout_dirty`, `ci_red` and `ci_stuck`; each is explained in plain words in [howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md). The watch is report-only in every mode: it never merges, starts, holds, cancels or retries an Automaton and never restarts a service. A check that cannot tell (a probe that failed, a node that cannot be reached) reports nothing. A finding closes by itself when its check stops reporting it, and re-opens in place, keeping its first-seen time, if the problem returns.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomous.automation.supervisor_watch.mode` | `shadow` (unset or empty reads `shadow`) | `off` (the pass does nothing), `shadow` (everything runs and is recorded, a finding open for the alert time is marked would-alert, no alert is raised) or `on` (the alert is raised, once per episode). |
+| `autonomous.automation.supervisor_watch.alert_minutes` | `30` | How long a finding may stay open before its one alert; `0` turns the alert off; negative is refused. |
+| `autonomous.automation.supervisor_watch.silent_minutes` | `60` | How long an Automaton with a task in progress may show no activity before `worktree_silent`; negative is refused. |
+| `autonomous.automation.supervisor_watch.poll_seconds` | `60` (unset or `0` reads `60`) | The interval the script record's freshness is judged against (stale at three times this); below 60 is refused (minimum 60). |
+| `autonomous.automation.supervisor_watch.script_output_path` | empty | The file the supervisor script writes with `--record`; empty means no comparison. |
+| `autonomous.automation.supervisor_watch.tmux_restart_baseline` | empty | The starting point `tmux_restart` compares against; empty means that check reports nothing. |
+| `autonomous.automation.supervisor_watch.main_checkout` | empty | The main checkout inspected for `main_checkout_dirty`; empty turns that check off. |
+| `autonomous.automation.supervisor_watch.working_model` | empty | The model every registered compute node should keep loaded, checked by `model_not_resident`; empty means no working model is set and that check reports nothing. |
+
+Every key is read live; a bad value is refused on every write path (unknown mode, negative minute threshold, `poll_seconds` below 60, a path or model name that is not text) and nothing is written. Change a key with `PUT /api/config` (or Settings → General in the PWA), `datawatch config set autonomous.automation.supervisor_watch.alert_minutes 15`, or `configure autonomous.automation.supervisor_watch.alert_minutes=15` on the comm channel; each change applies on the next pass, no restart.
+
+**Shadow mode records and never acts.** It runs every check, records the findings, writes the triage-record note for a finding about one Automaton the first time it is seen, and marks a finding `would alert` once it has been open for `alert_minutes`. It raises no alert. It ships first so you can compare it with the script before you rely on it.
+
+**Trying it in a sandbox.** `bash scripts/supervisor-watch-sandbox-check.sh` builds this tree, starts a throwaway daemon (shared daemon-library traps, scratch `HOME`, `server.proxy_sandbox_port: 0` so it never binds the production proxy port) and shows the watch raise `main_checkout_dirty` live in shadow. It touches no other daemon.
+
+**The comparison record.** With `script_output_path` set, each pass compares its own kind-and-subject findings with the script's record file and stores the result: what only the watch raised, what only the script raised, and whether they agreed. The last 500 comparisons are kept, with a per-day tally; a day counts toward **days of full agreement** only when it had a comparison and every one agreed. A script record that is missing, unreadable or older than three times `poll_seconds` records no comparison at all — unavailable is never a disagreement. Run the script with `--record` more often than that window, or raise `poll_seconds`. Retire the script after one full calendar day of agreement with a recent last poll.
+
+**The one alert.** In `on` mode a finding open for longer than `alert_minutes` raises exactly one warning alert per episode; the title names the kind and the subject and the body carries the finding's line and how long it has been open. The alert time is stamped on the finding (`alerted_at`), which keeps it to one, including across a restart. A finding that resolves and returns is a new episode. The alert reaches your chat channels through the existing alert fan-out.
+
+### Supervisor watch surfaces
+
+| Surface | Read the state | Notes |
+|---|---|---|
+| REST | `GET /api/autonomous/supervisor-watch` | body: `mode`, `last_poll_at`, `findings` (open first, then most recently seen first), `comparison`; no parameters; 405 for any other method, 503 while the autonomous engine is disabled |
+| MCP | `supervisor_watch_list` (read-only, no arguments) | same body as the GET route; an argument is refused |
+| CLI | `datawatch autonomous supervisor-watch [--json]` | the mode, the last poll, one line per finding (kind, state, last seen, the operator line), then the comparison summary |
+| Comm channel | `autonomous supervisor-watch` (alias `supervisor_watch`) | the same lines as the CLI; no arguments |
+| PWA | Automation view → Chains sub-tab, the **Supervisor watch** card | mode, last-poll age, up to twenty open findings, the comparison line; refreshes every 30 s; hidden if the endpoint is unavailable |
+
+### Supervisor watch monitoring
+
+| Where | What |
+|---|---|
+| REST | `GET /api/autonomous/supervisor-watch/stats` — `mode`, `last_poll_at`, `last_poll_age_seconds` (-1 when it never polled), `findings_open` (includes the next two), `findings_would_alert`, `findings_alerted`, `findings_resolved`, `agreed_days` |
+| MCP | `supervisor_watch_stats` (read-only, no arguments) — the same object |
+| Stats snapshot | `supervisor_watch_mode`, `supervisor_watch_findings_open`, `supervisor_watch_findings_would_alert`, `supervisor_watch_findings_alerted`, `supervisor_watch_last_poll_age_seconds`, `supervisor_watch_agreed_days` on the WS stats broadcast |
+| Web UI | Settings → Monitor → **Supervisor watch** |
+| Prometheus | `GET /metrics` → `datawatch_supervisor_watch_findings{state}`, `datawatch_supervisor_watch_agreed_days`, `datawatch_supervisor_watch_last_poll_age_seconds` |
+
+**The triage note is written in shadow too.** The one thing shadow writes beyond the watch's own records is the triage-record note for an Automaton-scoped finding; it is text on a record the daemon already keeps, changes no state and raises no alert. `mode: off` stops it.
+
+**Restart.** The findings are in `<data-dir>/autonomous/supervisor_watch.jsonl` and the comparison history in `<data-dir>/autonomous/supervisor_watch_comparisons.json`; both reload after a restart, and `mode: off` keeps them readable too.
+
+**What the watch never does.** It never calls a model, never merges, never starts, holds, cancels or retries an Automaton, never restarts a service or reloads a model, and never writes to a repository, the CI service or a worktree. It never alerts in `shadow` or twice in one episode, never turns an unknown into a finding, and never counts a missing or stale script record as a disagreement.
+
+---
+
 ## Triage records (failed and blocked Automata)
 
 The autonomous engine keeps one triage record per **failed** or **blocked** Automaton, so an operator can see what failed, when it has been sitting, how much retry budget is left, and whether the triage alert has fired — from every surface at once. The record is a **read**: filling it starts, retries and edits nothing.

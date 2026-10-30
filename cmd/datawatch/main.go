@@ -4438,6 +4438,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				DiskAlertPercent:          acfgIn.Automation.DiskAlertPercent,
 				// security failure mode (autonomous.automation.security_failure.mode)
 				SecurityFailure: autonomouspkg.SecurityFailureConfig{Mode: acfgIn.Automation.SecurityFailure.Mode},
+				// supervisor watch block (autonomous.automation.supervisor_watch.*):
+				// without it the watch re-reads its defaults after every restart.
+				SupervisorWatch: supervisorWatchFromYAML(acfgIn.Automation.SupervisorWatch),
 				// repo CI watch block (autonomous.automation.repo_ci_watch.*):
 				// without it the watch reads off after every restart.
 				RepoCIWatch: repoCIWatchFromYAML(acfgIn.Automation.RepoCIWatch),
@@ -6997,6 +7000,28 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 				return a.ID
 			})
+			// Supervisor watch pass — wire the production views so the
+			// host, work and worktree checks run for real in the
+			// coordinator's idle loop. The probes only read; the pass
+			// stores findings, marks shadow would-alerts, and raises the
+			// operator alert through the sink set above (the pass itself
+			// never calls a model).
+			{
+				nodeAddresses := map[string]string{}
+				if computeReg != nil {
+					for _, n := range computeReg.List() {
+						if n != nil && n.Name != "" && n.Address != "" {
+							nodeAddresses[n.Name] = n.Address
+						}
+					}
+				}
+				amgr.SetSupervisorWatchProbe(
+					autonomouspkg.NewShellSupervisorWatchHostProbe(nodeAddresses, cfg.Hostname))
+				if computeReg != nil {
+					amgr.SetSupervisorWatchNodeView(computeReg)
+				}
+				amgr.SetSupervisorWatchSessionLookup(mgr.GetSession)
+			}
 			// PRD/automata watchdog — scans every 60 s for autonomous task
 			// sessions that have been in a non-terminal state for >5 min and
 			// whose scrollback contains an SSE stall pattern. Kills the
@@ -8124,6 +8149,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.WorkerQuestionsRefused = wq.Refused
 				s.WorkerQuestionsParked = wq.Parked
 				s.WorkerQuestionsResumed = wq.Resumed
+				sw := amgrRef.SupervisorWatchStatus().Stats(time.Now())
+				s.SupervisorWatchMode = sw.Mode
+				s.SupervisorWatchLastPollAgeSeconds = sw.LastPollAgeSeconds
+				s.SupervisorWatchFindingsOpen = sw.FindingsOpen
+				s.SupervisorWatchFindingsWouldAlert = sw.FindingsWouldAlert
+				s.SupervisorWatchFindingsAlerted = sw.FindingsAlerted
+				s.SupervisorWatchAgreedDays = sw.AgreedDays
 			})
 		}
 		// BL372 — wire web search stats into the collector.
@@ -8163,6 +8195,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			metricsPkg.UptimeSeconds.Set(float64(s.UptimeSeconds))
 			metricsPkg.RTKTokensSaved.Set(float64(s.RTKTotalSaved))
 			metricsPkg.RTKSavingsPct.Set(s.RTKAvgSavings)
+			metricsPkg.SupervisorWatchFindings.WithLabelValues("open").Set(float64(s.SupervisorWatchFindingsOpen))
+			metricsPkg.SupervisorWatchFindings.WithLabelValues("would_alert").Set(float64(s.SupervisorWatchFindingsWouldAlert))
+			metricsPkg.SupervisorWatchFindings.WithLabelValues("alerted").Set(float64(s.SupervisorWatchFindingsAlerted))
+			metricsPkg.SupervisorWatchAgreedDays.Set(float64(s.SupervisorWatchAgreedDays))
+			metricsPkg.SupervisorWatchLastPollAge.Set(float64(s.SupervisorWatchLastPollAgeSeconds))
 			// Reset session gauges and re-populate
 			metricsPkg.SessionsActive.Reset()
 			for _, ss := range s.SessionStats {

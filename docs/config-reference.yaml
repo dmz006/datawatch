@@ -1256,6 +1256,90 @@ autonomous:
     # Security failure card in the Automation view.
     security_failure:
       mode: shadow
+    # Supervisor watch: the daemon-side version of the supervisor script
+    # (scripts/supervisor-watch.py). On each coordinator poll, with no model
+    # call, it runs the script's checks and keeps one finding per kind and
+    # subject: tmux_restart, daemon_inactive, model_not_resident, task_failed,
+    # task_review_needed, automaton_not_merged, idle_lane_eligible_work,
+    # worktree_no_gomod, worktree_not_registered, worktree_silent,
+    # verify_script_not_executable, main_checkout_dirty, ci_red and ci_stuck.
+    # It is report-only in every mode: it never merges, starts, holds, cancels
+    # or retries an Automaton and never restarts a service. A finding about one
+    # Automaton is also noted on that Automaton's triage record the first time
+    # it is seen. A check that cannot tell (a failed probe, an unreachable node)
+    # reports nothing.
+    #
+    # Every key is settable at runtime, with no restart, on every configuration
+    # channel:
+    #   PUT /api/config {"autonomous.automation.supervisor_watch.alert_minutes": 15}
+    #   (GET /api/config shows the block under autonomous.automation, with the
+    #   defaults filled in), CLI `datawatch config set
+    #   autonomous.automation.supervisor_watch.alert_minutes 15`, comm
+    #   `configure autonomous.automation.supervisor_watch.alert_minutes=15`, and
+    #   the PWA Settings fields under Settings -> General.
+    # A refused value (an unknown mode, a negative minute threshold, a
+    # poll_seconds below 60, a path or model name that is not text) is rejected (400 on PUT
+    # /api/config, an error on config load) and nothing is written.
+    #
+    # mode: off, shadow (default; empty also reads shadow) or on —
+    #   case-insensitive; any other value is refused on the write paths. off
+    #   does nothing. shadow runs every check, records the findings and the
+    #   comparison, and marks a finding "would alert" when it has been open for
+    #   alert_minutes, without raising an alert. on raises the alert, once per
+    #   episode. The watch ships in shadow first; compare it with the script for
+    #   a day (docs/howto/automation-supervisor-watch.md) before switching to on.
+    # alert_minutes: whole minutes >= 0. How long a finding may stay open before
+    #   its one alert for the episode (on mode). An explicit 0 turns the alert
+    #   off and survives a round trip; an unset value reads the 30-minute
+    #   default, the same one autonomous.automation.triage_alert_minutes uses. A
+    #   negative value is refused on the write paths.
+    # silent_minutes: whole minutes >= 0. How long a running Automaton that has
+    #   a task in progress or being verified may show no activity (no file
+    #   changed in its worktree, no worker transcript written) before
+    #   worktree_silent. An explicit 0 is legal; unset reads the 60-minute
+    #   default. A negative value is refused on the write paths.
+    # poll_seconds: whole seconds. The poll interval the script record's
+    #   freshness is judged against: a record older than three times this value
+    #   is "script output unavailable" and no comparison is recorded for that
+    #   pass (it is never counted as a disagreement). The coordinator runs the
+    #   pass at most once a minute. Minimum 60 — a value below 60 is refused on
+    #   the write paths, not rounded up. Unset (0) reads the 60-second default.
+    #   Default below: 60.
+    # script_output_path: the file scripts/supervisor-watch.py writes when it is
+    #   run with --record <path>. Set, every pass compares its findings with the
+    #   script's and records the comparison (last 500, plus the days of full
+    #   agreement). Empty (default) means no comparison is made.
+    # tmux_restart_baseline: the starting point (restart count and active-since
+    #   time of the terminal-session service) tmux_restart compares against.
+    #   Empty (default) means no starting point is configured and that check
+    #   reports nothing.
+    # main_checkout: the path of the main checkout inspected for modified
+    #   tracked files (main_checkout_dirty). Empty (default) turns that check
+    #   off.
+    # working_model: the model every registered compute node is expected to keep
+    #   loaded (model_not_resident). A node that does not have it loaded, a
+    #   context variant of the model's base name counting as loaded, raises the
+    #   finding. Text, trimmed. Empty (default) means no working model is set and
+    #   that one check reports nothing; there is no built-in default model.
+    #
+    # Operator docs: docs/howto/automation-supervisor-watch.md (the how-to, the
+    # shadow run, the comparison and the operations), the "Supervisor watch"
+    # section of docs/operations.md and the "Supervisor watch" entry in
+    # docs/datawatch-definitions.md. Read surfaces (all read-only): GET
+    # /api/autonomous/supervisor-watch (body: mode, last_poll_at, findings[],
+    # comparison), the supervisor_watch_list MCP tool, `datawatch autonomous
+    # supervisor-watch`, the comm `supervisor-watch` verb, and the Supervisor
+    # watch card in the Automation view (hidden when the endpoint is
+    # unavailable, so never a stale state).
+    supervisor_watch:
+      mode: shadow
+      alert_minutes: 30
+      silent_minutes: 60
+      poll_seconds: 60
+      script_output_path: ""
+      tmux_restart_baseline: ""
+      main_checkout: ""
+      working_model: ""
     create_search_mode: shadow
     create_search_threshold: 0.5
     # decision_assistant — no daemon config key; default OFF. The optional

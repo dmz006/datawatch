@@ -9,6 +9,12 @@ Checks: tmux restarts, daemon up, the working model resident on both nodes, PRDs
 newly failed, blocked or need review, PRDs finished but not merged, idle lanes with
 work waiting, running PRDs whose worktree is broken or silent, a dirty main checkout
 (it makes a ship abort), and red or stuck CI on main and the tags.
+
+With --record <path> the findings are additionally written to <path> as
+{"at": <unix seconds>, "findings": [{"kind": <stable finding kind>,
+"subject": <id or empty>, "text": <line>}]} (the daemon-side supervisor watch
+compares its own findings against that record); without the option stdout and
+exit code are unchanged.
 """
 import glob
 import json
@@ -134,7 +140,62 @@ def usage_snapshot():
         pass
 
 
-def main():
+def map_finding(text):
+    """(stable finding kind, subject id) for one printed finding line, or None when the line is outside the stable vocabulary the daemon watch understands.
+
+    The kinds are the daemon-side supervisor watch's stable vocabulary; subject is the id the line is about (the PRD id, the CI run id, the model host or lane name) or the empty string when the line carries no id.
+    """
+    m = re.match(r"^NEW (failed|review_needed) task \S+ of (\S+)", text)
+    if m:
+        return ("task_failed" if m.group(1) == "failed" else "task_review_needed"), m.group(2)
+    m = re.match(r"^MERGE READY (\S+)", text)
+    if m:
+        return "automaton_not_merged", m.group(1)
+    if text.startswith("TMUX"):
+        return "tmux_restart", ""
+    if text.startswith("DAEMON"):
+        return "daemon_inactive", ""
+    m = re.search(r"not resident on (\S+)", text)
+    if text.startswith("MODEL") and m:
+        # "MODEL host X unreachable" is not a resident-model finding: the daemon
+        # watch reports nothing when a node cannot be reached, so leave it out
+        # of the record rather than key it as model_not_resident with no node.
+        return "model_not_resident", m.group(1)
+    m = re.match(r"^IDLE (\S+) lane", text)
+    if m:
+        return "idle_lane_eligible_work", m.group(1).lower()
+    m = re.match(r"^WORKTREE (\S+) has no go\.mod", text)
+    if m:
+        return "worktree_no_gomod", m.group(1)
+    m = re.match(r"^SILENT (\S+)", text)
+    if m:
+        # The printed line is "SILENT <id>: ...", so \S+ catches the trailing
+        # colon. The daemon-side watch keys this finding by the bare Automaton
+        # id, so strip the colon — keeping it would make every silent
+        # worktree a false one-sided difference in the compare.
+        return "worktree_silent", m.group(1).rstrip(":")
+    if text.startswith("MAIN checkout"):
+        return "main_checkout_dirty", ""
+    m = re.search(r"run (\d+)", text)
+    sub = m.group(1) if m else ""
+    if text.startswith("CI RED"):
+        return "ci_red", sub
+    if text.startswith("CI STUCK"):
+        return "ci_stuck", sub
+    return None
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    record_path = None
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--record" and i + 1 < len(argv):
+            record_path = argv[i + 1]
+            i += 2
+        else:
+            i += 1
+
     findings, state = [], {}
     usage_snapshot()
     try:
@@ -253,6 +314,22 @@ def main():
         json.dump({"held": held_now, "at": time.time()}, open(STATE, "w"))
     except OSError:
         pass
+
+    if record_path is not None:
+        recs = []
+        for f in findings:
+            mapped = map_finding(f)
+            if mapped is None:
+                continue  # outside the stable vocabulary; the daemon watch cannot key it
+            recs.append({"kind": mapped[0], "subject": mapped[1], "text": f})
+        try:
+            d = os.path.dirname(record_path)
+            if d:
+                os.makedirs(d, exist_ok=True)
+            with open(record_path, "w") as fh:
+                json.dump({"at": int(time.time()), "findings": recs}, fh)
+        except OSError as e:
+            print("record write failed: %s" % e, file=sys.stderr)
 
     if findings:
         print("ATTENTION " + summary)

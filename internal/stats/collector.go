@@ -37,11 +37,11 @@ type SystemStats struct {
 	DiskFree  uint64 `json:"disk_free"`
 
 	// GPU (optional — empty if no GPU detected)
-	GPUName       string  `json:"gpu_name,omitempty"`
-	GPUTemp       int     `json:"gpu_temp,omitempty"`       // Celsius
-	GPUUtilPct    int     `json:"gpu_util_pct,omitempty"`   // 0-100
-	GPUMemUsedMB  int     `json:"gpu_mem_used_mb,omitempty"`
-	GPUMemTotalMB int     `json:"gpu_mem_total_mb,omitempty"`
+	GPUName       string `json:"gpu_name,omitempty"`
+	GPUTemp       int    `json:"gpu_temp,omitempty"`     // Celsius
+	GPUUtilPct    int    `json:"gpu_util_pct,omitempty"` // 0-100
+	GPUMemUsedMB  int    `json:"gpu_mem_used_mb,omitempty"`
+	GPUMemTotalMB int    `json:"gpu_mem_total_mb,omitempty"`
 	// GPUError explains why the GPU fields above are empty when nvidia-smi
 	// exists but failed (e.g. a driver/library version mismatch after an
 	// unattended driver update, before a reboot) — as opposed to being empty
@@ -58,26 +58,26 @@ type SystemStats struct {
 	TotalSessions  int `json:"total_sessions"`
 
 	// Tmux
-	TmuxSessions    int      `json:"tmux_sessions"`              // total tmux sessions with cs- prefix
-	OrphanedTmux    []string `json:"orphaned_tmux,omitempty"`    // tmux sessions with no matching datawatch session
-	UptimeSeconds   int      `json:"uptime_seconds"`
+	TmuxSessions  int      `json:"tmux_sessions"`           // total tmux sessions with cs- prefix
+	OrphanedTmux  []string `json:"orphaned_tmux,omitempty"` // tmux sessions with no matching datawatch session
+	UptimeSeconds int      `json:"uptime_seconds"`
 
 	// eBPF status
-	EBPFEnabled  bool   `json:"ebpf_enabled"`
-	EBPFActive   bool   `json:"ebpf_active"`    // true if BPF programs are loaded
-	EBPFMessage  string `json:"ebpf_message,omitempty"` // status/warning message
+	EBPFEnabled bool   `json:"ebpf_enabled"`
+	EBPFActive  bool   `json:"ebpf_active"`            // true if BPF programs are loaded
+	EBPFMessage string `json:"ebpf_message,omitempty"` // status/warning message
 
 	// Network
 	BoundInterfaces []string `json:"bound_interfaces,omitempty"`
-	NetRxBytes      uint64   `json:"net_rx_bytes"`  // total received bytes (all interfaces)
-	NetTxBytes      uint64   `json:"net_tx_bytes"`  // total transmitted bytes
+	NetRxBytes      uint64   `json:"net_rx_bytes"` // total received bytes (all interfaces)
+	NetTxBytes      uint64   `json:"net_tx_bytes"` // total transmitted bytes
 
 	// Server interfaces (for infrastructure card)
-	WebPort     int    `json:"web_port,omitempty"`
-	TLSEnabled  bool   `json:"tls_enabled,omitempty"`
-	TLSPort     int    `json:"tls_port,omitempty"`
-	MCPSSEHost  string `json:"mcp_sse_host,omitempty"`
-	MCPSSEPort  int    `json:"mcp_sse_port,omitempty"`
+	WebPort    int    `json:"web_port,omitempty"`
+	TLSEnabled bool   `json:"tls_enabled,omitempty"`
+	TLSPort    int    `json:"tls_port,omitempty"`
+	MCPSSEHost string `json:"mcp_sse_host,omitempty"`
+	MCPSSEPort int    `json:"mcp_sse_port,omitempty"`
 	// GH#192 D78a — Observer's Daemon/Infrastructure cards had neither
 	// hostname nor the running daemon version anywhere. Populated via
 	// SetServerIdentity, the same pattern as SetServerInterfaces below.
@@ -85,27 +85,27 @@ type SystemStats struct {
 	DaemonVersion string `json:"daemon_version,omitempty"`
 
 	// RTK (Rust Token Killer) integration stats
-	RTKInstalled    bool    `json:"rtk_installed,omitempty"`
-	RTKVersion      string  `json:"rtk_version,omitempty"`
-	RTKHooksActive  bool    `json:"rtk_hooks_active,omitempty"`
-	RTKTotalSaved   int     `json:"rtk_total_saved,omitempty"`     // total tokens saved
-	RTKAvgSavings   float64 `json:"rtk_avg_savings_pct,omitempty"` // average savings percentage
+	RTKInstalled       bool    `json:"rtk_installed,omitempty"`
+	RTKVersion         string  `json:"rtk_version,omitempty"`
+	RTKHooksActive     bool    `json:"rtk_hooks_active,omitempty"`
+	RTKTotalSaved      int     `json:"rtk_total_saved,omitempty"`     // total tokens saved
+	RTKAvgSavings      float64 `json:"rtk_avg_savings_pct,omitempty"` // average savings percentage
 	RTKTotalCmds       int     `json:"rtk_total_commands,omitempty"`
 	RTKLatestVersion   string  `json:"rtk_latest_version,omitempty"`   // latest available version from GitHub
 	RTKUpdateAvailable bool    `json:"rtk_update_available,omitempty"` // true if newer version exists
 
 	// Episodic Memory stats
-	MemoryEnabled     bool   `json:"memory_enabled,omitempty"`
-	MemoryBackend     string `json:"memory_backend,omitempty"`     // "sqlite" or "postgres"
-	MemoryEmbedder    string `json:"memory_embedder,omitempty"`    // e.g. "ollama:nomic-embed-text"
-	MemoryTotalCount  int    `json:"memory_total_count,omitempty"` // total memories across all projects
-	MemoryManualCount int    `json:"memory_manual_count,omitempty"`
-	MemorySessionCount int   `json:"memory_session_count,omitempty"`
-	MemoryLearningCount int  `json:"memory_learning_count,omitempty"`
-	MemoryChunkCount  int    `json:"memory_chunk_count,omitempty"`
-	MemoryDBSizeBytes  int64  `json:"memory_db_size_bytes,omitempty"`
-	MemoryEncrypted    bool   `json:"memory_encrypted,omitempty"`
-	MemoryKeyFP        string `json:"memory_key_fingerprint,omitempty"`
+	MemoryEnabled       bool   `json:"memory_enabled,omitempty"`
+	MemoryBackend       string `json:"memory_backend,omitempty"`     // "sqlite" or "postgres"
+	MemoryEmbedder      string `json:"memory_embedder,omitempty"`    // e.g. "ollama:nomic-embed-text"
+	MemoryTotalCount    int    `json:"memory_total_count,omitempty"` // total memories across all projects
+	MemoryManualCount   int    `json:"memory_manual_count,omitempty"`
+	MemorySessionCount  int    `json:"memory_session_count,omitempty"`
+	MemoryLearningCount int    `json:"memory_learning_count,omitempty"`
+	MemoryChunkCount    int    `json:"memory_chunk_count,omitempty"`
+	MemoryDBSizeBytes   int64  `json:"memory_db_size_bytes,omitempty"`
+	MemoryEncrypted     bool   `json:"memory_encrypted,omitempty"`
+	MemoryKeyFP         string `json:"memory_key_fingerprint,omitempty"`
 
 	// Ollama server stats (BL71)
 	OllamaStats *OllamaStats `json:"ollama_stats,omitempty"`
@@ -120,9 +120,9 @@ type SystemStats struct {
 	MCPStats *MCPStatsBlock `json:"mcp_stats,omitempty"`
 
 	// BL367 — autonomous quality gate aggregate stats.
-	QualityGateRuns        int `json:"quality_gate_runs,omitempty"`
-	QualityGatePass        int `json:"quality_gate_pass,omitempty"`
-	QualityGateFail        int `json:"quality_gate_fail,omitempty"`
+	QualityGateRuns int `json:"quality_gate_runs,omitempty"`
+	QualityGatePass int `json:"quality_gate_pass,omitempty"`
+	QualityGateFail int `json:"quality_gate_fail,omitempty"`
 
 	// BL382 — cancel/requeue lifecycle operation totals.
 	StoriesCancelled int64 `json:"stories_cancelled,omitempty"`
@@ -137,6 +137,17 @@ type SystemStats struct {
 	WorkerQuestionsRefused   int64 `json:"worker_questions_refused,omitempty"`
 	WorkerQuestionsParked    int64 `json:"worker_questions_parked,omitempty"`
 	WorkerQuestionsResumed   int64 `json:"worker_questions_resumed,omitempty"`
+
+	// Supervisor watch: the mode in effect, seconds since the coordinator
+	// last polled (-1 when it never has), the unresolved findings (and
+	// how many of them are would-alert or alerted) and the days of full
+	// agreement with the supervisor script.
+	SupervisorWatchMode               string `json:"supervisor_watch_mode,omitempty"`
+	SupervisorWatchLastPollAgeSeconds int64  `json:"supervisor_watch_last_poll_age_seconds,omitempty"`
+	SupervisorWatchFindingsOpen       int    `json:"supervisor_watch_findings_open,omitempty"`
+	SupervisorWatchFindingsWouldAlert int    `json:"supervisor_watch_findings_would_alert,omitempty"`
+	SupervisorWatchFindingsAlerted    int    `json:"supervisor_watch_findings_alerted,omitempty"`
+	SupervisorWatchAgreedDays         int    `json:"supervisor_watch_agreed_days,omitempty"`
 
 	// BL372 — web search MCP injection stats.
 	WebSearchEnabled      bool      `json:"web_search_enabled,omitempty"`
@@ -158,7 +169,7 @@ type SystemStats struct {
 // CommChannelStat holds detailed stats for a communication channel or LLM backend.
 type CommChannelStat struct {
 	Name     string `json:"name"`
-	Type     string `json:"type"`     // "messaging", "llm", "infra"
+	Type     string `json:"type"` // "messaging", "llm", "infra"
 	Enabled  bool   `json:"enabled"`
 	Endpoint string `json:"endpoint,omitempty"` // connection endpoint (group, channel, URL)
 
@@ -188,11 +199,11 @@ type SessionStat struct {
 	Backend    string  `json:"backend"`
 	State      string  `json:"state"`
 	PanePID    int     `json:"pane_pid"`
-	RSSBytes   uint64  `json:"rss_bytes"`       // resident set size of process tree
+	RSSBytes   uint64  `json:"rss_bytes"` // resident set size of process tree
 	CPUPercent float64 `json:"cpu_percent"`
-	Uptime     string  `json:"uptime"`           // elapsed time
-	NetTxBytes uint64  `json:"net_tx_bytes"`     // per-session TCP TX (eBPF, 0 if disabled)
-	NetRxBytes uint64  `json:"net_rx_bytes"`     // per-session TCP RX (eBPF, 0 if disabled)
+	Uptime     string  `json:"uptime"`       // elapsed time
+	NetTxBytes uint64  `json:"net_tx_bytes"` // per-session TCP TX (eBPF, 0 if disabled)
+	NetRxBytes uint64  `json:"net_rx_bytes"` // per-session TCP RX (eBPF, 0 if disabled)
 	// RTK token savings for this session's project
 	RTKSavedTokens int     `json:"rtk_saved_tokens,omitempty"`
 	RTKSavingsPct  float64 `json:"rtk_savings_pct,omitempty"`
@@ -226,10 +237,10 @@ type Collector struct {
 	// boundInterfaces returns the list of bound interface addresses
 	boundInterfaces []string
 
-	startTime    time.Time
-	ebpfEnabled  bool
-	ebpfActive   bool
-	ebpfMessage  string
+	startTime   time.Time
+	ebpfEnabled bool
+	ebpfActive  bool
+	ebpfMessage string
 
 	// daemonNetFn returns (tx, rx) bytes for the daemon process tree via eBPF
 	daemonNetFn func() (uint64, uint64)
@@ -430,8 +441,8 @@ func (c *Collector) History(minutes int) []SystemStats {
 
 func (c *Collector) collect() {
 	s := SystemStats{
-		Timestamp: time.Now(),
-		CPUCores:  runtime.NumCPU(),
+		Timestamp:  time.Now(),
+		CPUCores:   runtime.NumCPU(),
 		Goroutines: runtime.NumGoroutine(),
 	}
 

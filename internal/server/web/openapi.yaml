@@ -1369,6 +1369,67 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/supervisor-watch:
+    get:
+      summary: Supervisor watch state
+      description: |
+        The supervisor watch state at a glance: the mode in effect (`mode`,
+        off / shadow / on; an unset mode reads shadow — the release default,
+        reports only, never acts), the instant the coordinator last polled
+        (`last_poll_at`, the zero time when it never has), the stored findings
+        (`findings`, open first, most recently seen first: kind, subject, the
+        operator line, first and last seen, the shadow would-alert mark and the
+        raised-alert instant), and the comparison view (`comparison`: the last
+        recorded comparison against the script's record file, the days of full
+        agreement, and the last comparison's one-sided differences; an
+        unavailable script record is never recorded, so `last` is `null` until
+        one was). Read-only; needs the autonomous read capability when called
+        by a federated peer.
+      operationId: autonomousSupervisorWatch
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Supervisor watch state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorWatchStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/supervisor-watch/stats:
+    get:
+      summary: Supervisor watch stats
+      description: |
+        The supervisor watch as numbers for monitoring: the mode in effect
+        (`mode`), the instant the coordinator last polled (`last_poll_at`) and
+        how many seconds ago (`last_poll_age_seconds`, -1 when it never has),
+        the unresolved findings (`findings_open`, of which `findings_would_alert`
+        shadow marked alert-due and `findings_alerted` raised an alert), the
+        resolved ones (`findings_resolved`) and the days of full agreement with
+        the supervisor script (`agreed_days`). The same numbers ride in the
+        stats snapshot (`supervisor_watch_*`) and the Prometheus gauges
+        `datawatch_supervisor_watch_findings`, `datawatch_supervisor_watch_agreed_days`
+        and `datawatch_supervisor_watch_last_poll_age_seconds`. Read-only; needs
+        the autonomous read capability when called by a federated peer.
+      operationId: autonomousSupervisorWatchStats
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Supervisor watch stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorWatchStats"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/progress:
     get:
       summary: Progress metrics
@@ -5886,6 +5947,111 @@ components:
         path: {type: string, description: The path the usage was measured for}
         percent: {type: integer, description: Disk usage used percent}
         alert: {type: boolean, description: "True when the reading is at or above the threshold"}
+    SupervisorWatchStatus:
+      type: object
+      description: >-
+        The supervisor watch state, as GET /api/autonomous/supervisor-watch
+        returns it. `findings` is open first, most recently seen first;
+        `last_poll_at` is the coordinator's last poll instant (the zero time
+        when it never has); `mode` is the watch mode in effect (an unset mode
+        reads shadow — reports only, never acts).
+      required: [mode, last_poll_at, findings, comparison]
+      properties:
+        mode:
+          type: string
+          enum: [off, shadow, on]
+          description: The watch mode in effect; an unset mode reads shadow
+        last_poll_at:
+          type: string
+          format: date-time
+          description: When the coordinator last ran a supervisor watch pass; the zero time when it never has
+        findings:
+          type: array
+          description: The stored findings, open first, most recently seen first; empty when none are stored
+          items: {$ref: "#/components/schemas/SupervisorWatchFinding"}
+        comparison: {$ref: "#/components/schemas/SupervisorWatchComparisonView"}
+    SupervisorWatchStats:
+      type: object
+      description: >-
+        The supervisor watch as numbers, as GET /api/autonomous/supervisor-watch/stats
+        returns it.
+      required: [mode, last_poll_at, last_poll_age_seconds, findings_open, findings_would_alert, findings_alerted, findings_resolved, agreed_days]
+      properties:
+        mode:
+          type: string
+          enum: [off, shadow, on]
+          description: The watch mode in effect; an unset mode reads shadow
+        last_poll_at:
+          type: string
+          format: date-time
+          description: When the coordinator last ran a supervisor watch pass; the zero time when it never has
+        last_poll_age_seconds: {type: integer, description: "Whole seconds since the last poll; -1 when the coordinator never polled"}
+        findings_open: {type: integer, description: Findings not yet resolved, including the would-alert and alerted ones}
+        findings_would_alert: {type: integer, description: Open findings shadow marked alert-due without raising an alert}
+        findings_alerted: {type: integer, description: Open findings an alert was raised for}
+        findings_resolved: {type: integer, description: Stored findings whose check stopped reporting them}
+        agreed_days: {type: integer, description: Calendar days whose comparisons with the supervisor script all agreed}
+    SupervisorWatchFinding:
+      type: object
+      description: >-
+        One open (or resolved) supervisor watch finding: what the daemon-side
+        watch raised (or would have raised, in shadow mode) and records until an
+        operator closes it. Kind and subject are the finding's identity.
+      required: [kind, subject, first_seen_at, last_seen_at, resolved]
+      properties:
+        kind:
+          type: string
+          enum: [tmux_restart, daemon_inactive, model_not_resident, task_failed, task_review_needed, automaton_not_merged, idle_lane_eligible_work, worktree_no_gomod, worktree_not_registered, worktree_silent, verify_script_not_executable, main_checkout_dirty, ci_red, ci_stuck]
+          description: What the finding is about, one of the stable finding kinds
+        subject: {type: string, description: "The stable id the finding is about: an Automaton id, a node name, a lane name, a CI run id, or the main checkout's path"}
+        text: {type: string, description: The operator-facing line for the finding; empty when not set}
+        first_seen_at: {type: string, format: date-time, description: When the finding was first raised; preserved across refreshes}
+        last_seen_at: {type: string, format: date-time, description: When the finding was last re-raised or touched}
+        would_alert: {type: boolean, description: Shadow mode marked this finding alert-due without raising; false in on mode}
+        alerted_at:
+          nullable: true
+          type: string
+          format: date-time
+          description: When the alert for the finding was raised; null until it does
+        resolved: {type: boolean, description: The operator (or a later pass) closed the finding; a re-sighting re-opens it in place}
+    SupervisorWatchComparisonView:
+      type: object
+      description: >-
+        The comparison view the supervisor watch read route serves: the last
+        recorded comparison between the watch's findings and the script's
+        record file (null until one was recorded — an unavailable script record
+        is never recorded), the days whose comparisons all agreed, and the last
+        comparison's one-sided differences.
+      properties:
+        last:
+          nullable: true
+          description: The most recent recorded comparison
+          oneOf:
+            - type: 'null'
+            - $ref: "#/components/schemas/SupervisorWatchComparison"
+        agreed_days: {type: integer, description: Calendar days whose comparisons all agreed; a day with no comparisons does not count}
+        only_watch:
+          type: array
+          description: The last comparison's entries the watch raised that the script did not
+          items: {type: string}
+        only_script:
+          type: array
+          description: The last comparison's entries the script raised that the watch did not
+          items: {type: string}
+    SupervisorWatchComparison:
+      type: object
+      description: >-
+        One pass's comparison between the daemon-side supervisor watch's
+        findings and the script's record file: the two sides' kind/subject
+        sets, the two one-sided differences, and whether they agreed.
+      required: [at, watch_kinds, script_kinds, only_watch, only_script, agreed]
+      properties:
+        at: {type: string, format: date-time, description: When the pass ran the comparison}
+        watch_kinds: {type: array, description: The watch's kind/subject set, sorted and de-duplicated, items: {type: string}}
+        script_kinds: {type: array, description: The script's kind/subject set, sorted and de-duplicated, items: {type: string}}
+        only_watch: {type: array, description: Entries the watch raised that the script did not, items: {type: string}}
+        only_script: {type: array, description: Entries the script raised that the watch did not, items: {type: string}}
+        agreed: {type: boolean, description: The two sides raised exactly the same kind/subject set}
     SecurityFailureEntry:
       type: object
       description: >-

@@ -118,3 +118,33 @@ func repoCIWatchFromYAML(in config.RepoCIWatchConfig) autonomouspkg.RepoCIWatchC
 	}
 	return out
 }
+
+// supervisorWatchFromYAML bridges the supervisor watch block
+// (autonomous.automation.supervisor_watch.*) from the loaded config into
+// the Manager's boot-time config. Without it the Manager starts with a
+// zero SupervisorWatch and re-reads its one defaults after every restart,
+// losing any operator-set value from the saved file until a config PUT
+// happens to carry it again.
+//
+// The pointer fields keep their nil-versus-zero distinction: a nil
+// (unset) threshold stays nil so the Effective* default applies, and an
+// explicit 0 stays an explicit 0.
+func supervisorWatchFromYAML(in config.SupervisorWatchConfig) autonomouspkg.SupervisorWatchConfig {
+	out := autonomouspkg.SupervisorWatchConfig{
+		Mode:                in.Mode,
+		PollSeconds:         in.PollSeconds,
+		ScriptOutputPath:    in.ScriptOutputPath,
+		TmuxRestartBaseline: in.TmuxRestartBaseline,
+		MainCheckout:        in.MainCheckout,
+		WorkingModel:        in.WorkingModel,
+	}
+	if in.AlertMinutes != nil {
+		alert := *in.AlertMinutes
+		out.AlertMinutes = &alert
+	}
+	if in.SilentMinutes != nil {
+		silent := *in.SilentMinutes
+		out.SilentMinutes = &silent
+	}
+	return out
+}

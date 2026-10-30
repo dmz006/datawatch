@@ -5983,6 +5983,82 @@ assert 'usage: autonomous security-failure' in resp, 'extra arguments not answer
 fi
 
 # ---------------------------------------------------------------------------
+H "90. Supervisor watch — REST routes and comm verb (read only)"
+# The supervisor watch is a read: GET /api/autonomous/supervisor-watch returns
+# the mode in effect, the last poll, the findings and the comparison, and
+# GET /api/autonomous/supervisor-watch/stats returns the same state as numbers.
+# The comm verb `autonomous supervisor-watch` answers the read as text. The
+# smoke daemon's mode is whatever it runs with (an unset mode reads shadow), so
+# this checks the shape of the replies, not particular findings. Nothing is
+# written, changed or alerted here.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  SW_BODY=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/supervisor-watch" 2>/dev/null || true)
+  SW_CODE=$(echo "$SW_BODY" | tail -n1)
+  SW_JSON=$(echo "$SW_BODY" | sed '$d')
+  if [[ "$SW_CODE" == "200" ]] && echo "$SW_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert d["mode"] in ("off","shadow","on"), d["mode"]
+assert isinstance(d["findings"], list)
+assert "last_poll_at" in d and "comparison" in d
+assert isinstance(d["comparison"]["agreed_days"], int)
+' 2>/dev/null; then
+    ok "supervisor watch: GET /api/autonomous/supervisor-watch answers 200 with the mode, last poll, findings list and comparison"
+  else
+    ko "supervisor watch: REST read returned HTTP $SW_CODE or a malformed body: $(echo "$SW_JSON" | head -c 200)"
+  fi
+
+  SW_ST=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/supervisor-watch/stats" 2>/dev/null || true)
+  SW_ST_CODE=$(echo "$SW_ST" | tail -n1)
+  SW_ST_JSON=$(echo "$SW_ST" | sed '$d')
+  if [[ "$SW_ST_CODE" == "200" ]] && echo "$SW_ST_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert d["mode"] in ("off","shadow","on"), d["mode"]
+for k in ("last_poll_age_seconds","findings_open","findings_would_alert","findings_alerted","findings_resolved","agreed_days"):
+    assert isinstance(d[k], int), k
+assert d["findings_open"] >= d["findings_would_alert"] + d["findings_alerted"]
+' 2>/dev/null; then
+    ok "supervisor watch: GET /api/autonomous/supervisor-watch/stats answers 200 with the mode and the counts"
+  else
+    ko "supervisor watch: stats read returned HTTP $SW_ST_CODE or a malformed body: $(echo "$SW_ST_JSON" | head -c 200)"
+  fi
+
+  SW_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/autonomous/supervisor-watch" 2>/dev/null || true)
+  if [[ "$SW_POST" == "405" ]]; then
+    ok "supervisor watch: the route is read only (POST answers 405)"
+  else
+    ko "supervisor watch: POST answered HTTP $SW_POST, expected 405"
+  fi
+
+  SW_TM=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"text":"autonomous supervisor-watch"}' "$BASE/api/test/message")
+  if echo "$SW_TM" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+resp=' '.join(d.get('responses',[]))
+assert 'autonomous supervisor-watch' in resp, 'comm reply lacks the verb header'
+assert 'Supervisor watch mode:' in resp, 'comm reply lacks the mode line'
+assert 'HTTP 401' not in resp, 'comm verb was refused (HTTP 401)'
+" 2>/dev/null; then
+    ok "supervisor watch: comm verb 'autonomous supervisor-watch' answers the mode line (not refused)"
+  else
+    ko "supervisor watch: comm verb reply failed: $(echo "$SW_TM" | head -c 200)"
+  fi
+
+  SW_USAGE=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"text":"autonomous supervisor-watch a b"}' "$BASE/api/test/message")
+  if echo "$SW_USAGE" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+resp=' '.join(d.get('responses',[]))
+assert 'usage: autonomous supervisor-watch' in resp, 'extra arguments not answered with usage'
+" 2>/dev/null; then
+    ok "supervisor watch: comm verb answers extra arguments with its usage line"
+  else
+    ko "supervisor watch: usage reply failed: $(echo "$SW_USAGE" | head -c 200)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

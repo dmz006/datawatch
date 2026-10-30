@@ -2719,6 +2719,8 @@ function navigate(view, sessionId, fromPopstate) {
     if (window._piProgressInterval) { clearInterval(window._piProgressInterval); window._piProgressInterval = null; }
     // Repo CI watch status-line poll (Automaton view, same rule)
     if (window._repoCIWatchInterval) { clearInterval(window._repoCIWatchInterval); window._repoCIWatchInterval = null; }
+    // Supervisor watch card poll (Automaton view, same rule)
+    if (window._supervisorWatchInterval) { clearInterval(window._supervisorWatchInterval); window._supervisorWatchInterval = null; }
     const statsPanel = document.getElementById('statsPanel');
     if (statsPanel && statsPanel._statsInterval) {
       clearInterval(statsPanel._statsInterval);
@@ -16473,6 +16475,18 @@ const GENERAL_CONFIG_FIELDS = [
     // empty value reads shadow (the first-release default: the feature is
     // switched on in shadow mode first, with no behaviour change).
     { key: 'autonomous.automation.security_failure.mode', label: 'Security failure mode (off, shadow or on; default shadow)', labelKey: 'settings_security_failure_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
+    // Supervisor watch (autonomous.automation.supervisor_watch.*) — the
+    // daemon-side watch behind the Supervisor watch card in the Automaton
+    // view (GET /api/autonomous/supervisor-watch). An unset mode reads
+    // shadow: it reports and records, and never acts.
+    { key: 'autonomous.automation.supervisor_watch.mode', label: 'Supervisor watch mode (off, shadow or on; default shadow)', labelKey: 'settings_supervisor_watch_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
+    { key: 'autonomous.automation.supervisor_watch.alert_minutes', label: 'Supervisor watch alert (minutes a finding stays open before one alert, 0 = off, default 30)', labelKey: 'settings_supervisor_watch_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
+    { key: 'autonomous.automation.supervisor_watch.silent_minutes', label: 'Supervisor watch silence window (minutes an Automaton worktree may stay silent, default 60)', labelKey: 'settings_supervisor_watch_silent_minutes', type: 'number', placeholder: '60', min: 0, step: 1, default: '60' },
+    { key: 'autonomous.automation.supervisor_watch.poll_seconds', label: 'Supervisor watch poll interval (seconds, min 60, default 60)', labelKey: 'settings_supervisor_watch_poll_seconds', type: 'number', placeholder: '60', min: 60, step: 1, default: '60' },
+    { key: 'autonomous.automation.supervisor_watch.script_output_path', label: 'Supervisor watch script record path (repository-relative path of the supervisor script record file, empty = no comparison)', labelKey: 'settings_supervisor_watch_script_output_path', type: 'text', placeholder: '' },
+    { key: 'autonomous.automation.supervisor_watch.tmux_restart_baseline', label: 'Supervisor watch tmux restart baseline (empty = no baseline)', labelKey: 'settings_supervisor_watch_tmux_restart_baseline', type: 'text', placeholder: '' },
+    { key: 'autonomous.automation.supervisor_watch.main_checkout', label: 'Supervisor watch main checkout (repository path, empty = dirty main checkout not checked)', labelKey: 'settings_supervisor_watch_main_checkout', type: 'text', placeholder: '' },
+    { key: 'autonomous.automation.supervisor_watch.working_model', label: 'Supervisor watch working model (model every compute node should keep resident, empty = not checked)', labelKey: 'settings_supervisor_watch_working_model', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.create_search_mode', label: 'Automaton create search (off, shadow records overlaps without showing them, on shows them, default shadow)', labelKey: 'settings_automation_create_search_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.automation.create_search_threshold', label: 'Automaton create search threshold (similarity above 0 and at most 1, default 0.5)', labelKey: 'settings_automation_create_search_threshold', type: 'number', placeholder: '0.5', min: 0.05, max: 1, step: 0.05, default: '0.5' },
     // Lane fill — shadow (default) computes and records every decision and starts nothing.
@@ -28188,6 +28202,7 @@ const _AUTOMATION_SUBTABS = [
            would hide items waiting on the operator and be a regression. -->
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSecurityFailureCard" class="prd-capacity-slot security-failure-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationSupervisorWatchCard" class="prd-capacity-slot supervisor-watch-slot" role="status" style="margin:6px 8px 0;display:none;"></div>
       <div id="automationQuestionsCard" class="prd-capacity-card questions-card" style="margin:6px 8px 0;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;">
           <div class="cap-title">${escHtml(t('automation_questions_title'))}</div>
@@ -28204,8 +28219,12 @@ const _AUTOMATION_SUBTABS = [
     },
     mount() {
       listLoaderAll([_automationLoader(), _automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader()]);
+      supervisorWatchStartPolling();
     },
-    stop() { _automationStopLoaders(['automation', 'automation_triage', 'automation_security_failure', 'automation_questions']); },
+    stop() {
+      _automationStopLoaders(['automation', 'automation_triage', 'automation_security_failure', 'automation_questions']);
+      supervisorWatchStopPolling();
+    },
   },
 ];
 
@@ -28253,6 +28272,7 @@ function _automationStopLoaders(keys) {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
   });
+  if (!keys) supervisorWatchStopPolling(); // stop-all also ends the Supervisor watch card poll
 }
 
 // switchAutomationSubtab switches the second-row sub-tab. Unknown ids are
@@ -28388,6 +28408,119 @@ function _automationSecurityFailureLoader() {
     active: () => !!document.getElementById('automationSecurityFailureCard'),
     render: body => window.securityFailureListHtml(body),
   });
+}
+
+// ── Supervisor watch card (the Automaton view, Chains sub-tab)
+// The card shows the daemon-side supervisor watch state read from
+// GET /api/autonomous/supervisor-watch: the mode in effect, how long ago
+// the coordinator last polled, the findings (kind and text), and the
+// comparison agreement line against the supervisor script's record.
+//
+// It is read-only. When the endpoint is unavailable (autonomous disabled,
+// a peer without the capability) the card is hidden instead of showing a
+// stale state.
+//
+// PWA poll-stacking rule: the interval lives on
+// window._supervisorWatchInterval and is cleared both before it is
+// (re)set (each mount of the sub-tab) and when the sub-tab or view is
+// left, so re-renders and tab switches never stack a second timer.
+const SUPERVISOR_WATCH_CARD_ELEMENT_ID = 'automationSupervisorWatchCard';
+const SUPERVISOR_WATCH_POLL_MS = 30000;
+const SUPERVISOR_WATCH_MAX_FINDINGS = 20;
+
+function supervisorWatchAgeText(lastPollAt, nowMs) {
+  if (!lastPollAt || String(lastPollAt).slice(0, 4) === '0001' || Number.isNaN(Date.parse(lastPollAt))) {
+    return t('supervisor_watch_last_poll_never');
+  }
+  const now = nowMs ? nowMs : Date.now();
+  const secs = Math.floor(Math.max(0, now - Date.parse(lastPollAt)) / 1000);
+  if (secs < 5) return t('supervisor_watch_last_poll', [t('supervisor_watch_age_just_now')]);
+  if (secs < 60) return t('supervisor_watch_last_poll', [t('supervisor_watch_age_seconds', [secs])]);
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return t('supervisor_watch_last_poll', [t('supervisor_watch_age_minutes', [mins])]);
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return t('supervisor_watch_last_poll', [t('supervisor_watch_age_hours', [hrs])]);
+  return t('supervisor_watch_last_poll', [t('supervisor_watch_age_days', [Math.floor(hrs / 24)])]);
+}
+
+function _supervisorWatchText(v) {
+  return typeof v === 'string' ? v.trim() : '';
+}
+
+// supervisorWatchComparisonText words the comparison agreement line from
+// the read view's comparison block ({ last, agreed_days, only_watch,
+// only_script }). A missing last comparison reads as no comparison yet.
+function supervisorWatchComparisonText(cmp) {
+  const c = (cmp && typeof cmp === 'object') ? cmp : {};
+  const days = Number.isFinite(c.agreed_days) ? c.agreed_days : 0;
+  if (!c.last || typeof c.last !== 'object') return t('supervisor_watch_comparison_none');
+  if (c.last.agreed) return t('supervisor_watch_comparison_agreed', [days]);
+  const onlyWatch = (Array.isArray(c.only_watch) ? c.only_watch : []).map(_supervisorWatchText).filter(Boolean).join(', ');
+  const onlyScript = (Array.isArray(c.only_script) ? c.only_script : []).map(_supervisorWatchText).filter(Boolean).join(', ');
+  const none = t('supervisor_watch_comparison_nothing');
+  return t('supervisor_watch_comparison_differs', [onlyWatch || none, onlyScript || none, days]);
+}
+
+// supervisorWatchCardHtml renders the whole card for one read view
+// ({ mode, last_poll_at, findings, comparison }), or null for anything
+// that is not a view — pure so the PWA test can pin its text. nowMs is
+// injectable for the same reason.
+function supervisorWatchCardHtml(view, nowMs) {
+  if (!view || typeof view !== 'object' || Array.isArray(view)) return null;
+  const mode = _supervisorWatchText(view.mode) || 'shadow';
+  let modeText = t('supervisor_watch_mode_' + mode);
+  if (modeText.indexOf('supervisor_watch_mode_') === 0) modeText = mode; // unknown mode: raw value
+  const line = (text, extraStyle) =>
+    `<div style="font-size:12px;color:var(--text2);margin-top:4px;min-width:0;overflow-wrap:anywhere;${extraStyle || ''}">${escHtml(text)}</div>`;
+  const findings = (Array.isArray(view.findings) ? view.findings : []).filter(f => f && typeof f === 'object');
+  const open = findings.filter(f => !f.resolved);
+  const shown = open.slice(0, SUPERVISOR_WATCH_MAX_FINDINGS);
+  let body = line(t('supervisor_watch_mode', [modeText]));
+  body += line(supervisorWatchAgeText(view.last_poll_at, nowMs));
+  if (!shown.length) {
+    body += line(t('supervisor_watch_no_findings'));
+  } else {
+    body += line(t('supervisor_watch_findings', [open.length]), 'font-weight:600;color:var(--text);');
+    body += shown.map(f => {
+      const kind = _supervisorWatchText(f.kind) || t('supervisor_watch_unknown');
+      const text = _supervisorWatchText(f.text) || _supervisorWatchText(f.subject) || t('supervisor_watch_unknown');
+      const would = f.would_alert ? ' ' + t('supervisor_watch_would_alert') : '';
+      return `<div class="supervisor-watch-finding" style="font-size:12px;margin-top:4px;min-width:0;overflow-wrap:anywhere;">` +
+        `<code>${escHtml(kind)}</code> ${escHtml(text)}${escHtml(would)}</div>`;
+    }).join('');
+    if (open.length > shown.length) body += line(t('supervisor_watch_more', [open.length - shown.length]));
+  }
+  body += line(supervisorWatchComparisonText(view.comparison));
+  return `<div class="prd-capacity-card supervisor-watch-card"><div class="cap-title">${escHtml(t('supervisor_watch_title'))}</div>${body}</div>`;
+}
+
+function supervisorWatchRenderCard(view, nowMs) {
+  const el = document.getElementById(SUPERVISOR_WATCH_CARD_ELEMENT_ID);
+  if (!el) return;
+  const html = supervisorWatchCardHtml(view, nowMs);
+  if (!html) { // endpoint missing — hide the card, never show a stale state
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = html;
+  el.style.display = '';
+}
+
+function supervisorWatchRefreshCard(nowMs) {
+  return apiFetch('/api/autonomous/supervisor-watch')
+    .then(view => supervisorWatchRenderCard(view, nowMs))
+    .catch(() => supervisorWatchRenderCard(null, nowMs));
+}
+
+function supervisorWatchStartPolling() {
+  if (window._supervisorWatchInterval) { clearInterval(window._supervisorWatchInterval); window._supervisorWatchInterval = null; }
+  supervisorWatchRefreshCard();
+  window._supervisorWatchInterval = setInterval(supervisorWatchRefreshCard, SUPERVISOR_WATCH_POLL_MS);
+}
+
+function supervisorWatchStopPolling() {
+  if (window._supervisorWatchInterval) { clearInterval(window._supervisorWatchInterval); window._supervisorWatchInterval = null; }
 }
 
 // Open-questions queue card: its own listLoader on
@@ -33408,6 +33541,25 @@ function renderStatsData(el, data) {
       }).join('');
       html += `<div class="stat-card"><div class="stat-label">${t('stats_worker_questions')||'Worker Questions'}</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${wqLines}</div></div>`;
+    }
+    // Supervisor watch card: the mode, how long ago the coordinator last
+    // polled, the unresolved findings and the days of full agreement with
+    // the supervisor script. Left out until the daemon reports a mode.
+    if (data.supervisor_watch_mode) {
+      const swRows = [
+        ['stats_supervisor_watch_mode', 'Mode', data.supervisor_watch_mode],
+        ['stats_supervisor_watch_open', 'Open findings', data.supervisor_watch_findings_open || 0],
+        ['stats_supervisor_watch_would_alert', 'Would alert', data.supervisor_watch_findings_would_alert || 0],
+        ['stats_supervisor_watch_alerted', 'Alerted', data.supervisor_watch_findings_alerted || 0],
+        ['stats_supervisor_watch_poll_age', 'Last poll (s ago)', (data.supervisor_watch_last_poll_age_seconds || 0) < 0 ? '-' : (data.supervisor_watch_last_poll_age_seconds || 0)],
+        ['stats_supervisor_watch_agreed_days', 'Days of full agreement', data.supervisor_watch_agreed_days || 0],
+      ];
+      const swLines = swRows.map(r => {
+        const warn = (r[0] === 'stats_supervisor_watch_alerted' || r[0] === 'stats_supervisor_watch_would_alert') && r[2] > 0;
+        return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t(r[0])||r[1])}</span><span style="color:${warn ? 'var(--warning)' : 'var(--text)'};">${escHtml(r[2])}</span></div>`;
+      }).join('');
+      html += `<div class="stat-card"><div class="stat-label">${t('stats_supervisor_watch')||'Supervisor watch'}</div>
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${swLines}</div></div>`;
     }
     html += '</div>';
 

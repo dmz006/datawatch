@@ -2759,7 +2759,17 @@ type AutonomousAutomationConfig struct {
 	// shadow mode first, with no behaviour change) is applied only in its
 	// Effective* accessor, and a mode other than off|shadow|on is refused
 	// on every write path.
-	SecurityFailure       SecurityFailureConfig `yaml:"security_failure" json:"security_failure"`
+	SecurityFailure SecurityFailureConfig `yaml:"security_failure" json:"security_failure"`
+	// SupervisorWatch — the supervisor watch block
+	// (autonomous.automation.supervisor_watch.*). See
+	// SupervisorWatchConfig: the defaults (an unset or empty mode reads
+	// shadow, the release default — reports only, never acts; an unset
+	// alert minutes reads the shared DefaultAutomationTriageAlertMinutes
+	// (30) default; an unset silent minutes reads the 60-minute default)
+	// are applied only in its Effective* accessors, a mode other than
+	// off|shadow|on is refused on every write path, and a negative minute
+	// threshold is refused on every write path.
+	SupervisorWatch       SupervisorWatchConfig `yaml:"supervisor_watch" json:"supervisor_watch"`
 	CreateSearchMode      string                `yaml:"create_search_mode" json:"create_search_mode"`
 	CreateSearchThreshold *float64              `yaml:"create_search_threshold,omitempty" json:"create_search_threshold,omitempty"`
 	// Cleanup — the safe-to-delete cleanup knobs (cleanup_mode,
@@ -3471,6 +3481,193 @@ func ValidateSecurityFailureMode(mode string) error {
 // silently.
 func validateSecurityFailure(c SecurityFailureConfig) error {
 	return ValidateSecurityFailureMode(c.Mode)
+}
+
+// Supervisor watch — the autonomous.automation.supervisor_watch knobs
+// (mode, alert_minutes, silent_minutes, script_output_path,
+// tmux_restart_baseline, main_checkout). Each knob mirrors
+// internal/autonomous (SupervisorWatchConfig) so the YAML/config-load
+// path keeps its own copy of the same rules — internal/config must not
+// import internal/autonomous.
+const (
+	// SupervisorWatchModeOff/Shadow/On — the legal supervisor watch
+	// modes. SupervisorWatchModeShadow is the release default: an
+	// unset or empty mode reads shadow — reports only, never acts — so
+	// the watch ships in shadow mode first.
+	SupervisorWatchModeOff    = "off"
+	SupervisorWatchModeShadow = "shadow"
+	SupervisorWatchModeOn     = "on"
+
+	// DefaultSupervisorWatchSilentMinutes — the supervisor watch
+	// silent_minutes default: an Automaton session may go silent this
+	// many minutes before the watch records a silence finding.
+	DefaultSupervisorWatchSilentMinutes = 60
+
+	// DefaultSupervisorWatchPollSeconds — the supervisor watch
+	// poll_seconds default: the configured coordinator poll interval
+	// (whole seconds) the script-record staleness window is measured
+	// against (a record is stale at 3 times the effective interval).
+	DefaultSupervisorWatchPollSeconds = 60
+
+	// SupervisorWatchMinPollSeconds — the minimum configured poll
+	// interval (whole seconds); an explicitly set value below it is
+	// refused on every write path.
+	SupervisorWatchMinPollSeconds = 60
+)
+
+// SupervisorWatchConfig — the supervisor watch knobs
+// (autonomous.automation.supervisor_watch.*).
+//
+// Mode: off, shadow or on. An empty (unset) mode reads
+// SupervisorWatchModeShadow (the release default — shadow first, reports
+// only, never acts). Any other value is refused on every write path.
+//
+// AlertMinutes is a pointer on purpose: an unset (nil) value reads the
+// shared DefaultAutomationTriageAlertMinutes (30) default — there is no
+// second constant for 30 — while an explicit 0 (a pointer to zero) turns
+// the alert off and must survive a round trip. A negative value is
+// rejected with a 400 on every write path and with an error on config
+// load.
+//
+// SilentMinutes is a pointer on purpose: an unset (nil) value reads
+// DefaultSupervisorWatchSilentMinutes (60) while an explicit 0 must
+// survive a round trip. A negative value is rejected the same way.
+//
+// PollSeconds is the configured coordinator poll interval (whole
+// seconds) the script-record staleness window is measured against
+// (stale at 3 times the effective interval). An unset value (0) reads
+// DefaultSupervisorWatchPollSeconds (60) via EffectivePollSeconds(); an
+// explicitly set value below SupervisorWatchMinPollSeconds (60), like a
+// negative one, is refused on every write path.
+//
+// ScriptOutputPath is the optional path of the oracle script's record
+// file; empty (the zero value) means the script has not published one.
+// TmuxRestartBaseline is the optional baseline the tmux_restart finding
+// compares against; empty means none. MainCheckout is the optional path
+// of the main checkout; empty disables the dirty main-checkout finding
+// altogether.
+type SupervisorWatchConfig struct {
+	Mode                string `yaml:"mode" json:"mode"`
+	AlertMinutes        *int   `yaml:"alert_minutes,omitempty" json:"alert_minutes,omitempty"`
+	SilentMinutes       *int   `yaml:"silent_minutes,omitempty" json:"silent_minutes,omitempty"`
+	PollSeconds         int    `yaml:"poll_seconds,omitempty" json:"poll_seconds,omitempty"`
+	ScriptOutputPath    string `yaml:"script_output_path,omitempty" json:"script_output_path,omitempty"`
+	TmuxRestartBaseline string `yaml:"tmux_restart_baseline,omitempty" json:"tmux_restart_baseline,omitempty"`
+	MainCheckout        string `yaml:"main_checkout,omitempty" json:"main_checkout,omitempty"`
+
+	// WorkingModel is the model the watch expects to be resident on every
+	// registered compute node. Empty (unset) turns the model_not_resident
+	// check off; there is no default working model.
+	WorkingModel string `yaml:"working_model,omitempty" json:"working_model,omitempty"`
+}
+
+// EffectiveMode returns the supervisor watch mode in effect: an empty (unset) value reads
+// SupervisorWatchModeShadow (the release default). Any value other than
+// off, shadow or on is refused on the write paths, so this never has to
+// guess for it. This accessor is the only place the shadow default is
+// applied; a caller never writes the literal.
+func (c SupervisorWatchConfig) EffectiveMode() string {
+	mode := strings.ToLower(strings.TrimSpace(c.Mode))
+	if mode == "" {
+		return SupervisorWatchModeShadow
+	}
+	return mode
+}
+
+// EffectiveAlertMinutes returns the supervisor watch alert threshold in
+// effect: an unset (nil) value reads the shared
+// DefaultAutomationTriageAlertMinutes (30) default, and an explicit 0
+// keeps the alert off. Negative values are rejected on the write paths,
+// so this never has to guess for them. This accessor is the only place
+// the 30-minute default is applied.
+func (c SupervisorWatchConfig) EffectiveAlertMinutes() int {
+	if c.AlertMinutes == nil {
+		return DefaultAutomationTriageAlertMinutes
+	}
+	return *c.AlertMinutes
+}
+
+// EffectiveSilentMinutes returns the supervisor watch silence window in
+// effect: an unset (nil) value reads
+// DefaultSupervisorWatchSilentMinutes (60), and an explicit 0 keeps the
+// window at zero. Negative values are rejected on the write paths, so
+// this never has to guess for them. This accessor is the only place the
+// 60-minute default is applied.
+func (c SupervisorWatchConfig) EffectiveSilentMinutes() int {
+	if c.SilentMinutes == nil {
+		return DefaultSupervisorWatchSilentMinutes
+	}
+	return *c.SilentMinutes
+}
+
+// EffectivePollSeconds returns the configured coordinator poll interval
+// in effect (whole seconds the script-record staleness window is
+// measured against): an unset value (0) reads the
+// DefaultSupervisorWatchPollSeconds (60) default, while an explicit
+// value below SupervisorWatchMinPollSeconds (60), like a negative one,
+// is refused on the write paths, so this never has to guess for it. This
+// accessor is the only place the 60-second default is applied; a caller
+// never writes the literal.
+func (c SupervisorWatchConfig) EffectivePollSeconds() int {
+	if c.PollSeconds == 0 {
+		return DefaultSupervisorWatchPollSeconds
+	}
+	return c.PollSeconds
+}
+
+// ValidateSupervisorWatchMode accepts the three legal supervisor watch
+// modes (off, shadow, on; case-insensitive, trimmed; empty = unset =
+// shadow) and rejects every other value with a clear error naming the
+// accepted set.
+func ValidateSupervisorWatchMode(mode string) error {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", SupervisorWatchModeOff, SupervisorWatchModeShadow, SupervisorWatchModeOn:
+		return nil
+	default:
+		return fmt.Errorf("autonomous.automation.supervisor_watch.mode: %q is not a valid value (must be %q, %q or %q)",
+			mode, SupervisorWatchModeOff, SupervisorWatchModeShadow, SupervisorWatchModeOn)
+	}
+}
+
+// validateSupervisorWatchMinutes rejects a negative minute threshold with
+// a clear error naming the key. Zero is legal (the operator said zero
+// explicitly); an unset (nil) threshold is the accessors' business, not
+// the validator's.
+func validateSupervisorWatchMinutes(field string, minutes int) error {
+	if minutes < 0 {
+		return fmt.Errorf("autonomous.automation.supervisor_watch.%s: %d must not be negative (0 is legal; an unset key reads its default)",
+			field, minutes)
+	}
+	return nil
+}
+
+// validateSupervisorWatch checks one SupervisorWatchConfig the same way
+// the REST write paths do, so a bad mode or a negative threshold is
+// refused consistently on every write path (config load and
+// PUT /api/config) rather than normalized silently.
+func validateSupervisorWatch(c SupervisorWatchConfig) error {
+	if err := ValidateSupervisorWatchMode(c.Mode); err != nil {
+		return err
+	}
+	if c.AlertMinutes != nil {
+		if err := validateSupervisorWatchMinutes("alert_minutes", *c.AlertMinutes); err != nil {
+			return err
+		}
+	}
+	if c.SilentMinutes != nil {
+		if err := validateSupervisorWatchMinutes("silent_minutes", *c.SilentMinutes); err != nil {
+			return err
+		}
+	}
+	if c.PollSeconds < 0 {
+		return fmt.Errorf("autonomous.automation.supervisor_watch.poll_seconds: %d must not be negative (0 = unset, which reads the %d-second default)",
+			c.PollSeconds, DefaultSupervisorWatchPollSeconds)
+	}
+	if c.PollSeconds > 0 && c.PollSeconds < SupervisorWatchMinPollSeconds {
+		return fmt.Errorf("autonomous.automation.supervisor_watch.poll_seconds: %d must be a whole number >= %d (unset reads the %d-second default)",
+			c.PollSeconds, SupervisorWatchMinPollSeconds, DefaultSupervisorWatchPollSeconds)
+	}
+	return nil
 }
 
 // float64Ptr returns a pointer to the float64 value v.
@@ -4989,6 +5186,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := validateSecurityFailure(cfg.Autonomous.Automation.SecurityFailure); err != nil {
+		return err
+	}
+	if err := validateSupervisorWatch(cfg.Autonomous.Automation.SupervisorWatch); err != nil {
 		return err
 	}
 	if err := cfg.Autonomous.LaneFill.validate(); err != nil {

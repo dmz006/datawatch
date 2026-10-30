@@ -180,6 +180,17 @@ nothing, so it can be checked against what the operator did. It never merges
 and never touches the queue — see
 [automation-repo-ci-watch.md](docs/howto/automation-repo-ci-watch.md).
 
+Supervisor watch is the daemon's own version of the supervisor script. On every
+poll, with no model call, it runs fourteen checks over the Automata and the
+machines that run them (a restarted terminal-session service, a node whose
+daemon is down or lacks the working model, a failed or review-held task, a
+finished Automaton that is not merged, an idle lane while work waits, a broken
+or silent worktree, a dirty main checkout, red or stuck CI) and keeps one
+finding per kind and subject. It is report-only in every mode and starts in
+`shadow`, which records what it would alert and raises nothing, so it can be
+compared with the script for a day before it is switched to `on` — see
+[automation-supervisor-watch.md](docs/howto/automation-supervisor-watch.md).
+
 When a security check fails because of a dependency, the daemon stops the
 Automaton line the failing commit belongs to and writes a security failure
 report: the dependency, the advisory, when it was published, the accepted-risks
