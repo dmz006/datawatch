@@ -22,6 +22,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.47.1 — CodeQL default setup kept, alert gate only, local scan
+
+### Fixed
+
+- **The CodeQL workflow no longer fails on every push.** It used to run its own analysis and try to upload a second one, but GitHub's default setup is switched on for the repository and the two cannot both upload, so the upload was rejected every time. GitHub default setup stays the one analysis. The workflow now holds only the alert gate: it waits for default setup's analysis of the commit, then fails if any high or critical alert is open, with dismissed alerts left out. A local, non-uploading CodeQL run shows the same findings before CI does: the same four languages, the same default query suite and the same rule, file and line for every open alert, with nothing sent to GitHub. It comes as a script, a `make` target, a how-to and an optional pre-push hook. The security review document no longer says default setup must be disabled.
+
+**Reuse audit (CodeQL fix):** nothing new was built for the gate. The existing alert gate in the CodeQL workflow is kept and only the duplicate analysis and upload were removed, and the local run reuses the earlier local CodeQL reproduction (same bundle version, packs and suites) as a script instead of re-deriving it.
+
+**Surfaces:** no REST, MCP, CLI, comm channel, config or PWA surface changed.
+
 ## v9.47.0 — Quality gate scope
 
 - **The quality gate can now run only the tests a task can break.** Each Automaton, or every Automaton through `autonomous.default_quality_gates.scope`, can set the gate scope (`full`, the default and the old behaviour, or a scoped value) and a list of smoke packages (`smoke_packages`). A scoped gate runs the packages touched by the task plus the smoke set, also runs `go vet` on them and folds new vet failures in as regressions, and falls back to the full run with the reason kept when it cannot work out the scope. The final gate task always runs the full suite. The plan used for each gate is stored on the gate result (`scope_plan`). The setting is on the YAML config, REST, MCP, CLI, chat commands and the web UI; how-to `quality-gate-scope`.
