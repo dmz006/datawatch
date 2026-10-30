@@ -1551,6 +1551,43 @@ The fields are copied from the live Automaton at the last pass, not derived: `pr
 
 The route is read-only and a sibling of the lane-fill read under the same access rules: bearer-authenticated locally, and it needs the autonomous read **capability** when called by a federated peer. Its surfaces are the REST route above, the MCP tool `autonomous_triage` (the same three filters, proxying the route), the CLI (`datawatch autonomous triage [--automation <id>] [--prd <id>] [--status failed|blocked] [--json]`), the comm verb (`autonomous triage [automation-id]`, one optional positional argument: the Automation id), the PWA triage card in the Automaton detail view, and the same contract documented for the mobile and wear surfaces in [mobile-surface.md](mobile-surface.md). The record card on each client displays, in order: the Automaton name (title, or id), the status chip (failed/blocked), the owning Automation name with its member id when one exists, the failed task title, the task error, the blocked reason, the session end reason, the first-seen time, whether the alert has fired and when, one row per retry-budget category (used of limit, left), and the overall retry ceiling when one is set; values the record does not carry are simply not shown. Triage has exactly one configuration key, `autonomous.automation.triage_alert_minutes`. The record shape is in `internal/server/web/openapi.yaml` (`TriageList`, `TriageRecord`).
 
+## Overlap search (`GET /api/autonomous/overlap`)
+
+The read an operator or an agent runs before it creates an Automaton. It asks the same finder the create route runs: every Automaton in the store, the registry rows in `docs/plans/README.md` and the unmerged `automaton/` branches, with no Automaton excluded. The operator reference, including how to read each kind of warning and how shadow mode is compared with the supervisor's decisions, is in [docs/howto/automaton-search-before-create.md](../howto/automaton-search-before-create.md).
+
+```
+GET /api/autonomous/overlap
+    ?title=<plan title>
+    ?spec=<plan spec>
+    ?limit=<1 to 50, default 10>
+
+200: { "warnings": [ { ... } ], "threshold": 0.5, "mode": "shadow" }
+400: title and spec both blank, or limit not a whole number from 1 to 50
+403: federated peer lacks the autonomous read capability
+500: the overlap search failed (never an empty list)
+503: autonomous is disabled
+```
+
+Give a `title`, a `spec`, or both. The warnings come back best match first, at most `limit` of them. Each warning:
+
+```json
+{
+  "kind": "automaton",
+  "id": "3fa9c2d1",
+  "status": "completed",
+  "score": 0.72,
+  "shared_terms": ["automaton", "existing", "overlaps", "warn"],
+  "reason": "Automaton 3fa9c2d1 already describes this plan.",
+  "read_hint": "datawatch autonomous get 3fa9c2d1"
+}
+```
+
+`kind` is one of `automaton`, `registry`, `branch` or `unavailable`. `id` and `status` are set on the `automaton` kind, `row` on `registry`, and `branch` on `branch`. `unavailable` means one of the three places could not be read, so it was not checked. `threshold` is the match threshold in force and `mode` the search-before-create mode in force (`off`, `shadow` or `on`). The route is a read: it writes nothing, works in every mode, and a search that fails answers 500 rather than an empty list.
+
+The create route, `POST /api/autonomous/prds`, runs the same finder after it stores the Automaton, so a failed search never stops a create. In `on` mode its reply carries `overlap_warnings`, an empty list when nothing matches. In `shadow` mode it writes one `automaton_create_search` audit entry and the reply has no such field. In `off` mode it searches nothing.
+
+Surfaces: the REST route above; the MCP tool `autonomous_overlap_search` (`title`, `spec`, `limit`, proxying the route); the CLI `datawatch autonomous overlap [spec] [--title T] [--spec S] [--json]`; and the comm verb `autonomous overlap <text>`, where the text is the spec. The CLI and the comm verb render the warnings with the same text; the REST route and the MCP tool return the JSON object.
+
 ## Configuration
 
 Per the no-hard-coded-config rule, every knob is reachable from
@@ -1587,6 +1624,9 @@ autonomous:
   judge_policy:           []          # ordered judge backends, one attempt each; empty = follow the verifier routing policy
   judge_timeout_seconds:  1800        # time limit for one judge run; the capacity-slot wait does not count
   judge_size_threshold_lines: 400     # changed lines above which claude-code is tried first; 0 = size rule off
+  automation:
+    create_search_mode:   shadow      # off | shadow | on: search-before-create over the existing Automata, registry rows and branches
+    create_search_threshold: 0.5      # score at or above which an existing Automaton counts as an overlap; above 0, at most 1
 ```
 
 ### Task attempt limits (`task_max_attempt_seconds`, `task_no_progress_seconds`)
@@ -1600,6 +1640,14 @@ A no-progress stop fails the attempt with `no progress for N seconds: no
 output, no file changes, no commits`. In both cases the uncommitted work
 is saved to a ref before the worker is stopped (never discarded) and the
 normal retry budget applies. Recommended values: `5400` and `1800`.
+
+### Search before create (`create_search_mode`, `create_search_threshold`)
+
+`autonomous.automation.create_search_mode` is `off`, `shadow` or `on`, default `shadow`. `off` never searches before a create. `shadow` searches and records what it would have warned in the audit log, and the reply does not change. `on` also adds the warnings to the create reply as `overlap_warnings`. Any other value is refused with 400 and nothing is written. An empty value reads as `shadow`.
+
+`autonomous.automation.create_search_threshold` is the score at or above which an existing Automaton, registry row or branch counts as an overlap. It is a number above 0 and at most 1, default `0.5`. A zero, negative, above-1, non-finite or non-numeric value is refused with 400 and nothing is written; an out-of-range value in the file is an error on load.
+
+Settable through `GET` and `PUT /api/config` (keys `autonomous.automation.create_search_mode` and `autonomous.automation.create_search_threshold`), through `GET` and `PUT /api/autonomous/config` (the `automation` object), through the MCP `autonomous_config_set` tool (`automation_create_search_mode`, `automation_create_search_threshold`), through the CLI `datawatch config set autonomous.automation.create_search_mode=on`, and through the comm verb `configure`. The mode and threshold are read on every create and every search, so a change applies to the next create with no restart.
 
 ### Compute-node engine cap (`max_engines_per_node`)
 

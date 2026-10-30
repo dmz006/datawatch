@@ -252,6 +252,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
+| Search before create | `autonomous_overlap_search` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
 | Memory + KG | `memory_remember/recall/list/forget/export/import/reindex/stats/learnings`, `kg_add/query/timeline/stats/invalidate`, `research_sessions`, `get_prompt`, `copy_response` |
@@ -984,6 +985,27 @@ Restart a session from any state (running, waiting_input, complete, failed, or k
 **Example response:**
 ```
 Restarted session myhost-a3f2 (state: running)
+```
+
+---
+
+### `autonomous_overlap_search`
+
+Search before create: find the Automata, registry rows and unmerged branches that already cover a plan's title and spec, best match first, before you create the plan. It is read-only and works in every search-before-create mode. It proxies `GET /api/autonomous/overlap`. A failed search returns an error, never an empty list.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `title` | string | No | Title of the plan about to be created. Give a title, a spec, or both. |
+| `spec` | string | No | Spec of the plan about to be created. Give a title, a spec, or both. |
+| `limit` | number | No | Most warnings returned, from 1 to 50. Default 10. |
+
+**Reply:** `warnings`, best match first. Each warning has `kind` (`automaton`, `registry`, `branch` or `unavailable`), `id` and `status` for an Automaton, `row` for a registry row, `branch` for a branch, `score` from 0 to 1, up to five `shared_terms`, `reason` and `read_hint`. The reply also carries `threshold` (the match threshold in force) and `mode` (`off`, `shadow` or `on`, the mode in force).
+
+**Example:**
+```
+autonomous_overlap_search(title="Add search before create", spec="Warn when a new Automaton overlaps an existing one", limit=5)
 ```
 
 ---

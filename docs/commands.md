@@ -1162,6 +1162,7 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `prd-create <spec> --kind <feature\|bug\|other>` | Give the kind at creation; omit it to derive the kind from the title and spec |
 | `prd-set-lane-preference <id> <gpu\|claude\|any>` | Set which lane an Automaton may take; an unknown value is refused before anything is sent; `POST /api/autonomous/prds/{id}/set_lane_preference` (body `{"lane_preference": ...}`) |
 | `prd-create <spec> --lane-preference <gpu\|claude\|any>` | Give the lane preference at creation; omit it to take any lane |
+| `overlap [spec] [--title <t>] [--spec <s>] [--json]` | Search before create: the Automata, registry rows and unmerged branches that already cover a plan's title and spec, best match first. Give the spec as the argument or with `--spec`, and the title with `--title`; either one alone is enough. A read: nothing is written, and it runs in every create-search mode. `--json` prints the `GET /api/autonomous/overlap` body untouched; chat: `autonomous overlap <text>` (the text is the spec) |
 
 Comm channels: `autonomous tags [counts]`, `attention`, `session-tags <session-id> <tag-id1,tag-id2,...>` (omit the list to clear), `set-primary <prd-id> <tag-id|none>`, `tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]`,
 `tag-rename <id> <new-name>`, `tag-move <id> <parent-id|root>`, `tag-color <id> <color>`,
@@ -1181,6 +1182,8 @@ eligible counts, then the newest five decisions (`limit` is how many decisions a
 `autonomous set-lane-preference <prd-id> <gpu|claude|any>` sets the lane an Automaton may take.
 
 Comm channel for triage records: `autonomous triage [automation-id]` (one optional positional argument, the automation id) replies with one line per record (newest first) and the alert threshold; extra arguments are refused, the daemon's refusal (no manager) is passed through. The records are read: the daemon neither starts nor retries from one of them.
+
+Comm channel for the overlap read: `autonomous overlap <text>` takes the spec of the plan you are about to create (everything after the verb) and replies with one line per warning, best match first, or `No overlaps found.`. It is a read and writes nothing; a bare `autonomous overlap` is refused with the usage line. The create-search mode and threshold are configuration keys, not commands: `datawatch config set autonomous.automation.create_search_mode=on` (or `shadow`, or `off`), and `autonomous.automation.create_search_threshold` (above 0, at most 1). In chat, `configure autonomous.automation.create_search_mode=on`.
 
 Lane fill settings are configuration keys, not commands: `datawatch config set autonomous.lane_fill.mode shadow` (or `on`, or `off`), and the other `autonomous.lane_fill.*` keys. In chat, `configure autonomous.lane_fill.mode=on`. The keys and the surfaces are listed in the Lane fill section of `docs/operations.md`.
 
