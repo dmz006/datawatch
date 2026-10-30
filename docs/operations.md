@@ -4726,8 +4726,8 @@ A worker session of an Automaton can ask the operator a design question by print
 |---|---|---|
 | **REST API** | `GET /api/questions?state=open`; `GET /api/questions/{id}` | `POST /api/questions/{id}/answer` with `chosen_option_id` and/or `quote` |
 | **MCP** | `question_list` with `state: open`; `question_get` | `question_answer` |
-| **CLI** | `datawatch question list --state open`; `datawatch question show <id>` | `datawatch question answer <id> --option <option id> --text "..."` |
-| **Comm channel** | `question list`; `question show <id>` | `question answer <id> <option number or id> [quote...]`, or a plain reply when exactly one question is open |
+| **CLI** | `datawatch autonomous decisions --state open` (read only) | n/a: no CLI verb answers a question; use REST, MCP or the Web UI |
+| **Comm channel** | `autonomous decisions` (read only, newest ten); the raise announcement names the id | n/a: no chat verb answers a question; use REST, MCP or the Web UI |
 | **Web UI** | Automation view → *Operator questions* card; the task's waiting reason on the Automaton | **Answer** on the row. The Automaton's decision log shows the answer id on an answer entry as a link that opens the quote, the chosen option, the actor and the time |
 
 **Not covered yet.** One-shot print-mode backends are not asked on their behalf: a run that prints its result and exits cannot be paused and then prompted with the decision, and this step adds no handling for it. A non-blocking question's answer is stored but not sent into the worker's session.

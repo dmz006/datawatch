@@ -187,10 +187,10 @@ option, who answered and when.
 | Surface | How |
 |---|---|
 | PWA | **Automation** view → *Operator questions* card → **Answer** on the row → pick an option or type your words → **Answer**. On the Automaton's Decisions tab, the answer id on an answer entry opens the quote panel |
-| CLI | `datawatch question list --state open`, then `datawatch question answer <id> --option cap --text "your words"` |
+| CLI | Read only: `datawatch autonomous decisions --state open` lists the open questions with their ids. There is no CLI verb to answer; answer from the PWA, REST or MCP |
 | REST | `POST /api/questions/{id}/answer` (example below) |
 | MCP | `question_list` with `state: open`, then `question_answer` with `id`, `chosen_option_id` and/or `quote` |
-| Comm channel | `question list`, then `question answer <id> <option number or id> [your words]` — or a plain reply when exactly one question is open |
+| Comm channel | Read only: `autonomous decisions` shows the newest decisions, open questions included. The announcement names the question id. There is no chat verb to answer; answer from the PWA, REST or MCP |
 
 An answer needs an option, your own words, or both. Your words are stored
 exactly as written, and an answer that looks like a credential is refused.
