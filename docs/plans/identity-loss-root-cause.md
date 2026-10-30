@@ -128,7 +128,7 @@ the daemon log is used as evidence in this note.
 | MCP `update_identity` | ruled out | PATCH, merge only. |
 | REST PUT, PATCH, POST | ruled in (the mechanism) | The incident is a PATCH then a PUT at the REST layer. `PUT {}` through `Server.handleIdentity` into `Manager.Set` produces precisely the file found. POST is an alias for PATCH and cannot clear. |
 | `scripts/release-smoke.sh` section 13 | ruled in (likely) | Issues the PATCH then `PUT {}` against `$BASE/api/identity`. Order, timing, the epoch in the section 14 session name and the smoke-named resources in the live audit log all match, and external-daemon mode is the only way that reaches the live daemon. |
-| E2E stories (TS-153, TS-211, TS-246, TS-333, TS-334) | ruled out | None sends a PUT. TS-153 sends PATCH with a `name` field the identity type does not have, so it merges nothing and rewrites the current document with a new `updated_at`; it would audit `identity_update`, never `identity_set`. TS-211 and TS-246 only GET. TS-333 runs `identity show`, TS-334 runs `identity configure --help`. |
+| E2E stories (the five identity stories under `scripts/test-stories/`) | ruled out | None sends a PUT. The get-and-patch story sends PATCH with a `name` field the identity type does not have, so it merges nothing and rewrites the current document with a new `updated_at`; it would audit `identity_update`, never `identity_set`. Two stories only GET `/api/identity`. One runs `identity show` and one runs `identity configure --help`. |
 | Go tests | ruled out | The only tests that build an identity manager or post to the identity route are in `internal/identity` and `internal/server`, and every one uses `t.TempDir()`. The `cmd/datawatch` tests never touch identity. |
 
 ## Test and script isolation audit
@@ -156,7 +156,7 @@ can do it by being pointed there on purpose, and nothing in it stops that.
    picks free ports.
 4. **`scripts/run-tests.sh`, `DW_BASE` or `--no-daemon`.** `TEST_BASE` becomes the named
    daemon, so the stories run against it. Not protected, but the only identity traffic in the
-   stories is GET plus the no-op PATCH in TS-153, which preserves content (it merges nothing
+   stories is GET plus the no-op PATCH in the get-and-patch identity story, which preserves content (it merges nothing
    and rewrites the daemon's in-memory copy). If that copy were stale relative to the file it
    would overwrite the file with it; that is an effect of how `Update` merges against the
    cache, not a wipe.
@@ -186,8 +186,16 @@ played a part in this incident.
 
 ## What the guards now do
 
-This change set delivers these protections. This note was written against the tree before
-they landed, and each is checked by a verify script in `.datawatch/verify/`.
+Status: pending. None of the protections below exists in the tree this note was written
+against. This change set is documentation only and changes no source code, so there is no
+backup, no refusal, no reset route and no lint script yet. The list is the specification for
+the follow-up change set that lands them, not a description of current behaviour. At this
+tree, `Manager.Set` in `internal/identity/identity.go` still writes an empty identity, there
+are no `/api/identity/reset`, `/api/identity/backups` or `/api/identity/restore` routes, no
+`backups_to_keep` setting and no `scripts/check-no-identity-wipe.sh`, and section 13 of
+`scripts/release-smoke.sh` still sends `PUT {}`. Until they land, a repeat is possible.
+
+What the follow-up change set is to deliver:
 
 - **Timestamped backup before every write.** Before `Set` or `Update` replaces the file, the
   previous content is saved as a timestamped backup. The number kept is configurable
@@ -195,14 +203,12 @@ they landed, and each is checked by a verify script in `.datawatch/verify/`.
 - **Refusal of an all-empty overwrite.** A whole-document replace in which every field is
   empty is refused instead of written, so a stray `PUT {}` or a blank form cannot wipe a
   populated identity.
-- **The explicit reset.** Clearing the identity is now a separate, deliberate action
+- **The explicit reset.** Clearing the identity becomes a separate, deliberate action
   (`/api/identity/reset`, with CLI and MCP equivalents), so the only way to empty the
   identity is to ask for exactly that.
 - **Restore on every surface.** Backups can be listed and restored through REST
-  (`/api/identity/backups`, `/api/identity/restore`), the PWA (Restore and Revert buttons),
-  the CLI (`identity backups`, `identity restore`), MCP (`identity_backups`,
-  `restore_identity`) and chat.
-- **The smoke fix.** Section 13 of `scripts/release-smoke.sh` no longer sends an empty body to
-  the identity route.
+  (`/api/identity/backups`, `/api/identity/restore`), the PWA, the CLI, MCP and chat.
+- **The smoke fix.** Section 13 of `scripts/release-smoke.sh` stops sending an empty body to
+  the identity route, and external-daemon mode refuses a daemon that holds a real identity.
 - **The lint guard.** `scripts/check-no-identity-wipe.sh`, run from the Makefile, fails the
   build when any script sends an empty PUT to `/api/identity`.
