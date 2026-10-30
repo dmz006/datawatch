@@ -46,7 +46,19 @@ func isAutomationObjectKey(key string) bool {
 var pendingTranslationKeys = map[string]bool{
 	"settings_stuck_running_seconds": true, // datawatch-app issue 290
 	// Merge-pending badge, safe-to-delete report and their settings: English until the app translation lands.
+	"merge_state_pending":                             true,
+	"merge_state_needs_look":                          true,
+	"merge_state_merged":                              true,
+	"merge_state_empty":                               true,
+	"merge_state_unknown":                             true,
 	"merge_badge_title":                               true,
+	"safe_delete_card_title":                          true,
+	"safe_delete_safe_heading":                        true,
+	"safe_delete_held_heading":                        true,
+	"safe_delete_worktree":                            true,
+	"safe_delete_commits":                             true,
+	"safe_delete_state":                               true,
+	"safe_delete_failed":                              true,
 	"safe_delete_read_only":                           true,
 	"safe_delete_safe_empty":                          true,
 	"safe_delete_held_empty":                          true,

@@ -83,7 +83,7 @@ function safeReport(over) {
 test('a pending entry draws the merge pending badge with its branch and commit count', () => {
   const html = badge(entry());
   assert.ok(html.includes('merge-badge-pending'), 'pending class missing: ' + html);
-  assert.ok(html.includes('>Merge pending<'), 'pending label missing');
+  assert.ok(html.includes('>Automaton merge pending<'), 'pending label missing');
   assert.ok(html.includes('automaton/p1'), 'branch missing from the title');
   assert.ok(html.includes('3 commits not on main'), 'commit count missing from the title: ' + html);
 });
@@ -91,7 +91,7 @@ test('a pending entry draws the merge pending badge with its branch and commit c
 test('a needs_look entry draws the needs a look badge', () => {
   const html = badge(entry({ state: 'needs_look' }));
   assert.ok(html.includes('merge-badge-needs-look'), 'needs-look class missing: ' + html);
-  assert.ok(html.includes('>Needs a look<'), 'needs-look label missing');
+  assert.ok(html.includes('>Automaton needs a look<'), 'needs-look label missing');
   assert.ok(!html.includes('merge-badge-pending'), 'pending class must not show on a needs-look entry');
 });
 
@@ -170,16 +170,16 @@ test('loadMergeStatus indexes the automata by id and keeps the last read when a 
 
 test('the report lists the safe branches and the held ones with their details', () => {
   const html = report(safeReport());
-  assert.ok(html.includes('Safe-to-delete report'), 'card title missing');
-  assert.ok(html.includes('Safe to delete (2)'), 'safe heading missing: ' + html);
-  assert.ok(html.includes('Held (2)'), 'held heading missing');
+  assert.ok(html.includes('Automaton safe-to-delete report'), 'card title missing');
+  assert.ok(html.includes('Automaton branches safe to delete (2)'), 'safe heading missing: ' + html);
+  assert.ok(html.includes('Automaton branches held (2)'), 'held heading missing');
   for (const b of ['automaton/aaa', 'automaton/bbb', 'automaton/ccc', 'automaton/ddd']) {
     assert.ok(html.includes(b), b + ' missing');
   }
-  assert.ok(html.includes('Worktree: /wt/aaa'), 'worktree line missing');
+  assert.ok(html.includes('Automaton worktree: /wt/aaa'), 'worktree line missing');
   assert.ok(html.includes('all commits on main'), 'safe reason missing');
-  assert.ok(html.includes('Commits not on main: 4'), 'commit count missing');
-  assert.ok(html.includes('State: Merge pending'), 'held state label missing: ' + html);
+  assert.ok(html.includes('Automaton commits not on main: 4'), 'commit count missing');
+  assert.ok(html.includes('Automaton branch state: Automaton merge pending'), 'held state label missing: ' + html);
   assert.ok(html.includes('uncommitted changes'), 'dirty note missing');
 });
 
@@ -195,15 +195,15 @@ test('an empty, missing or malformed report renders both empty states, not a thr
     const html = report(body);
     assert.ok(html.includes('No Automaton branch is safe to delete.'), 'safe empty state missing for ' + JSON.stringify(body));
     assert.ok(html.includes('No Automaton branch is held.'), 'held empty state missing for ' + JSON.stringify(body));
-    assert.ok(html.includes('Safe to delete (0)') && html.includes('Held (0)'), 'zero counts missing');
+    assert.ok(html.includes('Automaton branches safe to delete (0)') && html.includes('Automaton branches held (0)'), 'zero counts missing');
   }
 });
 
 test('a held entry with an unknown state shows the raw value escaped, and non-object entries are skipped', () => {
   const html = report({ safe: [null, 'x'], held: [{ branch: 'automaton/q', state: 'constructor' }, 7] });
-  assert.ok(html.includes('Safe to delete (0)'), 'non-object safe entries must be skipped');
-  assert.ok(html.includes('Held (1)'), 'non-object held entries must be skipped');
-  assert.ok(html.includes('State: constructor'), 'inherited name must not map to a locale key: ' + html);
+  assert.ok(html.includes('Automaton branches safe to delete (0)'), 'non-object safe entries must be skipped');
+  assert.ok(html.includes('Automaton branches held (1)'), 'non-object held entries must be skipped');
+  assert.ok(html.includes('Automaton branch state: constructor'), 'inherited name must not map to a locale key: ' + html);
 });
 
 test('hostile text in every report field is escaped and never injectable', () => {
@@ -232,6 +232,7 @@ test('every merge-pending and safe-to-delete key exists in every locale bundle, 
     for (const k of KEYS) {
       const v = b[k];
       assert.ok(typeof v === 'string' && v.length > 0, lang + ' missing or empty ' + k);
+      assert.ok(/\bAutomat(?:on|a)\b/.test(v), lang + ' ' + k + ' must say Automaton or Automata: ' + v);
       assert.ok(!/\bPRDs?\b/.test(v), lang + ' ' + k + ' must say Automaton or Automata, never PRD');
       assert.ok(!/\b(?:BL|F|B|S)\d{1,6}\b/.test(v), lang + ' ' + k + ' carries a tracker id');
     }
