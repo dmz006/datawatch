@@ -16393,6 +16393,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.questions.return_path', label: 'Allow the per-question session return line on top of the event plus polled answer path (on by default)', labelKey: 'settings_automata_questions_return_path', type: 'toggle' },
     { key: 'autonomous.questions.decision_gate', label: 'Hold a task on an unanswered decision it names (on by default)', labelKey: 'settings_automata_questions_decision_gate', type: 'toggle' },
     { key: 'autonomous.questions.decision_gate_mode', label: 'Decision gate mode (shadow only records, on holds the task, default shadow)', labelKey: 'settings_automata_questions_decision_gate_mode', type: 'select', options: ['shadow', 'on'], default: 'shadow' },
+    { key: 'autonomous.questions.worker_marker', label: 'Let a worker raise a question with a marker in its output (off by default)', labelKey: 'settings_automata_questions_worker_marker', helpKey: 'settings_automata_questions_worker_marker_help', type: 'toggle' },
     // Progress engine parameters (0 or empty = the default shown as placeholder).
     { key: 'autonomous.progress.lanes', label: 'Progress lanes (parallel lanes of Automata used for utilization, 0 = 5)', labelKey: 'settings_progress_lanes', type: 'number', placeholder: '5', min: 0, step: 1, default: '0' },
     { key: 'autonomous.progress.inactive_gap_hours', label: 'Progress inactive gap (hours without activity that count as an inactive window, 0 = 3)', labelKey: 'settings_progress_inactive_gap_hours', type: 'number', placeholder: '3', min: 0, step: 0.5, default: '0' },
@@ -16663,7 +16664,7 @@ function loadCommsConfig() {
         } else if (f.type === 'toggle') {
           const checked = !!val;
           html += `<div class="settings-row" style="justify-content:space-between;align-items:center;">
-            <div class="settings-label">${escHtml(f.label)}</div>
+            <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(f.label)}</div>
             <label class="toggle-switch">
               <input type="checkbox" ${checked ? 'checked' : ''} onchange="saveGeneralField('${f.key}', this.checked)" />
               <span class="toggle-slider"></span>
@@ -16876,7 +16877,7 @@ function loadLLMTabConfig() {
             ? `testAndEnableMemory(this)`
             : `saveGeneralField('${f.key}', this.checked)`;
           html += `<div class="settings-row" style="justify-content:space-between;align-items:center;">
-            <div class="settings-label">${escHtml(f.label)}</div>
+            <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(f.label)}</div>
             <div style="display:flex;align-items:center;gap:6px;">
               ${f.key === 'memory.enabled' ? `<button class="btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="testMemoryConnection()">Test</button>` : ''}
               <label class="toggle-switch">
@@ -25347,6 +25348,69 @@ window.loadDecisionLineCard = function(prdID) {
     });
 };
 
+// decisionAnswerLinkHtml(d) is the answer link on one Automaton decision log
+// entry: an operator_answer entry that names its question and its answer
+// shows the answer id as a button that opens a small panel. Any other entry
+// renders nothing. Every value is escaped.
+window.decisionAnswerLinkHtml = function(d) {
+  if (!d || typeof d !== 'object') return '';
+  const qid = d.question_id || d.QuestionID || '';
+  const aid = d.answer_id || d.AnswerID || '';
+  if ((d.kind || d.Kind) !== 'operator_answer' || !qid || !aid) return '';
+  return `<span class="decision-answer-ref" style="display:block;min-width:0;">` +
+    `<button type="button" class="decision-answer-link" data-question="${escHtml(qid)}" data-answer="${escHtml(aid)}" aria-expanded="false" onclick="openDecisionAnswerPanel(this)" style="background:none;border:none;padding:0;color:var(--accent);cursor:pointer;text-decoration:underline;font-size:12px;overflow-wrap:anywhere;text-align:left;">${escHtml(t('decision_answer_link', [aid]))}</button>` +
+    `<div class="decision-answer-panel" hidden style="min-width:0;"></div></span>`;
+};
+// decisionAnswerPanelHtml(answer) is the panel body for one answer from
+// GET /api/questions/{id}/answers: the verbatim quote, the chosen option, the
+// actor and the time. The quote is text, never markup, and is not trimmed or
+// cut. A missing answer renders the not-found line.
+window.decisionAnswerPanelHtml = function(answer) {
+  if (!answer || typeof answer !== 'object') {
+    return `<div class="decision-answer-missing" style="color:var(--text2);">${escHtml(t('decision_answer_panel_missing'))}</div>`;
+  }
+  const row = (label, value) => value
+    ? `<div class="decision-answer-field" style="overflow-wrap:anywhere;"><span style="color:var(--text2);">${escHtml(label)}</span> ${escHtml(value)}</div>`
+    : '';
+  const when = answer.created_at ? _triageTime(answer.created_at) : '';
+  return `<div class="decision-answer-body" style="margin:4px 0 6px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;min-width:0;">` +
+    `<div style="color:var(--text2);font-size:11px;">${escHtml(t('decision_answer_panel_quote'))}</div>` +
+    `<blockquote class="decision-answer-quote" style="margin:2px 0 4px;padding:2px 8px;border-left:2px solid var(--border);white-space:pre-wrap;overflow-wrap:anywhere;">${escHtml(answer.quote == null ? '' : String(answer.quote))}</blockquote>` +
+    row(t('decision_answer_panel_option'), answer.chosen_option_id) +
+    row(t('decision_answer_panel_actor'), answer.actor) +
+    row(t('decision_answer_panel_time'), when) +
+    `</div>`;
+};
+// loadDecisionAnswerPanel(questionID, answerID, panel) fills panel with the
+// answer: GET /api/questions/{id}/answers lists the answers of the question
+// and the one with answerID is shown. A failed fetch or an answer that is not
+// in the list renders its own line.
+window.loadDecisionAnswerPanel = function(questionID, answerID, panel) {
+  if (!panel) return Promise.resolve();
+  panel.innerHTML = `<div class="decision-answer-loading" style="color:var(--text2);">${escHtml(t('decision_answer_panel_loading'))}</div>`;
+  return apiFetch('/api/questions/' + encodeURIComponent(questionID) + '/answers')
+    .then(body => {
+      const list = body && Array.isArray(body.answers) ? body.answers : [];
+      panel.innerHTML = window.decisionAnswerPanelHtml(list.find(a => a && a.id === answerID));
+    })
+    .catch(() => {
+      panel.innerHTML = `<div class="decision-answer-failed" style="color:var(--text2);">${escHtml(t('decision_answer_panel_failed'))}</div>`;
+    });
+};
+// openDecisionAnswerPanel(btn) toggles the panel that follows an answer link.
+window.openDecisionAnswerPanel = function(btn) {
+  const panel = btn && btn.nextElementSibling;
+  if (!panel) return Promise.resolve();
+  if (!panel.hidden) {
+    panel.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+    return Promise.resolve();
+  }
+  panel.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  return window.loadDecisionAnswerPanel(btn.getAttribute('data-question'), btn.getAttribute('data-answer'), panel);
+};
+
 // ── Automata progress card ───────────────────────────────────────────────────
 // progressCardHtml(state, opts) is a pure function from the loader state to
 // markup. state: {status: 'loading'|'ok'|'stale'|'failed', data: the
@@ -27140,6 +27204,7 @@ function _renderDetailDecisionsTab(prd) {
         <span class="prd-decision-time">${escHtml(time)}</span>
       </div>
       ${note ? `<div class="prd-decision-note">${escHtml(note)}</div>` : ''}
+      ${window.decisionAnswerLinkHtml(d)}
       ${grid}
     </div>`;
   }).join('');
