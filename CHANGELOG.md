@@ -22,6 +22,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.47.0 — Quality gate scope
+
+- **The quality gate can now run only the tests a task can break.** Each Automaton, or every Automaton through `autonomous.default_quality_gates.scope`, can set the gate scope (`full`, the default and the old behaviour, or a scoped value) and a list of smoke packages (`smoke_packages`). A scoped gate runs the packages touched by the task plus the smoke set, also runs `go vet` on them and folds new vet failures in as regressions, and falls back to the full run with the reason kept when it cannot work out the scope. The final gate task always runs the full suite. The plan used for each gate is stored on the gate result (`scope_plan`). The setting is on the YAML config, REST, MCP, CLI, chat commands and the web UI; how-to `quality-gate-scope`.
+
 ## v9.46.1 — PWA dialogs fit the screen
 
 ### Fixed
