@@ -458,8 +458,11 @@ jobs:
             git push origin "$BRANCH"
             gh pr create --title "fix(security): remove $(wc -l < /tmp/stale.txt | tr -d ' ') stale CVE suppression(s) — v$NEW_VERSION" \
               --body-file /tmp/pr-full-body.md \
-              --label security \
-              --reviewer "${{ github.repository_owner }}"
+              --label security
+            # Best effort: the owner cannot be asked to review a pull request their own
+            # token opened (GitHub refuses it), and that refusal must not fail the run.
+            gh pr edit "$BRANCH" --add-reviewer "${{ github.repository_owner }}" \
+              || echo "reviewer request skipped (the pull request author cannot review it)"
           fi
 
       - name: File or update tracking issue (always — audit trail even when nothing is stale)
