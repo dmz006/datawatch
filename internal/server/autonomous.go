@@ -139,13 +139,14 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					CreateSearchThreshold *float64 `json:"create_search_threshold"`
 					// Cleanup keys (cleanup_mode, cleanup_retention_hours,
 					// cleanup_max_removals_per_pass, disk_alert_percent).
-					// Declared here only so a type mismatch (a string in a
-					// numeric key, an object in the mode) is caught by the
-					// unmarshal and answered with a 400; any value of the right
-					// type is accepted — an empty or unknown cleanup_mode word
-					// reads as report, zero/negative numbers read their
-					// defaults, and the alert percent is clamped to 1..100 by
-					// the Effective* accessors.
+					// Declared so a type mismatch (a string in a numeric
+					// key, an object in the mode) is caught by the unmarshal
+					// and answered with a 400; an ABSENT key keeps the current
+					// value (merge-onto-current in SetConfig), and a PRESENT one
+					// is then checked strictly below (off|report|on; whole
+					// hours and limit of at least 1; alert percent whole in
+					// 1..100), so a GET /api/autonomous/config readback always
+					// shows exactly what was written.
 					CleanupMode               *string  `json:"cleanup_mode"`
 					CleanupRetentionHours     *float64 `json:"cleanup_retention_hours"`
 					CleanupMaxRemovalsPerPass *float64 `json:"cleanup_max_removals_per_pass"`
@@ -196,6 +197,24 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 						http.Error(w, verr.Error(), http.StatusBadRequest)
 						return
 					}
+				}
+				if auto.CleanupMode != nil {
+					if verr := validateCleanupConfigMode(*auto.CleanupMode); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if verr := cleanupWholeAtLeast("cleanup_retention_hours", auto.CleanupRetentionHours); verr != nil {
+					http.Error(w, verr.Error(), http.StatusBadRequest)
+					return
+				}
+				if verr := cleanupWholeAtLeast("cleanup_max_removals_per_pass", auto.CleanupMaxRemovalsPerPass); verr != nil {
+					http.Error(w, verr.Error(), http.StatusBadRequest)
+					return
+				}
+				if verr := cleanupPercentWhole(auto.DiskAlertPercent); verr != nil {
+					http.Error(w, verr.Error(), http.StatusBadRequest)
+					return
 				}
 			}
 			// lane_fill: every field is checked, so one bad value rejects the PUT.

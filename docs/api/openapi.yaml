@@ -1354,6 +1354,42 @@ paths:
         "500": {description: The branches could not be listed}
         "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
 
+  /api/autonomous/cleanup:
+    get:
+      summary: Automation cleanup status
+      description: |
+        The status of both Automaton cleanup passes, the disk readings behind them
+        and the rate-limited disk alert. `worktrees` is the finished-worktrees
+        pass (this daemon's own finished Automata branches and worktrees, and the
+        net finished entries removed or dry-run counted in the same pass),
+        `temp` the daemon temp-file sweep, each with its mode in effect, last run
+        time (null until that pass runs), the removed / would-removed / skipped /
+        failed counts, the bytes freed, the last error, and the split between
+        this daemon's own Automata and the rest. `worktree_disk` and
+        `temp_disk` (when present) are the disk readings behind the two passes;
+        a pass that has not run has no reading.
+        `disk_alert_percent` is the threshold in effect
+        (`autonomous.automation.disk_alert_percent`), `disk_alert` whether the
+        rate-limited alert is currently due, and `last_disk_alert_at` the last
+        time it fired (null until then). The status is read from the in-memory
+        watch kept by the coordination loop, so a read never scans the disk again.
+        Read-only; only GET is served, and a federated peer needs the autonomous
+        read capability.
+      operationId: autonomousCleanup
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Cleanup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CleanupStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/progress:
     get:
       summary: Progress metrics
@@ -2340,7 +2376,11 @@ paths:
         lint mode: the effective, normalized value is returned.
         The `automation` object carries the search-before-create settings:
         `create_search_mode` (off|shadow|on, default shadow) and
-        `create_search_threshold` (above 0 and at most 1, default 0.5).
+        `create_search_threshold` (above 0 and at most 1, default 0.5). It also
+        carries the cleanup settings: `cleanup_mode` (off|report|on, default
+        report), `cleanup_retention_hours` (whole hours >= 1, default 24),
+        `cleanup_max_removals_per_pass` (whole number >= 1, default 10) and
+        `disk_alert_percent` (whole percent 1-100, default 85).
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses:
@@ -2369,6 +2409,23 @@ paths:
                         type: number
                         default: 0.5
                         description: "The over-duplication score at or above which an existing Automaton counts as an overlap. Above 0 and at most 1 (autonomous.automation.create_search_threshold)."
+                      cleanup_mode:
+                        type: string
+                        enum: [off, report, "on"]
+                        default: report
+                        description: "The cleanup mode in effect (autonomous.automation.cleanup_mode): off never removes anything, report removes nothing and records what it would remove, on performs the removals."
+                      cleanup_retention_hours:
+                        type: integer
+                        default: 24
+                        description: "Whole hours >= 1; only finished entries older than this are candidates for the worktrees pass (autonomous.automation.cleanup_retention_hours)."
+                      cleanup_max_removals_per_pass:
+                        type: integer
+                        default: 10
+                        description: "Whole number >= 1; a pass removes at most this many entries and leaves the rest for the next pass (autonomous.automation.cleanup_max_removals_per_pass)."
+                      disk_alert_percent:
+                        type: integer
+                        default: 85
+                        description: "Whole percent 1-100; the disk-usage threshold at or above which the rate-limited cleanup disk alert fires (autonomous.automation.disk_alert_percent)."
     put:
       summary: Replace autonomous config
       description: |
@@ -2399,6 +2456,13 @@ paths:
         changes nothing. `PUT /api/config` accepts them as
         `autonomous.automation.create_search_mode` and
         `autonomous.automation.create_search_threshold`.
+        The cleanup settings under `automation` follow the same rule: an absent
+        key keeps the current value, and a present one must be a value a GET
+        reads back verbatim — `cleanup_mode` (off|report|on),
+        `cleanup_retention_hours` and `cleanup_max_removals_per_pass` (whole
+        numbers of at least 1) and `disk_alert_percent` (a whole percent in
+        1-100) — otherwise the whole PUT is rejected with 400 and changes
+        nothing.
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:
@@ -2421,6 +2485,19 @@ paths:
                       type: number
                       default: 0.5
                       description: "The over-duplication score at or above which an existing Automaton counts as an overlap. Above 0 and at most 1 (autonomous.automation.create_search_threshold)."
+                    cleanup_mode:
+                      type: string
+                      enum: [off, report, "on"]
+                      description: "The cleanup mode: off never removes anything, report removes nothing and records what it would remove, on performs the removals (autonomous.automation.cleanup_mode). Any other value rejects the PUT with 400."
+                    cleanup_retention_hours:
+                      type: integer
+                      description: "Whole hours >= 1; only finished entries older than this are candidates (autonomous.automation.cleanup_retention_hours). Zero, a negative, a fractional or a non-numeric value rejects the PUT with 400."
+                    cleanup_max_removals_per_pass:
+                      type: integer
+                      description: "Whole number >= 1; a pass removes at most this many entries (autonomous.automation.cleanup_max_removals_per_pass). Zero, a negative, a fractional or a non-numeric value rejects the PUT with 400."
+                    disk_alert_percent:
+                      type: integer
+                      description: "Whole percent in 1-100; the disk-usage threshold for the rate-limited cleanup disk alert (autonomous.automation.disk_alert_percent). A fractional or out-of-range value rejects the PUT with 400."
                 scope_lint:
                   type: string
                   enum: [off, warn, enforce]
@@ -6148,6 +6225,55 @@ components:
               dirty: {type: boolean, description: True when the worktree has uncommitted changes}
               note: {type: string}
         held_dirty: {type: integer, description: Branches that are safe by state but held for uncommitted changes}
+    CleanupStatus:
+      type: object
+      description: |-
+        The automation cleanup status, as GET /api/autonomous/cleanup returns it.
+        A pass that has not run carries null for its last_run and zero counts;
+        `last_disk_alert_at` is null until the alert fires. `disk_alert` is
+        rate-limited by autonomous.automation.disk_alert_interval_minutes
+        (default 60) so a permanently full disk fires once per interval, not on
+        every pass.
+      required: [worktrees, temp, disk_alert_percent, disk_alert]
+      properties:
+        worktrees: {$ref: "#/components/schemas/CleanupPassStatus"}
+        temp: {$ref: "#/components/schemas/CleanupPassStatus"}
+        worktree_disk:
+          allOf: [{$ref: "#/components/schemas/CleanupDiskCheck"}]
+          description: The disk reading behind the worktrees pass; absent until that pass runs
+        temp_disk:
+          allOf: [{$ref: "#/components/schemas/CleanupDiskCheck"}]
+          description: The disk reading behind the daemon temp-file sweep; absent until it runs
+        disk_alert_percent: {type: integer, description: "The disk-usage threshold in force (whole percent, autonomous.automation.disk_alert_percent; default 85)"}
+        disk_alert: {type: boolean, description: "True while the rate-limited disk alert is due"}
+        last_disk_alert_at: {type: string, nullable: true, format: date-time, description: When the rate-limited alert last fired; null until it does}
+    CleanupPassStatus:
+      type: object
+      description: |-
+        One cleanup pass. `owner_*` fields cover this daemon's own finished
+        Automata; `net_*` covers the same pass's sweep of everything else that
+        qualifies.
+      required: [mode, last_run, removed, would_remove, skipped, failed, bytes_freed, last_error, owner_removed, net_removed, owner_bytes_freed, net_bytes_freed]
+      properties:
+        mode: {type: string, enum: [off, report, "on"], description: "The cleanup mode in effect when the pass last ran (autonomous.automation.cleanup_mode; default report)"}
+        last_run: {type: string, nullable: true, format: date-time, description: When the pass last ran; null until it runs}
+        removed: {type: integer, description: Entries removed on the last run}
+        would_remove: {type: integer, description: "report mode: entries that would be removed"}
+        skipped: {type: integer, description: Entries skipped on the last run}
+        failed: {type: integer, description: Entries that failed on the last run}
+        bytes_freed: {type: integer, format: int64, description: Bytes freed on the last run}
+        last_error: {type: string, description: The last error; empty when the pass succeeded}
+        owner_removed: {type: integer, description: "This daemon's own finished Automata entries"}
+        net_removed: {type: integer, description: Everything else the same pass removed}
+        owner_bytes_freed: {type: integer, format: int64}
+        net_bytes_freed: {type: integer, format: int64}
+    CleanupDiskCheck:
+      type: object
+      description: One disk-usage reading behind a cleanup pass
+      properties:
+        path: {type: string, description: The path the usage was measured for}
+        percent: {type: integer, description: Disk usage used percent}
+        alert: {type: boolean, description: "True when the reading is at or above the threshold"}
     TriageList:
       type: object
       description: |-
