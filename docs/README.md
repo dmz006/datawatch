@@ -35,6 +35,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [howto/automation-queue-advance.md](howto/automation-queue-advance.md) | Automation (chained Automatons): activate, automatic advance, idle alert |
 | [howto/usage-calculator.md](howto/usage-calculator.md) | Usage calculator: within or over budget for the week, what each lane count costs, the three policies, typed readings, federation, the three PWA variants |
 | [howto/automation-lane-fill.md](howto/automation-lane-fill.md) | Lane fill: keeping GPU and Claude lanes busy, the shadow mode comparison, lane preferences, the idle alert and restart behaviour |
+| [howto/automaton-search-before-create.md](howto/automaton-search-before-create.md) | Search before create: the overlap warning, how to read each kind, the off / shadow / on modes, comparing shadow records with what the supervisor did, the threshold, and the five ways to read warnings |
 | [howto/automation-tab.md](howto/automation-tab.md) | Automation tab: list, pipeline strip, create and edit form, member controls |
 | [howto/automata-tab-loading.md](howto/automata-tab-loading.md) | Automata tab loading: paged summary, Load more, loading / cached / stale / failed states, reconnect |
 | [howto/automation-tab.md](howto/automation-tab.md) | Automation view (first sub-tab of Automata): list, pipeline strip, create and edit form, member controls |
@@ -114,6 +115,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [flow/agent-spawn-flow.md](flow/agent-spawn-flow.md) | F10 agent lifecycle — profile → spawn → bootstrap → clone → terminate → revoke → sweep |
 | [flow/lifecycle-subscription-flow.md](flow/lifecycle-subscription-flow.md) | Automata lifecycle event → dispatcher → subscription engine → comm / session (bridge, SendInput) / topic / alert / pending-events queue (`mcp_queue`) sinks; update + test-fire; outbound webhook and peer forwarding paths (both ship disabled) |
 | [flow/tag-registry-sync-flow.md](flow/tag-registry-sync-flow.md) | Shared tag registry across federated daemons: keeper and peer roles, the pull loop, forwarded writes, stale copies, pending sync, merge and removed-on-keeper notes |
+| [flow/automaton-create-overlap-flow.md](flow/automaton-create-overlap-flow.md) | Create-time overlap check — create, store, search, then the reply (`on`) or the audit record (`shadow`) |
 | [flow/automation-triage-flow.md](flow/automation-triage-flow.md) | Poll-time triage pass — fill/refresh/clear the stuck Automaton's triage record, one alert per episode, and the read on every surface |
 
 ---

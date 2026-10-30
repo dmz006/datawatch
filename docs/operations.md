@@ -4426,6 +4426,25 @@ Every key is read live. Mode and threshold changes apply on the next poll, with 
 
 ---
 
+## Create-time overlap check and shadow mode (`autonomous.automation.create_search_mode`)
+
+When an Automaton is created, the daemon can check whether an existing Automaton, a plans-registry row or an unmerged Automaton branch already covers the same work, and report any match as an overlap warning. The check never blocks a create and never changes what it finds. The full guide is [howto/automaton-search-before-create.md](howto/automaton-search-before-create.md); the data flow is [flow/automaton-create-overlap-flow.md](flow/automaton-create-overlap-flow.md).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomous.automation.create_search_mode` | `shadow` | `off` (no check), `shadow` (check and record in the audit log; the create reply is unchanged) or `on` (check and add `overlap_warnings` to the create reply). |
+| `autonomous.automation.create_search_threshold` | `0.5` | Score a match must reach, above 0 and at most 1. A match also needs at least three shared words. |
+
+Both keys are read on every create, so a change applies at once with no restart. A bad value is refused and nothing is written.
+
+**Shadow mode.** It is the default so you can test the matching on real work before anyone sees a warning. Each create writes one audit entry with the action `automaton_create_search`, the new Automaton as its subject, and the mode and the warnings the check would have shown (an empty list when it found none). Read them with `datawatch audit --action automaton_create_search`, then compare each one with what the supervisor did with that Automaton: right warning, noise, or missed. Raise the threshold for noise, lower it for misses, and switch to `on` when both are low enough.
+
+**Reading overlaps by hand.** `GET /api/autonomous/overlap?title=...&spec=...`, `datawatch autonomous overlap`, the comm verb `autonomous overlap <text>` and the MCP tool `autonomous_overlap_search` run the same search at any time, in every mode, and write nothing.
+
+**If the check fails.** A source that cannot be read becomes an `unavailable` warning and the others still run. If the whole search fails, the daemon logs one `[overlap]` line and the create replies as if the mode were `off`. A failure never fails a create.
+
+---
+
 ## Triage records (failed and blocked Automata)
 
 The autonomous engine keeps one triage record per **failed** or **blocked** Automaton, so an operator can see what failed, when it has been sitting, how much retry budget is left, and whether the triage alert has fired — from every surface at once. The record is a **read**: filling it starts, retries and edits nothing.
