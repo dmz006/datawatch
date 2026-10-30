@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-30
 **Scope:** whether the analysis GitHub default setup runs for this repository (languages `actions`, `go`, `javascript-typescript`, `python`; default code-scanning suite) can be reproduced on a developer machine with the CodeQL command line and without uploading anything. Measurement only: no source, workflow or config file is changed by this document. Prior art, re-measured here rather than copied: [2026-10-27-codeql-local-reproduction.md](2026-10-27-codeql-local-reproduction.md) (go and javascript-typescript, CLI 2.27.3).
-**Status:** measured; the answer is recorded in `## Local run feasibility`. The working files (bundle, databases, SARIF, scripts) live under `.datawatch/codeql/`, which is gitignored (`.gitignore` line 1), so none of them are committed.
+**Status:** Done on the branch; ships in the next patch above `main`. The measurements are in `## Local run feasibility`, the workflow check in `## Gate reads default setup alerts`. The working files (bundle, databases, SARIF, scripts) live under `.datawatch/codeql/`, which is gitignored (`.gitignore` line 1), so none of them are committed.
 **Version:** the fix that follows from this ships as the next patch above `main`; no number is assigned here.
 
 ## Decision
@@ -116,6 +116,54 @@ Reverse direction: 87 of the 106 dismissed alerts are reproduced locally on the 
 - Install the bundle outside the source root (or exclude it) so the Python extractor does not walk it.
 - Python and actions produce 0 results, as they do on GitHub, so a zero from those two is expected, not a sign the step failed. The run logs and the database-created line, not the exit status alone, confirmed each step finished.
 - The CLI messages "scanned N out of M files" refer to one language per invocation and are not a coverage gap.
+
+## Phases
+
+| Phase | Work | Status |
+|-------|------|--------|
+| 1 | Rewrite `.github/workflows/codeql.yaml` as the alert gate only: no analysis job, no upload, a wait step for default setup's analyses, then the open high or critical alert check | Done |
+| 2 | Clear the CodeQL conflict flag in the supervisor watch, since the advanced workflow no longer conflicts with default setup | Done |
+| 3 | Smoke the wait step and the gate against the live repository, read-only (`codeql-alert-gate-smoke-result.md`) | Done |
+| 4 | Measure whether default setup's analysis can be reproduced locally (`## Local run feasibility`) | Done |
+| 5 | Add the local scan: `scripts/codeql-local.sh`, its report helper, the `codeql-local` Makefile target and the opt-in pre-push hook | Done |
+| 6 | Document the local scan in `docs/howto/codeql-local-scan.md` and the doc indexes | Done |
+| 7 | Update the security documentation, the plan registry and this document | Done |
+
+## Gate reads default setup alerts
+
+Re-run read-only on 2026-10-30 with the same `gh api` queries the workflow uses. Nothing was written to GitHub.
+
+Newest analyses on `main`:
+
+```bash
+gh api 'repos/dmz006/datawatch/code-scanning/analyses?ref=refs/heads/main&per_page=6' \
+  --jq '.[] | [.commit_sha[0:9], .tool.name, .tool.version, .analysis_key, .category, .results_count, .rules_count] | @tsv'
+```
+
+| Commit | Tool | Version | Analysis key | Category | Results | Rules |
+|--------|------|---------|--------------|----------|--------:|------:|
+| `2aa267b60` | CodeQL | 2.27.3 | `dynamic/github-code-scanning/codeql:analyze` | `/language:go` | 69 | 34 |
+| `bdb6b9191` | CodeQL | 2.27.3 | `dynamic/github-code-scanning/codeql:analyze` | `/language:go` | 69 | 34 |
+| `2aa267b60` | CodeQL | 2.27.3 | `dynamic/github-code-scanning/codeql:analyze` | `/language:javascript-typescript` | 23 | 87 |
+| `2aa267b60` | CodeQL | 2.27.3 | `dynamic/github-code-scanning/codeql:analyze` | `/language:python` | 0 | 43 |
+| `2aa267b60` | CodeQL | 2.27.3 | `dynamic/github-code-scanning/codeql:analyze` | `/language:actions` | 0 | 17 |
+| `bdb6b9191` | CodeQL | 2.27.3 | `dynamic/github-code-scanning/codeql:analyze` | `/language:javascript-typescript` | 23 | 87 |
+
+Every analysis is by the tool `CodeQL` at version 2.27.3, with the analysis key `dynamic/github-code-scanning/codeql:analyze`: the key default setup uses, not the key of an advanced workflow. The four categories are `/language:actions`, `/language:go`, `/language:javascript-typescript` and `/language:python`.
+
+One open alert, read back with `gh api 'repos/dmz006/datawatch/code-scanning/alerts?state=open&ref=refs/heads/main&per_page=100'`: alert 729 (`go/disabled-certificate-check`, high) has `most_recent_instance.analysis_key` `dynamic/github-code-scanning/codeql:analyze` and category `/language:go`. The other four open alerts (723 to 726, all high) report the same analysis key, with category `/language:javascript-typescript`.
+
+**Conclusion.** The alerts the gate lists are the alerts of default setup's analyses. The gate reads them through the alerts API for the ref, so it needs no upload of its own and cannot disagree with what the Security tab shows.
+
+**The wait step and why it exists.** On a push or a pull request, default setup analyzes the commit at about the same time as the gate starts. Without a wait, the gate could read the alerts of the previous commit and pass or fail on stale data. The step polls the analyses endpoint (which ignores a `sha` parameter, so it filters on `commit_sha`) until all four expected categories exist for the commit, then lets the alert check run. A pull request is looked up under `refs/pull/<number>/head` at the PR head commit, where default setup records it, not at the merge commit. If a category is still missing at the deadline the step fails and names the missing categories, so a missing analysis is a visible failure and not a silent pass. Scheduled and manual runs skip the wait, because they read the alerts of the default branch as they stand.
+
+**Tunables.** All three are in `.github/workflows/codeql.yaml`:
+
+| Tunable | Default | Meaning |
+|---------|---------|---------|
+| `WAIT_INTERVAL_SECONDS` | 30 | Seconds between polls of the analyses endpoint. |
+| `WAIT_MAX_SECONDS` | 1500 | Total seconds to wait before the step fails; the job's `timeout-minutes: 40` leaves room above it. |
+| `EXPECTED_CATEGORIES` | the four `/language:<name>` categories | Space-separated categories that must exist for the commit; change it when a language is added to or removed from default setup. |
 
 ## Parity surface
 
