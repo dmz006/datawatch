@@ -294,3 +294,7 @@ The daemon fixes found along the way (v9.1.3 ask adapter, v9.1.4 session
 launch) change no contract on any surface. They make the existing
 `llm_test` and opencode session-start paths accept the registry's
 `ollama/<model>` form.
+
+### pi-r2 (2026-10-30), base role only on the local node
+
+Run `20261030-pi-r2` ran the `base` role (`ollama/qwen3.8:27b`, thinking level minimal) on the local node for all four task types, preflight passed, and all four cells completed (the run timed out at its four hour limit with two cells done; the other two finished afterwards, mostly waiting for the verifier on the remote node). Verifier exits: analysis 0, scripting 0, docs 1, review 0. The result is again **untrusted**, not pass or fail: when `collect` ran, every worker session returned 404 from `GET /api/sessions/{id}` although the session directories exist on disk and the CLI still shows them, so `model_identity` is unknown and `verification_integrity` is suspect (the workers' own reports name the right model). The sessions were most likely dropped from the session records by the daemon restart at 04:35 and the temp-directory quota failures of that morning, which also made two sessions fail to start. A valid run needs `collect` per cell while the run is still going, and no daemon restart or quota failure during it. The other three roles still need the node placement answer.
