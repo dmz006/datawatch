@@ -140,6 +140,7 @@ Selected core tools:
 | `autonomous_lane_fill_status` | Read the lane fill status: lanes, idle state, recent planner decisions and idle alerts; optional `limit` (1 to 1000, default 50) |
 | `autonomous_prd_set_lane_preference` | Set an Automaton's lane to `gpu`, `claude` or `any` (empty means `any`); takes `id` and `lane_preference` |
 | `autonomous_triage` | Read the triage records: one record per failed or blocked Automaton, newest first, with its identity, the failed or blocked task and its error, the session end reason, the retry budgets and the append-only notes — beside `alert_minutes`, the triage alert threshold currently in effect; optional `automation_id`, `prd_id` and `status` (`failed` or `blocked`) |
+| `security_failure_list` | List the stored security failure reports, newest first: each entry has the failing run's `repo`, `ref_kind`, `ref_name`, `workflow`, `run_id`, `run_url` and `status` and the stored `report`; optional `repo` and `status` (`green`, `failing`, `pending`, `hung`, `rerunning` or `superseded`) |
 | `autonomous_prd_rejudge` | Re-judge the completion guardrail of a blocked Automaton whose tasks are all completed, without resetting any task — pass unblocks it, block keeps it blocked; refused otherwise |
 | `autonomous_prd_set_failure_escalation` | Set or clear the failure escalation override on an Automaton or one task (`policy` object, or `clear=true`) |
 | `autonomous_prd_resolve_task_review` | Retry (optionally with a changed spec, worker or file list) or cancel a task held for review |

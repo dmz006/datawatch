@@ -1303,6 +1303,41 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/security-failures:
+    get:
+      summary: Security failure reports
+      description: |
+        The stored security failure reports, newest first, as a list. Each entry
+        names the failing security run it belongs to (repository, ref kind and name,
+        workflow, run ID, run URL and watch status) and carries the report stored for
+        it under `report`: the dependency, the advisory identifiers, the fixed
+        version, the accepted-risk registry result, the recommendation and the mode
+        and action the Automaton line received. `repo` narrows the list to one
+        repository path, `status` to one watch status (green, failing, pending, hung,
+        rerunning, superseded); an unknown status is refused with a 400 that names
+        the allowed values. A read that matches nothing is an empty array, not an
+        error. Read-only; needs the autonomous read capability when called by a
+        federated peer.
+      operationId: autonomousSecurityFailures
+      tags: [Autonomous]
+      parameters:
+        - {name: repo, in: query, required: false, description: Only the reports of this repository path, schema: {type: string}}
+        - {name: status, in: query, required: false, description: "Only green, failing, pending, hung, rerunning or superseded", schema: {type: string, enum: [green, failing, pending, hung, rerunning, superseded]}}
+      responses:
+        "200":
+          description: Security failure reports, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/SecurityFailureEntry"}
+        "400": {description: status is not one of the watch statuses}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/progress:
     get:
       summary: Progress metrics
@@ -5591,6 +5626,52 @@ components:
           type: array
           description: Watch records, newest first; empty when nothing matches
           items: {$ref: "#/components/schemas/RepoCIWatchRecord"}
+    SecurityFailureEntry:
+      type: object
+      description: >-
+        One stored security failure report with the identity of the failing
+        security run it belongs to, as GET /api/autonomous/security-failures
+        returns it.
+      required: [repo, ref_kind, ref_name, workflow, run_id, run_url, status, report]
+      properties:
+        repo: {type: string, description: The repository path, e.g. dmz006/datawatch}
+        ref_kind: {type: string, enum: [main, tag], description: The kind of ref the run was watched at}
+        ref_name: {type: string, description: The branch name or tag}
+        workflow: {type: string, description: The workflow file name}
+        run_id: {type: string, description: The CI run ID}
+        run_url: {type: string}
+        status:
+          type: string
+          enum: [green, failing, pending, hung, rerunning, superseded]
+          description: The run's watch state
+        report: {$ref: "#/components/schemas/SecurityFailureReport"}
+    SecurityFailureReport:
+      type: object
+      description: >-
+        The report stored for one failing security run: what failed, what the
+        advisory lookup and the accepted-risks registry said, what was
+        recommended, and what the Automaton line received.
+      properties:
+        dependency: {type: string}
+        advisory_ids: {type: array, items: {type: string}}
+        workflow: {type: string}
+        run_id: {type: integer, format: int64}
+        run_url: {type: string}
+        sha: {type: string, description: The commit the run executed against}
+        published_at: {type: string, description: When the advisory was published, as the lookup reported it; empty when unknown}
+        fixed_version: {type: string}
+        registry_found: {type: boolean, description: Whether the accepted-risks registry holds an entry for the advisory}
+        registry_id: {type: string}
+        registry_first_added: {type: string}
+        registry_added: {type: string}
+        registry_expires: {type: string}
+        registry_error: {type: string, description: Why the registry could not be consulted; empty otherwise}
+        lookup_error: {type: string, description: Why the advisory lookup failed; empty otherwise}
+        recommendation: {type: string, enum: [upgrade, unknown, keep, keep_no_entry]}
+        note: {type: string, description: Why the decision stopped at report_only or consulted nothing; empty otherwise}
+        mode: {type: string, enum: [off, shadow, on], description: The security failure mode the report was made under}
+        action: {type: string, enum: [report_only, would_stop, stopped], description: What the decision did or would do to the Automaton line}
+        assessed_at: {type: string}
     RepoCIWatchRecord:
       type: object
       description: >-
