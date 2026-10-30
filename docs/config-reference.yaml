@@ -1122,6 +1122,27 @@ autonomous:
       hung_after_minutes: 60
       security_workflows: [CodeQL, dependency-review, owasp-zap, secret-scan, security-scan]
       delete_superseded: report
+    # Security failure: switches the coordinator's security-failure handling
+    # on, off, or into shadow. The one key is mode: off, shadow or on
+    # (case-insensitive; any other value is refused on every write path).
+    # Unset (empty) reads shadow — the first-release default: the feature is
+    # switched on in shadow mode first, with no behaviour change. The one
+    # default is applied in exactly one place (the EffectiveMode accessor),
+    # so no call site hard-codes it.
+    # The security workflow set is not a key here: it is read from
+    # repo_ci_watch.security_workflows above (unset reads
+    # [CodeQL, dependency-review, owasp-zap, secret-scan, security-scan]),
+    # and the alert time is the existing
+    # autonomous.automation.triage_alert_minutes above.
+    # Every key is settable at runtime, with no restart, on every
+    # configuration channel:
+    #   PUT /api/config {"autonomous.automation.security_failure.mode": "on"}
+    #   (GET /api/config shows the block under autonomous.automation), MCP
+    #   autonomous_config_set, CLI `datawatch config set
+    #   autonomous.automation.security_failure.mode on`, and comm `configure
+    #   autonomous.automation.security_failure.mode=on`.
+    security_failure:
+      mode: shadow
     # decision_assistant — no daemon config key; default OFF. The optional
     # local-model decision assistant is runtime data on the Automation record
     # (decision_assistant) and, as an override that wins over it, on a member.

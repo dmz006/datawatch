@@ -6277,6 +6277,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// (Effective* accessors), so GET never emits a zero that reads
 				// a different default.
 				"repo_ci_watch": repoCIWatchSurface(s.cfg.Autonomous.Automation.RepoCIWatch),
+				// Effective, not raw: an unset or empty mode reads shadow (the
+				// first-release default) via the Effective* accessor.
+				"security_failure": securityFailureSurface(s.cfg.Autonomous.Automation.SecurityFailure),
 			},
 			"lane_fill": laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
 			"progress": map[string]interface{}{
@@ -6576,6 +6579,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// alert/tag threshold, a hung threshold below 1) rejects the whole
 	// PUT rather than being skipped.
 	if verr := validateRepoCIWatchPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Security failure (autonomous.automation.security_failure.*): the only
+	// key is mode, which must be off, shadow or on (empty = unset =
+	// shadow). Any other value rejects the whole PUT rather than being
+	// skipped.
+	if verr := validateSecurityFailurePatch(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -8090,6 +8101,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// check here is left unchanged.
 			applyRepoCIWatchValue(&cfg.Autonomous.Automation.RepoCIWatch,
 				strings.TrimPrefix(k, repoCIWatchKeyPrefix), v)
+		case "autonomous.automation.security_failure.mode":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applySecurityFailureValue(&cfg.Autonomous.Automation.SecurityFailure, v)
 		case laneFillKeyPrefix + "mode", laneFillKeyPrefix + "gpu_lanes", laneFillKeyPrefix + "claude_lanes",
 			laneFillKeyPrefix + "idle_alert_minutes", laneFillKeyPrefix + "decompose_ahead_min",
 			laneFillKeyPrefix + "poll_seconds", laneFillKeyPrefix + "gpu_backend",
@@ -9170,6 +9185,48 @@ func applyRepoCIWatchValue(rcw *config.RepoCIWatchConfig, field string, v interf
 		if n, err := parseRepoCIWatchWhole("tag_count", v); err == nil && n >= 0 {
 			rcw.TagCount = &n
 		}
+	}
+}
+
+// securityFailureKeyPrefix — the REST key prefix for the security failure
+// knob (autonomous.automation.security_failure.mode).
+const securityFailureKeyPrefix = "autonomous.automation.security_failure."
+
+// securityFailureSurface renders the security failure block on the GET
+// /api/config surface as effective values (unset or empty mode reads
+// shadow, the first-release default), read from the Effective* accessors
+// — never a literal.
+func securityFailureSurface(c config.SecurityFailureConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"mode": c.EffectiveMode(),
+	}
+}
+
+// validateSecurityFailurePatch checks every autonomous.automation
+// .security_failure.* value present in the patch before anything is
+// applied, so one bad value rejects the whole PUT rather than being
+// silently skipped. It runs the same rules the config-load path runs
+// (config.validateSecurityFailure), so a bad value is refused
+// consistently on every write path.
+func validateSecurityFailurePatch(patch map[string]interface{}) error {
+	v, ok := patch[securityFailureKeyPrefix+"mode"]
+	if !ok {
+		return nil
+	}
+	str, isStr := v.(string)
+	if !isStr || config.ValidateSecurityFailureMode(str) != nil {
+		return fmt.Errorf("%smode: must be %q, %q or %q (empty is unset and reads the %q first-release default)",
+			securityFailureKeyPrefix, config.SecurityFailureModeOff, config.SecurityFailureModeShadow, config.SecurityFailureModeOn, config.SecurityFailureModeShadow)
+	}
+	return nil
+}
+
+// applySecurityFailureValue stores the security failure value (validated
+// above in handlePutConfig; a value that fails the check here is left
+// unchanged).
+func applySecurityFailureValue(sfc *config.SecurityFailureConfig, v interface{}) {
+	if str, isStr := v.(string); isStr && config.ValidateSecurityFailureMode(str) == nil {
+		sfc.Mode = str
 	}
 }
 

@@ -16410,6 +16410,11 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.automation.repo_ci_watch.hung_after_minutes', label: 'Repo CI watch hung threshold (minutes pending before a run is hung, default 60)', labelKey: 'settings_repo_ci_watch_hung_after_minutes', type: 'number', placeholder: '60', min: 1, step: 5, default: '60' },
     { key: 'autonomous.automation.repo_ci_watch.security_workflows', label: 'Repo CI watch security workflows (comma-separated workflow names, empty list = none watched)', labelKey: 'settings_repo_ci_watch_security_workflows', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.repo_ci_watch.delete_superseded', label: 'Repo CI watch superseded runs (report | delete, default report)', labelKey: 'settings_repo_ci_watch_delete_superseded', type: 'select', options: ['report', 'delete'], default: 'report' },
+    // Security failure (autonomous.automation.security_failure.mode) — the
+    // security-failure handling switch (off, shadow, on); an unset or
+    // empty value reads shadow (the first-release default: the feature is
+    // switched on in shadow mode first, with no behaviour change).
+    { key: 'autonomous.automation.security_failure.mode', label: 'Security failure mode (off, shadow or on; default shadow)', labelKey: 'settings_security_failure_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     // Lane fill — shadow (default) computes and records every decision and starts nothing.
     { key: 'autonomous.lane_fill.mode', label: 'Lane fill mode (off, shadow or on; default shadow)', labelKey: 'settings_lane_fill_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.lane_fill.gpu_lanes', label: 'Lane fill GPU lanes (whole number, default 2)', labelKey: 'settings_lane_fill_gpu_lanes', type: 'number', placeholder: '2', min: 0, step: 1, default: '2' },
