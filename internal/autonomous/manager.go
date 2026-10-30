@@ -1021,6 +1021,15 @@ type Manager struct {
 	treeBoxMu   sync.Mutex
 	treeLockBox map[string]*func()
 
+	// sessionContinueLineFn — sends one given line to a parked worker
+	// session; the question resume of the coordinator tick uses it so the
+	// prompt can carry the operator's decision. Optional. Guarded by mu.
+	sessionContinueLineFn func(sessionID, line string) error
+
+	// questionTick is the in-flight guard and wait group of the coordinator
+	// tick's question resumes (question_tick.go).
+	questionTick questionTickState
+
 	// alertSink — operator-facing alert callback (level, title, body).
 	// Guarded by mu. Nil = alerts silently skipped. It returns the id of
 	// the alert it recorded ("" when it cannot name one) so an emitter

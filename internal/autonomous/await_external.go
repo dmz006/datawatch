@@ -129,6 +129,23 @@ func (m *Manager) sessionContinueFnLocked() func(sessionID string) error {
 	return m.sessionContinueFn
 }
 
+// SetSessionContinueLineFn wires the line-carrying sibling of the continue
+// hook: it prompts a parked worker session with the given one-line text
+// instead of the fixed await-external prompt. The coordinator tick resumes a
+// task parked on a worker question through it, so the prompt can carry the
+// operator's decision. Optional; nil skips the prompt.
+func (m *Manager) SetSessionContinueLineFn(fn func(sessionID, line string) error) {
+	m.mu.Lock()
+	m.sessionContinueLineFn = fn
+	m.mu.Unlock()
+}
+
+func (m *Manager) sessionContinueLineFnLocked() func(sessionID, line string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sessionContinueLineFn
+}
+
 // attachTreeRelease / detachTreeRelease / treeLockBoxLocked: the executor
 // registers a pointer to its own task-tree-write-lock release closure
 // (executeOne's treeRelease variable) here, so an await-external cycle can
@@ -239,24 +256,32 @@ func (m *Manager) AwaitExternal(ctx context.Context, prd *PRD, t *Task, conditio
 // resumeAwaitExternal re-claims the tree lock (when the cycle had released
 // it) and prompts the parked session to continue the task.
 func (m *Manager) resumeAwaitExternal(prd *PRD, t *Task, releasedTree bool, box *func()) {
-	if releasedTree {
-		if rel, rerr := m.acquireTreeWritersLock(context.Background(), prd, t); rerr == nil {
-			if box != nil {
-				*box = rel
-			}
-			// Re-register (attachTreeRelease was a plain pointer set; the
-			// map entry already points at the same box).
-		} else {
-			// Another same-tree writer now holds the lock — the session may
-			// proceed for its external-wait follow-up (reading status), and
-			// the executor re-acquires before any further tree writes.
-			log.Printf("[autonomous] %s: await-external: tree re-claim blocked (another writer holds it): %v", t.ID, rerr)
-		}
-	}
+	m.reclaimTreeLock(prd, t, releasedTree, box)
 	if contFn := m.sessionContinueFnLocked(); contFn != nil && t.SessionID != "" {
 		if cerr := contFn(t.SessionID); cerr != nil {
 			log.Printf("[autonomous] %s: await-external continue prompt to session %s failed: %v", t.ID, t.SessionID, cerr)
 		}
+	}
+}
+
+// reclaimTreeLock re-claims the project-tree write lock for a resumed task
+// when the park had released it, and re-registers the release closure in the
+// executor's box (attachTreeRelease set a plain pointer; the map entry already
+// points at the same box).
+func (m *Manager) reclaimTreeLock(prd *PRD, t *Task, releasedTree bool, box *func()) {
+	if !releasedTree {
+		return
+	}
+	rel, rerr := m.acquireTreeWritersLock(context.Background(), prd, t)
+	if rerr != nil {
+		// Another same-tree writer now holds the lock — the session may
+		// proceed for its follow-up (reading status), and the executor
+		// re-acquires before any further tree writes.
+		log.Printf("[autonomous] %s: resume: tree re-claim blocked (another writer holds it): %v", t.ID, rerr)
+		return
+	}
+	if box != nil {
+		*box = rel
 	}
 }
 
@@ -267,6 +292,14 @@ func (m *Manager) resumeAwaitExternal(prd *PRD, t *Task, releasedTree bool, box 
 // string. prefer is the node the task released for the wait: placement still
 // picks the least loaded node, and that node only wins a tie.
 func (m *Manager) awaitReAdmit(ctx context.Context, prd *PRD, t *Task, condition, prefer string) error {
+	return m.awaitReAdmitAs(ctx, prd, t, AwaitExternalWaitReasonFor(condition), prefer)
+}
+
+// awaitReAdmitAs is awaitReAdmit with the wait reason prefix chosen by the
+// caller: an await-external cycle keeps "await_external: <condition>", a task
+// resumed after a worker question keeps its "await_decision: <question id>"
+// reason, so the status JSON names what the task is queued for.
+func (m *Manager) awaitReAdmitAs(ctx context.Context, prd *PRD, t *Task, prefix, prefer string) error {
 	if !m.capacityOn() {
 		return nil
 	}
@@ -280,7 +313,6 @@ func (m *Manager) awaitReAdmit(ctx context.Context, prd *PRD, t *Task, condition
 	if len(pools) == 0 {
 		return nil
 	}
-	prefix := AwaitExternalWaitReasonFor(condition)
 	req := capacity.Request{
 		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), PreferNode: prefer, Model: model, Role: capacity.RoleWorker,
 	}

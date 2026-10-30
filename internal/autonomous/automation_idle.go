@@ -4,6 +4,7 @@
 package autonomous
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -17,6 +18,16 @@ func (c *Coordinator) idleLoop(stop <-chan struct{}, tick time.Duration) {
 	}
 	t := time.NewTicker(tick)
 	defer t.Stop()
+	// A resume the question pass starts is bounded by the same stop signal.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-stop:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 	for {
 		select {
 		case <-stop:
@@ -25,6 +36,7 @@ func (c *Coordinator) idleLoop(stop <-chan struct{}, tick time.Duration) {
 			c.checkIdle()
 			c.checkBudget()
 			c.triagePass()
+			c.questionPass(ctx)
 		}
 	}
 }

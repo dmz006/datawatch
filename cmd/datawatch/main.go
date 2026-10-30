@@ -6789,6 +6789,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			amgr.SetSessionContinueFn(func(sessionID string) error {
 				return mgr.SendInput(sessionID, "[automaton await-external] Your await-external cycle is complete — your capacity slot is live again and you have the project tree. Re-check the external condition you were waiting on (CI run, deploy, upstream review, …) and, if it has resolved, continue the task from where you left off toward its DATAWATCH_COMPLETE marker. If it has NOT resolved yet, emit the "+autonomouspkg.AwaitExternalMarker+" marker again and stop.", "automaton")
 			})
+			// Resume of a task parked on a blocking worker question: the
+			// coordinator tick prompts the session with one line that carries the
+			// operator's decision (or that the question was withdrawn).
+			amgr.SetSessionContinueLineFn(func(sessionID, line string) error {
+				return mgr.SendInput(sessionID, line, "automaton")
+			})
 			// Boot-resume: recorded output of a session that ended while the daemon
 			// was down, so a finished worker is verified instead of redone.
 			amgr.SetSessionOutputFn(func(sessionID string) (string, bool) {
