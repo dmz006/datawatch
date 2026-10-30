@@ -77,11 +77,13 @@ var DefaultQuestionLabels = []string{
 }
 
 // Question sources: how a question reached the store. A worker session's
-// DATAWATCH_QUESTION: marker line is "marker"; POST /api/questions is "rest".
+// DATAWATCH_QUESTION: marker line is "marker"; POST /api/questions is "rest";
+// a held question the daemon raises from its fixed table is "held".
 // An empty source (a record written before the field existed) is accepted.
 const (
 	QuestionSourceMarker = "marker"
 	QuestionSourceRest   = "rest"
+	QuestionSourceHeld   = "held"
 )
 
 // questionLineSHA256Len is the length of a hex SHA-256 digest.
@@ -262,7 +264,7 @@ func ValidateNewQuestion(q *Question) error {
 	// came from and the hash of its line (the dedupe key); a line hash is a
 	// hex SHA-256 digest, so no line text can ride in that field.
 	switch q.Source {
-	case "", QuestionSourceRest:
+	case "", QuestionSourceRest, QuestionSourceHeld:
 	case QuestionSourceMarker:
 		if q.SessionID == "" {
 			add("source marker requires session_id")
@@ -271,7 +273,7 @@ func ValidateNewQuestion(q *Question) error {
 			add("source marker requires source_line_sha256")
 		}
 	default:
-		add("source is %q; it must be empty, %q or %q", q.Source, QuestionSourceMarker, QuestionSourceRest)
+		add("source is %q; it must be empty, %q, %q or %q", q.Source, QuestionSourceMarker, QuestionSourceRest, QuestionSourceHeld)
 	}
 	if q.SourceLineSHA256 != "" && !isLowerHexDigest(q.SourceLineSHA256) {
 		add("source_line_sha256 must be %d lowercase hex characters", questionLineSHA256Len)
