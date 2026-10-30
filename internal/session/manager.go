@@ -469,6 +469,13 @@ type Manager struct {
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
 
+	// sessionTempRelease releases the session's own temporary files (task
+	// capture files, per-session worker config directories for the pi,
+	// claude-code, opencode, aider and goose backends) using the created-path
+	// record in internal/llm/scratch. nil skips it; it runs at every end path
+	// through emitSessionEnd, before onSessionEnd.
+	sessionTempRelease func(sess *Session)
+
 	// workerQuestion routes a recognised DATAWATCH_QUESTION line to the daemon
 	// (see question_marker.go). It is off unless a gate and a hook are set.
 	workerQuestion workerQuestionRoute
@@ -1115,6 +1122,33 @@ func (m *Manager) SetOnPreLaunch(fn func(*Session)) {
 // SetOnSessionEnd sets a callback invoked when a session reaches a terminal state.
 func (m *Manager) SetOnSessionEnd(fn func(*Session)) {
 	m.onSessionEnd = fn
+}
+
+// SetScratchReleaser sets the callback that releases a session's own
+// temporary files when the session ends. It runs on the session manager's
+// end path — before the registered SessionEnd listeners — for the pi,
+// claude-code, opencode, aider and goose backend files (task capture files
+// and per-session worker config directories) that the daemon created at
+// launch and that the run left behind. It receives the ending session, so
+// it releases exactly that session's files and never a live session's. See
+// internal/llm/scratch for the created-path record it works from.
+func (m *Manager) SetScratchReleaser(fn func(*Session)) {
+	m.sessionTempRelease = fn
+}
+
+// emitSessionEnd is the one place a session's terminal state is delivered:
+// first the scratch releaser drops the session's own leftover temp files
+// (best effort — a refused removal stays put and the autonomous temp sweep
+// may still collect it later), then the registered end listener runs,
+// unchanged in behaviour. Every end path (complete, failed, killed,
+// interrupted-after-restart, ...) funnels through here.
+func (m *Manager) emitSessionEnd(sess *Session) {
+	if m.sessionTempRelease != nil {
+		m.sessionTempRelease(sess)
+	}
+	if m.onSessionEnd != nil {
+		m.onSessionEnd(sess)
+	}
 }
 
 // SetClaudeAliveChangeHandler (BL355) sets the callback invoked when claude_alive
@@ -2968,9 +3002,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 								if m.onStateChange != nil {
 									m.onStateChange(current, oldState)
 								}
-								if m.onSessionEnd != nil {
-									m.onSessionEnd(current)
-								}
+								m.emitSessionEnd(current)
 								m.triggerSummarize(current.FullID, 200)
 								return
 							}
@@ -3185,9 +3217,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							if m.onStateChange != nil {
 								m.onStateChange(current, oldState)
 							}
-							if m.onSessionEnd != nil {
-								m.onSessionEnd(current)
-							}
+							m.emitSessionEnd(current)
 							return
 						}
 					}
@@ -3214,9 +3244,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							if m.onStateChange != nil {
 								m.onStateChange(current, oldState)
 							}
-							if m.onSessionEnd != nil {
-								m.onSessionEnd(current)
-							}
+							m.emitSessionEnd(current)
 							m.triggerSummarize(current.FullID, 200)
 							return
 						}
@@ -3838,9 +3866,7 @@ func (m *Manager) subprocessFinish(sess *Session, runErr error) {
 	if m.onStateChange != nil {
 		m.onStateChange(&snap, oldState)
 	}
-	if m.onSessionEnd != nil {
-		m.onSessionEnd(&snap)
-	}
+	m.emitSessionEnd(&snap)
 	m.triggerSummarize(snap.FullID, 200)
 }
 
@@ -5928,9 +5954,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			if m.onStateChange != nil {
 				m.onStateChange(sess, oldState)
 			}
-			if m.onSessionEnd != nil {
-				m.onSessionEnd(sess)
-			}
+			m.emitSessionEnd(sess)
 			m.triggerSummarize(sess.FullID, 200)
 			continue
 		}
@@ -6677,9 +6701,7 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 			if m.onStateChange != nil {
 				m.onStateChange(sess, oldState)
 			}
-			if m.onSessionEnd != nil {
-				m.onSessionEnd(sess)
-			}
+			m.emitSessionEnd(sess)
 			// Cancel orphaned monitor if any
 			m.mu.Lock()
 			if cancel, ok := m.monitors[sess.FullID]; ok {
@@ -7255,9 +7277,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 							if m.onStateChange != nil {
 								m.onStateChange(current, oldState)
 							}
-							if m.onSessionEnd != nil {
-								m.onSessionEnd(current)
-							}
+							m.emitSessionEnd(current)
 							return
 						}
 						// If waiting but no prompt matches, go back to running.
@@ -7360,9 +7380,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						if m.onStateChange != nil {
 							m.onStateChange(current, oldState)
 						}
-						if m.onSessionEnd != nil {
-							m.onSessionEnd(current)
-						}
+						m.emitSessionEnd(current)
 					}
 					return
 				}
@@ -7575,9 +7593,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 					if m.onStateChange != nil {
 						m.onStateChange(current, oldState)
 					}
-					if m.onSessionEnd != nil {
-						m.onSessionEnd(current)
-					}
+					m.emitSessionEnd(current)
 				}
 				return
 			}
@@ -7806,9 +7822,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				if m.onStateChange != nil {
 					m.onStateChange(current, oldState)
 				}
-				if m.onSessionEnd != nil {
-					m.onSessionEnd(current)
-				}
+				m.emitSessionEnd(current)
 			}
 			return
 		}

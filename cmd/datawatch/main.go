@@ -70,6 +70,7 @@ import (
 	pibackend "github.com/dmz006/datawatch/internal/llm/backends/pi"
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
 	"github.com/dmz006/datawatch/internal/llm/claudecode"
+	scratch "github.com/dmz006/datawatch/internal/llm/scratch"
 	"github.com/dmz006/datawatch/internal/mcp"
 	mcpsearchpkg "github.com/dmz006/datawatch/internal/mcp/search"
 	memoryPkg "github.com/dmz006/datawatch/internal/memory"
@@ -1668,6 +1669,33 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					} else {
 						fmt.Printf("[memory] installed Claude hooks in %s/.claude/\n", sess.ProjectDir)
 					}
+				}
+			}
+		})
+		// Session-end scratch release (design: session-end cleanup + safety-net
+		// sweep) — when this worker session reaches its terminal state, drop
+		// the temp files the daemon itself created for it (task capture files
+		// for the pi / claude-code / opencode / aider / goose backends, and the
+		// pi per-session worker config directories) from the created-path
+		// record. Removal is best effort: whatever it could not delete stays
+		// put, stays recorded, and the autonomous temp sweep may still collect
+		// it later. It never touches a live session's record.
+		mgr.SetScratchReleaser(func(sess *session.Session) {
+			if sess == nil {
+				return
+			}
+			keys := map[string]bool{}
+			if sess.TmuxSession != "" {
+				keys[sess.TmuxSession] = true
+			}
+			keys[sess.ID] = true // defensive: a launch path keyed under the bare id
+			for k := range keys {
+				released, errs := scratch.ReleaseSession(k)
+				if released > 0 {
+					debugf("scratch release for %s: removed %d leftover temp entr(ies) from session end", sess.FullID, released)
+				}
+				for _, e := range errs {
+					debugf("scratch release for %s: %v", sess.FullID, e)
 				}
 			}
 		})

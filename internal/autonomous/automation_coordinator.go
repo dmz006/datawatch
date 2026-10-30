@@ -852,6 +852,12 @@ func (c *Coordinator) triagePass() {
 	// on removes within the per-pass limit.
 	c.m.CleanupWorktreesPass()
 
+	// Temp-file sweep — periodic safety net for worker-session scratch that
+	// the session-end path left behind: only this daemon's recorded scratch
+	// of ended sessions, past retention. off does nothing, report records
+	// would-removes, on removes within the per-pass limit.
+	c.m.SweepDaemonTempPass()
+
 	for _, d := range due {
 		c.alert(d.level, d.title, d.body)
 	}

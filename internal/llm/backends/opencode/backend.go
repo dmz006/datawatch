@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/llm/scratch"
 )
 
 // standaloneFlagCache memoizes, per binary path, whether `<binary> run
@@ -61,6 +62,9 @@ func writeTaskFile(tmuxSession, task string) (string, error) {
 		os.Remove(f.Name()) //nolint:errcheck
 		return "", err
 	}
+	// Session-end ownership: record the task-capture file under the session's
+	// tmux name so its end path releases any the run left behind.
+	scratch.RecordPath(tmuxSession, f.Name())
 	return f.Name(), nil
 }
 
@@ -99,7 +103,7 @@ func resolveBinary(binary string) string {
 	return binary
 }
 
-func (b *Backend) Name() string                  { return "opencode" }
+func (b *Backend) Name() string                   { return "opencode" }
 func (b *Backend) SupportsInteractiveInput() bool { return false }
 func (b *Backend) PromptRequired() bool           { return false }
 func (b *Backend) HasToolAccess() bool            { return true }
@@ -115,13 +119,15 @@ func NewPrompt(binary string) llm.Backend {
 	return &PromptBackend{binary: resolveBinary(binary)}
 }
 
-func (b *PromptBackend) Name() string                  { return "opencode-prompt" }
+func (b *PromptBackend) Name() string                   { return "opencode-prompt" }
 func (b *PromptBackend) SupportsInteractiveInput() bool { return false }
 func (b *PromptBackend) PromptRequired() bool           { return true }
 func (b *PromptBackend) HasToolAccess() bool            { return true }
 func (b *PromptBackend) Version() string {
 	out, err := exec.Command(b.binary, "--version").Output()
-	if err != nil { return "" }
+	if err != nil {
+		return ""
+	}
 	return strings.TrimSpace(string(out))
 }
 
@@ -170,6 +176,7 @@ func (b *Backend) Version() string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
 // buildRunCmd builds the shell command to type into the tmux pane. When a
 // task is given, its text is written to a scratch file rather than
 // embedded inline — see writeTaskFile's doc comment for why — so the

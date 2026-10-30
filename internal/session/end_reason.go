@@ -127,9 +127,7 @@ func (m *Manager) EndSession(fullID string, why EndReason) error {
 		if m.onStateChange != nil {
 			m.onStateChange(sess, oldState)
 		}
-		if m.onSessionEnd != nil {
-			m.onSessionEnd(sess)
-		}
+		m.emitSessionEnd(sess)
 		m.triggerSummarize(sess.FullID, 200)
 	}
 
