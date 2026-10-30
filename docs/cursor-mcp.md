@@ -128,6 +128,11 @@ Selected core tools:
 | `session_children` | List child sessions spawned by a parent session (v8.10.0) |
 | `reply_to_parent` | Send a message back to the spawning parent session (v8.10.0) |
 | `autonomous_prd_create` / `autonomous_prd_decompose` / `autonomous_prd_run` | Autonomous PRD lifecycle |
+| `question_raise` | raise an operator question to this daemon's operator (the operator-question channel) |
+| `question_list` | list the daemon's stored operator questions, optionally filtered (the poll read) |
+| `question_get` | read one stored question and its current answer (the asker's return path) |
+| `question_answer` | answer a stored question by option id and/or the operator's own words; a changed mind supersedes, never edits |
+| `question_withdraw` | withdraw an open question with a reason, attributed to a named actor |
 | `autonomous_prd_children` | List child PRDs spawned via `Task.SpawnPRD` |
 | `autonomous_prd_set_kind` | Set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again) |
 | `autonomous_progress` | Read the progress metrics object: counts by kind, throughput, utilization, remaining work and the completion range; optional `automation_id`, `tag_id`, `since`, `until` |

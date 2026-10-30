@@ -1343,6 +1343,27 @@ LLM-backend health, observer kprobe load.
 List the last `n` alerts (default 20). Same source as the PWA Alerts
 tab.
 
+### `datawatch question <subcommand>`
+
+The operator-question channel from the CLI (v9.33+): read and answer a
+question an Automaton has raised. All of these speak the daemon's
+`/api/questions` routes, so an answer here is the same record as one
+over MCP, comm, or the PWA; while the `autonomous.questions.enabled`
+switch is off the daemon 503s and names the switch.
+
+| Subcommand | Description |
+|---|---|
+| `list [--state <state>] [--context <ctx>] [--asker <who>] [--text <search>] [--limit n] [--json]` | List the questions in a state (default `open`); print the answer log with `show` |
+| `show <id>` | One question, its current answer (option id, verbatim quote, actor, surface) and the full answer log |
+| `answer <id> (--option <option id> and/or --text <verbatim words>) [--supersedes <answer id>]` | Record an answer (option id and/or the operator's own words, verbatim, never trimmed); `--supersedes` names the standing answer a changed mind replaces |
+| `withdraw <id> --reason <text>` | Withdraw an open question; the reason is recorded verbatim |
+| `raise --text <text> --option id=label [..] [--default <option id or hold>]` | Raise a question to the Automaton's operator: name what it is about with the context flags (`--prd-id`, `--task-id`, `--proposal-path`, `--registry-row-key`), add a recommendation with `--recommend`/`--rationale`, and opt this question into the session line with `--return-path --session <id>` |
+
+See [howto/operator-questions-answering.md](howto/operator-questions-answering.md)
+for the full walkthrough and
+[howto/operator-questions-notifications.md](howto/operator-questions-notifications.md)
+for the notify/alert/return-path switches.
+
 ### `datawatch health [--url=<url>] [--endpoint=<path>] [--timeout=<sec>]`
 
 One-shot health probe — used by container `HEALTHCHECK`. Defaults:

@@ -225,7 +225,9 @@ func TestQuestionListJSONPrintsTheRawBody(t *testing.T) {
 	}
 	os.Stdout = writer
 	_, runErr := runQuestionCmd(t, "list", "--json")
-	writer.Close()
+	if closeErr := writer.Close(); closeErr != nil {
+		t.Errorf("writer.Close: %v", closeErr)
+	}
 	os.Stdout = oldStdout
 	capBuf, _ := io.ReadAll(reader)
 	if runErr != nil {

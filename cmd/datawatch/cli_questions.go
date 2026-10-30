@@ -654,15 +654,15 @@ asking session when it is answered) and therefore requires --session.`,
 			if def != "hold" && !inOptions(def) {
 				return fmt.Errorf("--default %q is neither an --option id nor hold", def)
 			}
-			switch {
-			case priority == "":
-			case priority == "normal", priority == "high":
+			switch priority {
+			case "":
+			case "normal", "high":
 			default:
 				return fmt.Errorf("--priority must be normal or high (got %q)", priority)
 			}
-			switch {
-			case risk == "":
-			case risk == "low", risk == "normal":
+			switch risk {
+			case "":
+			case "low", "normal":
 			default:
 				return fmt.Errorf("--risk must be low or normal (got %q)", risk)
 			}

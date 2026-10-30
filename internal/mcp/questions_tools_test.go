@@ -45,10 +45,9 @@ func TestQuestionToolDefinitions(t *testing.T) {
 
 	required := func(name string, want []string) {
 		t.Helper()
-		got := make([]string, 0, len(tools[name].InputSchema.Required))
-		for _, r := range tools[name].InputSchema.Required {
-			got = append(got, r)
-		}
+		required := tools[name].InputSchema.Required
+		got := make([]string, len(required))
+		copy(got, required)
 		if len(got) != len(want) {
 			t.Errorf("%s: required = %v, want %v", name, got, want)
 			return
