@@ -573,6 +573,14 @@ type AutomationConfig struct {
 	// EffectiveMode accessor (security_failure_config.go).
 	SecurityFailure SecurityFailureConfig `json:"security_failure"`
 
+	// SupervisorWatch: the supervisor watch knobs (autonomous.automation.
+	// supervisor_watch.*). Every default is applied only in the Effective*
+	// accessors in supervisor_watch_config.go: an unset or empty mode reads
+	// shadow (reports only, never acts), an unset alert minutes reads the
+	// shared 30-minute triage default, and an unset silent minutes reads
+	// the 60-minute default.
+	SupervisorWatch SupervisorWatchConfig `json:"supervisor_watch"`
+
 	// AgentInsertPolicy: PolicyAllow (default, also the empty value) lets an
 	// agent insert a member directly; PolicyRequireOperator holds an agent's
 	// insert as a pending insert until an operator approves it.

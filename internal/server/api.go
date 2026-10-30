@@ -6292,6 +6292,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// Effective, not raw: an unset or empty mode reads shadow (the
 				// first-release default) via the Effective* accessor.
 				"security_failure": securityFailureSurface(s.cfg.Autonomous.Automation.SecurityFailure),
+				// Effective, not raw: an unset or empty mode reads shadow (the
+				// release default — reports only, never acts) and the unset
+				// minute thresholds read their one defaults, all via the
+				// Effective* accessors.
+				"supervisor_watch": supervisorWatchSurface(s.cfg.Autonomous.Automation.SupervisorWatch),
 				// Effective, not raw: an unset value reads the "shadow" default,
 				// an explicit off/on stays.
 				"create_search_mode": s.cfg.Autonomous.Automation.EffectiveCreateSearchMode(),
@@ -6636,6 +6641,15 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// shadow). Any other value rejects the whole PUT rather than being
 	// skipped.
 	if verr := validateSecurityFailurePatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Supervisor watch (autonomous.automation.supervisor_watch.*): the mode
+	// must be off, shadow or on (empty = unset = shadow), the minute
+	// thresholds must be whole numbers >= 0, and the path/baseline keys
+	// must be strings. Any other value rejects the whole PUT rather than
+	// being skipped.
+	if verr := validateSupervisorWatchPatch(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -8179,6 +8193,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
 			applySecurityFailureValue(&cfg.Autonomous.Automation.SecurityFailure, v)
+		case supervisorWatchKeyPrefix + "mode",
+			supervisorWatchKeyPrefix + "alert_minutes",
+			supervisorWatchKeyPrefix + "silent_minutes",
+			supervisorWatchKeyPrefix + "script_output_path",
+			supervisorWatchKeyPrefix + "tmux_restart_baseline",
+			supervisorWatchKeyPrefix + "main_checkout":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applySupervisorWatchValue(&cfg.Autonomous.Automation.SupervisorWatch,
+				strings.TrimPrefix(k, supervisorWatchKeyPrefix), v)
 		case laneFillKeyPrefix + "mode", laneFillKeyPrefix + "gpu_lanes", laneFillKeyPrefix + "claude_lanes",
 			laneFillKeyPrefix + "idle_alert_minutes", laneFillKeyPrefix + "decompose_ahead_min",
 			laneFillKeyPrefix + "poll_seconds", laneFillKeyPrefix + "gpu_backend",
@@ -9308,6 +9332,106 @@ func validateSecurityFailurePatch(patch map[string]interface{}) error {
 func applySecurityFailureValue(sfc *config.SecurityFailureConfig, v interface{}) {
 	if str, isStr := v.(string); isStr && config.ValidateSecurityFailureMode(str) == nil {
 		sfc.Mode = str
+	}
+}
+
+// supervisorWatchKeyPrefix — the REST key prefix for the supervisor
+// watch knobs (autonomous.automation.supervisor_watch.*).
+const supervisorWatchKeyPrefix = "autonomous.automation.supervisor_watch."
+
+// supervisorWatchSurface renders the supervisor watch block on the GET
+// /api/config surface as effective values (an unset or empty mode reads
+// shadow, the release default — reports only, never acts — and the unset
+// minute thresholds read their one defaults), read from the Effective*
+// accessors — never a literal.
+func supervisorWatchSurface(c config.SupervisorWatchConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"mode":                  c.EffectiveMode(),
+		"alert_minutes":         c.EffectiveAlertMinutes(),
+		"silent_minutes":        c.EffectiveSilentMinutes(),
+		"script_output_path":    c.ScriptOutputPath,
+		"tmux_restart_baseline": c.TmuxRestartBaseline,
+		"main_checkout":         c.MainCheckout,
+	}
+}
+
+// validateSupervisorWatchWhole checks one supervisor watch minute
+// threshold: a whole number >= 0 (0 is legal — the operator said zero;
+// an unset key reads its default, which is not this value's business).
+func validateSupervisorWatchWhole(field string, v interface{}) error {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) || f < 0 {
+		return fmt.Errorf("%s%s: must be a whole number >= 0 (an unset key reads its default)",
+			supervisorWatchKeyPrefix, field)
+	}
+	return nil
+}
+
+// validateSupervisorWatchPatch checks every autonomous.automation
+// .supervisor_watch.* value present in the patch before anything is
+// applied, so one bad value rejects the whole PUT rather than being
+// silently skipped. It runs the same rules the config-load path runs
+// (config.validateSupervisorWatch), so a bad value is refused
+// consistently on every write path.
+func validateSupervisorWatchPatch(patch map[string]interface{}) error {
+	if v, ok := patch[supervisorWatchKeyPrefix+"mode"]; ok {
+		str, isStr := v.(string)
+		if !isStr || config.ValidateSupervisorWatchMode(str) != nil {
+			return fmt.Errorf("%smode: must be %q, %q or %q (empty is unset and reads the %q release default)",
+				supervisorWatchKeyPrefix, config.SupervisorWatchModeOff, config.SupervisorWatchModeShadow, config.SupervisorWatchModeOn, config.SupervisorWatchModeShadow)
+		}
+	}
+	for _, field := range []string{"alert_minutes", "silent_minutes"} {
+		if v, ok := patch[supervisorWatchKeyPrefix+field]; ok {
+			if verr := validateSupervisorWatchWhole(field, v); verr != nil {
+				return verr
+			}
+		}
+	}
+	for _, field := range []string{"script_output_path", "tmux_restart_baseline", "main_checkout"} {
+		if v, ok := patch[supervisorWatchKeyPrefix+field]; ok {
+			if _, isStr := v.(string); !isStr {
+				return fmt.Errorf("%s%s: must be a string", supervisorWatchKeyPrefix, field)
+			}
+		}
+	}
+	return nil
+}
+
+// applySupervisorWatchValue stores one supervisor watch value (validated
+// above in handlePutConfig; a value that fails the check here is left
+// unchanged). The minute thresholds are pointers on purpose: an explicit
+// 0 must be stored as such, not dropped as a zero.
+func applySupervisorWatchValue(swc *config.SupervisorWatchConfig, field string, v interface{}) {
+	switch field {
+	case "mode":
+		if str, ok := v.(string); ok && config.ValidateSupervisorWatchMode(str) == nil {
+			swc.Mode = str
+		}
+	case "alert_minutes":
+		if n, ok := toInt(v); ok && n >= 0 {
+			swc.AlertMinutes = &n
+		}
+	case "silent_minutes":
+		if n, ok := toInt(v); ok && n >= 0 {
+			swc.SilentMinutes = &n
+		}
+	case "script_output_path":
+		if str, ok := v.(string); ok {
+			swc.ScriptOutputPath = strings.TrimSpace(str)
+		}
+	case "tmux_restart_baseline":
+		if str, ok := v.(string); ok {
+			swc.TmuxRestartBaseline = strings.TrimSpace(str)
+		}
+	case "main_checkout":
+		// Empty (after trimming) disables the dirty main-checkout finding.
+		if str, ok := v.(string); ok {
+			swc.MainCheckout = strings.TrimSpace(str)
+		}
 	}
 }
 

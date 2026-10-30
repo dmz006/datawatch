@@ -4383,6 +4383,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				CreateSearchThreshold:    acfgIn.Automation.CreateSearchThreshold,
 				// security failure mode (autonomous.automation.security_failure.mode)
 				SecurityFailure: autonomouspkg.SecurityFailureConfig{Mode: acfgIn.Automation.SecurityFailure.Mode},
+				// supervisor watch block (autonomous.automation.supervisor_watch.*):
+				// without it the watch re-reads its defaults after every restart.
+				SupervisorWatch: supervisorWatchFromYAML(acfgIn.Automation.SupervisorWatch),
 				// repo CI watch block (autonomous.automation.repo_ci_watch.*):
 				// without it the watch reads off after every restart.
 				RepoCIWatch: repoCIWatchFromYAML(acfgIn.Automation.RepoCIWatch),
