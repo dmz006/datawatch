@@ -6266,6 +6266,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// Decision gate: effective values (on, and shadow, when absent).
 				"decision_gate":      s.cfg.Autonomous.Questions.EffectiveDecisionGate(),
 				"decision_gate_mode": s.cfg.Autonomous.Questions.EffectiveDecisionGateMode(),
+				// Worker question marker: effective value (off when absent).
+				"worker_marker": s.cfg.Autonomous.Questions.EffectiveWorkerMarker(),
 			},
 			"automation": map[string]interface{}{
 				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
@@ -6687,6 +6689,7 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		"autonomous.questions.notify_alert",
 		"autonomous.questions.return_path",
 		"autonomous.questions.decision_gate",
+		"autonomous.questions.worker_marker",
 	} {
 		if v, ok := patch[k]; ok {
 			if _, isBool := v.(bool); !isBool {
@@ -8182,6 +8185,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// so no restart is needed.
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.Questions.DecisionGate = &b
+			}
+		case "autonomous.questions.worker_marker":
+			// Validated in handlePutConfig to a strict boolean. Stored as *bool
+			// so an explicit value is distinguishable from an absent key
+			// (which stays off).
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Questions.WorkerMarker = &b
 			}
 		case "autonomous.questions.decision_gate_mode":
 			// Validated in handlePutConfig to shadow or on.
