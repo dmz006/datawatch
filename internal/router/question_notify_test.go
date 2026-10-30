@@ -1,9 +1,9 @@
 // question_notify_test.go — the messaging-group leg of question-raise
 // notification (Router.NotifyQuestionRaised): the router's backend
 // receives exactly one send, and that text names the question id, lists
-// the options as a numbered list, points the operator at the two answer
-// routes (the REST answer endpoint and the Automaton PWA), and never
-// promises a reply verb this channel does not implement.
+// the options as a numbered list, and points the operator at the three
+// answer routes (the question answer chat verb, the REST answer
+// endpoint, and the Automaton PWA).
 
 package router
 
@@ -87,9 +87,8 @@ func TestQuestionRaiseNotify_RouterReceivesExactlyOne(t *testing.T) {
 
 // TestQuestionRaiseNotify_TextNamesIDNumberedOptionsAndAnswerRoutes — the
 // text carries the question id and label, a high-priority marker, the
-// options as a numbered list, and points at the two answer routes. It
-// does not promise a reply verb: the answer goes through the REST
-// endpoint or the PWA.
+// options as a numbered list, and points at all three answer routes: the
+// question answer chat verb, the REST endpoint, and the Automaton PWA.
 func TestQuestionRaiseNotify_TextNamesIDNumberedOptionsAndAnswerRoutes(t *testing.T) {
 	r, got := newQuestionNotifyRouter(t)
 	q := questionNotifySample()
@@ -106,6 +105,7 @@ func TestQuestionRaiseNotify_TextNamesIDNumberedOptionsAndAnswerRoutes(t *testin
 		q.Text,
 		"1. Yes, cap it",
 		"2. No",
+		"question answer " + q.ID + " <option number> followed by your words",
 		"POST /api/questions/" + q.ID + "/answer",
 		"Automaton PWA",
 	} {
@@ -113,10 +113,40 @@ func TestQuestionRaiseNotify_TextNamesIDNumberedOptionsAndAnswerRoutes(t *testin
 			t.Errorf("text missing %q:\n%s", want, text)
 		}
 	}
-	for _, absent := range []string{"reply with", "Reply: send", "reply: send"} {
-		if strings.Contains(strings.ToLower(text), strings.ToLower(absent)) {
-			t.Errorf("text promises a reply verb (%q) the channel does not implement:\n%s", absent, text)
+}
+
+// TestQuestionRaiseNotice_NamesQuestionAnswerVerb — the closing line names
+// the question answer chat verb (option number followed by words, with a
+// bare option number when this is the only open question), and a question
+// raised without options still renders without a numbered list.
+func TestQuestionRaiseNotice_NamesQuestionAnswerVerb(t *testing.T) {
+	r, got := newQuestionNotifyRouter(t)
+	q := questionNotifySample()
+
+	r.NotifyQuestionRaised(q)
+	text := waitRouterSends(t, 1, got)[0]
+
+	for _, want := range []string{
+		"question answer " + q.ID + " <option number> followed by your words",
+		"a bare option number when this is the only open question",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text missing %q:\n%s", want, text)
 		}
+	}
+
+	q.Options = nil
+	r.NotifyQuestionRaised(q)
+	msgs := waitRouterSends(t, 2, got)
+	if len(msgs) < 2 {
+		t.Fatalf("second raise did not reach the group; got %d send(s)", len(msgs))
+	}
+	noOpts := msgs[1]
+	if strings.Contains(noOpts, "Options:") {
+		t.Fatalf("text lists options for a question without any:\n%s", noOpts)
+	}
+	if !strings.Contains(noOpts, "question answer "+q.ID) {
+		t.Fatalf("text for a question without options does not name the question answer verb:\n%s", noOpts)
 	}
 }
 

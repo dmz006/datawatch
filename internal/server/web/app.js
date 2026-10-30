@@ -1064,7 +1064,7 @@ function listLoader(opts) {
   const now = opts.now || (() => Date.now());
   const doFetch = opts.fetch || ((u, o) => apiFetch(u, o));
   const st = {
-    key, seq: 0, ctrl: null, loading: false, loadedOnce: false, data: null, hasData: false,
+    key, opts, seq: 0, ctrl: null, loading: false, loadedOnce: false, data: null, hasData: false,
     at: 0, fromCache: false, error: '', pollTimer: null, tickTimer: null, stopped: false,
   };
   const cached = _listCacheRead(key);
@@ -1292,12 +1292,31 @@ function handleMessage(msg) {
       }
       break;
     }
-    case 'question_raised':
-      // Operator question channel: an Automaton raised a question. The
-      // frame is acknowledged and deliberately not rendered yet — the
-      // question UI consumes this message in a later step. Until then it
-      // must be a no-op, never an error.
+    case 'question_raised': {
+      // Operator question channel: an Automaton raised a question (the
+      // return-path event for a successful POST /api/questions). Live
+      // refresh: while the Automation view is mounted — the questions
+      // card element exists — re-request the queue now through
+      // window.refreshAutomationQuestions so the new question appears
+      // before the next poll tick, and notice it through the same alert
+      // dock path the PWA uses for other live events (the needs_input
+      // case surfaces its message via showToast). The notice names the
+      // new question's label, falling back to its id; the dock render
+      // escapes the message (escHtml), so a hostile label never lands as
+      // live HTML. A frame with missing fields never throws: every field
+      // is read defensively, and with no name at all there is simply no
+      // notice. With the view unmounted this is a complete no-op — no
+      // request, no notice.
+      if (document.getElementById('automationQuestionsCard') &&
+          typeof window.refreshAutomationQuestions === 'function') {
+        window.refreshAutomationQuestions();
+        const qr = (msg.data && typeof msg.data === 'object') ? msg.data : {};
+        const _qstr = (v) => ((typeof v === 'string' || typeof v === 'number') ? String(v).trim() : '');
+        const qname = _qstr(qr.label) || _qstr(qr.id);
+        if (qname) showToast(t('automation_questions_raised', [qname]), 'info', 5000);
+      }
       break;
+    }
     case 'hello_ack':
       // Reply to our hello. Only 'window' changes the frames we get; an
       // older daemon (or one that echoes another mode) keeps the legacy
@@ -27653,14 +27672,24 @@ const _AUTOMATION_SUBTABS = [
            above the list. Moving it behind the non-default Overview sub-tab
            would hide items waiting on the operator and be a regression. -->
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationQuestionsCard" class="prd-capacity-card questions-card" style="margin:6px 8px 0;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="cap-title">${escHtml(t('automation_questions_title'))}</div>
+          <button type="button" id="automationQuestionsHistoryBtn" class="btn-secondary questions-history-btn" title="${escHtml(t('automation_questions_history'))}" onclick="if (typeof toggleAutomationQuestionsHistory === 'function') toggleAutomationQuestionsHistory()" style="margin-left:auto;font-size:11px;padding:2px 10px;">${escHtml(t('automation_questions_history'))}</button>
+        </div>
+        <div style="margin:4px 0 6px;">
+          <input id="automationQuestionsSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_questions_search'))}" aria-label="${escHtml(t('automation_questions_search'))}" onkeydown="onAutomationQuestionsSearchKeydown(event)" oninput="onAutomationQuestionsSearchInput(this.value)" style="width:100%;box-sizing:border-box;font-size:12px;">
+        </div>
+        <div id="automationQuestionsBody"></div>
+      </div>
       <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>`;
     },
     mount() {
-      listLoaderAll([_automationLoader(), _automationTriageLoader()]);
+      listLoaderAll([_automationLoader(), _automationTriageLoader(), _automationQuestionsLoader()]);
     },
-    stop() { _automationStopLoaders(['automation', 'automation_triage']); },
+    stop() { _automationStopLoaders(['automation', 'automation_triage', 'automation_questions']); },
   },
 ];
 
@@ -27703,7 +27732,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage'];
+  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage', 'automation_questions'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -27807,6 +27836,503 @@ function _automationTriageLoader() {
     render: body => window.triageListHtml(body),
   });
 }
+
+// Open-questions queue card: its own listLoader on
+// GET /api/questions?state=open&limit=50, with the same poll interval as the
+// capacity, lane fill and triage cards. The card is read-only — it never
+// POSTs. A row button hands off to window.openQuestion(id), which the answer
+// form task writes; the inline call is guarded so the card still works while
+// that function is absent.
+const _automationQuestionsState = { searchText: '', history: false, historyList: [] };
+// Exposed so tests and the history toggle can inspect/flip the mode without
+// re-rendering the whole card.
+window._automationQuestionsState = _automationQuestionsState;
+let _automationQuestionsSearchTimer = null;
+
+// _automationQuestionsListFetch is the loader's fetch override. It builds the
+// full URL itself (the loader's url field is the no-search form) so a paused
+// search is committed on Enter as well as after the input pause. A 503 from
+// the list route means the questions switch is off: resolve a disabled
+// sentinel instead of failing, so the card paints only the disabled text.
+function _automationQuestionsListFetch(opts) {
+  // In history mode the same search field filters both decided states:
+  // the text parameter rides on each of the two state requests.
+  const text = (_automationQuestionsState.searchText || '').trim();
+  const textQ = text ? '&text=' + encodeURIComponent(text) : '';
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const srv = state.activeServer;
+  const isRemote = srv && srv !== 'local' && srv !== 'all';
+  const o = { method: 'GET', headers };
+  if (opts && opts.signal) o.signal = opts.signal;
+  const one = qs => {
+    const path = '/api/questions?' + qs;
+    const url = isRemote ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
+    return fetch(url, o).then(r => {
+      if (r.status === 503) return { __automationQuestionsDisabled: true };
+      if (r.ok) return r.json();
+      return r.text().then(tx => Promise.reject(new Error(tx || r.statusText)));
+    });
+  };
+  if (_automationQuestionsState.history) {
+    // History: the two decided states on the same route, merged and
+    // dated, newest first (the history ordering is the card's own).
+    return Promise.all([one('state=answered&limit=50' + textQ), one('state=withdrawn&limit=50' + textQ)]).then(res => {
+      if (res.some(r => r && r.__automationQuestionsDisabled)) return { __automationQuestionsDisabled: true };
+      const list = [];
+      res.forEach(r => {
+        (Array.isArray(r) ? r : (r && Array.isArray(r.questions) ? r.questions : [])).forEach(q => { if (q) list.push(q); });
+      });
+      const ts = x => { const n = new Date(x.created_at).getTime(); return isFinite(n) && n > 0 ? n : 0; };
+      list.sort((a, b) => ts(b) - ts(a)); // newest first
+      _automationQuestionsState.historyList = list;
+      return { count: list.length, questions: list };
+    });
+  }
+  return one('state=open&limit=50' + textQ);
+}
+
+// _automationQuestionsAgeText is a compact age label (s/m/h/d) from the
+// question's created_at; a zero or invalid created_at gives an empty label.
+function _automationQuestionsAgeText(q) {
+  if (!q || !q.created_at) return '';
+  const ms = Date.now() - new Date(q.created_at).getTime();
+  if (!isFinite(ms) || ms < 0) return '';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm';
+  const h = Math.floor(m / 60);
+  if (h < 48) return h + 'h';
+  return Math.floor(h / 24) + 'd';
+}
+
+// _automationQuestionsRowHtml draws one row: the question id, its label (when
+// set), the visible high-priority marker, the escaped question text, the asker
+// and the age, and the hand-off button. Rows keep the route's order — the
+// card never reorders on the client.
+function _automationQuestionsRowHtml(q) {
+  const id = String(q.id == null ? '' : q.id);
+  const high = q.priority === 'high'
+    ? `<span class="questions-priority-high" style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 6px;">${escHtml(t('automation_questions_high'))}</span>`
+    : '';
+  const age = _automationQuestionsAgeText(q);
+  const ageHtml = age ? escHtml(t('automation_questions_age', [age])) : '';
+  return `<div class="questions-queue-row" data-question-id="${escHtml(id)}" style="border-top:1px solid var(--border);padding:8px 2px;display:flex;flex-direction:column;gap:4px;">` +
+    `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
+      `<span class="questions-id" style="font-weight:600;font-size:12px;">${escHtml(id)}</span>` +
+      (q.label ? `<span class="questions-label" style="font-size:12px;color:var(--text);">${escHtml(q.label)}</span>` : '') +
+      high +
+    `</div>` +
+    (q.text ? `<div class="questions-text" style="font-size:12px;color:var(--text);overflow-wrap:anywhere;">${escHtml(q.text)}</div>` : '') +
+    `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
+      `<span class="questions-meta" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_questions_by'))} ${escHtml(q.asked_by || '')}${ageHtml ? ' · ' + ageHtml : ''}</span>` +
+      `<button type="button" class="btn-secondary questions-open-btn" style="font-size:11px;padding:3px 10px;margin-left:auto;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escHtml(id)}')">${escHtml(t('automation_questions_open'))}</button>` +
+    `</div>` +
+    `</div>`;
+}
+
+// window.questionsCardHtml(body) turns the decoded GET /api/questions body
+// ({count, questions}) — or the 503 disabled sentinel — into the card body.
+window.questionsCardHtml = function(body) {
+  if (!body || body.__automationQuestionsDisabled) {
+    return `<div style="color:var(--text2);">${escHtml(t('automation_questions_disabled'))}</div>`;
+  }
+  const list = Array.isArray(body) ? body : (body && Array.isArray(body.questions) ? body.questions : []);
+  if (!list.length) {
+    return `<div style="color:var(--text2);">${escHtml(t('automation_questions_empty'))}</div>`;
+  }
+  return `<div class="questions-queue-list">${list.map(_automationQuestionsRowHtml).join('')}</div>`;
+};
+
+// _automationQuestionsLoader polls the open question list beside the capacity,
+// lane fill and triage cards. Its failed state is the list loader's banner,
+// like the capacity card.
+function _automationQuestionsLoader() {
+  return window._listLoaders.automation_questions || listLoader({
+    key: 'automation_questions', el: 'automationQuestionsBody', url: '/api/questions?state=open&limit=50', pollMs: 5000,
+    fetch: (url, opts) => _automationQuestionsListFetch(opts),
+    failedText: msg => t('automation_questions_failed', [msg]),
+    active: () => !!document.getElementById('automationQuestionsBody'),
+    render: body => _automationQuestionsState.history
+      ? window.questionsHistoryHtml(body)
+      : window.questionsCardHtml(body),
+  });
+}
+
+// Search: a short pause coalesces the keystrokes and Enter commits at once;
+// each commit re-requests the list with the text parameter. Never one request
+// per keystroke.
+function _automationQuestionsSearchCancelTimer() {
+  if (_automationQuestionsSearchTimer) { clearTimeout(_automationQuestionsSearchTimer); _automationQuestionsSearchTimer = null; }
+}
+function _automationQuestionsSearchCommit() {
+  const ctl = window._listLoaders && window._listLoaders.automation_questions;
+  if (ctl) ctl.load();
+}
+function onAutomationQuestionsSearchInput(val) {
+  _automationQuestionsState.searchText = val;
+  _automationQuestionsSearchCancelTimer();
+  _automationQuestionsSearchTimer = setTimeout(() => {
+    _automationQuestionsSearchTimer = null;
+    _automationQuestionsSearchCommit();
+  }, 400);
+}
+window.onAutomationQuestionsSearchInput = onAutomationQuestionsSearchInput;
+function onAutomationQuestionsSearchKeydown(e) {
+  if (!e || (e.key !== 'Enter' && e.key !== 'search')) return;
+  const el = document.getElementById('automationQuestionsSearch');
+  if (el && el.value) _automationQuestionsState.searchText = el.value;
+  _automationQuestionsSearchCancelTimer();
+  _automationQuestionsSearchCommit();
+}
+window.onAutomationQuestionsSearchKeydown = onAutomationQuestionsSearchKeydown;
+
+// window.refreshAutomationQuestions is the live refresh entry point the live
+// refresh task calls to re-request the queue immediately, before the next
+// poll tick.
+window.refreshAutomationQuestions = function() {
+  const ctl = window._listLoaders && window._listLoaders.automation_questions;
+  if (ctl) ctl.load();
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// v1 question answer form — window.openQuestion(id)
+//
+// The queue card's row button hands off here. It loads GET
+// /api/questions/{id} (question plus the current answer metadata in one
+// read) and opens the answer dialog in the Automation view, on the same
+// showModal helper the other Automation dialogs use. The form shows the
+// question text, the options as radio choices with their trade-offs, the
+// recommendation (option label and rationale), the default as a translated
+// line naming the option or hold, and a free-text box. An already answered
+// question also shows the current answer's quote and a line saying the new
+// answer replaces it. Confirm posts to POST /api/questions/{id}/answer with
+// surface pwa, chosen_option_id (only when a choice was made) and the quote
+// exactly as typed — newlines and leading spaces included; only a fully
+// blank value counts as no text. Supersedes carries the current answer's id
+// when the question is already answered and is omitted otherwise, so a
+// changed mind is a new answer on the wire, never an edit. The client
+// refuses to submit with neither a choice nor non-blank text; server errors
+// (409 the question is no longer open, 400 the server refusing a
+// secret-looking text and naming the safe routes) show the server's message
+// in the form and keep the dialog open. On success the dialog closes and
+// the queue card refreshes through window.refreshAutomationQuestions when
+// it exists.
+// ════════════════════════════════════════════════════════════════════════════
+
+// _questionAnswerOptionLabel resolves a name inside the question's options
+// to its display label; no match (or no label) gives '' so the caller falls
+// back to the name itself.
+function _questionAnswerOptionLabel(options, name) {
+  const n = String(name == null ? '' : name);
+  if (!n) return '';
+  const opt = (Array.isArray(options) ? options : []).find(o => o && String(o.id) === n);
+  return opt && opt.label ? String(opt.label) : '';
+}
+window._questionAnswerOptionLabel = _questionAnswerOptionLabel;
+
+// _questionAnswerBody builds the exact POST /api/questions/{id}/answer body.
+// chosen_option_id is present only when a choice was made; the quote is
+// carried verbatim (a blank value is the "no text" case, and the server
+// applies that rule — this client never trims it); supersedes is present
+// only for an already answered question, named after the current answer.
+function _questionAnswerBody(currentAnswerId, chosenOptionId, quote) {
+  const body = { surface: 'pwa' };
+  if (chosenOptionId) body.chosen_option_id = String(chosenOptionId);
+  body.quote = quote == null ? '' : String(quote);
+  if (currentAnswerId) body.supersedes = String(currentAnswerId);
+  return body;
+}
+window.questionAnswerBody = _questionAnswerBody;
+
+// _questionAnswerErrorMessage pulls the human message out of a failed
+// automationRequest error: the server speaks {"error": "..."} JSON, and
+// anything that is not that shape is shown as-is.
+function _questionAnswerErrorMessage(err) {
+  const raw = ((err && (err.message || String(err))) || String(err || 'error')) + '';
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj.error === 'string' && obj.error) return obj.error;
+  } catch (e) { /* a plain-text message: use raw */ }
+  return raw;
+}
+window._questionAnswerErrorMessage = _questionAnswerErrorMessage;
+
+// _questionAnswerSubmit posts the answer and resolves on success. It fails
+// with the server's message preserved for _questionAnswerErrorMessage.
+function _questionAnswerSubmit(id, currentAnswerId, chosenOptionId, quote) {
+  return automationRequest('POST', '/api/questions/' + encodeURIComponent(String(id)) + '/answer',
+    _questionAnswerBody(currentAnswerId, chosenOptionId, quote));
+}
+window._questionAnswerSubmit = _questionAnswerSubmit;
+
+// _questionAnswerBodyHTML is the dialog body: question text, options as
+// radios with trade-offs, the recommendation, the translated default line
+// (option label or hold), the free-text box, and — when the question is
+// already answered — the current answer's quote with the replaces-it line.
+function _questionAnswerBodyHTML(q, answer) {
+  const options = Array.isArray(q.options) ? q.options : [];
+  let html = `<div class="question-answer-text" style="font-size:13px;color:var(--text);overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(q.text || '')}</div>`;
+  if (options.length) {
+    html += '<div class="question-answer-options" style="margin-top:10px;">';
+    options.forEach(o => {
+      const trade = (o && o.tradeoffs)
+        ? `<div style="margin:2px 0 0 20px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(o.tradeoffs)}</div>`
+        : '';
+      html += `<label class="question-answer-option" style="display:block;margin:4px 0;" title="${escHtml((o && o.tradeoffs) || '')}">`
+        + `<input type="radio" name="questionAnswerChoice" value="${escHtml(o && o.id ? o.id : '')}"> ${escHtml((o && (o.label || o.id)) || '')}`
+        + trade + '</label>';
+    });
+    html += '</div>';
+  }
+  const rec = (q.recommendation && typeof q.recommendation === 'object') ? q.recommendation : null;
+  if (rec && rec.option_id) {
+    const name = String(rec.option_id);
+    const label = _questionAnswerOptionLabel(options, name) || name;
+    html += `<div class="question-answer-rec" style="margin-top:8px;font-size:12px;color:var(--text);">`
+      + `<span style="font-weight:600;">${escHtml(t('automation_questions_answer_rec', [label]))}</span>`
+      + (rec.rationale ? ` — ${escHtml(rec.rationale)}` : '') + '</div>';
+  }
+  const defName = String(q.default == null ? '' : q.default);
+  // The record's default is an option id or the word hold; hold is shown
+  // as-is, an option by its label (falling back to the raw name).
+  const defLabel = (defName && defName !== 'hold') ? (_questionAnswerOptionLabel(options, defName) || defName) : 'hold';
+  html += `<div class="question-answer-default" style="margin-top:2px;font-size:12px;color:var(--text2);">${escHtml(t('automation_questions_answer_default', [defLabel]))}</div>`;
+  html += `<div style="margin-top:10px;">`
+    + `<label class="question-answer-quote-label" style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('automation_questions_answer_quote_label'))}</label>`
+    + '<textarea id="questionAnswerQuote" class="form-input question-answer-quote" rows="3" style="width:100%;box-sizing:border-box;font-size:12px;"></textarea></div>';
+  if (answer && typeof answer === 'object') {
+    const quote = answer.quote == null ? '' : String(answer.quote);
+    html += `<div class="question-answer-current" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;font-size:12px;">`
+      + `<div class="question-answer-current-quote" style="color:var(--text);overflow-wrap:anywhere;">${escHtml(t('automation_questions_answer_current'))}: ${escHtml(quote)}</div>`
+      + `<div class="question-answer-supersedes-note" style="margin-top:4px;color:var(--text2);">${escHtml(t('automation_questions_answer_supersedes_note'))}</div>`
+      + '</div>';
+  }
+  html += '<div id="questionAnswerError" class="question-answer-error" role="alert" style="color:var(--error);font-size:12px;margin-top:8px;"></div>';
+  return html;
+}
+window._questionAnswerBodyHTML = _questionAnswerBodyHTML;
+
+// window.openQuestion(id) is the hand-off target of the queue card's row
+// buttons (the card guards the call so it still works while this function
+// is absent, e.g. on an old cached bundle). Opens the answer dialog; the
+// dialog's confirm does the validation, the post and the close — it never
+// submits a promise, because showModal closes whenever onConfirm does not
+// return false, so while the server is answering the dialog stays open and
+// the close happens only after the answer is recorded.
+window.openQuestion = function(id) {
+  const qid = String(id == null ? '' : id);
+  return automationRequest('GET', '/api/questions/' + encodeURIComponent(qid)).then(payload => {
+    const body0 = (payload && typeof payload === 'object') ? payload : {};
+    const q = (body0.question && typeof body0.question === 'object') ? body0.question : {};
+    const answer = (body0.answer && typeof body0.answer === 'object') ? body0.answer : null;
+    const currentAnswerId = String(body0.current_answer_id || (answer && answer.id) || '');
+    showModal({
+      title: t('automation_questions_answer_title', [String(q.id || qid)]),
+      body: _questionAnswerBodyHTML(q, answer),
+      confirmLabel: t('automation_questions_answer_submit'),
+      onConfirm: () => {
+        const picked = (typeof document.querySelector === 'function')
+          ? document.querySelector('input[name="questionAnswerChoice"]:checked')
+          : null;
+        const chosen = (picked && picked.value) ? String(picked.value) : '';
+        const box = document.getElementById('questionAnswerQuote');
+        const quote = (box && typeof box.value === 'string') ? box.value : ''; // verbatim: newlines, leading spaces
+        const errEl = document.getElementById('questionAnswerError');
+        if (!chosen && quote.trim() === '') {
+          // Neither a choice nor non-blank text: refuse client side, and
+          // keep the dialog open saying so in the translated line.
+          if (errEl) errEl.innerHTML = escHtml(t('automation_questions_answer_required'));
+          return false;
+        }
+        if (errEl) errEl.innerHTML = '';
+        _questionAnswerSubmit(qid, currentAnswerId, chosen, quote).then(() => {
+          const modal = document.getElementById('genericModal');
+          if (modal && modal.remove) modal.remove();
+          if (typeof window.refreshAutomationQuestions === 'function') window.refreshAutomationQuestions();
+        }).catch(err => {
+          // Server errors — 409 no longer open, 400 secret-looking text
+          // (the refusal names the safe routes) — show the server's
+          // message in the form; the dialog stays open to try again.
+          if (errEl) errEl.innerHTML = escHtml(_questionAnswerErrorMessage(err));
+          return false;
+        });
+        return false;
+      },
+    });
+  }).catch(err => {
+    showToast(_questionAnswerErrorMessage(err), 'error');
+  });
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// v1 question history — the History control on the question card
+//
+// The same card and the same search field, a different list: switched on,
+// the card shows the recently decided questions — the two decided states on
+// the same route, GET /api/questions?state=answered and
+// GET /api/questions?state=withdrawn, merged and dated, newest first. A row
+// shows the question id, its label (when set), the escaped text, its state
+// and its date. The history is read-only: a row never carries an answer
+// control, and the dialog a row opens never renders an answer form — the
+// history only ever holds decided states, never open.
+//
+// Clicking a row loads GET /api/questions/{id}/answers and shows the answer
+// log in a dialog, oldest first (the server's order): every answer's quote
+// verbatim in an escaped <pre> (never markup), the chosen option's label,
+// the actor, the surface and the time; a superseded answer carries a
+// Superseded badge naming the superseded_by answer, and the currently
+// effective answer carries the Current marker.
+// ════════════════════════════════════════════════════════════════════════════
+
+// _questionsHistoryDateText is the row date label: the question's local
+// calendar date (YYYY-MM-DD). A missing or invalid timestamp gives ''.
+function _questionsHistoryDateText(iso) {
+  if (iso == null || iso === '') return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const p = n => (n < 10 ? '0' + n : '' + n);
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+window._questionsHistoryDateText = _questionsHistoryDateText;
+
+// _questionsHistoryTimeText is the log entry's time label: the answer's
+// local date and hour (YYYY-MM-DD HH:MM). A missing or invalid timestamp
+// gives ''.
+function _questionsHistoryTimeText(iso) {
+  const date = _questionsHistoryDateText(iso);
+  if (!date) return '';
+  const d = new Date(iso);
+  const p = n => (n < 10 ? '0' + n : '' + n);
+  return date + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+window._questionsHistoryTimeText = _questionsHistoryTimeText;
+
+// _questionsHistoryRowHtml draws one history row: the question id, its
+// label (when set), its state, the escaped text and the date. The row is
+// read-only: no button, no input, no answer control of any kind — the only
+// affordance is clicking the row to open the answer log.
+function _questionsHistoryRowHtml(q) {
+  const id = String(q.id == null ? '' : q.id);
+  const st = String(q.state == null ? '' : q.state);
+  const stateKey = st === 'answered' ? 'automation_questions_history_answered'
+    : st === 'withdrawn' ? 'automation_questions_history_withdrawn'
+    : null;
+  const stateLabel = stateKey ? t(stateKey) : (st || '');
+  const askDate = _questionsHistoryDateText(q.created_at);
+  return `<div class="questions-history-row" data-question-id="${escHtml(id)}" data-state="${escHtml(st)}" style="border-top:1px solid var(--border);padding:8px 2px;display:flex;flex-direction:column;gap:4px;cursor:pointer;" onclick="if (typeof window.openQuestionHistory === 'function') window.openQuestionHistory('${escHtml(id)}')">` +
+    `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
+      `<span class="questions-history-id" style="font-weight:600;font-size:12px;">${escHtml(id)}</span>` +
+      (q.label ? `<span class="questions-history-label" style="font-size:12px;color:var(--text);">${escHtml(q.label)}</span>` : '') +
+      (stateLabel ? `<span class="questions-history-state${stateKey ? ' questions-history-state-' + escHtml(st) : ''}" style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;">${escHtml(stateLabel)}</span>` : '') +
+    `</div>` +
+    (q.text ? `<div class="questions-history-text" style="font-size:12px;color:var(--text);overflow-wrap:anywhere;">${escHtml(q.text)}</div>` : '') +
+    (askDate ? `<div class="questions-history-date" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_questions_history_date', [askDate]))}</div>` : '') +
+    `</div>`;
+}
+
+// window.questionsHistoryHtml(body) turns the decoded history list — the
+// merged answered+withdrawn questions, or the 503 disabled sentinel — into
+// the card body, in the newest-first order the fetch produced.
+window.questionsHistoryHtml = function(body) {
+  if (!body || body.__automationQuestionsDisabled) {
+    return `<div style="color:var(--text2);">${escHtml(t('automation_questions_disabled'))}</div>`;
+  }
+  const list = Array.isArray(body) ? body : (body && Array.isArray(body.questions) ? body.questions : []);
+  if (!list.length) {
+    return `<div style="color:var(--text2);">${escHtml(t('automation_questions_history_list_empty'))}</div>`;
+  }
+  return `<div class="questions-history-list">${list.map(h => _questionsHistoryRowHtml(h || {})).join('')}</div>`;
+};
+
+// _questionsHistoryBodyHTML is the dialog body: the answer log, oldest
+// first. Each entry shows the quote verbatim in an escaped <pre> (never
+// markup), then the chosen option's label, the actor, the surface and the
+// time; a superseded entry carries the Superseded badge naming
+// superseded_by, and the entry whose id is current_answer_id carries the
+// Current marker. This is a log, not a form: no radio, no textarea, no
+// submit — the history never offers the answer control, and a withdrawn
+// question shows only its state here.
+function _questionsHistoryBodyHTML(payload, question) {
+  const p = (payload && typeof payload === 'object') ? payload : {};
+  let answers = (p.answers && Array.isArray(p.answers)) ? p.answers : [];
+  if (!answers.length && Array.isArray(payload)) answers = payload;
+  const currentId = String(p.current_answer_id != null ? p.current_answer_id : '');
+  if (!answers.length) {
+    return `<div class="questions-history-no-answers" style="font-size:12px;color:var(--text2);">${escHtml(t('automation_questions_history_no_answers'))}</div>`;
+  }
+  const options = (question && Array.isArray(question.options)) ? question.options : [];
+  const entries = answers.map(a => {
+    const ea = (a && typeof a === 'object') ? a : {};
+    const aid = String(ea.id != null ? ea.id : '');
+    const quote = ea.quote != null ? String(ea.quote) : '';
+    const chosenID = String(ea.chosen_option_id != null ? ea.chosen_option_id : '');
+    // The option's label (the raw id when the question carries no such
+    // option), exactly like the answer dialog resolves choices.
+    const chosenLabel = chosenID ? (_questionAnswerOptionLabel(options, chosenID) || chosenID) : '';
+    const time = _questionsHistoryTimeText(ea.created_at);
+    let marks = '';
+    if (currentId && aid === currentId) {
+      marks += `<span class="questions-history-current" style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 6px;">${escHtml(t('automation_questions_history_current'))}</span>`;
+    }
+    if (ea.superseded === true) {
+      marks += `<span class="questions-history-superseded" title="${escHtml(String(ea.superseded_by != null ? ea.superseded_by : ''))}" style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;">${escHtml(t('automation_questions_history_superseded', [String(ea.superseded_by != null ? ea.superseded_by : '')]))}</span>`;
+    }
+    return `<div class="questions-history-entry" data-answer-id="${escHtml(aid)}" style="margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:8px;">` +
+      (quote !== '' ? `<pre class="questions-history-quote" style="margin:0 0 6px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);">${escHtml(quote)}</pre>` : '') +
+      (chosenLabel ? `<div class="questions-history-chosen" style="font-size:12px;color:var(--text);margin-bottom:2px;">${escHtml(t('automation_questions_history_chosen', [chosenLabel]))}</div>` : '') +
+      `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--text2);">` +
+        `<span class="questions-history-actor">${escHtml(t('automation_questions_history_actor', [String(ea.actor != null ? ea.actor : '')]))}</span>` +
+        `<span class="questions-history-surface">${escHtml(t('automation_questions_history_surface', [String(ea.surface != null ? ea.surface : '')]))}</span>` +
+        (time ? `<span class="questions-history-time">${escHtml(t('automation_questions_history_time', [time]))}</span>` : '') +
+        marks +
+      `</div>` +
+      `</div>`;
+  }).join('');
+  return `<div class="questions-history-log" style="max-height:50vh;overflow-y:auto;">${entries}</div>`;
+}
+window._questionsHistoryBodyHTML = _questionsHistoryBodyHTML;
+
+// window.openQuestionHistory(id) is the hand-off target of the history
+// rows. It loads GET /api/questions/{id}/answers and shows the answer log
+// in a dialog — the log is the whole dialog: there is no option radio and
+// no quote box, so a decided question (answered or withdrawn) never shows
+// an answer form. Option labels resolve from the history list the row came
+// from (the list items carry the question's options).
+window.openQuestionHistory = function(id) {
+  const qid = String(id == null ? '' : id);
+  const stateRef = _automationQuestionsState;
+  return automationRequest('GET', '/api/questions/' + encodeURIComponent(qid) + '/answers').then(payload => {
+    const question = (Array.isArray(stateRef.historyList) ? stateRef.historyList : []).find(q => q && String(q.id) === qid) || null;
+    showModal({
+      title: t('automation_questions_history_title', [question && question.id != null ? String(question.id) : qid]),
+      body: _questionsHistoryBodyHTML(payload, question),
+    });
+  }).catch(err => {
+    showToast(_questionAnswerErrorMessage(err), 'error');
+  });
+};
+
+// toggleAutomationQuestionsHistory flips the card between the open queue
+// and the history, re-requests through the card's own loader (the same
+// search text applies to both lists), and marks the button active.
+function toggleAutomationQuestionsHistory() {
+  const state2 = _automationQuestionsState;
+  state2.history = !state2.history;
+  if (state2.history) state2.historyList = [];
+  const btn = document.getElementById('automationQuestionsHistoryBtn');
+  if (btn && btn.classList) btn.classList.toggle('active', state2.history);
+  const ctl = window._listLoaders && window._listLoaders.automation_questions;
+  if (ctl) ctl.load();
+}
+window.toggleAutomationQuestionsHistory = (() => {
+  if (typeof window.toggleAutomationQuestionsHistory !== 'function') {
+    window.toggleAutomationQuestionsHistory = toggleAutomationQuestionsHistory;
+  }
+  return window.toggleAutomationQuestionsHistory;
+})();
 
 // The empty state shows only after a load that succeeded with zero
 // Automations: not before the first load completes, not from cached data, and

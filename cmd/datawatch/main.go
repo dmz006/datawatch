@@ -376,6 +376,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newChannelRoutingCmd(), // BL331 parity
 		// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
 		newAutonomousCmd(),
+		newQuestionCmd(),
 		// Sprint S7 (v3.11.0) — BL33 plugin framework.
 		newPluginsCmd(),
 		// Sprint S8 (v4.0.0) — BL117 PRD-DAG orchestrator.

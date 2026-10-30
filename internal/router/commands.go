@@ -131,6 +131,14 @@ const (
 	// "prd" is also accepted as a shorter alias.
 	CmdAutonomous CommandType = "autonomous"
 
+	// Operator question channel over comm (decision item 23): the
+	// /api/questions REST surface as chat verbs. The subverb parsing
+	// and the bare-reply rule live in questions_comm.go.
+	//   "question list"                              — open questions
+	//   "question show <id>"                         — question + answer
+	//   "question answer <id> <N|option-id> [quote…]" — answer one
+	CmdQuestion CommandType = "question"
+
 	// BL220-G4 — orchestrator graph lifecycle over chat.
 	//   "orchestrator"               → list graphs
 	//   "orchestrator config"        → show orchestrator config
@@ -1319,6 +1327,13 @@ func Parse(text string) Command {
 		//   "peers delete <name>"
 		rest := strings.TrimSpace(text[len("peers"):])
 		return Command{Type: CmdPeers, Text: rest}
+
+	case lower == "question" || strings.HasPrefix(lower, "question "):
+		// Operator question channel (decision item 23). The subverb
+		// (list / show / answer) and args sit in Text;
+		// questions_comm.go parses and performs them.
+		rest := strings.TrimSpace(text[len("question"):])
+		return Command{Type: CmdQuestion, Text: rest}
 
 	case lower == "autonomous" || strings.HasPrefix(lower, "autonomous ") ||
 		lower == "prd" || strings.HasPrefix(lower, "prd "):

@@ -126,7 +126,10 @@ test('deep links land on Chains, even after choosing Overview: navigate, openAut
 test('there is no Questions sub-tab: not in the rendered row, not in the registry, not in en.json', () => {
   const { sb, out } = loadView();
   sb.renderAutonomousView();
-  assert.doesNotMatch(out.view, /question/i, 'the rendered view names no Questions sub-tab');
+  // The question queue is a card on Chains, not a sub-tab: drop that card's
+  // markup (it ends at the list panel) before checking the view.
+  const viewNoCard = out.view.replace(/<div id="automationQuestionsCard"[\s\S]*?(?=<div id="automationPanel")/, '');
+  assert.doesNotMatch(viewNoCard, /question/i, 'the rendered view names no Questions sub-tab');
   const bar = sb._automationSubtabsBarHTML();
   assert.doesNotMatch(bar, /question/i, 'the second-row bar names no Questions button');
   const reg = vm.runInContext('_AUTOMATION_SUBTABS', sb);

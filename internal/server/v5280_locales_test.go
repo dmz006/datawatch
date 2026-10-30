@@ -255,6 +255,16 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"triage_card_title",
 		// The stuck-running watchdog bound on the Automata settings card.
 		"settings_stuck_running_seconds",
+		// Step 3 PWA (f1f20010) — operator-question channel: queue card
+		// title / empty / disabled texts, answer button, history control,
+		// answer-form submit label, new-question notice.
+		"automation_questions_title",
+		"automation_questions_empty",
+		"automation_questions_disabled",
+		"automation_questions_open",
+		"automation_questions_history",
+		"automation_questions_answer_submit",
+		"automation_questions_raised",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
