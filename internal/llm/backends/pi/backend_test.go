@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/testhome"
 )
 
 // ---- PromptBackend (one-shot, --print) ----
@@ -31,6 +32,7 @@ func TestBuildLaunchCmd_WhitespaceModelRefused(t *testing.T) {
 }
 
 func TestBuildLaunchCmd_WithModel(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
 	cmd, err := buildLaunchCmd("pi", "ollama/qwen3.8:27b", "task text", "/proj", "cs-abc")
 	if err != nil {
 		t.Fatalf("buildLaunchCmd with a model: %v", err)
@@ -47,6 +49,7 @@ func TestBuildLaunchCmd_WithModel(t *testing.T) {
 // newline as a literal Enter keypress mid-command. Confirmed live
 // 2026-10-16 ("These: command not found" mid-paste) before this fix.
 func TestBuildLaunchCmd_TaskGoesThroughScratchFile(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
 	cmd, err := buildLaunchCmd("pi", "prov/model-a", "it's a test\nwith a newline", "/proj", "cs-abc")
 	if err != nil {
 		t.Fatalf("buildLaunchCmd: %v", err)
@@ -60,6 +63,7 @@ func TestBuildLaunchCmd_TaskGoesThroughScratchFile(t *testing.T) {
 }
 
 func TestBuildLaunchCmd_EscapesSingleQuotesInProjectDir(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
 	cmd, err := buildLaunchCmd("pi", "prov/model-a", "task", "/proj's/dir", "cs-abc")
 	if err != nil {
 		t.Fatalf("buildLaunchCmd: %v", err)
@@ -70,6 +74,7 @@ func TestBuildLaunchCmd_EscapesSingleQuotesInProjectDir(t *testing.T) {
 }
 
 func TestBuildLaunchCmd_EscapesSingleQuotesInModel(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
 	cmd, err := buildLaunchCmd("pi", "weird'model", "task", "/proj", "cs-abc")
 	if err != nil {
 		t.Fatalf("buildLaunchCmd: %v", err)
@@ -80,6 +85,7 @@ func TestBuildLaunchCmd_EscapesSingleQuotesInModel(t *testing.T) {
 }
 
 func TestBuildLaunchCmd_EmptyTaskOmitsArg(t *testing.T) {
+	testhome.PrivateTmp(t) // the out/status scratch files are removed with the test's temp dir
 	cmd, err := buildLaunchCmd("pi", "prov/model-a", "", "/proj", "cs-abc")
 	if err != nil {
 		t.Fatalf("buildLaunchCmd: %v", err)
@@ -132,6 +138,7 @@ func TestPromptBackend_SetModel(t *testing.T) {
 // rewriting, no substitution with a default. A regression here is how a
 // pi-prompt verifier ended up launching with an unrelated ollama model.
 func TestBuildLaunchCmd_ModelPassesThroughVerbatim(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
 	const model = "ollama-datawatch/qwen3.8-64k:27b"
 	cmd, err := buildLaunchCmd("pi", model, "some task", "work", "ses")
 	if err != nil {
@@ -168,6 +175,7 @@ func TestPromptBackend_LaunchCmdSendsSetModelToTmux(t *testing.T) {
 		t.Fatalf("write fake tmux: %v", err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	testhome.PrivateTmp(t) // the out/status scratch files of each Launch are removed with the test's temp dir
 
 	launch := func(b *PromptBackend) string {
 		t.Helper()
@@ -212,6 +220,7 @@ func TestPromptBackend_VersionReturnsEmptyOnMissingBinary(t *testing.T) {
 }
 
 func TestPromptLaunch_InvokesTmuxSendKeys(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
 	b := NewPrompt("pi").(*PromptBackend)
 	b.SetModel("prov/model-a")
 	err := b.Launch(context.Background(), "task", "cs-nonexistent-session-xyz", "/tmp", "/tmp/out.log")
@@ -228,6 +237,7 @@ var _ llm.Backend = NewPrompt("")
 func TestBuildInteractiveCmd_NoSessionWithModel(t *testing.T) {
 	// Since v9.10.19 model is required; an empty session ID still must not
 	// add a --session-id flag.
+	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
 	cmd, err := buildInteractiveCmd("pi", "prov/model-a", "", "do the thing", "/home/dmz/work", "cs-abc")
 	if err != nil {
 		t.Fatalf("buildInteractiveCmd with model: %v", err)
@@ -271,6 +281,7 @@ func TestBuildInteractiveCmd_EmptyModelRefused(t *testing.T) {
 }
 
 func TestBuildInteractiveCmd_WithSessionAndModel(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
 	cmd, err := buildInteractiveCmd("pi", "ollama/qwen3.8:27b", "johnnyjohnny-c905", "task text", "/proj", "cs-abc")
 	if err != nil {
 		t.Fatalf("buildInteractiveCmd: %v", err)
@@ -297,6 +308,7 @@ func TestBuildInteractiveCmd_EmptyTaskOmitsArg(t *testing.T) {
 // interactive mode: the flag appears exactly once when set, and is absent
 // when empty.
 func TestBuildInteractiveCmd_ThinkingLevelInCmd(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
 	cmd, err := buildInteractiveCmdWithAgentDir("pi", "prov/model-a", "minimal", "", "task", "/proj", "cs-abc", "")
 	if err != nil {
 		t.Fatalf("buildInteractiveCmdWithAgentDir: %v", err)
@@ -406,6 +418,7 @@ func TestLaunch_InvokesTmuxSendKeys(t *testing.T) {
 	// session-manager integration level, not here.
 	b := New("pi").(*Backend)
 	b.SetModel("prov/model-a")
+	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
 	err := b.Launch(context.Background(), "task", "cs-nonexistent-session-xyz", "/tmp", "/tmp/out.log")
 	if err == nil {
 		t.Skip("tmux session happened to exist or tmux accepted the target; nothing to assert here")
@@ -416,6 +429,7 @@ func TestLaunchResume_FallsBackToSessionNameWhenResumeIDEmpty(t *testing.T) {
 	b := New("pi").(*Backend)
 	b.SetSessionName("stored-name")
 	b.SetModel("prov/model-a")
+	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
 	err := b.LaunchResume(context.Background(), "task", "cs-nonexistent-session-xyz", "/tmp", "/tmp/out.log", "")
 	if err == nil {
 		t.Skip("tmux session happened to exist or tmux accepted the target; nothing to assert here")
@@ -429,6 +443,7 @@ func TestLaunchResume_FallsBackToSessionNameWhenResumeIDEmpty(t *testing.T) {
 // PATH that prints a distinct stderr message and exits nonzero — no real
 // tmux server is started.
 func TestLaunch_TmuxStderrSurfacesInError(t *testing.T) {
+	testhome.PrivateTmp(t) // scratch task files are removed with the test's temp dir
 	dir := t.TempDir()
 	const want = "FAKE-TMUX-STDERR-PI"
 	fakeTmux := filepath.Join(dir, "tmux")
@@ -484,6 +499,7 @@ func TestLaunch_TmuxStderrSurfacesInError(t *testing.T) {
 // on PATH in this test, so any stray exec would fail differently. No fake
 // tmux server is ever involved.
 func TestLaunch_SendKeysLengthGuardApplies(t *testing.T) {
+	testhome.PrivateTmp(t) // scratch task files are removed with the test's temp dir
 	// Oversize via the project dir, which both the interactive and
 	// one-shot command builders inline (`cd '...'`), even though the task
 	// text itself may go through a scratch file.
@@ -539,6 +555,7 @@ func runLaunchCmdWithStubPi(t *testing.T, stubBody, model string) (string, error
 	if strings.TrimSpace(model) == "" {
 		t.Fatal("runLaunchCmdWithStubPi: model must be non-empty")
 	}
+	testhome.PrivateTmp(t) // the task/out/status scratch files are removed with the test's temp dir
 	dir := t.TempDir()
 	stub := filepath.Join(dir, "pi-stub")
 	if err := os.WriteFile(stub, []byte("#!/bin/sh\n"+stubBody), 0o755); err != nil { //nolint:gosec // test fixture must be executable
@@ -642,6 +659,7 @@ var _ llm.Backend = New("")
 // TestBuildLaunchCmd_ThinkingLevelInCmd: the one-shot command carries pi's
 // --thinking flag exactly once when a level is set and none when it is empty.
 func TestBuildLaunchCmd_ThinkingLevelInCmd(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
 	cmd, err := buildLaunchCmdWithAgentDir("pi", "prov/model-a", "high", "task", "/proj", "cs-abc", "")
 	if err != nil {
 		t.Fatalf("buildLaunchCmdWithAgentDir: %v", err)

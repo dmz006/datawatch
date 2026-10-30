@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/testhome"
 )
 
 // regressionPinnedModel is the exact pinned model the 2026-10-20 22:29
@@ -44,6 +46,7 @@ func assertExactModelFlag(t *testing.T, cmd, want string) {
 }
 
 func TestBuildInteractiveCmd_ExplicitModelPinnedExact(t *testing.T) {
+	testhome.PrivateTmp(t) // any scratch file this build makes lands in the test's temp dir
 	cmd, err := buildInteractiveCmd("/usr/local/bin/pi", regressionPinnedModel, "sess_judge_1", "", "/work", "tmux_judge_1")
 	if err != nil {
 		t.Fatalf("buildInteractiveCmd: %v", err)
@@ -54,6 +57,7 @@ func TestBuildInteractiveCmd_ExplicitModelPinnedExact(t *testing.T) {
 func TestBuildInteractiveCmd_EmptyModelFailsLoudly(t *testing.T) {
 	// An empty explicit-model argument is a configuration failure, not a
 	// silent "let the harness pick its own default" case.
+	testhome.PrivateTmp(t) // boundary pin: the refuse path creates no scratch file
 	cmd, err := buildInteractiveCmd("/usr/local/bin/pi", "", "sess_judge_2", "", "/work", "tmux_judge_2")
 	if !errors.Is(err, ErrNoModel) {
 		t.Fatalf("empty model: err = %v, want ErrNoModel (fail loudly, never fall back to the harness default)", err)
@@ -64,6 +68,7 @@ func TestBuildInteractiveCmd_EmptyModelFailsLoudly(t *testing.T) {
 }
 
 func TestBuildLaunchCmd_ExplicitModelPinnedExact(t *testing.T) {
+	testhome.PrivateTmp(t) // the out/status scratch files are removed with the test's temp dir
 	cmd, err := buildLaunchCmd("/usr/local/bin/pi", regressionPinnedModel, "", "/work", "tmux_judge_3")
 	if err != nil {
 		t.Fatalf("buildLaunchCmd: %v", err)
@@ -72,6 +77,7 @@ func TestBuildLaunchCmd_ExplicitModelPinnedExact(t *testing.T) {
 }
 
 func TestBuildLaunchCmd_EmptyModelFailsLoudly(t *testing.T) {
+	testhome.PrivateTmp(t) // boundary pin: the refuse path creates no scratch file
 	cmd, err := buildLaunchCmd("/usr/local/bin/pi", "  ", "", "/work", "tmux_judge_4")
 	if !errors.Is(err, ErrNoModel) {
 		t.Fatalf("blank model: err = %v, want ErrNoModel", err)
@@ -150,6 +156,7 @@ func TestWriteTaskFile_WritesAndCleans(t *testing.T) {
 // TestReserveScratchFile_NamesAndFailure covers reserveScratchFile's
 // success path and its CreateTemp error branch.
 func TestReserveScratchFile_NamesAndFailure(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch file is removed with the test's temp dir
 	if _, err := reserveScratchFile("tmux_judge_8", "out"); err != nil {
 		t.Fatalf("reserveScratchFile success path: %v", err)
 	}

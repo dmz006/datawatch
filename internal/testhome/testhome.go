@@ -11,23 +11,36 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Run points HOME at a throwaway directory, runs the package's tests and
 // removes the directory again, whatever the exit code. It returns the exit
 // code for os.Exit. Setup failures print "home isolation: <err>" and return 1.
 func Run(m *testing.M) int {
+	// Reclaim strays from an earlier run that died before cleanup. Warn
+	// and continue: sweeping is bookkeeping, never a gate.
+	if err := SweepStale(os.TempDir(), time.Hour, time.Now()); err != nil {
+		fmt.Fprintf(os.Stderr, "home isolation: WARNING: sweep: %v\n", err)
+	}
 	realHome := os.Getenv("HOME")
 	home, err := os.MkdirTemp("", "dw-test-home-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "home isolation:", err)
 		return 1
 	}
+	Record(home) // so a later sweep can reclaim it if we die hard
 	// Deferred so the removal also runs if m.Run panics.
 	defer func() {
 		if err := Remove(home); err != nil {
 			fmt.Fprintf(os.Stderr, "home isolation: WARNING: could not remove %s: %v\n", home, err)
 		}
+		// Clean exit: the creation manifest must leave no trace in the temp
+		// dir (the story-s3 leak guard asserts zero surviving entries after
+		// a clean run). A run that died hard (os.Exit, SIGKILL) skips this
+		// defer, so its line and its stray home survive — which is exactly
+		// what the next Run's sweep is meant to find.
+		forget(home)
 	}()
 	PinGoEnv(realHome)
 	DisableGoTelemetry(home)
@@ -137,6 +150,20 @@ func pinIfExists(env, dir string) {
 	}
 }
 
+// PrivateTmp points TMPDIR at a test-scoped directory for the duration of
+// t's test. Scratch files the code under test creates via os.CreateTemp or
+// os.MkdirTemp (the backend task scratch files are the canonical example)
+// then land in a tree t.TempDir already guarantees will be removed even when
+// the test fails partway, instead of orphaning in the operator's $TMPDIR.
+// Must not be called from a parallel test (t.Setenv restriction).
+// Returns the private directory.
+func PrivateTmp(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+	return dir
+}
+
 // TmuxDirMarker is a file TmuxIsolation writes inside the throwaway
 // TMUX_TMPDIR, so a test can prove a candidate TMUX_TMPDIR was created for
 // this test run (and is therefore safe) rather than pointing at a live
@@ -158,6 +185,7 @@ func TmuxIsolation() (func(), error) {
 	if err != nil {
 		return nil, err
 	}
+	Record(dir) // so a later sweep can reclaim it if we die hard
 	fail := func(err error) (func(), error) {
 		if remErr := os.RemoveAll(dir); remErr != nil {
 			fmt.Fprintf(os.Stderr, "home isolation: WARNING: could not remove %s: %v\n", dir, remErr)

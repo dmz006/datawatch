@@ -3,11 +3,12 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: build clean install lint check-security-ignore-writes check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs test fmt cross release release-snapshot channel-build \
+.PHONY: build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
         security-registry-gen security-registry-check \
+        test-tmp-guard \
         test-e2e-docker test-e2e-pwa test-e2e-pwa-load test-e2e-mobile-fit test-e2e-shared-nav test-e2e-all test-e2e-clean
 
 # Sync docs/ into internal/server/web/docs/ so the embedded web FS
@@ -229,6 +230,14 @@ install: sync-docs docs-index
 clean:
 	rm -rf $(BUILD_DIR)
 
+# Remove stale throwaway test scratch directories (dw-test-*, dw-leak-*,
+# svchelper-*, datawatch-*-task-*, ...) older than an hour from the
+# program temp directory. Never follows symlinks, never touches tmux,
+# never kills processes. Runs with TMUX/TMUX_TMPDIR unset as a
+# belt-and-braces guarantee.
+clean-test-tmp:
+	env -u TMUX -u TMUX_TMPDIR bash scripts/clean-test-tmp.sh
+
 check-tmux:
 	bash scripts/check-no-unscoped-tmux.sh
 
@@ -266,6 +275,14 @@ lint: check-tmux check-test-daemons check-service-scope check-go-pins check-inte
 
 test:
 	go test ./...
+
+# Temp-dir leak guard (internal/session TestNoNewTmpLeakEntries) in full
+# mode: DW_LEAK_GUARD_FULL=1 makes it run every package from `go list ./...`
+# (except internal/session, which would run a copy of the guard) one at a
+# time, attributing any temp-dir survivor to the package that left it. The
+# normal `go test ./...` run of the same test keeps the small default list.
+test-tmp-guard:
+	DW_LEAK_GUARD_FULL=1 go test -count=1 -timeout 20h ./internal/session/ -run TestNoNewTmpLeakEntries
 
 fmt:
 	gofmt -w .

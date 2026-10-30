@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/testhome"
 )
 
 // installFakeTmux puts a PATH-resolvable fake `tmux` in dir that records
@@ -51,6 +53,7 @@ func TestPromptBackendLaunch_LongTaskGoesThroughScratchFile(t *testing.T) {
 	dir := t.TempDir()
 	argvFile := filepath.Join(dir, "argv")
 	installFakeTmux(t, dir, argvFile)
+	testhome.PrivateTmp(t) // scratch task file is removed with the test's temp dir
 
 	task := "SPEC\n" + strings.Repeat("y", 40*1024)
 	b := NewPrompt("goose")
@@ -105,6 +108,7 @@ func TestPromptBackendLaunch_FallsBackToInlineWhenScratchFileFails(t *testing.T)
 	dir := t.TempDir()
 	argvFile := filepath.Join(dir, "argv")
 	installFakeTmux(t, dir, argvFile)
+	testhome.PrivateTmp(t) // any scratch file lands in the test's temp dir
 	// Point TMPDIR at a path that doesn't exist so os.CreateTemp fails.
 	t.Setenv("TMPDIR", filepath.Join(dir, "definitely-missing"))
 

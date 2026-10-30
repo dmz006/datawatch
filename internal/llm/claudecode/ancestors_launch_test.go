@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/testhome"
 )
 
 var settingsArgRe = regexp.MustCompile(`--settings '([^']*)'`)
@@ -64,6 +66,7 @@ func sameSet(a, b []string) bool {
 }
 
 func TestLaunch_ExcludesExactlyAncestorClaudeMds(t *testing.T) {
+	testhome.PrivateTmp(t) // scratch task file is removed with the test's temp dir
 	argv := startFakeTmux(t, false)
 	root, proj, anc := ancestorTree(t)
 	b := backendOf()
@@ -78,6 +81,7 @@ func TestLaunch_ExcludesExactlyAncestorClaudeMds(t *testing.T) {
 }
 
 func TestLaunch_NeverExcludesProjectOwnClaudeMd(t *testing.T) {
+	testhome.PrivateTmp(t) // scratch task file is removed with the test's temp dir
 	argv := startFakeTmux(t, false)
 	_, proj, _ := ancestorTree(t)
 	b := backendOf()
@@ -95,6 +99,7 @@ func TestLaunch_NeverExcludesProjectOwnClaudeMd(t *testing.T) {
 }
 
 func TestLaunch_OptionOff_NoSettings(t *testing.T) {
+	testhome.PrivateTmp(t) // scratch task file is removed with the test's temp dir
 	argv := startFakeTmux(t, false)
 	_, proj, _ := ancestorTree(t)
 	if err := backendOf().Launch(context.Background(), "do it", "cs-anc3", proj, "/nonexistent/log"); err != nil {

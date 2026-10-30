@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/testhome"
 )
 
 // 2026-10-15 — operator-reported: the PWA session view for an opencode
@@ -17,6 +18,7 @@ import (
 // in the typed command and echoed by the pty. writeTaskFile moves the
 // content to a file so the typed line stays short.
 func TestWriteTaskFile(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch file is removed with the test's temp dir
 	task := "line one\nline two with 'quotes' and \"stuff\"\nCHECKPOINT PROTOCOL etc."
 	path, err := writeTaskFile("johnnyjohnny-a400", task)
 	if err != nil {
@@ -43,6 +45,7 @@ func TestWriteTaskFile(t *testing.T) {
 // inline) and must still reference the real content via command
 // substitution, so opencode receives the exact same text it always did.
 func TestBuildRunCmd_KeepsTypedLineShort(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch file is removed with the test's temp dir
 	// supportsStandaloneFlag shells out to the real binary; pre-seed the
 	// cache with a synthetic name so this test stays hermetic regardless
 	// of whether opencode is installed, or which version, on the machine
@@ -83,6 +86,7 @@ func TestBuildRunCmd_EmptyTaskUnchanged(t *testing.T) {
 // background service existed yet), and passing an unknown flag would be a
 // hard, loud failure instead of the graceful no-op this should be.
 func TestBuildRunCmd_NoStandaloneFlagWhenUnsupported(t *testing.T) {
+	testhome.PrivateTmp(t) // the scratch file is removed with the test's temp dir
 	standaloneFlagCache.Store("opencode-test-old", false)
 	b := &Backend{binary: "opencode-test-old"}
 	cmd := b.buildRunCmd("/tmp/proj", "a task", "johnnyjohnny-xyz2")
@@ -109,6 +113,7 @@ func TestSupportsStandaloneFlag_UnknownBinaryFailsClosed(t *testing.T) {
 // seeded in standaloneFlagCache) keep the test hermetic: no real opencode
 // is ever exec'd.
 func TestLaunch_TmuxStderrSurfacesInError(t *testing.T) {
+	testhome.PrivateTmp(t) // scratch task files are removed with the test's temp dir
 	dir := t.TempDir()
 	const want = "FAKE-TMUX-STDERR-OPENCODE"
 	fakeTmux := filepath.Join(dir, "tmux")
@@ -159,6 +164,7 @@ func TestLaunch_TmuxStderrSurfacesInError(t *testing.T) {
 // standaloneFlagCache) keep the test hermetic: no real opencode is ever
 // exec'd.
 func TestLaunch_SendKeysLengthGuardApplies(t *testing.T) {
+	testhome.PrivateTmp(t) // scratch task files are removed with the test's temp dir
 	// Oversize via the project dir, which all three command builders
 	// inline (`cd '...'`), even though the task text itself goes through
 	// a scratch file.

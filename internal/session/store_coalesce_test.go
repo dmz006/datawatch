@@ -210,6 +210,12 @@ func TestStoreCrashSafety(t *testing.T) {
 			cmd.Env = append(cmd.Env, kv)
 		}
 		cmd.Env = append(cmd.Env, crashHelperEnv+"="+path)
+		// The helper never survives the SIGKILL below, so its TestMain-deferred
+		// cleanup never runs: point its scratch space at a test-scoped dir so
+		// the testhome dw-test-home-*/dw-test-tmux-* trees it creates are
+		// removed by our cleanup instead of orphaning in $TMPDIR. (Last
+		// duplicate wins in exec.Cmd.Env, overriding any inherited TMPDIR.)
+		cmd.Env = append(cmd.Env, "TMPDIR="+t.TempDir())
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}

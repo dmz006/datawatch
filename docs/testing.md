@@ -73,6 +73,32 @@ When documenting a test, use this table format:
 - Every verification script must run with `env -u TMUX -u TMUX_TMPDIR`, for example `env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-unscoped-tmux.sh`.
 - `scripts/check-no-unscoped-tmux.sh` enforces these rules. It runs in `make lint`, in CI, and as a check when a PRD is decomposed. A line that only holds fixture text and is never run against tmux may carry a `tmux-scope-ok` marker.
 
+## Temp directory hygiene for tests
+
+Tests share one operating-system temp directory, and a suite that leaves its scratch
+there poisons the directory for every later run on the host. The rules are:
+
+- **Create and clean up in the same test.** A Go test must build its throwaway
+directory with `t.TempDir()`, or register a cleanup (`t.Cleanup`) right after
+creating one — before any code runs that could fail the test. A cleanup that is
+registered after the failure point never runs, and the directory leaks.
+- **A hard-killed run skips its cleanups; the backstops cover that.** The test
+home helper (`internal/testhome`) records every throwaway directory it creates in
+a manifest file in the temp directory, and the next test binary that starts runs
+a sweep (`SweepStale`) that reclaims the strays the manifest still lists.
+`scripts/clean-test-tmp.sh` (run as `make clean-test-tmp`) is the manual version
+of the same sweep for operators: it removes stale throwaway test scratch
+directories older than one hour from the temp directory — never following
+symlinks, never touching tmux — and prunes the manifest to whatever it could
+not remove. Use it to clear the leftovers of a killed run.
+- **The leak guard is the regression gate.** `TestNoNewTmpLeakEntries`
+(`internal/session`) runs the tested suites one package at a time against a
+fresh, private temp directory and fails the run — naming the surviving entry and
+the responsible package — if any scratch directory is left behind.
+`make test-tmp-guard` runs the guard in full mode over every package in the
+repository; the ordinary `go test ./...` run of the same test keeps a small
+default list so a local run stays fast.
+
 ## Internal-Ref Leak Check
 
 - `scripts/check-no-internal-refs.sh` blocks internal tracking IDs from leaking into
