@@ -507,6 +507,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/progress/trend", api.handleAutonomousProgressTrend)
 	apiMux.HandleFunc("/api/autonomous/lane-fill", api.handleAutonomousLaneFill) // lane fill status: lanes, decisions, alerts
 	apiMux.HandleFunc("/api/autonomous/triage", api.handleAutonomousTriage)      // triage records: the Automata waiting (failed/blocked), newest first
+	apiMux.HandleFunc("/api/autonomous/overlap", api.handleAutonomousOverlap)    // search before create: overlaps for a title and spec
 	apiMux.HandleFunc("/api/capacity/admission", api.handleCapacityAdmission)    // read-only admission query
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)
