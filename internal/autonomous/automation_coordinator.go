@@ -818,6 +818,13 @@ func (c *Coordinator) triagePass() {
 				if title, body, ok := c.mergePendingCheck(prd, mergeMode, cfg.WorktreeBaseRepo, now, mergeThreshold); ok {
 					due = append(due, dueAlert{level: "warn", title: title, body: body})
 				}
+				// Worktree cleanup — merge pass end path: the work
+				// branch's standing was just compared to the base
+				// branch; release the work branch and work tree if the
+				// work has landed on the base project. The cleanup's
+				// safety criteria still apply; an entry they hold is
+				// left with the reason recorded.
+				c.m.ReleaseAutomatonWorktree(prd)
 				continue
 			}
 			if prd.Triage != nil {
@@ -836,6 +843,14 @@ func (c *Coordinator) triagePass() {
 	} else {
 		c.mergePendingPrune(nil, nil)
 	}
+
+	// Worktree cleanup — periodic safety net across every Automaton
+	// branch: release the work branch and work tree of Automata that
+	// are finished or cancelled, whose work is on the base branch, and
+	// whose entry is past the retention window. off mode does nothing
+	// (not even a git read), report records what would be removed,
+	// on removes within the per-pass limit.
+	c.m.CleanupWorktreesPass()
 
 	for _, d := range due {
 		c.alert(d.level, d.title, d.body)

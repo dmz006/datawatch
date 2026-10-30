@@ -821,6 +821,11 @@ func (a *API) Cancel(id string) error {
 	}
 	a.M.emitPRDStatus(prd, old, lastDecision(prd, "cancel"), nil)
 	a.M.EmitPRDUpdate(id)
+	// Worktree cleanup — cancelled end path: release the work branch
+	// and its work tree if the work is on the base branch and the
+	// entry is safe to remove (live sessions and leases still hold
+	// it, and the reasons are then recorded). off mode does nothing.
+	a.M.ReleaseAutomatonWorktree(prd)
 	return nil
 }
 
