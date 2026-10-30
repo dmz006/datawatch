@@ -124,8 +124,10 @@ func RaiseWorkerQuestion(d WorkerQuestionDeps, ev session.WorkerQuestionEvent) (
 	}
 	if !isNew {
 		// The same pane line read again while its question is still open.
+		recordWorkerQuestion(WorkerQuestionOutcomeDuplicate)
 		return raised, false
 	}
+	recordWorkerQuestion(WorkerQuestionOutcomeRaised)
 	if d.Notify != nil {
 		d.Notify(raised)
 	}
@@ -139,6 +141,7 @@ func (d WorkerQuestionDeps) refuse(ev session.WorkerQuestionEvent, reason string
 		reason = workerQuestionReasonUnknown
 	}
 	hash := workerLineHash(ev)
+	recordWorkerQuestion(WorkerQuestionOutcomeRefused)
 	if d.Audit != nil {
 		d.Audit(audit.ActionQuestionMarkerRefused, map[string]any{
 			"session_id":  ev.SessionFullID,

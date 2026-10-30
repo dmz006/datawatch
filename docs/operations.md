@@ -4734,6 +4734,8 @@ A worker session of an Automaton can ask the operator a design question by print
 
 **Monitoring: n/a, with reasons.** The worker marker adds no subsystem with a state of its own to gauge. A raised question is on `GET /api/questions`, a parked task is visible as its waiting reason, and a refused line is an audit entry (`question_marker_refused`); there is no separate stats field, endpoint, tool, card or command for it.
 
+**Watching it.** The marker has its own counters, since daemon start: lines raised as questions, repeats of a question still open, lines refused, tasks parked on a blocking question and tasks resumed. Read them from `GET /api/questions/stats` (MCP `question_stats`), from the *Worker Questions* card on the Monitor tab (shown once any counter is above zero), from the stats snapshot (`worker_questions_*`), or from the `datawatch_worker_questions_total{outcome=…}` Prometheus metric. A rising `refused` count means workers are printing marker lines that fail their checks; each refusal is in the audit log as `question_marker_refused` with the session, the reason category and a hash of the line, never the text.
+
 ## Terminal Performance
 
 ### xterm.js load time

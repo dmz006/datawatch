@@ -228,6 +228,20 @@ If the worker's line was refused, no question appears. Look for
 `question_marker_refused` in the audit log (`GET /api/audit?action=question_marker_refused`)
 and compare the line hash with the worker's output.
 
+## Watching it work
+
+The marker counts what happens to every line it sees, since the daemon started:
+
+| Counter | Meaning |
+|---|---|
+| `raised` | a line was stored as a new question |
+| `duplicate` | the same line was read again while its question was still open |
+| `refused` | a line failed its checks and nothing was stored |
+| `parked` | a task was parked on a blocking question |
+| `resumed` | a parked task was resumed after you decided |
+
+Read them with `GET /api/questions/stats` (the MCP tool is `question_stats`), or open the Monitor tab: a *Worker Questions* card appears once any counter is above zero, and a refusal count is shown in the warning colour. The same numbers are in the Prometheus metric `datawatch_worker_questions_total{outcome=…}`. The read answers even while the channel is off, with `questions_enabled` and `worker_marker_enabled` telling you which switch is holding things back.
+
 ## What this step does not cover yet
 
 - **One-shot print-mode backends are not asked on their behalf.** A worker that

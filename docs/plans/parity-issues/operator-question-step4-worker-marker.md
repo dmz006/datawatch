@@ -2,12 +2,12 @@
 
 Parity issue for dmz006/datawatch-app. It covers Android and iPhone/iOS together, so no platform tag is used. The text between the two body markers below is the issue body; the sections after the end marker record the filed issue.
 
-**The GitHub issue is not filed yet.** It is filed only when the operator says so. Until then this file is the tracked parity record, and the "Filed issue" section below stays empty.
+**Filed 2026-10-29 as a comment on [datawatch-app#283](https://github.com/dmz006/datawatch-app/issues/283)** (the operator question channel issue, which already carries the Step 2 comment): [issuecomment-6513069983](https://github.com/dmz006/datawatch-app/issues/283#issuecomment-6513069983). The comment body is the text between the two markers below, with a title line and a pointer to the Decisions card issue #302 added in front.
 
 <!-- body-start -->
 ## Daemon version
 
-Lands in the next minor release above main at the time the change merges. The mobile apps should gate the feature on the daemon reporting that release or later.
+Lands in the next minor release after 9.37.0. The mobile apps should gate the feature on the daemon reporting that release or later.
 
 ## What changed in datawatch
 
@@ -85,15 +85,22 @@ Every surface the change could reach, and whether it changes. Where it does not 
 
 | Surface | Changes? | Detail or reason |
 |---|---|---|
-| REST | Yes | Three new fields on the question record (`blocking`, `source`, `source_line_sha256`), the `await_decision` value for the capacity wait `cause`, and the new config key on `GET`/`PUT /api/config`. No new route: a worker question is read and answered on the existing `/api/questions` routes. |
-| MCP | Config only | No new tool. `question_list` and `question_get` return the question record, so the new fields appear there as they do on REST, and the key is set through the generic `config_set` and read with `get_config`. A marker is raised from a session's output, so a `question_raise` tool call is not part of it. |
+| REST | Yes | Three new fields on the question record (`blocking`, `source`, `source_line_sha256`), the `await_decision` value for the capacity wait `cause`, and the new config key on `GET`/`PUT /api/config`. One new read-only route, `GET /api/questions/stats` (counters and the two switches, 200 whether or not the channel is on); a worker question itself is read and answered on the existing `/api/questions` routes. |
+| MCP | Yes: one new tool | `question_stats` (read-only) returns the worker marker counters and the open marker and blocking counts. The config key is set through the generic `config_set` and read with `get_config`. The question record's new fields appear on the question tools once the Step 3 tools are merged with this step; a marker question is raised from a session's output, so a `question_raise` tool call is not part of it. |
 | CLI | Config only | No new verb or flag. The key is set with `datawatch config set autonomous.questions.worker_marker true`. `datawatch autonomous decisions --json` prints the daemon's response unchanged, so any new decision fields appear there; the CLI has no question-answer verb, and this step adds none. |
 | Comm channel | Config only | No new command. The key is set with `configure autonomous.questions.worker_marker=true`. The comm channel has no question-answer verb or bare-reply rule, and this step adds none; raising is done by the worker's marker, not by a chat verb. |
 | YAML/config | Yes | New key `autonomous.questions.worker_marker` (boolean, off when absent, read live), documented in the config reference. |
-| PWA | Yes | A settings toggle for the key, and the answer link with its quote panel on `operator_answer` entries in the Automaton decision log. |
-| Android | Yes, not built | Needs the settings toggle, the waiting-for-decision display and the answer link. Tracked in this record; the issue is filed when the operator says so. |
-| iPhone | Yes, not built | The same as Android. Tracked in this record; the issue is filed when the operator says so. |
+| PWA | Yes | A settings toggle for the key, the answer link with its quote panel on `operator_answer` entries in the Automaton decision log, and a *Worker Questions* card on the Monitor tab (hidden until a counter is above zero; six new locale keys `stats_worker_questions` and `stats_worker_questions_raised|duplicate|refused|parked|resumed`). |
+| Android | Yes, not built | Needs the settings toggle, the waiting-for-decision display and the answer link. Tracked in datawatch-app#283 (comment filed 2026-10-29). |
+| iPhone | Yes, not built | The same as Android. Tracked in datawatch-app#283 (comment filed 2026-10-29). |
+
+## Addendum comment
+
+The stats read, the Monitor card and its six locale keys were added after the first comment and are in a second comment on datawatch-app#283 (2026-10-29), filed the same way: [issuecomment-6513481407](https://github.com/dmz006/datawatch-app/issues/283#issuecomment-6513481407). Title: "[sync] Worker questions, addendum: marker counters, Monitor card and six locale keys".
 
 ## Filed issue
 
-Not filed. The GitHub issue for dmz006/datawatch-app is filed only when the operator says so. When it is filed, record here the issue number, the URL, the title and the exact filed body text, as the other parity records do, and update the Android and iPhone rows in `docs/parity-status.md`.
+- Issue: [dmz006/datawatch-app#283](https://github.com/dmz006/datawatch-app/issues/283), "feat(questions): operator question channel — queue view, answer sheet + settings toggle (parent REST /api/questions)", open.
+- Filed as: a follow-up comment, [issuecomment-6513069983](https://github.com/dmz006/datawatch-app/issues/283#issuecomment-6513069983), on 2026-10-29. The relevant issue already existed, so the Mobile-Parity Rule's comment path applied rather than a new issue.
+- Comment title: "[sync] Worker questions: blocking questions, the await_decision wait and the decision link".
+- Comment body: the text between the two body markers above, preceded by one line saying it follows Steps 1 and 2 and also touches the Decisions card in #302.

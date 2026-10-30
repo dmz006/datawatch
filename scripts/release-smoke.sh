@@ -5818,6 +5818,115 @@ except Exception: print(0)' "$Q2_NO" <<<"$Q2_EVS" 2>/dev/null || echo 0)
   fi
 fi
 
+H "88. operator questions step 4 — worker marker switch, question stats, REST-raised source"
+# The worker question marker on this script's own sandbox daemon (or the
+# dedicated DW_BASE sandbox), never production. REST only: it reads the switch
+# and the marker key first and add_cleanup restores each (an absent marker key
+# reads as off, so it is restored as false). The one question it raises is
+# answered, so no open smoke question is left behind. The marker line itself,
+# read from a live worker pane, is checked by the sandbox live check in
+# docs/plans/2026-10-29-operator-question-step4-live-check.md.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  Q4_JSON() { python3 -c 'import json,sys
+try:
+  d=json.load(sys.stdin)
+  for k in sys.argv[1].split("."):
+    d=d.get(k) if isinstance(d,dict) else None
+  print("" if d is None else (str(d).lower() if isinstance(d,bool) else d))
+except Exception:
+  print("")' "$1" 2>/dev/null || echo ""; }
+  Q4_CFG() { curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | Q4_JSON "autonomous.questions.$1"; }
+  Q4_PUT() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d "{\"autonomous.questions.$1\":$2}" "$BASE/api/config" 2>/dev/null || echo 000; }
+  Q4_CODE() { curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$@" 2>/dev/null || echo 000; }
+
+  Q4_SW0=$(Q4_CFG enabled)
+  Q4_WM0=$(Q4_CFG worker_marker)
+  [[ -n "$Q4_WM0" ]] || Q4_WM0=false
+  if [[ -z "$Q4_SW0" ]]; then
+    skip "questions step 4: GET /api/config does not expose autonomous.questions.enabled"
+  else
+    add_cleanup qcfg "autonomous.questions.enabled=$Q4_SW0"
+    add_cleanup qcfg "autonomous.questions.worker_marker=$Q4_WM0"
+
+    # 88.1 the marker switch: boolean write reads back, non-boolean refused (400) and not stored
+    Q4_OK=1
+    [[ "$(Q4_PUT worker_marker true)" == "200" && "$(Q4_CFG worker_marker)" == "true" ]] || Q4_OK=0
+    [[ "$(Q4_PUT worker_marker '"yes"')" == "400" && "$(Q4_CFG worker_marker)" == "true" ]] || Q4_OK=0
+    [[ "$(Q4_PUT worker_marker false)" == "200" && "$(Q4_CFG worker_marker)" == "false" ]] || Q4_OK=0
+    if [[ "$Q4_OK" == "1" ]]; then
+      ok "questions step 4: autonomous.questions.worker_marker writes true, refuses a non-boolean (400) and writes false, each read back"
+    else
+      ko "questions step 4: the worker marker switch did not round-trip through PUT/GET /api/config"
+    fi
+
+    # 88.2 GET /api/questions/stats answers 200 with the five counters and the two switches,
+    # whether or not the channel is on
+    Q4_PUT enabled false >/dev/null
+    Q4_PUT worker_marker true >/dev/null
+    Q4_STATS=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/questions/stats" 2>/dev/null || echo "")
+    Q4_BODY=$(sed '$d' <<<"$Q4_STATS")
+    Q4_SHAPE=$(python3 -c 'import json,sys
+try:
+  d=json.loads(sys.stdin.read())
+  ks=["raised","duplicate","refused","parked","resumed"]
+  ok=all(isinstance(d.get(k),int) for k in ks) and isinstance(d.get("open_marker_questions"),int) and isinstance(d.get("open_blocking_questions"),int)
+  print("yes" if ok and d.get("questions_enabled") is False and d.get("worker_marker_enabled") is True else "no")
+except Exception:
+  print("no")' <<<"$Q4_BODY" 2>/dev/null || echo no)
+    if [[ "$(tail -n1 <<<"$Q4_STATS")" == "200" && "$Q4_SHAPE" == "yes" ]]; then
+      ok "questions step 4: GET /api/questions/stats is 200 with the five counters, the open counts and both switches while the channel is off"
+    else
+      ko "questions step 4: question stats (HTTP $(tail -n1 <<<"$Q4_STATS"), shape=$Q4_SHAPE)"
+    fi
+    [[ "$(Q4_CODE -X POST "$BASE/api/questions/stats")" == "405" ]] \
+      && ok "questions step 4: POST /api/questions/stats is 405" \
+      || ko "questions step 4: POST /api/questions/stats was not 405"
+
+    # 88.3 a question raised over REST says so: source "rest", no blocking flag; stats count it as
+    # neither a marker nor a blocking question while open
+    Q4_PUT enabled true >/dev/null
+    Q4_TAG="$$-$(date +%s)"
+    Q4_ID=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d "{\"label\":\"decision\",\"context\":\"none\",\"text\":\"smoke probe $Q4_TAG: marker source?\",\"options\":[{\"id\":\"yes\",\"label\":\"Yes\"},{\"id\":\"no\",\"label\":\"No\"}],\"default\":\"yes\",\"asked_by\":\"smoke\"}" \
+      "$BASE/api/questions" 2>/dev/null | Q4_JSON "question.id")
+    if [[ -z "$Q4_ID" ]]; then
+      ko "questions step 4: POST /api/questions returned no question id"
+    else
+      Q4_REC=$(curl "${curl_args[@]}" "$BASE/api/questions/$Q4_ID" 2>/dev/null)
+      Q4_SRC=$(Q4_JSON "question.source" <<<"$Q4_REC")
+      Q4_BLK=$(Q4_JSON "question.blocking" <<<"$Q4_REC")
+      if [[ "$Q4_SRC" == "rest" && ( -z "$Q4_BLK" || "$Q4_BLK" == "false" ) ]]; then
+        ok "questions step 4: a REST-raised question carries source rest and is not blocking"
+      else
+        ko "questions step 4: REST-raised question (source='$Q4_SRC' blocking='$Q4_BLK')"
+      fi
+      # the decision link reads the answer log: the answer's id and verbatim quote are there
+      Q4_ANS=$(Q4_CODE -X POST -H "Content-Type: application/json" -d '{"chosen_option_id":"no","quote":"no, keep the marker off","surface":"cli"}' "$BASE/api/questions/$Q4_ID/answer")
+      Q4_LOGID=$(curl "${curl_args[@]}" "$BASE/api/questions/$Q4_ID/answers" 2>/dev/null | python3 -c 'import json,sys
+try:
+  a=json.load(sys.stdin).get("answers") or []
+  print(a[0].get("id","") if a and a[0].get("quote")=="no, keep the marker off" else "")
+except Exception:
+  print("")' 2>/dev/null || echo "")
+      if [[ "$Q4_ANS" == "201" && -n "$Q4_LOGID" ]]; then
+        ok "questions step 4: the answer log returns the answer id and the verbatim quote the decision link opens"
+      else
+        ko "questions step 4: answer log for the decision link (answer HTTP $Q4_ANS, id='$Q4_LOGID')"
+      fi
+    fi
+
+    # 88.4 restore the exact values read first (add_cleanup repeats both on any abnormal exit)
+    Q4_RESTORE_OK=1
+    [[ "$(Q4_PUT worker_marker "$Q4_WM0")" == "200" ]] || Q4_RESTORE_OK=0
+    [[ "$(Q4_PUT enabled "$Q4_SW0")" == "200" ]] || Q4_RESTORE_OK=0
+    if [[ "$Q4_RESTORE_OK" == "1" ]]; then
+      ok "questions step 4: the switch ($Q4_SW0) and the worker marker ($Q4_WM0) are restored to the values read first"
+    else
+      ko "questions step 4: could not restore the switch and the worker marker"
+    fi
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"

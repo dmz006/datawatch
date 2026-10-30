@@ -97,5 +97,26 @@ Each requirement, mapped to the file that implements it and the test that proves
 What this verdict does not claim, so the next reader does not assume it:
 
 - The park path for a blocking question and the raise notifications for a marker question are proven by Go tests only, not by a live run (the live check says so).
-- The Android and iPhone work is not built and the parity issue for `dmz006/datawatch-app` is not filed; it is filed only when the operator says so.
+- The Android and iPhone work is not built. The parity record is filed as two comments on `dmz006/datawatch-app#283` on 2026-10-29 (the feature, then the marker counters and Monitor card); the apps have not acted on it.
 - The branch is behind `main` on the version number (`9.35.0` at the branch point, `9.37.0` on `main`). The merge takes the version from `main`.
+
+## Later round: rules-review fixes (2026-10-29)
+
+A rules-review round found that the first pass left several rules unmet. What was done, with the result:
+
+| # | Item | Result |
+|---|------|--------|
+| 1 | Mobile App Sync and Mobile-Parity: file the app issue | Comments filed on datawatch-app#283 (the feature, then an addendum for the stats read, Monitor card and locale keys); `docs/parity-status.md` has two new rows (worker marker toggle, decision answer link) pointing at them |
+| 2 | Observability | Five counters, `GET /api/questions/stats`, MCP `question_stats`, the Monitor tab *Worker Questions* card (six locale keys in five bundles) and the `datawatch_worker_questions_total` metric, each with tests |
+| 3 | Release smoke | Section 88 added (marker switch, stats read, REST source, answer log). Run alone on a fresh sandbox daemon: 6 PASS, 0 FAIL, 0 SKIP. The whole script could not be used here; the reason is in the testing guide |
+| 4 | PWA e2e story | `scripts/test-stories/TS-838.sh` wraps the story; `scripts/run-tests.sh --stories=TS-838` passed against the sandbox daemon (1 passed, 0 failed, no leftover test daemons) |
+| 5 | Test daemon cleanup and tmux | The sandbox runs used `scripts/test-daemon-lib.sh` (recorded PID, `/proc/<pid>/cmdline` marker check, traps) and a private `TMUX_TMPDIR`; the live check was repeated with the tmux server inspected: one session on the private server, none after delete, and no server after the daemon stopped |
+| 6 | Docs | README, `docs/README.md` index, the plans README row, the proposal status, the CHANGELOG monitoring and reuse-audit paragraphs for this step, the live-check `## Parity surface` section, OpenAPI (both copies), API reference, MCP mapping, `docs/mcp.md`, operations, the how-to, the tracker and the testing guide |
+| 7 | Coverage | `questionPass` 100%, `resumeForQuestion` 91%, `RaiseWorkerQuestion` 100%, `workerLineHash` 100% (was 0, 71, 81 and 40) |
+| 8 | Detection Pattern Governance | Recorded as a low-severity divergence: the marker is a protocol constant like `DATAWATCH_COMPLETE`, not an editable pattern (CHANGELOG reuse audit and the proposal) |
+
+Verification: `make build` clean, `make lint` 0 issues (includes the test-daemon cleanup and unscoped-tmux audits), `go test ./...` passed after one documentation count (the smoke section count in the testing guide) was brought to 89, `node --check internal/server/web/app.js` ok, `node --test internal/server/web/*.test.js` 1517 of 1517.
+
+### Parity surface in this round
+
+Unchanged from the table above, plus: REST gains `GET /api/questions/stats`; MCP gains `question_stats`; the PWA gains the Monitor *Worker Questions* card; the Android and iPhone rows point at the two comments on datawatch-app#283.

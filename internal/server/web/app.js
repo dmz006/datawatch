@@ -32365,6 +32365,23 @@ function renderStatsData(el, data) {
           ${qgInvalidLine}
         </div></div>`;
     }
+    // Worker question marker stats card (visible once a marker line has been
+    // seen or a task has parked on a blocking question).
+    const wqRows = [
+      ['stats_worker_questions_raised', 'Raised', data.worker_questions_raised],
+      ['stats_worker_questions_duplicate', 'Repeated', data.worker_questions_duplicate],
+      ['stats_worker_questions_refused', 'Refused', data.worker_questions_refused],
+      ['stats_worker_questions_parked', 'Parked', data.worker_questions_parked],
+      ['stats_worker_questions_resumed', 'Resumed', data.worker_questions_resumed],
+    ];
+    if (wqRows.some(r => (r[2] || 0) > 0)) {
+      const wqLines = wqRows.map(r => {
+        const color = r[0] === 'stats_worker_questions_refused' && (r[2] || 0) > 0 ? 'var(--warning)' : 'var(--text)';
+        return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t(r[0])||r[1])}</span><span style="color:${color};">${escHtml(r[2] || 0)}</span></div>`;
+      }).join('');
+      html += `<div class="stat-card"><div class="stat-label">${t('stats_worker_questions')||'Worker Questions'}</div>
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${wqLines}</div></div>`;
+    }
     html += '</div>';
 
     // ── Session Statistics Card ──

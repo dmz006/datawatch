@@ -67,8 +67,18 @@ Exit codes are the shell exit code of the call (curl or the process command). "H
 - **The marker-off line came from a second session.** The first session was still inside the `sleep 600` that ends `lines.sh`, so a command typed there would have waited behind it. The first session was killed and a fresh shell session printed the line. Both sessions ran with the same daemon and the same switches, so the check holds, but the same-session case was not run.
 - **The restart check did not re-read a pane.** The daemon was set to end its sessions on shutdown, so after the restart both sessions were `killed` and nothing was scanned again. Row 20 shows no new question when the marker was turned back on, but it does not prove the same-line de-duplication of a pane that is read twice. That rule (an open question for the same session and line is not raised twice) is covered by the Go tests only.
 - **Where the refusal log line lands.** In this sandbox the one daemon log line of the refusal (`[autonomous] worker question marker refused: session=… reason=malformed line_sha256=…`, no line text) was written to `data/daemon-crash.log`, not to the daemon's standard output file.
-- **tmux.** The sandbox daemon opened its panes on the default tmux socket because `TMUX_TMPDIR` was unset by rule. No tmux command was run by hand. Session delete and the daemon shutdown closed the panes (daemon log: `closing pane cs-wm-live-sbx-7154`); the tmux server itself was not inspected afterwards.
+- **tmux.** The first run's sandbox daemon opened its panes on the default tmux socket because `TMUX_TMPDIR` was unset, and the tmux server was not inspected afterwards. That left the aim of the Session Safety rule (test work stays away from the operator's tmux server) unverified, so it was checked again in the second run below, with a private tmux directory.
 - **PIDs.** The daemon was the child of the `timeout` wrapper. The first run's wrapper was 3187795 and daemon 3187797. The second run's wrapper was 3216077 and daemon 3216079. Only the daemon PIDs were signalled; the wrappers ended by themselves.
+
+## Second run: the tmux server the daemon used
+
+Run on 2026-10-29 after the first report, to close the tmux gap above. Same binary and the same marker path, on a fresh sandbox daemon. The point of this run is the tmux server, so it printed one valid line only.
+
+- **Daemon.** Started through `scripts/test-daemon-lib.sh` (start, record the PID with the config path as the marker, traps on every exit path), with `env -u TMUX TMUX_TMPDIR=<private dir>`. The private directory is `.datawatch/pt` inside this tree (git ignores `.datawatch`), 57 characters long, so the socket path (77 characters) is under the unix socket limit. A first attempt with a directory under the scratch area failed with `create tmux session: exit status 1` because the socket path was too long; the short directory fixed it. Data directory, config and project directory were under `.datawatch/wm-recheck`.
+- **Checked from `/proc` before any session was made.** The daemon's `cmdline` carried the recorded `--config` path (1 match), its environment had `TMUX_TMPDIR` set to the private directory (1 match) and no `TMUX` variable (0 matches).
+- **Marker.** Both switches set through `PUT /api/config` (HTTP 200). One shell session was started and `bash lines.sh` was typed into it; the script waits 9 seconds, then prints one valid `DATAWATCH_QUESTION:` line (a first attempt printed the JSON through an unquoted `echo`, which dropped the quotes, so nothing was raised; that was a fault of the test script, and the quoted line is what was used). `GET /api/questions` then returned `count` 1: `asked_by worker-2d5a`, `asker_kind session`, `state open`, `source marker`, `default hold`, no `blocking` key.
+- **tmux.** `tmux list-sessions` against the private directory listed exactly one session, `cs-dw-wm-recheck-2d5a`, and the private socket directory held the `default` socket: the daemon's panes were on the private server, not on the default one. After `POST /api/sessions/delete` the same command printed `no server running on …/.datawatch/pt/tmux-1000/default`, and it printed the same after the daemon was stopped. The operator's own tmux server was never named in any command, because the daemon had no way to reach it: no `TMUX`, and a different `TMUX_TMPDIR`.
+- **Stop.** `td_stop_one` with the recorded PID; the daemon was gone afterwards (`kill -0` failed), the sandbox and private directories were removed, and the session ended in the same call. No tmux server command that kills anything was run.
 
 ## What was not run live
 
@@ -79,3 +89,18 @@ Exit codes are the shell exit code of the call (curl or the process command). "H
 - The restart-grace and task-echo windows (the first seconds after a restart or a task delivery, in which a marker is ignored). The 9-second wait before printing stayed outside them, so they were not tested.
 - Lines over the size caps, an invalid default, a duplicate option id, an unknown label or risk, and a recommendation that names no option (the Go tests cover each refusal reason).
 - Two sessions printing the same line, and a line printed twice by one session while its question is open.
+
+## Parity surface
+
+This document records a live check and changes nothing; the surfaces below are the ones the checked feature reaches, with the check's coverage of each.
+
+| Surface | Reached by the feature? | Covered by this check |
+|---|---|---|
+| REST | Yes: `/api/questions`, `/api/questions/{id}/answer`, `/api/questions/{id}/answers`, `/api/config` | Driven directly (rows 3 to 20, second run) |
+| MCP | Config key through `config_set`, and the stats read `question_stats` | Not driven live; covered by Go tests |
+| CLI | Config key through `datawatch config set` | Not driven live |
+| Comm channel | Config key through `configure` | Not driven live |
+| YAML/config | `autonomous.questions.worker_marker` | Driven through `PUT /api/config` and read back |
+| PWA | Settings toggle, answer link, Monitor card | Not driven live; covered by the PWA story TS-838 and the node tests |
+| Android | Tracked in datawatch-app#283 | Not applicable: no app is built here |
+| iPhone/iOS | Tracked in datawatch-app#283 | Not applicable: no app is built here |

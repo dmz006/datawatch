@@ -5267,6 +5267,44 @@ paths:
       tags: [Singletons]
       responses: {"200": {description: OK}, "503": {description: Ollama not configured}}
 
+  /api/questions/stats:
+    get:
+      summary: Worker question marker counters
+      description: |
+        Counters for the worker question marker since daemon start - `raised`
+        (marker lines stored as new questions), `duplicate` (a repeat of a
+        question still open), `refused` (lines that failed validation and
+        stored nothing), `parked` (tasks parked on a blocking question) and
+        `resumed` (parked tasks resumed after the decision) - plus
+        `open_marker_questions` and `open_blocking_questions` now, and the
+        two live switches `questions_enabled` and `worker_marker_enabled`.
+        Answers 200 whether or not the channel is on, so a monitor can tell
+        off from idle. Needs the autonomous read capability. The same object
+        is the MCP `question_stats` tool; the counters are also in the stats
+        snapshot (`worker_questions_*`) and the
+        `datawatch_worker_questions_total{outcome}` metric.
+      operationId: questionStats
+      tags: [Questions]
+      responses:
+        "200":
+          description: The counters and switches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  questions_enabled: {type: boolean}
+                  worker_marker_enabled: {type: boolean}
+                  open_marker_questions: {type: integer}
+                  open_blocking_questions: {type: integer}
+                  raised: {type: integer}
+                  duplicate: {type: integer}
+                  refused: {type: integer}
+                  parked: {type: integer}
+                  resumed: {type: integer}
+        "403": {description: Missing the autonomous read capability, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+
 components:
   securitySchemes:
     BearerToken:

@@ -129,6 +129,15 @@ type SystemStats struct {
 	TasksCancelled   int64 `json:"tasks_cancelled,omitempty"`
 	TasksRequeued    int64 `json:"tasks_requeued,omitempty"`
 
+	// Worker questions (the DATAWATCH_QUESTION: marker), counted since daemon
+	// start: lines raised as questions, repeats of an open question, lines
+	// refused, tasks parked on a blocking question and tasks resumed.
+	WorkerQuestionsRaised    int64 `json:"worker_questions_raised,omitempty"`
+	WorkerQuestionsDuplicate int64 `json:"worker_questions_duplicate,omitempty"`
+	WorkerQuestionsRefused   int64 `json:"worker_questions_refused,omitempty"`
+	WorkerQuestionsParked    int64 `json:"worker_questions_parked,omitempty"`
+	WorkerQuestionsResumed   int64 `json:"worker_questions_resumed,omitempty"`
+
 	// BL372 — web search MCP injection stats.
 	WebSearchEnabled      bool      `json:"web_search_enabled,omitempty"`
 	WebSearchProvider     string    `json:"web_search_provider,omitempty"`

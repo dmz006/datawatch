@@ -8042,6 +8042,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.StoriesCancelled = st.StoriesCancelled
 				s.TasksCancelled = st.TasksCancelled
 				s.TasksRequeued = st.TasksRequeued
+				wq := autonomouspkg.WorkerQuestionCountsSnapshot()
+				s.WorkerQuestionsRaised = wq.Raised
+				s.WorkerQuestionsDuplicate = wq.Duplicate
+				s.WorkerQuestionsRefused = wq.Refused
+				s.WorkerQuestionsParked = wq.Parked
+				s.WorkerQuestionsResumed = wq.Resumed
 			})
 		}
 		// BL372 — wire web search stats into the collector.

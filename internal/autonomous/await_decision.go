@@ -86,6 +86,7 @@ func (m *Manager) ParkForDecision(prd *PRD, t *Task, questionID string) bool {
 	}
 
 	m.emitAwaitReleaseAuditFor(prd, t, releasedPools, keepTree, awaitDecisionConditionPrefix+questionID)
+	recordWorkerQuestion(WorkerQuestionOutcomeParked)
 	log.Printf("[autonomous] %s: parked on decision %s: released pools=%v tree lock kept=%v",
 		t.ID, questionID, releasedPools, keepTree)
 	return true

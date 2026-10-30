@@ -295,6 +295,7 @@ func (m *Manager) resumeForQuestion(ctx context.Context, snap Task, q Question, 
 		}
 	}
 	m.emitDecisionResumeAudit(prd, snap.ID, rec)
+	recordWorkerQuestion(WorkerQuestionOutcomeResumed)
 	log.Printf("[autonomous] %s: resumed after decision %s (answer %q, withdrawn=%v); no retry counted", snap.ID, q.ID, rec.AnswerID, rec.Withdrawn)
 }
 

@@ -2499,6 +2499,32 @@ A worker marker line that fails validation writes `question_marker_refused`
 
 ---
 
+### Worker question stats — `GET /api/questions/stats`
+
+Read-only counters for the worker marker. They count since daemon start and
+reset when the daemon restarts; the questions themselves are in the store and
+are not lost.
+
+| Field | Meaning |
+|---|---|
+| `raised` | marker lines stored as new questions |
+| `duplicate` | marker lines that repeated a question still open |
+| `refused` | marker lines that failed validation and stored nothing (each is also audited as `question_marker_refused`) |
+| `parked` | tasks parked on a blocking question |
+| `resumed` | parked tasks resumed after the question was decided |
+| `open_marker_questions` | open questions that came from a marker line, now |
+| `open_blocking_questions` | open questions that hold a task, now |
+| `questions_enabled`, `worker_marker_enabled` | the two live switches |
+
+It answers 200 whether or not the channel is on (the other question routes answer
+503 while it is off), so a monitor can tell off from idle. It needs the autonomous
+read capability; any other method is 405. The same object is the MCP tool
+`question_stats`. The five counters are also in the stats snapshot that feeds the
+Monitor tab (`worker_questions_raised`, `worker_questions_duplicate`,
+`worker_questions_refused`, `worker_questions_parked`, `worker_questions_resumed`, each
+left out while zero) and in the Prometheus metric
+`datawatch_worker_questions_total{outcome="raised|duplicate|refused|parked|resumed"}`.
+
 ## Storage
 
 Each PRD's full state is persisted as JSON-lines under
