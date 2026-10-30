@@ -1823,3 +1823,11 @@ Operator: "Claude is at 53%, pi only is good, what else is needed to get everyth
 ## Reading 2026-10-30 05:05 EDT: 67%
 
 Operator, 2026-10-30, quoted: "Claude is at 67%". The calculator records 67% at Fri 05:05 EDT against a pace line of 69.3 (headroom 2.3 points). Recent burn is 19.6 points per 24 h (the 11 points since 56% at 15:35 on 10-29 came mostly from the overnight Claude work: three attempts at the search-before-create final gate, the large security-failure auto-fix, and decomposes), the week average is 13.7. At the recent burn the week ends at 109% and runs out Sat 21:35 EDT; at the week average it ends at 96.7%. The advice for three lanes is 76.5%. The Claude cap stays at one lane and I will not start Claude work that the pi lanes can do.
+
+## Reading 2026-10-30 13:28 EDT: 70%, and the decision on Claude lanes to Sunday
+
+Operator, 2026-10-30, quoted: "Just saved 70%, not sure why it asks how many lanes running, it's that how many i want or how many are running?" The lanes field of a reading is how many Claude lanes were running when it was read (a fact used to work out the burn per lane); the number of lanes to run is a separate choice. The reading was saved with 2 lanes; only one Claude lane was running, so it was corrected to 1 (the reading was deleted and added again at the same time).
+
+With 1 lane running the calculator says: pace line 74.2, headroom 4.2 points, 1 lane ends the week at 85.6 to 94.3%, 2 lanes end at 93.2%, 3 lanes run out about 1.2 hours before the Sunday reset. The choice was put in the question queue (`q-18e35eec6f27ca03cafd`, "Claude lanes to Sunday"; the first version, `q-18e35eeae5ae704ca8d9`, used figures from the wrong lane count and was withdrawn).
+
+Operator answer, 2026-10-30, quoted: "2 lanes, go ahead". Two Claude lanes run until the Sunday 08:00 reset. The second lane takes the slowest feature work (first the worktree and temp cleanup, with a Claude judge for verification, then the automatic held-state questions). Re-read the percentage every few hours and drop back to one lane if the recent burn would run the week out before the reset.
