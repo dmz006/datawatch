@@ -563,6 +563,10 @@ type AutomationConfig struct {
 	// turns the alert off and survives a merge round trip.
 	MergePendingAlertMinutes *int `json:"merge_pending_alert_minutes,omitempty"`
 
+	// MergedMemberPolicy: completed | manual | block (empty reads as
+	// completed). Mirrors autonomous.automation.merged_member_policy.
+	MergedMemberPolicy string `json:"merged_member_policy,omitempty"`
+
 	// RepoCIWatch: the repo CI watch knobs (autonomous.automation.
 	// repo_ci_watch.*). Defaults are applied only in the Effective*
 	// accessors in repo_ci_watch_config.go. See RepoCIWatchConfig.
@@ -637,6 +641,17 @@ func (c AutomationConfig) EffectiveMergePendingMode() string {
 		return config.MergePendingModeOff
 	}
 	return c.MergePendingMode
+}
+
+// EffectiveMergedMemberPolicy returns the merged-member policy in effect: an
+// empty value reads as config.MergedMemberPolicyCompleted. Unrecognized
+// values are refused upstream on the write and load paths, so this never has
+// to guess for them.
+func (c AutomationConfig) EffectiveMergedMemberPolicy() string {
+	if c.MergedMemberPolicy == "" {
+		return config.MergedMemberPolicyCompleted
+	}
+	return c.MergedMemberPolicy
 }
 
 // EffectiveMergePendingAlertMinutes returns the merge-pending alert threshold

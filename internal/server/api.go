@@ -6284,7 +6284,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// 0 stays 0 (the merge-pending alert off).
 				"merge_pending_mode":          s.cfg.Autonomous.Automation.EffectiveMergePendingMode(),
 				"merge_pending_alert_minutes": s.cfg.Autonomous.Automation.EffectiveMergePendingAlertMinutes(),
-				"agent_insert_policy":         s.cfg.Autonomous.Automation.EffectiveAgentInsertPolicy(),
+				// Effective, not raw: an empty value reads the "completed"
+				// default via the accessor.
+				"merged_member_policy": s.cfg.Autonomous.Automation.EffectiveMergedMemberPolicy(),
+				"agent_insert_policy":  s.cfg.Autonomous.Automation.EffectiveAgentInsertPolicy(),
 				// Effective values: unset fields read their defaults in one place
 				// (Effective* accessors), so GET never emits a zero that reads
 				// a different default.
@@ -6592,6 +6595,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := patch["autonomous.automation.merge_pending_alert_minutes"]; ok {
 		if verr := validateMergePendingAlertMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Merged-member policy: completed | manual | block. Any other value
+	// rejects the whole PUT, same as merge_pending_mode.
+	if v, ok := patch["autonomous.automation.merged_member_policy"]; ok {
+		if verr := validateMergedMemberPolicy(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -8145,6 +8156,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.Automation.MergePendingAlertMinutes = &n
 			}
+		case "autonomous.automation.merged_member_policy":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			if validateMergedMemberPolicy(v) == nil {
+				cfg.Autonomous.Automation.MergedMemberPolicy = toString(v)
+			}
 		case "autonomous.automation.agent_insert_policy":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
@@ -9321,6 +9338,19 @@ func validateMergePendingMode(v interface{}) error {
 			config.MergePendingModeOff, config.MergePendingModeShadow, config.MergePendingModeOn)
 	}
 	return config.ValidateMergePendingMode(str)
+}
+
+// validateMergedMemberPolicy checks autonomous.automation.
+// merged_member_policy: a string that is "completed", "manual" or "block"
+// (empty is not accepted over the wire; the default applies when the key is
+// absent).
+func validateMergedMemberPolicy(v interface{}) error {
+	str, ok := v.(string)
+	if !ok || str == "" {
+		return fmt.Errorf("autonomous.automation.merged_member_policy: must be %q, %q or %q",
+			config.MergedMemberPolicyCompleted, config.MergedMemberPolicyManual, config.MergedMemberPolicyBlock)
+	}
+	return config.ValidateMergedMemberPolicy(str)
 }
 
 // validateMergePendingAlertMinutes checks
