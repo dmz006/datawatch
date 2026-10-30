@@ -45,6 +45,14 @@ func isAutomationObjectKey(key string) bool {
 // half-translated or edited value still fails the guard.
 var pendingTranslationKeys = map[string]bool{
 	"settings_stuck_running_seconds": true, // datawatch-app issue 290
+	// Merge-pending badge, safe-to-delete report and their settings: English until the app translation lands.
+	"merge_badge_title":                               true,
+	"safe_delete_read_only":                           true,
+	"safe_delete_safe_empty":                          true,
+	"safe_delete_held_empty":                          true,
+	"safe_delete_dirty":                               true,
+	"settings_automation_merge_pending_mode":          true,
+	"settings_automation_merge_pending_alert_minutes": true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {

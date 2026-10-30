@@ -224,6 +224,44 @@ for (const [lang, file] of Object.entries(LOCALES)) {
   });
 }
 
+test('GENERAL_CONFIG_FIELDS: autonomous.automation.merge_pending_mode is an off, shadow or on select defaulting to off', async (t) => {
+  const sandbox = boot();
+  const fields = vm.runInContext('GENERAL_CONFIG_FIELDS', sandbox, { filename: 'app.js' });
+  const autonomous = fields.find((sec) => sec.id === 'autonomous');
+  const field = autonomous.fields.find((f) => f.key === 'autonomous.automation.merge_pending_mode');
+  assert.ok(field, 'autonomous.automation.merge_pending_mode field is declared');
+  assert.equal(field.type, 'select');
+  assert.deepEqual(Array.from(field.options), ['off', 'shadow', 'on']);
+  assert.equal(field.default, 'off', 'unset reads as off');
+  assert.equal(field.labelKey, 'settings_automation_merge_pending_mode');
+  assert.ok(field.label && field.label.length > 0, 'hardcoded fallback label non-empty');
+});
+
+test('GENERAL_CONFIG_FIELDS: autonomous.automation.merge_pending_alert_minutes is a non-negative number with default 30', async (t) => {
+  const sandbox = boot();
+  const fields = vm.runInContext('GENERAL_CONFIG_FIELDS', sandbox, { filename: 'app.js' });
+  const autonomous = fields.find((sec) => sec.id === 'autonomous');
+  const field = autonomous.fields.find((f) => f.key === 'autonomous.automation.merge_pending_alert_minutes');
+  assert.ok(field, 'autonomous.automation.merge_pending_alert_minutes field is declared');
+  assert.equal(field.type, 'number');
+  assert.equal(field.min, 0, '0 is a valid value (merge-pending alert off)');
+  assert.equal(field.default, '30', 'unset reads the 30-minute default');
+  assert.equal(field.labelKey, 'settings_automation_merge_pending_alert_minutes');
+  assert.ok(field.label && field.label.length > 0, 'hardcoded fallback label non-empty');
+});
+
+for (const key of ['settings_automation_merge_pending_mode', 'settings_automation_merge_pending_alert_minutes']) {
+  for (const [lang, file] of Object.entries(LOCALES)) {
+    test(`locales: ${lang} defines ${key}`, (t) => {
+      const bundle = JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, file), 'utf8'));
+      const v = bundle[key];
+      assert.ok(typeof v === 'string' && v.trim().length > 0, `${lang} key present and non-empty`);
+      assert.ok(!/\bPRDs?\b/.test(v), 'says Automaton or Automata, never PRD');
+      assert.ok(!/\b((?:BL|F|B|S)\d{1,6})\b/.test(v), 'no tracker IDs in the string');
+    });
+  }
+}
+
 for (const [lang, file] of Object.entries(LOCALES)) {
   test(`locales: ${lang} defines the automation idle-alert label`, (t) => {
     const bundle = JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, file), 'utf8'));
