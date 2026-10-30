@@ -1819,3 +1819,7 @@ Time zone default for other users, operator 2026-10-28, quoted: "Default to zone
 ### Usage reading 2026-10-29 about 03:46
 
 Operator: "Claude is at 53%, pi only is good, what else is needed to get everything done, are automation ask done, how many prd and bugs left to 10.0?" The reading was typed into the usage calculator at 03:46 EDT. The calculator then showed: pace line 54.3 points at 3.82 days elapsed (the reset is Sunday 08:00 EST), so 53% is 1.3 points under the line; recent burn 7.6 points per 24 h, week average 13.9; projected end 77.4% at the recent burn and 97.6% at the week average, both within budget, nothing running out before the reset. The supervisor's own estimate overnight was 51 to 52%. The "pi only is good" part answers the eval matrix question: the matrix runs on pi workers only, the opencode roles are dropped (registry row 243).
+
+## Reading 2026-10-30 05:05 EDT: 67%
+
+Operator, 2026-10-30, quoted: "Claude is at 67%". The calculator records 67% at Fri 05:05 EDT against a pace line of 69.3 (headroom 2.3 points). Recent burn is 19.6 points per 24 h (the 11 points since 56% at 15:35 on 10-29 came mostly from the overnight Claude work: three attempts at the search-before-create final gate, the large security-failure auto-fix, and decomposes), the week average is 13.7. At the recent burn the week ends at 109% and runs out Sat 21:35 EDT; at the week average it ends at 96.7%. The advice for three lanes is 76.5%. The Claude cap stays at one lane and I will not start Claude work that the pi lanes can do.
