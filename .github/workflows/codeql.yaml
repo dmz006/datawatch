@@ -47,14 +47,26 @@ jobs:
           REPO: ${{ github.repository }}
           REF: ${{ github.ref }}
           SHA: ${{ github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           EXPECTED_CATEGORIES: "/language:actions /language:go /language:javascript-typescript /language:python"
         run: |
           set -euo pipefail
           interval="${WAIT_INTERVAL_SECONDS:-30}"
           max="${WAIT_MAX_SECONDS:-1500}"
+          # Default setup records pull request analyses under refs/pull/N/head
+          # at the PR head commit, not under refs/pull/N/merge at the merge commit.
+          if [ -n "${PR_NUMBER:-}" ]; then
+            REF="refs/pull/${PR_NUMBER}/head"
+            SHA="${PR_HEAD_SHA}"
+          fi
           waited=0
           while true; do
-            have=$(gh api "repos/${REPO}/code-scanning/analyses?ref=${REF}&sha=${SHA}&per_page=100" --jq '.[].category')
+            # The analyses endpoint ignores a sha query parameter, so filter on
+            # commit_sha here. A failed call is treated as nothing seen yet and
+            # retried until the deadline.
+            have=$(gh api "repos/${REPO}/code-scanning/analyses?ref=${REF}&per_page=100" \
+              --jq '.[] | select(.commit_sha == env.SHA) | .category' || true)
             missing=""
             for c in ${EXPECTED_CATEGORIES}; do
               if ! printf "%s\n" "$have" | grep -qxF -- "$c"; then
