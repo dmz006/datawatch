@@ -5932,6 +5932,208 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Ollama not configured}}
 
   /api/questions:
+    get:
+      summary: List operator questions
+      description: |
+        Lists stored questions, filterable by `state`, `context`, `asker` and
+        `text`, newest first up to `limit`. Every row is the stored question
+        plus a computed `context_ref` (see the QuestionContextRef schema); the
+        reference is built for this read and is not part of the stored record.
+        Needs the autonomous read capability and `autonomous.questions.enabled`.
+      operationId: listQuestions
+      tags: [Questions]
+      parameters:
+        - {name: state, in: query, required: false, schema: {type: string, enum: [open, answered, withdrawn, expired, all]}}
+        - {name: context, in: query, required: false, schema: {type: string, enum: [none, prd, task, proposal, registry_row, all]}}
+        - {name: asker, in: query, required: false, schema: {type: string}}
+        - {name: text, in: query, required: false, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1}}
+      responses:
+        "200":
+          description: The matching questions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {type: integer}
+                  questions:
+                    type: array
+                    items:
+                      type: object
+                      description: The stored question fields, plus the computed context_ref.
+                      properties:
+                        context_ref: {$ref: "#/components/schemas/QuestionContextRef"}
+        "400": {description: Unknown state or context filter, or a bad limit, content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: Missing the autonomous read capability, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Operator questions are disabled or not available, content: {"text/plain": {schema: {type: string}}}}
+    post:
+      summary: Raise an operator question
+      description: |
+        Raises a question for the operator: text, at least two options, a
+        context and a default. The optional `tradeoffs` object maps an option
+        id to trade-off text; each entry fills that option's own `tradeoffs`
+        when it has none, and an id that matches no option is a 400 naming it.
+
+        After the question validates and before it is stored, the question
+        quality check runs under `autonomous.questions.quality_mode`. It
+        flags options without trade-offs, question text shorter than
+        `quality_min_text_chars`, and text that matches
+        `quality_tracker_id_pattern`. In `off` mode nothing is checked. In
+        `warn` mode (the default) the question is stored and the 201 body
+        carries the findings in `warnings`. In `refuse` mode nothing is
+        stored and the answer is 422 with the findings, so the asker can fix
+        the question and send it again. Needs the autonomous write
+        capability and `autonomous.questions.enabled`.
+      operationId: raiseQuestion
+      tags: [Questions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, text, options, default]
+              properties:
+                label: {type: string}
+                asked_by: {type: string}
+                asker_kind: {type: string}
+                session_id: {type: string}
+                context: {type: string}
+                text: {type: string}
+                options:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, label]
+                    properties:
+                      id: {type: string}
+                      label: {type: string}
+                      tradeoffs: {type: string}
+                tradeoffs:
+                  type: object
+                  description: Trade-off text keyed by option id; fills an option that has none of its own.
+                  additionalProperties: {type: string}
+                recommendation:
+                  type: object
+                  properties:
+                    option_id: {type: string}
+                    rationale: {type: string}
+                default: {type: string}
+                risk: {type: string}
+                priority: {type: string}
+                return_path: {type: boolean}
+      responses:
+        "201":
+          description: The question was stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  question: {type: object}
+                  warnings:
+                    type: array
+                    description: Quality findings, present only in warn mode when the check found something.
+                    items:
+                      type: object
+                      properties:
+                        code: {type: string, enum: [no_tradeoffs, text_too_short, tracker_id]}
+                        message: {type: string}
+        "400": {description: The question is malformed, or tradeoffs names an option that does not exist, content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: Missing the autonomous write capability, content: {"text/plain": {schema: {type: string}}}}
+        "413": {description: Body larger than 64 KiB, content: {"text/plain": {schema: {type: string}}}}
+        "422":
+          description: Refused by the question quality check (refuse mode); nothing was stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: {type: string}
+                  findings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code: {type: string, enum: [no_tradeoffs, text_too_short, tracker_id]}
+                        message: {type: string}
+        "503": {description: Operator questions are disabled or not available, content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions/quality:
+    get:
+      summary: Effective question quality policy
+      description: |
+        The effective values of the question quality keys under
+        `autonomous.questions`: `quality_mode` (off, warn or refuse),
+        `quality_min_text_chars`, `quality_tracker_id_pattern` and
+        `queue_preview_lines`. Absent keys read their defaults. Needs the
+        autonomous read capability and `autonomous.questions.enabled`.
+      operationId: questionQuality
+      tags: [Questions]
+      responses:
+        "200":
+          description: The effective policy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode: {type: string, enum: [off, warn, refuse]}
+                  min_text_chars: {type: integer}
+                  tracker_id_pattern: {type: string}
+                  queue_preview_lines: {type: integer}
+        "403": {description: Missing the autonomous read capability, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Operator questions are disabled, content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions/{id}:
+    get:
+      summary: One operator question with its answer metadata
+      description: |
+        The question, the number of answers ever recorded, the id of the
+        currently effective answer and that answer's summary (`answer` is null
+        until the question is answered). The `question` object is the stored
+        record plus a computed `context_ref`: the kind of context the question
+        was raised in, a title, the id, and for a proposal the
+        repository-relative `doc_path` and the in-app documents viewer link in
+        `viewer_url`. The reference is built for this read and is not part of
+        the stored record. Needs the autonomous read capability and
+        `autonomous.questions.enabled`.
+      operationId: getQuestion
+      tags: [Questions]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: The question and its answer metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  question:
+                    type: object
+                    description: The stored question fields, plus the computed context_ref.
+                    properties:
+                      context_ref: {$ref: "#/components/schemas/QuestionContextRef"}
+                  answer_count: {type: integer}
+                  current_answer_id: {type: string}
+                  answer:
+                    type: object
+                    nullable: true
+                    properties:
+                      id: {type: string}
+                      chosen_option_id: {type: string}
+                      quote: {type: string}
+                      actor: {type: string}
+                      surface: {type: string}
+                      created_at: {type: string, format: date-time}
+        "403": {description: Missing the autonomous read capability, content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: Unknown question, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Operator questions are disabled or not available, content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions:
     post:
       summary: Raise an operator question
       description: |
@@ -6249,6 +6451,17 @@ components:
         question_id: {type: string, description: "The operator decision the entry records"}
         answer_id: {type: string, description: "The answer the entry records; answer entries only"}
         decision_state: {type: string, enum: [open, answered, withdrawn, expired], description: "The decision state the entry stands for"}
+    QuestionContextRef:
+      type: object
+      description: |
+        Where a question was raised, computed on every read from the stored
+        context links. Never stored on the question record.
+      properties:
+        kind: {type: string, enum: [proposal, automaton, task, registry_row, none], description: "none when the question has no context or its link is missing"}
+        title: {type: string, description: "A proposal's file name; an Automaton's or task's stored name when it can be resolved and its id otherwise; a registry row's key"}
+        id: {type: string, description: "The Automaton id, task id or registry row key; empty for a proposal or no context"}
+        doc_path: {type: string, description: "A proposal's repository-relative path; empty when the stored path is not repository-relative"}
+        viewer_url: {type: string, description: "The in-app documents viewer link for a proposal that is a markdown file inside the served docs tree (for example /diagrams.html#docs/plans/plan.md); empty for any other path"}
     LaneFillStatus:
       type: object
       description: The lane fill status, as GET /api/autonomous/lane-fill returns it.

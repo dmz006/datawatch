@@ -5,8 +5,9 @@
 //	question list                                — GET /api/questions?state=open
 //	question show <id>                           — GET /api/questions/{id}
 //	question answer <id> <N|option id> [quote…]  — resolve the option, POST /api/questions/{id}/answer
+//	question quality                             — GET /api/questions/quality
 //
-// The three subverbs always exist. The bare-reply rule
+// The four subverbs always exist. The bare-reply rule
 // (tryQuestionBareReply, called from the router's default branch) lets a
 // plain message answer the open question when there is exactly one: the
 // first word is an option number, or the message exactly matches an
@@ -33,7 +34,18 @@ import (
 const questionsListPath = "/api/questions"
 
 // questionUsage is the text sent when a subverb is missing or malformed.
-const questionUsage = "usage: question list | question show <id> | question answer <id> <option number or id> [quote...]"
+const questionUsage = "usage: question list | question show <id> | question answer <id> <option number or id> [quote...] | question quality"
+
+// questionQualityPath is the effective question-quality policy read for
+// `question quality`.
+const questionQualityPath = questionsListPath + "/quality"
+
+// questionAnswerHelp is the help text of the answer verb. It carries the
+// same wording as the command-line answer help.
+const questionAnswerHelp = "question answer <id> <option number or id> [your words]: " +
+	"your own words after the option are optional when you pick an option. " +
+	"Whatever you type is saved exactly as written, with your choice, as the record of your decision, " +
+	"and the asker reads it as your answer."
 
 func questionPath(id, sub string) string {
 	p := questionsListPath + "/" + url.PathEscape(strings.TrimSpace(id))
@@ -58,8 +70,18 @@ type questionWire struct {
 }
 
 type questionOptionWire struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Tradeoffs string `json:"tradeoffs"`
+}
+
+// questionQualityBody is the GET /api/questions/quality response: the
+// effective question-quality policy.
+type questionQualityBody struct {
+	Mode              string `json:"mode"`
+	MinTextChars      int    `json:"min_text_chars"`
+	TrackerIDPattern  string `json:"tracker_id_pattern"`
+	QueuePreviewLines int    `json:"queue_preview_lines"`
 }
 
 // questionListBody is the GET /api/questions?state=open response.
@@ -87,7 +109,7 @@ type questionGetBody struct {
 
 // questionVerb is the parsed `question` subverb.
 type questionVerb struct {
-	action string // list | show | answer
+	action string // list | show | answer | quality
 	id     string
 	option string // raw option token (a number or an option id)
 	quote  string // remainder after the option token, as typed
@@ -116,13 +138,18 @@ func parseQuestionVerb(text string) (questionVerb, error) {
 		return questionVerb{action: "show", id: parts[1]}, nil
 	case "answer":
 		if len(parts) < 3 {
-			return questionVerb{}, fmt.Errorf("question answer takes <id> and <option number or id> (%s)", questionUsage)
+			return questionVerb{}, fmt.Errorf("question answer takes <id> and <option number or id> (%s)\n%s", questionUsage, questionAnswerHelp)
 		}
 		// The quote is every word after the option token, kept verbatim
 		// (newline- and space-preserving): operators may paste a longer
 		// answer than a single line.
 		return questionVerb{action: "answer", id: parts[1], option: parts[2],
 			quote: questionQuote(rest, 3)}, nil
+	case "quality":
+		if len(parts) != 1 {
+			return questionVerb{}, fmt.Errorf("question quality takes no arguments (%s)", questionUsage)
+		}
+		return questionVerb{action: "quality"}, nil
 	}
 	return questionVerb{}, fmt.Errorf("%s", questionUsage)
 }
@@ -163,7 +190,31 @@ func (r *Router) handleQuestion(cmd Command) {
 		r.handleQuestionShow(v.id)
 	case "answer":
 		r.handleQuestionAnswer(v.id, v.option, v.quote)
+	case "quality":
+		r.handleQuestionQuality()
 	}
+}
+
+// handleQuestionQuality GETs the effective question-quality policy and
+// sends it as one line per setting.
+func (r *Router) handleQuestionQuality() {
+	body, err := r.commGet(questionQualityPath, nil)
+	if err != nil {
+		r.reply("question quality failed", err.Error())
+		return
+	}
+	var qb questionQualityBody
+	if err := json.Unmarshal([]byte(body), &qb); err != nil {
+		r.reply("question quality failed", "cannot read daemon response: "+err.Error())
+		return
+	}
+	var b strings.Builder
+	b.WriteString("question quality policy:")
+	fmt.Fprintf(&b, "\nmode: %s", qb.Mode)
+	fmt.Fprintf(&b, "\nminimum text length: %d", qb.MinTextChars)
+	fmt.Fprintf(&b, "\ntracker-id pattern: %s", qb.TrackerIDPattern)
+	fmt.Fprintf(&b, "\nqueue preview lines: %d", qb.QueuePreviewLines)
+	r.reply("question quality", b.String())
 }
 
 // handleQuestionList GETs the open questions and sends them as a
@@ -220,6 +271,9 @@ func (r *Router) handleQuestionShow(id string) {
 		for i, o := range q.Options {
 			byID[o.ID] = o
 			fmt.Fprintf(&b, "\n%d. %s  %s", i+1, o.ID, o.Label)
+			if o.Tradeoffs != "" {
+				fmt.Fprintf(&b, "\n   trade-offs: %s", o.Tradeoffs)
+			}
 		}
 		if q.Recommendation != nil && q.Recommendation.OptionID != "" {
 			label := q.Recommendation.OptionID

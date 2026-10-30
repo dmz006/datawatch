@@ -8990,6 +8990,10 @@ const DOCS_LINKS_BY_KEY = {
   gc_autonomous: 'howto/autonomous-planning.md',
   automata_skills: 'howto/skills-sync.md',
   automata_type_registry: DOCS_DEFINITIONS + '#settings-automate',
+  settings_automata_questions_quality_mode: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
+  settings_automata_questions_quality_min_text_chars: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
+  settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
+  settings_automata_questions_queue_preview_lines: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   gc_pipeline: 'howto/pipeline-chaining.md',
   gc_orchestrator: 'howto/automata-orchestrator.md',
   // Settings -> Plugins
@@ -16510,6 +16514,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.questions.return_path', label: 'Allow the per-question session return line on top of the event plus polled answer path (on by default)', labelKey: 'settings_automata_questions_return_path', type: 'toggle' },
     { key: 'autonomous.questions.decision_gate', label: 'Hold a task on an unanswered decision it names (on by default)', labelKey: 'settings_automata_questions_decision_gate', type: 'toggle' },
     { key: 'autonomous.questions.decision_gate_mode', label: 'Decision gate mode (shadow only records, on holds the task, default shadow)', labelKey: 'settings_automata_questions_decision_gate_mode', type: 'select', options: ['shadow', 'on'], default: 'shadow' },
+    { key: 'autonomous.questions.quality_mode', label: 'Automata question quality check (off, warn or refuse, default warn)', labelKey: 'settings_automata_questions_quality_mode', docsKey: 'settings_automata_questions_quality_mode', type: 'select', options: ['off', 'warn', 'refuse'], default: 'warn' },
+    { key: 'autonomous.questions.quality_min_text_chars', label: 'Automata question minimum text length (characters, 0 = no length check, default 60)', labelKey: 'settings_automata_questions_quality_min_text_chars', docsKey: 'settings_automata_questions_quality_min_text_chars', type: 'number', min: 0, step: 1, placeholder: '60', default: '60' },
+    { key: 'autonomous.questions.quality_tracker_id_pattern', label: 'Automata question tracker id pattern (regular expression, empty = built-in default)', labelKey: 'settings_automata_questions_quality_tracker_id_pattern', docsKey: 'settings_automata_questions_quality_tracker_id_pattern', type: 'text', placeholder: '' },
+    { key: 'autonomous.questions.queue_preview_lines', label: 'Automata question queue preview lines (default 3)', labelKey: 'settings_automata_questions_queue_preview_lines', docsKey: 'settings_automata_questions_queue_preview_lines', type: 'number', min: 1, step: 1, placeholder: '3', default: '3' },
     { key: 'autonomous.questions.worker_marker', label: 'Let a worker raise a question with a marker in its output (off by default)', labelKey: 'settings_automata_questions_worker_marker', helpKey: 'settings_automata_questions_worker_marker_help', type: 'toggle' },
     // Progress engine parameters (0 or empty = the default shown as placeholder).
     { key: 'autonomous.progress.lanes', label: 'Progress lanes (parallel lanes of Automata used for utilization, 0 = 5)', labelKey: 'settings_progress_lanes', type: 'number', placeholder: '5', min: 0, step: 1, default: '0' },
@@ -17404,7 +17412,7 @@ function loadGeneralConfig() {
             ).join('');
             const _selHint = _fieldHintHTML(f);
             html += `<div class="settings-row" style="justify-content:space-between;${_selHint ? 'flex-wrap:wrap;' : ''}">
-              <div class="settings-label">${escHtml(fLabel)}</div>
+              <div class="settings-label">${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
               <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
               ${_selHint}
             </div>`;
@@ -17628,7 +17636,7 @@ function loadGeneralConfig() {
             const _inHint = _fieldHintHTML(f);
             const _zNoteHTML = zNote ? `<div style="font-size:10px;color:var(--text2);width:100%;">${escHtml(zNote)}</div>` : '';
             html += `<div class="settings-row" style="justify-content:space-between;${(_inHint || _zNoteHTML) ? 'flex-wrap:wrap;' : ''}">
-              <div class="settings-label">${escHtml(fLabel)}</div>
+              <div class="settings-label">${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
               <input type="${f.type}" class="form-input general-cfg-input" value="${escHtml(defVal)}"
                 ${zPlaceholder ? 'placeholder="' + escHtml(zPlaceholder) + '"' : ''}
                 ${f.min !== undefined ? 'min="' + f.min + '"' : ''}
@@ -28221,6 +28229,7 @@ const _AUTOMATION_SUBTABS = [
       </div>`;
     },
     mount() {
+      _automationQuestionsLoadQuality();
       listLoaderAll([_automationLoader(), _automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader()]);
       supervisorWatchStartPolling();
     },
@@ -28532,7 +28541,7 @@ function supervisorWatchStopPolling() {
 // POSTs. A row button hands off to window.openQuestion(id), which the answer
 // form task writes; the inline call is guarded so the card still works while
 // that function is absent.
-const _automationQuestionsState = { searchText: '', history: false, historyList: [] };
+const _automationQuestionsState = { searchText: '', history: false, historyList: [], previewLines: 3, expanded: {}, qualityAt: 0 };
 // Exposed so tests and the history toggle can inspect/flip the mode without
 // re-rendering the whole card.
 window._automationQuestionsState = _automationQuestionsState;
@@ -28582,6 +28591,31 @@ function _automationQuestionsListFetch(opts) {
   return one('state=open&limit=50' + textQ);
 }
 
+// _automationQuestionsLoadQuality reads queue_preview_lines from
+// GET /api/questions/quality when the Automation view mounts, at most once a
+// minute and off the list request's path: the card keeps the last good value
+// (default 3) when the read fails, the route 503s or the value is not a whole
+// number of at least 1.
+function _automationQuestionsLoadQuality() {
+  const nowMs = Date.now();
+  if (nowMs - _automationQuestionsState.qualityAt < 60000) return;
+  _automationQuestionsState.qualityAt = nowMs;
+  try {
+    const token = localStorage.getItem('cs_token') || '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const srv = state.activeServer;
+    const isRemote = srv && srv !== 'local' && srv !== 'all';
+    const path = '/api/questions/quality';
+    Promise.resolve(fetch(isRemote ? '/api/proxy/' + encodeURIComponent(srv) + path : path, { method: 'GET', headers }))
+      .then(r => (r && r.ok && typeof r.json === 'function') ? r.json() : null)
+      .then(body => {
+        const n = body && Number(body.queue_preview_lines);
+        if (n >= 1 && Math.floor(n) === n) _automationQuestionsState.previewLines = n;
+      }).catch(() => {});
+  } catch (e) { /* keep the previous value */ }
+}
+
 // _automationQuestionsAgeText is a compact age label (s/m/h/d) from the
 // question's created_at; a zero or invalid created_at gives an empty label.
 function _automationQuestionsAgeText(q) {
@@ -28597,10 +28631,35 @@ function _automationQuestionsAgeText(q) {
   return Math.floor(h / 24) + 'd';
 }
 
-// _automationQuestionsRowHtml draws one row: the question id, its label (when
-// set), the visible high-priority marker, the escaped question text, the asker
-// and the age, and the hand-off button. Rows keep the route's order — the
-// card never reorders on the client.
+// _automationQuestionsPreview splits a question text for the queue row: the
+// first N lines when it has more, and whether the row is long enough to need
+// the Show more control. A line counts as ~80 characters wide, so one long
+// unbroken paragraph is clipped too (the collapsed block also carries a CSS
+// line clamp of N lines).
+function _automationQuestionsPreview(text, n) {
+  const lines = String(text).split('\n');
+  let visual = 0;
+  lines.forEach(l => { visual += Math.max(1, Math.ceil(l.length / 80)); });
+  const clipped = lines.length > n || visual > n;
+  return { clipped, preview: lines.length > n ? lines.slice(0, n).join('\n') : String(text) };
+}
+
+// toggleAutomationQuestionPreview flips one row between the clipped preview and
+// the full text. The state is keyed by question id, so the card's periodic
+// refresh keeps the row expanded; the repaint reuses the loaded list.
+function toggleAutomationQuestionPreview(id) {
+  const ex = _automationQuestionsState.expanded;
+  if (ex[id]) delete ex[id]; else ex[id] = true;
+  const ctl = window._listLoaders && window._listLoaders.automation_questions;
+  if (ctl && typeof ctl.paint === 'function') ctl.paint();
+}
+window.toggleAutomationQuestionPreview = toggleAutomationQuestionPreview;
+
+// _automationQuestionsRowHtml draws one row: the label (when set) first, the
+// question id as smaller secondary text, the visible high-priority marker, the
+// escaped question text clipped to the first queue_preview_lines lines with a
+// Show more / Show less control, the asker and the age, and the hand-off
+// button. Rows keep the route's order — the card never reorders on the client.
 function _automationQuestionsRowHtml(q) {
   const id = String(q.id == null ? '' : q.id);
   const high = q.priority === 'high'
@@ -28608,13 +28667,27 @@ function _automationQuestionsRowHtml(q) {
     : '';
   const age = _automationQuestionsAgeText(q);
   const ageHtml = age ? escHtml(t('automation_questions_age', [age])) : '';
+  const n = _automationQuestionsState.previewLines >= 1 ? _automationQuestionsState.previewLines : 3;
+  const expanded = !!_automationQuestionsState.expanded[id];
+  let textHtml = '';
+  if (q.text) {
+    const pv = _automationQuestionsPreview(q.text, n);
+    const open = expanded || !pv.clipped;
+    const shown = open ? String(q.text) : pv.preview;
+    const clamp = open ? '' : `display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:${n};overflow:hidden;`;
+    textHtml = `<div class="questions-text" style="font-size:12px;color:var(--text);overflow-wrap:anywhere;white-space:pre-wrap;${clamp}">${escHtml(shown)}</div>` +
+      (pv.clipped
+        ? `<button type="button" class="btn-secondary questions-show-more" aria-expanded="${expanded ? 'true' : 'false'}" style="font-size:11px;padding:1px 8px;align-self:flex-start;" onclick="if (typeof window.toggleAutomationQuestionPreview === 'function') window.toggleAutomationQuestionPreview('${escHtml(id)}')">${escHtml(t(expanded ? 'automation_questions_show_less' : 'automation_questions_show_more'))}</button>`
+        : '');
+  }
+  const idStyle = q.label ? 'font-size:11px;color:var(--text2);' : 'font-weight:600;font-size:12px;';
   return `<div class="questions-queue-row" data-question-id="${escHtml(id)}" style="border-top:1px solid var(--border);padding:8px 2px;display:flex;flex-direction:column;gap:4px;">` +
     `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
-      `<span class="questions-id" style="font-weight:600;font-size:12px;">${escHtml(id)}</span>` +
-      (q.label ? `<span class="questions-label" style="font-size:12px;color:var(--text);">${escHtml(q.label)}</span>` : '') +
+      (q.label ? `<span class="questions-label" style="font-weight:600;font-size:12px;color:var(--text);">${escHtml(q.label)}</span>` : '') +
+      `<span class="questions-id" style="${idStyle}">${escHtml(id)}</span>` +
       high +
     `</div>` +
-    (q.text ? `<div class="questions-text" style="font-size:12px;color:var(--text);overflow-wrap:anywhere;">${escHtml(q.text)}</div>` : '') +
+    textHtml +
     `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
       `<span class="questions-meta" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_questions_by'))} ${escHtml(q.asked_by || '')}${ageHtml ? ' · ' + ageHtml : ''}</span>` +
       `<button type="button" class="btn-secondary questions-open-btn" style="font-size:11px;padding:3px 10px;margin-left:auto;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escHtml(id)}')">${escHtml(t('automation_questions_open'))}</button>` +
@@ -28757,18 +28830,81 @@ function _questionAnswerSubmit(id, currentAnswerId, chosenOptionId, quote) {
 }
 window._questionAnswerSubmit = _questionAnswerSubmit;
 
-// _questionAnswerBodyHTML is the dialog body: question text, options as
-// radios with trade-offs, the recommendation, the translated default line
-// (option label or hold), the free-text box, and — when the question is
+// _questionContextSafeViewerURL gives the viewer link back only when it is a
+// same-origin relative link: it starts with a single slash and carries no
+// backslash, whitespace or control characters. Anything else is '' and the
+// caller shows no link; a link is never built from raw text.
+function _questionContextSafeViewerURL(url) {
+  if (typeof url !== 'string' || url === '') return '';
+  if (url.charAt(0) !== '/' || url.charAt(1) === '/') return '';
+  if (/[\\\s\u0000-\u001f\u007f]/.test(url)) return '';
+  return url;
+}
+window._questionContextSafeViewerURL = _questionContextSafeViewerURL;
+
+// window.questionContextOpenAutomaton opens the Automaton a question is about:
+// it closes the answer dialog, then uses the Automata open-by-id helper.
+window.questionContextOpenAutomaton = function(id) {
+  const modal = document.getElementById('genericModal');
+  if (modal && modal.remove) modal.remove();
+  if (typeof window.openAutomationMemberPRD === 'function') window.openAutomationMemberPRD(String(id));
+};
+
+// _questionContextHTML is the "This question is about" line under the
+// question text, built from the context_ref the question read carries. The
+// none kind (or no context_ref) gives ''. A proposal or document gets an
+// open link into the documents viewer in a new tab when its viewer_url is a
+// safe relative link; an Automaton gets an open button on the Automata
+// helper; a task or registry row shows its title with its kind (and the id
+// when it differs) as text. Every value goes through escHtml.
+function _questionContextHTML(ref) {
+  if (!ref || typeof ref !== 'object') return '';
+  const kind = String(ref.kind == null ? '' : ref.kind);
+  if (!kind || kind === 'none') return '';
+  const id = String(ref.id == null ? '' : ref.id);
+  const baseTitle = String(ref.title == null || ref.title === '' ? (ref.doc_path || id) : ref.title);
+  const kindKey = kind === 'automaton' ? 'automation_kind_prd'
+    : kind === 'task' ? 'status_automaton_task'
+    : kind === 'registry_row' ? 'overlap_warning_registry' : '';
+  let title = baseTitle;
+  if (kindKey) {
+    title = t(kindKey) + ' ' + baseTitle;
+    if (id && id !== baseTitle) title += ' (' + id + ')';
+  }
+  let control = '';
+  const openLabel = escHtml(t('automation_questions_context_open'));
+  if (kind === 'proposal') {
+    const href = _questionContextSafeViewerURL(ref.viewer_url);
+    if (href) control = `<a class="question-context-open" href="${escHtml(href)}" target="_blank" rel="noopener noreferrer" style="margin-left:8px;color:var(--accent);">${openLabel}</a>`;
+  } else if (kind === 'automaton' && id && typeof window.openAutomationMemberPRD === 'function') {
+    control = `<button type="button" class="btn-secondary question-context-open" style="margin-left:8px;font-size:11px;padding:2px 10px;" onclick="window.questionContextOpenAutomaton(${escHtml(JSON.stringify(id))})">${openLabel}</button>`;
+  }
+  return `<div class="question-answer-context" style="margin-top:6px;font-size:12px;color:var(--text2);overflow-wrap:anywhere;">`
+    + `<span class="question-context-label">${escHtml(t('automation_questions_context_label', [title]))}</span>${control}</div>`;
+}
+window._questionContextHTML = _questionContextHTML;
+
+// _questionAnswerBodyHTML is the dialog body: the id line under the title,
+// question text, options as radios with a visible trade-off line, the
+// recommendation and default in plain sentences, the free-text box with its
+// plain label and helper line, and — when the question is
 // already answered — the current answer's quote with the replaces-it line.
 function _questionAnswerBodyHTML(q, answer) {
   const options = Array.isArray(q.options) ? q.options : [];
-  let html = `<div class="question-answer-text" style="font-size:13px;color:var(--text);overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(q.text || '')}</div>`;
+  const qid = String(q.id == null ? '' : q.id);
+  let html = '';
+  // The title carries the label (or the id when the label is empty); the id
+  // stays visible as a small secondary line under it.
+  if (qid) {
+    html += `<div class="question-answer-id-line" style="margin:-8px 0 8px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('automation_questions_answer_id_line', [qid]))}</div>`;
+  }
+  html += `<div class="question-answer-text" style="font-size:13px;color:var(--text);overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(q.text || '')}</div>`;
+  html += _questionContextHTML(q.context_ref);
   if (options.length) {
     html += '<div class="question-answer-options" style="margin-top:10px;">';
     options.forEach(o => {
       const trade = (o && o.tradeoffs)
-        ? `<div style="margin:2px 0 0 20px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(o.tradeoffs)}</div>`
+        ? `<div class="question-answer-tradeoff" style="margin:2px 0 0 20px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(o.tradeoffs)}</div>`
         : '';
       html += `<label class="question-answer-option" style="display:block;margin:4px 0;" title="${escHtml((o && o.tradeoffs) || '')}">`
         + `<input type="radio" name="questionAnswerChoice" value="${escHtml(o && o.id ? o.id : '')}"> ${escHtml((o && (o.label || o.id)) || '')}`
@@ -28780,18 +28916,28 @@ function _questionAnswerBodyHTML(q, answer) {
   if (rec && rec.option_id) {
     const name = String(rec.option_id);
     const label = _questionAnswerOptionLabel(options, name) || name;
+    const recLine = rec.rationale
+      ? t('automation_questions_answer_rec_line', [label, String(rec.rationale)])
+      : t('automation_questions_answer_rec_line_no_rationale', [label]);
     html += `<div class="question-answer-rec" style="margin-top:8px;font-size:12px;color:var(--text);">`
-      + `<span style="font-weight:600;">${escHtml(t('automation_questions_answer_rec', [label]))}</span>`
-      + (rec.rationale ? ` — ${escHtml(rec.rationale)}` : '') + '</div>';
+      + `<div style="font-weight:600;">${escHtml(t('automation_questions_answer_rec', [label]))}</div>`
+      + `<div class="question-answer-rec-line" style="overflow-wrap:anywhere;">${escHtml(recLine)}</div></div>`;
   }
   const defName = String(q.default == null ? '' : q.default);
   // The record's default is an option id or the word hold; hold is shown
   // as-is, an option by its label (falling back to the raw name).
-  const defLabel = (defName && defName !== 'hold') ? (_questionAnswerOptionLabel(options, defName) || defName) : 'hold';
-  html += `<div class="question-answer-default" style="margin-top:2px;font-size:12px;color:var(--text2);">${escHtml(t('automation_questions_answer_default', [defLabel]))}</div>`;
+  const isHold = !defName || defName === 'hold';
+  const defLabel = isHold ? 'hold' : (_questionAnswerOptionLabel(options, defName) || defName);
+  const defLine = isHold
+    ? t('automation_questions_answer_default_line_hold')
+    : t('automation_questions_answer_default_line', [defLabel]);
+  html += `<div class="question-answer-default" style="margin-top:6px;font-size:12px;color:var(--text2);">`
+    + `<div>${escHtml(t('automation_questions_answer_default', [defLabel]))}</div>`
+    + `<div class="question-answer-default-line">${escHtml(defLine)}</div></div>`;
   html += `<div style="margin-top:10px;">`
-    + `<label class="question-answer-quote-label" style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('automation_questions_answer_quote_label'))}</label>`
-    + '<textarea id="questionAnswerQuote" class="form-input question-answer-quote" rows="3" style="width:100%;box-sizing:border-box;font-size:12px;"></textarea></div>';
+    + `<label class="question-answer-quote-label" for="questionAnswerQuote" style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('automation_questions_answer_text_label'))}</label>`
+    + '<textarea id="questionAnswerQuote" class="form-input question-answer-quote" rows="3" style="width:100%;box-sizing:border-box;font-size:12px;"></textarea>'
+    + `<div class="question-answer-text-help" style="margin-top:4px;font-size:11px;color:var(--text2);">${escHtml(t('automation_questions_answer_text_help'))}</div></div>`;
   if (answer && typeof answer === 'object') {
     const quote = answer.quote == null ? '' : String(answer.quote);
     html += `<div class="question-answer-current" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;font-size:12px;">`
@@ -28819,7 +28965,7 @@ window.openQuestion = function(id) {
     const answer = (body0.answer && typeof body0.answer === 'object') ? body0.answer : null;
     const currentAnswerId = String(body0.current_answer_id || (answer && answer.id) || '');
     showModal({
-      title: t('automation_questions_answer_title', [String(q.id || qid)]),
+      title: t('automation_questions_answer_title', [String(q.label || q.id || qid)]),
       body: _questionAnswerBodyHTML(q, answer),
       confirmLabel: t('automation_questions_answer_submit'),
       onConfirm: () => {

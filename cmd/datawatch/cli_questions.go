@@ -6,12 +6,14 @@
 //	    → GET /api/questions
 //	datawatch question show <id>
 //	    → GET /api/questions/{id} + GET /api/questions/{id}/answers
-//	datawatch question answer <id> (--option <option id> and/or --text <verbatim words>) [--supersedes <answer id>]
+//	datawatch question answer <id> (--option <option id> and/or --text <your words>) [--supersedes <answer id>]
 //	    → POST /api/questions/{id}/answer
 //	datawatch question withdraw <id> --reason <text>
 //	    → POST /api/questions/{id}/withdraw
-//	datawatch question raise --text <text> --option id=label [--option id=label …] …
+//	datawatch question raise --text <text> --option id=label [--option id=label …] [--tradeoff id=text …] …
 //	    → POST /api/questions
+//	datawatch question quality [--json]
+//	    → GET /api/questions/quality
 //
 // The render functions (renderQuestionList, renderQuestionShow, …) are pure
 // text builders over the response bodies, so the tests check the operator
@@ -20,6 +22,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -310,6 +313,94 @@ func renderQuestionRaise(w io.Writer, body []byte) error {
 	return nil
 }
 
+// cliQuestionFinding is one quality finding as the daemon sends it.
+type cliQuestionFinding struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// line is the finding as one plain line: the daemon's message, led by its
+// code when it has one.
+func (f cliQuestionFinding) line() string {
+	switch {
+	case f.Code != "" && f.Message != "":
+		return f.Code + ": " + f.Message
+	case f.Message != "":
+		return f.Message
+	default:
+		return f.Code
+	}
+}
+
+// renderQuestionRaiseWarnings writes the quality warnings of a 201 raise
+// response to w, one plain line each. A response without warnings writes
+// nothing.
+func renderQuestionRaiseWarnings(w io.Writer, body []byte) {
+	var resp struct {
+		Warnings []cliQuestionFinding `json:"warnings"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return
+	}
+	for _, f := range resp.Warnings {
+		_, _ = fmt.Fprintf(w, "warning: %s\n", f.line())
+	}
+}
+
+// questionRefusalError turns a 422 refusal from the daemon into the error
+// the operator sees: the daemon's own refusal text, then one line per
+// finding, so nothing the daemon said is hidden. Any other error comes back
+// unchanged.
+func questionRefusalError(err error) error {
+	const prefix = "HTTP 422: "
+	if err == nil || !strings.HasPrefix(err.Error(), prefix) {
+		return err
+	}
+	var refusal struct {
+		Error    string               `json:"error"`
+		Findings []cliQuestionFinding `json:"findings"`
+	}
+	if json.Unmarshal([]byte(strings.TrimPrefix(err.Error(), prefix)), &refusal) != nil || (refusal.Error == "" && len(refusal.Findings) == 0) {
+		return err
+	}
+	var b strings.Builder
+	b.WriteString(prefix)
+	b.WriteString(refusal.Error)
+	for _, f := range refusal.Findings {
+		b.WriteString("\n  - ")
+		b.WriteString(f.line())
+	}
+	return errors.New(b.String())
+}
+
+// renderQuestionQuality writes the effective question quality policy.
+func renderQuestionQuality(w io.Writer, body []byte) error {
+	var p struct {
+		Mode              string `json:"mode"`
+		MinTextChars      int    `json:"min_text_chars"`
+		TrackerIDPattern  string `json:"tracker_id_pattern"`
+		QueuePreviewLines int    `json:"queue_preview_lines"`
+	}
+	if err := json.Unmarshal(body, &p); err != nil {
+		return fmt.Errorf("unexpected response: %w", err)
+	}
+	modeNote := ""
+	switch p.Mode {
+	case "off":
+		modeNote = " (questions are not checked)"
+	case "warn":
+		modeNote = " (a weak question is raised, with a warning)"
+	case "refuse":
+		modeNote = " (a weak question is refused)"
+	}
+	_, _ = fmt.Fprintln(w, "question quality policy:")
+	_, _ = fmt.Fprintf(w, "  mode: %s%s\n", p.Mode, modeNote)
+	_, _ = fmt.Fprintf(w, "  minimum text length: %d characters\n", p.MinTextChars)
+	_, _ = fmt.Fprintf(w, "  internal id pattern: %s\n", p.TrackerIDPattern)
+	_, _ = fmt.Fprintf(w, "  queue preview: %d lines\n", p.QueuePreviewLines)
+	return nil
+}
+
 // questionActor is the local login name the CLI records as the actor of an
 // answer or withdraw: the $USER or $LOGNAME environment, else the OS user
 // database entry.
@@ -370,11 +461,11 @@ func validateQuestionContext(context, prdID, taskID, proposalPath, registryRowKe
 // ----- the question command group ----------------------------------------
 
 // newQuestionCmd builds the `question` command group: the operator question
-// channel on the Automaton (list, show, answer, withdraw, raise).
+// channel on the Automaton (list, show, answer, withdraw, raise, quality).
 func newQuestionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "question",
-		Short: "Operator questions on the Automaton: list, show, answer, withdraw, raise",
+		Short: "Operator questions on the Automaton: list, show, answer, withdraw, raise, quality",
 		Long: `Raise, read and decide the operator questions the Automaton puts to
 its operator. Questions are a decision channel: each question is one text,
 a numbered set of options with trade-offs, a recommendation, and a forced
@@ -391,6 +482,7 @@ switch; while it is off the daemon answers with a 503 naming the switch.`,
 		newQuestionAnswerCmd(),
 		newQuestionWithdrawCmd(),
 		newQuestionRaiseCmd(),
+		newQuestionQualityCmd(),
 	)
 	return cmd
 }
@@ -505,14 +597,21 @@ func newQuestionAnswerCmd() *cobra.Command {
 		supersedes string
 	)
 	cmd := &cobra.Command{
-		Use:   "answer <id> (--option <option id> and/or --text <verbatim words>) [--supersedes <answer id>]",
-		Short: "Record an answer to a question, in the operator's own words",
-		Long: `Answer one question. Name an option with --option, and/or say the
-operator's own words verbatim with --text (sent exactly as given; they are
-kept in full, never trimmed or re-encoded). At least one of the two is
-needed. An already-answered question accepts only a new answer that names
-its current answer with --supersedes: an answer is immutable, and a
-changed mind is a superseding answer, never an edit.
+		Use:   "answer <id> (--option <option id> and/or --text <your words>) [--supersedes <answer id>]",
+		Short: "Record your answer to a question: pick an option, say it in your own words, or both",
+		Long: `Answer one question. Pick one of the question's options with --option.
+Typing your own words with --text is optional when you pick an option, and
+it is the only thing needed when you do not pick one (at least one of the
+two is required).
+
+Whatever you type with --text is saved exactly as written, with your
+choice, as the record of your decision, and the asker reads it as your
+answer. It is never trimmed, reworded or re-encoded, so say what you mean
+to have on record.
+
+A question that already has an answer accepts only a new answer that
+names its current answer with --supersedes: an answer is never edited, and
+a changed mind is a new answer that supersedes the old one.
 
 The answer is recorded with surface "cli" and the local login name as the
 actor.`,
@@ -523,7 +622,7 @@ actor.`,
 				return fmt.Errorf("a question id is required")
 			}
 			if option == "" && strings.TrimSpace(text) == "" {
-				return fmt.Errorf("an answer needs --option <option id> or a non-blank --text (the operator's own words, verbatim)")
+				return fmt.Errorf("an answer needs --option <option id> or a non-blank --text (your own words, saved exactly as written)")
 			}
 			body := map[string]any{
 				"surface": "cli",
@@ -544,7 +643,7 @@ actor.`,
 		},
 	}
 	cmd.Flags().StringVar(&option, "option", "", "the chosen option id (one of the question's options)")
-	cmd.Flags().StringVar(&text, "text", "", "the operator's own words, verbatim (never trimmed)")
+	cmd.Flags().StringVar(&text, "text", "", "your own words, saved exactly as written with your choice (optional when you pick an option)")
 	cmd.Flags().StringVar(&supersedes, "supersedes", "", "the current answer id being superseded (required when the question is already answered)")
 	return cmd
 }
@@ -589,6 +688,7 @@ func newQuestionRaiseCmd() *cobra.Command {
 		text           string
 		label          string
 		options        []string
+		tradeoffFlags  []string
 		recommend      string
 		rationale      string
 		def            string // --default
@@ -605,10 +705,11 @@ func newQuestionRaiseCmd() *cobra.Command {
 		returnPath     bool
 	)
 	cmd := &cobra.Command{
-		Use:   "raise --text <text> --option id=label [--option id=label …] [--default <option id or hold>]",
+		Use:   "raise --text <text> --option id=label [--option id=label …] [--tradeoff id=text …] [--default <option id or hold>]",
 		Short: "Raise a question to the operator of the Automaton",
 		Long: `Raise one question: a line of text, at least two options
-(--option id=label, repeatable), the asker's recommendation
+(--option id=label, repeatable), what each option costs
+(--tradeoff id=text, repeatable, one per option id), the asker's recommendation
 (--recommend <option id> with --rationale), and a forced default
 (--default, an option id or the word hold, so no choice is ever silent).
 
@@ -618,7 +719,12 @@ registry_row + --registry-row-key, or none (no links).
 
 --session names the asking session; --return-path opts this one
 question in to the session line (one DATAWATCH_ANSWER: line into the
-asking session when it is answered) and therefore requires --session.`,
+asking session when it is answered) and therefore requires --session.
+
+The daemon checks how readable the question is. In warn mode the
+question is raised and each warning is printed to standard error; in
+refuse mode the question is not raised, the findings are printed and the
+command exits non-zero. Read the policy with: datawatch question quality.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(text) == "" {
@@ -636,6 +742,10 @@ asking session when it is answered) and therefore requires --session.`,
 				}
 				parsed = append(parsed, map[string]any{"id": id, "label": lbl})
 				optionIDs = append(optionIDs, id)
+			}
+			tradeoffs, err := parseQuestionTradeoffs(tradeoffFlags)
+			if err != nil {
+				return err
 			}
 			inOptions := func(id string) bool {
 				for _, have := range optionIDs {
@@ -683,6 +793,9 @@ asking session when it is answered) and therefore requires --session.`,
 				"default":     def,
 				"return_path": returnPath,
 			}
+			if len(tradeoffs) > 0 {
+				body["tradeoffs"] = tradeoffs
+			}
 			if label != "" {
 				body["label"] = label
 			}
@@ -723,8 +836,9 @@ asking session when it is answered) and therefore requires --session.`,
 
 			resp, err := daemonJSONBody(http.MethodPost, "/api/questions", body)
 			if err != nil {
-				return err
+				return questionRefusalError(err)
 			}
+			renderQuestionRaiseWarnings(cmd.ErrOrStderr(), resp)
 			return renderQuestionRaise(cmd.OutOrStdout(), resp)
 		},
 	}
@@ -732,6 +846,7 @@ asking session when it is answered) and therefore requires --session.`,
 	f.StringVar(&text, "text", "", "the question as a line of text (required)")
 	f.StringVar(&label, "label", "", "the question's label (default: decision, or set it yourself)")
 	f.StringArrayVar(&options, "option", nil, "an option as id=label (repeatable, at least two)")
+	f.StringArrayVar(&tradeoffFlags, "tradeoff", nil, "what an option costs, as id=text (repeatable; id is one of the --option ids)")
 	f.StringVar(&recommend, "recommend", "", "the recommended option id (one of the --option ids)")
 	f.StringVar(&rationale, "rationale", "", "why the recommended option is the right one (with --recommend)")
 	f.StringVar(&def, "default", "", "the forced default: an option id or the word hold (required)")
@@ -746,5 +861,58 @@ asking session when it is answered) and therefore requires --session.`,
 	f.StringVar(&askerKind, "asker-kind", "", "the asker's kind: session, supervisor, operator or system (default operator)")
 	f.StringVar(&session, "session", "", "the asking session id")
 	f.BoolVar(&returnPath, "return-path", false, "opt this question in to the answer line into the asking session (requires --session)")
+	return cmd
+}
+
+// parseQuestionTradeoffs splits each --tradeoff value on its first '=' into
+// an option id and its trade-off text. A value with no '=', an empty id, or
+// an id given twice is refused with a message naming the value.
+func parseQuestionTradeoffs(values []string) (map[string]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(values))
+	for _, pair := range values {
+		id, text, ok := strings.Cut(pair, "=")
+		if !ok {
+			return nil, fmt.Errorf("each --tradeoff must be an id=text pair, with an = between the option id and its trade-off (got %q)", pair)
+		}
+		if strings.TrimSpace(id) == "" {
+			return nil, fmt.Errorf("each --tradeoff needs the option id before the = (got %q)", pair)
+		}
+		if _, dup := out[id]; dup {
+			return nil, fmt.Errorf("--tradeoff names option %q more than once; give each option one trade-off", id)
+		}
+		out[id] = text
+	}
+	return out, nil
+}
+
+// newQuestionQualityCmd builds `question quality`.
+func newQuestionQualityCmd() *cobra.Command {
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "quality [--json]",
+		Short: "Show the policy that checks how readable a raised question is",
+		Long: `Show the question quality policy the daemon applies when a question is
+raised: the mode (off, warn or refuse), the fewest characters a question's
+text needs, the pattern that spots an internal planning id in a question,
+and how many lines of a question the queue shows as a preview.
+
+Change a value with: datawatch config set autonomous.questions.<key> <value>.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := daemonJSONBody(http.MethodGet, "/api/questions/quality", nil)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				prettyPrint(body)
+				return nil
+			}
+			return renderQuestionQuality(cmd.OutOrStdout(), body)
+		},
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON response")
 	return cmd
 }

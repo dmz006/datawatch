@@ -1096,7 +1096,7 @@ daemon — the remote-client counterpart to the CLI, the comm verbs and
 the PWA automation queue. They proxy the `/api/questions` REST
 surface one-for-one, and they need the `autonomous:write`
 (`question_raise`, `question_answer`, `question_withdraw`) or
-`autonomous:read` (`question_list`, `question_get`) capability when
+`autonomous:read` (`question_list`, `question_get`, `question_quality`) capability when
 called by a federated peer.
 
 | Tool | What it does | Rest call |
@@ -1106,6 +1106,7 @@ called by a federated peer.
 | `question_get` | Return one stored operator question by id, plus its current answer — the default return path for the asker | `GET /api/questions/{id}` |
 | `question_answer` | Record an answer to a stored operator question; the answer is immutable, a changed mind supersedes | `POST /api/questions/{id}/answer` |
 | `question_withdraw` | Withdraw an open operator question (marked withdrawn, can no longer be answered) | `POST /api/questions/{id}/withdraw` |
+| `question_quality` | Read the question quality policy the daemon checks every raised question against (read-only) | `GET /api/questions/quality` |
 
 **Common behaviour.** While the `autonomous.questions.enabled`
 switch is off the daemon answers 503 and names the switch.
@@ -1127,6 +1128,9 @@ instead.
 | `context` | no | What the question is about (`none`, `prd`, `task`, `proposal`, `registry_row`) |
 | `prd_id` | no | The Automaton id the question is about, when `context` is `prd` or `task` |
 | `return_path` | no | Also deliver the answer line into the asking session (`DATAWATCH_ANSWER` marker, best-effort; default false) |
+| `tradeoffs` | no | What each option costs: an object mapping an option id to its trade-off text, such as `{"ship": "faster, skips the soak"}`. It fills an option that has no trade-offs of its own; an id that is not one of the options is a `400` |
+
+**Quality check on raise.** The daemon checks how readable the question is. In `warn` mode the question is raised and the findings come back in the response under `warnings` (each with a `code` and a `message`). In `refuse` mode the question is not raised: the daemon answers `422` with the findings, so fix them and send the question again. `off` skips the check. Read the policy with `question_quality`, which takes no parameters and returns `mode`, `min_text_chars`, `tracker_id_pattern` and `queue_preview_lines`; like the other question tools it answers `503` while the `autonomous.questions.enabled` switch is off.
 
 **`question_list` parameters:**
 
@@ -1145,8 +1149,8 @@ instead.
 | Parameter | Required | Description |
 |---|---|---|
 | `id` | yes | The question id to answer |
-| `chosen_option_id` | one with `quote` | The option being chosen: one of the question's option ids |
-| `quote` | one with `chosen_option_id` | The answer in the operator's own words (stored verbatim, capped at 16 KiB) |
+| `chosen_option_id` | one with `quote` | The option you pick: one of the question's option ids |
+| `quote` | one with `chosen_option_id` | Your own words. Optional when you pick an option, and the only thing needed when you do not. Whatever you type is saved exactly as written, with your choice, as the record of your decision, and the asker reads it as your answer (capped at 16 KiB) |
 | `supersedes` | no | The id of the answer this answer replaces (a changed mind; `409` if the id is wrong) |
 | `actor` | no | Who is answering (default: the caller of record) |
 

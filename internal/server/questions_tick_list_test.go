@@ -47,9 +47,15 @@ func TestQuestionTick(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 			t.Fatalf("decode GET state=%s: %v", state, err)
 		}
-		var viaHTTP bytes.Buffer
-		if err := json.Compact(&viaHTTP, env.Questions); err != nil {
-			t.Fatalf("compact GET state=%s: %v", state, err)
+		// Each HTTP row is the stored question plus the computed context_ref;
+		// decoding into the stored shape compares the stored records only.
+		var httpRows []autonomous.Question
+		if err := json.Unmarshal(env.Questions, &httpRows); err != nil {
+			t.Fatalf("decode GET rows state=%s: %v", state, err)
+		}
+		viaHTTP, err := json.Marshal(httpRows)
+		if err != nil {
+			t.Fatalf("marshal GET rows state=%s: %v", state, err)
 		}
 
 		tick := autonomous.ReadQuestionsForTick(store, state)
@@ -58,8 +64,8 @@ func TestQuestionTick(t *testing.T) {
 			t.Fatalf("marshal tick read state=%s: %v", state, err)
 		}
 
-		if !bytes.Equal(viaHTTP.Bytes(), viaTick) {
-			t.Errorf("state=%s: GET /api/questions and the tick read differ\n http: %s\n tick: %s", state, viaHTTP.String(), viaTick)
+		if !bytes.Equal(viaHTTP, viaTick) {
+			t.Errorf("state=%s: GET /api/questions and the tick read differ\n http: %s\n tick: %s", state, viaHTTP, viaTick)
 		}
 		if len(tick) != 1 || tick[0].ID != wantID {
 			t.Errorf("state=%s: tick read = %+v, want exactly question %s", state, tick, wantID)

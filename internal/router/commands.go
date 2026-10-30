@@ -137,6 +137,7 @@ const (
 	//   "question list"                              — open questions
 	//   "question show <id>"                         — question + answer
 	//   "question answer <id> <N|option-id> [quote…]" — answer one
+	//   "question quality"                           — effective quality policy
 	CmdQuestion CommandType = "question"
 
 	// BL220-G4 — orchestrator graph lifecycle over chat.
@@ -1875,6 +1876,10 @@ agent show <id>                 show agent detail
 agent logs <id>                 tail agent container logs
 agent kill <id>                 terminate an agent
 bind <session-id> <agent-id>    bind a session to a worker agent (use - to unbind)
+question list                   open operator questions
+question show <id>              a question, its options with trade-offs, and its answer
+%s
+question quality                effective question quality policy
 help                            show this help
 
 — v3.7.x parity (Sx2) —
@@ -1916,7 +1921,7 @@ exit_hook add name=<n> action=restart [cooldown=<sec>]
 exit_hook add name=<n> action=notify notify_session=<s> [message=<m>]
 exit_hook delete id=<id>         delete a hook
 exit_hook enable id=<id>         enable a hook
-exit_hook disable id=<id>        disable a hook`, hostname)
+exit_hook disable id=<id>        disable a hook`, hostname, questionAnswerHelp)
 }
 
 // parseBudget parses the tail of "budget …": "status" (optional) followed by

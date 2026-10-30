@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -3895,6 +3896,118 @@ type AutonomousQuestionsConfig struct {
 	// same reasoning as the toggles above: an explicit true or false must
 	// survive a YAML/JSON round trip and a PUT /api/config write.
 	WorkerMarker *bool `yaml:"worker_marker" json:"worker_marker"`
+
+	// The four keys below tune the question quality check and the queue row.
+	// Each is a pointer: nil means the key is absent and the Effective*
+	// helper returns the default. None carries omitempty, so an explicit
+	// value (including 0 or an empty pattern) survives a YAML/JSON round
+	// trip and a PUT /api/config write.
+	//
+	// QualityMode is off, warn or refuse (default warn).
+	QualityMode *string `yaml:"quality_mode" json:"quality_mode"`
+	// QualityMinTextChars is the fewest characters a question's text may
+	// have before the check flags it; a whole number >= 0 (default 60).
+	QualityMinTextChars *int `yaml:"quality_min_text_chars" json:"quality_min_text_chars"`
+	// QualityTrackerIDPattern is a regular expression that spots an internal
+	// tracker identifier in a question (default
+	// DefaultQuestionQualityTrackerIDPattern).
+	QualityTrackerIDPattern *string `yaml:"quality_tracker_id_pattern" json:"quality_tracker_id_pattern"`
+	// QueuePreviewLines is how many lines of a question the queue row shows
+	// before the expand control; a whole number >= 1 (default 3).
+	QueuePreviewLines *int `yaml:"queue_preview_lines" json:"queue_preview_lines"`
+}
+
+// Question quality modes (autonomous.questions.quality_mode).
+const (
+	QuestionQualityModeOff    = "off"
+	QuestionQualityModeWarn   = "warn"
+	QuestionQualityModeRefuse = "refuse"
+)
+
+// Defaults for the question quality and queue preview keys. The mode, the
+// minimum and the pattern repeat the shipped defaults of the quality check in
+// internal/autonomous/question_quality.go (config cannot import that package);
+// a test in internal/server holds the two copies equal.
+const (
+	DefaultQuestionQualityMode             = QuestionQualityModeWarn
+	DefaultQuestionQualityMinTextChars     = 60
+	DefaultQuestionQualityTrackerIDPattern = `\b[A-Z]{1,3}[0-9]{2,4}\b`
+	DefaultQuestionQueuePreviewLines       = 3
+)
+
+// EffectiveQualityMode returns the quality mode: warn when the key is absent.
+func (q AutonomousQuestionsConfig) EffectiveQualityMode() string {
+	if q.QualityMode == nil || *q.QualityMode == "" {
+		return DefaultQuestionQualityMode
+	}
+	return *q.QualityMode
+}
+
+// EffectiveQualityMinTextChars returns the minimum question length: 60 when
+// the key is absent. An explicit 0 stays 0 (no length check).
+func (q AutonomousQuestionsConfig) EffectiveQualityMinTextChars() int {
+	if q.QualityMinTextChars == nil {
+		return DefaultQuestionQualityMinTextChars
+	}
+	return *q.QualityMinTextChars
+}
+
+// EffectiveQualityTrackerIDPattern returns the tracker identifier pattern:
+// the default when the key is absent or empty.
+func (q AutonomousQuestionsConfig) EffectiveQualityTrackerIDPattern() string {
+	if q.QualityTrackerIDPattern == nil || *q.QualityTrackerIDPattern == "" {
+		return DefaultQuestionQualityTrackerIDPattern
+	}
+	return *q.QualityTrackerIDPattern
+}
+
+// EffectiveQueuePreviewLines returns how many lines of a question the queue
+// row shows before the expand control: 3 when the key is absent.
+func (q AutonomousQuestionsConfig) EffectiveQueuePreviewLines() int {
+	if q.QueuePreviewLines == nil {
+		return DefaultQuestionQueuePreviewLines
+	}
+	return *q.QueuePreviewLines
+}
+
+// ValidateQuestionQualityMode refuses a quality_mode other than off, warn or
+// refuse (empty reads as warn). The config file load, PUT /api/config and every surface that rides
+// it share this rule.
+func ValidateQuestionQualityMode(mode string) error {
+	switch mode {
+	case "", QuestionQualityModeOff, QuestionQualityModeWarn, QuestionQualityModeRefuse:
+		return nil
+	}
+	return fmt.Errorf("autonomous.questions.quality_mode: invalid value %q (valid values: %q, %q, %q, or empty for %q)",
+		mode, QuestionQualityModeOff, QuestionQualityModeWarn, QuestionQualityModeRefuse, DefaultQuestionQualityMode)
+}
+
+// ValidateQuestionQualityMinTextChars refuses a negative minimum.
+func ValidateQuestionQualityMinTextChars(n int) error {
+	if n < 0 {
+		return fmt.Errorf("autonomous.questions.quality_min_text_chars: %d is invalid (use a whole number >= 0; default %d)",
+			n, DefaultQuestionQualityMinTextChars)
+	}
+	return nil
+}
+
+// ValidateQuestionQualityTrackerIDPattern refuses a pattern that does not
+// compile as a regular expression. Empty is valid and reads as the default.
+func ValidateQuestionQualityTrackerIDPattern(pattern string) error {
+	if _, err := regexp.Compile(pattern); err != nil {
+		return fmt.Errorf("autonomous.questions.quality_tracker_id_pattern: %q does not compile as a regular expression (%v); use a valid pattern, or empty for the default",
+			pattern, err)
+	}
+	return nil
+}
+
+// ValidateQuestionQueuePreviewLines refuses a preview shorter than one line.
+func ValidateQuestionQueuePreviewLines(n int) error {
+	if n < 1 {
+		return fmt.Errorf("autonomous.questions.queue_preview_lines: %d is invalid (use a whole number >= 1; default %d)",
+			n, DefaultQuestionQueuePreviewLines)
+	}
+	return nil
 }
 
 // Decision gate modes (autonomous.questions.decision_gate_mode).
@@ -3925,14 +4038,36 @@ func ValidateDecisionGateMode(mode string) error {
 	return AutonomousQuestionsConfig{DecisionGateMode: mode}.validate()
 }
 
-// validate refuses a decision_gate_mode other than shadow or on.
+// validate refuses a decision_gate_mode other than shadow or on, and any
+// question quality or queue preview value outside its valid range.
 func (q AutonomousQuestionsConfig) validate() error {
 	switch q.DecisionGateMode {
 	case "", DecisionGateModeShadow, DecisionGateModeOn:
-		return nil
+	default:
+		return fmt.Errorf("autonomous.questions.decision_gate_mode: invalid value %q (valid values: %q, %q, or empty for %q)",
+			q.DecisionGateMode, DecisionGateModeShadow, DecisionGateModeOn, DecisionGateModeShadow)
 	}
-	return fmt.Errorf("autonomous.questions.decision_gate_mode: invalid value %q (valid values: %q, %q, or empty for %q)",
-		q.DecisionGateMode, DecisionGateModeShadow, DecisionGateModeOn, DecisionGateModeShadow)
+	if q.QualityMode != nil {
+		if err := ValidateQuestionQualityMode(*q.QualityMode); err != nil {
+			return err
+		}
+	}
+	if q.QualityMinTextChars != nil {
+		if err := ValidateQuestionQualityMinTextChars(*q.QualityMinTextChars); err != nil {
+			return err
+		}
+	}
+	if q.QualityTrackerIDPattern != nil {
+		if err := ValidateQuestionQualityTrackerIDPattern(*q.QualityTrackerIDPattern); err != nil {
+			return err
+		}
+	}
+	if q.QueuePreviewLines != nil {
+		if err := ValidateQuestionQueuePreviewLines(*q.QueuePreviewLines); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // EffectiveWorkerMarker reports whether the worker question marker is

@@ -114,6 +114,13 @@ var pendingTranslationKeys = map[string]bool{
 	// Supervisor watch settings label: English placeholder until the app
 	// translation lands.
 	"settings_supervisor_watch_silent_minutes": true,
+	// The question quality and queue preview settings labels ship as the
+	// English text in the four non-English bundles until the app translation
+	// lands.
+	"settings_automata_questions_quality_mode":               true,
+	"settings_automata_questions_quality_min_text_chars":     true,
+	"settings_automata_questions_quality_tracker_id_pattern": true,
+	"settings_automata_questions_queue_preview_lines":        true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {

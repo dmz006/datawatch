@@ -44,7 +44,7 @@ const questionContextsDesc = "one of none, prd, task, proposal or registry_row"
 // toolQuestionRaise raises an operator question on the daemon.
 func (s *Server) toolQuestionRaise() mcpsdk.Tool {
 	return mcpsdk.NewTool("question_raise",
-		mcpsdk.WithDescription("Raise a question to the operator on this daemon (the Automaton operator-question channel), so an automation blocked on a decision gets an answer back through its return path (event plus the polled GET, and into the asking session when return_path is set). Requires non-empty text and at least one option (a choice the operator can pick). asker: who is asking (default: the caller of record). context: "+questionContextsDesc+" (the daemon's store validates it and names the field in the 400). Returns 201 with the stored question (including its id, for question_get / question_answer). Proxies POST /api/questions; while the autonomous.questions.enabled switch is off the daemon 503s and names the switch. The CLI/PWA equivalents are the daemon's own question surfaces."),
+		mcpsdk.WithDescription("Raise a question to the operator on this daemon (the Automaton operator-question channel), so an automation blocked on a decision gets an answer back through its return path (event plus the polled GET, and into the asking session when return_path is set). Requires non-empty text and at least one option (a choice the operator can pick). asker: who is asking (default: the caller of record). context: "+questionContextsDesc+" (the daemon's store validates it and names the field in the 400). Returns 201 with the stored question (including its id, for question_get / question_answer). The daemon also checks how readable the question is (read the policy with question_quality). In warn mode the question is raised and the findings come back in the response under \"warnings\"; in refuse mode the question is not raised and the daemon answers 422 with the findings, so fix them and send it again. tradeoffs: what each option costs, as an object mapping an option id to its trade-off text. Proxies POST /api/questions; while the autonomous.questions.enabled switch is off the daemon 503s and names the switch. The CLI/PWA equivalents are the daemon's own question surfaces."),
 		mcpsdk.WithString("text",
 			mcpsdk.Required(),
 			mcpsdk.Description("The question itself, one line of what decision is needed."),
@@ -79,6 +79,9 @@ func (s *Server) toolQuestionRaise() mcpsdk.Tool {
 		),
 		mcpsdk.WithBoolean("return_path",
 			mcpsdk.Description("Also deliver the answer line into the asking session (default false; the event plus polled GET return path is always there)."),
+		),
+		mcpsdk.WithObject("tradeoffs",
+			mcpsdk.Description("What each option costs: an object mapping an option id to its trade-off text, e.g. {\"yes\": \"faster, but skips the review\"}. Fills an option that has no trade-offs of its own; an id that is not one of the options is a 400."),
 		),
 	)
 }
@@ -119,16 +122,16 @@ func (s *Server) toolQuestionGet() mcpsdk.Tool {
 // toolQuestionAnswer records an answer to a stored question.
 func (s *Server) toolQuestionAnswer() mcpsdk.Tool {
 	return mcpsdk.NewTool("question_answer",
-		mcpsdk.WithDescription("Record an answer to a stored operator question (surfaces as answered to the asker's return path). At least one of chosen_option_id or a non-blank quote is required: pick an option by the id the question carries, or answer in the operator's own words with a quote (stored verbatim, capped at 16 KiB). An answer is immutable — a changed mind is a new answer that supersedes the old one (supersedes: the id of the effective answer to replace). 409 when the question is no longer open or the supersedes target is wrong, 422 when the answer text looks like a secret (store it in the datawatch secrets store and refer to it as ${secret:name} instead). Returns 201 with the stored answer and the question's new state. Proxies POST /api/questions/{id}/answer with surface set to mcp."),
+		mcpsdk.WithDescription("Record an answer to a stored operator question (surfaces as answered to the asker's return path). Pick one of the question's options with chosen_option_id. Typing your own words with quote is optional when you pick an option, and it is the only thing needed when you do not pick one (at least one of the two is required). Whatever you type in quote is saved exactly as written, with your choice, as the record of your decision, and the asker reads it as your answer; it is never trimmed, reworded or re-encoded (capped at 16 KiB). An answer is immutable — a changed mind is a new answer that supersedes the old one (supersedes: the id of the effective answer to replace). 409 when the question is no longer open or the supersedes target is wrong, 422 when the answer text looks like a secret (store it in the datawatch secrets store and refer to it as ${secret:name} instead). Returns 201 with the stored answer and the question's new state. Proxies POST /api/questions/{id}/answer with surface set to mcp."),
 		mcpsdk.WithString("id",
 			mcpsdk.Required(),
 			mcpsdk.Description("Question id to answer."),
 		),
 		mcpsdk.WithString("chosen_option_id",
-			mcpsdk.Description("The option being chosen: one of the question's option ids. At least one of this or a non-blank quote is required."),
+			mcpsdk.Description("The option you pick: one of the question's option ids. At least one of this or a non-blank quote is required."),
 		),
 		mcpsdk.WithString("quote",
-			mcpsdk.Description("The answer in the operator's own words, stored verbatim. At least one of this or chosen_option_id is required."),
+			mcpsdk.Description("Your own words: optional when you pick an option, and the only thing needed when you do not (at least one of this or chosen_option_id is required). Whatever you type is saved exactly as written, with your choice, as the record of your decision, and the asker reads it as your answer."),
 		),
 		mcpsdk.WithString("supersedes",
 			mcpsdk.Description("Id of the current effective answer to replace (a changed mind); required by the daemon when answering a question that already has a current answer. Omit for the first answer."),
@@ -249,6 +252,9 @@ func (s *Server) handleQuestionRaise(ctx context.Context, req mcpsdk.CallToolReq
 	}
 	if req.GetBool("return_path", false) {
 		body["return_path"] = true
+	}
+	if tradeoffs, ok := req.GetArguments()["tradeoffs"].(map[string]any); ok && len(tradeoffs) > 0 {
+		body["tradeoffs"] = tradeoffs
 	}
 	respBody, err := s.proxyJSON(http.MethodPost, questionsPathBase, body)
 	if err != nil {
