@@ -8,22 +8,22 @@
 // salvage — the work branch and work tree should be releasable, but
 // never by force:
 //
-//  - the branch must belong to an Automaton that is finished or
-//    cancelled, and finished means NOT restarted: the current state of
-//    the store decides, never a remembered one;
-//  - no live session and no live lease may be using the work tree, so
-//    that no running or resumable work is deleted out from under
-//    itself;
-//  - the work tree must be clean (re-verifying with `git status
-//    --porcelain` at removal time, not trusting the earlier report), so
-//    uncommitted work is never destroyed;
-//  - the branch must be at least as old as the retention window, so
-//    freshly finished work stays reachable while an operator still
-//    looks at it;
-//  - the branch must be the main checkout of no working tree, so the
-//    primary checkout is never touched;
-//  - its commits must be all on the base project (re-verifying with
-//    rev-list at removal time), so nothing unique is lost.
+//   - the branch must belong to an Automaton that is finished or
+//     cancelled, and finished means NOT restarted: the current state of
+//     the store decides, never a remembered one;
+//   - no live session and no live lease may be using the work tree, so
+//     that no running or resumable work is deleted out from under
+//     itself;
+//   - the work tree must be clean (re-verifying with `git status
+//     --porcelain` at removal time, not trusting the earlier report), so
+//     uncommitted work is never destroyed;
+//   - the branch must be at least as old as the retention window, so
+//     freshly finished work stays reachable while an operator still
+//     looks at it;
+//   - the branch must be the main checkout of no working tree, so the
+//     primary checkout is never touched;
+//   - its commits must be all on the base project (re-verifying with
+//     rev-list at removal time), so nothing unique is lost.
 //
 // Removal itself is the strict pair `git worktree remove` (never with
 // --force) and `git branch -d` (never -D): if either one refuses, the
@@ -39,13 +39,13 @@
 //
 // Two entry points share the same path and the same safety criteria:
 //
-//  - ReleaseAutomatonWorktree is called from an ended Automaton's end
-//    paths (completed, cancelled) and from the merge-pending pass when
-//    the work has landed on the base project, releasing that Automaton's
-//    work branch and work tree;
-//  - CleanupWorktreesPass is the periodic safety net, called by the
-//    coordinator's idle cycle, removing up to the per-pass limit across
-//    every Automaton branch.
+//   - ReleaseAutomatonWorktree is called from an ended Automaton's end
+//     paths (completed, cancelled) and from the merge-pending pass when
+//     the work has landed on the base project, releasing that Automaton's
+//     work branch and work tree;
+//   - CleanupWorktreesPass is the periodic safety net, called by the
+//     coordinator's idle cycle, removing up to the per-pass limit across
+//     every Automaton branch.
 //
 // Every removal is logged to the Automaton's triage record (a note when
 // one exists, a record minted otherwise) and to the audit log, so an
@@ -114,12 +114,12 @@ const (
 // Stage names recorded on a failed entry: the step at which removal
 // stopped and the entry was left in place.
 const (
-	cleanupStageStatus   = "status_check"
-	cleanupStageSize     = "size_lookup"
-	cleanupStageAudit    = "audit_write"
-	cleanupStageRemove   = "worktree_remove"
-	cleanupStageBranch   = "branch_delete"
-	cleanupStageRecord   = "record"
+	cleanupStageStatus = "status_check"
+	cleanupStageSize   = "size_lookup"
+	cleanupStageAudit  = "audit_write"
+	cleanupStageRemove = "worktree_remove"
+	cleanupStageBranch = "branch_delete"
+	cleanupStageRecord = "record"
 )
 
 // WorktreeCleanupProbe is the small interface CleanupWorktrees needs to
@@ -309,7 +309,7 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 				continue
 			}
 			if strings.TrimSpace(status) != "" {
-				skip(cleanupSkipDirty, "the work tree has uncommitted changes: " + firstLine(status))
+				skip(cleanupSkipDirty, "the work tree has uncommitted changes: "+firstLine(status))
 				continue
 			}
 		}
@@ -354,13 +354,13 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 			size = s
 		}
 		details := map[string]any{
-			"branch":       e.Branch,
-			"worktree":     e.Worktree,
-			"bytes_freed":  size,
-			"base_branch":  base,
-			"reason":       e.Reason,
-			"age_seconds":  int64(age / time.Second),
-			"at":           opts.Now().Format(time.RFC3339),
+			"branch":      e.Branch,
+			"worktree":    e.Worktree,
+			"bytes_freed": size,
+			"base_branch": base,
+			"reason":      e.Reason,
+			"age_seconds": int64(age / time.Second),
+			"at":          opts.Now().Format(time.RFC3339),
 		}
 		if err := opts.Audit(worktreeCleanupAuditAction, details); err != nil {
 			failed(cleanupStageAudit, "audit log write: %v", err)
@@ -780,14 +780,31 @@ func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 		Probe:       probe,
 	})
 	m.worktreeOutcomeLog("release", res)
+	// cleanup status: this is the owner releasing its own work at its
+	// end of work (completed or cancelled); the net count in the status
+	// stays separate so the operator can see when the safety net is the
+	// one doing the work (cleanup_status.go).
+	if res.Mode != config.CleanupModeOff {
+		m.recordCleanupWorktree(res, cleanupSourceOwner)
+	}
 }
 
 // CleanupWorktreesPass is the periodic safety net: one cleanup pass
 // across every Automaton branch of the base repository, removing up to
 // the per-pass limit. It is called from the coordinator's idle cycle.
 // off mode does nothing (not even a git read); report mode records what
-// would be removed; on mode removes.
+// would be removed; on mode removes. The result is recorded into the
+// cleanup status under the net bucket (cleanup_status.go); an
+// off-mode pass does not touch the status.
 func (m *Manager) CleanupWorktreesPass() WorktreeCleanupResult {
+	res := m.cleanupWorktreesPassRun()
+	if res.Mode != config.CleanupModeOff {
+		m.recordCleanupWorktree(res, cleanupSourceNet)
+	}
+	return res
+}
+
+func (m *Manager) cleanupWorktreesPassRun() WorktreeCleanupResult {
 	m.mu.Lock()
 	repo := m.cfg.WorktreeBaseRepo
 	mode := m.cfg.Automation.EffectiveCleanupMode()

@@ -294,6 +294,15 @@ var claudeStartupAccepted sync.Map // key: sessID (string) → struct{}{}
 // bridge), opencode-acp (ACP structured API), subprocess (shell task wrapping).
 var tuiTaskDelivered sync.Map // key: sessID (string) → struct{}{}
 
+// scratchOwnerReleaseHook counts a worker session's own temporary scratch
+// release into the autonomous cleanup status (the owner bucket in
+// cleanup_status.go), so it stays separate from the safety-net sweep's count.
+// Once the autonomous manager starts up, it gets set to the manager's
+// RecordOwnerTempRelease; nil is a no-op (hand-launched test, autonomous
+// disabled), and it is read at session termination — at that point the
+// manager may have already started.
+var scratchOwnerReleaseHook func(count int)
+
 var (
 	cfgPath    string
 	verbose    bool
@@ -1689,13 +1698,24 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				keys[sess.TmuxSession] = true
 			}
 			keys[sess.ID] = true // defensive: a launch path keyed under the bare id
+			releasedTotal := 0
 			for k := range keys {
 				released, errs := scratch.ReleaseSession(k)
+				releasedTotal += released
 				if released > 0 {
 					debugf("scratch release for %s: removed %d leftover temp entr(ies) from session end", sess.FullID, released)
 				}
 				for _, e := range errs {
 					debugf("scratch release for %s: %v", sess.FullID, e)
+				}
+			}
+			if releasedTotal > 0 {
+				// cleanup status (cleanup_status.go): count the owner's own
+				// session-end release under the owner bucket, so the
+				// safety-net sweep's count stays separate and the operator
+				// can see when the net had to do the owner's work.
+				if scratchOwnerReleaseHook != nil {
+					scratchOwnerReleaseHook(releasedTotal)
 				}
 			}
 		})
@@ -6360,6 +6380,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
 			autonomousMgrRef = amgr // BL244 — expose for plugin context wiring below
+			// Session-end scratch releases by the owner are counted into the
+			// cleanup status (owner bucket) so the safety-net sweep's count
+			// stays separate (cleanup_status.go).
+			scratchOwnerReleaseHook = amgr.RecordOwnerTempRelease
 			// Planning/verification pairing check at startup. Each warning is
 			// written to the daemon log once; the status endpoint keeps them.
 			amgr.ReportPairingWarnings()

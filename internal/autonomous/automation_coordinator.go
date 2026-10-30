@@ -858,6 +858,15 @@ func (c *Coordinator) triagePass() {
 	// would-removes, on removes within the per-pass limit.
 	c.m.SweepDaemonTempPass()
 
+	// Disk check — one statfs per disk, the two the cleanup guards
+	// (worktree base and session temp dir). When a reading is at or
+	// above the disk_alert_percent, the disk alert fires — rate-limited
+	// so it is not re-raised every poll while the disk stays full
+	// (cleanup_status.go). It cannot fail the poll.
+	if due, st := c.m.CleanupDiskPass(); due {
+		c.alert("warn", "Disk almost full (Automaton cleanup)", cleanupDiskAlertBody(st))
+	}
+
 	for _, d := range due {
 		c.alert(d.level, d.title, d.body)
 	}

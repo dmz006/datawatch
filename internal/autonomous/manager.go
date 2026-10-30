@@ -914,6 +914,12 @@ type Manager struct {
 
 	coordinator *Coordinator // set by Coordinator.Start; nil until then
 
+	// Cleanup status (cleanup_status.go) — the in-memory + persisted
+	// record of the two safety-net passes and their disk readings.
+	// Owns its own lock; never guarded by mu. Created in NewManager;
+	// nil only for hand-rolled test Managers.
+	cleanupStatus *cleanupStatusRecorder
+
 	// pairingLogged records each pairing warning already written to the
 	// daemon log, so a config set does not repeat a warning it logged before.
 	pairingLogged map[string]bool
@@ -2031,6 +2037,11 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 		templates:   newTemplateStore(dataDir),
 		decompose:   decompose,
 		types:       types,
+		// cleanup status — in memory and persisted next to the
+		// merge-shadow record in the same data directory, so a restart
+		// keeps the last run and does not re-alert an already-alerted
+		// disk (cleanup_status.go).
+		cleanupStatus: newCleanupStatusRecorder(st.dir),
 	}
 	m.initGuardrailLibrary() // BL303 S2
 	m.lifecycleBus()         // BL427 — create dispatcher + cache hostname
@@ -5425,6 +5436,20 @@ func (m *Manager) reconcileStuckTasks() {
 // Done on a nil context.
 func (m *Manager) run(ctx context.Context) {
 	m.reconcileStuckTasks()
+
+	// Daemon start — clean as we go, not as a cleanup job: run both
+	// safety-net passes once, before the first poll, so leftovers from
+	// before this process started are handled immediately. The owner's
+	// end-of-work paths should have released everything, and a pass
+	// error is recorded on the cleanup status, never fatal: the daemon
+	// start cannot fail because of a cleanup.
+	m.CleanupWorktreesPass()
+	m.SweepDaemonTempPass()
+	// Disk check — the same rate-limited alert the poll raises, so a
+	// full disk is surfaced at start instead of on the first idle tick.
+	if due, st := m.CleanupDiskPass(); due {
+		m.alertCleanupDisk(st)
+	}
 
 	interval := time.Duration(m.cfg.PollIntervalSeconds) * time.Second
 	if interval <= 0 {

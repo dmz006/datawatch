@@ -240,8 +240,18 @@ func dirBytes(root string) (total int64) {
 // and the same safety rules (only created-and-recorded paths, only ended
 // sessions, never a live session, never a symlink, bounded to the temp
 // root). off mode does nothing. The result is logged and, like the
-// worktree pass, recorded in the audit stream.
+// worktree pass, recorded in the audit stream and in the cleanup status
+// under the net bucket (cleanup_status.go); an off-mode sweep does not
+// touch the status.
 func (m *Manager) SweepDaemonTempPass() TempSweepResult {
+	res := m.sweepDaemonTempPassRun()
+	if res.Mode != config.CleanupModeOff {
+		m.recordCleanupTemp(res, cleanupSourceNet)
+	}
+	return res
+}
+
+func (m *Manager) sweepDaemonTempPassRun() TempSweepResult {
 	m.mu.Lock()
 	mode := m.cfg.Automation.EffectiveCleanupMode()
 	retention := time.Duration(m.cfg.Automation.EffectiveCleanupRetentionHours()) * time.Hour
