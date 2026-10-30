@@ -20,6 +20,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+### Fixed
+
+- **The Go test suites no longer leave scratch files in the temp directory.** Tests now get their throwaway directories from the test framework, or register a cleanup right after creating one, and the temp-directory leak guard fails the run — naming the surviving entry and the package that left it — when any scratch directory is left behind. `make test-tmp-guard` runs the guard in full mode over every package in the repository, while a normal `go test ./...` keeps the same check on a small default package list. Leftovers of a killed run can be cleared with `make clean-test-tmp`, which removes only stale throwaway test scratch directories older than one hour — it never follows symlinks and never touches anything else in the temp directory.
+
 ## v9.42.1 — MCP session tests no longer race their temp dir cleanup
 
 ### Fixed
