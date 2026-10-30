@@ -33,6 +33,10 @@ Subcommands:
                                   Triage read: the failed and blocked Automata waiting for operator triage,
                                   newest first, beside the alert threshold — the same text the comm verb
                                   (autonomous triage) and the triage alert show
+  merge [--json]                  Merge state: the mode, the alert threshold and the finished Automata whose
+                                  work branch is not on main yet (read only)
+  safe-to-delete [--json]         Automaton branches and worktrees that are safe to delete, and those held back
+                                  (report only, nothing is deleted)
   config-get                      Read current autonomous config
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
@@ -203,6 +207,8 @@ Subcommands:
 		newAutonomousEventsCmd(),
 		// Triage read (docs/plans/2026-10-26-autonomous-triage-read-route.md).
 		newAutonomousTriageCmd(),
+		newAutonomousMergeCmd(),
+		newAutonomousSafeToDeleteCmd(),
 	)
 	return cmd
 }
