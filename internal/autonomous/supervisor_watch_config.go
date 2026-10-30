@@ -31,6 +31,18 @@ const (
 // records a silence finding.
 const DefaultSupervisorWatchSilentMinutes = 60
 
+// DefaultSupervisorWatchPollSeconds — the
+// autonomous.automation.supervisor_watch.poll_seconds default: the
+// configured coordinator poll interval (whole seconds) the
+// script-record staleness window is measured against (a record is
+// stale at 3 times the effective interval).
+const DefaultSupervisorWatchPollSeconds = 60
+
+// SupervisorWatchMinPollSeconds — the minimum configured poll interval
+// (whole seconds). An explicitly set value below it is refused on every
+// write path (mirroring the repo CI watch's poll_seconds rule).
+const SupervisorWatchMinPollSeconds = 60
+
 // SupervisorWatchConfig — the supervisor watch knobs
 // (autonomous.automation.supervisor_watch.*).
 //
@@ -49,6 +61,14 @@ const DefaultSupervisorWatchSilentMinutes = 60
 //     DefaultSupervisorWatchSilentMinutes (60); an explicit 0 keeps the
 //     silence window at zero and survives a merge round trip; a negative
 //     value is refused on every write path.
+//
+//   - PollSeconds: the configured coordinator poll interval (whole
+//     seconds) the supervisor watch pass is expected to run at and the
+//     script-record staleness window is measured against (stale at 3
+//     times the effective interval). Unset (0) reads
+//     DefaultSupervisorWatchPollSeconds (60); an explicitly set value
+//     below SupervisorWatchMinPollSeconds (60), like a negative one, is
+//     refused on every write path.
 //
 //   - ScriptOutputPath: optional repository-relative or absolute path of
 //     the oracle script's record file (the findings this watch re-raises
@@ -77,6 +97,12 @@ type SupervisorWatchConfig struct {
 	// DefaultSupervisorWatchSilentMinutes (60) default, while an
 	// explicit 0 must survive a round trip.
 	SilentMinutes *int `yaml:"silent_minutes,omitempty" json:"silent_minutes,omitempty"`
+
+	// PollSeconds is the configured coordinator poll interval (whole
+	// seconds). 0 is unset and reads DefaultSupervisorWatchPollSeconds
+	// (60) via EffectivePollSeconds; an explicitly set value below
+	// SupervisorWatchMinPollSeconds (60) is refused on the write paths.
+	PollSeconds int `yaml:"poll_seconds,omitempty" json:"poll_seconds,omitempty"`
 
 	ScriptOutputPath    string `yaml:"script_output_path,omitempty" json:"script_output_path,omitempty"`
 	TmuxRestartBaseline string `yaml:"tmux_restart_baseline,omitempty" json:"tmux_restart_baseline,omitempty"`
@@ -127,6 +153,21 @@ func (c SupervisorWatchConfig) EffectiveSilentMinutes() int {
 	return *c.SilentMinutes
 }
 
+// EffectivePollSeconds returns the configured coordinator poll interval
+// in effect (whole seconds): an unset (0) value reads the
+// DefaultSupervisorWatchPollSeconds (60) default, while an explicit
+// value below SupervisorWatchMinPollSeconds (60), like a negative one,
+// is refused on the write paths, so this never has to guess for it. The
+// script-record staleness window is 3 times this value. This accessor
+// is the only place the 60-second default is applied; a caller never
+// writes the literal.
+func (c SupervisorWatchConfig) EffectivePollSeconds() int {
+	if c.PollSeconds == 0 {
+		return DefaultSupervisorWatchPollSeconds
+	}
+	return c.PollSeconds
+}
+
 // EffectiveWorkingModel returns the working model in effect, trimmed:
 // an unset (blank) value stays blank, which disables the
 // model_not_resident check — there is no default working model. This
@@ -147,6 +188,7 @@ func DefaultSupervisorWatchConfig() SupervisorWatchConfig {
 		Mode:          SupervisorWatchModeShadow,
 		AlertMinutes:  &alert,
 		SilentMinutes: &silent,
+		PollSeconds:   DefaultSupervisorWatchPollSeconds,
 	}
 }
 
@@ -192,6 +234,14 @@ func ValidateSupervisorWatchConfig(c SupervisorWatchConfig) error {
 		if err := ValidateSupervisorWatchMinutes("silent_minutes", *c.SilentMinutes); err != nil {
 			return err
 		}
+	}
+	if c.PollSeconds < 0 {
+		return fmt.Errorf("autonomous.automation.supervisor_watch.poll_seconds: %d must not be negative (0 = unset, which reads the %d-second default)",
+			c.PollSeconds, DefaultSupervisorWatchPollSeconds)
+	}
+	if c.PollSeconds > 0 && c.PollSeconds < SupervisorWatchMinPollSeconds {
+		return fmt.Errorf("autonomous.automation.supervisor_watch.poll_seconds: %d must be a whole number >= %d (unset reads the %d-second default)",
+			c.PollSeconds, SupervisorWatchMinPollSeconds, DefaultSupervisorWatchPollSeconds)
 	}
 	return nil
 }

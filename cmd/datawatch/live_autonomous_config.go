@@ -132,6 +132,7 @@ func repoCIWatchFromYAML(in config.RepoCIWatchConfig) autonomouspkg.RepoCIWatchC
 func supervisorWatchFromYAML(in config.SupervisorWatchConfig) autonomouspkg.SupervisorWatchConfig {
 	out := autonomouspkg.SupervisorWatchConfig{
 		Mode:                in.Mode,
+		PollSeconds:         in.PollSeconds,
 		ScriptOutputPath:    in.ScriptOutputPath,
 		TmuxRestartBaseline: in.TmuxRestartBaseline,
 		MainCheckout:        in.MainCheckout,

@@ -3418,6 +3418,17 @@ const (
 	// silent_minutes default: an Automaton session may go silent this
 	// many minutes before the watch records a silence finding.
 	DefaultSupervisorWatchSilentMinutes = 60
+
+	// DefaultSupervisorWatchPollSeconds — the supervisor watch
+	// poll_seconds default: the configured coordinator poll interval
+	// (whole seconds) the script-record staleness window is measured
+	// against (a record is stale at 3 times the effective interval).
+	DefaultSupervisorWatchPollSeconds = 60
+
+	// SupervisorWatchMinPollSeconds — the minimum configured poll
+	// interval (whole seconds); an explicitly set value below it is
+	// refused on every write path.
+	SupervisorWatchMinPollSeconds = 60
 )
 
 // SupervisorWatchConfig — the supervisor watch knobs
@@ -3438,6 +3449,13 @@ const (
 // DefaultSupervisorWatchSilentMinutes (60) while an explicit 0 must
 // survive a round trip. A negative value is rejected the same way.
 //
+// PollSeconds is the configured coordinator poll interval (whole
+// seconds) the script-record staleness window is measured against
+// (stale at 3 times the effective interval). An unset value (0) reads
+// DefaultSupervisorWatchPollSeconds (60) via EffectivePollSeconds(); an
+// explicitly set value below SupervisorWatchMinPollSeconds (60), like a
+// negative one, is refused on every write path.
+//
 // ScriptOutputPath is the optional path of the oracle script's record
 // file; empty (the zero value) means the script has not published one.
 // TmuxRestartBaseline is the optional baseline the tmux_restart finding
@@ -3448,6 +3466,7 @@ type SupervisorWatchConfig struct {
 	Mode                string `yaml:"mode" json:"mode"`
 	AlertMinutes        *int   `yaml:"alert_minutes,omitempty" json:"alert_minutes,omitempty"`
 	SilentMinutes       *int   `yaml:"silent_minutes,omitempty" json:"silent_minutes,omitempty"`
+	PollSeconds         int    `yaml:"poll_seconds,omitempty" json:"poll_seconds,omitempty"`
 	ScriptOutputPath    string `yaml:"script_output_path,omitempty" json:"script_output_path,omitempty"`
 	TmuxRestartBaseline string `yaml:"tmux_restart_baseline,omitempty" json:"tmux_restart_baseline,omitempty"`
 	MainCheckout        string `yaml:"main_checkout,omitempty" json:"main_checkout,omitempty"`
@@ -3490,6 +3509,21 @@ func (c SupervisorWatchConfig) EffectiveSilentMinutes() int {
 		return DefaultSupervisorWatchSilentMinutes
 	}
 	return *c.SilentMinutes
+}
+
+// EffectivePollSeconds returns the configured coordinator poll interval
+// in effect (whole seconds the script-record staleness window is
+// measured against): an unset value (0) reads the
+// DefaultSupervisorWatchPollSeconds (60) default, while an explicit
+// value below SupervisorWatchMinPollSeconds (60), like a negative one,
+// is refused on the write paths, so this never has to guess for it. This
+// accessor is the only place the 60-second default is applied; a caller
+// never writes the literal.
+func (c SupervisorWatchConfig) EffectivePollSeconds() int {
+	if c.PollSeconds == 0 {
+		return DefaultSupervisorWatchPollSeconds
+	}
+	return c.PollSeconds
 }
 
 // ValidateSupervisorWatchMode accepts the three legal supervisor watch
@@ -3535,6 +3569,14 @@ func validateSupervisorWatch(c SupervisorWatchConfig) error {
 		if err := validateSupervisorWatchMinutes("silent_minutes", *c.SilentMinutes); err != nil {
 			return err
 		}
+	}
+	if c.PollSeconds < 0 {
+		return fmt.Errorf("autonomous.automation.supervisor_watch.poll_seconds: %d must not be negative (0 = unset, which reads the %d-second default)",
+			c.PollSeconds, DefaultSupervisorWatchPollSeconds)
+	}
+	if c.PollSeconds > 0 && c.PollSeconds < SupervisorWatchMinPollSeconds {
+		return fmt.Errorf("autonomous.automation.supervisor_watch.poll_seconds: %d must be a whole number >= %d (unset reads the %d-second default)",
+			c.PollSeconds, SupervisorWatchMinPollSeconds, DefaultSupervisorWatchPollSeconds)
 	}
 	return nil
 }

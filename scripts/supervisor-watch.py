@@ -166,7 +166,11 @@ def map_finding(text):
         return "worktree_no_gomod", m.group(1)
     m = re.match(r"^SILENT (\S+)", text)
     if m:
-        return "worktree_silent", m.group(1)
+        # The printed line is "SILENT <id>: ...", so \S+ catches the trailing
+        # colon. The daemon-side watch keys this finding by the bare Automaton
+        # id, so strip the colon — keeping it would make every silent
+        # worktree a false one-sided difference in the compare.
+        return "worktree_silent", m.group(1).rstrip(":")
     if text.startswith("MAIN checkout"):
         return "main_checkout_dirty", ""
     m = re.search(r"run (\d+)", text)

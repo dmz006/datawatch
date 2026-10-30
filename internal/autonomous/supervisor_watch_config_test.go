@@ -2,6 +2,7 @@ package autonomous
 
 import (
 	"testing"
+	"time"
 )
 
 // TestSupervisorWatchConfigDefaultModeUnset — an unset or empty mode reads
@@ -161,6 +162,50 @@ func TestSupervisorWatchConfigSilentDefault(t *testing.T) {
 	if got := DefaultSupervisorWatchConfig().EffectiveSilentMinutes(); got != DefaultSupervisorWatchSilentMinutes {
 		t.Errorf("DefaultSupervisorWatchConfig() EffectiveSilentMinutes() = %d, want %d",
 			got, DefaultSupervisorWatchSilentMinutes)
+	}
+}
+
+// TestSupervisorWatchConfigPollSeconds — an unset (0) poll interval reads
+// the 60-second default, an explicit legal value is kept, and the
+// staleness window the compare measures against is 3 times the effective
+// interval. Negative and below-minimum values are refused.
+func TestSupervisorWatchConfigPollSeconds(t *testing.T) {
+	var unset SupervisorWatchConfig
+	if got, want := unset.EffectivePollSeconds(), DefaultSupervisorWatchPollSeconds; got != want {
+		t.Errorf("unset poll_seconds: EffectivePollSeconds() = %d, want the %d default", got, want)
+	}
+
+	legal := 120
+	if got := (SupervisorWatchConfig{PollSeconds: legal}).EffectivePollSeconds(); got != legal {
+		t.Errorf("explicit %d: EffectivePollSeconds() = %d, want %d", legal, got, legal)
+	}
+
+	atMin := SupervisorWatchMinPollSeconds
+	if got := (SupervisorWatchConfig{PollSeconds: atMin}).EffectivePollSeconds(); got != atMin {
+		t.Errorf("explicit %d (the minimum): EffectivePollSeconds() = %d, want %d", atMin, got, atMin)
+	}
+
+	if got := DefaultSupervisorWatchConfig().EffectivePollSeconds(); got != DefaultSupervisorWatchPollSeconds {
+		t.Errorf("DefaultSupervisorWatchConfig() EffectivePollSeconds() = %d, want %d",
+			got, DefaultSupervisorWatchPollSeconds)
+	}
+
+	// The staleness window scales with the effective interval: 3x.
+	if got, want := supervisorWatchScriptStale(SupervisorWatchConfig{}), 3*time.Duration(DefaultSupervisorWatchPollSeconds)*time.Second; got != want {
+		t.Errorf("default stale window = %v, want %v", got, want)
+	}
+	if got, want := supervisorWatchScriptStale(SupervisorWatchConfig{PollSeconds: 120}), 6*time.Minute; got != want {
+		t.Errorf("poll_seconds=120 stale window = %v, want %v", got, want)
+	}
+
+	// Negative values are refused; the minimum is legal.
+	for _, bad := range []int{-1, 59, 1} {
+		if err := ValidateSupervisorWatchConfig(SupervisorWatchConfig{PollSeconds: bad}); err == nil {
+			t.Errorf("Validate(poll_seconds=%d): accepted, want refused", bad)
+		}
+	}
+	if err := ValidateSupervisorWatchConfig(SupervisorWatchConfig{PollSeconds: SupervisorWatchMinPollSeconds}); err != nil {
+		t.Errorf("Validate(poll_seconds=%d): %v, want accepted", SupervisorWatchMinPollSeconds, err)
 	}
 }
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,3 +98,56 @@ func TestSupervisorWatchConfigLoads(t *testing.T) {
 		}
 	}
 }
+
+// TestSupervisorWatchConfigPollSecondsLoads — the poll_seconds config-load
+// path: unset reads the 60-second default, a legal override is kept, and a
+// negative value or one below the 60-second minimum is refused (the write
+// paths refuse the same set).
+func TestSupervisorWatchConfigPollSecondsLoads(t *testing.T) {
+	load := func(t *testing.T, body string) (*Config, error) {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatalf("write config file: %v", err)
+		}
+		return Load(path)
+	}
+
+	// Unset: loads clean, the poll interval reads the 60-second default.
+	cfg, err := load(t, "agent:\n  enabled: true\n")
+	if err != nil {
+		t.Fatalf("Load (unset supervisor_watch): %v", err)
+	}
+	if got, want := cfg.Autonomous.Automation.SupervisorWatch.EffectivePollSeconds(), DefaultSupervisorWatchPollSeconds; got != want {
+		t.Errorf("unset block: effective poll_seconds = %d, want the %d default", got, want)
+	}
+
+	// A legal override (>= the minimum) is kept, and the minimum itself loads.
+	for _, v := range []int{SupervisorWatchMinPollSeconds, 120, 300} {
+		body := "autonomous:\n  automation:\n    supervisor_watch:\n      poll_seconds: " + itoa(v) + "\n"
+		cfg, err := load(t, body)
+		if err != nil {
+			t.Errorf("Load (poll_seconds: %d): %v, want accepted", v, err)
+			continue
+		}
+		if got := cfg.Autonomous.Automation.SupervisorWatch.EffectivePollSeconds(); got != v {
+			t.Errorf("Load (poll_seconds: %d): effective = %d, want %d", v, got, v)
+		}
+	}
+
+	// A negative value or one below the minimum is refused on config load,
+	// each naming the poll_seconds key.
+	for _, v := range []int{-1, 1, 59} {
+		body := "autonomous:\n  automation:\n    supervisor_watch:\n      poll_seconds: " + itoa(v) + "\n"
+		_, err := load(t, body)
+		if err == nil {
+			t.Errorf("Load (poll_seconds: %d): accepted, want refused", v)
+			continue
+		}
+		if !strings.Contains(err.Error(), "poll_seconds") {
+			t.Errorf("Load (poll_seconds: %d): error %q does not name the poll_seconds key", v, err)
+		}
+	}
+}
+
+func itoa(v int) string { return fmt.Sprintf("%d", v) }

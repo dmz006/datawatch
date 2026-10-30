@@ -8196,6 +8196,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case supervisorWatchKeyPrefix + "mode",
 			supervisorWatchKeyPrefix + "alert_minutes",
 			supervisorWatchKeyPrefix + "silent_minutes",
+			supervisorWatchKeyPrefix + "poll_seconds",
 			supervisorWatchKeyPrefix + "script_output_path",
 			supervisorWatchKeyPrefix + "tmux_restart_baseline",
 			supervisorWatchKeyPrefix + "main_checkout":
@@ -9349,6 +9350,7 @@ func supervisorWatchSurface(c config.SupervisorWatchConfig) map[string]interface
 		"mode":                  c.EffectiveMode(),
 		"alert_minutes":         c.EffectiveAlertMinutes(),
 		"silent_minutes":        c.EffectiveSilentMinutes(),
+		"poll_seconds":          c.EffectivePollSeconds(),
 		"script_output_path":    c.ScriptOutputPath,
 		"tmux_restart_baseline": c.TmuxRestartBaseline,
 		"main_checkout":         c.MainCheckout,
@@ -9370,6 +9372,20 @@ func validateSupervisorWatchWhole(field string, v interface{}) error {
 	return nil
 }
 
+// parseSupervisorWatchWhole accepts a whole number for one supervisor watch
+// key (the CLI and the comm channel may send plain ints or JSON numbers;
+// fractional, string and missing values are refused with a clear error).
+func parseSupervisorWatchWhole(field string, v interface{}) (int, error) {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) {
+		return 0, fmt.Errorf("%s%s: must be a whole number", supervisorWatchKeyPrefix, field)
+	}
+	return int(f), nil
+}
+
 // validateSupervisorWatchPatch checks every autonomous.automation
 // .supervisor_watch.* value present in the patch before anything is
 // applied, so one bad value rejects the whole PUT rather than being
@@ -9389,6 +9405,16 @@ func validateSupervisorWatchPatch(patch map[string]interface{}) error {
 			if verr := validateSupervisorWatchWhole(field, v); verr != nil {
 				return verr
 			}
+		}
+	}
+	if v, ok := patch[supervisorWatchKeyPrefix+"poll_seconds"]; ok {
+		n, err := parseSupervisorWatchWhole("poll_seconds", v)
+		if err != nil {
+			return err
+		}
+		if n < config.SupervisorWatchMinPollSeconds {
+			return fmt.Errorf("%spoll_seconds: %d must be a whole number >= %d (unset reads the %d-second default)",
+				supervisorWatchKeyPrefix, n, config.SupervisorWatchMinPollSeconds, config.DefaultSupervisorWatchPollSeconds)
 		}
 	}
 	for _, field := range []string{"script_output_path", "tmux_restart_baseline", "main_checkout"} {
@@ -9418,6 +9444,13 @@ func applySupervisorWatchValue(swc *config.SupervisorWatchConfig, field string, 
 	case "silent_minutes":
 		if n, ok := toInt(v); ok && n >= 0 {
 			swc.SilentMinutes = &n
+		}
+	case "poll_seconds":
+		// An explicitly set value below the minimum is already refused by
+		// validateSupervisorWatchPatch and by config.load validation; a value
+		// that slips past those checks is left unchanged rather than stored.
+		if n, err := parseSupervisorWatchWhole("poll_seconds", v); err == nil && n >= config.SupervisorWatchMinPollSeconds {
+			swc.PollSeconds = n
 		}
 	case "script_output_path":
 		if str, ok := v.(string); ok {

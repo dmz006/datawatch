@@ -8,7 +8,8 @@
 // persisted next to the finding records in supervisor_watch_record.go.
 //
 // A missing record file, a stale one (older than three times the
-// supervisor watch poll interval), and an unparseable one all mean
+// configured supervisor watch poll interval — poll_seconds via
+// EffectivePollSeconds), and an unparseable one all mean
 // "script output unavailable" — not a disagreement. Such a pass records
 // no comparison at all, so the agreement history never learns about a
 // missing oracle as if the oracle had said something else.
@@ -29,10 +30,17 @@ import (
 const SupervisorWatchComparisonLen = 500
 
 // supervisorWatchScriptStale is the age at which the oracle script's
-// record file no longer counts: older than three times the supervisor
-// watch poll interval (supervisorWatchMinPollInterval, the guard the
-// pass in supervisor_watch_pass.go keeps between consecutive passes).
-const supervisorWatchScriptStale = 3 * supervisorWatchMinPollInterval
+// record file no longer counts: older than three times the effective
+// coordinator poll interval (the configured poll_seconds via
+// cfg.EffectivePollSeconds() — an unset poll_seconds reads the
+// 60-second default, so at the default the window is 3 minutes).
+// supervisorWatchMinPollInterval, the guard the pass in
+// supervisor_watch_pass.go keeps between consecutive passes, is a floor
+// on that pass cadence, not the interval the staleness window measures
+// against.
+func supervisorWatchScriptStale(cfg SupervisorWatchConfig) time.Duration {
+	return 3 * time.Duration(cfg.EffectivePollSeconds()) * time.Second
+}
 
 // SupervisorWatchComparison — the result of one pass's comparison
 // between the daemon-side supervisor watch's findings and the oracle
@@ -154,13 +162,14 @@ func loadSupervisorWatchScriptRecord(path string) (supervisorWatchScriptRecord, 
 
 // supervisorWatchScriptFresh reports whether the record file was written
 // recently enough to be comparable against this pass: a record with a
-// missing instant, or one older than supervisorWatchScriptStale (three
-// poll intervals), is "script output unavailable", not a disagreement.
-func supervisorWatchScriptFresh(rec supervisorWatchScriptRecord, now time.Time) bool {
+// missing instant, or one older than maxAge (the configured poll
+// interval measured against; see supervisorWatchScriptStale), is
+// "script output unavailable", not a disagreement.
+func supervisorWatchScriptFresh(rec supervisorWatchScriptRecord, now time.Time, maxAge time.Duration) bool {
 	if rec.At <= 0 {
 		return false
 	}
-	return now.Sub(time.Unix(rec.At, 0)) <= supervisorWatchScriptStale
+	return now.Sub(time.Unix(rec.At, 0)) <= maxAge
 }
 
 // supervisorWatchCompare cross-checks this pass's findings against the
@@ -178,7 +187,7 @@ func (m *Manager) supervisorWatchCompare(cfg SupervisorWatchConfig, watch []Supe
 		return nil
 	}
 	rec, err := loadSupervisorWatchScriptRecord(cfg.ScriptOutputPath)
-	if err != nil || !supervisorWatchScriptFresh(rec, now) {
+	if err != nil || !supervisorWatchScriptFresh(rec, now, supervisorWatchScriptStale(cfg)) {
 		return nil
 	}
 
@@ -308,7 +317,9 @@ func (s *SupervisorWatchStore) persistComparisons(file supervisorWatchCompareFil
 // the last SupervisorWatchComparisonLen, 500), applies it to the
 // per-day agreement summary, and persists both. It returns a copy of
 // the recorded comparison; a persist failure rolls the change back and
-// returns the error.
+// returns the error. compareMu is held across the persist, so that
+// roll-back can only undo this call's change — never one a concurrent
+// caller recorded.
 func (s *SupervisorWatchStore) RecordComparison(c SupervisorWatchComparison) (*SupervisorWatchComparison, error) {
 	in := c
 	if in.WatchKinds == nil {
@@ -350,15 +361,18 @@ func (s *SupervisorWatchStore) RecordComparison(c SupervisorWatchComparison) (*S
 	for k, v := range s.compareDays {
 		newFile.Days[k] = v
 	}
-	s.compareMu.Unlock()
 
+	// Persist while holding compareMu: the restore below can only roll
+	// back this call's change, because nothing else can interleave between
+	// the snapshot above and that restore (and the persisted file order
+	// matches the in-memory history order).
 	if err := s.persistComparisons(newFile); err != nil {
-		s.compareMu.Lock()
 		s.comparisons = snap.Comparisons
 		s.compareDays = snap.Days
 		s.compareMu.Unlock()
 		return nil, err
 	}
+	s.compareMu.Unlock()
 	out := in
 	return &out, nil
 }

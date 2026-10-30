@@ -212,13 +212,18 @@ func TestSupervisorWatchCompareMissingFile(t *testing.T) {
 }
 
 // TestSupervisorWatchCompareStaleFile pins the freshness rule: a
-// record file older than three poll intervals is "unavailable" — the
-// pass records no comparison and no disagreement — while a record
-// written this pass is comparable.
+// record file older than three times the effective poll interval is
+// "unavailable" — the pass records no comparison and no disagreement —
+// while a record written within the window is comparable. The window
+// scales with the configured poll interval (poll_seconds via
+// EffectivePollSeconds), not with the fixed one-minute pass guard.
 func TestSupervisorWatchCompareStaleFile(t *testing.T) {
 	m := swNewManager(t)
 	now := time.Now()
 
+	// At the default interval (unset, reads 60 seconds) the window is
+	// 3 minutes, so a 4-minute-old record is unavailable: the pass
+	// records nothing for it.
 	stale := swcWriteRecord(t, t.TempDir(), now.Add(-4*time.Minute),
 		[2]string{"tmux_restart", "local"},
 	)
@@ -230,20 +235,28 @@ func TestSupervisorWatchCompareStaleFile(t *testing.T) {
 		t.Errorf("store history = %+v, want empty (stale file must not count)", got)
 	}
 
-	// A record written within the window is comparable; both directions of
-	// the explicit fresh-vs-stale verdict hold either way.
-	fresh := swcWriteRecord(t, t.TempDir(), now,
-		[2]string{"tmux_restart", "local"},
-	)
-	if !supervisorWatchScriptFresh(swcRecord(t, fresh), now) {
-		t.Error("a record written this pass reads stale, want fresh")
+	// The window is 3 times the configured interval: the same
+	// 4-minute-old record is fresh when poll_seconds is set to 120
+	// (window 6 minutes), so the pass compares it and the two sides
+	// agree.
+	cfgPoll := cfg
+	cfgPoll.PollSeconds = 120
+	if cmp := m.supervisorWatchCompare(cfgPoll, swcFindings([2]string{"tmux_restart", "local"}), now); cmp == nil || !cmp.Agreed {
+		t.Fatalf("record fresh at the configured interval not compared: %+v (want: agreed)", cmp)
 	}
-	if supervisorWatchScriptFresh(supervisorWatchScriptRecord{At: now.Add(-4 * time.Minute).Unix()}, now) {
-		t.Error("a 4-minute-old record (past 3 poll intervals) reads fresh, want stale")
+
+	// The windows scale with the effective interval, in both directions.
+	if got, want := supervisorWatchScriptStale(cfg), 3*time.Duration(cfg.EffectivePollSeconds())*time.Second; got != want {
+		t.Errorf("unset interval: stale window = %s, want %s (3 x the 60-second default)", got, want)
 	}
-	cfg = swcSetScriptPath(t, m, fresh)
-	if cmp := m.supervisorWatchCompare(cfg, swcFindings([2]string{"tmux_restart", "local"}), now); cmp == nil || !cmp.Agreed {
-		t.Errorf("fresh record not compared: %+v", cmp)
+	if got, want := supervisorWatchScriptStale(cfgPoll), 6*time.Minute; got != want {
+		t.Errorf("configured interval 120: stale window = %s, want 6m0s (3 x 120s)", got)
+	}
+	if !supervisorWatchScriptFresh(swcRecord(t, stale), now, supervisorWatchScriptStale(cfgPoll)) {
+		t.Error("a 4-minute-old record reads stale under a 6-minute window, want fresh")
+	}
+	if supervisorWatchScriptFresh(supervisorWatchScriptRecord{At: now.Add(-8 * time.Minute).Unix()}, now, supervisorWatchScriptStale(cfgPoll)) {
+		t.Error("an 8-minute-old record reads fresh under a 6-minute window, want stale")
 	}
 }
 
