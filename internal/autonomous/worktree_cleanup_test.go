@@ -67,12 +67,6 @@ func (r *recordedAudit) events(action string) []map[string]any {
 	return out
 }
 
-func (r *recordedAudit) anyFailed() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.failure != ""
-}
-
 type recordNote struct{ branch, text string }
 
 type recordedRecords struct {
@@ -222,14 +216,6 @@ func runCoreWith(g MergeGitRunner, probe WorktreeCleanupProbe, report SafeDelete
 
 func runCore(g MergeGitRunner, probe WorktreeCleanupProbe, report SafeDeleteReport, audit WorktreeCleanupAudit, record func(string, string) error) WorktreeCleanupResult {
 	return runCoreWith(g, probe, report, config.CleanupModeOn, audit, record)
-}
-
-func skippedReasons(res WorktreeCleanupResult) []string {
-	out := make([]string, 0, len(res.Skipped))
-	for _, s := range res.Skipped {
-		out = append(out, s.Reason)
-	}
-	return out
 }
 
 func skippedHas(res WorktreeCleanupResult, reason string) bool {

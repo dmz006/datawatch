@@ -30,7 +30,7 @@ func TestMergeCLI_MergeCommandPrints(t *testing.T) {
 	}
 	for _, want := range []string{
 		"mode shadow (alert threshold: 30 min)",
-		`Automaton "Add paging" (id p1): branch automaton/p1 is pending, 3 commit(s) ahead of main`,
+		`Automaton "Add paging" (id p1): branch automaton/p1 is pending, 3 commit(s) ahead of the default branch`,
 		"merge pending since 2026-01-02T00:00:00Z",
 		"would alert",
 		"Shadow decisions",

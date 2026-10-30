@@ -455,12 +455,9 @@ func cleanupDiskAlertBody(st CleanupStatus) string {
 			continue
 		}
 		if p := c.Percent; p != nil && *p >= st.DiskAlertPercent {
-			note := ""
-			switch {
-			case c == st.WorktreeDisk:
+			note := "the disk holding the daemon session temp dir "
+			if c == st.WorktreeDisk {
 				note = "the disk holding the Automaton worktree base "
-			default:
-				note = "the disk holding the daemon session temp dir "
 			}
 			hot = append(hot, fmt.Sprintf("%s%s is at %d%%", note, c.Path, *p))
 		}
