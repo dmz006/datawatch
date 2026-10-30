@@ -159,6 +159,7 @@ var MCPToolCap = map[string]string{
 	"question_stats":                  CapAutonomousRead,
 	"autonomous_merge":                CapAutonomousRead,
 	"autonomous_safe_to_delete":       CapAutonomousRead,
+	"autonomous_cleanup_status":       CapAutonomousRead,
 	"autonomous_overlap_search":       CapAutonomousRead,
 	"security_failure_list":           CapAutonomousRead,
 	"channel_diagnostics":             CapCommRead,
