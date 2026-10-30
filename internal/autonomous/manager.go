@@ -843,13 +843,19 @@ type Manager struct {
 	// the host/views the pass runs the checks through (wired by
 	// cmd/datawatch), and the test seam that replaces the whole check run.
 	// Guarded by mu, except supervisorWatchAlerted which owns its lock.
-	supervisorWatch         *SupervisorWatchStore
-	supervisorWatchProbe    SupervisorWatchHostProbe
-	supervisorWatchNodes    SupervisorWatchNodeLister
-	supervisorWatchSess     SupervisorWatchSessionLogger
-	supervisorWatchFindings func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding
-	supervisorWatchAlerted  map[string]bool
-	supervisorWatchAlertMu  sync.Mutex
+	supervisorWatch      *SupervisorWatchStore
+	supervisorWatchProbe SupervisorWatchHostProbe
+	// supervisorWatchTmux* keep the tmux_restart baseline across polls: the
+	// pass builds a fresh host each poll, so the baseline the last poll
+	// stored lives here. supervisorWatchTmuxCfg is the configured baseline
+	// that seeded it; a change of the configured value reseeds.
+	supervisorWatchTmuxBaseline string
+	supervisorWatchTmuxCfg      string
+	supervisorWatchNodes        SupervisorWatchNodeLister
+	supervisorWatchSess         SupervisorWatchSessionLogger
+	supervisorWatchFindings     func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding
+	supervisorWatchAlerted      map[string]bool
+	supervisorWatchAlertMu      sync.Mutex
 
 	dataDir    string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
 	templates  *TemplateStore // BL221 (v6.2.0) — dedicated template store

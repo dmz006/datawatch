@@ -6947,6 +6947,9 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 						partial[top] = v
 					}
 				}
+				if raw, ok := partial["automation"]; ok && patchTouchesSupervisorWatch(patch) {
+					partial["automation"] = withSupervisorWatchClears(raw, s.cfg.Autonomous.Automation.SupervisorWatch)
+				}
 				if b, err := json.Marshal(partial); err == nil {
 					_ = s.autonomousMgr.SetConfig(json.RawMessage(b))
 				}
@@ -9359,6 +9362,60 @@ func supervisorWatchSurface(c config.SupervisorWatchConfig) map[string]interface
 	}
 }
 
+// patchTouchesSupervisorWatch reports whether a PUT /api/config patch
+// carries any autonomous.automation.supervisor_watch.* key.
+func patchTouchesSupervisorWatch(patch map[string]interface{}) bool {
+	for k := range patch {
+		if strings.HasPrefix(k, supervisorWatchKeyPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// withSupervisorWatchClears makes the supervisor watch block of the
+// automation JSON carry its string keys and poll_seconds explicitly. Those
+// fields are omitempty (or empty strings the live merge cannot tell from
+// absent), so a PUT that clears one back to empty was dropped from the
+// pushed block and the live watch kept serving the stale value until a
+// restart. Writing the current value explicitly lets the live merge apply
+// the clear. A block that cannot be decoded is returned unchanged.
+func withSupervisorWatchClears(automation json.RawMessage, swc config.SupervisorWatchConfig) json.RawMessage {
+	var auto map[string]json.RawMessage
+	if json.Unmarshal(automation, &auto) != nil {
+		return automation
+	}
+	block := map[string]json.RawMessage{}
+	if raw, ok := auto["supervisor_watch"]; ok {
+		if json.Unmarshal(raw, &block) != nil {
+			return automation
+		}
+	}
+	for key, val := range map[string]interface{}{
+		"script_output_path":    swc.ScriptOutputPath,
+		"tmux_restart_baseline": swc.TmuxRestartBaseline,
+		"main_checkout":         swc.MainCheckout,
+		"working_model":         swc.WorkingModel,
+		"poll_seconds":          swc.PollSeconds,
+	} {
+		b, err := json.Marshal(val)
+		if err != nil {
+			return automation
+		}
+		block[key] = b
+	}
+	nb, err := json.Marshal(block)
+	if err != nil {
+		return automation
+	}
+	auto["supervisor_watch"] = nb
+	out, err := json.Marshal(auto)
+	if err != nil {
+		return automation
+	}
+	return out
+}
+
 // validateSupervisorWatchWhole checks one supervisor watch minute
 // threshold: a whole number >= 0 (0 is legal — the operator said zero;
 // an unset key reads its default, which is not this value's business).
@@ -9414,8 +9471,8 @@ func validateSupervisorWatchPatch(patch map[string]interface{}) error {
 		if err != nil {
 			return err
 		}
-		if n < config.SupervisorWatchMinPollSeconds {
-			return fmt.Errorf("%spoll_seconds: %d must be a whole number >= %d (unset reads the %d-second default)",
+		if n < 0 || (n > 0 && n < config.SupervisorWatchMinPollSeconds) {
+			return fmt.Errorf("%spoll_seconds: %d must be 0 (unset) or a whole number >= %d (unset reads the %d-second default)",
 				supervisorWatchKeyPrefix, n, config.SupervisorWatchMinPollSeconds, config.DefaultSupervisorWatchPollSeconds)
 		}
 	}
@@ -9448,10 +9505,12 @@ func applySupervisorWatchValue(swc *config.SupervisorWatchConfig, field string, 
 			swc.SilentMinutes = &n
 		}
 	case "poll_seconds":
-		// An explicitly set value below the minimum is already refused by
-		// validateSupervisorWatchPatch and by config.load validation; a value
-		// that slips past those checks is left unchanged rather than stored.
-		if n, err := parseSupervisorWatchWhole("poll_seconds", v); err == nil && n >= config.SupervisorWatchMinPollSeconds {
+		// 0 is unset (it reads the default), the same as on the config-load
+		// path. An explicitly set value below the minimum is already refused
+		// by validateSupervisorWatchPatch and by config.load validation; a
+		// value that slips past those checks is left unchanged rather than
+		// stored.
+		if n, err := parseSupervisorWatchWhole("poll_seconds", v); err == nil && (n == 0 || n >= config.SupervisorWatchMinPollSeconds) {
 			swc.PollSeconds = n
 		}
 	case "script_output_path":

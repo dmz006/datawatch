@@ -123,7 +123,9 @@ func (m *Manager) supervisorWatchRawFindings(cfg SupervisorWatchConfig, prds []*
 
 	var out []SupervisorWatchFinding
 	host := NewSupervisorWatchHost(probe, cfg, nodes)
+	host.tmuxBaseline = m.supervisorWatchTmuxSeed(cfg)
 	out = append(out, host.CheckTmuxRestart()...)
+	m.supervisorWatchTmuxStore(host.StoredTmuxBaseline())
 	out = append(out, host.CheckDaemonInactive()...)
 	out = append(out, host.CheckModelNotResident()...)
 	out = append(out, host.CheckVerifyScriptNotExecutable(SupervisorWatchRunningUnits(prds))...)
@@ -342,6 +344,29 @@ func (m *Manager) supervisorWatchPoll(now time.Time, cfg SupervisorWatchConfig) 
 		})
 	}
 	return due
+}
+
+// supervisorWatchTmuxSeed returns the tmux_restart baseline the next poll
+// starts from: the one the previous poll stored, or the configured one when
+// it is the first poll or the configured value changed since (an operator
+// who sets or clears tmux_restart_baseline reseeds the check).
+func (m *Manager) supervisorWatchTmuxSeed(cfg SupervisorWatchConfig) string {
+	cfgBaseline := strings.TrimSpace(cfg.TmuxRestartBaseline)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if cfgBaseline != m.supervisorWatchTmuxCfg {
+		m.supervisorWatchTmuxCfg = cfgBaseline
+		m.supervisorWatchTmuxBaseline = cfgBaseline
+	}
+	return m.supervisorWatchTmuxBaseline
+}
+
+// supervisorWatchTmuxStore remembers the baseline the poll ended with, so a
+// restart seen after it raises and the same state does not raise again.
+func (m *Manager) supervisorWatchTmuxStore(baseline string) {
+	m.mu.Lock()
+	m.supervisorWatchTmuxBaseline = baseline
+	m.mu.Unlock()
 }
 
 // supervisorWatchStore returns the shared finding store.

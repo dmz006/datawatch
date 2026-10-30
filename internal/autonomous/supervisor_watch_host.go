@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -185,9 +186,9 @@ type SupervisorWatchHost struct {
 // tmux_restart baseline.
 func NewSupervisorWatchHost(probe SupervisorWatchHostProbe, cfg SupervisorWatchConfig, nodes SupervisorWatchNodeLister) *SupervisorWatchHost {
 	h := &SupervisorWatchHost{
-		Probe:       probe,
-		Config:      cfg,
-		Nodes:       nodes,
+		Probe:        probe,
+		Config:       cfg,
+		Nodes:        nodes,
 		tmuxBaseline: strings.TrimSpace(cfg.TmuxRestartBaseline),
 	}
 	return h
@@ -547,14 +548,27 @@ func (p *ShellSupervisorWatchHostProbe) DaemonActive(node string) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	out, err := p.runCmd(context.Background(), systemctl, "--user", "is-active", SupervisorWatchDaemonUnitName)
+	// systemctl is-active exits non-zero for every state but active (3 for
+	// inactive), so a non-zero exit with a state word on its output is the
+	// answer, not a failure to read it.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	raw, err := exec.CommandContext(ctx, systemctl, "--user", "is-active", SupervisorWatchDaemonUnitName).CombinedOutput()
+	state := strings.TrimSpace(string(raw))
 	if err != nil {
-		return false, err
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			return false, fmt.Errorf("supervisor watch host: systemctl --user is-active %s: %w", SupervisorWatchDaemonUnitName, err)
+		}
+		switch state {
+		case "inactive", "failed", "activating", "deactivating", "reloading", "maintenance":
+			return false, nil
+		}
+		// no recognised state (for example the user manager is unreachable):
+		// unknown, no finding
+		return false, fmt.Errorf("supervisor watch host: systemctl --user is-active %s: %w (output %q)", SupervisorWatchDaemonUnitName, err, state)
 	}
-	if strings.TrimSpace(out) != "active" {
-		return false, nil
-	}
-	return true, nil
+	return state == "active", nil
 }
 
 // ResidentModels reads the node's model report (GET /api/ps) and
