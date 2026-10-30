@@ -1552,6 +1552,10 @@ and
 
 **await_decision wait reason** — the reason shown for a task parked on an open blocking question: `await_decision: <question id>`. The coordinator tick resumes the task after the question is answered or withdrawn and sends the worker one `[automaton decision]` line carrying the decision. It is a wait, not a failure.
 
+**Question context link** — the line *This question is about: …* in the answer dialog, which says what a question concerns and, where it can, lets you open it. For a proposal or document it is an **Open** link that opens the proposal in the documents viewer in a new tab; for an Automaton it is an **Open** button that goes to that Automaton; for a task or a registry row it names the item in words. A question about nothing in particular shows no line. It is for the operator who wants to read the thing being decided before answering. See [howto/operator-questions-answering.md](howto/operator-questions-answering.md).
+
+**Question quality check** — the daemon's review of a question at the moment it is raised, so the operator is not handed one that cannot be answered. It looks for three things: an option with no trade-off written, question text that is too short, and an internal tracker identifier the operator cannot look up. Its mode is `off` (no check), `warn` (the question is raised and the findings go back to the asker) or `refuse` (the question is not raised until it is fixed). The tuning keys are described under the Automata question quality and queue settings below. See [howto/operator-questions-answering.md](howto/operator-questions-answering.md).
+
 ### Automata question quality and queue settings
 
 Four settings in Settings → Automata (Autonomous Automata planning) control how the daemon judges a question an Automaton raises for the operator, and how much of each open question the queue shows. They only matter while operator questions are switched on (`autonomous.questions.enabled`). Each help link in those rows opens this section.
