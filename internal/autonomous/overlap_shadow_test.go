@@ -84,7 +84,7 @@ func TestOverlapShadowWritesThroughAuditLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("audit.New: %v", err)
 	}
-	defer log.Close()
+	defer func() { _ = log.Close() }()
 
 	RecordCreateSearchShadow(func(e audit.Entry) { _ = log.Write(e) }, "operator", "prd-new", "shadow", []OverlapWarning{{
 		Kind:   warningKindBranch,

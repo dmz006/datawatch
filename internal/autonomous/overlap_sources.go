@@ -60,11 +60,7 @@ func overlapRowCandidates(projectRoot string) ([]overlapCandidate, error) {
 // splitMarkdownRow splits a markdown table row into trimmed cells,
 // dropping the empty pieces produced by the surrounding pipes.
 func splitMarkdownRow(line string) []string {
-	parts := strings.Split(line, "|")
-	cells := make([]string, 0, len(parts))
-	for _, p := range parts {
-		cells = append(cells, p)
-	}
+	cells := strings.Split(line, "|")
 	if cells[0] == "" {
 		cells = cells[1:]
 	}
