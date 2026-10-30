@@ -22,6 +22,12 @@ import (
 // record so one huge worker error cannot bloat the PRD's JSON.
 const maxTriageErrorLen = 2000
 
+// TriageStatusMergePending is the TriageRecord.Status of a completed
+// Automaton whose work branch still has commits that are not on main. Such
+// a record is written by the merge-pending pass (merge_pending_pass.go),
+// never by BuildTriageRecord, which only builds failed and blocked records.
+const TriageStatusMergePending = "merge_pending"
+
 // TriageNote is one append-only annotation written to an existing
 // record by a later lifecycle step. At is when it was written, Source
 // names the writing step (e.g. "alert", "review") and Text is the
@@ -69,7 +75,8 @@ type TriageRecord struct {
 	MemberID string `json:"member_id,omitempty"`
 	PRDID    string `json:"prd_id"`
 	PRDTitle string `json:"prd_title,omitempty"`
-	// Status is the Automaton's stuck state: "failed" or "blocked".
+	// Status is the Automaton's stuck state: "failed", "blocked" or
+	// TriageStatusMergePending.
 	Status string `json:"status"`
 	// TaskID/TaskTitle name the failed (or blocked) task behind the
 	// record when one exists.
@@ -96,6 +103,10 @@ type TriageRecord struct {
 	AlertedAt *time.Time `json:"alerted_at,omitempty"`
 	// Notes is the append-only annotation list later steps write to.
 	Notes []TriageNote `json:"notes,omitempty"`
+	// Branch and CommitsAhead are set only on a merge_pending record: the
+	// Automaton's work branch and how many of its commits are not on main.
+	Branch       string `json:"branch,omitempty"`
+	CommitsAhead int    `json:"commits_ahead,omitempty"`
 }
 
 // TriageRetryCategories are the four auto-retry budget categories, in

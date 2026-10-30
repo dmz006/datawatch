@@ -91,6 +91,25 @@ the other summary cards that sit with them. Each card loads with its own
 loading skeleton and, if the request fails, its own error with a Retry button;
 a failed card never blanks the list, and a failed list never blanks the cards.
 
+### Reading the merge state and the safe-to-delete report
+
+A finished Automaton can look done while its work is still only on its own branch. When the merge-pending check is turned on, the Automation view tells you which finished Automata still have commits that are not on `main`. The check is **off by default**; switch it on in Settings (**Automaton merge-pending check**: `off`, `shadow` or `on`). It only reads: nothing here merges, deletes or pushes.
+
+**The merge badge.** On a finished Automaton's detail view, and on its Automation's card in the list, a badge appears when the Automaton needs you:
+
+- **Automaton merge pending** (warning colour): the branch has commits that are not on `main`. With the check `on`, one alert is raised after the branch has waited for the **Automaton merge-pending alert** time (30 minutes unless you changed it; `0` turns the alert off).
+- **Automaton needs a look** (error colour): the check could not tell whether the work landed. Hover or long-press the badge for the branch name and how many commits are not on `main`.
+
+No badge means the Automaton is merged, has nothing ahead of `main`, or has not been compared yet. On an Automation card that has several members, the badge shows the member that most needs you, and needs a look wins over merge pending.
+
+**Why "needs a look" and not "merge pending".** A commit whose patch changed while it was merged shows as needs a look, not as merge pending. The check recognises merged work by matching each commit's patch and its subject line against `main`. If a commit was merged but the patch that landed is not the patch on the branch (a conflict fixed by hand, an edit on the way in), the subject line matches and the patch does not, and the check will not guess either way. Treat the badge as a request: compare the branch and `main`, then merge it or clear it up yourself. Needs a look raises no alert.
+
+**Trying it first with shadow mode.** Set the check to `shadow` and it records what it would have done (state, commits ahead, whether it would have alerted) without raising any alert or writing any merge-pending record. Read that history with `datawatch autonomous merge` or `GET /api/autonomous/merge` (`shadow_decisions`, newest first) and switch to `on` once the states match what you expect. The badge also appears in shadow mode, so you can see the states on your own branches before anything alerts.
+
+**The safe-to-delete report.** On the Overview sub-tab, the **Automaton safe-to-delete report** card lists two things. **Automaton branches safe to delete** are branches whose commits are all on `main` (or that have none) and whose worktree has nothing uncommitted. **Automaton branches held** must stay: still merge pending, needing a look, not comparable, or merged but with a worktree that has uncommitted changes (the card shows "The Automaton worktree has uncommitted changes."). Each row shows the branch, its worktree path, and why. The card refreshes every 60 seconds, wraps long branch names and paths on a phone, and shows **Could not load the Automaton safe-to-delete report** if the read fails (for example when no worktree base repository is configured).
+
+**The report never deletes anything.** The card has no delete, merge or push button, and no command acts on the report. It tells you what is safe; removing a branch or a worktree is a step you take yourself after checking it. The same two reads are available as `datawatch autonomous merge` and `datawatch autonomous safe-to-delete`, as the chat verbs `autonomous merge` and `autonomous safe-to-delete`, and over MCP as `autonomous_merge` and `autonomous_safe_to_delete`. The states, the alert and the config keys are described in the *Merge-pending check* section of [operations.md](../operations.md), and the response shapes in [the API reference](../api/autonomous.md#merge-state-and-safe-to-delete-report-get-apiautonomousmerge-get-apiautonomoussafe-to-delete).
+
 ### The empty state
 
 When the list loads successfully and there are no Automations at all, the
@@ -409,6 +428,10 @@ env -u TMUX -u TMUX_TMPDIR rtk curl -sS -X POST http://127.0.0.1:8787/api/questi
   Automaton in your Automations — how the pass fills, refreshes and clears
   it, the single alert it can raise, and where to read it (REST, MCP, CLI,
   comm, this detail view); the operator reference is the *Triage records*
+  section of [operations.md](../operations.md)
+- [Merge state and safe-to-delete report](../api/autonomous.md#merge-state-and-safe-to-delete-report-get-apiautonomousmerge-get-apiautonomoussafe-to-delete):
+  whether a finished Automaton's branch has reached `main`, the five states, shadow
+  mode and the one alert; the operator reference is the *Merge-pending check*
   section of [operations.md](../operations.md)
 - [automation-queue-advance.md](automation-queue-advance.md): activating an
   Automation, automatic advance, idle alert, model defaults and the

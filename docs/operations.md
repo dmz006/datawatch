@@ -4514,6 +4514,67 @@ A read that matches nothing is an empty list, not an error. The full field docum
 
 ---
 
+## Merge-pending check (finished Automata whose branch is not on main)
+
+When an Automaton finishes, its work lives on its own branch (`automaton/<id>`) in the worktree base repository (`worktree_base_repo`). Nothing about finishing puts that work on `main`, so a completed Automaton can look done while its commits are still only on the branch. The merge-pending check compares each completed Automaton's branch with `main` so an operator can see which finished Automata are waiting to be merged, from every surface at once. The check is a **read**: it never merges, deletes or pushes anything, and it is **off by default**.
+
+**The five states.** The check asks git, read-only, how many commits the branch has that `main` does not (`git rev-list --count main..branch`), whether each of those commits' patches is already on `main` (`git cherry`), and whether each commit's subject line appears in `main`'s log. It then reports one state:
+
+| State | Meaning | Record and alert |
+|---|---|---|
+| `merged` | Every commit on the branch has its patch and its subject line on `main` | None |
+| `pending` | At least one commit's patch is not on `main` and at least one subject line is not on `main` either: the work has not been merged | Merge-pending record and, after the threshold, one alert (`on` mode only) |
+| `needs_look` | The patch and subject checks disagree, so the check cannot say whether the work landed | None. A prompt for the operator to compare the branch by hand |
+| `empty` | The branch has no commits that are not on `main` (nothing ahead, or already contained in `main`) | None |
+| `unknown` | The branch could not be compared: no `worktree_base_repo` is configured, the branch or `main` is missing, or git failed or timed out | None. The previous state is left alone and the reason is logged once per distinct failure |
+
+**The needs-a-look caveat.** A commit whose patch changed while it was merged shows as `needs_look`, not as `pending`. The check identifies merged work by matching a commit's patch **and** its subject line against `main`. Suppose a commit was merged, but the patch that landed differs from the one on the branch, for example because a conflict was fixed by hand or the commit was edited on the way in. Its subject line is on `main` but its patch is not, which is exactly the case the check cannot settle either way, so it reports `needs_look` instead of calling the work unmerged. The opposite mismatch (every patch is on `main` but a subject line was reworded) is also `needs_look`. Treat `needs_look` as a request to compare the branch and `main` yourself; the check raises no alert for it. The cost of this choice is that a branch whose work really is unmerged, but which reuses subject lines already on `main`, is also shown as `needs_look`.
+
+**The modes.** `autonomous.automation.merge_pending_mode` takes three values:
+
+| Value | What it does |
+|---|---|
+| `off` (default) | The check does not run. Git is never called, nothing is recorded, and the merge reads return empty lists. A missing key reads as `off`. |
+| `shadow` | The check runs on every coordinator tick and only records what it would have done. No merge-pending record is written, no alert is raised, and a leftover merge-pending record is cleared. |
+| `on` | The check runs, a `pending` Automaton gets a merge-pending record (shown as a `merge_pending` status in its triage record, with the branch and `commits_ahead`), and one alert is raised per episode after the threshold. |
+
+**Shadow mode and what it records.** Shadow mode is the way to find out how the check judges your own branches before it can alert anyone. On each tick, for every completed Automaton with a work branch, the check writes one shadow decision: the Automaton id and name, the branch, the state, `commits_ahead`, and `would_alert`, which says whether an alert would have fired by now given `merge_pending_alert_minutes` (always false when that is `0`). A decision identical to the newest one for the same Automaton is not written again; it only raises that entry's `repeat_count` and moves `last_seen_at`, so a quiet poll adds no new rows. The history is bounded at 1000 entries, newest first, and is kept in `merge_shadow_decisions.json` beside the other autonomous stores, so it survives a daemon restart. Read it with the merge read (`shadow_decisions`). Outside shadow mode the list is returned empty. Leave shadow on for as long as you need to trust the states, then switch to `on`; the switch applies on the next tick.
+
+**The alert and when it fires.** In `on` mode, when a finished Automaton is `pending`, the check writes a merge-pending record stamped with the time it was first seen. Once that record has stood for `autonomous.automation.merge_pending_alert_minutes` (default 30), one `warn` alert is raised through the existing alert sink, the same path the triage alert uses. The alert is titled "Automaton `<name>` merge pending" and its body names the Automaton and its id, the work branch, how many commits are not on `main`, the Automation it is a member of (when it is), how long it has been waiting, and states that nothing has been merged, deleted or pushed. The time of the alert is stamped on the record (`alerted_at`). It fires **once per episode**: it does not repeat while the Automaton stays pending. An episode ends when the branch leaves `pending`, whether it was merged (`merged`) or ended up `empty` or `needs_look`; the record is then cleared and a later pending episode alerts again. `0` turns the alert off: the record is still written and shown, but no alert is ever raised. A branch that is `unknown` changes nothing, neither starting nor ending an episode.
+
+| Key | Meaning | Default | Allowed |
+|---|---|---|---|
+| `autonomous.automation.merge_pending_mode` | Whether the check is off, records only (shadow) or on | `off` | `off`, `shadow`, `on` (an empty string or any other word is refused on every write surface) |
+| `autonomous.automation.merge_pending_alert_minutes` | How long a pending branch may wait before the one alert | 30 | whole number ≥ 0 (`0` = alert off; negative or non-whole values refused) |
+
+Set them with `datawatch config set autonomous.automation.merge_pending_mode shadow`, `PUT /api/config` with the key, comm `configure autonomous.automation.merge_pending_mode=shadow`, the MCP tool `autonomous_config_set`, or the PWA Settings fields. They are read live; a change applies to the next tick, with no restart. The check needs `worktree_base_repo` to be set: without it every branch is `unknown`.
+
+**The safe-to-delete report.** The report answers a different question: which Automata work branches and worktrees can be cleaned up. It looks at every local `automaton/*` branch in the worktree base repository (the base branch and the branch checked out in the main checkout are skipped) and sorts each into one of two lists:
+
+| List | Which branches | Fields |
+|---|---|---|
+| `safe` | State `merged` (reason "all commits on main") or `empty` (reason "no commits ahead of main"), and the worktree, if any, has no uncommitted changes | `branch`, `worktree` (empty when none), `reason`, `commits` |
+| `held` | State `pending`, `needs_look` or `unknown`; or a `merged` or `empty` branch whose worktree has uncommitted changes (`dirty`) | `branch`, `worktree`, `state`, `dirty`, `note` |
+
+`held_dirty` counts the branches that are safe by state but held back only because of uncommitted changes in their worktree. Unlike the merge status, the report runs git when it is read (it is not served from the daemon's memory) and works in every mode, including `off`; it needs only `worktree_base_repo`. **The report never deletes anything.** It does not delete a branch, remove a worktree, push, reset, check out or merge, and there is no surface that acts on it. Cleaning up a branch or worktree stays a separate step that you approve and carry out yourself. Read `safe` as "the check found nothing to lose", not as an instruction, and use `needs_look` entries in `held` as the reminder to look first.
+
+**Surfaces.**
+
+| Surface | Merge state | Safe-to-delete report |
+|---|---|---|
+| REST | `GET /api/autonomous/merge` | `GET /api/autonomous/safe-to-delete` |
+| MCP | `autonomous_merge` | `autonomous_safe_to_delete` |
+| CLI | `datawatch autonomous merge [--json]` | `datawatch autonomous safe-to-delete [--json]` |
+| Comm channel | `autonomous merge` | `autonomous safe-to-delete` |
+| PWA | Merge badge on a finished Automaton's detail view and on its Automation card (`pending` and `needs_look` only) | Safe-to-delete card on the Automation Overview sub-tab, refreshed every 60 seconds |
+| Mobile/wear | The same REST contract, documented in `docs/api/mobile-surface.md` | Same |
+
+Both reads are GET-only (any other method is 405), answer 503 while Automata are disabled, and need the autonomous read capability when called by a federated peer. The merge state is served from the daemon's last comparison, so a read never runs git and an Automaton not compared yet reads `unknown`. The full field documentation and JSON shapes are in `docs/api/autonomous.md` (section *Merge state and safe-to-delete report*), and the walk-through for reading them is in `docs/howto/automation-tab.md`.
+
+**What the merge-pending check never does.** It never merges a branch, deletes a branch, removes a worktree, pushes, resets or checks anything out: every git command it issues is a read. It never alerts in `off` or `shadow` mode, never alerts twice for one episode, and never alerts for `merged`, `empty`, `needs_look` or `unknown`. It never changes an Automaton's own status or fields; the only thing it writes is the merge-pending record in `on` mode and the shadow history in `shadow` mode.
+
+---
+
 ## Automata progress dashboard
 
 A read-only view of how far the Automata have got and roughly when the rest

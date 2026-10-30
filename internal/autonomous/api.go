@@ -1739,6 +1739,15 @@ func (a *API) ListTriageRecords() []*TriageRecord {
 }
 func (a *API) TriageAlertMinutes() int { return a.M.TriageAlertMinutes() }
 
+// MergeStatus + MergeSafeToDelete — the Automaton merge read surface behind
+// GET /api/autonomous/merge and GET /api/autonomous/safe-to-delete. Both only
+// read: the status comes from the Coordinator's in-memory cache and the report
+// runs read-only git queries.
+func (a *API) MergeStatus() MergeStatus { return a.M.MergeStatus() }
+func (a *API) MergeSafeToDelete(ctx context.Context) (SafeDeleteReport, error) {
+	return a.M.MergeSafeToDelete(ctx)
+}
+
 func (a *API) GetAutomation(id string) (any, bool) {
 	got, ok := a.M.GetAutomation(id)
 	if !ok {

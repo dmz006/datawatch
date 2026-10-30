@@ -132,6 +132,8 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				var auto struct {
 					IdleAlertMinutes   *float64 `json:"idle_alert_minutes"`
 					TriageAlertMinutes *float64 `json:"triage_alert_minutes"`
+					MergePendingMode   *string  `json:"merge_pending_mode"`
+					MergePendingAlert  *float64 `json:"merge_pending_alert_minutes"`
 					AgentInsertPolicy  *string  `json:"agent_insert_policy"`
 				}
 				if json.Unmarshal(rawAuto, &auto) != nil {
@@ -146,6 +148,18 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				}
 				if auto.TriageAlertMinutes != nil {
 					if verr := validateTriageAlertMinutes(*auto.TriageAlertMinutes); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if auto.MergePendingMode != nil {
+					if verr := validateMergePendingMode(*auto.MergePendingMode); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if auto.MergePendingAlert != nil {
+					if verr := validateMergePendingAlertMinutes(*auto.MergePendingAlert); verr != nil {
 						http.Error(w, verr.Error(), http.StatusBadRequest)
 						return
 					}

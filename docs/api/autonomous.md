@@ -16,7 +16,7 @@ Disabled by default — opt in by setting `autonomous.enabled: true`.
 |---|---|
 | YAML  | `autonomous:` block in `~/.datawatch/config.yaml` |
 | REST  | `/api/autonomous/*` (bearer-authenticated) |
-| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings`, `autonomous_lane_fill_status`, `autonomous_triage` |
+| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings`, `autonomous_lane_fill_status`, `autonomous_triage`, `autonomous_merge`, `autonomous_safe_to_delete` |
 | CLI   | `datawatch autonomous <subcmd>` |
 | Comm  | `rest GET /api/autonomous/status` etc. via the comm `rest` passthrough (Signal/Slack/Telegram/Matrix/etc.) |
 
@@ -75,6 +75,8 @@ GET    /api/autonomous/learnings           extracted post-task learnings
 GET    /api/autonomous/progress[?automation_id=&tag_id=&since=&until=]  progress metrics object (counts by kind, throughput, utilization, remaining work, completion range); since/until are YYYY-MM-DD, until is inclusive; 400 on a bad date
 GET    /api/autonomous/progress/trend[?days=]  saved daily snapshots as {days, points[], direction}; days 1..365 (default 30), 400 outside that range
 GET    /api/autonomous/lane-fill[?limit=N]  lane fill status: mode, lanes, queued eligible counts, pool evidence, newest decisions and idle alerts; limit 1..1000 (default 50), 400 outside that range
+GET    /api/autonomous/merge               merge state of finished Automata work branches: mode, alert_minutes, automata, shadow_decisions; read-only, never runs git
+GET    /api/autonomous/safe-to-delete      read-only report of Automata branches and worktrees that are safe to delete and those held; never deletes anything
 
 # Guardrail Library + Profiles
 GET    /api/autonomous/guardrails                  list guardrail library (built-ins + skill-contributed)
@@ -1550,6 +1552,135 @@ A record (newest first in `records`):
 The fields are copied from the live Automaton at the last pass, not derived: `prd_title` names the Automaton (absent when it has no title); `automation_name` and `member_id` place the record in its Automation; `task_id` and `task_title` name the task that failed (or was blocked), `error` is that task's error and `session_end_reason` why its live sessions were ended, each already truncated to 2000 chars by the pass; `blocked_reason` is the Automaton's own block reason, kept separate from the task error; `first_seen_at` is when the Automaton first ended in this failed or blocked state (its own status timestamp), `updated_at` when the pass last refreshed it, and `alerted_at` when the triage alert for this episode fired (absent until it does). `retry_budget` is the engine's existing retry budget, reused as-is and shown for all four categories — `limit` is the maximum, `used` what has been consumed, `left` what remains — plus `ceiling_total` and `ceiling_left`, the overall retry ceiling when one is set; it is **informational**: the pass neither spends nor resets any of it. `notes` is an append-only list (at, source, text) the pass grows over the life of the record. `alert_minutes` is not on the record: it rides the list body beside `records`.
 
 The route is read-only and a sibling of the lane-fill read under the same access rules: bearer-authenticated locally, and it needs the autonomous read **capability** when called by a federated peer. Its surfaces are the REST route above, the MCP tool `autonomous_triage` (the same three filters, proxying the route), the CLI (`datawatch autonomous triage [--automation <id>] [--prd <id>] [--status failed|blocked] [--json]`), the comm verb (`autonomous triage [automation-id]`, one optional positional argument: the Automation id), the PWA triage card in the Automaton detail view, and the same contract documented for the mobile and wear surfaces in [mobile-surface.md](mobile-surface.md). The record card on each client displays, in order: the Automaton name (title, or id), the status chip (failed/blocked), the owning Automation name with its member id when one exists, the failed task title, the task error, the blocked reason, the session end reason, the first-seen time, whether the alert has fired and when, one row per retry-budget category (used of limit, left), and the overall retry ceiling when one is set; values the record does not carry are simply not shown. Triage has exactly one configuration key, `autonomous.automation.triage_alert_minutes`. The record shape is in `internal/server/web/openapi.yaml` (`TriageList`, `TriageRecord`).
+
+## Merge state and safe-to-delete report (`GET /api/autonomous/merge`, `GET /api/autonomous/safe-to-delete`)
+
+Two read routes report whether the work branches of finished Automata have reached `main`. The check that fills the first one runs on every coordinator tick when `autonomous.automation.merge_pending_mode` is `shadow` or `on`; this section documents only the reads. The operator reference — the five states, shadow mode, the alert and what the check never does — is in [docs/operations.md](../operations.md) (section *Merge-pending check*), and the walk-through is [howto/automation-tab.md](../howto/automation-tab.md).
+
+Both routes share one gate:
+
+| Condition | Response |
+|---|---|
+| Any method but `GET` | `405` with `Allow: GET` |
+| Automata disabled | `503` `autonomous disabled` |
+| Federated peer without the autonomous read capability | `403` |
+| Otherwise | `200` with the JSON body below |
+
+Neither route takes a query parameter, and neither has a write sibling: nothing here merges, deletes or pushes.
+
+### `GET /api/autonomous/merge`
+
+```
+GET /api/autonomous/merge
+
+200: {
+  "mode": "shadow",
+  "alert_minutes": 30,
+  "automata": [
+    {
+      "automaton_id": "d0442737d38c",
+      "name": "nightly ingest",
+      "branch": "automaton/d0442737d38c",
+      "state": "pending",
+      "commits_ahead": 3,
+      "pending_since": "2026-10-29T09:12:44Z",
+      "alerted_at": null,
+      "would_alert": true
+    }
+  ],
+  "shadow_decisions": [
+    {
+      "at": "2026-10-29T09:12:44Z",
+      "automaton_id": "d0442737d38c",
+      "name": "nightly ingest",
+      "branch": "automaton/d0442737d38c",
+      "state": "pending",
+      "commits_ahead": 3,
+      "would_alert": false,
+      "repeat_count": 31,
+      "last_seen_at": "2026-10-29T09:42:44Z"
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `mode` | The `merge_pending_mode` in effect: `off`, `shadow` or `on` (an unset key reports `off`) |
+| `alert_minutes` | The `merge_pending_alert_minutes` in effect (default 30; `0` = alert off), in the same body as the entries it applies to |
+| `automata` | One entry per **completed** Automaton that has a work branch, sorted by `automaton_id`. Empty while `mode` is `off` |
+| `automata[].automaton_id`, `.name`, `.branch` | The Automaton, its title (its id when it has none) and its work branch |
+| `automata[].state` | `merged`, `pending`, `needs_look`, `empty` or `unknown` (see below) |
+| `automata[].commits_ahead` | Commits on the branch that are not on `main` (0 until the check has compared the branch) |
+| `automata[].pending_since` | When the Automaton was first seen merge pending; `null` when it is not pending or has not been seen yet |
+| `automata[].alerted_at` | When the merge-pending alert fired; `null` until it does, and always `null` in `shadow` mode, which never alerts |
+| `automata[].would_alert` | Present **only in `shadow` mode**: whether an alert would have fired by now |
+| `shadow_decisions` | The shadow history, **newest first**. Empty outside `shadow` mode |
+
+The states:
+
+| `state` | Meaning |
+|---|---|
+| `merged` | Every commit's patch and subject line are on `main` |
+| `pending` | A patch and a subject line are both missing from `main`: not merged |
+| `needs_look` | The patch and subject checks disagree, so the check cannot say whether the work landed. **A commit whose patch changed while it was merged lands here, not in `pending`.** It raises no alert |
+| `empty` | No commits on the branch that are not on `main` |
+| `unknown` | Not compared yet, or the comparison failed (no worktree base repository, a git error). A client must treat it as "no information", never as merged or pending |
+
+`state` is read from the daemon's in-memory comparison, so this route **never runs git** and answers quickly; an Automaton the check has not compared yet reads `unknown`. A shadow decision is one row per change of an Automaton's outcome: an identical decision is not appended again, it raises `repeat_count` and moves `last_seen_at` instead. `repeat_count` can therefore be 1 for a row seen once. The history is bounded at 1000 rows and survives a daemon restart.
+
+### `GET /api/autonomous/safe-to-delete`
+
+```
+GET /api/autonomous/safe-to-delete
+
+200: {
+  "safe": [
+    { "branch": "automaton/a1b2c3d4e5f6", "worktree": "/home/me/.datawatch/prd-worktrees/a1b2c3d4e5f6", "reason": "all commits on main", "commits": 4 }
+  ],
+  "held": [
+    { "branch": "automaton/d0442737d38c", "worktree": "", "state": "pending" },
+    { "branch": "automaton/9f8e7d6c5b4a", "worktree": "/home/me/.datawatch/prd-worktrees/9f8e7d6c5b4a", "state": "merged", "dirty": true, "note": "Automaton worktree has uncommitted changes" }
+  ],
+  "held_dirty": 1
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `safe` | Local `automaton/*` branches that can be cleaned up: state `merged` (`reason` `all commits on main`) or `empty` (`reason` `no commits ahead of main`), with no uncommitted changes in the worktree |
+| `safe[].worktree` | The checked-out worktree path; empty when the branch has none |
+| `safe[].commits` | Commits on the branch that are not on `main` (0 for `empty`) |
+| `held` | Branches that must stay |
+| `held[].state` | `pending`, `needs_look` or `unknown`; or `merged` / `empty` for a branch held only because its worktree is dirty |
+| `held[].dirty` | `true` when the worktree has uncommitted changes; omitted otherwise |
+| `held[].note` | The reason in words (the git error for an `unknown` branch); omitted when empty |
+| `held_dirty` | How many branches are safe by state but held back for uncommitted changes |
+
+Both lists are always arrays, never `null`. The base branch and the branch checked out in the main checkout are never listed. Unlike the merge route, this one **runs git when it is read** (bounded at 60 seconds) and works in every mode, including `off`. It only needs the worktree base repository, so clients should poll it slowly (the PWA refreshes it every 60 seconds).
+
+| Status | When |
+|---|---|
+| `200` | The report |
+| `500` | The branches or worktrees could not be listed |
+| `503` | Automata are disabled, or no `worktree_base_repo` is configured for Automata |
+
+**The report never deletes anything.** There is no delete, merge or push route beside it; cleaning up a branch or worktree is a separate step the operator approves.
+
+### The `merge_pending` triage status
+
+The existing optional `triage` record on an Automaton (see *Triage records* above) gains one status value and two fields. In `on` mode, a completed Automaton whose branch is `pending` carries a record with `status: "merge_pending"`, plus `branch` (the work branch) and `commits_ahead` (the count not on `main`); `first_seen_at` and `alerted_at` mean the same as on a failed or blocked record. Both new fields are omitted on `failed` and `blocked` records. The record is cleared when the branch is no longer pending, and shadow mode never writes one. Clients that list triage records must tolerate the new status value.
+
+### Surfaces and configuration
+
+The same reads are served by MCP `autonomous_merge` and `autonomous_safe_to_delete`, the CLI `datawatch autonomous merge [--json]` and `datawatch autonomous safe-to-delete [--json]`, the comm verbs `autonomous merge` and `autonomous safe-to-delete`, and the PWA (a merge badge on finished Automata and a safe-to-delete card on the Automation Overview sub-tab). The same contract for the mobile and wear surfaces is in [mobile-surface.md](mobile-surface.md). There are exactly two configuration keys, both under `autonomous.automation`, both in the Automata config object and `PUT /api/config`:
+
+| Key | Values | Default | Notes |
+|---|---|---|---|
+| `merge_pending_mode` | `off`, `shadow`, `on` | `off` | An empty string or any other value is refused with `400` and nothing is written |
+| `merge_pending_alert_minutes` | whole number ≥ 0 | `30` | `0` turns the alert off and round-trips as `0`; unset reads `30`; a negative or non-whole value is refused with `400` |
+
+The response shapes are in `docs/api/openapi.yaml` (`MergeStatus`, `MergeAutomaton`, `MergeShadowDecision`, `SafeDeleteReport`).
 
 ## Operator decisions (`GET /api/autonomous/decisions`)
 

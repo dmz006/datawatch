@@ -42,6 +42,10 @@ Subcommands:
                                   the watched repositories, the last poll, and the stored records
                                   (repository, ref, workflow, status, classification, first seen,
                                   alerted), newest first
+  merge [--json]                  Merge state: the mode, the alert threshold and the finished Automata whose
+                                  work branch is not on main yet (read only)
+  safe-to-delete [--json]         Automaton branches and worktrees that are safe to delete, and those held back
+                                  (report only, nothing is deleted)
   config-get                      Read current autonomous config
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
@@ -215,6 +219,8 @@ Subcommands:
 		// Repo CI watch read.
 		newAutonomousRepoCIWatchCmd(),
 		newAutonomousDecisionsCmd(),
+		newAutonomousMergeCmd(),
+		newAutonomousSafeToDeleteCmd(),
 	)
 	return cmd
 }

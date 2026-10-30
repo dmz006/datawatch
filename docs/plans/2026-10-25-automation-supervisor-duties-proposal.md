@@ -122,7 +122,7 @@ Proposed status: Planned.
 
 **Step 5.** Merge pending by commit content and a safe-to-delete report (duty 3).
 Depends on: Step 1 (the alert shape), Q1 (the alert time) and Q7 (the commit comparison method). Implements the comparison against main, the merge-pending state in the Automation view with its alert, and the safe-to-delete report for branches whose commits are all on main.
-Proposed status: Planned.
+Status: Implemented (2026-10-30, automaton branch `automaton/f1f20050`, released with the next minor above main). Built as the comparison by patch and subject line, the `merge_pending_mode` (`off`, `shadow`, `on`) and `merge_pending_alert_minutes` keys, the two read routes `GET /api/autonomous/merge` and `GET /api/autonomous/safe-to-delete`, their MCP, CLI and comm-channel siblings, the PWA badge and report card, and the mobile parity issue datawatch-app#304. The sandbox live check passed (see `docs/plans/2026-10-29-automation-merge-pending-live-check.md`) and the final gate report is `docs/plans/2026-10-29-automation-merge-pending-final-gate-report.md`. Operator reference: the *Merge-pending check* section of `docs/operations.md`.
 - Docs checklist: `CHANGELOG.md`; alert-time key in `docs/config-reference.yaml`; `docs/testing-tracker.md` section for the merge-pending state surface; `docs/howto/` entry for using the safe-to-delete report; `docs/flow/` note if the merge state is a new data flow; full phase completion checklist.
 - Parity surface (pending Q4, recommendation (b)): config, REST state and report read, MCP read, CLI read, comm-channel alert and report, PWA merge-pending badge and report view.
 - Mobile: new state and report fields in REST are a contract change, so a mobile parity issue is needed.
@@ -303,3 +303,4 @@ This document changes nothing on any surface; it names where future steps would 
 | Proposal | Planned |
 | Confirmed | yes, Step 1 only (operator, 2026-10-25); Q1 to Q8 decided |
 | Date | 2026-10-25 |
+| Step 5 (merge pending and safe-to-delete report) | Implemented, 2026-10-30 |

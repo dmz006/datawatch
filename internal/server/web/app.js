@@ -16397,6 +16397,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.backoff_max_wait_minutes', label: 'Usage back-off max wait (minutes when a rate limit has no reset time, default 60)', labelKey: 'settings_backoff_max_wait_minutes', type: 'number', placeholder: '60', min: 1, step: 1, default: '60' },
     { key: 'autonomous.automation.idle_alert_minutes', label: 'Automation idle alert (minutes idle before one alert, 0 = off)', labelKey: 'settings_automation_idle_alert_minutes', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
     { key: 'autonomous.automation.triage_alert_minutes', label: 'Automation triage alert (minutes an Automation may sit waiting before a triage alert, 0 = off, default 30)', labelKey: 'settings_automation_triage_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
+    // Merge pending — off (default) does nothing, shadow records what it would do, on raises the alert.
+    { key: 'autonomous.automation.merge_pending_mode', label: 'Automaton merge-pending check (off, shadow or on; default off)', labelKey: 'settings_automation_merge_pending_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'off' },
+    { key: 'autonomous.automation.merge_pending_alert_minutes', label: 'Automaton merge-pending alert (minutes a finished Automaton branch may sit unmerged before an alert, 0 = off, default 30)', labelKey: 'settings_automation_merge_pending_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
     // Repo CI watch (autonomous.automation.repo_ci_watch.*) — the
     // read-only status line in the Automaton view reads
     // GET /api/autonomous/repo-ci-watch; these settings configure the
@@ -23807,15 +23810,25 @@ function _renderDetailContent(prd) {
   const triageSlot = (status === 'failed' || status === 'blocked')
     ? `<div id="prdTriageCard" class="prd-capacity-slot triage-slot" style="margin-top:10px;">${window.triageCardHtml(prd.triage || null)}</div>`
     : '';
+  // The merge-pending badge slot sits beside it for a finished Automaton: it
+  // paints from the last merge read at once and again when a fresh read lands.
+  const mergeSlot = status === 'completed'
+    ? `<div id="prdMergeBadge" class="merge-slot" style="margin-top:10px;">${window.mergeBadgeHtml(_mergeStatus.byId[prd.id] || null)}</div>`
+    : '';
   body.innerHTML = `<div class="prd-detail-body">
     ${header}
     ${tabStrip}
     ${triageSlot}
+    ${mergeSlot}
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
     <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
   </div>`;
   window.loadDecisionLineCard(prd.id);
   _tagsLoad().then(() => _renderDetailTagRow(prd));
+  if (mergeSlot) window.loadMergeStatus().then(byId => {
+    const el = document.getElementById('prdMergeBadge');
+    if (el) el.innerHTML = window.mergeBadgeHtml(byId[prd.id] || null);
+  });
   // GATE alpha.36 (operator 2026-05-10): hoist the title + back into
   // the PWA banner header (matches session-detail behavior).
   // - backBtn shown with onclick=_backToAutomataList (chevron arrow,
@@ -25452,6 +25465,108 @@ window.openDecisionAnswerPanel = function(btn) {
   panel.hidden = false;
   btn.setAttribute('aria-expanded', 'true');
   return window.loadDecisionAnswerPanel(btn.getAttribute('data-question'), btn.getAttribute('data-answer'), panel);
+};
+
+// ── Merge-pending badge and safe-to-delete report ───────────────────────────
+// GET /api/autonomous/merge lists every completed Automaton with a work branch
+// and the state the merge-pending pass compared it at; mergeBadgeHtml(entry)
+// turns one entry into the badge, and only pending or needs_look draw one.
+// GET /api/autonomous/safe-to-delete is the read-only branch report that
+// safeDeleteCardHtml(report) draws: the branches that are safe to clean up and
+// the ones held back. Neither read has a write sibling, so nothing here
+// deletes, merges or pushes. Every value is escaped; the key map holds literal
+// locale keys so the key-coverage guard can see them.
+const MERGE_STATE_KEYS = {
+  pending: 'merge_state_pending', needs_look: 'merge_state_needs_look',
+  merged: 'merge_state_merged', empty: 'merge_state_empty', unknown: 'merge_state_unknown',
+};
+const MERGE_BADGE_STATES = ['pending', 'needs_look'];
+const MERGE_MIN_REFETCH_MS = 5000;
+// _mergeStatus is the last good GET /api/autonomous/merge read, indexed by
+// Automaton id. A failed read keeps it, so a flaky poll never blinks a badge.
+const _mergeStatus = { byId: {}, at: 0, inflight: null };
+window._mergeStatus = _mergeStatus;
+function _mergeIndex(body) {
+  const byId = {};
+  (body && Array.isArray(body.automata) ? body.automata : []).forEach(e => {
+    if (e && typeof e === 'object' && e.automaton_id) byId[e.automaton_id] = e;
+  });
+  return byId;
+}
+window.mergeBadgeHtml = function(entry) {
+  if (!entry || typeof entry !== 'object') return '';
+  const state = _triageKey(MERGE_STATE_KEYS, entry.state) ? entry.state : '';
+  if (MERGE_BADGE_STATES.indexOf(state) < 0) return '';
+  const color = state === 'needs_look' ? 'var(--error,#c00)' : 'var(--warning,#a06b00)';
+  const title = t('merge_badge_title', [String(entry.branch || ''), Number(entry.commits_ahead) || 0]);
+  return `<span class="merge-badge merge-badge-${state.replace('_', '-')}" title="${escHtml(title)}" style="display:inline-block;padding:1px 8px;border:1px solid ${color};border-radius:10px;font-size:11px;font-weight:700;color:${color};">${escHtml(t(MERGE_STATE_KEYS[state]))}</span>`;
+};
+// mergeBadgeForAutomation picks the badge entry of an Automation card: the
+// member Automaton that most needs the operator (needs a look before merge
+// pending), or null when no member has a badge state.
+window.mergeBadgeForAutomation = function(automation, byId) {
+  const idx = byId || {};
+  let best = null;
+  (automation && Array.isArray(automation.members) ? automation.members : []).forEach(m => {
+    const e = m && m.prd_id && Object.prototype.hasOwnProperty.call(idx, m.prd_id) ? idx[m.prd_id] : null;
+    if (!e || MERGE_BADGE_STATES.indexOf(e.state) < 0) return;
+    if (!best || (e.state === 'needs_look' && best.state !== 'needs_look')) best = e;
+  });
+  return best;
+};
+// loadMergeStatus reads the merge status into _mergeStatus and resolves with
+// the by-id index. A read within MERGE_MIN_REFETCH_MS of the last good one, or
+// one already in flight, shares that result; a failed read resolves with the
+// previous index.
+window.loadMergeStatus = function() {
+  if (_mergeStatus.inflight) return _mergeStatus.inflight;
+  if (_mergeStatus.at && (Date.now() - _mergeStatus.at) < MERGE_MIN_REFETCH_MS) return Promise.resolve(_mergeStatus.byId);
+  _mergeStatus.inflight = Promise.resolve().then(() => apiFetch('/api/autonomous/merge')).then(body => {
+    _mergeStatus.byId = _mergeIndex(body);
+    _mergeStatus.at = Date.now();
+    return _mergeStatus.byId;
+  }).catch(() => _mergeStatus.byId).then(byId => { _mergeStatus.inflight = null; return byId; });
+  return _mergeStatus.inflight;
+};
+// safeDeleteCardHtml draws the report body of GET /api/autonomous/safe-to-delete:
+// { safe: [{branch, worktree, reason, commits}], held: [{branch, worktree,
+// state, dirty, note}], held_dirty }. A missing or malformed body reads as an
+// empty report. The loader owns the loading and failed states.
+function _safeDeleteRow(lines) {
+  return `<div class="safe-delete-row" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">${lines.join('')}</div>`;
+}
+function _safeDeleteLine(text, style) {
+  return `<div style="${style || 'color:var(--text2);'}overflow-wrap:anywhere;">${escHtml(text)}</div>`;
+}
+function _safeDeleteSection(title, rows, emptyText) {
+  return `<div style="margin-top:8px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(title)}</div>` +
+    (rows.length ? rows.join('') : _safeDeleteLine(emptyText));
+}
+window.safeDeleteCardHtml = function(report) {
+  const r = (report && typeof report === 'object') ? report : {};
+  const safe = Array.isArray(r.safe) ? r.safe.filter(e => e && typeof e === 'object') : [];
+  const held = Array.isArray(r.held) ? r.held.filter(e => e && typeof e === 'object') : [];
+  const head = `<div class="cap-title">${escHtml(t('safe_delete_card_title'))}</div>`;
+  const note = _safeDeleteLine(t('safe_delete_read_only'));
+  const safeRows = safe.map(e => _safeDeleteRow([
+    _safeDeleteLine(String(e.branch || ''), 'font-weight:600;'),
+    e.worktree ? _safeDeleteLine(t('safe_delete_worktree', [String(e.worktree)])) : '',
+    e.reason ? _safeDeleteLine(String(e.reason)) : '',
+    _safeDeleteLine(t('safe_delete_commits', [Number(e.commits) || 0])),
+  ]));
+  const heldRows = held.map(e => {
+    const stateKey = _triageKey(MERGE_STATE_KEYS, e.state);
+    return _safeDeleteRow([
+      _safeDeleteLine(String(e.branch || ''), 'font-weight:600;'),
+      e.worktree ? _safeDeleteLine(t('safe_delete_worktree', [String(e.worktree)])) : '',
+      _safeDeleteLine(t('safe_delete_state', [stateKey ? t(stateKey) : String(e.state || '')])),
+      e.dirty ? _safeDeleteLine(t('safe_delete_dirty'), 'color:var(--warning,#a06b00);') : '',
+      e.note ? _safeDeleteLine(String(e.note)) : '',
+    ]);
+  });
+  return `<div class="prd-capacity-card safe-delete-card" style="min-width:0;">${head}${note}` +
+    _safeDeleteSection(t('safe_delete_safe_heading', [safe.length]), safeRows, t('safe_delete_safe_empty')) +
+    _safeDeleteSection(t('safe_delete_held_heading', [held.length]), heldRows, t('safe_delete_held_empty')) + `</div>`;
 };
 
 // ── Automata progress card ───────────────────────────────────────────────────
@@ -27763,6 +27878,7 @@ const _automationState = {
   expanded: new Set(),
   loadError: null,
   prdTitles: {},
+  mergeById: {},
   prdStatuses: {},
   prdFlags: {},
   actingBranch: '',
@@ -27821,14 +27937,15 @@ const _AUTOMATION_SUBTABS = [
     bodyHTML: () => `<div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationUsageCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
       <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
-      <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+      <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
     mount() {
-      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader()]);
+      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationSafeDeleteLoader()]);
       // The progress card renders into its slot on this sub-tab; it has no
       // listLoader of its own, so nothing for stop() to end.
       if (typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
     },
-    stop() { _automationStopLoaders(['automation_capacity', 'automation_usage', 'automation_lane_fill']); },
+    stop() { _automationStopLoaders(['automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_safe_delete']); },
   },
   {
     id: 'chains',
@@ -27904,7 +28021,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage', 'automation_questions'];
+  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage', 'automation_questions', 'automation_safe_delete'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -27994,6 +28111,18 @@ function _automationLaneFillLoader() {
     failedText: msg => t('lane_fill_failed', [msg]),
     active: () => !!document.getElementById('automationLaneFillCard'),
     render: status => window.laneFillCardHtml(status),
+  });
+}
+
+// _automationSafeDeleteLoader reads the safe-to-delete report on the Overview
+// sub-tab. The read runs git, so it polls slowly; its failed state is the list
+// loader's banner. The card is a report only and offers no action.
+function _automationSafeDeleteLoader() {
+  return window._listLoaders.automation_safe_delete || listLoader({
+    key: 'automation_safe_delete', el: 'automationSafeDeleteCard', url: '/api/autonomous/safe-to-delete', pollMs: 60000,
+    failedText: msg => t('safe_delete_failed', [msg]),
+    active: () => !!document.getElementById('automationSafeDeleteCard'),
+    render: report => window.safeDeleteCardHtml(report),
   });
 }
 
@@ -28526,12 +28655,14 @@ window.automationEmptyStateHtml = automationEmptyStateHtml;
 
 function _automationFetchAll() {
   const request = automationRequest('GET', '/api/automations');
-  return Promise.all([request, loadAutomationPrdInfo(), _tagsLoad(true), _tagBrowseConfigLoad(), _tagPinnedLoad()]).then(([data, info]) => ({
+  return Promise.all([request, loadAutomationPrdInfo(), _tagsLoad(true), _tagBrowseConfigLoad(), _tagPinnedLoad(), window.loadMergeStatus()]).then(([data, info, , , , merge]) => ({
     list: Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : []),
     titles: info.titles,
+    merge,
   })).then(d => {
     _automationState.list = d.list;
     _automationState.prdTitles = d.titles;
+    _automationState.mergeById = d.merge;
     _automationState.loadError = null;
     _automationState.loaded = true;
     return d;
@@ -28546,10 +28677,11 @@ function _automationLoader() {
     render: d => {
       _automationState.list = d.list;
       _automationState.prdTitles = d.titles;
+      _automationState.mergeById = d.merge || {};
       _automationState.loadError = null;
       const items = automationListVisible(d.list, _automationState);
       if (!d.list.length) return _automationEmptyAllowed() ? automationEmptyStateHtml() : '';
-      const ctx = { prdTitles: d.titles, now: Date.now() };
+      const ctx = { prdTitles: d.titles, mergeById: _automationState.mergeById, now: Date.now() };
       return _automationTilesHTML(items, ctx);
     },
     afterPaint: () => {
@@ -28682,7 +28814,7 @@ function _automationRenderCards() {
     panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('automation_list_empty'))}</div>`;
     return;
   }
-  const ctx = { prdTitles: st.prdTitles, now: Date.now() };
+  const ctx = { prdTitles: st.prdTitles, mergeById: st.mergeById, now: Date.now() };
   panel.innerHTML = _automationTilesHTML(items, ctx);
   _tagFacetsRefresh('automation');
 }
@@ -28764,6 +28896,7 @@ function buildAutomationCardHTML(automation, ctx) {
     onOpen: open,
     statusClass,
     statusHtml: `<span class="automation-card-status">${escHtml(t('automation_status_' + status))}</span>`,
+    badgesHtml: window.mergeBadgeHtml(window.mergeBadgeForAutomation(a, c.mergeById)),
     title: a.name,
     titleClass: 'automation-card-title',
     progress: { done, total },

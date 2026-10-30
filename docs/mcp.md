@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_triage`, `autonomous_decisions`, `autonomous_prd_set_lane_preference`, `capacity_status` |
+| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_triage`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `autonomous_prd_set_lane_preference`, `capacity_status` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
@@ -382,6 +382,49 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
   question_stats()
   ```
+- **`autonomous_merge`** — read the Automaton merge state: `mode` (the `merge_pending_mode` in effect: `off`, `shadow` or `on`), `alert_minutes` (the merge-pending alert threshold in whole minutes; `0` = alert off), `automata` (one entry per finished Automaton that has a work branch, sorted by `automaton_id`, each with `automaton_id`, `name`, `branch`, `state` — `merged`, `pending`, `needs_look`, `empty` or `unknown` — `commits_ahead`, `pending_since`, `alerted_at` and, in `shadow` mode only, `would_alert`) and `shadow_decisions` (what the check would have acted on, newest first; empty outside `shadow` mode). While the mode is `off` both lists are empty. The state comes from the daemon's last comparison, so a read never runs git, and an Automaton not compared yet reads `unknown` (treat it as "no information"). Read-only: nothing is merged, deleted or pushed. Returns the same object as `GET /api/autonomous/merge`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | — | — | The tool takes no parameters |
+
+  ```
+  autonomous_merge()
+  ```
+
+  Example result (shortened):
+
+  ```json
+  {"mode": "shadow", "alert_minutes": 30,
+   "automata": [{"automaton_id": "d0442737d38c", "name": "nightly ingest", "branch": "automaton/d0442737d38c", "state": "pending", "commits_ahead": 3, "pending_since": "2026-10-29T09:12:44Z", "alerted_at": null, "would_alert": false}],
+   "shadow_decisions": []}
+  ```
+
+  Answers a tool error while Automata are disabled (the daemon's `503`). Needs the autonomous read capability when called by a federated peer. The two settings that drive it are set through `autonomous_config_set` with `automation_merge_pending_mode` (`off`, `shadow` or `on`) and `automation_merge_pending_alert_minutes` (whole number >= 0; `0` turns the alert off, unset keeps 30):
+
+  ```
+  autonomous_config_set(automation_merge_pending_mode="shadow")
+  autonomous_config_set(automation_merge_pending_alert_minutes=0)
+  ```
+- **`autonomous_safe_to_delete`** — read the safe-to-delete report for Automaton work branches and worktrees: `safe` lists the `automaton/*` branches that can be cleaned up (state `merged` or `empty`, no uncommitted changes in the worktree; each with `branch`, `worktree`, `reason`, `commits`), `held` lists the ones that must stay (`pending`, `needs_look` or `unknown`, or a worktree with uncommitted changes; each with `branch`, `worktree`, `state` and, when set, `dirty` and `note`) and `held_dirty` counts the branches held only for uncommitted changes. Unlike `autonomous_merge`, the daemon runs git when this is read (bounded at 60 seconds), and it works in every mode including `off`. Read-only: it never deletes a branch, removes a worktree, merges or pushes — cleaning up stays a separate step the operator approves. Returns the same object as `GET /api/autonomous/safe-to-delete`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | — | — | The tool takes no parameters |
+
+  ```
+  autonomous_safe_to_delete()
+  ```
+
+  Example result (shortened):
+
+  ```json
+  {"safe": [{"branch": "automaton/a1b2c3d4e5f6", "worktree": "", "reason": "all commits on main", "commits": 4}],
+   "held": [{"branch": "automaton/d0442737d38c", "worktree": "", "state": "pending"}],
+   "held_dirty": 0}
+  ```
+
+  Answers a tool error when Automata are disabled or no `worktree_base_repo` is set (the daemon's `503`) or the branches cannot be listed (`500`). Needs the autonomous read capability when called by a federated peer.
 - **`autonomous_prd_set_lane_preference`** — set which lane an Automaton may take: `gpu`, `claude` or `any`. Takes `id` and `lane_preference`; an empty `lane_preference` clears the setting, which means `any`. An unknown value is refused. Proxies `POST /api/autonomous/prds/{id}/set_lane_preference`. Needs the autonomous write capability when called by a federated peer.
 
   | Parameter | Required | Description |

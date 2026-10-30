@@ -26,6 +26,7 @@ Each flow is documented in its own file under `docs/flow/`.
 | [Guardrail Flow](flow/guardrail-flow.md) | `flow/guardrail-flow.md` | Guardrail registry, scan unification, profiles, per-Automaton override |
 | [Dashboard Flow](flow/dashboard-flow.md) | `flow/dashboard-flow.md` | WS hook_update → constellation nodes + EKG waveform → sprint pipeline + expand panel |
 | [Automation Triage Flow](flow/automation-triage-flow.md) | `flow/automation-triage-flow.md` | Poll-time triage pass — fill/refresh/clear the stuck Automaton's record, one alert per episode, and the read on every surface |
+| [Automation Merge-Pending Flow](flow/automation-merge-pending-flow.md) | `flow/automation-merge-pending-flow.md` | Poll-time merge-pending check — cache keyed by branch and main tips, git cherry and subject check, state decision, shadow recording vs the on-mode alert |
 
 ---
 

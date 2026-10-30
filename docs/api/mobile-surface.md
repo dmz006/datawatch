@@ -493,6 +493,81 @@ Shape notes for the app team:
   capability for federated peers. The same endpoint is listed in the full OpenAPI
   spec (`TriageList`/`TriageRecord` schemas).
 
+## Merge state and safe-to-delete report (Automata surface)
+
+Whether the work branches of finished Automata have reached `main` is read from two GET-only routes — the same contract the PWA's merge badge and safe-to-delete card use, and the same one the CLI, MCP and comm surfaces read. Nothing on either route merges, deletes or pushes.
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/autonomous/merge` | GET | Merge-pending mode, alert threshold, one entry per finished Automaton with a work branch, and the shadow decisions |
+| `/api/autonomous/safe-to-delete` | GET | Read-only report of Automata branches and worktrees that are safe to delete and those held back |
+
+Neither takes a query parameter. Any other method is 405, a federated peer needs the autonomous read capability (403 without it), and both answer 503 while Automata are disabled. Handle 401, 403, 405 and 503 without failing the screen.
+
+`GET /api/autonomous/merge` response:
+
+```json
+{
+  "mode": "shadow",
+  "alert_minutes": 30,
+  "automata": [
+    {
+      "automaton_id": "d0442737d38c",
+      "name": "nightly ingest",
+      "branch": "automaton/d0442737d38c",
+      "state": "pending",
+      "commits_ahead": 3,
+      "pending_since": "2026-10-29T09:12:44Z",
+      "alerted_at": null,
+      "would_alert": true
+    }
+  ],
+  "shadow_decisions": [
+    {
+      "at": "2026-10-29T09:12:44Z",
+      "automaton_id": "d0442737d38c",
+      "name": "nightly ingest",
+      "branch": "automaton/d0442737d38c",
+      "state": "pending",
+      "commits_ahead": 3,
+      "would_alert": false,
+      "repeat_count": 31,
+      "last_seen_at": "2026-10-29T09:42:44Z"
+    }
+  ]
+}
+```
+
+`GET /api/autonomous/safe-to-delete` response:
+
+```json
+{
+  "safe": [
+    { "branch": "automaton/a1b2c3d4e5f6", "worktree": "/home/me/.datawatch/prd-worktrees/a1b2c3d4e5f6", "reason": "all commits on main", "commits": 4 }
+  ],
+  "held": [
+    { "branch": "automaton/9f8e7d6c5b4a", "worktree": "/home/me/.datawatch/prd-worktrees/9f8e7d6c5b4a", "state": "merged", "dirty": true, "note": "Automaton worktree has uncommitted changes" }
+  ],
+  "held_dirty": 1
+}
+```
+
+Shape notes for the app team:
+
+- `state` is one of `merged`, `pending`, `needs_look`, `empty`, `unknown`. Only `pending` and `needs_look` get a badge ("Automaton merge pending", "Automaton needs a look"); the other three draw nothing. Treat any other value as plain text, not a failure.
+- **`needs_look` is not a softer `pending`.** A commit whose patch changed while it was merged shows as `needs_look`, never as `pending`: the daemon matches a commit's patch and its subject line against `main`, and when the two disagree it cannot say whether the work landed. The badge is a prompt to compare the branch by hand; no alert is raised for it. On an Automation card that lists several member Automata, `needs_look` wins over `pending`.
+- `mode` is `off`, `shadow` or `on`. While it is `off`, `automata` and `shadow_decisions` are empty arrays (not null) and no badge is drawn. `shadow_decisions` is empty outside `shadow`, and newest first.
+- `alert_minutes` is the `autonomous.automation.merge_pending_alert_minutes` setting (default 30, `0` = alert off) and rides the body beside the entries it applies to.
+- `pending_since` and `alerted_at` are `null` when they do not apply; `alerted_at` is always `null` in `shadow` mode, which never alerts. `would_alert` is present **only in `shadow` mode**.
+- `state` comes from the daemon's in-memory comparison, so the merge read never runs git and an Automaton not compared yet reads `unknown`. Keep the last good result when a read fails, and do not repeat the read more than about once every 5 seconds.
+- The safe-to-delete read **does run git**, so poll it slowly (the PWA refreshes every 60 seconds). It works in every mode, including `off`. `dirty` and `note` are omitted when false or empty; `worktree` is an empty string when the branch has none. `held_dirty` counts branches safe by state but held back for uncommitted changes. Both lists are always arrays.
+- A 503 from the safe-to-delete read means Automata are disabled or no worktree base repository is configured: show the failed state, not an empty report.
+- **The report never deletes anything**, and the app must not offer a delete, merge or push action next to it. Cleaning up a branch is a separate step the operator approves.
+- Branch names, worktree paths and notes are daemon strings: render them sanitized and wrapped, never as markup.
+- The Automaton `triage` record gains the status value `merge_pending`, with `branch` and `commits_ahead` (both omitted on `failed` and `blocked` records). A client that lists triage records must tolerate the new value.
+- Two config keys (read and write through the existing config surfaces, under `autonomous.automation`): `merge_pending_mode` (`off`, `shadow`, `on`; default `off`; an empty or other value is refused with 400) and `merge_pending_alert_minutes` (whole number ≥ 0; default 30; `0` is kept as `0`, a negative value is refused with 400).
+- Access follows the daemon's rules: bearer token locally, the autonomous read capability for federated peers. The schemas are `MergeStatus`, `MergeAutomaton`, `MergeShadowDecision` and `SafeDeleteReport` in the full OpenAPI spec. The operator reference is `docs/operations.md` (section *Merge-pending check*) and the full field documentation is `docs/api/autonomous.md` (section *Merge state and safe-to-delete report*).
+
 ## Session Guardrail + Live Task Tree APIs (S3)
 
 On-demand guardrail invocation for a session and real-time Status tab data:
