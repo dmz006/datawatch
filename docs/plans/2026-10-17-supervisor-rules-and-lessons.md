@@ -613,3 +613,23 @@ On 2026-10-30 eight questions were answered between 13:33 and 13:42 and the tick
 ### How to write a question for the queue (2026-10-30)
 
 Operator, 2026-10-30, quoted: "Maybe i am missing the question or it needs to be clearer, please review this and the next screenshot in pwa, not app, and help me understand the quotation being asked or isn't clear". My first batch asked 'confirm proposal A' with the generic options confirm, walk me through and not now, using tracker identifiers and shorthand; the operator could not tell what was being decided. A question must stand alone: say in plain language what the situation is and what is being decided, name no tracker identifier, offer the real choices as options (each with a trade-off line giving its cost and its risk), give a recommendation with its reason, and set a forced default. Questions that say 'confirm the recommendation' are not allowed. The eight proposal questions were withdrawn and raised again in this form on 2026-10-30.
+
+### What the supervisor still does by hand (2026-10-30)
+
+Operator, 2026-10-30, quoted: "What else are you doing by hand that datawatch should be doing?" The inventory, each with what removes it:
+
+1. Merging a finished Automaton (trial merge, conflict resolution, the version and changelog, lint, the full tests, the ship, the tag): the coordinator merge mechanics step (the last supervisor duty step, behind a design answer) and the pre-flight and post-flight checks feature. Not filed as a PRD yet beyond the answered design questions.
+2. Cancelling the PRD record and the Automation after a ship: the merged-member-completes feature (`46df0001`).
+3. Deploying (build, install, restart, check the leases and sessions): no PRD. To file.
+4. Checking the hourly list (lanes, held tasks, CI, releases, disk, questions): the daemon-side supervisor watch (`85720001`) covers the findings; the hourly tick as a whole is not replaced.
+5. Reading a plan for coverage and approving it (acknowledging the false findings of the plan-coverage gate): no PRD. The gate reports new files the PRD creates as unresolved; the gate should know that files named in a task as created are not findings. To file.
+6. Moving a task to another backend when it is slow or stuck, and releasing a hung verification: the request progress observer (`8f040001`) and the model routing and per-task pin work (`b2220001`).
+7. Resetting tasks after a failure caused by the disk quota or a restart: no PRD; the held-state questions feature (`56d30001`) turns it into a question with a retry option, but a retry on transient infrastructure failures should be automatic. To file.
+8. Committing a worker's uncommitted work after a backend move or a cancel and reopen, and checking the worktree before a merge: no PRD. The executor should refuse to complete a task whose work was not committed. To file.
+9. Writing the PRD specs, the follow-up PRDs after an answer, and the registry rows and decision records: decisions raising their own questions (`ee660001`) covers the question part; filing the follow-up PRD from an answer is the follow-up list in that feature; the registry row is no PRD yet. To file.
+10. Recording the operator's answers and their quotes in the design docs: decisions raising their own questions (`ee660001`).
+11. Reading the answered questions every tick: the same feature, applying an answer.
+12. Cleaning up temp space and worktrees: the cleanup feature (shipped in 9.43.0) and the test leak fix (shipped in 9.42.3).
+13. Reading CI failures, finding the cause and shipping the fix: the repo CI watch (shipped 9.38.0) reports and reruns a hung run once; diagnosing is not automated and should stay a supervisor job.
+14. Budget: reading the percentage, computing the pace and choosing lanes: the usage calculator advises; moving the lane count automatically within the operator's setting is not built. To file.
+15. Starting the next feature step when one merges (filing it, decomposing it, starting it in an Automation): the Automation chain does the start; filing the next step is by hand.
