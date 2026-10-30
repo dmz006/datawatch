@@ -9,6 +9,7 @@
 //	POST /api/questions/{id}/answer  — record an answer (needs autonomous:write)
 //	POST /api/questions/{id}/withdraw — withdraw an open question (autonomous:write)
 //	GET  /api/questions/{id}/answers — the answer log, oldest first (autonomous:read)
+//	GET  /api/questions/quality      — the effective question quality policy (autonomous:read)
 //
 // An operator authorized for the Automation may answer from any
 // communication channel: answering needs only the write, so no separate
@@ -27,13 +28,16 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
@@ -117,6 +121,10 @@ type raiseQuestionBody struct {
 	Recommendation *autonomous.QuestionRecommendation `json:"recommendation"`
 	Default        string                             `json:"default"`
 	Risk           string                             `json:"risk"`
+	// Tradeoffs maps an option id to trade-off text. Each entry fills the
+	// matching option's own tradeoffs when that option has none; a key that
+	// matches no option is a 400 naming the id.
+	Tradeoffs map[string]string `json:"tradeoffs"`
 	// Priority is empty, normal or high (the store validates it and a value
 	// outside the set is a 400 naming the field). ReturnPath opts this one
 	// question in to the session line and, when true, the store requires a
@@ -319,6 +327,12 @@ func (s *Server) handleQuestionRaise(w http.ResponseWriter, r *http.Request) {
 	// does not self-attest one.
 	actor := s.auditActor(r.Context())
 
+	options, err := mergeQuestionTradeoffs(reqBody.Options, reqBody.Tradeoffs)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	q := autonomous.Question{
 		Label:          strings.TrimSpace(reqBody.Label),
 		AskedBy:        strings.TrimSpace(reqBody.AskedBy),
@@ -330,7 +344,7 @@ func (s *Server) handleQuestionRaise(w http.ResponseWriter, r *http.Request) {
 		ProposalPath:   reqBody.ProposalPath,
 		RegistryRowKey: strings.TrimSpace(reqBody.RegistryRowKey),
 		Text:           reqBody.Text,
-		Options:        reqBody.Options,
+		Options:        options,
 		Recommendation: reqBody.Recommendation,
 		Default:        reqBody.Default,
 		Risk:           strings.TrimSpace(reqBody.Risk),
@@ -347,6 +361,34 @@ func (s *Server) handleQuestionRaise(w http.ResponseWriter, r *http.Request) {
 	// An omitted context is deliberately NOT defaulted here: the body must
 	// name one of the known contexts, and the store's validation is the one
 	// that says so (400 naming the field).
+
+	// The quality check runs on the validated record, before anything is
+	// stored. The store validates again on Raise; validating a copy here only
+	// keeps a malformed question a 400 whatever the quality mode is.
+	var warnings []questionQualityFinding
+	if policy := s.questionQualityPolicy(); policy.Mode != autonomous.QualityModeOff {
+		check := q
+		if err := autonomous.ValidateNewQuestion(&check); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		findings, err := autonomous.CheckQuestionQuality(check, policy)
+		if err != nil {
+			http.Error(w, "question quality check is misconfigured: fix autonomous.questions.quality_mode and autonomous.questions.quality_tracker_id_pattern", http.StatusInternalServerError)
+			return
+		}
+		if len(findings) > 0 {
+			items := questionQualityFindings(findings)
+			if policy.Mode == autonomous.QualityModeRefuse {
+				writeJSONError(w, http.StatusUnprocessableEntity, map[string]any{
+					"error":    "question refused: it does not meet the question quality policy; fix the findings and send it again",
+					"findings": items,
+				})
+				return
+			}
+			warnings = items
+		}
+	}
 
 	raised, err := s.questionStore.Raise(q)
 	if err != nil {
@@ -366,7 +408,11 @@ func (s *Server) handleQuestionRaise(w http.ResponseWriter, r *http.Request) {
 	// line is added here.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(map[string]any{"question": raised})
+	resp := map[string]any{"question": raised}
+	if len(warnings) > 0 {
+		resp["warnings"] = warnings
+	}
+	_ = json.NewEncoder(w).Encode(resp)
 
 	// Fan-out: WS broadcast + messaging group + (high priority, on and in
 	// range) an alert. Reads the switch/toggles live, non-blocking, and a
@@ -374,6 +420,102 @@ func (s *Server) handleQuestionRaise(w http.ResponseWriter, r *http.Request) {
 	// channel is off. The raise is already persisted and on its way back
 	// out as the 201 response, so none of this can delay or fail it.
 	s.notifyQuestionRaised(raised)
+}
+
+// questionQualityFinding is one quality finding on the wire.
+type questionQualityFinding struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func questionQualityFindings(in []autonomous.QualityFinding) []questionQualityFinding {
+	out := make([]questionQualityFinding, 0, len(in))
+	for _, f := range in {
+		out = append(out, questionQualityFinding{Code: f.Code, Message: f.Message})
+	}
+	return out
+}
+
+// questionsConfig returns the autonomous.questions section, or the zero
+// value (every key at its default) when the server has no config.
+func (s *Server) questionsConfig() config.AutonomousQuestionsConfig {
+	if s.cfg == nil {
+		return config.AutonomousQuestionsConfig{}
+	}
+	return s.cfg.Autonomous.Questions
+}
+
+// questionQualityPolicy is the effective quality policy, read live.
+func (s *Server) questionQualityPolicy() autonomous.QualityPolicy {
+	return autonomous.QualityPolicyFromConfig(s.questionsConfig())
+}
+
+// mergeQuestionTradeoffs returns a copy of options with each tradeoffs entry
+// filled into the option of that id when it has no trade-offs of its own. A
+// key matching no option is an error naming the id (the first in sorted
+// order, so the message is stable).
+func mergeQuestionTradeoffs(options []autonomous.QuestionOption, tradeoffs map[string]string) ([]autonomous.QuestionOption, error) {
+	if len(tradeoffs) == 0 {
+		return options, nil
+	}
+	out := make([]autonomous.QuestionOption, len(options))
+	copy(out, options)
+	ids := make([]string, 0, len(tradeoffs))
+	for id := range tradeoffs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		found := false
+		for i := range out {
+			if out[i].ID != id {
+				continue
+			}
+			found = true
+			if strings.TrimSpace(out[i].Tradeoffs) == "" {
+				out[i].Tradeoffs = tradeoffs[id]
+			}
+			break
+		}
+		if !found {
+			return nil, fmt.Errorf("tradeoffs names option %q, which is not one of this question's options", id)
+		}
+	}
+	return out, nil
+}
+
+// questionQualityResponse is the GET /api/questions/quality body: the
+// effective values of the autonomous.questions quality keys.
+type questionQualityResponse struct {
+	Mode              string `json:"mode"`
+	MinTextChars      int    `json:"min_text_chars"`
+	TrackerIDPattern  string `json:"tracker_id_pattern"`
+	QueuePreviewLines int    `json:"queue_preview_lines"`
+}
+
+// handleQuestionQuality implements GET /api/questions/quality. It is
+// registered as its own exact path so it wins over the /api/questions/{id}
+// subtree, needs the autonomous read capability, and honours the
+// autonomous.questions.enabled switch like the other question routes.
+func (s *Server) handleQuestionQuality(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	if s.cfg != nil && !s.cfg.Autonomous.Questions.Enabled {
+		http.Error(w, "operator questions are disabled: set autonomous.questions.enabled to true", http.StatusServiceUnavailable)
+		return
+	}
+	qc := s.questionsConfig()
+	writeJSONOK(w, questionQualityResponse{
+		Mode:              qc.EffectiveQualityMode(),
+		MinTextChars:      qc.EffectiveQualityMinTextChars(),
+		TrackerIDPattern:  qc.EffectiveQualityTrackerIDPattern(),
+		QueuePreviewLines: qc.EffectiveQueuePreviewLines(),
+	})
 }
 
 // handleQuestionList implements GET /api/questions.
