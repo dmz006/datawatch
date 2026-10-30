@@ -15,6 +15,8 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf8"
 )
 
@@ -249,4 +251,77 @@ func parseWorkerQuestionPayload(raw string) (WorkerQuestionSignal, string) {
 		Label:          label,
 		Risk:           risk,
 	}, ""
+}
+
+// WorkerQuestionEvent is what the scanner hands the hook for a worker question
+// line. Exactly one of Signal and RefusalReason is set: Signal for a valid
+// question, RefusalReason (a category, never the line text) for a refused one.
+type WorkerQuestionEvent struct {
+	SessionFullID string
+	PRDID         string
+	TaskID        string
+	Signal        *WorkerQuestionSignal
+	RefusalReason string
+	At            time.Time
+}
+
+// workerQuestionRoute holds the gate and hook behind their own lock, so a
+// setter called after the scanners start never races a read.
+type workerQuestionRoute struct {
+	mu   sync.RWMutex
+	gate func() bool
+	hook func(WorkerQuestionEvent)
+}
+
+// SetWorkerQuestionGate sets the switch that turns worker question routing on.
+// A nil gate, or one that returns false, leaves routing off.
+func (m *Manager) SetWorkerQuestionGate(fn func() bool) {
+	m.workerQuestion.mu.Lock()
+	m.workerQuestion.gate = fn
+	m.workerQuestion.mu.Unlock()
+}
+
+// SetWorkerQuestionHook sets the receiver for worker question events. It runs
+// on the output scanner, so it must return quickly: the daemon side hands the
+// event to a goroutine and never waits on a question store here.
+func (m *Manager) SetWorkerQuestionHook(fn func(WorkerQuestionEvent)) {
+	m.workerQuestion.mu.Lock()
+	m.workerQuestion.hook = fn
+	m.workerQuestion.mu.Unlock()
+}
+
+// routeWorkerQuestion sends line to the worker question hook when it is a real
+// or refused worker question, the gate is on, and the session's markers are
+// trusted (outside the post-restart grace and the task-echo window, the same
+// window the needs-input marker uses). It never changes session state.
+func (m *Manager) routeWorkerQuestion(sess *Session, line string) {
+	m.workerQuestion.mu.RLock()
+	gate, hook := m.workerQuestion.gate, m.workerQuestion.hook
+	m.workerQuestion.mu.RUnlock()
+	if hook == nil {
+		return
+	}
+	kind, sig, reason := classifyWorkerQuestion(line)
+	if kind != workerQuestionReal && kind != workerQuestionRefused {
+		return
+	}
+	if gate == nil || !gate() {
+		return
+	}
+	if !m.markersTrusted(sess) {
+		m.debugf("processOutputLine: ignoring worker question marker inside restart-grace/task-echo window for %s", sess.FullID)
+		return
+	}
+	ev := WorkerQuestionEvent{
+		SessionFullID: sess.FullID,
+		PRDID:         sess.PRDID,
+		TaskID:        sess.TaskID,
+		At:            m.now(),
+	}
+	if kind == workerQuestionReal {
+		ev.Signal = &sig
+	} else {
+		ev.RefusalReason = reason
+	}
+	hook(ev)
 }
