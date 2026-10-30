@@ -115,6 +115,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [flow/lifecycle-subscription-flow.md](flow/lifecycle-subscription-flow.md) | Automata lifecycle event → dispatcher → subscription engine → comm / session (bridge, SendInput) / topic / alert / pending-events queue (`mcp_queue`) sinks; update + test-fire; outbound webhook and peer forwarding paths (both ship disabled) |
 | [flow/tag-registry-sync-flow.md](flow/tag-registry-sync-flow.md) | Shared tag registry across federated daemons: keeper and peer roles, the pull loop, forwarded writes, stale copies, pending sync, merge and removed-on-keeper notes |
 | [flow/automation-triage-flow.md](flow/automation-triage-flow.md) | Poll-time triage pass — fill/refresh/clear the stuck Automaton's triage record, one alert per episode, and the read on every surface |
+| [flow/automation-merge-pending-flow.md](flow/automation-merge-pending-flow.md) | Poll-time merge-pending check — the cache keyed by branch and main tips, the git cherry and subject check, the state decision, and the split between shadow recording and the on-mode alert |
 
 ---
 
