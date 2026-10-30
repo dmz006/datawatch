@@ -81,3 +81,8 @@ __pycache__/
 *.pyc
 /etc/
 /ts706-upload.txt
+
+# Runtime folders that live checks and the restart harness create; never commit them
+/tmp-sandbox/
+/rmt/
+/.rm-run/
