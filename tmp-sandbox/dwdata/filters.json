@@ -1,0 +1,83 @@
+[
+  {
+    "id": "6fef",
+    "pattern": "Do you want to proceed\\?",
+    "action": "schedule",
+    "value": "yes",
+    "enabled": true,
+    "seeded": true,
+    "created_at": "2026-10-29T21:43:11.520159297-04:00"
+  },
+  {
+    "id": "2e0b",
+    "pattern": "You've hit your limit|rate limit exceeded|quota exceeded|limit reached|weekly usage limit|hit weekly limit|opus limit reached|sonnet limit reached",
+    "action": "alert",
+    "value": "Rate limit detected — session may be paused.",
+    "enabled": true,
+    "seeded": true,
+    "created_at": "2026-10-29T21:43:11.52017462-04:00"
+  },
+  {
+    "id": "b03c",
+    "pattern": "trust the files|Trust ",
+    "action": "alert",
+    "value": "Trust dialog detected — review with 'status \u003cid\u003e' before approving.",
+    "enabled": true,
+    "seeded": true,
+    "created_at": "2026-10-29T21:43:11.520179447-04:00"
+  },
+  {
+    "id": "757c",
+    "pattern": "Do you want to|Would you like|Proceed\\?|Allow this action",
+    "action": "detect_prompt",
+    "value": "",
+    "enabled": true,
+    "seeded": true,
+    "created_at": "2026-10-29T21:43:11.520185647-04:00"
+  },
+  {
+    "id": "de99",
+    "pattern": "\\[y/N\\]|\\[Y/n\\]|\\(y/n\\)|\\(yes/no\\)|\\(y/n/always\\)",
+    "action": "detect_prompt",
+    "value": "",
+    "enabled": true,
+    "seeded": true,
+    "created_at": "2026-10-29T21:43:11.520192877-04:00"
+  },
+  {
+    "id": "3a64",
+    "pattern": "Enter to confirm|Esc to cancel",
+    "action": "detect_prompt",
+    "value": "",
+    "enabled": true,
+    "seeded": true,
+    "created_at": "2026-10-29T21:43:11.520198095-04:00"
+  },
+  {
+    "id": "55c2",
+    "pattern": "Yes, I trust|trust this folder|Quick safety check",
+    "action": "detect_prompt",
+    "value": "",
+    "enabled": true,
+    "seeded": true,
+    "created_at": "2026-10-29T21:43:11.520202832-04:00"
+  },
+  {
+    "id": "c535",
+    "pattern": "I am using this for local development|Loading development channels",
+    "action": "detect_prompt",
+    "value": "",
+    "enabled": true,
+    "seeded": true,
+    "created_at": "2026-10-29T21:43:11.52020779-04:00"
+  },
+  {
+    "id": "42b6",
+    "pattern": "Yes, I accept",
+    "action": "detect_prompt",
+    "value": "",
+    "enabled": true,
+    "seeded": true,
+    "created_at": "2026-10-29T21:43:11.520210153-04:00"
+  }
+]

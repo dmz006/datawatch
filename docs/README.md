@@ -35,6 +35,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [howto/automation-queue-advance.md](howto/automation-queue-advance.md) | Automation (chained Automatons): activate, automatic advance, idle alert |
 | [howto/usage-calculator.md](howto/usage-calculator.md) | Usage calculator: within or over budget for the week, what each lane count costs, the three policies, typed readings, federation, the three PWA variants |
 | [howto/automation-lane-fill.md](howto/automation-lane-fill.md) | Lane fill: keeping GPU and Claude lanes busy, the shadow mode comparison, lane preferences, the idle alert and restart behaviour |
+| [howto/automation-repo-ci-watch.md](howto/automation-repo-ci-watch.md) | Repo CI watch: the head of `main` and the newest release tags across every workflow, the classifications, the once-per-episode alert, the budgeted infra rerun / hung cancel / superseded deletion, why security runs are record-only, the shadow-mode comparison, all read surfaces |
 | [howto/automation-tab.md](howto/automation-tab.md) | Automation tab: list, pipeline strip, create and edit form, member controls |
 | [howto/automata-tab-loading.md](howto/automata-tab-loading.md) | Automata tab loading: paged summary, Load more, loading / cached / stale / failed states, reconnect |
 | [howto/automation-tab.md](howto/automation-tab.md) | Automation view (first sub-tab of Automata): list, pipeline strip, create and edit form, member controls |

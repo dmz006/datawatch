@@ -1694,6 +1694,63 @@ Response:
   - PWA triage card in the Automaton detail view (`internal/server/web/app.js`), with the `triage_*` strings in the five locale bundles (en, de, es, fr, ja).
 - **Parity:** the REST/MCP/CLI/comm mapping is asserted in `internal/router/triage_parity_test.go` and `cmd/datawatch/lane_fill_parity_test.go`; the triage alert sink (including the untruncated comm-body contract with the alert store) is covered in `internal/router/triage_alert_sink_test.go`.
 
+## Repo CI watch (autonomous.automation.repo_ci_watch)
+
+The coordinator watches the CI runs of repositories you name it to, on the
+head of main and on the newest release tags. See `docs/howto/automation-repo-ci-watch.md`
+for the operator view and the "Repo CI watch" section of `docs/operations.md`
+for the poll's contract.
+
+- **Config:** `autonomous.automation.repo_ci_watch` — a block inside the
+  existing `autonomous.automation` section, so it rides on every
+  configuration channel (PUT /api/config, MCP `autonomous_config_set`, CLI
+  `config set`, comm `configure`, the PWA Settings fields). Keys and
+  defaults (each with what an unset value reads, an explicit-0 meaning
+  where one is legal, and the write-path refusal below the minimum):
+  `mode` (off, the default, shadow or on; any other value refused), `repos`
+  (absolute repository paths; empty means nothing is watched and a
+  repository is never inferred from the working directory),
+  `poll_seconds` (minimum 60, 300 default), `alert_minutes` (0 turns the
+  alert off, explicit 0 survives a merge round trip, unset reads the 30-
+  minute default), `tag_count` (0 means no tags, unset reads the 5 default),
+  `hung_after_minutes` (minimum 1, 60 default), `security_workflows` (unset
+  reads the default list `CodeQL, dependency-review, owasp-zap, secret-scan,
+  security-scan`; an explicitly empty list means none), `delete_superseded`
+  (report, the default, or delete). The per-repository infra retry budget is
+  not a key here: unset reads 0, meaning no automatic reruns.
+- **Poll:** the coordinator lists the workflows on the head of main and on
+  the newest release tags of every watched repository on each poll, records
+  each run, and classifies it (none, infra, security, policy, code_or_test,
+  judging, hung). A failed run gets a judge call at most once per
+  poll to decide infra versus code_or_test; the verdict is cached per run id,
+  so a run is never judged twice. Shadow mode records everything and logs
+  every action it would take on the record (`would_do`) without writing to
+  GitHub and without raising the alert.
+- **Actions (on mode only):** a hung run is cancelled at most once per run
+  id; an infra-failing run is rerun at most once per run id, and only while
+  the infra retry budget still has reruns left for that
+  repository/ref/workflow; a failed run that a later green run
+  of the same workflow on a descendant commit has superseded is named in that
+  green record's superseded_run_ids the poll it is discovered in and, when
+  `delete_superseded` is delete, deleted by a later poll — the poll that
+  names a superseded run never deletes it. A security or a policy run is
+  record-only: it is never cancelled, rerun or deleted. The per-episode alert
+  (unresolved for `alert_minutes` since first seen) is raised once per record
+  and never in shadow mode; `alert_minutes` 0 or an off mode disables it.
+- **Surfaces:** REST read `GET /api/autonomous/repo-ci-watch` (body: mode,
+  alert_minutes, repositories, last_poll_at, and the records; optional
+  `repo` and `status` filters), the MCP read tool
+  `autonomous_repo_ci_watch`, the CLI `datawatch autonomous repo-ci-watch`, the
+  comm channel `repo-ci-watch` verb, the PWA read-only status line and the
+  settings fields, and the config block itself. The federation capability
+  `autonomous:read` already covers the read, so the read does not gain
+  separate capabilities. The status line is hidden when the endpoint is
+  unavailable, so it never displays a stale state.
+- **Test:** `internal/autonomous/repo_ci_watch_*_test.go` (config validation
+  and defaults, poll pass over the fixture, action phase, alert, the judge
+  cache), `internal/server/repo_ci_watch_rest_test.go` (the REST read), and
+  the parity tests that cover the CLI and comm verbs.
+
 ## Automation decision assistant (set_decision_assistant)
 
 - **Setting:** `decision_assistant` on an Automation and on a member (`DecisionAssistant` in `internal/autonomous/decision_assistant.go`): `backend`, `model`, `mode` (`shadow` default, `live`), `hooks` (`empty_edge`, `skip_member`, `insert_member`, `budget_breach`) and per-hook `thresholds`. **Default: off** — an unset setting, or an empty backend, means no hook consults the assistant. A member's setting wins over the Automation's (`EffectiveDecisionAssistant`).

@@ -551,6 +551,11 @@ type AutomationConfig struct {
 	// EffectiveTriageAlertMinutes.
 	TriageAlertMinutes *int `json:"triage_alert_minutes,omitempty"`
 
+	// RepoCIWatch: the repo CI watch knobs (autonomous.automation.
+	// repo_ci_watch.*). Defaults are applied only in the Effective*
+	// accessors in repo_ci_watch_config.go. See RepoCIWatchConfig.
+	RepoCIWatch RepoCIWatchConfig `json:"repo_ci_watch"`
+
 	// AgentInsertPolicy: PolicyAllow (default, also the empty value) lets an
 	// agent insert a member directly; PolicyRequireOperator holds an agent's
 	// insert as a pending insert until an operator approves it.
@@ -755,8 +760,9 @@ type Manager struct {
 	cfg         Config
 	store       *Store
 	automations *AutomationStore
-	dataDir     string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
-	templates   *TemplateStore // BL221 (v6.2.0) — dedicated template store
+	repoCIWatch *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
+	dataDir     string            // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
+	templates   *TemplateStore    // BL221 (v6.2.0) — dedicated template store
 	decompose   DecomposeFn
 	guardrail   GuardrailFn
 	planReview  PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
@@ -827,6 +833,36 @@ type Manager struct {
 	ciRerunFn       func(ctx context.Context, ownerRepo string, runID int64) error
 	ciPollInterval  time.Duration
 	ciFollowUpDelay time.Duration
+
+	// repo CI watch (head-of-main / tag release runs) seams (see
+	// repo_ci_watch_runs.go and repo_ci_watch_poll.go), same pattern as
+	// the ci-watch seams above: guarded by mu, nil = use
+	// the real implementation (repo_ci_watch_runs.go):
+	// repoCIFetchFn  → defaultRepoCIFetch,
+	// repoCIOriginFn → defaultRepoCIOrigin,
+	// repoCIHeadFn   → defaultRepoCIHead,
+	// repoCITagsFn   → defaultRepoCITags,
+	// repoCIPeelFn   → defaultRepoCIPeel,
+	// repoCIRunsFn   → defaultRepoCIRuns,
+	// repoCIJudgeFn  → repoCIJudgeCall (ci_watch.go),
+	// repoCIAncestorFn → defaultRepoCIAncestor (repo_ci_watch_actions.go),
+	// repoCICancelFn   → defaultRepoCICancel,
+	// repoCIRerunFn    → defaultCIRerun (ci_watch.go),
+	// repoCIDeleteFn   → defaultRepoCIDelete.
+	// Injectable so the poll pass never shells out to the real git/gh
+	// binaries, never calls a real judge, and never writes to GitHub in
+	// tests (cancel, rerun and delete are all GitHub writes).
+	repoCIFetchFn    func(ctx context.Context, repoDir string) error
+	repoCIOriginFn   func(ctx context.Context, repoDir string) (string, error)
+	repoCIHeadFn     func(ctx context.Context, repoDir string) (string, error)
+	repoCITagsFn     func(ctx context.Context, repoDir string) ([]string, error)
+	repoCIPeelFn     func(ctx context.Context, repoDir, tag string) (string, error)
+	repoCIRunsFn     func(ctx context.Context, ownerRepo, sha string) ([]RepoCIWatchRun, error)
+	repoCIJudgeFn    func(ctx context.Context, repoPath, label string) (GuardrailVerdict, error)
+	repoCIAncestorFn func(ctx context.Context, repoDir, older, newer string) bool
+	repoCICancelFn   func(ctx context.Context, ownerRepo string, runID int64) error
+	repoCIRerunFn    func(ctx context.Context, ownerRepo string, runID int64) error
+	repoCIDeleteFn   func(ctx context.Context, ownerRepo string, runID int64) error
 
 	// BL406 Phase 5 — nil until BL405 Phase 8 wires real CouncilProfile
 	// support; resolveGuidedModeSource falls "council" back to
@@ -1825,6 +1861,10 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	if err != nil {
 		return nil, err
 	}
+	repoWatch, err := NewRepoCIWatchStore(st.dir)
+	if err != nil {
+		return nil, err
+	}
 	types := make([]AutomatonType, len(builtinTypes))
 	copy(types, builtinTypes)
 	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
@@ -1832,6 +1872,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 		cfg:         cfg,
 		store:       st,
 		automations: automs,
+		repoCIWatch: repoWatch,
 		dataDir:     dataDir,
 		templates:   newTemplateStore(dataDir),
 		decompose:   decompose,
@@ -5849,4 +5890,110 @@ func (m *Manager) SetPRDRetryPolicy(prdID, profile string, policy map[string]int
 // GetGuardrailProfile (BL303 S2 T05) returns one profile by ID.
 func (m *Manager) GetGuardrailProfile(id string) (*GuardrailProfile, bool) {
 	return m.store.GetGuardrailProfile(id)
+}
+
+// ListRepoCIWatchRecords returns deep copies of all repo CI watch
+// records currently stored, newest FirstSeenAt first — the whole list
+// for a repository with a clean head is empty.
+func (m *Manager) ListRepoCIWatchRecords() []*RepoCIWatchRecord {
+	if m.repoCIWatch == nil {
+		return []*RepoCIWatchRecord{}
+	}
+	return m.repoCIWatch.List()
+}
+
+// SaveRepoCIWatchRecord persists rec under its composite key (insert or
+// refresh), guarded by the store's mutex, and returns a deep copy of
+// the stored record.
+func (m *Manager) SaveRepoCIWatchRecord(rec *RepoCIWatchRecord) (*RepoCIWatchRecord, error) {
+	if m.repoCIWatch == nil {
+		return nil, errors.New("repo ci watch: no store available")
+	}
+	return m.repoCIWatch.Save(rec)
+}
+
+// AppendRepoCIWatchNote writes one annotation to the existing record
+// under key (source names the writing step, text is the note body); it
+// never creates one. The store's guard serializes the append with any
+// concurrent save, so the append-only invariant holds.
+func (m *Manager) AppendRepoCIWatchNote(key, source, text string) (*RepoCIWatchRecord, error) {
+	if m.repoCIWatch == nil {
+		return nil, errors.New("repo ci watch: no store available")
+	}
+	return m.repoCIWatch.AppendNote(key, source, text)
+}
+
+// ClearRepoCIWatchRecord removes the record under key — e.g. when a
+// failing run goes green — and persists the change; a missing record
+// is an error.
+func (m *Manager) ClearRepoCIWatchRecord(key string) error {
+	if m.repoCIWatch == nil {
+		return errors.New("repo ci watch: no store available")
+	}
+	return m.repoCIWatch.Delete(key)
+}
+
+// repoCIWatchAncestor reports — through git merge-base --is-ancestor in
+// repoDir — whether older is an ancestor of newer (equal commits count).
+// A failed or absent git read reports "not an ancestor"; the superseded
+// check is best-effort and never fails the pass. The seam (nil →
+// defaultRepoCIAncestor) keeps tests off the real git binary.
+func (m *Manager) repoCIWatchAncestor(ctx context.Context, repoDir, older, newer string) bool {
+	m.mu.Lock()
+	fn := m.repoCIAncestorFn
+	m.mu.Unlock()
+	if fn == nil {
+		fn = defaultRepoCIAncestor
+	}
+	return fn(ctx, repoDir, older, newer)
+}
+
+// repoCIWatchCancel cancels one workflow run (gh run cancel) — a
+// GitHub write. nil seam → defaultRepoCICancel.
+func (m *Manager) repoCIWatchCancel(ctx context.Context, ownerRepo string, runID int64) error {
+	m.mu.Lock()
+	fn := m.repoCICancelFn
+	m.mu.Unlock()
+	if fn == nil {
+		fn = defaultRepoCICancel
+	}
+	return fn(ctx, ownerRepo, runID)
+}
+
+// repoCIWatchRerun reruns one workflow run's failed jobs
+// (gh run rerun --failed) — a GitHub write that reuses the ci-watch
+// default. nil seam → defaultCIRerun.
+func (m *Manager) repoCIWatchRerun(ctx context.Context, ownerRepo string, runID int64) error {
+	m.mu.Lock()
+	fn := m.repoCIRerunFn
+	m.mu.Unlock()
+	if fn == nil {
+		fn = defaultCIRerun
+	}
+	return fn(ctx, ownerRepo, runID)
+}
+
+// repoCIWatchDelete removes one workflow run's record (gh run delete) —
+// a GitHub write. nil seam → defaultRepoCIDelete.
+func (m *Manager) repoCIWatchDelete(ctx context.Context, ownerRepo string, runID int64) error {
+	m.mu.Lock()
+	fn := m.repoCIDeleteFn
+	m.mu.Unlock()
+	if fn == nil {
+		fn = defaultRepoCIDelete
+	}
+	return fn(ctx, ownerRepo, runID)
+}
+
+// RepoCIWatchInfraRetryLimit returns the Manager-configured infra retry
+// budget (RetryPolicy["infra"]), the ceiling on automatic infra reruns
+// shared per repository/ref/workflow; an unset entry reads 0 — no
+// automatic reruns at all.
+func (m *Manager) RepoCIWatchInfraRetryLimit() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if v, ok := m.cfg.RetryPolicy["infra"]; ok {
+		return v
+	}
+	return 0
 }

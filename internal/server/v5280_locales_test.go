@@ -180,6 +180,9 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_automata_questions_notify_messaging",
 		"settings_automata_questions_notify_alert",
 		"settings_automata_questions_return_path",
+		// Repo CI watch status line (Automaton view) — the title every
+		// non-English bundle must carry even before translations land.
+		"repo_ci_watch_status_title",
 		"prd_cancel_task",
 		"prd_cancel_task_confirm",
 		"prd_cancel_task_ok",

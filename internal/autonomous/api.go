@@ -1870,3 +1870,19 @@ func (a *API) ProgressSource() ProgressSource { return a.M.Store() }
 // ProgressSnapshots returns the snapshot store behind the trend view, or nil
 // when snapshots are not enabled.
 func (a *API) ProgressSnapshots() *ProgressSnapshotStore { return a.M.ProgressSnapshotStore() }
+
+// ListRepoCIWatchRecords returns the repo CI watch records currently
+// stored, newest first — the whole list for a repository with a clean
+// head is empty.
+func (a *API) ListRepoCIWatchRecords() []*RepoCIWatchRecord {
+	return a.M.ListRepoCIWatchRecords()
+}
+
+// RepoCIWatchStatus is the repo CI watch read view in force: the mode
+// (off, shadow or on), the configured repository paths, the alert
+// threshold in whole minutes (0 while the watch is off), the instant
+// the coordinator last polled (the zero time when it never has) and the
+// stored records, newest first. Serves GET /api/autonomous/repo-ci-watch.
+func (a *API) RepoCIWatchStatus() RepoCIWatchStatus {
+	return a.M.RepoCIWatchStatus()
+}

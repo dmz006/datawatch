@@ -37,6 +37,11 @@ Subcommands:
                                   Decision line: the operator decisions, newest first, one line each with
                                   the question, the answer and any task held on it — the same text the
                                   comm verb (autonomous decisions) shows
+  repo-ci-watch [--repo P] [--status S] [--json]
+                                  Repo CI watch read: the mode, the alert threshold in whole minutes,
+                                  the watched repositories, the last poll, and the stored records
+                                  (repository, ref, workflow, status, classification, first seen,
+                                  alerted), newest first
   config-get                      Read current autonomous config
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
@@ -207,6 +212,8 @@ Subcommands:
 		newAutonomousEventsCmd(),
 		// Triage read (docs/plans/2026-10-26-autonomous-triage-read-route.md).
 		newAutonomousTriageCmd(),
+		// Repo CI watch read.
+		newAutonomousRepoCIWatchCmd(),
 		newAutonomousDecisionsCmd(),
 	)
 	return cmd

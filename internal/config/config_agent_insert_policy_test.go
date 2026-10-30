@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -43,7 +44,18 @@ func TestConfigAutomationAgentInsertPolicyRoundTrip(t *testing.T) {
 		if err := yaml.Unmarshal(raw, &out); err != nil {
 			t.Fatal(err)
 		}
-		if out != in {
+		// yaml.v3 round trip turns nil slices into empty non-nil ones;
+		// normalize both sides before comparing.
+		normalize := func(c AutonomousAutomationConfig) AutonomousAutomationConfig {
+			if len(c.RepoCIWatch.Repos) == 0 {
+				c.RepoCIWatch.Repos = nil
+			}
+			if len(c.RepoCIWatch.SecurityWorkflows) == 0 {
+				c.RepoCIWatch.SecurityWorkflows = nil
+			}
+			return c
+		}
+		if !reflect.DeepEqual(normalize(out), normalize(in)) {
 			t.Fatalf("round trip of %q: got %+v, want %+v", want, out, in)
 		}
 	}

@@ -1,0 +1,30 @@
+{
+  "registries": [
+    {
+      "name": "community",
+      "kind": "git",
+      "url": "https://github.com/dmz006/datawatch-community",
+      "branch": "main",
+      "enabled": true,
+      "description": "Official datawatch community skills + plugins registry. Connect to browse and install community-contributed extensions.",
+      "is_builtin": true,
+      "created_at": "2026-10-30T01:43:11.477306372Z",
+      "updated_at": "2026-10-30T01:43:11.477306372Z",
+      "last_synced_at": "0001-01-01T00:00:00Z"
+    },
+    {
+      "name": "pai",
+      "kind": "git",
+      "url": "https://github.com/danielmiessler/Personal_AI_Infrastructure",
+      "branch": "main",
+      "enabled": true,
+      "description": "Personal AI Infrastructure (danielmiessler/PAI) — built-in default skill registry. v1 sync target. See docs/skills.md.",
+      "is_builtin": true,
+      "created_at": "2026-10-30T01:43:11.491162695Z",
+      "updated_at": "2026-10-30T01:43:11.491162695Z",
+      "last_synced_at": "0001-01-01T00:00:00Z"
+    }
+  ],
+  "synced": null,
+  "updated_at": "2026-10-30T01:43:11.491163105Z"
+}

@@ -1268,6 +1268,41 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/repo-ci-watch:
+    get:
+      summary: Repo CI watch state
+      description: |
+        The repo CI watch state at a glance: the mode in effect (`mode`, off / shadow /
+        on), the alert threshold currently in force (`alert_minutes`, whole minutes,
+        0 while the watch is off), the configured repository paths (`repos`; empty
+        when nothing is watched), the instant the coordinator last polled
+        (`last_poll_at`, the zero time when it never has), and the stored watch
+        records (`records`, newest first: repository, ref, sha, workflow, run
+        identity, status, classification, reruns, notes and verdict). `repo`
+        narrows `records` to one repository path, `status` to one watch status
+        (green, failing, pending, hung, rerunning, superseded); an unknown status
+        is refused with a 400 that names the allowed values. A read that matches
+        nothing is an empty `records` array, not an error. Read-only; needs the
+        autonomous read capability when called by a federated peer.
+      operationId: autonomousRepoCIWatch
+      tags: [Autonomous]
+      parameters:
+        - {name: repo, in: query, required: false, description: Only the records of this repository path, schema: {type: string}}
+        - {name: status, in: query, required: false, description: "Only green, failing, pending, hung, rerunning or superseded", schema: {type: string, enum: [green, failing, pending, hung, rerunning, superseded]}}
+      responses:
+        "200":
+          description: Repo CI watch state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoCIWatchList"
+        "400": {description: status is not one of the watch statuses}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/progress:
     get:
       summary: Progress metrics
@@ -5530,6 +5565,97 @@ components:
         at: {type: string, format: date-time}
         source: {type: string, description: Who appended the note, e.g. triage}
         text: {type: string}
+    RepoCIWatchList:
+      type: object
+      description: >-
+        The repo CI watch state, as GET /api/autonomous/repo-ci-watch returns it.
+        `records` is newest first; `alert_minutes` is the alert threshold currently
+        in force in whole minutes (0 while the watch is off); `last_poll_at` is the
+        coordinator's last poll instant (the zero time when it never has).
+      required: [mode, alert_minutes, repos, last_poll_at, records]
+      properties:
+        mode:
+          type: string
+          enum: [off, shadow, on]
+          description: The watch mode in effect; an unset mode reads off
+        alert_minutes: {type: integer, description: The alert threshold in minutes in effect; 0 = off or the watch itself is off}
+        repos:
+          type: array
+          description: The configured repository paths; empty when nothing is watched
+          items: {type: string}
+        last_poll_at:
+          type: string
+          format: date-time
+          description: When the coordinator last ran a poll pass; the zero time when it never has
+        records:
+          type: array
+          description: Watch records, newest first; empty when nothing matches
+          items: {$ref: "#/components/schemas/RepoCIWatchRecord"}
+    RepoCIWatchRecord:
+      type: object
+      description: >-
+        One record for a CI run watched at a repository's head of main or a tag
+        while it waits for operator attention.
+      required: [repo, ref_kind, ref_name, sha, workflow, run_id, status, first_seen_at, updated_at]
+      properties:
+        repo: {type: string, description: The repository path, e.g. dmz006/datawatch}
+        ref_kind: {type: string, enum: [main, tag], description: The kind of ref being watched}
+        ref_name: {type: string, description: The branch name or tag}
+        sha: {type: string, description: The commit the run executed against}
+        workflow: {type: string, description: The workflow file name}
+        run_id: {type: string, description: The CI run ID the record is keyed on}
+        run_url: {type: string}
+        status:
+          type: string
+          enum: [green, failing, pending, hung, rerunning, superseded]
+          description: The run's watch state
+        classification:
+          type: string
+          enum: [code_or_test, infra, hung, security, policy, judging, none]
+          description: The failure's resolved category; none until one is assigned
+        first_seen_at: {type: string, format: date-time, description: When the run was first observed under watch; preserved across refreshes}
+        updated_at: {type: string, format: date-time, description: When the record was last refreshed}
+        alerted_at:
+          nullable: true
+          type: string
+          format: date-time
+          description: When the record was marked alerted; null until it does
+        rerun_log:
+          type: array
+          description: One entry per automatic cancel or rerun performed on the run
+          items:
+            type: object
+            properties:
+              at: {type: string, format: date-time}
+              action: {type: string, enum: [cancel, rerun]}
+              run_id: {type: string}
+        would_do:
+          type: array
+          description: "Shadow-mode log: what the watch would have done, had it not been shadowed"
+          items:
+            type: object
+            properties:
+              action: {type: string, enum: [cancel, rerun]}
+              run_id: {type: string}
+              reason: {type: string}
+        superseded_run_ids:
+          type: array
+          description: The run's superseded predecessors, each with its run URL
+          items:
+            type: object
+            properties:
+              run_id: {type: string}
+              run_url: {type: string}
+        notes:
+          type: array
+          description: The append-only annotation list, oldest first
+          items: {$ref: "#/components/schemas/TriageNote"}
+        judge_verdict:
+          type: object
+          description: The judge's verdict cached for this record's run
+          properties:
+            run_id: {type: string}
+            verdict: {type: string}
     NodeUsage:
       type: object
       description: |
