@@ -317,3 +317,59 @@ func TestSupervisorWatchRecordMissingFileIsEmpty(t *testing.T) {
 		t.Fatalf("List on a fresh store = %d findings, want 0", len(got))
 	}
 }
+
+// TestSupervisorWatchRecordWouldAlertLifecycle checks the shadow-mode
+// mark: a WouldAlert finding stays marked (with its earliest
+// WouldAlertAt) across refreshes of the same open episode, and a fresh
+// observation after a resolve is a new episode — clean alert history
+// (AlertedAt nil) and the WouldAlert mark cleared, so shadow can mark
+// it again.
+func TestSupervisorWatchRecordWouldAlertLifecycle(t *testing.T) {
+	store, err := NewSupervisorWatchStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewSupervisorWatchStore: %v", err)
+	}
+
+	firstSeen := time.Date(2026, 10, 2, 8, 0, 0, 0, time.UTC)
+	marked := firstSeen.Add(45 * time.Minute)
+	a := testSupervisorWatchFinding(SupervisorWatchWorktreeSilent, "auto-silent", "quiet", firstSeen)
+	a.WouldAlert = true
+	a.WouldAlertAt = marked
+	ou, err := store.Upsert(a)
+	if err != nil {
+		t.Fatalf("Upsert(a): %v", err)
+	}
+	if !ou.WouldAlert || !ou.WouldAlertAt.Equal(marked) {
+		t.Fatalf("would-alert mark not stored: %+v", ou)
+	}
+
+	// A refresh of the same open episode preserves the mark.
+	ou2, err := store.Upsert(testSupervisorWatchFinding(SupervisorWatchWorktreeSilent, "auto-silent", "still quiet", time.Time{}))
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if !ou2.WouldAlert || !ou2.WouldAlertAt.Equal(marked) {
+		t.Fatalf("refresh un-marked the finding: %+v", ou2)
+	}
+
+	// A resolve, then a fresh observation: new episode, clean history.
+	if _, err := store.Resolve(ou2.Key()); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	ou3, err := store.Upsert(testSupervisorWatchFinding(SupervisorWatchWorktreeSilent, "auto-silent", "quiet again", time.Time{}))
+	if err != nil {
+		t.Fatalf("re-open: %v", err)
+	}
+	if ou3.Resolved {
+		t.Fatal("re-open must be open")
+	}
+	if ou3.AlertedAt != nil {
+		t.Fatalf("new episode must start unalerted: %v", *ou3.AlertedAt)
+	}
+	if ou3.WouldAlert || !ou3.WouldAlertAt.IsZero() {
+		t.Fatalf("new episode must start unmarked: %+v", ou3)
+	}
+	if !ou3.FirstSeenAt.Equal(firstSeen) {
+		t.Fatalf("re-open lost its FirstSeenAt history: %v", ou3.FirstSeenAt)
+	}
+}

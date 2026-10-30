@@ -123,7 +123,17 @@ type SupervisorWatchFinding struct {
 	// LastSeenAt is when the finding was last re-raised or touched.
 	LastSeenAt time.Time `json:"last_seen_at"`
 	// AlertedAt is nil until an alert for the finding has been raised.
+	// Shadow mode never sets this: it records WouldAlert instead.
 	AlertedAt *time.Time `json:"alerted_at,omitempty"`
+	// WouldAlert is true from the moment the pass, running in shadow,
+	// found this finding alert-due: shadow records what it would have
+	// raised (with WouldAlertAt) instead of calling the alert sink. It
+	// is false in on mode (which alerts for real and records
+	// AlertedAt) and off mode (which records nothing).
+	WouldAlert bool `json:"would_alert,omitempty"`
+	// WouldAlertAt is when the pass first marked WouldAlert on this
+	// episode (shadow mode); zero when the finding was never marked.
+	WouldAlertAt time.Time `json:"would_alert_at,omitempty"`
 	// Resolved flips to true when an operator (or, later, an automated
 	// pass) closes the finding; a refresh after resolution re-opens it
 	// in place, keeping its FirstSeenAt history.
@@ -301,10 +311,14 @@ func (s *SupervisorWatchStore) persist() error {
 // Upsert stores the finding under its kind+subject key and persists the
 // change, returning a deep copy of the stored finding. A refresh of an
 // existing finding keeps its FirstSeenAt, its AlertedAt unless the
-// incoming finding carries a newer one, and its Resolved flag — a
-// fresh observation re-opens the finding in place (Resolved false) so
-// the same condition does not mint records forever. A persist failure
-// rolls the in-memory change back and returns the persist error.
+// incoming finding carries a newer one, and the shadow WouldAlert mark
+// (and its earliest WouldAlertAt); a fresh observation re-opens the
+// finding in place (Resolved false) so the same condition does not mint
+// records forever — a re-open after resolution is a new episode, so its
+// alert history starts clean (AlertedAt nil, WouldAlert cleared) and
+// the pass may alert for it again, or in shadow mark it alert-due
+// again. A persist failure rolls the in-memory change back and returns
+// the persist error.
 func (s *SupervisorWatchStore) Upsert(f *SupervisorWatchFinding) (*SupervisorWatchFinding, error) {
 	if err := supervisorWatchValidateFinding(f); err != nil {
 		return nil, err
@@ -323,8 +337,26 @@ func (s *SupervisorWatchStore) Upsert(f *SupervisorWatchFinding) (*SupervisorWat
 		if !snap.FirstSeenAt.IsZero() {
 			in.FirstSeenAt = snap.FirstSeenAt
 		}
-		if snap.AlertedAt != nil && (in.AlertedAt == nil || snap.AlertedAt.After(*in.AlertedAt)) {
-			in.AlertedAt = snap.AlertedAt
+		if snap.Resolved {
+			// A fresh observation after the finding was closed is a new
+			// episode: it starts its own alert history, so the pass can
+			// alert for it again (or, in shadow, mark it alert-due
+			// again).
+			in.AlertedAt = nil
+			in.WouldAlert = false
+			in.WouldAlertAt = time.Time{}
+		} else {
+			// Same episode still open: a refresh never un-records an
+			// already-raised alert or an already-recorded shadow mark.
+			if snap.AlertedAt != nil && (in.AlertedAt == nil || snap.AlertedAt.After(*in.AlertedAt)) {
+				in.AlertedAt = snap.AlertedAt
+			}
+			if snap.WouldAlert {
+				in.WouldAlert = true
+				if snap.WouldAlertAt.After(in.WouldAlertAt) {
+					in.WouldAlertAt = snap.WouldAlertAt
+				}
+			}
 		}
 	}
 	in.LastSeenAt = now

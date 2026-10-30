@@ -1,10 +1,14 @@
-// supervisor_watch_pass_test.go — the supervisor watch pass: record,
-// resolve, alert-once-per-episode, triage notes, off-mode, and the
-// last-poll guard. Every test wires the findings seam instead of
-// shelling out; the pass has no model client at all, so a nil-model
-// Manager is the whole point. Run with:
+// supervisor_watch_pass_test.go — the supervisor watch pass, per mode:
+// off records nothing and checks nothing; shadow records findings,
+// marks alert-due ones WouldAlert with a timestamp, and calls the
+// alert sink zero times; on raises one alert per episode once the
+// threshold is met, again after a resolve+re-sighting. Also covered:
+// triage first-sighting notes, malformed-finding drops, the last-poll
+// guard, the no-model-call contract, and the unwired-views path.
+// Every test wires the findings seam instead of shelling out. Run
+// with:
 //
-//	env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous -run TestSupervisorWatch
+//	env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous -run TestSupervisorWatchPass
 package autonomous
 
 import (
@@ -91,7 +95,189 @@ func TestSupervisorWatchPassOffModeDoesNothing(t *testing.T) {
 	}
 }
 
-func TestSupervisorWatchPollRecordsFreshFindings(t *testing.T) {
+// TestSupervisorWatchPassShadowMarksWouldAlertWithoutAlerting pins the
+// shadow contract: the checks run and the findings store, but the
+// alert sink is never called — instead the alert-due finding is
+// marked WouldAlert with a timestamp.
+func TestSupervisorWatchPassShadowMarksWouldAlertWithoutAlerting(t *testing.T) {
+	m := swNewManager(t)
+	oneMinute := 1
+	m.mu.Lock()
+	m.cfg.Automation.SupervisorWatch.Mode = SupervisorWatchModeShadow
+	m.cfg.Automation.SupervisorWatch.AlertMinutes = &oneMinute
+	m.mu.Unlock()
+
+	seed := swFinding(SupervisorWatchWorktreeSilent, "prd-1", "its worktree has been quiet")
+	if _, err := m.SaveSupervisorWatchFinding(&seed); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// the store stamped FirstSeenAt at the real now; a future "now" puts
+	// the finding past the one-minute threshold
+	now := time.Now().Add(2 * time.Minute)
+
+	m.SetSupervisorWatchFindingsFn(func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
+		return []SupervisorWatchFinding{seed}
+	})
+	sink := &laneFillAlertSink{}
+	c := NewCoordinator(m, swFakeStarter{})
+	c.alertFn = sink.add
+	c.now = func() time.Time { return now }
+
+	c.supervisorWatchPass() // first pass of the episode
+
+	if got := sink.all(); len(got) != 0 {
+		t.Fatalf("shadow raised %d alert(s), want 0 — the alert sink must never be called in shadow", len(got))
+	}
+	rec := swGet(t, m, seed.Key())
+	if rec == nil {
+		t.Fatal("shadow pass lost the finding")
+	}
+	if !rec.WouldAlert {
+		t.Errorf("shadow did not mark the alert-due finding WouldAlert: %+v", rec)
+	}
+	if rec.WouldAlertAt.IsZero() {
+		t.Errorf("shadow marked WouldAlert without a timestamp: %+v", rec)
+	}
+	if rec.AlertedAt != nil {
+		t.Errorf("shadow must not record AlertedAt (no alert was raised): %v", *rec.AlertedAt)
+	}
+	if rec.Resolved {
+		t.Errorf("shadow must not resolve the finding: %+v", rec)
+	}
+
+	// A later pass in the same episode marks nothing new and still
+	// raises nothing.
+	c.now = func() time.Time { return now.Add(90 * time.Second) }
+	c.supervisorWatchPass()
+	if got := sink.all(); len(got) != 0 {
+		t.Errorf("shadow raised %d alert(s) on a later pass, want 0", len(got))
+	}
+	again := swGet(t, m, seed.Key())
+	if again == nil || !again.WouldAlert || !again.WouldAlertAt.Equal(rec.WouldAlertAt) {
+		t.Errorf("later pass changed the would-alert mark: %+v -> %+v", rec, again)
+	}
+}
+
+// TestSupervisorWatchPassOnAlertsOncePerEpisode pins the on-mode
+// behavior that is distinct from shadow: the alert sink is called,
+// exactly once per episode.
+func TestSupervisorWatchPassOnAlertsOncePerEpisode(t *testing.T) {
+	m := swNewManager(t)
+	oneMinute := 1
+	m.mu.Lock()
+	m.cfg.Automation.SupervisorWatch.Mode = SupervisorWatchModeOn
+	m.cfg.Automation.SupervisorWatch.AlertMinutes = &oneMinute
+	m.mu.Unlock()
+
+	seed := swFinding(SupervisorWatchWorktreeSilent, "prd-1", "its worktree has been quiet")
+	if _, err := m.SaveSupervisorWatchFinding(&seed); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	now := time.Now().Add(2 * time.Minute)
+
+	m.SetSupervisorWatchFindingsFn(func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
+		return []SupervisorWatchFinding{seed}
+	})
+	sink := &laneFillAlertSink{}
+	c := NewCoordinator(m, swFakeStarter{})
+	c.alertFn = sink.add
+	c.now = func() time.Time { return now }
+
+	c.supervisorWatchPass() // first pass of the episode
+	if got := sink.all(); len(got) != 1 {
+		t.Fatalf("first pass raised %d alert(s), want 1", len(got))
+	}
+	// the last-poll guard holds a minute; move the clock past it so the
+	// second pass actually runs and the per-episode dedupe does the work
+	c.now = func() time.Time { return now.Add(75 * time.Second) }
+	c.supervisorWatchPass() // interval elapsed, same episode
+	if got := sink.all(); len(got) != 1 {
+		t.Errorf("episode alerted %d time(s), want exactly 1", len(got))
+	}
+
+	a := sink.all()[0]
+	if a.level != "warn" {
+		t.Errorf("level = %q, want warn", a.level)
+	}
+	if !strings.Contains(a.title, string(SupervisorWatchWorktreeSilent)) || !strings.Contains(a.title, "prd-1") {
+		t.Errorf("title = %q, want kind and subject", a.title)
+	}
+	for _, s := range []string{"supervisor watch", "(mode on)", "quiet"} {
+		if !strings.Contains(a.body, s) {
+			t.Errorf("body = %q, missing %q", a.body, s)
+		}
+	}
+	if strings.Contains(a.body, "PRD") || strings.Contains(a.title, "PRD") {
+		t.Errorf("operator-facing text must say Automaton, never PRD: %q / %q", a.title, a.body)
+	}
+
+	rec := swGet(t, m, seed.Key())
+	if rec == nil || rec.AlertedAt == nil {
+		t.Errorf("alerted record not persisted: %+v", rec)
+	}
+	if rec.WouldAlert {
+		t.Errorf("on mode must alert (AlertedAt), not mark WouldAlert: %+v", rec)
+	}
+}
+
+// TestSupervisorWatchPassOnReAlertsAfterResolveAndRecur covers the
+// on-mode contract that the previous attempt's test only half-checked:
+// after the episode resolves and recurs, the sink is called a second
+// time (a new episode may alert again).
+func TestSupervisorWatchPassOnReAlertsAfterResolveAndRecur(t *testing.T) {
+	m := swNewManager(t)
+	oneMinute := 1
+	m.mu.Lock()
+	m.cfg.Automation.SupervisorWatch.Mode = SupervisorWatchModeOn
+	m.cfg.Automation.SupervisorWatch.AlertMinutes = &oneMinute
+	m.mu.Unlock()
+
+	seed := swFinding(SupervisorWatchCIRed, "run-9", "a CI run is red")
+	if _, err := m.SaveSupervisorWatchFinding(&seed); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	m.SetSupervisorWatchFindingsFn(func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
+		return []SupervisorWatchFinding{seed}
+	})
+	sink := &laneFillAlertSink{}
+	c := NewCoordinator(m, swFakeStarter{})
+	c.alertFn = sink.add
+	base := time.Now().Add(2 * time.Minute)
+	c.now = func() time.Time { return base }
+
+	c.supervisorWatchPass() // episode one, past the threshold: one alert
+	if got := sink.all(); len(got) != 1 {
+		t.Fatalf("episode one raised %d alert(s), want 1", len(got))
+	}
+
+	// The episode closes: the checks no longer report the finding.
+	m.SetSupervisorWatchFindingsFn(func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
+		return nil
+	})
+	c.now = func() time.Time { return base.Add(90 * time.Second) }
+	c.supervisorWatchPass()
+	if got := swGet(t, m, seed.Key()); got == nil || !got.Resolved {
+		t.Fatalf("episode not resolved: %+v", got)
+	}
+
+	// The finding recurs: a new episode, and the next pass alerts for it.
+	m.SetSupervisorWatchFindingsFn(func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
+		return []SupervisorWatchFinding{seed}
+	})
+	c.now = func() time.Time { return base.Add(180 * time.Second) }
+	c.supervisorWatchPass()
+
+	if got := sink.all(); len(got) != 2 {
+		t.Fatalf("sink saw %d alert(s) total across the two episodes, want 2 (resolve+recur must alert again)", len(got))
+	}
+	again := swGet(t, m, seed.Key())
+	if again == nil || again.Resolved || again.AlertedAt == nil {
+		t.Fatalf("second episode not open and alerted: %+v", again)
+	}
+}
+
+func TestSupervisorWatchPassRecordsFreshFindings(t *testing.T) {
 	m := swNewManager(t)
 	m.SetSupervisorWatchFindingsFn(func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
 		// deliberately unordered: recording, alerts and notes must not
@@ -126,7 +312,7 @@ func TestSupervisorWatchPollRecordsFreshFindings(t *testing.T) {
 	}
 }
 
-func TestSupervisorWatchPollResolvesStaleFindings(t *testing.T) {
+func TestSupervisorWatchPassResolvesStaleFindings(t *testing.T) {
 	m := swNewManager(t)
 	seed := swFinding(SupervisorWatchDaemonInactive, "node-1", "daemon inactive")
 	if _, err := m.SaveSupervisorWatchFinding(&seed); err != nil {
@@ -172,64 +358,7 @@ func TestSupervisorWatchPollResolvesStaleFindings(t *testing.T) {
 	}
 }
 
-func TestSupervisorWatchAlertsOncePerEpisode(t *testing.T) {
-	m := swNewManager(t)
-	oneMinute := 1
-	m.mu.Lock()
-	m.cfg.Automation.SupervisorWatch.AlertMinutes = &oneMinute
-	m.mu.Unlock()
-
-	seed := swFinding(SupervisorWatchWorktreeSilent, "prd-1", "its worktree has been quiet")
-	if _, err := m.SaveSupervisorWatchFinding(&seed); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	// the store stamped FirstSeenAt at the real now; a future "now" puts
-	// the finding past the one-minute threshold
-	now := time.Now().Add(2 * time.Minute)
-
-	m.SetSupervisorWatchFindingsFn(func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
-		return []SupervisorWatchFinding{seed}
-	})
-	sink := &laneFillAlertSink{}
-	c := NewCoordinator(m, swFakeStarter{})
-	c.alertFn = sink.add
-	c.now = func() time.Time { return now }
-
-	c.supervisorWatchPass() // first pass of the episode
-	if got := sink.all(); len(got) != 1 {
-		t.Fatalf("first pass raised %d alert(s), want 1", len(got))
-	}
-	// the last-poll guard holds a minute; move the clock past it so the
-	// second pass actually runs and the per-episode dedupe does the work
-	c.now = func() time.Time { return now.Add(75 * time.Second) }
-	c.supervisorWatchPass() // interval elapsed, same episode
-	if got := sink.all(); len(got) != 1 {
-		t.Errorf("episode alerted %d time(s), want exactly 1", len(got))
-	}
-
-	a := sink.all()[0]
-	if a.level != "warn" {
-		t.Errorf("level = %q, want warn", a.level)
-	}
-	if !strings.Contains(a.title, string(SupervisorWatchWorktreeSilent)) || !strings.Contains(a.title, "prd-1") {
-		t.Errorf("title = %q, want kind and subject", a.title)
-	}
-	for _, s := range []string{"supervisor watch", "shadow", "quiet"} {
-		if !strings.Contains(a.body, s) {
-			t.Errorf("body = %q, missing %q", a.body, s)
-		}
-	}
-	if strings.Contains(a.body, "PRD") || strings.Contains(a.title, "PRD") {
-		t.Errorf("operator-facing text must say Automaton, never PRD: %q / %q", a.title, a.body)
-	}
-
-	rec := swGet(t, m, seed.Key())
-	if rec == nil || rec.AlertedAt == nil {
-		t.Errorf("alerted record not persisted: %+v", rec)
-	}
-}
-
-func TestSupervisorWatchAlertOffWithExplicitZero(t *testing.T) {
+func TestSupervisorWatchPassAlertOffWithExplicitZero(t *testing.T) {
 	m := swNewManager(t)
 	zero := 0
 	m.mu.Lock()
@@ -255,12 +384,16 @@ func TestSupervisorWatchAlertOffWithExplicitZero(t *testing.T) {
 	if got := sink.all(); len(got) != 0 {
 		t.Errorf("explicit alert_minutes 0 must suppress alerts, got %d", len(got))
 	}
-	if rec := swGet(t, m, seed.Key()); rec == nil || rec.AlertedAt != nil {
+	rec := swGet(t, m, seed.Key())
+	if rec == nil || rec.AlertedAt != nil {
 		t.Errorf("record should stay unalerted: %+v", rec)
+	}
+	if rec != nil && rec.WouldAlert {
+		t.Errorf("explicit alert_minutes 0 must not mark WouldAlert either: %+v", rec)
 	}
 }
 
-func TestSupervisorWatchTriageNoteFirstSighting(t *testing.T) {
+func TestSupervisorWatchPassTriageNoteFirstSighting(t *testing.T) {
 	m := swNewManager(t)
 	prd, err := m.CreatePRD("spec", "/tmp", "", "", "")
 	if err != nil {
@@ -323,7 +456,7 @@ func TestSupervisorWatchTriageNoteFirstSighting(t *testing.T) {
 	}
 }
 
-func TestSupervisorWatchDropsMalformedFindings(t *testing.T) {
+func TestSupervisorWatchPassDropsMalformedFindings(t *testing.T) {
 	m := swNewManager(t)
 	m.SetSupervisorWatchFindingsFn(func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
 		return []SupervisorWatchFinding{
@@ -343,7 +476,7 @@ func TestSupervisorWatchDropsMalformedFindings(t *testing.T) {
 	}
 }
 
-func TestSupervisorWatchLastPollGuard(t *testing.T) {
+func TestSupervisorWatchPassLastPollGuard(t *testing.T) {
 	m := swNewManager(t)
 	calls := 0
 	m.SetSupervisorWatchFindingsFn(func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
@@ -374,11 +507,69 @@ func TestSupervisorWatchLastPollGuard(t *testing.T) {
 	}
 }
 
+// TestSupervisorWatchPassNeverCallsModelClient wires the Manager with a
+// counting model client (NewManager's third argument, the DecomposeFn —
+// the one function field on the Manager that would talk to a model if
+// anything in the pass invoked it) and runs the pass in both running
+// modes. The counter must stay zero: the pass reads host state, stores
+// findings, and alerts — it never calls a model.
+func TestSupervisorWatchPassNeverCallsModelClient(t *testing.T) {
+	modelCalls := 0
+	m, err := NewManager(t.TempDir(), DefaultConfig(), func(_ DecomposeRequest) (string, error) {
+		modelCalls++
+		return "", nil
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	oneMinute := 1
+	m.mu.Lock()
+	m.cfg.Automation.SupervisorWatch.AlertMinutes = &oneMinute
+	m.mu.Unlock()
+	c := NewCoordinator(m, swFakeStarter{})
+	if c == nil {
+		t.Fatal("NewCoordinator returned nil")
+	}
+	seed := swFinding(SupervisorWatchWorktreeSilent, "prd-1", "its worktree has been quiet")
+	if _, err := m.SaveSupervisorWatchFinding(&seed); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	m.SetSupervisorWatchFindingsFn(func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
+		return []SupervisorWatchFinding{seed}
+	})
+	sink := &laneFillAlertSink{}
+	c.alertFn = sink.add
+	now := time.Now().Add(2 * time.Minute)
+
+	m.mu.Lock()
+	m.cfg.Automation.SupervisorWatch.Mode = SupervisorWatchModeShadow
+	m.mu.Unlock()
+	c.now = func() time.Time { return now }
+	c.supervisorWatchPass()
+
+	c.mu.Lock()
+	c.supervisorWatchLastPoll = time.Time{}
+	c.mu.Unlock()
+	m.mu.Lock()
+	m.cfg.Automation.SupervisorWatch.Mode = SupervisorWatchModeOn
+	m.mu.Unlock()
+	c.now = func() time.Time { return now.Add(90 * time.Second) }
+	c.supervisorWatchPass()
+
+	if modelCalls != 0 {
+		t.Fatalf("the pass called the model client %d time(s), want 0", modelCalls)
+	}
+	if got := sink.all(); len(got) != 1 {
+		t.Errorf("across shadow+on the sink saw %d alert(s), want exactly 1 (on only)", len(got))
+	}
+}
+
 func TestSupervisorWatchPassRunsRealChecksWithNilProbe(t *testing.T) {
 	// no probe, node view or session lookup wired, no findings seam:
 	// every check degrades to "unknown, finds nothing" and the pass
 	// completes without a model call or a panic. The Manager here was
-	// built with a nil model client (NewManager's third argument).
+	// built with a nil model client (NewManager's third argument,
+	// DecomposeFn).
 	m := swNewManager(t)
 	c := NewCoordinator(m, swFakeStarter{})
 	if c == nil {

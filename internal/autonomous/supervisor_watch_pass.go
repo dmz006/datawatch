@@ -1,17 +1,19 @@
 // The supervisor watch pass: one coordinator tick that runs the host,
 // work, and worktree supervisor watch checks without a model call,
 // upserts their findings into the shared finding store, resolves the
-// findings that no longer match, raises at most one alert per open
-// episode once a finding has been open for the configured alert
-// threshold, and records first sightings on the owning Automaton's
+// findings that no longer match, acts on the alert threshold per mode,
+// and records first sightings on the owning Automaton's
 // triage record.
 //
 // The pass is report-only in every mode it ships in: shadow (the
-// release default) reports and never acts; this step of the watch in
-// "on" mode is the same report. A check never acts by design — the
-// probes read, the store records, the alert informs (see
-// supervisor_watch_host.go). An alert reports a situation, not an
-// action, so shadow raises one just like anything else reports it.
+// release default) records what it would have raised — the finding
+// gains WouldAlert with a timestamp, and the alert sink is never
+// called — and this step of the watch in "on" mode raises the alert
+// for real, once per episode, once the finding has been open for the
+// configured threshold (AlertedAt records it; a re-sighting after a
+// resolve is a new episode that may alert again). A check never acts
+// by design — the probes read, the store records, the alert informs
+// (see supervisor_watch_host.go).
 
 package autonomous
 
@@ -223,9 +225,12 @@ func supervisorWatchFindingLess(a, b *SupervisorWatchFinding) bool {
 }
 
 // supervisorWatchPoll is one full pass: record the fresh findings,
-// resolve the stale ones, raise the due alerts (one per episode). It
+// resolve the stale ones, then work the alert threshold by mode —
+// shadow marks each due finding's stored record WouldAlert with a
+// timestamp and returns no alerts (the Coordinator calls the alert
+// sink zero times), on returns the due alerts (one per episode). It
 // returns the alerts that fell due this pass; the Coordinator raises
-// them.
+// them (shadow: none).
 func (m *Manager) supervisorWatchPoll(now time.Time, cfg SupervisorWatchConfig) []supervisorWatchAlert {
 	store := m.supervisorWatchStore()
 	if store == nil {
@@ -273,21 +278,43 @@ func (m *Manager) supervisorWatchPoll(now time.Time, cfg SupervisorWatchConfig) 
 		m.supervisorWatchForgetAlert(key)
 	}
 
-	// Raise the alerts due: an open finding that has been open at least
-	// the effective alert threshold and has not alerted yet — at most
-	// once per episode. A resolved finding is not due (closing the
-	// episode also clears its alert), and explicit alert_minutes 0
-	// turns the watch's alerting off.
+	// Work the alert threshold by mode. Both modes skip resolved
+	// findings (closing the episode also clears its alert) and the
+	// explicit alert_minutes 0 off-switch.
+	//
+	// Shadow: record what would have been raised — on the finding's
+	// stored record set WouldAlert and stamp WouldAlertAt — and return
+	// no alerts. The Coordinator therefore calls the alert sink zero
+	// times in shadow (distinct from off: off records nothing at all).
+	// On: raise for real, at most one alert per episode once the
+	// finding is older than the threshold; AlertedAt records it, and a
+	// re-sighting after a resolve is a new episode that may alert
+	// again.
+	mode := cfg.EffectiveMode()
 	alertMinutes := cfg.EffectiveAlertMinutes()
 	var due []supervisorWatchAlert
 	for _, rec := range m.supervisorWatchList() {
 		if rec == nil || rec.Resolved {
 			continue
 		}
-		if rec.AlertedAt != nil || alertMinutes <= 0 {
+		if alertMinutes <= 0 {
 			continue
 		}
 		if rec.FirstSeenAt.IsZero() || now.Sub(rec.FirstSeenAt) < time.Duration(alertMinutes)*time.Minute {
+			continue
+		}
+		if mode == SupervisorWatchModeShadow {
+			if rec.WouldAlert {
+				continue // already marked this episode
+			}
+			rec.WouldAlert = true
+			rec.WouldAlertAt = now
+			if _, err := m.SaveSupervisorWatchFinding(rec); err != nil {
+				continue
+			}
+			continue
+		}
+		if rec.AlertedAt != nil {
 			continue
 		}
 		key := rec.Key()
@@ -305,7 +332,7 @@ func (m *Manager) supervisorWatchPoll(now time.Time, cfg SupervisorWatchConfig) 
 		due = append(due, supervisorWatchAlert{
 			level: "warn",
 			title: supervisorWatchAlertTitle(rec),
-			body:  supervisorWatchAlertBody(rec, cfg.EffectiveMode(), now),
+			body:  supervisorWatchAlertBody(rec, mode, now),
 		})
 	}
 	return due

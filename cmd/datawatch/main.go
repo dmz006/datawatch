@@ -6941,6 +6941,28 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 				return a.ID
 			})
+			// Supervisor watch pass — wire the production views so the
+			// host, work and worktree checks run for real in the
+			// coordinator's idle loop. The probes only read; the pass
+			// stores findings, marks shadow would-alerts, and raises the
+			// operator alert through the sink set above (the pass itself
+			// never calls a model).
+			{
+				nodeAddresses := map[string]string{}
+				if computeReg != nil {
+					for _, n := range computeReg.List() {
+						if n != nil && n.Name != "" && n.Address != "" {
+							nodeAddresses[n.Name] = n.Address
+						}
+					}
+				}
+				amgr.SetSupervisorWatchProbe(
+					autonomouspkg.NewShellSupervisorWatchHostProbe(nodeAddresses, cfg.Hostname))
+				if computeReg != nil {
+					amgr.SetSupervisorWatchNodeView(computeReg)
+				}
+				amgr.SetSupervisorWatchSessionLookup(mgr.GetSession)
+			}
 			// PRD/automata watchdog — scans every 60 s for autonomous task
 			// sessions that have been in a non-terminal state for >5 min and
 			// whose scrollback contains an SSE stall pattern. Kills the
