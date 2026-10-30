@@ -1594,6 +1594,8 @@
   "settings_ws_output_scope_default": "ライブ端末出力 (hello を送らないクライアント)",
   "settings_api_gzip": "API レスポンスを圧縮 (gzip)",
   "settings_api_gzip_min_bytes": "API 圧縮しきい値 (バイト)",
+  "settings_git_push_on_complete": "完了した作業をリモートにプッシュする",
+  "settings_git_push_remote": "プッシュ先リモート名",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
   "max_engines_per_node": "ノードあたりの最大エンジン数（1 = 1 件ずつ）",
   "settings_max_concurrent_tasks": "オートマトンあたりの最大同時タスク数（1 = 1 件ずつ）",

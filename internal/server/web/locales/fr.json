@@ -1594,6 +1594,8 @@
   "settings_ws_output_scope_default": "Sortie terminal en direct (clients sans hello)",
   "settings_api_gzip": "Compresser les réponses de l'API (gzip)",
   "settings_api_gzip_min_bytes": "Seuil de compression de l'API (octets)",
+  "settings_git_push_on_complete": "Pousser le travail terminé vers le remote",
+  "settings_git_push_remote": "Nom du remote de push",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
   "max_engines_per_node": "Moteurs max. par nœud (1 = un à la fois)",
   "settings_max_concurrent_tasks": "Tâches simultanées max. par Automate (1 = une à la fois)",

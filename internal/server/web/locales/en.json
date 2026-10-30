@@ -1635,6 +1635,8 @@
   "settings_ws_output_scope_default": "Live terminal output (clients without hello)",
   "settings_api_gzip": "Compress API responses (gzip)",
   "settings_api_gzip_min_bytes": "API compression threshold (bytes)",
+  "settings_git_push_on_complete": "Push finished work to the remote",
+  "settings_git_push_remote": "Push remote name",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
   "max_engines_per_node": "Max engines per node (1 = one at a time)",
   "settings_max_concurrent_tasks": "Max concurrent tasks per Automaton (1 = one at a time)",

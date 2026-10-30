@@ -1594,6 +1594,8 @@
   "settings_ws_output_scope_default": "Live-Terminalausgabe (Clients ohne hello)",
   "settings_api_gzip": "API-Antworten komprimieren (gzip)",
   "settings_api_gzip_min_bytes": "API-Komprimierungsschwelle (Bytes)",
+  "settings_git_push_on_complete": "Beendete Arbeit auf den Remote pushen",
+  "settings_git_push_remote": "Remote-Name zum Pushen",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
   "max_engines_per_node": "Max. Engines pro Node (1 = nacheinander)",
   "settings_max_concurrent_tasks": "Max. gleichzeitige Aufgaben pro Automat (1 = nacheinander)",

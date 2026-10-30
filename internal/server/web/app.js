@@ -14128,6 +14128,14 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'server.api_gzip_min_bytes', label: 'API compression threshold (bytes)', labelKey: 'settings_api_gzip_min_bytes', type: 'number', placeholder: '1024' },
     { key: 'session.auto_git_init', label: 'Auto git init', type: 'toggle' },
     { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
+    // Git push-on-complete (git.push_*): what to push when finished work is
+    // committed. The renderer resolves the select value from
+    // cfg.git.push_on_complete (key split + reduce), so the stored value is
+    // preselected after a reload. The field renderer has no option-label
+    // mechanism (options render as their raw values, like
+    // ws_session_list_default), so the raw values stay as the visible labels.
+    { key: 'git.push_on_complete', label: 'Push finished work to the remote', labelKey: 'settings_git_push_on_complete', type: 'select', options: ['never', 'branch', 'default_branch'] },
+    { key: 'git.push_remote', label: 'Push remote name', labelKey: 'settings_git_push_remote', type: 'text', placeholder: 'origin' },
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
     { key: 'session.schedule_settle_ms', label: 'Scheduled command settle (ms) — B30', type: 'number' },
