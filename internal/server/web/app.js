@@ -8904,6 +8904,7 @@ const DOCS_LINKS_BY_KEY = {
   view_automata: DOCS_DEFINITIONS + '#automata',
   view_automaton_detail: DOCS_DEFINITIONS + '#automaton-detail',
   view_automata_wizard: DOCS_DEFINITIONS + '#launch-automaton-form',
+  merged_member_policy: DOCS_DEFINITIONS + '#merged-member-policy',
   view_observer: DOCS_DEFINITIONS + '#observer',
   view_alerts: 'howto/alerts-and-notifications.md',
   view_dashboard: 'howto/dashboard.md',
@@ -16449,6 +16450,8 @@ const GENERAL_CONFIG_FIELDS = [
     // Merge pending — off (default) does nothing, shadow records what it would do, on raises the alert.
     { key: 'autonomous.automation.merge_pending_mode', label: 'Automaton merge-pending check (off, shadow or on; default off)', labelKey: 'settings_automation_merge_pending_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'off' },
     { key: 'autonomous.automation.merge_pending_alert_minutes', label: 'Automaton merge-pending alert (minutes a finished Automaton branch may sit unmerged before an alert, 0 = off, default 30)', labelKey: 'settings_automation_merge_pending_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
+    // Merged member — what an Automaton does when a member ends with its work already merged into the project's default branch.
+    { key: 'autonomous.automation.merged_member_policy', label: 'Automaton merged-member policy (completed, manual or block; default completed)', labelKey: 'settings_automation_merged_member_policy', type: 'select', options: ['completed', 'manual', 'block'], default: 'completed' },
     // Repo CI watch (autonomous.automation.repo_ci_watch.*) — the
     // read-only status line in the Automaton view reads
     // GET /api/autonomous/repo-ci-watch; these settings configure the
@@ -29654,10 +29657,72 @@ function _automationDecisionAssistantHTML(a) {
     + row('automation_assistant_thresholds', `<span class="automation-assistant-thresholds">${escHtml(thText)}</span>`));
 }
 
+// _automationMergedOutcomeText names a merged-member outcome; an unknown one
+// shows as written.
+function _automationMergedOutcomeText(outcome) {
+  const o = String(outcome == null ? '' : outcome);
+  if (o === 'advanced') return t('automation_merged_member_outcome_advanced');
+  if (o === 'blocked') return t('automation_merged_member_outcome_blocked');
+  return o;
+}
+
+// automationMergedMembersHTML draws the merged-member decisions of one
+// Automation (the rows of GET /api/automations/{id}/merged-members): member,
+// branch, proving commit, policy and outcome. No rows draws nothing.
+function automationMergedMembersHTML(rows) {
+  const list = Array.isArray(rows) ? rows.filter(r => r && typeof r === 'object') : [];
+  if (!list.length) return '';
+  const cell = (cls, key, val) => `<span class="automation-merged-member-${cls}"><span class="automation-merged-member-key">${escHtml(t(key))}</span> ${escHtml(val)}</span>`;
+  const items = list.slice().reverse().map(r => {
+    const at = _automationTimeText(r.at);
+    const outcome = String(r.outcome || '').replace(/[^a-z_]/g, '');
+    const commit = String(r.proving_commit || '');
+    return `<li class="automation-merged-member" data-outcome="${escHtml(outcome)}">`
+      + cell('member', 'automation_merged_member_member', String(r.member || ''))
+      + cell('branch', 'automation_merged_member_branch', String(r.branch || ''))
+      + cell('commit', 'automation_merged_member_commit', commit.slice(0, 12))
+      + cell('policy', 'automation_merged_member_policy', String(r.policy || ''))
+      + cell('outcome', 'automation_merged_member_outcome', _automationMergedOutcomeText(r.outcome))
+      + (at ? `<span class="automation-merged-member-at">${escHtml(at)}</span>` : '')
+      + '</li>';
+  }).join('');
+  return _automationDetailSection('automation_merged_members_title', `<ul class="automation-merged-members">${items}</ul>`);
+}
+window.automationMergedMembersHTML = automationMergedMembersHTML;
+
+// loadAutomationMergedMembers fills the merged-member block of the open
+// Automation from the read route; a failed read leaves the block empty.
+function loadAutomationMergedMembers(id) {
+  let req;
+  try { req = automationRequest('GET', '/api/automations/' + encodeURIComponent(id) + '/merged-members'); } catch (_) { return Promise.resolve(); }
+  return Promise.resolve(req).then(body => {
+    const el = document.getElementById('automationMergedMembers');
+    if (!el || _automationState.detailId !== id) return;
+    el.innerHTML = automationMergedMembersHTML(body && body.merged_members);
+  }, () => {});
+}
+window.loadAutomationMergedMembers = loadAutomationMergedMembers;
+
+// _automationMergedDecisionHTML is the decision-log text of a merged_member
+// entry: the member, the default branch it was proved merged into, the
+// proving commit and the outcome.
+function _automationMergedDecisionHTML(d) {
+  const r = d.merged_member;
+  const text = t('automation_decision_merged_member', [
+    String(r.member || ''), String(r.default_branch || ''),
+    String(r.commit || '').slice(0, 12), _automationMergedOutcomeText(r.outcome)]);
+  return `<span class="automation-decision-note automation-decision-merged-member">${escHtml(text)}</span>`;
+}
+
 function _automationDecisionsHTML(a) {
   const decisions = Array.isArray(a.decisions) ? a.decisions.filter(Boolean) : [];
   if (!decisions.length) return '';
   const rows = decisions.slice(-_AUTOMATION_DECISION_LIMIT).reverse().map(d => {
+    if (d.kind === 'merged_member' && d.merged_member && typeof d.merged_member === 'object') {
+      const at = _automationTimeText(d.at);
+      const actor = d.actor ? `<span class="automation-decision-actor">${escHtml(d.actor)}</span>` : '';
+      return `<li class="automation-decision automation-decision-merged-member-entry" data-kind="${escHtml(d.kind)}"><span class="automation-decision-kind">${escHtml(d.kind)}</span>${actor}${at ? `<span class="automation-decision-at">${escHtml(at)}</span>` : ''}${_automationMergedDecisionHTML(d)}</li>`;
+    }
     if (_automationIsAssistantDecision(d)) {
       const at = _automationTimeText(d.at);
       return `<li class="automation-decision automation-decision-assistant" data-kind="${escHtml(d.kind)}"><span class="automation-decision-kind">${escHtml(d.kind)}</span><span class="automation-decision-actor">${escHtml(d.actor)}</span>${at ? `<span class="automation-decision-at">${escHtml(at)}</span>` : ''}${_automationAssistantDecisionHTML(d)}</li>`;
@@ -29705,6 +29770,7 @@ function buildAutomationDetailHTML(automation, ctx) {
     <div id="automationControls"></div>
     <div id="automationLiveStatus" class="automation-live-status" style="font-size:11px;color:var(--text2);margin:4px 0;"></div>
     <div id="automationStrip">${buildAutomationStripHTML(a, c)}</div>
+    <div id="automationMergedMembers"></div>
     ${_automationPendingInsertsHTML(a)}${_automationDecisionsHTML(a)}`;
 }
 window.buildAutomationDetailHTML = buildAutomationDetailHTML;
@@ -29845,7 +29911,10 @@ function _automationDrawDetail(a) {
   const view = document.getElementById('view');
   if (view) view.innerHTML = _automationDetailShell(buildAutomationDetailHTML(a, _automationStripContext()));
   renderAutomationControls(a);
-  if (a && a.id) loadAutomationLiveStatus(a.id);
+  if (a && a.id) {
+    loadAutomationLiveStatus(a.id);
+    loadAutomationMergedMembers(a.id);
+  }
 }
 
 // automationControl runs one control operation on the open Automation. A 409

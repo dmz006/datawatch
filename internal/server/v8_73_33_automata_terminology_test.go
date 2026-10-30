@@ -65,6 +65,17 @@ var pendingTranslationKeys = map[string]bool{
 	"safe_delete_dirty":                               true,
 	"settings_automation_merge_pending_mode":          true,
 	"settings_automation_merge_pending_alert_minutes": true,
+	// Merged-member policy setting, the Automation detail decision view and the decision-log entry: English until the app translation lands.
+	"settings_automation_merged_member_policy":  true,
+	"automation_merged_members_title":           true,
+	"automation_merged_member_member":           true,
+	"automation_merged_member_branch":           true,
+	"automation_merged_member_commit":           true,
+	"automation_merged_member_policy":           true,
+	"automation_merged_member_outcome":          true,
+	"automation_merged_member_outcome_advanced": true,
+	"automation_merged_member_outcome_blocked":  true,
+	"automation_decision_merged_member":         true,
 	// datawatch-app issue 301: verifier-wait lane occupancy ships this
 	// settings label as the English placeholder until the app sends back
 	// DE/ES/FR/JA translations.
