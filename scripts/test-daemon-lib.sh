@@ -72,9 +72,10 @@
 #
 # td_install_traps must be called early in a script, before any other side
 # effect, and be given the script's own arguments ("$@"): when the script is
-# started as a background job SIGINT is inherited as SIG_IGN and bash cannot
-# trap it, so td_install_traps reruns the top-level script once, with those
-# arguments, through a launcher that resets the signal to its default
+# started as a background job SIGINT, or under nohup/detached runners
+# SIGHUP, is inherited as SIG_IGN and bash cannot trap it; in that case
+# td_install_traps reruns the top-level script once, with those arguments,
+# through a launcher that resets the ignored signal(s) to their default
 # (TD_REEXEC_GUARD, holding the pid that was rerun, prevents a loop).
 
 TD_STATE_DIR="${TD_STATE_DIR:-$(mktemp -d /tmp/dw-daemon-state.XXXXXX)}"
@@ -512,21 +513,36 @@ _td_sigint_ignored() {
   [[ "$mask" =~ ^[0-9a-fA-F]+$ ]] && (( (0x$mask & 2) != 0 ))
 }
 
+_td_sighup_ignored() {
+  # 0 iff SIGHUP arrived as SIG_IGN (bash cannot install a SIGHUP trap then).
+  # nohup, cron-style and some CI/detached runners deliver a shell with HUP
+  # ignored, so the driver would hang on the SIGHUP exit path: bit 1 of the
+  # SigIgn mask in this process's /proc status
+  local mask
+  mask=$(sed -n 's/^SigIgn:[[:space:]]*//p' "/proc/$$/status" 2>/dev/null | sed -n 1p)
+  [[ "$mask" =~ ^[0-9a-fA-F]+$ ]] && (( (0x$mask & 1) != 0 ))
+}
+
 _td_reexec_with_int() {
   # _td_reexec_with_int [script args...] — if SIGINT was inherited as SIG_IGN
-  # (this script started as a background job), rerun the top-level script
-  # once with its arguments through a launcher that resets the signal to its
-  # default. The guard holds the pid that was rerun (an exec keeps the pid),
-  # so the rerun does not loop while a child script of its own still can.
+  # (this script started as a background job) or SIGHUP was (nohup / detached
+  # runners), rerun the top-level script once with its arguments through a
+  # launcher that resets those signals to their defaults. The guard holds the
+  # pid that was rerun (an exec keeps the pid), so the rerun does not loop
+  # while a child script of its own still can.
   # Best effort: without python3, or without a script file to rerun, the
-  # traps are installed anyway (EXIT and TERM still work).
+  # traps are installed anyway (EXIT and TERM still work; the ignored
+  # signal's trap stays silently disarmed).
   local src="${BASH_SOURCE[${#BASH_SOURCE[@]}-1]:-${0:-}}"
-  if _td_sigint_ignored && [[ "${TD_REEXEC_GUARD:-}" != "$$" && -f "$src" ]] \
+  if { _td_sigint_ignored || _td_sighup_ignored; } \
+      && [[ "${TD_REEXEC_GUARD:-}" != "$$" && -f "$src" ]] \
       && command -v python3 >/dev/null 2>&1; then
     export TD_REEXEC_GUARD=$$
     exec python3 -I -c '
 import os, signal, sys
-signal.signal(signal.SIGINT, signal.SIG_DFL)
+for _sig in (signal.SIGINT, signal.SIGHUP):
+    if signal.getsignal(_sig) == signal.SIG_IGN:
+        signal.signal(_sig, signal.SIG_DFL)
 os.execvp("bash", ["bash"] + sys.argv[1:])
 ' "$src" "$@"
   fi

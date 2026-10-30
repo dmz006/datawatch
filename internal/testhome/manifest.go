@@ -35,6 +35,43 @@ func Record(dir string) {
 	}
 }
 
+// forget prunes the manifest on the clean-exit path of Run: it drops dir's
+// own line plus any line whose directory no longer exists (a scratch dir
+// that was created and removed during the run, or another test binary's
+// home that was already cleaned up), and deletes the manifest file when
+// nothing is left. A hard-killed run never reaches it, and such a run's
+// live homes still exist, so their lines survive for the next sweep.
+func forget(dir string) {
+	lines, err := readManifest(manifestPath)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintf(os.Stderr, "home isolation: WARNING: forget: %v\n", err)
+		}
+		return
+	}
+	kept := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if l == dir {
+			continue
+		}
+		if fi, err := os.Stat(l); err != nil || !fi.IsDir() {
+			// Already gone: nothing left to sweep, drop the stale line so a
+			// fully clean run can delete the manifest entirely.
+			continue
+		}
+		kept = append(kept, l)
+	}
+	if len(kept) == 0 {
+		if err := os.Remove(manifestPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintf(os.Stderr, "home isolation: WARNING: forget: %v\n", err)
+		}
+		return
+	}
+	if err := writeManifest(manifestPath, kept); err != nil {
+		fmt.Fprintf(os.Stderr, "home isolation: WARNING: forget: %v\n", err)
+	}
+}
+
 // SweepStale reclaims the throwaway directories it remembers from an
 // earlier run that no longer exist under any live test process. For each
 // dir in the manifest it deletes dir only if every one of the following
@@ -60,6 +97,12 @@ func SweepStale(tmpDir string, maxAge time.Duration, now time.Time) error {
 	survivors := make([]string, 0, len(lines))
 	for _, dir := range lines {
 		if dir == "" {
+			continue
+		}
+		// A line whose directory is already gone has nothing left to sweep
+		// for: dropping it lets a fully clean run delete the manifest
+		// entirely instead of leaving a bookkeeping file in the temp dir.
+		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 			continue
 		}
 		if sweepable(tmp, dir, maxAge, now) {

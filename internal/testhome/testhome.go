@@ -35,6 +35,12 @@ func Run(m *testing.M) int {
 		if err := Remove(home); err != nil {
 			fmt.Fprintf(os.Stderr, "home isolation: WARNING: could not remove %s: %v\n", home, err)
 		}
+		// Clean exit: the creation manifest must leave no trace in the temp
+		// dir (the story-s3 leak guard asserts zero surviving entries after
+		// a clean run). A run that died hard (os.Exit, SIGKILL) skips this
+		// defer, so its line and its stray home survive — which is exactly
+		// what the next Run's sweep is meant to find.
+		forget(home)
 	}()
 	PinGoEnv(realHome)
 	DisableGoTelemetry(home)

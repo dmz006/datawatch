@@ -8,6 +8,7 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
         security-registry-gen security-registry-check \
+        security-registry-gen security-registry-check test-tmp-guard \
         test-e2e-docker test-e2e-pwa test-e2e-pwa-load test-e2e-mobile-fit test-e2e-shared-nav test-e2e-all test-e2e-clean
 
 # Sync docs/ into internal/server/web/docs/ so the embedded web FS
@@ -274,6 +275,14 @@ lint: check-tmux check-test-daemons check-service-scope check-go-pins check-inte
 
 test:
 	go test ./...
+
+# Temp-dir leak guard (internal/session TestNoNewTmpLeakEntries) in full
+# mode: DW_LEAK_GUARD_FULL=1 makes it run every package from `go list ./...`
+# (except internal/session, which would run a copy of the guard) one at a
+# time, attributing any temp-dir survivor to the package that left it. The
+# normal `go test ./...` run of the same test keeps the small default list.
+test-tmp-guard:
+	DW_LEAK_GUARD_FULL=1 go test -count=1 -timeout 20h ./internal/session/ -run TestNoNewTmpLeakEntries
 
 fmt:
 	gofmt -w .

@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -17,8 +18,9 @@ import (
 // watchedLeakPrefixes are the datawatch test-harness temp prefixes that have
 // historically leaked into the session temp dir and accumulated across runs:
 // the TestMain homes, the supervisor helper dir, the schedule scratch roots,
-// the pi-agent task/status/out channels, and this guard's own work dir. They
-// are listed so failures can say which harness an orphan belongs to, and so a
+// the pi-agent task/status/out channels, the claudecode/opencode/aider/goose
+// task scratch dirs, tmux scratch, and this guard's own work dir. They are
+// listed so failures can say which harness an orphan belongs to, and so a
 // future regression in the guard itself (dw-tmp-leak-guard-) is caught too.
 var watchedLeakPrefixes = []string{
 	"dw-test-home-",
@@ -28,6 +30,13 @@ var watchedLeakPrefixes = []string{
 	"datawatch-pi-status-",
 	"datawatch-pi-out-",
 	"dw-tmp-leak-guard-",
+	"dw-test-manifest",
+	"dw-test-tmux-",
+	"dw-leak-",
+	"datawatch-claudecode-task-",
+	"datawatch-opencode-task-",
+	"datawatch-aider-task-",
+	"datawatch-goose-task-",
 }
 
 // TestNoNewTmpLeakEntries is the story-s3 regression guard against temp-dir
@@ -47,22 +56,34 @@ var watchedLeakPrefixes = []string{
 // system temp dir can no longer produce false positives here, because it
 // cannot see this private directory.
 //
+// The packages run one at a time and the private dir is checked and cleaned
+// after each, so every survivor is attributed to the package that left it;
+// the failure message names the leaked entry, the watched harness prefix it
+// matches, and the responsible package.
+//
+// The inner runs operate with TMUX and TMUX_TMPDIR removed from the
+// environment (the equivalent of `env -u TMUX -u TMUX_TMPDIR go test ...`)
+// and never issue tmux server commands.
+//
 // The inner run's throwaway homes are removed even when the go tool created
 // read-only module cache files in them (testhome.Remove plus -modcacherw), so
 // the exclusive dir stays empty after a clean run.
 //
-// The inner run covers the packages that use the shared temp dir
-// (mcp, server, plugins) and deliberately does not include ./internal/session/
-// so this test never runs a copy of itself.
+// Package selection: by default the guard covers the packages that use the
+// shared temp dir (mcp, server, plugins) and deliberately does not include
+// ./internal/session/ so this test never runs a copy of itself. With
+// DW_LEAK_GUARD_FULL=1 (set by `make test-tmp-guard`) the list is
+// `go list ./...` minus ./internal/session/, i.e. every other package in the
+// repo.
 func TestNoNewTmpLeakEntries(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skipf("skipping temp-leak guard: go toolchain not found on PATH: %v", err)
 	}
 
-	// Fresh private temp workspace for the inner run. Created inside the
+	// Fresh private temp workspace for the inner runs. Created inside the
 	// shared system temp dir (which on this host is /tmp), then made the
 	// active temp dir for this process and, through inheritance, for the
-	// inner `go test`. t.Cleanup removes it so the guard itself never
+	// inner `go test` runs. t.Cleanup removes it so the guard itself never
 	// contributes to the accumulation it is watching for.
 	fresh, err := os.MkdirTemp("", "dw-tmp-leak-guard-")
 	if err != nil {
@@ -79,59 +100,142 @@ func TestNoNewTmpLeakEntries(t *testing.T) {
 		t.Fatalf("resolve repo root: %v", err)
 	}
 
+	pkgs, err := guardPackageList(t, root)
+	if err != nil {
+		t.Fatalf("build inner package list: %v", err)
+	}
+	t.Logf("temp-leak guard: %d package(s): %s", len(pkgs), strings.Join(pkgs, " "))
+
+	env := guardChildEnv()
+
+	var offenders []string
+	for _, pkg := range pkgs {
+		out, err := innerGoTest(t, root, env, pkg)
+		if err != nil {
+			t.Fatalf("inner go test %s failed (fix the suite first; the leak guard cannot run on top of it):\n%s", pkg, out)
+		}
+		// Check the directory while pkg is the one under the gun, name the
+		// offenders, then clean it so the next package starts from an empty
+		// private dir.
+		if left := collectAndClean(fresh); len(left) > 0 {
+			t.Logf("temp-leak guard: package %s left %s in %s", pkg, strings.Join(left, ", "), fresh)
+			offenders = append(offenders, "package "+pkg+" left "+strings.Join(left, ", "))
+		}
+	}
+
+	if len(offenders) > 0 {
+		t.Fatalf("temp-dir leak: %d package(s) left entries in the test temp dir %s; "+
+			"known watched harness prefixes are %s: [%s]",
+			len(offenders),
+			fresh,
+			strings.Join(watchedLeakPrefixes, ", "),
+			strings.Join(offenders, " | "))
+	}
+}
+
+// guardPackageList returns the inner `go test` targets. In normal mode the
+// small default list; with DW_LEAK_GUARD_FULL=1 the full repo list
+// (`go list ./...` minus ./internal/session/ — the guard must never run a
+// copy of itself).
+func guardPackageList(t *testing.T, root string) ([]string, error) {
+	t.Helper()
+	if os.Getenv("DW_LEAK_GUARD_FULL") != "1" {
+		return []string{"./internal/mcp/", "./internal/server/", "./internal/plugins/"}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "list", "./...")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("go list ./... in %s: %w", root, err)
+	}
+	var pkgs []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, "github.com/dmz006/datawatch") {
+			continue // external or tool packages are not part of this repo's suites
+		}
+		if strings.HasSuffix(line, "/internal/session") {
+			continue // never run a copy of the guard
+		}
+		pkgs = append(pkgs, line)
+	}
+	if len(pkgs) == 0 {
+		return nil, errors.New("go list ./... produced no internal packages")
+	}
+	return pkgs, nil
+}
+
+// guardChildEnv is the environment for the inner `go test` processes:
+// this process's environment minus TMUX/TMUX_TMPDIR (the equivalent of
+// `env -u TMUX -u TMUX_TMPDIR`), with the real HOME restored. This process
+// runs with the package's throwaway HOME (see TestMain); the child go
+// toolchain must use the real one, otherwise it downloads the whole module
+// cache and builds from scratch inside the throwaway HOME, which is created
+// before TMPDIR is redirected and cannot be removed (the module cache is
+// read-only). TMPDIR carries over, pointing at the private dir.
+func guardChildEnv() []string {
+	env := make([]string, 0, len(os.Environ()))
+	for _, kv := range os.Environ() {
+		if eq := strings.IndexByte(kv, '='); eq > 0 {
+			if k := kv[:eq]; k == "TMUX" || k == "TMUX_TMPDIR" {
+				continue
+			}
+		}
+		env = append(env, kv)
+	}
+	if realHome != "" {
+		env = append(env, "HOME="+realHome)
+	}
+	return env
+}
+
+// innerGoTest runs `go test -count=1 <pkg>` with a 30-minute budget and
+// returns combined output; it fails the test on timeout or a non-zero exit.
+func innerGoTest(t *testing.T, root string, env []string, pkg string) ([]byte, error) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "test", "-count=1",
-		"./internal/mcp/", "./internal/server/", "./internal/plugins/")
+	cmd := exec.CommandContext(ctx, "go", "test", "-count=1", pkg)
 	cmd.Dir = root
-	// This process runs with the package's throwaway HOME (see TestMain). The
-	// child go toolchain must use the real one, otherwise it downloads the whole
-	// module cache and builds from scratch inside the throwaway HOME, which
-	// is created before TMPDIR is redirected, is outside the exclusive dir
-	// asserted on below, and cannot be removed (the module cache is read-only).
-	if realHome != "" {
-		cmd.Env = append(os.Environ(), "HOME="+realHome)
-	}
+	cmd.Env = env
 	out, err := cmd.CombinedOutput()
-	t.Logf("inner go test output:\n%s", out)
+	t.Logf("inner go test %s output:\n%s", pkg, out)
 	if ctx.Err() != nil {
-		t.Fatalf("inner go test exceeded the 30m budget:\n%s", out)
+		t.Fatalf("inner go test %s exceeded the 30m budget:\n%s", pkg, out)
 	}
-	if err != nil {
-		t.Fatalf("inner go test failed (fix the suites first; the leak guard cannot run on top of them):\n%s", out)
-	}
+	return out, err
+}
 
-	// Clean inner run, clean exit: the exclusive temp dir must now be empty.
-	entries, err := filepath.Glob(filepath.Join(fresh, "*"))
+// collectAndClean lists whatever the just-finished inner run left in the
+// private temp dir, human-readable (naming the matching watched harness
+// prefix when one matches), and removes the entries so the next package
+// starts from an empty private dir.
+func collectAndClean(dir string) []string {
+	entries, err := filepath.Glob(filepath.Join(dir, "*"))
 	if err != nil {
-		t.Fatalf("list %s: %v", fresh, err)
+		return nil
 	}
-	if len(entries) == 0 {
-		return
-	}
-
-	leaked := make([]string, 0, len(entries))
+	left := make([]string, 0, len(entries))
 	for _, e := range entries {
 		name := filepath.Base(e)
+		desc := name + " (no watched harness prefix match)"
 		for _, p := range watchedLeakPrefixes {
 			if strings.HasPrefix(name, p) {
-				leaked = append(leaked, name+" (watched harness prefix "+p+")")
+				desc = name + " (watched harness prefix " + p + ")"
 				break
 			}
 		}
+		left = append(left, desc)
+		if err := os.RemoveAll(e); err != nil { //nolint:errcheck
+			// Leave it: attribution is already recorded above.
+		}
 	}
-	t.Fatalf("temp-dir leak: %d entr%s left in the test temp dir %s after the inner run; "+
-		"known leaking harness prefixes are %s: [%s]",
-		len(entries),
-		func() string {
-			if len(entries) == 1 {
-				return "y"
-			}
-			return "ies"
-		}(),
-		fresh,
-		strings.Join(watchedLeakPrefixes, ", "),
-		strings.Join(leaked, "; "))
+	return left
 }
 
 // buildReadOnlyModTree creates a throwaway home under the current temp dir
