@@ -44,3 +44,20 @@ Answer by number with a letter or yes or no; "recommended" for any item means th
 ## Notes on verification
 
 The drafting agents flagged claims they could not fully verify in code, listed at the end of each file's report: several "nothing exists" statements rest on searches of `internal/` only (the verifier pre-run, the registry-versus-README check, the merge-pending suffix writer, tag use), task and PRD counts are rough estimates, and whether branch protection and Dependabot security updates are enabled in the GitHub settings is not visible from the repository.
+
+## Answers given in the question queue, 2026-10-30
+
+Answered in the PWA (surface pwa) unless noted; the quotes are the operator's words exactly as stored with the answer.
+
+| Time (EDT) | Question | Answer | Operator's words |
+|---|---|---|---|
+| 06:55 | BL433 audit | Yes, start after the Sunday reset | (none) |
+| 13:33 | Claude lanes to Sunday | 2 lanes (via the CLI, relayed from chat) | "2 lanes, go ahead" |
+| 13:36 | BL644 pending items | Hold the Automation until the item is attached; parse the README rows | "Other users of datawatch may not use the same readme numbering sequence,  so need to track internally but support file registry,  but really this world be an internal datawatch function" |
+| 13:38 | push on complete (BL486) | Yes: push the finished work branch to origin (never force, visible not-pushed warning) | (none) |
+| 13:38 | model routing (BL517) | Cancel the old rows and file one small PRD for the two missing pieces | (none) |
+| 13:40 | chain advance rule | Yes: a merged member counts as completed, so chains advance | "These merge questions should be configurable,  other datawatch users may want their own settings, my selection is default" |
+| 13:41 | hung request (BL645) | Option 1: observe request progress (no remediation yet) | (none) |
+| 13:42 | BL620 rules files | Confirm the recommended option (B first) and its default answers | "These questions should be configurable,  other datawatch users may want their own settings, my selection is default" |
+
+Standing design rule from these answers (operator, 2026-10-30, quoted: "need to remember most options need to be configurable since others may use datawatch in their own way, my answers are default and our use case"): every behaviour choice a PRD builds is a configuration key whose default is the operator's answer, because other datawatch users will run it their own way. Consequences recorded: the BL644 answer says the registry the coordinator tracks should be an internal datawatch function that also supports a file registry (a README table) as one source, not the README numbering as the source of truth; the chain advance rule, the push on complete behaviour and the BL620 protected paths are all configurable with these answers as defaults.

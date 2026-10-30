@@ -4,7 +4,7 @@
 **Version:** none (planning document; plan-document commits are exempt from the version bump)
 **Tracker:** BL620, registry row 207 (external report GH#207 follow-up; earlier draft in `2026-10-26-response-to-issues-207-210.md`)
 
-Confirmed: no — no option is chosen. This file records the problem and the options; nothing is decided and no implementation PRD is filed until a `Confirmed: yes` line replaces this one.
+Confirmed: yes — option B first (the judge reads the rules from the base commit, plus a protected-paths gate) with the proposal's default answers, every setting configurable. Operator, 2026-10-30 13:42 EDT, in the question queue (PWA), question q-18e348cb04df2657cbce, option confirm; words: "These questions should be configurable,  other datawatch users may want their own settings, my selection is default".
 
 ## Problem
 
