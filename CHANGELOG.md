@@ -20,6 +20,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.42.1 — MCP session tests no longer race their temp dir cleanup
+
+### Fixed
+
+- **The release build no longer fails on a cleanup race in the MCP session tests.** A test helper started sessions whose background writers could still be writing when the test's temporary directory was removed, which failed the v9.42.0 release run once ("directory not empty"). The helper now stops the writers first. No product behaviour changed.
+
 ## v9.42.0 — Security failures stop the Automaton line and are reported
 
 ### Added
