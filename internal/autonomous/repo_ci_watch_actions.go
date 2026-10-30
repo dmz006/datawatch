@@ -171,7 +171,7 @@ func (p *repoCIWatchPollContext) saveRepoCIWatchRecord(rec *RepoCIWatchRecord) *
 // failNote writes a write-failure note on rec's record (store errors
 // are tolerated: the pass continues).
 func (p *repoCIWatchPollContext) failNote(rec *RepoCIWatchRecord, action string, err error) {
-	p.m.AppendRepoCIWatchNote(rec.Key(), repoCIWatchNoteSource, action+": "+err.Error())
+	_, _ = p.m.AppendRepoCIWatchNote(rec.Key(), repoCIWatchNoteSource, action+": "+err.Error())
 }
 
 // repoCIWatchRunIDto64 parses a record's run ID (a decimal string from

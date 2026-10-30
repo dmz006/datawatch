@@ -43,7 +43,7 @@ const (
 	fakeTagSHA  = "bbbb18bc26b80b0be05f9c7d2e4a3b2c1d0e9f8a7b6c"
 )
 
-var judgeErr = errors.New("judge unavailable")
+var errJudgeUnavailable = errors.New("judge unavailable")
 
 // newPollHarness builds a Manager whose repo CI watch deps, judge and
 // store are under test control: fetch/origin/head/tags/peel are fakes
@@ -358,7 +358,7 @@ func TestRepoCIWatchPollJudgeErrorsStaysJudging(t *testing.T) {
 	m.repoCIJudgeFn = func(ctx context.Context, repoDir, label string) (GuardrailVerdict, error) {
 		judgeCalls++
 		if judgeCalls == 1 {
-			return GuardrailVerdict{}, judgeErr
+			return GuardrailVerdict{}, errJudgeUnavailable
 		}
 		return GuardrailVerdict{Outcome: "fail", Category: "policy"}, nil
 	}

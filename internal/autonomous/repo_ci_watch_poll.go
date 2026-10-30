@@ -186,7 +186,6 @@ type repoCIWatchPollContext struct {
 	budget             int                 // remaining judge calls this pass (repoCIWatchJudgeBudget)
 	judgedIDS          map[string]struct{} // run IDs already budgeted this pass
 	supersededThisPass map[string]struct{} // "recordKey\x00runID" pairs named this pass
-	log                func(format string, args ...any)
 }
 
 // runRepoCIWatchPoll runs the ungated pass: for each configured

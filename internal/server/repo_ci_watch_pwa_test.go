@@ -83,7 +83,7 @@ func TestRepoCIWatchPWA(t *testing.T) {
 	// dynamic status families are) and present in every bundle with a
 	// non-empty value free of the PRD word.
 	for _, key := range repoCIWatchLocaleKeys {
-		want := key
+		var want string
 		if strings.HasPrefix(key, "repo_ci_watch_mode_") {
 			want = "'repo_ci_watch_mode_'"
 		} else {

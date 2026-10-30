@@ -49,7 +49,7 @@ func renderRepoCIWatch(w *strings.Builder, body *repoCIWatchState) {
 		return
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "REPOSITORY\tREF\tWORKFLOW\tSTATUS\tCLASSIFICATION\tFIRST SEEN\tALERTED")
+	_, _ = fmt.Fprintln(tw, "REPOSITORY\tREF\tWORKFLOW\tSTATUS\tCLASSIFICATION\tFIRST SEEN\tALERTED")
 	for _, rec := range body.Records {
 		firstSeen := "-"
 		if !rec.FirstSeenAt.IsZero() {
@@ -63,7 +63,7 @@ func renderRepoCIWatch(w *strings.Builder, body *repoCIWatchState) {
 		if rec.AlertedAt != nil {
 			alerted = "yes"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			rec.Repo, repoCIWatchRef(rec), rec.Workflow, rec.Status,
 			classification, firstSeen, alerted)
 	}
