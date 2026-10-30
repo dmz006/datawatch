@@ -240,6 +240,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		// `autonomous.automation.triage_alert_minutes` and the triage
 		// card title in the Automaton detail view.
 		"settings_automation_triage_alert_minutes",
+		"settings_automation_create_search_mode",
+		"settings_automation_create_search_threshold",
 		"triage_card_title",
 		// The stuck-running watchdog bound on the Automata settings card.
 		"settings_stuck_running_seconds",

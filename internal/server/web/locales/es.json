@@ -1290,6 +1290,8 @@
   "settings_plan_coverage_min_ratio": "Ratio mínimo de cobertura del plan (cobertura de requisitos 0–1, predeterminado 1.0)",
   "settings_automation_idle_alert_minutes": "Alerta de inactividad de Automation (minutos inactiva antes de una alerta, 0 = desactivada)",
   "settings_automation_triage_alert_minutes": "Alerta de triaje de autómatas (minutos que un autómata fallido o bloqueado puede esperar antes de una alerta de triaje, 0 = desactivada, predeterminado 30)",
+  "settings_automation_create_search_mode": "Búsqueda al crear autómatas (off, shadow registra solapamientos sin mostrarlos, on los muestra, predeterminado shadow)",
+  "settings_automation_create_search_threshold": "Umbral de búsqueda al crear autómatas (similitud mayor que 0 y como máximo 1, predeterminado 0,5)",
   "settings_automation_agent_insert_policy": "Política de inserción de agentes en Automation (allow | require_operator, por defecto allow)",
   "settings_progress_lanes": "Carriles de progreso (carriles paralelos de autómatas para la utilización, 0 = 5)",
   "settings_progress_inactive_gap_hours": "Intervalo de inactividad del progreso (horas sin actividad que cuentan como ventana inactiva, 0 = 3)",

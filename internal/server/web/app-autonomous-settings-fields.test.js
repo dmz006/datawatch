@@ -215,6 +215,58 @@ test('GENERAL_CONFIG_FIELDS: autonomous.automation.triage_alert_minutes is a non
   assert.ok(field.label && field.label.length > 0, 'hardcoded fallback label non-empty');
 });
 
+function createSearchField(key) {
+  const sandbox = boot();
+  const fields = vm.runInContext('GENERAL_CONFIG_FIELDS', sandbox, { filename: 'app.js' });
+  const autonomous = fields.find((sec) => sec.id === 'autonomous');
+  return autonomous.fields.find((f) => f.key === key);
+}
+
+test('GENERAL_CONFIG_FIELDS: autonomous.automation.create_search_mode is the off/shadow/on select defaulting to shadow', async (t) => {
+  const field = createSearchField('autonomous.automation.create_search_mode');
+  assert.ok(field, 'autonomous.automation.create_search_mode field is declared');
+  assert.equal(field.type, 'select');
+  assert.equal(JSON.stringify(field.options), JSON.stringify(['off', 'shadow', 'on']), 'options are exactly off/shadow/on');
+  assert.equal(field.default, 'shadow');
+  assert.equal(field.labelKey, 'settings_automation_create_search_mode');
+  assert.ok(field.label && field.label.length > 0, 'hardcoded fallback label non-empty');
+  for (const ok of ['off', 'shadow', 'on']) {
+    assert.ok(field.options.includes(ok), ok + ' is accepted');
+  }
+  for (const bad of ['', 'warn', 'block', 'ON', 'true', 'shadow ']) {
+    assert.ok(!field.options.includes(bad), JSON.stringify(bad) + ' is rejected');
+  }
+});
+
+test('GENERAL_CONFIG_FIELDS: autonomous.automation.create_search_threshold is a number above 0 and at most 1, defaulting to 0.5', async (t) => {
+  const field = createSearchField('autonomous.automation.create_search_threshold');
+  assert.ok(field, 'autonomous.automation.create_search_threshold field is declared');
+  assert.equal(field.type, 'number');
+  assert.equal(field.default, '0.5');
+  assert.equal(field.step, 0.05);
+  assert.equal(field.max, 1);
+  assert.equal(field.labelKey, 'settings_automation_create_search_threshold');
+  assert.ok(field.label && field.label.length > 0, 'hardcoded fallback label non-empty');
+  assert.ok(field.min > 0 && field.min <= field.max, 'min is above 0, so 0 is rejected');
+  const accepts = (v) => v >= field.min && v <= field.max;
+  assert.ok(!accepts(0), '0 is rejected');
+  assert.ok(!accepts(1.05), 'a value above 1 is rejected');
+  assert.ok(!accepts(2), '2 is rejected');
+  assert.ok(accepts(0.5) && accepts(1), '0.5 and 1 are accepted');
+});
+
+for (const [lang, file] of Object.entries(LOCALES)) {
+  test(`locales: ${lang} defines the create-search labels`, (t) => {
+    const bundle = JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, file), 'utf8'));
+    for (const key of ['settings_automation_create_search_mode', 'settings_automation_create_search_threshold']) {
+      const v = bundle[key];
+      assert.ok(typeof v === 'string' && v.trim().length > 0, `${lang} ${key} present and non-empty`);
+      assert.ok(!/\bPRDs?\b/.test(v), 'no PRD wording in the string');
+      assert.ok(!/\b((?:BL|F|B|S)\d{1,6})\b/.test(v), 'no tracker IDs in the string');
+    }
+  });
+}
+
 for (const [lang, file] of Object.entries(LOCALES)) {
   test(`locales: ${lang} defines the automation triage-alert label`, (t) => {
     const bundle = JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, file), 'utf8'));
