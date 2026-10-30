@@ -844,16 +844,25 @@ type Manager struct {
 	// repoCITagsFn   → defaultRepoCITags,
 	// repoCIPeelFn   → defaultRepoCIPeel,
 	// repoCIRunsFn   → defaultRepoCIRuns,
-	// repoCIJudgeFn  → repoCIJudgeCall (ci_watch.go).
+	// repoCIJudgeFn  → repoCIJudgeCall (ci_watch.go),
+	// repoCIAncestorFn → defaultRepoCIAncestor (repo_ci_watch_actions.go),
+	// repoCICancelFn   → defaultRepoCICancel,
+	// repoCIRerunFn    → defaultCIRerun (ci_watch.go),
+	// repoCIDeleteFn   → defaultRepoCIDelete.
 	// Injectable so the poll pass never shells out to the real git/gh
-	// binaries and never calls a real judge in tests.
-	repoCIFetchFn  func(ctx context.Context, repoDir string) error
-	repoCIOriginFn func(ctx context.Context, repoDir string) (string, error)
-	repoCIHeadFn   func(ctx context.Context, repoDir string) (string, error)
-	repoCITagsFn   func(ctx context.Context, repoDir string) ([]string, error)
-	repoCIPeelFn   func(ctx context.Context, repoDir, tag string) (string, error)
-	repoCIRunsFn   func(ctx context.Context, ownerRepo, sha string) ([]RepoCIWatchRun, error)
-	repoCIJudgeFn  func(ctx context.Context, repoPath, label string) (GuardrailVerdict, error)
+	// binaries, never calls a real judge, and never writes to GitHub in
+	// tests (cancel, rerun and delete are all GitHub writes).
+	repoCIFetchFn    func(ctx context.Context, repoDir string) error
+	repoCIOriginFn   func(ctx context.Context, repoDir string) (string, error)
+	repoCIHeadFn     func(ctx context.Context, repoDir string) (string, error)
+	repoCITagsFn     func(ctx context.Context, repoDir string) ([]string, error)
+	repoCIPeelFn     func(ctx context.Context, repoDir, tag string) (string, error)
+	repoCIRunsFn     func(ctx context.Context, ownerRepo, sha string) ([]RepoCIWatchRun, error)
+	repoCIJudgeFn    func(ctx context.Context, repoPath, label string) (GuardrailVerdict, error)
+	repoCIAncestorFn func(ctx context.Context, repoDir, older, newer string) bool
+	repoCICancelFn   func(ctx context.Context, ownerRepo string, runID int64) error
+	repoCIRerunFn    func(ctx context.Context, ownerRepo string, runID int64) error
+	repoCIDeleteFn   func(ctx context.Context, ownerRepo string, runID int64) error
 
 	// BL406 Phase 5 — nil until BL405 Phase 8 wires real CouncilProfile
 	// support; resolveGuidedModeSource falls "council" back to
@@ -5916,4 +5925,69 @@ func (m *Manager) ClearRepoCIWatchRecord(key string) error {
 		return errors.New("repo ci watch: no store available")
 	}
 	return m.repoCIWatch.Delete(key)
+}
+
+// repoCIWatchAncestor reports — through git merge-base --is-ancestor in
+// repoDir — whether older is an ancestor of newer (equal commits count).
+// A failed or absent git read reports "not an ancestor"; the superseded
+// check is best-effort and never fails the pass. The seam (nil →
+// defaultRepoCIAncestor) keeps tests off the real git binary.
+func (m *Manager) repoCIWatchAncestor(ctx context.Context, repoDir, older, newer string) bool {
+	m.mu.Lock()
+	fn := m.repoCIAncestorFn
+	m.mu.Unlock()
+	if fn == nil {
+		fn = defaultRepoCIAncestor
+	}
+	return fn(ctx, repoDir, older, newer)
+}
+
+// repoCIWatchCancel cancels one workflow run (gh run cancel) — a
+// GitHub write. nil seam → defaultRepoCICancel.
+func (m *Manager) repoCIWatchCancel(ctx context.Context, ownerRepo string, runID int64) error {
+	m.mu.Lock()
+	fn := m.repoCICancelFn
+	m.mu.Unlock()
+	if fn == nil {
+		fn = defaultRepoCICancel
+	}
+	return fn(ctx, ownerRepo, runID)
+}
+
+// repoCIWatchRerun reruns one workflow run's failed jobs
+// (gh run rerun --failed) — a GitHub write that reuses the ci-watch
+// default. nil seam → defaultCIRerun.
+func (m *Manager) repoCIWatchRerun(ctx context.Context, ownerRepo string, runID int64) error {
+	m.mu.Lock()
+	fn := m.repoCIRerunFn
+	m.mu.Unlock()
+	if fn == nil {
+		fn = defaultCIRerun
+	}
+	return fn(ctx, ownerRepo, runID)
+}
+
+// repoCIWatchDelete removes one workflow run's record (gh run delete) —
+// a GitHub write. nil seam → defaultRepoCIDelete.
+func (m *Manager) repoCIWatchDelete(ctx context.Context, ownerRepo string, runID int64) error {
+	m.mu.Lock()
+	fn := m.repoCIDeleteFn
+	m.mu.Unlock()
+	if fn == nil {
+		fn = defaultRepoCIDelete
+	}
+	return fn(ctx, ownerRepo, runID)
+}
+
+// RepoCIWatchInfraRetryLimit returns the Manager-configured infra retry
+// budget (RetryPolicy["infra"]), the ceiling on automatic infra reruns
+// shared per repository/ref/workflow; an unset entry reads 0 — no
+// automatic reruns at all.
+func (m *Manager) RepoCIWatchInfraRetryLimit() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if v, ok := m.cfg.RetryPolicy["infra"]; ok {
+		return v
+	}
+	return 0
 }

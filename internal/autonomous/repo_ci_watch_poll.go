@@ -158,17 +158,22 @@ func (c *Coordinator) repoCIWatchPass() {
 
 // repoCIWatchPollContext carries one poll pass's state: the shared
 // (timeout-bounded) context, the pass instant (records mint at now, not
-// at each store round trip), the effective config, and the judge
-// discipline (one call per pass, never one already budgeted).
+// at each store round trip), the effective config, the judge
+// discipline (one call per pass, never one already budgeted), and —
+// for the action phase (repo_ci_watch_actions.go) — the coordinator
+// (alerts raise through it) and the superseded pairs this pass itself
+// named (step 1), which step 2 must leave to a later poll.
 type repoCIWatchPollContext struct {
-	m         *Manager
-	ctx       context.Context
-	now       time.Time
-	cfg       RepoCIWatchConfig
-	judge     repoCIWatchJudgeFunc
-	budget    int                 // remaining judge calls this pass (repoCIWatchJudgeBudget)
-	judgedIDS map[string]struct{} // run IDs already budgeted this pass
-	log       func(format string, args ...any)
+	m                  *Manager
+	co                 *Coordinator // alerts raise through Coordinator.alert
+	ctx                context.Context
+	now                time.Time
+	cfg                RepoCIWatchConfig
+	judge              repoCIWatchJudgeFunc
+	budget             int                 // remaining judge calls this pass (repoCIWatchJudgeBudget)
+	judgedIDS          map[string]struct{} // run IDs already budgeted this pass
+	supersededThisPass map[string]struct{} // "recordKey\x00runID" pairs named this pass
+	log                func(format string, args ...any)
 }
 
 // runRepoCIWatchPoll runs the ungated pass: for each configured
@@ -178,13 +183,15 @@ func (c *Coordinator) runRepoCIWatchPoll(now time.Time, cfg RepoCIWatchConfig) {
 	ctx, cancel := context.WithTimeout(context.Background(), m.ciWatchTimeout())
 	defer cancel()
 	p := &repoCIWatchPollContext{
-		m:         m,
-		ctx:       ctx,
-		now:       now,
-		cfg:       cfg,
-		judge:     m.repoCIWatchJudge(),
-		budget:    repoCIWatchJudgeBudget,
-		judgedIDS: map[string]struct{}{},
+		m:                  m,
+		co:                 c,
+		ctx:                ctx,
+		now:                now,
+		cfg:                cfg,
+		judge:              m.repoCIWatchJudge(),
+		budget:             repoCIWatchJudgeBudget,
+		judgedIDS:          map[string]struct{}{},
+		supersededThisPass: map[string]struct{}{},
 	}
 	repos := cfg.EffectiveRepos()
 	for _, repoDir := range repos {
@@ -259,31 +266,57 @@ func (p *repoCIWatchPollContext) pollRepo(d repoCIWatchDeps, repoDir string) {
 	}
 }
 
-// pollRef lists the runs at one ref's SHA and records each.
+// pollRef lists the runs at one ref's SHA and records each; then it runs
+// the action phase (repo_ci_watch_actions.go) for the ref's records in
+// the spec's two-step order: first the superseded naming (step 1) for
+// the ref's green runs, so every same-ref record is stored and visible,
+// and then per record the cancel/rerun/delete decision (step 2) and the
+// alert.
 func (p *repoCIWatchPollContext) pollRef(ownerRepo, repoDir string, ref repoCIWatchRef) {
 	runs, err := p.m.repoCIWatchDeps().runs(p.ctx, ownerRepo, ref.sha)
 	if err != nil {
 		log.Printf("repo ci watch: %s %s@%s: listing runs failed: %v", ownerRepo, ref.name, ref.sha[:8], err)
 		return
 	}
+	var recorded []*RepoCIWatchRecord
 	for _, run := range runs {
-		p.recordRun(ownerRepo, repoDir, ref, run)
+		if rec := p.recordRun(ownerRepo, repoDir, ref, run); rec != nil {
+			recorded = append(recorded, rec)
+		}
+	}
+	// Step 1: a green run can name earlier failed runs of the same
+	// workflow it superseded; run it over all of this ref's green runs
+	// (a failing run named in step 1 may itself have been recorded after
+	// this green one in the same list).
+	for i, rec := range recorded {
+		if rec.Status == repoCIWatchStatusGreen {
+			recorded[i] = p.markRepoCIWatchSuperseded(repoDir, rec)
+		}
+	}
+	// Step 2 (and the alert): the writes of this pass, each either a real
+	// GitHub write (mode on) or a would_do stand-in (shadow).
+	for i, rec := range recorded {
+		recorded[i] = p.applyRepoCIWatchActions(ownerRepo, rec)
 	}
 }
 
 // recordRun classifies one run, looks up (or mints) its record, and
-// saves it through the Manager's store accessor.
-func (p *repoCIWatchPollContext) recordRun(ownerRepo, repoDir string, ref repoCIWatchRef, run RepoCIWatchRun) {
+// saves it through the Manager's store accessor; it returns the saved
+// record (nil when the run cannot be recorded).
+func (p *repoCIWatchPollContext) recordRun(ownerRepo, repoDir string, ref repoCIWatchRef, run RepoCIWatchRun) *RepoCIWatchRecord {
 	runID := repoCIWatchRunID(run)
 	if runID == "" {
 		log.Printf("repo ci watch: %s: a listed run in %s@%s has no run ID; it cannot be recorded", ownerRepo, ref.name, ref.sha[:8])
-		return
+		return nil
 	}
 	key := RepoCIWatchKey(ownerRepo, ref.kind, ref.name, ref.sha, run.WorkflowName, runID)
 
 	// The stored record (if any) carries the run's lifetime: FirstSeenAt
-	// is preserved across refreshes, and a cached judge verdict is the
-	// once-per-run source of truth.
+	// is preserved across refreshes, a cached judge verdict is the
+	// once-per-run source of truth, and the action phase's state — the
+	// automatic-action log, the would_do stand-ins, the superseded list,
+	// the alert stamp and any notes — must survive a reclassification,
+	// so every refresh carries them over.
 	var existing *RepoCIWatchRecord
 	if s := p.m.repoCIWatch; s != nil {
 		if rec, ok := s.Get(key); ok {
@@ -295,14 +328,22 @@ func (p *repoCIWatchPollContext) recordRun(ownerRepo, repoDir string, ref repoCI
 	rec, err := BuildRepoCIWatchRecord(ownerRepo, ref.kind, ref.name, ref.sha, run.WorkflowName, runID, run.URL, status, classification, p.now)
 	if err != nil {
 		log.Printf("repo ci watch: recording %s %s for run %s: %v", ownerRepo, ref.name, runID, err)
-		return
+		return nil
 	}
 	if existing != nil {
 		rec.FirstSeenAt = existing.FirstSeenAt
+		rec.RerunLog = existing.RerunLog
+		rec.WouldDo = existing.WouldDo
+		rec.SupersededRunIDs = existing.SupersededRunIDs
+		rec.AlertedAt = existing.AlertedAt
+		rec.Notes = existing.Notes
 	}
 	rec.JudgeVerdict = verdict
-	if _, err := p.m.SaveRepoCIWatchRecord(rec); err != nil {
+	if saved, err := p.m.SaveRepoCIWatchRecord(rec); err != nil {
 		log.Printf("repo ci watch: saving record %s: %v", key, err)
+		return nil
+	} else {
+		return saved
 	}
 }
 
