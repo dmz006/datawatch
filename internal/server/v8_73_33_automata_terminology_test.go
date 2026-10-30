@@ -49,6 +49,10 @@ var pendingTranslationKeys = map[string]bool{
 	// settings label as the English placeholder until the app sends back
 	// DE/ES/FR/JA translations.
 	"settings_lane_fill_count_verifier_wait": true,
+	// datawatch-app issue 306: the security failure card ships these two
+	// action lines as English placeholders until the translations arrive.
+	"automation_security_failure_action_stopped":    true,
+	"automation_security_failure_action_would_stop": true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {

@@ -25333,6 +25333,104 @@ window.triageListHtml = function(body) {
     `<div class="list-state-empty triage-list-empty" style="text-align:center;padding:20px;color:var(--text2);min-width:0;">${escHtml(t('triage_empty'))}</div>`;
 };
 
+// ── Security failure card ───────────────────────────────────────────────────
+// securityFailureCardHtml(entry) turns one entry of GET
+// /api/autonomous/security-failures — a run's identity beside the stored
+// SecurityFailureReport under `report` — into a read-only card: the
+// dependency, the advisory identifier, the publication date (or unknown),
+// the registry entry with its first_added, added and expires dates (or not
+// in the registry), the recommendation, and the action taken, or in shadow
+// mode the line of what would have been taken. The card has no control
+// that acts. Every value is escaped. The key maps hold literal locale
+// keys, so the key-coverage guard can see them.
+const SECURITY_FAILURE_RECOMMENDATION_KEYS = {
+  upgrade: 'automation_security_failure_recommend_upgrade',
+  keep: 'automation_security_failure_recommend_keep',
+  keep_no_entry: 'automation_security_failure_recommend_keep_no_entry',
+  unknown: 'automation_security_failure_recommend_unknown',
+};
+const SECURITY_FAILURE_ACTION_KEYS = {
+  stopped: 'automation_security_failure_action_stopped',
+  would_stop: 'automation_security_failure_action_would_stop',
+  report_only: 'automation_security_failure_action_report_only',
+};
+// _securityFailureText returns a trimmed string, or '' for anything that is
+// not a string or number.
+function _securityFailureText(v) {
+  return (typeof v === 'string' || typeof v === 'number') ? String(v).trim() : '';
+}
+function _securityFailureLine(text, extraStyle) {
+  return `<div style="color:var(--text2);overflow-wrap:anywhere;${extraStyle || ''}">${escHtml(text)}</div>`;
+}
+// _securityFailureRegistry words the registry entry: its id and the three
+// dates, each unknown when the report holds none, or that the advisory is
+// not in the registry.
+function _securityFailureRegistry(r) {
+  const unknown = t('automation_security_failure_unknown');
+  const val = v => _securityFailureText(v) || unknown;
+  if (!r.registry_found) {
+    const err = _securityFailureText(r.registry_error);
+    return err
+      ? t('automation_security_failure_registry_unreadable', [err])
+      : t('automation_security_failure_registry_none');
+  }
+  return t('automation_security_failure_registry', [
+    val(r.registry_id), val(r.registry_first_added), val(r.registry_added), val(r.registry_expires),
+  ]);
+}
+window.securityFailureCardHtml = function(entry) {
+  const head = `<div class="cap-title">${escHtml(t('automation_security_failure_title'))}</div>`;
+  const rep = (entry && typeof entry === 'object' && entry.report && typeof entry.report === 'object') ? entry.report : null;
+  if (!rep) {
+    return `<div class="prd-capacity-card security-failure-card">${head}${_securityFailureLine(t('automation_security_failure_report_empty'))}</div>`;
+  }
+  const unknown = t('automation_security_failure_unknown');
+  const advisory = (Array.isArray(rep.advisory_ids) ? rep.advisory_ids : []).map(_securityFailureText).filter(Boolean).join(', ');
+  const ref = entry.ref_name && entry.ref_name !== entry.ref_kind
+    ? _securityFailureText(entry.ref_kind) + '/' + _securityFailureText(entry.ref_name)
+    : _securityFailureText(entry.ref_kind);
+  const where = [entry.repo, ref, entry.workflow].map(_securityFailureText).filter(Boolean).join(' · ');
+  const runId = _securityFailureText(entry.run_id);
+  const runText = runId ? t('automation_security_failure_run', [runId]) : '';
+  const run = (runText && /^https?:\/\//i.test(_securityFailureText(entry.run_url)))
+    ? `<a href="${escHtml(_securityFailureText(entry.run_url))}" target="_blank" rel="noopener noreferrer">${escHtml(runText)}</a>`
+    : escHtml(runText);
+  const identity = (where || run)
+    ? `<div style="margin-top:4px;font-weight:600;overflow-wrap:anywhere;">${escHtml(where)}${where && run ? ' · ' : ''}${run}</div>`
+    : '';
+  const recKey = (typeof rep.recommendation === 'string' && Object.prototype.hasOwnProperty.call(SECURITY_FAILURE_RECOMMENDATION_KEYS, rep.recommendation))
+    ? SECURITY_FAILURE_RECOMMENDATION_KEYS[rep.recommendation] : '';
+  const recText = recKey ? t(recKey) : (_securityFailureText(rep.recommendation) || unknown);
+  const actKey = (typeof rep.action === 'string' && Object.prototype.hasOwnProperty.call(SECURITY_FAILURE_ACTION_KEYS, rep.action))
+    ? SECURITY_FAILURE_ACTION_KEYS[rep.action] : '';
+  const actText = actKey ? t(actKey) : t('automation_security_failure_action_other', [_securityFailureText(rep.action) || unknown]);
+  const rows = [
+    t('automation_security_failure_dependency', [_securityFailureText(rep.dependency) || unknown]),
+    t('automation_security_failure_advisory', [advisory || unknown]),
+    t('automation_security_failure_published', [_securityFailureText(rep.published_at) || unknown]),
+  ];
+  if (_securityFailureText(rep.fixed_version)) rows.push(t('automation_security_failure_fixed_version', [_securityFailureText(rep.fixed_version)]));
+  rows.push(_securityFailureRegistry(rep));
+  if (_securityFailureText(rep.lookup_error)) rows.push(t('automation_security_failure_lookup_failed', [_securityFailureText(rep.lookup_error)]));
+  rows.push(t('automation_security_failure_recommendation', [recText]));
+  rows.push(t('automation_security_failure_mode', [_securityFailureText(rep.mode) || unknown]));
+  const body = rows.map(r => _securityFailureLine(r)).join('');
+  const action = `<div class="security-failure-action" style="margin-top:4px;font-weight:600;overflow-wrap:anywhere;">${escHtml(actText)}</div>`;
+  const note = _securityFailureText(rep.note)
+    ? _securityFailureLine(t('automation_security_failure_note', [_securityFailureText(rep.note)]), 'white-space:pre-wrap;')
+    : '';
+  return `<div class="prd-capacity-card security-failure-card" style="min-width:0;">${head}${identity}${body}${action}${note}</div>`;
+};
+// securityFailureListHtml is the list renderer for the Automation view: the
+// GET /api/autonomous/security-failures body is a JSON list, newest first;
+// it draws a card per report and an empty state when there is none. The
+// loader still owns the loading and failed states.
+window.securityFailureListHtml = function(body) {
+  const list = Array.isArray(body) ? body : [];
+  return list.map(e => window.securityFailureCardHtml(e)).join('') ||
+    `<div class="list-state-empty security-failure-list-empty" style="text-align:center;padding:20px;color:var(--text2);min-width:0;">${escHtml(t('automation_security_failure_empty'))}</div>`;
+};
+
 // decisionLineHtml(decisions) is the read-only decision line card on the
 // Automaton detail: GET /api/autonomous/decisions?prd_id=<id> answers
 // { decisions: [...] }, newest first, and every decision renders one line —
@@ -27784,6 +27882,7 @@ const _AUTOMATION_SUBTABS = [
            above the list. Moving it behind the non-default Overview sub-tab
            would hide items waiting on the operator and be a regression. -->
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationSecurityFailureCard" class="prd-capacity-slot security-failure-slot" style="margin:6px 8px 0;"></div>
       <div id="automationQuestionsCard" class="prd-capacity-card questions-card" style="margin:6px 8px 0;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;">
           <div class="cap-title">${escHtml(t('automation_questions_title'))}</div>
@@ -27799,9 +27898,9 @@ const _AUTOMATION_SUBTABS = [
       </div>`;
     },
     mount() {
-      listLoaderAll([_automationLoader(), _automationTriageLoader(), _automationQuestionsLoader()]);
+      listLoaderAll([_automationLoader(), _automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader()]);
     },
-    stop() { _automationStopLoaders(['automation', 'automation_triage', 'automation_questions']); },
+    stop() { _automationStopLoaders(['automation', 'automation_triage', 'automation_security_failure', 'automation_questions']); },
   },
 ];
 
@@ -27844,7 +27943,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage', 'automation_questions'];
+  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage', 'automation_security_failure', 'automation_questions'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -27946,6 +28045,18 @@ function _automationTriageLoader() {
     failedText: msg => t('triage_failed', [msg]),
     active: () => !!document.getElementById('automationTriageCard'),
     render: body => window.triageListHtml(body),
+  });
+}
+
+// _automationSecurityFailureLoader polls the security failure reports beside
+// the triage card. The card is read-only; its failed state is the list
+// loader's banner, like the triage card.
+function _automationSecurityFailureLoader() {
+  return window._listLoaders.automation_security_failure || listLoader({
+    key: 'automation_security_failure', el: 'automationSecurityFailureCard', url: '/api/autonomous/security-failures', pollMs: 5000,
+    failedText: msg => t('automation_security_failure_failed', [msg]),
+    active: () => !!document.getElementById('automationSecurityFailureCard'),
+    render: body => window.securityFailureListHtml(body),
   });
 }
 
