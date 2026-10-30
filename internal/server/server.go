@@ -513,6 +513,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                 // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
 	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete) // safe-to-delete report of finished Automaton branches and worktrees
 	apiMux.HandleFunc("/api/autonomous/overlap", api.handleAutonomousOverlap)             // search before create: overlaps for a title and spec
+	apiMux.HandleFunc("/api/autonomous/security-failures", api.handleSecurityFailures)    // stored security failure reports with their run identity, newest first
 	apiMux.HandleFunc("/api/capacity/admission", api.handleCapacityAdmission)             // read-only admission query
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)

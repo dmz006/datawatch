@@ -349,6 +349,7 @@ func (p *repoCIWatchPollContext) recordRun(ownerRepo, repoDir string, ref repoCI
 		rec.SupersededRunIDs = existing.SupersededRunIDs
 		rec.AlertedAt = existing.AlertedAt
 		rec.Notes = existing.Notes
+		rec.Security = existing.Security
 	}
 	rec.JudgeVerdict = verdict
 	if saved, err := p.m.SaveRepoCIWatchRecord(rec); err != nil {

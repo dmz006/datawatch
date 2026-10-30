@@ -289,6 +289,32 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"automation_questions_raised",
 		// Search-before-create overlap block shown after a create succeeds.
 		"overlap_warnings_title",
+		// The read-only security failure card in the Automation view.
+		"automation_security_failure_title",
+		"automation_security_failure_empty",
+		"automation_security_failure_failed",
+		"automation_security_failure_report_empty",
+		"automation_security_failure_unknown",
+		"automation_security_failure_run",
+		"automation_security_failure_dependency",
+		"automation_security_failure_advisory",
+		"automation_security_failure_published",
+		"automation_security_failure_fixed_version",
+		"automation_security_failure_registry",
+		"automation_security_failure_registry_none",
+		"automation_security_failure_registry_unreadable",
+		"automation_security_failure_lookup_failed",
+		"automation_security_failure_recommendation",
+		"automation_security_failure_recommend_upgrade",
+		"automation_security_failure_recommend_keep",
+		"automation_security_failure_recommend_keep_no_entry",
+		"automation_security_failure_recommend_unknown",
+		"automation_security_failure_mode",
+		"automation_security_failure_action_stopped",
+		"automation_security_failure_action_would_stop",
+		"automation_security_failure_action_report_only",
+		"automation_security_failure_action_other",
+		"automation_security_failure_note",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

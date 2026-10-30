@@ -119,5 +119,30 @@ func RenderTriageRecord(rec *TriageRecord) string {
 			b.WriteString(strings.ReplaceAll(n.Text, "\n", " ") + "\n")
 		}
 	}
+	if s := rec.Security; s != nil {
+		b.WriteString("Security failure:\n")
+		if s.RunURL != "" {
+			b.WriteString("  Run: " + s.RunURL + "\n")
+		}
+		if dep := strings.TrimSpace(s.Dependency); dep != "" {
+			b.WriteString("  Dependency: " + dep + "\n")
+		}
+		if len(s.AdvisoryIDs) > 0 {
+			b.WriteString("  Advisories: " + strings.Join(s.AdvisoryIDs, ", ") + "\n")
+		}
+		if s.FixedVersion != "" {
+			b.WriteString("  Fixed version: " + s.FixedVersion + "\n")
+		}
+		if s.Recommendation != "" {
+			b.WriteString("  Recommendation: " + s.Recommendation + "\n")
+		}
+		if s.RegistryFound {
+			b.WriteString("  Accepted risk: " + s.RegistryID + "\n")
+		}
+		if note := strings.TrimSpace(s.Note); note != "" {
+			b.WriteString("  Note: " + note + "\n")
+		}
+		b.WriteString("  Action: " + s.Action + " (mode " + s.Mode + ")\n")
+	}
 	return b.String()
 }

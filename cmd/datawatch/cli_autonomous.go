@@ -49,6 +49,10 @@ Subcommands:
   overlap [--title T] [--spec S | <spec>] [--json]
                                   Search before you create: the Automata, registry rows and branches
                                   that already cover a plan's title and spec, best match first
+  security-failure [--repo P] [--status S] [--json]
+                                  Security failure read: the open reports of failed security runs
+                                  (repository, ref, workflow, run, status, dependency, advisory,
+                                  recommendation, action), newest first
   config-get                      Read current autonomous config
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
@@ -221,6 +225,7 @@ Subcommands:
 		newAutonomousTriageCmd(),
 		// Repo CI watch read.
 		newAutonomousRepoCIWatchCmd(),
+		newAutonomousSecurityFailureCmd(),
 		newAutonomousDecisionsCmd(),
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),

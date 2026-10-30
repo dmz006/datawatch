@@ -2752,8 +2752,16 @@ type AutonomousAutomationConfig struct {
 	MergePendingMode         string            `yaml:"merge_pending_mode,omitempty" json:"merge_pending_mode,omitempty"`
 	MergePendingAlertMinutes *int              `yaml:"merge_pending_alert_minutes,omitempty" json:"merge_pending_alert_minutes,omitempty"`
 	AgentInsertPolicy        string            `yaml:"agent_insert_policy" json:"agent_insert_policy"`
-	CreateSearchMode         string            `yaml:"create_search_mode" json:"create_search_mode"`
-	CreateSearchThreshold    *float64          `yaml:"create_search_threshold,omitempty" json:"create_search_threshold,omitempty"`
+	// SecurityFailure — the security failure block
+	// (autonomous.automation.security_failure.*). See
+	// SecurityFailureConfig: the one default (an unset or empty mode reads
+	// shadow, the first-release default — the feature is switched on in
+	// shadow mode first, with no behaviour change) is applied only in its
+	// Effective* accessor, and a mode other than off|shadow|on is refused
+	// on every write path.
+	SecurityFailure       SecurityFailureConfig `yaml:"security_failure" json:"security_failure"`
+	CreateSearchMode      string                `yaml:"create_search_mode" json:"create_search_mode"`
+	CreateSearchThreshold *float64              `yaml:"create_search_threshold,omitempty" json:"create_search_threshold,omitempty"`
 }
 
 // autonomous.automation.create_search_mode values and defaults.
@@ -3320,6 +3328,65 @@ func validateRepoCIWatch(c RepoCIWatchConfig) error {
 		}
 	}
 	return nil
+}
+
+// Security failure — the autonomous.automation.security_failure knob
+// (one key: mode). The constants and validation here mirror
+// internal/autonomous (SecurityFailureConfig) so the YAML/config-load
+// surface and the REST write paths refuse the same bad value; the config
+// package must not import that one (the daemon bridges it)
+const (
+	// SecurityFailureModeOff/Shadow/On — the legal security failure modes.
+	// SecurityFailureModeShadow is the first-release default: an unset or
+	// empty mode reads shadow.
+	SecurityFailureModeOff    = "off"
+	SecurityFailureModeShadow = "shadow"
+	SecurityFailureModeOn     = "on"
+)
+
+// SecurityFailureConfig — mirror of autonomous.SecurityFailureConfig
+// (autonomous.automation.security_failure.mode). The one default (an
+// unset or empty mode reads shadow, the first-release default) is applied
+// only in EffectiveMode, so no call site hard-codes one. There is no
+// other key: the security workflow set is read from
+// autonomous.automation.repo_ci_watch.security_workflows, and the alert
+// time is autonomous.automation.triage_alert_minutes.
+type SecurityFailureConfig struct {
+	Mode string `yaml:"mode" json:"mode"`
+}
+
+// EffectiveMode returns the security failure mode in effect: an empty
+// (unset) value reads SecurityFailureModeShadow (the first-release
+// default — shadow first, no behaviour change). Any value other than off,
+// shadow or on is refused on the write paths, so this never has to guess
+// for it.
+func (c SecurityFailureConfig) EffectiveMode() string {
+	mode := strings.ToLower(strings.TrimSpace(c.Mode))
+	if mode == "" {
+		return SecurityFailureModeShadow
+	}
+	return mode
+}
+
+// ValidateSecurityFailureMode accepts the three legal security failure
+// modes (off, shadow, on; case-insensitive, trimmed; empty = unset =
+// shadow) and rejects every other value.
+func ValidateSecurityFailureMode(mode string) error {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", SecurityFailureModeOff, SecurityFailureModeShadow, SecurityFailureModeOn:
+		return nil
+	default:
+		return fmt.Errorf("autonomous.automation.security_failure.mode: %q is not a valid value (must be %q, %q or %q)",
+			mode, SecurityFailureModeOff, SecurityFailureModeShadow, SecurityFailureModeOn)
+	}
+}
+
+// validateSecurityFailure checks one SecurityFailureConfig the same way
+// the REST write paths do, so a bad mode is refused consistently on every
+// write path (config load and PUT /api/config) rather than normalized
+// silently.
+func validateSecurityFailure(c SecurityFailureConfig) error {
+	return ValidateSecurityFailureMode(c.Mode)
 }
 
 // float64Ptr returns a pointer to the float64 value v.
@@ -4294,9 +4361,21 @@ func DefaultConfig() *Config {
 			DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
 			UndeclaredEditMode:      "warn",
 			ScopeLint:               ScopeLintEnforce,
-			Automation:              AutonomousAutomationConfig{AgentInsertPolicy: AgentInsertPolicyAllow, TriageAlertMinutes: intPtr(DefaultAutomationTriageAlertMinutes), CreateSearchMode: CreateSearchModeShadow, CreateSearchThreshold: float64Ptr(DefaultAutomationCreateSearchThreshold), MergePendingMode: MergePendingModeOff, MergePendingAlertMinutes: intPtr(DefaultAutomationMergePendingAlertMinutes)},
-			LaneFill:                DefaultAutonomousLaneFill(),
-			Progress:                AutonomousProgressConfig{BacklogPath: DefaultProgressBacklogPath},
+			Automation: AutonomousAutomationConfig{
+				AgentInsertPolicy:  AgentInsertPolicyAllow,
+				TriageAlertMinutes: intPtr(DefaultAutomationTriageAlertMinutes), CreateSearchMode: CreateSearchModeShadow, CreateSearchThreshold: float64Ptr(DefaultAutomationCreateSearchThreshold), MergePendingMode: MergePendingModeOff, MergePendingAlertMinutes: intPtr(DefaultAutomationMergePendingAlertMinutes),
+				// The repo CI watch's security workflow list ships populated.
+				// A nil list is saved as an empty list (the field has no
+				// omitempty), and a reload reads an empty list as "watch no
+				// security workflows": the security failure pass then goes
+				// silently off in every mode. Only an operator's explicit
+				// empty list may mean none.
+				RepoCIWatch: RepoCIWatchConfig{
+					SecurityWorkflows: append([]string(nil), DefaultRepoCIWatchSecurityWorkflows...),
+				},
+			},
+			LaneFill: DefaultAutonomousLaneFill(),
+			Progress: AutonomousProgressConfig{BacklogPath: DefaultProgressBacklogPath},
 			// Notify — global baseline for the notify event kinds
 			// (autonomous.notify.default_events). Written as literals,
 			// not the internal/autonomous constants: the config package
@@ -4823,6 +4902,9 @@ func validateLoaded(cfg *Config) error {
 			t, DefaultAutomationMergePendingAlertMinutes)
 	}
 	if err := validateRepoCIWatch(cfg.Autonomous.Automation.RepoCIWatch); err != nil {
+		return err
+	}
+	if err := validateSecurityFailure(cfg.Autonomous.Automation.SecurityFailure); err != nil {
 		return err
 	}
 	if err := cfg.Autonomous.LaneFill.validate(); err != nil {

@@ -216,6 +216,26 @@ reported by the daily watch in `.github/workflows/image-refresh.yaml`.
 To close an accepted CVE once fixed: remove its entry from
 `security/accepted-risks.yml` and regenerate.
 
+### Stop and report when a security check fails
+
+When a security workflow fails because of a dependency, the Automation
+coordinator does not fix the finding and does not document it away. It stops the
+Automaton line the failing commit belongs to (in `on` mode; the default
+`shadow` mode only records the stop it would have made) and stores a security
+failure report: the dependency, the advisory identifier, the publication date
+when it is known, the matching registry entry and its dates, a fixed version
+when one is known, and a recommendation (`upgrade`, `keep`, `keep_no_entry` or
+`unknown`). The report is read on the REST, MCP, CLI, chat and PWA surfaces;
+see [howto/automation-security-failure.md](howto/automation-security-failure.md).
+
+Suppressions stay in the registry. The coordinator never writes
+`security/accepted-risks.yml`, `.trivyignore` or the generated table above, and
+it never reruns a security run. An operator who decides to accept a risk adds
+the entry to `security/accepted-risks.yml` and runs
+`make security-registry-gen`; `scripts/check-no-direct-ignore-writes.sh` (part
+of `make lint`) fails when either generated file differs from what the registry
+produces.
+
 ## Prompt injection mitigations — v8.18.0
 
 User-controlled text flowing into LLM prompts is a class of vulnerability not covered by gosec or Trivy. The following controls were added:

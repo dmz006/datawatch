@@ -175,6 +175,11 @@ func triageRecordUnchanged(stored, fresh *TriageRecord) bool {
 	if a.AlertedAt != nil {
 		b.AlertedAt = a.AlertedAt
 	}
+	if a.Security != nil && b.Security == nil {
+		// SaveTriageRecord keeps the stored report when the fresh one
+		// carries none — a plain refresh is not a change
+		b.Security = a.Security
+	}
 	a.UpdatedAt, b.UpdatedAt = time.Time{}, time.Time{}
 	return reflect.DeepEqual(a, b)
 }

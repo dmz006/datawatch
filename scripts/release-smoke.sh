@@ -5928,6 +5928,61 @@ except Exception:
 fi
 
 # ---------------------------------------------------------------------------
+H "89. Security failure report — REST route and comm verb (read only)"
+# The security failure report is a read: GET /api/autonomous/security-failures
+# returns the stored reports as a JSON list (empty on a fresh daemon), and the
+# comm verb `autonomous security-failure` answers the same read as text. The
+# smoke daemon stores no report, so this checks the route's shape and the comm
+# reply, not a particular run. Nothing is written, stopped or alerted here.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  SF_BODY=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/security-failures" 2>/dev/null || true)
+  SF_CODE=$(echo "$SF_BODY" | tail -n1)
+  SF_JSON=$(echo "$SF_BODY" | sed '$d')
+  if [[ "$SF_CODE" == "200" ]] && echo "$SF_JSON" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d,list)' 2>/dev/null; then
+    ok "security failure: GET /api/autonomous/security-failures answers 200 with a JSON list"
+  else
+    ko "security failure: REST route returned HTTP $SF_CODE or a non-list body: $(echo "$SF_JSON" | head -c 200)"
+  fi
+
+  SF_TM=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"text":"autonomous security-failure"}' "$BASE/api/test/message")
+  if echo "$SF_TM" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+resp=' '.join(d.get('responses',[]))
+assert 'autonomous security-failure' in resp, 'comm reply lacks the verb header'
+assert 'HTTP 401' not in resp, 'comm verb was refused (HTTP 401)'
+" 2>/dev/null; then
+    ok "security failure: comm verb 'autonomous security-failure' answers the list (not refused)"
+  else
+    ko "security failure: comm verb reply failed: $(echo "$SF_TM" | head -c 200)"
+  fi
+
+  SF_UNKNOWN=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"text":"autonomous security-failure 0"}' "$BASE/api/test/message")
+  if echo "$SF_UNKNOWN" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+resp=' '.join(d.get('responses',[]))
+assert 'No security failure report found for run 0.' in resp, 'unknown run not reported as not found'
+" 2>/dev/null; then
+    ok "security failure: comm verb reports an unknown run as not found"
+  else
+    ko "security failure: unknown-run reply failed: $(echo "$SF_UNKNOWN" | head -c 200)"
+  fi
+
+  SF_USAGE=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"text":"autonomous security-failure a b c"}' "$BASE/api/test/message")
+  if echo "$SF_USAGE" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+resp=' '.join(d.get('responses',[]))
+assert 'usage: autonomous security-failure' in resp, 'extra arguments not answered with usage'
+" 2>/dev/null; then
+    ok "security failure: comm verb answers extra arguments with its usage line"
+  else
+    ko "security failure: usage reply failed: $(echo "$SF_USAGE" | head -c 200)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

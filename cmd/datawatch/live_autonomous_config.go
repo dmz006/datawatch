@@ -85,3 +85,36 @@ func cloneNotifyDefaultEvents(in []string) []string {
 	copy(out, in)
 	return out
 }
+
+// repoCIWatchFromYAML bridges the repo CI watch block
+// (autonomous.automation.repo_ci_watch.*) from the loaded config into the
+// Manager's boot-time config. Without it the Manager starts with a zero
+// RepoCIWatch: the watch reads off after every restart until a config PUT
+// happens to carry it again, even though the saved file says shadow or on.
+//
+// The security workflow list keeps its nil-versus-empty distinction: a nil
+// list (unset) stays nil so the default applies, and a non-nil empty list
+// (an explicit "none") stays non-nil empty.
+func repoCIWatchFromYAML(in config.RepoCIWatchConfig) autonomouspkg.RepoCIWatchConfig {
+	out := autonomouspkg.RepoCIWatchConfig{
+		Mode:             in.Mode,
+		PollSeconds:      in.PollSeconds,
+		HungAfterMinutes: in.HungAfterMinutes,
+		DeleteSuperseded: in.DeleteSuperseded,
+	}
+	if in.Repos != nil {
+		out.Repos = append([]string{}, in.Repos...)
+	}
+	if in.SecurityWorkflows != nil {
+		out.SecurityWorkflows = append([]string{}, in.SecurityWorkflows...)
+	}
+	if in.AlertMinutes != nil {
+		alert := *in.AlertMinutes
+		out.AlertMinutes = &alert
+	}
+	if in.TagCount != nil {
+		tags := *in.TagCount
+		out.TagCount = &tags
+	}
+	return out
+}

@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_triage`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `autonomous_prd_set_lane_preference`, `capacity_status` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_triage`, `security_failure_list`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `autonomous_prd_set_lane_preference`, `capacity_status` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
@@ -360,6 +360,20 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   autonomous_triage()
   autonomous_triage(status="failed")
   autonomous_triage(automation_id="aut_01", status="blocked")
+  ```
+
+  A wrong `status` comes back as a tool error with the daemon's message. Needs the autonomous read capability when called by a federated peer.
+- **`security_failure_list`** — list the stored security failure reports, newest first, as a JSON list. Each entry carries the failing security run's identity (`repo`, `ref_kind`, `ref_name`, `workflow`, `run_id`, `run_url`, `status`) and the report stored for it under `report`: `dependency`, `advisory_ids`, `workflow`, `run_id`, `run_url`, `sha`, `published_at`, `fixed_version`, the accepted-risks registry result (`registry_found`, `registry_id`, `registry_first_added`, `registry_added`, `registry_expires`, `registry_error`), `lookup_error`, `recommendation`, `note`, the `mode` it was made under, the `action` the Automaton line received (`report_only`, `would_stop` or `stopped`) and `assessed_at`. Read-only: listing never reruns, cancels, stops or edits anything. Returns the same list as `GET /api/autonomous/security-failures`; nothing matching is `[]`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `repo` | no | only the reports of this repository path |
+  | `status` | no | only reports whose run is in this watch state: `green`, `failing`, `pending`, `hung`, `rerunning` or `superseded` (anything else is refused) |
+
+  ```
+  security_failure_list()
+  security_failure_list(repo="dmz006/datawatch")
+  security_failure_list(repo="dmz006/datawatch", status="failing")
   ```
 
   A wrong `status` comes back as a tool error with the daemon's message. Needs the autonomous read capability when called by a federated peer.

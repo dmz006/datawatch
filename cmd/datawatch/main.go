@@ -2889,6 +2889,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// Sx2 — comm-channel parity needs the local REST loopback port.
 		if cfg.Server.Enabled && cfg.Server.Port > 0 {
 			r.SetWebPort(cfg.Server.Port)
+			r.SetWebToken(cfg.Server.Token)
 		}
 		// BL102 — register the backend by its declared name. Last
 		// router-construction call wins per name; for parents that
@@ -4380,6 +4381,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				MergePendingAlertMinutes: acfgIn.Automation.MergePendingAlertMinutes,
 				CreateSearchMode:         acfgIn.Automation.CreateSearchMode,
 				CreateSearchThreshold:    acfgIn.Automation.CreateSearchThreshold,
+				// security failure mode (autonomous.automation.security_failure.mode)
+				SecurityFailure: autonomouspkg.SecurityFailureConfig{Mode: acfgIn.Automation.SecurityFailure.Mode},
+				// repo CI watch block (autonomous.automation.repo_ci_watch.*):
+				// without it the watch reads off after every restart.
+				RepoCIWatch: repoCIWatchFromYAML(acfgIn.Automation.RepoCIWatch),
 			},
 			// Lane fill (autonomous.lane_fill.*).
 			LaneFill: autonomouspkg.LaneFillConfigFromYAML(acfgIn.LaneFill),
@@ -7601,6 +7607,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// the local loopback port, the same as the messaging routers above.
 		if cfg.Server.Enabled && cfg.Server.Port > 0 {
 			testRouter.SetWebPort(cfg.Server.Port)
+			testRouter.SetWebToken(cfg.Server.Token)
 		}
 		testRouter.SetScheduleStore(schedStore)
 		testRouter.SetAlertStore(alertStore)

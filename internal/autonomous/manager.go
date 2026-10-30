@@ -568,6 +568,11 @@ type AutomationConfig struct {
 	// accessors in repo_ci_watch_config.go. See RepoCIWatchConfig.
 	RepoCIWatch RepoCIWatchConfig `json:"repo_ci_watch"`
 
+	// SecurityFailure: the security failure block (autonomous.automation.
+	// security_failure.*). The default mode is applied only in its
+	// EffectiveMode accessor (security_failure_config.go).
+	SecurityFailure SecurityFailureConfig `json:"security_failure"`
+
 	// AgentInsertPolicy: PolicyAllow (default, also the empty value) lets an
 	// agent insert a member directly; PolicyRequireOperator holds an agent's
 	// insert as a pending insert until an operator approves it.
@@ -914,6 +919,7 @@ type Manager struct {
 	// repoCICancelFn   → defaultRepoCICancel,
 	// repoCIRerunFn    → defaultCIRerun (ci_watch.go),
 	// repoCIDeleteFn   → defaultRepoCIDelete.
+	// securityFailureLogFn → defaultSecurityFailureLog (security_failure_pass.go).
 	// Injectable so the poll pass never shells out to the real git/gh
 	// binaries, never calls a real judge, and never writes to GitHub in
 	// tests (cancel, rerun and delete are all GitHub writes).
@@ -928,6 +934,11 @@ type Manager struct {
 	repoCICancelFn   func(ctx context.Context, ownerRepo string, runID int64) error
 	repoCIRerunFn    func(ctx context.Context, ownerRepo string, runID int64) error
 	repoCIDeleteFn   func(ctx context.Context, ownerRepo string, runID int64) error
+	// securityFailureLogFn — the failed-run log source of the security
+	// failure pass. nil → defaultSecurityFailureLog (gh run view
+	// <runID> --log-failed); tests inject a canned log instead of
+	// shelling out to the real gh binary.
+	securityFailureLogFn func(ctx context.Context, ownerRepo string, runID int64) (string, error)
 
 	// BL406 Phase 5 — nil until BL405 Phase 8 wires real CouncilProfile
 	// support; resolveGuidedModeSource falls "council" back to
@@ -6055,6 +6066,22 @@ func (m *Manager) repoCIWatchDelete(ctx context.Context, ownerRepo string, runID
 	m.mu.Unlock()
 	if fn == nil {
 		fn = defaultRepoCIDelete
+	}
+	return fn(ctx, ownerRepo, runID)
+}
+
+// securityFailureLog returns the failed jobs' log of one workflow run
+// (gh run view <runID> --log-failed --repo <owner/repo>) — the
+// best-available source the security failure pass assesses. nil seam
+// → defaultSecurityFailureLog. A gh failure is an error that still
+// carries whatever gh did print, so the caller can assess the partial
+// log rather than giving up.
+func (m *Manager) securityFailureLog(ctx context.Context, ownerRepo string, runID int64) (string, error) {
+	m.mu.Lock()
+	fn := m.securityFailureLogFn
+	m.mu.Unlock()
+	if fn == nil {
+		fn = defaultSecurityFailureLog
 	}
 	return fn(ctx, ownerRepo, runID)
 }

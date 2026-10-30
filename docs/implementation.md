@@ -1776,6 +1776,69 @@ for the poll's contract.
 - **Surfaces:** the manager `Config` mirror (`internal/autonomous/automation_config.go`, effective defaults resolved by `EffectiveCreateSearch*`), REST GET/PUT `/api/config` (`internal/server/api.go` — `validateCreateSearchModeValue` / `validateCreateSearchThresholdValue`, both pre-PUT validation and `applyConfigPatch`), REST GET/PUT `/api/autonomous/config` (`internal/server/autonomous.go`), the MCP `autonomous_config_set` arguments `automation_create_search_mode` / `automation_create_search_threshold` (`internal/mcp/autonomous.go`), the config YAML bridge into the manager (`cmd/datawatch/main.go`), and the CLI/comm `config set autonomous.automation.<key>` paths that ride on the same REST PUT.
 - **Tests:** `internal/config/overlap_config_test.go` (defaults, valid values, refusal on load) and `internal/server/overlap_config_test.go` (GET defaults, PUT accept, PUT refusal with 400, round-trip write→read).
 
+## Security failure (autonomous.automation.security_failure)
+
+- **Setting:** `autonomous.automation.security_failure` — a block inside
+  the existing `autonomous.automation` section, so it rides on every
+  configuration channel (PUT /api/config, the generic MCP `config_set`
+  tool, CLI `config set`, comm `configure`). The `autonomous_config_set`
+  MCP tool does not carry this key. It has one key: `mode` (off, shadow or
+  on, case-insensitive; any other value is refused on every write path —
+  a 400 on the REST PUT and an error on config load). An unset or empty
+  mode reads shadow, which is the first-release default: the feature is
+  switched on in shadow mode first, with no behaviour change. The one
+  default is applied in exactly one place, the `EffectiveMode()` accessor
+  (`autonomous.SecurityFailureConfig` in
+  `internal/autonomous/security_failure_config.go`, mirrored by
+  `config.SecurityFailureConfig` in `internal/config/config.go` for the
+  config-load and REST surfaces); no call site hard-codes it.
+- **Relationship to the other blocks:** the security workflow set is not
+  a key here — it is the workflows to watch for the security signals,
+  read from `autonomous.automation.repo_ci_watch.security_workflows`
+  (unset reads `CodeQL, dependency-review, owasp-zap, secret-scan,
+  security-scan`), and the alert time is the existing
+  `autonomous.automation.triage_alert_minutes` (unset reads the 30-minute
+  default).
+- **Surfaces:** the config block itself. The GET /api/config surface shows
+  `security_failure.mode` as the effective value (read from the
+  accessor), and the REST PUT validation and store run in
+  `internal/server/api.go` (`validateSecurityFailurePatch`,
+  `applySecurityFailureValue`), mirroring the repo_ci_watch block.
+  The report is read on REST `GET /api/autonomous/security-failures`
+  (`internal/server/security_failure.go`; optional `repo` and `status`
+  filters; GET only; the `autonomous:read` capability), the MCP read tool
+  `security_failure_list` (`internal/mcp/security_failure_tools.go`), the
+  CLI `datawatch autonomous security-failure`
+  (`cmd/datawatch/cli_security_failure.go`), the comm channel
+  `security-failure [run-id]` verb (alias `security_failure`,
+  `internal/router/security_failure_comm.go`) and the PWA Security failure
+  card in the Automation view. The CLI and the comm verb share one
+  renderer, `internal/autonomous/security_failure_render.go`.
+- **Pass:** `securityFailurePass` in
+  `internal/autonomous/security_failure_pass.go` runs on the coordinator's
+  idle tick beside the triage and repo CI watch passes. It visits failing,
+  `security`-classified repo CI watch records on the effective security
+  workflow set once each, decides with `decideSecurityFailure`
+  (`security_failure_decide.go`, a pure function), and stores the
+  `SecurityFailureReport` on the record. In `on` mode it stops the linked
+  Automaton by the executor's own blocked transition and raises one alert;
+  in `shadow` it appends one would-do entry and changes nothing. It never
+  reruns, cancels or deletes a run and never writes the generated ignore
+  file, `docs/security-review.md` or `security/accepted-risks.yml`;
+  `scripts/check-no-direct-ignore-writes.sh` (`make
+  check-security-ignore-writes`, part of `make lint`) and
+  `security_failure_guard_test.go` enforce the last point. Operator view:
+  `docs/howto/automation-security-failure.md` and the "Security failure
+  report" section of `docs/operations.md`.
+- **Test:** `TestSecurityFailureConfig` — `internal/autonomous/
+  security_failure_config_test.go` (unset and empty read shadow, off/
+  shadow/on are accepted, any other value is refused, YAML and JSON
+  round trips, the effective value comes from the accessor),
+  `internal/config/security_failure_config_test.go` (the config-load
+  refusal), and `internal/server/security_failure_config_test.go` (the
+  REST write path: the default surface reads shadow, legal values are
+  accepted, any other value is a 400 and leaves the stored value intact).
+
 ## Automation decision assistant (set_decision_assistant)
 
 - **Setting:** `decision_assistant` on an Automation and on a member (`DecisionAssistant` in `internal/autonomous/decision_assistant.go`): `backend`, `model`, `mode` (`shadow` default, `live`), `hooks` (`empty_edge`, `skip_member`, `insert_member`, `budget_breach`) and per-hook `thresholds`. **Default: off** — an unset setting, or an empty backend, means no hook consults the assistant. A member's setting wins over the Automation's (`EffectiveDecisionAssistant`).
