@@ -6657,6 +6657,24 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						},
 						log.Printf,
 					))
+					// Worker question marker: a DATAWATCH_QUESTION: line a worker
+					// session prints is raised into this same store, with the same
+					// audit, decision-log entry and raise notifications as a REST
+					// raise. Both switches are read live at each event, so a config
+					// write takes effect with no restart. The hook runs on the
+					// output scanner, so it hands the event to a goroutine.
+					mgr.SetWorkerQuestionGate(func() bool {
+						return cfg.Autonomous.Questions.Enabled && cfg.Autonomous.Questions.EffectiveWorkerMarker()
+					})
+					workerQuestionDeps := autonomouspkg.WorkerQuestionDeps{
+						Store:  qstore,
+						Audit:  lifecycleAuditFn,
+						Notify: httpServer.NotifyQuestionRaised,
+						Logf:   log.Printf,
+					}
+					mgr.SetWorkerQuestionHook(func(ev session.WorkerQuestionEvent) {
+						go autonomouspkg.RaiseWorkerQuestion(workerQuestionDeps, ev)
+					})
 				}
 				// BL427 (phase 5) — POST /api/autonomous/events/forward: a peer's
 				// forwarded event is re-emitted into this daemon's dispatcher.

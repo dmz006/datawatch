@@ -76,6 +76,17 @@ var DefaultQuestionLabels = []string{
 	"information",
 }
 
+// Question sources: how a question reached the store. A worker session's
+// DATAWATCH_QUESTION: marker line is "marker"; POST /api/questions is "rest".
+// An empty source (a record written before the field existed) is accepted.
+const (
+	QuestionSourceMarker = "marker"
+	QuestionSourceRest   = "rest"
+)
+
+// questionLineSHA256Len is the length of a hex SHA-256 digest.
+const questionLineSHA256Len = 64
+
 // Size caps for question and answer fields.
 const (
 	questionTextMaxBytes        = 8192
@@ -127,6 +138,15 @@ type Question struct {
 	State      QuestionState `json:"state,omitempty"`
 	Priority   string        `json:"priority,omitempty"`
 	ReturnPath bool          `json:"return_path"`
+	// Blocking is true when the asker said it is blocked until the question
+	// is answered (the worker marker's "blocked" key). Source is how the
+	// question arrived: QuestionSourceMarker or QuestionSourceRest, empty on
+	// a record written before the field existed. SourceLineSHA256 is the hex
+	// SHA-256 of the marker line a worker question came from, so the same
+	// pane line read twice raises one question; it is never the line text.
+	Blocking         bool   `json:"blocking,omitempty"`
+	Source           string `json:"source,omitempty"`
+	SourceLineSHA256 string `json:"source_line_sha256,omitempty"`
 }
 
 // Answer is an immutable reply to a question, stored with the operator's
@@ -236,6 +256,25 @@ func ValidateNewQuestion(q *Question) error {
 	// the asking session.
 	if q.ReturnPath && q.SessionID == "" {
 		add("return_path requires session_id: a question that opts into the session line must name the asking session")
+	}
+
+	// Source: empty, marker or rest. A marker question names the session it
+	// came from and the hash of its line (the dedupe key); a line hash is a
+	// hex SHA-256 digest, so no line text can ride in that field.
+	switch q.Source {
+	case "", QuestionSourceRest:
+	case QuestionSourceMarker:
+		if q.SessionID == "" {
+			add("source marker requires session_id")
+		}
+		if q.SourceLineSHA256 == "" {
+			add("source marker requires source_line_sha256")
+		}
+	default:
+		add("source is %q; it must be empty, %q or %q", q.Source, QuestionSourceMarker, QuestionSourceRest)
+	}
+	if q.SourceLineSHA256 != "" && !isLowerHexDigest(q.SourceLineSHA256) {
+		add("source_line_sha256 must be %d lowercase hex characters", questionLineSHA256Len)
 	}
 
 	// Text is required and capped.
@@ -474,6 +513,20 @@ func SecretRefusalMessage(pattern string) string {
 		"secret in the datawatch secrets store and refer to it by name as " +
 		"${secret:name}, or save it on the filesystem and point the session to " +
 		"the file."
+}
+
+// isLowerHexDigest reports whether s is a lowercase hex SHA-256 digest.
+func isLowerHexDigest(s string) bool {
+	if len(s) != questionLineSHA256Len {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // utf8len counts the characters (Unicode code points) in s.

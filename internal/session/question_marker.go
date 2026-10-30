@@ -256,12 +256,15 @@ func parseWorkerQuestionPayload(raw string) (WorkerQuestionSignal, string) {
 // WorkerQuestionEvent is what the scanner hands the hook for a worker question
 // line. Exactly one of Signal and RefusalReason is set: Signal for a valid
 // question, RefusalReason (a category, never the line text) for a refused one.
+// LineSHA256 is the hex SHA-256 of the exact line in both cases, so a refusal
+// can be audited by hash without carrying the line.
 type WorkerQuestionEvent struct {
 	SessionFullID string
 	PRDID         string
 	TaskID        string
 	Signal        *WorkerQuestionSignal
 	RefusalReason string
+	LineSHA256    string
 	At            time.Time
 }
 
@@ -320,8 +323,11 @@ func (m *Manager) routeWorkerQuestion(sess *Session, line string) {
 	}
 	if kind == workerQuestionReal {
 		ev.Signal = &sig
+		ev.LineSHA256 = sig.LineSHA256
 	} else {
 		ev.RefusalReason = reason
+		sum := sha256.Sum256([]byte(line))
+		ev.LineSHA256 = hex.EncodeToString(sum[:])
 	}
 	hook(ev)
 }

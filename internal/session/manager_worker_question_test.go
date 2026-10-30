@@ -8,6 +8,8 @@ package session
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"sync"
 	"testing"
 	"time"
@@ -168,6 +170,10 @@ func TestWorkerQuestion_RefusedLineCallsHookWithReasonOnly(t *testing.T) {
 	}
 	if evs[0].RefusalReason != workerQuestionReasonTooFewOptions {
 		t.Errorf("refusal reason = %q, want %q", evs[0].RefusalReason, workerQuestionReasonTooFewOptions)
+	}
+	sum := sha256.Sum256([]byte(wqRefusedLine))
+	if evs[0].LineSHA256 != hex.EncodeToString(sum[:]) {
+		t.Errorf("refusal line hash = %q, want sha256 of the line", evs[0].LineSHA256)
 	}
 	if cur.State != StateRunning {
 		t.Errorf("refused worker question changed session state to %q", cur.State)
