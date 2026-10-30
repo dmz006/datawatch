@@ -32,7 +32,7 @@
 //     and not after triage_alert_minutes.
 //
 // The pass never reruns, cancels or deletes a run, never writes
-// .trivyignore, the generated ignore file, docs/security-review.md or
+// the generated ignore file, docs/security-review.md or
 // security/accepted-risks.yml, and does not touch the repo CI watch
 // action phase (repo_ci_watch_actions.go).
 package autonomous

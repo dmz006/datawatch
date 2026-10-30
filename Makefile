@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: build clean install lint check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs test fmt cross release release-snapshot channel-build \
+.PHONY: build clean install lint check-security-ignore-writes check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
@@ -258,7 +258,10 @@ check-go-pins:
 check-internal-refs:
 	bash scripts/check-no-internal-refs.sh
 
-lint: check-tmux check-test-daemons check-service-scope check-go-pins check-internal-refs
+check-security-ignore-writes:
+	bash scripts/check-no-direct-ignore-writes.sh
+
+lint: check-tmux check-test-daemons check-service-scope check-go-pins check-internal-refs check-security-ignore-writes
 	golangci-lint run ./...
 
 test:
