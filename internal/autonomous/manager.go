@@ -839,11 +839,23 @@ type Manager struct {
 	store       *Store
 	automations *AutomationStore
 	repoCIWatch *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
-	dataDir     string            // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
-	templates   *TemplateStore    // BL221 (v6.2.0) — dedicated template store
-	decompose   DecomposeFn
-	guardrail   GuardrailFn
-	planReview  PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
+	// supervisor watch (supervisor_watch_pass.go): the shared finding store,
+	// the host/views the pass runs the checks through (wired by
+	// cmd/datawatch), and the test seam that replaces the whole check run.
+	// Guarded by mu, except supervisorWatchAlerted which owns its lock.
+	supervisorWatch         *SupervisorWatchStore
+	supervisorWatchProbe    SupervisorWatchHostProbe
+	supervisorWatchNodes    SupervisorWatchNodeLister
+	supervisorWatchSess     SupervisorWatchSessionLogger
+	supervisorWatchFindings func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding
+	supervisorWatchAlerted  map[string]bool
+	supervisorWatchAlertMu  sync.Mutex
+
+	dataDir    string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
+	templates  *TemplateStore // BL221 (v6.2.0) — dedicated template store
+	decompose  DecomposeFn
+	guardrail  GuardrailFn
+	planReview PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
 	// sessionTags counts the sessions carrying a tag, for the delete-in-use
 	// check (tags.go). Wired by the server; nil = Automata only.
 	sessionTags SessionTagCounter
@@ -1958,18 +1970,24 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	if err != nil {
 		return nil, err
 	}
+	supWatch, err := NewSupervisorWatchStore(st.dir)
+	if err != nil {
+		return nil, err
+	}
 	types := make([]AutomatonType, len(builtinTypes))
 	copy(types, builtinTypes)
 	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
 	m := &Manager{
-		cfg:         cfg,
-		store:       st,
-		automations: automs,
-		repoCIWatch: repoWatch,
-		dataDir:     dataDir,
-		templates:   newTemplateStore(dataDir),
-		decompose:   decompose,
-		types:       types,
+		cfg:                    cfg,
+		store:                  st,
+		automations:            automs,
+		repoCIWatch:            repoWatch,
+		supervisorWatch:        supWatch,
+		supervisorWatchAlerted: map[string]bool{},
+		dataDir:                dataDir,
+		templates:              newTemplateStore(dataDir),
+		decompose:              decompose,
+		types:                  types,
 	}
 	m.initGuardrailLibrary() // BL303 S2
 	m.lifecycleBus()         // BL427 — create dispatcher + cache hostname
