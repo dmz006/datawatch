@@ -42,8 +42,8 @@
 #
 # Exit 0 only when every check passed.
 #
-# The report is regenerated on every run. Its "Findings and mismatches" section
-# is written by hand after a run and is not produced by this script.
+# The report is regenerated on every run, including its "Spec amendments and
+# what is not shown live" section, so nothing in it depends on a hand edit.
 
 set -uo pipefail
 
@@ -451,6 +451,14 @@ else
 fi
 SAFE_REST="$(api GET /api/autonomous/safe-to-delete)"
 rep_block "\`GET /api/autonomous/safe-to-delete\` on the same project (for comparison with the cleanup's own count):" "$(printf '%s' "$SAFE_REST" | jq -c . 2>/dev/null || printf '%s' "$SAFE_REST")"
+SAFE_N="$(printf '%s' "$SAFE_REST" | jq_r '.safe | length')"
+SAFE_BAD="$(printf '%s' "$SAFE_REST" | jq_r "[.safe[].reason | select(contains(\"$PROJECT_DEFAULT_BRANCH\") | not)] | length")"
+HELD_UNK="$(printf '%s' "$SAFE_REST" | jq_r '[.held[] | select(.state == "unknown")] | length')"
+if [[ "$SAFE_N" -ge 3 && "$SAFE_BAD" == 0 && "$HELD_UNK" == 0 ]]; then
+  verdict PASS "safe-to-delete judges the merged branches against \`$PROJECT_DEFAULT_BRANCH\` (the project has no \`main\`): safe entries name it, none is held as unknown" "safe=$SAFE_N, safe reasons not naming \`$PROJECT_DEFAULT_BRANCH\`=$SAFE_BAD, held as unknown=$HELD_UNK"
+else
+  verdict FAIL "safe-to-delete judges the merged branches against \`$PROJECT_DEFAULT_BRANCH\` (the project has no \`main\`): safe entries name it, none is held as unknown" "safe=${SAFE_N:-?}, safe reasons not naming \`$PROJECT_DEFAULT_BRANCH\`=${SAFE_BAD:-?}, held as unknown=${HELD_UNK:-?}"
+fi
 
 # ============================================================================
 section "2. The four reads agree (report mode)"
@@ -529,7 +537,7 @@ compare_surfaces() { # compare_surfaces <label>
     [[ "$v" == OK ]] && break
     sleep 2   # a poll may have landed between two of the four reads
   done
-  ev="REST: \`GET /api/autonomous/cleanup\`; CLI: \`datawatch autonomous cleanup --json\` and \`datawatch autonomous cleanup\`; MCP: \`autonomous_cleanup_status\` over \`datawatch mcp\` (stdio); comm: \`POST /api/test/message {\"text\":\"autonomous cleanup\"}\`. Comparison result: \`$v\`"
+  ev="REST: \`GET /api/autonomous/cleanup\`; CLI: \`datawatch autonomous cleanup --json\` and \`datawatch autonomous cleanup\`; MCP: \`autonomous_cleanup_status\` over \`datawatch mcp\` (stdio); comm: \`POST /api/test/message {\"text\":\"autonomous cleanup\"}\`. Comparison result: \`$v\`. Comm reply as read: \`$(head -n 2 "$S/s-comm.txt" | tr '\n' ' ' | head -c 400)\`"
   rep_block "CLI text:" "$(cat "$S/s-cli.txt")"
   rep_block "Comm-channel reply:" "$(cat "$S/s-comm.txt")"
   rep_block "MCP result (first 600 bytes):" "$(head -c 600 "$S/s-mcp.json")"
@@ -745,6 +753,13 @@ else
   verdict FAIL "the sandbox daemon, its sessions and its tmux server are gone and no test daemon was left behind" "daemon gone: $D_GONE; port closed: $PORT_CLOSED; private tmux session left: $TMUX_LEFT; leftover check exit $LEFT_RC: $LEFT_OUT"
 fi
 rep "- **Scratch area** (project, remote, work trees, data, config, log, daemon records, shims) is removed by the exit handler right after this report is written."
+
+section "Spec amendments and what is not shown live"
+rep ""
+rep "- **Retention 0 is not testable and was amended to 1 hour.** The brief asked for an on-mode pass with retention 0. The smallest retention the cleanup accepts is 1 hour (check 8 shows \`0\` refused with 400, and a hand-edited \`0\` reads as the 24-hour default), so the on-mode pass uses 1 hour and the sample Automata are seeded 72 hours old in the store."
+rep "- **Release at end ignores the retention window.** The age counts from the moment the Automaton finished, so with a window of at least an hour an end-path release that honored it could never remove anything. The owner's release at completion or cancel therefore skips only the age test (all other safety tests still apply, check 16); the periodic pass keeps the window (check 11, held \`young\`)."
+rep "- **A temp dir of an ended session swept by the periodic sweep is not shown live.** The sweep removes only paths that the daemon's in-memory created-path record attributes to a session that ended at least the retention window (minimum 1 hour) ago, and the record cannot be seeded from outside the daemon. The sweep's primary route (session end releases its own scratch, checks 18 and 22) and its keep cases (live session, a prefixed name the daemon never created, checks 19-21) are shown live; its removal rule is covered by \`internal/autonomous/temp_sweep_test.go\`."
+rep "- **Generality.** The project is a throwaway repository whose default branch is \`$PROJECT_DEFAULT_BRANCH\` and has no \`main\`; the base repository and the worktree root come from the daemon configuration (\`autonomous.worktree_base_repo\`, \`autonomous.worktree_dir\`); the Automata branch namespace is the single constant \`AUTOMATON_PREFIX\` in this script and \`automatonBranchPrefix\` in the daemon. Checks 6 and 12 show the base branch being found from git, not assumed."
 
 # --- summary and report ------------------------------------------------------
 {

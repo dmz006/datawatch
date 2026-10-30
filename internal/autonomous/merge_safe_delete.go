@@ -11,11 +11,9 @@ import (
 	"strings"
 )
 
-// Reasons attached to a safe entry.
-const (
-	safeReasonMerged = "all commits on main"
-	safeReasonEmpty  = "no commits ahead of main"
-)
+// Reasons attached to a safe entry; they name the project's own default branch.
+func safeReasonMerged(base string) string { return "all commits on " + base }
+func safeReasonEmpty(base string) string  { return "no commits ahead of " + base }
 
 // automatonBranchPrefix is the ref namespace of Automata work branches.
 const automatonBranchPrefix = "automaton/"
@@ -78,9 +76,9 @@ func SafeToDeleteReport(ctx context.Context, git MergeGitRunner, baseRepo, base 
 		var reason string
 		switch cmp.State {
 		case MergeStateMerged:
-			reason = safeReasonMerged
+			reason = safeReasonMerged(base)
 		case MergeStateEmpty:
-			reason = safeReasonEmpty
+			reason = safeReasonEmpty(base)
 		default:
 			held := SafeDeleteHeld{Branch: branch, Worktree: wt, State: cmp.State}
 			if cmp.Error != "" {

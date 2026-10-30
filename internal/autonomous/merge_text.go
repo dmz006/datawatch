@@ -69,7 +69,7 @@ func RenderMergeState(ms MergeStatus) string {
 				name = e.AutomatonID
 			}
 			fmt.Fprintf(&b, "  Automaton %q (id %s): branch %s is %s, %d commit(s) ahead of %s",
-				name, e.AutomatonID, e.Branch, e.State, e.CommitsAhead, mergePendingBase)
+				name, e.AutomatonID, e.Branch, e.State, e.CommitsAhead, mergeBaseText(e.Base))
 			if e.PendingSince != nil {
 				fmt.Fprintf(&b, ", merge pending since %s", mergeTimeText(e.PendingSince))
 			}

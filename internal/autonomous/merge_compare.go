@@ -55,6 +55,9 @@ type MergeCompare struct {
 	SubjectsOnBase bool `json:"subjects_on_base"`
 	// State is one of the MergeState constants.
 	State string `json:"state"`
+	// Base is the branch the comparison was made against; set by the
+	// merge-pending pass, which resolves it from git for each repository.
+	Base string `json:"base,omitempty"`
 	// Error holds the git error text when State is unknown.
 	Error string `json:"error,omitempty"`
 }

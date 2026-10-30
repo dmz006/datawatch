@@ -864,10 +864,23 @@ func TestWorktreeCleanupLeavesLiveSessions(t *testing.T) {
 func TestWorktreeCleanupLeavesYoungEntries(t *testing.T) {
 	baseRepo, _ := fixtureRepo(t)
 	m, _ := buildManager(t, baseRepo, config.CleanupModeOn, 48) // 48h retention
+	saveFixturePRD(t, m, "automaton/fixture", PRDCompleted, "", time.Now()) // finished just now
+	m.CleanupWorktreesPass()
+	if !branchExists(t, baseRepo, "automaton/fixture") {
+		t.Fatalf("an entry inside the retention window must be left alone by the periodic pass")
+	}
+}
+
+func TestWorktreeCleanupReleaseAtEndIgnoresRetention(t *testing.T) {
+	baseRepo, worktree := fixtureRepo(t)
+	m, _ := buildManager(t, baseRepo, config.CleanupModeOn, 48) // 48h retention
 	prd := saveFixturePRD(t, m, "automaton/fixture", PRDCompleted, "", time.Now()) // finished just now
 	m.ReleaseAutomatonWorktree(prd)
-	if !branchExists(t, baseRepo, "automaton/fixture") {
-		t.Fatalf("an entry inside the retention window must be left alone")
+	if branchExists(t, baseRepo, "automaton/fixture") {
+		t.Fatalf("the owner's release at the end must not wait for the retention window")
+	}
+	if _, err := os.Stat(worktree); err == nil {
+		t.Fatalf("the work tree directory must be gone")
 	}
 }
 

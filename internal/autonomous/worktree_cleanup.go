@@ -183,7 +183,8 @@ type WorktreeCleanupRemoval struct {
 	// BytesFreed is the work tree's size measured before removal.
 	BytesFreed int64 `json:"bytes_freed"`
 	// Reason is the safety verdict that qualified it (e.g. "all
-	// commits on main", "no commits ahead of main").
+	// commits on trunk", "no commits ahead of trunk": the project's own
+	// default branch).
 	Reason string `json:"reason"`
 }
 
@@ -700,11 +701,19 @@ func (m *Manager) worktreeCleanupRun(opts WorktreeCleanupOptions) WorktreeCleanu
 
 // ReleaseAutomatonWorktree attempts to release one finished (completed
 // or cancelled) Automaton's work branch and work tree from an end path,
-// under the cleanup's full safety criteria. If anything fails — a
+// under the cleanup's safety criteria (all but the retention window). If anything fails — a
 // safety check holds the entry, a command refuses — the entry is left
 // alone and the reason is recorded (log + audit); the periodic
 // CleanupWorktreesPass retries it later. off mode does nothing; report
 // mode records what would be removed and removes nothing.
+//
+// The retention window does not apply here: the entry's age is measured
+// from the moment it finished, so at the end path it is always young and
+// a window of at least an hour would make this path release nothing. Only
+// work whose every commit is already on the base branch, with a clean work
+// tree and no live user, is released, so nothing an operator could still
+// want is lost; the periodic pass keeps the retention window for whatever
+// this path held back.
 func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 	if prd == nil || prd.ID == "" || prd.Git.Branch == "" {
 		return
@@ -712,7 +721,6 @@ func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 	m.mu.Lock()
 	repo := m.cfg.WorktreeBaseRepo
 	mode := m.cfg.Automation.EffectiveCleanupMode()
-	retention := time.Duration(m.cfg.Automation.EffectiveCleanupRetentionHours()) * time.Hour
 	m.mu.Unlock()
 	if mode == config.CleanupModeOff {
 		return // off does nothing
@@ -774,7 +782,7 @@ func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 		Repo:        repo,
 		Report:      single,
 		Mode:        mode,
-		Retention:   retention,
+		Retention:   0, // the owner releasing its own just-ended work: see below
 		MaxRemovals: 1,
 		Git:         git,
 		Probe:       probe,

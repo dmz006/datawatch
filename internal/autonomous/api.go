@@ -1753,6 +1753,12 @@ func (a *API) MergeSafeToDelete(ctx context.Context) (SafeDeleteReport, error) {
 	return a.M.MergeSafeToDelete(ctx)
 }
 
+// CleanupStatus — the automation cleanup read surface behind
+// GET /api/autonomous/cleanup (and the MCP, CLI and comm reads on top of it).
+// Without it the route's interface check fails and the route answers 503 in
+// a running daemon.
+func (a *API) CleanupStatus() CleanupStatus { return a.M.CleanupStatus() }
+
 func (a *API) GetAutomation(id string) (any, bool) {
 	got, ok := a.M.GetAutomation(id)
 	if !ok {

@@ -89,7 +89,11 @@ one does not, the entry is left exactly as it is and the reason is recorded.
   entry is left alone.
 - The branch is **at least as old as the retention window** (below), so work you
   may still want to look at stays reachable for a while. An entry whose age
-  cannot be determined counts as young.
+  cannot be determined counts as young. This applies to the periodic sweep. The
+  moment an Automaton completes or is cancelled, the owner releases its own work
+  without waiting, because the age is measured from that very moment; the other
+  conditions in this list still all have to hold, and in particular a branch with
+  any commit not yet on the default branch is never released.
 - It is not the **main checkout** of the repository, and it is not the default
   branch itself.
 - Only branches in the `automaton/` namespace are ever considered. Branches you

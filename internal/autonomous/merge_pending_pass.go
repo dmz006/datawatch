@@ -29,8 +29,9 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 )
 
-// mergePendingBase is the branch Automaton work branches are compared with.
-const mergePendingBase = "main"
+// mergePendingFallbackBase names the base branch only when git cannot tell
+// the repository's default branch (no remote HEAD, no checked-out branch).
+const mergePendingFallbackBase = "main"
 
 // mergePendingGitTimeout bounds the git work of one comparison.
 const mergePendingGitTimeout = 30 * time.Second
@@ -60,6 +61,63 @@ type mergePendingState struct {
 	// unchanged failure is logged once, not every poll.
 	logged map[string]string
 	shadow *mergeShadowRecords
+	// bases caches the default branch resolved per base repository.
+	bases map[string]string
+}
+
+// resolveMergeBase finds the branch Automaton work branches in repo are
+// compared with: the remote's default branch (refs/remotes/<remote>/HEAD),
+// else the branch the repository itself has checked out, else
+// mergePendingFallbackBase. It never assumes a name git can supply, so a
+// repository whose default branch is master or trunk works unchanged.
+func resolveMergeBase(ctx context.Context, git MergeGitRunner, repo string) string {
+	remotes := []string{"origin"}
+	if out, err := git.Run(ctx, repo, "remote"); err == nil {
+		for _, l := range strings.Split(out, "\n") {
+			if l = strings.TrimSpace(l); l != "" && l != "origin" {
+				remotes = append(remotes, l)
+			}
+		}
+	}
+	const prefix = "refs/remotes/"
+	for _, remote := range remotes {
+		out, err := git.Run(ctx, repo, "symbolic-ref", prefix+remote+"/HEAD")
+		if err != nil {
+			continue
+		}
+		name := strings.TrimPrefix(strings.TrimSpace(out), prefix)
+		if i := strings.Index(name, "/"); i >= 0 {
+			name = name[i+1:]
+		}
+		if name != "" {
+			return name
+		}
+	}
+	if out, err := git.Run(ctx, repo, "symbolic-ref", "--short", "HEAD"); err == nil {
+		if name := strings.TrimSpace(out); name != "" && !strings.HasPrefix(name, automatonBranchPrefix) {
+			return name
+		}
+	}
+	return mergePendingFallbackBase
+}
+
+// baseFor returns the resolved default branch of repo, asking git once per
+// repository for the life of the daemon.
+func (s *mergePendingState) baseFor(ctx context.Context, repo string) string {
+	s.mu.Lock()
+	if b, ok := s.bases[repo]; ok {
+		s.mu.Unlock()
+		return b
+	}
+	s.mu.Unlock()
+	b := resolveMergeBase(ctx, s.runner(), repo)
+	s.mu.Lock()
+	if s.bases == nil {
+		s.bases = map[string]string{}
+	}
+	s.bases[repo] = b
+	s.mu.Unlock()
+	return b
 }
 
 func (s *mergePendingState) runner() MergeGitRunner {
@@ -94,15 +152,15 @@ func (c *Coordinator) shadowRecords() *mergeShadowRecords {
 // no git at all; a layout the ref files cannot answer for (symbolic or
 // reftable refs, an unreadable repository) falls back to git rev-parse under
 // ctx.
-func (s *mergePendingState) mergeTips(ctx context.Context, repo, branch string) (branchTip, baseTip string, err error) {
+func (s *mergePendingState) mergeTips(ctx context.Context, repo, branch, base string) (branchTip, baseTip string, err error) {
 	read := s.refTips
 	if read == nil {
 		read = readBranchTips
 	}
-	if bt, mt, ok := read(repo, branch, mergePendingBase); ok {
+	if bt, mt, ok := read(repo, branch, base); ok {
 		return bt, mt, nil
 	}
-	out, err := s.runner().Run(ctx, repo, "rev-parse", branch, mergePendingBase)
+	out, err := s.runner().Run(ctx, repo, "rev-parse", branch, base)
 	if err != nil {
 		return "", "", fmt.Errorf("merge tips for the Automaton branch: %v: %s", err, strings.TrimSpace(out))
 	}
@@ -197,7 +255,8 @@ func (c *Coordinator) mergeCompare(repo, branch string) (MergeCompare, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), mergePendingGitTimeout)
 	defer cancel()
 
-	branchTip, baseTip, err := s.mergeTips(ctx, repo, branch)
+	base := s.baseFor(ctx, repo)
+	branchTip, baseTip, err := s.mergeTips(ctx, repo, branch, base)
 	if err != nil {
 		return unknown(err.Error())
 	}
@@ -213,10 +272,11 @@ func (c *Coordinator) mergeCompare(repo, branch string) (MergeCompare, bool) {
 		return e.cmp, true
 	}
 
-	cmp := CompareBranchToMain(ctx, s.runner(), repo, branch, mergePendingBase)
+	cmp := CompareBranchToMain(ctx, s.runner(), repo, branch, base)
 	if cmp.State == MergeStateUnknown {
 		return unknown(cmp.Error)
 	}
+	cmp.Base = base
 	s.mu.Lock()
 	if s.cache == nil {
 		s.cache = map[string]mergeCacheEntry{}
@@ -355,6 +415,7 @@ func (c *Coordinator) mergePendingRecord(prd *PRD, cmp MergeCompare, now time.Ti
 		Status:       TriageStatusMergePending,
 		Branch:       prd.Git.Branch,
 		CommitsAhead: cmp.Ahead,
+		BaseBranch:   cmp.Base,
 		FirstSeenAt:  now,
 		UpdatedAt:    now,
 	}
@@ -385,8 +446,9 @@ func mergePendingAlertBody(rec *TriageRecord, now time.Time) string {
 	if name == "" {
 		name = rec.PRDID
 	}
+	base := mergeBaseText(rec.BaseBranch)
 	fmt.Fprintf(&b, "Automaton %q (id %s) has finished, but its work branch %s has %d commit(s) that are not on %s yet.\n",
-		name, rec.PRDID, rec.Branch, rec.CommitsAhead, mergePendingBase)
+		name, rec.PRDID, rec.Branch, rec.CommitsAhead, base)
 	if rec.AutomationID != "" {
 		member := ""
 		if rec.MemberID != "" {
@@ -395,6 +457,15 @@ func mergePendingAlertBody(rec *TriageRecord, now time.Time) string {
 		fmt.Fprintf(&b, "Member of Automation %q (id %s)%s.\n", rec.AutomationName, rec.AutomationID, member)
 	}
 	fmt.Fprintf(&b, "Merge pending since %s (%s).\n", rec.FirstSeenAt.Format(time.RFC3339), now.Sub(rec.FirstSeenAt).Round(time.Minute))
-	fmt.Fprintf(&b, "Review the Automaton branch and merge it into %s; nothing has been merged, deleted or pushed.", mergePendingBase)
+	fmt.Fprintf(&b, "Review the Automaton branch and merge it into %s; nothing has been merged, deleted or pushed.", base)
 	return b.String()
+}
+
+// mergeBaseText names the base branch in operator text; a record written
+// before the base was recorded reads as the repository's default branch.
+func mergeBaseText(base string) string {
+	if base == "" {
+		return "the default branch"
+	}
+	return base
 }

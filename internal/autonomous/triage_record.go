@@ -105,8 +105,10 @@ type TriageRecord struct {
 	Notes []TriageNote `json:"notes,omitempty"`
 	// Branch and CommitsAhead are set only on a merge_pending record: the
 	// Automaton's work branch and how many of its commits are not on main.
+	// BaseBranch is the repository's default branch the work was compared with.
 	Branch       string `json:"branch,omitempty"`
 	CommitsAhead int    `json:"commits_ahead,omitempty"`
+	BaseBranch   string `json:"base_branch,omitempty"`
 	// Security carries the SecurityFailureReport when this record was
 	// minted by the security failure pass — an Automaton blocked because
 	// a watched security run failed. Nil for an ordinary failure or
