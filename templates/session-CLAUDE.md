@@ -62,6 +62,8 @@ The daemon monitors for this pattern and will:
 
 You can also use normal interactive prompts — the daemon detects idle prompt states.
 
+- Design choice for the operator: when the task and the code cannot settle a design choice that only the operator can make, you may print the marker `DATAWATCH_QUESTION:` followed by one line of JSON with the keys question, options, recommendation, default and blocked. Set blocked to true only when the task cannot go on without the answer; otherwise keep working on the rest of the task. The daemon acts on that line only when the operator has turned the worker marker on, so keep using the needs-input line for anything that is not a design choice.
+
 ## Completion Protocol
 
 When your task is fully complete, output:
