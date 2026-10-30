@@ -81,6 +81,7 @@ type SharedSeries struct {
 	lookup PeerLookup
 	client *http.Client
 	now    func() time.Time
+	stamp  LaneStamper // keeper only; nil stamps every reading unavailable
 }
 
 // SharedOption adjusts a SharedSeries at construction time.
@@ -102,6 +103,11 @@ func WithSharedclient(c *http.Client) SharedOption {
 			s.client = c
 		}
 	}
+}
+
+// WithLaneStamper sets the stamper the keeper calls for each reading it stores.
+func WithLaneStamper(stamp LaneStamper) SharedOption {
+	return func(s *SharedSeries) { s.stamp = stamp }
 }
 
 // NewSharedSeries wires a store to the keeper named by keeper (empty: this daemon is the
@@ -274,8 +280,15 @@ func (s *SharedSeries) fetchRecord(ctx context.Context, keeper, baseURL, token s
 // keeper is unreachable: ErrKeeperUnreachable.
 func (s *SharedSeries) AddReading(ctx context.Context, r Reading) (Reading, error) {
 	if s.isKeeper() {
+		// The keeper alone decides the lane stamp; a value the caller sent is overwritten.
+		r.Lanes, r.LanesSource = nil, LanesUnavailable
+		if s.stamp != nil {
+			r.Lanes, r.LanesSource = s.stamp(r.At, s.now())
+		}
 		return s.store.Append(r)
 	}
+	// A peer carries no ledger of the keeper's, so it sends the reading without a stamp.
+	r.Lanes, r.LanesSource = nil, ""
 	body, err := json.Marshal(r)
 	if err != nil {
 		return Reading{}, fmt.Errorf("usage series: encode the reading: %w", err)

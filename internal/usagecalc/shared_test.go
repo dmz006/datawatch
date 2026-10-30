@@ -634,3 +634,72 @@ func TestSharedSeriesMalformedKeeperResponse(t *testing.T) {
 		t.Fatalf("local store mutated by a write to a denying keeper: %+v", local.Account)
 	}
 }
+
+// laneSharedFixture is a keeper daemon whose stamper reads a fake counter and a fake history.
+func laneSharedFixture(t *testing.T, counter *fakeLaneCounter, history LaneLookup) *sharedFixture {
+	t.Helper()
+	fx := newSharedFixture(t, "", "unknown", "")
+	fx.series = NewSharedSeries(fx.store, "", nil, WithSharedClock(fx.clock.Now),
+		WithLaneStamper(NewLaneStamper(counter, history)))
+	return fx
+}
+
+func TestSharedSeriesKeeperStampsLiveReading(t *testing.T) {
+	counter := &fakeLaneCounter{count: 3, ok: true}
+	fx := laneSharedFixture(t, counter, nil)
+	stored, err := fx.series.AddReading(context.Background(), Reading{At: storeTestNow.Add(-10 * time.Second), Percent: fptr(30), Source: SourceTyped})
+	if err != nil {
+		t.Fatalf("AddReading: %v", err)
+	}
+	if stored.Lanes == nil || *stored.Lanes != 3 || stored.LanesSource != LanesLive {
+		t.Fatalf("stored lanes = %v source %q, want 3 live", stored.Lanes, stored.LanesSource)
+	}
+	if got := fx.store.Snapshot().Account.Readings; len(got) != 1 || got[0].Lanes == nil || *got[0].Lanes != 3 || got[0].LanesSource != LanesLive {
+		t.Fatalf("store holds %+v", got)
+	}
+}
+
+func TestSharedSeriesKeeperStampOverridesCallerLanes(t *testing.T) {
+	counter := &fakeLaneCounter{count: 2, ok: true}
+	fx := laneSharedFixture(t, counter, nil)
+	stored, err := fx.series.AddReading(context.Background(), Reading{At: storeTestNow, Percent: fptr(30), Lanes: iptr(9), LanesSource: LanesTyped, Source: SourceTyped})
+	if err != nil {
+		t.Fatalf("AddReading: %v", err)
+	}
+	if stored.Lanes == nil || *stored.Lanes != 2 || stored.LanesSource != LanesLive {
+		t.Fatalf("stored lanes = %v source %q, want the stamp 2 live", stored.Lanes, stored.LanesSource)
+	}
+	// A reading with no counter wired replaces the caller's value too.
+	none := laneSharedFixture(t, &fakeLaneCounter{}, nil)
+	stored, err = none.series.AddReading(context.Background(), Reading{At: storeTestNow, Percent: fptr(30), Lanes: iptr(9), Source: SourceTyped})
+	if err != nil {
+		t.Fatalf("AddReading: %v", err)
+	}
+	if stored.Lanes != nil || stored.LanesSource != LanesUnavailable {
+		t.Fatalf("stored lanes = %v source %q, want nil unavailable", stored.Lanes, stored.LanesSource)
+	}
+}
+
+func TestSharedSeriesNoStamperIsUnavailable(t *testing.T) {
+	fx := newSharedFixture(t, "", "unknown", "")
+	stored, err := fx.series.AddReading(context.Background(), Reading{At: storeTestNow, Percent: fptr(30), Lanes: iptr(4), Source: SourceTyped})
+	if err != nil {
+		t.Fatalf("AddReading: %v", err)
+	}
+	if stored.Lanes != nil || stored.LanesSource != LanesUnavailable {
+		t.Fatalf("stored lanes = %v source %q, want nil unavailable", stored.Lanes, stored.LanesSource)
+	}
+}
+
+func TestSharedSeriesPeerForwardsReadingWithLanesCleared(t *testing.T) {
+	fx := newSharedFixture(t, "alpha", "live", "tok")
+	fx.series = NewSharedSeries(fx.store, "alpha", func(string) (string, string, bool) { return fx.server.URL, "tok", true },
+		WithSharedClock(fx.clock.Now), WithLaneStamper(NewLaneStamper(&fakeLaneCounter{count: 5, ok: true}, nil)))
+	if _, err := fx.series.AddReading(context.Background(), Reading{At: storeTestNow.Add(-time.Hour), Percent: fptr(50), Lanes: iptr(7), LanesSource: LanesTyped, Source: SourceTyped}); err != nil {
+		t.Fatalf("AddReading: %v", err)
+	}
+	readings, _, _ := fx.keeper.state()
+	if len(readings) != 1 || readings[0].Lanes != nil || readings[0].LanesSource != "" {
+		t.Fatalf("keeper received %+v, want lanes and lanes_source cleared", readings)
+	}
+}

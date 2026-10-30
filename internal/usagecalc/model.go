@@ -50,6 +50,21 @@ const (
 	operatorChoosesNote = "The operator chooses the number of lanes; this is advice only."
 )
 
+// LanesSource values: how the keeper arrived at Reading.Lanes.
+const (
+	// LanesLive: the reading is at the clock, the count is the ledger count now.
+	LanesLive = "live"
+	// LanesRecorded: an earlier time that the lane history covers.
+	LanesRecorded = "recorded"
+	// LanesCurrent: an earlier time the history does not cover, so the ledger count now is used.
+	LanesCurrent = "current"
+	// LanesUnavailable: no ledger is wired; Lanes is nil.
+	LanesUnavailable = "unavailable"
+	// LanesTyped: a reading stored before the stamp existed that carried an operator-typed
+	// lane count. Its value is kept as it is and never feeds the advice.
+	LanesTyped = "typed"
+)
+
 const (
 	day  = 24 * time.Hour
 	hour = time.Hour
@@ -64,8 +79,11 @@ type Reading struct {
 	Percent        *float64  `json:"percent,omitempty"`
 	SpendUSD       *float64  `json:"spend_usd,omitempty"`
 	SessionPercent *float64  `json:"session_percent,omitempty"`
-	Lanes          *int      `json:"lanes,omitempty"`
-	Source         string    `json:"source"`
+	// Lanes is the Claude lane count the keeper stamped on the reading; LanesSource says
+	// where that count came from (the LanesSource values below).
+	Lanes       *int   `json:"lanes,omitempty"`
+	LanesSource string `json:"lanes_source,omitempty"`
+	Source      string `json:"source"`
 }
 
 // RemainingWork is the work still to run under the run-flat-out policy, in points of the

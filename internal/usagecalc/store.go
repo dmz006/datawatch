@@ -143,6 +143,9 @@ func (s *Store) load() error {
 	if f.Account.Readings == nil {
 		f.Account.Readings = []Reading{}
 	}
+	for i := range f.Account.Readings {
+		f.Account.Readings[i] = markTypedLanes(f.Account.Readings[i])
+	}
 	sortReadings(f.Account.Readings)
 	s.data = f
 	return nil
@@ -230,9 +233,6 @@ func validateReading(r Reading, now time.Time) (Reading, error) {
 	if r.SessionPercent != nil && !validPercentFigure(*r.SessionPercent) {
 		return r, fmt.Errorf("%w: session percent must be from 0 to %g", ErrInvalidReading, MaxPercentReading)
 	}
-	if r.Lanes != nil && *r.Lanes < 0 {
-		return r, fmt.Errorf("%w: lanes must be 0 or more", ErrInvalidReading)
-	}
 	if r.At.IsZero() {
 		return r, fmt.Errorf("%w: a reading needs a time", ErrInvalidReading)
 	}
@@ -240,7 +240,18 @@ func validateReading(r Reading, now time.Time) (Reading, error) {
 		return r, fmt.Errorf("%w: time is more than %s ahead of the clock", ErrInvalidReading, MaxFutureSkew)
 	}
 	r.At = r.At.UTC()
-	return r, nil
+	// A lanes value from the request is not rejected, older callers still send one; the
+	// keeper's stamp replaces it. A bare count with no source is an operator-typed one.
+	return markTypedLanes(r), nil
+}
+
+// markTypedLanes gives a reading that carries a lane count but no source the typed source,
+// which is what every such reading stored before the keeper stamped lanes is.
+func markTypedLanes(r Reading) Reading {
+	if r.Lanes != nil && r.LanesSource == "" {
+		r.LanesSource = LanesTyped
+	}
+	return r
 }
 
 // save prunes old readings from next, writes it atomically and, only on success, makes it
