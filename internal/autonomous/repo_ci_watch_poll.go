@@ -156,6 +156,19 @@ func (c *Coordinator) repoCIWatchPass() {
 	c.runRepoCIWatchPoll(now, cfg)
 }
 
+// RepoCIWatchLastPoll returns the instant the coordinator last ran a
+// repo CI watch poll pass: the zero time when it never has (the
+// Coordinator's fields are guarded by c.mu; a nil Coordinator reports
+// the zero time). Read-only.
+func (c *Coordinator) RepoCIWatchLastPoll() time.Time {
+	if c == nil {
+		return time.Time{}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.repoCIWatchLastPoll
+}
+
 // repoCIWatchPollContext carries one poll pass's state: the shared
 // (timeout-bounded) context, the pass instant (records mint at now, not
 // at each store round trip), the effective config, the judge
