@@ -4369,6 +4369,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			Automation: autonomouspkg.AutomationConfig{
 				IdleAlertMinutes:   acfgIn.Automation.IdleAlertMinutes,
 				TriageAlertMinutes: acfgIn.Automation.TriageAlertMinutes,
+				// Merge-pending mode + alert threshold: same nil-means-default
+				// rule as the triage threshold.
+				MergePendingMode:         acfgIn.Automation.MergePendingMode,
+				MergePendingAlertMinutes: acfgIn.Automation.MergePendingAlertMinutes,
 			},
 			// Lane fill (autonomous.lane_fill.*).
 			LaneFill: autonomouspkg.LaneFillConfigFromYAML(acfgIn.LaneFill),

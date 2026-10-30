@@ -2721,10 +2721,29 @@ func ValidateUndeclaredEditMode(mode string) error {
 // with an error on config load.
 const DefaultAutomationTriageAlertMinutes = 30
 
+// MergePendingMode is the autonomous.automation.merge_pending_mode setting: it
+// says whether the merge-pending check of finished Automaton branches is off,
+// runs in shadow (records and reports only) or is on. An empty value reads as
+// MergePendingModeOff. MergePendingAlertMinutes is how long (whole minutes) an
+// Automaton branch may sit finished but unmerged before the merge-pending alert
+// is raised. It is a pointer for the same reason as TriageAlertMinutes: unset
+// (nil) reads DefaultAutomationMergePendingAlertMinutes (30), an explicit 0
+// turns the merge-pending alert off and must survive a round trip, and a
+// negative value is rejected on every write path and on config load.
+const (
+	MergePendingModeOff    = "off"
+	MergePendingModeShadow = "shadow"
+	MergePendingModeOn     = "on"
+
+	DefaultAutomationMergePendingAlertMinutes = 30
+)
+
 type AutonomousAutomationConfig struct {
-	IdleAlertMinutes   int    `yaml:"idle_alert_minutes" json:"idle_alert_minutes"`
-	TriageAlertMinutes *int   `yaml:"triage_alert_minutes,omitempty" json:"triage_alert_minutes,omitempty"`
-	AgentInsertPolicy  string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
+	IdleAlertMinutes         int    `yaml:"idle_alert_minutes" json:"idle_alert_minutes"`
+	TriageAlertMinutes       *int   `yaml:"triage_alert_minutes,omitempty" json:"triage_alert_minutes,omitempty"`
+	MergePendingMode         string `yaml:"merge_pending_mode,omitempty" json:"merge_pending_mode,omitempty"`
+	MergePendingAlertMinutes *int   `yaml:"merge_pending_alert_minutes,omitempty" json:"merge_pending_alert_minutes,omitempty"`
+	AgentInsertPolicy        string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
 }
 
 // autonomous.lane_fill.mode values and defaults.
@@ -3091,6 +3110,39 @@ func (c AutonomousAutomationConfig) EffectiveTriageAlertMinutes() int {
 		return DefaultAutomationTriageAlertMinutes
 	}
 	return *c.TriageAlertMinutes
+}
+
+// ValidateMergePendingMode accepts the legal autonomous.automation.
+// merge_pending_mode values: off, shadow and on. The empty string is accepted
+// too, as "unset", and reads as off. Any other value is rejected.
+func ValidateMergePendingMode(mode string) error {
+	switch mode {
+	case "", MergePendingModeOff, MergePendingModeShadow, MergePendingModeOn:
+		return nil
+	}
+	return fmt.Errorf("autonomous.automation.merge_pending_mode: unknown mode %q (use %s, %s or %s)",
+		mode, MergePendingModeOff, MergePendingModeShadow, MergePendingModeOn)
+}
+
+// EffectiveMergePendingMode returns the merge-pending mode in effect: an empty
+// value reads as MergePendingModeOff.
+func (c AutonomousAutomationConfig) EffectiveMergePendingMode() string {
+	if c.MergePendingMode == "" {
+		return MergePendingModeOff
+	}
+	return c.MergePendingMode
+}
+
+// EffectiveMergePendingAlertMinutes returns the merge-pending alert threshold
+// in effect: an unset value (nil pointer) reads
+// DefaultAutomationMergePendingAlertMinutes (30), while an explicit 0 turns
+// the merge-pending alert off. Negative values are rejected on the write
+// paths, so this never has to guess for them.
+func (c AutonomousAutomationConfig) EffectiveMergePendingAlertMinutes() int {
+	if c.MergePendingAlertMinutes == nil {
+		return DefaultAutomationMergePendingAlertMinutes
+	}
+	return *c.MergePendingAlertMinutes
 }
 
 // AutonomousNotifyConfig —autonomous.notify sub-config. DefaultEvents
@@ -3896,7 +3948,7 @@ func DefaultConfig() *Config {
 			DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
 			UndeclaredEditMode:      "warn",
 			ScopeLint:               ScopeLintEnforce,
-			Automation:              AutonomousAutomationConfig{AgentInsertPolicy: AgentInsertPolicyAllow, TriageAlertMinutes: intPtr(DefaultAutomationTriageAlertMinutes)},
+			Automation:              AutonomousAutomationConfig{AgentInsertPolicy: AgentInsertPolicyAllow, TriageAlertMinutes: intPtr(DefaultAutomationTriageAlertMinutes), MergePendingMode: MergePendingModeOff, MergePendingAlertMinutes: intPtr(DefaultAutomationMergePendingAlertMinutes)},
 			LaneFill:                DefaultAutonomousLaneFill(),
 			Progress:                AutonomousProgressConfig{BacklogPath: DefaultProgressBacklogPath},
 			// Notify — global baseline for the notify event kinds
@@ -4410,6 +4462,13 @@ func validateLoaded(cfg *Config) error {
 	if t := cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(); t < 0 {
 		return fmt.Errorf("autonomous.automation.triage_alert_minutes: %d must be a whole number >= 0 (0 = off, default %d)",
 			t, DefaultAutomationTriageAlertMinutes)
+	}
+	if err := ValidateMergePendingMode(cfg.Autonomous.Automation.MergePendingMode); err != nil {
+		return err
+	}
+	if t := cfg.Autonomous.Automation.EffectiveMergePendingAlertMinutes(); t < 0 {
+		return fmt.Errorf("autonomous.automation.merge_pending_alert_minutes: %d must be a whole number >= 0 (0 = off, default %d)",
+			t, DefaultAutomationMergePendingAlertMinutes)
 	}
 	if err := cfg.Autonomous.LaneFill.validate(); err != nil {
 		return err

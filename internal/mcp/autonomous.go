@@ -72,6 +72,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("plan_coverage_check", mcpsdk.Description("Plan requirement-coverage gate mode: off (no gate), warn (failing coverage is reported on the PRD but approval proceeds), block (the default: approving a PRD with a failing plan-coverage report is blocked until the operator acknowledges that exact failing surface with autonomous_prd_plan_coverage_acknowledge)")),
 		mcpsdk.WithNumber("automation_idle_alert_minutes", mcpsdk.Description("Minutes an active Automation may sit idle (a member finished and no next member started) before one idle alert is raised. Whole number >= 0; 0 turns the alert off.")),
 		mcpsdk.WithNumber("automation_triage_alert_minutes", mcpsdk.Description("Minutes an Automation may sit waiting before a triage alert is raised. Whole number >= 0; 0 turns the triage alert off, unset keeps the 30-minute default.")),
+		mcpsdk.WithString("automation_merge_pending_mode", mcpsdk.Enum("off", "shadow", "on"), mcpsdk.Description("Merge-pending check of finished Automaton branches: off (the default, no check), shadow (records and reports only) or on. Empty keeps the current value.")),
+		mcpsdk.WithNumber("automation_merge_pending_alert_minutes", mcpsdk.Description("Minutes a finished Automaton branch may sit unmerged before a merge-pending alert is raised. Whole number >= 0; 0 turns the merge-pending alert off, unset keeps the 30-minute default.")),
 		mcpsdk.WithString("lane_fill_mode", mcpsdk.Enum("off", "shadow", "on"), mcpsdk.Description("Lane fill mode: off (no planning), shadow (plans and records every decision but starts nothing) or on (starts the planned work). Empty is shadow.")),
 		mcpsdk.WithNumber("lane_fill_gpu_lanes", mcpsdk.Description("Number of GPU lanes lane fill plans for. Whole number >= 0.")),
 		mcpsdk.WithNumber("lane_fill_claude_lanes", mcpsdk.Description("Number of Claude lanes lane fill plans for. Whole number >= 0; 0 means no Claude lane.")),
@@ -248,6 +250,14 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		}
 		if _, ok := args["automation_triage_alert_minutes"]; ok {
 			auto["triage_alert_minutes"] = req.GetFloat("automation_triage_alert_minutes", 0)
+		}
+	}
+	if v := req.GetString("automation_merge_pending_mode", ""); v != "" {
+		auto["merge_pending_mode"] = v
+	}
+	if args := req.GetArguments(); args != nil {
+		if _, ok := args["automation_merge_pending_alert_minutes"]; ok {
+			auto["merge_pending_alert_minutes"] = req.GetFloat("automation_merge_pending_alert_minutes", 0)
 		}
 	}
 	if v := req.GetString("automation_agent_insert_policy", ""); v != "" {

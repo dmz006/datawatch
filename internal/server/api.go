@@ -6269,7 +6269,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// Effective, not raw: an unset (nil) value reads the 30-minute
 				// default, an explicit 0 stays 0 (the triage alert off).
 				"triage_alert_minutes": s.cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(),
-				"agent_insert_policy":  s.cfg.Autonomous.Automation.EffectiveAgentInsertPolicy(),
+				// Merge-pending check: the mode reads off when unset, the alert
+				// minutes read the 30-minute default when unset and an explicit
+				// 0 stays 0 (the merge-pending alert off).
+				"merge_pending_mode":          s.cfg.Autonomous.Automation.EffectiveMergePendingMode(),
+				"merge_pending_alert_minutes": s.cfg.Autonomous.Automation.EffectiveMergePendingAlertMinutes(),
+				"agent_insert_policy":         s.cfg.Autonomous.Automation.EffectiveAgentInsertPolicy(),
 			},
 			"lane_fill": laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
 			"progress": map[string]interface{}{
@@ -6550,6 +6555,21 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// whole PUT rather than being skipped.
 	if v, ok := patch["autonomous.automation.triage_alert_minutes"]; ok {
 		if verr := validateTriageAlertMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Merge-pending mode: off | shadow | on. Any other value rejects the whole
+	// PUT. The alert threshold is whole minutes >= 0; unset reads the 30-minute
+	// default and an explicit 0 turns the merge-pending alert off.
+	if v, ok := patch["autonomous.automation.merge_pending_mode"]; ok {
+		if verr := validateMergePendingMode(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if v, ok := patch["autonomous.automation.merge_pending_alert_minutes"]; ok {
+		if verr := validateMergePendingAlertMinutes(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -8040,6 +8060,18 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.Automation.TriageAlertMinutes = &n
 			}
+		case "autonomous.automation.merge_pending_mode":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			if validateMergePendingMode(v) == nil {
+				cfg.Autonomous.Automation.MergePendingMode = toString(v)
+			}
+		case "autonomous.automation.merge_pending_alert_minutes":
+			// Validated above in handlePutConfig; n >= 0 is re-checked for
+			// safety, and an explicit 0 (merge-pending alert off) is preserved.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.Automation.MergePendingAlertMinutes = &n
+			}
 		case "autonomous.automation.agent_insert_policy":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
@@ -8951,6 +8983,33 @@ func validateTriageAlertMinutes(v interface{}) error {
 	}
 	if !ok || f != math.Trunc(f) || f < 0 {
 		return fmt.Errorf("autonomous.automation.triage_alert_minutes: must be a whole number >= 0 (0 = off, default %d)", config.DefaultAutomationTriageAlertMinutes)
+	}
+	return nil
+}
+
+// validateMergePendingMode checks autonomous.automation.merge_pending_mode: a
+// string that is "off", "shadow" or "on" (empty is not accepted over the wire;
+// the default applies when the key is absent).
+func validateMergePendingMode(v interface{}) error {
+	str, ok := v.(string)
+	if !ok || str == "" {
+		return fmt.Errorf("autonomous.automation.merge_pending_mode: must be %q, %q or %q",
+			config.MergePendingModeOff, config.MergePendingModeShadow, config.MergePendingModeOn)
+	}
+	return config.ValidateMergePendingMode(str)
+}
+
+// validateMergePendingAlertMinutes checks
+// autonomous.automation.merge_pending_alert_minutes: a whole number >= 0 (an
+// unset key reads the 30-minute default; an explicit 0 turns the merge-pending
+// alert off).
+func validateMergePendingAlertMinutes(v interface{}) error {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) || f < 0 {
+		return fmt.Errorf("autonomous.automation.merge_pending_alert_minutes: must be a whole number >= 0 (0 = off, default %d)", config.DefaultAutomationMergePendingAlertMinutes)
 	}
 	return nil
 }

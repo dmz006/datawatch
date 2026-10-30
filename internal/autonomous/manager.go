@@ -551,6 +551,18 @@ type AutomationConfig struct {
 	// EffectiveTriageAlertMinutes.
 	TriageAlertMinutes *int `json:"triage_alert_minutes,omitempty"`
 
+	// MergePendingMode: off | shadow | on (empty reads as off). Whether the
+	// merge-pending check of finished Automaton branches is idle, records and
+	// reports only, or acts. Mirrors autonomous.automation.merge_pending_mode.
+	MergePendingMode string `json:"merge_pending_mode,omitempty"`
+
+	// MergePendingAlertMinutes: how long (whole minutes) a finished Automaton
+	// branch may sit unmerged before the merge-pending alert is raised. Pointer
+	// on purpose, like TriageAlertMinutes: unset (nil) reads
+	// config.DefaultAutomationMergePendingAlertMinutes (30), an explicit 0
+	// turns the alert off and survives a merge round trip.
+	MergePendingAlertMinutes *int `json:"merge_pending_alert_minutes,omitempty"`
+
 	// AgentInsertPolicy: PolicyAllow (default, also the empty value) lets an
 	// agent insert a member directly; PolicyRequireOperator holds an agent's
 	// insert as a pending insert until an operator approves it.
@@ -572,6 +584,25 @@ func (c AutomationConfig) EffectiveTriageAlertMinutes() int {
 		return DefaultAutomationTriageAlertMinutes
 	}
 	return *c.TriageAlertMinutes
+}
+
+// EffectiveMergePendingMode returns the merge-pending mode in effect: an empty
+// value reads as off.
+func (c AutomationConfig) EffectiveMergePendingMode() string {
+	if c.MergePendingMode == "" {
+		return config.MergePendingModeOff
+	}
+	return c.MergePendingMode
+}
+
+// EffectiveMergePendingAlertMinutes returns the merge-pending alert threshold
+// in effect: unset (nil) reads config.DefaultAutomationMergePendingAlertMinutes
+// (30), an explicit 0 turns the alert off.
+func (c AutomationConfig) EffectiveMergePendingAlertMinutes() int {
+	if c.MergePendingAlertMinutes == nil {
+		return config.DefaultAutomationMergePendingAlertMinutes
+	}
+	return *c.MergePendingAlertMinutes
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
