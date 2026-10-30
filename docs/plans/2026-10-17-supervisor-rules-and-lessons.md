@@ -481,10 +481,10 @@ budget estimate. Deliberately held PRDs are listed in `IGNORE` in the script wit
    b. finished PRDs: merge (below). c. drafts: decompose. d. new work only from decided designs, after searching the
    registry, `prd-list` and `scripts/branch-audit.py`. An implementation PRD for an open design point is gated on a
    `Confirmed: yes` line in the proposal file.
-6. Merge procedure: `/tmp/sv/trial-merge.sh <id>` in a throwaway worktree; resolve conflicts (a helper subagent for
+6. Merge procedure: `<workspace>/supervisor-scratch/sv/trial-merge.sh <id>` in a throwaway worktree; resolve conflicts (a helper subagent for
    semantic ones); changelog body = lines added by the branch against its merge-base; `BUMP=minor` for a feature,
-   patch for a fix or refactor; `/tmp/sv/finish-merge.sh` (lint plus full `go test` with `env -u TMUX -u TMUX_TMPDIR`);
-   ship only on go exit 0 and only with a clean main checkout; `/tmp/sv/ship-merge.sh`; cancel the PRD record only
+   patch for a fix or refactor; `<workspace>/supervisor-scratch/sv/finish-merge.sh` (lint plus full `go test` with `env -u TMUX -u TMUX_TMPDIR`);
+   ship only on go exit 0 and only with a clean main checkout; `<workspace>/supervisor-scratch/sv/ship-merge.sh`; cancel the PRD record only
    after the ship succeeded; update the registry row; redeploy when a release or setting needs it and no worker is
    on a final task (record in-flight sessions; resume PRDs the restart parked). After each redeploy run
    `scripts/check-waiter-nodes.sh` with the daemon address and token (`DATAWATCH_URL`, `DATAWATCH_TOKEN`): exit
