@@ -1,0 +1,12 @@
+{
+  "at_unix": 1793324591,
+  "howto": "/docs/howto/v7-compute-migration.md",
+  "migrated": [
+    "ollama",
+    "openwebui",
+    "opencode",
+    "goose"
+  ],
+  "notice": "v7 unification: 4 LLM(s) migrated from v6 cfg blocks. Review them in Compute → LLMs.",
+  "version": "7.0.0"
+}
