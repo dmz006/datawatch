@@ -55,6 +55,10 @@ const DefaultSupervisorWatchSilentMinutes = 60
 //     and records). Empty means the script has not published a record
 //     location; the watch then records nothing for it.
 //
+//   - WorkingModel: the model the watch expects to be resident on
+//     every registered compute node. Empty (unset) disables the
+//     model_not_resident check — there is no default working model.
+//
 //   - TmuxRestartBaseline: optional baseline the tmux_restart finding
 //     compares against. Empty means no baseline is configured.
 //
@@ -77,6 +81,13 @@ type SupervisorWatchConfig struct {
 	ScriptOutputPath    string `yaml:"script_output_path,omitempty" json:"script_output_path,omitempty"`
 	TmuxRestartBaseline string `yaml:"tmux_restart_baseline,omitempty" json:"tmux_restart_baseline,omitempty"`
 	MainCheckout        string `yaml:"main_checkout,omitempty" json:"main_checkout,omitempty"`
+
+	// WorkingModel is the working model the watch expects to be
+	// resident on every registered compute node. Empty (unset) disables
+	// the model_not_resident check; an explicit value is compared as-is
+	// (context variants of the base name count, see
+	// supervisorWatchModelResident).
+	WorkingModel string `yaml:"working_model,omitempty" json:"working_model,omitempty"`
 }
 
 // EffectiveMode returns the mode in effect: an empty (unset) value reads
@@ -114,6 +125,14 @@ func (c SupervisorWatchConfig) EffectiveSilentMinutes() int {
 		return DefaultSupervisorWatchSilentMinutes
 	}
 	return *c.SilentMinutes
+}
+
+// EffectiveWorkingModel returns the working model in effect, trimmed:
+// an unset (blank) value stays blank, which disables the
+// model_not_resident check — there is no default working model. This
+// accessor is the only place that policy is applied.
+func (c SupervisorWatchConfig) EffectiveWorkingModel() string {
+	return strings.TrimSpace(c.WorkingModel)
 }
 
 // DefaultSupervisorWatchConfig returns a SupervisorWatchConfig fully
