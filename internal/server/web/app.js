@@ -33458,6 +33458,25 @@ function renderStatsData(el, data) {
       html += `<div class="stat-card"><div class="stat-label">${t('stats_worker_questions')||'Worker Questions'}</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${wqLines}</div></div>`;
     }
+    // Supervisor watch card: the mode, how long ago the coordinator last
+    // polled, the unresolved findings and the days of full agreement with
+    // the supervisor script. Left out until the daemon reports a mode.
+    if (data.supervisor_watch_mode) {
+      const swRows = [
+        ['stats_supervisor_watch_mode', 'Mode', data.supervisor_watch_mode],
+        ['stats_supervisor_watch_open', 'Open findings', data.supervisor_watch_findings_open || 0],
+        ['stats_supervisor_watch_would_alert', 'Would alert', data.supervisor_watch_findings_would_alert || 0],
+        ['stats_supervisor_watch_alerted', 'Alerted', data.supervisor_watch_findings_alerted || 0],
+        ['stats_supervisor_watch_poll_age', 'Last poll (s ago)', (data.supervisor_watch_last_poll_age_seconds || 0) < 0 ? '-' : (data.supervisor_watch_last_poll_age_seconds || 0)],
+        ['stats_supervisor_watch_agreed_days', 'Days of full agreement', data.supervisor_watch_agreed_days || 0],
+      ];
+      const swLines = swRows.map(r => {
+        const warn = (r[0] === 'stats_supervisor_watch_alerted' || r[0] === 'stats_supervisor_watch_would_alert') && r[2] > 0;
+        return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t(r[0])||r[1])}</span><span style="color:${warn ? 'var(--warning)' : 'var(--text)'};">${escHtml(r[2])}</span></div>`;
+      }).join('');
+      html += `<div class="stat-card"><div class="stat-label">${t('stats_supervisor_watch')||'Supervisor watch'}</div>
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${swLines}</div></div>`;
+    }
     html += '</div>';
 
     // ── Session Statistics Card ──

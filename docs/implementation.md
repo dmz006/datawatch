@@ -1769,6 +1769,79 @@ for the poll's contract.
   cache), `internal/server/repo_ci_watch_rest_test.go` (the REST read), and
   the parity tests that cover the CLI and comm verbs.
 
+## Supervisor watch (autonomous.automation.supervisor_watch)
+
+The coordinator runs the daemon-side version of the supervisor script on every
+poll, with no model call. See `docs/howto/automation-supervisor-watch.md` for
+the operator view and the "Supervisor watch" section of `docs/operations.md`.
+
+- **Config:** `autonomous.automation.supervisor_watch` — a block inside the
+  existing `autonomous.automation` section, so it rides on every
+  configuration channel (PUT /api/config, the generic MCP `config_set`, CLI
+  `config set`, comm `configure`, the PWA Settings fields). The type is
+  `autonomous.SupervisorWatchConfig` (`internal/autonomous/supervisor_watch_config.go`),
+  mirrored by `config.SupervisorWatchConfig` in `internal/config/config.go`.
+  Eight keys: `mode` (off, shadow or on, case-insensitive; an unset or empty
+  mode reads shadow through the `EffectiveMode()` accessor, the one place the
+  default is applied; any other value is refused on every write path),
+  `alert_minutes` (a pointer on purpose: unset reads the shared 30-minute
+  triage default, an explicit 0 turns the alert off and survives a merge round
+  trip, negative refused), `silent_minutes` (a pointer: unset reads 60, an
+  explicit 0 is legal, negative refused), `poll_seconds` (unset or 0 reads 60,
+  an explicit value below 60 refused), `script_output_path` (the file the
+  script writes with `--record`; empty means no comparison),
+  `tmux_restart_baseline` (empty means `tmux_restart` reports nothing),
+  `main_checkout` (empty turns `main_checkout_dirty` off) and `working_model`
+  (empty turns `model_not_resident` off; there is no default working model).
+- **Pass:** one pass per coordinator poll, at most once a minute
+  (`supervisor_watch_pass.go`), over three groups of pure checks that read
+  state already observed and call no model: the host checks over a probe
+  interface (`supervisor_watch_host.go` — the real adapters shell out to
+  systemctl, git and the node model report; every probe error reads as
+  unknown and raises nothing), the work checks over the Automaton list, the
+  lane fill status and the repo CI watch records (`supervisor_watch_work.go`),
+  and the worktree checks over a filesystem probe
+  (`supervisor_watch_worktree.go`). Findings are keyed by kind plus subject in
+  `supervisor_watch_record.go` (`<data-dir>/autonomous/supervisor_watch.jsonl`);
+  a finding whose check stops reporting it is resolved, and re-opened in place
+  with its first-seen time. Operator wording lives in one place
+  (`supervisor_watch_text.go`).
+- **Modes:** shadow records everything, marks a finding open for the alert time
+  as would-alert and raises nothing; on raises one warning alert per episode
+  and stamps it on the finding. The triage-record note for an
+  Automaton-scoped finding is written in shadow and on alike (text on an
+  existing record, no state change); off does nothing. The watch is
+  report-only in every mode.
+- **Comparison:** with `script_output_path` set each pass compares its own
+  kind-and-subject set with the script record (`supervisor_watch_compare.go`);
+  an unavailable (missing, unreadable or stale) record records nothing. The
+  last 500 comparisons and a per-day tally are kept in
+  `supervisor_watch_comparisons.json`.
+- **Surfaces:** REST read `GET /api/autonomous/supervisor-watch`
+  (`internal/server/supervisor_watch.go`), the MCP read tool
+  `supervisor_watch_list` (`internal/mcp/supervisor_watch_tools.go`), the CLI
+  `datawatch autonomous supervisor-watch`, the comm verb
+  `autonomous supervisor-watch` (`internal/router/supervisor_watch_comm.go`;
+  the CLI and the verb share `autonomous.RenderSupervisorWatch`), the PWA card
+  on the Automation view and the eight settings fields. The federation
+  capability `autonomous:read` covers the reads.
+- **Monitoring:** `GET /api/autonomous/supervisor-watch/stats` (the
+  `SupervisorWatchStats` numbers, derived by `SupervisorWatchStatus.Stats`),
+  the MCP tool `supervisor_watch_stats`, the `supervisor_watch_*` fields of
+  `SystemStats` filled in `SetAutonomousStatsFunc`, the Monitor card in
+  `renderStatsData()` and the Prometheus gauges
+  `datawatch_supervisor_watch_findings{state}`,
+  `datawatch_supervisor_watch_agreed_days` and
+  `datawatch_supervisor_watch_last_poll_age_seconds`.
+- **Test:** `internal/autonomous/supervisor_watch_*_test.go` (every decision
+  path over fakes, plus the real host and worktree adapters against a stub
+  command runner, a stub node HTTP server and a temporary directory),
+  `internal/config/supervisor_watch_config_test.go`,
+  `internal/server/supervisor_watch*_test.go`,
+  `internal/mcp/supervisor_watch_tools_test.go`,
+  `internal/router/supervisor_watch_comm_test.go`, and the web tests
+  `app-supervisor-watch.test.js` and `app-supervisor-watch-stats.test.js`.
+
 ## Search-before-create (autonomous.automation.create_search_mode, autonomous.automation.create_search_threshold)
 
 - **Config keys:** `autonomous.automation.create_search_mode` (string: `off`, `shadow` default, `on`) and `autonomous.automation.create_search_threshold` (number in the open-closed interval (0, 1]; unset reads `DefaultAutomationCreateSearchThreshold` (0.5)) on `config.AutonomousAutomationConfig` in `internal/config/config.go`, with the exported validators `ValidateCreateSearchMode` / `ValidateCreateSearchThreshold` and the effective getters `EffectiveCreateSearchMode` / `EffectiveCreateSearchThreshold`. A mode outside `off`/`shadow`/`on` is refused (400 on the write paths, an error on config load in `validateLoaded`); a threshold that is zero, negative, above 1, non-finite or non-numeric is refused the same way.

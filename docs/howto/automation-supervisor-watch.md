@@ -7,6 +7,10 @@ exec_steps:
     description: Read the supervisor watch - the mode in effect, the last poll, the stored findings (open first) and the comparison against the supervisor script's record
     args: {}
     read_only: true
+  - tool: supervisor_watch_stats
+    description: Read the supervisor watch numbers - mode, seconds since the last poll, open, would-alert and alerted finding counts, days of full agreement
+    args: {}
+    read_only: true
   - tool: autonomous_config_get
     description: Read the autonomous settings, including the autonomous.automation.supervisor_watch block
     args: {}
@@ -17,8 +21,11 @@ exec_steps:
 
 The **supervisor watch** is the daemon's standing health check over the Automata
 and the machines that run them. On every coordinator poll, with **no model
-call**, it runs the same fourteen checks that the supervisor script
-(`scripts/supervisor-watch.py`) runs by hand today. Each thing it finds is kept
+call**, it runs fourteen checks. Twelve of them are checks the supervisor script
+(`scripts/supervisor-watch.py`) runs by hand today; two
+(`worktree_not_registered` and `verify_script_not_executable`) are new in the
+watch, and the script has several checks of its own the watch does not have yet
+— see "Where the watch and the script differ" below. Each thing it finds is kept
 as one **finding** with a stable kind, shown on every surface, and — once the
 watch is switched to `on` — raised through the alert and notify channels you
 already have. A finding about one Automaton is also written on that Automaton's
@@ -57,7 +64,7 @@ the same subject is one record that is refreshed, not a new one every poll.
 | `daemon_inactive` | The Automaton daemon is not active on a registered compute node. | The node name |
 | `model_not_resident` | The working model is not loaded on a registered compute node, so routing more Automata there would stall. Context variants of the model's base name count as loaded. Not checked while no working model is set. | The node name |
 | `task_failed` | A task in an Automaton failed. Read the verifier verdict before retrying. | The Automaton id |
-| `task_review_needed` | A task in an Automaton is waiting for a person to review it. | The Automaton id |
+| `task_review_needed` | A task in a running or blocked Automaton is held for a person to review (for example after it used up its attempts). It is read from the tasks themselves, not from the triage record, because the record of an Automaton held for review names no task. | The Automaton id |
 | `automaton_not_merged` | An Automaton finished all of its work, every task completed, and is waiting to be merged. | The Automaton id |
 | `idle_lane_eligible_work` | A lane is idle while Automata work that is eligible to run on it is waiting. This reads the lane fill's own status; the watch applies no eligibility rules of its own. | The lane name |
 | `worktree_no_gomod` | A running Automaton's worktree has no `go.mod`, so its project directory is broken. Only raised for a project that is a Go project. | The Automaton id |
@@ -95,6 +102,13 @@ records the findings, resolves the ones that cleared and writes the triage-recor
 note for Automaton-scoped findings. When a finding has been open for
 `alert_minutes`, shadow stamps it `would alert` and **raises nothing**. No alert
 goes to the alert history or to any chat channel, and nothing is acted on.
+
+**The one thing shadow writes besides its own records.** The triage-record note
+for an Automaton-scoped finding is written in shadow too, not only in `on`. It is
+a line of text added to a record the daemon already keeps for that Automaton; it
+changes no state, starts, holds or retries nothing, and raises no alert. It is
+what lets you see in shadow what the watch would have told the operator on the
+Automaton's own record. Set `mode` to `off` if even that note is unwanted.
 
 **The comparison record.** If `script_output_path` is set, every pass also reads
 the file the script wrote with `--record` and compares the two sets of findings,
@@ -138,6 +152,31 @@ for **one full day**:
 When the day agrees, switch to `on`. Keep the script around for one more week of
 spot checks if you like; the watch no longer needs it.
 
+## Where the watch and the script differ
+
+The comparison is kind-and-subject against what the script recorded, so these
+differences are expected and are not bugs. Know them before you read the first
+day's result.
+
+- **Two kinds the script never prints.** `worktree_not_registered` and
+  `verify_script_not_executable` exist only in the watch. Whenever either is
+  open, the comparison lists it under **only the watch**, and that day does not
+  count toward the days of full agreement. Treat each as a real finding to look
+  at (or fix) rather than as a disagreement to chase, and expect a quiet day to
+  be the only kind that can agree fully.
+- **Script checks the watch does not cover.** The script also prints: a model
+  host that is unreachable, a node holding sessions against its limit
+  (balancing), a capacity lease held without a reason, idle compute nodes while
+  requests wait for a busy one (placement), and the main checkout being
+  commits ahead of origin. None of these has a finding kind in the watch. The
+  script leaves them out of its `--record` file (they are outside the stable
+  vocabulary), so they never show up as **only the script** and never block
+  agreement — but while the script is your only source for them, keep reading
+  the script's own output until the watch grows those checks.
+- **Different notions of "new".** The script prints a failed or review task only
+  the first time it sees it; the watch keeps the finding open as long as the
+  task stays in that state.
+
 ## Reading it on every surface
 
 The watch is readable from all five operator surfaces, and all of them read the
@@ -152,6 +191,19 @@ an alert.
 | CLI | `datawatch autonomous supervisor-watch` | The mode, the last poll, one line per finding (kind, state, last seen, the operator line) and the comparison summary; `--json` prints the body untouched. |
 | Comm channel | `autonomous supervisor-watch` (alias `supervisor_watch`) | The same lines as the CLI, in the same order. The read takes no arguments. |
 | PWA | Automation view → Chains sub-tab → the **Supervisor watch** card | The mode, how long ago the coordinator last polled, up to twenty open findings with their kind and line (a finding shadow marked alert-due says so), and the comparison line. Refreshes every 30 seconds. The card is hidden when the endpoint is unavailable, so it never shows a stale state. |
+
+### Monitoring
+
+The numbers behind the watch ride on the existing monitoring surfaces too, so
+you can graph or alert on them without reading the whole finding list:
+
+| Where | What |
+|---|---|
+| REST | `GET /api/autonomous/supervisor-watch/stats` — `mode`, `last_poll_at`, `last_poll_age_seconds` (-1 when it never polled), `findings_open`, `findings_would_alert`, `findings_alerted`, `findings_resolved`, `agreed_days` |
+| MCP | `supervisor_watch_stats` (read-only, no arguments) — the same object |
+| Web UI | Settings → Monitor → the **Supervisor watch** card (mode, open findings, would alert, alerted, last poll age, days of full agreement), live over the stats broadcast |
+| Prometheus | `GET /metrics` → `datawatch_supervisor_watch_findings{state="open"|"would_alert"|"alerted"}`, `datawatch_supervisor_watch_agreed_days`, `datawatch_supervisor_watch_last_poll_age_seconds` |
+| Comm channel | `autonomous supervisor-watch` already answers the status question from chat; there is no separate stats verb |
 
 The alerts the watch raises in `on` mode are ordinary system alerts. They reach
 your chat channels through the existing alert fan-out, not through the read verb.

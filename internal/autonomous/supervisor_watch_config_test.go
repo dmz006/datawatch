@@ -223,7 +223,7 @@ func TestSupervisorWatchConfigOptionalKeys(t *testing.T) {
 	c := SupervisorWatchConfig{
 		ScriptOutputPath:    "records/supervisor-watch.jsonl",
 		TmuxRestartBaseline: "session-19",
-		MainCheckout:        "/home/dmz/projects/automaton",
+		MainCheckout:        "checkouts/main",
 	}
 	if got := c.ScriptOutputPath; got != "records/supervisor-watch.jsonl" {
 		t.Errorf("ScriptOutputPath = %q, want records/supervisor-watch.jsonl", got)
@@ -231,8 +231,8 @@ func TestSupervisorWatchConfigOptionalKeys(t *testing.T) {
 	if got := c.TmuxRestartBaseline; got != "session-19" {
 		t.Errorf("TmuxRestartBaseline = %q, want session-19", got)
 	}
-	if got := c.MainCheckout; got != "/home/dmz/projects/automaton" {
-		t.Errorf("MainCheckout = %q, want /home/dmz/projects/automaton", got)
+	if got := c.MainCheckout; got != "checkouts/main" {
+		t.Errorf("MainCheckout = %q, want checkouts/main", got)
 	}
 	// No mode set: the effective mode is still the shadow default.
 	if got := c.EffectiveMode(); got != SupervisorWatchModeShadow {

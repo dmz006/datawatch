@@ -319,3 +319,30 @@ reads a triage record that never names a task held for review, so the check cann
 gets a verification script path, so the live check needed a fixture node for planning and verdicts; (3) a daemon started
 with `TMUX_TMPDIR` unset adopts the dedicated tmux socket when `$HOME` has one, so a sandbox that needs worker sessions has to
 change `$HOME` to avoid the production socket, and even then the sessions share tmux's default socket.
+
+## Corrections after review (for the next live run)
+
+These are things the review found in this live check. The sandbox run itself is not repeated here; what changed is recorded so
+the next run starts from the corrected set-up.
+
+1. **`task_review_needed` can now fire on the normal escalation path.** The check read the triage record, which never names a
+   task held for review (the record of an Automaton blocked for review carries the blocked reason and no task id), so the live
+   attempt on Automaton `28070001` could not hold. The check now reads the tasks of every running or blocked Automaton and raises
+   one finding per Automaton with a task in the review state. `TestSupervisorWatchWorkTaskReviewNeeded` now builds exactly the
+   escalated shape the live run produced (blocked, triage record with no task id, one task in review) and expects the finding.
+   It has **not** been re-run live; the row for this kind stays "unit-tested, not raised live" until the next sandbox run.
+2. **Start the sandbox daemon under the test-daemon trap library.** The run started its daemon without `td_install_traps`
+   ("no traps installed in the starting shell"), so an interrupted run could have left the daemon behind. The next run must source
+   `scripts/test-daemon-lib.sh`, start the daemon with `td_start`, and call `td_install_traps "$@"` before anything else, so the
+   daemon is ended on every exit path.
+3. **Do not let the sandbox bind the production proxy port.** The bootstrap config left `server.proxy_sandbox_port` at its default,
+   so the daemon tried to bind 8444 (the production proxy's port; the bind failed and nothing was sent to it). The next bootstrap
+   config must set `server.proxy_sandbox_port: 0` (listener disabled) or a free loopback port.
+4. **The triage-record note is written in shadow too.** The note is text added to a record the daemon already keeps; it changes no
+   state and raises no alert. The how-to now says so (see "The one thing shadow writes besides its own records") and says that
+   `mode: off` stops it.
+5. **Kinds the script cannot produce.** `worktree_not_registered` and `verify_script_not_executable` exist only in the watch, so
+   the comparison lists them under *only the watch* whenever they are open; the script also checks an unreachable model host, node
+   balancing, capacity lease holds, placement and commits ahead of origin, which the watch does not. The how-to section "Where the
+   watch and the script differ" is the reference to read the first day's comparison against.
+

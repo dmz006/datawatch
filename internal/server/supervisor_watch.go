@@ -36,6 +36,12 @@ type supervisorWatchReader interface {
 	SupervisorWatchStatus() autonomous.SupervisorWatchStatus
 }
 
+// supervisorWatchStatsReader is the narrow read surface the stats route
+// uses: the watch's numeric monitoring view.
+type supervisorWatchStatsReader interface {
+	SupervisorWatchStats() autonomous.SupervisorWatchStats
+}
+
 // handleSupervisorWatch serves GET /api/autonomous/supervisor-watch.
 // The body is the read view, unfiltered: the store already orders the
 // findings (open first, most recently seen first, then the resolved
@@ -70,4 +76,27 @@ func (s *Server) handleSupervisorWatch(w http.ResponseWriter, r *http.Request) {
 		snap.Comparison.OnlyScript = []string{}
 	}
 	writeJSONOK(w, snap)
+}
+
+// handleSupervisorWatchStats serves GET /api/autonomous/supervisor-watch/stats:
+// the numeric monitoring view (mode, seconds since the last poll, the
+// unresolved finding counts and the days of full agreement). Read-only.
+func (s *Server) handleSupervisorWatchStats(w http.ResponseWriter, r *http.Request) {
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	sr, ok := s.autonomousMgr.(supervisorWatchStatsReader)
+	if !ok {
+		http.Error(w, "supervisor watch unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSONOK(w, sr.SupervisorWatchStats())
 }

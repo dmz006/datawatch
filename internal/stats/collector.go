@@ -138,6 +138,17 @@ type SystemStats struct {
 	WorkerQuestionsParked    int64 `json:"worker_questions_parked,omitempty"`
 	WorkerQuestionsResumed   int64 `json:"worker_questions_resumed,omitempty"`
 
+	// Supervisor watch: the mode in effect, seconds since the coordinator
+	// last polled (-1 when it never has), the unresolved findings (and
+	// how many of them are would-alert or alerted) and the days of full
+	// agreement with the supervisor script.
+	SupervisorWatchMode               string `json:"supervisor_watch_mode,omitempty"`
+	SupervisorWatchLastPollAgeSeconds int64  `json:"supervisor_watch_last_poll_age_seconds,omitempty"`
+	SupervisorWatchFindingsOpen       int    `json:"supervisor_watch_findings_open,omitempty"`
+	SupervisorWatchFindingsWouldAlert int    `json:"supervisor_watch_findings_would_alert,omitempty"`
+	SupervisorWatchFindingsAlerted    int    `json:"supervisor_watch_findings_alerted,omitempty"`
+	SupervisorWatchAgreedDays         int    `json:"supervisor_watch_agreed_days,omitempty"`
+
 	// BL372 — web search MCP injection stats.
 	WebSearchEnabled      bool      `json:"web_search_enabled,omitempty"`
 	WebSearchProvider     string    `json:"web_search_provider,omitempty"`

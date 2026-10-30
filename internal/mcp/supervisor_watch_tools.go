@@ -23,9 +23,16 @@ func (s *Server) toolSupervisorWatchList() mcpsdk.Tool {
 	)
 }
 
+func (s *Server) toolSupervisorWatchStats() mcpsdk.Tool {
+	return mcpsdk.NewTool("supervisor_watch_stats",
+		mcpsdk.WithDescription("Read the supervisor watch numbers: the mode in effect (\"mode\"), when the coordinator last polled (\"last_poll_at\") and how many seconds ago (\"last_poll_age_seconds\", -1 when it never has), the unresolved findings (\"findings_open\", of which \"findings_would_alert\" shadow marked alert-due and \"findings_alerted\" raised an alert), the resolved ones (\"findings_resolved\") and the days of full agreement with the supervisor script (\"agreed_days\"). Takes no arguments; any argument is refused. Read-only. The same object as GET /api/autonomous/supervisor-watch/stats."),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+	)
+}
+
 // SupervisorWatchToolNames lists the supervisor watch tools, for the parity test.
 func SupervisorWatchToolNames() []string {
-	return []string{"supervisor_watch_list"}
+	return []string{"supervisor_watch_list", "supervisor_watch_stats"}
 }
 
 func (s *Server) handleSupervisorWatchList(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -41,6 +48,23 @@ func (s *Server) handleSupervisorWatchList(_ context.Context, req mcpsdk.CallToo
 	out, err := s.proxyGet("/api/autonomous/supervisor-watch", nil)
 	if err != nil {
 		return toolError("supervisor_watch_list", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) handleSupervisorWatchStats(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if args := req.GetArguments(); len(args) > 0 {
+		names := make([]string, 0, len(args))
+		for k := range args {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		return toolError("supervisor_watch_stats",
+			fmt.Errorf("unknown argument(s): %s; this tool takes no arguments", strings.Join(names, ", "))), nil
+	}
+	out, err := s.proxyGet("/api/autonomous/supervisor-watch/stats", nil)
+	if err != nil {
+		return toolError("supervisor_watch_stats", err), nil
 	}
 	return textOK(string(out)), nil
 }

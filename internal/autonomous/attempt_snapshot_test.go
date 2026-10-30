@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // snapTestGit runs git in dir with a fixed identity so no global config is needed.
@@ -154,10 +155,25 @@ func TestAttemptSnapshotCleansUpTempDir(t *testing.T) {
 	if ref == "" {
 		t.Fatal("expected a snapshot ref for a dirty tree")
 	}
-	for name := range attemptTempEntries(t, "attempt-snapshot-") {
-		if _, existedBefore := before[name]; !existedBefore {
-			t.Errorf("SnapshotAttemptWork left temp dir %s behind — best-effort cleanup did not run", name)
+	// The temp area is shared with every other test in the package; a
+	// snapshot another test still has in flight owns its own temp dir
+	// until it finishes. Give such a dir a moment to go away before
+	// treating it as left behind by this call.
+	var leftover []string
+	for deadline := time.Now().Add(3 * time.Second); ; {
+		leftover = leftover[:0]
+		for name := range attemptTempEntries(t, "attempt-snapshot-") {
+			if _, existedBefore := before[name]; !existedBefore {
+				leftover = append(leftover, name)
+			}
 		}
+		if len(leftover) == 0 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	for _, name := range leftover {
+		t.Errorf("SnapshotAttemptWork left temp dir %s behind — best-effort cleanup did not run", name)
 	}
 }
 

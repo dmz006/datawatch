@@ -1906,3 +1906,10 @@ func (a *API) RepoCIWatchStatus() RepoCIWatchStatus {
 func (a *API) SupervisorWatchStatus() SupervisorWatchStatus {
 	return a.M.SupervisorWatchStatus()
 }
+
+// SupervisorWatchStats is the numeric monitoring view of the supervisor
+// watch (mode, poll age, finding counts, days of full agreement).
+// Serves GET /api/autonomous/supervisor-watch/stats.
+func (a *API) SupervisorWatchStats() SupervisorWatchStats {
+	return a.M.SupervisorWatchStatus().Stats(time.Now())
+}

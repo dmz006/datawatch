@@ -1369,6 +1369,36 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/supervisor-watch/stats:
+    get:
+      summary: Supervisor watch stats
+      description: |
+        The supervisor watch as numbers for monitoring: the mode in effect
+        (`mode`), the instant the coordinator last polled (`last_poll_at`) and
+        how many seconds ago (`last_poll_age_seconds`, -1 when it never has),
+        the unresolved findings (`findings_open`, of which `findings_would_alert`
+        shadow marked alert-due and `findings_alerted` raised an alert), the
+        resolved ones (`findings_resolved`) and the days of full agreement with
+        the supervisor script (`agreed_days`). The same numbers ride in the
+        stats snapshot (`supervisor_watch_*`) and the Prometheus gauges
+        `datawatch_supervisor_watch_findings`, `datawatch_supervisor_watch_agreed_days`
+        and `datawatch_supervisor_watch_last_poll_age_seconds`. Read-only; needs
+        the autonomous read capability when called by a federated peer.
+      operationId: autonomousSupervisorWatchStats
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Supervisor watch stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorWatchStats"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/progress:
     get:
       summary: Progress metrics
@@ -5828,6 +5858,27 @@ components:
           description: The stored findings, open first, most recently seen first; empty when none are stored
           items: {$ref: "#/components/schemas/SupervisorWatchFinding"}
         comparison: {$ref: "#/components/schemas/SupervisorWatchComparisonView"}
+    SupervisorWatchStats:
+      type: object
+      description: >-
+        The supervisor watch as numbers, as GET /api/autonomous/supervisor-watch/stats
+        returns it.
+      required: [mode, last_poll_at, last_poll_age_seconds, findings_open, findings_would_alert, findings_alerted, findings_resolved, agreed_days]
+      properties:
+        mode:
+          type: string
+          enum: [off, shadow, on]
+          description: The watch mode in effect; an unset mode reads shadow
+        last_poll_at:
+          type: string
+          format: date-time
+          description: When the coordinator last ran a supervisor watch pass; the zero time when it never has
+        last_poll_age_seconds: {type: integer, description: "Whole seconds since the last poll; -1 when the coordinator never polled"}
+        findings_open: {type: integer, description: Findings not yet resolved, including the would-alert and alerted ones}
+        findings_would_alert: {type: integer, description: Open findings shadow marked alert-due without raising an alert}
+        findings_alerted: {type: integer, description: Open findings an alert was raised for}
+        findings_resolved: {type: integer, description: Stored findings whose check stopped reporting them}
+        agreed_days: {type: integer, description: Calendar days whose comparisons with the supervisor script all agreed}
     SupervisorWatchFinding:
       type: object
       description: >-

@@ -133,3 +133,49 @@ func TestSupervisorWatchMCPSurfacesDaemonError(t *testing.T) {
 		t.Fatalf("a 503 from the daemon must come back as a tool error: %+v", res)
 	}
 }
+
+func TestSupervisorWatchStatsMCPTool(t *testing.T) {
+	tool := (&Server{}).toolSupervisorWatchStats()
+	if tool.Name != "supervisor_watch_stats" {
+		t.Fatalf("name = %q", tool.Name)
+	}
+	if tool.Annotations.ReadOnlyHint == nil || !*tool.Annotations.ReadOnlyHint {
+		t.Error("supervisor_watch_stats must be marked read-only")
+	}
+	if len(tool.InputSchema.Properties) != 0 {
+		t.Errorf("takes no arguments, schema has %v", tool.InputSchema.Properties)
+	}
+	if got := federation.MCPToolCap["supervisor_watch_stats"]; got != federation.CapAutonomousRead {
+		t.Errorf("federation capability = %q, want %q", got, federation.CapAutonomousRead)
+	}
+
+	var path, method string
+	body := `{"mode":"shadow","last_poll_age_seconds":5,"findings_open":1}`
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		path, method = r.URL.Path, r.Method
+		_, _ = w.Write([]byte(body))
+	})
+	res, err := s.handleSupervisorWatchStats(context.Background(), callReq(nil))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	if method != http.MethodGet || path != "/api/autonomous/supervisor-watch/stats" {
+		t.Errorf("proxied %s %s", method, path)
+	}
+	if text := automationText(t, res); text != body {
+		t.Errorf("result differs from the daemon body: %s", text)
+	}
+
+	res, err = s.handleSupervisorWatchStats(context.Background(), callReq(map[string]any{"repo": "x"}))
+	if err != nil || res == nil || !res.IsError {
+		t.Fatalf("an argument must be refused: err=%v res=%+v", err, res)
+	}
+
+	s = capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+	})
+	res, err = s.handleSupervisorWatchStats(context.Background(), callReq(nil))
+	if err != nil || res == nil || !res.IsError {
+		t.Fatalf("a 503 must come back as a tool error: err=%v res=%+v", err, res)
+	}
+}

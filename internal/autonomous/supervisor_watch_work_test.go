@@ -95,33 +95,50 @@ func TestSupervisorWatchWorkTaskFailed(t *testing.T) {
 }
 
 // TestSupervisorWatchWorkTaskReviewNeeded — one task_review_needed
-// finding per Automaton whose triage record names a task and that task
-// sits in its review state, and none otherwise (including the case
-// where the task is failed instead, which is the task_failed finding's
-// own state, not this one's).
+// finding per running or blocked Automaton that has a task held in its
+// review state, read from the tasks and not from the triage record
+// (the record of an escalated Automaton names no task: it carries only
+// the blocked reason). None when the task is failed instead (the
+// task_failed finding's own state), when the Automaton is not running
+// or blocked, or when no task is held.
 func TestSupervisorWatchWorkTaskReviewNeeded(t *testing.T) {
-	good := workTestPRD("p-1",
-		&TriageRecord{PRDID: "p-1", Status: "failed", TaskID: "t-1"},
+	// The normal escalation path: blocked, a triage record with no task
+	// id, one task held for review.
+	escalated := workTestPRD("p-1",
+		&TriageRecord{PRDID: "p-1", Status: "blocked"},
 		workTestTask("p-1", "t-1", TaskReviewNeeded))
+	escalated.Status = PRDBlocked
 
-	failedNotReview := workTestPRD("p-2",
-		&TriageRecord{PRDID: "p-2", Status: "failed", TaskID: "t-2"},
-		workTestTask("p-2", "t-2", TaskFailed))
+	// Running with the held task and no triage record at all.
+	running := workTestPRD("p-2", nil,
+		workTestTask("p-2", "t-2", TaskCompleted),
+		workTestTask("p-2", "t-3", TaskReviewNeeded),
+		workTestTask("p-2", "t-4", TaskReviewNeeded))
+	running.Status = PRDRunning
 
-	w := NewSupervisorWatchWork(&fakeSupervisorWatchPRDLister{prds: []*PRD{good, failedNotReview}}, nil, nil)
+	failedNotReview := workTestPRD("p-3",
+		&TriageRecord{PRDID: "p-3", Status: "failed", TaskID: "t-5"},
+		workTestTask("p-3", "t-5", TaskFailed))
+	failedNotReview.Status = PRDBlocked
+
+	cancelled := workTestPRD("p-4", nil, workTestTask("p-4", "t-6", TaskReviewNeeded))
+	cancelled.Status = PRDCancelled
+
+	w := NewSupervisorWatchWork(&fakeSupervisorWatchPRDLister{prds: []*PRD{escalated, running, failedNotReview, cancelled}}, nil, nil)
 	fs := w.CheckTaskReviewNeeded()
-	if len(fs) != 1 {
-		t.Fatalf("expected 1 task_review_needed finding, got %d", len(fs))
+	if len(fs) != 2 {
+		t.Fatalf("expected 2 task_review_needed findings (p-1, p-2), got %d: %+v", len(fs), fs)
 	}
-	if fs[0].Kind != SupervisorWatchTaskReviewNeeded || fs[0].Subject != "p-1" {
-		t.Errorf("expected task_review_needed/p-1, got %q/%q", fs[0].Kind, fs[0].Subject)
-	}
-	// The failed task in p-2 is the other check's finding, not this
-	// one's: no review-needed finding may name it.
-	for _, f := range fs {
-		if f.Subject == "p-2" {
-			t.Errorf("a failed task must not raise task_review_needed")
+	for i, want := range []string{"p-1", "p-2"} {
+		if fs[i].Kind != SupervisorWatchTaskReviewNeeded || fs[i].Subject != want {
+			t.Errorf("finding %d: expected task_review_needed/%s, got %q/%q", i, want, fs[i].Kind, fs[i].Subject)
 		}
+		if fs[i].Text == "" {
+			t.Errorf("finding %d has no operator-facing text", i)
+		}
+	}
+	if again := w.CheckTaskReviewNeeded(); len(again) != 0 {
+		t.Errorf("an already-raised finding must not be raised again, got %d", len(again))
 	}
 }
 

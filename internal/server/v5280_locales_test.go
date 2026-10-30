@@ -193,6 +193,12 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		// Repo CI watch status line (Automaton view) — the title every
 		// non-English bundle must carry even before translations land.
 		"repo_ci_watch_status_title",
+		// Supervisor watch card (Automaton view), its Monitor card title
+		// and the settings label of its mode — every bundle carries them.
+		"supervisor_watch_title",
+		"supervisor_watch_no_findings",
+		"settings_supervisor_watch_mode",
+		"stats_supervisor_watch",
 		"prd_cancel_task",
 		"prd_cancel_task_confirm",
 		"prd_cancel_task_ok",

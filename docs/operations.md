@@ -4523,7 +4523,7 @@ The security workflow set is read from `autonomous.automation.repo_ci_watch.secu
 
 ## Supervisor watch (`autonomous.automation.supervisor_watch`)
 
-The supervisor watch is the daemon-side version of the supervisor script (`scripts/supervisor-watch.py`). On every coordinator poll, with no model call, it runs the script's fourteen checks and keeps one finding per kind and subject. The kinds are `tmux_restart`, `daemon_inactive`, `model_not_resident`, `task_failed`, `task_review_needed`, `automaton_not_merged`, `idle_lane_eligible_work`, `worktree_no_gomod`, `worktree_not_registered`, `worktree_silent`, `verify_script_not_executable`, `main_checkout_dirty`, `ci_red` and `ci_stuck`; each is explained in plain words in [howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md). The watch is report-only in every mode: it never merges, starts, holds, cancels or retries an Automaton and never restarts a service. A check that cannot tell (a probe that failed, a node that cannot be reached) reports nothing. A finding closes by itself when its check stops reporting it, and re-opens in place, keeping its first-seen time, if the problem returns.
+The supervisor watch is the daemon-side version of the supervisor script (`scripts/supervisor-watch.py`). On every coordinator poll, with no model call, it runs fourteen checks — twelve that the script also runs, plus `worktree_not_registered` and `verify_script_not_executable`, which only the watch has and the comparison therefore shows as *only the watch* — and keeps one finding per kind and subject. The script also checks things the watch does not yet (an unreachable model host, node balancing, capacity lease holds, placement, commits ahead of origin); see [howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md) for the differences to expect in the comparison. The kinds are `tmux_restart`, `daemon_inactive`, `model_not_resident`, `task_failed`, `task_review_needed`, `automaton_not_merged`, `idle_lane_eligible_work`, `worktree_no_gomod`, `worktree_not_registered`, `worktree_silent`, `verify_script_not_executable`, `main_checkout_dirty`, `ci_red` and `ci_stuck`; each is explained in plain words in [howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md). The watch is report-only in every mode: it never merges, starts, holds, cancels or retries an Automaton and never restarts a service. A check that cannot tell (a probe that failed, a node that cannot be reached) reports nothing. A finding closes by itself when its check stops reporting it, and re-opens in place, keeping its first-seen time, if the problem returns.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -4553,6 +4553,18 @@ Every key is read live; a bad value is refused on every write path (unknown mode
 | CLI | `datawatch autonomous supervisor-watch [--json]` | the mode, the last poll, one line per finding (kind, state, last seen, the operator line), then the comparison summary |
 | Comm channel | `autonomous supervisor-watch` (alias `supervisor_watch`) | the same lines as the CLI; no arguments |
 | PWA | Automation view → Chains sub-tab, the **Supervisor watch** card | mode, last-poll age, up to twenty open findings, the comparison line; refreshes every 30 s; hidden if the endpoint is unavailable |
+
+### Supervisor watch monitoring
+
+| Where | What |
+|---|---|
+| REST | `GET /api/autonomous/supervisor-watch/stats` — `mode`, `last_poll_at`, `last_poll_age_seconds` (-1 when it never polled), `findings_open` (includes the next two), `findings_would_alert`, `findings_alerted`, `findings_resolved`, `agreed_days` |
+| MCP | `supervisor_watch_stats` (read-only, no arguments) — the same object |
+| Stats snapshot | `supervisor_watch_mode`, `supervisor_watch_findings_open`, `supervisor_watch_findings_would_alert`, `supervisor_watch_findings_alerted`, `supervisor_watch_last_poll_age_seconds`, `supervisor_watch_agreed_days` on the WS stats broadcast |
+| Web UI | Settings → Monitor → **Supervisor watch** |
+| Prometheus | `GET /metrics` → `datawatch_supervisor_watch_findings{state}`, `datawatch_supervisor_watch_agreed_days`, `datawatch_supervisor_watch_last_poll_age_seconds` |
+
+**The triage note is written in shadow too.** The one thing shadow writes beyond the watch's own records is the triage-record note for an Automaton-scoped finding; it is text on a record the daemon already keeps, changes no state and raises no alert. `mode: off` stops it.
 
 **Restart.** The findings are in `<data-dir>/autonomous/supervisor_watch.jsonl` and the comparison history in `<data-dir>/autonomous/supervisor_watch_comparisons.json`; both reload after a restart, and `mode: off` keeps them readable too.
 

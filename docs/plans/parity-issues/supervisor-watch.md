@@ -58,6 +58,27 @@ Everything is additive: unknown fields are ignored, and an absent optional field
 
 - New read-only tool `supervisor_watch_list` returns the same object as `GET /api/autonomous/supervisor-watch`. It takes no arguments; an argument is refused rather than ignored.
 
+- New read-only tool `supervisor_watch_stats` returns the same object as `GET /api/autonomous/supervisor-watch/stats` (below). It takes no arguments; an argument is refused.
+
+### Stats route (monitoring)
+
+`GET /api/autonomous/supervisor-watch/stats` (read-only; the autonomous read capability) returns the watch as numbers, for a monitor or a status tile:
+
+```json
+{
+  "mode": "shadow",
+  "last_poll_at": "2026-10-30T10:00:00Z",
+  "last_poll_age_seconds": 42,
+  "findings_open": 3,
+  "findings_would_alert": 1,
+  "findings_alerted": 0,
+  "findings_resolved": 4,
+  "agreed_days": 2
+}
+```
+
+`findings_open` counts every unresolved finding and so includes the would-alert and alerted ones; `last_poll_age_seconds` is `-1` when the coordinator never polled. The same numbers ride on the WebSocket stats broadcast as `supervisor_watch_mode`, `supervisor_watch_findings_open`, `supervisor_watch_findings_would_alert`, `supervisor_watch_findings_alerted`, `supervisor_watch_last_poll_age_seconds` and `supervisor_watch_agreed_days` (zero values omitted), and the PWA Monitor tab shows them on a **Supervisor watch** card (shown whenever `supervisor_watch_mode` is present; an alert count above zero is drawn as a warning; a `last_poll_age_seconds` below zero shows a dash).
+
 ### CLI
 
 - `datawatch autonomous supervisor-watch` prints the mode, the last poll, one line per finding (kind, state, last seen, the operator line) and the comparison summary. States are `open`, `would alert`, `alerted` and `resolved`. `--json` prints the raw response.
@@ -95,7 +116,7 @@ The PWA lists all eight in the Automata settings block, labelled by the `setting
 
 ### New locale keys
 
-There are 29 new keys, present in all five PWA bundles (en, de, es, fr, ja). EN values:
+There are 29 new keys for the Automaton view card and the settings, plus 7 for the Monitor card (`stats_supervisor_watch`, `stats_supervisor_watch_mode`, `_open`, `_would_alert`, `_alerted`, `_poll_age`, `_agreed_days`: "Supervisor watch", "Mode", "Open findings", "Would alert", "Alerted", "Last poll (s ago)", "Days of full agreement"), all present in the five PWA bundles (en, de, es, fr, ja). EN values of the 29:
 
 | Key | EN value |
 |---|---|
@@ -138,4 +159,5 @@ The de, es, fr and ja bundles carry the same English text as a placeholder for n
 - `would_alert` findings show the mark; resolved findings are not counted as open; a null `comparison.last` reads as no comparison yet; the zero `last_poll_at` reads as never.
 - The eight config keys read their value from the daemon config and write it back through the config endpoint; an absent key shows the default in the table.
 - Labels, the age text and the comparison text are localized in EN, DE, ES, FR and JA.
+- The Monitor view reads the stats route (or the stats broadcast) and shows the mode, open findings, would-alert and alerted counts, the last-poll age and the days of full agreement; alert counts above zero read as a warning.
 - Unknown or absent fields render exactly as today, so the app stays forward-compatible.

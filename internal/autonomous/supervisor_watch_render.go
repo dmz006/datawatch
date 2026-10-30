@@ -32,17 +32,17 @@ func SupervisorWatchFindingState(f *SupervisorWatchFinding) string {
 // operator line) or an explicit no-findings note, then the comparison
 // summary.
 func RenderSupervisorWatch(w io.Writer, body *SupervisorWatchStatus) {
-	fmt.Fprintf(w, "Supervisor watch mode: %s\n", body.Mode)
+	_, _ = fmt.Fprintf(w, "Supervisor watch mode: %s\n", body.Mode)
 	if body.LastPollAt.IsZero() {
-		fmt.Fprintln(w, "Last poll: never")
+		_, _ = fmt.Fprintln(w, "Last poll: never")
 	} else {
-		fmt.Fprintf(w, "Last poll: %s\n", body.LastPollAt.Format("2006-01-02 15:04:05"))
+		_, _ = fmt.Fprintf(w, "Last poll: %s\n", body.LastPollAt.Format("2006-01-02 15:04:05"))
 	}
 
 	if len(body.Findings) == 0 {
-		fmt.Fprintln(w, "No supervisor watch findings.")
+		_, _ = fmt.Fprintln(w, "No supervisor watch findings.")
 	} else {
-		fmt.Fprintf(w, "Findings: %d\n", len(body.Findings))
+		_, _ = fmt.Fprintf(w, "Findings: %d\n", len(body.Findings))
 		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 		for _, f := range body.Findings {
 			lastSeen := "-"
@@ -55,24 +55,24 @@ func RenderSupervisorWatch(w io.Writer, body *SupervisorWatchStatus) {
 			}
 			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", f.Kind, SupervisorWatchFindingState(f), lastSeen, text)
 		}
-		tw.Flush() //nolint:errcheck
+		_ = tw.Flush()
 	}
 
 	cmp := body.Comparison
 	if cmp.Last == nil {
-		fmt.Fprintf(w, "Comparison: none recorded yet (days of full agreement: %d)\n", cmp.AgreedDays)
+		_, _ = fmt.Fprintf(w, "Comparison: none recorded yet (days of full agreement: %d)\n", cmp.AgreedDays)
 		return
 	}
 	verdict := "agreed"
 	if !cmp.Last.Agreed {
 		verdict = "differs"
 	}
-	fmt.Fprintf(w, "Comparison: %s at %s (days of full agreement: %d)\n",
+	_, _ = fmt.Fprintf(w, "Comparison: %s at %s (days of full agreement: %d)\n",
 		verdict, cmp.Last.At.Format("2006-01-02 15:04:05"), cmp.AgreedDays)
 	if len(cmp.OnlyWatch) > 0 {
-		fmt.Fprintf(w, "  only the watch raised: %s\n", strings.Join(cmp.OnlyWatch, ", "))
+		_, _ = fmt.Fprintf(w, "  only the watch raised: %s\n", strings.Join(cmp.OnlyWatch, ", "))
 	}
 	if len(cmp.OnlyScript) > 0 {
-		fmt.Fprintf(w, "  only the script raised: %s\n", strings.Join(cmp.OnlyScript, ", "))
+		_, _ = fmt.Fprintf(w, "  only the script raised: %s\n", strings.Join(cmp.OnlyScript, ", "))
 	}
 }

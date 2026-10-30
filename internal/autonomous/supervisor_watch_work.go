@@ -6,9 +6,9 @@
 //     failed state);
 //
 //   - a task of an Automaton is now waiting for review
-//     (task_review_needed: the same triage-record data, but the task the
-//     record names has moved to its review state since the record was
-//     built — a new state the record does not already report);
+//     (task_review_needed: a running or blocked Automaton has a task in
+//     its review state — read from the tasks, because the triage record
+//     never names a task held for review);
 //
 //   - an Automaton finished all of its work but is not merged
 //     (automaton_not_merged: its triage record sits at merge_pending —
@@ -113,14 +113,6 @@ func (w *SupervisorWatchWork) Raise(f SupervisorWatchFinding) {
 	}
 }
 
-// releaseForTest clears the already-raised bookkeeping so a test may
-// re-raise a finding it raised before.
-func (w *SupervisorWatchWork) releaseForTest() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.raised = map[string]bool{}
-}
-
 func (w *SupervisorWatchWork) isRaised(kind SupervisorWatchKind, subject string) bool {
 	key := SupervisorWatchKey(kind, subject)
 	w.mu.Lock()
@@ -137,20 +129,6 @@ func (w *SupervisorWatchWork) markRaised(findings []SupervisorWatchFinding) {
 		w.raised[SupervisorWatchKey(f.Kind, f.Subject)] = true
 	}
 	w.mu.Unlock()
-}
-
-func (w *SupervisorWatchWork) prds() []*PRD {
-	if w.PRDs == nil {
-		return nil
-	}
-	return w.PRDs.PRDs()
-}
-
-func (w *SupervisorWatchWork) ciRecords() []*RepoCIWatchRecord {
-	if w.CI == nil {
-		return nil
-	}
-	return w.CI.CIWatchRecords()
 }
 
 // CheckTaskFailed returns one task_failed finding per Automaton whose
@@ -179,17 +157,19 @@ func (w *SupervisorWatchWork) CheckTaskFailed() []SupervisorWatchFinding {
 }
 
 // CheckTaskReviewNeeded returns one task_review_needed finding per
-// Automaton whose triage record names a task and that task sits in its
-// review state — a new state the record (built when the Automaton
-// failed or was blocked) does not already report. The same data and
-// the same lookups as CheckTaskFailed; a task already reported as
-// failed is not also reported as review-needed, and vice versa. A
-// finding already raised is not raised again; a newly minted finding
-// is marked raised when it is returned.
+// running or blocked Automaton that has a task held in its review
+// state. It reads the tasks themselves, not the triage record: the
+// record is built from failed or blocked tasks and never names a task
+// that was held for review, so an Automaton that escalated a task to
+// review (and went blocked) carries no task id the record could be
+// matched on. A task already reported as failed is not also reported
+// here, and an Automaton with several held tasks is one finding (the
+// subject is the Automaton id). A finding already raised is not raised
+// again; a newly minted finding is marked raised when it is returned.
 func (w *SupervisorWatchWork) CheckTaskReviewNeeded() []SupervisorWatchFinding {
 	var out []SupervisorWatchFinding
 	for _, p := range w.sortedPRDs() {
-		if !supervisorWatchTriageNamesFailedTask(p, TaskReviewNeeded) {
+		if !supervisorWatchHasReviewHeldTask(p) {
 			continue
 		}
 		if w.isRaised(SupervisorWatchTaskReviewNeeded, p.ID) {
@@ -347,6 +327,23 @@ func supervisorWatchTriageNamesFailedTask(p *PRD, want TaskStatus) bool {
 				continue
 			}
 			return t.Status == want
+		}
+	}
+	return false
+}
+
+// supervisorWatchHasReviewHeldTask reports whether p is running or
+// blocked (the two states a held task keeps an Automaton in) and has at
+// least one task in the review state.
+func supervisorWatchHasReviewHeldTask(p *PRD) bool {
+	if p == nil || (p.Status != PRDRunning && p.Status != PRDBlocked) {
+		return false
+	}
+	for i := range p.Story {
+		for j := range p.Story[i].Tasks {
+			if p.Story[i].Tasks[j].Status == TaskReviewNeeded {
+				return true
+			}
 		}
 	}
 	return false

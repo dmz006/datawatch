@@ -87,3 +87,64 @@ func (m *Manager) SupervisorWatchStatus() (s SupervisorWatchStatus) {
 	}
 	return s
 }
+
+// SupervisorWatchStats is the numeric view of the supervisor watch for
+// the monitoring surfaces (the stats collector, GET
+// /api/autonomous/supervisor-watch/stats, the supervisor_watch_stats
+// MCP tool and the Prometheus gauges): the mode, how long ago the
+// coordinator last polled, the finding counts by standing and the days
+// of full agreement with the script.
+type SupervisorWatchStats struct {
+	// Mode is the watch mode in effect (off, shadow or on).
+	Mode string `json:"mode"`
+	// LastPollAt is the coordinator's last poll instant; the zero time
+	// when it never has.
+	LastPollAt time.Time `json:"last_poll_at"`
+	// LastPollAgeSeconds is the whole seconds since LastPollAt, or -1
+	// when the coordinator never polled.
+	LastPollAgeSeconds int64 `json:"last_poll_age_seconds"`
+	// FindingsOpen counts the findings not yet resolved (it includes
+	// the would-alert and alerted ones).
+	FindingsOpen int `json:"findings_open"`
+	// FindingsWouldAlert counts the open findings shadow marked
+	// alert-due without raising an alert.
+	FindingsWouldAlert int `json:"findings_would_alert"`
+	// FindingsAlerted counts the open findings an alert was raised for.
+	FindingsAlerted int `json:"findings_alerted"`
+	// FindingsResolved counts the stored findings whose check stopped
+	// reporting them.
+	FindingsResolved int `json:"findings_resolved"`
+	// AgreedDays is the number of calendar days whose comparisons with
+	// the script all agreed.
+	AgreedDays int `json:"agreed_days"`
+}
+
+// Stats derives the numeric monitoring view from the read view; now is
+// the instant the poll age is measured against.
+func (s SupervisorWatchStatus) Stats(now time.Time) SupervisorWatchStats {
+	out := SupervisorWatchStats{
+		Mode:               s.Mode,
+		LastPollAt:         s.LastPollAt,
+		LastPollAgeSeconds: -1,
+		AgreedDays:         s.Comparison.AgreedDays,
+	}
+	if !s.LastPollAt.IsZero() {
+		out.LastPollAgeSeconds = int64(now.Sub(s.LastPollAt).Seconds())
+	}
+	for _, f := range s.Findings {
+		if f == nil {
+			continue
+		}
+		switch SupervisorWatchFindingState(f) {
+		case "resolved":
+			out.FindingsResolved++
+			continue
+		case "alerted":
+			out.FindingsAlerted++
+		case "would alert":
+			out.FindingsWouldAlert++
+		}
+		out.FindingsOpen++
+	}
+	return out
+}

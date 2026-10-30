@@ -378,7 +378,7 @@ func TestSupervisorWatchHostVerifyScriptOneFindingPerAutomaton(t *testing.T) {
 }
 
 func TestSupervisorWatchHostMainCheckoutDirty(t *testing.T) {
-	dir := "/home/dmz/workspace/datawatch"
+	dir := "checkouts/main"
 	probe := &fakeSupervisorWatchHostProbe{
 		gitStatus: map[string][]string{dir: {" M internal/autonomous/manager.go", "?? notes.md", "A\tnew.go"}},
 	}
@@ -394,7 +394,7 @@ func TestSupervisorWatchHostMainCheckoutDirty(t *testing.T) {
 }
 
 func TestSupervisorWatchHostMainCheckoutHealthy(t *testing.T) {
-	dir := "/home/dmz/workspace/datawatch"
+	dir := "checkouts/main"
 	probe := &fakeSupervisorWatchHostProbe{
 		gitStatus: map[string][]string{dir: {"?? scratch.md", "?? logs/"}}, // untracked only: does not count
 	}
@@ -405,7 +405,7 @@ func TestSupervisorWatchHostMainCheckoutHealthy(t *testing.T) {
 }
 
 func TestSupervisorWatchHostMainCheckoutProbeError(t *testing.T) {
-	dir := "/home/dmz/workspace/datawatch"
+	dir := "checkouts/main"
 	probe := &fakeSupervisorWatchHostProbe{
 		gitErr: map[string]error{dir: errSupervisorWatchProbe},
 	}

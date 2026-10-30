@@ -595,7 +595,7 @@ func (p *ShellSupervisorWatchHostProbe) ResidentModels(node string) ([]string, e
 	if err != nil {
 		return nil, fmt.Errorf("supervisor watch host: node %s unreachable: %v", node, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("supervisor watch host: node %s report HTTP %d", node, resp.StatusCode)
 	}

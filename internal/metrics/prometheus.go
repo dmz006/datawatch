@@ -143,6 +143,20 @@ var (
 		Help: "Quality gate evaluations that detected a test regression",
 	})
 
+	// Supervisor watch gauges.
+	SupervisorWatchFindings = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "datawatch_supervisor_watch_findings",
+		Help: "Unresolved supervisor watch findings by standing (open includes would_alert and alerted)",
+	}, []string{"state"})
+	SupervisorWatchAgreedDays = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_supervisor_watch_agreed_days",
+		Help: "Calendar days whose supervisor watch comparisons with the supervisor script all agreed",
+	})
+	SupervisorWatchLastPollAge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_supervisor_watch_last_poll_age_seconds",
+		Help: "Seconds since the coordinator last ran a supervisor watch pass (-1 when it never has)",
+	})
+
 	// BL397 — native ACME subsystem metrics.
 	AcmeCertExpirySeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "datawatch_acme_cert_expiry_seconds",
@@ -198,6 +212,7 @@ func Register() {
 		WebSearchQueriesTotal, WebSearchErrorsTotal,
 		AcmeCertExpirySeconds, AcmeRenewalsTotal,
 		WorkerQuestionsTotal,
+		SupervisorWatchFindings, SupervisorWatchAgreedDays, SupervisorWatchLastPollAge,
 	)
 }
 

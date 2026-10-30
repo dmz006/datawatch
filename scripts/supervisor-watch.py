@@ -156,8 +156,11 @@ def map_finding(text):
     if text.startswith("DAEMON"):
         return "daemon_inactive", ""
     m = re.search(r"not resident on (\S+)", text)
-    if text.startswith("MODEL"):
-        return "model_not_resident", (m.group(1) if m else "")
+    if text.startswith("MODEL") and m:
+        # "MODEL host X unreachable" is not a resident-model finding: the daemon
+        # watch reports nothing when a node cannot be reached, so leave it out
+        # of the record rather than key it as model_not_resident with no node.
+        return "model_not_resident", m.group(1)
     m = re.match(r"^IDLE (\S+) lane", text)
     if m:
         return "idle_lane_eligible_work", m.group(1).lower()

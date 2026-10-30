@@ -8090,6 +8090,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.WorkerQuestionsRefused = wq.Refused
 				s.WorkerQuestionsParked = wq.Parked
 				s.WorkerQuestionsResumed = wq.Resumed
+				sw := amgrRef.SupervisorWatchStatus().Stats(time.Now())
+				s.SupervisorWatchMode = sw.Mode
+				s.SupervisorWatchLastPollAgeSeconds = sw.LastPollAgeSeconds
+				s.SupervisorWatchFindingsOpen = sw.FindingsOpen
+				s.SupervisorWatchFindingsWouldAlert = sw.FindingsWouldAlert
+				s.SupervisorWatchFindingsAlerted = sw.FindingsAlerted
+				s.SupervisorWatchAgreedDays = sw.AgreedDays
 			})
 		}
 		// BL372 — wire web search stats into the collector.
@@ -8129,6 +8136,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			metricsPkg.UptimeSeconds.Set(float64(s.UptimeSeconds))
 			metricsPkg.RTKTokensSaved.Set(float64(s.RTKTotalSaved))
 			metricsPkg.RTKSavingsPct.Set(s.RTKAvgSavings)
+			metricsPkg.SupervisorWatchFindings.WithLabelValues("open").Set(float64(s.SupervisorWatchFindingsOpen))
+			metricsPkg.SupervisorWatchFindings.WithLabelValues("would_alert").Set(float64(s.SupervisorWatchFindingsWouldAlert))
+			metricsPkg.SupervisorWatchFindings.WithLabelValues("alerted").Set(float64(s.SupervisorWatchFindingsAlerted))
+			metricsPkg.SupervisorWatchAgreedDays.Set(float64(s.SupervisorWatchAgreedDays))
+			metricsPkg.SupervisorWatchLastPollAge.Set(float64(s.SupervisorWatchLastPollAgeSeconds))
 			// Reset session gauges and re-populate
 			metricsPkg.SessionsActive.Reset()
 			for _, ss := range s.SessionStats {
