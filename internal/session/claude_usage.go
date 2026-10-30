@@ -59,7 +59,7 @@ func claudeSessionUUID(fullID string) string {
 // session's JSONL transcript, given its project directory. Claude Code
 // flattens the cwd into a directory name by replacing '/' and '.' with
 // '-' (confirmed against real transcript directories on this machine,
-// e.g. "/home/dmz/workspace/datawatch/.foo" -> "-home-dmz-workspace-
+// e.g. "/home/user/workspace/datawatch/.foo" -> "-home-user-workspace-
 // datawatch--foo"); existing hyphens in the path are left alone.
 func claudeTranscriptPath(projectDir, fullID string) string {
 	if projectDir == "" {

@@ -31,7 +31,7 @@ The earlier version of this doc ruled Ollama out. That was correct for Ollama's 
 - **`/v1/systemone` shipped in Ollama 0.35.0.** The technique requires Ollama 0.35.0 or later on every node that runs it. Earlier versions do not have the route.
 - **Confirmed live on 2026-10-15** against a local Ollama 0.40.5 node using the official `nimble` model. A yes/no guardrail question and an A/B/C quality question in one call returned `correct: {noul: 0.9896}` and `quality: {A: 0.517, B: 0.474, C: 0.0087}`. These matched ground truth.
 - Secondary sources agree on the endpoint and the 0.35.0 version. The official Ollama API docs were not re-read for this revision. P1 must pin the documented request and response shape before any code is written.
-- The remote `datawatch` compute node is on Ollama 0.33.2 and must be upgraded before use. The local `johnnyjohnny` node is on 0.40.5.
+- The remote `datawatch` compute node is on Ollama 0.33.2 and must be upgraded before use. The local `local-node` node is on 0.40.5.
 - Ollaya is a separate third-party project that serves a compatible `/v1/systemone` format. It is not Ollama, and results should not be attributed to Ollama.
 
 **Letter-position bias.** The earlier design spent most of its length on cancelling letter-position bias through rotated options and averaging. That bias is a property of a generic chat model emitting a letter token. A native decision head returns per-option scores, so for `/v1/systemone` the rotation machinery is likely unnecessary. This doc drops it. For the generic logprob path, rotation stays a candidate mitigation. P2 measures whether it is needed before anyone adopts it.
@@ -99,7 +99,7 @@ This section says how a future implementation would be judged. It does not run a
 
 (c) **Latency and cost per decision.** Report p50 and p95 wall time per decision, and tokens per decision. The native decision endpoint reports zero output tokens, because it returns scores and not text. Generate-and-parse spends output tokens on every verdict. The comparison states both numbers plainly, and notes that the optional generative explanation call adds its own cost back.
 
-(d) **CPU-only feasibility.** Can the classify path run on the CPU-only node class (H4, `cpu-only-24c`, the `johnnyjohnny-cpu` node in the recurring model eval design)? At what p50 and p95 latency per decision? Only models in the CPU budget are in scope. Models of 32B and up are excluded, as in that doc.
+(d) **CPU-only feasibility.** Can the classify path run on the CPU-only node class (H4, `cpu-only-24c`, the `local-node-cpu` node in the recurring model eval design)? At what p50 and p95 latency per decision? Only models in the CPU budget are in scope. Models of 32B and up are excluded, as in that doc.
 
 **Phases.**
 

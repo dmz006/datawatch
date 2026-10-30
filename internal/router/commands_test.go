@@ -460,15 +460,15 @@ func TestParseScheduleSpawnParams(t *testing.T) {
 }
 
 func TestParse_ScheduleSpawn(t *testing.T) {
-	cmd := Parse("schedule spawn task=audit logs dir=/home/dmz cron=0 * * * *")
+	cmd := Parse("schedule spawn task=audit logs dir=/home/user cron=0 * * * *")
 	if cmd.Type != CmdScheduleSpawn {
 		t.Errorf("Type = %q, want %q", cmd.Type, CmdScheduleSpawn)
 	}
 	if cmd.SpawnTask != "audit logs" {
 		t.Errorf("SpawnTask = %q, want %q", cmd.SpawnTask, "audit logs")
 	}
-	if cmd.SpawnDir != "/home/dmz" {
-		t.Errorf("SpawnDir = %q, want %q", cmd.SpawnDir, "/home/dmz")
+	if cmd.SpawnDir != "/home/user" {
+		t.Errorf("SpawnDir = %q, want %q", cmd.SpawnDir, "/home/user")
 	}
 	if cmd.CronExpr != "0 * * * *" {
 		t.Errorf("CronExpr = %q, want %q", cmd.CronExpr, "0 * * * *")

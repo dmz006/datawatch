@@ -133,7 +133,7 @@ func TestResolveVerifierCandidates(t *testing.T) {
 		switch raw {
 		case "ollama-datawatch":
 			return "ollama", "qwen3.8:27b", nil
-		case "ollama-johnnyjohnny":
+		case "ollama-local-node":
 			return "ollama", "qwen3:1.7b", nil
 		case "claude-code":
 			return "claude-code", "sonnet", nil
@@ -145,12 +145,12 @@ func TestResolveVerifierCandidates(t *testing.T) {
 	askCompatible := func(kind string) bool { return kind == "ollama" }
 
 	got := resolveVerifierCandidates(
-		[]string{"ollama-datawatch", " ", "claude-code", "bogus", "ollama-johnnyjohnny"},
+		[]string{"ollama-datawatch", " ", "claude-code", "bogus", "ollama-local-node"},
 		resolve, askCompatible)
 
 	want := []verifierCandidate{
 		{backend: "ollama-datawatch", kind: "ollama", model: "qwen3.8:27b"},
-		{backend: "ollama-johnnyjohnny", kind: "ollama", model: "qwen3:1.7b"},
+		{backend: "ollama-local-node", kind: "ollama", model: "qwen3:1.7b"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("resolveVerifierCandidates() = %+v, want %+v", got, want)

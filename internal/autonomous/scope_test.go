@@ -24,7 +24,7 @@ func TestScope_EffectiveDirsAndPathInDirs(t *testing.T) {
 
 func TestScope_LintFlagsOutOfScopePaths(t *testing.T) {
 	prd := &PRD{ProjectDir: "/w/proj", ReadDirs: []string{"/w/ref"}}
-	if p := LintTaskScope(prd, "t", "Work in the repo at /home/dmz/workspace/datawatch and edit it", nil); len(p) != 1 {
+	if p := LintTaskScope(prd, "t", "Work in the repo at /home/user/workspace/datawatch and edit it", nil); len(p) != 1 {
 		t.Fatalf("want 1 problem, got %v", p)
 	}
 	if p := LintTaskScope(prd, "t", "read /w/ref/notes.md then write docs/x.md", []string{"docs/x.md"}); len(p) != 0 {
@@ -87,7 +87,7 @@ func TestScope_LintIgnoresPlaceholderAndGlobPaths(t *testing.T) {
 	prd := &PRD{ProjectDir: "/w/proj"}
 	for _, spec := range []string{
 		"Save the report under /home/{user}/reports before you finish.",
-		"Collect every log matching /home/dmz/*/logs/today.txt for the summary.",
+		"Collect every log matching /home/user/*/logs/today.txt for the summary.",
 		"Expand /home/$USER/notes in the template.",
 		"Compare against ~alice's copy at /home/~alice/notes.md.",
 	} {
@@ -101,22 +101,22 @@ func TestScope_LintIgnoresQuotedSearchPatterns(t *testing.T) {
 	prd := &PRD{ProjectDir: "/w/proj"}
 	for _, spec := range []string{
 		"search for '/home/<user>/.ssh/id_rsa' in the output",
-		"search for '/home/dmz/secret.txt' in the output",
-		"match `/home/dmz/secret.txt` against the log",
+		"search for '/home/user/secret.txt' in the output",
+		"match `/home/user/secret.txt` against the log",
 	} {
 		if p := LintTaskScope(prd, "t", spec, nil); len(p) != 0 {
 			t.Fatalf("quoted search pattern flagged for %q: %v", spec, p)
 		}
 	}
 	// A quoted path with no pattern verb before it is still a path claim.
-	if p := LintTaskScope(prd, "t", "copy '/home/dmz/secret.txt' into docs", nil); len(p) != 1 {
+	if p := LintTaskScope(prd, "t", "copy '/home/user/secret.txt' into docs", nil); len(p) != 1 {
 		t.Fatalf("quoted non-pattern path must still be flagged: %v", p)
 	}
 }
 
 func TestScope_LintStillFlagsOutOfScopeReadPath(t *testing.T) {
 	prd := &PRD{ProjectDir: "/w/proj", ReadDirs: []string{"/w/ref"}}
-	if p := LintTaskScope(prd, "t", "Read /home/dmz/workspace/datawatch/notes.md and summarise it", nil); len(p) != 1 {
+	if p := LintTaskScope(prd, "t", "Read /home/user/workspace/datawatch/notes.md and summarise it", nil); len(p) != 1 {
 		t.Fatalf("want 1 problem for out-of-scope read path, got %v", p)
 	}
 }
@@ -192,7 +192,7 @@ func TestScope_ExecutorBlocksOutOfScopeTaskWithoutSpawning(t *testing.T) {
 	// scan park this PRD (dir-missing) and clobber the PRDFailed state
 	// the test asserts.
 	prd, _ := m.CreatePRD("s", t.TempDir(), "opencode", "", EffortNormal)
-	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "work in /home/dmz/workspace/datawatch"}}}})
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "work in /home/user/workspace/datawatch"}}}})
 	spawned := 0
 	spawn := func(context.Context, SpawnRequest) (SpawnResult, error) {
 		spawned++
@@ -248,13 +248,13 @@ func TestScope_ExecutorPrependsScopeBlockToSpec(t *testing.T) {
 
 func TestScope_LintSpecProblemNamesTokenLineAndRemedy(t *testing.T) {
 	prd := &PRD{ProjectDir: "/w/proj"}
-	spec := "Step one: summarise the notes.\nStep two: keep the draft in docs/x.md.\nStep three: read /home/dmz/workspace/datawatch/notes.md and summarise it."
+	spec := "Step one: summarise the notes.\nStep two: keep the draft in docs/x.md.\nStep three: read /home/user/workspace/datawatch/notes.md and summarise it."
 	p := LintTaskScope(prd, "task 't'", spec, nil)
 	if len(p) != 1 {
 		t.Fatalf("want 1 problem, got %v", p)
 	}
 	for _, want := range []string{
-		"/home/dmz/workspace/datawatch/notes.md",
+		"/home/user/workspace/datawatch/notes.md",
 		"line 3",
 		"edit the task spec to remove or quote it, or widen the PRD read dirs if the task must read it",
 	} {
@@ -290,7 +290,7 @@ func scopeLintRun(t *testing.T, mode string) (*PRD, int) {
 	cfg.ScopeLint = mode
 	m.SetConfig(cfg)
 	prd, _ := m.CreatePRD("s", t.TempDir(), "opencode", "", EffortNormal)
-	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "work in /home/dmz/workspace/datawatch"}}}})
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "work in /home/user/workspace/datawatch"}}}})
 	// Plan-time lint: SetPRDDirs re-runs it and fills ScopeWarnings per mode.
 	if err := m.SetPRDDirs(prd.ID, nil, nil); err != nil {
 		t.Fatal(err)

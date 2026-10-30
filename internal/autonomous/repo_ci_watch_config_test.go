@@ -77,11 +77,11 @@ func TestRepoCIWatchExplicitZeroIsMeaningful(t *testing.T) {
 
 func TestRepoCIWatchExplicitReposAndSecurityWorkflows(t *testing.T) {
 	c := RepoCIWatchConfig{
-		Repos:             []string{"/home/dmz/repo-a", "/home/dmz/repo-b"},
+		Repos:             []string{"/home/user/repo-a", "/home/user/repo-b"},
 		SecurityWorkflows: []string{}, // an empty list is explicit: none
 	}
 	repos := c.EffectiveRepos()
-	if len(repos) != 2 || repos[0] != "/home/dmz/repo-a" || repos[1] != "/home/dmz/repo-b" {
+	if len(repos) != 2 || repos[0] != "/home/user/repo-a" || repos[1] != "/home/user/repo-b" {
 		t.Errorf("effective repos = %v, want the two configured paths", repos)
 	}
 	if got := c.EffectiveSecurityWorkflows(); len(got) != 0 {
@@ -172,7 +172,7 @@ func TestRepoCIWatchConfigToleratesUnsetAndZero(t *testing.T) {
 	// A configured-but-valid struct validates clean.
 	c = RepoCIWatchConfig{
 		Mode:              RepoCIWatchModeShadow,
-		Repos:             []string{"/home/dmz/repo-a"},
+		Repos:             []string{"/home/user/repo-a"},
 		PollSeconds:       RepoCIWatchDefaultPollSeconds,
 		SecurityWorkflows: []string{"CodeQL"},
 		DeleteSuperseded:  RepoCIWatchDeleteSupersededDelete,

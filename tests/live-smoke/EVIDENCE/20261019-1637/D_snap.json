@@ -32,7 +32,7 @@
   "id": "6085a8d3",
   "memory_harvest": {},
   "memory_seed": {},
-  "project_dir": "/home/dmz/.datawatch/tree-smoke-20261019-0945/s2d",
+  "project_dir": "/home/user/.datawatch/tree-smoke-20261019-0945/s2d",
   "rev": 11,
   "spec": "Create exactly one new file named D_FILE.txt at the project root containing the single line 'worktree D ok' and nothing else. Do not modify any other file.",
   "status": "failed",

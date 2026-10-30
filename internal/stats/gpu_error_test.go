@@ -59,7 +59,7 @@ func TestReadGPU_NvidiaSMIFails_SurfacesRealReason(t *testing.T) {
 
 func TestReadGPU_NvidiaSMISucceeds_ParsesDataAndClearsError(t *testing.T) {
 	dir := t.TempDir()
-	script := "#!/bin/sh\necho 'NVIDIA RTX 5090, 45, 12, 4096, 32768'\n"
+	script := "#!/bin/sh\necho 'NVIDIA 32 GB GPU, 45, 12, 4096, 32768'\n"
 	if err := os.WriteFile(filepath.Join(dir, "nvidia-smi"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestReadGPU_NvidiaSMISucceeds_ParsesDataAndClearsError(t *testing.T) {
 	if s.GPUError != "" {
 		t.Fatalf("a successful poll must not set GPUError, got %q", s.GPUError)
 	}
-	if s.GPUName != "NVIDIA RTX 5090" || s.GPUUtilPct != 12 {
+	if s.GPUName != "NVIDIA 32 GB GPU" || s.GPUUtilPct != 12 {
 		t.Fatalf("GPU data not parsed correctly: %+v", s)
 	}
 }

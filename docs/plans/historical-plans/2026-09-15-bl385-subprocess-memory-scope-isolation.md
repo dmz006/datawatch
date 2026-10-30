@@ -240,7 +240,7 @@ Authorization: Bearer <token>
 {
   "scope":      "session-local",        // required; one of the 6 scope names
   "project":    "/home/user/datawatch", // required (except persona-global)
-  "session_id": "johnnyjohnny-12cf",    // required for session-local
+  "session_id": "local-node-12cf",    // required for session-local
   "prd_id":     "0fb4e302",             // required for prd-shared
   "story_id":   "9b90b7a5",             // required for story-shared
   "persona":    "",                     // required for persona-* scopes
@@ -371,7 +371,7 @@ memory scope save  scope=story-shared  project=/home/user/proj  story_id=9b90b7a
 memory scope delete  scope=prd-shared  project=/home/user/proj  prd_id=0fb4e302
 
 # Recall across hierarchy for a session in a PRD context
-memory scope recall  project=/home/user/proj  session_id=johnnyjohnny-12cf  prd_id=0fb4e302  story_id=9b90b7a5  query="approach for X"
+memory scope recall  project=/home/user/proj  session_id=local-node-12cf  prd_id=0fb4e302  story_id=9b90b7a5  query="approach for X"
 
 # List all scopes with data
 memory scope inventory  project=/home/user/proj

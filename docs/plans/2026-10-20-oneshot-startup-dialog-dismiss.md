@@ -332,15 +332,15 @@ reds).
 
 ## Live Validation (2026-10-21, one-shot, claude-code backend)
 
-Ran against the worktree build (`./datawatch` at `/home/dmz/.datawatch/prd-worktrees/b0390001`, go build rc=0), not the system binary.
+Ran against the worktree build (`./datawatch` at `/home/user/.datawatch/prd-worktrees/b0390001`, go build rc=0), not the system binary.
 
 ### Setup
 
 - Sandbox daemon in `/tmp/dw-oneshot-livetest` (fresh `data/`, `projects/live-001`), ports 28080 (HTTP) / 28443 (TLS), started with `-v` so `debugf` lines land in the daemon log. The system daemon on 18443/18080 (old binary v9.5.x) was left untouched.
 - Project dir `/tmp/dw-oneshot-livetest/projects/live-001` is **untrusted** — not present in `~/.claude.json`, no prior claude run in it, so the first-launch trust dialog ("Quick safety check … ❯ No, exit / Yes, I trust this folder") **does** appear.
 - One-shot session started via `POST /api/sessions/start` with `one_shot: true`, `backend: claude-code`, task: *"Create a file named hello.txt in the current directory containing exactly the text: hello oneshot. Then print a line that starts with: DATAWATCH_COMPLETE: hello.txt created"*.
-- Session id `1e20` / `dw-sbx-oneshot-1e20`, tmux session `cs-dw-sbx-oneshot-1e20` (dedicated socket under `/home/dmz/.datawatch/tmux/tmux-1000/default`).
-- Live pane captures taken with `tmux -S /home/dmz/.datawatch/tmux/tmux-1000/default capture-pane` against the running session.
+- Session id `1e20` / `dw-sbx-oneshot-1e20`, tmux session `cs-dw-sbx-oneshot-1e20` (dedicated socket under `/home/user/.datawatch/tmux/tmux-1000/default`).
+- Live pane captures taken with `tmux -S /home/user/.datawatch/tmux/tmux-1000/default capture-pane` against the running session.
 
 ### What actually happened (timeline, daemon local time)
 
@@ -384,7 +384,7 @@ Full daemon-log + pane evidence: [`2026-10-20-oneshot-startup-dialog-dismiss-liv
 
 ### Result
 
-**Implemented** in `/home/dmz/.datawatch/prd-worktrees/b0390001` (worktree for PRD `b0390001`), in
+**Implemented** in `/home/user/.datawatch/prd-worktrees/b0390001` (worktree for PRD `b0390001`), in
 `internal/session/manager.go` (`dismissClaudeStartupDialog`, `trySendDialogAccept`,
 `markDialogConfirmedIfGone`, and the capture-loop + output-line hooks that call it).
 Built locally with `go build -o datawatch ./cmd/datawatch/` (rc=0) and run **live** against
@@ -446,7 +446,7 @@ unchanged from the Fix #1 design.
 
 ### Setup (round 2)
 
-- Worktree build at `/home/dmz/.datawatch/prd-worktrees/b0390001`
+- Worktree build at `/home/user/.datawatch/prd-worktrees/b0390001`
   (`./datawatch`, **v9.5.31**), rebuilt 2026-10-21 ~03:13 after Fix #3;
   `go build` rc=0, `go vet ./internal/session/` clean,
   `rtk go test ./internal/session/` → **478 passed** (including the 8

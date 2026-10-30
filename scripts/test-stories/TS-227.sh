@@ -6,9 +6,9 @@ CURRENT_STORY="TS-227"
 story_preflight "surface:api feature:voice" || return 0
 
 _story_ts_227() {
-  local venv_python="/home/dmz/.datawatch/.venv/bin/python3"
+  local venv_python="/home/user/.datawatch/.venv/bin/python3"
   if [[ ! -x "$venv_python" ]]; then
-    skip "Whisper venv not found at /home/dmz/.datawatch/.venv"
+    skip "Whisper venv not found at /home/user/.datawatch/.venv"
     return
   fi
   if ! "$venv_python" -c "import whisper" 2>/dev/null; then
@@ -38,7 +38,7 @@ print(result.get('text',''))
   rm -f "$test_audio"
   save_evidence TS-227 "transcript.txt" "$whisper_out"
   if [[ $rc -eq 0 ]]; then
-    ok "Whisper (tiny) transcribed test audio via venv /home/dmz/.datawatch/.venv"
+    ok "Whisper (tiny) transcribed test audio via venv /home/user/.datawatch/.venv"
   else
     ko "whisper transcription failed rc=$rc"
   fi

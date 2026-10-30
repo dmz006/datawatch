@@ -223,7 +223,7 @@ leftover stale pi log also gets 404; 405 for non-GET methods.
   "session_id": "a3f2",
   "full_id": "host-a3f2",
   "state": "running",
-  "log_path": "/sessions/--home-dmz-proj--/2026-10-14T12-00-00-000Z_a3f2.jsonl",
+  "log_path": "/sessions/--home-user-proj--/2026-10-14T12-00-00-000Z_a3f2.jsonl",
   "last_event_at": "2026-10-14T12:04:41Z",
   "assistant_turns": 12,
   "tool_calls": {"bash": 9, "write": 3},

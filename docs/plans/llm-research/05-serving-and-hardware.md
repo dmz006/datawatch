@@ -107,7 +107,7 @@ tensors to CPU. AWQ/GPTQ are GPU-only formats vLLM/SGLang favor for
 GPU-only throughput. NVFP4 gets a 70B model to ~40 GB vs ~70 GB at FP8
 ([source](https://packet.ai/blog/nvfp4), checked 2026-09-30) — meaningful on
 the B200 (bigger models or more parallel slots in 128 GB), not really
-needed on the 5090 where GGUF Q4/Q8 already fits comfortably.
+needed on the 32 GB GPU where GGUF Q4/Q8 already fits comfortably.
 
 ---
 
@@ -159,7 +159,7 @@ mainly helps prefill/concurrent-CPU-request throughput, not single-stream
 generation).
 
 **Worth it on this fleet:** embeddings (`nomic-embed-text`, 137M params,
-already the configured memory embedder at `http://johnnyjohnny:11434`);
+already the configured memory embedder at `http://local-node:11434`);
 speech (the confirmed `whisper: medium` pipeline); guardrail/verifier
 classification (`verification_backend: ollama-datawatch` today — small
 low-latency classification is exactly the bandwidth-bound case above, and
@@ -194,17 +194,17 @@ same active-vs-total logic as §c, per-request instead of per-model.
 
 **Expected speeds:** community reports for gpt-oss-120b with expert offload:
 **~35 tok/s on an NVIDIA DGX Spark**; on an RTX Pro 6000 (96 GB, bigger than
-the 5090), **134 tok/s at 12k context, down to 48 tok/s at max context**
+the 32 GB GPU), **134 tok/s at 12k context, down to 48 tok/s at max context**
 ([hardware-corner](https://www.hardware-corner.net/guides/rtx-pro-6000-gpt-oss-120b-performance/), checked 2026-09-30).
 Same source: DDR5 at 2000 MT/s instead of 6000 MT/s caused a **3× slowdown**
 for this technique — offloaded experts live in RAM, so RAM speed dominates.
-Confirming `johnnyjohnny`'s DDR5-6400 actually runs at rated speed (not a
+Confirming `local-node`'s DDR5-6400 actually runs at rated speed (not a
 JEDEC fallback) is a prerequisite for trusting local numbers; not checked
 here (blocked by §g anyway).
 
 **Does it beat a smaller all-GPU model here?** Judgment call: for
 short-to-medium, parallelism-hungry PRD/council workloads, a smaller
-all-GPU model (`qwen3.5:35b`, `qwen3.8:27b` — both fit the 5090 or B200
+all-GPU model (`qwen3.5:35b`, `qwen3.8:27b` — both fit the 32 GB GPU or B200
 without offload and support real `NUM_PARALLEL` fan-out) is very likely the
 better *concurrency* choice. CPU+GPU offload for these two big MoE models
 fits better as a **quality-tier single-stream option** — one hard PRD task
@@ -256,7 +256,7 @@ ctx q8_0 + `gemma3:12b` + `nomic-embed-text`:
 ~80 GB headroom — enough to also load `gpt-oss:120b` (65.4 GB) for the §d
 "hard problem" tier, though that gets tight and would need real measurement.
 
-**Plan 2 — RTX 5090 32 GB, matches brief's example:** 8× `qwen3:8b` @ 16k
+**Plan 2 — 32 GB GPU 32 GB, matches brief's example:** 8× `qwen3:8b` @ 16k
 ctx q8_0:
 
 | Component | Calc | GB |
@@ -269,7 +269,7 @@ ctx q8_0:
 ~16 GB headroom — room for `moondream` (1.7 GB) or `nomic-embed-text`
 (0.3 GB) concurrently, or to double context to 32k (~24.9 GB total, still fits).
 
-**Plan 3 — RTX 5090, mixed vision+chat tenancy** (reflects actual local
+**Plan 3 — 32 GB GPU, mixed vision+chat tenancy** (reflects actual local
 tenancy per `ollama_stats`): 6× `qwen3:8b` @ 16k q8_0 + `moondream` +
 `nomic-embed-text`:
 
@@ -306,14 +306,14 @@ Live registry state (`compute_node_list`/`health`/`llm_list`, 2026-09-30):
 |---|---|---|---|
 | `datawatch` | `ollama` | 90 | none declared (§a gap) |
 | `datawatch-openai` | `openai-compat` | 90 | 1× B200, 128 GB, `max_concurrent_models: 3` |
-| `johnnyjohnny` | `ollama` | 70 | 1× RTX 5090, 32 GB, `max_concurrent_models: 10` |
+| `local-node` | `ollama` | 70 | 1× 32 GB GPU, 32 GB, `max_concurrent_models: 10` |
 | `test-node` | `ollama` | 50 | stale duplicate of `datawatch`'s address |
 
 Capacity ledger (live): pool `host` limit 9 (external 3), pool
 `node:datawatch` limit **1**. That single-lease limit bottlenecks any
 attempt to run parallel council personas or PRD workers on `datawatch`
 regardless of §e's VRAM headroom — raising it (or routing more to
-`johnnyjohnny`, priority 70 but not capacity-constrained the same way) is a
+`local-node`, priority 70 but not capacity-constrained the same way) is a
 prerequisite for real 8+ concurrency, not optional polish.
 
 **Existing routing hooks** (`routing` field, orthogonal to `kind`, confirmed
@@ -328,13 +328,13 @@ behind another datawatch instance rather than being registered directly.
 **Council balancing sketch:** 12 personas, `council.max_parallel: 0` →
 default 2/round, `council.llm_ref` empty → default backend (all confirmed
 live). Round-robining across `datawatch` (capacity-limited to 1 lease today)
-and `johnnyjohnny` (real headroom per Plans 2/3) would bottleneck almost
+and `local-node` (real headroom per Plans 2/3) would bottleneck almost
 entirely on the `node:datawatch` pool limit, not GPU memory — raising
 `council.max_parallel` without first raising that pool limit just produces
 queued/rejected leases. A CPU-only endpoint (`llama-server` on
-`johnnyjohnny`'s spare threads, §c's small-model personas) registered as a
+`local-node`'s spare threads, §c's small-model personas) registered as a
 fourth compute node with its own pool would let low-stakes personas run
-without competing for the 5090's GPU slots at all.
+without competing for the 32 GB GPU's GPU slots at all.
 
 **Cost caveat:** `cost_summary` reports 2,243 sessions, `$0`/zero tokens
 across every backend — token accounting doesn't work today, so none of the
@@ -345,13 +345,13 @@ real signals available until that's fixed.
 
 ## (g) Prerequisite: local `nvidia-smi` driver/library mismatch
 
-`nvidia-smi` on `johnnyjohnny` reports **"Driver/library version mismatch"**
+`nvidia-smi` on `local-node` reports **"Driver/library version mismatch"**
 (NVML 595.91) — the kernel module and userspace driver library disagree on
 version, typically from a driver upgrade on disk while the old module stayed
 loaded ([troubleshooting guide](https://support.exxactcorp.com/hc/en-us/articles/32810166604183-GPU-Troubleshooting-Guide-Resolving-Driver-Library-Version-Mismatch-Errors), checked 2026-09-30).
 
 **This blocks any local GPU benchmarking** implied by §c/§d/§e's "verify
-locally" caveats — until fixed, the only real 5090 facts available are the
+locally" caveats — until fixed, the only real 32 GB GPU facts available are the
 registry's *declared* capacity, not a live GPU query. Standard remediation,
 described in words per scope (not executed here):
 
@@ -372,8 +372,8 @@ described in words per scope (not executed here):
 
 1. Raise the `node:datawatch` capacity pool limit (currently 1) — the single
    biggest blocker to real concurrency on the highest-priority node.
-2. Start with Plan 2/3 (§e) on `johnnyjohnny`: 6–8 `qwen3:8b` slots @ 16k
-   ctx, q8_0 KV, comfortably fits the 5090 alongside vision/embedding tenants.
+2. Start with Plan 2/3 (§e) on `local-node`: 6–8 `qwen3:8b` slots @ 16k
+   ctx, q8_0 KV, comfortably fits the 32 GB GPU alongside vision/embedding tenants.
 3. On the B200, prefer several mid-size-model slots (Plan 1) over one large
    MoE model (Plan 4) for throughput; reserve `gpt-oss:120b`/`qwen3-coder-next`
    CPU-offload (§d) for single-stream "hard problem" tasks, not concurrency.

@@ -119,12 +119,12 @@ declared a narrower scope. Two cases followed:
 1. **PRD runs.** The pre-session snapshot and the task commit staged the whole datawatch
    checkout, so other sessions' files and test debris went into history (item 1).
 2. **The hourly imap job** (the operator's own job, not PRD work). It runs as a one-shot
-   with project directory `/home/dmz`. That directory is itself a git repo with 9 tracked
+   with project directory `/home/user`. That directory is itself a git repo with 9 tracked
    files and 97 untracked top-level entries, including `.gnupg`, `.claude.json` and
    `.bash_history`. Since BL465 (v9.2.0), each completion tried `git add -A` there.
 
 From 2026-10-16 17:01 to 2026-10-17 14:12 the journal shows 44 such attempts in
-`/home/dmz` and 6 in the datawatch checkout. The `/home/dmz` ones all failed (42 with git
+`/home/user` and 6 in the datawatch checkout. The `/home/user` ones all failed (42 with git
 exit 128, 2 killed by a restart), the home repo's index is empty, its last commit is still
 `904c0dd` from 2026-09-30, and it has no remote. So nothing was committed, but that was
 luck: the cause of exit 128 was not determined (inference: unreadable files or nested

@@ -226,7 +226,7 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 
 // LaunchResume resumes a prior opencode session.
 // Opencode session IDs use a "ses_" prefix; datawatch session IDs (e.g.
-// "johnnyjohnny-c905") are not valid opencode session IDs, so we fall
+// "local-node-c905") are not valid opencode session IDs, so we fall
 // back to a fresh launch (no -s flag).
 func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)

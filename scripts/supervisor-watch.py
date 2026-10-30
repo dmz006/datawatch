@@ -56,6 +56,24 @@ def get_json(url, timeout=6, insecure=False):
         return None
 
 
+def model_hosts():
+    """The Ollama hosts to check: every ollama compute node the daemon has
+    registered (its own registry, never a hard-coded address), plus the
+    loopback host. SUPERVISOR_WATCH_EXTRA_MODEL_URLS (comma separated) adds more."""
+    hosts = [("local", "http://127.0.0.1:11434")]
+    try:
+        out = sh("curl -sk https://localhost:8443/api/compute/nodes", 20)
+        for n in json.loads(out[out.index("["):]):
+            addr = (n.get("address") or "").rstrip("/")
+            if n.get("kind") == "ollama" and addr and addr not in [h[1] for h in hosts]:
+                hosts.append((n.get("name") or addr, addr))
+    except Exception:
+        pass
+    for i, u in enumerate(filter(None, os.environ.get("SUPERVISOR_WATCH_EXTRA_MODEL_URLS", "").split(","))):
+        hosts.append(("extra%d" % i, u.strip()))
+    return hosts
+
+
 def models(url):
     """Names of the resident models; the working model also counts when it is loaded under its base tag with the 64k context."""
     d = get_json(url + "/api/ps")
@@ -90,12 +108,12 @@ def newest_activity(prd_id):
                 best = max(best, os.path.getmtime(os.path.join(root, f)))
             except OSError:
                 pass
-    for f in glob.glob(os.path.expanduser("~/.pi/agent/sessions/--home-dmz-.datawatch-prd-worktrees-%s--/*.jsonl" % prd_id)):
+    for f in glob.glob(os.path.expanduser("~/.pi/agent/sessions/--home-user-.datawatch-prd-worktrees-%s--/*.jsonl" % prd_id)):
         try:
             best = max(best, os.path.getmtime(f))
         except OSError:
             pass
-    for f in glob.glob(os.path.expanduser("~/.claude/projects/-home-dmz--datawatch-prd-worktrees-%s/*.jsonl" % prd_id)):
+    for f in glob.glob(os.path.expanduser("~/.claude/projects/-home-user--datawatch-prd-worktrees-%s/*.jsonl" % prd_id)):
         try:
             best = max(best, os.path.getmtime(f))
         except OSError:
@@ -214,7 +232,7 @@ def main(argv=None):
         findings.append("DAEMON is not active")
 
     # models
-    for name, url in (("local", "http://127.0.0.1:11434"), ("remote", "http://100.64.0.20:11434")):
+    for name, url in model_hosts():
         m = models(url)
         if m is None:
             findings.append("MODEL host %s unreachable" % name)

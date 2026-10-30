@@ -22,18 +22,18 @@ Command, run with `env -u TMUX` and TMUX_TMPDIR set to a sandbox directory:
     TEST_BINARY=<wt>/bin/sandbox/run-daemon.sh PROBE_OUT_DIR=<wt>/docs/testing/runs/shared-nav-mobile-fit \
     PROBE_CHROME_PROFILE=<wt>/bin/sandbox/chrome-profile PROBE_DAEMON_VERSION=9.11.0 \
     PATH=<wt>/bin/sandbox/shim:$PATH bash scripts/e2e-pwa.sh shared-nav-mobile-fit-probe
-(<wt> = /home/dmz/.datawatch/prd-worktrees/b54f0001.) Binary rebuilt from the unmodified
+(<wt> = /home/user/.datawatch/prd-worktrees/b54f0001.) Binary rebuilt from the unmodified
 tree first: `go build -o bin/datawatch ./cmd/datawatch/` (13:03:17).
 
 Deviations from the spec, each made so the run stays inside its boundary:
 1. TMUX_TMPDIR is SET to a sandbox directory, not unset. With it unset, the daemon falls
-   back to the production dedicated socket /home/dmz/.datawatch/tmux (the earlier run's
+   back to the production dedicated socket /home/user/.datawatch/tmux (the earlier run's
    log showed exactly that). cmd/datawatch/main.go ensureTmuxTmpdirEnv only falls back
    when the variable is unset, so the sandbox value keeps the daemon off the production socket.
    The daemon log has no "TMUX_TMPDIR was unset" line for this run.
 2. npm ci is stubbed by a PATH shim (sandbox/npm-ci-shim.sh). e2e-pwa.sh runs `npm ci`
    in scripts/test-stories/pwa, and that directory's node_modules is a symlink to
-   /home/dmz/workspace/datawatch, outside the worktree. The probe imports node built-ins
+   /home/user/workspace/datawatch, outside the worktree. The probe imports node built-ins
    only, so the install is not needed. The symlink is unchanged after the run.
 3. TEST_BINARY points at sandbox/run-daemon.sh, which execs the same binary and appends
    its output to sandbox/daemon.log. e2e-pwa.sh deletes its own run dir, including

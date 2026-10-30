@@ -1871,8 +1871,8 @@ Tests run against a sandboxed daemon started by `run-tests.sh`. The template con
 
 | Feature | Config field | Required value |
 |---------|-------------|---------------|
-| Session summarizer | `session.summarizer.enabled` + `session.summarizer.llm_ref` | `true` + `ollama-johnnyjohnny` — missing causes TS-721/730 503 |
-| Primary LLM backend | `llm.backends[ollama-johnnyjohnny]` | `http://johnnyjohnny:11434` — primary for decompose/summarize |
+| Session summarizer | `session.summarizer.enabled` + `session.summarizer.llm_ref` | `true` + `ollama-local-node` — missing causes TS-721/730 503 |
+| Primary LLM backend | `llm.backends[ollama-local-node]` | `http://local-node:11434` — primary for decompose/summarize |
 | Secondary LLM backend | `llm.backends[ollama-localhost]` | `http://localhost:11434` — qwen3:1.7b fallback |
 | Vision backend | `vision.backend` + `vision.model` | `ollama`, `moondream:latest` on localhost:11434 |
 | Webhook comms | `comms.webhook.url` | `127.0.0.1:19080` — must use sentinel `WEBHOOK_NOAUTH` for token field (see token sed rule below) |
@@ -1982,8 +1982,8 @@ prior 480s/720s budgets were not enough — model takes 60–120s per story, exe
 more. If TS-695 still times out: check whether both Ollama nodes are alive first
 (`GET /api/backends`), then consider whether the model has changed.
 
-For decomposition: use `qwen3:8b` on `johnnyjohnny` (128GB GPU, faster) not `qwen3:1.7b`
-on localhost. The TS-695 story spec should reference `ollama-johnnyjohnny` for the
+For decomposition: use `qwen3:8b` on `local-node` (128GB GPU, faster) not `qwen3:1.7b`
+on localhost. The TS-695 story spec should reference `ollama-local-node` for the
 decompose backend.
 
 ### TS-723/724/725 sequencing dependency
@@ -2102,7 +2102,7 @@ unblocks. Test both conditions explicitly.
 
 | Backend name | URL | Primary use |
 |---|---|---|
-| `ollama-johnnyjohnny` | http://johnnyjohnny:11434 | Primary: decompose, summarize, large model (qwen3:8b) |
+| `ollama-local-node` | http://local-node:11434 | Primary: decompose, summarize, large model (qwen3:8b) |
 | `ollama-localhost` | http://localhost:11434 | Secondary: qwen3:1.7b fallback, moondream vision |
 
 Moondream vision runs on `ollama-localhost`. When both are under load, LLM-dependent

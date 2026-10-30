@@ -29,7 +29,7 @@ const cleanupCLISample = `{
   },
   "temp": {"mode": "on"},
   "disk_alert_percent": 85,
-  "worktree_disk": {"path": "/home/dmz/repo", "percent": 82, "alert": false},
+  "worktree_disk": {"path": "/home/user/repo", "percent": 82, "alert": false},
   "temp_disk": {"path": "/tmp", "percent": 91, "alert": true},
   "disk_alert": true,
   "last_disk_alert_at": "2026-11-01T08:00:00Z"
@@ -50,7 +50,7 @@ func TestCleanupCLI_StatusPrints(t *testing.T) {
 		"owner vs net: 2/1 removed, 1048576/1048576 bytes freed",
 		"last error: permission denied",
 		"temp pass: not run yet",
-		"worktree disk: /home/dmz/repo at 82%",
+		"worktree disk: /home/user/repo at 82%",
 		"temp dir disk: /tmp at 91% (alert)",
 		"disk alert: active (last raised 2026-11-01T08:00:00Z)",
 		"This is a status read only: the cleanup passes do the removing, not this read.",

@@ -286,7 +286,7 @@ func TestCancelBySessionDoesNotAffectSpawnSchedule(t *testing.T) {
 	}
 
 	// Simulate the spawned session being deleted: CancelBySession fires
-	n := store.CancelBySession("johnnyjohnny-spawned-abc123")
+	n := store.CancelBySession("local-node-spawned-abc123")
 	if n != 0 {
 		t.Errorf("CancelBySession cancelled %d spawn schedule(s), want 0", n)
 	}

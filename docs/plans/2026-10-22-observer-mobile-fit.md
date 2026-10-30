@@ -323,7 +323,7 @@ report was produced or a scenario could not even open its view
 ### 2026-10-25 — end-to-end gate (fresh run, strict order)
 
 Full end-to-end gate re-run in strict order against this tree
-(`/home/dmz/.datawatch/prd-worktrees/dbd5000a`; the only file this gate
+(`/home/user/.datawatch/prd-worktrees/dbd5000a`; the only file this gate
 writes is this plan doc). Every
 browser step ran against an isolated loopback daemon freshly built from
 this tree (`go build ./cmd/datawatch` to a temp dir, `.datawatch/verify/_daemon.sh`) —

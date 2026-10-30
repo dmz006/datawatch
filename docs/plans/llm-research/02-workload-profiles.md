@@ -1,7 +1,7 @@
 # 02 — Workload Profiles
 
 Re-verified live 2026-09-29 against the same datawatch instance (v8.34.1,
-hostname `johnnyjohnny`) documented in [01 — Current State](01-current-state.md),
+hostname `local-node`) documented in [01 — Current State](01-current-state.md),
 via `get_config`, `autonomous_config_get`, `council_personas`,
 `council_config_get`, `orchestrator_config_get`, `cost_summary`, `cost_rates`,
 `capacity_status`, `compute_node_list`, `docs_search`/`docs_read`, and
@@ -80,7 +80,7 @@ cost/time (from `memory_recall`/`cost_summary`, else **unknown**).
 | Tool calling | Not confirmed either way in docs corpus |
 | Structured output | Yes — pass/warn/block verdict stream |
 | Parallelism | Up to `max_parallel_prds: 2` × up to 4 guardrails/PRD, once enabled |
-| Observed cost/time | **Unobserved**, not just unknown — no live traffic since disabled. Falls back to the named `ollama` registry entry (`qwen3:1.7b`@`johnnyjohnny`) via `amgrCfg.VerificationBackend`, same path as the verifier — see [01(c) drift item 6](01-current-state.md#c-llm-registry-and-drift) for why `orchestrator.guardrail_backend` is a separate, unread config key. |
+| Observed cost/time | **Unobserved**, not just unknown — no live traffic since disabled. Falls back to the named `ollama` registry entry (`qwen3:1.7b`@`local-node`) via `amgrCfg.VerificationBackend`, same path as the verifier — see [01(c) drift item 6](01-current-state.md#c-llm-registry-and-drift) for why `orchestrator.guardrail_backend` is a separate, unread config key. |
 
 ### 5. Council persona proposals (12 personas)
 
@@ -93,7 +93,7 @@ cost/time (from `memory_recall`/`cost_summary`, else **unknown**).
 | Tool calling | No |
 | Structured output | No strict schema — freeform critique text |
 | Parallelism | **Most naturally parallel workload in datawatch**: 12 independent calls/round, but `council.max_parallel: 0` means default **2** concurrent (confirmed via docs) — clearest concrete "raise this number" opportunity for the 8+ parallel goal |
-| Observed cost/time | **Unknown.** `council.llm_ref` is empty (confirmed) — falls back deterministically to the named `ollama` registry entry, concretely `qwen3:1.7b`@`johnnyjohnny` (`cmd/datawatch/main.go:3160-3163`; live `ollama.model`/`ollama.host` in config.yaml) — not an ambiguous default, but still the smallest general model in the fleet backing adversarial personas (`hacker`, `app-hacker`, `security-skeptic`) — see drift item 4, 01(c) |
+| Observed cost/time | **Unknown.** `council.llm_ref` is empty (confirmed) — falls back deterministically to the named `ollama` registry entry, concretely `qwen3:1.7b`@`local-node` (`cmd/datawatch/main.go:3160-3163`; live `ollama.model`/`ollama.host` in config.yaml) — not an ambiguous default, but still the smallest general model in the fleet backing adversarial personas (`hacker`, `app-hacker`, `security-skeptic`) — see drift item 4, 01(c) |
 
 ### 6. Council synthesis (consensus + dissent)
 
@@ -106,7 +106,7 @@ cost/time (from `memory_recall`/`cost_summary`, else **unknown**).
 | Tool calling | No |
 | Structured output | Implied (consensus/no-consensus signal drives "milestone" comm pushes, confirmed) though not a strict schema |
 | Parallelism | None — one synthesis call per round, sequential after the persona round |
-| Observed cost/time | **Unknown**, same `council.llm_ref` fallback as profile 5 — deterministically `qwen3:1.7b`@`johnnyjohnny`, not unset |
+| Observed cost/time | **Unknown**, same `council.llm_ref` fallback as profile 5 — deterministically `qwen3:1.7b`@`local-node`, not unset |
 
 ### 7. Vision description (image → short text)
 
@@ -132,7 +132,7 @@ builds the real local-venv transcriber for it, explicitly to keep "existing
 operator configs" working unchanged. Combined with live config —
 `whisper.enabled: true`, `whisper.model: "medium"`, `whisper.venv_path`
 set, `signal.enabled: true` — voice transcription is fully wired and active
-today via the local Whisper venv on `johnnyjohnny`. This is a real, running
+today via the local Whisper venv on `local-node`. This is a real, running
 workload, not a hypothetical one.
 
 | Field | Value |
@@ -142,7 +142,7 @@ workload, not a hypothetical one.
 | Latency tolerance | Interactive — a voice note feels synchronous to the conversation that follows |
 | Quality bar | Recoverable, user-facing and immediately noticed (closer to vision's failure mode) |
 | Tool calling / structured output | N/A |
-| Parallelism | Naturally high across independent comms channels; runs locally on `johnnyjohnny` (CPU, via the Whisper Python venv — separate resource pool from the Ollama GPU workloads above) |
+| Parallelism | Naturally high across independent comms channels; runs locally on `local-node` (CPU, via the Whisper Python venv — separate resource pool from the Ollama GPU workloads above) |
 | Observed cost/time | **Unknown** — no per-transcription timing/cost surfaced in `cost_summary` or memory. Worth measuring before assuming it's cheap: local Whisper `medium` on CPU can be slower than the Ollama-served models above for longer clips. |
 
 ### 9. Memory embedding (nomic-embed-text)
@@ -156,14 +156,14 @@ workload, not a hypothetical one.
 | Tool calling | No |
 | Structured output | No — raw vector |
 | Parallelism | Very high — tiny, independent, stateless calls. Strongest downsizing candidate alongside Council personas |
-| Observed cost/time | Unknown per-call. Confirmed: runs on `johnnyjohnny`, currently the **only** loaded model on that node (0.57 GB VRAM, confirmed via `/api/ps`) — the local RTX 5090 sits almost entirely idle outside embedding traffic. Clearest evidence the hardware for the user's parallel-routing goal already exists and is underused. |
+| Observed cost/time | Unknown per-call. Confirmed: runs on `local-node`, currently the **only** loaded model on that node (0.57 GB VRAM, confirmed via `/api/ps`) — the local 32 GB GPU sits almost entirely idle outside embedding traffic. Clearest evidence the hardware for the user's parallel-routing goal already exists and is underused. |
 
 ### 10. Memory fact extraction / session summarization
 
 | Field | Value |
 |---|---|
 | Input / output tokens | Medium (accumulated session turns) / small-medium (summary or extracted facts) |
-| Context window | Medium — currently served by `qwen3:1.7b` (`session.summarizer.llm_ref: "ollama-johnnyjohnny"`, confirmed) — already the smallest general-purpose model in the fleet |
+| Context window | Medium — currently served by `qwen3:1.7b` (`session.summarizer.llm_ref: "ollama-local-node"`, confirmed) — already the smallest general-purpose model in the fleet |
 | Latency tolerance | Batch — runs on session end/checkpoint |
 | Quality bar | Recoverable — degrades future recall quality only; raw content stays separately stored (`memory.storage_mode: "verbatim"`, confirmed) and can be re-summarized |
 | Tool calling | No |
@@ -188,8 +188,8 @@ workload, not a hypothetical one.
 
 | Tier | Workloads | Why | Today's actual routing |
 |---|---|---|---|
-| **Fast-small** | Verifier, guardrail checks, memory embedding, fact extraction/summarization | Bounded input, cheap failure mode (except verifier's false-pass asymmetry), highest parallelism | Summarizer on `qwen3:1.7b`, embedding on `nomic-embed-text` — correct. Verifier + guardrail both fall back to the named `ollama` entry, also `qwen3:1.7b`@`johnnyjohnny` — an *implicit but deterministic* pin, not silent drift (drift items 5-6, 01(c)) |
-| **Balanced** | Council persona proposals, vision description, voice/STT | Needs a distinct, specific perspective or an accurate short description, but no catastrophic downstream trust in any single call | Vision correctly pinned to `moondream:latest`. Council personas fall back to the same `ollama`/`qwen3:1.7b`@`johnnyjohnny` entry (`council.llm_ref: ""`, drift item 4) — deterministic, but arguably under-provisioned for adversarial personas. Voice/STT is live on local Whisper (`medium`), not a gap |
+| **Fast-small** | Verifier, guardrail checks, memory embedding, fact extraction/summarization | Bounded input, cheap failure mode (except verifier's false-pass asymmetry), highest parallelism | Summarizer on `qwen3:1.7b`, embedding on `nomic-embed-text` — correct. Verifier + guardrail both fall back to the named `ollama` entry, also `qwen3:1.7b`@`local-node` — an *implicit but deterministic* pin, not silent drift (drift items 5-6, 01(c)) |
+| **Balanced** | Council persona proposals, vision description, voice/STT | Needs a distinct, specific perspective or an accurate short description, but no catastrophic downstream trust in any single call | Vision correctly pinned to `moondream:latest`. Council personas fall back to the same `ollama`/`qwen3:1.7b`@`local-node` entry (`council.llm_ref: ""`, drift item 4) — deterministic, but arguably under-provisioned for adversarial personas. Voice/STT is live on local Whisper (`medium`), not a gap |
 | **Strong** | Council synthesis, interactive chat sessions | Must reconcile 12 viewpoints fairly, or is directly human-facing | Interactive sessions correctly pinned to `claude-code`. Synthesis shares Council's `qwen3:1.7b` fallback |
 | **Frontier / agentic** | PRD decomposition/planning, coding worker sessions | Strict-JSON reliability and reliable multi-turn tool calling are non-negotiable; the only two call sites with explicit v8.18.0 injection-guard hardening | Both correctly pinned to `qwen3.8:27b` via opencode on `datawatch` — the one place today's routing already matches the target end-state |
 
@@ -197,13 +197,13 @@ workload, not a hypothetical one.
 (frontier/agentic) are already correctly pinned. The gap is narrower than
 first described: verifier, guardrail, and both Council call sites are **not**
 unpinned — they all resolve, in source, to one shared named fallback
-(`ollama` → `qwen3:1.7b`@`johnnyjohnny`). The real finding is that this one
+(`ollama` → `qwen3:1.7b`@`local-node`). The real finding is that this one
 small model is doing quadruple duty (verifier + guardrail + council persona
 + council synthesis) with no config distinguishing them, and `council.
 max_parallel: 0` (→ default 2) caps the system's single most parallel-shaped
 workload well below its natural 12-wide structure. Getting to "8+ calls in
 parallel across CPU+GPU" is less about finding new small models —
-`johnnyjohnny`'s RTX 5090 already sits mostly idle outside embedding traffic
+`local-node`'s 32 GB GPU already sits mostly idle outside embedding traffic
 (profile 9) — and more about (a) deciding whether the four fast/balanced
 call sites sharing one fallback model is fine or should be split out with
 explicit `*_backend`/`llm_ref` keys, and (b) raising `council.max_parallel`

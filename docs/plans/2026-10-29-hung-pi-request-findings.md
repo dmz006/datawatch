@@ -26,21 +26,21 @@ cmd/datawatch/descendant_processes.go and cmd/datawatch/exit_silence_wait.go, sp
 docs/plans/2026-10-28-pi-descendant-only-stall.md; the incident investigated here is the live
 hang that this PRD category targets. In scope:
 
-- **ab4c** (`johnnyjohnny-ab4c`, `autonomous:Auto-fix: rules-review findings (attempt 1)`,
+- **ab4c** (`local-node-ab4c`, `autonomous:Auto-fix: rules-review findings (attempt 1)`,
   PRD f3420001 / task bd730001): created 2026-10-28 07:51:34 (-04:00), killed 09:30:52
   (-04:00) — the ~1 h 39 m hang.
-- **ef70** (`johnnyjohnny-ef70`, same name): created 09:30:52 (-04:00), one second
+- **ef70** (`local-node-ef70`, same name): created 09:30:52 (-04:00), one second
   after ab4c's kill, terminal state 10:35:14 (-04:00) — the ~1 h 04 m hang.
 
 Both records show `one_shot=true`, `backend_family=pi-prompt`, `model=ollama/qwen3.8-64k:27b`,
 `node_address=<compute-node>`, `compute_node_ref=<compute-node>`. The per-session pane
-logs referenced by the records (`<home>/.datawatch/sessions/johnnyjohnny-ab4c/output.log`,
-`.../johnnyjohnny-ef70/output.log`) sit outside this worktree and were not read (rule 2).
+logs referenced by the records (`<home>/.datawatch/sessions/local-node-ab4c/output.log`,
+`.../local-node-ef70/output.log`) sit outside this worktree and were not read (rule 2).
 Out of scope: anything needing generation requests, files outside the worktree, code changes.
 
 ## Evidence: session ab4c
 
-Facts from the sanctioned interfaces (daemon record `johnnyjohnny-ab4c`; PRD f3420001, task
+Facts from the sanctioned interfaces (daemon record `local-node-ab4c`; PRD f3420001, task
 bd730001):
 
 - State `killed`; created `2026-10-28T07:51:34.292761232-04:00`, updated
@@ -60,9 +60,9 @@ bd730001):
   lines: `DATAWATCH_PI_FAILED: pi exited with status 143 (model ollama/qwen3.8-64k:27b)` and
   `logout`. The wrapper is the template in internal/llm/backends/pi/backend.go:516-563
   (`buildLaunchCmdWithAgentDir`): `cd '<home>/.datawatch/prd-worktrees/f3420001' && {
-  PI_CODING_AGENT_DIR='/tmp/datawatch-pi-agent-cs-johnnyjohnny-ab4c-2690530149' pi --print
+  PI_CODING_AGENT_DIR='/tmp/datawatch-pi-agent-cs-local-node-ab4c-2690530149' pi --print
   --mode text --approve --model 'ollama/qwen3.8-64k:27b' "$(cat
-  '/tmp/datawatch-pi-task-cs-johnnyjohnny-ab4c-151365485.txt')"; echo $? >
+  '/tmp/datawatch-pi-task-cs-local-node-ab4c-151365485.txt')"; echo $? >
   '/tmp/datawatch-pi-status-…'` piped to `tee '/tmp/datawatch-pi-out-…'`, followed by the
   `dw_status` checks at internal/llm/backends/pi/backend.go:537. Exit **143 = 128 + 15 = the
   pi process died of SIGTERM while running**; it did not terminate on its own error path.
@@ -88,7 +88,7 @@ The clause alone does not prove the runner was dead or alive.
 
 ## Evidence: session ef70
 
-Facts from the sanctioned interfaces (daemon record `johnnyjohnny-ef70`; PRD f3420001, task
+Facts from the sanctioned interfaces (daemon record `local-node-ef70`; PRD f3420001, task
 bd730001):
 
 - State `complete` (neither `failed` nor `killed` — see discrepancy below). Created
@@ -106,9 +106,9 @@ bd730001):
   attribution for the terminal transition** (contrast with ab4c).
 - `session_children` → "Session ef70 has no child sessions."
 - Final pane content (`session_output` tail): the full wrapper command
-  (`PI_CODING_AGENT_DIR='/tmp/datawatch-pi-agent-cs-johnnyjohnny-ef70-19174962' pi --print
+  (`PI_CODING_AGENT_DIR='/tmp/datawatch-pi-agent-cs-local-node-ef70-19174962' pi --print
   --mode text --approve --model 'ollama/qwen3.8-64k:27b' "$(cat
-  '/tmp/datawatch-pi-task-cs-johnnyjohnny-ef70-3076274759.txt')"`, scratch paths
+  '/tmp/datawatch-pi-task-cs-local-node-ef70-3076274759.txt')"`, scratch paths
   `/tmp/datawatch-pi-out-…-1102636443`, `/tmp/datawatch-pi-status-…-3567820164`), then the
   same two lines as ab4c: `DATAWATCH_PI_FAILED: pi exited with status 143 (model
   ollama/qwen3.8-64k:27b)` and `logout` — again a SIGTERM death of pi while running.
@@ -156,8 +156,8 @@ Facts from the interfaces (node `<compute-node>`, PRD f3420001):
   tees pi's stdout to a scratch file, checks exit status and non-empty output, prints
   `DATAWATCH_PI_FAILED: …` or `DATAWATCH_COMPLETE: pi done`, and — critically — runs
   `rm -f` on the task/out/status scratch files and `rm -rf` on the `PI_CODING_AGENT_DIR`
-  (`/tmp/datawatch-pi-agent-cs-johnnyjohnny-ab4c-2690530149`,
-  `/tmp/datawatch-pi-agent-cs-johnnyjohnny-ef70-19174962`) before the outcome checks.
+  (`/tmp/datawatch-pi-agent-cs-local-node-ab4c-2690530149`,
+  `/tmp/datawatch-pi-agent-cs-local-node-ef70-19174962`) before the outcome checks.
 - Bounds active at the time (deployed daemon text, cf. internal/mcp/autonomous.go:117-123):
   idle limit 900 s ("waiting_input/idle with no live child process … infra failure"),
   start-confirm 120 s; waiting-input alert semantics at
@@ -202,14 +202,14 @@ logs or server-side request records were available through any sanctioned interf
    `f3420001`, `bd730001`, `keep_alive` or `timeout` → the 2026-10-28 07:51-10:35 window was
    rotated/truncated before this investigation; the only "hunger" evidence there is the
    `[recovery] … (state=waiting_input)` screen-capture mechanism for later sessions.
-   Per-session logs named in the records (`<home>/.datawatch/sessions/johnnyjohnny-ab4c/output.log`,
-   `.../johnnyjohnny-ef70/output.log`) are outside the project worktree and were
+   Per-session logs named in the records (`<home>/.datawatch/sessions/local-node-ab4c/output.log`,
+   `.../local-node-ef70/output.log`) are outside the project worktree and were
    intentionally not read (rule 2).
 2. **Ollama server logs on <node-address>** — no sanctioned interface exposes them; the
    server-side hang point (which request held the queue, first-token timeout) cannot be pinned.
 3. **pi transcripts** — the wrapper (internal/llm/backends/pi/backend.go:516-563) deletes
-   `PI_CODING_AGENT_DIR` (`/tmp/datawatch-pi-agent-cs-johnnyjohnny-ab4c-2690530149` and
-   `/tmp/datawatch-pi-agent-cs-johnnyjohnny-ef70-19174962`) before the outcome checks, so the
+   `PI_CODING_AGENT_DIR` (`/tmp/datawatch-pi-agent-cs-local-node-ab4c-2690530149` and
+   `/tmp/datawatch-pi-agent-cs-local-node-ef70-19174962`) before the outcome checks, so the
    session JSONL for both hangs no longer exists by design; only the pane tail (recovered via
    the `session_output` tool) survives in the daemon records.
 4. **Window-state metrics** — node process history (ps/ethtool/pcap), Ollama per-request

@@ -42,12 +42,12 @@ func TestCollector_SetSessionCountFunc(t *testing.T) {
 // hostname nor the running daemon version anywhere.
 func TestCollector_SetServerIdentity(t *testing.T) {
 	c := NewCollector(t.TempDir())
-	c.SetServerIdentity("johnnyjohnny", "8.70.0")
+	c.SetServerIdentity("local-node", "8.70.0")
 	var stats SystemStats
 	c.SetOnCollect(func(s SystemStats) { stats = s })
 	c.collect()
-	if stats.Hostname != "johnnyjohnny" {
-		t.Errorf("expected hostname %q, got %q", "johnnyjohnny", stats.Hostname)
+	if stats.Hostname != "local-node" {
+		t.Errorf("expected hostname %q, got %q", "local-node", stats.Hostname)
 	}
 	if stats.DaemonVersion != "8.70.0" {
 		t.Errorf("expected daemon version %q, got %q", "8.70.0", stats.DaemonVersion)

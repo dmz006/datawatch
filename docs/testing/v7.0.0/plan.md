@@ -1051,7 +1051,7 @@ Results → `docs/testing/v7.0.0/cookbook.md`
 ### TS-094 — Signal: configure test group + send + verify comm_stats
 **Tags**: [surface:api] [feature:comms]  
 **Steps**:
-1. PUT config: `curl ... -d '{"signal.enabled":true,"signal.group":"'"$TEST_SIGNAL_GROUP"'","signal.config_dir":"/home/dmz/.local/share/signal-cli"}' $TEST_BASE/api/config`
+1. PUT config: `curl ... -d '{"signal.enabled":true,"signal.group":"'"$TEST_SIGNAL_GROUP"'","signal.config_dir":"/home/user/.local/share/signal-cli"}' $TEST_BASE/api/config`
 2. Read `comm_stats` before
 3. `curl ... -X POST -d '{"backend":"signal","message":"datawatch e2e test — ignore"}' $TEST_BASE/api/comm/send`
 4. Assert `comm_stats.signal.msg_sent` incremented

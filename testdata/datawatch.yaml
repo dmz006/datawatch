@@ -24,7 +24,7 @@ session:
   kill_sessions_on_exit: true
   summarizer:
     enabled: true
-    llm_ref: ollama-johnnyjohnny
+    llm_ref: ollama-local-node
 
 server:
   enabled: true
@@ -56,17 +56,17 @@ autonomous:
 
 council:
   enabled: true
-  llm_ref: ollama-johnnyjohnny
+  llm_ref: ollama-local-node
 
 ollama:
   enabled: true
   model: qwen3:1.7b
-  host: http://johnnyjohnny:11434
+  host: http://local-node:11434
 
 llms:
-  - name: ollama-johnnyjohnny
+  - name: ollama-local-node
     kind: ollama
-    url: http://johnnyjohnny:11434
+    url: http://local-node:11434
     model: qwen3:1.7b
     enabled: true
   - name: ollama-localhost
@@ -88,11 +88,11 @@ whisper:
   enabled: false
   model: medium
   language: en
-  venv_path: /home/dmz/.datawatch/.venv
+  venv_path: /home/user/.datawatch/.venv
 
 # Vision backend — disabled by default; runner enables via PUT /api/config for TS-658+.
 # Points to the test ollama instance (port 21434 in docker-compose.test.yml;
-# port 11434 on the host network when running natively against johnnyjohnny).
+# port 11434 on the host network when running natively against local-node).
 vision:
   enabled: true
   backend: ollama
@@ -110,7 +110,7 @@ webhook:
 compute_nodes:
   - name: datawatch-ollama
     kind: ollama
-    address: http://johnnyjohnny:11434
+    address: http://local-node:11434
     scheduling_priority: 90
     declared_capacity:
       gpus: 1
@@ -149,7 +149,7 @@ web_search:
 
 goose:
   enabled: true
-  binary: /home/dmz/.local/bin/goose
+  binary: /home/user/.local/bin/goose
 
 opencode:
   enabled: false

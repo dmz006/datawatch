@@ -17,7 +17,7 @@ scratch repos.
 - `get_version` (MCP) reported `Current version: 9.0.74`.
 - `datawatch version` reported `datawatch v9.0.74`.
 - Daemon-wide `autonomous.block_on_file_drift` was `false` (the default).
-  `worktree_base_repo` was `/home/dmz/workspace/datawatch`.
+  `worktree_base_repo` was `/home/user/workspace/datawatch`.
 
 ## Scratch repo shape (each run used a fresh one)
 

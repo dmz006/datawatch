@@ -8,7 +8,7 @@ attempt had committed. All shell commands were run with
 `env -u TMUX -u TMUX_TMPDIR`; repository-relative paths only; no multiplexer
 touched.
 
-Run on 2026-10-28, worktree `/home/dmz/.datawatch/prd-worktrees/db4b0001`.
+Run on 2026-10-28, worktree `/home/user/.datawatch/prd-worktrees/db4b0001`.
 
 ## Commands and exit statuses
 
@@ -16,14 +16,14 @@ Run on 2026-10-28, worktree `/home/dmz/.datawatch/prd-worktrees/db4b0001`.
 |---|---------|------|
 | 1 | `env -u TMUX -u TMUX_TMPDIR bash .datawatch/verify/zap-attach-workflow.sh` | 1 — only the 4 pre-existing shellcheck findings listed below surfaced via actionlint (identical set on main, see #4); the script's own pass checks (YAML parse, refs/tags gating, rate-limit handling, back-off, continue-on-error, fail_action count) all hold |
 | 2 | `env -u TMUX -u TMUX_TMPDIR bash .datawatch/verify/zap-rate-limit-docs.sh` | 0 — grep checks passed, internal-ref leak audit passed (`PASS: no internal refs in user-facing surfaces`), printed `ok` |
-| 3 | `env -u TMUX -u TMUX_TMPDIR /home/dmz/go/bin/actionlint .github/workflows/owasp-zap.yaml` | 1 — exactly 4 findings: SC2015 and SC2034 at line 163, SC2106 and SC2162 at line 281 (the release_tag step) |
+| 3 | `env -u TMUX -u TMUX_TMPDIR /home/user/go/bin/actionlint .github/workflows/owasp-zap.yaml` | 1 — exactly 4 findings: SC2015 and SC2034 at line 163, SC2106 and SC2162 at line 281 (the release_tag step) |
 | 4 | `env -u TMUX -u TMUX_TMPDIR git show main:.github/workflows/owasp-zap.yaml` → same actionlint on that exact main content | 1 — exactly the same 4 findings at main's lines 152 and 270; a 163-152 = 281-270 = 11 offset explained by the 11 comment lines added at the workflow header, i.e. zero new findings from the change |
 | 5 | `env -u TMUX -u TMUX_TMPDIR git diff main...HEAD --name-only` (this branch's own commits over the merge-base with main; main has landed unrelated work after this branch's fork point, so the merge-base diff is the right yardstick, not a tip-to-tip comparison) | 0 — lists `.github/workflows/owasp-zap.yaml`, `docs/operations.md`, and `VERIFY-REPORT.md` (the stray root file a previous attempt committed); this gate run removes that stray file, so the finally recorded change set is exactly the allowed set with nothing at the repository root |
 | 6 | `env -u TMUX -u TMUX_TMPDIR git diff main...HEAD -- .github/workflows/owasp-zap.yaml docs/operations.md` | 0 — inspected for the confirmation items below |
 | 7 | `env -u TMUX -u TMUX_TMPDIR rm VERIFY-REPORT.md` | 0 — removes the stray root file committed by the earlier attempt; the committed history diff no longer contains it once this change is recorded |
 | 8 | Per-item greps on `.github/workflows/owasp-zap.yaml`: `grep -q 'refs/tags/'` (0), `grep -qi 'rate limit'` (0), `grep -qE 'sleep\|backoff\|back-off'` (0), `grep -q 'continue-on-error'` (0), `grep -c 'fail_action: true'` (2) | 0 — each assertion below backed by these |
 
-actionlint was found via PATH (`/home/dmz/go/bin/actionlint`), so it was run
+actionlint was found via PATH (`/home/user/go/bin/actionlint`), so it was run
 per the gate spec; the verify script #1 found it the same way, which is why
 its exit 1 is actionlint-derived, not a missing-tool skip.
 

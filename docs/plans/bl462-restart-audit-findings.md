@@ -13,7 +13,7 @@ Status: live audit complete (sandbox). No product code was changed. Every findin
 - Restart = `kill -TERM <sandbox pid>` (the same signal systemd sends on stop), then relaunch with the same command line. Two restarts were done (18:47:14 and 18:48:39 UTC-4).
 - Sandbox PRDs and their project dirs (`projects/cc`, `projects/oc`, `projects/sub`) are under `.bl462-sandbox/` as well.
 
-**Deviation from the brief, stated plainly.** The brief asked for the sandbox config, data and project dirs to live in a temp dir outside the repo. The scope rule in the same brief limits writes to `/home/dmz/workspace/datawatch`. These two rules conflict. The sandbox was kept inside the repo at `.bl462-sandbox/`, which is listed in `.git/info/exclude` so nothing there is committed. Its project dirs are nested git repos, so the sandbox's own auto-commit cannot touch the outer repo. The directory should be deleted once the audit is closed.
+**Deviation from the brief, stated plainly.** The brief asked for the sandbox config, data and project dirs to live in a temp dir outside the repo. The scope rule in the same brief limits writes to `/home/user/workspace/datawatch`. These two rules conflict. The sandbox was kept inside the repo at `.bl462-sandbox/`, which is listed in `.git/info/exclude` so nothing there is committed. Its project dirs are nested git repos, so the sandbox's own auto-commit cannot touch the outer repo. The directory should be deleted once the audit is closed.
 
 **Sandbox deviation 2.** The sandbox shares the host's `~/.claude` and `~/.config/opencode`, and the sandbox's startup log printed `cleaned up 1 stale MCP registration(s)`. I did not verify whether that cleanup touched a production MCP registration. Treat that as an open item.
 

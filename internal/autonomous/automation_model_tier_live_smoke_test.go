@@ -22,7 +22,7 @@ package autonomous
 //	  go test -count=1 -run TestAutomationModelTierLiveSmoke -v ./internal/autonomous/
 //
 // The backend and model values are the ones testdata/datawatch.yaml lists for the
-// sandbox (the llms ollama-johnnyjohnny and ollama-localhost, model qwen3:1.7b),
+// sandbox (the llms ollama-local-node and ollama-localhost, model qwen3:1.7b),
 // so the daemon's backend lookup accepts them.
 //
 // The test only calls the REST API of that daemon and runs no LLM work. The
@@ -98,9 +98,9 @@ func TestAutomationModelTierLiveSmoke(t *testing.T) {
 		execBackend     = "ollama-localhost"
 		execModel       = "qwen3:1.7b"
 		execEffort      = "high"
-		planBackend     = "ollama-johnnyjohnny"
+		planBackend     = "ollama-local-node"
 		planModel       = "qwen3:1.7b"
-		verifyBackend   = "ollama-johnnyjohnny"
+		verifyBackend   = "ollama-local-node"
 		verifyModel     = "qwen3:1.7b"
 		verifyEffort    = "low"
 		smokeActor      = "operator"

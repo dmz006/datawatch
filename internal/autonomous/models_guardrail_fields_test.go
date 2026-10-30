@@ -205,7 +205,7 @@ func TestGuardrailJudgeFields_RoundTrip(t *testing.T) {
 		Guardrail:       "security",
 		Outcome:         "block",
 		JudgeSessionID:  "judge-7f3a",
-		JudgeOutputPath: "/home/dmz/.datawatch/judge/judge-7f3a.out",
+		JudgeOutputPath: "/home/user/.datawatch/judge/judge-7f3a.out",
 	}
 
 	prdRaw, err := json.Marshal(prdIn)

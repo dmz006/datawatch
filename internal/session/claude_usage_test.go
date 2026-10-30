@@ -29,8 +29,8 @@ func TestClaudeSessionUUID_Deterministic(t *testing.T) {
 func TestClaudeTranscriptPath_EscapesSlashesAndDots(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	got := claudeTranscriptPath("/home/dmz/workspace/datawatch/.hllm-sandbox", "full-id")
-	want := filepath.Join(home, ".claude", "projects", "-home-dmz-workspace-datawatch--hllm-sandbox", claudeSessionUUID("full-id")+".jsonl")
+	got := claudeTranscriptPath("/home/user/workspace/datawatch/.hllm-sandbox", "full-id")
+	want := filepath.Join(home, ".claude", "projects", "-home-user-workspace-datawatch--hllm-sandbox", claudeSessionUUID("full-id")+".jsonl")
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}

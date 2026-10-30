@@ -116,8 +116,8 @@ func TestReadMissingFile(t *testing.T) {
 
 func TestLocateLogForPrefersExactIDMatch(t *testing.T) {
 	root := t.TempDir()
-	workDir := "/home/dmz/work/demo"
-	dir := filepath.Join(root, "--home-dmz-work-demo--")
+	workDir := "/home/user/work/demo"
+	dir := filepath.Join(root, "--home-user-work-demo--")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -165,16 +165,16 @@ func TestLocateLogForPrefersExactIDMatch(t *testing.T) {
 }
 
 func TestProjectDirName(t *testing.T) {
-	if got, want := ProjectDirName("/home/dmz/work/demo"), "--home-dmz-work-demo--"; got != want {
+	if got, want := ProjectDirName("/home/user/work/demo"), "--home-user-work-demo--"; got != want {
 		t.Errorf("ProjectDirName = %q, want %q", got, want)
 	}
 }
 
 func TestLocateLogPicksClosestAtOrAfterStart(t *testing.T) {
 	root := t.TempDir()
-	workDir := "/home/dmz/work/demo"
-	dir := filepath.Join(root, "--home-dmz-work-demo--")
-	other := filepath.Join(root, "--home-dmz-work-other--")
+	workDir := "/home/user/work/demo"
+	dir := filepath.Join(root, "--home-user-work-demo--")
+	other := filepath.Join(root, "--home-user-work-other--")
 	for _, d := range []string{dir, other} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)

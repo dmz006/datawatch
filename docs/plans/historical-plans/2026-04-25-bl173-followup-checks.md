@@ -18,7 +18,7 @@ manifest or `datawatch setup ebpf --target stats`).
 ```bash
 make ebpf-gen                          # generates netprobe_bpfel.{go,o}
 make install                           # rebuild parent with the .o linked
-sudo setcap cap_bpf,cap_perfmon=ep /home/dmz/.local/bin/datawatch
+sudo setcap cap_bpf,cap_perfmon=ep /home/user/.local/bin/datawatch
 datawatch start --foreground &
 curl -ks https://127.0.0.1:8443/api/observer/stats | jq .host.ebpf
 # expect: kprobes_loaded=true, message="kprobes attached — per-process net live"

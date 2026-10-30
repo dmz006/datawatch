@@ -26,7 +26,7 @@
   "id": "dd13d141",
   "memory_harvest": {},
   "memory_seed": {},
-  "project_dir": "/home/dmz/.datawatch/tree-smoke-20261019-0945/s1",
+  "project_dir": "/home/user/.datawatch/tree-smoke-20261019-0945/s1",
   "rev": 8,
   "spec": "Create exactly one new file named A_LIST.txt at the project root. It must contain the integers 1 through 150, one integer per line (1 on the first line, 150 on the last line), and nothing else. Do not modify any other file.",
   "status": "running",

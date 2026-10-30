@@ -146,7 +146,7 @@ test('_loadPRDMemoryTab fetches the memory-report and scoped-recall endpoints, l
     return realFetch(url, opts);
   };
 
-  await call(sandbox, '_loadPRDMemoryTab', { id: 'prd-7', project_dir: '/home/dmz/workspace/datawatch' });
+  await call(sandbox, '_loadPRDMemoryTab', { id: 'prd-7', project_dir: '/home/user/workspace/datawatch' });
   // Both fetches are fire-and-forget promises inside _loadPRDMemoryTab; give them a tick.
   await new Promise(r => setImmediate(r));
 

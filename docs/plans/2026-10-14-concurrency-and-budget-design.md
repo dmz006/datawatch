@@ -249,7 +249,7 @@ cap.
 
 **Key:** the canonical project tree.
 `filepath.EvalSymlinks(filepath.Clean(prd.ProjectDir))`, then the
-`git rev-parse --show-toplevel` of that path, so that `/home/dmz/workspace/datawatch`,
+`git rev-parse --show-toplevel` of that path, so that `/home/user/workspace/datawatch`,
 a symlink to it, and a subdirectory of it all map to the same key.
 
 **Worktree mode (BL407).** A PRD with `Git.Branch` set runs in its own
@@ -363,12 +363,12 @@ dimension** for later per-model pools. The ledger request already carries
 Real evidence, read live 2026-10-14 from this host's own registries:
 
 - `compute_node_list` returns 4 nodes: `datawatch` (ollama), `datawatch-openai`
-  (openai-compat, 1× B200 GPU), `johnnyjohnny` (ollama, 1× RTX 5090), and
+  (openai-compat, 1× B200 GPU), `local-node` (ollama, 1× 32 GB GPU), and
   `verdict` (ollama, `127.0.0.1:11435`, `tags: ["docker", "verdict-model",
-  "imap-mcp", "shared-gpu-with-johnnyjohnny"]`).
+  "imap-mcp", "shared-gpu-with-local-node"]`).
 - That last tag is a **free-text string an operator typed by hand.** Nothing
   in the capacity ledger (3b's `node:<name>` pools) reads it. `node:verdict`
-  and `node:johnnyjohnny` are enforced as two fully independent pools
+  and `node:local-node` are enforced as two fully independent pools
   (`capacity_status` tracks each `limit`/`held` separately) even though the
   operator's own tag says they are the same physical GPU. Two tasks each
   admitted "within limit" on their own node can still collide on hardware
@@ -379,7 +379,7 @@ Real evidence, read live 2026-10-14 from this host's own registries:
   registry is local and opaque to every peer.
 
 This is the same gap at two scopes: within one daemon (the `verdict` /
-`johnnyjohnny` case today, worked around by an unread tag) and across
+`local-node` case today, worked around by an unread tag) and across
 federated peers (two daemons' registries pointing at the same box under
 different names/addresses, with neither aware the other exists).
 
@@ -414,7 +414,7 @@ while removing the toil of hand-typing `peer:node` pairs — the operator
 confirms a *discovered* pairing instead of composing one from scratch.
 Confirmed pairs are recorded as a structured field (replacing today's
 free-text tag), e.g. `ComputeNode.SharesHardwareWith []string`, entries being
-bare node names for an intra-daemon pairing (`"johnnyjohnny"`) or
+bare node names for an intra-daemon pairing (`"local-node"`) or
 `peer:<node>` for a cross-federation one (`"ralfthewise:gpu-box-1"`). Once
 confirmed, the ledger computes `node:<name>` admission over the merged set,
 not each name independently.
@@ -795,7 +795,7 @@ a simplification.
 **Facts** (from the daemon's own PRD records, read live 2026-10-14):
 
 - BL423 `9f311580` ("ci-watch: completion guardrail…"), project_dir
-  `/home/dmz/workspace/datawatch`, direct mode (`git: {}`).
+  `/home/user/workspace/datawatch`, direct mode (`git: {}`).
   - Approved 20:52:31 (all times are local, -04:00, 2026-10-13).
   - Ran its 7 tasks sequentially from 20:53 onward.
   - A `boot_reconcile` decision at 22:53:15 and a `run` at 22:53:17
@@ -832,7 +832,7 @@ a simplification.
    and `llm:claude-code`, whose `max_inflight` is 0 (unlimited). All were
    granted instantly.
 5. No tree lock exists, so nothing considered that the three shared
-   `/home/dmz/workspace/datawatch`.
+   `/home/user/workspace/datawatch`.
 
 **Consequences visible in the records:**
 

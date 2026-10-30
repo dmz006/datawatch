@@ -7,7 +7,7 @@
 
 ### JS channel fallback memory tool parity (BL212 follow-up, datawatch#29)
 
-v5.27.7 added `memory_remember` / `memory_recall` / `memory_list` / `memory_forget` / `memory_stats` to the Go bridge (`cmd/datawatch-channel`) but left the JS fallback (`internal/channel/embed/channel.js`) at the original `reply`-only surface. Operator caught this on ring-laptop / storage testing instances where `~/.mcp.json` still points at `/usr/bin/node /home/dmz/.datawatch/channel/channel.js` — those sessions were silently missing memory.
+v5.27.7 added `memory_remember` / `memory_recall` / `memory_list` / `memory_forget` / `memory_stats` to the Go bridge (`cmd/datawatch-channel`) but left the JS fallback (`internal/channel/embed/channel.js`) at the original `reply`-only surface. Operator caught this on ring-laptop / storage testing instances where `~/.mcp.json` still points at `/usr/bin/node /home/user/.datawatch/channel/channel.js` — those sessions were silently missing memory.
 
 v5.27.9 mirrors all five tools into the embedded JS bridge:
 

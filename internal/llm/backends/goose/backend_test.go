@@ -232,9 +232,9 @@ func TestPromptRequired(t *testing.T) {
 
 func TestSetSessionName_SanitizesColons(t *testing.T) {
 	b := New("goose").(*Backend)
-	b.SetSessionName("johnnyjohnny:abc123")
-	if b.sessionName != "johnnyjohnny-abc123" {
-		t.Errorf("SetSessionName colon sanitize: got %q, want \"johnnyjohnny-abc123\"", b.sessionName)
+	b.SetSessionName("local-node:abc123")
+	if b.sessionName != "local-node-abc123" {
+		t.Errorf("SetSessionName colon sanitize: got %q, want \"local-node-abc123\"", b.sessionName)
 	}
 }
 
@@ -349,7 +349,7 @@ func TestGooseEnvPrefix_ChannelRequiresSessionID(t *testing.T) {
 func TestGooseEnvPrefix_ChannelWithSessionID(t *testing.T) {
 	b := New("goose").(*Backend)
 	b.SetChannelEnabled(true)
-	b.SetSessionFullID("johnnyjohnny:abc123")
+	b.SetSessionFullID("local-node:abc123")
 	got := b.gooseEnvPrefix()
 	if !contains(got, "GOOSE_MCP__DATAWATCH__TYPE=stdio") {
 		t.Errorf("missing MCP TYPE env var in %q", got)
@@ -357,7 +357,7 @@ func TestGooseEnvPrefix_ChannelWithSessionID(t *testing.T) {
 	if !contains(got, "GOOSE_MCP__DATAWATCH__CMD=") {
 		t.Errorf("missing MCP CMD env var in %q", got)
 	}
-	if !contains(got, "mcp,--caller-session-id,johnnyjohnny:abc123") {
+	if !contains(got, "mcp,--caller-session-id,local-node:abc123") {
 		t.Errorf("missing session ID in MCP ARGS in %q", got)
 	}
 }

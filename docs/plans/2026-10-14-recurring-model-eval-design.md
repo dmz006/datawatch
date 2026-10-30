@@ -34,35 +34,35 @@
 |---|---|---|---|---|---|
 | `datawatch` | ollama | `http://datawatch:11434` | `{}` | `{}` | **No hardware declared at all** — no GPU, no CPU, no RAM. `max_concurrent_sessions:1`, priority 90. |
 | `datawatch-openai` | openai-compat | `http://datawatch:3000` | gpus 1, 128 GB, max 3 models | nvidia `blackwell-b200`, count 1 | Served via OpenWebUI. |
-| `johnnyjohnny` | ollama | `http://johnnyjohnny:11434` | gpus 1, **32 GB**, max 10 models | nvidia `rtx-5090`, count 1 | **No CPU fields declared.** |
-| `verdict` | ollama | `http://127.0.0.1:11435` | gpu_mem 32 GB, max 2 models | `{}` | Free-text tag `shared-gpu-with-johnnyjohnny`; capacity ledger does not read it (BL428 §3c, `2026-10-14-concurrency-and-budget-design.md:361-380`). Serves the imap-mcp verdict workload. |
+| `local-node` | ollama | `http://local-node:11434` | gpus 1, **32 GB**, max 10 models | nvidia `gpu-32gb`, count 1 | **No CPU fields declared.** |
+| `verdict` | ollama | `http://127.0.0.1:11435` | gpu_mem 32 GB, max 2 models | `{}` | Free-text tag `shared-gpu-with-local-node`; capacity ledger does not read it (BL428 §3c, `2026-10-14-concurrency-and-budget-design.md:361-380`). Serves the imap-mcp verdict workload. |
 
 **`llm_list`** — registered backends and the models each one exposes. Examples:
 - `claude-code` (kind claude-code): models opus, sonnet, haiku on node `claude`. `default_effort:"normal"`.
-- `ollama-johnnyjohnny` (node johnnyjohnny): qwen3:1.7b, qwen3.5:35b, qwen3-coder:30b, qwen2.5:14b, Gemma3:12b, qwen3:8b, nomic-embed-text.
+- `ollama-local-node` (node local-node): qwen3:1.7b, qwen3.5:35b, qwen3-coder:30b, qwen2.5:14b, Gemma3:12b, qwen3:8b, nomic-embed-text.
 - `ollama-datawatch` (node datawatch): the widest set, including gpt-oss:120b, qwen3-coder-next:q4_K_M, qwen3.8:27b. **These sizes are registered but the node has no declared hardware, so fit cannot be checked from the registry.**
 - `ollama-verdict` (node verdict): gemma4:26b, gpt-oss:20b, granite4.2:30b, granite4.2:8b.
 - `openwebui-datawatch` (node datawatch-openai): qwen3-coder-next, gpt-oss:120b, and the Qwen/Gemma set.
 
-**`capacity_status`** — pools: `host` (limit 9), `llm:claude-code` (**limit 0 = unlimited**), `node:datawatch` (limit 1), `node:datawatch-openai` / `node:johnnyjohnny` / `node:verdict` (limit 0 = unlimited). Two live leases, both on `llm:claude-code`. This confirms BL428 §3b's "unlimited by default" finding.
+**`capacity_status`** — pools: `host` (limit 9), `llm:claude-code` (**limit 0 = unlimited**), `node:datawatch` (limit 1), `node:datawatch-openai` / `node:local-node` / `node:verdict` (limit 0 = unlimited). Two live leases, both on `llm:claude-code`. This confirms BL428 §3b's "unlimited by default" finding.
 
 **`ollama_stats`** — **not available.** The MCP call returned `404 unknown tool: ollama_stats` on this server. The tool appears in the listing but is not served. Live GPU/VRAM figures were therefore taken from the host directly (below).
 
-### Hardware, johnnyjohnny host — measured, not declared
+### Hardware, local-node host — measured, not declared
 
-Read-only on this host (`hostname` = `johnnyjohnny`):
+Read-only on this host (`hostname` = `local-node`):
 
 - **CPU:** AMD Ryzen Threadripper 9960X, **1 socket, 24 physical cores, 2 threads per core = 48 logical CPUs** (`nproc` = 48; `lscpu` NUMA node0 = 0-47).
 - **RAM:** 122 GB total, 99 GB available (87 GB buff/cache).
-- **GPU:** NVIDIA GeForce RTX 5090, **32,607 MiB**, driver 595.91.07.
+- **GPU:** a 32 GB GPU, **32,607 MiB**, driver 595.91.07.
 
 **Discrepancy to resolve:** the operator's stated figure for this host is **64 CPU cores**. The measured figure is **24 physical / 48 logical**. This doc uses the measured numbers. If the 64-core figure refers to a different machine, that node needs its own registration and measurement. Open question 1.
 
-**CPU is not in the registry for any node.** `johnnyjohnny` declares a GPU and nothing else. A CPU row therefore cannot be filtered from the registry today; the hardware probe in the implementation PRD must add it (see the follow-up PRD section, S2).
+**CPU is not in the registry for any node.** `local-node` declares a GPU and nothing else. A CPU row therefore cannot be filtered from the registry today; the hardware probe in the implementation PRD must add it (see the follow-up PRD section, S2).
 
 ### Verdict node
 
-`verdict` shares GPU memory with `johnnyjohnny` per its free-text tag (BL428 §3c). It also serves the production imap-mcp verdict workload (`ollama-verdict` tags: `imap-mcp`, `verdict-model`, `spam-phishing-eval`). **This doc excludes `verdict` from every sweep cell.** Benchmarking there could degrade a live spam classifier, and the two nodes cannot run load independently.
+`verdict` shares GPU memory with `local-node` per its free-text tag (BL428 §3c). It also serves the production imap-mcp verdict workload (`ollama-verdict` tags: `imap-mcp`, `verdict-model`, `spam-phishing-eval`). **This doc excludes `verdict` from every sweep cell.** Benchmarking there could degrade a live spam classifier, and the two nodes cannot run load independently.
 
 ---
 
@@ -102,18 +102,18 @@ CPU-only inference is its own hardware class (see Test matrix, row H4). The disc
 **Realistic model sizes for a 24-core / 48-thread CPU (no GPU):**
 
 - Third-party guidance (not verified on this host; Ollama's own docs were not retrieved in this pass): CPU inference "works for small-to-mid models, but expect single-digit to low-double-digit tokens per second", a 7B q4_K_M model runs at about 5–15 tokens/s on an 8-core chip, and CPU use generally needs about 2× the RAM a GPU would ([valebyte.com](https://valebyte.com/en/blog/ollama-server-requirements-ram-vram-and-cpu-by-model-size/), [computingforgeeks.com](https://computingforgeeks.com/install-ollama-rocky-ubuntu/)). These are rough estimates; the sweep must measure, not assume.
-- **Well suited (1.5B–8B, q4):** qwen3:1.7b, qwen3:8b, qwen2.5-coder 1.5b/7b, gemma3 1b/4b, deepseek-r1 1.5b/7b-8b. Of these, **qwen3:1.7b and qwen3:8b are already registered on `ollama-johnnyjohnny`**; the others are catalog-only.
-- **Usable for batch runs (≈14B):** qwen2.5:14b and Gemma3:12b are registered on johnnyjohnny; phi4 14b and deepseek-r1 14b are catalog entries. Expect slow generation; fine for a single overnight sweep, not for interactive work.
+- **Well suited (1.5B–8B, q4):** qwen3:1.7b, qwen3:8b, qwen2.5-coder 1.5b/7b, gemma3 1b/4b, deepseek-r1 1.5b/7b-8b. Of these, **qwen3:1.7b and qwen3:8b are already registered on `ollama-local-node`**; the others are catalog-only.
+- **Usable for batch runs (≈14B):** qwen2.5:14b and Gemma3:12b are registered on local-node; phi4 14b and deepseek-r1 14b are catalog entries. Expect slow generation; fine for a single overnight sweep, not for interactive work.
 - **Exclude from CPU (≥ 32B):** qwen3.5:35b, qwen3-coder:30b, granite4.2:30b, gpt-oss:120b, llama3.3:70b, deepseek-r1:70b. RAM would fit (122 GB), but generation would be too slow for the wall-clock bound.
 
-**Does the CPU row need a new model pull?** **No, not for the first data point.** `qwen3:1.7b` and `qwen3:8b` are already on johnnyjohnny's Ollama and fit the CPU budget. One new CPU candidate per month can then be pulled through the normal discovery path if the operator confirms it. **This pass pulls nothing.**
+**Does the CPU row need a new model pull?** **No, not for the first data point.** `qwen3:1.7b` and `qwen3:8b` are already on local-node's Ollama and fit the CPU budget. One new CPU candidate per month can then be pulled through the normal discovery path if the operator confirms it. **This pass pulls nothing.**
 
-**How to run a CPU-only row on a GPU-equipped node** (johnnyjohnny): Ollama takes GPU visibility from its environment at process start. Two options:
+**How to run a CPU-only row on a GPU-equipped node** (local-node): Ollama takes GPU visibility from its environment at process start. Two options:
 
-- (a) **Preferred:** a *second* Ollama server on another port, started with GPU visibility disabled (`CUDA_VISIBLE_DEVICES=""`), with its own models directory pointing at the same blobs. Register it as a separate compute node `johnnyjohnny-cpu`, declared `cpu_cores_physical:24, cpu_threads:48, ram_gb:122, gpus:0`. It cannot disturb the primary GPU server, and it makes the CPU row explicit in the registry.
-- (b) **Not recommended:** restart the primary `johnnyjohnny` Ollama with GPU disabled for the sweep window. That stops live GPU inference for the duration and risks a half-restored GPU server.
+- (a) **Preferred:** a *second* Ollama server on another port, started with GPU visibility disabled (`CUDA_VISIBLE_DEVICES=""`), with its own models directory pointing at the same blobs. Register it as a separate compute node `local-node-cpu`, declared `cpu_cores_physical:24, cpu_threads:48, ram_gb:122, gpus:0`. It cannot disturb the primary GPU server, and it makes the CPU row explicit in the registry.
+- (b) **Not recommended:** restart the primary `local-node` Ollama with GPU disabled for the sweep window. That stops live GPU inference for the duration and risks a half-restored GPU server.
 
-Option (a) needs a service change on johnnyjohnny. That is an operator action; this doc does not perform it.
+Option (a) needs a service change on local-node. That is an operator action; this doc does not perform it.
 
 ---
 
@@ -136,10 +136,10 @@ Option (a) needs a service change on johnnyjohnny. That is an operator action; t
 | Class | Definition | Where it exists today | Used for |
 |---|---|---|---|
 | **H0** `hosted` | Anthropic-hosted; no local hardware | `claude-code` | Claude cells. Not a local hardware class; excluded from hardware-conditioned local advice. |
-| **H1** `gpu-32g` | Single GPU, 32 GB VRAM | johnnyjohnny (RTX 5090, 32,607 MiB) | Main local GPU row. |
+| **H1** `gpu-32g` | Single GPU, 32 GB VRAM | local-node (32 GB GPU, 32,607 MiB) | Main local GPU row. |
 | **H2** `gpu-128g` | Single GPU, 128 GB | datawatch-openai (B200, via OpenWebUI) | Large-model row. Only for models that do not fit H1 (gpt-oss:120b, qwen3-coder-next). |
 | **H3** `gpu-undeclared` | GPU present but undeclared | `datawatch` (`hardware:{}`) | Cannot be classified. Probe first (S2); cells are recorded as `class_unknown` until then. |
-| **H4** `cpu-only-24c` | **CPU-only, 24 physical cores / 48 threads, ≥ 64 GB RAM** | johnnyjohnny's CPU, GPU hidden (`johnnyjohnny-cpu` node, option (a)) | **First-class CPU row.** Distinct from H1 even on the same host. |
+| **H4** `cpu-only-24c` | **CPU-only, 24 physical cores / 48 threads, ≥ 64 GB RAM** | local-node's CPU, GPU hidden (`local-node-cpu` node, option (a)) | **First-class CPU row.** Distinct from H1 even on the same host. |
 | **H5** `cpu-only-undeclared` | CPU-only, cores/RAM not declared | `datawatch` (no GPU declared; cores unknown) | Measured by the probe (S2). Recorded as `cpu_class_unknown` until measured. |
 
 **Why H4 is separate from H5 and from "no declared GPU":** H4 has *measured* cores and RAM, so its advice can say "recommended on CPU-only, ≥ 24 physical cores". H5 may be a CPU-only box or a GPU box with undeclared hardware, and nothing is known yet. Folding them together would make the advice wrong on whichever side turns out not to match.
@@ -292,7 +292,7 @@ Replaces any single global "model X is recommended" with advice keyed on hardwar
         "gpu": "none_or_hidden"
       },
       "recommendation": "recommended_on_cpu_only",
-      "reason": "measured on johnnyjohnny-cpu (24C/48T, GPU hidden); 1.7B fits the budget",
+      "reason": "measured on local-node-cpu (24C/48T, GPU hidden); 1.7B fits the budget",
       "evidence": { "run_ids": ["<sweep-run-id>"], "pass_rate": 0.75, "reps": 2 },
       "finding": "hardware_limit"
     },
@@ -328,7 +328,7 @@ Rules for the shape:
 ### What this sweep does
 
 - **Respects §3b for Claude:** the sweep's Claude cells run with `llm:claude-code` capped at **1** for the sweep's duration, through a dedicated capacity lease. This is a per-run cap, not a change to the global default, so it is not a BL428 override.
-- **Respects §3b for local:** `node:johnnyjohnny-cpu` and `node:johnnyjohnny` each get a limit of **1** during the sweep, so no two sweep cells run at once on one node. The sweep does not share a node with a live GPU workload it did not start.
+- **Respects §3b for local:** `node:local-node-cpu` and `node:local-node` each get a limit of **1** during the sweep, so no two sweep cells run at once on one node. The sweep does not share a node with a live GPU workload it did not start.
 - **Respects §4e:** before the first Claude cell, the sweep checks `backoff:<billing_group>`. A set flag aborts the Claude portion and records `skipped_backoff`. The local portion still runs.
 - **Deliberately overrides nothing permanent.** The sweep does not change `max_inflight`, `plan_tier`, or any global default. The per-run cap is released when the sweep ends, including on failure (lease released in a `finally`-style path).
 
@@ -368,9 +368,9 @@ Staged. Each stage is independently reviewable. None of this is implemented here
 
 **S1 — Data model and store.** Add the `kind:"sweep"` record and the `eval-advice/v1` shape to the BL259 store. Acceptance: round-trip test; old `Run` records still list correctly.
 
-**S2 — Hardware probe.** Add probing for each compute node: GPU name and VRAM (from the node, via its own Ollama/OpenWebUI endpoint or a probe command), and CPU physical cores, threads, and RAM. Store measured values next to the declared ones, and show both. Acceptance: `johnnyjohnny` reports 24C/48T and 32,607 MiB; `datawatch` reports unknown rather than assuming. Also resolves the 64-core discrepancy in the record.
+**S2 — Hardware probe.** Add probing for each compute node: GPU name and VRAM (from the node, via its own Ollama/OpenWebUI endpoint or a probe command), and CPU physical cores, threads, and RAM. Store measured values next to the declared ones, and show both. Acceptance: `local-node` reports 24C/48T and 32,607 MiB; `datawatch` reports unknown rather than assuming. Also resolves the 64-core discrepancy in the record.
 
-**S3 — CPU-only compute node.** Register `johnnyjohnny-cpu` (second Ollama server with GPU hidden, option (a)). This step is an operator action on the host; the PRD task documents the exact commands and does not run them without confirmation. Acceptance: `compute_node_list` shows the node with measured CPU fields and `gpus:0`.
+**S3 — CPU-only compute node.** Register `local-node-cpu` (second Ollama server with GPU hidden, option (a)). This step is an operator action on the host; the PRD task documents the exact commands and does not run them without confirmation. Acceptance: `compute_node_list` shows the node with measured CPU fields and `gpus:0`.
 
 **S4 — Discovery loop.** Catalog diff, operator candidate list, registered-unevaluated diff. Enforces the candidate bounds (≤ 2 new + ≤ 1 CPU). Pulls require confirmation. Acceptance: a dry-run lists candidates and bounds without pulling.
 
@@ -394,8 +394,8 @@ Staged. Each stage is independently reviewable. None of this is implemented here
 
 ## Open questions
 
-1. **Core count for johnnyjohnny.** The operator stated 64 cores; `lscpu` on this host reports 24 physical / 48 logical. Is the 64-core figure for a different machine, or is it a mistake? This doc uses the measured figures.
-2. **CPU-only node: separate node (option a) or flag on the existing node?** This doc recommends a separate `johnnyjohnny-cpu` node so the GPU server is never touched during a CPU run.
+1. **Core count for local-node.** The operator stated 64 cores; `lscpu` on this host reports 24 physical / 48 logical. Is the 64-core figure for a different machine, or is it a mistake? This doc uses the measured figures.
+2. **CPU-only node: separate node (option a) or flag on the existing node?** This doc recommends a separate `local-node-cpu` node so the GPU server is never touched during a CPU run.
 3. **Dollar cap per sweep.** Proposed $25 per run. This is an assumption. The real cost of one full Claude sweep should be measured from `rates.json` and `cost_usage` before the cap is set.
 4. **Which models are the first candidates?** Proposed: `qwen2.5-coder:7b` (catalog, not yet registered) and one CPU candidate. Operator to choose.
 5. **Auto-apply.** Recommended off. Should a later phase allow it for advisory entries only, per hardware class? (The proposal above says yes, later, off by default.)

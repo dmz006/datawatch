@@ -76,7 +76,7 @@ Command: `env -u TMUX -u TMUX_TMPDIR TMPDIR="$PWD/bin/tmp" bash scripts/e2e-pwa.
 (TS-835.mjs is the newest scripts/test-stories/pwa/TS-*.mjs.)
 Exit code: 0
 ```
-e2e-pwa: starting daemon (/home/dmz/…/bin/datawatch) http=127.0.0.1:43165 tls=37631
+e2e-pwa: starting daemon (/home/user/…/bin/datawatch) http=127.0.0.1:43165 tls=37631
 e2e-pwa: daemon healthy (PID 3841980)
 seeded Automation 077b1be6 (ts-subtabs-1793284125532)
 cleanup: DELETE 204, GET 404

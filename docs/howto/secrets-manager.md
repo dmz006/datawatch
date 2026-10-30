@@ -66,7 +66,7 @@ For KeePass / 1Password, edit `~/.datawatch/datawatch.yaml`:
 ```yaml
 secrets:
   backend: keepass        # or onepassword
-  keepass_db: /home/dmz/.config/keepassxc/secrets.kdbx
+  keepass_db: /home/user/.config/keepassxc/secrets.kdbx
   keepass_password: ${env:DATAWATCH_KEEPASS_PASSWORD}
   keepass_group: datawatch
 ```

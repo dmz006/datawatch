@@ -22,7 +22,7 @@ import (
 
 const (
 	relaunchNodeFirst  = "datawatch"
-	relaunchNodeSecond = "johnnyjohnny"
+	relaunchNodeSecond = "local-node"
 )
 
 // relaunchRig is one relaunch-shaped task on the two-node fixture.

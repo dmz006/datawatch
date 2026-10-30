@@ -7,11 +7,11 @@ story_preflight "surface:api feature:automata group:b106-file-viewer-v9" || retu
 
 _story_ts_697() {
   # Use a known file that exists in the daemon's root_path
-  # The test daemon's root_path is set to /home/dmz/workspace/datawatch by default
+  # The test daemon's root_path is set to /home/user/workspace/datawatch by default
   local test_file=""
   local candidates=(
-    "/home/dmz/workspace/datawatch/README.md"
-    "/home/dmz/workspace/datawatch/docs/parity-status.md"
+    "/home/user/workspace/datawatch/README.md"
+    "/home/user/workspace/datawatch/docs/parity-status.md"
     "/etc/hostname"
   )
   for f in "${candidates[@]}"; do

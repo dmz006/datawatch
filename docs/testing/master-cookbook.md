@@ -37,7 +37,7 @@ TEST_PORT_OFFSET=10 bash run-tests.sh &  # ports 18090/18453/18091/18443
 | LLM backend (default) | Ollama at `http://datawatch:11434`, model: `qwen3:1.7b` |
 | LLM backend (Claude) | Requires `CLAUDE_API_KEY` env var; uses `claude-haiku-4-5` with `quick` effort |
 | Memory embedder | Ollama `nomic-embed-text` at `http://datawatch:11434` |
-| Signal | Account `+18435409771`, group: `YOJtFDXm8WQCjna6dVGTOM8b4+aINRx4D4QgQ8Nmo54=`, config: `/home/dmz/.local/share/signal-cli` |
+| Signal | Account `+18435409771`, group: `YOJtFDXm8WQCjna6dVGTOM8b4+aINRx4D4QgQ8Nmo54=`, config: `/home/user/.local/share/signal-cli` |
 | Kubernetes | `kubectl --context=testing` (3-node cluster) — use `import-kubectl-context.sh` to inject |
 | GitHub | Via local `gh` CLI authenticated to operator account; test repos created with random names + deleted on cleanup |
 | PWA testing | Chrome headless via CDP (`pwa_cdp.py`) — auto-detected in `run-tests.sh`; falls back to API-only if Chrome unavailable |

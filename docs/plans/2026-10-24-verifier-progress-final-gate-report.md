@@ -1,7 +1,7 @@
 # Final gate report — verifier progress watchdog (2026-10-24)
 
 Ran with `env -u TMUX -u TMUX_TMPDIR`, in the required order, from
-`/home/dmz/.datawatch/prd-worktrees/c30b0001`. No test or script was
+`/home/user/.datawatch/prd-worktrees/c30b0001`. No test or script was
 modified; no commits made by this task.
 
 ## 1. go build ./...

@@ -408,7 +408,7 @@ memory_scope_inventory project=/home/user/datawatch
     ],
     "story-shared": [...],
     "session-local": [
-      {"session_id": "johnnyjohnny-12cf", "count": 17, ...},
+      {"session_id": "local-node-12cf", "count": 17, ...},
       ...
     ],
     "project-shared": {"count": 203, ...}
@@ -430,7 +430,7 @@ Extend the existing `GET /api/memory/stats` response with a `scopes` breakdown:
   "project_shared": 203,
   "prd_shared": {"0fb4e302": 42, "a1b2c3d4": 8},
   "story_shared":  {"9b90b7a5": 15},
-  "session_local": {"johnnyjohnny-12cf": 17, "...": 6}
+  "session_local": {"local-node-12cf": 17, "...": 6}
 }
 ```
 
