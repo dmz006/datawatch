@@ -234,6 +234,9 @@ func TestDecisionGateExecutorHoldsTaskWithOpenDecision(t *testing.T) {
 			if !r.live() {
 				t.Error("the executor left while a task waits on a decision")
 			}
+			// The alert goes out just after the task parks, so wait for it
+			// rather than reading the count the moment the status flips.
+			pollUntil(t, gateWait, "the hold alert", func() bool { return r.alerts.Load() >= 1 })
 			if got := r.alerts.Load(); got != 1 {
 				t.Errorf("alerts = %d; want 1", got)
 			}
