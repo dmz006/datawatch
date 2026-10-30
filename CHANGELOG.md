@@ -20,6 +20,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.38.1 — Decision gate test no longer races its alert
+
+### Fixed
+
+- **The release build no longer fails on a timing-sensitive test of the decision gate.** The test checked the single "task waiting for a decision" alert the moment the task was parked, but the alert is sent a moment later; on a slow machine the test read zero alerts and stopped the release pipeline (this happened to the 9.35.0 and 9.38.0 releases). The test now waits for the alert. No behaviour of the gate changed.
+
 ## v9.38.0 — Repo CI watch for the head of main and release tags
 
 ### Added
