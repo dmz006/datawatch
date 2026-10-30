@@ -96,6 +96,12 @@ type TriageRecord struct {
 	AlertedAt *time.Time `json:"alerted_at,omitempty"`
 	// Notes is the append-only annotation list later steps write to.
 	Notes []TriageNote `json:"notes,omitempty"`
+	// Security carries the SecurityFailureReport when this record was
+	// minted by the security failure pass — an Automaton blocked because
+	// a watched security run failed. Nil for an ordinary failure or
+	// block episode. Like AlertedAt and FirstSeenAt, it is preserved
+	// across refreshes.
+	Security *SecurityFailureReport `json:"security,omitempty"`
 }
 
 // TriageRetryCategories are the four auto-retry budget categories, in
@@ -312,6 +318,11 @@ func (m *Manager) SaveTriageRecord(prdID string, fresh *TriageRecord) error {
 				}
 				fresh.FirstSeenAt = stored.FirstSeenAt
 				fresh.Notes = stored.Notes
+				if stored.Security != nil && fresh.Security == nil {
+					// a refresh never erases the security report of the
+					// episode; a plain refresh keeps it too
+					fresh.Security = stored.Security
+				}
 			}
 			if fresh.AutomationID == "" {
 				fresh.AutomationID = p.AutomationID
