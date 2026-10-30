@@ -6273,6 +6273,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"decision_gate_mode": s.cfg.Autonomous.Questions.EffectiveDecisionGateMode(),
 				// Worker question marker: effective value (off when absent).
 				"worker_marker": s.cfg.Autonomous.Questions.EffectiveWorkerMarker(),
+				// Question quality check and queue row preview: effective values
+				// (warn, 60, the default pattern and 3 when absent).
+				"quality_mode":               s.cfg.Autonomous.Questions.EffectiveQualityMode(),
+				"quality_min_text_chars":     s.cfg.Autonomous.Questions.EffectiveQualityMinTextChars(),
+				"quality_tracker_id_pattern": s.cfg.Autonomous.Questions.EffectiveQualityTrackerIDPattern(),
+				"queue_preview_lines":        s.cfg.Autonomous.Questions.EffectiveQueuePreviewLines(),
 			},
 			"automation": map[string]interface{}{
 				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
@@ -6783,6 +6789,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
+	}
+	// The question quality and queue preview keys: a bad value rejects the
+	// whole PUT before anything is applied, by the same rules the config file
+	// load uses.
+	if err := validateQuestionQualityPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	// pi.thinking_level — pre-validate like task_override_statuses above so an
 	// unknown level rejects the whole PUT instead of silently no-op'ing in
@@ -8311,6 +8324,27 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if mode, ok := v.(string); ok {
 				cfg.Autonomous.Questions.DecisionGateMode = mode
 			}
+		case "autonomous.questions.quality_mode":
+			// Validated in handlePutConfig to off, warn or refuse. Stored as
+			// *string so an absent key is distinguishable from an explicit one.
+			if mode, ok := v.(string); ok {
+				cfg.Autonomous.Questions.QualityMode = &mode
+			}
+		case "autonomous.questions.quality_tracker_id_pattern":
+			// Validated in handlePutConfig to a pattern that compiles.
+			if pat, ok := v.(string); ok {
+				cfg.Autonomous.Questions.QualityTrackerIDPattern = &pat
+			}
+		case "autonomous.questions.quality_min_text_chars":
+			// Validated in handlePutConfig to a whole number >= 0.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.Questions.QualityMinTextChars = &n
+			}
+		case "autonomous.questions.queue_preview_lines":
+			// Validated in handlePutConfig to a whole number >= 1.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.Questions.QueuePreviewLines = &n
+			}
 		case "autonomous.planning_effort", "autonomous.decomposition_effort":
 			cfg.Autonomous.PlanningEffort = toString(v)
 		case "autonomous.verification_effort":
@@ -9519,6 +9553,67 @@ func validateJudgeSizeThresholdPatch(patch map[string]interface{}) error {
 		}
 	}
 	return fmt.Errorf("%s: %v is invalid; use a whole number of 0 or more (0 turns size-aware judge routing off)", key, v)
+}
+
+// validateQuestionQualityPatch checks the four autonomous.questions quality and
+// queue preview keys in a PUT /api/config body. Each refusal names the key and
+// the valid values; a number must be a whole JSON number (a quoted number is
+// not one).
+func validateQuestionQualityPatch(patch map[string]interface{}) error {
+	if v, ok := patch["autonomous.questions.quality_mode"]; ok {
+		mode, isStr := v.(string)
+		if !isStr {
+			return fmt.Errorf("autonomous.questions.quality_mode: %v is invalid; use %q, %q or %q",
+				v, config.QuestionQualityModeOff, config.QuestionQualityModeWarn, config.QuestionQualityModeRefuse)
+		}
+		if err := config.ValidateQuestionQualityMode(mode); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.questions.quality_tracker_id_pattern"]; ok {
+		pat, isStr := v.(string)
+		if !isStr {
+			return fmt.Errorf("autonomous.questions.quality_tracker_id_pattern: %v is invalid; use a regular expression as text (empty for the default)", v)
+		}
+		if err := config.ValidateQuestionQualityTrackerIDPattern(pat); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.questions.quality_min_text_chars"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			return fmt.Errorf("autonomous.questions.quality_min_text_chars: %v is invalid; use a whole number >= 0 (default %d)",
+				v, config.DefaultQuestionQualityMinTextChars)
+		}
+		if err := config.ValidateQuestionQualityMinTextChars(n); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.questions.queue_preview_lines"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			return fmt.Errorf("autonomous.questions.queue_preview_lines: %v is invalid; use a whole number >= 1 (default %d)",
+				v, config.DefaultQuestionQueuePreviewLines)
+		}
+		if err := config.ValidateQuestionQueuePreviewLines(n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// wholeNumber reports v as an int when it is a JSON number with no fractional
+// part that fits an int32; anything else (a string, a fraction, a bool) is not.
+func wholeNumber(v interface{}) (int, bool) {
+	switch x := v.(type) {
+	case float64:
+		if x == math.Trunc(x) && x >= math.MinInt32 && x <= math.MaxInt32 {
+			return int(x), true
+		}
+	case int:
+		return x, true
+	}
+	return 0, false
 }
 
 func toInt(v interface{}) (int, bool) {
