@@ -5438,6 +5438,27 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 					_ = wiredAuditLog.Write(auditpkg.Entry{Timestamp: time.Now(), Actor: "autonomous", Action: a, Details: d})
 				})
 			}
+			// Push-on-complete settings (git.push_on_complete /
+			// git.push_remote): the closure is stored, not its result —
+			// it is read on every push attempt, so a runtime configure
+			// change applies without a restart (same live-config pattern
+			// as the CommSink closures above).
+			amgr.SetGitPushSettings(func() (string, string) {
+				return cfg.Git.EffectivePushOnComplete(), cfg.Git.EffectivePushRemote()
+			})
+			// Operator alert sink for autonomous warnings (today: a
+			// push-on-complete failure) → the same alert store every
+			// other system alert goes to.
+			amgr.SetAlertFn(func(level, title, body string) {
+				lv := alertspkg.LevelInfo
+				switch level {
+				case "warn":
+					lv = alertspkg.LevelWarn
+				case "error":
+					lv = alertspkg.LevelError
+				}
+				alertStore.AddSystem(lv, title, body)
+			})
 			// v5.26.19 — wire F10 profile resolver so SetPRDProfiles
 			// can validate that named project + cluster profiles
 			// actually exist before persisting them onto a PRD.

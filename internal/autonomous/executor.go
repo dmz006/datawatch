@@ -833,6 +833,16 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// already returned to its own caller is unsafe against
 	// anything else reading the same PRD concurrently (e.g. a
 	// REST GET while a background goroutine is still writing).
+	// Push-on-complete (final): every task is terminal and the
+	// status above really landed as PRDCompleted — rules review,
+	// CI watch and quality gates all passed — so push the work to
+	// the remote per the effective policy: the branch policy pushes
+	// the work branch, the default_branch policy fast-forwards the
+	// remote's default branch. Before handleWorktreeCompletion so
+	// its own AutoPR push (unchanged) happens after the harness
+	// push. Never changes the PRD outcome; the SavePRD below
+	// persists whatever push state was recorded.
+	m.pushValidatedWork(prd, true)
 	m.handleWorktreeCompletion(prd)
 	// BL407 Phase 3 — cluster-dispatched counterpart. Also
 	// synchronous and for the same reason: fast, bounded
@@ -1249,6 +1259,25 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 			}
 			m.emitTaskStatus(prd, t, preDoneStatus, nil, nil)
+			// Push-on-complete (per task): the task is verified and saved
+			// as TaskCompleted, so harness-push the work per the effective
+			// policy. Release the per-task tree-writers lock FIRST (the
+			// defer below would otherwise hold it across the push): a slow
+			// remote push must not extend the tree critical section — the
+			// lock serializes tree WRITES only, and this push is read-only
+			// on the tree (no new commits, no file writes), so releasing
+			// early is safe and keeps sibling workers from ever seeing
+			// this lock as an over-held (stale) record.
+			if treeRelease != nil {
+				treeRelease()
+				treeRelease = nil
+			}
+			// pushValidatedWork never returns an error and never mutates
+			// task state — a push problem is recorded on the PRD
+			// (PushState/PushWarning + alert) and the task outcome stands.
+			// One call site serves both the sequential walk and the
+			// concurrent-pool path (both funneled through executeOne).
+			m.pushValidatedWork(prd, false)
 			m.deleteTaskSession(t.SessionID)
 			return nil
 		}
