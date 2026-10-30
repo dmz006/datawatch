@@ -1,0 +1,61 @@
+#!/bin/sh
+# Opt-in pre-push hook: run the local CodeQL scan for the languages a push
+# touches and block the push on high or critical findings that are not
+# dismissed on GitHub. Does nothing unless DATAWATCH_CODEQL_PRE_PUSH=1.
+#
+# Install (never installed automatically):
+#   ln -sf ../../hooks/pre-push-codeql "$(git rev-parse --git-path hooks)/pre-push"
+#
+# Bypass once with: git push --no-verify
+
+[ "${DATAWATCH_CODEQL_PRE_PUSH:-}" = "1" ] || exit 0
+
+ROOT="$(git rev-parse --show-toplevel)" || exit 0
+ZERO="0000000000000000000000000000000000000000"
+files=""
+
+# git feeds one line per pushed ref: <local ref> <local sha> <remote ref> <remote sha>
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ "$local_sha" = "$ZERO" ] && continue # deleting a ref changes no files
+  if [ "$remote_sha" = "$ZERO" ]; then
+    # new remote ref: compare against commits no remote ref has yet
+    range="$local_sha --not --remotes"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  # shellcheck disable=SC2086
+  base="$(git rev-list $range 2>/dev/null | tail -n 1)"
+  [ -n "$base" ] || continue
+  changed="$(git diff --name-only "$base^" "$local_sha" 2>/dev/null || git diff --name-only "$(git hash-object -t tree /dev/null)" "$local_sha")"
+  files="$files
+$changed"
+done
+
+languages=""
+add_lang() {
+  case " $languages " in
+    *" $1 "*) ;;
+    *) languages="${languages:+$languages }$1" ;;
+  esac
+}
+
+for f in $(printf '%s\n' "$files" | sort -u); do
+  case "$f" in
+    .github/workflows/*) add_lang actions ;;
+    *.go) add_lang go ;;
+    *.js|*.mjs|*.ts) add_lang javascript-typescript ;;
+    *.py) add_lang python ;;
+  esac
+done
+
+if [ -z "$languages" ]; then
+  echo "pre-push-codeql: no CodeQL languages affected, skipping."
+  exit 0
+fi
+
+echo "pre-push-codeql: scanning $languages"
+if ! bash "$ROOT/scripts/codeql-local.sh" --compare --languages "$languages"; then
+  echo "pre-push-codeql: CodeQL found high or critical issues (or failed)." >&2
+  echo "pre-push-codeql: fix them, or bypass once with: git push --no-verify" >&2
+  exit 1
+fi
