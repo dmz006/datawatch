@@ -1260,6 +1260,65 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/merge:
+    get:
+      summary: Automaton merge status
+      description: |
+        The merge-pending state of the finished Automata. `mode` is the
+        `autonomous.automation.merge_pending_mode` setting in effect (`off`, `shadow`
+        or `on`) and `alert_minutes` the `merge_pending_alert_minutes` threshold in
+        whole minutes (0 = alerts off). `automata` has one entry per completed
+        Automaton that has a work branch: its id, name, branch, the merge state, the
+        commits it is ahead of main, when it was first seen merge pending
+        (`pending_since`) and when the alert fired (`alerted_at`); both are null when
+        they do not apply. In shadow mode each entry also carries `would_alert`, and
+        `shadow_decisions` lists what the pass recorded without acting, newest first.
+        The state is read from the coordinator's in-memory cache, so a read never runs
+        git and no field is added to the Automaton; an Automaton the pass has not
+        compared yet reads `unknown`. While the mode is `off` both lists are empty.
+        Read-only; only GET is served, and a federated peer needs the autonomous read
+        capability.
+      operationId: autonomousMerge
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Merge status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/safe-to-delete:
+    get:
+      summary: Safe-to-delete report
+      description: |
+        The local Automaton work branches, and their worktrees, whose commits are all
+        on main (or that have none), so an operator can review what is safe to clean
+        up. Branches that are still pending, need a look, cannot be compared, or whose
+        worktree has uncommitted changes are listed under `held`. The report only
+        reads; nothing is deleted, merged or pushed. Only GET is served, and a
+        federated peer needs the autonomous read capability.
+      operationId: autonomousSafeToDelete
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Safe-to-delete report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafeDeleteReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "500": {description: The branches could not be listed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
   /api/autonomous/progress:
     get:
       summary: Progress metrics
@@ -5726,6 +5785,87 @@ components:
         at: {type: string, format: date-time}
         lane_id: {type: string}
         work: {type: string, description: Title of the work waiting for the lane}
+    MergeStatus:
+      type: object
+      description: |-
+        The merge status, as GET /api/autonomous/merge returns it. Both lists are
+        empty while `mode` is off; `shadow_decisions` is empty outside shadow mode.
+      required: [mode, alert_minutes, automata, shadow_decisions]
+      properties:
+        mode: {type: string, enum: [off, shadow, "on"], description: The merge_pending_mode in effect}
+        alert_minutes: {type: integer, description: The merge-pending alert threshold in minutes; 0 = off}
+        automata:
+          type: array
+          description: One entry per completed Automaton with a work branch
+          items: {$ref: "#/components/schemas/MergeAutomaton"}
+        shadow_decisions:
+          type: array
+          description: What the pass recorded in shadow mode, newest first
+          items: {$ref: "#/components/schemas/MergeShadowDecision"}
+    MergeAutomaton:
+      type: object
+      description: A completed Automaton with a work branch, as the merge-pending pass last compared it
+      required: [automaton_id, name, branch, state, commits_ahead, pending_since, alerted_at]
+      properties:
+        automaton_id: {type: string}
+        name: {type: string, description: The Automaton's title, or its id when it has none}
+        branch: {type: string, description: The Automaton's work branch}
+        state:
+          type: string
+          enum: [merged, pending, needs_look, empty, unknown]
+          description: The cached merge comparison state; unknown until the pass has compared the branch
+        commits_ahead: {type: integer, description: Commits on the branch that are not on main}
+        pending_since:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the Automaton was first seen merge pending; null when it is not pending
+        alerted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the merge-pending alert fired; null until it does
+        would_alert: {type: boolean, description: "Shadow mode only: whether the pass would have alerted"}
+    MergeShadowDecision:
+      type: object
+      description: One decision the merge-pending pass recorded in shadow mode
+      properties:
+        at: {type: string, format: date-time}
+        automaton_id: {type: string}
+        name: {type: string}
+        branch: {type: string}
+        state: {type: string, enum: [merged, pending, needs_look, empty, unknown]}
+        commits_ahead: {type: integer}
+        would_alert: {type: boolean}
+        repeat_count: {type: integer, description: How many polls chose the same decision again}
+        last_seen_at: {type: string, format: date-time}
+    SafeDeleteReport:
+      type: object
+      description: The safe-to-delete report, as GET /api/autonomous/safe-to-delete returns it
+      required: [safe, held, held_dirty]
+      properties:
+        safe:
+          type: array
+          items:
+            type: object
+            required: [branch, worktree, reason, commits]
+            properties:
+              branch: {type: string}
+              worktree: {type: string, description: The checked-out worktree path; empty when none exists}
+              reason: {type: string}
+              commits: {type: integer, description: Commits on the branch that are not on main}
+        held:
+          type: array
+          items:
+            type: object
+            required: [branch, worktree, state]
+            properties:
+              branch: {type: string}
+              worktree: {type: string}
+              state: {type: string, description: The merge comparison state}
+              dirty: {type: boolean, description: True when the worktree has uncommitted changes}
+              note: {type: string}
+        held_dirty: {type: integer, description: Branches that are safe by state but held for uncommitted changes}
     TriageList:
       type: object
       description: |-
