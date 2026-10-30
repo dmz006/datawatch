@@ -4625,6 +4625,47 @@ Both reads are GET-only (any other method is 405), answer 503 while Automata are
 
 ---
 
+## Merged-member policy (a member Automaton cancelled after its work shipped)
+
+When a member Automaton of an Automation ends cancelled, the Automation has no `on_complete` edge to follow and becomes `blocked`. That is right when the member's work never landed and wrong when it did: the member's branch (`automaton/<id>`) is already merged into the project's default branch and only the Automaton was cancelled afterwards. The merged-member policy decides what the Automation does in that case. When a member ends cancelled or completed, the coordinator asks read-only git whether the member's branch is merged on the default branch, and if it is, `autonomous.automation.merged_member_policy` chooses the outcome. A branch that is not merged, has no commits ahead of the default branch, or whose state git cannot read always keeps the blocked outcome, whatever the policy. The check never merges, deletes, pushes or checks out a branch.
+
+**The three values.**
+
+| Value | What it does |
+|---|---|
+| `completed` (default) | The member counts as completed and the Automation follows its `on_complete` edge. One info alert, "Automaton advanced on a merged member", names the Automaton, the member, the branch and the proving commit |
+| `manual` | The Automation stays blocked, as before, and the block reason carries the merge proof so the operator can resume it or skip the member |
+| `block` | Exactly the behaviour before the key existed: the Automation stays blocked and no git runs |
+
+| Key | Meaning | Default | Allowed |
+|---|---|---|---|
+| `autonomous.automation.merged_member_policy` | What an Automation does when a cancelled member's work is already merged | `completed` | `completed`, `manual`, `block` (an empty string or any other word is refused on every write surface; an absent key reads as `completed`) |
+
+Set it with `datawatch config set autonomous.automation.merged_member_policy manual`, `PUT /api/config` with the key, comm `configure autonomous.automation.merged_member_policy=manual`, the MCP tool `autonomous_config_set` (`automation_merged_member_policy`), or the PWA field **Automaton merged-member policy** under Settings, General, Automate. The key is read live; a change applies to the next member that ends, with no restart. The proof needs `worktree_base_repo` to be set: without it nothing can be proved and every cancelled member keeps the blocked outcome.
+
+**The project's own default branch.** The proof does not assume `main`. It resolves the default branch per project from git: the symbolic ref of the base repository's remote `HEAD` (`refs/remotes/origin/HEAD`), and, if that gives no answer, the branch currently checked out in the base repository. A slash-named default branch such as `release/1.0` is kept whole. If neither answers, the state is unknown and the Automation stays blocked. The comparison itself is the one the merge-pending check uses (patch match through `git cherry` plus a commit-subject check), and the proving commit is the branch tip when the tip is on the default branch, otherwise the default-branch commit that carries the same patch as the tip.
+
+**What is recorded.** Each time the proof took part in a member's end, the Automation's decision log gets one `merged_member` entry and the audit trail gets one `automation_merged_member` entry. Both carry the member, the branch, the default branch, the proving commit, the policy and the outcome: `advanced` (the Automation moved on) or `blocked` (it stayed for the operator).
+
+**Reopening a member.** Running a cancelled member again while the Automation is blocked on it because of that cancellation resumes the Automation: the member goes back to `running`, the Automation back to `active`, and a `reopened` decision is recorded. A reopened member never revives an Automation that is cancelled, completed, paused or blocked for another reason.
+
+**Surfaces.**
+
+| Surface | Merged-member decisions |
+|---|---|
+| REST | `GET /api/automations/merged-members` (every Automation), `GET /api/automations/{id}/merged-members` (one) |
+| MCP | `automation_merged_members` (optional `id`) |
+| CLI | `datawatch autonomous merged-members [automation-id] [--json]` |
+| Comm channel | `autonomous merged-members [automation-id]` (newest first, at most ten lines) |
+| PWA | **Automaton merged-member decisions** block on the Automation detail view, and a one-line entry in its decision log |
+| Mobile/wear | The same REST contract |
+
+The reads are GET-only (any other method is 405), answer 503 while Automata are disabled, and need the autonomous read capability when called by a federated peer. The full field documentation is in `docs/api/autonomous.md` (section *Merged-member decisions*), the walk-through is in `docs/howto/automation-merged-member.md`, and the decision as a diagram is in `docs/flow/automation-merged-member-flow.md`.
+
+**What the merged-member policy never does.** It never merges a branch, deletes a branch, removes a worktree, pushes, resets or checks anything out: every git command it issues is a read. It never changes the outcome for a branch that is not proved merged. It never runs git at all under `block`.
+
+---
+
 ## Automata progress dashboard
 
 A read-only view of how far the Automata have got and roughly when the rest

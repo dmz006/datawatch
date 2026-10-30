@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_triage`, `security_failure_list`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `autonomous_prd_set_lane_preference`, `capacity_status` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_triage`, `security_failure_list`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
@@ -575,6 +575,28 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
 - **`get_my_scope`** (BL463) — self-scope confirmation for the session calling over its MCP bridge. Read-only (`health:read`), no session argument required — resolution order is `hint` (optional session ID or name) → the in-band caller scope carried by the session's MCP bridge token (HLLM-004) → the first channel-ready session (flagged as such in `resolved_via`). Returns the session's identity and mode ("host" vs "container(agent=<id>)" — F10 sessions), its per-session MCP server name (`datawatch-<FullID>`; the exact `<mcpServers>` key it was registered under in `~/.claude.json` / `.mcp.json`), `shared_entry_name` (the common `datawatch` entry in the per-project `.mcp.json` every host-mode session shares), its project dir + tmux identity, channel readiness, and `peers[]` — every other session's name, state, and MCP server name, so the caller can confirm its own name is distinct from each peer's. Use it to answer "which MCP server is actually mine, and which of these are peers I must not be using?" (the BL467 first-come bridge race, see [plans/2026-10-16-mcp-bridge-registration-race.md](plans/2026-10-16-mcp-bridge-registration-race.md); audit in [plans/2026-10-20-bl463-mcp-drop-findings.md](plans/2026-10-20-bl463-mcp-drop-findings.md)). Same data over REST: `GET /api/sessions/self/scope` (optional `?hint=<id>`).
 - **`guardrail_library_list`** (BL303 S2) — list all registered guardrails (built-in scan guardrails + skill-contributed).
 - **`guardrail_profile_list/create/get/update/delete`** (BL303 S2) — manage named guardrail profiles (named sets of guardrails that can be applied to sessions or PRDs). `create` and `update` take an optional `notify_events_json` (a JSON array of event kinds, e.g. `["prd.blocked","task.session_started"]`) setting the profile tier's notification event set — the middle tier of the notify_events precedence chain (Automaton > guardrail profile > global default). On create: omitted = default; on update: omitted = unchanged, `"[]"` = clears the profile's list. Invalid JSON is reported as an error before any request is sent.
+- **`automation_merged_members`** — read the merged-member decisions of one Automaton, or of every Automaton when no `id` is given. A decision is written when a member of an Automaton ended cancelled or completed and its work branch was found already merged into the project's default branch. The result is `{automation_id, count, merged_members}`, oldest first, each row with `automation_id`, `automation_name`, `member`, `prd_id`, `branch`, `default_branch`, `proving_commit` (the commit that proves the merge), `policy` (`completed`, `manual` or `block`), `outcome` (`advanced` when the chain moved on, `blocked` when the Automaton stayed blocked for the operator) and `at`. It is the same object as `GET /api/automations/{id}/merged-members` (or `GET /api/automations/merged-members` for all). Read-only: nothing is changed, merged or resumed. An unknown `id` is a tool error (the daemon's `404`), as is a daemon with Automata disabled (`503`). Needs the autonomous read capability when called by a federated peer.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `id` | No | The Automaton ID. Leave out for every Automaton |
+
+  ```
+  automation_merged_members(id="4522f306c266")
+  ```
+
+  Example result (shortened):
+
+  ```json
+  {"automation_id": "4522f306c266", "count": 1,
+   "merged_members": [{"automation_id": "4522f306c266", "automation_name": "nightly pipeline", "member": "b", "branch": "automaton/d0442737d38c", "default_branch": "main", "proving_commit": "3f9a1c0e7b2d4a58c6e1f0a9b8d7c6e5f4a3b2c1", "policy": "completed", "outcome": "advanced", "at": "2026-10-30T09:12:44Z"}]}
+  ```
+
+  The policy that drives it is set through `autonomous_config_set` with `automation_merged_member_policy` (`completed`, `manual` or `block`; an empty or other value is refused, and leaving the argument out sends nothing):
+
+  ```
+  autonomous_config_set(automation_merged_member_policy="manual")
+  ```
 - **`per_automaton_guardrails_set`** (BL303 S2) — override guardrail profile and per-task/per-story guardrails for a specific PRD, plus the Automaton-completion list (`per_prd_guardrails_json`, e.g. `["rules-review","ci-watch"]`). The call replaces the profile and all three lists, so pass the ones you want to keep.
 - **`session_guardrail_run`** (BL303 S3) — run a named guardrail against a session's project directory; appends the verdict to the session's telemetry. Parameters: `session_id`, `name` (guardrail library name, e.g. `sast-scan`).
 - **`session_guardrail_approve`** (v8.27.5, GH#153) — approve a single blocked guardrail verdict so the session can proceed. Parameters: `session_id`, `guardrail` (guardrail name in telemetry, required), `note` (optional). Returns `{guardrail, approved, session_unblocked, telemetry}`. Use when a block verdict was a false positive; approval is scoped to the current session run (in-memory only). See also `POST /api/sessions/{id}/guardrail/{name}/approve`.

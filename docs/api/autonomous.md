@@ -1682,6 +1682,65 @@ The same reads are served by MCP `autonomous_merge` and `autonomous_safe_to_dele
 
 The response shapes are in `docs/api/openapi.yaml` (`MergeStatus`, `MergeAutomaton`, `MergeShadowDecision`, `SafeDeleteReport`).
 
+## Merged-member decisions (`GET /api/automations/merged-members`, `GET /api/automations/{id}/merged-members`)
+
+Two read routes list the decisions the Automation coordinator made when a member Automaton ended cancelled or completed and its work branch (`automaton/<id>`) was already merged into the project's own default branch. The operator how-to is [howto/automation-merged-member.md](../howto/automation-merged-member.md); the operator reference is in [docs/operations.md](../operations.md) (section *Merged-member policy*).
+
+```
+GET /api/automations/merged-members          every Automaton's decisions
+GET /api/automations/{id}/merged-members     one Automaton's decisions
+
+200: {
+  "automation_id": "4522f306c266",
+  "count": 1,
+  "merged_members": [
+    {
+      "automation_id": "4522f306c266",
+      "automation_name": "nightly pipeline",
+      "member": "b",
+      "prd_id": "d0442737d38c",
+      "branch": "automaton/d0442737d38c",
+      "default_branch": "main",
+      "proving_commit": "3f9a1c0e7b2d4a58c6e1f0a9b8d7c6e5f4a3b2c1",
+      "policy": "completed",
+      "outcome": "advanced",
+      "at": "2026-10-30T09:12:44Z",
+      "note": "member nightly ingest: branch automaton/d0442737d38c is merged on main (commit 3f9a1c0e7b2d4a58c6e1f0a9b8d7c6e5f4a3b2c1); policy completed treats the cancelled member as completed"
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `automation_id` (top level) | The requested id; empty for the all-Automata route |
+| `count` | The length of `merged_members` |
+| `merged_members` | The decisions, oldest first. Always an array, never `null` |
+| `automation_id`, `automation_name` | The Automaton the member belongs to (`automation_name` is omitted when empty) |
+| `member` | The member id within the Automaton |
+| `prd_id` | The member's work record id (omitted when empty) |
+| `branch` | The member's work branch |
+| `default_branch` | The project default branch the member was proved merged into |
+| `proving_commit` | The commit that proves the merge |
+| `policy` | The `merged_member_policy` in force: `completed`, `manual` or `block` |
+| `outcome` | `advanced` when the Automation moved on past the member, `blocked` when it stayed blocked for the operator. A client must show an unknown value as written |
+| `at` | RFC 3339 time of the decision |
+| `note` | The recorded explanation (omitted when empty) |
+
+An unknown `{id}` is a `404`; an Automaton with no such decision returns an empty list. Both routes are GET-only (any other method is `405`), answer `503` while Automata are disabled, and need the autonomous read capability when called by a federated peer (`403` without it). A read changes nothing.
+
+The same decision is also written into the Automaton's existing `decisions` array as an entry with `kind: "merged_member"` and one optional object `merged_member` (`member`, `prd_id`, `branch`, `default_branch`, `commit`, `policy`, `outcome`; the proving commit is `commit` there and `proving_commit` on the route). A client that lists decisions must tolerate an entry of this kind.
+
+### Surfaces and configuration
+
+The same reads are served by MCP `automation_merged_members` (optional `id`), the CLI `datawatch autonomous merged-members [automation-id] [--json]`, the comm verb `autonomous merged-members [automation-id]`, and the PWA (a block on the Automation detail view). There is one configuration key, under `autonomous.automation`:
+
+| Key | Values | Default | Notes |
+|---|---|---|---|
+| `merged_member_policy` | `completed`, `manual`, `block` | `completed` | Absent reads `completed`. An empty string or any other value is refused with `400` on `PUT /api/config` and on the Automata config object, and nothing is written. Applies to the next member that ends, with no restart |
+
+The response shapes are in `docs/api/openapi.yaml` (`MergedMemberList`, `MergedMemberRow`).
+
 ## Operator decisions (`GET /api/autonomous/decisions`)
 
 An operator decision is a question raised on the [operator question channel](#operator-question-channel) that an Automaton task can wait on. This route is the one read of them: every decision with its state, its answer and the tasks that name it or are held on it. The operator how-to is [howto/automaton-operator-decisions.md](../howto/automaton-operator-decisions.md); the operator reference is in [docs/operations.md](../operations.md) (section *Decision gate*).
