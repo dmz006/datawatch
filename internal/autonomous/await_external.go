@@ -347,6 +347,13 @@ func (m *Manager) treeNotClean(ctx context.Context, dir string) bool {
 // for a completed await-external cycle. Best-effort; must never fail the
 // cycle.
 func (m *Manager) emitAwaitReleaseAudit(prd *PRD, t *Task, releasedPools []string, treeLockKept bool) {
+	m.emitAwaitReleaseAuditFor(prd, t, releasedPools, treeLockKept, "")
+}
+
+// emitAwaitReleaseAuditFor is emitAwaitReleaseAudit with the condition the
+// task is parked on ("decision <id>" for a worker question); an empty
+// condition leaves the key out.
+func (m *Manager) emitAwaitReleaseAuditFor(prd *PRD, t *Task, releasedPools []string, treeLockKept bool, condition string) {
 	if m.auditFn == nil {
 		return
 	}
@@ -355,6 +362,9 @@ func (m *Manager) emitAwaitReleaseAudit(prd *PRD, t *Task, releasedPools []strin
 		"task":           t.ID,
 		"released_pools": releasedPools,
 		"tree_lock_kept": treeLockKept,
+	}
+	if condition != "" {
+		details["condition"] = condition
 	}
 	m.auditFn("autonomous_idle_wait_release", details)
 }

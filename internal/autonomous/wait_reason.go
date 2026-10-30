@@ -22,7 +22,10 @@ const (
 	WaitCauseBudget         WaitCause = "budget"
 	WaitCauseGlobalCooldown WaitCause = "global_cooldown"
 	WaitCauseAwaitExternal  WaitCause = "await_external"
-	WaitCauseTreeLock       WaitCause = "tree_lock"
+	// WaitCauseAwaitDecision is a task parked on an open blocking worker
+	// question until the operator decides.
+	WaitCauseAwaitDecision WaitCause = "await_decision"
+	WaitCauseTreeLock      WaitCause = "tree_lock"
 	// WaitCauseRateCeiling is a wait on a pool's rolling-window rate ceiling
 	// (requests or tokens per window).
 	WaitCauseRateCeiling WaitCause = "rate_ceiling"
@@ -39,6 +42,13 @@ const (
 	poolPrefix           = "pool "
 	backpressureInfix    = " backpressure: "
 	rateCeilingInfix     = " rate ceiling: "
+
+	// AwaitDecisionWaitReason is the bare sub-reason of a task parked on an
+	// open blocking worker question; the full reason is
+	// "await_decision: <question id>".
+	AwaitDecisionWaitReason = "await_decision"
+	// AwaitDecisionWaitReasonPrefix is the reason prefix.
+	AwaitDecisionWaitReasonPrefix = "await_decision"
 )
 
 // ClassifyWaitReason maps a wait reason produced anywhere in the daemon back
@@ -52,6 +62,8 @@ func ClassifyWaitReason(reason string) WaitCause {
 		return ""
 	case IsAwaitExternalWaitReason(r):
 		return WaitCauseAwaitExternal
+	case IsAwaitDecisionWaitReason(r):
+		return WaitCauseAwaitDecision
 	case strings.HasPrefix(r, treeLockPrefix):
 		return WaitCauseTreeLock
 	case strings.HasPrefix(r, budgetPrefix):
@@ -351,6 +363,30 @@ func AwaitExternalWaitText(condition string) string {
 		cond = cond[:maxAwaitExternalConditionChars] + "…"
 	}
 	return AwaitExternalWaitReasonPrefix + ": " + cond
+}
+
+// AwaitDecisionWaitText words a wait on an open blocking worker question:
+// "await_decision: <question id>". An empty id yields the bare sub-reason.
+func AwaitDecisionWaitText(questionID string) string {
+	id := strings.TrimSpace(questionID)
+	if id == "" {
+		return AwaitDecisionWaitReason
+	}
+	return AwaitDecisionWaitReasonPrefix + ": " + id
+}
+
+// IsAwaitDecisionWaitReason reports whether a Task.WaitReason value is the
+// await-decision sub-reason of waiting_capacity.
+func IsAwaitDecisionWaitReason(reason string) bool {
+	r := strings.TrimSpace(reason)
+	if r == "" {
+		return false
+	}
+	if r == AwaitDecisionWaitReasonPrefix {
+		return true
+	}
+	return strings.HasPrefix(r, AwaitDecisionWaitReasonPrefix+":") ||
+		strings.HasPrefix(r, AwaitDecisionWaitReasonPrefix+" — ")
 }
 
 // TreeLockWaitText words a wait on a working-tree lock, naming the holder.

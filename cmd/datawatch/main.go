@@ -4855,6 +4855,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// DATAWATCH_AWAIT_EXTERNAL marker line already processed this
 				// wait; the same stale marker line must not be re-handled.
 				awaitHandledLine := -1
+				// decisionHandledID — the open blocking worker question this
+				// wait already parked the task on; parked once per question.
+				decisionHandledID := ""
 				// Session idle detector (autonomous.session_idle_timeout_seconds):
 				// idleSince is when the session was first seen parked in
 				// waiting_input in the current unbroken run; the probe only runs
@@ -5034,6 +5037,31 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									}
 									continue
 								}
+							}
+							// A blocking worker question raised for this task and still
+							// open: park the task on it once (inference slot released, tree
+							// lock kept only with unpushed work, no retry counted) and keep
+							// the session running. It resumes through the coordinator tick
+							// task, not here. While the question stays open the stall
+							// detectors below stay suppressed — the worker is waiting on
+							// the operator by design.
+							if q, ok := autonomousMgrRef.OpenBlockingQuestionForTask(task.ID); ok {
+								if q.ID != decisionHandledID {
+									log.Printf("[autonomous] verifier: task %s/%s raised blocking question %s — parking it for the decision",
+										task.PRDID, task.ID, q.ID)
+									autonomousMgrRef.ParkForDecision(prd, task, q.ID)
+									decisionHandledID = q.ID
+								}
+								waitingInputTicks = 0
+								idleSince = time.Time{}
+								if exitSilenceTracker != nil {
+									exitSilenceTracker.Reset(time.Now())
+								}
+								if descendantStallTracker != nil {
+									descendantStallTracker.Reset(time.Now())
+									descendantOutputObs.reset()
+								}
+								continue
 							}
 						}
 						// Attempt-limit check: every tick, every backend. The

@@ -166,8 +166,8 @@ func (m *Manager) buildTaskVisibility(budgets []BudgetStatus) ([]TaskWaitView, [
 			case TaskWaitingCapacity:
 				w := m.waitingTaskView(p, t, waiters, bo, cooldownFn, budgets)
 				queue = append(queue, w)
-				if w.Cause == WaitCauseAwaitExternal {
-					holdings = append(holdings, m.awaitHoldView(p, t))
+				if w.Cause == WaitCauseAwaitExternal || w.Cause == WaitCauseAwaitDecision {
+					holdings = append(holdings, m.awaitHoldView(p, t, w.Cause))
 				}
 			case TaskQueued, TaskPending:
 				w, isReady := queuedTaskView(p, t, byID, ready)
@@ -331,18 +331,23 @@ func (m *Manager) runningHoldView(p visPRD, t *visTask, led *capacity.Ledger) Ta
 	return h
 }
 
-// awaitHoldView words what a task parked on an external condition holds: the
-// inference slot is released; the tree lock is kept unless the park released it.
-func (m *Manager) awaitHoldView(p visPRD, t *visTask) TaskHoldView {
+// awaitHoldView words what a task parked on an external condition or on an
+// open worker question holds: the inference slot is released; the tree lock is
+// kept unless the park released it.
+func (m *Manager) awaitHoldView(p visPRD, t *visTask, cause WaitCause) TaskHoldView {
+	what := "an external condition"
+	if cause == WaitCauseAwaitDecision {
+		what = "an operator decision"
+	}
 	h := TaskHoldView{
 		TaskID: t.id, PRDID: p.id, PRDTitle: p.title, TaskTitle: t.title, SessionID: t.sessionID,
 		Pools: []string{}, Since: t.updatedAt,
 	}
 	if key := m.heldTreeKey(p, t); key != "" {
 		h.Pools = append(h.Pools, key)
-		h.Note = "waiting on an external condition: the inference slot is released but the tree lock " + key + " is kept"
+		h.Note = "waiting on " + what + ": the inference slot is released but the tree lock " + key + " is kept"
 	} else {
-		h.Note = "waiting on an external condition: the inference slot and the tree lock are released"
+		h.Note = "waiting on " + what + ": the inference slot and the tree lock are released"
 	}
 	return h
 }
