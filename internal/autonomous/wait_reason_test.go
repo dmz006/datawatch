@@ -229,3 +229,31 @@ func TestWaitReasonHolders_ExtractsRawIds(t *testing.T) {
 		t.Errorf("unknown holders = %v, want nil", got)
 	}
 }
+
+func TestWaitReason_AwaitDecisionTextAndPredicate(t *testing.T) {
+	got := AwaitDecisionWaitText("q-1")
+	assertWaitText(t, got, "await_decision: q-1", WaitCauseAwaitDecision)
+	assertWaitText(t, AwaitDecisionWaitText("  "), "await_decision", WaitCauseAwaitDecision)
+
+	for _, c := range []struct {
+		reason string
+		want   bool
+	}{
+		{"await_decision", true},
+		{"await_decision: q-1", true},
+		{"  await_decision: q-1  ", true},
+		{"await_decision — pool llm:x full (1/1)", true},
+		{"await_external: CI run #42", false},
+		{"await_decisions", false},
+		{"tree lock: t1", false},
+		{"", false},
+	} {
+		if got := IsAwaitDecisionWaitReason(c.reason); got != c.want {
+			t.Errorf("IsAwaitDecisionWaitReason(%q) = %v; want %v", c.reason, got, c.want)
+		}
+	}
+	// The two await sub-reasons stay distinct.
+	if IsAwaitExternalWaitReason("await_decision: q-1") {
+		t.Error("an await_decision reason must not read as await_external")
+	}
+}

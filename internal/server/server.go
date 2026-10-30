@@ -444,6 +444,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// /withdraw and /answers under a question id serve the answer flow;
 	// other sub-paths 404.
 	apiMux.HandleFunc("/api/questions", api.handleQuestions)
+	apiMux.HandleFunc("/api/questions/stats", api.handleQuestionStats) // worker question marker counters (exact path wins over the /api/questions/ subtree)
 	apiMux.HandleFunc("/api/questions/", api.handleQuestions)
 	apiMux.HandleFunc("/api/autonomous/events", api.handleAutonomousEvents)
 	// BL427 phase 5 — receiving endpoint for peer-forwarded lifecycle events.

@@ -436,6 +436,7 @@ Session: %s | Task: %s
 - Do not run git add or git commit — your work is committed automatically when you finish
 - If rate limited: output DATAWATCH_RATE_LIMITED: resets at <time>
 - If needing input: output DATAWATCH_NEEDS_INPUT: <question>
+- Design choice for the operator: when the task and the code cannot settle a design choice that only the operator can make, you may print the marker `+"`DATAWATCH_QUESTION:`"+` followed by one line of JSON with the keys question, options, recommendation, default and blocked. Set blocked to true only when the task cannot go on without the answer; otherwise keep working on the rest of the task. The daemon acts on that line only when the operator has turned the worker marker on, so keep using the needs-input line for anything that is not a design choice.
 - When done: output DATAWATCH_COMPLETE: <summary>
 `, sess.FullID, sess.Task, sess.ProjectDir)
 }

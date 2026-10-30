@@ -469,6 +469,10 @@ type Manager struct {
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
 
+	// workerQuestion routes a recognised DATAWATCH_QUESTION line to the daemon
+	// (see question_marker.go). It is off unless a gate and a hook are set.
+	workerQuestion workerQuestionRoute
+
 	// journal receives the session end and pane-close lines (see end_reason.go).
 	// nil writes them to stdout; tests set it to capture them.
 	journal io.Writer
@@ -7826,6 +7830,10 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		}
 		return
 	}
+
+	// A recognised worker question goes to the hook behind the gate. It never
+	// changes session state: the line still falls through as ordinary output.
+	m.routeWorkerQuestion(sess, line)
 
 	// If we were waiting for input and see new output, transition back to running.
 	// v6.11.26 — also bump LastChannelEventAt so the gap watcher sees the

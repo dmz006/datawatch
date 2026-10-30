@@ -162,6 +162,13 @@ var (
 		Name: "datawatch_web_search_errors_total",
 		Help: "Total web search queries that returned an error",
 	})
+	// Worker questions: what became of the DATAWATCH_QUESTION: marker lines
+	// and of the tasks parked on a blocking one. outcome: raised | duplicate
+	// | refused | parked | resumed.
+	WorkerQuestionsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "datawatch_worker_questions_total",
+		Help: "Worker question marker outcomes (raised, duplicate, refused, parked, resumed)",
+	}, []string{"outcome"})
 	// Session result endpoint metrics (scheduled-job structured results).
 	// Posted = accepted and recorded; rejected = failed authz/identity/validation.
 	SessionResultsPosted = prometheus.NewCounter(prometheus.CounterOpts{
@@ -190,6 +197,7 @@ func Register() {
 		QualityGateRunsTotal, QualityGatePassTotal, QualityGateRegressionTotal,
 		WebSearchQueriesTotal, WebSearchErrorsTotal,
 		AcmeCertExpirySeconds, AcmeRenewalsTotal,
+		WorkerQuestionsTotal,
 	)
 }
 

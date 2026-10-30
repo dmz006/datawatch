@@ -51,6 +51,16 @@ func (s *HTTPServer) SetQuestionRaiseNotifier(n QuestionRaiseNotifier) {
 	s.api.SetQuestionRaiseNotifier(n)
 }
 
+// NotifyQuestionRaised runs the raise fan-out for a question that was raised
+// outside POST /api/questions (a worker question marker), so it reaches the
+// same WebSocket, messaging and alert legs, under the same switch and toggles.
+func (s *HTTPServer) NotifyQuestionRaised(q autonomous.Question) {
+	if s == nil || s.api == nil {
+		return
+	}
+	s.api.notifyQuestionRaised(q)
+}
+
 // notifyQuestionRaised fires the three parts for one successful raise.
 // It reads the switch live (off = nothing below runs) and the two
 // notify toggles live (absent keys count as on). The parts run in one

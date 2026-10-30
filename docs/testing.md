@@ -1204,7 +1204,7 @@ default. Recorded as a follow-up in the backlog.
 | `node --check internal/server/web/app.js` | PASS |
 | `make build` | PASS (`bin/datawatch` → `datawatch v9.0.82`) |
 | `make install` + `systemctl --user restart datawatch` | PASS (`datawatch version` → `datawatch v9.0.82`; `/api/info` → `9.0.82`) |
-| `bash scripts/release-smoke.sh` (own isolated sandbox daemon, `TMUX` unset) | PASS — `== Summary ==` Pass: 217, Fail: 0, Skip: 35 (109 numbered sections at the time of that run; as of 2026-10-28 the script carries 88 top-level numbered section headers, incl. the usage calculator section 85, the stuck-running watchdog bound section 86 and the operator questions step 2 section 87 (notification toggles, the answered and withdrawn events through the events read, the return-path record, the polled single GET); section 73 covers capabilities, the summary list, alert counts and API gzip) |
+| `bash scripts/release-smoke.sh` (own isolated sandbox daemon, `TMUX` unset) | PASS — `== Summary ==` Pass: 217, Fail: 0, Skip: 35 (109 numbered sections at the time of that run; as of 2026-10-29 the script carries 89 top-level numbered section headers, incl. the usage calculator section 85, the stuck-running watchdog bound section 86, the operator questions step 2 section 87 (notification toggles, the answered and withdrawn events through the events read, the return-path record, the polled single GET) and the operator questions step 4 section 88 (the worker marker switch, the question stats read, the REST-raised source and the answer log the decision link opens); section 73 covers capabilities, the summary list, alert counts and API gzip) |
 
 ## v9.0.83 — Session-tracker git growth: output.log out of history, no implicit auto-gc (2026-10-14)
 
@@ -2100,6 +2100,20 @@ Counts: 12 new Go test functions in 4 test files (the 2 rewritten ones included)
 
 ---
 
+## TS-838 — PWA Automaton decision log: the answer link and its quote panel
+
+| Field | Details |
+|-------|---------|
+| **Description** | An `operator_answer` entry in an Automaton's decision log carries the question and answer ids; the PWA shows the answer id as a link (on that entry only) that opens a panel with the answer's verbatim quote, chosen option, actor and time. The quote is hostile HTML on purpose: it must render as text. |
+| **Steps** | `env -u TMUX TMUX_TMPDIR=<short private dir> bash scripts/run-tests.sh --stories=TS-838` (the wrapper `scripts/test-stories/TS-838.sh` runs `scripts/test-stories/pwa/question-decision-link.mjs`; the PWA stories need `npm ci` in `scripts/test-stories/pwa`, which `scripts/e2e-pwa.sh` does too). 1. The decision log holds one decision entry and one answer entry. 2. Count the answer links. 3. Click the link. 4. Click it again. 5. Open a question whose answer log is gone. 6. Check for sideways scroll at phone width. |
+| **Expected** | Exactly one link, on the answer entry. The panel shows the quote exactly as stored (line break kept, no live `<img>`, no dialog), the option, the actor and the time; a second click closes it; the missing answer shows the not-on-record line; no horizontal overflow. |
+| **Actual** | Run on 2026-10-29 through `scripts/run-tests.sh --stories=TS-838` against a sandbox daemon started by the harness: `PASS [question-decision-link]`, `Results: 1 passed 0 failed 0 skipped`, `OK: no leftover test daemons`. |
+| **Result** | Pass (live) |
+
+**Release smoke section 88 (worker marker).** Run on 2026-10-29. `SMOKE_ONLY=88 scripts/release-smoke.sh` could not be used as the evidence: every section before 88 still runs its setup under `SMOKE_ONLY`, section 75 waits about two minutes in this environment because its spawn is refused (`/tmp` is outside the allowed project roots), and the sandbox daemon was gone (signal `terminated`) before section 88 started, so the section skipped itself on an unreadable config. The same section text was therefore run alone against a fresh sandbox daemon started and ended through `scripts/test-daemon-lib.sh` (recorded PID, marker check on `/proc/<pid>/cmdline`, traps on every exit path), under `env -u TMUX TMUX_TMPDIR=<private dir>`: 6 PASS, 0 FAIL, 0 SKIP, and the restore step wrote back the values read first. The daemon was confirmed gone afterwards. The earlier failure of the full script is outside this change and was not investigated further.
+
+---
+
 ## TS-835 — PWA Automation view: the Overview and Chains sub-tabs on a 360 px phone
 
 | Field | Details |
@@ -2242,3 +2256,25 @@ stories (TS-836 PWA, TS-837 CLI). The locale entries the rows use
 (`TestLocales_AutomatonNeverUntranslatedOrMistranslated`, EN/DE/ES/FR/JA bundles), which
 refuses the English word "Automaton" in the four non-EN bundles: de `Automat`, es
 `autómata`, fr `automate`, ja `オートマトン`.
+
+## Worker marker — sandbox live check (2026-10-29)
+
+Live check of the worker marker (`DATAWATCH_QUESTION:` and `autonomous.questions.worker_marker`) on a throwaway sandbox daemon. Full commands, trimmed responses and verdicts: [plans/2026-10-29-operator-question-step4-live-check.md](plans/2026-10-29-operator-question-step4-live-check.md).
+
+The daemon was built from this tree (`go build -o` into a directory under `.datawatch/`, which git ignores), ran on loopback port 57993 with its own config and data directory, and was never the production daemon on port 8443. Every command ran under `env -u TMUX -u TMUX_TMPDIR`; no tmux server command was run and nothing was ended by name. The daemon was stopped by its exact PID, confirmed gone, and the sandbox directory was deleted.
+
+| Step | Result | Seen live |
+|------|--------|-----------|
+| Set `autonomous.questions.enabled` and `worker_marker` through `PUT /api/config`, confirm with `GET` | Pass | both read `true` |
+| Shell session prints a valid worker line, a mid-sentence instruction, a malformed line and a `<json>` placeholder | Pass | `GET /api/questions`: exactly one open question, source `marker`, default `hold`, no `blocking` key (omitted when false), `asked_by worker-e2dc` |
+| Audit log | Pass | one `question_raised` and one `question_marker_refused` (reason `malformed`, line hash, session id). Neither the malformed line nor the placeholder text is in `audit.log`; the hash equals the SHA-256 of the exact line |
+| Answer with a quote holding a newline and a double quote | Pass | `GET …/answers` returned the quote equal to the bytes sent (48 of 48) |
+| `worker_marker` off, then a valid line | Pass | the line was printed in the pane; the question list did not change |
+| Stop the daemon by exact PID, start it again | Pass | the same single answered question, no duplicate; `worker_marker: false` kept |
+| Teardown | Pass | daemon and wrapper gone, port closed, sandbox directory deleted |
+
+Not run live: the park path for a blocking worker question (covered by the Go tests only: `TestAwaitDecision_*`, `TestWaitReason_AwaitDecisionTextAndPredicate`, `TestQuestionTick_*`), a worker bound to a task or an Automaton, the raise notifications, the other config surfaces (MCP, CLI, comm channel, PWA), the restart-grace and task-echo windows, the same-line de-duplication of a pane read twice (the daemon ended its sessions on shutdown, so no pane was re-read), and the size caps and other refusal reasons.
+
+Notes from the run: the shell backend echoes its `task` as a comment and does not run it, so the lines were started with `POST /api/sessions/send`; the marker-off line was printed from a second session because the first was still inside its `sleep`; and the refusal's one daemon log line landed in `data/daemon-crash.log`.
+
+Go tests behind the Tested column (all passed on 2026-10-29): `env -u TMUX -u TMUX_TMPDIR go test ./internal/session/ -run 'WorkerQuestion' -count=1`, `go test ./internal/autonomous/ -run 'TestWorkerQuestion|TestAwaitDecision|TestQuestionTick|TestWaitReason_AwaitDecision' -count=1`, `go test ./internal/audit/ -run 'TestQuestionMarkerRefusedAudit' -count=1`, `go test ./internal/config/ ./internal/server/ -run 'TestQuestionsWorkerMarker' -count=1`.

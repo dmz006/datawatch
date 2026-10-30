@@ -183,3 +183,63 @@ func TestEnsureRepoHygiene_Idempotent(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkerQuestionGuardrail(t *testing.T) {
+	const marker = "DATAWATCH_QUESTION:"
+	repoOnly := []string{"AGENT.md", "CONTEXT.md", "docs/plans", "decision-protocol", "decision protocol"}
+	sess := &Session{FullID: "host-abcd", Task: "do a thing", ProjectDir: "/tmp/proj"}
+
+	// check asserts one rendered guardrail text carries the worker question
+	// bullet next to the unchanged needs-input text, with the marker only inline.
+	check := func(t *testing.T, text string) {
+		t.Helper()
+		if !strings.Contains(text, "DATAWATCH_NEEDS_INPUT:") {
+			t.Error("guardrail lost the needs-input marker")
+		}
+		if !strings.Contains(text, "`"+marker+"`") {
+			t.Errorf("guardrail does not carry %s inline in backticks", marker)
+		}
+		for _, key := range []string{"question", "options", "recommendation", "default", "blocked"} {
+			if !strings.Contains(text, key) {
+				t.Errorf("guardrail does not name the %q key", key)
+			}
+		}
+		for i, line := range strings.Split(text, "\n") {
+			trimmed := strings.TrimLeft(line, " \t>-*`")
+			if strings.HasPrefix(trimmed, marker) {
+				t.Errorf("line %d starts with the question marker: %q", i+1, line)
+			}
+		}
+		for _, line := range strings.Split(text, "\n") {
+			if !strings.Contains(line, marker) {
+				continue
+			}
+			for _, banned := range repoOnly {
+				if strings.Contains(line, banned) {
+					t.Errorf("question bullet names repository-only text %q", banned)
+				}
+			}
+		}
+	}
+
+	t.Run("minimal", func(t *testing.T) {
+		text := minimalSessionGuardrails(sess)
+		check(t, text)
+		for _, banned := range repoOnly {
+			if strings.Contains(text, banned) {
+				t.Errorf("minimal guardrail names repository-only text %q", banned)
+			}
+		}
+		if !strings.Contains(text, "- If needing input: output DATAWATCH_NEEDS_INPUT: <question>\n") {
+			t.Error("needs-input line changed")
+		}
+	})
+
+	t.Run("template", func(t *testing.T) {
+		data, err := os.ReadFile(filepath.Join("..", "..", "templates", "session-CLAUDE.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(t, string(data))
+	})
+}

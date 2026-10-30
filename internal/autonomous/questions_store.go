@@ -414,10 +414,37 @@ func (s *QuestionStore) emitAudit(action string, details map[string]any) {
 // stores it. It never blocks on anything else: the asker keeps working.
 // The id and the state are never taken from the input.
 func (s *QuestionStore) Raise(q Question) (Question, error) {
+	out, _, err := s.raise(q, false)
+	return out, err
+}
+
+// RaiseUnlessOpenSourceLine is Raise for a question that came from a pane
+// line: when an open question already carries the same session id and source
+// line hash, nothing is raised and that question is returned with raised
+// false. The check and the append run under one lock, so two scans of the
+// same line cannot both raise. A question without a session id or line hash
+// has no dedupe key and is raised like any other.
+func (s *QuestionStore) RaiseUnlessOpenSourceLine(q Question) (Question, bool, error) {
+	return s.raise(q, true)
+}
+
+// raise is the shared Raise path. With dedupe set it first looks for an open
+// question with the same session id and source line hash.
+func (s *QuestionStore) raise(q Question, dedupe bool) (Question, bool, error) {
 	if err := ValidateNewQuestion(&q); err != nil {
-		return Question{}, err
+		return Question{}, false, err
 	}
 	s.mu.Lock()
+	if dedupe && q.SessionID != "" && q.SourceLineSHA256 != "" {
+		for _, have := range s.questions {
+			if have.State == QuestionOpen && have.SessionID == q.SessionID &&
+				have.SourceLineSHA256 == q.SourceLineSHA256 {
+				dup := *have
+				s.mu.Unlock()
+				return dup, false, nil
+			}
+		}
+	}
 	now := s.now()
 	q.ID = s.newUniqueQuestionID(now)
 	q.CreatedAt = &now
@@ -425,7 +452,7 @@ func (s *QuestionStore) Raise(q Question) (Question, error) {
 	rec := questionStoreRecord{Type: storeLineQuestionRaised, Question: &q}
 	if err := s.appendLocked(rec); err != nil {
 		s.mu.Unlock()
-		return Question{}, err
+		return Question{}, false, err
 	}
 	// On a successful append the in-memory view changes; on failure Raise
 	// returned above and the view is untouched.
@@ -447,7 +474,7 @@ func (s *QuestionStore) Raise(q Question) (Question, error) {
 		"text":         q.Text,
 	})
 	s.emitChange(QuestionChange{Kind: QuestionChangeRaised, Question: q})
-	return q, nil
+	return q, true, nil
 }
 
 // Answer records an answer to the question. The quote is scanned for

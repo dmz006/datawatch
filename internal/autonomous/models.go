@@ -961,6 +961,10 @@ type Task struct {
 	// stall and cleared once recordFailedAttempt has copied it into the
 	// attempt record.
 	RunnerEvidence *RunnerEvidence `json:"runner_evidence,omitempty"`
+	// DecisionResume records the worker question the coordinator tick last
+	// resumed this task for (question_tick.go), so a later tick never resumes
+	// it twice for the same answer. Nil = never resumed for a question.
+	DecisionResume *DecisionResume `json:"decision_resume,omitempty"`
 	// EscalationFailures counts failed attempts since the last operator
 	// action; it indexes the policy's steps and is compared with
 	// max_failures.

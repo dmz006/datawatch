@@ -336,6 +336,7 @@ func (s *Server) handleQuestionRaise(w http.ResponseWriter, r *http.Request) {
 		Risk:           strings.TrimSpace(reqBody.Risk),
 		Priority:       strings.TrimSpace(reqBody.Priority),
 		ReturnPath:     reqBody.ReturnPath,
+		Source:         autonomous.QuestionSourceRest,
 	}
 	if q.AskedBy == "" {
 		q.AskedBy = actor

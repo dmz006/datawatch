@@ -243,6 +243,10 @@ func TestTaskVisibility_EveryWaitCauseHasText(t *testing.T) {
 			reason: AwaitExternalWaitText("CI run #42"),
 		},
 		{
+			name: "await decision", cause: WaitCauseAwaitDecision,
+			reason: AwaitDecisionWaitText("q-20261029-abc"),
+		},
+		{
 			name: "tree lock", cause: WaitCauseTreeLock,
 			reason:     TreeLockWaitText("tree:/w/proj", "t5", "p5", now.Unix()),
 			wantHolder: "t5",

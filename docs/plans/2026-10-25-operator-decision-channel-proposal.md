@@ -1,7 +1,7 @@
 # Operator decision channel: proposal
 
 Date: 2026-10-25
-Status: in progress. All open points below were decided by the operator on 2026-10-25. Step 1 (config switch, question store, audit actions, REST, config accessibility) and Step 2 (notifications and the return path: the raise announcement, the answered and withdrawn events, the polled single-question GET, the opt-in session line and the three notification toggles) are implemented in this branch with their tests, the operator docs, the how-to, the PWA settings toggles and the locale keys in all five bundles; Steps 3-5 follow the order in this document. The mobile surfaces are tracked externally in datawatch-app#283 (filed 2026-10-25, verified open 2026-10-27 — title: "feat(questions): operator question channel — queue view, answer sheet + settings toggle").
+Status: in progress. All open points below were decided by the operator on 2026-10-25. Step 1 (config switch, question store, audit actions, REST, config accessibility) and Step 2 (notifications and the return path: the raise announcement, the answered and withdrawn events, the polled single-question GET, the opt-in session line and the three notification toggles) are implemented in this branch with their tests, the operator docs, the how-to, the PWA settings toggles and the locale keys in all five bundles; Steps 3-5 follow the order in this document. Step 4 (the worker marker) is built on branch `automaton/f1f200be` and not yet merged: the `DATAWATCH_QUESTION:` marker, the `await_decision` park and the coordinator tick resume, `autonomous.questions.worker_marker`, the decision-log answer link, the stats read and Monitor card, with its mobile comment filed on datawatch-app#283 on 2026-10-29. The mobile surfaces are tracked externally in datawatch-app#283 (filed 2026-10-25, verified open 2026-10-27 — title: "feat(questions): operator question channel — queue view, answer sheet + settings toggle").
 
 Confirmed: yes
 
@@ -183,6 +183,8 @@ Depends on: Steps 1 and 2.
 Parity surface: every column in section 5. The mobile column is handled through the external repository.
 
 ### Step 4: supervisor and worker integration
+
+Status: built on branch `automaton/f1f200be`, awaiting merge (2026-10-29). The worker side is done: the marker, the park on a blocking question, the tick that resumes it, the decision-log link and the observability read. The supervisor-side items below (the proposal's `Confirmed` line set from an answer, and the design write-back) are not part of this step and stay open. Detection Pattern Governance: the marker is a protocol constant like `DATAWATCH_COMPLETE`, not an editable detection pattern, and this is a recorded low-severity divergence from that rule's text.
 
 Builds:
 - A structured marker, DATAWATCH_QUESTION:, followed by one line of JSON. The same classifier pattern as the needs-input marker drops echoes of the instruction text. DATAWATCH_NEEDS_INPUT stays for compatibility.

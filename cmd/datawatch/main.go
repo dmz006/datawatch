@@ -4856,6 +4856,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// DATAWATCH_AWAIT_EXTERNAL marker line already processed this
 				// wait; the same stale marker line must not be re-handled.
 				awaitHandledLine := -1
+				// decisionHandledID — the open blocking worker question this
+				// wait already parked the task on; parked once per question.
+				decisionHandledID := ""
 				// Session idle detector (autonomous.session_idle_timeout_seconds):
 				// idleSince is when the session was first seen parked in
 				// waiting_input in the current unbroken run; the probe only runs
@@ -5035,6 +5038,31 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									}
 									continue
 								}
+							}
+							// A blocking worker question raised for this task and still
+							// open: park the task on it once (inference slot released, tree
+							// lock kept only with unpushed work, no retry counted) and keep
+							// the session running. It resumes through the coordinator tick
+							// task, not here. While the question stays open the stall
+							// detectors below stay suppressed — the worker is waiting on
+							// the operator by design.
+							if q, ok := autonomousMgrRef.OpenBlockingQuestionForTask(task.ID); ok {
+								if q.ID != decisionHandledID {
+									log.Printf("[autonomous] verifier: task %s/%s raised blocking question %s — parking it for the decision",
+										task.PRDID, task.ID, q.ID)
+									autonomousMgrRef.ParkForDecision(prd, task, q.ID)
+									decisionHandledID = q.ID
+								}
+								waitingInputTicks = 0
+								idleSince = time.Time{}
+								if exitSilenceTracker != nil {
+									exitSilenceTracker.Reset(time.Now())
+								}
+								if descendantStallTracker != nil {
+									descendantStallTracker.Reset(time.Now())
+									descendantOutputObs.reset()
+								}
+								continue
 							}
 						}
 						// Attempt-limit check: every tick, every backend. The
@@ -6658,6 +6686,24 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						},
 						log.Printf,
 					))
+					// Worker question marker: a DATAWATCH_QUESTION: line a worker
+					// session prints is raised into this same store, with the same
+					// audit, decision-log entry and raise notifications as a REST
+					// raise. Both switches are read live at each event, so a config
+					// write takes effect with no restart. The hook runs on the
+					// output scanner, so it hands the event to a goroutine.
+					mgr.SetWorkerQuestionGate(func() bool {
+						return cfg.Autonomous.Questions.Enabled && cfg.Autonomous.Questions.EffectiveWorkerMarker()
+					})
+					workerQuestionDeps := autonomouspkg.WorkerQuestionDeps{
+						Store:  qstore,
+						Audit:  lifecycleAuditFn,
+						Notify: httpServer.NotifyQuestionRaised,
+						Logf:   log.Printf,
+					}
+					mgr.SetWorkerQuestionHook(func(ev session.WorkerQuestionEvent) {
+						go autonomouspkg.RaiseWorkerQuestion(workerQuestionDeps, ev)
+					})
 				}
 				// BL427 (phase 5) — POST /api/autonomous/events/forward: a peer's
 				// forwarded event is re-emitted into this daemon's dispatcher.
@@ -6743,6 +6789,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// its own context; it re-checks the condition and finishes the task.
 			amgr.SetSessionContinueFn(func(sessionID string) error {
 				return mgr.SendInput(sessionID, "[automaton await-external] Your await-external cycle is complete — your capacity slot is live again and you have the project tree. Re-check the external condition you were waiting on (CI run, deploy, upstream review, …) and, if it has resolved, continue the task from where you left off toward its DATAWATCH_COMPLETE marker. If it has NOT resolved yet, emit the "+autonomouspkg.AwaitExternalMarker+" marker again and stop.", "automaton")
+			})
+			// Resume of a task parked on a blocking worker question: the
+			// coordinator tick prompts the session with one line that carries the
+			// operator's decision (or that the question was withdrawn).
+			amgr.SetSessionContinueLineFn(func(sessionID, line string) error {
+				return mgr.SendInput(sessionID, line, "automaton")
 			})
 			// Boot-resume: recorded output of a session that ended while the daemon
 			// was down, so a finished worker is verified instead of redone.
@@ -7991,6 +8043,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.StoriesCancelled = st.StoriesCancelled
 				s.TasksCancelled = st.TasksCancelled
 				s.TasksRequeued = st.TasksRequeued
+				wq := autonomouspkg.WorkerQuestionCountsSnapshot()
+				s.WorkerQuestionsRaised = wq.Raised
+				s.WorkerQuestionsDuplicate = wq.Duplicate
+				s.WorkerQuestionsRefused = wq.Refused
+				s.WorkerQuestionsParked = wq.Parked
+				s.WorkerQuestionsResumed = wq.Resumed
 			})
 		}
 		// BL372 — wire web search stats into the collector.

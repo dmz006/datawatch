@@ -377,6 +377,11 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   A wrong `state` or a `limit` that is not a positive whole number comes back as a tool error with the daemon's message. Needs the autonomous read capability when called by a federated peer.
+- **`question_stats`** — read the worker question marker's counters since daemon start: `raised`, `duplicate`, `refused`, `parked` and `resumed`, plus `open_marker_questions` and `open_blocking_questions` now and the two switches `questions_enabled` and `worker_marker_enabled`. Takes no parameters. Read-only; the same object as `GET /api/questions/stats`, which answers whether or not the channel is on. Needs the autonomous read capability when called by a federated peer.
+
+  ```
+  question_stats()
+  ```
 - **`autonomous_prd_set_lane_preference`** — set which lane an Automaton may take: `gpu`, `claude` or `any`. Takes `id` and `lane_preference`; an empty `lane_preference` clears the setting, which means `any`. An unknown value is refused. Proxies `POST /api/autonomous/prds/{id}/set_lane_preference`. Needs the autonomous write capability when called by a federated peer.
 
   | Parameter | Required | Description |

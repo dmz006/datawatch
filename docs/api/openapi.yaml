@@ -1535,8 +1535,8 @@ paths:
                             prd_id: {type: string}
                             prd_title: {type: string}
                             task_title: {type: string}
-                            cause: {type: string, enum: [pool_full, node_busy, backoff, budget, global_cooldown, await_external, tree_lock, rate_ceiling]}
-                            reason: {type: string, description: Plain-language wait reason}
+                            cause: {type: string, enum: [pool_full, node_busy, backoff, budget, global_cooldown, await_external, await_decision, tree_lock, rate_ceiling]}
+                            reason: {type: string, description: "Plain-language wait reason. A task parked on an open blocking worker question reads `await_decision: <question id>` (cause `await_decision`)."}
                             since: {type: string, format: date-time}
                             resets_at: {type: string, format: date-time, description: Present only when the daemon knows when the wait ends}
                             holder: {type: string, description: The task or session the wait depends on, when there is one}
@@ -5514,6 +5514,16 @@ paths:
         silent. Body cap 64 KiB; content after the JSON object is malformed.
         Needs the autonomous write capability when called by a federated
         peer.
+
+        A question raised here is stored with `source` `rest` and is never
+        `blocking`. A worker session can also raise a question without this
+        route: a `DATAWATCH_QUESTION:` line in its output, acted on only while
+        `autonomous.questions.enabled` and `autonomous.questions.worker_marker`
+        are both on, is stored through the same path with `source` `marker`.
+        A blocking one parks its task with the wait reason
+        `await_decision: <question id>`. A marker line that fails validation
+        is never stored; it is audited as `question_marker_refused` (session
+        id, reason category and the SHA-256 of the line, never the text).
       operationId: questionRaise
       tags: [Questions]
       requestBody:
@@ -5672,6 +5682,44 @@ paths:
         "404": {description: Unknown question id, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
         "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
         "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions/stats:
+    get:
+      summary: Worker question marker counters
+      description: |
+        Counters for the worker question marker since daemon start - `raised`
+        (marker lines stored as new questions), `duplicate` (a repeat of a
+        question still open), `refused` (lines that failed validation and
+        stored nothing), `parked` (tasks parked on a blocking question) and
+        `resumed` (parked tasks resumed after the decision) - plus
+        `open_marker_questions` and `open_blocking_questions` now, and the
+        two live switches `questions_enabled` and `worker_marker_enabled`.
+        Answers 200 whether or not the channel is on, so a monitor can tell
+        off from idle. Needs the autonomous read capability. The same object
+        is the MCP `question_stats` tool; the counters are also in the stats
+        snapshot (`worker_questions_*`) and the
+        `datawatch_worker_questions_total{outcome}` metric.
+      operationId: questionStats
+      tags: [Questions]
+      responses:
+        "200":
+          description: The counters and switches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  questions_enabled: {type: boolean}
+                  worker_marker_enabled: {type: boolean}
+                  open_marker_questions: {type: integer}
+                  open_blocking_questions: {type: integer}
+                  raised: {type: integer}
+                  duplicate: {type: integer}
+                  refused: {type: integer}
+                  parked: {type: integer}
+                  resumed: {type: integer}
+        "403": {description: Missing the autonomous read capability, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
 
 components:
   securitySchemes:
@@ -7232,6 +7280,9 @@ components:
         risk: {type: string, enum: [normal, low], default: normal}
         priority: {type: string, enum: [normal, high], description: "How urgently an operator should act; omitted means `normal` (separate from `risk`, which says how dangerous a wrong answer is). A `high` raise additionally lands in the alert store while the channel is on."}
         return_path: {type: boolean, default: false, description: "This question opted in to the single `DATAWATCH_ANSWER:` line delivered to its `session_id` when the answer is recorded (needs `autonomous.questions.return_path` on). Default no: the return path is the events plus polling GET."}
+        blocking: {type: boolean, description: "The asker said it cannot go on until the question is decided (the worker marker's `blocked`). While such a question is open its task is parked with the wait reason `await_decision: <question id>`. A REST raise is never blocking. Left out when false."}
+        source: {type: string, enum: [marker, rest], description: "How the question arrived: `marker` (a worker's DATAWATCH_QUESTION: line, raised only while `autonomous.questions.worker_marker` and `autonomous.questions.enabled` are on) or `rest` (POST /api/questions). Left out on a record written before the field existed. A `marker` question carries a `session_id` and a `source_line_sha256`."}
+        source_line_sha256: {type: string, pattern: "^[0-9a-f]{64}$", description: "Lowercase hex SHA-256 of the marker line a worker question came from. The dedupe key: the same line read again while its question is open raises nothing. Never the line text. Left out when empty."}
         state: {type: string, enum: [open, answered, withdrawn, expired]}
         created_at: {type: string, format: date-time}
 

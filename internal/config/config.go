@@ -3399,6 +3399,13 @@ type AutonomousQuestionsConfig struct {
 	// DecisionGateMode is "shadow" (the default when empty: the gate
 	// reports what it would hold but holds nothing) or "on".
 	DecisionGateMode string `yaml:"decision_gate_mode" json:"decision_gate_mode"`
+
+	// WorkerMarker is off when the key is absent (nil). When it is on, and
+	// Enabled is on too, the daemon acts on a question a worker raises in
+	// its session output. The switch alone changes nothing. No omitempty,
+	// same reasoning as the toggles above: an explicit true or false must
+	// survive a YAML/JSON round trip and a PUT /api/config write.
+	WorkerMarker *bool `yaml:"worker_marker" json:"worker_marker"`
 }
 
 // Decision gate modes (autonomous.questions.decision_gate_mode).
@@ -3437,6 +3444,12 @@ func (q AutonomousQuestionsConfig) validate() error {
 	}
 	return fmt.Errorf("autonomous.questions.decision_gate_mode: invalid value %q (valid values: %q, %q, or empty for %q)",
 		q.DecisionGateMode, DecisionGateModeShadow, DecisionGateModeOn, DecisionGateModeShadow)
+}
+
+// EffectiveWorkerMarker reports whether the worker question marker is
+// acted on. Absent (nil) is off.
+func (q AutonomousQuestionsConfig) EffectiveWorkerMarker() bool {
+	return q.WorkerMarker != nil && *q.WorkerMarker
 }
 
 // EffectiveNotifyMessaging reports whether the operator is notified when

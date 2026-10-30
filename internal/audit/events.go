@@ -148,6 +148,14 @@ const (
 	// Details: question_id, actor, surface, reason, pattern (the name of
 	// the matched rule only, NEVER the text).
 	ActionQuestionAnswerRefused = "question_answer_refused"
+	// ActionQuestionMarkerRefused — the output scanner saw a worker question
+	// marker line (DATAWATCH_QUESTION:) that failed validation, so no question
+	// was raised. Audited without the line: Details carries the session id, the
+	// refusal reason category and the SHA-256 of the line, NEVER the line text,
+	// so a malformed or hostile line leaves nothing but its hash in the log.
+	// Subject: the session id. Details: session_id, reason (a category such as
+	// malformed or too_long), line_sha256.
+	ActionQuestionMarkerRefused = "question_marker_refused"
 	// Usage-calculator record mutations (Design 8 / Decision 9). Each is
 	// emitted once, on the daemon that stores the write — the keeper for the
 	// shared series, the daemon itself for its local remaining-work figure.
