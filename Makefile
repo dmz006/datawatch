@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: build clean install lint check-security-ignore-writes check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs test fmt cross release release-snapshot channel-build \
+.PHONY: build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
@@ -228,6 +228,14 @@ install: sync-docs docs-index
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+# Remove stale throwaway test scratch directories (dw-test-*, dw-leak-*,
+# svchelper-*, datawatch-*-task-*, ...) older than an hour from the
+# program temp directory. Never follows symlinks, never touches tmux,
+# never kills processes. Runs with TMUX/TMUX_TMPDIR unset as a
+# belt-and-braces guarantee.
+clean-test-tmp:
+	env -u TMUX -u TMUX_TMPDIR bash scripts/clean-test-tmp.sh
 
 check-tmux:
 	bash scripts/check-no-unscoped-tmux.sh
