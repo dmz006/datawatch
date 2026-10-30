@@ -86,3 +86,7 @@ __pycache__/
 /tmp-sandbox/
 /rmt/
 /.rm-run/
+
+# Build and generated artifacts that tasks have committed by mistake
+/datawatch-channel
+/internal/server/web/assets/docs-bm25-index.json
