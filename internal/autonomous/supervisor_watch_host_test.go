@@ -448,3 +448,33 @@ func TestSupervisorWatchHostRunningUnits(t *testing.T) {
 		t.Fatalf("blank scripts dropped, kept scripts in task order: %+v", u.ScriptPaths)
 	}
 }
+
+// TestSupervisorWatchHostVerifyScriptAbsolutePathSkipped — a script path
+// that is absolute is never resolved against the worktree, even when a
+// file at that path is not executable.
+func TestSupervisorWatchHostVerifyScriptAbsolutePathSkipped(t *testing.T) {
+	probe := &fakeSupervisorWatchHostProbe{
+		fileModes: map[string]os.FileMode{"/abs/esc.sh": 0o644},
+	}
+	h := NewSupervisorWatchHost(probe, SupervisorWatchConfig{}, fakeSupervisorWatchNodes{})
+	units := []SupervisorWatchHostUnit{{
+		AutomatonID: "a1b2c3d4",
+		Worktree:    "/tmp/automata/worktrees/a1b2c3d4",
+		ScriptPaths: []string{"/abs/esc.sh"},
+	}}
+	if got := h.CheckVerifyScriptNotExecutable(units); len(got) != 0 {
+		t.Fatalf("an absolute path is never inspected: got %v", got)
+	}
+}
+
+// TestSupervisorWatchRunningUnitsOrder — two running Automata come back
+// in id order, whatever order the store listed them in.
+func TestSupervisorWatchRunningUnitsOrder(t *testing.T) {
+	mk := func(id string) *PRD {
+		return &PRD{ID: id, Status: PRDRunning, ProjectDir: "/tmp/automata/worktrees/" + id}
+	}
+	units := SupervisorWatchRunningUnits([]*PRD{mk("b"), mk("a")})
+	if len(units) != 2 || units[0].AutomatonID != "a" || units[1].AutomatonID != "b" {
+		t.Fatalf("units must be in id order, got %+v", units)
+	}
+}

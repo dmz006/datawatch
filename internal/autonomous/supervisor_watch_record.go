@@ -241,20 +241,18 @@ func (s *SupervisorWatchStore) load() error {
 	return err
 }
 
-// cloneSupervisorWatchFinding returns a deep copy of f via a JSON round
-// trip so callers cannot mutate store state through the copy; a nil
-// finding stays nil.
+// cloneSupervisorWatchFinding returns a deep copy of f so callers cannot
+// mutate store state through the copy; a nil finding stays nil. The only
+// reference field is AlertedAt, so a struct copy plus a fresh time pointer
+// is a full deep copy.
 func cloneSupervisorWatchFinding(f *SupervisorWatchFinding) *SupervisorWatchFinding {
 	if f == nil {
 		return nil
 	}
-	b, err := json.Marshal(f)
-	if err != nil {
-		panic(err) // supervisor watch findings are plain data; marshaling cannot fail
-	}
-	var out SupervisorWatchFinding
-	if err := json.Unmarshal(b, &out); err != nil {
-		panic(err)
+	out := *f
+	if f.AlertedAt != nil {
+		at := *f.AlertedAt
+		out.AlertedAt = &at
 	}
 	return &out
 }
@@ -372,6 +370,7 @@ func (s *SupervisorWatchStore) Upsert(f *SupervisorWatchFinding) (*SupervisorWat
 	in.LastSeenAt = now
 	in.Resolved = false
 	s.findings[key] = in
+	out := cloneSupervisorWatchFinding(in)
 	s.mu.Unlock()
 
 	if err := s.persist(); err != nil {
@@ -383,10 +382,6 @@ func (s *SupervisorWatchStore) Upsert(f *SupervisorWatchFinding) (*SupervisorWat
 		}
 		s.mu.Unlock()
 		return nil, err
-	}
-	out, ok := s.Get(key)
-	if !ok {
-		return nil, fmt.Errorf("supervisor watch: finding %q disappeared after upsert", key)
 	}
 	return out, nil
 }
@@ -405,6 +400,7 @@ func (s *SupervisorWatchStore) Resolve(key string) (*SupervisorWatchFinding, err
 	now := time.Now()
 	stored.Resolved = true
 	stored.LastSeenAt = now
+	out := cloneSupervisorWatchFinding(stored)
 	s.mu.Unlock()
 
 	if err := s.persist(); err != nil {
@@ -412,10 +408,6 @@ func (s *SupervisorWatchStore) Resolve(key string) (*SupervisorWatchFinding, err
 		s.findings[key] = snap
 		s.mu.Unlock()
 		return nil, err
-	}
-	out, ok := s.Get(key)
-	if !ok {
-		return nil, fmt.Errorf("supervisor watch: finding %q disappeared after resolve", key)
 	}
 	return out, nil
 }

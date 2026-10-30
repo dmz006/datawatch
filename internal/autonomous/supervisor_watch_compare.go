@@ -301,10 +301,7 @@ type supervisorWatchCompareFile struct {
 // SupervisorWatchComparisonFile (temp file + rename, so a torn write
 // never lands on the live file).
 func (s *SupervisorWatchStore) persistComparisons(file supervisorWatchCompareFile) error {
-	b, err := json.MarshalIndent(file, "", "  ")
-	if err != nil {
-		return err
-	}
+	b, _ := json.MarshalIndent(file, "", "  ") // plain data: encoding cannot fail
 	target := filepath.Join(s.dir, SupervisorWatchComparisonFile)
 	tmp := target + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {

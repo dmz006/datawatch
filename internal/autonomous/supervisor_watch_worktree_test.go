@@ -32,6 +32,9 @@ type fakeSupervisorWatchWorktreeFS struct {
 	newest map[string]time.Time
 	// mtimes maps a log file path to its modification time.
 	mtimes map[string]time.Time
+	// newestErr forces an error for a worktree directory that cannot be
+	// walked.
+	newestErr map[string]error
 }
 
 func (f *fakeSupervisorWatchWorktreeFS) key(s string) string { return filepath.Clean(s) }
@@ -48,6 +51,9 @@ func (f *fakeSupervisorWatchWorktreeFS) RegisteredWorktrees(repo string) ([]stri
 }
 
 func (f *fakeSupervisorWatchWorktreeFS) NewestNonGitChange(dir string) (time.Time, bool, error) {
+	if err := f.newestErr[f.key(dir)]; err != nil {
+		return time.Time{}, false, err
+	}
 	t, ok := f.newest[f.key(dir)]
 	return t, ok, nil
 }
@@ -415,5 +421,92 @@ func TestSupervisorWatchWorktreeNonGoProject(t *testing.T) {
 		supervisorWatchWorktreeBase)
 	if got := wNonGo.CheckNoGomod([]*PRD{p}); got != nil {
 		t.Fatalf("non-Go project: expected no worktree_no_gomod findings, got %+v", got)
+	}
+}
+
+// TestSupervisorWatchWorktreePRDFilter — the shared PRD filter skips
+// Automata that are nil, not running, without an id or a project
+// directory, and duplicates; the rest come back in id order.
+func TestSupervisorWatchWorktreePRDFilter(t *testing.T) {
+	good := supervisorWatchWorktreePRD("b", "/base/repo/wtrees/b")
+	dup := supervisorWatchWorktreePRD("b", "/base/repo/wtrees/b-again")
+	first := supervisorWatchWorktreePRD("a", "/base/repo/wtrees/a")
+	stopped := supervisorWatchWorktreePRD("c", "/base/repo/wtrees/c")
+	stopped.Status = PRDBlocked
+	noID := supervisorWatchWorktreePRD("d", "/base/repo/wtrees/d")
+	noID.ID = " "
+	noDir := supervisorWatchWorktreePRD("e", " ")
+
+	got := supervisorWatchWorktreePRDs([]*PRD{nil, good, dup, first, stopped, noID, noDir})
+	if len(got) != 2 || got[0].ID != "p-a" || got[1].ID != "p-b" {
+		t.Fatalf("expected [p-a p-b], got %+v", got)
+	}
+	if got[1].ProjectDir != "/base/repo/wtrees/b" {
+		t.Errorf("the first of two duplicates must win, got %q", got[1].ProjectDir)
+	}
+}
+
+// TestSupervisorWatchWorktreeNotWired — a check without the view it
+// reads, or without a base repository to register against, raises
+// nothing instead of guessing.
+func TestSupervisorWatchWorktreeNotWired(t *testing.T) {
+	cfg := SupervisorWatchConfig{Mode: SupervisorWatchModeShadow}
+	prd := supervisorWatchWorktreePRD("1", supervisorWatchWorktreeDir,
+		supervisorWatchWorktreeActiveTask("1", "s1"))
+	clock := fixedSupervisorWatchClock{now: time.Unix(1_700_000_000, 0)}
+
+	noFS := NewSupervisorWatchWorktree(nil, clock, nil, cfg, supervisorWatchWorktreeBase)
+	if got := noFS.CheckNotRegistered([]*PRD{prd}); got != nil {
+		t.Errorf("no filesystem view: CheckNotRegistered = %+v", got)
+	}
+	if got := noFS.CheckSilent([]*PRD{prd}); got != nil {
+		t.Errorf("no filesystem view: CheckSilent = %+v", got)
+	}
+
+	noBase := NewSupervisorWatchWorktree(&fakeSupervisorWatchWorktreeFS{}, clock, nil, cfg, "")
+	if got := noBase.CheckNotRegistered([]*PRD{prd}); got != nil {
+		t.Errorf("no base repository: CheckNotRegistered = %+v", got)
+	}
+
+	noClock := NewSupervisorWatchWorktree(&fakeSupervisorWatchWorktreeFS{}, nil, nil, cfg, supervisorWatchWorktreeBase)
+	if got := noClock.CheckSilent([]*PRD{prd}); got != nil {
+		t.Errorf("no clock: CheckSilent = %+v", got)
+	}
+}
+
+// TestSupervisorWatchWorktreeSilentUnknownFacts — facts the check cannot
+// read are unknown, never silence: a worktree that cannot be walked
+// raises nothing, and a task that is not being worked on does not count
+// toward the Automaton's activity while another one does; a session log
+// that cannot be stat'ed adds no activity.
+func TestSupervisorWatchWorktreeSilentUnknownFacts(t *testing.T) {
+	now := time.Unix(1_700_000_600, 0)
+	clock := fixedSupervisorWatchClock{now: now}
+	cfg := SupervisorWatchConfig{Mode: SupervisorWatchModeShadow, SilentMinutes: supervisorWatchTestSilentMinutes()}
+
+	dirBroken := "/base/repo/wtrees/p-broken"
+	dirMixed := "/base/repo/wtrees/p-mixed"
+	broken := supervisorWatchWorktreePRD("broken", dirBroken,
+		supervisorWatchWorktreeActiveTask("1", "s-broken"))
+	// p-mixed: a completed task (skipped when reading activity) beside
+	// one in progress whose session log is registered but unreadable.
+	mixed := supervisorWatchWorktreePRD("mixed", dirMixed,
+		Task{ID: "0", Title: "done", Status: TaskCompleted, SessionID: "s-done"},
+		supervisorWatchWorktreeActiveTask("1", "s-mixed"))
+
+	fsys := &fakeSupervisorWatchWorktreeFS{
+		newest:    map[string]time.Time{dirMixed: now.Add(-3 * time.Hour)},
+		newestErr: map[string]error{dirBroken: errors.New("permission denied")},
+		mtimes:    map[string]time.Time{"/logs/s-done": now.Add(-time.Minute)},
+	}
+	sessions := &fakeSupervisorWatchSessions{paths: map[string]string{
+		"s-done":  "/logs/s-done",   // fresh, but its task is not being worked on
+		"s-mixed": "/logs/s-absent", // known path, no readable file
+	}}
+	w := NewSupervisorWatchWorktree(fsys, clock, sessions, cfg, supervisorWatchWorktreeBase)
+
+	got := w.CheckSilent([]*PRD{broken, mixed})
+	if len(got) != 1 || got[0].Subject != "p-mixed" {
+		t.Fatalf("expected only p-mixed (stale worktree, unreadable log), got %+v", got)
 	}
 }

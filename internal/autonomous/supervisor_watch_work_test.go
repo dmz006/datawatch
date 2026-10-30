@@ -303,3 +303,89 @@ func TestSupervisorWatchWorkCISTuck(t *testing.T) {
 		t.Errorf("a missing repo CI watch must not find, got %d", len(got))
 	}
 }
+
+// TestSupervisorWatchWorkRaisedSuppressesEveryKind — a finding already
+// raised (by Raise, as the coordinator does for one the store holds) is
+// not raised again by the check of its kind: merge pending, an idle
+// lane, a red run and a stuck run.
+func TestSupervisorWatchWorkRaisedSuppressesEveryKind(t *testing.T) {
+	merge := workTestPRD("p-1",
+		&TriageRecord{PRDID: "p-1", Status: TriageStatusMergePending},
+		workTestTask("p-1", "t-1", TaskCompleted))
+	st := LaneFillStatus{
+		Lanes:          []LaneFillLaneStatus{{ID: "lane-1", Type: LaneTypeGPU, State: "idle"}},
+		QueuedEligible: LaneFillQueued{GPU: 1},
+	}
+	w := NewSupervisorWatchWork(
+		&fakeSupervisorWatchPRDLister{prds: []*PRD{merge}},
+		&fakeSupervisorWatchLaneFill{st: st, ok: true},
+		&fakeSupervisorWatchCIRecords{recs: []*RepoCIWatchRecord{
+			{Repo: "o/r", RunID: "42", Status: "failing"},
+			{Repo: "o/r", RunID: "43", Status: "hung"},
+		}})
+
+	w.Raise(SupervisorWatchFinding{Kind: SupervisorWatchAutomatonNotMerged, Subject: "p-1"})
+	w.Raise(SupervisorWatchFinding{Kind: SupervisorWatchIdleLaneEligibleWork, Subject: "lane-1"})
+	w.Raise(SupervisorWatchFinding{Kind: SupervisorWatchCIRed, Subject: "42"})
+	w.Raise(SupervisorWatchFinding{Kind: SupervisorWatchCISTuck, Subject: "43"})
+	w.Raise(SupervisorWatchFinding{Subject: "kindless"}) // no kind: ignored
+
+	if got := w.CheckAutomatonNotMerged(); len(got) != 0 {
+		t.Errorf("automaton_not_merged re-raised: %+v", got)
+	}
+	if got := w.CheckIdleLane(); len(got) != 0 {
+		t.Errorf("idle_lane_eligible_work re-raised: %+v", got)
+	}
+	if got := w.CheckCIRed(); len(got) != 0 {
+		t.Errorf("ci_red re-raised: %+v", got)
+	}
+	if got := w.CheckCISTuck(); len(got) != 0 {
+		t.Errorf("ci_stuck re-raised: %+v", got)
+	}
+}
+
+// TestSupervisorWatchWorkSkipsMalformedPRDs — the lister's nil entries,
+// entries without an id and duplicate ids never reach a check, and the
+// rest come back in id order.
+func TestSupervisorWatchWorkSkipsMalformedPRDs(t *testing.T) {
+	mk := func(id string) *PRD {
+		return workTestPRD(id,
+			&TriageRecord{PRDID: id, Status: TriageStatusMergePending},
+			workTestTask(id, "t-1", TaskCompleted))
+	}
+	noID := mk("x")
+	noID.ID = ""
+	w := NewSupervisorWatchWork(&fakeSupervisorWatchPRDLister{
+		prds: []*PRD{nil, noID, mk("p-b"), mk("p-b"), mk("p-a")},
+	}, nil, nil)
+
+	got := w.CheckAutomatonNotMerged()
+	if len(got) != 2 || got[0].Subject != "p-a" || got[1].Subject != "p-b" {
+		t.Fatalf("expected [p-a p-b], got %+v", got)
+	}
+
+	// No lister wired: no PRDs, no findings, no panic.
+	if got := NewSupervisorWatchWork(nil, nil, nil).CheckAutomatonNotMerged(); got != nil {
+		t.Errorf("no lister: %+v", got)
+	}
+}
+
+// TestSupervisorWatchTriageNamesFailedTask — the shared condition looks
+// the named task up among every task of the Automaton: the named task
+// may come after others, and a name that matches none is no finding.
+func TestSupervisorWatchTriageNamesFailedTask(t *testing.T) {
+	p := workTestPRD("p-1",
+		&TriageRecord{PRDID: "p-1", Status: "failed", TaskID: "t-2"},
+		workTestTask("p-1", "t-1", TaskCompleted),
+		workTestTask("p-1", "t-2", TaskFailed))
+	if !supervisorWatchTriageNamesFailedTask(p, TaskFailed) {
+		t.Error("the named, failed task (after another task) must match")
+	}
+	if supervisorWatchTriageNamesFailedTask(p, TaskReviewNeeded) {
+		t.Error("the named task is not in the review state")
+	}
+	p.Triage.TaskID = "t-gone"
+	if supervisorWatchTriageNamesFailedTask(p, TaskFailed) {
+		t.Error("a task id that names no task of the Automaton must not match")
+	}
+}

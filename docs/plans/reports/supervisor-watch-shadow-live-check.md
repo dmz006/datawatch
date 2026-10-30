@@ -320,10 +320,11 @@ gets a verification script path, so the live check needed a fixture node for pla
 with `TMUX_TMPDIR` unset adopts the dedicated tmux socket when `$HOME` has one, so a sandbox that needs worker sessions has to
 change `$HOME` to avoid the production socket, and even then the sessions share tmux's default socket.
 
-## Corrections after review (for the next live run)
+## Corrections after review
 
-These are things the review found in this live check. The sandbox run itself is not repeated here; what changed is recorded so
-the next run starts from the corrected set-up.
+These are things the review found in this live check. The full first run (the table above) is not repeated: the set-up faults
+are corrected in `scripts/supervisor-watch-sandbox-check.sh`, which was run once after the correction (see below). The table's
+other kinds still need worker sessions and a planner fixture and stand as first recorded.
 
 1. **`task_review_needed` can now fire on the normal escalation path.** The check read the triage record, which never names a
    task held for review (the record of an Automaton blocked for review carries the blocked reason and no task id), so the live
@@ -331,13 +332,33 @@ the next run starts from the corrected set-up.
    one finding per Automaton with a task in the review state. `TestSupervisorWatchWorkTaskReviewNeeded` now builds exactly the
    escalated shape the live run produced (blocked, triage record with no task id, one task in review) and expects the finding.
    It has **not** been re-run live; the row for this kind stays "unit-tested, not raised live" until the next sandbox run.
-2. **Start the sandbox daemon under the test-daemon trap library.** The run started its daemon without `td_install_traps`
-   ("no traps installed in the starting shell"), so an interrupted run could have left the daemon behind. The next run must source
-   `scripts/test-daemon-lib.sh`, start the daemon with `td_start`, and call `td_install_traps "$@"` before anything else, so the
-   daemon is ended on every exit path.
-3. **Do not let the sandbox bind the production proxy port.** The bootstrap config left `server.proxy_sandbox_port` at its default,
-   so the daemon tried to bind 8444 (the production proxy's port; the bind failed and nothing was sent to it). The next bootstrap
-   config must set `server.proxy_sandbox_port: 0` (listener disabled) or a free loopback port.
+2. **The sandbox daemon is now started under the test-daemon trap library.** The first run started its daemon without
+   `td_install_traps` ("no traps installed in the starting shell"). `scripts/supervisor-watch-sandbox-check.sh` is the corrected
+   start: it sources `scripts/test-daemon-lib.sh`, calls `td_install_traps "$@"` before any other side effect, starts the daemon
+   with `td_start`-style recording (`td_track_pid`, `td_set_api`), and its `check_setup` step fails the run unless an EXIT trap
+   is installed and the daemon is recorded. The daemon (and its sessions) is ended on every exit path; the scratch directory,
+   the daemon's `HOME` and the library's state directory are all under one work directory removed after the daemon is gone.
+3. **The sandbox no longer binds the production proxy port.** The first run's bootstrap config left `server.proxy_sandbox_port`
+   at its default, so the daemon tried to bind 8444. The script's bootstrap config sets `server.proxy_sandbox_port: 0`
+   (listener disabled), asserts that line is present, and fails if the daemon log shows any `:8444` bind attempt or lacks the
+   "proxy sandbox listener disabled" line.
+
+### Corrected set-up run
+
+`bash scripts/supervisor-watch-sandbox-check.sh` (2026-10-30, build of this branch, `env -u TMUX -u TMUX_TMPDIR`, daemon `HOME`
+in the scratch directory) printed, in order: daemon healthy on a free loopback TLS port; traps installed and the daemon recorded
+for cleanup; proxy sandbox listener disabled with no bind attempt on 8444; `GET /api/autonomous/supervisor-watch` 200 in
+`shadow`; `main_checkout_dirty` raised live for a scratch repository with a modified tracked file; no alert in shadow; the
+`supervisor_watch` config read back to its prior values; `ALL PASS`. No process was left behind and nothing was sent to any
+daemon but the one the script started.
+
+One fault in the script's own first draft is recorded because it is the same class of mistake: the `sed` that adds
+`proxy_sandbox_port: 0` also matched the template's `tls_port` comment line, which left the bootstrap file unparsable. The
+daemon did not fail; it ran on its **defaults** (ports 8080 and 8444, in a scratch `HOME`) and its binds failed because the
+production daemon already holds those ports, so nothing was served or sent to it. The traps ended that daemon when the
+health wait gave up. The script now anchors the substitution to the indented `tls_port` line of the `server:` block and validates the bootstrap file as YAML
+(when PyYAML is present) before it starts anything; the run above is the second one.
+
 4. **The triage-record note is written in shadow too.** The note is text added to a record the daemon already keeps; it changes no
    state and raises no alert. The how-to now says so (see "The one thing shadow writes besides its own records") and says that
    `mode: off` stops it.

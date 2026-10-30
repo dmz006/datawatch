@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 // snapTestGit runs git in dir with a fixed identity so no global config is needed.
@@ -147,7 +146,14 @@ func TestAttemptSnapshotCleansUpTempDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	before := attemptTempEntries(t, "attempt-snapshot-")
+	// Point the temp dir at a private empty area. The system temp dir is
+	// shared with every other test binary `go test ./...` runs at the
+	// same time (cmd/datawatch snapshots there too), and a snapshot
+	// another process has in flight owns an attempt-snapshot-* dir until
+	// it finishes — scanning the shared dir mistook that for a leak.
+	tmpArea := t.TempDir()
+	t.Setenv("TMPDIR", tmpArea)
+
 	ref, err := SnapshotAttemptWork(context.Background(), dir, "task-cleanup", 1)
 	if err != nil {
 		t.Fatalf("SnapshotAttemptWork: %v", err)
@@ -155,24 +161,7 @@ func TestAttemptSnapshotCleansUpTempDir(t *testing.T) {
 	if ref == "" {
 		t.Fatal("expected a snapshot ref for a dirty tree")
 	}
-	// The temp area is shared with every other test in the package; a
-	// snapshot another test still has in flight owns its own temp dir
-	// until it finishes. Give such a dir a moment to go away before
-	// treating it as left behind by this call.
-	var leftover []string
-	for deadline := time.Now().Add(3 * time.Second); ; {
-		leftover = leftover[:0]
-		for name := range attemptTempEntries(t, "attempt-snapshot-") {
-			if _, existedBefore := before[name]; !existedBefore {
-				leftover = append(leftover, name)
-			}
-		}
-		if len(leftover) == 0 || time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	for _, name := range leftover {
+	for name := range attemptTempEntries(t, "attempt-snapshot-") {
 		t.Errorf("SnapshotAttemptWork left temp dir %s behind — best-effort cleanup did not run", name)
 	}
 }

@@ -12,6 +12,7 @@
 package autonomous
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -584,5 +585,189 @@ func TestSupervisorWatchPassRunsRealChecksWithNilProbe(t *testing.T) {
 	}
 	if got := swList(t, m); len(got) != 0 {
 		t.Errorf("unwired views minted %d finding(s), want 0", len(got))
+	}
+}
+
+func TestSupervisorWatchPassNilGuards(t *testing.T) {
+	(*Coordinator)(nil).supervisorWatchPass() // no panic
+	(&Coordinator{}).supervisorWatchPass()    // no manager: no panic
+	if !(*Coordinator)(nil).SupervisorWatchLastPoll().IsZero() {
+		t.Error("a nil coordinator has no last poll")
+	}
+
+	m := swNewManager(t)
+	m.mu.Lock()
+	m.supervisorWatch = nil
+	m.mu.Unlock()
+	if got := m.supervisorWatchPoll(time.Now(), SupervisorWatchConfig{}); got != nil {
+		t.Errorf("a poll with no store raised %+v", got)
+	}
+}
+
+func TestSupervisorWatchFindingOrder(t *testing.T) {
+	in := []SupervisorWatchFinding{
+		swFinding(SupervisorWatchCIRed, "b", ""),
+		swFinding(SupervisorWatchCIRed, "a", ""),
+		swFinding(SupervisorWatchCISTuck, "a", ""),
+	}
+	got := supervisorWatchSorted(in)
+	want := []string{"ci_red/a", "ci_red/b", "ci_stuck/a"}
+	for i, f := range got {
+		if g := string(f.Kind) + "/" + f.Subject; g != want[i] {
+			t.Errorf("position %d = %s, want %s", i, g, want[i])
+		}
+	}
+}
+
+// swPoisonStore seeds two open findings old enough to alert, then makes
+// the store's directory vanish so every later save fails. It returns the
+// manager and the seeded finding that the next poll still reports.
+func swPoisonStore(t *testing.T, mode string) (*Manager, SupervisorWatchFinding) {
+	t.Helper()
+	m := swNewManager(t)
+	oneMinute := 1
+	m.mu.Lock()
+	m.cfg.Automation.SupervisorWatch.Mode = mode
+	m.cfg.Automation.SupervisorWatch.AlertMinutes = &oneMinute
+	m.mu.Unlock()
+
+	old := time.Now().Add(-2 * time.Hour)
+	kept := swFinding(SupervisorWatchCIRed, "kept", "still red")
+	kept.FirstSeenAt = old
+	gone := swFinding(SupervisorWatchCIRed, "gone", "no longer reported")
+	gone.FirstSeenAt = old
+	for _, f := range []SupervisorWatchFinding{kept, gone} {
+		f := f
+		if _, err := m.SaveSupervisorWatchFinding(&f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	newer := swFinding(SupervisorWatchCISTuck, "new", "fresh")
+	m.SetSupervisorWatchFindingsFn(func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
+		// The directory vanishes as the pass starts: recording the
+		// fresh findings, resolving the missing one and stamping the
+		// alert all fail to save.
+		_ = os.RemoveAll(m.supervisorWatchStore().dir)
+		return []SupervisorWatchFinding{kept, newer}
+	})
+	return m, kept
+}
+
+// TestSupervisorWatchPassSaveFailuresShadow — a store that cannot save
+// never aborts or corrupts the pass: the fresh finding is not recorded,
+// the missing one is not resolved, and the shadow mark is not stamped
+// (the next pass tries again).
+func TestSupervisorWatchPassSaveFailuresShadow(t *testing.T) {
+	m, kept := swPoisonStore(t, SupervisorWatchModeShadow)
+	alerts := m.supervisorWatchPoll(time.Now(), m.Config().Automation.SupervisorWatch)
+	if len(alerts) != 0 {
+		t.Errorf("shadow never alerts, got %+v", alerts)
+	}
+	if rec := swGet(t, m, kept.Key()); rec == nil || rec.WouldAlert {
+		t.Errorf("a failed save must leave the shadow mark off, got %+v", rec)
+	}
+	if rec := swGet(t, m, SupervisorWatchKey(SupervisorWatchCIRed, "gone")); rec == nil || rec.Resolved {
+		t.Errorf("a failed resolve must leave the finding open, got %+v", rec)
+	}
+	if rec := swGet(t, m, SupervisorWatchKey(SupervisorWatchCISTuck, "new")); rec != nil {
+		t.Errorf("a failed save must not record the fresh finding, got %+v", rec)
+	}
+}
+
+// TestSupervisorWatchPassSaveFailureOnLetsAlertRetry — in on mode a
+// failed save of the alert stamp drops no alert for good: the in-episode
+// dedupe is released so the next pass takes it again.
+func TestSupervisorWatchPassSaveFailureOnLetsAlertRetry(t *testing.T) {
+	m, kept := swPoisonStore(t, SupervisorWatchModeOn)
+	if alerts := m.supervisorWatchPoll(time.Now(), m.Config().Automation.SupervisorWatch); len(alerts) != 0 {
+		t.Errorf("an alert whose stamp could not be saved was returned: %+v", alerts)
+	}
+	if !m.supervisorWatchTakeAlert(kept.Key()) {
+		t.Error("the alert dedupe must be released after a failed save")
+	}
+}
+
+// TestSupervisorWatchPassAlertAlreadyTaken — an alert the dedupe already
+// holds for the episode is not raised a second time, even though the
+// record carries no alert stamp yet.
+func TestSupervisorWatchPassAlertAlreadyTaken(t *testing.T) {
+	m := swNewManager(t)
+	oneMinute := 1
+	m.mu.Lock()
+	m.cfg.Automation.SupervisorWatch.Mode = SupervisorWatchModeOn
+	m.cfg.Automation.SupervisorWatch.AlertMinutes = &oneMinute
+	m.mu.Unlock()
+	seed := swFinding(SupervisorWatchCIRed, "42", "red")
+	seed.FirstSeenAt = time.Now().Add(-2 * time.Hour)
+	if _, err := m.SaveSupervisorWatchFinding(&seed); err != nil {
+		t.Fatal(err)
+	}
+	m.SetSupervisorWatchFindingsFn(func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
+		return []SupervisorWatchFinding{seed}
+	})
+	if !m.supervisorWatchTakeAlert(seed.Key()) {
+		t.Fatal("the first take must succeed")
+	}
+	if alerts := m.supervisorWatchPoll(time.Now(), m.Config().Automation.SupervisorWatch); len(alerts) != 0 {
+		t.Errorf("an alert already taken for the episode was raised again: %+v", alerts)
+	}
+}
+
+// TestSupervisorWatchTriageNoteEdges — the first-sighting note's
+// guards and fallbacks: no manager, store or record writes nothing; a
+// finding with no text is noted by its kind; an Automaton the store does
+// not hold gets no record and the failure goes to the audit sink.
+func TestSupervisorWatchTriageNoteEdges(t *testing.T) {
+	now := time.Now()
+	rec := swFinding(SupervisorWatchTaskFailed, "p-x", "")
+	(*Manager)(nil).supervisorWatchTriageNote(nil, &rec, now)
+
+	m := swNewManager(t)
+	m.supervisorWatchTriageNote(nil, nil, now) // no record: nothing to write
+
+	// A finding with no text is noted by its kind, on the existing record.
+	prd, err := m.CreatePRD("spec", "/tmp", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prd.Status = PRDBlocked
+	prd.Triage = &TriageRecord{PRDID: prd.ID, Status: string(PRDBlocked), FirstSeenAt: now, UpdatedAt: now}
+	if err := m.Store().SavePRD(prd); err != nil {
+		t.Fatal(err)
+	}
+	noText := swFinding(SupervisorWatchTaskFailed, prd.ID, "  ")
+	m.supervisorWatchTriageNote([]*PRD{prd}, &noText, now)
+	got, _ := m.Store().GetPRD(prd.ID)
+	if got.Triage == nil || len(got.Triage.Notes) != 1 || got.Triage.Notes[0].Text != string(SupervisorWatchTaskFailed) {
+		t.Fatalf("a textless finding must be noted by its kind, got %+v", got.Triage)
+	}
+
+	// An Automaton that is in the list but not in the store: no record
+	// can be written, and the failure is surfaced, not swallowed.
+	var audited []map[string]any
+	m.SetAuditFn(func(action string, details map[string]any) {
+		if action == "supervisor_watch" {
+			audited = append(audited, details)
+		}
+	})
+	ghost := &PRD{ID: "ghost", Title: "ghost", Status: PRDFailed}
+	ghostRec := swFinding(SupervisorWatchTaskFailed, "ghost", "failed")
+	m.supervisorWatchTriageNote([]*PRD{ghost}, &ghostRec, now)
+	if len(audited) != 1 || audited[0]["prd_id"] != "ghost" {
+		t.Errorf("the failed triage save was not audited: %+v", audited)
+	}
+}
+
+// TestSupervisorWatchPassRunsWorktreeChecks — with a base repository
+// configured the pass also runs the three worktree checks (here over a
+// directory that is not a repository, so they find nothing and do not
+// fail).
+func TestSupervisorWatchPassRunsWorktreeChecks(t *testing.T) {
+	m := swNewManager(t)
+	m.mu.Lock()
+	m.cfg.WorktreeBaseRepo = t.TempDir()
+	m.mu.Unlock()
+	if got := m.supervisorWatchRawFindings(SupervisorWatchConfig{}, nil); len(got) != 0 {
+		t.Errorf("an empty tree with an unreadable repository raised %+v", got)
 	}
 }

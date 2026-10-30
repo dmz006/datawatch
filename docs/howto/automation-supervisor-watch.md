@@ -158,8 +158,9 @@ The comparison is kind-and-subject against what the script recorded, so these
 differences are expected and are not bugs. Know them before you read the first
 day's result.
 
-- **Two kinds the script never prints.** `worktree_not_registered` and
-  `verify_script_not_executable` exist only in the watch. Whenever either is
+- **Two watch-only kinds.** `worktree_not_registered` and
+  `verify_script_not_executable` are watch-only: the script never prints a
+  line for either, so the comparison cannot match them. Whenever either is
   open, the comparison lists it under **only the watch**, and that day does not
   count toward the days of full agreement. Treat each as a real finding to look
   at (or fix) rather than as a disagreement to chase, and expect a quiet day to

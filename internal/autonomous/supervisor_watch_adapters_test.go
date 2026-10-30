@@ -421,3 +421,41 @@ func TestRealSupervisorWatchClockIsNow(t *testing.T) {
 		t.Errorf("clock = %v, not near now", got)
 	}
 }
+
+func TestShellWorktreeFSNewestNonGitChangeFailures(t *testing.T) {
+	f := NewShellSupervisorWatchWorktreeFS()
+
+	// A path below a regular file cannot be stat'ed: an error, not "no
+	// activity".
+	file := filepath.Join(t.TempDir(), "plain")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := f.NewestNonGitChange(filepath.Join(file, "below")); err == nil || ok {
+		t.Errorf("a path below a file must be an error: ok=%v err=%v", ok, err)
+	}
+
+	if os.Geteuid() == 0 {
+		return
+	}
+	// One unreadable subdirectory is skipped; the readable file beside it
+	// is still the answer.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "seen.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	locked := filepath.Join(dir, "locked")
+	if err := os.Mkdir(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(locked, "hidden.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	if _, ok, err := f.NewestNonGitChange(dir); err != nil || !ok {
+		t.Errorf("an unreadable subdirectory must be skipped: ok=%v err=%v", ok, err)
+	}
+}

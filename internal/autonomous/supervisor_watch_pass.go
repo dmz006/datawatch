@@ -251,9 +251,6 @@ func (m *Manager) supervisorWatchPoll(now time.Time, cfg SupervisorWatchConfig) 
 	// record, and whether that record was already resolved.
 	open := make(map[string]*SupervisorWatchFinding, len(raw))
 	for _, f := range m.supervisorWatchList() {
-		if f == nil {
-			continue
-		}
 		open[f.Key()] = f
 	}
 
@@ -266,7 +263,7 @@ func (m *Manager) supervisorWatchPoll(now time.Time, cfg SupervisorWatchConfig) 
 		observed[key] = true
 		_, existed := open[key]
 		rec, err := m.SaveSupervisorWatchFinding(&f)
-		if err != nil || rec == nil {
+		if err != nil {
 			continue
 		}
 		if !existed && supervisorWatchAutomatonScoped(f.Kind) {
@@ -317,9 +314,9 @@ func (m *Manager) supervisorWatchPoll(now time.Time, cfg SupervisorWatchConfig) 
 			}
 			rec.WouldAlert = true
 			rec.WouldAlertAt = now
-			if _, err := m.SaveSupervisorWatchFinding(rec); err != nil {
-				continue
-			}
+			// Best effort: a failed save leaves the mark off, so the
+			// next pass marks it again.
+			_, _ = m.SaveSupervisorWatchFinding(rec)
 			continue
 		}
 		if rec.AlertedAt != nil {

@@ -2,6 +2,8 @@ package autonomous
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -277,5 +279,32 @@ func TestSupervisorWatchFindingStateWording(t *testing.T) {
 		if got := SupervisorWatchFindingState(&f); got != c.want {
 			t.Errorf("state of %+v = %q, want %q", c.f, got, c.want)
 		}
+	}
+}
+
+// TestSupervisorWatchStatusOneSidedListsNeverNull — a stored comparison
+// that carries no one-sided lists at all (a history file written without
+// them) still reads as two empty lists, never null.
+func TestSupervisorWatchStatusOneSidedListsNeverNull(t *testing.T) {
+	dir := t.TempDir()
+	hist := `{"comparisons":[{"at":"2026-10-30T10:00:00Z","agreed":true}],"days":{}}`
+	if err := os.WriteFile(filepath.Join(dir, SupervisorWatchComparisonFile), []byte(hist), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := NewSupervisorWatchStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := swNewManager(t)
+	m.mu.Lock()
+	m.supervisorWatch = st
+	m.mu.Unlock()
+
+	got := m.SupervisorWatchStatus()
+	if got.Comparison.Last == nil {
+		t.Fatal("the stored comparison was not read")
+	}
+	if got.Comparison.OnlyWatch == nil || got.Comparison.OnlyScript == nil {
+		t.Errorf("one-sided lists must be empty, not null: %v / %v", got.Comparison.OnlyWatch, got.Comparison.OnlyScript)
 	}
 }

@@ -30,7 +30,6 @@ package autonomous
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -310,9 +309,6 @@ func (w *SupervisorWatchWorktree) CheckSilent(prds []*PRD) []SupervisorWatchFind
 		for i := range p.Story {
 			for j := range p.Story[i].Tasks {
 				t := &p.Story[i].Tasks[j]
-				if t == nil {
-					continue
-				}
 				if t.Status != TaskInProgress && t.Status != TaskVerifying {
 					continue
 				}
@@ -452,13 +448,10 @@ func (f *ShellSupervisorWatchWorktreeFS) NewestNonGitChange(dir string) (time.Ti
 	found := false
 	walkErr := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil // vanished mid-walk: not activity, not a fact
-			}
 			if path == dir {
 				return err // the root itself is unreadable
 			}
-			return nil // one unreadable entry: skip it
+			return nil // an entry that vanished or cannot be read: skip it
 		}
 		if d.Name() == ".git" {
 			if d.IsDir() {
@@ -469,11 +462,9 @@ func (f *ShellSupervisorWatchWorktreeFS) NewestNonGitChange(dir string) (time.Ti
 		if !d.Type().IsRegular() {
 			return nil
 		}
-		info, ierr := d.Info()
-		if ierr != nil {
-			return nil // unreadable entry: skip it
-		}
-		if !found || info.ModTime().After(newest) {
+		// An entry whose info cannot be read is skipped, like an
+		// unreadable one above.
+		if info, ierr := d.Info(); ierr == nil && (!found || info.ModTime().After(newest)) {
 			newest = info.ModTime()
 			found = true
 		}

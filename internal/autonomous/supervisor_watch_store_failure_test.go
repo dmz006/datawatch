@@ -158,3 +158,33 @@ func TestSessionSupervisorWatchSessionLoggerEdges(t *testing.T) {
 		t.Error("an unwired lookup reads as no known log")
 	}
 }
+
+// TestSupervisorWatchAPIReads — the API serves the same state the
+// manager holds: the read view and the numeric stats.
+func TestSupervisorWatchAPIReads(t *testing.T) {
+	m := swNewManager(t)
+	f := swFinding(SupervisorWatchCIRed, "42", "red")
+	if _, err := m.SaveSupervisorWatchFinding(&f); err != nil {
+		t.Fatal(err)
+	}
+	a := NewAPI(m)
+	if got := a.SupervisorWatchStatus(); got.Mode != SupervisorWatchModeShadow || len(got.Findings) != 1 {
+		t.Errorf("status = %+v", got)
+	}
+	if got := a.SupervisorWatchStats(); got.Mode != SupervisorWatchModeShadow || got.FindingsOpen != 1 {
+		t.Errorf("stats = %+v", got)
+	}
+}
+
+// TestNewManagerRefusesCorruptSupervisorWatchStore — a manager does not
+// start over a findings file it cannot read.
+func TestNewManagerRefusesCorruptSupervisorWatchStore(t *testing.T) {
+	m := swNewManager(t)
+	dir := m.supervisorWatchStore().dir
+	if err := os.WriteFile(filepath.Join(dir, SupervisorWatchFileName), []byte("{not json\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewManager(m.dataDir, DefaultConfig(), nil); err == nil {
+		t.Error("NewManager must fail on a corrupt supervisor watch store")
+	}
+}

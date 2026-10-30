@@ -373,3 +373,54 @@ func TestSupervisorWatchRecordWouldAlertLifecycle(t *testing.T) {
 		t.Fatalf("re-open lost its FirstSeenAt history: %v", ou3.FirstSeenAt)
 	}
 }
+
+// TestSupervisorWatchStoreListTieBreak — findings open at the same
+// instant list in key order, so the listing does not depend on map
+// iteration.
+func TestSupervisorWatchStoreListTieBreak(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Unix(1_700_000_000, 0).UTC().Format(time.RFC3339)
+	lines := ""
+	for _, subject := range []string{"b", "a"} {
+		lines += `{"kind":"ci_red","subject":"` + subject + `","first_seen_at":"` + at + `","last_seen_at":"` + at + `","resolved":false}` + "\n"
+	}
+	if err := os.WriteFile(filepath.Join(dir, SupervisorWatchFileName), []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := NewSupervisorWatchStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := st.List()
+	if len(got) != 2 || got[0].Subject != "a" || got[1].Subject != "b" {
+		t.Fatalf("equal timestamps must list in key order, got %+v", got)
+	}
+}
+
+// TestSupervisorWatchStoreWriteFailureRollsBack — a write that fails
+// part-way (the findings file cannot take bytes) is an error from the
+// persist and leaves the in-memory store unchanged.
+func TestSupervisorWatchStoreWriteFailureRollsBack(t *testing.T) {
+	if _, err := os.Stat("/dev/full"); err != nil {
+		t.Skip("no /dev/full on this host")
+	}
+	dir := t.TempDir()
+	st, err := NewSupervisorWatchStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, SupervisorWatchFileName)
+	if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/dev/full", file); err != nil {
+		t.Fatal(err)
+	}
+	f := swFinding(SupervisorWatchCIRed, "9", "x")
+	if _, err := st.Upsert(&f); err == nil {
+		t.Fatal("a write that fails must be an error")
+	}
+	if _, ok := st.Get(f.Key()); ok {
+		t.Error("a failed write must not leave the finding stored")
+	}
+}

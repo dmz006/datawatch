@@ -194,9 +194,6 @@ func (w *SupervisorWatchWork) CheckTaskReviewNeeded() []SupervisorWatchFinding {
 func (w *SupervisorWatchWork) CheckAutomatonNotMerged() []SupervisorWatchFinding {
 	var out []SupervisorWatchFinding
 	for _, p := range w.sortedPRDs() {
-		if p == nil || p.ID == "" {
-			continue
-		}
 		if p.Triage == nil || p.Triage.Status != TriageStatusMergePending {
 			continue
 		}
@@ -320,9 +317,6 @@ func supervisorWatchTriageNamesFailedTask(p *PRD, want TaskStatus) bool {
 	for i := range p.Story {
 		for j := range p.Story[i].Tasks {
 			t := &p.Story[i].Tasks[j]
-			if t == nil || t.ID == "" {
-				continue
-			}
 			if t.ID != p.Triage.TaskID {
 				continue
 			}
@@ -358,12 +352,8 @@ func supervisorWatchAllTasksCompleted(p *PRD) bool {
 	n := 0
 	for i := range p.Story {
 		for j := range p.Story[i].Tasks {
-			t := &p.Story[i].Tasks[j]
-			if t == nil {
-				continue
-			}
 			n++
-			if t.Status != TaskCompleted {
+			if p.Story[i].Tasks[j].Status != TaskCompleted {
 				return false
 			}
 		}

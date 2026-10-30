@@ -370,3 +370,69 @@ func TestSupervisorWatchCompareHistoryCap(t *testing.T) {
 		t.Errorf("newest kept comparison At = %v, want %v", got, base.Add(time.Duration(want+49)*time.Minute))
 	}
 }
+
+// TestSupervisorWatchCompareNotRecorded — every way a pass has nothing to
+// record: no manager, a record with no timestamp, no store, and a store
+// that cannot persist. Findings or script entries with no kind are left
+// out of both sets.
+func TestSupervisorWatchCompareNotRecorded(t *testing.T) {
+	now := time.Now()
+	if got := (*Manager)(nil).supervisorWatchCompare(SupervisorWatchConfig{}, nil, now); got != nil {
+		t.Errorf("nil manager recorded %+v", got)
+	}
+	if supervisorWatchScriptFresh(supervisorWatchScriptRecord{}, now, time.Hour) {
+		t.Error("a record with no timestamp is never fresh")
+	}
+
+	m := swNewManager(t)
+	dir := t.TempDir()
+	rec := supervisorWatchScriptRecord{At: now.Unix(), Findings: []supervisorWatchScriptFinding{
+		{Kind: "", Subject: "ignored"},
+		{Kind: "ci_red", Subject: "42"},
+	}}
+	b, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "record.json")
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := swcSetScriptPath(t, m, path)
+	watch := []SupervisorWatchFinding{{Kind: "", Subject: "ignored"}, {Kind: SupervisorWatchCIRed, Subject: "42"}}
+
+	got := m.supervisorWatchCompare(cfg, watch, now)
+	if got == nil || !got.Agreed || len(got.OnlyWatch) != 0 || len(got.OnlyScript) != 0 {
+		t.Fatalf("kindless entries must be left out of both sets, got %+v", got)
+	}
+
+	// The store cannot persist: nothing is recorded.
+	st := m.supervisorWatchStore()
+	if err := os.RemoveAll(st.dir); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.supervisorWatchCompare(cfg, watch, now); got != nil {
+		t.Errorf("a store that cannot persist recorded %+v", got)
+	}
+
+	// No store at all.
+	m.mu.Lock()
+	m.supervisorWatch = nil
+	m.mu.Unlock()
+	if got := m.supervisorWatchCompare(cfg, watch, now); got != nil {
+		t.Errorf("no store recorded %+v", got)
+	}
+}
+
+// TestSupervisorWatchStoreComparisonFileUnreadable — a comparison history
+// that is not a readable file (here a directory) refuses to open rather
+// than being read as empty.
+func TestSupervisorWatchStoreComparisonFileUnreadable(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, SupervisorWatchComparisonFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewSupervisorWatchStore(dir); err == nil {
+		t.Error("an unreadable comparison history must refuse to open")
+	}
+}
