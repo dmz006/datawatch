@@ -1332,6 +1332,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if identityErr != nil {
 		fmt.Printf("[warn] identity manager init: %v\n", identityErr)
 	}
+	// identity.backups_to_keep is read on every identity write. cfg is the
+	// same pointer the HTTP server's config PUT mutates (server.New below
+	// receives it), so a change applies on the next write with no restart.
+	if identityMgr != nil {
+		identityMgr.SetBackupsToKeep(func() int { return cfg.Identity.EffectiveBackupsToKeep() })
+	}
 
 	// BL258 v6.9.0 — Algorithm Mode 7-phase tracker. In-memory; one
 	// state machine per session ID. State is operator-driven (manual

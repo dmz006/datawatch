@@ -14,6 +14,24 @@ data_dir: /var/lib/datawatch
 # always had.
 notify_exclude: []
 
+# ── Operator Identity ──
+# Settings for the operator identity file (identity.yaml in the data
+# directory). The "Identity" heading above is only about machine
+# identification; this is the top-level `identity` key.
+identity:
+  # identity.backups_to_keep — how many timestamped backups of the operator
+  # identity file the daemon keeps. Each write to the identity file first
+  # saves a backup; the oldest are removed once there are more than this
+  # many. A whole number >= 1; default 10. A value below 1 or a non-numeric
+  # value is refused (PUT /api/config answers 400 and changes nothing).
+  # Change it with PUT /api/config {"identity.backups_to_keep": 20},
+  # the comm channel (`configure identity.backups_to_keep=20`),
+  # the CLI (`datawatch config set identity.backups_to_keep 20`),
+  # the MCP config_set tool (key identity.backups_to_keep, value 20)
+  # or the Identity section of the PWA settings. Takes effect at the next
+  # identity write, no restart needed.
+  backups_to_keep: 10
+
 # ── Session Management ──
 # Controls session creation, LLM defaults, and project git integration.
 session:
