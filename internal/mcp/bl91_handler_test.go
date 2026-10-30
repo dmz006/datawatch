@@ -24,6 +24,13 @@ func bl91Server(t *testing.T) *Server {
 	}
 	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
+	// Registered after t.TempDir, so it runs first: stop every background
+	// writer of the manager before the data dir is removed, or the removal
+	// can race a session file written after the test returned.
+	t.Cleanup(func() {
+		mgr.WaitBackground()
+		_ = mgr.Close()
+	})
 	return &Server{
 		hostname: "testhost",
 		manager:  mgr,
