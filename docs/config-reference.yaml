@@ -992,6 +992,44 @@ autonomous:
   # fails to parse; a fractional YAML number such as 1.5 is not refused, the YAML
   # decoder narrows it to a whole number (1.5 loads as 1).
   #
+  # merge_pending_mode: string, `off` (default), `shadow` or `on`. Controls the
+  # merge-pending check of finished Automaton work branches, which compares each
+  # completed Automaton's branch with main and sorts it into merged, pending,
+  # needs_look, empty or unknown. `off` means the check does not run at all: git
+  # is never called, no state is kept, and the merge reads return empty lists.
+  # `shadow` runs the check and records what it would have done (state, commits
+  # ahead of main, whether it would have alerted) in a bounded history served by
+  # GET /api/autonomous/merge, but raises no alert and writes no merge-pending
+  # record. `on` writes a merge-pending record for a finished Automaton whose
+  # branch has commits not on main and raises the alert (see
+  # merge_pending_alert_minutes). A key that is absent, or an empty value in the
+  # YAML file, reads as `off`. Any other value is refused on load; PUT
+  # /api/config and the Automata config object refuse an empty string and any
+  # value outside the three words with 400, and nothing is written. Nothing in
+  # any mode merges, deletes or pushes. Settable via PUT /api/config (key
+  # autonomous.automation.merge_pending_mode; GET /api/config shows the
+  # effective value), CLI `datawatch config set
+  # autonomous.automation.merge_pending_mode=shadow`, comm `configure
+  # autonomous.automation.merge_pending_mode=shadow`, the MCP
+  # autonomous_config_set tool (automation_merge_pending_mode), and the PWA
+  # Settings field (settings_automation_merge_pending_mode). Applies on the next
+  # coordinator poll, no restart.
+  #
+  # merge_pending_alert_minutes: whole number >= 0. How long a finished Automaton
+  # branch may sit merge pending (commits not on main) before the daemon raises
+  # one merge-pending alert for the episode. Only used in `on` mode; in `shadow`
+  # mode it only decides each recorded decision's would_alert flag. Like
+  # triage_alert_minutes, an unset key is read as 30 and an explicit 0 turns the
+  # alert off (the merge-pending record is still written in `on` mode, and
+  # shadow decisions always report would_alert false). A negative, fractional or
+  # non-numeric value is rejected with 400 on PUT /api/config, and nothing is
+  # written; on config load a negative value is an error. Settable via PUT
+  # /api/config (key autonomous.automation.merge_pending_alert_minutes), CLI
+  # `datawatch config set autonomous.automation.merge_pending_alert_minutes=45`,
+  # comm `configure autonomous.automation.merge_pending_alert_minutes=45`, the
+  # MCP autonomous_config_set tool (automation_merge_pending_alert_minutes), and
+  # the PWA Settings field (settings_automation_merge_pending_alert_minutes).
+  #
   # agent_insert_policy: string, `allow` (default) or `require_operator`; any
   # other value is rejected (400 on PUT /api/config, an error on config load),
   # and an empty value means allow. Decides what happens when a session or
@@ -1044,6 +1082,8 @@ autonomous:
   automation:
     idle_alert_minutes: 0
     triage_alert_minutes: 30
+    merge_pending_mode: off
+    merge_pending_alert_minutes: 30
     agent_insert_policy: allow
     # decision_assistant — no daemon config key; default OFF. The optional
     # local-model decision assistant is runtime data on the Automation record
