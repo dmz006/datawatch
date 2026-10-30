@@ -9,6 +9,14 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Dialog height cap and scrolling body — next patch above main
+
+Dialogs opened through the PWA's shared dialog function (including the question answer dialog) are now capped to the visible height. The title and the Cancel and submit buttons stay in view and only the body scrolls; the dialog follows the visible area, so the buttons stay reachable with the on-screen keyboard open. Short dialogs keep their size and behavior. Plan: [`plans/2026-10-30-pwa-dialog-scroll.md`](plans/2026-10-30-pwa-dialog-scroll.md).
+
+**Tested:** Yes — Node tests in `internal/server/web/app-modal-scroll.test.js`, run with `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-modal-scroll.test.js`. They cover the dialog markup (title, body and button row as separate parts, escaped title), the CSS contract (capped flex column, only the body scrolls, the 12px overlay padding kept), a 360 by 640 layout model built from the real CSS numbers, the visualViewport keyboard path (listeners added, the overlay fitted on resize, listeners removed once the dialog is gone, no error when the browser has no visualViewport), and the short-dialog regression (same overlay, classes, width, confirm and cancel behavior as before, no new fixed height). These are Node tests against stubbed DOM output and a layout model, not a browser.
+
+**Validated:** No — a live look on a phone-width browser with a long question and the keyboard open is still pending.
+
 ## Automaton worktree cleanup — finished work branches, temp files and the disk alert — next minor above main
 
 The cleanup removes a finished Automaton's work branch and worktree and the daemon's own session scratch files, only when nothing is lost, and raises one rate-limited alert when a disk it guards fills up. The mode is `off`, `report` (the default) or `on`. The operator guide is [`howto/automaton-worktree-cleanup.md`](howto/automaton-worktree-cleanup.md) and the reference is the *Automaton worktree cleanup* section of [`operations.md`](operations.md).

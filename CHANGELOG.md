@@ -20,6 +20,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+### Fixed
+
+- **Dialogs in the PWA now fit the screen, so a long one can always be answered or cancelled.** A long dialog, including the question answer dialog, used to grow taller than a phone screen with no way to scroll, which pushed Cancel and the submit button out of reach. The dialog is now capped to the visible height: its title and its Cancel and submit buttons stay in view while the middle scrolls. It follows the visible area, so the buttons also stay reachable with the phone keyboard open. Short dialogs look and behave as before.
+
 ## v9.44.3 — Stop committing a built binary and a stale search index
 
 ### Fixed
