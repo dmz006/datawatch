@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs test fmt cross release release-snapshot channel-build \
+.PHONY: build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs codeql-local test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
@@ -272,6 +272,11 @@ check-security-ignore-writes:
 
 lint: check-tmux check-test-daemons check-service-scope check-go-pins check-internal-refs check-security-ignore-writes
 	golangci-lint run ./...
+
+# Local, non-uploading CodeQL run compared with GitHub's alerts. Long running
+# (minutes, several GB of databases): not part of lint, build or test.
+codeql-local:
+	bash scripts/codeql-local.sh --compare
 
 test:
 	go test ./...
