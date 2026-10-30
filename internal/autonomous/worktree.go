@@ -7,6 +7,7 @@
 package autonomous
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
 )
@@ -171,8 +173,23 @@ func (m *Manager) ensureWorktreeIfConfigured(prd *PRD) (created bool, err error)
 }
 
 func runGitIn(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...) // #nosec G204 -- fixed git subcommands; dir/branch/path come from operator-controlled config and PRD fields, same trust model as every other git shell-out in this codebase (e.g. session.ProjectGit)
+	return runGitInCtx(context.Background(), dir, args...)
+}
+
+// mergeGitWaitDelay bounds how long Wait lingers for git's output pipes once
+// ctx has killed the process, so a grandchild holding a pipe open cannot keep
+// a cancelled call from returning.
+const mergeGitWaitDelay = 2 * time.Second
+
+// runGitInCtx is runGitIn with a context: when ctx ends, the git process is
+// killed and the call returns.
+func runGitInCtx(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- fixed git subcommands; dir/branch/path come from operator-controlled config and PRD fields, same trust model as every other git shell-out in this codebase (e.g. session.ProjectGit)
 	cmd.Dir = dir
+	cmd.WaitDelay = mergeGitWaitDelay
 	out, err := cmd.CombinedOutput()
+	if cerr := ctx.Err(); cerr != nil && err != nil {
+		return string(out), fmt.Errorf("git %s: %w", args[0], cerr)
+	}
 	return string(out), err
 }

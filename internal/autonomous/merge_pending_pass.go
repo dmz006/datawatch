@@ -16,9 +16,12 @@
 package autonomous
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +48,9 @@ type mergePendingState struct {
 	mu sync.Mutex
 	// git overrides the production git runner (tests).
 	git MergeGitRunner
+	// refTips overrides how the branch and main tips are read (tests). It
+	// reports ok false when it cannot answer, and git is asked instead.
+	refTips func(repo, branch, base string) (branchTip, baseTip string, ok bool)
 	// cache holds the newest comparison per branch.
 	cache map[string]mergeCacheEntry
 	// since is when each Automaton was first seen merge pending in shadow
@@ -83,15 +89,98 @@ func (c *Coordinator) shadowRecords() *mergeShadowRecords {
 	return s.shadow
 }
 
+// mergeTips returns the tips of the Automaton branch and of main. They are
+// read from the repository's ref files, so a poll in which nothing moved runs
+// no git at all; a layout the ref files cannot answer for (symbolic or
+// reftable refs, an unreadable repository) falls back to git rev-parse under
+// ctx.
+func (s *mergePendingState) mergeTips(ctx context.Context, repo, branch string) (branchTip, baseTip string, err error) {
+	read := s.refTips
+	if read == nil {
+		read = readBranchTips
+	}
+	if bt, mt, ok := read(repo, branch, mergePendingBase); ok {
+		return bt, mt, nil
+	}
+	out, err := s.runner().Run(ctx, repo, "rev-parse", branch, mergePendingBase)
+	if err != nil {
+		return "", "", fmt.Errorf("merge tips for the Automaton branch: %v: %s", err, strings.TrimSpace(out))
+	}
+	tips := strings.Fields(out)
+	if len(tips) != 2 {
+		return "", "", fmt.Errorf("merge tips for the Automaton branch: unexpected rev-parse output %q", strings.TrimSpace(out))
+	}
+	return tips[0], tips[1], nil
+}
+
+// readBranchTips reads the tips of two local branches from the loose ref
+// files, then packed-refs, of repo. ok is false when either cannot be
+// resolved that way.
+func readBranchTips(repo, branch, base string) (branchTip, baseTip string, ok bool) {
+	gitDir := filepath.Join(repo, ".git")
+	if fi, err := os.Stat(gitDir); err != nil || !fi.IsDir() {
+		gitDir = repo // a bare repository
+	}
+	branchTip, ok = readRefTip(gitDir, "refs/heads/"+branch)
+	if !ok {
+		return "", "", false
+	}
+	baseTip, ok = readRefTip(gitDir, "refs/heads/"+base)
+	if !ok {
+		return "", "", false
+	}
+	return branchTip, baseTip, true
+}
+
+// readRefTip resolves one full ref name under gitDir to an object id.
+func readRefTip(gitDir, ref string) (string, bool) {
+	if strings.Contains(ref, "..") || strings.ContainsAny(ref, "\\ \t\n") {
+		return "", false
+	}
+	if data, err := os.ReadFile(filepath.Join(gitDir, filepath.FromSlash(ref))); err == nil {
+		if id := strings.TrimSpace(string(data)); isObjectID(id) {
+			return id, true
+		}
+		return "", false // a symbolic ref or something unexpected
+	}
+	f, err := os.Open(filepath.Join(gitDir, "packed-refs"))
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		id, name, found := strings.Cut(sc.Text(), " ")
+		if found && name == ref && isObjectID(id) {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+// isObjectID reports whether s is a full hexadecimal object id.
+func isObjectID(s string) bool {
+	if len(s) != 40 && len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // mergeCompare returns the comparison of branch with main, running git only
 // when the branch tip or the main tip moved since the cached result. ok is
-// false (and the reason logged once) when the state is unknown.
+// false (and the reason logged once) when the state is unknown. No lock is
+// held while git runs, so a slow git cannot hold up the shadow list.
 func (c *Coordinator) mergeCompare(repo, branch string) (MergeCompare, bool) {
 	s := &c.mp
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	unknown := func(text string) (MergeCompare, bool) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		if s.logged == nil {
 			s.logged = map[string]string{}
 		}
@@ -107,31 +196,34 @@ func (c *Coordinator) mergeCompare(repo, branch string) (MergeCompare, bool) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), mergePendingGitTimeout)
 	defer cancel()
-	git := s.runner()
 
-	out, err := git.Run(ctx, repo, "rev-parse", branch, mergePendingBase)
+	branchTip, baseTip, err := s.mergeTips(ctx, repo, branch)
 	if err != nil {
-		return unknown(fmt.Sprintf("automaton merge tips: %v: %s", err, strings.TrimSpace(out)))
+		return unknown(err.Error())
 	}
-	tips := strings.Fields(out)
-	if len(tips) != 2 {
-		return unknown(fmt.Sprintf("automaton merge tips: unexpected rev-parse output %q", strings.TrimSpace(out)))
-	}
-	branchTip, baseTip := tips[0], tips[1]
 
-	if e, ok := s.cache[branch]; ok && e.branchTip == branchTip && e.baseTip == baseTip {
+	s.mu.Lock()
+	e, hit := s.cache[branch]
+	hit = hit && e.branchTip == branchTip && e.baseTip == baseTip
+	if hit {
 		delete(s.logged, branch)
+	}
+	s.mu.Unlock()
+	if hit {
 		return e.cmp, true
 	}
-	cmp := CompareBranchToMain(ctx, git, repo, branch, mergePendingBase)
+
+	cmp := CompareBranchToMain(ctx, s.runner(), repo, branch, mergePendingBase)
 	if cmp.State == MergeStateUnknown {
 		return unknown(cmp.Error)
 	}
+	s.mu.Lock()
 	if s.cache == nil {
 		s.cache = map[string]mergeCacheEntry{}
 	}
 	s.cache[branch] = mergeCacheEntry{branchTip: branchTip, baseTip: baseTip, cmp: cmp}
 	delete(s.logged, branch)
+	s.mu.Unlock()
 	return cmp, true
 }
 
@@ -159,16 +251,15 @@ func (c *Coordinator) mergePendingPrune(branches, prdIDs map[string]struct{}) {
 	}
 }
 
-// mergePendingClear drops the Automaton's shadow episode and any stored
-// triage record, as the triage pass does for an Automaton that left its
-// stuck state.
+// mergePendingClear drops the Automaton's shadow episode and its stored
+// merge_pending record. Any other stored record is left as it is.
 func (c *Coordinator) mergePendingClear(prd *PRD) {
 	c.mp.mu.Lock()
 	delete(c.mp.since, prd.ID)
 	c.mp.mu.Unlock()
-	if prd.Triage != nil {
+	if prd.Triage != nil && prd.Triage.Status == TriageStatusMergePending {
 		if err := c.m.ClearTriageRecord(prd.ID); err != nil {
-			log.Printf("[autonomous] clear triage record for %s: %v", prd.ID, err)
+			log.Printf("[autonomous] clear merge pending record for Automaton %s: %v", prd.ID, err)
 		}
 	}
 }
@@ -230,16 +321,9 @@ func (c *Coordinator) mergePendingCheck(prd *PRD, mode, repo string, now time.Ti
 		return "", "", false
 	}
 
+	// triagePass has already cleared any failed or blocked record, so the
+	// stored one is a merge_pending record or none
 	stored := prd.Triage
-	if stored != nil && stored.Status != TriageStatusMergePending {
-		// a leftover failed/blocked record must not lend its first-seen or
-		// alert stamps to a merge_pending one
-		if err := c.m.ClearTriageRecord(prd.ID); err != nil {
-			log.Printf("[autonomous] clear triage record for %s: %v", prd.ID, err)
-			return "", "", false
-		}
-		stored = nil
-	}
 	fresh := c.mergePendingRecord(prd, cmp, now)
 	alerting := threshold > 0 && stored != nil && stored.AlertedAt == nil &&
 		!now.Before(stored.FirstSeenAt.Add(threshold))
@@ -251,7 +335,7 @@ func (c *Coordinator) mergePendingCheck(prd *PRD, mode, repo string, now time.Ti
 		fresh.AlertedAt = &t
 	}
 	if err := c.m.SaveTriageRecord(prd.ID, fresh); err != nil {
-		log.Printf("[autonomous] merge pending record for %s: %v", prd.ID, err)
+		log.Printf("[autonomous] merge pending record for Automaton %s: %v", prd.ID, err)
 		return "", "", false
 	}
 	if !alerting {

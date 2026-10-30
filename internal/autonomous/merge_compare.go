@@ -22,7 +22,7 @@ const (
 )
 
 // MergeGitRunner runs one git command in dir and returns its output. The
-// production implementation wraps runGitIn; decision tests substitute a fake.
+// production implementation wraps runGitInCtx; decision tests substitute a fake.
 type MergeGitRunner interface {
 	Run(ctx context.Context, dir string, args ...string) (string, error)
 }
@@ -31,16 +31,13 @@ type MergeGitRunner interface {
 type shellMergeGit struct{}
 
 // NewMergeGitRunner returns the production runner, which shells out to git
-// through runGitIn.
+// through runGitInCtx.
 func NewMergeGitRunner() MergeGitRunner { return shellMergeGit{} }
 
-// Run implements MergeGitRunner. runGitIn takes no context, so cancellation
-// is honoured by checking ctx before the call.
+// Run implements MergeGitRunner. The git process is killed when ctx ends, so
+// a hung git cannot outlive the caller's deadline.
 func (shellMergeGit) Run(ctx context.Context, dir string, args ...string) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	return runGitIn(dir, args...)
+	return runGitInCtx(ctx, dir, args...)
 }
 
 // MergeCompare is the result of comparing an Automaton branch with its base.
@@ -69,7 +66,7 @@ func CompareBranchToMain(ctx context.Context, git MergeGitRunner, repo, branch, 
 	res := MergeCompare{State: MergeStateUnknown}
 	fail := func(what string, out string, err error) MergeCompare {
 		res.State = MergeStateUnknown
-		res.Error = fmt.Sprintf("automaton merge compare: %s: %v: %s", what, err, strings.TrimSpace(out))
+		res.Error = fmt.Sprintf("Automaton merge compare: %s: %v: %s", what, err, strings.TrimSpace(out))
 		return res
 	}
 

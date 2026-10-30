@@ -802,6 +802,13 @@ func (c *Coordinator) triagePass() {
 			}
 		default:
 			if mergeActive && prd.Status == PRDCompleted && prd.Git.Branch != "" {
+				if prd.Triage != nil && prd.Triage.Status != TriageStatusMergePending {
+					// a completed Automaton holds no failed or blocked record
+					if err := m.ClearTriageRecord(prd.ID); err != nil {
+						log.Printf("[autonomous] clear triage record for %s: %v", prd.ID, err)
+						continue
+					}
+				}
 				mergeBranches[prd.Git.Branch], mergePRDs[prd.ID] = struct{}{}, struct{}{}
 				if title, body, ok := c.mergePendingCheck(prd, mergeMode, cfg.WorktreeBaseRepo, now, mergeThreshold); ok {
 					due = append(due, dueAlert{level: "warn", title: title, body: body})

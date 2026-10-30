@@ -3,6 +3,8 @@ package autonomous
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +26,22 @@ type scriptedMergeGit struct {
 	branchLog  string
 	baseLog    string
 	failOnVerb string
+	// tipsUnreadable makes the ref-file tip lookup give up, so the pass falls
+	// back to git rev-parse.
+	tipsUnreadable bool
+	tipReads       int
+}
+
+// refTips is the fake ref-file lookup: it answers from the scripted tips and
+// counts the lookups, which run no git.
+func (f *scriptedMergeGit) refTips(_, _, _ string) (string, string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tipReads++
+	if f.tipsUnreadable {
+		return "", "", false
+	}
+	return f.branchTip, f.baseTip, true
 }
 
 func (f *scriptedMergeGit) Run(_ context.Context, _ string, args ...string) (string, error) {
@@ -105,6 +123,7 @@ func newMergePendingHarness(t *testing.T, mode string, alertMinutes int) (*triag
 	git := &scriptedMergeGit{baseTip: "base-1"}
 	git.setPending("branch-1")
 	th.h.c.mp.git = git
+	th.h.c.mp.refTips = git.refTips
 
 	p, ok := th.h.m.store.GetPRD(th.h.prds[0].ID)
 	if !ok {
@@ -266,12 +285,20 @@ func TestMergePendingPass_ThresholdZeroNoAlert(t *testing.T) {
 func TestMergePendingPass_CacheReusedWhenTipsUnchanged(t *testing.T) {
 	th, git := newMergePendingHarness(t, config.MergePendingModeOn, 10)
 
-	for i := 0; i < 5; i++ {
-		th.h.c.triagePass()
-		th.advance(time.Minute)
+	th.h.c.triagePass()
+	first := git.total()
+	if first == 0 {
+		t.Fatal("the first pass ran no git comparison")
 	}
-	if n := git.count("rev-list"); n != 1 {
-		t.Fatalf("rev-list ran %d times over 5 passes with unchanged tips, want 1", n)
+	for i := 0; i < 4; i++ {
+		th.advance(time.Minute)
+		th.h.c.triagePass()
+	}
+	if n := git.total(); n != first {
+		t.Fatalf("git ran %d commands over 5 passes with unchanged tips, want %d (all from the first pass)", n, first)
+	}
+	if n := git.count("rev-parse"); n != 0 {
+		t.Fatalf("rev-parse ran %d times, want none while the ref files answer", n)
 	}
 
 	git.mu.Lock()
@@ -293,6 +320,7 @@ func TestMergePendingPass_CacheReusedWhenTipsUnchanged(t *testing.T) {
 
 func TestMergePendingPass_GitErrorIsUnknownNoAlert(t *testing.T) {
 	th, git := newMergePendingHarness(t, config.MergePendingModeOn, 10)
+	git.tipsUnreadable = true // tips come from git rev-parse
 	git.failOnVerb = "rev-parse"
 
 	for i := 0; i < 3; i++ {
@@ -321,6 +349,7 @@ func TestMergePendingPass_GitErrorIsUnknownNoAlert(t *testing.T) {
 	th.assertNoAlerts(t, "")
 
 	// a failure after the tips resolved is unknown too, and is not cached
+	git.tipsUnreadable = false
 	git.failOnVerb = "rev-list"
 	git.mu.Lock()
 	git.branchTip = "branch-9"
@@ -369,5 +398,193 @@ func TestMergePendingPass_ModeOffNeverRunsGit(t *testing.T) {
 		if got := th.h.c.MergeShadowDecisions(0); len(got) != 0 {
 			t.Fatalf("mode %q recorded shadow decisions %+v", mode, got)
 		}
+	}
+}
+
+func TestMergePendingPass_ShadowUnchangedPollsDoNotRewriteFile(t *testing.T) {
+	th, _ := newMergePendingHarness(t, config.MergePendingModeShadow, 0)
+	path := filepath.Join(th.h.m.store.dir, mergeShadowRecordsFile)
+
+	th.h.c.triagePass()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("shadow decision file after the first pass: %v", err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		th.advance(time.Minute)
+		th.h.c.triagePass()
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("shadow decision file was rewritten by an unchanged poll (stat err = %v)", err)
+	}
+	got := th.h.c.MergeShadowDecisions(0)
+	if len(got) != 1 || got[0].RepeatCount != 4 {
+		t.Fatalf("shadow decisions = %+v, want one record repeated 4 times in memory", got)
+	}
+}
+
+func TestMergePendingPass_ClearOnlyRemovesMergePendingRecord(t *testing.T) {
+	th, _ := newMergePendingHarness(t, config.MergePendingModeOn, 10)
+	id := th.h.prds[0].ID
+
+	if err := th.h.m.SaveTriageRecord(id, &TriageRecord{Status: "failed", FirstSeenAt: th.clock}); err != nil {
+		t.Fatal(err)
+	}
+	prd, _ := th.h.m.store.GetPRD(id)
+	th.h.c.mergePendingClear(prd)
+	if rec := th.record(t, 0); rec == nil || rec.Status != "failed" {
+		t.Fatalf("record = %+v, want the failed record left alone", rec)
+	}
+
+	if err := th.h.m.SaveTriageRecord(id, &TriageRecord{Status: TriageStatusMergePending, FirstSeenAt: th.clock}); err != nil {
+		t.Fatal(err)
+	}
+	prd, _ = th.h.m.store.GetPRD(id)
+	th.h.c.mergePendingClear(prd)
+	if rec := th.record(t, 0); rec != nil {
+		t.Fatalf("record = %+v, want the merge_pending record cleared", rec)
+	}
+}
+
+func TestMergePendingPass_LeftoverFailedRecordOnCompletedAutomatonStillCleared(t *testing.T) {
+	th, git := newMergePendingHarness(t, config.MergePendingModeOn, 10)
+	id := th.h.prds[0].ID
+	old := th.clock.Add(-24 * time.Hour)
+
+	// the branch already landed: the old failed record goes, as before
+	git.setMerged("branch-1", "base-2")
+	if err := th.h.m.SaveTriageRecord(id, &TriageRecord{Status: "failed", FirstSeenAt: old}); err != nil {
+		t.Fatal(err)
+	}
+	th.h.c.triagePass()
+	if rec := th.record(t, 0); rec != nil {
+		t.Fatalf("record = %+v, want the leftover failed record cleared", rec)
+	}
+
+	// the branch is pending: the merge_pending record starts its own episode
+	git.setPending("branch-2")
+	if err := th.h.m.SaveTriageRecord(id, &TriageRecord{Status: "failed", FirstSeenAt: old}); err != nil {
+		t.Fatal(err)
+	}
+	th.h.c.triagePass()
+	rec := th.record(t, 0)
+	if rec == nil || rec.Status != TriageStatusMergePending || !rec.FirstSeenAt.After(old) {
+		t.Fatalf("record = %+v, want a fresh merge_pending record that did not inherit the failed one's first-seen time", rec)
+	}
+}
+
+func TestMergePendingPass_TipsUnreadableFallsBackToGit(t *testing.T) {
+	th, git := newMergePendingHarness(t, config.MergePendingModeOn, 10)
+	git.tipsUnreadable = true
+	for i := 0; i < 3; i++ {
+		th.h.c.triagePass()
+	}
+	if n := git.count("rev-parse"); n != 3 {
+		t.Fatalf("rev-parse ran %d times, want one per pass (3) when the ref files cannot answer", n)
+	}
+	if n := git.count("rev-list"); n != 1 {
+		t.Fatalf("rev-list ran %d times, want 1 (tips never moved)", n)
+	}
+}
+
+// blockingMergeGit blocks every call until released and reports when the first
+// call has started.
+type blockingMergeGit struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (b *blockingMergeGit) Run(ctx context.Context, _ string, _ ...string) (string, error) {
+	b.once.Do(func() { close(b.started) })
+	select {
+	case <-b.release:
+	case <-ctx.Done():
+	}
+	return "", errors.New("blocked")
+}
+
+func TestMergePendingPass_SlowGitDoesNotBlockShadowList(t *testing.T) {
+	th, _ := newMergePendingHarness(t, config.MergePendingModeShadow, 10)
+	b := &blockingMergeGit{started: make(chan struct{}), release: make(chan struct{})}
+	th.h.c.mp.git = b
+	th.h.c.mp.refTips = func(_, _, _ string) (string, string, bool) { return "tip-a", "tip-b", true }
+
+	done := make(chan struct{})
+	go func() {
+		th.h.c.mergeCompare("/repos/base", mergeTestBranch)
+		close(done)
+	}()
+	select {
+	case <-b.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("git never started")
+	}
+
+	listed := make(chan struct{})
+	go func() {
+		th.h.c.MergeShadowDecisions(0)
+		close(listed)
+	}()
+	select {
+	case <-listed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("MergeShadowDecisions blocked behind a running git comparison")
+	}
+	close(b.release)
+	<-done
+}
+
+func TestMergeGitRunner_HungGitIsKilledAtDeadline(t *testing.T) {
+	dir := t.TempDir()
+	// a git that hangs and leaves a child holding its output open
+	script := "#!/bin/sh\nsleep 60\n"
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o700); err != nil { // #nosec G306 -- test stub
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := NewMergeGitRunner().Run(ctx, t.TempDir(), "rev-list", "--count", "main..x")
+	if err == nil {
+		t.Fatal("hung git returned no error")
+	}
+	if took := time.Since(start); took > 10*time.Second {
+		t.Fatalf("hung git took %s to stop, want it cut off near the deadline", took)
+	}
+}
+
+func TestReadBranchTips_LooseAndPackedRefs(t *testing.T) {
+	repo := gitFixture(t)
+	gitT(t, repo, "branch", "automaton/alpha-work")
+	want := strings.TrimSpace(gitT(t, repo, "rev-parse", "main"))
+
+	bt, mt, ok := readBranchTips(repo, "automaton/alpha-work", "main")
+	if !ok || bt != want || mt != want {
+		t.Fatalf("loose refs: got %q %q ok=%v, want %q for both", bt, mt, ok, want)
+	}
+
+	writeFileT(t, repo, "more.txt", "more\n")
+	gitT(t, repo, "checkout", "-q", "automaton/alpha-work")
+	gitT(t, repo, "add", "more.txt")
+	gitT(t, repo, "commit", "-m", "Automaton second commit")
+	gitT(t, repo, "checkout", "-q", "main")
+	branchWant := strings.TrimSpace(gitT(t, repo, "rev-parse", "automaton/alpha-work"))
+	gitT(t, repo, "pack-refs", "--all")
+
+	bt, mt, ok = readBranchTips(repo, "automaton/alpha-work", "main")
+	if !ok || bt != branchWant || mt != want {
+		t.Fatalf("packed refs: got %q %q ok=%v, want %q and %q", bt, mt, ok, branchWant, want)
+	}
+
+	if _, _, ok := readBranchTips(repo, "automaton/missing", "main"); ok {
+		t.Fatal("a missing branch resolved")
+	}
+	if _, _, ok := readBranchTips(repo, "../escape", "main"); ok {
+		t.Fatal("a ref name with .. resolved")
 	}
 }

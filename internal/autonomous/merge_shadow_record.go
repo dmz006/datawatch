@@ -58,13 +58,13 @@ func (r *mergeShadowRecords) load() {
 	data, err := os.ReadFile(r.path)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			log.Printf("[autonomous] merge shadow records: read %s: %v", r.path, err)
+			log.Printf("[autonomous] Automaton merge shadow records: read %s: %v", r.path, err)
 		}
 		return
 	}
 	var list []MergeShadowDecision
 	if err := json.Unmarshal(data, &list); err != nil {
-		log.Printf("[autonomous] merge shadow records: %s is corrupt, starting empty: %v", r.path, err)
+		log.Printf("[autonomous] Automaton merge shadow records: %s is corrupt, starting empty: %v", r.path, err)
 		r.dirty = true
 		r.save()
 		return
@@ -79,23 +79,29 @@ func (r *mergeShadowRecords) load() {
 }
 
 // observe stores one decision, or advances the newest equal one for the same
-// Automaton. It reports whether a new record was appended.
+// Automaton. It reports whether a new record was appended, and marks the
+// history for writing only when something other than a repeat count changed.
 func (r *mergeShadowRecords) observe(d MergeShadowDecision, now time.Time) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.dirty = true
 	for _, e := range r.entries {
 		if e.AutomatonID != d.AutomatonID {
 			continue
 		}
 		if e.Branch == d.Branch && e.State == d.State && e.CommitsAhead == d.CommitsAhead && e.WouldAlert == d.WouldAlert {
-			e.Name = d.Name
+			// an unchanged decision only advances the in-memory counters; they
+			// reach disk with the next change, so a quiet poll writes nothing
 			e.LastSeenAt = now
 			e.RepeatCount++
+			if e.Name != d.Name {
+				e.Name = d.Name
+				r.dirty = true
+			}
 			return false
 		}
 		break // the newest record for this Automaton differs: start a new one
 	}
+	r.dirty = true
 	d.At, d.LastSeenAt, d.RepeatCount = now, now, 1
 	r.entries = append([]*MergeShadowDecision{&d}, r.entries...)
 	if len(r.entries) > mergeShadowRecordLimit {
@@ -141,7 +147,7 @@ func (r *mergeShadowRecords) save() {
 		err = atomicWriteFile(r.path, data)
 	}
 	if err != nil {
-		log.Printf("[autonomous] merge shadow records: write %s: %v", r.path, err)
+		log.Printf("[autonomous] Automaton merge shadow records: write %s: %v", r.path, err)
 		return
 	}
 	r.dirty = false
