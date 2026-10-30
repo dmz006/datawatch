@@ -20,6 +20,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.36.0 — Lanes waiting only on a verifier count as available
+
+### Added
+
+- **A Claude lane whose Automaton is only waiting on a verifier now counts as available.** When the work on a Claude lane is done for now and the lane is just waiting for verifier results, the automatic lane fill planner treats that lane as available when it works out the next start (within the usual lane count and Claude usage limits), so queued work no longer sits behind a lane that is idle in practice. Every lane view — the REST lane fill status, the MCP tool, the CLI, the comm channel, and the PWA lane fill card — shows such a lane as waiting on a verifier and whether the planner counts it as available. The idle-lane alert for a lane like that fires once per episode, not once per poll. A lane whose waiting work still has other work running counts as busy, as before. The new setting `autonomous.lane_fill.count_verifier_wait` (on by default) switches this counting back off whenever you want the old behaviour. Automatic lane fill itself is still in shadow mode by default: the planner records what it would start and starts nothing until you switch the mode on.
+
 ## v9.35.0 — Operator decisions and the design-point gate
 
 ### Added
