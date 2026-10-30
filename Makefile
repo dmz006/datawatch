@@ -8,7 +8,7 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
         security-registry-gen security-registry-check \
-        security-registry-gen security-registry-check test-tmp-guard \
+        test-tmp-guard \
         test-e2e-docker test-e2e-pwa test-e2e-pwa-load test-e2e-mobile-fit test-e2e-shared-nav test-e2e-all test-e2e-clean
 
 # Sync docs/ into internal/server/web/docs/ so the embedded web FS

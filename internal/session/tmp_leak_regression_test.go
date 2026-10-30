@@ -231,9 +231,7 @@ func collectAndClean(dir string) []string {
 			}
 		}
 		left = append(left, desc)
-		if err := os.RemoveAll(e); err != nil { //nolint:errcheck
-			// Leave it: attribution is already recorded above.
-		}
+		_ = os.RemoveAll(e) // leave it on failure: attribution is already recorded above
 	}
 	return left
 }
