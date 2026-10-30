@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/llm/scratch"
 )
 
 func init() {
@@ -184,6 +185,9 @@ func writeTaskFile(tmuxSession, task string) (string, error) {
 		os.Remove(f.Name()) //nolint:errcheck
 		return "", err
 	}
+	// Session-end ownership: record the task-capture file under the session's
+	// tmux name so its end path releases any the run left behind.
+	scratch.RecordPath(tmuxSession, f.Name())
 	return f.Name(), nil
 }
 

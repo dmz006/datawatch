@@ -46,6 +46,9 @@ Subcommands:
                                   work branch is not on main yet (read only)
   safe-to-delete [--json]         Automaton branches and worktrees that are safe to delete, and those held back
                                   (report only, nothing is deleted)
+  cleanup [--json]                 Cleanup status: both passes (worktrees and temp sweep), their last run,
+                                   the removed/would-remove/skipped/failed counts, the owner-vs-net split,
+                                   the two disk readings and the disk alert (read only, nothing is removed)
   overlap [--title T] [--spec S | <spec>] [--json]
                                   Search before you create: the Automata, registry rows and branches
                                   that already cover a plan's title and spec, best match first
@@ -229,6 +232,7 @@ Subcommands:
 		newAutonomousDecisionsCmd(),
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),
+		newAutonomousCleanupCmd(),
 		// Search-before-create read (docs/plans/2026-10-29-search-before-create.md).
 		newAutonomousOverlapCmd(),
 	)

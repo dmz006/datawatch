@@ -667,6 +667,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolQuestionStats(), tracked(s.handleQuestionStats))
 	mcpSrv.AddTool(s.toolAutonomousMerge(), tracked(s.handleAutonomousMerge))
 	mcpSrv.AddTool(s.toolAutonomousSafeToDelete(), tracked(s.handleAutonomousSafeToDelete))
+	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))
 	mcpSrv.AddTool(s.toolAutonomousOverlapSearch(), tracked(s.handleAutonomousOverlapSearch))
 	mcpSrv.AddTool(s.toolSecurityFailureList(), tracked(s.handleSecurityFailureList))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetSkills(), tracked(s.handleAutonomousPRDSetSkills))

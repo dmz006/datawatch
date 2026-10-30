@@ -2762,6 +2762,21 @@ type AutonomousAutomationConfig struct {
 	SecurityFailure       SecurityFailureConfig `yaml:"security_failure" json:"security_failure"`
 	CreateSearchMode      string                `yaml:"create_search_mode" json:"create_search_mode"`
 	CreateSearchThreshold *float64              `yaml:"create_search_threshold,omitempty" json:"create_search_threshold,omitempty"`
+	// Cleanup — the safe-to-delete cleanup knobs (cleanup_mode,
+	// cleanup_retention_hours, cleanup_max_removals_per_pass,
+	// disk_alert_percent). The write path (internal/server/cleanup.go)
+	// refuses a cleanup_mode outside off|report|on, retention hours and
+	// per-pass removal caps below 1 or fractional, and a disk_alert_percent
+	// outside 1..100 with a 400. The read side is still tolerant, for a
+	// hand-edited config file: every read goes through the Effective*
+	// accessors, so an unset key or an unrecognized cleanup_mode reads as
+	// CleanupModeReport (record and report only), zero or negative retention
+	// hours and removal caps read their defaults, and disk_alert_percent is
+	// clamped to 1..100 (unset reads 85).
+	CleanupMode               string `yaml:"cleanup_mode,omitempty" json:"cleanup_mode,omitempty"`
+	CleanupRetentionHours     int    `yaml:"cleanup_retention_hours,omitempty" json:"cleanup_retention_hours,omitempty"`
+	CleanupMaxRemovalsPerPass int    `yaml:"cleanup_max_removals_per_pass,omitempty" json:"cleanup_max_removals_per_pass,omitempty"`
+	DiskAlertPercent          int    `yaml:"disk_alert_percent,omitempty" json:"disk_alert_percent,omitempty"`
 }
 
 // autonomous.automation.create_search_mode values and defaults.
@@ -2814,6 +2829,75 @@ func (c AutonomousAutomationConfig) EffectiveCreateSearchThreshold() float64 {
 		return DefaultAutomationCreateSearchThreshold
 	}
 	return *c.CreateSearchThreshold
+}
+
+// autonomous.automation cleanup values and defaults. CleanupMode decides
+// whether the safe-to-delete cleanup pass is off, records and reports only
+// (the default) or on. CleanupRetentionHours is how long a
+// removal candidate may sit unused (whole hours) before it counts as
+// retained for cleanup; CleanupMaxRemovalsPerPass bounds how many removals
+// one pass may perform; DiskAlertPercent is the disk-usage percent at or
+// above which a disk alert is raised.
+const (
+	CleanupModeOff    = "off"
+	CleanupModeReport = "report"
+	CleanupModeOn     = "on"
+
+	DefaultAutomationCleanupRetentionHours     = 24
+	DefaultAutomationCleanupMaxRemovalsPerPass = 10
+	DefaultAutomationDiskAlertPercent          = 85
+)
+
+// EffectiveCleanupMode returns the cleanup mode in effect: an unset key
+// (empty) and any unknown value read as CleanupModeReport; off and on are
+// explicit operator choices. This is deliberately more forgiving than
+// EffectiveMergePendingMode or EffectiveCreateSearchMode: unknown words are
+// legal values that resolve to report, not write-path errors.
+func (c AutonomousAutomationConfig) EffectiveCleanupMode() string {
+	switch c.CleanupMode {
+	case CleanupModeOff, CleanupModeOn:
+		return c.CleanupMode
+	default:
+		return CleanupModeReport
+	}
+}
+
+// EffectiveCleanupRetentionHours returns the cleanup retention window in
+// whole hours: zero or a negative value reads the default of
+// DefaultAutomationCleanupRetentionHours (24); an unset key and an explicit
+// 0 are indistinguishable and both read the default.
+func (c AutonomousAutomationConfig) EffectiveCleanupRetentionHours() int {
+	if c.CleanupRetentionHours <= 0 {
+		return DefaultAutomationCleanupRetentionHours
+	}
+	return c.CleanupRetentionHours
+}
+
+// EffectiveCleanupMaxRemovalsPerPass returns the per-pass removal cap: zero
+// or a negative value reads the default of
+// DefaultAutomationCleanupMaxRemovalsPerPass (10).
+func (c AutonomousAutomationConfig) EffectiveCleanupMaxRemovalsPerPass() int {
+	if c.CleanupMaxRemovalsPerPass <= 0 {
+		return DefaultAutomationCleanupMaxRemovalsPerPass
+	}
+	return c.CleanupMaxRemovalsPerPass
+}
+
+// EffectiveDiskAlertPercent returns the disk-usage alert percent in effect:
+// an unset key (zero) reads the default of DefaultAutomationDiskAlertPercent
+// (85), and any other value is clamped into 1..100.
+func (c AutonomousAutomationConfig) EffectiveDiskAlertPercent() int {
+	p := c.DiskAlertPercent
+	if p == 0 {
+		return DefaultAutomationDiskAlertPercent
+	}
+	if p < 1 {
+		p = 1
+	}
+	if p > 100 {
+		p = 100
+	}
+	return p
 }
 
 // autonomous.lane_fill.mode values and defaults.

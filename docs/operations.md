@@ -4606,7 +4606,7 @@ Set them with `datawatch config set autonomous.automation.merge_pending_mode sha
 | `safe` | State `merged` (reason "all commits on main") or `empty` (reason "no commits ahead of main"), and the worktree, if any, has no uncommitted changes | `branch`, `worktree` (empty when none), `reason`, `commits` |
 | `held` | State `pending`, `needs_look` or `unknown`; or a `merged` or `empty` branch whose worktree has uncommitted changes (`dirty`) | `branch`, `worktree`, `state`, `dirty`, `note` |
 
-`held_dirty` counts the branches that are safe by state but held back only because of uncommitted changes in their worktree. Unlike the merge status, the report runs git when it is read (it is not served from the daemon's memory) and works in every mode, including `off`; it needs only `worktree_base_repo`. **The report never deletes anything.** It does not delete a branch, remove a worktree, push, reset, check out or merge, and there is no surface that acts on it. Cleaning up a branch or worktree stays a separate step that you approve and carry out yourself. Read `safe` as "the check found nothing to lose", not as an instruction, and use `needs_look` entries in `held` as the reminder to look first.
+`held_dirty` counts the branches that are safe by state but held back only because of uncommitted changes in their worktree. Unlike the merge status, the report runs git when it is read (it is not served from the daemon's memory) and works in every mode, including `off`; it needs only `worktree_base_repo`. **The report never deletes anything.** It does not delete a branch, remove a worktree, push, reset, check out or merge, and there is no surface that acts on it. Cleaning up a branch or worktree is a separate step: you carry it out yourself, or you switch on the Automaton worktree cleanup described in the next section, which applies a retention window and a per-pass limit on top of this report. Read `safe` as "the check found nothing to lose", not as an instruction, and use `needs_look` entries in `held` as the reminder to look first.
 
 **Surfaces.**
 
@@ -4622,6 +4622,54 @@ Set them with `datawatch config set autonomous.automation.merge_pending_mode sha
 Both reads are GET-only (any other method is 405), answer 503 while Automata are disabled, and need the autonomous read capability when called by a federated peer. The merge state is served from the daemon's last comparison, so a read never runs git and an Automaton not compared yet reads `unknown`. The full field documentation and JSON shapes are in `docs/api/autonomous.md` (section *Merge state and safe-to-delete report*), and the walk-through for reading them is in `docs/howto/automation-tab.md`.
 
 **What the merge-pending check never does.** It never merges a branch, deletes a branch, removes a worktree, pushes, resets or checks anything out: every git command it issues is a read. It never alerts in `off` or `shadow` mode, never alerts twice for one episode, and never alerts for `merged`, `empty`, `needs_look` or `unknown`. It never changes an Automaton's own status or fields; the only thing it writes is the merge-pending record in `on` mode and the shadow history in `shadow` mode.
+
+---
+
+## Automaton worktree cleanup (finished work branches, worktrees and daemon temp files)
+
+An Automaton that runs in worktree mode works on its own branch (`automaton/<id>`) in its own worktree under the worktree base repository (`autonomous.worktree_base_repo`), and its worker sessions leave scratch files in the daemon's temporary directory. The cleanup removes what a finished Automaton no longer needs, and only what it is certain it can lose nothing by removing, and watches the disks involved. It is not tied to one repository: it reads the worktree base repository from the config, takes the branch an Automaton's work must be on from that Automaton's own base branch or, failing that, from the default branch the remote records for the repository (`origin/HEAD`), and works for a project whose default branch is `master`, `trunk` or any other name. The operator guide is [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md).
+
+**Two passes.** The **worktrees** pass removes a finished (completed or cancelled) Automaton's work branch and worktree when it ends and again on the coordinator's periodic sweep. The **temp files** pass removes the scratch files and directories the daemon's own worker sessions created in the temporary directory, when the session ends and again on a periodic sweep. The removal at the end of the Automaton or session is the **owner** path; the sweep is the **net**. The status keeps the two apart so you can see whether the net finds real work.
+
+**The safety criteria (worktrees).** An entry is removed only if all of these hold, each re-checked at removal time: the Automaton is completed or cancelled in the store now; no live session or live lease uses the worktree; the worktree has no uncommitted changes; every commit on the branch is on the base branch (and if the base branch cannot be worked out, nothing is removed); the branch is at least `cleanup_retention_hours` old (an unknown age counts as young; the release an Automaton makes when it completes or is cancelled skips only this age check, because the age counts from that moment); and it is neither the main checkout nor the base branch. Only branches in the `automaton/` namespace are considered. Removal is `git worktree remove` without `--force` then `git branch -d`, never `-D`; a refusal leaves the entry in place and records the error. Every removal is written to the Automaton's triage record and the audit log.
+
+**The safety criteria (temp files).** A path is removed only if its name starts with `datawatch-` and sits inside the temporary directory, the daemon recorded creating that exact path for a session, that session is known not to be alive, and it ended at least `cleanup_retention_hours` ago. Unrecorded prefixed names are skipped as foreign, an unknown session counts as alive, symbolic links are never followed or removed, and the record of created paths is in memory, so scratch from an earlier daemon process is left alone.
+
+**The modes.** `autonomous.automation.cleanup_mode`:
+
+| Value | What it does |
+|---|---|
+| `off` | No cleanup git command is run and the temporary directory is not scanned. The disk check still runs. |
+| `report` (default) | Every check runs and each pass records what it would remove; nothing is removed. An unset key and any unrecognized value read as `report`. |
+| `on` | The passes remove what passes every check, at most `cleanup_max_removals_per_pass` per pass. |
+
+| Key | Meaning | Default | Allowed |
+|---|---|---|---|
+| `autonomous.automation.cleanup_mode` | Whether the cleanup is off, reports only or removes | `report` | `off`, `report`, `on` (anything else is refused on every write surface) |
+| `autonomous.automation.cleanup_retention_hours` | How long finished work must have sat before it can be removed | 24 | whole number ≥ 1 |
+| `autonomous.automation.cleanup_max_removals_per_pass` | The most entries one pass removes; the rest wait for the next pass and count as would-remove | 10 | whole number ≥ 1 |
+| `autonomous.automation.disk_alert_percent` | Disk usage percent that raises the disk alert | 85 | whole number 1–100 |
+
+Set them with `datawatch config set autonomous.automation.cleanup_mode on`, `PUT /api/config` or `PUT /api/autonomous/config`, comm `configure autonomous.automation.cleanup_mode=on`, the MCP tool `config_set`, or the PWA Settings fields. They are read live; a change applies on the next poll with no restart.
+
+**The disk alert.** The daemon reads the usage of the disk holding the worktree base repository and of the disk holding the daemon's temporary directory on start and on every coordinator poll, in every mode including `off`. While either is at or above `disk_alert_percent` it raises one warning alert, at most once an hour, that names the disk and its usage. The time of the last alert is kept across restarts. The alert never removes anything. A disk that cannot be measured has no reading and cannot alert.
+
+**Status.** One read on every surface:
+
+| Surface | How |
+|---|---|
+| REST | `GET /api/autonomous/cleanup` |
+| MCP | `autonomous_cleanup_status` |
+| CLI | `datawatch autonomous cleanup [--json]` |
+| Comm channel | `autonomous cleanup` |
+| PWA | **Cleanup** card on the Automation Overview sub-tab, refreshed every 30 seconds |
+| Mobile/wear | The same REST contract, described in `docs/api/openapi.yaml` |
+
+The read is GET-only (any other method is 405), answers 503 while Automata are disabled, and needs the autonomous read capability when called by a federated peer. It serves the daemon's in-memory status, so a read never runs git or scans a disk; the status is also saved to `cleanup_status.json` beside the other autonomous stores so the last run survives a restart. Each pass reports its `mode`, `last_run`, `removed`, `would_remove`, `skipped`, `failed`, `bytes_freed`, `last_error` and the owner-versus-net split; the status adds the two disk readings, `disk_alert_percent`, `disk_alert` and `last_disk_alert_at`. The full field documentation is in `docs/api/openapi.yaml`.
+
+**Moving from report to on.** Run in `report` until a few finished Automata have gone through; read `would_remove` and `skipped` and the safe-to-delete report above to confirm the pass would remove only what you are happy to lose; keep the per-pass limit small for the first `on` passes; then set the mode to `on`. Nothing removed comes back, so the checks come first.
+
+**What the cleanup never does.** It never removes a branch with commits that are not on the base branch, a worktree with uncommitted changes, anything belonging to a running or unfinished Automaton, a branch outside `automaton/`, or a path outside the daemon's own scratch files. It never uses `--force` or `-D`, never follows a symbolic link, and never touches anything in `off` mode.
 
 ---
 

@@ -39,6 +39,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/llm/scratch"
 )
 
 // ErrNoModel — a pi-family launch was built with no model configured.
@@ -73,6 +74,10 @@ func writeTaskFile(tmuxSession, task string) (string, error) {
 		os.Remove(f.Name()) //nolint:errcheck
 		return "", err
 	}
+	// Session-end ownership: record the task-capture file under the session's
+	// tmux name so the session's end path releases it and the autonomous temp
+	// sweep may only ever reach it as this session's own scratch.
+	scratch.RecordPath(tmuxSession, f.Name())
 	return f.Name(), nil
 }
 
@@ -97,6 +102,9 @@ func reserveScratchFile(tmuxSession, purpose string) (string, error) {
 		return "", err
 	}
 	defer f.Close() //nolint:errcheck
+	// Same ownership rule as writeTaskFile: one-shot scratch, released at
+	// session end.
+	scratch.RecordPath(tmuxSession, f.Name())
 	return f.Name(), nil
 }
 
@@ -173,6 +181,9 @@ func writeNodeHostAgentDir(sourceDir, tmuxSession, provider, baseURL string) (st
 	if err != nil {
 		return "", err
 	}
+	// Session-end ownership: record the per-session worker config directory
+	// the moment it exists (released at session end, sweep-covered after).
+	scratch.RecordPath(tmuxSession, dir)
 	for _, e := range entries {
 		if e.Name() == "models.json" {
 			continue

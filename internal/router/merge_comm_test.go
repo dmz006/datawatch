@@ -15,7 +15,7 @@ import (
 
 const mergeCommSample = `{"mode":"on","alert_minutes":30,"automata":[{
   "automaton_id": "prd-9", "name": "Add paging", "branch": "automaton/prd-9",
-  "state": "pending", "commits_ahead": 3,
+  "state": "pending", "commits_ahead": 3, "base": "main",
   "pending_since": "2026-01-02T00:00:00Z", "alerted_at": "2026-01-02T00:31:00Z"
 }],"shadow_decisions":[]}`
 
@@ -112,6 +112,7 @@ func TestMergeComm_AlertBodyIntact(t *testing.T) {
 		Status:         autonomous.TriageStatusMergePending,
 		Branch:         "automaton/prd-9",
 		CommitsAhead:   3,
+		BaseBranch:     "main",
 		FirstSeenAt:    first,
 		UpdatedAt:      first,
 	}
@@ -164,7 +165,7 @@ func TestMergeComm_AlertBodyIntact(t *testing.T) {
 		AlertMinutes: 30,
 		Automata: []autonomous.MergeStatusEntry{{
 			AutomatonID: rec.PRDID, Name: rec.PRDTitle, Branch: rec.Branch,
-			State: autonomous.MergeStatePending, CommitsAhead: rec.CommitsAhead, PendingSince: &since,
+			State: autonomous.MergeStatePending, CommitsAhead: rec.CommitsAhead, Base: rec.BaseBranch, PendingSince: &since,
 		}},
 	})
 	for _, shared := range []string{

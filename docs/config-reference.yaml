@@ -1072,6 +1072,46 @@ autonomous:
   # autonomous.automation.create_search_threshold=0.8`, and comm `configure
   # autonomous.automation.create_search_threshold=0.8`.
   #
+  # cleanup_mode: string, `off`, `report` (default) or `on`. Controls the
+  # safe-to-delete cleanup pass: `off` does not run it, `report` records and
+  # reports only, and `on` performs the removals the pass decides on. Unlike
+  # the other enum keys here, an absent key, an empty value and any
+  # unrecognized word all read as `report` — they are not refused on config
+  # load or on the write paths (only a non-string type is). Settable via PUT
+  # /api/config (key autonomous.automation.cleanup_mode; GET /api/config
+  # shows the effective value), CLI `datawatch config set
+  # autonomous.automation.cleanup_mode=on`, comm `configure
+  # autonomous.automation.cleanup_mode=on`, and the MCP
+  # autonomous_config_set tool (automation_cleanup_mode).
+  #
+  # cleanup_retention_hours: whole hours >= 0. How long a removal candidate
+  # may sit unused before it counts as retained for the cleanup pass. An
+  # unset key, an explicit 0 and a negative value are not refused — they all
+  # read as 24 (the default) through the effective getter. Settable via PUT
+  # /api/config (key autonomous.automation.cleanup_retention_hours), CLI
+  # `datawatch config set autonomous.automation.cleanup_retention_hours=48`,
+  # comm `configure autonomous.automation.cleanup_retention_hours=48`, and
+  # the MCP autonomous_config_set tool (automation_cleanup_retention_hours).
+  #
+  # cleanup_max_removals_per_pass: whole number >= 0. The maximum removals
+  # one cleanup pass may perform. An unset key, an explicit 0 and a negative
+  # value are not refused — they all read as 10 (the default) through the
+  # effective getter. Settable via PUT /api/config (key
+  # autonomous.automation.cleanup_max_removals_per_pass), CLI `datawatch
+  # config set autonomous.automation.cleanup_max_removals_per_pass=5`, comm
+  # `configure autonomous.automation.cleanup_max_removals_per_pass=5`, and
+  # the MCP autonomous_config_set tool
+  # (automation_cleanup_max_removals_per_pass).
+  #
+  # disk_alert_percent: whole number, clamped to 1..100. The disk-usage
+  # percent at or above which a disk alert is raised. An unset key (0) reads
+  # the 85 default; a stored value below 1 reads as 1 and above 100 reads as
+  # 100 — the clamp happens on read, the write is never refused for range.
+  # Settable via PUT /api/config (key autonomous.automation.disk_alert_percent),
+  # CLI `datawatch config set autonomous.automation.disk_alert_percent=90`,
+  # comm `configure autonomous.automation.disk_alert_percent=90`, and the MCP
+  # autonomous_config_set tool (automation_disk_alert_percent).
+  #
   # Automation objects themselves (members, edges, budget policy, defaults) are
   # runtime data in the automation store, created through the Automation verbs
   # (including `automation import-graph`), not keys in this file.

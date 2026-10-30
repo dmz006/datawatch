@@ -70,6 +70,7 @@ import (
 	pibackend "github.com/dmz006/datawatch/internal/llm/backends/pi"
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
 	"github.com/dmz006/datawatch/internal/llm/claudecode"
+	scratch "github.com/dmz006/datawatch/internal/llm/scratch"
 	"github.com/dmz006/datawatch/internal/mcp"
 	mcpsearchpkg "github.com/dmz006/datawatch/internal/mcp/search"
 	memoryPkg "github.com/dmz006/datawatch/internal/memory"
@@ -292,6 +293,15 @@ var claudeStartupAccepted sync.Map // key: sessID (string) → struct{}{}
 // task via send_input exactly once per session. Excluded: claude-code (channel
 // bridge), opencode-acp (ACP structured API), subprocess (shell task wrapping).
 var tuiTaskDelivered sync.Map // key: sessID (string) → struct{}{}
+
+// scratchOwnerReleaseHook counts a worker session's own temporary scratch
+// release into the autonomous cleanup status (the owner bucket in
+// cleanup_status.go), so it stays separate from the safety-net sweep's count.
+// Once the autonomous manager starts up, it gets set to the manager's
+// RecordOwnerTempRelease; nil is a no-op (hand-launched test, autonomous
+// disabled), and it is read at session termination — at that point the
+// manager may have already started.
+var scratchOwnerReleaseHook func(count int)
 
 var (
 	cfgPath    string
@@ -1668,6 +1678,44 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					} else {
 						fmt.Printf("[memory] installed Claude hooks in %s/.claude/\n", sess.ProjectDir)
 					}
+				}
+			}
+		})
+		// Session-end scratch release (design: session-end cleanup + safety-net
+		// sweep) — when this worker session reaches its terminal state, drop
+		// the temp files the daemon itself created for it (task capture files
+		// for the pi / claude-code / opencode / aider / goose backends, and the
+		// pi per-session worker config directories) from the created-path
+		// record. Removal is best effort: whatever it could not delete stays
+		// put, stays recorded, and the autonomous temp sweep may still collect
+		// it later. It never touches a live session's record.
+		mgr.SetScratchReleaser(func(sess *session.Session) {
+			if sess == nil {
+				return
+			}
+			keys := map[string]bool{}
+			if sess.TmuxSession != "" {
+				keys[sess.TmuxSession] = true
+			}
+			keys[sess.ID] = true // defensive: a launch path keyed under the bare id
+			releasedTotal := 0
+			for k := range keys {
+				released, errs := scratch.ReleaseSession(k)
+				releasedTotal += released
+				if released > 0 {
+					debugf("scratch release for %s: removed %d leftover temp entr(ies) from session end", sess.FullID, released)
+				}
+				for _, e := range errs {
+					debugf("scratch release for %s: %v", sess.FullID, e)
+				}
+			}
+			if releasedTotal > 0 {
+				// cleanup status (cleanup_status.go): count the owner's own
+				// session-end release under the owner bucket, so the
+				// safety-net sweep's count stays separate and the operator
+				// can see when the net had to do the owner's work.
+				if scratchOwnerReleaseHook != nil {
+					scratchOwnerReleaseHook(releasedTotal)
 				}
 			}
 		})
@@ -4381,6 +4429,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				MergePendingAlertMinutes: acfgIn.Automation.MergePendingAlertMinutes,
 				CreateSearchMode:         acfgIn.Automation.CreateSearchMode,
 				CreateSearchThreshold:    acfgIn.Automation.CreateSearchThreshold,
+				// Cleanup keys: the effective defaults (report, 24, 10, 85)
+				// resolve in the manager's Effective* accessors, so the bridge
+				// copies raw values and lets unset stay unset.
+				CleanupMode:               acfgIn.Automation.CleanupMode,
+				CleanupRetentionHours:     acfgIn.Automation.CleanupRetentionHours,
+				CleanupMaxRemovalsPerPass: acfgIn.Automation.CleanupMaxRemovalsPerPass,
+				DiskAlertPercent:          acfgIn.Automation.DiskAlertPercent,
 				// security failure mode (autonomous.automation.security_failure.mode)
 				SecurityFailure: autonomouspkg.SecurityFailureConfig{Mode: acfgIn.Automation.SecurityFailure.Mode},
 				// repo CI watch block (autonomous.automation.repo_ci_watch.*):
@@ -6325,6 +6380,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
 			autonomousMgrRef = amgr // BL244 — expose for plugin context wiring below
+			// Session-end scratch releases by the owner are counted into the
+			// cleanup status (owner bucket) so the safety-net sweep's count
+			// stays separate (cleanup_status.go).
+			scratchOwnerReleaseHook = amgr.RecordOwnerTempRelease
 			// Planning/verification pairing check at startup. Each warning is
 			// written to the daemon log once; the status endpoint keeps them.
 			amgr.ReportPairingWarnings()

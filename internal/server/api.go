@@ -6297,6 +6297,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"create_search_mode": s.cfg.Autonomous.Automation.EffectiveCreateSearchMode(),
 				// Effective, not raw: an unset (nil) value reads the 0.5 default.
 				"create_search_threshold": s.cfg.Autonomous.Automation.EffectiveCreateSearchThreshold(),
+				// Effective, not raw: an unset key or an unrecognized value
+				// reads report; zero/negative values read the 24-hour and 10
+				// defaults; the alert percent reads 85 when unset and is
+				// clamped to 1..100 otherwise.
+				"cleanup_mode":                  s.cfg.Autonomous.Automation.EffectiveCleanupMode(),
+				"cleanup_retention_hours":       s.cfg.Autonomous.Automation.EffectiveCleanupRetentionHours(),
+				"cleanup_max_removals_per_pass": s.cfg.Autonomous.Automation.EffectiveCleanupMaxRemovalsPerPass(),
+				"disk_alert_percent":            s.cfg.Autonomous.Automation.EffectiveDiskAlertPercent(),
 			},
 			"lane_fill": laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
 			"progress": map[string]interface{}{
@@ -6629,6 +6637,32 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		if verr := validateCreateSearchThresholdValue(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
+		}
+	}
+	// Cleanup keys (autonomous.automation.cleanup_mode,
+	// cleanup_retention_hours, cleanup_max_removals_per_pass,
+	// disk_alert_percent): only the value type is checked here. An unknown
+	// cleanup_mode word is legal — it reads as report through
+	// EffectiveCleanupMode — and zero/negative hours and caps plus out-of-
+	// range percents are not refusals either (they read their defaults or
+	// clamp to 1..100), unlike the merge-pending and search-before-create
+	// keys above.
+	if v, ok := patch["autonomous.automation.cleanup_mode"]; ok {
+		if verr := validateCleanupModeValue(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	for _, key := range []string{
+		"autonomous.automation.cleanup_retention_hours",
+		"autonomous.automation.cleanup_max_removals_per_pass",
+		"autonomous.automation.disk_alert_percent",
+	} {
+		if v, ok := patch[key]; ok {
+			if verr := validateCleanupWholeNumber(key, v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 	}
 	// Security failure (autonomous.automation.security_failure.*): the only
@@ -8163,6 +8197,33 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if f, err := parseCreateSearchThreshold(v); err == nil {
 				cfg.Autonomous.Automation.CreateSearchThreshold = &f
 			}
+		case "autonomous.automation.cleanup_mode":
+			// String; stored as written — off | report | on are the intended
+			// words and an empty/unknown one reads as report through
+			// EffectiveCleanupMode.
+			if validateCleanupModeValue(v) == nil {
+				cfg.Autonomous.Automation.CleanupMode = toString(v)
+			}
+		case "autonomous.automation.cleanup_retention_hours":
+			// Stored as written (a whole number, checked above); zero or a
+			// negative value reads the 24-hour default through
+			// EffectiveCleanupRetentionHours.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.Automation.CleanupRetentionHours = n
+			}
+		case "autonomous.automation.cleanup_max_removals_per_pass":
+			// Stored as written (a whole number, checked above); zero or a
+			// negative value reads the 10 default through
+			// EffectiveCleanupMaxRemovalsPerPass.
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.Automation.CleanupMaxRemovalsPerPass = n
+			}
+		case "autonomous.automation.disk_alert_percent":
+			// Stored as written (a whole number, checked above); the accessor
+			// surfaces it clamped to 1..100 (unset reads the 85 default).
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.Automation.DiskAlertPercent = n
+			}
 		case "autonomous.automation.repo_ci_watch.mode",
 			"autonomous.automation.repo_ci_watch.repos",
 			"autonomous.automation.repo_ci_watch.poll_seconds",
@@ -9403,6 +9464,31 @@ func parseCreateSearchThreshold(v interface{}) (float64, error) {
 		return 0, verr
 	}
 	return f, nil
+}
+
+// validateCleanupModeValue checks autonomous.automation.cleanup_mode: it
+// must hold a string. Unlike validateMergePendingMode and
+// validateCreateSearchModeValue, unknown words (and the empty string) are
+// not errors: they resolve to report through EffectiveCleanupMode, so the
+// write path only refuses a type mismatch.
+func validateCleanupModeValue(v interface{}) error {
+	if _, ok := v.(string); !ok {
+		return fmt.Errorf("autonomous.automation.cleanup_mode: must be a string (off, report or on; an empty or unrecognized value reads as report)")
+	}
+	return nil
+}
+
+// validateCleanupWholeNumber checks one of the three whole-number cleanup
+// keys (cleanup_retention_hours, cleanup_max_removals_per_pass,
+// disk_alert_percent): it must hold a whole number (a JSON number or a
+// numeric string). Out-of-range values are not refused here — the
+// Effective* accessors resolve zero/negative values to the defaults and
+// clamp disk_alert_percent to 1..100.
+func validateCleanupWholeNumber(key string, v interface{}) error {
+	if _, ok := toInt(v); !ok {
+		return fmt.Errorf("%s: must be a whole number (zero or a negative value reads the default; disk_alert_percent is otherwise clamped to 1..100)", key)
+	}
+	return nil
 }
 
 // planTierTableForDisplay renders the tier -> max-inflight table for the

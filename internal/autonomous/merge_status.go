@@ -27,6 +27,8 @@ type MergeStatusEntry struct {
 	// compared the branch.
 	State        string `json:"state"`
 	CommitsAhead int    `json:"commits_ahead"`
+	// Base is the default branch the comparison used; empty until compared.
+	Base string `json:"base,omitempty"`
 	// PendingSince is when the Automaton was first seen merge pending; null
 	// when it is not pending or the pass has not seen it yet.
 	PendingSince *time.Time `json:"pending_since"`
@@ -97,7 +99,7 @@ func (m *Manager) MergeStatus() MergeStatus {
 		}
 		e := MergeStatusEntry{AutomatonID: prd.ID, Name: name, Branch: prd.Git.Branch, State: MergeStateUnknown}
 		if cmp, ok := c.mergeCached(prd.Git.Branch); ok {
-			e.State, e.CommitsAhead = cmp.State, cmp.Ahead
+			e.State, e.CommitsAhead, e.Base = cmp.State, cmp.Ahead, cmp.Base
 		}
 		pending := e.State == MergeStatePending
 		if mode == config.MergePendingModeShadow {
@@ -130,5 +132,6 @@ func (m *Manager) MergeSafeToDelete(ctx context.Context) (SafeDeleteReport, erro
 	if repo == "" {
 		return SafeDeleteReport{Safe: []SafeDeleteEntry{}, Held: []SafeDeleteHeld{}}, ErrMergeNoBaseRepo
 	}
-	return SafeToDeleteReport(ctx, NewMergeGitRunner(), repo, mergePendingBase)
+	git := NewMergeGitRunner()
+	return SafeToDeleteReport(ctx, git, repo, resolveMergeBase(ctx, git, repo))
 }

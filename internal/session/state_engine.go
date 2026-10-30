@@ -156,8 +156,8 @@ func (m *Manager) markChannelEventAt(fullID string, kind ChannelEventKind, ts ti
 		if m.onStateChange != nil {
 			m.onStateChange(sess, oldState)
 		}
-		if newState == StateComplete && m.onSessionEnd != nil {
-			m.onSessionEnd(sess)
+		if newState == StateComplete {
+			m.emitSessionEnd(sess)
 		}
 	}
 }

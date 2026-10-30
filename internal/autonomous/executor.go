@@ -1123,6 +1123,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// (open-PR only, no local push) network calls, run before
 	// anything else can observe *prd concurrently.
 	m.handleClusterCompletion(prd)
+	// Worktree cleanup — completion end path: release the work
+	// branch and its work tree when the commits are already on the
+	// base branch. The cleanup's safety criteria still apply (live
+	// session or lease, dirty work tree, retention window), and an
+	// entry they hold is left alone with the reason recorded; the
+	// coordinator's periodic cleanup pass retries later.
+	m.ReleaseAutomatonWorktree(prd)
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}

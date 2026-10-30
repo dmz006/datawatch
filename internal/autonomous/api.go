@@ -821,6 +821,11 @@ func (a *API) Cancel(id string) error {
 	}
 	a.M.emitPRDStatus(prd, old, lastDecision(prd, "cancel"), nil)
 	a.M.EmitPRDUpdate(id)
+	// Worktree cleanup — cancelled end path: release the work branch
+	// and its work tree if the work is on the base branch and the
+	// entry is safe to remove (live sessions and leases still hold
+	// it, and the reasons are then recorded). off mode does nothing.
+	a.M.ReleaseAutomatonWorktree(prd)
 	return nil
 }
 
@@ -1747,6 +1752,12 @@ func (a *API) MergeStatus() MergeStatus { return a.M.MergeStatus() }
 func (a *API) MergeSafeToDelete(ctx context.Context) (SafeDeleteReport, error) {
 	return a.M.MergeSafeToDelete(ctx)
 }
+
+// CleanupStatus — the automation cleanup read surface behind
+// GET /api/autonomous/cleanup (and the MCP, CLI and comm reads on top of it).
+// Without it the route's interface check fails and the route answers 503 in
+// a running daemon.
+func (a *API) CleanupStatus() CleanupStatus { return a.M.CleanupStatus() }
 
 func (a *API) GetAutomation(id string) (any, bool) {
 	got, ok := a.M.GetAutomation(id)
