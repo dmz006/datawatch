@@ -223,6 +223,7 @@ func gsRun(t *testing.T, runner *gsFakeRunner, tester *gsTester, testCmd, scope 
 		t.Fatalf("NewManager: %v", err)
 	}
 	t.Cleanup(m.Stop)
+	allowTempProjectRoots(m)
 	st := m.Store()
 	prd, err := st.CreatePRD("gate scope executor prd", t.TempDir(), "claude-code", "", EffortNormal)
 	if err != nil {
@@ -274,6 +275,7 @@ func gsRunRealModule(t *testing.T, runner *gsFakeRunner, tester *gsTester, projD
 		t.Fatalf("NewManager: %v", err)
 	}
 	t.Cleanup(m.Stop)
+	allowTempProjectRoots(m)
 	st := m.Store()
 	prd, err := st.CreatePRD("gate scope real module prd", projDir, "claude-code", "", EffortNormal)
 	if err != nil {
