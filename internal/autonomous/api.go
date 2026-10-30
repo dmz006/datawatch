@@ -1756,6 +1756,13 @@ func (a *API) GetAutomation(id string) (any, bool) {
 	return a.M.AutomationViewOf(got), true
 }
 
+// MergedMembers is the read surface behind GET /api/automations/merged-members
+// and GET /api/automations/{id}/merged-members: the merged-member decisions of
+// one Automaton, or of all Automata when id is empty.
+func (a *API) MergedMembers(id string) ([]MergedMemberRow, error) {
+	return a.M.MergedMembers(id)
+}
+
 // ActivateAutomation starts a draft Automation (in-process; never via REST).
 func (a *API) ActivateAutomation(id, actor string, expectedVersion int64) (any, error) {
 	return a.M.ActivateAutomation(id, actor, expectedVersion)

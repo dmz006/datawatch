@@ -168,7 +168,13 @@ func step(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects
 	}
 	st := &stepper{a: a, snap: snap, eff: &stepEffects{details: map[string]any{}}, now: in.at(), breachChoice: in.breachChoice}
 	if n := in.end.merged; n != nil {
-		st.decision(decisionMergedMember, n.note)
+		// A fork branch carries no outcome edge, so only a non-branch member
+		// with a direct reason is blocked by the merged-member end.
+		outcome := MergedMemberAdvanced
+		if joinOf(a, mem.ID) == nil && in.end.direct != "" {
+			outcome = MergedMemberBlocked
+		}
+		st.decisionMergedMember(mem.ID, outcome, n)
 		st.audit("automation_merged_member", map[string]any{
 			"automation_id": a.ID, "member": mem.ID, "prd_id": n.prdID, "branch": n.branch,
 			"default_branch": n.base, "commit": n.commit, "policy": n.policy,
@@ -557,6 +563,18 @@ func (st *stepper) finalize() {
 
 func (st *stepper) decision(kind, note string) {
 	st.a.Decisions = trimDecisions(append(st.a.Decisions, Decision{At: st.now, Kind: kind, Actor: coordinatorActor, Note: note}))
+}
+
+// decisionMergedMember appends the merged_member Decision with its structured
+// record, so the read-only status view needs no parsing of the note.
+func (st *stepper) decisionMergedMember(memberID, outcome string, n *mergedMemberNote) {
+	st.a.Decisions = trimDecisions(append(st.a.Decisions, Decision{
+		At: st.now, Kind: decisionMergedMember, Actor: coordinatorActor, Note: n.note,
+		MergedMember: &MergedMemberDecision{
+			Member: memberID, PRDID: n.prdID, Branch: n.branch, DefaultBranch: n.base,
+			Commit: n.commit, Policy: n.policy, Outcome: outcome,
+		},
+	}))
 }
 
 func (st *stepper) audit(action string, details map[string]any) {

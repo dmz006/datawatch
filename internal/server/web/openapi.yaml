@@ -3651,6 +3651,53 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 
+  /api/automations/merged-members:
+    get:
+      summary: Merged-member decisions of every Automaton
+      description: |
+        Read-only. Lists the merged-member decisions of all Automata, oldest
+        first. A decision is written when a member of an Automaton ended
+        cancelled or completed and its work was found already merged into the
+        project default branch. Each row names the member, its branch, the
+        default branch, the proving commit, the merged-member policy in force
+        (`completed`, `manual` or `block`), the outcome (`advanced` when the
+        chain moved on, `blocked` when the Automaton stayed blocked for the
+        operator) and the time. Nothing is changed.
+      operationId: automationsMergedMembersAll
+      tags: [Automations]
+      responses:
+        "200":
+          description: The merged-member decisions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergedMemberList"
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/merged-members:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    get:
+      summary: Merged-member decisions of one Automaton
+      description: |
+        Read-only. Lists the merged-member decisions in one Automaton's
+        decision log, oldest first, with the same rows as
+        `GET /api/automations/merged-members`. An Automaton with no such
+        decision returns an empty list.
+      operationId: automationsMergedMembers
+      tags: [Automations]
+      responses:
+        "200":
+          description: The merged-member decisions of the Automaton
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergedMemberList"
+        "404": {description: Automation not found}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
   # ─── Mobile-client parity endpoints (documented in v4.0.3) ────
   /api/backends/active:
     post:
@@ -6778,6 +6825,30 @@ components:
           type: string
           format: date-time
 
+    MergedMemberList:
+      type: object
+      description: "The merged-member decisions of one Automaton (automation_id set) or of all Automata (automation_id empty)."
+      properties:
+        automation_id: {type: string}
+        count: {type: integer}
+        merged_members:
+          type: array
+          items:
+            $ref: "#/components/schemas/MergedMemberRow"
+    MergedMemberRow:
+      type: object
+      properties:
+        automation_id: {type: string}
+        automation_name: {type: string}
+        member: {type: string, description: "Member ID within the Automaton"}
+        prd_id: {type: string}
+        branch: {type: string}
+        default_branch: {type: string, description: "The project default branch the member was proved merged into"}
+        proving_commit: {type: string}
+        policy: {type: string, enum: [completed, manual, block]}
+        outcome: {type: string, enum: [advanced, blocked]}
+        at: {type: string, format: date-time}
+        note: {type: string}
     Automation:
       type: object
       description: |

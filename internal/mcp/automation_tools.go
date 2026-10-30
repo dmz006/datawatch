@@ -740,7 +740,7 @@ func controlNumber(v any) (float64, bool) {
 func AutomationToolNames() []string {
 	s := &Server{}
 	tools := []mcpsdk.Tool{
-		s.toolAutomationList(), s.toolAutomationGet(), s.toolAutomationCreate(),
+		s.toolAutomationList(), s.toolAutomationGet(), s.toolAutomationMergedMembers(), s.toolAutomationCreate(),
 		s.toolAutomationUpdate(), s.toolAutomationDelete(), s.toolAutomationActivate(),
 		s.toolAutomationPause(), s.toolAutomationResume(), s.toolAutomationCancel(),
 		s.toolAutomationSkipMember(), s.toolAutomationInsertMember(), s.toolAutomationRemoveMember(),

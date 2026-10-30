@@ -32,6 +32,28 @@ func (s *Server) handleAutonomousStatus(_ context.Context, _ mcpsdk.CallToolRequ
 	return textOK(string(out)), nil
 }
 
+// ----- automation_merged_members ---------------------------------------------
+
+func (s *Server) toolAutomationMergedMembers() mcpsdk.Tool {
+	return mcpsdk.NewTool("automation_merged_members",
+		mcpsdk.WithDescription("Read the merged-member decisions of one Automaton, or of every Automaton (Automata) when no id is given. A decision is written when a member of an Automaton ended cancelled or completed and its work was found already merged into the project default branch. Each row has automation_id, automation_name, member, prd_id, branch, default_branch, proving_commit (the commit that proves the merge), policy (the merged-member policy in force: completed, manual or block), outcome (advanced when the chain moved on, blocked when the Automaton stayed blocked for the operator) and at (time), oldest first. Read-only; the same object as GET /api/automations/{id}/merged-members, or GET /api/automations/merged-members for all Automata. Nothing is changed, merged or resumed."),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+		mcpsdk.WithString("id", mcpsdk.Description("Automaton ID. Empty or omitted lists the merged-member decisions of every Automaton.")),
+	)
+}
+
+func (s *Server) handleAutomationMergedMembers(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	path := "/api/automations/merged-members"
+	if id := strings.TrimSpace(req.GetString("id", "")); id != "" {
+		path = "/api/automations/" + url.PathEscape(id) + "/merged-members"
+	}
+	out, err := s.proxyGet(path, nil)
+	if err != nil {
+		return toolError("automation_merged_members", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
 // ----- autonomous_config_get / set -------------------------------------------
 
 func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
