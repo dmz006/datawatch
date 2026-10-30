@@ -1,9 +1,0 @@
-{"criterion":"restart_exited_on_term","result":"PASS","detail":"daemon pid 767371 down in 1s"}
-{"criterion":"daemon_replaced","result":"PASS","detail":"pid 767371 -> 768554"}
-{"criterion":"no_duplicate_sessions","result":"PASS","detail":"0 extra live session(s) beyond one per role"}
-{"criterion":"no_lost_output","result":"PASS","detail":"0 byte(s) of earlier output missing afterwards"}
-{"criterion":"retry_count_unchanged","result":"PASS","detail":"retries 0 -> 0"}
-{"criterion":"planner_process_survived","result":"FAIL","detail":"planner pid 768409 alive right after the restart: no"}
-{"criterion":"planner_not_redone","result":"PASS","detail":"planner starts 1 -> 1"}
-{"criterion":"plan_completes_unaided","result":"FAIL","detail":"PRD status after the wait: draft"}
-{"criterion":"plan_has_its_task","result":"FAIL","detail":"tasks in the finished plan: 0"}
