@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.42.2 — fix(security): remove stale CVE suppressions now fixed upstream
+
+### Fixed
+- **Removed 6 .trivyignore suppression(s) with a fix now available in Debian bookworm** — found by the daily `image-refresh` recheck, which rebuilds every shipped image fresh and scans without `.trivyignore` applied. See the PR for exactly which CVEs and which images.
+
+
 ### Added
 
 - **Operators are now told when an Automaton needs a decision, and the asker hears the answer back.** With the operator-question channel (still behind its off-by-default switch), every question an Automaton raises is announced three ways at once: a live `question_raised` message to any open PWA, one line in every active messaging group (who asked, the question, the numbered options, and where to answer), and — for a high-priority question raised with `priority: "high"` — a warning alert carrying the question id, its label, the question text and the options that sits in the alert list until you deal with it. Answering or withdrawing an open question fires a `question.answered` / `question.withdrawn` event that you can subscribe to like any other Automaton lifecycle event (comm, topic, alert, webhook, MCP queue or peer), delivered exactly once even if the daemon restarts between the record and the send.
