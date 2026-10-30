@@ -2751,7 +2751,9 @@ const (
 // raised (0 = off). DecomposeAheadMin is the minimum number of decomposed
 // Automata kept ready per lane. PollSeconds is the planner poll interval
 // (minimum 5). GPUBackend, GPUModel and ClaudeBackend choose the backends the
-// lanes run. None are omitempty, so an explicit zero survives a round trip.
+// lanes run. None are omitempty, so an explicit zero survives a round trip;
+// CountVerifierWait is the lone pointer with omitempty, so an absent key
+// means the default (true) while an explicit false survives.
 type AutonomousLaneFillConfig struct {
 	Mode              string `yaml:"mode" json:"mode"`
 	GPULanes          int    `yaml:"gpu_lanes" json:"gpu_lanes"`
@@ -2762,6 +2764,10 @@ type AutonomousLaneFillConfig struct {
 	GPUBackend        string `yaml:"gpu_backend" json:"gpu_backend"`
 	GPUModel          string `yaml:"gpu_model" json:"gpu_model"`
 	ClaudeBackend     string `yaml:"claude_backend" json:"claude_backend"`
+	// CountVerifierWait: when true (the default, unset is nil) a Claude lane
+	// whose Automata wait on a verifier slot counts as available; when false
+	// the lane stays busy.
+	CountVerifierWait *bool `yaml:"count_verifier_wait,omitempty" json:"count_verifier_wait,omitempty"`
 }
 
 // DefaultAutonomousLaneFill returns the shipped lane fill settings: shadow
@@ -2865,6 +2871,16 @@ func (c AutonomousLaneFillConfig) EffectiveClaudeBackend() string {
 		return DefaultLaneFillClaudeBackend
 	}
 	return c.ClaudeBackend
+}
+
+// EffectiveCountVerifierWait returns the verifier-wait rule in effect: an
+// unset (nil) value means true — a Claude lane whose Automata wait on a
+// verifier slot counts as available; an explicit false keeps it busy.
+func (c AutonomousLaneFillConfig) EffectiveCountVerifierWait() bool {
+	if c.CountVerifierWait == nil {
+		return true
+	}
+	return *c.CountVerifierWait
 }
 
 // validate rejects negative numbers and an unknown mode.

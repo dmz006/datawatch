@@ -15,7 +15,7 @@ import (
 
 func (s *Server) toolAutonomousLaneFillStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_lane_fill_status",
-		mcpsdk.WithDescription("Read the lane fill status: each GPU and Claude lane with what it is running or waiting on, whether it is idle, the newest decisions the planner made (newest first), and any idle-lane alerts. Read-only; same object as GET /api/autonomous/lane-fill. limit sets how many decisions come back (a whole number from 1 to 1000, default 50)."),
+		mcpsdk.WithDescription("Read the lane fill status: each GPU and Claude lane with what it is running or waiting on, whether it is idle, the newest decisions the planner made (newest first), and any idle-lane alerts. A lane's waiting_on_verifier flag with its wait_reason text means its Automaton has running work but every piece is blocked waiting for a verifier slot, so the lane is occupied without advancing; a Claude lane the verifier-wait rule counts available carries the state waiting_verifier. A decision made on such a lane keeps the same wait_reason as its basis. Read-only; same object as GET /api/autonomous/lane-fill. limit sets how many decisions come back (a whole number from 1 to 1000, default 50)."),
 		mcpsdk.WithNumber("limit", mcpsdk.Description("Optional — how many decisions to return, a whole number from 1 to 1000 (default 50)")),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)

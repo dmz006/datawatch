@@ -99,6 +99,63 @@ An example from the CLI:
 datawatch autonomous lane-fill --limit 20
 ```
 
+## A lane waiting on a verifier
+
+A lane can be occupied without moving. That happens while an Automaton has
+running work and every running piece is stalled waiting on a verification
+slot: the check that must finish the task is queued, not done, and nothing on
+that lane can complete until it runs. That is a **lane waiting on a
+verifier**. It is not idle: an idle lane holds no work; a waiting lane holds
+work that cannot finish. A lane that has one moving task is still an
+occupied and working lane, even if another piece waits.
+
+**How it shows.** The same facts on every surface:
+
+- **REST** (`GET /api/autonomous/lane-fill`): a lane the count rule below
+  counts available has `state: "waiting_verifier"` on the lane object; a
+  lane the rule keeps busy keeps `state: "occupied"`. Either way the lane
+  carries `waiting_on_verifier: true` and the `wait_reason` text, for
+  example "CI still running the checks" or, when the wait queue has no text
+  of its own, "waiting for a capacity slot to finish verification". A
+  decision made on a lane counted available keeps the same `wait_reason`,
+  recorded as the basis for counting the lane available.
+- **CLI and comm channel**: `datawatch autonomous lane-fill [--limit N]`
+  and `autonomous lane-fill [limit]` render the same lines. The lane line
+  reads `claude-1: occupied by <id> "<title>" (claude-code), waiting on
+  verifier: <reason>`, and a decision that placed work on that lane carries
+  the same reason as `lane counted available by the verifier wait: <reason>`.
+- **PWA**: the **Lane fill** card shows the same lane objects with the same
+  flag and reason.
+
+**The idle alert.** A lane that stands free only because its occupant waits
+on a verifier slot raises the ordinary idle-lane alert: after
+`idle_alert_minutes` with an eligible Automaton waiting, once per idle
+episode, at warning level, and it clears when the lane stops waiting. The
+message names the wait instead of calling the lane idle: it states the lane,
+the waiting Automaton and its verifier-wait reason from the wait queue, and
+the first eligible Automaton that could have started on the lane.
+`idle_alert_minutes: 0` turns it off, for this kind of lane as for the rest.
+
+**Counting the lane available: `autonomous.lane_fill.count_verifier_wait`.**
+When on (the default, unset means on), a Claude lane whose occupant is
+waiting on a verifier slot counts as available: the waiting occupant holds
+the lane without spending Claude usage, so a lane with no working occupant
+can take the next ready Automaton. Set to `false` and the lane counts busy,
+and the planner places nothing on it. Like the other lane fill keys it is
+set in the config file, with `datawatch config set
+autonomous.lane_fill.count_verifier_wait false`, in chat with `configure
+autonomous.lane_fill.count_verifier_wait=false`, or at REST with
+`PUT /api/config`; the change applies on the next poll with no restart, and
+an explicit `false` is kept. A GPU lane is never freed by this rule:
+GPU work costs no Claude usage, so a waiting GPU occupant always counts the
+lane occupied.
+
+**Shadow mode starts nothing because of it.** In the default shadow mode
+none of this happens: a start placed on a verifier-wait lane is only
+recorded, with `executed: false`, and reads as a would-start. In `on` mode
+it goes through the same normal start path as every other start
+(admission, approval gates, quality gates, stuck-task rules).
+
 ## Setting a lane preference
 
 Every Automaton has a **lane preference**:
@@ -137,6 +194,7 @@ Automaton's status or its plan.
 | `autonomous.lane_fill.gpu_backend` | `pi-prompt` | The backend the GPU lanes run |
 | `autonomous.lane_fill.gpu_model` | empty | The model the GPU lanes run; empty means the backend's own model |
 | `autonomous.lane_fill.claude_backend` | `claude-code` | The backend the Claude lanes run |
+| `autonomous.lane_fill.count_verifier_wait` | `true` | Whether a lane waiting on a verifier slot counts available; `false` keeps it busy |
 
 Every key is settable at runtime with no restart:
 

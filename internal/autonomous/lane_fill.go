@@ -71,6 +71,14 @@ type LaneOccupant struct {
 	PRDID   string `json:"prd_id"`
 	Title   string `json:"title"`
 	Backend string `json:"backend"`
+	// WaitingOnVerifier says the lane is occupied but not advancing: the
+	// Automaton has running tasks and every one of them is blocked waiting
+	// for a verifier slot (see lane_fill_verifier_wait.go). Zero means the
+	// lane is working or holds no running task.
+	WaitingOnVerifier bool `json:"waiting_on_verifier,omitempty"`
+	// WaitReason is the readable reason text of a blocked waiter, set with
+	// WaitingOnVerifier.
+	WaitReason string `json:"wait_reason,omitempty"`
 }
 
 // LaneFillCandidate is a plain snapshot of one Automaton, as far as lane fill
@@ -137,19 +145,24 @@ type LaneFillInput struct {
 // filled by the coordinator, not the planner. RepeatCount and LastSeenAt let
 // the coordinator collapse the same decision seen on consecutive polls.
 type LaneFillDecision struct {
-	At          time.Time      `json:"at"`
-	Mode        LaneFillMode   `json:"mode"`
-	LaneID      string         `json:"lane_id"`
-	LaneType    LaneType       `json:"lane_type"`
-	Action      LaneFillAction `json:"action"`
-	PRDID       string         `json:"prd_id"`
-	Title       string         `json:"title"`
-	Reason      string         `json:"reason"`
-	Blocker     string         `json:"blocker"`
-	Executed    bool           `json:"executed"`
-	Error       string         `json:"error"`
-	RepeatCount int            `json:"repeat_count"`
-	LastSeenAt  time.Time      `json:"last_seen_at"`
+	At       time.Time      `json:"at"`
+	Mode     LaneFillMode   `json:"mode"`
+	LaneID   string         `json:"lane_id"`
+	LaneType LaneType       `json:"lane_type"`
+	Action   LaneFillAction `json:"action"`
+	PRDID    string         `json:"prd_id"`
+	Title    string         `json:"title"`
+	Reason   string         `json:"reason"`
+	Blocker  string         `json:"blocker"`
+	// WaitReason, when set, names the basis a decision rests on: the reason
+	// the lane's occupant reports while waiting on a verifier slot (see
+	// LaneOccupant), which is what made the lane count available. So the
+	// record shows why the decision was made, not only what it did.
+	WaitReason  string    `json:"wait_reason,omitempty"`
+	Executed    bool      `json:"executed"`
+	Error       string    `json:"error"`
+	RepeatCount int       `json:"repeat_count"`
+	LastSeenAt  time.Time `json:"last_seen_at"`
 }
 
 // LaneTypeForBackend says which lane type a worker backend occupies:
@@ -172,7 +185,10 @@ func LaneTypeForBackend(cfg LaneFillConfig, backend string) (LaneType, bool) {
 // places the running Automata in them.
 //
 // A running Automaton takes the first idle lane of the type its backend maps
-// to (see LaneTypeForBackend). Ones beyond the lane count of their type are
+// to (see LaneTypeForBackend). Working occupants are placed before
+// verifier-waiting ones, within each lane type and the same order inside each
+// group, so a waiting Automaton never pushes a working one into Extra or
+// hides a working lane. Ones beyond the lane count of their type are
 // extra occupants, and ones on any other backend occupy no lane; neither ever
 // creates an idle lane. GPU occupancy is the larger of the Automaton
 // occupants and the live evidence count, so a session on the pool that
@@ -193,6 +209,11 @@ func BuildLanes(cfg LaneFillConfig, running []LaneOccupant, evidence LaneEvidenc
 
 	ordered := append([]LaneOccupant(nil), running...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].PRDID < ordered[j].PRDID })
+	// Working occupants before verifier-waiting ones; the stable sort keeps
+	// the order above inside each group.
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return !ordered[i].WaitingOnVerifier && ordered[j].WaitingOnVerifier
+	})
 
 	gpuOccupants := 0
 	for _, occ := range ordered {
@@ -226,6 +247,46 @@ func BuildLanes(cfg LaneFillConfig, running []LaneOccupant, evidence LaneEvidenc
 		}
 	}
 	return model
+}
+
+// laneFillLaneStatusView renders one lane for the status view: idle and
+// occupied keep their meaning, a lane the verifier-wait rule counts
+// available gets state waiting_verifier, and a lane whose occupant waits on
+// a verifier slot carries its waiting_on_verifier flag and the occupant's
+// wait_reason, so the operator sees the difference between a lane that works
+// and one that waits.
+func laneFillLaneStatusView(cfg LaneFillConfig, l Lane, eligibleWaiting int) LaneFillLaneStatus {
+	state := "idle"
+	if l.Occupant != nil {
+		state = "occupied"
+		if l.Occupant.WaitingOnVerifier && l.Type == LaneTypeClaude && cfg.EffectiveCountVerifierWait() {
+			state = "waiting_verifier"
+		}
+	}
+	ls := LaneFillLaneStatus{
+		ID: l.ID, Type: l.Type, State: state, Occupant: l.Occupant,
+		Blocker: l.Blocker, EligibleWaiting: eligibleWaiting,
+	}
+	if l.Occupant != nil && l.Occupant.WaitingOnVerifier {
+		ls.WaitingOnVerifier = true
+		ls.WaitReason = l.Occupant.WaitReason
+	}
+	return ls
+}
+
+// laneFree says whether a lane is free for a new start: it has no occupant,
+// or its occupant is an Automaton waiting on a verifier slot, the lane is a
+// Claude lane and the count_verifier_wait rule is on — a waiting occupant
+// holds the lane without spending Claude usage. A GPU lane never frees under
+// the rule, because GPU work costs no Claude usage. Both the planner and the
+// idle alert test a lane for busy with this one helper.
+func laneFree(cfg LaneFillConfig, lane Lane) bool {
+	if lane.Occupant == nil {
+		return true
+	}
+	return lane.Occupant.WaitingOnVerifier &&
+		lane.Type == LaneTypeClaude &&
+		cfg.EffectiveCountVerifierWait()
 }
 
 // placeOccupant puts occ in the first idle lane of type t. It reports false
@@ -385,14 +446,29 @@ func PlanLaneFill(in LaneFillInput) []LaneFillDecision {
 	var pending []pendingIdle
 
 	newDecision := func(l Lane, a LaneFillAction) LaneFillDecision {
-		return LaneFillDecision{
+		d := LaneFillDecision{
 			At: in.Now, Mode: mode, LaneID: l.ID, LaneType: l.Type, Action: a,
 			RepeatCount: 1, LastSeenAt: in.Now,
 		}
+		// A lane decision on a lane the verifier-wait rule counted available
+		// carries the waiting occupant's reason — that is why the lane was
+		// free in the first place, and the record keeps the basis with the
+		// decision.
+		if l.Occupant != nil && l.Occupant.WaitingOnVerifier {
+			d.WaitReason = l.Occupant.WaitReason
+		}
+		return d
 	}
 
+	// A lane is busy by the one rule in laneFree: a Claude lane whose occupant
+	// waits on a verifier slot is free for a new start when the rule is on, and
+	// every other occupied lane is busy. Free Claude lanes are therefore
+	// claude_lanes minus the working Claude occupants minus the starts planned
+	// on earlier lanes in this poll, which bounds working Claude Automata;
+	// waiting ones never count against the cap because a working occupant is
+	// always placed before a waiting one (BuildLanes).
 	for _, lane := range lanes {
-		if lane.Occupant != nil {
+		if !laneFree(cfg, lane) {
 			continue
 		}
 		if lane.Type == LaneTypeGPU && in.EvidenceErr != "" && lane.Blocker == "" {

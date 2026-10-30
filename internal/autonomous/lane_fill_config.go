@@ -26,6 +26,11 @@ type LaneFillConfig struct {
 	GPUModel   string `json:"gpu_model"`
 	// ClaudeBackend chooses what the Claude lanes run. Default claude-code.
 	ClaudeBackend string `json:"claude_backend"`
+	// CountVerifierWait: when true (the default, unset is nil) a Claude lane
+	// whose Automata wait on a verifier slot counts as available; when false
+	// the lane stays busy. A pointer with omitempty, so an explicit false
+	// survives a round trip while an absent key keeps the default.
+	CountVerifierWait *bool `json:"count_verifier_wait,omitempty"`
 }
 
 // DefaultLaneFillConfig returns the shipped lane fill settings (shadow mode).
@@ -45,6 +50,7 @@ func LaneFillConfigFromYAML(c config.AutonomousLaneFillConfig) LaneFillConfig {
 		GPUBackend:        c.GPUBackend,
 		GPUModel:          c.GPUModel,
 		ClaudeBackend:     c.ClaudeBackend,
+		CountVerifierWait: c.CountVerifierWait,
 	}
 }
 
@@ -61,6 +67,7 @@ func (c LaneFillConfig) yaml() config.AutonomousLaneFillConfig {
 		GPUBackend:        c.GPUBackend,
 		GPUModel:          c.GPUModel,
 		ClaudeBackend:     c.ClaudeBackend,
+		CountVerifierWait: c.CountVerifierWait,
 	}
 }
 
@@ -89,3 +96,10 @@ func (c LaneFillConfig) EffectiveGPUBackend() string { return c.yaml().Effective
 
 // EffectiveClaudeBackend returns the Claude lane backend in effect.
 func (c LaneFillConfig) EffectiveClaudeBackend() string { return c.yaml().EffectiveClaudeBackend() }
+
+// EffectiveCountVerifierWait returns the verifier-wait rule in effect: unset
+// means true (a Claude lane whose Automata wait on a verifier slot counts as
+// available; an explicit false keeps it busy).
+func (c LaneFillConfig) EffectiveCountVerifierWait() bool {
+	return c.yaml().EffectiveCountVerifierWait()
+}

@@ -6,6 +6,7 @@ package autonomous
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -51,6 +52,11 @@ func (c *Coordinator) laneFillResetAlerts() {
 // that long. An episode starts when a lane is first seen idle with eligible
 // work and ends when the lane gets an occupant or no work is eligible for it.
 // Shadow mode alerts too: an alert reports a situation, not an action.
+// A lane that is free only because its occupant waits on a verifier uses the
+// same alert and the same per-episode rule, but its message names the
+// verifier wait and its reason, so an operator sees why the lane is free
+// while it still has an Automaton in it. A lane idle for any other reason
+// keeps the original message.
 func (c *Coordinator) laneFillCheckAlerts(cfg LaneFillConfig, lanes []Lane, cands []LaneFillCandidate, now time.Time) {
 	if c == nil {
 		return
@@ -67,7 +73,10 @@ func (c *Coordinator) laneFillCheckAlerts(cfg LaneFillConfig, lanes []Lane, cand
 	for _, lane := range lanes {
 		seen[lane.ID] = struct{}{}
 		work, ok := laneFillEligibleFor(cfg, lane, cands)
-		if lane.Occupant != nil || !ok {
+		// A lane is free for work by the one rule in laneFree: a Claude lane
+		// whose occupant waits on a verifier slot can still idle-alert with an
+		// Automaton holding it, because it is free for a new start.
+		if !laneFree(cfg, lane) || !ok {
 			delete(c.lf.workSince, lane.ID)
 			delete(c.lf.alerted, lane.ID)
 			continue
@@ -87,8 +96,7 @@ func (c *Coordinator) laneFillCheckAlerts(cfg LaneFillConfig, lanes []Lane, cand
 			title: fmt.Sprintf("Lane %s idle with work waiting", lane.ID),
 			alert: LaneFillAlert{
 				At: now, LaneID: lane.ID, Work: desc,
-				Message: fmt.Sprintf("Lane %s has been idle for %d minutes with eligible work waiting. First eligible: %s.",
-					lane.ID, int(now.Sub(since)/time.Minute), desc),
+				Message: laneFillIdleAlertMessage(lane, int(now.Sub(since)/time.Minute), desc),
 			},
 		})
 	}
@@ -110,4 +118,20 @@ func (c *Coordinator) laneFillCheckAlerts(cfg LaneFillConfig, lanes []Lane, cand
 	for _, p := range toAlert {
 		c.alert(p.level, p.title, p.alert.Message)
 	}
+}
+
+// laneFillIdleAlertMessage words one idle alert. A lane that is free only
+// because its occupant waits on a verifier says so, naming the Automaton and
+// the verifier wait reason; any other idle lane keeps the original message.
+func laneFillIdleAlertMessage(lane Lane, minutes int, desc string) string {
+	if occ := lane.Occupant; occ != nil && occ.WaitingOnVerifier {
+		reason := strings.TrimSpace(occ.WaitReason)
+		if reason == "" {
+			reason = "waiting for a capacity slot to finish verification"
+		}
+		return fmt.Sprintf("Lane %s is free only because the Automaton %s (%s) waits on a verifier (%s) and has stayed free for %d minutes with eligible work waiting. First eligible: %s.",
+			lane.ID, occ.Title, occ.PRDID, reason, minutes, desc)
+	}
+	return fmt.Sprintf("Lane %s has been idle for %d minutes with eligible work waiting. First eligible: %s.",
+		lane.ID, minutes, desc)
 }

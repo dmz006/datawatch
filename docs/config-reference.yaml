@@ -1134,7 +1134,9 @@ autonomous:
   #   Autonomous in the web app.
   # A bad value is rejected (400 on PUT /api/config, an error on config load)
   # and nothing is written. None of the keys is omitted from a saved file, so
-  # an explicit 0 survives a round trip.
+  # an explicit 0 survives a round trip; count_verifier_wait is the one
+  # exception — an absent key reads as its default (true), while an explicit
+  # false survives.
   #
   # mode: off | shadow | on (case-insensitive). Empty means shadow. off does
   #   nothing. shadow computes and records every decision and starts nothing.
@@ -1153,6 +1155,13 @@ autonomous:
   # gpu_model: the model the GPU lanes run. Empty (the default) means the
   #   backend's own default model.
   # claude_backend: the backend the Claude lanes run. Default claude-code.
+  # count_verifier_wait: bool, default true (an absent key reads as true).
+  #   When true, a Claude lane whose Automaton occupies it only while waiting
+  #   on a verifier slot counts as available within the Claude lane count, so
+  #   lane fill may place other work there while it waits. When false the lane
+  #   stays busy, as before. This key only changes which lanes count as
+  #   available; the lane fill mode still decides whether anything starts —
+  #   shadow starts nothing.
   lane_fill:
     mode: shadow
     gpu_lanes: 2
@@ -1163,6 +1172,7 @@ autonomous:
     gpu_backend: pi-prompt
     gpu_model: ""
     claude_backend: claude-code
+    count_verifier_wait: true
 
   # Progress metrics engine. Every parameter of the engine is a key here; none
   # is fixed in code. Each is also settable at runtime, with no restart, on

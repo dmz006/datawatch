@@ -70,12 +70,20 @@ type LaneFillQueued struct {
 
 // LaneFillLaneStatus is one lane as the status shows it.
 type LaneFillLaneStatus struct {
-	ID              string        `json:"id"`
-	Type            LaneType      `json:"type"`
-	State           string        `json:"state"` // occupied or idle
-	Occupant        *LaneOccupant `json:"occupant"`
-	Blocker         string        `json:"blocker"`
-	EligibleWaiting int           `json:"eligible_waiting"`
+	ID   string   `json:"id"`
+	Type LaneType `json:"type"`
+	// State is idle or occupied; a lane the verifier-wait rule counts
+	// available is waiting_verifier.
+	State string `json:"state"`
+
+	Occupant *LaneOccupant `json:"occupant"`
+	Blocker  string        `json:"blocker"`
+	// WaitingOnVerifier, set with WaitReason, says the lane's occupant is
+	// blocked waiting for a verifier slot.
+	WaitingOnVerifier bool `json:"waiting_on_verifier,omitempty"`
+	// WaitReason is the occupant's wait reason, set with WaitingOnVerifier.
+	WaitReason      string `json:"wait_reason,omitempty"`
+	EligibleWaiting int    `json:"eligible_waiting"`
 }
 
 // LaneFillEvidence is the pool evidence the last poll planned with.
@@ -331,6 +339,12 @@ func (c *Coordinator) laneFillAudit(rec *laneFillRecords, e *laneFillEntry) {
 	if d.Error != "" {
 		details["error"] = d.Error
 	}
+	if d.WaitReason != "" {
+		// The verifier-wait basis of the decision, when it rests on one: the
+		// shadow record says why the planner thought the lane was free, not
+		// only what it would have started.
+		details["wait_reason"] = d.WaitReason
+	}
 	c.audit("lane_fill", details)
 }
 
@@ -478,14 +492,14 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 		backend := c.laneFillWorkerBackend(r, execution)
 		switch {
 		case laneFillRunning(r.status):
-			running = append(running, LaneOccupant{PRDID: r.id, Title: r.title, Backend: backend})
+			running = append(running, c.laneFillVerifierWait(LaneOccupant{PRDID: r.id, Title: r.title, Backend: backend}))
 			c.laneFillForgetStart(r.id)
 			continue
 		case laneFillTerminal(r.status):
 			continue
 		}
 		if s, ok := started[r.id]; ok && now.Sub(s.at) < grace {
-			running = append(running, LaneOccupant{PRDID: r.id, Title: s.title, Backend: s.backend})
+			running = append(running, c.laneFillVerifierWait(LaneOccupant{PRDID: r.id, Title: s.title, Backend: s.backend}))
 			continue
 		}
 		if NormalizePRDStatus(r.status) == PRDPlanning {
@@ -536,19 +550,13 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 	c.lf.mu.Lock()
 	seen := map[string]bool{}
 	for _, l := range model.Lanes {
-		ls := LaneFillLaneStatus{
-			ID: l.ID, Type: l.Type, State: "idle", Occupant: l.Occupant,
-			Blocker: l.Blocker, EligibleWaiting: queued[l.Type],
-		}
-		if l.Occupant != nil {
-			ls.State = "occupied"
-		} else {
+		if l.Occupant == nil {
 			seen[l.ID] = true
 			if _, ok := c.lf.idleSince[l.ID]; !ok {
 				c.lf.idleSince[l.ID] = now
 			}
 		}
-		status.Lanes = append(status.Lanes, ls)
+		status.Lanes = append(status.Lanes, laneFillLaneStatusView(cfg, l, queued[l.Type]))
 	}
 	for id := range c.lf.idleSince {
 		if !seen[id] {

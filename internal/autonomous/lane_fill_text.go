@@ -55,6 +55,14 @@ func laneFillLaneText(l LaneFillLaneStatus) string {
 		s = "occupied by a pool session outside any Automaton"
 	case l.Occupant != nil:
 		s = fmt.Sprintf("occupied by %s %q (%s)", l.Occupant.PRDID, l.Occupant.Title, l.Occupant.Backend)
+		if l.Occupant.WaitingOnVerifier {
+			// A lane that works and a lane that waits must read differently.
+			if r := strings.TrimSpace(l.Occupant.WaitReason); r != "" {
+				s += fmt.Sprintf(", waiting on verifier: %s", r)
+			} else {
+				s += ", waiting on verifier"
+			}
+		}
 	case l.Blocker != "":
 		s = "idle, " + l.Blocker
 	default:
@@ -77,6 +85,9 @@ func laneFillDecisionText(d LaneFillDecision) string {
 	}
 	if d.Blocker != "" {
 		s += " (blocked: " + d.Blocker + ")"
+	}
+	if d.WaitReason != "" {
+		s += fmt.Sprintf(", lane counted available by the verifier wait: %s", d.WaitReason)
 	}
 	switch {
 	case d.Error != "":

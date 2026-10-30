@@ -90,9 +90,11 @@ func laneFillSlotKey(d LaneFillDecision) string {
 }
 
 // laneFillDecisionKey is what makes two decisions the same one: lane, action,
-// Automaton, blocker, and the mode they were made in.
+// Automaton, blocker, wait reason, and the mode they were made in. The wait
+// reason is in the key, so a lane whose occupant goes from working to waiting
+// starts a new record instead of folding the wait in over the old decision.
 func laneFillDecisionKey(d LaneFillDecision) string {
-	return fmt.Sprintf("%s|%s|%s|%s|%s", d.LaneID, d.Action, d.PRDID, d.Blocker, d.Mode)
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%s", d.LaneID, d.Action, d.PRDID, d.Blocker, d.WaitReason, d.Mode)
 }
 
 // observe stores one decision from the running poll. It returns the entry that
