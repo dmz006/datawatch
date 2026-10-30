@@ -31,12 +31,13 @@ func TestLocales_AllAppJSKeysExistInEnglishBundle(t *testing.T) {
 	// with a runtime value (e.g. t('automata_status_' + s)) match the regex
 	// as a truncated literal -- that's a dynamic key, not a missing one.
 	dynamicPrefixes := map[string]bool{
-		"automata_status_":      true, // + prd/story/task status string
-		"automation_status_":    true, // + Automation status string
-		"automation_edge_":      true, // + outcome edge name
-		"automation_join_rule_": true, // + join rule name
-		"chat_quick_reply_":     true, // + lowercased quick-reply label
-		"repo_ci_watch_mode_":   true, // + off/shadow/on mode string
+		"automata_status_":       true, // + prd/story/task status string
+		"automation_status_":     true, // + Automation status string
+		"automation_edge_":       true, // + outcome edge name
+		"automation_join_rule_":  true, // + join rule name
+		"chat_quick_reply_":      true, // + lowercased quick-reply label
+		"repo_ci_watch_mode_":    true, // + off/shadow/on mode string
+		"supervisor_watch_mode_": true, // + off/shadow/on mode string
 	}
 
 	seen := map[string]bool{}

@@ -73,6 +73,9 @@ var pendingTranslationKeys = map[string]bool{
 	// action lines as English placeholders until the translations arrive.
 	"automation_security_failure_action_stopped":    true,
 	"automation_security_failure_action_would_stop": true,
+	// Supervisor watch settings label: English placeholder until the app
+	// translation lands.
+	"settings_supervisor_watch_silent_minutes": true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {
