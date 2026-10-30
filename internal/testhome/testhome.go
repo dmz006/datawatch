@@ -11,18 +11,25 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Run points HOME at a throwaway directory, runs the package's tests and
 // removes the directory again, whatever the exit code. It returns the exit
 // code for os.Exit. Setup failures print "home isolation: <err>" and return 1.
 func Run(m *testing.M) int {
+	// Reclaim strays from an earlier run that died before cleanup. Warn
+	// and continue: sweeping is bookkeeping, never a gate.
+	if err := SweepStale(os.TempDir(), time.Hour, time.Now()); err != nil {
+		fmt.Fprintf(os.Stderr, "home isolation: WARNING: sweep: %v\n", err)
+	}
 	realHome := os.Getenv("HOME")
 	home, err := os.MkdirTemp("", "dw-test-home-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "home isolation:", err)
 		return 1
 	}
+	Record(home) // so a later sweep can reclaim it if we die hard
 	// Deferred so the removal also runs if m.Run panics.
 	defer func() {
 		if err := Remove(home); err != nil {
@@ -172,6 +179,7 @@ func TmuxIsolation() (func(), error) {
 	if err != nil {
 		return nil, err
 	}
+	Record(dir) // so a later sweep can reclaim it if we die hard
 	fail := func(err error) (func(), error) {
 		if remErr := os.RemoveAll(dir); remErr != nil {
 			fmt.Fprintf(os.Stderr, "home isolation: WARNING: could not remove %s: %v\n", dir, remErr)
