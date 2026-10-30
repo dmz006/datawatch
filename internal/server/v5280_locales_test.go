@@ -243,6 +243,13 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"triage_card_title",
 		// The stuck-running watchdog bound on the Automata settings card.
 		"settings_stuck_running_seconds",
+		// Automaton merge-pending check: the two settings fields, the two
+		// operator-visible merge badge labels and the safe-to-delete card title.
+		"settings_automation_merge_pending_mode",
+		"settings_automation_merge_pending_alert_minutes",
+		"merge_state_pending",
+		"merge_state_needs_look",
+		"safe_delete_card_title",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

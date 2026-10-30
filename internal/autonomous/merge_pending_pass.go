@@ -147,7 +147,7 @@ func readRefTip(gitDir, ref string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		id, name, found := strings.Cut(sc.Text(), " ")
