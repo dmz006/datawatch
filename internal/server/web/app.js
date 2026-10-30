@@ -28537,18 +28537,26 @@ function _questionAnswerSubmit(id, currentAnswerId, chosenOptionId, quote) {
 }
 window._questionAnswerSubmit = _questionAnswerSubmit;
 
-// _questionAnswerBodyHTML is the dialog body: question text, options as
-// radios with trade-offs, the recommendation, the translated default line
-// (option label or hold), the free-text box, and — when the question is
+// _questionAnswerBodyHTML is the dialog body: the id line under the title,
+// question text, options as radios with a visible trade-off line, the
+// recommendation and default in plain sentences, the free-text box with its
+// plain label and helper line, and — when the question is
 // already answered — the current answer's quote with the replaces-it line.
 function _questionAnswerBodyHTML(q, answer) {
   const options = Array.isArray(q.options) ? q.options : [];
-  let html = `<div class="question-answer-text" style="font-size:13px;color:var(--text);overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(q.text || '')}</div>`;
+  const qid = String(q.id == null ? '' : q.id);
+  let html = '';
+  // The title carries the label (or the id when the label is empty); the id
+  // stays visible as a small secondary line under it.
+  if (qid) {
+    html += `<div class="question-answer-id-line" style="margin:-8px 0 8px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('automation_questions_answer_id_line', [qid]))}</div>`;
+  }
+  html += `<div class="question-answer-text" style="font-size:13px;color:var(--text);overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(q.text || '')}</div>`;
   if (options.length) {
     html += '<div class="question-answer-options" style="margin-top:10px;">';
     options.forEach(o => {
       const trade = (o && o.tradeoffs)
-        ? `<div style="margin:2px 0 0 20px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(o.tradeoffs)}</div>`
+        ? `<div class="question-answer-tradeoff" style="margin:2px 0 0 20px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(o.tradeoffs)}</div>`
         : '';
       html += `<label class="question-answer-option" style="display:block;margin:4px 0;" title="${escHtml((o && o.tradeoffs) || '')}">`
         + `<input type="radio" name="questionAnswerChoice" value="${escHtml(o && o.id ? o.id : '')}"> ${escHtml((o && (o.label || o.id)) || '')}`
@@ -28560,18 +28568,28 @@ function _questionAnswerBodyHTML(q, answer) {
   if (rec && rec.option_id) {
     const name = String(rec.option_id);
     const label = _questionAnswerOptionLabel(options, name) || name;
+    const recLine = rec.rationale
+      ? t('automation_questions_answer_rec_line', [label, String(rec.rationale)])
+      : t('automation_questions_answer_rec_line_no_rationale', [label]);
     html += `<div class="question-answer-rec" style="margin-top:8px;font-size:12px;color:var(--text);">`
-      + `<span style="font-weight:600;">${escHtml(t('automation_questions_answer_rec', [label]))}</span>`
-      + (rec.rationale ? ` — ${escHtml(rec.rationale)}` : '') + '</div>';
+      + `<div style="font-weight:600;">${escHtml(t('automation_questions_answer_rec', [label]))}</div>`
+      + `<div class="question-answer-rec-line" style="overflow-wrap:anywhere;">${escHtml(recLine)}</div></div>`;
   }
   const defName = String(q.default == null ? '' : q.default);
   // The record's default is an option id or the word hold; hold is shown
   // as-is, an option by its label (falling back to the raw name).
-  const defLabel = (defName && defName !== 'hold') ? (_questionAnswerOptionLabel(options, defName) || defName) : 'hold';
-  html += `<div class="question-answer-default" style="margin-top:2px;font-size:12px;color:var(--text2);">${escHtml(t('automation_questions_answer_default', [defLabel]))}</div>`;
+  const isHold = !defName || defName === 'hold';
+  const defLabel = isHold ? 'hold' : (_questionAnswerOptionLabel(options, defName) || defName);
+  const defLine = isHold
+    ? t('automation_questions_answer_default_line_hold')
+    : t('automation_questions_answer_default_line', [defLabel]);
+  html += `<div class="question-answer-default" style="margin-top:6px;font-size:12px;color:var(--text2);">`
+    + `<div>${escHtml(t('automation_questions_answer_default', [defLabel]))}</div>`
+    + `<div class="question-answer-default-line">${escHtml(defLine)}</div></div>`;
   html += `<div style="margin-top:10px;">`
-    + `<label class="question-answer-quote-label" style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('automation_questions_answer_quote_label'))}</label>`
-    + '<textarea id="questionAnswerQuote" class="form-input question-answer-quote" rows="3" style="width:100%;box-sizing:border-box;font-size:12px;"></textarea></div>';
+    + `<label class="question-answer-quote-label" for="questionAnswerQuote" style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('automation_questions_answer_text_label'))}</label>`
+    + '<textarea id="questionAnswerQuote" class="form-input question-answer-quote" rows="3" style="width:100%;box-sizing:border-box;font-size:12px;"></textarea>'
+    + `<div class="question-answer-text-help" style="margin-top:4px;font-size:11px;color:var(--text2);">${escHtml(t('automation_questions_answer_text_help'))}</div></div>`;
   if (answer && typeof answer === 'object') {
     const quote = answer.quote == null ? '' : String(answer.quote);
     html += `<div class="question-answer-current" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;font-size:12px;">`
@@ -28599,7 +28617,7 @@ window.openQuestion = function(id) {
     const answer = (body0.answer && typeof body0.answer === 'object') ? body0.answer : null;
     const currentAnswerId = String(body0.current_answer_id || (answer && answer.id) || '');
     showModal({
-      title: t('automation_questions_answer_title', [String(q.id || qid)]),
+      title: t('automation_questions_answer_title', [String(q.label || q.id || qid)]),
       body: _questionAnswerBodyHTML(q, answer),
       confirmLabel: t('automation_questions_answer_submit'),
       onConfirm: () => {
