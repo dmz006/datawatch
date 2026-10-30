@@ -126,6 +126,26 @@ func (m *Manager) QuestionTick(ctx context.Context) {
 	}
 	answered := indexQuestions(ReadQuestionsForTick(store, QuestionAnswered))
 	withdrawn := indexQuestions(ReadQuestionsForTick(store, QuestionWithdrawn))
+
+	// Held questions are about the automation (or a parked task), never about a
+	// running worker — they own no session to resume, so the parked-task path
+	// below cannot reach them. Their answered questions route to the held
+	// processor: the operator's answer is carried through the manager's action
+	// path and recorded there, once per answer (its entry is the marker that
+	// keeps the repeat ticks quiet).
+	for qid, q := range answered {
+		if !isHeldQuestion(&q) {
+			continue
+		}
+		ans, ok := store.CurrentAnswer(qid)
+		if !ok {
+			continue
+		}
+		if err := m.ProcessHeldAnswer(ctx, q, ans); err != nil {
+			log.Printf("[autonomous] %s: held-answer routing refused: %v", qid, err)
+		}
+	}
+
 	if len(answered) == 0 && len(withdrawn) == 0 {
 		return
 	}
