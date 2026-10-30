@@ -161,6 +161,7 @@ var MCPToolCap = map[string]string{
 	"autonomous_safe_to_delete":       CapAutonomousRead,
 	"autonomous_overlap_search":       CapAutonomousRead,
 	"security_failure_list":           CapAutonomousRead,
+	"supervisor_watch_list":           CapAutonomousRead,
 	"channel_diagnostics":             CapCommRead,
 	"channel_info":                    CapCommRead,
 	"channel_routing_config_get":      CapConfigRead,
