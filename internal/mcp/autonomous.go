@@ -74,6 +74,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("automation_triage_alert_minutes", mcpsdk.Description("Minutes an Automation may sit waiting before a triage alert is raised. Whole number >= 0; 0 turns the triage alert off, unset keeps the 30-minute default.")),
 		mcpsdk.WithString("automation_merge_pending_mode", mcpsdk.Enum("off", "shadow", "on"), mcpsdk.Description("Merge-pending check of finished Automaton branches: off (the default, no check), shadow (records and reports only) or on. Empty keeps the current value.")),
 		mcpsdk.WithNumber("automation_merge_pending_alert_minutes", mcpsdk.Description("Minutes a finished Automaton branch may sit unmerged before a merge-pending alert is raised. Whole number >= 0; 0 turns the merge-pending alert off, unset keeps the 30-minute default.")),
+		mcpsdk.WithString("automation_merged_member_policy", mcpsdk.Enum("completed", "manual", "block"), mcpsdk.Description("What an Automaton does when a member ends cancelled or completed and its work is already merged into the project default branch: completed (the default) treats the member as completed and the chain follows its on_complete edge, manual keeps the blocked outcome and adds the merge proof to the block reason for the operator, block keeps the blocked outcome and runs no git check. A branch that is not merged always keeps the blocked outcome. Empty keeps the current value.")),
 		mcpsdk.WithString("lane_fill_mode", mcpsdk.Enum("off", "shadow", "on"), mcpsdk.Description("Lane fill mode: off (no planning), shadow (plans and records every decision but starts nothing) or on (starts the planned work). Empty is shadow.")),
 		mcpsdk.WithNumber("lane_fill_gpu_lanes", mcpsdk.Description("Number of GPU lanes lane fill plans for. Whole number >= 0.")),
 		mcpsdk.WithNumber("lane_fill_claude_lanes", mcpsdk.Description("Number of Claude lanes lane fill plans for. Whole number >= 0; 0 means no Claude lane.")),
@@ -268,6 +269,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		if _, ok := args["automation_merge_pending_alert_minutes"]; ok {
 			auto["merge_pending_alert_minutes"] = req.GetFloat("automation_merge_pending_alert_minutes", 0)
 		}
+	}
+	if v := req.GetString("automation_merged_member_policy", ""); v != "" {
+		auto["merged_member_policy"] = v
 	}
 	if v := req.GetString("automation_agent_insert_policy", ""); v != "" {
 		auto["agent_insert_policy"] = v
