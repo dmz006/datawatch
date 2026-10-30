@@ -1060,6 +1060,18 @@ func (a *API) SetPRDGit(prdID string, autoPR bool, baseBranch string) (any, erro
 	return prd, nil
 }
 
+// SetPRDGitPush sets (or clears with "") the per-PRD push-on-complete
+// override (git.push_on_complete precedence: PRD override > daemon
+// setting > default branch policy).
+func (a *API) SetPRDGitPush(prdID, policy string) (any, error) {
+	prd, err := a.M.SetPRDGitPush(prdID, policy)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	return prd, nil
+}
+
 // ── BL303 S2 — guardrail library + profiles + per-Automaton override ──────
 
 func (a *API) GuardrailLibrary() []any {

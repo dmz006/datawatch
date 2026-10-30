@@ -390,6 +390,15 @@ type PRD struct {
 // repo's current default branch" (resolved at worktree-creation
 // time, not stored until then). Branch and PRURL are populated by the
 // executor/completion hook — not operator-set fields.
+// PushStatePushed / PushStateNotPushed — the two values a PRD's
+// GitWorkflow.PushState can take. "" (zero value) means "no push outcome
+// recorded yet". Old stored PRDs that predate push-on-complete load
+// with PushState=="" unchanged.
+const (
+	PushStatePushed    = "pushed"
+	PushStateNotPushed = "not_pushed"
+)
+
 type GitWorkflow struct {
 	Provider   string `json:"provider,omitempty"`
 	URL        string `json:"url,omitempty"`
@@ -397,6 +406,17 @@ type GitWorkflow struct {
 	Branch     string `json:"branch,omitempty"`
 	AutoPR     bool   `json:"auto_pr,omitempty"`
 	PRURL      string `json:"pr_url,omitempty"`
+	// PushOnComplete is the per-PRD override of the daemon's git.push_on_complete
+	// policy ("", "never", "branch", "default_branch"). "" = use the daemon
+	// setting (see Manager.effectivePushPolicy).
+	PushOnComplete string     `json:"push_on_complete,omitempty"`
+	PushState      string     `json:"push_state,omitempty"` // "" | pushed(PushStatePushed) | not_pushed(PushStateNotPushed)
+	PushedRef      string     `json:"pushed_ref,omitempty"` // ref last successfully pushed
+	PushedSHA      string     `json:"pushed_sha,omitempty"` // HEAD SHA last successfully pushed
+	PushedAt       *time.Time `json:"pushed_at,omitempty"`  // when the last successful push landed
+	// PushWarning is the human reason shown when PushState is not_pushed;
+	// cleared on a later successful push.
+	PushWarning string `json:"push_warning,omitempty"`
 }
 
 // MemorySeedConfig (BL386 Phase 1 + BL387 Phase 2b) controls warm-start seeding at task spawn.
