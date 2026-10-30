@@ -2393,6 +2393,72 @@ The default return path — the `question_raised` WebSocket message, the
 answer summary — is always on and is what every asker gets even when
 it does not opt in.
 
+### Worker questions
+
+A worker session can raise a question by printing a marker line instead of
+calling `POST /api/questions`. The line is `DATAWATCH_QUESTION:` followed by
+one line of JSON; the output scanner recognises it and the daemon raises it
+through the same store path a `POST /api/questions` takes, so the audit entry,
+the decision-log entry and the three raise announcements are the ones a REST
+raise produces. There is no new route and no new MCP tool: a worker question is
+read and answered with the six endpoints above. How-to:
+[howto/operator-questions-workers](../howto/operator-questions-workers.md).
+
+**Off by default.** The marker is acted on only while
+`autonomous.questions.enabled` **and** `autonomous.questions.worker_marker` are
+`true`. Both are read live at each marker line.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `autonomous.questions.worker_marker` | boolean | off when absent | Whether a question marker in a worker's output is raised as a question. It changes nothing while `autonomous.questions.enabled` is off. Set with `PUT /api/config` and `{"autonomous.questions.worker_marker": true}`; no restart. |
+
+**The marker payload.** Unknown keys make the line malformed. The whole line is
+capped at 16384 bytes.
+
+| Key | Rule |
+|---|---|
+| `question` | required, up to 8192 bytes, not blank |
+| `options` | 2 to 20 items `{id, label, tradeoffs}`; unique non-empty `id`; `label` up to 200 bytes; `tradeoffs` up to 1000 bytes |
+| `recommendation` | optional `{option_id, rationale}`; `option_id` must exist; `rationale` up to 1000 bytes |
+| `default` | an option id or `hold`; absent means `hold` |
+| `blocked` | boolean, default `false` |
+| `label` | `decision` (default), `design review`, `approval` or `information` |
+| `risk` | `normal` (default) or `low` |
+
+**Fields of the stored question.** A marker question is asked by
+`worker-<short session id>` (`asker_kind: session`), carries the worker's
+`session_id` and is linked to its task (`context: task`), or to its Automaton
+(`context: prd`) when it has no task, or `none`. It has `priority: normal` and
+`return_path: false`. Three fields are new on the question record and on
+`GET /api/questions` and `GET /api/questions/{id}`; each is left out when empty,
+so a record written before they existed reads as before:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `blocking` | boolean | The asker said it cannot go on until the question is decided (the marker's `blocked`). A REST raise is never blocking. |
+| `source` | string | How the question arrived: `marker` (a worker's marker line) or `rest` (`POST /api/questions`). Empty on a record written before the field existed. A `marker` question must carry a `session_id` and a `source_line_sha256`. |
+| `source_line_sha256` | string | Lowercase hex SHA-256 (64 characters) of the marker line. It is the dedupe key: a second scan of the same line while its question is open raises nothing. Never the line text. |
+
+**The `await_decision` wait reason.** A task with an open blocking question is
+parked: it is waiting with the `wait_reason` `await_decision: <question id>`
+(`cause` `await_decision` on the waiting-task list of the capacity status, a
+new value beside `await_external`). The park returns the capacity lease,
+releases the project-tree lock unless the tree has unpushed work, and counts no
+retry or failure. The coordinator tick resumes the task from the answered and
+withdrawn questions it reads with `GET /api/questions` filters (it never reads a
+terminal), and sends the worker one `[automaton decision] …` line carrying the
+question id, the chosen option, the quote (JSON-encoded) and the answer id. A
+withdrawn question resumes the task with a line saying no default was applied.
+Show an unknown `cause` as plain text.
+
+**Refused lines.** A marker line that fails validation is never stored. It is
+written to the audit log as `question_marker_refused`: subject the session id;
+details `session_id`, `reason` (`malformed`, `too_long`, `empty_question`,
+`too_few_options`, `duplicate_option`, `invalid_label`, `invalid_risk`,
+`invalid_default`, `invalid_recommendation` or `invalid_question`) and
+`line_sha256`. The line text is never in the entry. Read them with
+`GET /api/audit?action=question_marker_refused`.
+
 ### Status codes
 
 | Code | When |
@@ -2428,6 +2494,8 @@ as that operator wrote it), `question_withdrawn`, `question_expired`,
 `answer_superseded` when a supersede lands (the replacing answer's quote
 kept), and `question_answer_refused` for a secret refusal — the matched
 rule's name only, never the text.
+A worker marker line that fails validation writes `question_marker_refused`
+(session id, reason category and line hash only; see "Worker questions").
 
 ---
 

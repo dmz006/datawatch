@@ -1410,6 +1410,25 @@ autonomous:
     # or the MCP config_set tool (key autonomous.questions.decision_gate_mode,
     # value on). Takes effect at once, no restart needed.
     decision_gate_mode: shadow
+    # autonomous.questions.worker_marker — whether a worker session may ask
+    # the operator a question by printing a DATAWATCH_QUESTION: line (the
+    # marker, then one line of JSON) in its output. Off when the key is
+    # absent. When on, and the question channel above is on too, the daemon
+    # raises the line as an ordinary operator question asked by
+    # "worker-<short session id>", linked to its task, and announces it like
+    # any other raise. A line with "blocked": true also parks the task on
+    # the question (wait reason "await_decision: <question id>", capacity
+    # slot given back, no retry counted) until the coordinator tick sees the
+    # answer; a line that fails validation is dropped and audited as
+    # question_marker_refused without its text. With the key off, or the
+    # channel off, the line is ignored like any other output. One-shot
+    # print-mode backends are not covered yet.
+    # Change it with PUT /api/config {"autonomous.questions.worker_marker": true},
+    # the comm channel (`configure autonomous.questions.worker_marker=true`),
+    # the CLI (`datawatch config set autonomous.questions.worker_marker true`)
+    # or the MCP config_set tool (key autonomous.questions.worker_marker,
+    # value true). Takes effect at once, no restart needed.
+    worker_marker: false
   # Daemon-wide default for how many independent tasks of one Automaton run
   # at once. An Automaton's own max_concurrent_tasks overrides it. 1 = one
   # task at a time (sequential). Tasks of different Automata are not limited

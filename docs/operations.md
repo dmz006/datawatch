@@ -4693,6 +4693,47 @@ A task whose spec names an [operator decision](howto/automaton-operator-decision
 
 **Monitoring: n/a, with reasons.** The gate adds no subsystem with a state of its own to gauge: a held task is visible as a task status, the shadow record is on the decision log and the one alert covers the first hold.
 
+## Worker questions
+
+A worker session of an Automaton can ask the operator a design question by printing one line in its output: `DATAWATCH_QUESTION:` followed by a single line of JSON (`question`, `options`, `recommendation`, `default`, `blocked`, and optionally `label` and `risk`). The daemon stores it as an ordinary [operator question](#operator-questions) asked by `worker-<short session id>`, linked to the session and its task, and announces it like any other raise. A line with `"blocked": true` also parks the task on the question until it is decided. How-to: [howto/operator-questions-workers](howto/operator-questions-workers.md). API reference: [api/autonomous](api/autonomous.md#worker-questions).
+
+**Two switches, both off by default.** The marker is acted on only while `autonomous.questions.enabled` and `autonomous.questions.worker_marker` are both `true`. Both are read live at each marker line, so a change needs no restart. With either off the line is ignored like other output.
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous:` → `questions:` → `worker_marker: true` |
+| **CLI** | `datawatch config set autonomous.questions.worker_marker true` |
+| **Web UI** | Settings → **Autonomous Automata planning** → *Let a worker raise a question with a marker in its output* |
+| **REST API** | `PUT /api/config` with `{"autonomous.questions.worker_marker": true}` |
+| **Comm channel** | `configure autonomous.questions.worker_marker=true` |
+| **MCP** | `config_set` with key `autonomous.questions.worker_marker` and value `true` |
+
+**What the daemon does with a marker line.**
+
+| Line | Result |
+|---|---|
+| Valid | One question is stored (`source: "marker"`, `blocking` from `blocked`, `source_line_sha256` the hash of the line) and announced. The same line read again while its question is open raises nothing new. |
+| Invalid (malformed, too long, a blank question, fewer than two options, a repeated option id, an unknown label or risk, a `default` or `recommendation` naming no option) | Nothing is stored or announced. The audit log gets `question_marker_refused` with the session id, a reason category and the SHA-256 of the line, never the line text. |
+| Not a question (the marker in the middle of a sentence, or followed by a placeholder) | Dropped silently. |
+
+**A blocked task.** While a blocking question is open, its task is waiting with the reason `await_decision: <question id>`: its capacity slot is returned, its project-tree lock is released unless the tree holds unpushed work, and no retry or failure is counted. The worker session keeps running. A question that is not blocking leaves the task running.
+
+**How a task resumes.** Supervisor and coordinator ticks read `GET /api/questions` with `state` `open`, and `answered` or `withdrawn` for the resume pass, and **never read the terminal**. The coordinator tick reads the answered and withdrawn questions through the same question read, re-admits each parked task whose question was decided, re-claims the tree lock if the park released it, and sends the worker one `[automaton decision]` line carrying the decision (or saying the question was withdrawn and no default was applied). A task is resumed once per answer; a superseding answer becomes the new current answer without a second resume.
+
+**Access methods for worker questions.**
+
+| Surface | See the open questions | Answer |
+|---|---|---|
+| **REST API** | `GET /api/questions?state=open`; `GET /api/questions/{id}` | `POST /api/questions/{id}/answer` with `chosen_option_id` and/or `quote` |
+| **MCP** | `question_list` with `state: open`; `question_get` | `question_answer` |
+| **CLI** | `datawatch question list --state open`; `datawatch question show <id>` | `datawatch question answer <id> --option <option id> --text "..."` |
+| **Comm channel** | `question list`; `question show <id>` | `question answer <id> <option number or id> [quote...]`, or a plain reply when exactly one question is open |
+| **Web UI** | Automation view → *Operator questions* card; the task's waiting reason on the Automaton | **Answer** on the row. The Automaton's decision log shows the answer id on an answer entry as a link that opens the quote, the chosen option, the actor and the time |
+
+**Not covered yet.** One-shot print-mode backends are not asked on their behalf: a run that prints its result and exits cannot be paused and then prompted with the decision, and this step adds no handling for it. A non-blocking question's answer is stored but not sent into the worker's session.
+
+**Monitoring: n/a, with reasons.** The worker marker adds no subsystem with a state of its own to gauge. A raised question is on `GET /api/questions`, a parked task is visible as its waiting reason, and a refused line is an audit entry (`question_marker_refused`); there is no separate stats field, endpoint, tool, card or command for it.
+
 ## Terminal Performance
 
 ### xterm.js load time
