@@ -555,6 +555,19 @@ type AutomationConfig struct {
 	// agent insert a member directly; PolicyRequireOperator holds an agent's
 	// insert as a pending insert until an operator approves it.
 	AgentInsertPolicy string `json:"agent_insert_policy"`
+
+	// CreateSearchMode: search-before-create mode (off|shadow|on). Empty
+	// (the zero value) and an unset value both read as the default "shadow"
+	// via EffectiveCreateSearchMode. Writes of any other value are refused
+	// with a 400 on every REST write path and on config load.
+	CreateSearchMode string `json:"create_search_mode"`
+
+	// CreateSearchThreshold: the search-before-create threshold in (0, 1].
+	// Pointer on purpose: an unset value (nil) reads the default 0.5 via
+	// EffectiveCreateSearchThreshold, and an in-range value survives a merge
+	// round trip. Zero, negative and above-1 values are refused on the write
+	// paths and on config load.
+	CreateSearchThreshold *float64 `json:"create_search_threshold,omitempty"`
 }
 
 // DefaultAutomationTriageAlertMinutes — the autonomous.automation.
@@ -572,6 +585,27 @@ func (c AutomationConfig) EffectiveTriageAlertMinutes() int {
 		return DefaultAutomationTriageAlertMinutes
 	}
 	return *c.TriageAlertMinutes
+}
+
+// EffectiveCreateSearchMode resolves the search-before-create mode: unset
+// (empty) reads as the default "shadow"; "off" and "on" are explicit
+// operator choices. Unrecognized values are refused upstream on the write
+// and load paths, so this never has to guess for them.
+func (c AutomationConfig) EffectiveCreateSearchMode() string {
+	if c.CreateSearchMode == "" {
+		return "shadow"
+	}
+	return c.CreateSearchMode
+}
+
+// EffectiveCreateSearchThreshold resolves the search-before-create
+// threshold: unset (nil) reads as the default 0.5. Zero, negative and
+// above-1 values are refused upstream on the write and load paths.
+func (c AutomationConfig) EffectiveCreateSearchThreshold() float64 {
+	if c.CreateSearchThreshold == nil {
+		return 0.5
+	}
+	return *c.CreateSearchThreshold
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.

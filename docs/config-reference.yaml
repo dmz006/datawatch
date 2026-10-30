@@ -1008,6 +1008,32 @@ autonomous:
   # `configure autonomous.automation.agent_insert_policy=require_operator`, and
   # the MCP config_set tool when mcp.allow_self_config is on.
   #
+  # create_search_mode: string, `off`, `shadow` (default) or `on`; any other
+  # value is rejected (400 on PUT /api/config, an error on config load), and an
+  # empty value reads as shadow. Controls the over-duplicate pre-check that
+  # searches the existing sources before a new Automaton is created
+  # (search-before-create): `off` never searches, `shadow` searches and
+  # surfaces the over-duplicate warning to the operator while the creation
+  # still proceeds, and `on` searches and holds a new Automaton back to the
+  # operator when it over-duplicates an existing one. Settable via REST GET
+  # /api/config (key autonomous.automation.create_search_mode; shows the
+  # effective value), REST PUT /api/config, the MCP autonomous_config_set tool
+  # (automation_create_search_mode), CLI `datawatch config set
+  # autonomous.automation.create_search_mode=on`, and comm `configure
+  # autonomous.automation.create_search_mode=on`.
+  #
+  # create_search_threshold: number in the open-closed interval (0, 1]; unset
+  # reads the 0.5 default. The over-duplication score at or above which an
+  # existing Automaton counts as the over-duplicate of the new one: a zero,
+  # negative, above-1, non-finite or non-numeric value is rejected with 400
+  # on PUT /api/config (nothing is written), and an out-of-range value is an
+  # error on config load. Settable via REST GET /api/config (key
+  # autonomous.automation.create_search_threshold; shows the effective
+  # value), REST PUT /api/config, the MCP autonomous_config_set tool
+  # (automation_create_search_threshold), CLI `datawatch config set
+  # autonomous.automation.create_search_threshold=0.8`, and comm `configure
+  # autonomous.automation.create_search_threshold=0.8`.
+  #
   # Automation objects themselves (members, edges, budget policy, defaults) are
   # runtime data in the automation store, created through the Automation verbs
   # (including `automation import-graph`), not keys in this file.
@@ -1045,6 +1071,8 @@ autonomous:
     idle_alert_minutes: 0
     triage_alert_minutes: 30
     agent_insert_policy: allow
+    create_search_mode: shadow
+    create_search_threshold: 0.5
     # decision_assistant — no daemon config key; default OFF. The optional
     # local-model decision assistant is runtime data on the Automation record
     # (decision_assistant) and, as an override that wins over it, on a member.

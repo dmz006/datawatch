@@ -130,9 +130,11 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 			// alert off and is preserved by the pointer below).
 			if rawAuto, ok := top["automation"]; ok {
 				var auto struct {
-					IdleAlertMinutes   *float64 `json:"idle_alert_minutes"`
-					TriageAlertMinutes *float64 `json:"triage_alert_minutes"`
-					AgentInsertPolicy  *string  `json:"agent_insert_policy"`
+					IdleAlertMinutes      *float64 `json:"idle_alert_minutes"`
+					TriageAlertMinutes    *float64 `json:"triage_alert_minutes"`
+					AgentInsertPolicy     *string  `json:"agent_insert_policy"`
+					CreateSearchMode      *string  `json:"create_search_mode"`
+					CreateSearchThreshold *float64 `json:"create_search_threshold"`
 				}
 				if json.Unmarshal(rawAuto, &auto) != nil {
 					http.Error(w, "automation: must be an object", http.StatusBadRequest)
@@ -152,6 +154,18 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				}
 				if auto.AgentInsertPolicy != nil {
 					if verr := validateAgentInsertPolicy(*auto.AgentInsertPolicy); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if auto.CreateSearchMode != nil {
+					if verr := validateCreateSearchModeValue(*auto.CreateSearchMode); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if auto.CreateSearchThreshold != nil {
+					if verr := validateCreateSearchThresholdValue(*auto.CreateSearchThreshold); verr != nil {
 						http.Error(w, verr.Error(), http.StatusBadRequest)
 						return
 					}

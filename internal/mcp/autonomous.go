@@ -81,6 +81,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("lane_fill_gpu_backend", mcpsdk.Description("LLM backend the GPU lanes run (default pi-prompt).")),
 		mcpsdk.WithString("lane_fill_gpu_model", mcpsdk.Description("Model the GPU lanes run. Empty leaves the model to the backend.")),
 		mcpsdk.WithString("lane_fill_claude_backend", mcpsdk.Description("LLM backend the Claude lanes run (default claude-code).")),
+		mcpsdk.WithString("automation_create_search_mode", mcpsdk.Description("Search-before-create mode: off never searches before creating an Automation, shadow (the default) searches and surfaces over-duplicate warnings, on searches and holds an over-duplicate creation back to the operator.")),
+		mcpsdk.WithNumber("automation_create_search_threshold", mcpsdk.Description("Over-duplication threshold in the open-closed interval (0, 1]; unset keeps the 0.5 default.")),
 		mcpsdk.WithString("automation_agent_insert_policy", mcpsdk.Description("What happens when an agent session inserts a member into an Automation: allow (the default) lets a draft insert land at once, require_operator holds every agent insert until an operator approves it.")),
 		mcpsdk.WithNumber("progress_lanes", mcpsdk.Description("Number of parallel lanes the progress figures assume (autonomous.progress.lanes). Whole number >= 0; 0 = 5.")),
 		mcpsdk.WithNumber("progress_inactive_gap_hours", mcpsdk.Description("Hours without activity that count as an inactive window in the progress figures (autonomous.progress.inactive_gap_hours). Number >= 0; 0 = 3.")),
@@ -240,7 +242,8 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	// Automation idle-alert + triage-alert thresholds (autonomous.automation.*);
 	// presence-aware so an explicit 0 (off) is sent. The agent insert policy
-	// (autonomous.automation.agent_insert_policy) rides in the same object.
+	// (autonomous.automation.agent_insert_policy) and the search-before-create
+	// keys (create_search_mode, create_search_threshold) ride in the same object.
 	auto := map[string]any{}
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["automation_idle_alert_minutes"]; ok {
@@ -249,6 +252,12 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		if _, ok := args["automation_triage_alert_minutes"]; ok {
 			auto["triage_alert_minutes"] = req.GetFloat("automation_triage_alert_minutes", 0)
 		}
+		if _, ok := args["automation_create_search_threshold"]; ok {
+			auto["create_search_threshold"] = req.GetFloat("automation_create_search_threshold", 0)
+		}
+	}
+	if v := req.GetString("automation_create_search_mode", ""); v != "" {
+		auto["create_search_mode"] = v
 	}
 	if v := req.GetString("automation_agent_insert_policy", ""); v != "" {
 		auto["agent_insert_policy"] = v
