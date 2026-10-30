@@ -1162,7 +1162,7 @@ func (r *Router) handleMessage(msg messaging.Message) {
 	case CmdPeers:
 		r.handlePeers(cmd)
 	case CmdAutonomous:
-		// The autonomous comm verbs (triage, repo-ci-watch, tags,
+		// The autonomous comm verbs (triage, repo-ci-watch, security-failure, tags,
 		// templates, lane-fill, ...) take their verb dispatch in
 		// handleAutonomous — this is the command-level dispatch.
 		r.handleAutonomous(cmd)

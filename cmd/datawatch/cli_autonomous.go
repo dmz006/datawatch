@@ -42,6 +42,10 @@ Subcommands:
                                   the watched repositories, the last poll, and the stored records
                                   (repository, ref, workflow, status, classification, first seen,
                                   alerted), newest first
+  security-failure [--repo P] [--status S] [--json]
+                                  Security failure read: the open reports of failed security runs
+                                  (repository, ref, workflow, run, status, dependency, advisory,
+                                  recommendation, action), newest first
   config-get                      Read current autonomous config
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
@@ -214,6 +218,7 @@ Subcommands:
 		newAutonomousTriageCmd(),
 		// Repo CI watch read.
 		newAutonomousRepoCIWatchCmd(),
+		newAutonomousSecurityFailureCmd(),
 		newAutonomousDecisionsCmd(),
 	)
 	return cmd
