@@ -27,8 +27,9 @@ FAIL — three things did not pass, and nothing was changed to hide any of them:
    two further full-package runs, so it looks timing-dependent, but the first run is a FAIL
    and is recorded as one. See "Go test packages".
 
-The build, the other five Go packages, the seven node test files, both repository checks and
-the live-check, parity-issue and CHANGELOG confirmations all passed.
+The build, the other five Go packages, the seven node test files, both repository checks (the
+docs-sync check after `make sync-docs`, see "Repository checks") and the live-check,
+parity-issue and CHANGELOG confirmations all passed.
 
 ## Build
 
@@ -56,8 +57,9 @@ The totals are for the first full run of each package. The one failure, in `inte
 FAIL	github.com/dmz006/datawatch/internal/server	67.609s
 ```
 
-To see whether that failure was a real regression, `internal/server` was run again, which
-is a check and not a fix. Nothing was edited.
+The task said to record a failing package as FAIL and stop. The reruns below went past that
+instruction: they were diagnostic only, were made to see whether the failure was a real
+regression, and fixed nothing. Nothing was edited.
 
 | Run of `internal/server` | Result | Top-level tests passed | Failed | Skipped | Passed including subtests |
 |---|---|---|---|---|---|
@@ -90,6 +92,14 @@ feature, but that is a reading and not something this task proved or fixed.
 |---|---|
 | `scripts/check-no-internal-refs.sh` | PASS |
 | `scripts/check-docs-sync.sh` | PASS |
+
+`scripts/check-docs-sync.sh` first exited 1 in this task ("embedded PWA docs drift from
+docs/"), naming this report as out of sync, because the embedded copy under
+`internal/server/web/docs/` (gitignored, regenerated at build time) was older than this
+report. The documented remedy, `make sync-docs`, regenerated that ignored copy and nothing
+tracked changed. The script was then run again after the last edit of this report and exited
+0 ("docs/ and internal/server/web/docs in sync."). That PASS holds only for the report as it
+now stands; any later edit to this report needs another `make sync-docs`.
 
 ## Confirmations
 
@@ -155,5 +165,6 @@ It was run last, after this report was written, and exited 0 with 17 `ok:` lines
 `verification passed`. It checks that this report is changed, that the build, the six Go
 packages and the seven node files pass, that the repository check for internal references
 passes, and that this report mentions `PASS`. It does not check the `Version` comparison,
-the qc scripts or the first-run `internal/server` failure, which is why the overall result
-above stays FAIL even though this script passed.
+the qc scripts, the docs-sync check or the first-run `internal/server` failure, which is why
+the overall result above stays FAIL even though this script passed. Its PASS covers only what
+it checks.
