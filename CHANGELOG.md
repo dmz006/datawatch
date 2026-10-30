@@ -20,6 +20,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.41.0 — Search before create warns about overlapping work
+
+### Added
+
+- **Creating an Automaton now checks for overlap and can warn you.** When you create an Automaton, the daemon compares its title and spec with the Automata already there, the plans registry and the unmerged Automaton branches, and returns an overlap warning for each one that looks like the same work. A warning never blocks the create and changes nothing. The default mode, `shadow`, records what the warnings would have been in the audit log (`automaton_create_search`) and shows nothing, so you can compare them with what you actually did; set `autonomous.automation.create_search_mode` to `on` to see the warnings in the create reply, or `off` to skip the check. `autonomous.automation.create_search_threshold` (default 0.5) sets how close a match must be. You can also run the same search by hand with `GET /api/autonomous/overlap`, `datawatch autonomous overlap`, the `autonomous overlap` chat command, or the `autonomous_overlap_search` MCP tool. See `docs/howto/automaton-search-before-create.md`.
+
 ## v9.40.0 — Merge pending by commit content and a safe-to-delete report
 
 ### Added
