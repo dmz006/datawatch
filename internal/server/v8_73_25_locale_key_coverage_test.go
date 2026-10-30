@@ -36,6 +36,7 @@ func TestLocales_AllAppJSKeysExistInEnglishBundle(t *testing.T) {
 		"automation_edge_":      true, // + outcome edge name
 		"automation_join_rule_": true, // + join rule name
 		"chat_quick_reply_":     true, // + lowercased quick-reply label
+		"repo_ci_watch_mode_": true, // + off/shadow/on mode string
 	}
 
 	seen := map[string]bool{}
