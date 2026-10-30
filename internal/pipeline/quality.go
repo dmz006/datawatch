@@ -25,6 +25,12 @@ type QualityGateConfig struct {
 	TestCommand       string `yaml:"test_command" json:"test_command"` // ONE shell string run via sh -c; compound commands such as "a && b" are fine
 	Timeout           int    `yaml:"timeout" json:"timeout"`           // seconds, 0/unset = default 300
 	BlockOnRegression bool   `yaml:"block_on_regression" json:"block_on_regression"`
+	// Scope is this automaton's gate scope (a GateScope* value); empty
+	// inherits the global value, then DefaultGateScope.
+	Scope string `yaml:"scope,omitempty" json:"scope,omitempty"`
+	// SmokePackages are the package patterns run as the smoke set under
+	// the touched-plus-smoke scope; empty is unset.
+	SmokePackages []string `yaml:"smoke_packages,omitempty" json:"smoke_packages,omitempty"`
 }
 
 // EffectiveTimeout returns the timeout in seconds the gate should use: the
@@ -75,6 +81,10 @@ type QualityGateResult struct {
 	// never a regression.
 	Invalid       bool   `json:"invalid"`
 	InvalidReason string `json:"invalid_reason,omitempty"`
+
+	// ScopePlan carries the scoping decision for this gate run when the
+	// gate ran under a non-full scope.
+	ScopePlan *GateScopePlan `json:"scope_plan,omitempty"`
 }
 
 // RunTests executes command through `sh -c` in projectDir and parses the

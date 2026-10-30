@@ -22,7 +22,7 @@ func TestBL367_SetPRDQualityGates_Persisted(t *testing.T) {
 	mgr, _ := NewManager(dir, Config{Enabled: true, AutoFixRetries: 0}, nil)
 	prd, _ := mgr.Store().CreatePRD("test prd", "/proj", "claude-code", "", EffortNormal)
 
-	updated, err := mgr.SetPRDQualityGates(prd.ID, true, "go test ./...", 60, true)
+	updated, err := mgr.SetPRDQualityGates(prd.ID, true, "go test ./...", 60, true, "", nil)
 	if err != nil {
 		t.Fatalf("SetPRDQualityGates: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestBL367_SetPRDQualityGates_NotFound(t *testing.T) {
 	dir := t.TempDir()
 	mgr, _ := NewManager(dir, Config{Enabled: true, AutoFixRetries: 0}, nil)
 
-	_, err := mgr.SetPRDQualityGates("no-such-prd", true, "go test ./...", 0, false)
+	_, err := mgr.SetPRDQualityGates("no-such-prd", true, "go test ./...", 0, false, "", nil)
 	if err == nil {
 		t.Fatal("expected error for unknown PRD ID")
 	}
@@ -83,7 +83,7 @@ func TestBL367_ResolveQualityGates_PerPRDOverridesDefault(t *testing.T) {
 
 	// Create PRD via the manager's own store so it's visible in-memory.
 	prd, _ := mgr.Store().CreatePRD("test prd", "/proj", "claude-code", "", EffortNormal)
-	_, err := mgr.SetPRDQualityGates(prd.ID, true, "cargo test", 30, false)
+	_, err := mgr.SetPRDQualityGates(prd.ID, true, "cargo test", 30, false, "", nil)
 	if err != nil {
 		t.Fatalf("SetPRDQualityGates: %v", err)
 	}

@@ -51,6 +51,7 @@ import (
 	"github.com/dmz006/datawatch/internal/memory"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/metrics"
+	"github.com/dmz006/datawatch/internal/pipeline"
 	"github.com/dmz006/datawatch/internal/plugins"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
@@ -896,7 +897,7 @@ type AutonomousAPI interface {
 	LaneFillStatus(limit int) autonomous.LaneFillStatus
 
 	// BL367 — per-PRD quality gate config.
-	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (any, error)
+	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool, scope string, smokePackages []string) (any, error)
 
 	// Per-PRD override for whether a story failure halts the PRD (default)
 	// or the executor continues into later, independent stories.
@@ -6232,6 +6233,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"test_command":        s.cfg.Autonomous.DefaultQualityGates.TestCommand,
 				"timeout":             s.cfg.Autonomous.DefaultQualityGates.Timeout,
 				"block_on_regression": s.cfg.Autonomous.DefaultQualityGates.BlockOnRegression,
+				"scope":               s.cfg.Autonomous.DefaultQualityGates.Scope,
+				"smoke_packages":      s.cfg.Autonomous.DefaultQualityGates.SmokePackages,
 			},
 			// BL369 — prompt injection guard.
 			"injection_guard":    s.cfg.Autonomous.InjectionGuard,
@@ -6785,6 +6788,15 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["autonomous.gate_disagreement"]; ok {
 		if str, ok := v.(string); !ok || (str != "warn" && str != "block") {
 			http.Error(w, `autonomous.gate_disagreement: must be "warn" or "block"`, http.StatusBadRequest)
+			return
+		}
+	}
+	// default_quality_gates.scope accepts only full / touched-plus-smoke /
+	// touched (the empty string is valid and means inherit the built-in
+	// default); the whole PUT is rejected before anything is applied.
+	if v, ok := patch["autonomous.default_quality_gates.scope"]; ok {
+		if _, err := pipeline.ParseGateScope(toString(v)); err != nil {
+			http.Error(w, `autonomous.default_quality_gates.scope: `+err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -8800,6 +8812,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "autonomous.default_quality_gates.block_on_regression":
 			cfg.Autonomous.DefaultQualityGates.BlockOnRegression = toBool(v)
+		// Gate scope (full | touched-plus-smoke | touched; pre-validated in
+		// handlePutConfig) and smoke package patterns for the scopes that
+		// use them. Accepts a JSON string list or a comma-separated string
+		// (the comm/CLI wire form).
+		case "autonomous.default_quality_gates.scope":
+			cfg.Autonomous.DefaultQualityGates.Scope = toString(v)
+		case "autonomous.default_quality_gates.smoke_packages":
+			cfg.Autonomous.DefaultQualityGates.SmokePackages = parseGateSmokePackagesValue(v)
 		// BL369 — prompt injection guard config.
 		case "autonomous.injection_guard":
 			cfg.Autonomous.InjectionGuard = toBool(v)
@@ -9014,6 +9034,32 @@ func effectiveUndeclaredEditMode(mode string) string {
 		return m
 	}
 	return "warn"
+}
+
+// parseGateSmokePackagesValue accepts a JSON string list or a
+// comma-separated string (the comm/CLI wire form) and returns the trimmed,
+// non-empty entries. Anything else yields nil ("use the default smoke
+// set").
+func parseGateSmokePackagesValue(v interface{}) []string {
+	switch val := v.(type) {
+	case []interface{}:
+		out := []string{}
+		for _, item := range val {
+			if s := strings.TrimSpace(toString(item)); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case string:
+		out := []string{}
+		for _, part := range strings.Split(val, ",") {
+			if p := strings.TrimSpace(part); p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func toBool(v interface{}) bool {

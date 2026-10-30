@@ -42,7 +42,7 @@ func TestGateValidity_SetPRDQualityGatesMarksInvalid(t *testing.T) {
 
 	// A command that exits non-zero without naming a failing test is not a
 	// usable baseline.
-	got, err := mgr.SetPRDQualityGates(prd.ID, true, "exit 1", 30, true)
+	got, err := mgr.SetPRDQualityGates(prd.ID, true, "exit 1", 30, true, "", nil)
 	if err != nil {
 		t.Fatalf("SetPRDQualityGates must not fail on an invalid baseline: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestGateValidity_SetPRDQualityGatesMarksInvalid(t *testing.T) {
 	}
 
 	// A command that reports a passing test run clears the stale verdict.
-	got, err = mgr.SetPRDQualityGates(prd.ID, true, "echo 'ok  \texample.com/x'", 30, true)
+	got, err = mgr.SetPRDQualityGates(prd.ID, true, "echo 'ok  \texample.com/x'", 30, true, "", nil)
 	if err != nil {
 		t.Fatalf("SetPRDQualityGates: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestGateValidity_SetPRDQualityGatesMarksInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
-	got, err = mgr.SetPRDQualityGates(noDir.ID, true, "exit 1", 30, true)
+	got, err = mgr.SetPRDQualityGates(noDir.ID, true, "exit 1", 30, true, "", nil)
 	if err != nil {
 		t.Fatalf("SetPRDQualityGates without project dir: %v", err)
 	}

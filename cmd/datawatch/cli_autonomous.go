@@ -68,6 +68,7 @@ Subcommands:
                                   config-set '{"max_concurrent_tasks":2}'
                                   config-set '{"max_engines_per_node":2}'
                                   config-set '{"gate_disagreement":"block"}'
+                                  config-set '{"default_quality_gates":{"scope":"touched-plus-smoke","smoke_packages":["internal/pipeline"]}}' (default gate scope: full|touched-plus-smoke|touched)
                                   config-set --capacity-rate-requests 60 --capacity-rate-tokens 2000000 --capacity-rate-window-seconds 3600
                                   config-set --verifier-policy-mode prefer-free --verifier-policy-backends qwen,claude-code
                                   config-set --judge-policy qwen,claude-code --judge-timeout-seconds 1800
@@ -279,7 +280,13 @@ resume_max_age_seconds is the boot-resume age limit in seconds (default
 gate_disagreement (default "warn") applies when the verifier passed a task
 but the quality gate found a regression: "warn" records task.gate_disagreement
 and a PRD decision-log entry and the task still completes; "block" fails the
-task with a "gate_disagreement: …" error. An invalid gate never blocks.`,
+task with a "gate_disagreement: …" error. An invalid gate never blocks.
+
+default_quality_gates is the default gate config for new Automata:
+enabled, test_command, timeout, block_on_regression, scope (full |
+touched-plus-smoke | touched — how much of the test suite a gate task runs;
+empty = full) and smoke_packages (package patterns for the touched-plus-smoke
+scope; empty = the built-in set).`,
 		RunE: func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/config") },
 	}
 }
@@ -556,6 +563,13 @@ fail the task instead of completing it with a recorded gate_disagreement.
 Only "warn" (the default; record and complete) or "block" is accepted:
 
   datawatch autonomous config-set '{"gate_disagreement":"block"}'
+
+Default quality-gate config for new Automata (autonomous.default_quality_gates):
+scope is full (default) | touched-plus-smoke (touched packages plus the smoke
+set) | touched (touched packages only); smoke_packages lists the package
+patterns the touched-plus-smoke scope runs (empty = the built-in set):
+
+  datawatch autonomous config-set '{"default_quality_gates":{"scope":"touched-plus-smoke","smoke_packages":["internal/pipeline","internal/autonomous"]}}'
 
 tier inflight-cap table (see "datawatch llm add|update --help" for --plan-tier/--max-inflight):
   datawatch autonomous config-set '{"plan_tier_max_inflight":{"max_5x":2,"api":0}}'

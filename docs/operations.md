@@ -3143,6 +3143,98 @@ On the Automaton JSON (`GET /api/autonomous/prds/{id}`) look at
 `gate_disagreement` (`verifier_ok`, `gate_regression`, `gate_invalid`,
 `policy`, `summary`) and `quality_gate_result`.
 
+### Gate scope (`autonomous.default_quality_gates.scope`, `quality_gates.scope`)
+
+Gate scope steers how much of the suite a gate task runs, independently of
+the disagreement policy above. Values: `full` (the built-in default — the
+configured command runs unchanged), `touched-plus-smoke` (the touched
+packages plus their one-level importers, plus the smoke set) and `touched`
+(touched packages plus one-level importers). An Automaton's unset scope
+resolves to the global default, then to `full`; the resolved value and its
+source (`automaton` / `global` / `default`) are recorded on the run as the
+`scope` and `scope_source` fields of `quality_gate_result.scope_plan`
+(see `docs/howto/quality-gate-scope.md`).
+
+**Touched packages** are every package with a changed file; **importers**
+are packages importing a touched package directly (second level is not
+walked). The **smoke set** is `autonomous.default_quality_gates.smoke_packages`
+(or the per-Automaton `quality_gates.smoke_packages`), falling back to the
+built-in list in `internal/config` (aliased as
+`internal/pipeline` for the planner): `./internal/autonomous/...`,
+`./internal/config`, `./internal/pipeline`, `./internal/server/...`,
+`./internal/mcp/...`, `./internal/observer/...`, `./internal/audit`,
+`./internal/metrics`. The gate rewrites `go test <flags> ./...` to the
+scoped package list; anything it cannot compute, and any command that is
+not a rewritable `go test ... ./...`, falls back to the full command for
+that run and is recorded in `scope_plan` (`full_reason` /
+`fallback_reason`). Module-level files (`go.mod`, `go.sum`, `go.work`,
+`go.work.sum`), changed files outside any Go package, and a mapping failure
+all force the full run. `go vet` runs over the same package set and its
+new findings count as regressions; pre-existing vet findings, and failures
+in packages that did not run, do not.
+
+Guarantees that hold at every scope:
+
+- **The final gate task always runs the full suite** — the last
+  non-terminal task of an Automaton (or any task tagged as the final gate),
+  whatever the resolved scope is.
+- **Failures that cannot be attributed are not reported as regressions** —
+  the baseline and current run are both restricted to the same package set,
+  so a pre-existing failure in a run-omitted package is not a new
+  failing test. An invalid run (could not classify: startup failure,
+  timeout, no named tests) is warn-only at every scope, exactly as it is
+  at `full`.
+
+**Where set and read (scope + smoke_packages):**
+
+- **YAML** — `autonomous.default_quality_gates.scope` (string) and
+  `autonomous.default_quality_gates.smoke_packages` (list of Go package
+  patterns); load with an unrecognized scope value is refused. See
+  `config.reference.yaml`.
+- **REST** — `PUT /api/config` (both keys; `smoke_packages` accepts a list
+  or a comma-separated string), read back from `GET /api/config`. Per
+  Automaton: `POST /api/autonomous/prds/{id}/set_quality_gates` also takes
+  `scope` and `smoke_packages` (anything other than the three values is a
+  400; empty inherits the global/default), read back from
+  `GET /api/autonomous/prds/{id}` (`quality_gates.{scope,smoke_packages}`).
+  Every task that had a gate run carries
+  `quality_gate_result.scope_plan` on `GET /api/autonomous/prds/{id}` and
+  in every task list; see `docs/api-mcp-mapping.md` for the field list.
+- **MCP** — `autonomous_config_set` takes `quality_gates_scope` and
+  `quality_gates_smoke_packages` (both optional, forwarded only when
+  supplied; unrecognized scope values are rejected); `autonomous_prd_set_quality_gates`
+  takes `scope` and `smoke_packages`. See `docs/mcp.md`.
+- **CLI** — `datawatch autonomous config-set
+  '{"default_quality_gates":{"scope":"touched-plus-smoke","smoke_packages":["internal/pipeline"]}}'`;
+  `datawatch autonomous config-get` shows both keys; `--help` names the
+  example. There is no per-Automaton CLI flag — use REST or MCP.
+- **comm** — `configure autonomous.default_quality_gates.scope=<value>` and
+  `configure autonomous.default_quality_gates.smoke_packages=a/b,c/d` (both
+  keys are listed in `configure help` / `configure list`); per-Automaton
+  override with `autonomous set-quality-gates <id> [scope=...] [smoke_packages=a,b]`.
+- **PWA** — Settings → General → the autonomous quality-gate card: a
+  quality-gate-scope selector (empty = inherit, i.e. `full`) and a
+  smoke-packages box (comma-separated, saved as a list); keys
+  `autonomous.default_quality_gates.scope` /
+  `autonomous.default_quality_gates.smoke_packages` (locale keys
+  `settings_gate_scope`, `settings_gate_scope_hint`). Each Automaton's
+  tasks render `scope_plan` under the task (locale keys
+  `prd_task_gate_scope`, `prd_task_gate_scope_full`). There is no
+  per-Automaton scope editor in the PWA — set it via REST, MCP or comm.
+
+**In the datawatch source tree** the default stays `full` — the scoped
+scopes are implemented, tested and surfaced on every surface above, but the
+new default is not flipped until the operator confirms the suggested smoke
+set in `docs/plans/2026-10-23-quality-gate-scope.md`.
+
+**Mobile parity:** the mobile app does not render the new fields yet and
+must not break on them; the brief is
+`docs/plans/2026-10-23-datawatch-app-gate-scope-note.md`. See
+`docs/parity-status.md` (the gate-scope row) for the tracked state.
+
+Full walkthrough (scopes, override order, `scope_plan` fields, fallback
+reasons, confirming the smoke set): `docs/howto/quality-gate-scope.md`.
+
 ### Pi worker observability (progress, heartbeat, loop detection)
 
 Pi-based autonomous workers (interactive `pi` and the `pi-prompt` one-shot

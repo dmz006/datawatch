@@ -94,6 +94,11 @@ type qualityGateBaselines struct {
 	cfg    pipeline.QualityGateConfig
 	prdDir string
 	byDir  map[string]pipeline.TestResult
+	// vetByDir caches the dir's vet baseline: the packages failing at
+	// baseline time. vetBadDir marks dirs where vet itself could not
+	// run (unusable = warn-only, never a regression).
+	vetByDir  map[string][]string
+	vetBadDir map[string]bool
 	// onInvalid is invoked when a lazily captured per-dir baseline
 	// classifies as unusable; the executor wires it to the PRD-level invalid
 	// marking and warning. nil is a no-op.
@@ -106,11 +111,43 @@ type qualityGateBaselines struct {
 
 func newQualityGateBaselines(cfg pipeline.QualityGateConfig, prdDir string, prdBaseline *pipeline.TestResult, roots []string) *qualityGateBaselines {
 	b := &qualityGateBaselines{cfg: cfg, prdDir: prdDir, byDir: map[string]pipeline.TestResult{},
+		vetByDir: map[string][]string{}, vetBadDir: map[string]bool{},
 		enabled: cfg.Enabled && cfg.TestCommand != "", roots: roots}
 	if prdBaseline != nil {
 		b.byDir[prdDir] = *prdBaseline
 	}
 	return b
+}
+
+// vetForDir returns the set of packages failing `go vet` at baseline time
+// in dir (captured once per dir, through the same runQualityGateTests seam
+// as the test baselines, and cached for the rest of the Run). ok is false
+// when vet itself could not execute in that dir: callers log a warning and
+// skip the vet comparison, and never count an unusable vet as a regression.
+func (b *qualityGateBaselines) vetForDir(dir string) (failing []string, ok bool) {
+	if b == nil || !b.enabled || dir == "" {
+		return nil, false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if pkgs, cached := b.vetByDir[dir]; cached {
+		return pkgs, true
+	}
+	if b.vetBadDir[dir] {
+		return nil, false
+	}
+	r := runQualityGateTests("go vet ./...", dir, b.cfg.EffectiveTimeout(), b.roots)
+	if r.ExitCode == -1 {
+		b.vetBadDir[dir] = true
+		log.Printf("[autonomous] WARNING: quality-gate vet baseline unusable in %s (vet could not run) - vet comparison for this dir warns only", dir)
+		return nil, false
+	}
+	pkgs := pipeline.VetFailuresFromOutput(r.Output)
+	b.vetByDir[dir] = pkgs
+	if len(pkgs) > 0 {
+		log.Printf("[autonomous] quality-gate vet baseline for dir %s: %d failing package(s): %s", dir, len(pkgs), strings.Join(pkgs, ", "))
+	}
+	return pkgs, true
 }
 
 // forDir returns the baseline comparable with a test run in dir. For

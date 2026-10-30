@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/inference"
+	"github.com/dmz006/datawatch/internal/pipeline"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -63,6 +64,7 @@ func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 			"block_on_file_drift (default false) controls foreign-file drift: when false a task whose commit swept in files that were already uncommitted before it started is only flagged (warn-only); when true that task is blocked instead. An automaton's own setting or its guardrail profile overrides it; worktree-mode automata are never checked. "+
 			"undeclared_edit_mode sets what happens when a task edits files outside its declared scope: off = skip the check, warn = record + alert (the default), block = hold the task. "+
 			"gate_disagreement (default \"warn\") covers verifier/quality-gate disagreement: when the verifier passed a task but the quality gate found a regression, \"warn\" records task.gate_disagreement and a PRD decision-log entry and the task still completes, while \"block\" fails the task with a \"gate_disagreement: …\" error. An invalid gate never blocks. "+
+			"default_quality_gates (BL367) is the gate config applied to new automata: enabled, test_command, timeout, block_on_regression, scope (full | touched-plus-smoke | touched; how much of the suite a gate task runs) and smoke_packages (package patterns for the touched-plus-smoke scope). "+
 			"scope_lint (off, warn or enforce; default enforce) controls the pre-spawn scope lint that checks a task's planned paths before its session starts: off skips it, warn spawns the task and records a scope_lint_warn decision, enforce blocks the task."),
 	)
 }
@@ -132,6 +134,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("quality_gates_test_command", mcpsdk.Description("BL367 — default test command for quality gates (e.g. 'go test ./...')")),
 		mcpsdk.WithNumber("quality_gates_timeout", mcpsdk.Description("BL367 — default gate timeout in seconds (0 = no limit)")),
 		mcpsdk.WithBoolean("quality_gates_block_on_regression", mcpsdk.Description("BL367 — block task on regression by default")),
+		mcpsdk.WithString("quality_gates_scope", mcpsdk.Description("BL367 — gate scope by default: full | touched-plus-smoke | touched. Controls how much of the test suite a gate task runs (empty = inherit the full default)")),
+		mcpsdk.WithString("quality_gates_smoke_packages", mcpsdk.Description("BL367 — smoke package patterns (comma-separated or JSON array) used by the touched-plus-smoke scope (empty = the built-in set)")),
 		mcpsdk.WithBoolean("injection_guard", mcpsdk.Description("BL369 — scan user-supplied PRD/task specs for prompt injection phrases (warn only by default)")),
 		mcpsdk.WithBoolean("block_on_injection", mcpsdk.Description("BL369 — reject PRD/task create or edit when injection phrases are detected (requires injection_guard:true)")),
 		mcpsdk.WithString("plan_review_backend", mcpsdk.Description("Plan review gate — LLM backend for the pre-approval reviewer judge (empty = inherit planning_backend)")),
@@ -378,6 +382,19 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if v := req.GetBool("quality_gates_block_on_regression", false); v {
 		qg["block_on_regression"] = v
 	}
+	if v := req.GetString("quality_gates_scope", ""); v != "" {
+		// REST 400s on a bad value; fail early with the named valid set so
+		// the caller gets one clean error.
+		if _, err := pipeline.ParseGateScope(v); err != nil {
+			return toolError("autonomous_config_set", err), nil
+		}
+		qg["scope"] = v
+	}
+	if args := req.GetArguments(); args != nil {
+		if v, ok := args["quality_gates_smoke_packages"]; ok {
+			qg["smoke_packages"] = qualityGatesSmokePackages(v)
+		}
+	}
 	if len(qg) > 0 {
 		body["default_quality_gates"] = qg
 	}
@@ -514,6 +531,31 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		}
 	}
 	return textOK(string(out)), nil
+}
+
+// qualityGatesSmokePackages normalises the quality_gates_smoke_packages / smoke_packages
+// argument (JSON array of strings, comma-separated string, or a single
+// pattern) into the REST body list. Whitespace is trimmed; empty input
+// yields an empty list ("fall back to the default smoke set").
+func qualityGatesSmokePackages(v any) []string {
+	out := []string{}
+	var list []string
+	switch val := v.(type) {
+	case []any:
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				list = append(list, s)
+			}
+		}
+	case string:
+		list = strings.Split(val, ",")
+	}
+	for _, s := range list {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // ----- autonomous_prds list / create / get / decompose / run / cancel --------

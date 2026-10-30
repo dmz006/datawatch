@@ -215,7 +215,7 @@ func (f *fakeOrchAutonomous) SetPRDRetryPolicy(string, string, map[string]int, i
 func (f *fakeOrchAutonomous) InvokeGuardrailByName(string, string) (any, error) { return nil, nil }
 
 // BL367 — per-PRD quality gate config stub.
-func (f *fakeOrchAutonomous) SetPRDQualityGates(string, bool, string, int, bool) (any, error) {
+func (f *fakeOrchAutonomous) SetPRDQualityGates(string, bool, string, int, bool, string, []string) (any, error) {
 	return nil, nil
 }
 

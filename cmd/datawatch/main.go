@@ -4397,6 +4397,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				TestCommand:       acfgIn.DefaultQualityGates.TestCommand,
 				Timeout:           acfgIn.DefaultQualityGates.Timeout,
 				BlockOnRegression: acfgIn.DefaultQualityGates.BlockOnRegression,
+				Scope:             acfgIn.DefaultQualityGates.Scope,
+				SmokePackages:     acfgIn.DefaultQualityGates.SmokePackages,
 			},
 			// BL369 — prompt injection guard config bridge.
 			InjectionGuard:   acfgIn.InjectionGuard,

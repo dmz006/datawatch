@@ -1577,8 +1577,8 @@ func (a *API) SetPRDDirs(prdID string, readDirs, writeDirs []string) (any, error
 }
 
 // SetPRDQualityGates (BL367) sets per-PRD quality gate config.
-func (a *API) SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (any, error) {
-	prd, err := a.M.SetPRDQualityGates(prdID, enabled, testCommand, timeout, blockOnRegression)
+func (a *API) SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool, scope string, smokePackages []string) (any, error) {
+	prd, err := a.M.SetPRDQualityGates(prdID, enabled, testCommand, timeout, blockOnRegression, scope, smokePackages)
 	if err != nil {
 		return nil, err
 	}

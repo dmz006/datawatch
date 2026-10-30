@@ -826,14 +826,58 @@ func (m *Manager) checkInjectionGuard(label, text string) error {
 
 // resolveQualityGates (BL367) returns the quality gate config to use for
 // a PRD: per-PRD override takes precedence over the daemon-wide default.
+// Scope and smoke list follow the override order (per-Automaton, then
+// global, then built-in default), so an Automaton override with an empty
+// scope never hides a global scope.
 func (m *Manager) resolveQualityGates(prd *PRD) pipeline.QualityGateConfig {
-	if prd.QualityGates != nil {
-		return *prd.QualityGates
-	}
 	m.mu.Lock()
 	d := m.cfg.DefaultQualityGates
 	m.mu.Unlock()
-	return d
+	if prd.QualityGates == nil {
+		return d
+	}
+	merged := *prd.QualityGates
+	merged.Scope, _ = pipeline.ResolveGateScope(merged.Scope, d.Scope)
+	if len(merged.SmokePackages) == 0 {
+		if len(d.SmokePackages) > 0 {
+			merged.SmokePackages = append([]string(nil), d.SmokePackages...)
+		} else {
+			merged.SmokePackages = append([]string(nil), pipeline.DefaultGateSmokePackages...)
+		}
+	}
+	return merged
+}
+
+// resolveGateScopeSettings resolves the gate scope, its source
+// ("automaton", "global" or "default") and the smoke package patterns for
+// a PRD by override order: the per-Automaton value wins, then the global
+// daemon value, then the built-in defaults (DefaultGateScope, which is
+// full, and the built-in smoke list). Non-empty values are returned
+// as-is; callers needing to reject typos run the result through
+// pipeline.ParseGateScope.
+func (m *Manager) resolveGateScopeSettings(prd *PRD) (scope, source string, smoke []string) {
+	var prdScope string
+	var prdSmoke []string
+	if prd != nil && prd.QualityGates != nil {
+		prdScope = prd.QualityGates.Scope
+		prdSmoke = prd.QualityGates.SmokePackages
+	}
+
+	m.mu.Lock()
+	globalScope := m.cfg.DefaultQualityGates.Scope
+	globalSmoke := m.cfg.DefaultQualityGates.SmokePackages
+	m.mu.Unlock()
+
+	scope, source = pipeline.ResolveGateScope(prdScope, globalScope)
+	switch {
+	case len(prdSmoke) > 0:
+		smoke = append([]string(nil), prdSmoke...)
+	case len(globalSmoke) > 0:
+		smoke = append([]string(nil), globalSmoke...)
+	default:
+		smoke = append([]string(nil), pipeline.DefaultGateSmokePackages...)
+	}
+	return scope, source, smoke
 }
 
 // resolveContinueOnStoryFailure returns whether the executor should keep
@@ -2107,6 +2151,13 @@ func (m *Manager) SetConfig(cfg Config) {
 	// GET exposes it.
 	if cfg.GateDisagreement != "warn" && cfg.GateDisagreement != "block" {
 		cfg.GateDisagreement = "warn"
+	}
+	// Gate scope: an unrecognized scope is treated as unset (empty) — a
+	// runtime config write must never wedge scope resolution; the empty
+	// value inherits, in order, the global value and the built-in
+	// full default.
+	if _, err := pipeline.ParseGateScope(cfg.DefaultQualityGates.Scope); err != nil {
+		cfg.DefaultQualityGates.Scope = ""
 	}
 	// failure_escalation: an unset max_failures reads as 3 and a nil enabled
 	// reads as true.
@@ -5911,8 +5962,14 @@ func (m *Manager) SetPRDDirs(prdID string, readDirs, writeDirs []string) error {
 	return m.store.SavePRD(prd)
 }
 
-// SetPRDQualityGates (BL367) sets per-PRD quality gate config.
-func (m *Manager) SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool) (*PRD, error) {
+// SetPRDQualityGates (BL367) sets per-PRD quality gate config. scope
+// ("" inherits, or a GateScope* value) is validated with
+// pipeline.ParseGateScope; smokePackages are the per-Automaton smoke set
+// (empty inherits the global value, then the built-in default).
+func (m *Manager) SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool, scope string, smokePackages []string) (*PRD, error) {
+	if _, err := pipeline.ParseGateScope(scope); err != nil {
+		return nil, err
+	}
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -5922,6 +5979,8 @@ func (m *Manager) SetPRDQualityGates(prdID string, enabled bool, testCommand str
 		TestCommand:       testCommand,
 		Timeout:           timeout,
 		BlockOnRegression: blockOnRegression,
+		Scope:             scope,
+		SmokePackages:     smokePackages,
 	}
 	// Re-validate whenever the gate command changes: run it once as a
 	// baseline in the PRD's project dir (skipped when the PRD has no dir)

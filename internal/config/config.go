@@ -4571,6 +4571,33 @@ type QualityGateConfig struct {
 	TestCommand       string `yaml:"test_command" json:"test_command"`
 	Timeout           int    `yaml:"timeout" json:"timeout"`
 	BlockOnRegression bool   `yaml:"block_on_regression" json:"block_on_regression"`
+	// Scope is the gate scope (full | touched-plus-smoke | touched); empty
+	// inherits the built-in default (full). Validated on the load paths
+	// by validateGateScope.
+	Scope string `yaml:"scope,omitempty" json:"scope,omitempty"`
+	// SmokePackages are the package patterns run as the smoke set under
+	// the touched-plus-smoke scope; when unset the built-in default list
+	// (DefaultGateSmokePackages) is applied in applyDefaults.
+	SmokePackages []string `yaml:"smoke_packages,omitempty" json:"smoke_packages,omitempty"`
+}
+
+// DefaultGateSmokePackages is the built-in smoke set — the proposed smoke
+// set from docs/plans/2026-10-23-quality-gate-scope.md. It is the single
+// source of truth for the default smoke list: applyDefaults fills it in
+// when autonomous.default_quality_gates.smoke_packages is unset, and
+// pipeline.DefaultGateSmokePackages is an alias to it. The list lives in
+// the config package (not the pipeline package) because the pipeline
+// package transitively imports config (via session), so the reverse
+// dependency would be an import cycle.
+var DefaultGateSmokePackages = []string{
+	"./internal/autonomous/...",
+	"./internal/config",
+	"./internal/pipeline",
+	"./internal/server/...",
+	"./internal/mcp/...",
+	"./internal/observer/...",
+	"./internal/audit",
+	"./internal/metrics",
 }
 
 // WhisperConfig configures voice-to-text transcription. Three
@@ -5257,6 +5284,15 @@ func applyDefaults(cfg *Config) {
 	if cfg.Autonomous.ProjectWriteSerialization == "" {
 		cfg.Autonomous.ProjectWriteSerialization = autonomousProjectWriteSerializationAdvisory
 	}
+	// Gate scope: an empty scope deliberately inherits the built-in
+	// default (full) and is not filled in here; an unrecognized value is
+	// rejected by validateGateScope on the load paths. A non-empty valid
+	// value is kept as written.
+	// Gate smoke list: the built-in default list applies when the operator
+	// has not set smoke_packages, so the global default is never empty.
+	if len(cfg.Autonomous.DefaultQualityGates.SmokePackages) == 0 {
+		cfg.Autonomous.DefaultQualityGates.SmokePackages = append([]string(nil), DefaultGateSmokePackages...)
+	}
 	if cfg.Autonomous.Automation.AgentInsertPolicy == "" {
 		cfg.Autonomous.Automation.AgentInsertPolicy = AgentInsertPolicyAllow
 	}
@@ -5330,6 +5366,9 @@ func validateLoaded(cfg *Config) error {
 			autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel)
 	}
 	if err := ValidateAgentInsertPolicy(cfg.Autonomous.Automation.AgentInsertPolicy); err != nil {
+		return err
+	}
+	if err := validateGateScope(cfg.Autonomous.DefaultQualityGates.Scope); err != nil {
 		return err
 	}
 	if t := cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(); t < 0 {
@@ -5427,6 +5466,19 @@ func validateGateDisagreement(v string) error {
 	}
 	return fmt.Errorf("autonomous.gate_disagreement: invalid value %q (valid values: %q, %q)",
 		v, autonomousGateDisagreementWarn, autonomousGateDisagreementBlock)
+}
+
+// validateGateScope rejects an unrecognized
+// autonomous.default_quality_gates.scope value; run from the config load
+// paths (via validateLoaded) so anything but unset or the three valid
+// values is rejected. An empty value means "inherit the built-in default
+// (full)" and is valid.
+func validateGateScope(v string) error {
+	switch v {
+	case "", "full", "touched-plus-smoke", "touched":
+		return nil
+	}
+	return fmt.Errorf("autonomous.default_quality_gates.scope: invalid value %q (valid values: empty (inherit), \"full\", \"touched-plus-smoke\", \"touched\")", v)
 }
 
 // normalizeBooleanFields fixes YAML representation inconsistencies where

@@ -34,6 +34,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/memory"
+	"github.com/dmz006/datawatch/internal/pipeline"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -575,7 +576,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				// BL367 — per-PRD quality gate config.
 				if req.QualityGates != nil {
 					qg := req.QualityGates
-					if _, err := s.autonomousMgr.SetPRDQualityGates(prdID, qg.Enabled, qg.TestCommand, qg.Timeout, qg.BlockOnRegression); err != nil {
+					if _, err := s.autonomousMgr.SetPRDQualityGates(prdID, qg.Enabled, qg.TestCommand, qg.Timeout, qg.BlockOnRegression, "", nil); err != nil {
 						_ = s.autonomousMgr.DeletePRD(prdID)
 						http.Error(w, "quality-gates-set: "+err.Error(), http.StatusBadRequest)
 						return
@@ -2305,16 +2306,35 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			Enabled           bool   `json:"enabled"`
-			TestCommand       string `json:"test_command"`
-			Timeout           int    `json:"timeout"`
-			BlockOnRegression bool   `json:"block_on_regression"`
+			Enabled           bool     `json:"enabled"`
+			TestCommand       string   `json:"test_command"`
+			Timeout           int      `json:"timeout"`
+			BlockOnRegression bool     `json:"block_on_regression"`
+			Scope             string   `json:"scope"`
+			SmokePackages     []string `json:"smoke_packages"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		updated, err := s.autonomousMgr.SetPRDQualityGates(id, req.Enabled, req.TestCommand, req.Timeout, req.BlockOnRegression)
+		// scope: empty inherits the global/default; anything recognized-must
+		// be a valid value (REST 400 names full, touched-plus-smoke, touched).
+		scope := strings.TrimSpace(req.Scope)
+		if parsed, err := pipeline.ParseGateScope(scope); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		} else {
+			scope = parsed
+		}
+		// smoke_packages: tolerate a comma-separated string as well as a
+		// JSON list, and keep only the non-empty, trimmed entries.
+		var smoke []string
+		for _, p := range req.SmokePackages {
+			if p = strings.TrimSpace(p); p != "" {
+				smoke = append(smoke, p)
+			}
+		}
+		updated, err := s.autonomousMgr.SetPRDQualityGates(id, req.Enabled, req.TestCommand, req.Timeout, req.BlockOnRegression, scope, smoke)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

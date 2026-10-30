@@ -2362,6 +2362,18 @@ autonomous:
     test_command: ""
     timeout: 0
     block_on_regression: false
+    # How much of the test suite a gate task runs (the gate_scope).
+    # Accepted values:
+    #   full              - the whole command (the default when empty)
+    #   touched-plus-smoke- touched packages plus the smoke set below
+    #   touched           - touched packages only
+    # Empty inherits the default (full). Only these three values are
+    # accepted; any other value is rejected when it is written.
+    scope: ""
+    # Package patterns the touched-plus-smoke scope adds to the touched set
+    # (e.g. "./internal/pipeline", "./cmd/datawatch"). Empty = the built-in
+    # smoke set. Only consulted when scope is touched-plus-smoke.
+    smoke_packages: []
 
   # What happens when a task's own verification PASSED but the quality gate
   # found a confirmed regression from a VALID baseline:

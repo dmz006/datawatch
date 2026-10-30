@@ -359,6 +359,15 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		m.markGateInvalid(prdID, prd, fmt.Sprintf("task dir %s: %s", dir, reason))
 		log.Printf("[autonomous] %s WARNING: quality-gate baseline for dir %s invalid (%s) — gate warns only and never blocks a task", prdID, dir, reason)
 	}
+	// Gate scope: when the resolved scope is non-full, capture the vet
+	// baseline in the PRD's own dir now (other resolved task dirs capture
+	// theirs lazily in the same cache), so new in-scope vet failures can
+	// be judged regressions against it.
+	if qgCfg.Enabled && qgCfg.TestCommand != "" && prd.ProjectDir != "" {
+		if scope, _, _ := m.resolveGateScopeSettings(prd); scope != pipeline.GateScopeFull {
+			qgBaselines.vetForDir(prd.ProjectDir)
+		}
+	}
 
 	// BL370 — resolve concurrency limit: per-PRD overrides global config.
 	// 0 or 1 = sequential (existing behaviour); > 1 = concurrent pool.
@@ -1673,8 +1682,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// captured in that same dir (qualityGateBaselines.forDir).
 			qgDir := m.resolveTaskProjectDir(prd, t)
 			if base, ok := qgBaselines.forDir(qgDir); ok {
-				current := runQualityGateTests(qgCfg.TestCommand, qgDir, qgCfg.EffectiveTimeout(), m.allowedProjectRoots())
-				cmp := pipeline.EvaluateGate(base, current, qgDir, qgCfg.EffectiveTimeout(), m.allowedProjectRoots())
+				// Gate scope: plan (final gate tasks and full scopes run the
+				// configured command with the full baseline; scoped plans run
+				// the scoped command against the restricted baseline, falling
+				// back to the full run with the reason kept on the plan),
+				// evaluate, and for non-full scopes also run vet, folding new
+				// vet failures in as regressions. The plan is persisted on the
+				// result for later tracing (QualityGateResult.ScopePlan).
+				cmp := m.runScopedQualityGate(prd, t, qgDir, qgCfg, qgBaselines, base)
 				t.QualityGateResult = &cmp
 				log.Printf("[autonomous] %s/%s quality-gate: %s", prd.ID, t.ID, cmp.Summary)
 				metrics.QualityGateRunsTotal.Inc()
