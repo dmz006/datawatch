@@ -2230,3 +2230,25 @@ stories (TS-836 PWA, TS-837 CLI). The locale entries the rows use
 (`TestLocales_AutomatonNeverUntranslatedOrMistranslated`, EN/DE/ES/FR/JA bundles), which
 refuses the English word "Automaton" in the four non-EN bundles: de `Automat`, es
 `autómata`, fr `automate`, ja `オートマトン`.
+
+## Worker marker — sandbox live check (2026-10-29)
+
+Live check of the worker marker (`DATAWATCH_QUESTION:` and `autonomous.questions.worker_marker`) on a throwaway sandbox daemon. Full commands, trimmed responses and verdicts: [plans/2026-10-29-operator-question-step4-live-check.md](plans/2026-10-29-operator-question-step4-live-check.md).
+
+The daemon was built from this tree (`go build -o` into a directory under `.datawatch/`, which git ignores), ran on loopback port 57993 with its own config and data directory, and was never the production daemon on port 8443. Every command ran under `env -u TMUX -u TMUX_TMPDIR`; no tmux server command was run and nothing was ended by name. The daemon was stopped by its exact PID, confirmed gone, and the sandbox directory was deleted.
+
+| Step | Result | Seen live |
+|------|--------|-----------|
+| Set `autonomous.questions.enabled` and `worker_marker` through `PUT /api/config`, confirm with `GET` | Pass | both read `true` |
+| Shell session prints a valid worker line, a mid-sentence instruction, a malformed line and a `<json>` placeholder | Pass | `GET /api/questions`: exactly one open question, source `marker`, default `hold`, no `blocking` key (omitted when false), `asked_by worker-e2dc` |
+| Audit log | Pass | one `question_raised` and one `question_marker_refused` (reason `malformed`, line hash, session id). Neither the malformed line nor the placeholder text is in `audit.log`; the hash equals the SHA-256 of the exact line |
+| Answer with a quote holding a newline and a double quote | Pass | `GET …/answers` returned the quote equal to the bytes sent (48 of 48) |
+| `worker_marker` off, then a valid line | Pass | the line was printed in the pane; the question list did not change |
+| Stop the daemon by exact PID, start it again | Pass | the same single answered question, no duplicate; `worker_marker: false` kept |
+| Teardown | Pass | daemon and wrapper gone, port closed, sandbox directory deleted |
+
+Not run live: the park path for a blocking worker question (covered by the Go tests only: `TestAwaitDecision_*`, `TestWaitReason_AwaitDecisionTextAndPredicate`, `TestQuestionTick_*`), a worker bound to a task or an Automaton, the raise notifications, the other config surfaces (MCP, CLI, comm channel, PWA), the restart-grace and task-echo windows, the same-line de-duplication of a pane read twice (the daemon ended its sessions on shutdown, so no pane was re-read), and the size caps and other refusal reasons.
+
+Notes from the run: the shell backend echoes its `task` as a comment and does not run it, so the lines were started with `POST /api/sessions/send`; the marker-off line was printed from a second session because the first was still inside its `sleep`; and the refusal's one daemon log line landed in `data/daemon-crash.log`.
+
+Go tests behind the Tested column (all passed on 2026-10-29): `env -u TMUX -u TMUX_TMPDIR go test ./internal/session/ -run 'WorkerQuestion' -count=1`, `go test ./internal/autonomous/ -run 'TestWorkerQuestion|TestAwaitDecision|TestQuestionTick|TestWaitReason_AwaitDecision' -count=1`, `go test ./internal/audit/ -run 'TestQuestionMarkerRefusedAudit' -count=1`, `go test ./internal/config/ ./internal/server/ -run 'TestQuestionsWorkerMarker' -count=1`.
