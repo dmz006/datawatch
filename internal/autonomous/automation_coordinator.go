@@ -15,6 +15,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // AutomationStarter is the slice of API the coordinator needs to start a
@@ -76,6 +78,11 @@ type Coordinator struct {
 	laneFillStop chan struct{}
 	laneFillDone chan struct{}
 	laneFillTick time.Duration
+
+	// mp is the merge-pending pass state (merge_pending_pass.go): the
+	// in-memory comparison cache and shadow bookkeeping. Its zero value is
+	// ready to use.
+	mp mergePendingState
 
 	// preApply is a test seam: when set, advance calls it after the step is
 	// computed and before the compare-and-set write, so a test can move the
@@ -741,7 +748,12 @@ func (c *Coordinator) triagePass() {
 	}
 	m := c.m
 	now := c.now()
-	threshold := time.Duration(m.Config().Automation.EffectiveTriageAlertMinutes()) * time.Minute
+	cfg := m.Config()
+	threshold := time.Duration(cfg.Automation.EffectiveTriageAlertMinutes()) * time.Minute
+	mergeMode := cfg.Automation.EffectiveMergePendingMode()
+	mergeActive := mergeMode == config.MergePendingModeShadow || mergeMode == config.MergePendingModeOn
+	mergeThreshold := time.Duration(cfg.Automation.EffectiveMergePendingAlertMinutes()) * time.Minute
+	mergeBranches, mergePRDs := map[string]struct{}{}, map[string]struct{}{}
 
 	type dueAlert struct{ level, title, body string }
 	var due []dueAlert
@@ -789,12 +801,28 @@ func (c *Coordinator) triagePass() {
 				})
 			}
 		default:
+			if mergeActive && prd.Status == PRDCompleted && prd.Git.Branch != "" {
+				mergeBranches[prd.Git.Branch], mergePRDs[prd.ID] = struct{}{}, struct{}{}
+				if title, body, ok := c.mergePendingCheck(prd, mergeMode, cfg.WorktreeBaseRepo, now, mergeThreshold); ok {
+					due = append(due, dueAlert{level: "warn", title: title, body: body})
+				}
+				continue
+			}
 			if prd.Triage != nil {
 				if err := m.ClearTriageRecord(prd.ID); err != nil {
 					log.Printf("[autonomous] clear triage record for %s: %v", prd.ID, err)
 				}
 			}
 		}
+	}
+
+	if mergeActive {
+		c.mergePendingPrune(mergeBranches, mergePRDs)
+		if mergeMode == config.MergePendingModeShadow {
+			c.shadowRecords().flush()
+		}
+	} else {
+		c.mergePendingPrune(nil, nil)
 	}
 
 	for _, d := range due {
