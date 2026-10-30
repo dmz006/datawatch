@@ -2764,13 +2764,15 @@ type AutonomousAutomationConfig struct {
 	CreateSearchThreshold *float64              `yaml:"create_search_threshold,omitempty" json:"create_search_threshold,omitempty"`
 	// Cleanup — the safe-to-delete cleanup knobs (cleanup_mode,
 	// cleanup_retention_hours, cleanup_max_removals_per_pass,
-	// disk_alert_percent). Unlike merge_pending_mode, an unknown
-	// cleanup_mode word is not refused anywhere: every read goes through
-	// EffectiveCleanupMode, and an unset key or any unrecognized value reads
-	// as CleanupModeReport (record and report only). Zero or negative
-	// retention hours and per-pass removal caps are not refused either:
-	// they read their defaults through the Effective* accessors, and
-	// disk_alert_percent is clamped to 1..100 (unset reads 85).
+	// disk_alert_percent). The write path (internal/server/cleanup.go)
+	// refuses a cleanup_mode outside off|report|on, retention hours and
+	// per-pass removal caps below 1 or fractional, and a disk_alert_percent
+	// outside 1..100 with a 400. The read side is still tolerant, for a
+	// hand-edited config file: every read goes through the Effective*
+	// accessors, so an unset key or an unrecognized cleanup_mode reads as
+	// CleanupModeReport (record and report only), zero or negative retention
+	// hours and removal caps read their defaults, and disk_alert_percent is
+	// clamped to 1..100 (unset reads 85).
 	CleanupMode               string `yaml:"cleanup_mode,omitempty" json:"cleanup_mode,omitempty"`
 	CleanupRetentionHours     int    `yaml:"cleanup_retention_hours,omitempty" json:"cleanup_retention_hours,omitempty"`
 	CleanupMaxRemovalsPerPass int    `yaml:"cleanup_max_removals_per_pass,omitempty" json:"cleanup_max_removals_per_pass,omitempty"`
