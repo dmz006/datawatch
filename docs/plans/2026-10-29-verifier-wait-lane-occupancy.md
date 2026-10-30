@@ -123,13 +123,17 @@ change to the mobile apps.
 
 ## Phases
 
-Status as of 2026-10-29: all four stories are **Planned**; none is built. Each story's own
+Status as of 2026-10-29 (final update): all four stories are **Done**. Each story's own
 checklist includes the Phase Completion Checklist from `AGENT.md` (functionality, unit tests,
 live smoke against a real daemon, `env -u TMUX -u TMUX_TMPDIR go test ./...` and
 `node --test internal/server/web/*.test.js`, the general documentation checklist, the
 Mobile-Parity Rule, the Localization Rule, and the plan status line).
+All work is committed on `automaton/f1f2004f`; the live check passed
+(`docs/plans/2026-10-29-verifier-wait-lane-live-check.md`, Result: PASS, live: PASS) and the
+final gate report is `docs/plans/2026-10-29-verifier-wait-lane-occupancy-final-gate-report.md`.
+No version bump on this branch (unreleased; the shipped-in version is recorded at the tag).
 
-1. **Story 1: the occupant wait flag and the planner.** Status: **Planned**.
+1. **Story 1: the occupant wait flag and the planner.** Status: **Done** (2026-10-29).
    - `waiting_verifier` on the occupant snapshot, derived from `setWaiting`'s captured wait
      reason: no running worker and all remaining work in the verifier-wait state
      (`internal/autonomous/capacity.go` state, read by the planner in
@@ -142,14 +146,14 @@ Mobile-Parity Rule, the Localization Rule, and the plan status line).
      the flag-off case.
    - Unit tests only in this story; no surfaces, no config key yet (the planner reads a
      `count_verifier_wait` parameter defaulting to true).
-2. **Story 2: the `autonomous.lane_fill.count_verifier_wait` setting.** Status: **Planned**.
+2. **Story 2: the `autonomous.lane_fill.count_verifier_wait` setting.** Status: **Done** (2026-10-29).
    - The key in `internal/config` (boolean, default `true`), wired into the planner call.
    - Every config surface: REST get and put, MCP config tools, CLI `datawatch config
      set`, comm `configure`, the PWA Automata settings block (field, label, hint),
      `docs/config-reference.yaml`, locale keys in all five bundles.
    - `TestVerifierWaitSetting*`: round-trip through every surface, default when absent,
      switching `false` restores today's occupancy rule.
-3. **Story 3: the lane state on REST, MCP, CLI, comm and PWA.** Status: **Planned**.
+3. **Story 3: the lane state on REST, MCP, CLI, comm and PWA.** Status: **Done** (2026-10-29).
    - `wait_reason` and `available` on every lane entry of `GET /api/autonomous/lane-fill`, the
      MCP `autonomous_lane_fill_status` tool, the CLI `datawatch autonomous lane-fill` output,
      the comm `autonomous lane-fill` line, and the PWA lane fill card (state chip plus the
@@ -158,7 +162,7 @@ Mobile-Parity Rule, the Localization Rule, and the plan status line).
    - `TestVerifierWaitParity` in `cmd/datawatch/lane_fill_parity_test.go` (the same
      four-surface shape as `TestTriageParity`): the wait state and the availability read the
      same on REST, MCP, CLI and comm for the same daemon state.
-4. **Story 4: one alert per episode, docs and final gate.** Status: **Planned**.
+4. **Story 4: one alert per episode, docs and final gate.** Status: **Done** (2026-10-29).
    - The idle-lane alert fires once per episode for a lane counted available with eligible
      work, names the verified-wait reason and the first eligible item, and does not re-fire
      until the episode ends.

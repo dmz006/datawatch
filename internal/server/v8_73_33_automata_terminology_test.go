@@ -45,6 +45,10 @@ func isAutomationObjectKey(key string) bool {
 // half-translated or edited value still fails the guard.
 var pendingTranslationKeys = map[string]bool{
 	"settings_stuck_running_seconds": true, // datawatch-app issue 290
+	// datawatch-app issue 301: verifier-wait lane occupancy ships this
+	// settings label as the English placeholder until the app sends back
+	// DE/ES/FR/JA translations.
+	"settings_lane_fill_count_verifier_wait": true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {
