@@ -17,6 +17,96 @@ The repo CI watch's shadow mode (config key `autonomous.automation.repo_ci_watch
 
 **Validated:** Yes — the 2026-10-29 sandbox live check above exercised the real shadow-mode path end to end against a real GitHub repository: shadow configured through `PUT /api/config`, two poll passes at `poll_seconds=60` (`last_poll_at` 21:45:31 → 21:47:31 local), 29 records classified (`green`/`failing`/`hung` with `none`/`security`/`infra`/`code_or_test`), 7 `would_do` stand-ins (2 rerun, 1 cancel, 4 delete — supervisor action per run: none found), zero GitHub writes, and the three read surfaces (REST `GET /api/autonomous/repo-ci-watch`, MCP `autonomous_repo_ci_watch`, CLI `autonomous repo-ci-watch`) returning identical state. Not validated: the `on` (live) mode's actual GitHub writes — by design the write paths are only shadowed in this check — and the alert delivery at the 30-minute threshold (the check window was short).
 
+## Security failure report — stop and report — next minor above main
+
+When a security check fails because of a dependency, the coordinator stores a security failure report for the run and, in `on` mode, stops the Automaton line carrying the failing commit; in the default `shadow` mode it stores the same report and records the stop it would have made. The report is read on REST, MCP, the CLI, the comm channel and a PWA card, one section per surface below, then the config key and the guard that keeps the generated ignore file out of the coordinator's reach. Operator view: [`howto/automation-security-failure.md`](howto/automation-security-failure.md).
+
+Every Tested row was run on 2026-10-30 with Go and Node from the repository root, with `env -u TMUX -u TMUX_TMPDIR` in front of each command. The Go tests use fakes only (a spy store, fake Automata, fake `gh` and advisory seams, fake HTTP servers) and no real GitHub, tmux or network.
+
+```sh
+env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous/ ./internal/server/ ./internal/mcp/ ./internal/router/ ./cmd/datawatch/ ./internal/config/ -run 'SecurityFailure' -count=1
+env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-security-failure.test.js
+```
+
+Result: 91 Go tests passed across the six packages (0 failed) and 16 Node tests passed (0 failed), counting subtests. **Validated** is **Pending** on every row: the live check task (a sandbox daemon against a real failing security run, all five read surfaces compared) has not run yet. No row is marked Validated from unit tests alone.
+
+### Security failure report — REST
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Empty list | `TestSecurityFailureRouteEmptyList` | `internal/server/security_failure_test.go`, fake reader | No stored report answers 200 with an empty JSON list, never a 404. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Stored report with every field | `TestSecurityFailureRouteReturnsStoredReportWithEveryField` | Same file | An entry carries the run identity (`repo`, `ref_kind`, `ref_name`, `workflow`, `run_id`, `run_url`, `status`) and every field of the stored report under `report`. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Filters | `TestSecurityFailureRouteFiltersApply` | Same file | `repo` and `status` each narrow the list and combine; a bad `status` is a 400 naming the allowed values; a filter that matches nothing is 200 with an empty list; the list is newest first. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Method guard | `TestSecurityFailureRouteRejectsNonGET` | Same file | Post, put, delete and patch are 405 and the reader is never asked. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Autonomous down | `TestSecurityFailureRouteUnavailableWithoutAutonomous` | Same file | A daemon without the autonomous manager answers 503. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Live read | — | sandbox daemon, a real failing security run | The route serves the stored report for a real run and agrees with the other four surfaces. | Live | **No** | Not run | Pending | Waits for the live check task. |
+
+### Security failure report — MCP
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Tool is listed and read-only | `TestSecurityFailureMCPToolIsListed`, `TestSecurityFailureMCPSchema` | `internal/mcp/security_failure_tools_test.go`, real server | `security_failure_list` is registered, carries the read-only hint, and takes only the optional `repo` and `status` parameters. | Unit | **Yes** | Pass, 2026-10-30 | Pending | The tool is mapped to the autonomous read capability in `internal/federation/mcp_tool_caps.go`. |
+| Same JSON as the route | `TestSecurityFailureMCPReturnsSameJSONShapeAsRoute` | Same file | With no filter, `repo`, `status`, both, and a no-match filter, the tool returns exactly the body the route serves. | Unit | **Yes** | Pass, 2026-10-30 | Pending | Five subtests. |
+| Empty store and bad status | `TestSecurityFailureMCPEmptyStoreAndBadStatus` | Same file | An empty store returns an empty list; a bad `status` returns the route's refusal as a tool error. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Live read | — | sandbox daemon | The tool returns the same list as the REST route on a real daemon. | Live | **No** | Not run | Pending | Waits for the live check task. |
+
+### Security failure report — CLI
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Table | `TestSecurityFailureCLITable` | `cmd/datawatch/cli_security_failure_test.go`, fake server | Repository, ref, workflow, run, status, dependency, advisory, recommendation and action print one row per report; without `--status` only open reports (watch status neither `green` nor `superseded`) are listed. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| `--json` | `TestSecurityFailureCLIJSON` | Same file | The raw body is printed untouched. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Filters | `TestSecurityFailureCLIFakeServerFilters` | Same file | `--repo` and `--status` are sent as the query. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Empty | `TestSecurityFailureCLIEmpty` | Same file | No open report prints an explicit note, not a blank. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Registered | `TestSecurityFailureCLIRegistered` | Same file | `security-failure` is a subcommand of `datawatch autonomous`. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Live read | — | sandbox daemon | `datawatch autonomous security-failure` prints the same reports as the route. | Live | **No** | Not run | Pending | Waits for the live check task. |
+
+### Security failure report — comm verb
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Verb dispatch | `TestSecurityFailureCommVerbDispatch` | `internal/router/security_failure_comm_test.go`, fake daemon | `autonomous security-failure` and its alias `security_failure` reach the handler; anything else gets the usage line. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Open reports | `TestSecurityFailureCommListsOpenReports`, `TestSecurityFailureCommEmptyList` | Same file | With no argument the reply is the same table the CLI prints, open reports only; an empty list reads as an explicit note. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Full report for a run | `TestSecurityFailureCommFullReportForRun`, `TestSecurityFailureCommUnknownRunNotFound` | Same file | With a run id the reply is the full report (dependency, advisory, publication date or unknown, registry entry and dates, recommendation, the action taken or the shadow would-have-taken line); an unknown run gets a not-found reply. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Read only, no internal wording | `TestSecurityFailureCommNoWritesNoPRDWording` | Same file | Across the list, full-report, not-found and extra-argument replies the verb makes no write call, uses Automaton wording and gives the usage line for extra arguments. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Live read | — | sandbox daemon, a chat channel | The verb answers over a real channel with the same reports. | Live | **No** | Not run | Pending | Waits for the live check task. |
+
+### Security failure report — PWA card
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Card content, escaping, read-only | `internal/server/web/app-security-failure.test.js` (16 tests) | `node --test` from the repository root | The card shows dependency, advisory, publication date (or unknown), registry entry with its three dates, recommendation, mode and action; the shadow would-have-taken line; fixed version, lookup error and note only when present; every value escaped, a hostile run URL not linked; no button, input, form or handler; a missing report shows a placeholder; the list draws one card per entry and an empty state for none. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Locale keys | `TestLocalesSecurityFailureKeysInAllBundles`, `TestLocalesSecurityFailureNoPRDWording`, `TestLocalesSecurityFailureNoOrphanKeys`, `TestSecurityFailureCardWiredThroughT` | `internal/server/security_failure_locale_test.go` | Every `automation_security_failure_` key exists with a value in all five bundles, none uses internal wording, none is unused, and the card text goes through the translation function. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Settings field | `TestSecurityFailurePWA` | `internal/server/security_failure_pwa_test.go` | The settings list carries `autonomous.automation.security_failure.mode` as a select over `off`, `shadow` and `on` with `shadow` as its default, and its label key exists in every locale bundle without internal wording. | Unit | **Yes** | Pass, 2026-10-30 | Pending | The card's mount point and its poll of the route are not covered by a unit test; they are part of the live render check below. |
+| Live render | — | sandbox daemon, a browser | The card matches the REST body on a running daemon and renders in a second locale. | Live | **No** | Not run | Pending | Waits for the live check task. Mobile: the contract is filed as `dmz006/datawatch-app` issue #306 (`docs/plans/parity-issues/security-failure-exception.md`); the app-side render is not run here. |
+
+### Security failure report — config
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Default and validation | `TestSecurityFailureConfig` | `internal/autonomous/security_failure_config_test.go` | Unset and empty read `shadow`; `off`, `shadow` and `on` are accepted case-insensitively; any other value is refused; YAML and JSON round trips; the effective value comes from the accessor. | Unit | **Yes** | Pass, 2026-10-30 | Pending | The default is applied in one place. |
+| Config load refusal | `TestSecurityFailureConfigLoads` | `internal/config/security_failure_config_test.go` | A config file with a bad mode is refused on load. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| REST write path | `TestSecurityFailureConfig` | `internal/server/security_failure_config_test.go`, fake config store | `GET /api/config` shows the effective mode; a legal value is stored; any other value is a 400 and leaves the stored value intact. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Mode switch on a live daemon | — | sandbox daemon | Set `shadow`, then `on`, over `PUT /api/config`; the next poll acts on it with no restart. | Live | **No** | Not run | Pending | Waits for the live check task. |
+
+### Security failure report — decision, pass and registry
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Recommendation and action rules | `TestSecurityFailureDecide` | `internal/autonomous/security_failure_decide_test.go`, 14 subtests | `upgrade` whatever the registry says; `unknown` when the lookup or the registry failed; `keep` and `keep_no_entry`; `report_only` for a non-dependency failure or no linked Automaton; `would_stop` in shadow and `stopped` in `on`; an advisory published an hour ago is treated like one published a year ago; a missing date stays empty; off returns before any lookup. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Pass behaviour | `TestSecurityFailurePass` | `internal/autonomous/security_failure_pass_test.go`, 12 subtests | A security run is never rerun, cancelled or deleted; an unreadable registry is a registry error and never `keep`; off reads nothing; shadow records the would-do, changes no Automaton and raises no alert; `on` stops the linked Automaton, copies the report to its triage record and alerts once; a second poll neither re-assesses nor re-alerts; only failing security records in the workflow set are visited; an unreadable log is reported once. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Log assessment and advisory lookup | `TestSecurityFailureAssess` and the `TestSecurityFailureAdvisory…` tests | `security_failure_assess_test.go`, `security_failure_advisory_test.go` | The log is read for the advisory identifier and the dependency without guessing either; the lookup handles GHSA and CVE identifiers, a missing `gh`, an empty or non-JSON answer and a lookup error. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Registry match | `TestSecurityFailureRegistry…` (8 tests) | `security_failure_registry_test.go`, fixture registries in a temp directory | Exact identifier match for `cve/` and `osv/` ids, no fuzzy match, a missing, malformed or wrong-shape file is an error and never a found entry, an empty repository path is refused. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| Stop and report on a real failing run | — | sandbox daemon, a real failing security run | A run's report appears within a poll; in `on` the linked Automaton is blocked and one alert is raised; in `shadow` neither happens. | Live | **No** | Not run | Pending | Waits for the live check task. |
+
+### Security failure report — guard
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| The coordinator never writes the ignore file | `TestSecurityFailureNoDirectIgnoreWrite` | `internal/autonomous/security_failure_guard_test.go` | No non-test `security_failure_*.go` source file in the autonomous package mentions `.trivyignore` or its generator, so the coordinator and its workers have no path to write the generated ignore file. | Unit | **Yes** | Pass, 2026-10-30 | Pending | |
+| The check catches a hand edit | `TestSecurityFailureNoDirectIgnoreWrite` (second subtest) and `scripts/check-no-direct-ignore-writes.sh` | Scratch copies of the registry, generator and generated files | A hand-edited `.trivyignore` or generated table fails the script; a regenerated file passes. The script runs as part of `make lint` (`make check-security-ignore-writes`). | Unit | **Yes** | Pass, 2026-10-30 | Pending | The script also ran green against the repository's own files on 2026-10-30. |
+| Guard on the real branch history | — | `bash scripts/check-no-direct-ignore-writes.sh <base-ref>` on the merged branch | The base-ref form passes on the branch to be merged. | Live | **No** | Not run | Pending | Waits for the live check task. |
+
 ## Automation view sub-tabs and removed header button — next minor above main
 
 The Automation sub-tab of the Automata view now carries a second row of exactly two sub-tabs — **Overview** (the Progress card, the Capacity and queue card and the summary cards that sit with them) and **Chains** (the status badges, the search and filter bar, the Automation cards, and the open Automation with its pipeline strip and its controls) — and the sub-tab bar no longer has a New Automation button. Creation stays with the round create button at the bottom right and the empty-state create button, which open the same form. There is no Questions sub-tab in either row; it will join the second row when the question queue lands.

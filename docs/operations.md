@@ -4461,6 +4461,7 @@ Every key is read live; a bad value is refused on write by every path (unknown `
 | MCP | `autonomous_repo_ci_watch` (read-only; `repo` / `status` filters) | same body as the GET route |
 | CLI | `datawatch autonomous repo-ci-watch [--repo …] [--status …] [--json]` | table: repository, ref, workflow, status, classification, first seen, alerted |
 | Comm channel | `autonomous repo-ci-watch` (alias `repo_ci_watch`) | mode line, then one line per record: repo, ref, workflow, status, classification, run URL; no arguments |
+| Security failure reports | `security_failure_list`, `datawatch autonomous security-failure` and `autonomous security-failure` (alias `security_failure`) | the reports of failed `security` runs: see [Security failure report: stop and report](#security-failure-report-stop-and-report) |
 | PWA | Automata tab, the **Repo CI watch** status line at the top of the tab | mode, failing/pending counts, last-poll age; refreshes every 30 s; hidden if the endpoint is unavailable |
 
 Change the mode or a threshold: `PUT /api/config` (or Settings → General → Autonomous in the PWA) with the `autonomous.automation.repo_ci_watch.*` key, or `datawatch config set autonomous.automation.repo_ci_watch.mode shadow`, or `configure autonomous.automation.repo_ci_watch.mode=shadow` on the comm channel. Every change applies on the next poll — no restart.
@@ -4468,6 +4469,36 @@ Change the mode or a threshold: `PUT /api/config` (or Settings → General → A
 **Restart.** The record history is in `<data-dir>/autonomous/repo_ci_watch.jsonl` and reloads after a restart. Records survive a stop (`mode: off` and a restart both keep the full history readable on every surface). A hung run's age is read from the CI run's own start time, so a restart does not reset the hung clock. A rerun or cancel in flight before the restart is not re-issued after it.
 
 **What the watch never does.** It never merges, never starts or holds Automata — it watches the repository's CI runs, not the queue. It never reruns a `security` or `policy` run, in any mode, and never as a would-do. It never posts a second cancel for a run that is already resolving. It never issues a deletion in `off`, `shadow` or `report`, and never one on the pass that named the run. It never re-judges a run that already carries a verdict, and never re-alerts an already-alerted episode. It never spends retry budget it does not have. In shadow it writes nothing: the records and the would-do text are the whole surface, and no alert is raised. The shadow-mode comparison to do before `on` is in [howto/automation-repo-ci-watch.md](howto/automation-repo-ci-watch.md).
+
+---
+
+## Security failure report: stop and report
+
+When a security check fails because of a dependency, the coordinator stops the Automaton line the failing commit belongs to and stores a **security failure report** for the run, instead of fixing the finding or documenting it away. The pass reads the repo CI watch's records: runs that are `failing`, classified `security` and on a workflow in `autonomous.automation.repo_ci_watch.security_workflows`. For each new run it reads the failed log (`gh run view <run> --log-failed`), reads the advisory identifier and the dependency from it, looks the advisory up, checks `security/accepted-risks.yml` for an entry with the same identifier, and finds the Automaton whose last completed task ended on the run's commit. A run is assessed once; a run that already carries a report is never assessed or alerted again. The full walk-through is in [howto/automation-security-failure.md](howto/automation-security-failure.md).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomous.automation.security_failure.mode` | `shadow` (unset or empty reads `shadow`) | `off` (nothing is read, stored or stopped), `shadow` (the report is stored and a stop is only recorded as a would-do; nothing is stopped and no alert is raised) or `on` (the linked Automaton is stopped and one alert is raised at once). Any other value is refused on every write path. |
+
+The security workflow set is read from `autonomous.automation.repo_ci_watch.security_workflows` and the alert time from the existing `autonomous.automation.triage_alert_minutes`; there is no other security failure key. The repo CI watch must itself be in `shadow` or `on` for there to be any failed security runs to read. Change the mode with `PUT /api/config`, `datawatch config set autonomous.automation.security_failure.mode on`, the `config_set` MCP tool, `configure autonomous.automation.security_failure.mode=on` on the comm channel, or Settings → General → Autonomous in the PWA. It applies on the next poll — no restart.
+
+**The recommendation.** `upgrade` (a fixed version is known, whatever the registry says), `keep` (no fix, and the registry holds an entry for the advisory), `keep_no_entry` (no fix, and no entry: the operator adds one through the registry) or `unknown` (no fix, and the lookup or the registry read failed). There is no age or waiting clock: an advisory published an hour ago is acted on exactly like one published a year ago, and a missing publication date reads `unknown`.
+
+**The action.** `stopped` (mode `on`, a dependency or CVE failure, and an Automaton line carries the commit: the Automaton is moved to blocked with the reason `security_failure_block`, and its triage record carries the report), `would_stop` (the same in `shadow`: one would-do line on the watch record, nothing stopped) or `report_only` (not a dependency failure, or no Automaton carries the commit; the note says which).
+
+### Security failure report surfaces
+
+| Surface | Read the report | Notes |
+|---|---|---|
+| REST | `GET /api/autonomous/security-failures?repo=…&status=…` | a JSON list, newest first; each entry has the run's identity (`repo`, `ref_kind`, `ref_name`, `workflow`, `run_id`, `run_url`, `status`) and the report under `report`; the status filter takes the repo CI watch states and anything else is a 400 naming them; an empty match is 200 with an empty list; GET only |
+| MCP | `security_failure_list` (read-only; `repo` / `status` filters) | same list as the GET route |
+| CLI | `datawatch autonomous security-failure [--repo …] [--status …] [--json]` | table: repository, ref, workflow, run, status, dependency, advisory, recommendation, action; without `--status` only open reports (watch status neither `green` nor `superseded`) |
+| Comm channel | `autonomous security-failure [run-id]` (alias `security_failure`) | with no argument, the open reports as the CLI table; with a run id, the full report of that run, or a not-found reply |
+| PWA | Automata tab → Automation view → Chains sub-tab, the **Security failure** card beside the triage card | one block per report; refreshes every few seconds; hidden if the endpoint is unavailable |
+
+**Accepting a risk is the operator's act.** The coordinator never writes a suppression: it does not touch `security/accepted-risks.yml`, the generated `.trivyignore` or the generated container table in `docs/security-review.md`. To accept a risk, add the entry to `security/accepted-risks.yml` and run `make security-registry-gen`, which validates the registry and regenerates both generated files. `make lint` runs `scripts/check-no-direct-ignore-writes.sh`, which fails when either generated file differs from what the registry produces. The coordinator never reruns a security run, in any mode, and never cancels or deletes one. It never resumes or restarts the Automaton it stopped.
+
+**Restart.** The reports live on the repo CI watch records and reload with them. An Automaton that was stopped stays blocked across a restart.
 
 ---
 

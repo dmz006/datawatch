@@ -1141,6 +1141,12 @@ autonomous:
     #   autonomous_config_set, CLI `datawatch config set
     #   autonomous.automation.security_failure.mode on`, and comm `configure
     #   autonomous.automation.security_failure.mode=on`.
+    # Operator docs: docs/howto/automation-security-failure.md and the
+    # "Security failure report" section of docs/operations.md. Read surfaces
+    # (all read-only): GET /api/autonomous/security-failures (repo and status
+    # filters), the security_failure_list MCP tool, `datawatch autonomous
+    # security-failure`, the comm `security-failure [run-id]` verb, and the
+    # Security failure card in the Automation view.
     security_failure:
       mode: shadow
     # decision_assistant — no daemon config key; default OFF. The optional

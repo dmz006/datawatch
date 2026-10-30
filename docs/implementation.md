@@ -1778,6 +1778,32 @@ for the poll's contract.
   accessor), and the REST PUT validation and store run in
   `internal/server/api.go` (`validateSecurityFailurePatch`,
   `applySecurityFailureValue`), mirroring the repo_ci_watch block.
+  The report is read on REST `GET /api/autonomous/security-failures`
+  (`internal/server/security_failure.go`; optional `repo` and `status`
+  filters; GET only; the `autonomous:read` capability), the MCP read tool
+  `security_failure_list` (`internal/mcp/security_failure_tools.go`), the
+  CLI `datawatch autonomous security-failure`
+  (`cmd/datawatch/cli_security_failure.go`), the comm channel
+  `security-failure [run-id]` verb (alias `security_failure`,
+  `internal/router/security_failure_comm.go`) and the PWA Security failure
+  card in the Automation view. The CLI and the comm verb share one
+  renderer, `internal/autonomous/security_failure_render.go`.
+- **Pass:** `securityFailurePass` in
+  `internal/autonomous/security_failure_pass.go` runs on the coordinator's
+  idle tick beside the triage and repo CI watch passes. It visits failing,
+  `security`-classified repo CI watch records on the effective security
+  workflow set once each, decides with `decideSecurityFailure`
+  (`security_failure_decide.go`, a pure function), and stores the
+  `SecurityFailureReport` on the record. In `on` mode it stops the linked
+  Automaton by the executor's own blocked transition and raises one alert;
+  in `shadow` it appends one would-do entry and changes nothing. It never
+  reruns, cancels or deletes a run and never writes the generated ignore
+  file, `docs/security-review.md` or `security/accepted-risks.yml`;
+  `scripts/check-no-direct-ignore-writes.sh` (`make
+  check-security-ignore-writes`, part of `make lint`) and
+  `security_failure_guard_test.go` enforce the last point. Operator view:
+  `docs/howto/automation-security-failure.md` and the "Security failure
+  report" section of `docs/operations.md`.
 - **Test:** `TestSecurityFailureConfig` — `internal/autonomous/
   security_failure_config_test.go` (unset and empty read shadow, off/
   shadow/on are accepted, any other value is refused, YAML and JSON

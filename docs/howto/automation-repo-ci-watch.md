@@ -191,6 +191,15 @@ first). None of them changes anything.
 | Comm channel | `autonomous repo-ci-watch` (alias `repo_ci_watch`) — the mode on the first line, then one line per record: repository, ref, workflow, status, classification, run URL | the read takes no arguments; to narrow, use the CLI, MCP or REST filters |
 | PWA | Automata tab → the **Repo CI watch** status line on the tab: the mode in effect, the `failing` and `pending` counts, and how long ago the coordinator last polled — refreshed every 30 s, or immediately when the tab renders | the line itself is the summary; the full records are the REST/MCP/CLI reads |
 
+A run the watch classifies `security` is also assessed once for a **security
+failure report** (the dependency, the advisory, the registry entry and a
+recommendation), which has its own reads: REST
+`GET /api/autonomous/security-failures`, MCP `security_failure_list`, CLI
+`datawatch autonomous security-failure`, the comm verb
+`autonomous security-failure [run-id]` and a card in the Automation view. The
+watch itself still never reruns a `security` run. See
+[automation-security-failure.md](automation-security-failure.md).
+
 ## Configuration
 
 | Key | Default | Meaning |
