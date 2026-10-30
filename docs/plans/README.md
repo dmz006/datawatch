@@ -397,6 +397,9 @@ The per-topic design documents live alongside this file, named
   [tooled deterministic guardrails](2026-10-12-tooled-deterministic-guardrails.md),
   [project-rules enforcement](2026-10-10-configurable-project-rules-enforcement.md)
 - Security: [CodeQL local reproduction and the code fixes it drove](2026-10-27-codeql-local-reproduction.md)
+- Operator how-tos for the supervisor duties: [supervisor watch](../howto/automation-supervisor-watch.md) (daemon-side watch, shadow first),
+  [repo CI watch](../howto/automation-repo-ci-watch.md),
+  [security failure report](../howto/automation-security-failure.md)
 - Other: [LLM enhancements](2026-10-10-llm-enhancements.md),
   [plugin extension surfaces](2026-10-09-plugin-extension-surfaces.md),
   [PRD git workflow](2026-10-10-prd-git-workflow.md),
