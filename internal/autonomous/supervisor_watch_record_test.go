@@ -185,6 +185,10 @@ func TestSupervisorWatchRecordUpsertKeepsFirstSeenAt(t *testing.T) {
 	if _, err := store.Upsert(testSupervisorWatchFinding(SupervisorWatchTaskFailed, "  ", "", time.Time{})); err == nil {
 		t.Fatal("Upsert(blank subject) succeeded, want an error")
 	}
+	// The text is operator-facing and must stay one line.
+	if _, err := store.Upsert(testSupervisorWatchFinding(SupervisorWatchTaskFailed, "auto-one", "line one\nline two", time.Time{})); err == nil {
+		t.Fatal("Upsert(multi-line text) succeeded, want an error")
+	}
 	if _, err := store.Upsert(nil); err == nil {
 		t.Fatal("Upsert(nil) succeeded, want an error")
 	}

@@ -143,8 +143,10 @@ func (f *SupervisorWatchFinding) Key() string {
 	return SupervisorWatchKey(f.Kind, f.Subject)
 }
 
-// supervisorWatchValidateFinding checks the identity fields a finding
-// needs before it can be stored: a known kind and a non-empty subject.
+// supervisorWatchValidateFinding checks the invariants a finding needs
+// before it can be stored: a known kind, a non-empty subject, and a
+// single-line Text when one is set — the text is operator-facing
+// (alerts and the record store) and must stay one line of English.
 func supervisorWatchValidateFinding(f *SupervisorWatchFinding) error {
 	if f == nil {
 		return fmt.Errorf("supervisor watch: nil finding")
@@ -155,6 +157,9 @@ func supervisorWatchValidateFinding(f *SupervisorWatchFinding) error {
 	}
 	if strings.TrimSpace(f.Subject) == "" {
 		return fmt.Errorf("supervisor watch: subject is required")
+	}
+	if strings.ContainsAny(f.Text, "\r\n") {
+		return fmt.Errorf("supervisor watch: text must be one line: %q", f.Text)
 	}
 	return nil
 }
