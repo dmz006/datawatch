@@ -54,64 +54,64 @@ For each repository in `repos`, one poll reads:
 
 | What | How | Default |
 |---|---|---|
-| The head of `main` | `git rev-parse origin/main` and then the CI runs on that SHA | always, for listed repos |
-| The newest release tags | the newest `tag_count` tags in the repository | 5 (0 = no tags) |
+| The head of `main` | `git rev-parse origin/main` (or the default branch) and then the CI runs on that SHA | always, for listed repos |
+| The newest release tags | the newest `tag_count` tags in the repository, each of the shape `v\u003cmajor\u003e.\u003cminor\u003e.\u003cpatch\u003e` (`v2` does not count as a release tag) | 5 (0 = no tags) |
 
-For every one of those refs the pass lists the repository's **workflows** and
-then the runs on that ref. So a poll covers the head of `main` plus the newest
-`tag_count` release tags, each across every workflow — the pass reads the
-workflow list, it does not work from a fixed workflow name. A run belongs to
-the (repository, ref, workflow) triple it ran on, and each one gets at most
-one watch record.
+For every one of those refs the pass lists the runs on that ref's head commit — every workflow that ran on that SHA — not a fixed workflow name. So a poll covers the head of `main` plus the newest `tag_count` release tags, each across every workflow that ran there. A run belongs to the (repository, ref, workflow) triple it ran on, and each one gets at most one watch record.
 
 ## The record states
 
-Each record keeps one watch state:
+Each record keeps one watch state. The pass records four of them — `green`, `failing`, `pending` and `hung` — and the read view's status filter accepts all six vocabulary values, so it can also filter on the two records the pass marks — `rerunning` (its own rerun is recorded on the record's rerun log) and `superseded` (a later green run names it in its `superseded_run_ids`); any other value is a 400 that names the allowed values.
 
 | State | Meaning |
 |---|---|
-| `green` | The run finished cleanly. It still matters for retention: once the ref moves on, the same run is **superseded** and becomes a retention-cleanup candidate. |
-| `failing` | The run finished red and needs a classification before anything else can be said about it. |
-| `pending` | The run has not finished yet. It is not "hung" until it has been pending longer than `hung_after_minutes`. |
+| `green` | The run finished cleanly (success, skipped or neutral). For retention it still matters: when the ref moves on and a later run on the same ref/workflow goes green, this run is named **superseded** by the newer green record and becomes a retention-cleanup candidate. |
+| `failing` | The run finished red (a failure conclusion or action-required) and carries the classification the pass reached for it. |
+| `pending` | The run is still in flight. It is not `hung` until it has been in flight longer than `hung_after_minutes`. |
 | `hung` | A `pending` run that outlived `hung_after_minutes` (default 60, minimum 1). In `on` mode it is cancelled once. |
-| `rerunning` | The pass reran the run (infra, budget permitting) and is waiting for the new attempt. |
-| `superseded` | The run on this ref/workflow is no longer the newest one for that ref. It is a retention candidate; the record keeps its identity so the pass can address it (and, in delete mode, the pass can issue the deletion for it — see below). |
+| `rerunning` | Vocabulary value: the pass's rerun of this run was posted; the record's rerun log names it and the pass waits for the new attempt. |
+| `superseded` | Vocabulary value: this run was preceded by a later run on the same ref/workflow, named on the green record that superseded it; it is a retention candidate, and the record keeps its run id so the pass can address it. |
 
 ## The classification and what each one means
 
-After a poll, every non-green run gets a classification. The classification is
-what decides what the pass may do with that run:
+After a poll, the pass classifies every run. The classification is what decides what the pass may do with that run, and the value you read on every surface is one of seven:
 
 | Classification | What it means | What the pass may do with it |
 |---|---|---|
-| `green` | The check the operator most needs — "did this pass on the head of `main`, or on a recent release tag?" | Record it; name it `superseded` once a newer run on the same ref/workflow exists; in `on` mode with the deletion policy set, it is a deletion candidate. |
-| `infra` | The run broke because of the CI infrastructure, not the code: the runner died, a step timed out before doing work, a dependency fetch failed. One automatic rerun is safe and expected. | In `on` mode, **one rerun** of the recorded run, and only while the infra retry budget still has reruns left. In shadow mode, the rerun is recorded as a `would-do` line and never executed. |
-| `security` | A security-related workflow failed (its name matches `security_workflows`; the default list is `security-review`, `codeql`, `dependency-review`). **Record-only by design.** | Nothing is rerun or acted on. The pass does **not** emit rerun candidates for security runs — a security failure is information for the operator plus whatever the operator's own security process says to do, and the watch's job is to keep the record visible, not to touch it. Shadow mode records the run with its classification and its would-do is the `superseded` retention entry only. |
-| `policy` | A policy or compliance gate failed (branch protection, required checks, a custom policy step). Like `security`, **record-only** — the watch does not rerun or waive it. | Nothing beyond the record. The operator's policy process owns the disposition. |
-| `failed` (unclassified) | Red, and the pass could not say `infra`, `security` or `policy`. The record stands until the operator looks. | Retention only (it becomes `superseded` when a newer run replaces it). No automatic rerun, no automatic cancel. |
+| `none` | Unclassified — the state a record carries until the pass classifies it, and the one a green or pending run stays at. | Nothing; it is the default, not a verdict. |
+| `infra` | The run broke because of the CI infrastructure, not the code: it finished by cancellation, timeout, a pre-start failure, or staleness (a pipeline abort, not a red test). One automatic rerun is safe and expected. | In `on` mode, **one rerun** of the recorded run — at most once per run id — and only while the infra retry budget still has reruns left. In shadow mode the rerun is recorded as a would-do and never executed. |
+| `security` | A run on a workflow named in `security_workflows` finished without a green or infra outcome (its conclusion is a failure or action-required). The default list is `CodeQL`, `dependency-review`, `owasp-zap`, `secret-scan`, `security-scan`. **Record-only by design.** | Nothing is rerun or acted on. The pass does not emit a would-rerun either — a security failure is information for the operator plus whatever the operator's own security process says to do, and the watch's job is to keep the record visible, not to touch it. |
+| `policy` | A failed non-security run whose **judge verdict** is a policy-gate refusal (the pass spends at most one LLM judge call per poll, on the first non-green run it meets, and never re-judges a run that already carries a verdict). Like `security`, **record-only** — the watch does not rerun or waive it. | Nothing beyond the record. The operator's policy process owns the disposition. |
+| `code_or_test` | A failed non-security run the judge cleared of policy: the verdict's other category, meaning the defect is in the code or the test and only the owner of the change can fix it. Not an infrastructure fault, not a policy gate. | Nothing automatic — no rerun, no cancel. The record and the alert name it so the owner can look. |
+| `judging` | A failed non-security run the pass could not reach a verdict on in this poll — the pass's single judge call was already spent, or the judge call itself failed. **A pending state, not a verdict**: a later poll reuses the cached verdict if the run has one, or re-judges it. | Nothing; it settles to `policy` or `code_or_test` once a verdict exists. |
+| `hung` | The run is in flight and outlived `hung_after_minutes`. | In `on` mode it is cancelled once. |
 
 **Why `security` is record-only.** A failed security run is evidence, not a
 flake. Rerunning it is a decision: it can legitimately rerun green (the finding
 was real and the rerun hid it), or it can be re-baselined in a process the
 watch does not own. The pass therefore never puts a security run in its
-rerun queue — not in `on` mode, and not even as a `would-do` in shadow mode.
+rerun queue — not in `on` mode, and not even as a would-do in shadow mode.
 The record carries the classification and the run URL so the operator can see
 exactly which security workflows are failing, on which ref, and for how long.
-That is the whole contract.
+That is the whole contract. `policy` and `code_or_test` share the same shape: the
+watch records the verdict and the run URL; the disposition belongs to the
+policy process or the change owner.
 
 ## The alert
 
 Once a run has been non-green — `failing`, `pending` or `hung` — for longer
-than `alert_minutes` (default 10; `0` turns the alert off), the pass raises
-**exactly one alert per episode**, carrying the full resolution in the body
-(repository, ref, workflow, run, classification, elapsed time) and the actor
-`repo_ci_watch` explicitly named. The alert is stamped onto the record as
-`alerted_at`, which is what makes it once-per-episode: a later passing that
-sees the same episode does not re-alert.
+than `alert_minutes` (default **30**; `0` turns the alert off), measured from
+the run's first-seen stamp, the pass raises **exactly one alert per episode**.
+The alert names the repository, the ref, the workflow, the run, its
+classification, the first-seen stamp and the run URL — enough for one action
+per line. The alert is stamped onto the record as `alerted_at`, which is what
+makes it once-per-episode: a later pass that sees the same episode does not
+re-alert, and the watch will not touch that run further until it is resolved,
+superseded, or the budget changes.
 
-In `shadow` mode the alert is not raised at all — shadow records would-dos and
-never interrupts. Turning `alert_minutes` to `0` turns the alert off in any
-mode.
+The alert raises in `on` mode only — in `shadow` mode nothing is raised at
+all: shadow records would-dos and never interrupts. Turning `alert_minutes`
+to `0` turns the alert off in any mode (the reported threshold then reads 0).
 
 ## The automatic actions in `on` mode
 
@@ -120,16 +120,16 @@ mode. Each one is budgeted or one-shot so the pass cannot loop:
 
 | Action | When | How many times |
 |---|---|---|
-| **Infra rerun** | The record is classified `infra` and its infra retry budget (read from `retry_policy.infra`, default 4) still has a rerun left. | One rerun per episode, then the record waits for the outcome. A rerun that also fails is not re-re-run automatically; it needs the operator again. |
-| **Hung cancel** | The record is `pending` and older than `hung_after_minutes`. | Once per run. The pass checks the run is not already cancelled before it posts the cancel, so a hung run that has already resolved is never cancelled twice. |
-| **Superseded deletion** | The record is `superseded`. | One deletion per run, addressed by the run ID recorded on the record — not by re-deriving the ref, so a tag that moved on after the record was written does not break the delete. See the deletion policy below. |
+| **Infra rerun** | The record is classified `infra` and the infra retry budget — the Manager's `RetryPolicy["infra"]`, read as `0` when unset (no automatic reruns at all) — still has a rerun for that repository·ref·workflow. | One rerun per run id, shared across the repository·ref·workflow. A rerun that errors is not counted as spent — the record stays unresolved and the later pass may retry. A rerun whose new attempt is itself red is not re-re-run automatically: it needs the operator again, or a re-classification. |
+| **Hung cancel** | The record is `pending` and older than `hung_after_minutes`. | Once per run id. The pass checks the run is not already cancelled before it posts the cancel, so a hung run that has already resolved is never cancelled twice. |
+| **Superseded deletion** | The green record names the superseded runs in its `superseded_run_ids`. | One deletion per run, addressed by the run ID recorded on the record — not by re-deriving the ref, so a tag that moved on after the record was written does not break the delete. A run named by this very poll is deleted on the **later** pass, never on the pass that named it; and it is never rerun while it is a deletion candidate. See the deletion policy below. |
 
 ### The deletion policy (`delete_superseded`)
 
 | Value | What the pass does with superseded runs |
 |---|---|
-| `report` (default) | The pass names the superseded runs in the record (their `would-do` is the retention entry) and stops there. Deleting is the operator's explicit act. This is the safe default: retention cleanup is a repository-management decision, and the pass should propose it, not make it. |
-| `delete` | In addition to recording, the pass issues the deletion — but only in `on` mode, and the pass that records the would-delete does not also issue it: the issue is picked up on the **later** pass, after the record is durably written, so a crash between "decide" and "issue" costs nothing. The result of the delete call is recorded on the record. In `shadow` mode `delete` behaves exactly like `report` — recording only, no deletion call. |
+| `report` (default) | The pass names the superseded runs on the green record and stops there. Deleting is the operator's explicit act. This is the safe default: retention cleanup is a repository-management decision, and the pass should propose it, not make it. |
+| `delete` | In addition to recording, the pass issues the deletion — but only in `on` mode, and the pass that names the runs does not also delete them: the deletion is picked up on the **later** pass, after the green record is durably written, so a crash between "decide" and "issue" costs nothing. In `shadow` mode `delete` behaves exactly like `report` — recording only, no deletion call. |
 
 There is no `delete` that fires in `shadow`: shadow never issues any call that
 changes state, and the deletion policy's `delete` value is not a write switch,
@@ -140,10 +140,10 @@ it is a declaration of what the pass is allowed to do once `mode` is `on`.
 **Shadow** is the mode you run first. On every poll the pass does everything
 it would do in `on` mode, except the write:
 
-- it polls the refs and workflows, classifies every non-green run,
+- it polls the refs, classifies every run the same way an `on` pass would,
 - it records the would-rerun for each `infra` run (with the budget it would
   spend), the would-cancel for each hung run, and the would-delete for each
-  `superseded` run,
+  superseded run,
 - it does **not** post a rerun, does **not** post a cancel, does **not** issue
   a deletion, and does **not** raise the alert.
 
@@ -165,16 +165,17 @@ superseded — put the two sides side by side:
    the CI UI, the audit trail, or whatever process owned that work.
 3. **Judge the three things that matter here** — classification (did the watch
    call `infra` what you called `infra`, and `security` what you called
-   `security`?), budget (would the watch have rerun something you would have
+   `security`? did a `code_or_test` verdict match what you saw?),
+   budget (would the watch have rerun something you would have
    left alone, or left alone something you would have rerun?), and order
    (would the watch have cancelled a run you were still debugging, or rerun one
    you wanted to hold for evidence?).
 
 When those agree over several episodes — including at least one `security`
-episode you deliberately left alone, and one `superseded` run you deliberately
+episode you deliberately left alone, and one superseded run you deliberately
 deleted or kept — `on` is a reasonable next step. When they disagree, the
 disagreement is the finding: fix the policy (`security_workflows`,
-`hung_after_minutes`, `retry_policy.infra`) and re-shadow.
+`hung_after_minutes`, the infra retry budget) and re-shadow.
 
 ## Reading the state on every surface
 
@@ -194,24 +195,26 @@ first). None of them changes anything.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `autonomous.automation.repo_ci_watch.mode` | `off` | `off` (the pass does not run and nothing is recorded), `shadow` (everything runs, nothing writes, no alert) or `on` (the actions above are taken, budgeted). |
+| `autonomous.automation.repo_ci_watch.mode` | `off` | `off` (the pass does not run and nothing is recorded), `shadow` (everything runs, nothing writes, no alert) or `on` (the actions above are taken, budgeted, and the alert raises). |
 | `autonomous.automation.repo_ci_watch.repos` | empty | Comma-separated absolute paths of the repositories to watch. Empty means nothing is watched. |
-| `autonomous.automation.repo_ci_watch.poll_seconds` | `300` | Seconds between polls. Values below 60 are raised to 60. |
-| `autonomous.automation.repo_ci_watch.alert_minutes` | `10` | How long a non-green run may sit before the once-per-episode alert. `0` turns the alert off (in which case the reported threshold reads 0). |
-| `autonomous.automation.repo_ci_watch.tag_count` | `5` | How many of the newest release tags are covered per poll. `0` means no tags. |
-| `autonomous.automation.repo_ci_watch.hung_after_minutes` | `60` | How long a run may be `pending` before it is `hung`. Minimum 1. |
-| `autonomous.automation.repo_ci_watch.security_workflows` | `security-review, codeql, dependency-review` | Workflow names that classify as `security` (record-only). Empty list means nothing classifies as `security` — set it deliberately before turning `on`. |
-| `autonomous.automation.repo_ci_watch.delete_superseded` | `report` | `report` (name the superseded runs, do not delete them) or `delete` (in `on` mode, the pass issues the deletion for the superseded records it would delete, on the later pass). |
-| `retry_policy.infra` | `4` | The infra retry budget the `on`-mode rerun draws from. A budget of 0 means the pass never reruns an infra run, in any mode. |
+| `autonomous.automation.repo_ci_watch.poll_seconds` | `300` (unset or `0` reads `300`) | Seconds between polls. Values below 60 are **refused on write** by every path — the minimum is 60; nothing is ever clamped up for you. |
+| `autonomous.automation.repo_ci_watch.alert_minutes` | `30` | How long a non-green run may sit before the once-per-episode alert. `0` turns the alert off (in which case the reported threshold reads 0); negative values are refused. |
+| `autonomous.automation.repo_ci_watch.tag_count` | `5` | How many of the newest release tags (shaped `v\u003cmajor\u003e.\u003cminor\u003e.\u003cpatch\u003e`) are covered per poll. `0` means no tags; negative values are refused. |
+| `autonomous.automation.repo_ci_watch.hung_after_minutes` | `60` | How long a run may be `pending` before it is `hung`. Minimum 1; below that is refused. |
+| `autonomous.automation.repo_ci_watch.security_workflows` | `CodeQL, dependency-review, owasp-zap, secret-scan, security-scan` | Workflow names that classify a non-green run as `security` (record-only). Empty list means nothing classifies as `security` — set it deliberately before turning `on`. |
+| `autonomous.automation.repo_ci_watch.delete_superseded` | `report` | `report` (name the superseded runs, do not delete them) or `delete` (in `on` mode, the pass issues the deletion for the runs a green record names, on the later pass). |
+| infra retry budget — the Manager's `RetryPolicy["infra"]` (`retry_policy.infra`) | unset reads `0` — no automatic reruns at all | The cap on automatic infra reruns shared per repository·ref·workflow. A budget of 0 means the pass never reruns an `infra` run; set it to allow one rerun per run id while it holds. |
 
-Every key is read live from `config.yaml`. Changing `mode`, `alert_minutes`,
-`tag_count`, `hung_after_minutes`, `security_workflows` or
-`delete_superseded` takes effect on the next poll — no restart. A value the
-pass cannot use (a negative `poll_seconds`, an unknown `mode`) is refused and
-nothing is written. The `repos` list and the classification vocabulary are
-read on every poll, so adding a repository mid-episode starts being watched on
-the following pass, and removing one stops it on the following pass without
-erasing its records (the records stay readable on every surface).
+Every key is read live from `config.yaml`. Changing `mode`, `poll_seconds`,
+`alert_minutes`, `tag_count`, `hung_after_minutes`, `security_workflows` or
+`delete_superseded` takes effect on the next poll — no restart. A bad value is
+refused on write by every path — an unknown `mode`, a non-absolute repository
+path, a `poll_seconds` below 60, a negative `alert_minutes` or `tag_count`, a
+`hung_after_minutes` below 1 — and nothing is written. The `repos` list and
+the classification vocabulary are read on every poll, so adding a repository
+mid-episode starts being watched on the following pass, and removing one stops
+it on the following pass without erasing its records (the records stay readable
+on every surface).
 
 ## What the watch never does
 
@@ -219,12 +222,14 @@ It never merges, never judges design or difficulty, and never holds or starts
 Automata — the watch is about the repository's CI runs, not about the
 Automation queue. It never reruns a `security` or `policy` run, in any mode,
 and never as a `would-do`. It never posts a second cancel for a run that is
-already resolving. It never issues a deletion in `shadow`, in `off`, or in
-`report`. It never re-alerts an episode that already alerted. It never spends
-retry budget it does not have — a rerun that comes from a zero budget is not a
-rerun, it is the operator deciding. And in `shadow` it never writes anything
-at all: the record, the audit line and the would-do text are the entire
-surface.
+already resolving, and never spends infra budget on a run it named for
+deletion. It never issues a deletion in `shadow`, in `off`, or in
+`report` — and never a deletion on the same pass that named the run. It never
+re-judges a run that already carries a verdict, and it never re-alerts an
+episode that already alerted. It never spends retry budget it does not have —
+a rerun that comes from a zero budget is not a rerun, it is the operator
+deciding. And in `shadow` it never writes anything at all: the record and the
+would-do text are the entire surface — no action, no alert.
 
 ## Operations
 
@@ -241,11 +246,13 @@ timer — and a rerun or cancel already in flight before the restart is not
 re-issued after it (the record's state is what the pass acts on, not a
 queue that survives the process).
 
-**Audit.** Every alert, every would-do, every rerun, cancel and deletion the
-pass issues carries the actor `repo_ci_watch` in the audit trail, so the read
-view and the audit trail can be cross-checked. The `alerted_at` stamp on the
-record is the once-per-episode proof; the `would-do` lines in shadow mode are
-the comparison evidence.
+**Audit.** Every would-do, rerun, cancel and deletion the pass makes is
+recorded on the record itself — the `would-do` lines, the rerun log, the
+failure notes and the `alerted_at` stamp — so the read view is the durable
+trace. In `on` mode the alert goes through the daemon's alert sink with the
+run's identity, classification, first-seen stamp and URL in the body. The
+`alerted_at` stamp on the record is the once-per-episode proof; the `would-do`
+lines in shadow mode are the comparison evidence.
 
 **The deletion is irreversible.** `delete_superseded: delete` in `on` mode
 issues real deletions of real CI runs on the ref the record names. Before you

@@ -4428,32 +4428,34 @@ Every key is read live. Mode and threshold changes apply on the next poll, with 
 
 ## Repo CI watch (`autonomous.automation.repo_ci_watch`)
 
-Repo CI watch stands over the repository's CI: on every poll it reads the head of `main` and the newest `tag_count` release tags across every workflow, keeps one record per run, classifies each non-green run (`infra`, `security`, `policy`, or unclassified `failed`), and — in `on` mode only — takes the budgeted actions: one rerun of an infra-broken run, one cancel of a hung run, and the retention deletion of superseded runs. It is **off** by default. The full behaviour, the classification rules, the shadow-mode comparison and the never-does list are in [howto/automation-repo-ci-watch.md](howto/automation-repo-ci-watch.md).
+Repo CI watch stands over the repository's CI: on every poll it reads the head of `main` (or the default branch) and the newest `tag_count` release-shaped tags (`v<M>.<m>.<p>`) across every workflow that ran on those head commits, keeps one record per run, and classifies each run as `none`, `infra`, `security`, `policy`, `code_or_test`, `judging` or `hung`. In `on` mode only, it takes the budgeted actions: at most one rerun of an `infra` run per run id (while the infra retry budget holds), one cancel of a run that hung, and the retention deletion of superseded runs named by a green record. It is **off** by default. The full behaviour, the classification rules, the shadow-mode comparison and the never-does list are in [howto/automation-repo-ci-watch.md](howto/automation-repo-ci-watch.md).
 
 | Key | Default | Meaning |
 |---|---|---|
 | `autonomous.automation.repo_ci_watch.mode` | `off` | `off`, `shadow` (decide and record everything, write nothing, no alert) or `on` (the actions are taken, budgeted). |
 | `autonomous.automation.repo_ci_watch.repos` | empty | Absolute paths of the repositories to watch; empty means nothing is watched. |
-| `autonomous.automation.repo_ci_watch.poll_seconds` | `300` | Seconds between polls; below 60 is raised to 60. |
-| `autonomous.automation.repo_ci_watch.alert_minutes` | `10` | How long a non-green run may sit before the once-per-episode alert; `0` turns the alert off. |
+| `autonomous.automation.repo_ci_watch.poll_seconds` | `300` (unset or `0` reads `300`) | Seconds between polls; below 60 is refused on write (minimum 60). |
+| `autonomous.automation.repo_ci_watch.alert_minutes` | `30` | How long a non-green run may sit before the once-per-episode alert; `0` turns the alert off. |
 | `autonomous.automation.repo_ci_watch.tag_count` | `5` | Newest release tags covered per poll; `0` means none. |
 | `autonomous.automation.repo_ci_watch.hung_after_minutes` | `60` | Minutes a run may stay pending before it is hung (minimum 1). |
-| `autonomous.automation.repo_ci_watch.security_workflows` | `security-review`, `codeql`, `dependency-review` | Workflow names classified `security` (record-only, never rerun). |
+| `autonomous.automation.repo_ci_watch.security_workflows` | `CodeQL`, `dependency-review`, `owasp-zap`, `secret-scan`, `security-scan` | Workflow names classified `security` (record-only, never rerun). |
 | `autonomous.automation.repo_ci_watch.delete_superseded` | `report` | `report` (name the superseded runs, do not delete) or `delete` (in `on` mode the pass issues the retention deletions, on the later pass). |
 
-Every key is read live; a bad value is refused and nothing is written.
+Every key is read live; a bad value is refused on write by every path (unknown `mode`, non-absolute repository path, `poll_seconds` below 60, negative `alert_minutes` or `tag_count`, `hung_after_minutes` below 1) and nothing is written. The infra retry budget is the Manager's `RetryPolicy["infra"]` (`retry_policy.infra`); **unset reads 0 — no automatic reruns at all**, and a rerun is at most once per run id, shared across the repository·ref·workflow while the budget holds; a rerun that errors is not counted as spent.
 
-**Security runs are record-only.** A failed security workflow is evidence, not a flake: the pass never reruns, cancels or waives it — in `on` mode and not even as a would-do in shadow mode. The record carries the classification and the run URL so the operator sees which security workflows are failing, on which ref, and for how long. `policy` failures are the same shape.
+**`security` and `policy` runs are record-only.** A failed security workflow is evidence, not a flake: the pass never reruns it, and not even as a would-rerun in shadow mode. The record carries the classification and the run URL, so the operator sees which security workflows are failing, on which ref, and for how long. `policy` is a judge verdict — at most one judge call per poll, on the first non-green run it meets; the verdict is cached per run id and never re-judged — and, like `security`, record-only. The other verdict, `code_or_test`, means the defect is in code or test and only the owner of the change can fix it: no automatic action either. `judging` is the transient state of a non-green run that had no verdict in this pass (the judge call was already spent, or failed) — not a verdict, and a later poll settles it.
 
-**The one alert.** Once a non-green run has sat for `alert_minutes` (default 10; `0` turns the alert off) the pass raises exactly one alert per episode, naming the repository, ref, workflow, run, classification and elapsed time, with the actor `repo_ci_watch` explicit. The alert is stamped on the record as `alerted_at`, which is what keeps it once-per-episode. Shadow mode raises no alert.
+**The one alert.** Once a non-green run has sat for `alert_minutes` (default 30; `0` turns the alert off), measured from its first-seen stamp, the pass raises exactly one alert per episode, naming the repository, ref, workflow, run, classification, first-seen stamp and run URL. The alert is stamped on the record as `alerted_at`, which is what keeps it once-per-episode. The alert raises in `on` mode only — shadow mode records its would-dos and raises no alert.
 
-**The automatic actions (on mode, budgeted).** One rerun of an `infra` run while the infra retry budget (`retry_policy.infra`, default 4; 0 means never) still has one left. One cancel of a run pending for more than `hung_after_minutes`, checked not-already-cancelled before the cancel is posted. Superseded-run deletions only when `delete_superseded` is `delete`, addressed by the recorded run ID, issued on the pass after the record that named them — never in shadow.
+**Shadow mode records and never acts.** No rerun posts, no cancel posts, no deletions, no alert — the would-do lines on the record are the whole surface, and the read interfaces are identical in every mode.
+
+**The automatic actions (on mode, budgeted).** At most one rerun of an `infra` run per run id, while the infra retry budget (`retry_policy.infra`; unset reads 0 — no automatic reruns at all) still has one for that repository·ref·workflow. One cancel of a run pending for more than `hung_after_minutes`, checked not-already-cancelled before the cancel is posted. Superseded-run deletions only when `delete_superseded` is `delete`, addressed by the recorded run ID, issued on the pass after the green record named the runs — never in shadow, and never on the pass that named them.
 
 ### Repo CI watch surfaces
 
 | Surface | Read the state | Notes |
 |---|---|---|
-| REST | `GET /api/autonomous/repo-ci-watch?repo=…&status=…` | body: mode, alert_minutes, repos, last_poll_at, records newest first; unknown `status` is a 400 naming the six values; an empty match is 200 with an empty list |
+| REST | `GET /api/autonomous/repo-ci-watch?repo=…&status=…` | body: mode, alert_minutes, repos, last_poll_at, records newest first; the status filter accepts `green`, `failing`, `pending`, `hung`, `rerunning`, `superseded` — anything else is a 400 naming the values; an empty match is 200 with an empty list |
 | MCP | `autonomous_repo_ci_watch` (read-only; `repo` / `status` filters) | same body as the GET route |
 | CLI | `datawatch autonomous repo-ci-watch [--repo …] [--status …] [--json]` | table: repository, ref, workflow, status, classification, first seen, alerted |
 | Comm channel | `autonomous repo-ci-watch` (alias `repo_ci_watch`) | mode line, then one line per record: repo, ref, workflow, status, classification, run URL; no arguments |
@@ -4461,9 +4463,9 @@ Every key is read live; a bad value is refused and nothing is written.
 
 Change the mode or a threshold: `PUT /api/config` (or Settings → General → Autonomous in the PWA) with the `autonomous.automation.repo_ci_watch.*` key, or `datawatch config set autonomous.automation.repo_ci_watch.mode shadow`, or `configure autonomous.automation.repo_ci_watch.mode=shadow` on the comm channel. Every change applies on the next poll — no restart.
 
-**Restart.** The record history is in `<data-dir>/autonomous/repo_ci_watch.jsonl` and reloads after a restart. Records survive a stop (`mode: off` and a restart both keep the full history readable on every surface). A hung run's age is read from the CI run's own start time, so a restart does not reset the hung clock. a rerun or cancel in flight before the restart is not re-issued after it.
+**Restart.** The record history is in `<data-dir>/autonomous/repo_ci_watch.jsonl` and reloads after a restart. Records survive a stop (`mode: off` and a restart both keep the full history readable on every surface). A hung run's age is read from the CI run's own start time, so a restart does not reset the hung clock. A rerun or cancel in flight before the restart is not re-issued after it.
 
-**What the watch never does.** It never merges, never starts or holds Automata — it watches the repository's CI runs, not the queue. It never reruns a `security` or `policy` run, in any mode. It never posts a second cancel. It never issues a deletion in `off`, `shadow` or `report`. It never re-alerts an already-alerted episode. It never spends retry budget it does not have. In shadow it writes nothing: the record, the audit line and the would-do text are the whole surface. The shadow-mode comparison to do before `on` is in [howto/automation-repo-ci-watch.md](howto/automation-repo-ci-watch.md).
+**What the watch never does.** It never merges, never starts or holds Automata — it watches the repository's CI runs, not the queue. It never reruns a `security` or `policy` run, in any mode, and never as a would-do. It never posts a second cancel for a run that is already resolving. It never issues a deletion in `off`, `shadow` or `report`, and never one on the pass that named the run. It never re-judges a run that already carries a verdict, and never re-alerts an already-alerted episode. It never spends retry budget it does not have. In shadow it writes nothing: the records and the would-do text are the whole surface, and no alert is raised. The shadow-mode comparison to do before `on` is in [howto/automation-repo-ci-watch.md](howto/automation-repo-ci-watch.md).
 
 ---
 
