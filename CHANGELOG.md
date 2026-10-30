@@ -20,6 +20,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.44.1 — Stop committing test run folders
+
+### Fixed
+
+- **Test run folders are no longer committed.** Three folders that live checks and the restart test harness create (a sandbox daemon's data directory, and two sets of harness records) had been committed by mistake; they held a sandbox node registry and machine paths. They are removed from the repository and listed in `.gitignore`, so a task can no longer add them.
+
 ## v9.44.0 — The daemon watches what the supervisor watches
 
 ### Added
