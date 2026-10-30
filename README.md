@@ -159,6 +159,20 @@ can prefer a GPU lane, a Claude lane or either. It never merges and never holds
 GPU work because of Claude usage limits — see
 [automation-lane-fill.md](docs/howto/automation-lane-fill.md).
 
+Repo CI watch stands over the repository's own CI instead of an individual
+Automaton. On every poll it reads the head of `main` and the newest release
+tags across every workflow, keeps one record per run, and classifies each
+non-green run (infra, security, policy or unclassified). A non-green run that
+outlives the alert threshold raises exactly one alert per episode. In `on`
+mode the daemon takes the budgeted actions: one rerun of an infra-broken run
+while the retry budget has one left, one cancel of a hung run, and the
+retention deletion of superseded runs when the deletion policy says so.
+Security runs are record-only in every mode, and the watch is off by default,
+with `shadow` available first: it records exactly what it would do and writes
+nothing, so it can be checked against what the operator did. It never merges
+and never touches the queue — see
+[automation-repo-ci-watch.md](docs/howto/automation-repo-ci-watch.md).
+
 - **Usage calculator** — type a reading of your weekly provider allowance and get advice on whether you are within budget and what each lane count costs; it only advises and never stops a lane. See [usage-calculator.md](docs/howto/usage-calculator.md).
 
 **v9.0.0 — Memory Lifecycle Complete.** The
@@ -457,7 +471,7 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 | Sessions + hooks | [docs/howto/sessions-deep-dive.md](docs/howto/sessions-deep-dive.md) · [docs/howto/claude-hooks.md](docs/howto/claude-hooks.md) |
 | Backends | [docs/llm-backends.md](docs/llm-backends.md) · [docs/messaging-backends.md](docs/messaging-backends.md) |
 | Interfaces | [docs/mcp.md](docs/mcp.md) · [docs/howto/mcp-tools.md](docs/howto/mcp-tools.md) · [docs/howto/docs-as-mcp.md](docs/howto/docs-as-mcp.md) · [internal/server/web/openapi.yaml](internal/server/web/openapi.yaml) |
-| Autonomous + plugins | [docs/api/autonomous.md](docs/api/autonomous.md) · [docs/howto/automation-tab.md](docs/howto/automation-tab.md) · [docs/howto/automata-progress.md](docs/howto/automata-progress.md) · [docs/howto/automation-lane-fill.md](docs/howto/automation-lane-fill.md) · [docs/howto/automata-tags.md](docs/howto/automata-tags.md) · [docs/howto/automata-tag-registry.md](docs/howto/automata-tag-registry.md) · [docs/flow/tag-registry-sync-flow.md](docs/flow/tag-registry-sync-flow.md) · [docs/api/orchestrator.md](docs/api/orchestrator.md) · [docs/api/plugins.md](docs/api/plugins.md) · [docs/skills.md](docs/skills.md) · [docs/howto/result-panel.md](docs/howto/result-panel.md) |
+| Autonomous + plugins | [docs/api/autonomous.md](docs/api/autonomous.md) · [docs/howto/automation-tab.md](docs/howto/automation-tab.md) · [docs/howto/automata-progress.md](docs/howto/automata-progress.md) · [docs/howto/automation-lane-fill.md](docs/howto/automation-lane-fill.md) · [docs/howto/automation-repo-ci-watch.md](docs/howto/automation-repo-ci-watch.md) · [docs/howto/automata-tags.md](docs/howto/automata-tags.md) · [docs/howto/automata-tag-registry.md](docs/howto/automata-tag-registry.md) · [docs/flow/tag-registry-sync-flow.md](docs/flow/tag-registry-sync-flow.md) · [docs/api/orchestrator.md](docs/api/orchestrator.md) · [docs/api/plugins.md](docs/api/plugins.md) · [docs/skills.md](docs/skills.md) · [docs/howto/result-panel.md](docs/howto/result-panel.md) |
 | Comms + federation | [docs/howto/channel-routing.md](docs/howto/channel-routing.md) · [docs/howto/file-service.md](docs/howto/file-service.md) · [docs/howto/discussion-scopes.md](docs/howto/discussion-scopes.md) · [docs/howto/comm-channels.md](docs/howto/comm-channels.md) |
 | Memory & intelligence | [docs/memory.md](docs/memory.md) · [docs/memory-usage-guide.md](docs/memory-usage-guide.md) |
 | Operations & security | [docs/operations.md](docs/operations.md) · [docs/config-reference.yaml](docs/config-reference.yaml) · [docs/encryption.md](docs/encryption.md) · [docs/multi-session.md](docs/multi-session.md) · [docs/uninstall.md](docs/uninstall.md) |
