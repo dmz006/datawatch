@@ -56,4 +56,4 @@ Not yet tested: whether the small local model meets the bar on spec drafting and
 1. Where the per-project pipeline lives: a file in the repository, a record in the daemon, or both with the file winning.
 2. Who runs the supervisor loop: plain code with narrow validated model calls and escalation, or a continuous Claude session as today.
 3. How far the daemon may go on its own at a merge conflict.
-4. The CodeQL setup conflict: which of the two to keep.
+4. The CodeQL setup conflict: answered 2026-10-30, quoted: "Keep gh, remove the local,  unless we can align them and test locally and find issues before ci failure". Default setup stays; the PRD `36db0001` removes the analyze jobs, keeps the alert gate and investigates a local run.
