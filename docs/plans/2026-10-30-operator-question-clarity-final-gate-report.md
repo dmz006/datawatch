@@ -14,7 +14,7 @@ command exited 0 and printed no failure; `FAIL` means it did not.
 
 ## Overall result
 
-FAIL — three things did not pass, and nothing was changed to hide any of them:
+FAIL — four things did not pass or were found, and nothing was changed to hide any of them:
 
 1. All 15 of the other `.datawatch/verify/qc-*.sh` scripts exit 1 on this clean tree
    (50 `FAIL:` lines, every one the same "expected change not found" message). The cause is
@@ -27,9 +27,14 @@ FAIL — three things did not pass, and nothing was changed to hide any of them:
    two further full-package runs, so it looks timing-dependent, but the first run is a FAIL
    and is recorded as one. See "Go test packages".
 
-The build, the other five Go packages, the seven node test files, both repository checks (the
-docs-sync check after `make sync-docs`, see "Repository checks") and the live-check,
-parity-issue and CHANGELOG confirmations all passed.
+4. `scripts/check-docs-sync.sh` exited 1 on its first run in this task, so that run is recorded
+   as FAIL. A second run, after `make sync-docs`, exited 0 and is listed as its own row. See
+   "Repository checks".
+
+The build, the other five Go packages, the seven node test files, `scripts/check-no-internal-refs.sh`,
+the second `scripts/check-docs-sync.sh` run, and the live-check and parity-issue confirmations all
+passed. The CHANGELOG confirmation passed for the lines this branch added, but one pre-existing
+tracker identifier was found in the CHANGELOG (see "Confirmations").
 
 ## Build
 
@@ -66,10 +71,12 @@ regression, and fixed nothing. Nothing was edited.
 | First full run (above) | FAIL | 1537 | 1 | 2 | 2099 |
 | Second full run | PASS | 1538 | 0 | 2 | 2100 |
 | Third full run | PASS | 1538 | 0 | 2 | 2100 |
-| Fourth full run, inside `qc-final-gate.sh` | PASS | package ran clean (count not captured) | 0 | n/a | n/a |
+| Fourth full run, inside `qc-final-gate.sh` | PASS | 1538 | 0 | 2 | 2100 |
 | The one test alone, `-count=5` | PASS | 5 of 5 | 0 | 0 | 5 |
 
-One failure in four full runs means the package is not reliably green. The test did pass
+The fourth run's counts come from one more full run of the package made to capture them
+(`go test -count=1 -v ./internal/server/`, exit 0, `ok ... 67.968s`); the run inside
+`qc-final-gate.sh` itself printed no counts. One failure in four full runs means the package is not reliably green. The test did pass
 whenever it had the machine to itself, which points at timing under load rather than at this
 feature, but that is a reading and not something this task proved or fixed.
 
@@ -91,15 +98,17 @@ feature, but that is a reading and not something this task proved or fixed.
 | Command | Result |
 |---|---|
 | `scripts/check-no-internal-refs.sh` | PASS |
-| `scripts/check-docs-sync.sh` | PASS |
+| `scripts/check-docs-sync.sh` (first run) | FAIL (exit 1) |
+| `scripts/check-docs-sync.sh` (second run, after `make sync-docs`) | PASS |
 
-`scripts/check-docs-sync.sh` first exited 1 in this task ("embedded PWA docs drift from
+The first run of `scripts/check-docs-sync.sh` exited 1 in this task ("embedded PWA docs drift from
 docs/"), naming this report as out of sync, because the embedded copy under
 `internal/server/web/docs/` (gitignored, regenerated at build time) was older than this
 report. The documented remedy, `make sync-docs`, regenerated that ignored copy and nothing
-tracked changed. The script was then run again after the last edit of this report and exited
-0 ("docs/ and internal/server/web/docs in sync."). That PASS holds only for the report as it
-now stands; any later edit to this report needs another `make sync-docs`.
+tracked changed. The second run, made after the last edit of this report, exited 0
+("docs/ and internal/server/web/docs in sync."). That PASS holds only for the report as it
+now stands; any later edit to this report needs another `make sync-docs`. The first run stays
+FAIL; the second row does not replace it.
 
 ## Confirmations
 
@@ -107,7 +116,8 @@ now stands; any later edit to this report needs another `make sync-docs`.
 |---|---|---|
 | The live-check report says PASS overall | PASS | `docs/plans/2026-10-30-operator-question-clarity-live-check.md`: "Checks: PASS" and "Overall: PASS for the feature under test". Its cleanup line says PARTIAL against the literal wording (the one answered question cannot be deleted through the API, so the sandbox data directory was removed instead); that deviation is recorded in that report. |
 | The parity issue file records an issue number | PASS | `docs/plans/parity-issues/operator-question-clarity.md` records `dmz006/datawatch-app#309`, open, filed 2026-10-30. |
-| The CHANGELOG entry has no tracker identifiers | PASS | The three lines added to `CHANGELOG.md` since the branch point match neither the `BL` nor the letters-and-digits identifier pattern. |
+| The CHANGELOG lines added by this branch have no tracker identifiers | PASS | The three lines added to `CHANGELOG.md` since the branch point (`git diff $(git merge-base HEAD main) HEAD -- CHANGELOG.md`) match neither the `BL` nor the letters-and-digits identifier pattern. This covers only the added lines, not the whole file. |
+| The whole CHANGELOG has no tracker identifiers | FAIL (pre-existing) | `CHANGELOG.md` line 22, in the Unreleased feature entry, starts `**Monitoring (B7):**`, a letters-and-digits identifier. It is already present at the branch point (three occurrences of `Monitoring (B7)` in `CHANGELOG.md` there, none in this branch's added lines), so it came from an earlier release on main, not from this branch. It was not edited, as the operator note says. The identifier check in `.datawatch/verify/qc-docs-tracker.sh` uses `\bB[0-9]{2,3}\b`, which does not match a single-digit id such as `B7`, so that script cannot see it either. |
 | The `Version` variables are unchanged by this branch (compared with the branch point, `git merge-base HEAD main`) | PASS | `internal/server/api.go` and `cmd/datawatch/main.go` both hold `9.42.2` at the branch point and at the branch head; `git diff` between the two shows no `Version` line changed. |
 | The `Version` variables are unchanged against main (compared with the tip of `main`) | FAIL | The tip of `main` holds `9.44.3` in both files and this branch holds `9.42.2`, so a direct comparison with main differs. The difference is main's own later bumps, not an edit on this branch; the task bars editing the variables here, so it was left. The task's wording does not say which comparison it means, so both are listed and the stricter one is recorded as FAIL. |
 
