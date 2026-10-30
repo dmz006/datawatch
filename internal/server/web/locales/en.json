@@ -2807,6 +2807,8 @@
   "automation_questions_answer_id_line": "Question %1$s",
   "automation_questions_answer_text_label": "Your answer in your own words",
   "automation_questions_answer_text_help": "Optional when you pick an option. Whatever you type is saved exactly as written, with your choice, as the record of your decision, and the asker reads it as your answer.",
+  "automation_questions_context_label": "This question is about: %1$s",
+  "automation_questions_context_open": "Open",
   "automation_questions_answer_rec_line": "The asker recommends %1$s because: %2$s",
   "automation_questions_answer_rec_line_no_rationale": "The asker recommends %1$s.",
   "automation_questions_answer_default_line": "If nobody answers, %1$s is used.",

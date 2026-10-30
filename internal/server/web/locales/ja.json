@@ -2807,6 +2807,8 @@
   "automation_questions_answer_id_line": "質問 %1$s",
   "automation_questions_answer_text_label": "ご自身の言葉での回答",
   "automation_questions_answer_text_help": "選択肢を選ぶ場合は省略できます。入力した内容は、選択とともに、あなたの決定の記録として書いたとおりに保存され、質問した側はそれをあなたの回答として読みます。",
+  "automation_questions_context_label": "This question is about: %1$s",
+  "automation_questions_context_open": "Open",
   "automation_questions_answer_rec_line": "質問した側は %1$s を推奨しています。理由: %2$s",
   "automation_questions_answer_rec_line_no_rationale": "質問した側は %1$s を推奨しています。",
   "automation_questions_answer_default_line": "誰も回答しない場合は %1$s が使われます。",

@@ -28537,6 +28537,60 @@ function _questionAnswerSubmit(id, currentAnswerId, chosenOptionId, quote) {
 }
 window._questionAnswerSubmit = _questionAnswerSubmit;
 
+// _questionContextSafeViewerURL gives the viewer link back only when it is a
+// same-origin relative link: it starts with a single slash and carries no
+// backslash, whitespace or control characters. Anything else is '' and the
+// caller shows no link; a link is never built from raw text.
+function _questionContextSafeViewerURL(url) {
+  if (typeof url !== 'string' || url === '') return '';
+  if (url.charAt(0) !== '/' || url.charAt(1) === '/') return '';
+  if (/[\\\s\u0000-\u001f\u007f]/.test(url)) return '';
+  return url;
+}
+window._questionContextSafeViewerURL = _questionContextSafeViewerURL;
+
+// window.questionContextOpenAutomaton opens the Automaton a question is about:
+// it closes the answer dialog, then uses the Automata open-by-id helper.
+window.questionContextOpenAutomaton = function(id) {
+  const modal = document.getElementById('genericModal');
+  if (modal && modal.remove) modal.remove();
+  if (typeof window.openAutomationMemberPRD === 'function') window.openAutomationMemberPRD(String(id));
+};
+
+// _questionContextHTML is the "This question is about" line under the
+// question text, built from the context_ref the question read carries. The
+// none kind (or no context_ref) gives ''. A proposal or document gets an
+// open link into the documents viewer in a new tab when its viewer_url is a
+// safe relative link; an Automaton gets an open button on the Automata
+// helper; a task or registry row shows its title with its kind (and the id
+// when it differs) as text. Every value goes through escHtml.
+function _questionContextHTML(ref) {
+  if (!ref || typeof ref !== 'object') return '';
+  const kind = String(ref.kind == null ? '' : ref.kind);
+  if (!kind || kind === 'none') return '';
+  const id = String(ref.id == null ? '' : ref.id);
+  const baseTitle = String(ref.title == null || ref.title === '' ? (ref.doc_path || id) : ref.title);
+  const kindKey = kind === 'automaton' ? 'automation_kind_prd'
+    : kind === 'task' ? 'status_automaton_task'
+    : kind === 'registry_row' ? 'overlap_warning_registry' : '';
+  let title = baseTitle;
+  if (kindKey) {
+    title = t(kindKey) + ' ' + baseTitle;
+    if (id && id !== baseTitle) title += ' (' + id + ')';
+  }
+  let control = '';
+  const openLabel = escHtml(t('automation_questions_context_open'));
+  if (kind === 'proposal') {
+    const href = _questionContextSafeViewerURL(ref.viewer_url);
+    if (href) control = `<a class="question-context-open" href="${escHtml(href)}" target="_blank" rel="noopener noreferrer" style="margin-left:8px;color:var(--accent);">${openLabel}</a>`;
+  } else if (kind === 'automaton' && id && typeof window.openAutomationMemberPRD === 'function') {
+    control = `<button type="button" class="btn-secondary question-context-open" style="margin-left:8px;font-size:11px;padding:2px 10px;" onclick="window.questionContextOpenAutomaton(${escHtml(JSON.stringify(id))})">${openLabel}</button>`;
+  }
+  return `<div class="question-answer-context" style="margin-top:6px;font-size:12px;color:var(--text2);overflow-wrap:anywhere;">`
+    + `<span class="question-context-label">${escHtml(t('automation_questions_context_label', [title]))}</span>${control}</div>`;
+}
+window._questionContextHTML = _questionContextHTML;
+
 // _questionAnswerBodyHTML is the dialog body: the id line under the title,
 // question text, options as radios with a visible trade-off line, the
 // recommendation and default in plain sentences, the free-text box with its
@@ -28552,6 +28606,7 @@ function _questionAnswerBodyHTML(q, answer) {
     html += `<div class="question-answer-id-line" style="margin:-8px 0 8px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('automation_questions_answer_id_line', [qid]))}</div>`;
   }
   html += `<div class="question-answer-text" style="font-size:13px;color:var(--text);overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(q.text || '')}</div>`;
+  html += _questionContextHTML(q.context_ref);
   if (options.length) {
     html += '<div class="question-answer-options" style="margin-top:10px;">';
     options.forEach(o => {

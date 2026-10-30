@@ -2807,6 +2807,8 @@
   "automation_questions_answer_id_line": "Question n° %1$s",
   "automation_questions_answer_text_label": "Votre réponse avec vos propres mots",
   "automation_questions_answer_text_help": "Facultatif si vous choisissez une option. Ce que vous saisissez est enregistré exactement tel que vous l’avez écrit, avec votre choix, comme trace de votre décision, et l’auteur de la question le lit comme votre réponse.",
+  "automation_questions_context_label": "This question is about: %1$s",
+  "automation_questions_context_open": "Open",
   "automation_questions_answer_rec_line": "L’auteur de la question recommande %1$s parce que : %2$s",
   "automation_questions_answer_rec_line_no_rationale": "L’auteur de la question recommande %1$s.",
   "automation_questions_answer_default_line": "Si personne ne répond, %1$s est utilisé.",
