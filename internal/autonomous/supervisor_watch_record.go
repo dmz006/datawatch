@@ -198,6 +198,11 @@ type SupervisorWatchStore struct {
 	mu       sync.Mutex
 	dir      string
 	findings map[string]*SupervisorWatchFinding // keyed by SupervisorWatchKey
+	// Comparability (supervisor_watch_compare.go): the comparison
+	// history and per-day agreement summary, guarded by compareMu.
+	compareMu   sync.Mutex
+	comparisons []SupervisorWatchComparison
+	compareDays map[string]supervisorWatchDayAgreement
 	// persistMu serializes file writes so concurrent persist calls don't
 	// interleave on the same file.
 	persistMu sync.Mutex
@@ -205,15 +210,20 @@ type SupervisorWatchStore struct {
 
 // NewSupervisorWatchStore opens (or creates) supervisor_watch.jsonl
 // under dir — the already-created <data_dir>/autonomous/ directory. A
-// missing file reads as an empty store.
+// missing file reads as an empty store (same for the comparison
+// history file, supervisor_watch_comparisons.json).
 func NewSupervisorWatchStore(dir string) (*SupervisorWatchStore, error) {
 	s := &SupervisorWatchStore{
-		dir:      dir,
-		findings: map[string]*SupervisorWatchFinding{},
+		dir:         dir,
+		findings:    map[string]*SupervisorWatchFinding{},
+		compareDays: map[string]supervisorWatchDayAgreement{},
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.load(); err != nil {
+		return nil, err
+	}
+	if err := s.loadComparisons(); err != nil {
 		return nil, err
 	}
 	return s, nil

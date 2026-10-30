@@ -238,6 +238,12 @@ func (m *Manager) supervisorWatchPoll(now time.Time, cfg SupervisorWatchConfig) 
 	}
 	prds := m.supervisorWatchPRDs()
 	raw := m.supervisorWatchRawFindings(cfg, prds)
+	// Cross-check this pass's findings against the oracle script's
+	// record file and record the comparison in the same store
+	// (supervisor_watch_compare.go). A missing, stale or unparseable
+	// record file records nothing — "script output unavailable" is not
+	// a disagreement.
+	m.supervisorWatchCompare(cfg, raw, now)
 
 	// The open set before this pass: which findings already had a
 	// record, and whether that record was already resolved.
