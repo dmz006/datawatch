@@ -5448,6 +5448,41 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Ollama not configured}}
 
   /api/questions:
+    get:
+      summary: List operator questions
+      description: |
+        Lists stored questions, filterable by `state`, `context`, `asker` and
+        `text`, newest first up to `limit`. Every row is the stored question
+        plus a computed `context_ref` (see the QuestionContextRef schema); the
+        reference is built for this read and is not part of the stored record.
+        Needs the autonomous read capability and `autonomous.questions.enabled`.
+      operationId: listQuestions
+      tags: [Questions]
+      parameters:
+        - {name: state, in: query, required: false, schema: {type: string, enum: [open, answered, withdrawn, expired, all]}}
+        - {name: context, in: query, required: false, schema: {type: string, enum: [none, prd, task, proposal, registry_row, all]}}
+        - {name: asker, in: query, required: false, schema: {type: string}}
+        - {name: text, in: query, required: false, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1}}
+      responses:
+        "200":
+          description: The matching questions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {type: integer}
+                  questions:
+                    type: array
+                    items:
+                      type: object
+                      description: The stored question fields, plus the computed context_ref.
+                      properties:
+                        context_ref: {$ref: "#/components/schemas/QuestionContextRef"}
+        "400": {description: Unknown state or context filter, or a bad limit, content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: Missing the autonomous read capability, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Operator questions are disabled or not available, content: {"text/plain": {schema: {type: string}}}}
     post:
       summary: Raise an operator question
       description: |
@@ -5568,6 +5603,52 @@ paths:
         "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
         "503": {description: Operator questions are disabled, content: {"text/plain": {schema: {type: string}}}}
 
+  /api/questions/{id}:
+    get:
+      summary: One operator question with its answer metadata
+      description: |
+        The question, the number of answers ever recorded, the id of the
+        currently effective answer and that answer's summary (`answer` is null
+        until the question is answered). The `question` object is the stored
+        record plus a computed `context_ref`: the kind of context the question
+        was raised in, a title, the id, and for a proposal the
+        repository-relative `doc_path` and the in-app documents viewer link in
+        `viewer_url`. The reference is built for this read and is not part of
+        the stored record. Needs the autonomous read capability and
+        `autonomous.questions.enabled`.
+      operationId: getQuestion
+      tags: [Questions]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: The question and its answer metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  question:
+                    type: object
+                    description: The stored question fields, plus the computed context_ref.
+                    properties:
+                      context_ref: {$ref: "#/components/schemas/QuestionContextRef"}
+                  answer_count: {type: integer}
+                  current_answer_id: {type: string}
+                  answer:
+                    type: object
+                    nullable: true
+                    properties:
+                      id: {type: string}
+                      chosen_option_id: {type: string}
+                      quote: {type: string}
+                      actor: {type: string}
+                      surface: {type: string}
+                      created_at: {type: string, format: date-time}
+        "403": {description: Missing the autonomous read capability, content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: Unknown question, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Operator questions are disabled or not available, content: {"text/plain": {schema: {type: string}}}}
+
   /api/questions/stats:
     get:
       summary: Worker question marker counters
@@ -5630,6 +5711,17 @@ components:
             example: "unauthorized"
 
   schemas:
+    QuestionContextRef:
+      type: object
+      description: |
+        Where a question was raised, computed on every read from the stored
+        context links. Never stored on the question record.
+      properties:
+        kind: {type: string, enum: [proposal, automaton, task, registry_row, none], description: "none when the question has no context or its link is missing"}
+        title: {type: string, description: "A proposal's file name; an Automaton's or task's stored name when it can be resolved and its id otherwise; a registry row's key"}
+        id: {type: string, description: "The Automaton id, task id or registry row key; empty for a proposal or no context"}
+        doc_path: {type: string, description: "A proposal's repository-relative path; empty when the stored path is not repository-relative"}
+        viewer_url: {type: string, description: "The in-app documents viewer link for a proposal that is a markdown file inside the served docs tree (for example /diagrams.html#docs/plans/plan.md); empty for any other path"}
     LaneFillStatus:
       type: object
       description: The lane fill status, as GET /api/autonomous/lane-fill returns it.

@@ -560,12 +560,14 @@ func (s *Server) handleQuestionList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	questions := s.questionStore.List(filter)
-	if questions == nil {
-		questions = []autonomous.Question{}
+	lk := s.questionContextRefLookup()
+	rows := make([]questionWithContextRef, 0, len(questions))
+	for _, q := range questions {
+		rows = append(rows, s.withContextRef(q, lk))
 	}
 	writeJSONOK(w, map[string]any{
-		"count":     len(questions),
-		"questions": questions,
+		"count":     len(rows),
+		"questions": rows,
 	})
 }
 
@@ -592,8 +594,10 @@ type polledAnswerSummary struct {
 // superseded ones — they are decided, never deleted), the currently
 // effective answer's id, and its summary (id, chosen option, verbatim
 // quote, actor, surface, created_at); a question with no answer yet
-// carries "answer": null. The full answer log is its own read: GET the
-// question's answers path.
+// carries "answer": null. The question also carries a computed context_ref
+// (the kind, title, id and document link of its context); it is built for
+// this read and is not part of the stored record. The full answer log is its
+// own read: GET the question's answers path.
 func (s *Server) handleQuestionGet(w http.ResponseWriter, r *http.Request, id string) {
 	id = strings.TrimSpace(id)
 	q, ok := s.questionStore.Get(id)
@@ -618,7 +622,7 @@ func (s *Server) handleQuestionGet(w http.ResponseWriter, r *http.Request, id st
 	}
 
 	writeJSONOK(w, map[string]any{
-		"question":          q,
+		"question":          s.withContextRef(q, s.questionContextRefLookup()),
 		"answer_count":      count,
 		"current_answer_id": currentID,
 		"answer":            summary,
