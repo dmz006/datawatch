@@ -1001,6 +1001,81 @@ Restart a session from any state (running, waiting_input, complete, failed, or k
 Restarted session myhost-a3f2 (state: running)
 ```
 
+### Operator question channel (v9.34.0)
+
+The operator-question tools let a client that cannot subscribe to the
+lifecycle events poll, raise and answer an operator question on this
+daemon — the remote-client counterpart to the CLI, the comm verbs and
+the PWA automation queue. They proxy the `/api/questions` REST
+surface one-for-one, and they need the `autonomous:write`
+(`question_raise`, `question_answer`, `question_withdraw`) or
+`autonomous:read` (`question_list`, `question_get`) capability when
+called by a federated peer.
+
+| Tool | What it does | Rest call |
+|---|---|---|
+| `question_raise` | Raise an operator question to the operator of this daemon (an automation blocked on a decision gets its answer back through its return path) | `POST /api/questions` |
+| `question_list` | List the daemon's stored operator questions, optionally filtered, for a client that cannot subscribe to poll | `GET /api/questions` |
+| `question_get` | Return one stored operator question by id, plus its current answer — the default return path for the asker | `GET /api/questions/{id}` |
+| `question_answer` | Record an answer to a stored operator question; the answer is immutable, a changed mind supersedes | `POST /api/questions/{id}/answer` |
+| `question_withdraw` | Withdraw an open operator question (marked withdrawn, can no longer be answered) | `POST /api/questions/{id}/withdraw` |
+
+**Common behaviour.** While the `autonomous.questions.enabled`
+switch is off the daemon answers 503 and names the switch.
+`context` takes one of `none`, `prd`, `task`, `proposal` or
+`registry_row`. `question_answer` and `question_withdraw` return
+409 when the question is not answerable (already answered or
+withdrawn) and 404 for unknown ids. `question_answer` refuses
+422 when the answer text looks like a secret — store it in the
+datawatch secrets store and refer to it as `${secret:name}`
+instead.
+
+**`question_raise` parameters:**
+
+| Parameter | Required | Description |
+|---|---|---|
+| `text` | yes | The question itself, one line of what decision is needed |
+| `options` | yes | At least one option: a string (id and label together), a comma-separated string, or a JSON array of `{"id","label","tradeoffs"}` objects; the ids are what `question_answer` passes back |
+| `asker` | no | Who is asking (default: the caller of record) |
+| `context` | no | What the question is about (`none`, `prd`, `task`, `proposal`, `registry_row`) |
+| `prd_id` | no | The Automaton id the question is about, when `context` is `prd` or `task` |
+| `return_path` | no | Also deliver the answer line into the asking session (`DATAWATCH_ANSWER` marker, best-effort; default false) |
+
+**`question_list` parameters:**
+
+| Parameter | Required | Description |
+|---|---|---|
+| `state` | no | Question state filter: `open`, `answered`, `withdrawn`, `expired` or `all` (default `all`) |
+| `context` | no | Context filter: one of the values above, or `all` |
+| `asker` | no | Only questions asked by this asker |
+| `text` | no | Only questions whose text contains this substring |
+| `limit` | no | Maximum questions to return (default 50, capped at 200) |
+
+**`question_get` parameters:** `id` (required) — the question id.
+
+**`question_answer` parameters:**
+
+| Parameter | Required | Description |
+|---|---|---|
+| `id` | yes | The question id to answer |
+| `chosen_option_id` | one with `quote` | The option being chosen: one of the question's option ids |
+| `quote` | one with `chosen_option_id` | The answer in the operator's own words (stored verbatim, capped at 16 KiB) |
+| `supersedes` | no | The id of the answer this answer replaces (a changed mind; `409` if the id is wrong) |
+| `actor` | no | Who is answering (default: the caller of record) |
+
+**`question_withdraw` parameters:**
+
+| Parameter | Required | Description |
+|---|---|---|
+| `id` | yes | The question id to withdraw |
+| `actor` | yes | Who is withdrawing (attribution is required — a withdrawal is named, an answer is not) |
+| `reason` | no | What the operator said when withdrawing |
+
+The full surface — the CLI `datawatch question` group, the comm
+verbs, the PWA automation queue, the answer log and the
+supersession rule — is walked through in
+[`howto/operator-questions-answering.md`](howto/operator-questions-answering.md).
+
 ---
 
 ## Exit Hooks (BL356)

@@ -63,7 +63,7 @@ func (s *Server) toolQuestionRaise() mcpsdk.Tool {
 			mcpsdk.Description("What the question is about: "+questionContextsDesc+". Required by the daemon's store; a value outside the set is a 400 naming the field."),
 		),
 		mcpsdk.WithString("prd_id",
-			mcpsdk.Description("The Automaton (PRD) id the question is about, when context is prd or task."),
+			mcpsdk.Description("The Automaton id the question is about, when context is prd or task."),
 		),
 		mcpsdk.WithString("task_id",
 			mcpsdk.Description("The task id the question is about, when context is task."),

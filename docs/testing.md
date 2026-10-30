@@ -2117,6 +2117,18 @@ Counts: 1 new node test file (9 tests), 7 node test files updated for the new st
 
 ---
 
+## TS-834 — PWA operator-question channel: off, on, withdraw
+
+| Field | Details |
+|-------|---------|
+| **Description** | The Automation view's question card follows `autonomous.questions.enabled`: off shows the disabled text and nothing listed, on lists a raised question and opens it with its options, recommendation and default. The story removes the question it raised by withdrawing it; an answer would be a decision of record and the store has no delete. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR bash scripts/e2e-pwa.sh TS-834`. 1. Set `autonomous.questions.enabled` to false through `PUT /api/config`, open the Automation view, read the disabled text, and check `POST /api/questions` and `GET /api/questions` answer 503. 2. Set it to true and raise one question through `POST /api/questions` (run-unique text, two options, a recommendation, a default, label `information`). 3. Check the queue card lists it within the timeout, open it and read the options, the recommendation and the default. 4. Withdraw it through `POST /api/questions/{id}/withdraw`. 5. Check the history shows it as withdrawn and the open queue no longer lists it. Finally restore `autonomous.questions.enabled` to the value found at the start. |
+| **Expected** | Step 1: disabled text shown, nothing listed, both calls answer 503. Step 2: the raise succeeds. Step 3: the row appears and the dialog shows two option radios, the recommendation with its rationale and the default. Steps 4–5: the history row is flagged withdrawn and the open queue is empty of it. The daemon ends with the original switch value. |
+| **Actual** | Run live on 2026-10-29 against an isolated sandbox daemon built from this branch (`go build -o bin/datawatch ./cmd/datawatch/`), headless Chromium, exit 0 (1 of 1 story passed), twice; every step passed. |
+| **Result** | Pass (live) |
+
+---
+
 ## CodeQL alerts on the MCP debug transport and dictation ids
 
 Two code-scanning alerts were fixed on one branch (the third, the subprocess shell alert, was dismissed by the operator's decision and has no code change; see the plan). Each fix has its own test description, steps, expected result and actual result. The sandbox daemon in every "Steps" list is loopback only with its data under a gitignored directory, never the production daemon on `8443`. Plan and decisions: [2026-10-28-codeql-last-three-alerts.md](plans/2026-10-28-codeql-last-three-alerts.md).
