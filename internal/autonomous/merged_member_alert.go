@@ -9,7 +9,7 @@ import "fmt"
 // mergedMemberAlert is what the alert names: the member, its branch, the
 // default branch it was proved merged into and the proving commit.
 type mergedMemberAlert struct {
-	automationID, member, branch, base, commit string
+	member, branch, base, commit string
 }
 
 // MergedMemberAlertTitle is the title of the merged-member advance alert.
