@@ -2792,6 +2792,8 @@
   "automation_questions_high": "Hoch",
   "automation_questions_age": "gestellt vor %1$s",
   "automation_questions_open": "Beantworten",
+  "automation_questions_show_more": "Show more",
+  "automation_questions_show_less": "Show less",
   "automation_questions_empty": "Keine offenen Fragen",
   "automation_questions_disabled": "Operatorfragen sind derzeit deaktiviert: der Fragen-Schalter ist aus.",
   "automation_questions_failed": "Offene Fragen fehlgeschlagen: %1$s",

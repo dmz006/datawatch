@@ -2792,6 +2792,8 @@
   "automation_questions_high": "Haute",
   "automation_questions_age": "il y a %1$s",
   "automation_questions_open": "Répondre",
+  "automation_questions_show_more": "Show more",
+  "automation_questions_show_less": "Show less",
   "automation_questions_empty": "Aucune question ouverte",
   "automation_questions_disabled": "Les questions opérateur sont actuellement désactivées : le commutateur des questions est hors.",
   "automation_questions_failed": "Échec du chargement des questions ouvertes : %1$s",

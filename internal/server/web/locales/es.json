@@ -2792,6 +2792,8 @@
   "automation_questions_high": "Alta",
   "automation_questions_age": "hace %1$s",
   "automation_questions_open": "Responder",
+  "automation_questions_show_more": "Show more",
+  "automation_questions_show_less": "Show less",
   "automation_questions_empty": "No hay preguntas abiertas",
   "automation_questions_disabled": "Las preguntas del operador están desactivadas: el conmutador de preguntas está desactivado.",
   "automation_questions_failed": "Fallo al cargar las preguntas abiertas: %1$s",

@@ -28132,6 +28132,7 @@ const _AUTOMATION_SUBTABS = [
       </div>`;
     },
     mount() {
+      _automationQuestionsLoadQuality();
       listLoaderAll([_automationLoader(), _automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader()]);
     },
     stop() { _automationStopLoaders(['automation', 'automation_triage', 'automation_security_failure', 'automation_questions']); },
@@ -28312,7 +28313,7 @@ function _automationSecurityFailureLoader() {
 // POSTs. A row button hands off to window.openQuestion(id), which the answer
 // form task writes; the inline call is guarded so the card still works while
 // that function is absent.
-const _automationQuestionsState = { searchText: '', history: false, historyList: [] };
+const _automationQuestionsState = { searchText: '', history: false, historyList: [], previewLines: 3, expanded: {}, qualityAt: 0 };
 // Exposed so tests and the history toggle can inspect/flip the mode without
 // re-rendering the whole card.
 window._automationQuestionsState = _automationQuestionsState;
@@ -28362,6 +28363,31 @@ function _automationQuestionsListFetch(opts) {
   return one('state=open&limit=50' + textQ);
 }
 
+// _automationQuestionsLoadQuality reads queue_preview_lines from
+// GET /api/questions/quality when the Automation view mounts, at most once a
+// minute and off the list request's path: the card keeps the last good value
+// (default 3) when the read fails, the route 503s or the value is not a whole
+// number of at least 1.
+function _automationQuestionsLoadQuality() {
+  const nowMs = Date.now();
+  if (nowMs - _automationQuestionsState.qualityAt < 60000) return;
+  _automationQuestionsState.qualityAt = nowMs;
+  try {
+    const token = localStorage.getItem('cs_token') || '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const srv = state.activeServer;
+    const isRemote = srv && srv !== 'local' && srv !== 'all';
+    const path = '/api/questions/quality';
+    Promise.resolve(fetch(isRemote ? '/api/proxy/' + encodeURIComponent(srv) + path : path, { method: 'GET', headers }))
+      .then(r => (r && r.ok && typeof r.json === 'function') ? r.json() : null)
+      .then(body => {
+        const n = body && Number(body.queue_preview_lines);
+        if (n >= 1 && Math.floor(n) === n) _automationQuestionsState.previewLines = n;
+      }).catch(() => {});
+  } catch (e) { /* keep the previous value */ }
+}
+
 // _automationQuestionsAgeText is a compact age label (s/m/h/d) from the
 // question's created_at; a zero or invalid created_at gives an empty label.
 function _automationQuestionsAgeText(q) {
@@ -28377,10 +28403,35 @@ function _automationQuestionsAgeText(q) {
   return Math.floor(h / 24) + 'd';
 }
 
-// _automationQuestionsRowHtml draws one row: the question id, its label (when
-// set), the visible high-priority marker, the escaped question text, the asker
-// and the age, and the hand-off button. Rows keep the route's order — the
-// card never reorders on the client.
+// _automationQuestionsPreview splits a question text for the queue row: the
+// first N lines when it has more, and whether the row is long enough to need
+// the Show more control. A line counts as ~80 characters wide, so one long
+// unbroken paragraph is clipped too (the collapsed block also carries a CSS
+// line clamp of N lines).
+function _automationQuestionsPreview(text, n) {
+  const lines = String(text).split('\n');
+  let visual = 0;
+  lines.forEach(l => { visual += Math.max(1, Math.ceil(l.length / 80)); });
+  const clipped = lines.length > n || visual > n;
+  return { clipped, preview: lines.length > n ? lines.slice(0, n).join('\n') : String(text) };
+}
+
+// toggleAutomationQuestionPreview flips one row between the clipped preview and
+// the full text. The state is keyed by question id, so the card's periodic
+// refresh keeps the row expanded; the repaint reuses the loaded list.
+function toggleAutomationQuestionPreview(id) {
+  const ex = _automationQuestionsState.expanded;
+  if (ex[id]) delete ex[id]; else ex[id] = true;
+  const ctl = window._listLoaders && window._listLoaders.automation_questions;
+  if (ctl && typeof ctl.paint === 'function') ctl.paint();
+}
+window.toggleAutomationQuestionPreview = toggleAutomationQuestionPreview;
+
+// _automationQuestionsRowHtml draws one row: the label (when set) first, the
+// question id as smaller secondary text, the visible high-priority marker, the
+// escaped question text clipped to the first queue_preview_lines lines with a
+// Show more / Show less control, the asker and the age, and the hand-off
+// button. Rows keep the route's order — the card never reorders on the client.
 function _automationQuestionsRowHtml(q) {
   const id = String(q.id == null ? '' : q.id);
   const high = q.priority === 'high'
@@ -28388,13 +28439,27 @@ function _automationQuestionsRowHtml(q) {
     : '';
   const age = _automationQuestionsAgeText(q);
   const ageHtml = age ? escHtml(t('automation_questions_age', [age])) : '';
+  const n = _automationQuestionsState.previewLines >= 1 ? _automationQuestionsState.previewLines : 3;
+  const expanded = !!_automationQuestionsState.expanded[id];
+  let textHtml = '';
+  if (q.text) {
+    const pv = _automationQuestionsPreview(q.text, n);
+    const open = expanded || !pv.clipped;
+    const shown = open ? String(q.text) : pv.preview;
+    const clamp = open ? '' : `display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:${n};overflow:hidden;`;
+    textHtml = `<div class="questions-text" style="font-size:12px;color:var(--text);overflow-wrap:anywhere;white-space:pre-wrap;${clamp}">${escHtml(shown)}</div>` +
+      (pv.clipped
+        ? `<button type="button" class="btn-secondary questions-show-more" aria-expanded="${expanded ? 'true' : 'false'}" style="font-size:11px;padding:1px 8px;align-self:flex-start;" onclick="if (typeof window.toggleAutomationQuestionPreview === 'function') window.toggleAutomationQuestionPreview('${escHtml(id)}')">${escHtml(t(expanded ? 'automation_questions_show_less' : 'automation_questions_show_more'))}</button>`
+        : '');
+  }
+  const idStyle = q.label ? 'font-size:11px;color:var(--text2);' : 'font-weight:600;font-size:12px;';
   return `<div class="questions-queue-row" data-question-id="${escHtml(id)}" style="border-top:1px solid var(--border);padding:8px 2px;display:flex;flex-direction:column;gap:4px;">` +
     `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
-      `<span class="questions-id" style="font-weight:600;font-size:12px;">${escHtml(id)}</span>` +
-      (q.label ? `<span class="questions-label" style="font-size:12px;color:var(--text);">${escHtml(q.label)}</span>` : '') +
+      (q.label ? `<span class="questions-label" style="font-weight:600;font-size:12px;color:var(--text);">${escHtml(q.label)}</span>` : '') +
+      `<span class="questions-id" style="${idStyle}">${escHtml(id)}</span>` +
       high +
     `</div>` +
-    (q.text ? `<div class="questions-text" style="font-size:12px;color:var(--text);overflow-wrap:anywhere;">${escHtml(q.text)}</div>` : '') +
+    textHtml +
     `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
       `<span class="questions-meta" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_questions_by'))} ${escHtml(q.asked_by || '')}${ageHtml ? ' · ' + ageHtml : ''}</span>` +
       `<button type="button" class="btn-secondary questions-open-btn" style="font-size:11px;padding:3px 10px;margin-left:auto;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escHtml(id)}')">${escHtml(t('automation_questions_open'))}</button>` +
