@@ -1,19 +1,18 @@
-# Advanced CodeQL setup. Replaces the repository default setup, which must be
-# disabled in Settings > Code security before this workflow can upload
-# (the two cannot both upload the same category).
+# CodeQL alert gate. The analysis itself is done by GitHub default setup
+# (Settings > Code security), which stays enabled. This workflow uploads
+# nothing.
 #
-#   - analyze (BLOCKING) — one job per language, each with a unique category
-#     and `upload: always` so results reach code scanning even when the
-#     queries report findings.
-#   - alert-gate (BLOCKING) — after every upload has been processed, lists
-#     open alerts at severity high or critical for this ref and fails with the
-#     counts. Only alerts in state "open" count, so any alert dismissed in
-#     code scanning is excluded. The gate does not read
-#     security/accepted-risks.yml; that registry documents the reason for each
-#     dismissal, which the operator applies in GitHub.
+#   - On push and pull_request it first waits until default setup has uploaded
+#     its analyses for this commit, so the gate never reads the alerts of the
+#     previous commit.
+#   - alert-gate (BLOCKING) — lists open alerts at severity high or critical
+#     for this ref and fails with the counts. Only alerts in state "open"
+#     count, so any alert dismissed in code scanning is excluded. The gate does
+#     not read security/accepted-risks.yml; that registry documents the reason
+#     for each dismissal, which the operator applies in GitHub.
 #
-# Concurrency is keyed on the ref so two runs on the same commit cannot upload
-# the same category at once.
+# Concurrency is keyed on the ref so a newer run replaces an older one on the
+# same ref.
 name: CodeQL
 
 on:
@@ -33,58 +32,48 @@ permissions:
   contents: read
 
 jobs:
-  analyze:
-    name: Analyze (${{ matrix.language }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      security-events: write
-      contents: read
-      actions: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - language: go
-            build-mode: autobuild
-          - language: javascript-typescript
-            build-mode: none
-          - language: actions
-            build-mode: none
-          - language: python
-            build-mode: none
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        if: matrix.language == 'go'
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
-
-      - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: "/language:${{ matrix.language }}"
-          upload: always
-
   alert-gate:
     name: Open high/critical alerts
-    needs: analyze
-    if: always() && needs.analyze.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 40
     permissions:
       security-events: read
       contents: read
     steps:
+      - name: Wait for the default setup analyses
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          EXPECTED_CATEGORIES: "/language:actions /language:go /language:javascript-typescript /language:python"
+        run: |
+          set -euo pipefail
+          interval="${WAIT_INTERVAL_SECONDS:-30}"
+          max="${WAIT_MAX_SECONDS:-1500}"
+          waited=0
+          while true; do
+            have=$(gh api "repos/${REPO}/code-scanning/analyses?ref=${REF}&sha=${SHA}&per_page=100" --jq '.[].category')
+            missing=""
+            for c in ${EXPECTED_CATEGORIES}; do
+              if ! printf "%s\n" "$have" | grep -qxF -- "$c"; then
+                missing="${missing:+${missing} }${c}"
+              fi
+            done
+            if [ -z "$missing" ]; then
+              echo "All default setup analyses are present for ${SHA} on ${REF}."
+              exit 0
+            fi
+            if [ "$waited" -ge "$max" ]; then
+              echo "::error title=Default setup analysis missing::No analysis for ${missing} on ${REF} at ${SHA} after ${waited}s."
+              exit 1
+            fi
+            echo "Waiting for: ${missing} (${waited}s of ${max}s)"
+            sleep "$interval"
+            waited=$((waited + interval))
+          done
+
       - name: Fail on open high or critical alerts
         env:
           GH_TOKEN: ${{ github.token }}
