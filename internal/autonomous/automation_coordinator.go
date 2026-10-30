@@ -288,6 +288,9 @@ func (c *Coordinator) onMemberTerminal(ev LifecycleEvent) {
 	if !ok {
 		return // a wait status: the member is still in progress
 	}
+	if status == PRDCancelled || status == PRDCompleted {
+		end = c.mergedMemberEnd(prd, status, end)
+	}
 	if status == PRDFailed && !c.Ready() {
 		c.mu.Lock()
 		c.deferred[ev.PRDID] = struct{}{}

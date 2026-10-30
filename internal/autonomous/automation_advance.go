@@ -25,13 +25,14 @@ var errStaleStep = errors.New("automation step: member is not a live cursor")
 
 // endOutcome is one member's terminal result, normalised for the step rules.
 type endOutcome struct {
-	edge      string       // outcome edge a linear or nested member follows
-	memStatus MemberStatus // member status recorded on finish
-	outcome   string       // PRD or child Automation status observed
-	success   bool         // join rule: only a completed branch is a success
-	direct    string       // non-empty: the Automation blocks with this reason, no edge is followed
-	revert    bool         // PRD reverted to approved: counts only while the member is running
-	note      string       // branch decision text (a start error names its cause)
+	edge      string            // outcome edge a linear or nested member follows
+	memStatus MemberStatus      // member status recorded on finish
+	outcome   string            // PRD or child Automation status observed
+	success   bool              // join rule: only a completed branch is a success
+	direct    string            // non-empty: the Automation blocks with this reason, no edge is followed
+	revert    bool              // PRD reverted to approved: counts only while the member is running
+	note      string            // branch decision text (a start error names its cause)
+	merged    *mergedMemberNote // set when the merged-member proof decided this end
 }
 
 // prdEnd maps a PRD status onto a member's end. ok is false for the wait
@@ -166,6 +167,14 @@ func step(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects
 		return nil, errStaleStep
 	}
 	st := &stepper{a: a, snap: snap, eff: &stepEffects{details: map[string]any{}}, now: in.at(), breachChoice: in.breachChoice}
+	if n := in.end.merged; n != nil {
+		st.decision(decisionMergedMember, n.note)
+		st.audit("automation_merged_member", map[string]any{
+			"automation_id": a.ID, "member": mem.ID, "prd_id": n.prdID, "branch": n.branch,
+			"default_branch": n.base, "commit": n.commit, "policy": n.policy,
+			"merged": n.merged, "actor": coordinatorActor,
+		})
+	}
 	if join := joinOf(a, mem.ID); join != nil {
 		// A fork branch carries no outcome edge: its end is recorded on the join.
 		end := in.end
