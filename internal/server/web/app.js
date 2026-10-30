@@ -16449,6 +16449,12 @@ const GENERAL_CONFIG_FIELDS = [
     // Merge pending — off (default) does nothing, shadow records what it would do, on raises the alert.
     { key: 'autonomous.automation.merge_pending_mode', label: 'Automaton merge-pending check (off, shadow or on; default off)', labelKey: 'settings_automation_merge_pending_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'off' },
     { key: 'autonomous.automation.merge_pending_alert_minutes', label: 'Automaton merge-pending alert (minutes a finished Automaton branch may sit unmerged before an alert, 0 = off, default 30)', labelKey: 'settings_automation_merge_pending_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
+    // Cleanup — off does nothing, report (default) records what it would remove, on removes. The
+    // status card in the Automata overview reads GET /api/autonomous/cleanup.
+    { key: 'autonomous.automation.cleanup_mode', label: 'Automaton cleanup (off, report or on; default report)', labelKey: 'settings_automation_cleanup_mode', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
+    { key: 'autonomous.automation.cleanup_retention_hours', label: 'Automaton cleanup retention (hours a finished Automaton worktree is kept before cleanup, whole number, default 24)', labelKey: 'settings_automation_cleanup_retention_hours', type: 'number', placeholder: '24', min: 1, step: 1, default: '24' },
+    { key: 'autonomous.automation.cleanup_max_removals_per_pass', label: 'Automaton cleanup limit (most Automaton entries removed in one pass, whole number, default 10)', labelKey: 'settings_automation_cleanup_max_removals_per_pass', type: 'number', placeholder: '10', min: 1, step: 1, default: '10' },
+    { key: 'autonomous.automation.disk_alert_percent', label: 'Automata disk alert (percent of the disk in use that raises an alert, 1-100, default 85)', labelKey: 'settings_automation_disk_alert_percent', type: 'number', placeholder: '85', min: 1, max: 100, step: 1, default: '85' },
     // Repo CI watch (autonomous.automation.repo_ci_watch.*) — the
     // read-only status line in the Automaton view reads
     // GET /api/autonomous/repo-ci-watch; these settings configure the
@@ -25724,6 +25730,70 @@ window.safeDeleteCardHtml = function(report) {
     _safeDeleteSection(t('safe_delete_held_heading', [held.length]), heldRows, t('safe_delete_held_empty')) + `</div>`;
 };
 
+// ── Automata cleanup status card ─────────────────────────────────────────────
+// cleanupCardHtml(status) draws the body of GET /api/autonomous/cleanup:
+// { worktrees, temp: {mode, last_run, removed, would_remove, skipped, failed,
+// bytes_freed, last_error, owner_removed, net_removed, ...}, disk_alert_percent,
+// worktree_disk, temp_disk: {path, percent, alert}, disk_alert,
+// last_disk_alert_at }. It is read-only: the mode and limits are changed in the
+// Automata settings. A missing or malformed body reads as a status that has
+// never run. Every value is escaped; the loader owns the loading and failed
+// states.
+function _cleanupBytesT(n) {
+  const v = Number(n);
+  return (isFinite(v) && v > 0) ? fmtBytesCompact(v) : '0 B';
+}
+function _cleanupLine(text, style) {
+  return `<div style="${style || 'color:var(--text2);'}overflow-wrap:anywhere;">${escHtml(text)}</div>`;
+}
+function _cleanupPassHtml(title, pass) {
+  const p = (pass && typeof pass === 'object') ? pass : {};
+  const n = k => Number(p[k]) || 0;
+  const ran = _triageTime(p.last_run);
+  const lines = [
+    _cleanupLine(t('cleanup_mode_line', [String(p.mode || '')])),
+    _cleanupLine(ran ? t('cleanup_last_run', [ran]) : t('cleanup_never_run')),
+  ];
+  if (ran) {
+    lines.push(
+      _cleanupLine(t('cleanup_counts', [n('removed'), n('would_remove'), n('skipped'), n('failed')])),
+      _cleanupLine(t('cleanup_bytes_freed', [_cleanupBytesT(p.bytes_freed)])),
+    );
+  }
+  lines.push(_cleanupLine(t('cleanup_split', [n('owner_removed'), n('net_removed')])));
+  lines.push(p.last_error
+    ? _cleanupLine(t('cleanup_last_error', [String(p.last_error)]), 'color:var(--error,#c00);')
+    : _cleanupLine(t('cleanup_error_none')));
+  return `<div style="margin-top:8px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(title)}</div>` +
+    `<div class="cleanup-pass" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">${lines.join('')}</div>`;
+}
+function _cleanupDiskLine(key, disk) {
+  if (!disk || typeof disk !== 'object') return '';
+  const pct = (typeof disk.percent === 'number' && isFinite(disk.percent)) ? disk.percent + '%' : '';
+  if (!pct) return _cleanupLine(t('cleanup_disk_unreadable', [String(disk.path || '')]));
+  return _cleanupLine(t(key, [String(disk.path || ''), pct]), disk.alert ? 'color:var(--error,#c00);font-weight:600;' : 'color:var(--text2);');
+}
+window.cleanupCardHtml = function(status) {
+  const s = (status && typeof status === 'object') ? status : {};
+  const head = `<div class="cap-title">${escHtml(t('cleanup_card_title'))}</div>`;
+  const note = _cleanupLine(t('cleanup_read_only'));
+  const alerting = s.disk_alert === true;
+  const fired = _triageTime(s.last_disk_alert_at);
+  const badgeText = t(alerting ? 'cleanup_disk_alert_badge' : 'cleanup_disk_ok_badge');
+  const badgeColor = alerting ? 'var(--error,#c00)' : 'var(--success,#2a7a2a)';
+  const badge = `<span class="cleanup-disk-badge cleanup-disk-badge-${alerting ? 'alert' : 'ok'}"${fired ? ` title="${escHtml(t('cleanup_disk_alert_last', [fired]))}"` : ''} style="display:inline-block;padding:1px 8px;border:1px solid ${badgeColor};border-radius:10px;font-size:11px;font-weight:700;color:${badgeColor};">${escHtml(badgeText)}</span>`;
+  const threshold = Number(s.disk_alert_percent) || 0;
+  const disk = _cleanupDiskLine('cleanup_disk_worktrees', s.worktree_disk) + _cleanupDiskLine('cleanup_disk_temp', s.temp_disk);
+  const diskBody = (disk || _cleanupLine(t('cleanup_disk_none'))) +
+    (threshold ? _cleanupLine(t('cleanup_disk_threshold', [threshold + '%'])) : '') +
+    (fired ? _cleanupLine(t('cleanup_disk_alert_last', [fired])) : '');
+  return `<div class="prd-capacity-card cleanup-card" style="min-width:0;">${head}${note}` +
+    _cleanupPassHtml(t('cleanup_pass_worktrees'), s.worktrees) +
+    _cleanupPassHtml(t('cleanup_pass_temp'), s.temp) +
+    `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0;"><span style="font-weight:600;color:var(--text2);">${escHtml(t('cleanup_disk_heading'))}</span>${badge}</div>` +
+    `<div class="cleanup-disk" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">${diskBody}</div></div>`;
+};
+
 // ── Automata progress card ───────────────────────────────────────────────────
 // progressCardHtml(state, opts) is a pure function from the loader state to
 // markup. state: {status: 'loading'|'ok'|'stale'|'failed', data: the
@@ -28093,14 +28163,15 @@ const _AUTOMATION_SUBTABS = [
       <div id="automationUsageCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
       <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+      <div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
     mount() {
-      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationSafeDeleteLoader()]);
+      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader()]);
       // The progress card renders into its slot on this sub-tab; it has no
       // listLoader of its own, so nothing for stop() to end.
       if (typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
     },
-    stop() { _automationStopLoaders(['automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_safe_delete']); },
+    stop() { _automationStopLoaders(['automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_safe_delete', 'automation_cleanup']); },
   },
   {
     id: 'chains',
@@ -28177,7 +28248,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete'];
+  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -28279,6 +28350,19 @@ function _automationSafeDeleteLoader() {
     failedText: msg => t('safe_delete_failed', [msg]),
     active: () => !!document.getElementById('automationSafeDeleteCard'),
     render: report => window.safeDeleteCardHtml(report),
+  });
+}
+
+// _automationCleanupLoader reads the cleanup status on the Overview sub-tab,
+// beside the safe-to-delete report. The status is in memory on the server, so
+// it polls at a modest rate; its failed state is the list loader's banner. The
+// card is read-only and offers no action.
+function _automationCleanupLoader() {
+  return window._listLoaders.automation_cleanup || listLoader({
+    key: 'automation_cleanup', el: 'automationCleanupCard', url: '/api/autonomous/cleanup', pollMs: 30000,
+    failedText: msg => t('cleanup_failed', [msg]),
+    active: () => !!document.getElementById('automationCleanupCard'),
+    render: status => window.cleanupCardHtml(status),
   });
 }
 
