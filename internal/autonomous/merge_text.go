@@ -146,3 +146,9 @@ func RenderSafeToDelete(r SafeDeleteReport) string {
 	b.WriteString("This is a report only: nothing has been deleted.\n")
 	return b.String()
 }
+
+// MergePendingAlertBody is the merge-pending alert body for one record, for
+// the surfaces and tests that must show the alert text exactly as raised.
+func MergePendingAlertBody(rec *TriageRecord, now time.Time) string {
+	return mergePendingAlertBody(rec, now)
+}
