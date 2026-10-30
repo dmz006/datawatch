@@ -60,7 +60,7 @@ type fakeOverlapBranch struct {
 	calls  int
 }
 
-func (f *fakeOverlapBranch) branchCandidates() ([]overlapCandidate, error) {
+func (f *fakeOverlapBranch) branchCandidates(string) ([]overlapCandidate, error) {
 	f.calls++
 	if f.panics {
 		panic("branch source exploded")

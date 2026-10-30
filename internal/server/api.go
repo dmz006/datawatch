@@ -483,6 +483,11 @@ type Server struct {
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
 
+	// overlapSearch runs the search-before-create check on the create route.
+	// Nil uses the autonomous finder over autonomousMgr's Automata; tests
+	// substitute a fake that can fail or panic.
+	overlapSearch overlapCreateSearch
+
 	// tagRegistry is the shared Automata tag registry, wired from main.go
 	// (SetTagRegistry). Nil keeps the tag routes on their local write path.
 	// tagRegistryStart starts its sync loop.

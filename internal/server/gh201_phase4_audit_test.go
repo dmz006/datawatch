@@ -476,6 +476,11 @@ func TestGH201Phase4_Automaton_CreateApproveDelete_Audited(t *testing.T) {
 	}
 	var gotActions []string
 	for i := len(entries) - 1; i >= 0; i-- {
+		// The shadow search-before-create entry is a side record the default
+		// create mode writes; this test covers the create/approve/delete trail.
+		if entries[i].Action == "automaton_create_search" {
+			continue
+		}
 		gotActions = append(gotActions, entries[i].Action)
 	}
 	want := []string{"create", "approve", "delete"}

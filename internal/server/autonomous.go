@@ -533,6 +533,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			s.audit(r.Context(), "create", "automaton", prdID, map[string]any{"project_dir": req.ProjectDir, "backend": req.Backend}) // GH#201 Phase 4
+			// Search-before-create: a read-only check on the stored Automaton.
+			// Only on mode adds to the reply; every other case writes the reply
+			// as it always has.
+			if warnings := s.createSearchAfterStore(r, prd, prdID); warnings != nil {
+				s.writeCreateReplyWithWarnings(w, r, prd, warnings)
+				return
+			}
 			s.writeAutonomousResult(w, r, prd, "", "", "")
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -39,24 +39,24 @@ const (
 // be checked this time.
 type OverlapWarning struct {
 	// Kind is one of automaton, registry, branch, unavailable.
-	Kind string
+	Kind string `json:"kind"`
 	// ID is the Automaton id (automaton kind only).
-	ID string
+	ID string `json:"id,omitempty"`
 	// Status is the Automaton's status (automaton kind only).
-	Status string
+	Status string `json:"status,omitempty"`
 	// Row is the registry row number (registry kind only).
-	Row int
+	Row int `json:"row,omitempty"`
 	// Branch is the branch name (branch kind only).
-	Branch string
+	Branch string `json:"branch,omitempty"`
 	// Score is the overlap score, rounded to two decimals.
-	Score float64
+	Score float64 `json:"score"`
 	// SharedTerms are the shared terms, at most five.
-	SharedTerms []string
+	SharedTerms []string `json:"shared_terms,omitempty"`
 	// Reason is one sentence of operator copy that says Automaton,
 	// never PRD.
-	Reason string
+	Reason string `json:"reason"`
 	// ReadHint is how the operator can read the underlying thing.
-	ReadHint string
+	ReadHint string `json:"read_hint,omitempty"`
 }
 
 // OverlapAutomaton is the state the finder needs from one stored
@@ -110,9 +110,10 @@ type overlapRegistrySource interface {
 }
 
 // overlapBranchSource reads unmerged-branch candidates behind an
-// interface so tests can fake it.
+// interface so tests can fake it. It takes the project root the way the
+// registry source does, so git always runs in the Automaton's own repo.
 type overlapBranchSource interface {
-	branchCandidates() ([]overlapCandidate, error)
+	branchCandidates(projectRoot string) ([]overlapCandidate, error)
 }
 
 // defaultRegistrySource is the registry source from the sources task.
@@ -122,13 +123,12 @@ func (defaultRegistrySource) registryCandidates(projectRoot string) ([]overlapCa
 	return overlapRowCandidates(projectRoot)
 }
 
-// defaultBranchSource is the branch source from the sources task.
-type defaultBranchSource struct {
-	runner gitRunner
-}
+// defaultBranchSource is the branch source from the sources task. It runs
+// git in the project root it is given.
+type defaultBranchSource struct{}
 
-func (s defaultBranchSource) branchCandidates() ([]overlapCandidate, error) {
-	return overlapBranchCandidates(s.runner)
+func (defaultBranchSource) branchCandidates(projectRoot string) ([]overlapCandidate, error) {
+	return overlapBranchCandidates(NewGitRunner(projectRoot))
 }
 
 // projectRootResolver returns the project root the registry and
@@ -252,7 +252,7 @@ func (f *OverlapFinder) Find(title, spec, excludeID, projectDir string) (warning
 
 	// Unmerged-branch source.
 	cands, err, panicked = safeRunCandidates(func() ([]overlapCandidate, error) {
-		return f.branches.branchCandidates()
+		return f.branches.branchCandidates(root)
 	})
 	if err != nil {
 		warnings = append(warnings, unavailableWarning(sourceNameBranch, panicked))
@@ -324,6 +324,15 @@ func safeRunCandidates(fn func() ([]overlapCandidate, error)) (cands []overlapCa
 	}()
 	cands, err = fn()
 	return cands, err, false
+}
+
+// NewCreateSearchFinder builds the finder the create route runs: the
+// Automata from lister, the default registry and branch sources, and the
+// project root the search reads. The root is the Automaton's project
+// directory, or the worktree base repository when that is empty; with
+// neither, the registry and branch sources are skipped and named.
+func NewCreateSearchFinder(lister AutomatonLister, threshold float64, worktreeBaseRepo string) *OverlapFinder {
+	return NewOverlapFinder(lister, nil, nil, threshold, worktreeBaseRootResolver(worktreeBaseRepo))
 }
 
 // roundOverlapScore rounds a score to two decimals.
