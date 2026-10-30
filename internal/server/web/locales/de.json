@@ -2705,5 +2705,10 @@
   "usage_calc_ledger_text_title": "Text form",
   "usage_calc_ledger_text_cli": "CLI",
   "usage_calc_ledger_text_comm": "Comm channel",
-  "usage_calc_ledger_text_empty": "No text form in this response."
+  "usage_calc_ledger_text_empty": "No text form in this response.",
+  "overlap_warnings_title": "Possible overlap with existing work",
+  "overlap_warning_automaton": "Automat",
+  "overlap_warning_registry": "Registry row",
+  "overlap_warning_branch": "Unmerged branch",
+  "overlap_warning_read_hint": "Read this item before you start new work. Nothing here was changed."
 }
