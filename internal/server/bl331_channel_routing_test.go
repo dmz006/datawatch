@@ -67,7 +67,7 @@ func TestChannelRouting_PutAndGet(t *testing.T) {
 				ChannelPattern:    "alerts-*",
 				PeerName:          "peer-alpha",
 				AutomataType:      "operational",
-				DefaultProjectDir: "/home/dmz/ops",
+				DefaultProjectDir: "/home/user/ops",
 			},
 		},
 	}

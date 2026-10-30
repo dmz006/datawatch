@@ -316,8 +316,8 @@ func TestRestartMidTask_RealCompletionStillDetected(t *testing.T) {
 // mtLaunchLine is the shell line the claude-code backend types into a fresh
 // pane; the terminal hard-wraps it at the pane width, so any wrapped fragment
 // can begin with the marker text.
-const mtLaunchLine = "cd '/home/dmz/.datawatch/prd-worktrees/91e60001' && NO_COLOR=1 claude --dangerously-skip-permissions " +
-	"--add-dir '/home/dmz/.datawatch/prd-worktrees/91e60001' --session-id 'abcd'; echo 'DATAWATCH_COMPLETE: claude done'"
+const mtLaunchLine = "cd '/home/user/.datawatch/prd-worktrees/91e60001' && NO_COLOR=1 claude --dangerously-skip-permissions " +
+	"--add-dir '/home/user/.datawatch/prd-worktrees/91e60001' --session-id 'abcd'; echo 'DATAWATCH_COMPLETE: claude done'"
 
 // mtHardWrap wraps at exactly width columns (no word boundaries).
 func mtHardWrap(s string, width int) string {

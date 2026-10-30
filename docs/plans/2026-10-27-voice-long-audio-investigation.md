@@ -1,6 +1,6 @@
 # Voice long-audio (>30 s) transcription failure — investigation
 
-Date: 2026-10-27 · Investigated on host `johnnyjohnny` (48-core AMD64, 125 GB RAM), live daemon data at `~/.datawatch`
+Date: 2026-10-27 · Investigated on host `local-node` (48-core AMD64, 125 GB RAM), live daemon data at `~/.datawatch`
 Related (prior, already fixed): `docs/plans/2026-10-20-voice-long-recording-rootcause.md` (15 s `ReadTimeout` upload abort; windowed `openai_compat` backend 30 s input limit). Both fixes are in tree.
 
 ## Symptom

@@ -2355,12 +2355,12 @@ unchanged.
 ## v9.1.6 — fix(compute): ComputeNodes representing this machine need ObserverPeer set
 
 **Operator-reported live, 2026-10-15**: the PWA session "Status" tab showed
-"no monitored compute node" for a session on `johnnyjohnny-cpu` (a CPU-only
+"no monitored compute node" for a session on `local-node-cpu` (a CPU-only
 logical ComputeNode for the same physical host as the daemon), and the PRD
 page's usage panel was silently missing the same data for the same reason.
 `handleComputeNodeDetail`'s self-peer fallback serves live local stats when
 a ComputeNode's `ObserverPeer` (or, if unset, its own name) equals the
-daemon's hostname — `johnnyjohnny-cpu`'s `ObserverPeer` was simply never
+daemon's hostname — `local-node-cpu`'s `ObserverPeer` was simply never
 set, so it fell through to its own node name, which doesn't match.
 **First attempt at this fix tried inferring locality from the node's
 Address (loopback/hostname/IP resolution) — operator explicitly rejected
@@ -7683,7 +7683,7 @@ All of this was verified against a live daemon, not just `go test`: started the 
 ## v8.36.9 — feat(autonomous): verifier capacity load-balances across multiple configured ollama nodes; fixes capacity-card PRD attribution and a config-merge bug
 
 ### Added
-- **`autonomous.verification_backends`** — an ordered list of LLM registry names (e.g. `["ollama-datawatch", "ollama-johnnyjohnny"]`) the verifier tries in order, using whichever currently has free node capacity. Found live: a claude-code PRD's verifier always fell back to one hardcoded default backend, which needed the *same exclusive `node:` capacity slot* a real local worker session on that node needed — so a 100%-cloud PRD's progress could be blocked indefinitely by unrelated local GPU contention it had nothing to do with. Each candidate uses its own registry-default model (forcing one model across heterogeneous nodes isn't safe). Empty (default) = exact single-backend behavior as before. Exposed through every surface: REST/YAML config, MCP (`autonomous_config_set`'s new `verification_backends` array param), and comm channel (new `autonomous config-get` / `autonomous config-set` verbs — this whole config surface previously had no comm-channel parity at all).
+- **`autonomous.verification_backends`** — an ordered list of LLM registry names (e.g. `["ollama-datawatch", "ollama-local-node"]`) the verifier tries in order, using whichever currently has free node capacity. Found live: a claude-code PRD's verifier always fell back to one hardcoded default backend, which needed the *same exclusive `node:` capacity slot* a real local worker session on that node needed — so a 100%-cloud PRD's progress could be blocked indefinitely by unrelated local GPU contention it had nothing to do with. Each candidate uses its own registry-default model (forcing one model across heterogeneous nodes isn't safe). Empty (default) = exact single-backend behavior as before. Exposed through every surface: REST/YAML config, MCP (`autonomous_config_set`'s new `verification_backends` array param), and comm channel (new `autonomous config-get` / `autonomous config-set` verbs — this whole config surface previously had no comm-channel parity at all).
 
 ### Fixed
 - **The verifier's capacity requests never set `PRDID`** — so `/api/capacity?prd_id=<id>` and the capacity card could never show that a PRD was genuinely blocked waiting on the verifier; it just looked idle. Also: `?prd_id=` only ever filtered the `pools` list, never `leases`/`waiting`, so a PRD's scoped view could show unrelated PRDs' entries. Both fixed.
@@ -7697,7 +7697,7 @@ All of this was verified against a live daemon, not just `go test`: started the 
 ## v8.36.7 — fix(autonomous): a worker's `git add -A` could reach the operator's home directory when its project dir had no git repo of its own
 
 ### Fixed
-- **A one-shot task's `git add -A` could silently stage the operator's entire home directory** — found live while retrying PRD `a2833a5e`'s story-2 tasks: `/home/dmz/workspace/llm-research` (the PRD's `project_dir`) had never been `git init`'d on its own, so every git command run from inside it (including the daemon's own pre-task `git -C projectDir rev-parse HEAD` capture, which doesn't error on this — it silently returns the discovered ancestor repo's SHA instead) walked upward and landed on a stray `.git` at the operator's home directory. A worker's checkpoint-protocol `git add -A` — which stages relative to the *discovered repo's root*, not the task's project dir — began staging `.gnupg`, `.kube`, `.docker`, `.claude.json`, `.bash_history`, and the rest of the home directory before being caught and killed. Verified nothing sensitive was ever actually committed (checked the home-dir repo's full history: only `workspace/llm-research/*` paths across its entire log, no remote configured). `autonomousSpawn` now calls `ensureProjectDirOwnGitRepo` before every task: if a project dir's discovered git toplevel resolves to exactly the operator's home directory (the specific dangerous case — a project dir intentionally nested inside some *other* real repo is left untouched), it gets its own dedicated repo first.
+- **A one-shot task's `git add -A` could silently stage the operator's entire home directory** — found live while retrying PRD `a2833a5e`'s story-2 tasks: `/home/user/workspace/llm-research` (the PRD's `project_dir`) had never been `git init`'d on its own, so every git command run from inside it (including the daemon's own pre-task `git -C projectDir rev-parse HEAD` capture, which doesn't error on this — it silently returns the discovered ancestor repo's SHA instead) walked upward and landed on a stray `.git` at the operator's home directory. A worker's checkpoint-protocol `git add -A` — which stages relative to the *discovered repo's root*, not the task's project dir — began staging `.gnupg`, `.kube`, `.docker`, `.claude.json`, `.bash_history`, and the rest of the home directory before being caught and killed. Verified nothing sensitive was ever actually committed (checked the home-dir repo's full history: only `workspace/llm-research/*` paths across its entire log, no remote configured). `autonomousSpawn` now calls `ensureProjectDirOwnGitRepo` before every task: if a project dir's discovered git toplevel resolves to exactly the operator's home directory (the specific dangerous case — a project dir intentionally nested inside some *other* real repo is left untouched), it gets its own dedicated repo first.
 - Migrated the 6 other project directories found in the same exposed state (`Android`, `datawatch-intelligence`, `email`, `openrig-datawatch`, plus two ephemeral e2e/sandbox dirs) to their own repos as a one-time operational cleanup; not part of the code fix itself.
 - **CI: `attach stats-cluster tarball` release-asset upload retry window widened 3×90s → 8×60s** — observed on the v8.36.6 release: `gh release view`/`gh release upload` returned "release not found" for 3 full minutes of retries starting 6 minutes after goreleaser's own log confirmed the release was published (same tag, same repo, same token) — a read-path propagation lag, not a permissions or job-ordering bug. A manual retry ~15 minutes post-publish succeeded immediately; widened the in-job budget to comfortably cover it.
 
@@ -8088,7 +8088,7 @@ This completes BL381's PWA surface. REST + MCP + CLI + comm channel + fedCap shi
 
 ### Fixed
 - **Automata watchdog blind to `verifying`/`running_tests` tasks** — the built-in watchdog goroutine only scanned tasks in `in_progress` state for SSE stall patterns. Tasks stuck in `verifying` or `running_tests` (where the opencode session has an active SSE stream but the LLM backend timed out) were never detected and never killed, leaving them stuck until manual operator intervention. The watchdog now covers all three active task states.
-- **Insecure spawned `automata-watchdog` schedule removed** — a cron schedule was spawning opencode sessions with a task prompt that (1) issued `curl` to the local daemon API, (2) ran `tmux capture-pane` to read other sessions' terminal content (a cross-session secret read boundary violation), and (3) wrote reports to `/home/dmz/.datawatch/` outside the workspace. The schedule has been deleted and the spawned session killed. The built-in Go watchdog goroutine already covers SSE stall detection without any of these security issues.
+- **Insecure spawned `automata-watchdog` schedule removed** — a cron schedule was spawning opencode sessions with a task prompt that (1) issued `curl` to the local daemon API, (2) ran `tmux capture-pane` to read other sessions' terminal content (a cross-session secret read boundary violation), and (3) wrote reports to `/home/user/.datawatch/` outside the workspace. The schedule has been deleted and the spawned session killed. The built-in Go watchdog goroutine already covers SSE stall detection without any of these security issues.
 
 ## v8.27.0 — feat(autonomous): cancel story/task, requeue task, active session resource bars
 
@@ -8986,7 +8986,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
   # Exact syntax from GH#128:
   datawatch schedule spawn \
     --cron "0 * * * *" \
-    --path /home/dmz/workspace/imap-mcp \
+    --path /home/user/workspace/imap-mcp \
     --schedule-name imap-hourly-rules \
     --shell "imap-mcp run-rules --config ~/workspace/dmz-imap.yaml"
   ```
@@ -9010,7 +9010,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
   session:
     extra_mcp_servers:
       - name: imap-mcp
-        command: /home/dmz/workspace/imap-mcp/imap-mcp
+        command: /home/user/workspace/imap-mcp/imap-mcp
         env:
           GMAIL_APP_PASSWORD: "${GMAIL_APP_PASSWORD}"
   ```
@@ -9093,7 +9093,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
 
 - **Task-echo false positive eliminated** — The `\r`-split fix introduced in v8.12.4 inadvertently caused a false positive: if the task text itself contains the completion pattern (e.g. `"output a line starting with:\nDATAWATCH_COMPLETE: done"`), Claude Code's TUI re-renders the user input and a CR-segment starting with `  DATAWATCH_COMPLETE:` appears in the pipe-pane log within ~1 s of task delivery. `matchesCompletionPattern` fired on it, setting `StateComplete` before the LLM had run the Bash tool. Fix: `Manager` now records a `taskDeliveredAt` timestamp when `send_input` fires (`MarkTaskDelivered`); `processOutputLine` suppresses completion detection for 5 s after task delivery. Task echo appears at T+1 s; LLM API response arrives at T+10 s minimum, so 5 s safely covers the echo window without affecting real completions.
 
-  Verified end-to-end with a tool-using spawn (v8125-toolcall-reap-test2, ac1c): task `ls -la /home/dmz | wc -l` → Bash tool called → LLM emitted `⎿ DATAWATCH_COMPLETE: 54` → detected at ~55 s, tmux killed. 369-line log confirms full execution path (vs. 96 lines for the false-positive premature kill). Exactly one session spawned per tick.
+  Verified end-to-end with a tool-using spawn (v8125-toolcall-reap-test2, ac1c): task `ls -la /home/user | wc -l` → Bash tool called → LLM emitted `⎿ DATAWATCH_COMPLETE: 54` → detected at ~55 s, tmux killed. 369-line log confirms full execution path (vs. 96 lines for the false-positive premature kill). Exactly one session spawned per tick.
 
 ---
 
@@ -13319,7 +13319,7 @@ Functional ✓ 1834 tests · Smoke ✓ exit 0 · Rule audit ✓ 31 rules walked 
 
 ### Summary — sessions.json corruption auto-recovery + atomic writes
 
-Operator post-mortem 2026-05-07: daemon crashed at startup with `Error: create session manager: open session store: parse store /home/dmz/.datawatch/sessions.json: unexpected end of JSON input`. Root cause: the previous version's `secfile.WriteFile` used non-atomic `os.WriteFile` — a daemon kill mid-flush left the file truncated at a 128 KB page boundary mid-string. Two fixes:
+Operator post-mortem 2026-05-07: daemon crashed at startup with `Error: create session manager: open session store: parse store /home/user/.datawatch/sessions.json: unexpected end of JSON input`. Root cause: the previous version's `secfile.WriteFile` used non-atomic `os.WriteFile` — a daemon kill mid-flush left the file truncated at a 128 KB page boundary mid-string. Two fixes:
 
 ### Fixed (BL286)
 

@@ -14,7 +14,7 @@ _story_ts_525() {
   # The default project dir is needed as from_project for the promote call
   local default_project
   default_project=$(api GET /api/config | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("session",{}).get("default_project_dir",""))' 2>/dev/null || echo "")
-  [[ -z "$default_project" ]] && default_project="/home/dmz"
+  [[ -z "$default_project" ]] && default_project="/home/user"
 
   local save_resp save_body mem_id
   save_resp=$(api POST /api/mcp/call "{\"tool\":\"memory_remember\",\"params\":{\"text\":\"ts525 scope-promote test $$\",\"scope\":\"project-shared\"}}")

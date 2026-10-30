@@ -16,14 +16,14 @@ available — daemon has moved five times since 05's 8.36.7 snapshot, same
 day), `eval_list_suites` (`[]`, unchanged), `llm_list`, `compute_node_list`,
 `ollama_stats`. No drift in registry/node facts since 03/05: same four
 compute nodes (`datawatch` priority 90 no declared capacity, `datawatch-openai`
-priority 90 with the declared B200, `johnnyjohnny` priority 70 with the RTX
-5090, `test-node` stale duplicate), same five LLM registry entries, same
-four models actually resident on local `johnnyjohnny` Ollama (`moondream`,
+priority 90 with the declared B200, `local-node` priority 70 with the RTX
+32 GB GPU, `test-node` stale duplicate), same five LLM registry entries, same
+four models actually resident on local `local-node` Ollama (`moondream`,
 `llmvision/glimpse-v1`, `qwen3:1.7b`, `nomic-embed-text`, 7.8 GB total).
 
 **Re-checked a second time, same day (2026-09-30), on a retry pass**: still
 `get_version` 8.36.10/8.36.11, still `eval_list_suites: []`, still the same
-four compute nodes and the same four models on `johnnyjohnny`. One new data
+four compute nodes and the same four models on `local-node`. One new data
 point worth recording: `cost_summary`'s session count climbed from 2243 (the
 task brief's snapshot) to 2298 in the interval between the two checks, while
 `total_tokens_in`/`total_tokens_out`/`total_usd` stayed exactly `0` across
@@ -191,7 +191,7 @@ untested on either axis.
 | Model load overhead | `load_duration / 1e9` — near-zero when the model is already resident (warm), large on a cold call (§4). |
 | Throughput at concurrency 1/4/8 | Issue N concurrent `/api/generate` calls against the same already-loaded model and divide total output tokens by wall-clock time for the batch; compare against `OLLAMA_NUM_PARALLEL` (05(a), default 1 — concurrency above that queues inside Ollama rather than truly parallelizing, so confirm the server's actual `OLLAMA_NUM_PARALLEL` before trusting a concurrency-4/8 number as real parallelism). |
 | VRAM / RAM used | `ollama_stats`/`/api/ps` for VRAM per loaded model (already used in 01/03/05); `free -h` for system RAM. |
-| GPU utilization | `nvidia-smi` — **blocked on `johnnyjohnny` today** by the driver/library version mismatch documented in [05(g)](05-serving-and-hardware.md#g-prerequisite-local-nvidia-smi-driverlibrary-mismatch); fix that first if local-GPU utilization numbers are needed, or read `datawatch`'s own GPU via whatever access that host allows (not checked in this pass — out of scope). |
+| GPU utilization | `nvidia-smi` — **blocked on `local-node` today** by the driver/library version mismatch documented in [05(g)](05-serving-and-hardware.md#g-prerequisite-local-nvidia-smi-driverlibrary-mismatch); fix that first if local-GPU utilization numbers are needed, or read `datawatch`'s own GPU via whatever access that host allows (not checked in this pass — out of scope). |
 
 ## 4. Observed timing — seed data (this session, 2026-09-30)
 
@@ -313,7 +313,7 @@ guessing which axis matters more.
   any benchmark run against it should either request a maintenance window or
   explicitly report queueing-vs-compute time separately, or risk attributing
   shared-traffic slowdowns to a candidate model.
-- **Local GPU telemetry is blocked** on `johnnyjohnny` by the `nvidia-smi`
+- **Local GPU telemetry is blocked** on `local-node` by the `nvidia-smi`
   driver/library mismatch ([05(g)](05-serving-and-hardware.md#g-prerequisite-local-nvidia-smi-driverlibrary-mismatch))
   — VRAM numbers from `ollama_stats`/`/api/ps` remain usable; GPU
   utilization percentages do not, until that's fixed.

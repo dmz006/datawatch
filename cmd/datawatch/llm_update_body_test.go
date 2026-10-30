@@ -31,7 +31,7 @@ func TestLLMUpdate_OmitsUnsetKindModelTimeout(t *testing.T) {
 	defer func() { serverURL = oldServerURL }()
 
 	cmd := newLLMAddCmd(true) // update=true
-	cmd.SetArgs([]string{"pi", "--compute-nodes", "johnnyjohnny"})
+	cmd.SetArgs([]string{"pi", "--compute-nodes", "local-node"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute() error: %v", err)
 	}
@@ -45,8 +45,8 @@ func TestLLMUpdate_OmitsUnsetKindModelTimeout(t *testing.T) {
 		t.Errorf("expected name=pi, got %v", gotBody["name"])
 	}
 	nodes, _ := gotBody["compute_nodes"].([]any)
-	if len(nodes) != 1 || nodes[0] != "johnnyjohnny" {
-		t.Errorf("expected compute_nodes=[johnnyjohnny], got %v", gotBody["compute_nodes"])
+	if len(nodes) != 1 || nodes[0] != "local-node" {
+		t.Errorf("expected compute_nodes=[local-node], got %v", gotBody["compute_nodes"])
 	}
 }
 

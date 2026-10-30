@@ -19,7 +19,7 @@ import (
 func TestBuildLaunchCmd_NoModel(t *testing.T) {
 	// Since v9.10.19 the pi-family backends no longer fall back to the
 	// host's built-in default model: an empty model is a build error.
-	_, err := buildLaunchCmd("pi", "", "do the thing", "/home/dmz/work", "cs-abc")
+	_, err := buildLaunchCmd("pi", "", "do the thing", "/home/user/work", "cs-abc")
 	if !errors.Is(err, ErrNoModel) {
 		t.Fatalf("empty model must be an error wrapping ErrNoModel, got: %v", err)
 	}
@@ -238,11 +238,11 @@ func TestBuildInteractiveCmd_NoSessionWithModel(t *testing.T) {
 	// Since v9.10.19 model is required; an empty session ID still must not
 	// add a --session-id flag.
 	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
-	cmd, err := buildInteractiveCmd("pi", "prov/model-a", "", "do the thing", "/home/dmz/work", "cs-abc")
+	cmd, err := buildInteractiveCmd("pi", "prov/model-a", "", "do the thing", "/home/user/work", "cs-abc")
 	if err != nil {
 		t.Fatalf("buildInteractiveCmd with model: %v", err)
 	}
-	if !strings.Contains(cmd, "cd '/home/dmz/work'") {
+	if !strings.Contains(cmd, "cd '/home/user/work'") {
 		t.Errorf("missing cd into project dir, got: %s", cmd)
 	}
 	if strings.Contains(cmd, "--print") {
@@ -274,7 +274,7 @@ func TestBuildInteractiveCmd_EmptyModelRefused(t *testing.T) {
 	// Since v9.10.19 an empty model is a hard error — silently running on
 	// the pi harness's built-in default model is exactly the fallback the
 	// datawatch launch paths must not take.
-	_, err := buildInteractiveCmd("pi", "", "", "do the thing", "/home/dmz/work", "cs-abc")
+	_, err := buildInteractiveCmd("pi", "", "", "do the thing", "/home/user/work", "cs-abc")
 	if !errors.Is(err, ErrNoModel) {
 		t.Fatalf("empty model must be an ErrNoModel error, got: %v", err)
 	}
@@ -282,11 +282,11 @@ func TestBuildInteractiveCmd_EmptyModelRefused(t *testing.T) {
 
 func TestBuildInteractiveCmd_WithSessionAndModel(t *testing.T) {
 	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
-	cmd, err := buildInteractiveCmd("pi", "ollama/qwen3.8:27b", "johnnyjohnny-c905", "task text", "/proj", "cs-abc")
+	cmd, err := buildInteractiveCmd("pi", "ollama/qwen3.8:27b", "local-node-c905", "task text", "/proj", "cs-abc")
 	if err != nil {
 		t.Fatalf("buildInteractiveCmd: %v", err)
 	}
-	if !strings.Contains(cmd, "--session-id 'johnnyjohnny-c905'") {
+	if !strings.Contains(cmd, "--session-id 'local-node-c905'") {
 		t.Errorf("expected --session-id with the given session name, got: %s", cmd)
 	}
 	if !strings.Contains(cmd, "--model 'ollama/qwen3.8:27b'") {
@@ -390,9 +390,9 @@ func TestBackend_SetModel(t *testing.T) {
 
 func TestBackend_SetSessionName(t *testing.T) {
 	b := New("").(*Backend)
-	b.SetSessionName("johnnyjohnny-c905")
-	if b.sessionName != "johnnyjohnny-c905" {
-		t.Errorf("sessionName after SetSessionName = %q, want \"johnnyjohnny-c905\"", b.sessionName)
+	b.SetSessionName("local-node-c905")
+	if b.sessionName != "local-node-c905" {
+		t.Errorf("sessionName after SetSessionName = %q, want \"local-node-c905\"", b.sessionName)
 	}
 }
 

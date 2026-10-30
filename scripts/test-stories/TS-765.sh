@@ -51,10 +51,10 @@ save_evidence "$CURRENT_STORY" "priority_check.json" \
 
 ok "tegrastats probe (line $tegra_line) precedes nvidia-smi (line $smi_line) in cmd/datawatch-stats/main.go — priority confirmed"
 
-# Secondary: if johnnyjohnny is reachable, verify live behavior via the stats API.
-if ssh -o BatchMode=yes -o ConnectTimeout=5 johnnyjohnny true 2>/dev/null; then
+# Secondary: if local-node is reachable, verify live behavior via the stats API.
+if ssh -o BatchMode=yes -o ConnectTimeout=5 local-node true 2>/dev/null; then
   # Check if datawatch-stats is running and reporting GPU info.
-  stats_resp=$(ssh johnnyjohnny \
+  stats_resp=$(ssh local-node \
     'curl -sk https://localhost:8443/api/stats 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); g=d.get(\"gpu\",[]); print(f\"gpu_count={len(g)} first={g[0].get(\"vendor\",\"\") if g else \"none\"}\")" 2>/dev/null || echo "not running"' 2>/dev/null || echo "ssh-failed")
   echo "  [TS-765] live stats: $stats_resp"
   save_evidence "$CURRENT_STORY" "live_stats.txt" "$stats_resp"

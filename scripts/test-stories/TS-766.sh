@@ -7,7 +7,7 @@ CURRENT_STORY="TS-766"
 story_preflight "surface:api feature:automata live:yes" || return 0
 
 # Verify opencode is available.
-opencode_bin="${OPENCODE_BIN:-/home/dmz/.opencode/bin/opencode}"
+opencode_bin="${OPENCODE_BIN:-/home/user/.opencode/bin/opencode}"
 if ! command -v opencode &>/dev/null && [[ ! -x "$opencode_bin" ]]; then
   skip "opencode binary not found — skip live session-based decompose test"
   return 0

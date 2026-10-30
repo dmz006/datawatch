@@ -45,7 +45,7 @@ Single-binary daemon (`cmd/datawatch/`) that:
 |---|---|---|
 | Pre-Execution Rule | 9 | Every task — re-read relevant sections before coding |
 | Session Safety | 19 | Never stop/kill user sessions without explicit ask |
-| Scope Constraints | 25 | Work only within `/home/dmz/workspace/datawatch/` |
+| Scope Constraints | 25 | Work only within `/home/user/workspace/datawatch/` |
 | Code Quality Rules | 31 | Every commit — compile, interface stability, doc.go |
 | Testing Tracker Rules | 40 | Every new interface or changed endpoint contract |
 | Git Discipline | 59 | Every commit — conventional format, no force-push |

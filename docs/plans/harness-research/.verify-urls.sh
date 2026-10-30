@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Batch-verify candidate URLs from candidates.md -> status file
 set -u
-cd /home/dmz/workspace/datawatch/docs/plans/harness-research
+cd /home/user/workspace/datawatch/docs/plans/harness-research
 UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 grep -hoE 'https?://[^ )>"]+' candidates.md | awk '!seen[$0]++' > .urls.txt
 : > .url-status.txt

@@ -8,8 +8,8 @@ story_preflight "surface:api feature:automata group:b106-file-viewer-v9" || retu
 _story_ts_698() {
   local test_file=""
   local candidates=(
-    "/home/dmz/workspace/datawatch/README.md"
-    "/home/dmz/workspace/datawatch/docs/parity-status.md"
+    "/home/user/workspace/datawatch/README.md"
+    "/home/user/workspace/datawatch/docs/parity-status.md"
     "/etc/hostname"
   )
   for f in "${candidates[@]}"; do

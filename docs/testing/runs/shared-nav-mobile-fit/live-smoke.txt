@@ -1,6 +1,6 @@
 Shared navigation mobile fit: live smoke test
 Date: 2026-10-25
-Branch: automaton/b54f0001 (worktree /home/dmz/.datawatch/prd-worktrees/b54f0001)
+Branch: automaton/b54f0001 (worktree /home/user/.datawatch/prd-worktrees/b54f0001)
 Daemon under test: sandbox daemon built from this tree by make build, version 9.11.0
 Production daemon (port 8443): not used. Nothing outside this run's own two sandbox daemons was changed or stopped.
 

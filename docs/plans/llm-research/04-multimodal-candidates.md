@@ -40,7 +40,7 @@ against the brief's environment facts:
   `backend: ollama`, `endpoint: http://localhost:11434`, `model:
   moondream:latest`, `max_image_bytes: 0` (→ 10 MB default per
   `datawatch-definitions.md`). Matches the brief exactly.
-- **`ollama_stats` on `johnnyjohnny` (local, RTX 5090):** 4 models, 7.8 GB
+- **`ollama_stats` on `local-node` (local, 32 GB GPU):** 4 models, 7.8 GB
   total — `moondream:latest`, `llmvision/glimpse-v1:latest`, `qwen3:1.7b`,
   `nomic-embed-text:latest`. Which one shows as "running" varies by
   snapshot (Ollama unloads idle models) — on the original pass only
@@ -69,12 +69,12 @@ endpoint:http://localhost:11434, model:moondream:latest}`; `whisper` is
 still `{backend:"", enabled:true, language:"en", model:"medium",
 venv_path:~/.datawatch/.venv}`; no `tts` key exists anywhere in the
 config dump; `memory` still shows `embedder_model:nomic-embed-text`,
-`embedder_host:http://johnnyjohnny:11434`, `dimensions:0`; `ollama_stats`
-on `johnnyjohnny` still reports the same 4 models / 7.8 GB with only
+`embedder_host:http://local-node:11434`, `dimensions:0`; `ollama_stats`
+on `local-node` still reports the same 4 models / 7.8 GB with only
 `nomic-embed-text` (0.6 GB) loaded; `compute_node_list` still shows
 `datawatch` (priority 90, `max_concurrent_sessions:1`, no declared
 capacity), `datawatch-openai` (Blackwell B200, 128 GB, `max_concurrent_models:3`),
-`johnnyjohnny` (RTX 5090, 32 GB, priority 70, `max_concurrent_models:10`),
+`local-node` (32 GB GPU, 32 GB, priority 70, `max_concurrent_models:10`),
 and `test-node` (stale duplicate of `datawatch`'s address, priority 50).
 This is a genuine independent re-check, not a copy of the numbers already
 in this file — see this run's own tool calls, not just the prose below.
@@ -86,7 +86,7 @@ in this file — see this run's own tool calls, not just the prose below.
 ### Current state
 
 datawatch's vision service (`vision.*` config) is enabled, pointed at Ollama
-on the local RTX 5090, and defaults to `moondream:latest`. It backs the
+on the local 32 GB GPU, and defaults to `moondream:latest`. It backs the
 comms-router image-attachment describer, the `vision_describe` MCP tool,
 `start_session`/`send_input` `image_paths`, and Council Mode's
 `image_path` (one description injected into every persona's proposal, per
@@ -195,7 +195,7 @@ either way.
 - **STT default:** replace the currently-configured Whisper `medium` model
   with **faster-whisper large-v3-turbo running int8 on CPU**. It's ~1-2 WER
   points worse than full large-v3 but ~4-6x faster, and CPU inference keeps
-  it entirely off the RTX 5090 that the LLM/vision workloads already share.
+  it entirely off the 32 GB GPU that the LLM/vision workloads already share.
   The Threadripper 9960X (24c/48t) has ample headroom for this — voice notes
   are bursty, not sustained load.
 - **If ultra-low latency streaming matters more than raw accuracy** (e.g. a
@@ -218,7 +218,7 @@ either way.
 ### Current state
 
 `get_config` (`memory` section): `backend: postgres`, `embedder_model:
-nomic-embed-text`, `embedder_host: http://johnnyjohnny:11434`, `dimensions:
+nomic-embed-text`, `embedder_host: http://local-node:11434`, `dimensions:
 0` (unset in this config view — the effective dimension is nomic-embed-text's
 native 768, per `ollama_stats` showing it loaded locally at 0.6 GB VRAM).
 This matches the brief.
@@ -249,7 +249,7 @@ not.
 
 - **No urgent reason to move off nomic-embed-text v1.5.** It already gives
   8192-token context, a tunable 768→64 dimension range, and is already
-  correctly wired (postgres + `memory_reindex` exist, `johnnyjohnny` host).
+  correctly wired (postgres + `memory_reindex` exist, `local-node` host).
 - **If retrieval quality becomes a bottleneck** (e.g. memory recall
   precision issues show up in practice), **Qwen3-Embedding-0.6B** is the
   best upgrade candidate: it's from a family that tops the MTEB
@@ -268,13 +268,13 @@ not.
 
 | Model | Role | Node | CPU or GPU | Why |
 |---|---|---|---|---|
-| `moondream:latest` (keep) | Vision — comms-router quick captions, default `vision_describe` | `johnnyjohnny` (local RTX 5090) | GPU | Already installed and default; lowest latency; 2026 OCR/UI-localization gains keep it competitive for "what's in this photo" |
-| `llmvision/glimpse-v1` (keep, narrow role) | Vision — home-security camera event summaries only | `johnnyjohnny` | GPU | Specialized Gemma 3 4B fine-tune; 1.9x better than base Gemma 3 4B *on that task specifically* — don't promote it to general-purpose |
-| `qwen3-vl:4b` (add) | Vision — Council image critique, diagram/screenshot understanding | `johnnyjohnny` | GPU | Native Ollama vision support, small footprint (~6 GB Q4_K_M), family benchmarks explicitly cover diagram/UI-style reasoning that Moondream/glimpse don't target |
-| `faster-whisper large-v3-turbo` (int8, replaces configured Whisper `medium`) | Voice — STT for Signal/Telegram/Matrix voice notes | `johnnyjohnny` | **CPU** (Threadripper 9960X) | ~4-6x realtime on CPU at a 1-2 WER-point cost vs. large-v3; keeps voice off the shared GPU |
-| Piper **or** Kokoro (new capability, not yet enabled) | Voice — TTS voice replies, if/when wanted | `johnnyjohnny` | **CPU** | Both hit usable real-time-or-better CPU RTF; Piper = GPL-3.0 + broadest voice/language catalog, Kokoro = Apache-2.0 + higher quality-per-parameter |
-| `nomic-embed-text` v1.5 (keep) | Memory embeddings | `johnnyjohnny` | GPU (tiny — 0.6 GB VRAM observed) | Already correctly wired end-to-end (postgres, `memory_reindex`); no reindex cost; 8192-token context already sufficient |
-| `qwen3-embedding:0.6b` (optional future upgrade) | Memory embeddings, if retrieval quality becomes a bottleneck | `johnnyjohnny` | GPU or CPU | Family tops MTEB multilingual leaderboard; official Ollama tag; flexible dims can preserve the existing 768-wide postgres column and skip a schema migration |
+| `moondream:latest` (keep) | Vision — comms-router quick captions, default `vision_describe` | `local-node` (local 32 GB GPU) | GPU | Already installed and default; lowest latency; 2026 OCR/UI-localization gains keep it competitive for "what's in this photo" |
+| `llmvision/glimpse-v1` (keep, narrow role) | Vision — home-security camera event summaries only | `local-node` | GPU | Specialized Gemma 3 4B fine-tune; 1.9x better than base Gemma 3 4B *on that task specifically* — don't promote it to general-purpose |
+| `qwen3-vl:4b` (add) | Vision — Council image critique, diagram/screenshot understanding | `local-node` | GPU | Native Ollama vision support, small footprint (~6 GB Q4_K_M), family benchmarks explicitly cover diagram/UI-style reasoning that Moondream/glimpse don't target |
+| `faster-whisper large-v3-turbo` (int8, replaces configured Whisper `medium`) | Voice — STT for Signal/Telegram/Matrix voice notes | `local-node` | **CPU** (Threadripper 9960X) | ~4-6x realtime on CPU at a 1-2 WER-point cost vs. large-v3; keeps voice off the shared GPU |
+| Piper **or** Kokoro (new capability, not yet enabled) | Voice — TTS voice replies, if/when wanted | `local-node` | **CPU** | Both hit usable real-time-or-better CPU RTF; Piper = GPL-3.0 + broadest voice/language catalog, Kokoro = Apache-2.0 + higher quality-per-parameter |
+| `nomic-embed-text` v1.5 (keep) | Memory embeddings | `local-node` | GPU (tiny — 0.6 GB VRAM observed) | Already correctly wired end-to-end (postgres, `memory_reindex`); no reindex cost; 8192-token context already sufficient |
+| `qwen3-embedding:0.6b` (optional future upgrade) | Memory embeddings, if retrieval quality becomes a bottleneck | `local-node` | GPU or CPU | Family tops MTEB multilingual leaderboard; official Ollama tag; flexible dims can preserve the existing 768-wide postgres column and skip a schema migration |
 
 ## Open items / lower-confidence spots, stated plainly
 

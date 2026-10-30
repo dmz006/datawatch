@@ -215,7 +215,7 @@ func (h *orphanHarness) auditDetail(action string) map[string]any {
 func TestOrphanSweepKeepsWorkerBoundByShortID(t *testing.T) {
 	h := newOrphanHarness(t)
 	h.bindTaskSession(t, "8b57")
-	w := h.worker("johnnyjohnny-8b57")
+	w := h.worker("local-node-8b57")
 	w.TaskID = h.prd.Story[0].Tasks[0].ID
 	h.list = []SessionInfo{w}
 	for i := 0; i < 4; i++ {
@@ -236,7 +236,7 @@ func TestOrphanSweepKeepsWorkerBoundByShortID(t *testing.T) {
 func TestOrphanSweepEndsTrueOrphanByFullID(t *testing.T) {
 	h := newOrphanHarness(t)
 	h.bindTaskSession(t, "8b57")
-	h.list = []SessionInfo{h.worker("johnnyjohnny-c3d4")}
+	h.list = []SessionInfo{h.worker("local-node-c3d4")}
 
 	h.m.sweepOrphanSessions()
 	if len(h.killed) != 0 {
@@ -246,7 +246,7 @@ func TestOrphanSweepEndsTrueOrphanByFullID(t *testing.T) {
 		t.Fatal("orphan not reported on first sight")
 	}
 	seen := h.auditDetail("autonomous_orphan_session_seen")
-	if seen["session_id"] != "johnnyjohnny-c3d4" || seen["session_short_id"] != "c3d4" {
+	if seen["session_id"] != "local-node-c3d4" || seen["session_short_id"] != "c3d4" {
 		t.Errorf("seen audit ids = session_id %v, session_short_id %v; want the lister id and its short id", seen["session_id"], seen["session_short_id"])
 	}
 
@@ -258,14 +258,14 @@ func TestOrphanSweepEndsTrueOrphanByFullID(t *testing.T) {
 
 	h.now = h.now.Add(101 * time.Second) // 301s since first sight
 	h.m.sweepOrphanSessions()
-	if len(h.killed) != 1 || h.killed[0] != "johnnyjohnny-c3d4" {
-		t.Fatalf("killed = %v, want [johnnyjohnny-c3d4]", h.killed)
+	if len(h.killed) != 1 || h.killed[0] != "local-node-c3d4" {
+		t.Fatalf("killed = %v, want [local-node-c3d4]", h.killed)
 	}
 	ended := h.auditDetail("autonomous_orphan_session_ended")
 	if ended == nil {
 		t.Fatal("no ended audit entry")
 	}
-	if ended["session_id"] != "johnnyjohnny-c3d4" || ended["session_short_id"] != "c3d4" {
+	if ended["session_id"] != "local-node-c3d4" || ended["session_short_id"] != "c3d4" {
 		t.Errorf("ended audit ids = session_id %v, session_short_id %v; want the lister id and its short id", ended["session_id"], ended["session_short_id"])
 	}
 }
@@ -273,7 +273,7 @@ func TestOrphanSweepEndsTrueOrphanByFullID(t *testing.T) {
 func TestOrphanSweepLogsSessionIDFormMismatchOnce(t *testing.T) {
 	h := newOrphanHarness(t)
 	h.bindTaskSession(t, "8b57")
-	h.list = []SessionInfo{h.worker("johnnyjohnny-c3d4")}
+	h.list = []SessionInfo{h.worker("local-node-c3d4")}
 
 	prev := log.Writer()
 	var buf bytes.Buffer
@@ -296,7 +296,7 @@ func TestOrphanSweepLogsSessionIDFormMismatchOnce(t *testing.T) {
 	}
 	for _, want := range []string{
 		"[autonomous] orphan-sweep:",
-		"full ids (example johnnyjohnny-c3d4)",
+		"full ids (example local-node-c3d4)",
 		"short ids (example 8b57)",
 		"by short id",
 	} {

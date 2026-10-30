@@ -9,7 +9,7 @@
   (this doc records the decisions; see §Decisions log).
 - **Source PRD**: `74e9eb05` ("Let's Encrypt integration research for public
   datawatch deployments"), research-only, completed 2026-10-06. Output docs:
-  `/home/dmz/workspace/datawatch-letsencrypt/docs/01-le-options-landscape.md`
+  `/home/user/workspace/datawatch-letsencrypt/docs/01-le-options-landscape.md`
   through `06-comparison-recommendations.md`. No datawatch code was written by
   that PRD — this plan is the build that follows from its research.
 

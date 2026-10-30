@@ -431,7 +431,7 @@ func (s *Server) serveComputeNodeDetail(w http.ResponseWriter, r *http.Request, 
 		// local observer is running, serve live stats directly (the self-peer
 		// never pushes snapshots — it's always live).
 		//
-		// 2026-10-15 — operator-reported: "johnnyjohnny-cpu" (a CPU-only
+		// 2026-10-15 — operator-reported: "local-node-cpu" (a CPU-only
 		// logical ComputeNode for the same physical host as the daemon)
 		// 503'd here because its ObserverPeer was never set, so peerName
 		// fell through to its own node name, which doesn't equal

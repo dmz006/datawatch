@@ -21,7 +21,7 @@ execution, surviving a full re-decompose. Opencode can complete individual
 tasks reliably now, but cannot be trusted to finish a PRD unattended.
 
 A same-night research pass (live-tested against our real `qwen3.8:27b` on
-`johnnyjohnny`, not a smaller model) found two real alternative harnesses:
+`local-node`, not a smaller model) found two real alternative harnesses:
 
 - **pi** (`earendil-works/pi`, MIT, 115K stars): minimal harness, calls the
   official OpenAI/Anthropic/Google SDKs directly rather than the

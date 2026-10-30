@@ -6,12 +6,12 @@ Environment facts below were re-verified live this session via `llm_list`,
 `compute_node_list`, and `ollama_stats` and match the brief exactly (no drift
 since 01/02): registry entries `claude-code`, `ollama-datawatch`
 (`auto_add_models: true`, 10 models incl. `qwen3.8:27b`, `gpt-oss:120b`,
-`qwen3-coder-next:q4_K_M`), `ollama-johnnyjohnny` (7-model list, stale vs.
+`qwen3-coder-next:q4_K_M`), `ollama-local-node` (7-model list, stale vs.
 the 4 actually installed locally per `ollama_stats`: `moondream:latest`,
 `llmvision/glimpse-v1`, `qwen3:1.7b`, `nomic-embed-text`), `opencode` (node
 `datawatch`), `openwebui-datawatch`; compute nodes `datawatch` (priority 90,
 `max_concurrent_sessions: 1`, no declared hardware), `datawatch-openai`
-(Blackwell B200 128 GB, `max_concurrent_models: 3`), `johnnyjohnny` (RTX 5090
+(Blackwell B200 128 GB, `max_concurrent_models: 3`), `local-node` (32 GB GPU
 32 GB, `max_concurrent_models: 10`, priority 70), `test-node` (duplicate
 address of `datawatch`, priority 50, stale).
 
@@ -75,7 +75,7 @@ before committing disk space or a routing config to any specific tag.
 ## MoE vs. dense for this fleet's goal
 
 The stated goal (02) is **8+ calls running in parallel across CPU+GPU** on a
-122 GB RAM / one-RTX-5090 host, plus a beefier but shared/priority-capped
+122 GB RAM / one-gpu-32gb host, plus a beefier but shared/priority-capped
 `datawatch` node. Two shapes of "smaller than qwen3.8:27b" serve that
 differently:
 
@@ -87,7 +87,7 @@ differently:
   midrange-GPU host**: keep the full weights in system RAM (122 GB comfortably
   fits several such models at once), let only the active-expert compute path
   matter for tokens/sec, and you get dense-7B-ish speed from a much smarter
-  model. This is the best fit for `johnnyjohnny`'s specific hardware profile
+  model. This is the best fit for `local-node`'s specific hardware profile
   and for the fast-small/balanced tiers that need many concurrent cheap
   calls (verifier, guardrail, Council personas, embedding).
 - **Dense small models** (4B–14B) have no such split — every parameter is
@@ -100,7 +100,7 @@ differently:
   GPU-resident instances," not "one smart model split across RAM/VRAM."
 
 Given `node:datawatch`'s confirmed `max_concurrent_sessions: 1` and
-`johnnyjohnny`'s `max_concurrent_models: 10`, the *local* RTX 5090 host is
+`local-node`'s `max_concurrent_models: 10`, the *local* 32 GB GPU host is
 actually where dense-small packing has room to matter today; the MoE/CPU-
 split trade is more about giving `datawatch` (currently one session at a
 time, whatever the model) options that don't all pin the same 15.5 GB of
@@ -113,12 +113,12 @@ Sizes/specs marked "training knowledge, unverified live" per the note above.
 | Family / variant | Total params (active, if MoE) | Disk size @ Q4_K_M / @ Q8 (approx.) | Context window | License | Ollama/llama.cpp tool-calling | Structured-output signal | Benchmark signal | Evidence |
 |---|---|---|---|---|---|---|---|---|
 | **Qwen3-4B-Instruct-2507** | 4B dense | ~2.5 GB / ~4.3 GB | 256K (native, via YaRN-free long-context variant) | Apache 2.0 | Yes, native Ollama tool-calling template | Qwen3 family ships an explicit non-thinking "Instruct" mode tuned for direct JSON/tool output (per repo description) | Qwen3 blog claims competitive IFEval/instruction-following for its size class | github.com/QwenLM/Qwen3 (checked 2026-09-29, confirms family + "Instruct-2507" mode exists); size/context: training knowledge, unverified live |
-| **Qwen3-8B** | 8B dense | ~5.2 GB / ~8.9 GB | 128K | Apache 2.0 | Yes | Same family tool-calling template as above | Reported near Qwen2.5-14B on several benchmarks at half the size (training knowledge) | Already installed in this fleet's registry (`ollama-datawatch`, `ollama-johnnyjohnny`) per live `llm_list` — existence/size on disk should be re-confirmed via `ollama show qwen3:8b` rather than assumed from the tag name alone (01 already flags qwen3:1.7b's tag as understating its real 2.0B param count) |
+| **Qwen3-8B** | 8B dense | ~5.2 GB / ~8.9 GB | 128K | Apache 2.0 | Yes | Same family tool-calling template as above | Reported near Qwen2.5-14B on several benchmarks at half the size (training knowledge) | Already installed in this fleet's registry (`ollama-datawatch`, `ollama-local-node`) per live `llm_list` — existence/size on disk should be re-confirmed via `ollama show qwen3:8b` rather than assumed from the tag name alone (01 already flags qwen3:1.7b's tag as understating its real 2.0B param count) |
 | **Qwen3-14B** | 14B dense | ~9 GB / ~15 GB | 128K | Apache 2.0 | Yes | Same | Closest dense sibling to the fleet's existing `qwen2.5:14b` | training knowledge, unverified live |
 | **Qwen3-30B-A3B** (MoE) | 30.5B total / **3.3B active** | ~18–19 GB / ~32 GB | 128K–256K depending on release | Apache 2.0 | Yes | Strong — this shape is Alibaba's flagship "cheap-to-serve, smart" MoE design | Reported to approach much larger dense models on reasoning/coding while running at small-dense-model speed (training knowledge) | training knowledge, unverified live. **This is the textbook fit for the CPU+GPU-split argument above** — closest in spirit to what the brief is asking for |
 | **Qwen3-Coder-30B-A3B** | 30B total / ~3B active | ~18–19 GB / ~32 GB | 256K+ | Apache 2.0 | Yes, tool-calling-first design (coding agent use case) | Purpose-built for agentic coding tool-call loops | Positioned as the small sibling to the fleet's existing `qwen3-coder-next` (79.7B) and `qwen3-coder:30b` (dense) — an MoE alternative at similar total size but far cheaper active compute | training knowledge, unverified live; fleet already runs the **dense** `qwen3-coder:30b` (18.6 GB, confirmed in 01) — this MoE sibling is a lateral option worth A/B-ing against it, not a strict upgrade |
 | **Gemma 3 4B** | 4B dense | ~2.5 GB / ~4.3 GB | 128K | Gemma license (custom, commercial use allowed with use restrictions — not OSI-approved Apache/MIT) | Limited native tool-calling vs. Qwen3/Llama; workable via prompt-based function-calling | No strict-JSON guarantee built in; needs grammar-constrained decoding for hard JSON | Strong on instruction-following/knowledge for size, weaker on agentic tool-use benchmarks (training knowledge) | training knowledge, unverified live |
-| **Gemma 3 12B** | 12B dense | ~8 GB / ~13 GB | 128K | Gemma license | Same caveat as above | Same caveat | Fleet already runs `Gemma3:12b` (8.1 GB, confirmed in 01, currently loaded) | Live: already in fleet (01, `ollama_stats` this session shows it's not currently loaded on `johnnyjohnny`, only on `datawatch`) |
+| **Gemma 3 12B** | 12B dense | ~8 GB / ~13 GB | 128K | Gemma license | Same caveat as above | Same caveat | Fleet already runs `Gemma3:12b` (8.1 GB, confirmed in 01, currently loaded) | Live: already in fleet (01, `ollama_stats` this session shows it's not currently loaded on `local-node`, only on `datawatch`) |
 | **Gemma 3n** (mobile/edge variant) | ~4B effective footprint via per-layer embedding tricks, distinct from Gemma3-4B | Smaller than Gemma3-4B disk footprint | Reduced vs. full Gemma 3 | Gemma license | Limited | Designed for on-device/edge, not server tool-calling | Not evaluated as a serious candidate here — edge/mobile-optimized architecture, not built for the tool-calling/JSON workloads this fleet needs (training knowledge) | training knowledge, unverified live |
 | **gpt-oss-20b** (OpenAI, MXFP4) | ~21B total, small-active MoE | ~13 GB (native MXFP4) | 128K | Apache 2.0 | Yes — OpenAI ships an explicit harmony/tool-calling chat format for this family | Explicit structured-output/function-calling support was a launch feature of gpt-oss | Positioned by OpenAI as near-o3-mini-class reasoning at a fraction of the size (training knowledge) | github.com/ollama/ollama repo description (checked 2026-09-29) confirms "gpt-oss" ships in Ollama's supported set; size/benchmark specifics: training knowledge, unverified live |
 | **gpt-oss-120b** (incumbent, for contrast) | ~117B total, small-active MoE | 65.4 GB (confirmed live, 01) | 128K | Apache 2.0 | Yes | Yes | Already in fleet, not loaded (01) | Live: `llm_list`/01 |
@@ -226,7 +226,7 @@ value gap) before swapping the frontier tier to any unverified alternative.
 - **Gemma 3n** — purpose-built for mobile/edge inference, not server-side
   tool-calling or structured JSON; the architectural tricks that make it
   small on a phone don't translate into an advantage on a 122 GB RAM / RTX
-  5090 host that already has room for dense Gemma 3 4B/12B.
+  32 GB GPU host that already has room for dense Gemma 3 4B/12B.
 - **SmolLM3** — fully open in spirit (a real virtue, and worth citing for a
   transparency-sensitive use case) but not built or benchmarked for agentic
   tool-calling, which disqualifies it from the worker/decomposition tiers
@@ -275,11 +275,11 @@ value gap) before swapping the frontier tier to any unverified alternative.
   in this document's opening paragraph and the incumbents table: same 5
   registry entries (`claude-code`, `ollama-datawatch` with `auto_add_models`
   and the same 10-model list including `qwen3.8:27b` and `gpt-oss:120b`,
-  `ollama-johnnyjohnny` still carrying the same stale 7-model list,
+  `ollama-local-node` still carrying the same stale 7-model list,
   `opencode` on node `datawatch`, `openwebui-datawatch`); same 4 compute
   nodes with identical priorities (`datawatch` 90, `datawatch-openai` 90,
-  `johnnyjohnny` 70, `test-node` 50, stale duplicate address unchanged);
-  local `johnnyjohnny` Ollama still exactly 4 models (`moondream:latest`,
+  `local-node` 70, `test-node` 50, stale duplicate address unchanged);
+  local `local-node` Ollama still exactly 4 models (`moondream:latest`,
   `llmvision/glimpse-v1`, `qwen3:1.7b`, `nomic-embed-text`, 7.8 GB total).
   This document's prior commit (`0309b41`) needed no factual correction —
   this pass exists to close out a retry whose failure was an infrastructure

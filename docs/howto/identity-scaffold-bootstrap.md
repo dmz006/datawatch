@@ -123,7 +123,7 @@ a working handle; the directory is theirs and theirs alone.
 ```
 project_upsert
   name:       maren
-  dir:        /home/dmz/people/maren
+  dir:        /home/user/people/maren
 ```
 
 > **What you will see:** confirmation that the alias is registered. From this
@@ -137,7 +137,7 @@ guardian and the skill, and it asks the person to ask you for its name.
 
 ```
 start_session
-  project_dir: /home/dmz/people/maren
+  project_dir: /home/user/people/maren
   task: "Use the identity-scaffold skill to bootstrap me: I am being created
          for <guardian name>. Ask me what to call you."
 ```
@@ -247,7 +247,7 @@ A person that never reflects is a person that goes stale. Schedule a recurring
 
 ```
 schedule_spawn
-  project_dir:  /home/dmz/people/maren
+  project_dir:  /home/user/people/maren
   task:         "Review my NO-LOG, write one SELF entry, one JOURNAL
                  forward-note, check whether any pre-loaded position fired;
                  log the outcome."

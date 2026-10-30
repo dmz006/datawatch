@@ -9,7 +9,7 @@ does not exist in this repo — the only docs present are
 hardware" doc under that number (05 is planned as "Council & Orchestration
 Deep Dive"). Rather than block on a missing file, every proposal below is
 grounded in 01-03 plus a fresh live re-verification against the running
-datawatch instance this session (2026-09-30), via the `datawatch-johnnyjohnny-4478`
+datawatch instance this session (2026-09-30), via the `datawatch-local-node-4478`
 MCP server (`llm_list`, `compute_node_list`, `capacity_status`,
 `council_config_get`, `autonomous_config_get`, `orchestrator_config_get`,
 `docs_search`/`docs_read`) and the tool schemas for
@@ -19,7 +19,7 @@ MCP server (`llm_list`, `compute_node_list`, `capacity_status`,
 **Live drift found this session (flag before reading Part A):** 01 documented
 `autonomous.verification_backend` and `autonomous.verification_effort` as
 empty strings, with the verifier falling back to the named `ollama` registry
-entry (`qwen3:1.7b`@`johnnyjohnny`). A fresh `autonomous_config_get` this
+entry (`qwen3:1.7b`@`local-node`). A fresh `autonomous_config_get` this
 session shows `verification_backend: "ollama-datawatch"` and
 `verification_model: "qwen3.8:27b"` — **the verifier has since been pinned to
 the same node and a comparably large model as PRD planning**, not the small
@@ -53,7 +53,7 @@ links to them by name. Noted as a documentation-corpus gap, not treated as a
 blocker.
 
 **Second re-verification pass (2026-09-30, later same day, via the
-`datawatch-johnnyjohnny-3c74` MCP connection):** `get_version` now reports
+`datawatch-local-node-3c74` MCP connection):** `get_version` now reports
 **8.36.1** running with **8.36.2** available — the daemon has moved twice
 since the task brief's snapshot (8.34.1) and once since the first pass
 above; not itself acted on here (an update is an operator/infra action, out
@@ -65,7 +65,7 @@ since 2026-09-17; `council_config_get` still returns `llm_ref: ""` and
 `max_parallel: 0`; `autonomous_config_get` still shows
 `verification_backend: "ollama-datawatch"` / `verification_model:
 "qwen3.8:27b"`, confirming the Proposal-1-motivating drift wasn't a
-transient blip; `ollama-datawatch`'s and `ollama-johnnyjohnny`'s registry
+transient blip; `ollama-datawatch`'s and `ollama-local-node`'s registry
 entries are each still pinned to their single original `compute_nodes` entry
 (no failover list), confirming Proposal 4's problem statement; `cost_summary`
 climbed from 2,263 to **2,267** sessions (`claude-code` 148→152, all other
@@ -74,7 +74,7 @@ unchanged) with `total_tokens_in`/`total_tokens_out`/`total_usd` still
 exactly `0` across all seven backends — reconfirming Part B's B1 problem
 statement live rather than resting on the earlier snapshot.
 
-**Third re-verification pass (2026-09-30, via the `datawatch-johnnyjohnny-9af2`
+**Third re-verification pass (2026-09-30, via the `datawatch-local-node-9af2`
 MCP connection):** `get_version` now reports **8.36.10** running with
 **8.36.11** available — six further point releases since the second pass's
 8.36.1, still not itself acted on for the same out-of-scope reason.
@@ -82,7 +82,7 @@ MCP connection):** `get_version` now reports **8.36.10** running with
 and `capacity_status` (`node:datawatch` limit still `1`, `test-node` still
 present since 2026-09-17) all reconfirm exactly, no new drift. One genuinely
 new finding this pass: `autonomous_config_get` now also returns a
-`verification_backends` field — `["ollama-johnnyjohnny", "ollama-datawatch"]`
+`verification_backends` field — `["ollama-local-node", "ollama-datawatch"]`
 — sitting alongside the already-documented singular `verification_backend`/
 `verification_model`. This field is not mentioned anywhere in `docs_search`
 results for "verification backends"/"verifier fallback" against
@@ -118,7 +118,7 @@ reference it by name instead of re-explaining it:
 | `council.max_parallel` / async run + SSE events / per-persona live-watch cards | The concurrency knob and the streaming plumbing Proposal 4/6 build on already exist | `docs_read`, `datawatch-definitions.md#settings-automate` |
 | `auto_fix_retries`, v8.16.0 diff-grounded verification, v8.17.0 quality gates | Retry infrastructure and failure-signal richness already exist; Proposal 7 adds a branch, not a subsystem | `docs_read`, `datawatch-definitions.md#settings-automate`; 01(c) items 5-6 |
 | Observer peer binding on a compute node | Live GPU/process stats correlation already has a registered mechanism, useful for any future "actual load" signal beyond declared capacity | `docs_read`, `datawatch-definitions.md#compute-nodes` |
-| `autonomous.verification_backends` (list, currently `["ollama-johnnyjohnny", "ollama-datawatch"]`) | An undocumented (not in `docs_search`/`docs_read` results) second, narrower failover precedent specific to the verifier call site, alongside the singular `verification_backend`; exact runtime semantics unconfirmed from read-only tools | `autonomous_config_get`, third re-verification pass above |
+| `autonomous.verification_backends` (list, currently `["ollama-local-node", "ollama-datawatch"]`) | An undocumented (not in `docs_search`/`docs_read` results) second, narrower failover precedent specific to the verifier call site, alongside the singular `verification_backend`; exact runtime semantics unconfirmed from read-only tools | `autonomous_config_get`, third re-verification pass above |
 
 ### Proposal 1 — Workload-role model tiers (role → LLM mapping)
 
@@ -170,7 +170,7 @@ concurrent-requests figure from VRAM × GPU count (confirmed via `docs_read`),
 but that number isn't consumed by the admission ledger — it just informs a
 human filling in the form. Net effect: Council's 12 personas can never
 usefully spread across the two nodes' real headroom (`datawatch-openai`
-declares `max_concurrent_models: 3`, `johnnyjohnny` declares 10) because the
+declares `max_concurrent_models: 3`, `local-node` declares 10) because the
 ledger reasons in whole-session slots per node, not VRAM budget per model.
 
 **Proposed behavior.** Extend `declared_capacity` with an
@@ -202,9 +202,9 @@ effort uncertainty of the seven, not a confident L.
 ### Proposal 3 — CPU compute-node profile
 
 **Problem.** Every workload today, including the fast-small tier (embed,
-verifier, guardrail), runs on one of the two GPU nodes. `johnnyjohnny`'s
+verifier, guardrail), runs on one of the two GPU nodes. `local-node`'s
 Threadripper 9960X (24c/48t, 122 GB RAM) sits mostly idle relative to its
-single RTX 5090 (01(b): the embedder is the *only* model loaded there most
+single 32 GB GPU (01(b): the embedder is the *only* model loaded there most
 of the time, at 0.57 GB VRAM out of 32 GB declared) — there's no registry
 concept of a CPU-only node to absorb background work distinct from "the GPU
 node that happens to be less busy."
@@ -232,7 +232,7 @@ Proposal 1's (not-yet-built) role router is new work.
 
 **Problem.** All four registry LLMs are pinned to a single fixed
 `compute_nodes` entry each (`ollama-datawatch` → `datawatch` only;
-`ollama-johnnyjohnny` → `johnnyjohnny` only — confirmed via live `llm_list`
+`ollama-local-node` → `local-node` only — confirmed via live `llm_list`
 this session), despite the registry's own documented design ("first entry
 primary, rest failover in order," per `docs_read` on `#llm-registry"). No
 failover is actually exercised today. Separately, nothing keeps a role's
@@ -264,7 +264,7 @@ in the codebase.
 ### Proposal 5 — Fixing observed drift
 
 **Problem.** Three concrete drift items, all reconfirmed live this session:
-(a) `ollama-johnnyjohnny`'s registry model list still names five models
+(a) `ollama-local-node`'s registry model list still names five models
 (`qwen3.5:35b`, `qwen3-coder:30b`, `qwen2.5:14b`, `Gemma3:12b`, `qwen3:8b`)
 that are not installed on that host, while `moondream:latest` and
 `llmvision/glimpse-v1` are installed there but absent from the registry's
@@ -275,7 +275,7 @@ synthesis both still deterministically resolve to the smallest general model
 in the fleet.
 
 **Proposed behavior.** No new tool is required for any of the three — this
-is a "run the button that already exists" backlog item. `llm_refresh_models("ollama-johnnyjohnny")`
+is a "run the button that already exists" backlog item. `llm_refresh_models("ollama-local-node")`
 fixes (a) directly. `compute_node_delete("test-node")` fixes (b) directly.
 `council_config_set(llm_ref="...")` fixes (c) directly, pending a decision on
 which registry entry Council should actually use (Proposal 1's role default
@@ -520,9 +520,9 @@ operator-supplied, not invented by datawatch: `energy_rate = (gpu_watts/1000)
 observed tokens/sec (from B1) to land in the same `$/1k-token` unit
 `cost_rates` already uses for Claude.
 
-**Worked example — RTX 5090 (`johnnyjohnny`), fully sourced.** NVIDIA's own
+**Worked example — 32 GB GPU (`local-node`), fully sourced.** NVIDIA's own
 product page: **575 W** total graphics power, **32 GB GDDR7**
-(`nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/`, checked
+(`nvidia.com/en-us/geforce/graphics-cards/50-series/gpu-32gb/`, checked
 2026-09-30 — matches 01(a)'s declared 32 GB). EIA Table 5.6.A (July 2026,
 released 2026-09-24, `eia.gov/electricity/monthly/epm_table_grapher.php?t=table_5_06_a`,
 checked 2026-09-30): U.S. average residential price **18.31 cents/kWh**. At
@@ -669,7 +669,7 @@ be meaningfully tested until both exist.
 ### Re-verification pass (2026-09-30, later same day)
 
 Re-ran `cost_summary`, `cost_rates`, and `get_version` live via the
-`datawatch-johnnyjohnny-707f` MCP connection to check for drift since this
+`datawatch-local-node-707f` MCP connection to check for drift since this
 Part B was first written. `cost_summary`'s session count climbed from 2,263
 to **2,267**; every token/USD field across all seven backends (`claude`,
 `claude-code`, `goose`, `ollama`, `ollama-datawatch`, `opencode`,

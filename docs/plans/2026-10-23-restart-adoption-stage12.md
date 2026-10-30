@@ -4,7 +4,7 @@ Restart onto the build with flexible verifier routing, with one PRD mid-run and 
 
 | PRD | Task | Session before | Session after | Outcome |
 |---|---|---|---|---|
-| 2d950001 (claude-code) | verifying (daemon-run verification script) | ed66 | none | task reset to pending; ended live session johnnyjohnny-0907 ("task reset on daemon restart") |
+| 2d950001 (claude-code) | verifying (daemon-run verification script) | ed66 | none | task reset to pending; ended live session local-node-0907 ("task reset on daemon restart") |
 
 - Result: **not adopted.** The task went from verifying to pending with an empty session link, so the worker will redo work it had already finished.
 - Cause (from the boot reconcile code and journal): the task was in verification that the daemon runs itself as a script. Its worker session was finished and idle, so boot reconcile saw no live verifier session, found no recorded verdict, and reset the task to pending, which ended the idle worker session. The code path is `resetInProgressTasksForResume`, case `TaskVerifying`.

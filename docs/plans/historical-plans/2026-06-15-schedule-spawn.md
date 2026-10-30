@@ -80,7 +80,7 @@ cron-based entries. The scheduler passes `CronExpr` through to the existing
 ```bash
 datawatch schedule spawn \
   --task "check and process new emails" \
-  --dir /home/dmz/workspace \
+  --dir /home/user/workspace \
   --backend claude \
   --cron "0 * * * *" \
   --schedule-name imap-hourly \
@@ -94,7 +94,7 @@ Also under `datawatch session schedule spawn`.
 ```json
 { "tool": "schedule_spawn",
   "task": "check and process new emails",
-  "project_dir": "/home/dmz/workspace",
+  "project_dir": "/home/user/workspace",
   "backend": "claude",
   "cron_expr": "0 * * * *",
   "schedule_name": "imap-hourly",

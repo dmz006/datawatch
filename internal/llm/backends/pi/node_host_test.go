@@ -169,7 +169,7 @@ func TestPiLaunchWithoutNodeHostUnchanged(t *testing.T) {
 	// A source directory exists but no node is set: it must not be read or linked.
 	useAgentEnvironment(t, sampleProviderTable)
 	argvFile := installFakeTmux(t)
-	const project, model = "/home/dmz/work", "ollama/qwen3.8:27b"
+	const project, model = "/home/user/work", "ollama/qwen3.8:27b"
 
 	b := New("pi").(*Backend)
 	b.SetSessionName("sess-plain")
@@ -178,7 +178,7 @@ func TestPiLaunchWithoutNodeHostUnchanged(t *testing.T) {
 		t.Fatalf("Launch: %v", err)
 	}
 	gotInteractive := scratchPathPattern.ReplaceAllString(sentCommand(t, argvFile), "'SCRATCH'")
-	wantInteractive := `cd '/home/dmz/work' && pi --approve --model 'ollama/qwen3.8:27b' --session-id 'sess-plain' ; pi_status=$?; echo; if [ "$pi_status" -eq 0 ]; then echo 'DATAWATCH_COMPLETE: pi session ended'; else echo "DATAWATCH_PI_FAILED: pi exited with status $pi_status"; fi; exit "$pi_status"`
+	wantInteractive := `cd '/home/user/work' && pi --approve --model 'ollama/qwen3.8:27b' --session-id 'sess-plain' ; pi_status=$?; echo; if [ "$pi_status" -eq 0 ]; then echo 'DATAWATCH_COMPLETE: pi session ended'; else echo "DATAWATCH_PI_FAILED: pi exited with status $pi_status"; fi; exit "$pi_status"`
 	if gotInteractive != wantInteractive {
 		t.Errorf("interactive command changed without a node host:\n got: %s\nwant: %s", gotInteractive, wantInteractive)
 	}
@@ -189,7 +189,7 @@ func TestPiLaunchWithoutNodeHostUnchanged(t *testing.T) {
 		t.Fatalf("Launch: %v", err)
 	}
 	gotPrompt := scratchPathPattern.ReplaceAllString(sentCommand(t, argvFile), "'SCRATCH'")
-	wantPrompt := `cd '/home/dmz/work' && { pi --print --mode text --approve --model 'ollama/qwen3.8:27b' ; echo $? > 'SCRATCH'; } | tee 'SCRATCH'; read dw_status < 'SCRATCH'; [ -s 'SCRATCH' ]; dw_has_output=$?; rm -f 'SCRATCH' 'SCRATCH'; if [ "${dw_status:-1}" -ne 0 ]; then printf 'DATAWATCH_PI_FAILED: pi exited with status %s (model %s)\n' "${dw_status:-1}" 'ollama/qwen3.8:27b'; exit "${dw_status:-1}"; fi; if [ "$dw_has_output" -ne 0 ]; then echo 'DATAWATCH_PI_FAILED: pi produced no output'; exit 1; fi; echo 'DATAWATCH_COMPLETE: pi done'`
+	wantPrompt := `cd '/home/user/work' && { pi --print --mode text --approve --model 'ollama/qwen3.8:27b' ; echo $? > 'SCRATCH'; } | tee 'SCRATCH'; read dw_status < 'SCRATCH'; [ -s 'SCRATCH' ]; dw_has_output=$?; rm -f 'SCRATCH' 'SCRATCH'; if [ "${dw_status:-1}" -ne 0 ]; then printf 'DATAWATCH_PI_FAILED: pi exited with status %s (model %s)\n' "${dw_status:-1}" 'ollama/qwen3.8:27b'; exit "${dw_status:-1}"; fi; if [ "$dw_has_output" -ne 0 ]; then echo 'DATAWATCH_PI_FAILED: pi produced no output'; exit 1; fi; echo 'DATAWATCH_COMPLETE: pi done'`
 	if gotPrompt != wantPrompt {
 		t.Errorf("one-shot command changed without a node host:\n got: %s\nwant: %s", gotPrompt, wantPrompt)
 	}

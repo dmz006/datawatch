@@ -2223,7 +2223,7 @@ type AutonomousConfig struct {
 	GuardrailModel string `yaml:"guardrail_model,omitempty" json:"guardrail_model,omitempty"`
 	// VerificationBackends (v8.36.9) is an ordered list of LLM registry
 	// names to load-balance the verifier's capacity requests across — e.g.
-	// ["ollama-datawatch", "ollama-johnnyjohnny"]. Found live: a
+	// ["ollama-datawatch", "ollama-local-node"]. Found live: a
 	// claude-code-backed PRD's verifier always fell back to a single
 	// hardcoded "ollama" default, which needed the SAME exclusive
 	// node: capacity slot a real local worker session on that node

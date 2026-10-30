@@ -31,7 +31,7 @@ func TestSessionIdleProbe_IdleClaudeWithOwnServersReportsNoWork(t *testing.T) {
 		100: {"bash"},
 		200: {"bash"},
 		300: {"claude"},
-		400: {"/home/dmz/.datawatch/channel/datawatch-channel"},
+		400: {"/home/user/.datawatch/channel/datawatch-channel"},
 		500: {"/usr/local/bin/datawatch", "mcp-search"},
 	}
 	ownServers := []channel.MCPServerSpec{{Command: "/usr/local/bin/datawatch", Args: []string{"mcp-search"}}}

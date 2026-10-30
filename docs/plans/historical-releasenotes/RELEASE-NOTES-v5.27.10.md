@@ -31,7 +31,7 @@ The per-session `.mcp.json` writer (added in BL109 for non-claude-code backends 
 Operators reading `tail -f ~/.datawatch/daemon.log` now see one line per session register:
 
 ```
-[channel] session ralfthewise-eac4 registered with go bridge at /home/dmz/.local/bin/datawatch-channel
+[channel] session ralfthewise-eac4 registered with go bridge at /home/user/.local/bin/datawatch-channel
 ```
 
 Instead of having to grep `[channel] using native Go bridge` + cross-reference session start times.

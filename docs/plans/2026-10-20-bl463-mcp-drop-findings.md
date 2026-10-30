@@ -114,7 +114,7 @@ A datawatch session has three related identifiers:
 | Identifier | Construction | Evidence |
 |---|---|---|
 | `ID` | 4-char hex suffix (e.g. `ba41`) | `internal/session/store.go:49` (Session struct) |
-| `FullID` | `hostname + "-" + ID` (e.g. `johnnyjohnny-ba41`) | `internal/session/manager.go:1754` — `fullID := fmt.Sprintf("%s-%s", m.hostname, id)` |
+| `FullID` | `hostname + "-" + ID` (e.g. `local-node-ba41`) | `internal/session/manager.go:1754` — `fullID := fmt.Sprintf("%s-%s", m.hostname, id)` |
 | tmux session | `cs-<sanitizedHostname>-<ID>` | `internal/session/manager.go:1759` |
 
 `FullID` is the identifier the daemon uses for **everything channel/session-scoped**:

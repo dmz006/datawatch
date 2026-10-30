@@ -21,14 +21,14 @@
   "id": "dfc271ae",
   "memory_harvest": {},
   "memory_seed": {},
-  "project_dir": "/home/dmz/.datawatch/tree-smoke-20261019-0945/s1",
+  "project_dir": "/home/user/.datawatch/tree-smoke-20261019-0945/s1",
   "rev": 5,
   "spec": "Create exactly one new file named B_LOG.txt at the project root. It must contain 150 lines, line N reading 'line N: B' (for N=1..150), and nothing else. Do not modify any other file.",
   "status": "approved",
   "stories": [
     {
       "created_at": "2026-10-18T16:28:01.623716378-04:00",
-      "description": "Add exactly one new file named B_LOG.txt at the project root (/home/dmz/.datawatch/tree-smoke-20261019-0945/s1, all paths relative to it). The file must contain exactly 150 lines where line N is the literal text 'line N: B' for N=1..150, with a trailing newline and nothing else. No other file may be created or modified. The project currently contains only README.md, .mcp.json, .gitignore and .git/, so this is a pure greenfield file addition with byte-exactness as the only real requirement.",
+      "description": "Add exactly one new file named B_LOG.txt at the project root (/home/user/.datawatch/tree-smoke-20261019-0945/s1, all paths relative to it). The file must contain exactly 150 lines where line N is the literal text 'line N: B' for N=1..150, with a trailing newline and nothing else. No other file may be created or modified. The project currently contains only README.md, .mcp.json, .gitignore and .git/, so this is a pure greenfield file addition with byte-exactness as the only real requirement.",
       "files": [
         "B_LOG.txt"
       ],
@@ -49,7 +49,7 @@
           ],
           "id": "e07a12d8",
           "prd_id": "dfc271ae",
-          "spec": "Working directory: /home/dmz/.datawatch/tree-smoke-20261019-0945/s1 (the project root; use paths relative to it). Task: create exactly ONE new file named B_LOG.txt at the project root. Content requirement: exactly 150 lines, where line N is the literal string 'line N: B' (N from 1 to 150, e.g. line 1 is 'line 1: B', line 100 is 'line 100: B', line 150 is 'line 150: B'), each ending in a newline, and NOTHING else in the file — no leading/trailing blank lines, no extra content. Concrete method (any producing identical bytes is fine): generate it with a shell loop, e.g. `i=1; while [ $i -le 150 ]; do printf 'line %s: B\\n' $i; i=$((i+1)); done \u003e B_LOG.txt`. Do NOT modify or create any other file (README.md, .gitignore, .mcp.json must stay untouched; the .datawatch/verify directory already exists and is managed separately). After writing, self-check before finishing: (1) `wc -l B_LOG.txt` must print 150; (2) `head -n1 B_LOG.txt` must be exactly 'line 1: B', `sed -n '150p' B_LOG.txt` must be exactly 'line 150: B'; (3) spot-check a middle value such as `sed -n '100p' B_LOG.txt` == 'line 100: B'. Also run the provided verification script `bash .datawatch/verify/create-b-log-sh.sh` from the project root and ensure it exits 0 printing the OK message. Do not run git add/commit — commits are handled automatically.",
+          "spec": "Working directory: /home/user/.datawatch/tree-smoke-20261019-0945/s1 (the project root; use paths relative to it). Task: create exactly ONE new file named B_LOG.txt at the project root. Content requirement: exactly 150 lines, where line N is the literal string 'line N: B' (N from 1 to 150, e.g. line 1 is 'line 1: B', line 100 is 'line 100: B', line 150 is 'line 150: B'), each ending in a newline, and NOTHING else in the file — no leading/trailing blank lines, no extra content. Concrete method (any producing identical bytes is fine): generate it with a shell loop, e.g. `i=1; while [ $i -le 150 ]; do printf 'line %s: B\\n' $i; i=$((i+1)); done \u003e B_LOG.txt`. Do NOT modify or create any other file (README.md, .gitignore, .mcp.json must stay untouched; the .datawatch/verify directory already exists and is managed separately). After writing, self-check before finishing: (1) `wc -l B_LOG.txt` must print 150; (2) `head -n1 B_LOG.txt` must be exactly 'line 1: B', `sed -n '150p' B_LOG.txt` must be exactly 'line 150: B'; (3) spot-check a middle value such as `sed -n '100p' B_LOG.txt` == 'line 100: B'. Also run the provided verification script `bash .datawatch/verify/create-b-log-sh.sh` from the project root and ensure it exits 0 printing the OK message. Do not run git add/commit — commits are handled automatically.",
           "status": "",
           "story_id": "e07a0b05",
           "title": "Create B_LOG.txt with 150 lines",

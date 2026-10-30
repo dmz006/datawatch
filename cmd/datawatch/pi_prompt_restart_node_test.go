@@ -27,7 +27,7 @@ import (
 
 const (
 	piNodeFirst   = "datawatch"
-	piNodeSecond  = "johnnyjohnny"
+	piNodeSecond  = "local-node"
 	piAddrFirst   = "http://10.0.0.1:11434"
 	piAddrSecond  = "http://10.0.0.2:11434"
 	piBackendName = "pi-prompt"

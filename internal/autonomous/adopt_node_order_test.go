@@ -230,7 +230,7 @@ func TestTaskComputeNodeSurvivesStoreRoundTrip(t *testing.T) {
 	}
 	got, _ := st.GetPRD(prd.ID)
 	task := &got.Story[0].Tasks[0]
-	task.ComputeNode = "johnnyjohnny"
+	task.ComputeNode = "local-node"
 	if err := st.SaveTask(task); err != nil {
 		t.Fatal(err)
 	}
@@ -243,8 +243,8 @@ func TestTaskComputeNodeSurvivesStoreRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatal("PRD missing after reload")
 	}
-	if n := again.Story[0].Tasks[0].ComputeNode; n != "johnnyjohnny" {
-		t.Fatalf("task ComputeNode after reload = %q, want johnnyjohnny", n)
+	if n := again.Story[0].Tasks[0].ComputeNode; n != "local-node" {
+		t.Fatalf("task ComputeNode after reload = %q, want local-node", n)
 	}
 }
 

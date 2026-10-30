@@ -20,7 +20,7 @@ import (
 func TestWriteTaskFile(t *testing.T) {
 	testhome.PrivateTmp(t) // the scratch file is removed with the test's temp dir
 	task := "line one\nline two with 'quotes' and \"stuff\"\nCHECKPOINT PROTOCOL etc."
-	path, err := writeTaskFile("johnnyjohnny-a400", task)
+	path, err := writeTaskFile("local-node-a400", task)
 	if err != nil {
 		t.Fatalf("writeTaskFile: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestWriteTaskFile(t *testing.T) {
 	if string(got) != task {
 		t.Errorf("file content mismatch: got %q, want %q", got, task)
 	}
-	if !strings.Contains(path, "johnnyjohnny-a400") {
+	if !strings.Contains(path, "local-node-a400") {
 		t.Errorf("path %q should carry the tmux session name for traceability", path)
 	}
 }
@@ -56,7 +56,7 @@ func TestBuildRunCmd_KeepsTypedLineShort(t *testing.T) {
 	standaloneFlagCache.Store("opencode-test-standalone", true)
 	b := &Backend{binary: "opencode-test-standalone"}
 	bigTask := strings.Repeat("this is a long task spec line.\n", 500) // ~16KB
-	cmd := b.buildRunCmd("/tmp/proj", bigTask, "johnnyjohnny-xyz1")
+	cmd := b.buildRunCmd("/tmp/proj", bigTask, "local-node-xyz1")
 
 	if len(cmd) > 2000 {
 		t.Errorf("typed command is %d bytes — expected the big task text to live in a file, not be embedded inline (len should stay small regardless of task size)", len(cmd))
@@ -74,7 +74,7 @@ func TestBuildRunCmd_KeepsTypedLineShort(t *testing.T) {
 
 func TestBuildRunCmd_EmptyTaskUnchanged(t *testing.T) {
 	b := &Backend{binary: "opencode"}
-	cmd := b.buildRunCmd("/tmp/proj", "", "johnnyjohnny-xyz1")
+	cmd := b.buildRunCmd("/tmp/proj", "", "local-node-xyz1")
 	want := "cd '/tmp/proj' && opencode"
 	if cmd != want {
 		t.Errorf("buildRunCmd empty task = %q, want %q", cmd, want)
@@ -89,7 +89,7 @@ func TestBuildRunCmd_NoStandaloneFlagWhenUnsupported(t *testing.T) {
 	testhome.PrivateTmp(t) // the scratch file is removed with the test's temp dir
 	standaloneFlagCache.Store("opencode-test-old", false)
 	b := &Backend{binary: "opencode-test-old"}
-	cmd := b.buildRunCmd("/tmp/proj", "a task", "johnnyjohnny-xyz2")
+	cmd := b.buildRunCmd("/tmp/proj", "a task", "local-node-xyz2")
 	if strings.Contains(cmd, "--standalone") {
 		t.Errorf("binary without --standalone support must not get the flag, got: %s", cmd)
 	}

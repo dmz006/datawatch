@@ -45,7 +45,7 @@ The IDs (`selectedDirDisplay`, `dirBrowser`) are shared with the New Session mod
 Both the New Session and the New PRD dir browsers now expose a `+ New folder` button next to the `✓ Use This Folder` button:
 
 ```
-[current path: /home/dmz/projects]
+[current path: /home/user/projects]
 [ ✓ Use This Folder ] [ + New folder ]
 [ 📁 .. ]
 [ 📁 datawatch ]

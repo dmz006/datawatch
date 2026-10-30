@@ -12,7 +12,7 @@ v9.0.17. Per the locked v10.0.0 Stage 1 sequencing
 second half of the "traditional build" exercise before Stage 2's
 PRD-driven shakedown run. The need was first raised while scoping
 BL406 Phase 2: every PRD this session has driven (including BL406's own
-implementation) ran directly inside `/home/dmz/workspace/datawatch` —
+implementation) ran directly inside `/home/user/workspace/datawatch` —
 this repo's own live checkout — with no branch, no isolation, and no
 reviewable diff before it landed. That's fine for a human operator
 typing commands, but it's the wrong default for an autonomous PRD loop

@@ -16340,10 +16340,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.verification_model', label: 'Verification model', type: 'llm_model', backendKey: 'autonomous.verification_backend' },
     { key: 'autonomous.verification_effort', label: 'Verification effort', labelKey: 'settings_verification_effort', type: 'select', options: ['', 'quick', 'normal', 'high', 'max'] },
     // v8.36.9 — ordered LLM registry names the verifier load-balances
-    // capacity across (e.g. ollama-datawatch, ollama-johnnyjohnny), tried
+    // capacity across (e.g. ollama-datawatch, ollama-local-node), tried
     // in order, whichever has free node capacity wins. Empty = single-
     // backend behavior via verification_backend above.
-    { key: 'autonomous.verification_backends', label: 'Verification backends (load-balance, comma-separated)', type: 'text', placeholder: 'ollama-datawatch, ollama-johnnyjohnny', csv: true },
+    { key: 'autonomous.verification_backends', label: 'Verification backends (load-balance, comma-separated)', type: 'text', placeholder: 'ollama-datawatch, ollama-local-node', csv: true },
     { key: 'autonomous.task_override_statuses', label: 'Automaton statuses that accept LLM overrides', labelKey: 'settings_task_override_statuses', type: 'text', placeholder: 'needs_review, revisions_asked, cancelled, blocked', csv: true },
     { key: 'autonomous.stale_task_seconds', label: 'Stale task timeout (sec, 0=inherit session default)', labelKey: 'settings_stale_task_seconds', type: 'number', placeholder: '0' },
     { key: 'autonomous.stuck_running_seconds', label: 'Stuck Automaton timeout (seconds)', labelKey: 'settings_stuck_running_seconds', helpKey: 'settings_stuck_running_seconds_help', type: 'number', min: 0, placeholder: '900' },

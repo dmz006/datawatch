@@ -357,19 +357,19 @@ requirement (open question 19).
 - **Lane idle diagnosis corrected (2026-10-19).** A first diagnosis said the local GPU lane
   was idle because the LLM registry did not bind the 64k model to its node. That was wrong.
   Both machines have the 64k model, and both hold it resident (verified 2026-10-19:
-  `ollama ps` on johnnyjohnny shows qwen3.8-64k:27b at a 65536 context, 100% GPU; the remote
-  box at 100.64.0.20 also shows it resident, about 18 GB VRAM). The remote box has done PRD
+  `ollama ps` on local-node shows qwen3.8-64k:27b at a 65536 context, 100% GPU; the remote
+  box at <remote-node-address> also shows it resident, about 18 GB VRAM). The remote box has done PRD
   work, per the operator. Which Ollama serves a given pi PRD is NOT yet verified: the
   pi sessions and daemon were seen connected to the local Ollama on one check, and no
   connection to the remote one was seen on that check. The capacity pool labels do not show
   where traffic goes. Do not call either GPU idle or busy without a live check (`ss -tnp |
   grep 11434` on each side, `ollama ps` on each machine, the remote box's own logs). Each
   tick does this before judging a lane.
-  Lanes, defined: GPU lane A = this machine (johnnyjohnny), qwen3.8-64k:27b;
-  GPU lane B = remote datawatch (100.64.0.20), qwen3.8-64k:27b; traffic routing unverified;
+  Lanes, defined: GPU lane A = this machine (local-node), qwen3.8-64k:27b;
+  GPU lane B = remote datawatch (<remote-node-address>), qwen3.8-64k:27b; traffic routing unverified;
   Claude 1 and Claude 2 = claude-code, two lanes only.
 - **Registry gap (2026-10-19).** Neither ollama backend (`ollama-datawatch`,
-  `ollama-johnnyjohnny`) lists `qwen3.8-64k:27b` in its model list; each lists only
+  `ollama-local-node`) lists `qwen3.8-64k:27b` in its model list; each lists only
   `qwen3.8:27b`. The PRD and config settings use `ollama/qwen3.8-64k:27b` anyway. Track this
   in the automation BL; do not change the registry without a decision.
 - **Plan check against the original spec.** A rewritten or shortened spec can drop test
@@ -417,7 +417,7 @@ The coordinator replaces the human loop, so these become mechanical:
 Design choices left to the operator: the escalation channel and thresholds, which
 surfaces map to which regression suites, and how an urgent bug may jump the queue.
 
-- **Local merges are authorized; ask only before a push (lesson, 2026-10-20).** Rule 6 says to trial-merge a completed branch, renumber it to the next patch above main, build and test it, and then merge. Do the local merge without asking. Only a push needs operator approval. The "do not run git add or git commit" line in `/home/dmz/CLAUDE.md` belongs to another session's guardrail (the imap-mcp run-rules session). It does not govern datawatch supervisor work, and the project rules (`CLAUDE.md` in the datawatch folder and `/home/dmz/workspace/CLAUDE.md`) allow commits. Holding merges for a go-ahead stalled every lane for several ticks (the BL516 and BL519 fixes sat unmerged while PRDs stayed blocked). Stage explicit paths only, and never include unrelated working-tree files such as `.oss-scanner/threat_model.md`. Recorded in `docs/plans/README.md` row 95 (BL514) and in memory as supervisor-local-merge-authorized.
+- **Local merges are authorized; ask only before a push (lesson, 2026-10-20).** Rule 6 says to trial-merge a completed branch, renumber it to the next patch above main, build and test it, and then merge. Do the local merge without asking. Only a push needs operator approval. The "do not run git add or git commit" line in `/home/user/CLAUDE.md` belongs to another session's guardrail (the imap-mcp run-rules session). It does not govern datawatch supervisor work, and the project rules (`CLAUDE.md` in the datawatch folder and `/home/user/workspace/CLAUDE.md`) allow commits. Holding merges for a go-ahead stalled every lane for several ticks (the BL516 and BL519 fixes sat unmerged while PRDs stayed blocked). Stage explicit paths only, and never include unrelated working-tree files such as `.oss-scanner/threat_model.md`. Recorded in `docs/plans/README.md` row 95 (BL514) and in memory as supervisor-local-merge-authorized.
 
 - **Supervisor pushes (rule 6b, decided 2026-10-20).** The supervisor decides pushes, not the operator. The operator makes design decisions only. A push is allowed when all of these hold: it is a fast-forward of `origin/main` (never force-push, never rewrite history); the touched packages build and their tests pass on the local `main`; no HOLD PRD is in the pushed range; and the push is recorded in the automation BL (`docs/plans/README.md`, row 95) with the commit range and the remote URL. Anything that is not a fast-forward, or that fails build or tests, is held and reported with the reason, not pushed. Release tags are not pushed by the supervisor; the release CI runs on tags, and the release decision stays with the operator.
 
@@ -508,7 +508,7 @@ budget estimate. Deliberately held PRDs are listed in `IGNORE` in the script wit
 The tick runs these checks in order and reports only state changes and idle lanes with blockers:
 
 0. tmux: `systemctl --user show datawatch-tmux -p NRestarts,ActiveEnterTimestamp`; baseline NRestarts 3 and 18:46:38 EDT (third tmux death, 2026-10-20 18:46:35). Never kill the tmux server.
-1. Infrastructure: qwen3.8-64k:27b resident locally (`ollama ps`) and on 100.64.0.20.
+1. Infrastructure: qwen3.8-64k:27b resident locally (`ollama ps`) and on <remote-node-address>.
 2. Every non-terminal PRD (`prd-list`, `prd-get`). A session silent for 15 minutes after a read with no reply is wedged: kill that one session by ID.
 3. Model and routing drift: restate backend and decomposition profile together in `prd-set-llm`.
 4. **Lane fill is mandatory (operator, 2026-10-21: "I shouldn't have to keep asking about idle lanes").** After checks 0 to 3, look at GPU 1, GPU 2 and Claude 1 to 3. Every lane that is not running a PRD MUST be given work in this same tick, taking the first source that has something:
@@ -534,7 +534,7 @@ The tick runs these checks in order and reports only state changes and idle lane
 ### Lesson: third tmux server death, 2026-10-20 18:46:35 (cause found)
 
 - **Time:** the dedicated tmux server (`datawatch-tmux.service`) died at 18:46:35 EDT and every session died with it, including the supervisor. systemd restarted it at 18:46:38 (NRestarts 3). Earlier deaths: 2026-10-18 20:18:09 (found: a pi worker's sandbox helper) and 2026-10-18 22:55:31.
-- **Cause:** at 22:46:32.852Z (18:46:32 EDT) the Claude Haiku worker of PRD `148b0001` (live smoke cleanup of the retried-task story) ran `TMUX_TMPDIR=$S/tmux tmux kill-server`. tmux gives the `$TMUX` variable priority over `TMUX_TMPDIR`, and every worker runs inside a pane where `$TMUX` points at the production socket, so the "sandbox" kill hit the production server. It is the same mechanism as the 2026-10-18 20:18 death. Found in `~/.claude/projects/-home-dmz--datawatch-prd-worktrees-148b0001/*.jsonl` by searching the minute before the death.
+- **Cause:** at 22:46:32.852Z (18:46:32 EDT) the Claude Haiku worker of PRD `148b0001` (live smoke cleanup of the retried-task story) ran `TMUX_TMPDIR=$S/tmux tmux kill-server`. tmux gives the `$TMUX` variable priority over `TMUX_TMPDIR`, and every worker runs inside a pane where `$TMUX` points at the production socket, so the "sandbox" kill hit the production server. It is the same mechanism as the 2026-10-18 20:18 death. Found in `~/.claude/projects/-home-user--datawatch-prd-worktrees-148b0001/*.jsonl` by searching the minute before the death.
 - **Why it recurred:** the fix PRDs for this class (BL504 `c7f10001`, then `e2120001`) were cancelled on 2026-10-19 as duplicated by the scoped cleanup in `scripts/run-tests.sh` and `scripts/release-smoke.sh`. Those scripts are scoped, but a worker writes and runs its own cleanup, so the worker environment itself must make the production socket unreachable.
 - **Recovered:** no task was left running or verifying. After the restart the daemon resumed the workers, and `148b0001`, `17880001`, `677d0001` and `51670001` completed. `cece0001` is blocked with all five tasks completed (verdict defect). Merges for six completed PRDs are pending.
 

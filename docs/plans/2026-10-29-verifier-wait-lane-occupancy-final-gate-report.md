@@ -3,7 +3,7 @@ Result: PASS
 # Verifier-wait lane occupancy — final gate report
 
 **Date:** 2026-10-29
-**Branch:** `automaton/f1f2004f` (worktree `/home/dmz/.datawatch/prd-worktrees/f1f2004f`)
+**Branch:** `automaton/f1f2004f` (worktree `/home/user/.datawatch/prd-worktrees/f1f2004f`)
 **Feature:** a Claude lane whose Automaton is only waiting on verifier results counts as
 available to the lane fill planner — `docs/plans/2026-10-29-verifier-wait-lane-occupancy.md`.
 

@@ -185,7 +185,7 @@ re-derived from the source doc.
    usage, where token economics matter.
 3. **Node selection / failover ordering** (Proposal 4/7): reuse compute
    node `scheduling_priority` (already exists; confirmed live:
-   `datawatch`/`datawatch-openai` = 90, `johnnyjohnny` = 70) as the
+   `datawatch`/`datawatch-openai` = 90, `local-node` = 70) as the
    ordering signal among same-role-tagged LLM entries. No new priority
    concept invented.
 4. **Priority, preemption, resume** (new cross-cutting scope): "interrupt"

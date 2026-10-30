@@ -30,7 +30,7 @@ func TestSetupFault_VerdictHoldsTaskInsteadOfRetryOrFail(t *testing.T) {
 		return VerificationResult{
 			OK:       false,
 			Category: "setup",
-			Summary:  "setup fault: required script run-rules.sh is missing at /home/dmz/.config/imap-mcp/run-rules",
+			Summary:  "setup fault: required script run-rules.sh is missing at /home/user/.config/imap-mcp/run-rules",
 		}, nil
 	}
 
@@ -53,7 +53,7 @@ func TestSetupFault_VerdictHoldsTaskInsteadOfRetryOrFail(t *testing.T) {
 	if spawnCalls != 1 {
 		t.Errorf("spawn calls = %d, want 1 (no respawn after a setup fault)", spawnCalls)
 	}
-	if want := "setup fault: required script run-rules.sh is missing at /home/dmz/.config/imap-mcp/run-rules"; tk.Error != want {
+	if want := "setup fault: required script run-rules.sh is missing at /home/user/.config/imap-mcp/run-rules"; tk.Error != want {
 		t.Errorf("task.Error = %q, want the verdict summary (naming the missing script path)", tk.Error)
 	}
 	if tk.FailureReason == nil {

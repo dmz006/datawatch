@@ -3,10 +3,10 @@
 Status: needs_review
 
 Date: 2026-10-14. Read-only investigation, run as an Automaton task (PRD
-`5d599cef`, story `09610293`, task `09611fc3`, session `johnnyjohnny-148a`).
+`5d599cef`, story `09610293`, task `09611fc3`, session `local-node-148a`).
 That session is a claude-code Automaton task session itself, so it was used
 as the live "autonomous" specimen. The interactive comparison is
-`johnnyjohnny-ab22` (claude-code, same project dir).
+`local-node-ab22` (claude-code, same project dir).
 
 ## What the operator saw
 
@@ -118,10 +118,10 @@ callback (`cmd/datawatch/main.go:2222-2246`). Conditions:
 
 **Live comparison: neither session type is populated.**
 
-- `/home/dmz/workspace/datawatch/.claude/` has no `settings.json` and no
+- `/home/user/workspace/datawatch/.claude/` has no `settings.json` and no
   `sprint/` directory. Both `ab22` (interactive) and `148a` (autonomous, just
   started) run in that project dir.
-- `/home/dmz/workspace/datawatch-app/.claude/sprint` (session `9245`) is also
+- `/home/user/workspace/datawatch-app/.claude/sprint` (session `9245`) is also
   absent.
 - So on this host `Install` is not taking effect for either session type.
   Possible causes:

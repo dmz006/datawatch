@@ -286,7 +286,7 @@ When building the `models[]` list, exclude model+node combinations where the mod
 }
 ```
 
-The RTX 5090 (32GB) is intentionally absent from `llm-reasoning` — models that won't fit fully should fail over to a node that can run them, not partially offload to CPU.
+The 32 GB GPU (32GB) is intentionally absent from `llm-reasoning` — models that won't fit fully should fail over to a node that can run them, not partially offload to CPU.
 
 ### Selecting a use-case entry in routing rules
 

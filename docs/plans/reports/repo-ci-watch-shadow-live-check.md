@@ -1,6 +1,6 @@
 # Repo CI watch — sandbox live check (shadow mode)
 
-Sandbox daemon: 3400327, port 18600, config path /home/dmz/.datawatch/prd-worktrees/f1f20051/tmp-sandbox/dwdata/config.yaml
+Sandbox daemon: 3400327, port 18600, config path /home/user/.datawatch/prd-worktrees/f1f20051/tmp-sandbox/dwdata/config.yaml
 Production daemon: not touched (PID 3511620, /usr/local/bin/datawatch with --config /etc/datawatch/config.yaml, started Tue Oct 20 18:19:20 2026, still running at the end of the check; all API traffic in this check went only to 127.0.0.1:18600, and the only process termination issued was `td_stop_one 3400327` — the sandbox daemon's recorded PID)
 GitHub writes: 0
 Would-rerun entries: 2 (would_do action "rerun" for runs 40980847035 and 40982802560; supervisor action for each: none found)
@@ -9,7 +9,7 @@ Would-rerun entries: 2 (would_do action "rerun" for runs 40980847035 and 4098280
 
 A live shadow-mode pass of the repo CI watch against the sandbox daemon only:
 `autonomous.automation.repo_ci_watch.{mode,repos,poll_seconds,tag_count}` set via the sandbox REST
-API to `shadow` / `/home/dmz/.datawatch/prd-worktrees/f1f20051` / `60` / `2`, two real poll passes
+API to `shadow` / `/home/user/.datawatch/prd-worktrees/f1f20051` / `60` / `2`, two real poll passes
 run against the real GitHub repository `dmz006/datawatch`, the watch read back over all three
 surfaces (REST, MCP tool, CLI), verified that every automatic action the watch took in shadow mode
 is a would-do stand-in (rerun, cancel, delete — none executed), and confirmed the watch made zero
@@ -20,7 +20,7 @@ daemon 3400327.
 
 ## Procedure and outputs
 
-All writes stayed under /home/dmz/.datawatch/prd-worktrees/f1f20051 (tmp-sandbox/). Daemon
+All writes stayed under /home/user/.datawatch/prd-worktrees/f1f20051 (tmp-sandbox/). Daemon
 start/stop via scripts/test-daemon-lib.sh (no traps installed in the starting shell — the EXIT
 trap would have killed the daemon at call exit; stopped later with `td_stop_one <recorded PID>`).
 
@@ -50,13 +50,13 @@ GET /api/config → repo_ci_watch: mode=off, repos=[], poll_seconds=300, tag_cou
 ```
 PUT /api/config {
   "autonomous.automation.repo_ci_watch.mode": "shadow",
-  "autonomous.automation.repo_ci_watch.repos": ["/home/dmz/.datawatch/prd-worktrees/f1f20051"],
+  "autonomous.automation.repo_ci_watch.repos": ["/home/user/.datawatch/prd-worktrees/f1f20051"],
   "autonomous.automation.repo_ci_watch.poll_seconds": 60,
   "autonomous.automation.repo_ci_watch.tag_count": 2
 } → {"status":"ok"}
 
 GET /api/autonomous/repo-ci-watch → {"mode":"shadow","alert_minutes":30,
-  "repos":["/home/dmz/.datawatch/prd-worktrees/f1f20051"],"last_poll_at":"0001-01-01T00:00:00Z","records":[]}
+  "repos":["/home/user/.datawatch/prd-worktrees/f1f20051"],"last_poll_at":"0001-01-01T00:00:00Z","records":[]}
 ```
 
 ### 4. GitHub state BEFORE the polls

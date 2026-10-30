@@ -90,7 +90,7 @@ func TestRepoCIWatchConfigRoundTrip(t *testing.T) {
 	s := &Server{cfg: &config.Config{}, cfgPath: t.TempDir() + "/config.yaml", autonomousMgr: spy}
 	patch := map[string]interface{}{
 		"autonomous.automation.repo_ci_watch.mode":               "shadow",
-		"autonomous.automation.repo_ci_watch.repos":              []string{"/home/dmz/repo-a", "/home/dmz/repo-b"},
+		"autonomous.automation.repo_ci_watch.repos":              []string{"/home/user/repo-a", "/home/user/repo-b"},
 		"autonomous.automation.repo_ci_watch.poll_seconds":       120,
 		"autonomous.automation.repo_ci_watch.alert_minutes":      0, // explicit off
 		"autonomous.automation.repo_ci_watch.tag_count":          0, // explicit none
@@ -112,7 +112,7 @@ func TestRepoCIWatchConfigRoundTrip(t *testing.T) {
 	if got.Mode != "shadow" || got.PollSeconds != 120 || got.HungAfterMinutes != 45 || got.DeleteSuperseded != "delete" {
 		t.Errorf("surface after PUT = %+v, want mode=shadow poll=120 hung=45 delete=delete", got)
 	}
-	if len(got.Repos) != 2 || got.Repos[0] != "/home/dmz/repo-a" {
+	if len(got.Repos) != 2 || got.Repos[0] != "/home/user/repo-a" {
 		t.Errorf("repos = %v, want the two configured paths", got.Repos)
 	}
 	if got.AlertMinutes != 0 {

@@ -53,7 +53,7 @@ func TestJSONResult_ParsesRealCapturedErrorShape(t *testing.T) {
   "session_id": "6755122b-29d8-4099-9583-022058e29871",
   "error": {
     "type": "Error",
-    "message": "Please set an Auth method in your /home/dmz/.gemini/settings.json or specify one of the following environment variables before running: GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA",
+    "message": "Please set an Auth method in your /home/user/.gemini/settings.json or specify one of the following environment variables before running: GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA",
     "code": 41
   }
 }`
