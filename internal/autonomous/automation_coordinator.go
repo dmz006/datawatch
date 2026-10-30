@@ -70,6 +70,11 @@ type Coordinator struct {
 	idleStop chan struct{}
 	alerted  map[string]time.Time
 
+	// repo CI watch (see repo_ci_watch_poll.go). repoCIWatchLastPoll is
+	// the Coordinator's own last-poll instant: the pass only runs when
+	// poll_seconds (repo_ci_watch.poll_seconds) has elapsed since it.
+	repoCIWatchLastPoll time.Time
+
 	// Lane fill (see lane_fill_coordinator.go). laneFillTick, when positive,
 	// replaces the poll_seconds interval of the lane fill loop (tests).
 	lf           laneFillState

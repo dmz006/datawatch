@@ -834,6 +834,27 @@ type Manager struct {
 	ciPollInterval  time.Duration
 	ciFollowUpDelay time.Duration
 
+	// repo CI watch (head-of-main / tag release runs) seams (see
+	// repo_ci_watch_runs.go and repo_ci_watch_poll.go), same pattern as
+	// the ci-watch seams above: guarded by mu, nil = use
+	// the real implementation (repo_ci_watch_runs.go):
+	// repoCIFetchFn  → defaultRepoCIFetch,
+	// repoCIOriginFn → defaultRepoCIOrigin,
+	// repoCIHeadFn   → defaultRepoCIHead,
+	// repoCITagsFn   → defaultRepoCITags,
+	// repoCIPeelFn   → defaultRepoCIPeel,
+	// repoCIRunsFn   → defaultRepoCIRuns,
+	// repoCIJudgeFn  → repoCIJudgeCall (ci_watch.go).
+	// Injectable so the poll pass never shells out to the real git/gh
+	// binaries and never calls a real judge in tests.
+	repoCIFetchFn  func(ctx context.Context, repoDir string) error
+	repoCIOriginFn func(ctx context.Context, repoDir string) (string, error)
+	repoCIHeadFn   func(ctx context.Context, repoDir string) (string, error)
+	repoCITagsFn   func(ctx context.Context, repoDir string) ([]string, error)
+	repoCIPeelFn   func(ctx context.Context, repoDir, tag string) (string, error)
+	repoCIRunsFn   func(ctx context.Context, ownerRepo, sha string) ([]RepoCIWatchRun, error)
+	repoCIJudgeFn  func(ctx context.Context, repoPath, label string) (GuardrailVerdict, error)
+
 	// BL406 Phase 5 — nil until BL405 Phase 8 wires real CouncilProfile
 	// support; resolveGuidedModeSource falls "council" back to
 	// "operator" while this is nil, rather than silently skipping the

@@ -729,3 +729,63 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 	m.recordFailureLearning(prd, prd.ID, v.Category, contentFixHint(v))
 	return true, nil, nil
 }
+
+// repoCIJudgeCall (repo CI watch pass, repo_ci_watch_poll.go) is the
+// extracted judge invocation for a failed run in an UNOWNED (non-PRD)
+// repository: it takes a repo path and a label describing the failed
+// run instead of a PRD, because there is no PRD here to hold the verdict
+// or an infra retry budget — the judge runs exactly once and its verdict
+// lands on the run's repo CI watch record (recorded by the poll pass),
+// where verdict.Category "policy" means the failure is a policy/rules
+// violation and anything else is a code/test defect. The inv shape and
+// judge-model resolution mirror ciWatchJudge (the PRD wrapper, whose
+// behavior is unchanged): the judge model still resolves from the same
+// global tiers, and an unresolvable judge model yields
+// NoGuardrailModelVerdict (loud, infra, non-retried) rather than a
+// launch. fn is resolved under mu exactly like ciWatchJudge.
+func (m *Manager) repoCIJudgeCall(ctx context.Context, repoPath, label string) (GuardrailVerdict, error) {
+	m.mu.Lock()
+	fn := m.guardrail
+	m.mu.Unlock()
+	if fn == nil {
+		return GuardrailVerdict{}, fmt.Errorf("repo ci watch for %s: no guardrail judge is configured", repoPath)
+	}
+	inv := GuardrailInvocation{
+		PRDID:     "repo-ci-watch/" + repoPath,
+		Level:     "repo",
+		UnitID:    repoPath,
+		UnitTitle: label,
+		UnitSpec: label + " — the subject is ONE failed CI run in a repository that has no PRD. " +
+			"Judge why it failed: if the failure looks like a policy or rules " +
+			"violation, use category \"policy\"; if it is a code or test defect, use " +
+			"category \"content\". Respond with the same JSON as any other guardrail: " +
+			"outcome (pass|warn|block), severity, summary, issues, category.",
+		Guardrail:  "repo-ci-watch",
+		ProjectDir: repoPath,
+	}
+	// Same paired judge-model resolution as ciWatchJudge, at the global
+	// tier (no task/PRD override exists for an unowned repo).
+	gb, gm, pinned, resErr := m.resolveUnitGuardrailModel(nil, nil)
+	if resErr == nil {
+		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
+		inv.GuardrailPinned = pinned
+	}
+	if resErr != nil {
+		// Loud, non-retried infra block — retrying cannot configure a
+		// model that is not configured (same rule as ciWatchJudge).
+		v := NoGuardrailModelVerdict("repo-ci-watch", resErr)
+		if v.VerdictAt.IsZero() {
+			v.VerdictAt = time.Now()
+		}
+		return v, nil
+	}
+	v, ferr := fn(ctx, inv)
+	if ferr != nil {
+		return GuardrailVerdict{}, fmt.Errorf("repo ci watch for %s: %w", repoPath, ferr)
+	}
+	if v.VerdictAt.IsZero() {
+		v.VerdictAt = time.Now()
+	}
+	v.Guardrail = "repo-ci-watch"
+	return v, nil
+}
