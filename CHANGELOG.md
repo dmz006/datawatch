@@ -20,6 +20,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.38.0 — Repo CI watch for the head of main and release tags
+
+### Added
+
+- **The daemon can now watch the CI of external repositories.** A new config block, `autonomous.automation.repo_ci_watch`, turns the automation coordinator into a CI watcher: name repositories (a list of absolute paths) and on every poll it lists the workflows on the head of `main` and on the newest release tags, records each run, classifies failures and stuck runs, and raises one alert per unresolved run once it has been that way for the alert window (default 30 minutes, off with `alert_minutes: 0`). Started up in `on` mode it also acts: it cancels a stuck run once per run id, reruns an infrastructure failure once per run id (only where the repository has an infrastructure retry budget — without one nothing is rerun automatically), and deletes a failed run that a later green run of the same workflow has superseded when you have set `delete_superseded: delete`. It is **off by default** — with no repositories and `mode: off` nothing is watched, recorded or alerted. **Shadow mode is the way to run it first**: it records every run and logs every action it would take without doing any of them and without raising the alert, so you can compare what it would have done against what actually happened before you let it act.
+
 ## v9.37.0 — Operator question answering on every surface
 
 ### Added
