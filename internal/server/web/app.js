@@ -8987,6 +8987,10 @@ const DOCS_LINKS_BY_KEY = {
   gc_autonomous: 'howto/autonomous-planning.md',
   automata_skills: 'howto/skills-sync.md',
   automata_type_registry: DOCS_DEFINITIONS + '#settings-automate',
+  settings_automata_questions_quality_mode: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
+  settings_automata_questions_quality_min_text_chars: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
+  settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
+  settings_automata_questions_queue_preview_lines: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   gc_pipeline: 'howto/pipeline-chaining.md',
   gc_orchestrator: 'howto/automata-orchestrator.md',
   // Settings -> Plugins
@@ -16487,6 +16491,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.questions.return_path', label: 'Allow the per-question session return line on top of the event plus polled answer path (on by default)', labelKey: 'settings_automata_questions_return_path', type: 'toggle' },
     { key: 'autonomous.questions.decision_gate', label: 'Hold a task on an unanswered decision it names (on by default)', labelKey: 'settings_automata_questions_decision_gate', type: 'toggle' },
     { key: 'autonomous.questions.decision_gate_mode', label: 'Decision gate mode (shadow only records, on holds the task, default shadow)', labelKey: 'settings_automata_questions_decision_gate_mode', type: 'select', options: ['shadow', 'on'], default: 'shadow' },
+    { key: 'autonomous.questions.quality_mode', label: 'Automata question quality check (off, warn or refuse, default warn)', labelKey: 'settings_automata_questions_quality_mode', docsKey: 'settings_automata_questions_quality_mode', type: 'select', options: ['off', 'warn', 'refuse'], default: 'warn' },
+    { key: 'autonomous.questions.quality_min_text_chars', label: 'Automata question minimum text length (characters, 0 = no length check, default 60)', labelKey: 'settings_automata_questions_quality_min_text_chars', docsKey: 'settings_automata_questions_quality_min_text_chars', type: 'number', min: 0, step: 1, placeholder: '60', default: '60' },
+    { key: 'autonomous.questions.quality_tracker_id_pattern', label: 'Automata question tracker id pattern (regular expression, empty = built-in default)', labelKey: 'settings_automata_questions_quality_tracker_id_pattern', docsKey: 'settings_automata_questions_quality_tracker_id_pattern', type: 'text', placeholder: '' },
+    { key: 'autonomous.questions.queue_preview_lines', label: 'Automata question queue preview lines (default 3)', labelKey: 'settings_automata_questions_queue_preview_lines', docsKey: 'settings_automata_questions_queue_preview_lines', type: 'number', min: 1, step: 1, placeholder: '3', default: '3' },
     { key: 'autonomous.questions.worker_marker', label: 'Let a worker raise a question with a marker in its output (off by default)', labelKey: 'settings_automata_questions_worker_marker', helpKey: 'settings_automata_questions_worker_marker_help', type: 'toggle' },
     // Progress engine parameters (0 or empty = the default shown as placeholder).
     { key: 'autonomous.progress.lanes', label: 'Progress lanes (parallel lanes of Automata used for utilization, 0 = 5)', labelKey: 'settings_progress_lanes', type: 'number', placeholder: '5', min: 0, step: 1, default: '0' },
@@ -17381,7 +17389,7 @@ function loadGeneralConfig() {
             ).join('');
             const _selHint = _fieldHintHTML(f);
             html += `<div class="settings-row" style="justify-content:space-between;${_selHint ? 'flex-wrap:wrap;' : ''}">
-              <div class="settings-label">${escHtml(fLabel)}</div>
+              <div class="settings-label">${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
               <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
               ${_selHint}
             </div>`;
@@ -17605,7 +17613,7 @@ function loadGeneralConfig() {
             const _inHint = _fieldHintHTML(f);
             const _zNoteHTML = zNote ? `<div style="font-size:10px;color:var(--text2);width:100%;">${escHtml(zNote)}</div>` : '';
             html += `<div class="settings-row" style="justify-content:space-between;${(_inHint || _zNoteHTML) ? 'flex-wrap:wrap;' : ''}">
-              <div class="settings-label">${escHtml(fLabel)}</div>
+              <div class="settings-label">${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
               <input type="${f.type}" class="form-input general-cfg-input" value="${escHtml(defVal)}"
                 ${zPlaceholder ? 'placeholder="' + escHtml(zPlaceholder) + '"' : ''}
                 ${f.min !== undefined ? 'min="' + f.min + '"' : ''}
