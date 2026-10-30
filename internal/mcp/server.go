@@ -700,6 +700,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// Automation orchestration — automation CRUD tools.
 	mcpSrv.AddTool(s.toolAutomationList(), tracked(s.handleAutomationList))
 	mcpSrv.AddTool(s.toolAutomationGet(), tracked(s.handleAutomationGet))
+	mcpSrv.AddTool(s.toolAutomationMergedMembers(), tracked(s.handleAutomationMergedMembers))
 	mcpSrv.AddTool(s.toolAutomationCreate(), tracked(s.handleAutomationCreate))
 	mcpSrv.AddTool(s.toolAutomationUpdate(), tracked(s.handleAutomationUpdate))
 	mcpSrv.AddTool(s.toolAutomationDelete(), tracked(s.handleAutomationDelete))
@@ -1403,6 +1404,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		// Automation orchestration
 		{s.toolAutomationList, "automation_list"},
 		{s.toolAutomationGet, "automation_get"},
+		{s.toolAutomationMergedMembers, "automation_merged_members"},
 		{s.toolAutomationCreate, "automation_create"},
 		{s.toolAutomationUpdate, "automation_update"},
 		{s.toolAutomationDelete, "automation_delete"},

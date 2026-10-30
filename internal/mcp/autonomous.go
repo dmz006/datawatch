@@ -32,6 +32,28 @@ func (s *Server) handleAutonomousStatus(_ context.Context, _ mcpsdk.CallToolRequ
 	return textOK(string(out)), nil
 }
 
+// ----- automation_merged_members ---------------------------------------------
+
+func (s *Server) toolAutomationMergedMembers() mcpsdk.Tool {
+	return mcpsdk.NewTool("automation_merged_members",
+		mcpsdk.WithDescription("Read the merged-member decisions of one Automaton, or of every Automaton (Automata) when no id is given. A decision is written when a member of an Automaton ended cancelled or completed and its work was found already merged into the project default branch. Each row has automation_id, automation_name, member, prd_id, branch, default_branch, proving_commit (the commit that proves the merge), policy (the merged-member policy in force: completed, manual or block), outcome (advanced when the chain moved on, blocked when the Automaton stayed blocked for the operator) and at (time), oldest first. Read-only; the same object as GET /api/automations/{id}/merged-members, or GET /api/automations/merged-members for all Automata. Nothing is changed, merged or resumed."),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+		mcpsdk.WithString("id", mcpsdk.Description("Automaton ID. Empty or omitted lists the merged-member decisions of every Automaton.")),
+	)
+}
+
+func (s *Server) handleAutomationMergedMembers(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	path := "/api/automations/merged-members"
+	if id := strings.TrimSpace(req.GetString("id", "")); id != "" {
+		path = "/api/automations/" + url.PathEscape(id) + "/merged-members"
+	}
+	out, err := s.proxyGet(path, nil)
+	if err != nil {
+		return toolError("automation_merged_members", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
 // ----- autonomous_config_get / set -------------------------------------------
 
 func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
@@ -74,6 +96,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("automation_triage_alert_minutes", mcpsdk.Description("Minutes an Automation may sit waiting before a triage alert is raised. Whole number >= 0; 0 turns the triage alert off, unset keeps the 30-minute default.")),
 		mcpsdk.WithString("automation_merge_pending_mode", mcpsdk.Enum("off", "shadow", "on"), mcpsdk.Description("Merge-pending check of finished Automaton branches: off (the default, no check), shadow (records and reports only) or on. Empty keeps the current value.")),
 		mcpsdk.WithNumber("automation_merge_pending_alert_minutes", mcpsdk.Description("Minutes a finished Automaton branch may sit unmerged before a merge-pending alert is raised. Whole number >= 0; 0 turns the merge-pending alert off, unset keeps the 30-minute default.")),
+		mcpsdk.WithString("automation_merged_member_policy", mcpsdk.Enum("completed", "manual", "block"), mcpsdk.Description("What an Automaton does when a member ends cancelled or completed and its work is already merged into the project default branch: completed (the default) treats the member as completed and the chain follows its on_complete edge, manual keeps the blocked outcome and adds the merge proof to the block reason for the operator, block keeps the blocked outcome and runs no git check. A branch that is not merged always keeps the blocked outcome. Empty keeps the current value.")),
 		mcpsdk.WithString("lane_fill_mode", mcpsdk.Enum("off", "shadow", "on"), mcpsdk.Description("Lane fill mode: off (no planning), shadow (plans and records every decision but starts nothing) or on (starts the planned work). Empty is shadow.")),
 		mcpsdk.WithNumber("lane_fill_gpu_lanes", mcpsdk.Description("Number of GPU lanes lane fill plans for. Whole number >= 0.")),
 		mcpsdk.WithNumber("lane_fill_claude_lanes", mcpsdk.Description("Number of Claude lanes lane fill plans for. Whole number >= 0; 0 means no Claude lane.")),
@@ -288,6 +311,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		if _, ok := args["automation_merge_pending_alert_minutes"]; ok {
 			auto["merge_pending_alert_minutes"] = req.GetFloat("automation_merge_pending_alert_minutes", 0)
 		}
+	}
+	if v := req.GetString("automation_merged_member_policy", ""); v != "" {
+		auto["merged_member_policy"] = v
 	}
 	if v := req.GetString("automation_agent_insert_policy", ""); v != "" {
 		auto["agent_insert_policy"] = v

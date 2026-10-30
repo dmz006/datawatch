@@ -4424,9 +4424,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				IdleAlertMinutes:   acfgIn.Automation.IdleAlertMinutes,
 				TriageAlertMinutes: acfgIn.Automation.TriageAlertMinutes,
 				// Merge-pending mode + alert threshold: same nil-means-default
-				// rule as the triage threshold.
+				// rule as the triage threshold. MergedMemberPolicy resolves an
+				// empty value to the "completed" default in the manager.
 				MergePendingMode:         acfgIn.Automation.MergePendingMode,
 				MergePendingAlertMinutes: acfgIn.Automation.MergePendingAlertMinutes,
+				MergedMemberPolicy:       acfgIn.Automation.MergedMemberPolicy,
 				CreateSearchMode:         acfgIn.Automation.CreateSearchMode,
 				CreateSearchThreshold:    acfgIn.Automation.CreateSearchThreshold,
 				// Cleanup keys: the effective defaults (report, 24, 10, 85)

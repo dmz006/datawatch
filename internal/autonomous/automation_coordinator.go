@@ -110,10 +110,11 @@ func NewCoordinator(m *Manager, starter AutomationStarter) *Coordinator {
 
 // coordinatorKinds is the set of PRD kinds the coordinator listens to: the
 // terminal kinds plus the non-terminal member transitions that matter
-// (revert to approved after start, archive, and the wait-only statuses).
+// (revert to approved after start, archive, the wait-only statuses, and running,
+// which reopens a member that was cancelled).
 func coordinatorKinds() []string {
 	kinds := TerminalPRDKinds()
-	for _, s := range []PRDStatus{PRDApproved, PRDArchived, PRDNeedsReview, PRDRevisionsAsked, PRDPlanning, PRDDraft, PRDPaused} {
+	for _, s := range []PRDStatus{PRDApproved, PRDArchived, PRDNeedsReview, PRDRevisionsAsked, PRDPlanning, PRDDraft, PRDPaused, PRDRunning} {
 		kinds = append(kinds, PRDStatusKind(s))
 	}
 	return kinds
@@ -287,9 +288,16 @@ func (c *Coordinator) onMemberTerminal(ev LifecycleEvent) {
 		return
 	}
 	status := PRDStatus(ev.NewStatus)
+	if status == PRDRunning {
+		c.onMemberReopened(autoID, ev.PRDID)
+		return
+	}
 	end, ok := prdEnd(status)
 	if !ok {
 		return // a wait status: the member is still in progress
+	}
+	if status == PRDCancelled || status == PRDCompleted {
+		end = c.mergedMemberEnd(prd, status, end)
 	}
 	if status == PRDFailed && !c.Ready() {
 		c.mu.Lock()
@@ -481,6 +489,7 @@ func (c *Coordinator) afterAdvance(a *Automation, eff *stepEffects) {
 		c.m.EmitPRDUpdate(id)
 	}
 	c.afterBudget(a, eff.budget)
+	c.afterMergedMember(a, eff.mergedAdvance)
 	switch {
 	case eff.blocked != "":
 		c.blocked(a, eff.blocked, eff.details)

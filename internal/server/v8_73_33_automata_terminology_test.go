@@ -92,6 +92,17 @@ var pendingTranslationKeys = map[string]bool{
 	"cleanup_disk_ok_badge":                             true,
 	"cleanup_disk_alert_last":                           true,
 	"cleanup_failed":                                    true,
+	// Merged-member policy setting, the Automation detail decision view and the decision-log entry: English until the app translation lands.
+	"settings_automation_merged_member_policy":  true,
+	"automation_merged_members_title":           true,
+	"automation_merged_member_member":           true,
+	"automation_merged_member_branch":           true,
+	"automation_merged_member_commit":           true,
+	"automation_merged_member_policy":           true,
+	"automation_merged_member_outcome":          true,
+	"automation_merged_member_outcome_advanced": true,
+	"automation_merged_member_outcome_blocked":  true,
+	"automation_decision_merged_member":         true,
 	// datawatch-app issue 301: verifier-wait lane occupancy ships this
 	// settings label as the English placeholder until the app sends back
 	// DE/ES/FR/JA translations.

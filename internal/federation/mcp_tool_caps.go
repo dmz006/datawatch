@@ -55,6 +55,7 @@ var MCPToolCap = map[string]string{
 	"automation_create":                            CapAutonomousWrite,
 	"automation_delete":                            CapAutonomousWrite,
 	"automation_get":                               CapAutonomousRead,
+	"automation_merged_members":                    CapAutonomousRead,
 	"automation_list":                              CapAutonomousRead,
 	"automation_update":                            CapAutonomousWrite,
 	"automation_import_graph":                      CapAutonomousWrite,

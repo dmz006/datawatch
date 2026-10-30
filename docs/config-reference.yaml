@@ -1030,6 +1030,26 @@ autonomous:
   # MCP autonomous_config_set tool (automation_merge_pending_alert_minutes), and
   # the PWA Settings field (settings_automation_merge_pending_alert_minutes).
   #
+  # merged_member_policy: string, `completed` (default), `manual` or `block`.
+  # Decides what an Automaton does when a member ends cancelled or completed
+  # and its work is already merged into the project's own default branch (the
+  # daemon proves this with git; a branch that is not merged, or whose state
+  # cannot be read, always keeps the blocked outcome). `completed` treats the
+  # member as completed, so the chain follows its on_complete edge. `manual`
+  # keeps the blocked outcome and adds the merge proof to the block reason, so
+  # the operator can resolve it with resume or skip. `block` keeps the blocked
+  # outcome and runs no git check at all. A key that is absent, or an empty
+  # value in the YAML file, reads as `completed`. Any other value is refused on
+  # load; PUT /api/config and the Automata config object refuse an empty string
+  # and any value outside the three words with 400, and nothing is written.
+  # Settable via PUT /api/config (key
+  # autonomous.automation.merged_member_policy; GET /api/config shows the
+  # effective value), CLI `datawatch config set
+  # autonomous.automation.merged_member_policy=manual`, comm `configure
+  # autonomous.automation.merged_member_policy=manual`, and the MCP
+  # autonomous_config_set tool (automation_merged_member_policy). Applies to
+  # the next member that ends, no restart.
+  #
   # agent_insert_policy: string, `allow` (default) or `require_operator`; any
   # other value is rejected (400 on PUT /api/config, an error on config load),
   # and an empty value means allow. Decides what happens when a session or
@@ -1150,6 +1170,7 @@ autonomous:
     triage_alert_minutes: 30
     merge_pending_mode: off
     merge_pending_alert_minutes: 30
+    merged_member_policy: completed
     agent_insert_policy: allow
     # Repo CI watch: lets the automation coordinator watch the CI runs of
     # external repositories. On each poll it lists the workflows on the head

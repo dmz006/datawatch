@@ -47,6 +47,10 @@ Subcommands:
                                   against the supervisor script's output
   merge [--json]                  Merge state: the mode, the alert threshold and the finished Automata whose
                                   work branch is not on main yet (read only)
+  merged-members [automation-id] [--json]
+                                  Merged-member decisions: the members whose branch was already merged on
+                                  the default branch, the outcome, the proving commit and the policy
+                                  (read only; without an id every Automaton's, newest first)
   safe-to-delete [--json]         Automaton branches and worktrees that are safe to delete, and those held back
                                   (report only, nothing is deleted)
   cleanup [--json]                 Cleanup status: both passes (worktrees and temp sweep), their last run,
@@ -237,6 +241,7 @@ Subcommands:
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),
 		newAutonomousCleanupCmd(),
+		newAutonomousMergedMembersCmd(),
 		// Search-before-create read (docs/plans/2026-10-29-search-before-create.md).
 		newAutonomousOverlapCmd(),
 	)

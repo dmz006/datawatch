@@ -134,6 +134,7 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					TriageAlertMinutes    *float64 `json:"triage_alert_minutes"`
 					MergePendingMode      *string  `json:"merge_pending_mode"`
 					MergePendingAlert     *float64 `json:"merge_pending_alert_minutes"`
+					MergedMemberPolicy    *string  `json:"merged_member_policy"`
 					AgentInsertPolicy     *string  `json:"agent_insert_policy"`
 					CreateSearchMode      *string  `json:"create_search_mode"`
 					CreateSearchThreshold *float64 `json:"create_search_threshold"`
@@ -176,6 +177,12 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				}
 				if auto.MergePendingAlert != nil {
 					if verr := validateMergePendingAlertMinutes(*auto.MergePendingAlert); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if auto.MergedMemberPolicy != nil {
+					if verr := validateMergedMemberPolicy(*auto.MergedMemberPolicy); verr != nil {
 						http.Error(w, verr.Error(), http.StatusBadRequest)
 						return
 					}
@@ -3404,6 +3411,7 @@ func automationErrStatus(err error) (int, string) {
 //	GET    /api/automations        — list
 //	POST   /api/automations        — create
 //	GET    /api/automations/{id}   — get
+//	GET    /api/automations/{id}/merged-members — merged-member decisions (see merged_member.go)
 //	PUT    /api/automations/{id}   — update
 //	DELETE /api/automations/{id}   — delete
 //	POST   /api/automations/import-graph/{graph_id} — convert an orchestrator graph
@@ -3445,6 +3453,11 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 
 	if isControl {
 		s.handleAutomationControl(w, r, ctlID, ctlOp)
+		return
+	}
+
+	if mmID, ok := strings.CutSuffix(rest, "/merged-members"); rest == "merged-members" || (ok && mmID != "" && !strings.Contains(mmID, "/")) {
+		s.handleMergedMembers(w, r)
 		return
 	}
 

@@ -74,6 +74,9 @@ type Decision struct {
 	QuestionID    string `json:"question_id,omitempty"`
 	AnswerID      string `json:"answer_id,omitempty"`
 	DecisionState string `json:"decision_state,omitempty"`
+	// MergedMember carries the structured proof of a merged_member entry
+	// written by the Automation coordinator; nil on every other kind.
+	MergedMember *MergedMemberDecision `json:"merged_member,omitempty"`
 }
 
 // GateDisagreement is the record of a verifier/quality-gate disagreement

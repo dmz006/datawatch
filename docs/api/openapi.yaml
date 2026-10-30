@@ -847,9 +847,17 @@ paths:
         `usage.calculator.cost_per_task_points` (number >= 0 points/week/task; 0 disables the
         finish-early estimate), `usage.calculator.baseline_per_24h` (number >= 0, the idle burn),
         `usage.calculator.max_lanes` (whole number from 1 to 8), `usage.calculator.reset_weekday`
-        (Monday..Sunday), `usage.calculator.reset_time` (HH:MM), `usage.calculator.reset_zone`
-        (IANA time zone) and `usage.calculator.keeper` (the daemon that keeps the shared record);
-        an invalid value rejects the whole PUT with 400 and nothing is written.
+        (sunday..saturday), `usage.calculator.reset_time` (HH:MM, 24-hour),
+        `usage.calculator.reset_zone` (IANA time zone name; empty means "follow the daemon's
+        local zone" and PUTs back empty — saving "UTC" pins UTC) and `usage.calculator.keeper`
+        (the daemon that keeps the shared record); an invalid value rejects the whole PUT
+        with 400 and nothing is written. GET returns, alongside `usage.calculator.reset_zone`
+        (the effective zone), `usage.calculator.reset_zone_source` (`configured` when the
+        operator set the zone, `server` when it follows the daemon's local zone) and
+        `usage.calculator.reset_zone_fell_back` (true when no zone could be resolved and the
+        reset runs in UTC; the `/api/usage/advice` result then carries a note under
+        `notes` telling the operator to set the zone explicitly, and its `zone` field
+        reports the effective zone with `server_zone` set when the operator left it unset).
       operationId: updateConfig
       tags: [System]
       requestBody:
@@ -1328,6 +1336,41 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/repo-ci-watch:
+    get:
+      summary: Repo CI watch state
+      description: |
+        The repo CI watch state at a glance: the mode in effect (`mode`, off / shadow /
+        on), the alert threshold currently in force (`alert_minutes`, whole minutes,
+        0 while the watch is off), the configured repository paths (`repos`; empty
+        when nothing is watched), the instant the coordinator last polled
+        (`last_poll_at`, the zero time when it never has), and the stored watch
+        records (`records`, newest first: repository, ref, sha, workflow, run
+        identity, status, classification, reruns, notes and verdict). `repo`
+        narrows `records` to one repository path, `status` to one watch status
+        (green, failing, pending, hung, rerunning, superseded); an unknown status
+        is refused with a 400 that names the allowed values. A read that matches
+        nothing is an empty `records` array, not an error. Read-only; needs the
+        autonomous read capability when called by a federated peer.
+      operationId: autonomousRepoCIWatch
+      tags: [Autonomous]
+      parameters:
+        - {name: repo, in: query, required: false, description: Only the records of this repository path, schema: {type: string}}
+        - {name: status, in: query, required: false, description: "Only green, failing, pending, hung, rerunning or superseded", schema: {type: string, enum: [green, failing, pending, hung, rerunning, superseded]}}
+      responses:
+        "200":
+          description: Repo CI watch state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoCIWatchList"
+        "400": {description: status is not one of the watch statuses}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/safe-to-delete:
     get:
       summary: Safe-to-delete report
@@ -1384,6 +1427,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CleanupStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/security-failures:
+    get:
+      summary: Security failure reports
+      description: |
+        The stored security failure reports, newest first, as a list. Each entry
+        names the failing security run it belongs to (repository, ref kind and name,
+        workflow, run ID, run URL and watch status) and carries the report stored for
+        it under `report`: the dependency, the advisory identifiers, the fixed
+        version, the accepted-risk registry result, the recommendation and the mode
+        and action the Automaton line received. `repo` narrows the list to one
+        repository path, `status` to one watch status (green, failing, pending, hung,
+        rerunning, superseded); an unknown status is refused with a 400 that names
+        the allowed values. A read that matches nothing is an empty array, not an
+        error. Read-only; needs the autonomous read capability when called by a
+        federated peer.
+      operationId: autonomousSecurityFailures
+      tags: [Autonomous]
+      parameters:
+        - {name: repo, in: query, required: false, description: Only the reports of this repository path, schema: {type: string}}
+        - {name: status, in: query, required: false, description: "Only green, failing, pending, hung, rerunning or superseded", schema: {type: string, enum: [green, failing, pending, hung, rerunning, superseded]}}
+      responses:
+        "200":
+          description: Security failure reports, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/SecurityFailureEntry"}
+        "400": {description: status is not one of the watch statuses}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}
@@ -2282,7 +2360,7 @@ paths:
         `current_prd_title`, `pending_members`, `idle_since` and
         `idle_seconds` (set while no member is running), and `blocked_reason`
         (blocked only). Each row also carries `active_cursors`, one entry per
-        live member (`member_id`, `prd_id` for a PRD member, `automation_id`
+        live member (`member_id`, `prd_id` for an Automaton member, `automation_id`
         for a nested one, and `status`), sorted by member ID and always present
         (empty when idle). `join_wait` is present only while a join waits on
         its branches: `join_member_id`, `rule`, `pending_branches` and
@@ -2360,6 +2438,8 @@ paths:
         `plan_coverage_check` (off|warn|block, default block) and
         `plan_coverage_min_ratio` (covered/extractable ratio required for a passing
         report, 0-1, default 1.0). Both are settable here and via /api/config PUT.
+        `scope_lint` (off|warn|enforce, default enforce) is the pre-spawn scope
+        lint mode: the effective, normalized value is returned.
         It also carries `undeclared_edit_mode` (off|warn|block, default warn), the
         enforcement for files a task's worker edited without declaring them.
         The `verifier_policy` object holds the global verifier policy: `mode`,
@@ -2432,6 +2512,9 @@ paths:
         Accepts partial JSON. Among the valid fields are `plan_coverage_check`
         (off|warn|block, default block) and `plan_coverage_min_ratio` (0-1,
         default 1.0). Values outside the allowed range are rejected with 400.
+        `scope_lint` (off|warn|enforce, default enforce) sets the pre-spawn scope
+        lint mode; any other value is rejected with 400. `PUT /api/config` accepts
+        it as `autonomous.scope_lint`.
         `undeclared_edit_mode` (off|warn|block, default warn) is also accepted;
         any other value is rejected with 400.
         `verifier_policy` is an object merged onto the current policy field by
@@ -3946,6 +4029,53 @@ paths:
         "400": {description: "Invalid setting, or nothing to set"}
         "404": {description: Automation or member not found}
         "409": {description: "expected_version is stale, or the Automation is completed or cancelled"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/merged-members:
+    get:
+      summary: Merged-member decisions of every Automaton
+      description: |
+        Read-only. Lists the merged-member decisions of all Automata, oldest
+        first. A decision is written when a member of an Automaton ended
+        cancelled or completed and its work was found already merged into the
+        project default branch. Each row names the member, its branch, the
+        default branch, the proving commit, the merged-member policy in force
+        (`completed`, `manual` or `block`), the outcome (`advanced` when the
+        chain moved on, `blocked` when the Automaton stayed blocked for the
+        operator) and the time. Nothing is changed.
+      operationId: automationsMergedMembersAll
+      tags: [Automations]
+      responses:
+        "200":
+          description: The merged-member decisions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergedMemberList"
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/merged-members:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    get:
+      summary: Merged-member decisions of one Automaton
+      description: |
+        Read-only. Lists the merged-member decisions in one Automaton's
+        decision log, oldest first, with the same rows as
+        `GET /api/automations/merged-members`. An Automaton with no such
+        decision returns an empty list.
+      operationId: automationsMergedMembers
+      tags: [Automations]
+      responses:
+        "200":
+          description: The merged-member decisions of the Automaton
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergedMemberList"
+        "404": {description: Automation not found}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 
@@ -5545,7 +5675,7 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Invalid request}, "404": {description: No budget window to default to}}
   /api/diagnose:
     get:
-      summary: Diagnostic snapshot — backend reachability, config validity, recent errors (BL37)
+      summary: Diagnostic snapshot — backend reachability, config validity, recent errors
       description: |
         In addition to the snapshot, the response carries one informational
         `listener_<name>` check per daemon listener: listener_rest,
@@ -6360,6 +6490,143 @@ components:
         at: {type: string, format: date-time}
         source: {type: string, description: Who appended the note, e.g. triage}
         text: {type: string}
+    RepoCIWatchList:
+      type: object
+      description: >-
+        The repo CI watch state, as GET /api/autonomous/repo-ci-watch returns it.
+        `records` is newest first; `alert_minutes` is the alert threshold currently
+        in force in whole minutes (0 while the watch is off); `last_poll_at` is the
+        coordinator's last poll instant (the zero time when it never has).
+      required: [mode, alert_minutes, repos, last_poll_at, records]
+      properties:
+        mode:
+          type: string
+          enum: [off, shadow, on]
+          description: The watch mode in effect; an unset mode reads off
+        alert_minutes: {type: integer, description: The alert threshold in minutes in effect; 0 = off or the watch itself is off}
+        repos:
+          type: array
+          description: The configured repository paths; empty when nothing is watched
+          items: {type: string}
+        last_poll_at:
+          type: string
+          format: date-time
+          description: When the coordinator last ran a poll pass; the zero time when it never has
+        records:
+          type: array
+          description: Watch records, newest first; empty when nothing matches
+          items: {$ref: "#/components/schemas/RepoCIWatchRecord"}
+    SecurityFailureEntry:
+      type: object
+      description: >-
+        One stored security failure report with the identity of the failing
+        security run it belongs to, as GET /api/autonomous/security-failures
+        returns it.
+      required: [repo, ref_kind, ref_name, workflow, run_id, run_url, status, report]
+      properties:
+        repo: {type: string, description: The repository path, e.g. dmz006/datawatch}
+        ref_kind: {type: string, enum: [main, tag], description: The kind of ref the run was watched at}
+        ref_name: {type: string, description: The branch name or tag}
+        workflow: {type: string, description: The workflow file name}
+        run_id: {type: string, description: The CI run ID}
+        run_url: {type: string}
+        status:
+          type: string
+          enum: [green, failing, pending, hung, rerunning, superseded]
+          description: The run's watch state
+        report: {$ref: "#/components/schemas/SecurityFailureReport"}
+    SecurityFailureReport:
+      type: object
+      description: >-
+        The report stored for one failing security run: what failed, what the
+        advisory lookup and the accepted-risks registry said, what was
+        recommended, and what the Automaton line received.
+      properties:
+        dependency: {type: string}
+        advisory_ids: {type: array, items: {type: string}}
+        workflow: {type: string}
+        run_id: {type: integer, format: int64}
+        run_url: {type: string}
+        sha: {type: string, description: The commit the run executed against}
+        published_at: {type: string, description: When the advisory was published, as the lookup reported it; empty when unknown}
+        fixed_version: {type: string}
+        registry_found: {type: boolean, description: Whether the accepted-risks registry holds an entry for the advisory}
+        registry_id: {type: string}
+        registry_first_added: {type: string}
+        registry_added: {type: string}
+        registry_expires: {type: string}
+        registry_error: {type: string, description: Why the registry could not be consulted; empty otherwise}
+        lookup_error: {type: string, description: Why the advisory lookup failed; empty otherwise}
+        recommendation: {type: string, enum: [upgrade, unknown, keep, keep_no_entry]}
+        note: {type: string, description: Why the decision stopped at report_only or consulted nothing; empty otherwise}
+        mode: {type: string, enum: [off, shadow, on], description: The security failure mode the report was made under}
+        action: {type: string, enum: [report_only, would_stop, stopped], description: What the decision did or would do to the Automaton line}
+        assessed_at: {type: string}
+    RepoCIWatchRecord:
+      type: object
+      description: >-
+        One record for a CI run watched at a repository's head of main or a tag
+        while it waits for operator attention.
+      required: [repo, ref_kind, ref_name, sha, workflow, run_id, status, first_seen_at, updated_at]
+      properties:
+        repo: {type: string, description: The repository path, e.g. dmz006/datawatch}
+        ref_kind: {type: string, enum: [main, tag], description: The kind of ref being watched}
+        ref_name: {type: string, description: The branch name or tag}
+        sha: {type: string, description: The commit the run executed against}
+        workflow: {type: string, description: The workflow file name}
+        run_id: {type: string, description: The CI run ID the record is keyed on}
+        run_url: {type: string}
+        status:
+          type: string
+          enum: [green, failing, pending, hung, rerunning, superseded]
+          description: The run's watch state
+        classification:
+          type: string
+          enum: [code_or_test, infra, hung, security, policy, judging, none]
+          description: The failure's resolved category; none until one is assigned
+        first_seen_at: {type: string, format: date-time, description: When the run was first observed under watch; preserved across refreshes}
+        updated_at: {type: string, format: date-time, description: When the record was last refreshed}
+        alerted_at:
+          nullable: true
+          type: string
+          format: date-time
+          description: When the record was marked alerted; null until it does
+        rerun_log:
+          type: array
+          description: One entry per automatic cancel or rerun performed on the run
+          items:
+            type: object
+            properties:
+              at: {type: string, format: date-time}
+              action: {type: string, enum: [cancel, rerun]}
+              run_id: {type: string}
+        would_do:
+          type: array
+          description: "Shadow-mode log: what the watch would have done, had it not been shadowed"
+          items:
+            type: object
+            properties:
+              action: {type: string, enum: [cancel, rerun]}
+              run_id: {type: string}
+              reason: {type: string}
+        superseded_run_ids:
+          type: array
+          description: The run's superseded predecessors, each with its run URL
+          items:
+            type: object
+            properties:
+              run_id: {type: string}
+              run_url: {type: string}
+        notes:
+          type: array
+          description: The append-only annotation list, oldest first
+          items: {$ref: "#/components/schemas/TriageNote"}
+        judge_verdict:
+          type: object
+          description: The judge's verdict cached for this record's run
+          properties:
+            run_id: {type: string}
+            verdict: {type: string}
     NodeUsage:
       type: object
       description: |
@@ -7278,11 +7545,35 @@ components:
           type: string
           format: date-time
 
+    MergedMemberList:
+      type: object
+      description: "The merged-member decisions of one Automaton (automation_id set) or of all Automata (automation_id empty)."
+      properties:
+        automation_id: {type: string}
+        count: {type: integer}
+        merged_members:
+          type: array
+          items:
+            $ref: "#/components/schemas/MergedMemberRow"
+    MergedMemberRow:
+      type: object
+      properties:
+        automation_id: {type: string}
+        automation_name: {type: string}
+        member: {type: string, description: "Member ID within the Automaton"}
+        prd_id: {type: string}
+        branch: {type: string}
+        default_branch: {type: string, description: "The project default branch the member was proved merged into"}
+        proving_commit: {type: string}
+        policy: {type: string, enum: [completed, manual, block]}
+        outcome: {type: string, enum: [advanced, blocked]}
+        at: {type: string, format: date-time}
+        note: {type: string}
     Automation:
       type: object
       description: |
         An Automation: a named graph of members advanced along outcome edges.
-        A member is a PRD, a nested Automation, or a fork/join control node.
+        A member is an Automaton, a nested Automation, or a fork/join control node.
         A fork starts its branches at once and its join waits for them. Once
         activated, the Automation advances itself as members finish.
       properties:
@@ -7323,11 +7614,11 @@ components:
 
     AutomationMember:
       type: object
-      description: "One member of an Automation: a member PRD, a nested Automation, or a fork/join control node, each with an outcome edge per result. Fork/join and nested members carry the kind fields below; prd members carry prd_id."
+      description: "One member of an Automation: a member Automaton, a nested Automation, or a fork/join control node, each with an outcome edge per result. Fork/join and nested members carry the kind fields below; Automaton members carry prd_id."
       properties:
         id: {type: string, description: "Stable member ID (8-hex, or operator-supplied)"}
         kind: {type: string, enum: [prd, automation, fork, join], description: "Member kind; omitted means prd"}
-        prd_id: {type: string, description: "The member Automaton (PRD) ID; prd members only"}
+        prd_id: {type: string, description: "The member Automaton ID; Automaton members only"}
         automation_id: {type: string, description: "kind automation: the nested child Automation ID"}
         fork_members: {type: array, items: {type: string}, description: "kind fork: the branch member IDs started together (at least 2)"}
         join_members: {type: array, items: {type: string}, description: "kind join: the branch member IDs collected, equal to the paired fork's fork_members"}

@@ -723,6 +723,41 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "503":
           description: Schedule result store not available
+  /api/sessions/{id}/progress:
+    get:
+      summary: Live progress snapshot for one session
+      description: |
+        Parses the session's own pi JSONL log and returns how far it has
+        gotten: assistant turns, per-tool call counts, the most recent action
+        (tool name, arguments, and the agent's last-stated intent), and
+        cumulative tokens. Same `progress` shape the autonomous prd-get
+        returns per running task. The route never reads a pi log from
+        another session: a non-pi session gets 404 even when a stale pi
+        log sits in its project directory (9.31.3).
+      operationId: getSessionProgress
+      tags: [Sessions]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}, description: "Session ID (short or full)"}
+      responses:
+        "200":
+          description: Progress snapshot
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      session_id: {type: string}
+                      full_id: {type: string}
+                      state: {type: string, description: "Session state: running, completed, failed, killed"}
+                      log_path: {type: string, description: "The JSONL log the snapshot was parsed from"}
+                  - $ref: "#/components/schemas/TaskProgress"
+        "404":
+          description: "Session not found; not a pi session (a stale pi log from another session is never read); or no locatable pi log (not yet flushed)"
+        "405":
+          description: Method not allowed (GET only)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /api/config:
     get:
@@ -1268,6 +1303,39 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/merge:
+    get:
+      summary: Automaton merge status
+      description: |
+        The merge-pending state of the finished Automata. `mode` is the
+        `autonomous.automation.merge_pending_mode` setting in effect (`off`, `shadow`
+        or `on`) and `alert_minutes` the `merge_pending_alert_minutes` threshold in
+        whole minutes (0 = alerts off). `automata` has one entry per completed
+        Automaton that has a work branch: its id, name, branch, the merge state, the
+        commits it is ahead of main, when it was first seen merge pending
+        (`pending_since`) and when the alert fired (`alerted_at`); both are null when
+        they do not apply. In shadow mode each entry also carries `would_alert`, and
+        `shadow_decisions` lists what the pass recorded without acting, newest first.
+        The state is read from the coordinator's in-memory cache, so a read never runs
+        git and no field is added to the Automaton; an Automaton the pass has not
+        compared yet reads `unknown`. While the mode is `off` both lists are empty.
+        Read-only; only GET is served, and a federated peer needs the autonomous read
+        capability.
+      operationId: autonomousMerge
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Merge status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/repo-ci-watch:
     get:
       summary: Repo CI watch state
@@ -1302,6 +1370,32 @@ paths:
         "403": {description: Federated peer lacks the autonomous read capability}
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
+
+  /api/autonomous/safe-to-delete:
+    get:
+      summary: Safe-to-delete report
+      description: |
+        The local Automaton work branches, and their worktrees, whose commits are all
+        on main (or that have none), so an operator can review what is safe to clean
+        up. Branches that are still pending, need a look, cannot be compared, or whose
+        worktree has uncommitted changes are listed under `held`. The report only
+        reads; nothing is deleted, merged or pushed. Only GET is served, and a
+        federated peer needs the autonomous read capability.
+      operationId: autonomousSafeToDelete
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Safe-to-delete report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafeDeleteReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "500": {description: The branches could not be listed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
 
   /api/autonomous/security-failures:
     get:
@@ -1670,8 +1764,8 @@ paths:
                             prd_id: {type: string}
                             prd_title: {type: string}
                             task_title: {type: string}
-                            cause: {type: string, enum: [pool_full, node_busy, backoff, budget, global_cooldown, await_external, tree_lock, rate_ceiling]}
-                            reason: {type: string, description: Plain-language wait reason}
+                            cause: {type: string, enum: [pool_full, node_busy, backoff, budget, global_cooldown, await_external, await_decision, tree_lock, rate_ceiling]}
+                            reason: {type: string, description: "Plain-language wait reason. A task parked on an open blocking worker question reads `await_decision: <question id>` (cause `await_decision`)."}
                             since: {type: string, format: date-time}
                             resets_at: {type: string, format: date-time, description: Present only when the daemon knows when the wait ends}
                             holder: {type: string, description: The task or session the wait depends on, when there is one}
@@ -1803,7 +1897,15 @@ paths:
   /api/autonomous/prds/{id}/set_tags:
     post:
       summary: Replace the tags on an Automaton
-      description: Replaces the full list; an empty array clears it. Every ID must be an existing tag.
+      description: |
+        Replaces the full list; an empty array clears it. Every ID must be an
+        existing tag. The optional primary_tag_id picks the tag a tag browser
+        sorts the Automaton under; it never hides a membership. Absent keeps the
+        current primary while it is still a tag. Empty clears it. Any other value
+        must be one of tag_ids, or the call is refused with 400. Removing the
+        primary tag from the Automaton clears the primary.
+        A body with primary_tag_id and no tag_ids keeps the current tags and changes
+        only the primary.
       operationId: autonomousPRDSetTags
       tags: [Autonomous]
       parameters:
@@ -1814,12 +1916,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [tag_ids]
               properties:
-                tag_ids: {type: array, items: {type: string}}
+                tag_ids: {type: array, items: {type: string}, description: "Omit with primary_tag_id alone to keep the current tags."}
+                primary_tag_id: {type: string, description: "Optional. One of tag_ids, or empty to clear. Default none."}
       responses:
-        "200": {description: Updated Automaton, carries tag_ids}
-        "404": {description: Unknown tag}
+        "200": {description: "The updated Automaton, carrying tag_ids and primary_tag_id"}
+        "400": {description: "primary_tag_id is not one of tag_ids"}
+        "404": {description: "Unknown tag, or an unknown Automaton when primary_tag_id is sent without tag_ids"}
 
   /api/autonomous/prds/{id}/set_notify_events:
     post:
@@ -1857,14 +1960,54 @@ paths:
   /api/autonomous/tags:
     get:
       summary: List Automata tags
-      description: Returns every tag (a tree via parent_id) with the number of Automata carrying it.
+      description: |
+        Returns every tag (a tree via parent_id) with the number of Automata
+        carrying it. With counts=true each tag also carries subtree_count (distinct
+        Automata carrying the tag or any descendant), direct_count (Automata
+        carrying exactly this tag), session_subtree_count and session_direct_count
+        (the same for sessions, where a session counts through its own tags and
+        through the tags it inherits from its Automaton), and the reply carries an
+        untagged object {count, session_count}. count keeps its include_sub meaning.
+
+        The reply also carries registry, the status of the shared tag registry on
+        this daemon (see the TagRegistry schema): its role (standalone, keeper or
+        peer), the keeper it syncs from, whether that keeper is stale, the last sync
+        time and revision, how many tags are pending sync, the merge and
+        removed-on-keeper notes, and the last sync error. On a peer the tag tree is
+        a cached copy of the keeper's tags, so it matches the keeper after a sync,
+        apart from tags the peer created while the keeper was unreachable.
       operationId: autonomousTagList
       tags: [Autonomous]
       parameters:
         - {name: include_sub, in: query, required: false, schema: {type: boolean, default: false}, description: "Roll counts up to include descendant tags"}
-      responses: {"200": {description: "{tags:[{id,name,parent_id,color,description,created_at,updated_at,count}]}"}}
+        - {name: counts, in: query, required: false, schema: {type: boolean, default: false}, description: "Add the subtree, direct and session counts and the untagged totals"}
+      responses:
+        "200":
+          description: "{tags:[{id,name,parent_id,color,description,created_at,updated_at,count}], untagged?:{count,session_count}, registry:{...}}; with counts=true each tag also has subtree_count, direct_count, session_subtree_count, session_direct_count"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tags:
+                    type: array
+                    items: {type: object}
+                  untagged:
+                    type: object
+                    description: "Present only with counts=true"
+                    properties:
+                      count: {type: integer}
+                      session_count: {type: integer}
+                  registry: {$ref: "#/components/schemas/TagRegistry"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
     post:
       summary: Create a tag
+      description: |
+        On a peer daemon the create is forwarded to the keeper of the shared tag
+        registry. While the keeper is unreachable the tag is still created on the
+        peer, marked pending_sync true, and it is pushed to the keeper when the keeper
+        next answers; a same-name tag under the same parent then merges into the
+        keeper's tag, and a merge note records it. A create is never refused with 503.
       operationId: autonomousTagCreate
       tags: [Autonomous]
       requestBody:
@@ -1879,13 +2022,26 @@ paths:
                 parent_id: {type: string}
                 color: {type: string}
                 description: {type: string}
-      responses: {"200": {description: Created tag}, "400": {description: Invalid name or unknown parent}}
+      responses:
+        "200": {description: "Created tag. On a peer while the keeper is unreachable it carries pending_sync: true"}
+        "400": {description: Invalid name or unknown parent}
+        "401": {$ref: "#/components/responses/Unauthorized"}
 
   /api/autonomous/tags/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     patch:
       summary: Rename, recolor, describe or reparent a tag
-      description: Omitted fields are unchanged. A parent_id of "" makes the tag a root. A move that would make a tag its own ancestor is refused with 409 and nothing is changed.
+      description: |
+        Omitted fields are unchanged. A parent_id of "" makes the tag a root. A move
+        that would make a tag its own ancestor is refused with 409 and nothing is changed.
+
+        On a peer daemon the edit is forwarded to the keeper of the shared tag
+        registry, and the reply shows the keeper's value. When the keeper decided a
+        conflict for a field this edit also changed, the reply carries
+        "conflict": true and "conflict_field" (name, parent, color or description);
+        the keeper's value is kept. While the keeper is unreachable on a peer, a
+        rename, re-parent, recolor or describe is refused with 503, and the message
+        says the last copy is shown.
       operationId: autonomousTagUpdate
       tags: [Autonomous]
       requestBody:
@@ -1899,16 +2055,120 @@ paths:
                 parent_id: {type: string}
                 color: {type: string}
                 description: {type: string}
-      responses: {"200": {description: Updated tag}, "404": {description: Unknown tag}, "409": {description: Cycle}}
+      responses:
+        "200": {description: "Updated tag. Carries conflict and conflict_field when the keeper decided a conflict"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {description: "Unknown tag (kind not_found)"}
+        "409": {description: "Cycle, or the keeper refused the move (kind cycle or has_children)"}
+        "503": {description: "Keeper unreachable on a peer (kind unreachable). Nothing is changed; the last copy is shown"}
     delete:
       summary: Delete a tag
-      description: Refused with 409 while the tag has child tags, and refused with 409 plus a count of Automata using it while it is still assigned. Nothing is changed on a refusal.
+      description: |
+        Refused with 409 while the tag has child tags, and refused with 409 plus a count of Automata using it while it is still assigned. Nothing is changed on a refusal.
+
+        On a peer daemon the delete is forwarded to the keeper. While the keeper is
+        unreachable it is refused with 503. On the keeper, a tag deleted there that a
+        peer still has assignments on shows up on that peer as a removed-on-keeper note.
       operationId: autonomousTagDelete
       tags: [Autonomous]
       responses:
         "200": {description: "{deleted: id}"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
         "404": {description: Unknown tag}
-        "409": {description: "Has child tags, or assigned to Automata (body carries count)"}
+        "409": {description: "Has child tags, or assigned to Automata (body carries count, kind has_children or in_use)"}
+        "503": {description: "Keeper unreachable on a peer (kind unreachable); nothing is deleted"}
+
+  /api/autonomous/tags/registry:
+    get:
+      summary: Read the keeper's shared tag registry snapshot
+      description: |
+        Keeper-to-peer protocol route. A peer daemon pulls this snapshot from the
+        daemon it names in autonomous.tags.registry_keeper, so the peer can keep its
+        cached copy of the registry. The reply is the keeper's revision, every tag
+        (with its origin node) and the merge and removed-on-keeper notes. Operators
+        do not need this route: the status of a daemon's own registry is the registry
+        object on GET /api/autonomous/tags.
+
+        A peer daemon answers 409, because only the keeper holds the registry.
+      operationId: autonomousTagRegistrySnapshot
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: "{revision, tags, notes}"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TagRegistrySnapshot"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous read capability"}
+        "405": {description: "GET only"}
+        "409": {description: "This daemon is a peer, not the keeper (kind not_keeper)"}
+        "503": {description: "Tag registry is not wired into this server"}
+
+  /api/autonomous/tags/registry/write:
+    post:
+      summary: Apply one forwarded tag write on the keeper
+      description: |
+        Keeper-to-peer protocol route. A peer forwards each tag create, rename,
+        re-parent, recolor, describe or delete here. The keeper applies it to its own
+        registry and returns the result: the keeper's value for the tag, the revision,
+        any conflict, and any merge note. The peer relays that result to the operator.
+        Operators do not call this route; use the tag routes on the peer instead.
+
+        A daemon that is not the keeper answers 409.
+      operationId: autonomousTagRegistryWrite
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TagRegistryWrite"}
+      responses:
+        "200":
+          description: The keeper's result for the write
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TagRegistryWriteResult"}
+        "400": {description: "Malformed body, or an invalid edit (kind invalid)"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "404": {description: "Unknown tag (kind not_found)"}
+        "405": {description: "POST only"}
+        "409": {description: "This daemon is not the keeper (kind not_keeper), or the edit is refused (kind has_children, in_use with count, or cycle)"}
+        "503": {description: "Tag registry is not wired into this server"}
+
+  /api/autonomous/tags/registry/notes/{id}/dismiss:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}, description: "Note ID, as listed in the registry notes"}]
+    post:
+      summary: Dismiss a merge or removed-on-keeper note on this daemon
+      description: |
+        Dismisses one note on this daemon only. A dismissed note stops appearing in
+        the registry object, and it stays dismissed when later keeper snapshots are
+        applied. Dismissing a note does not change any tag or any assignment.
+      operationId: autonomousTagRegistryDismissNote
+      tags: [Autonomous]
+      responses:
+        "200": {description: "{dismissed: id}"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "404": {description: "No such note on this daemon (kind note_not_found)"}
+        "405": {description: "POST only"}
+        "503": {description: "Tag registry is not wired into this server"}
+
+  /api/autonomous/attention:
+    get:
+      summary: List the Automata that need the operator's attention
+      description: |
+        The items are the Automata whose status is one of the attention statuses,
+        plus every Automaton with a task held for operator review. The statuses
+        field names the attention statuses in force: blocked, needs_review and
+        paused by default, so a paused Automaton is in the group. Each item is an
+        Automaton summary view and carries blocked_reason.
+      operationId: autonomousAttention
+      tags: [Autonomous]
+      responses:
+        "200": {description: "{statuses:[string], items:[SummaryView]}"}
+        "405": {description: Only GET is allowed}
+        "503": {description: autonomous disabled}
 
   /api/autonomous/guardrail_profiles:
     get:
@@ -2241,7 +2501,15 @@ paths:
         The `verifier_policy` object holds the global verifier policy: `mode`,
         `backends`, `claude_session_cap`, `claude_cap_window_minutes`,
         `force_stronger_on_retry`, `final_gate_stronger`, `stronger_backend` and
-        `stronger_model`.
+        `stronger_model`. The judge settings are `judge_policy` (ordered backends,
+        one attempt each; empty = the judges follow the verifier routing policy)
+        and `judge_timeout_seconds` (time limit for one judge run, default 1800).
+        `judge_size_threshold_lines` is the number of changed lines (added plus
+        deleted, on the Automaton branch against its merge base, lock files left
+        out) above which the judges try `claude-code` first, default 400; 0 turns
+        the size rule off.
+        `scope_lint` (off|warn|enforce, default enforce) is the pre-spawn scope
+        lint mode: the effective, normalized value is returned.
         The `automation` object carries the search-before-create settings:
         `create_search_mode` (off|shadow|on, default shadow) and
         `create_search_threshold` (above 0 and at most 1, default 0.5).
@@ -2313,6 +2581,14 @@ paths:
         `stronger_backend` and `stronger_model` (strings). An unknown mode, an empty
         backend entry, a negative number or an unknown key is rejected with 400 and
         changes nothing. The policy applies to the next verification with no restart.
+        `judge_policy` is an ordered list of backend names (an empty list clears it);
+        `judge_timeout_seconds` is a whole number of seconds (0 or negative = 1800).
+        `judge_size_threshold_lines` is a whole number of changed lines of 0 or more
+        (0 = size-aware judge routing off, default 400). `PUT /api/config` with the
+        key `autonomous.judge_size_threshold_lines` rejects anything else with 400.
+        `scope_lint` (off|warn|enforce, default enforce) sets the pre-spawn scope
+        lint mode; any other value is rejected with 400. `PUT /api/config` accepts
+        it as `autonomous.scope_lint`.
         `automation.create_search_mode` (off|shadow|on) and
         `automation.create_search_threshold` (above 0 and at most 1) set the
         search-before-create settings; any other value is rejected with 400 and
@@ -2480,9 +2756,33 @@ paths:
         committed that are in neither the task's planned nor generated files
         (lines summed across retries). Absent when there are none. Enforcement
         is `autonomous.undeclared_edit_mode` (off|warn|block, default warn).
+        `detail` picks the response level: `full` (default) is the whole PRD;
+        `tasks` is per-task rows (id, title, status, error, verification,
+        session id) without specs or story text; `summary` is ids, titles,
+        statuses and counts.
+        Tasks that are actively running (status in_progress or verifying)
+        additionally carry `progress` — the live snapshot shown in
+        TaskProgress — and `looping_warning`, set when the worker appears to
+        re-issue the same tool call on consecutive polls. `progress` is
+        stripped the instant a task leaves the active statuses, so its
+        absence means the task's worker is not running right now.
+        A task's `status` can be `waiting_decision`: its spec names an operator
+        decision that has no answer yet and the decision gate is holding it. The
+        task has not started; it is not a failure and not a retry. Its
+        `wait_reason` is one plain sentence naming the decision (and, while the
+        decision is open, the first 160 characters of the question), and when the
+        decision is answered the task goes back to `pending` by itself and the
+        reason clears. The gate holds tasks only when
+        `autonomous.questions.decision_gate_mode` is `on`; in `shadow` (the default)
+        no task has this status. Treat `waiting_decision` as an active status, not a
+        finished one. The `decisions` array is the Automaton's decision log, each
+        entry shaped as AutomatonDecisionLogEntry; its entries for operator
+        decisions carry `question_id`, `answer_id` and `decision_state`.
       operationId: autonomousPRDGet
       tags: [Autonomous]
-      responses: {"200": {description: OK}, "404": {description: Not found}}
+      parameters:
+        - {name: detail, in: query, required: false, schema: {type: string, enum: [full, tasks, summary], default: full}}
+      responses: {"200": {description: OK}, "404": {description: Not found}, "400": {description: "Bad detail value (expected full, tasks or summary)"}}
     delete:
       summary: Cancel + archive a PRD
       description: |
@@ -2718,8 +3018,10 @@ paths:
         retry requeues the task; it may carry a replaced spec, a worker (backend,
         model and effort for this task) and a narrowed list of files it may
         change. The held attempt report is cleared, and the operator's note is
-        given to the next attempt. A cancel cancels the task. A task that is not
-        held answers 409. Requires the `autonomous:write` capability for
+        given to the next attempt. A cancel cancels the task. The call works
+        while the Automaton is running other tasks: it answers at once and starts
+        no second executor, because the running executor picks the decision up.
+        A task that is not held answers 409. Requires the `autonomous:write` capability for
         federation peers.
       operationId: autonomousPRDResolveTaskReview
       tags: [Autonomous]
@@ -3074,7 +3376,7 @@ paths:
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
     post:
-      summary: Create a graph from a set of PRD IDs
+      summary: Create a graph from a set of Automaton IDs
       description: "Deprecated: use 'automation import-graph' (POST /api/automations/import-graph/{graph_id}); the response carries a Deprecation header and a deprecation field."
       operationId: orchestratorGraphCreate
       deprecated: true
@@ -3160,7 +3462,9 @@ paths:
       description: |
         All Automation records, one object each, in store order. A record
         with a budget policy also carries a computed `budget` view; the view
-        is worked out on each read and is never stored.
+        is worked out on each read and is never stored. Each record also carries
+        a computed `tags` array: the union of the tag IDs of its member Automata,
+        sorted. It is read-only and is never stored on the Automation.
         An empty store returns `[]`, never `null`. The response carries an
         `ETag`; a matching `If-None-Match` returns 304.
       operationId: automationsList
@@ -3528,9 +3832,9 @@ paths:
     parameters:
       - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
     post:
-      summary: Insert a PRD member
+      summary: Insert an Automaton member
       description: |
-        Inserts a PRD as a new member. On a draft it lands in the graph at once; on a
+        Inserts an Automaton as a new member. On a draft it lands in the graph at once; on a
         running Automation it is held as a pending insert until an operator approves it
         (`approve_insert`). `reason` is required. Only one urgent insert may be pending
         at a time. An urgent insert takes the next slot and must leave `after` empty.
@@ -3551,7 +3855,7 @@ paths:
           type: object
           required: [prd_id]
           properties:
-            prd_id: {type: string, description: "The member PRD to insert"}
+            prd_id: {type: string, description: "The member Automaton to insert"}
             name: {type: string, description: "Optional display name"}
         urgent: {type: boolean, description: "Take the next slot instead of the end of the chain"}
         after: {type: string, description: "Insert directly after this member ID; empty for the end of the chain"}
@@ -3781,6 +4085,53 @@ paths:
         "400": {description: "Invalid setting, or nothing to set"}
         "404": {description: Automation or member not found}
         "409": {description: "expected_version is stale, or the Automation is completed or cancelled"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/merged-members:
+    get:
+      summary: Merged-member decisions of every Automaton
+      description: |
+        Read-only. Lists the merged-member decisions of all Automata, oldest
+        first. A decision is written when a member of an Automaton ended
+        cancelled or completed and its work was found already merged into the
+        project default branch. Each row names the member, its branch, the
+        default branch, the proving commit, the merged-member policy in force
+        (`completed`, `manual` or `block`), the outcome (`advanced` when the
+        chain moved on, `blocked` when the Automaton stayed blocked for the
+        operator) and the time. Nothing is changed.
+      operationId: automationsMergedMembersAll
+      tags: [Automations]
+      responses:
+        "200":
+          description: The merged-member decisions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergedMemberList"
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/merged-members:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    get:
+      summary: Merged-member decisions of one Automaton
+      description: |
+        Read-only. Lists the merged-member decisions in one Automaton's
+        decision log, oldest first, with the same rows as
+        `GET /api/automations/merged-members`. An Automaton with no such
+        decision returns an empty list.
+      operationId: automationsMergedMembers
+      tags: [Automations]
+      responses:
+        "200":
+          description: The merged-member decisions of the Automaton
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergedMemberList"
+        "404": {description: Automation not found}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 
@@ -5580,6 +5931,190 @@ paths:
       tags: [Singletons]
       responses: {"200": {description: OK}, "503": {description: Ollama not configured}}
 
+  /api/questions:
+    post:
+      summary: Raise an operator question
+      description: |
+        Records an operator decision and returns it. Raise never blocks the
+        asker, and the question is kept until it is answered or withdrawn —
+        there is no deadline. An omitted asker and asker kind default to the
+        caller and `operator`; an omitted context is not defaulted, the body
+        must name one of `none`, `prd`, `task`, `proposal` or `registry_row`
+        (the matching link, `prd_id` / `task_id` / `proposal_path` /
+        `registry_row_key` present, `none` carrying none of them). One of the
+        options or `hold` must be named as the default, so no choice is ever
+        silent. Body cap 64 KiB; content after the JSON object is malformed.
+        Needs the autonomous write capability when called by a federated
+        peer.
+
+        A question raised here is stored with `source` `rest` and is never
+        `blocking`. A worker session can also raise a question without this
+        route: a `DATAWATCH_QUESTION:` line in its output, acted on only while
+        `autonomous.questions.enabled` and `autonomous.questions.worker_marker`
+        are both on, is stored through the same path with `source` `marker`.
+        A blocking one parks its task with the wait reason
+        `await_decision: <question id>`. A marker line that fails validation
+        is never stored; it is audited as `question_marker_refused` (session
+        id, reason category and the SHA-256 of the line, never the text).
+      operationId: questionRaise
+      tags: [Questions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/QuestionRaise"}
+      responses:
+        "201": {description: "The stored question record"}
+        "400": {description: "Malformed body, or a validation rule failed (every offending field named); nothing is stored", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "Federated peer lacks the autonomous write capability", content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
+        "413": {description: "Body over the 64 KiB cap", content: {"text/plain": {schema: {type: string}}}}
+        "500": {description: "The store could not append or replay the question", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off (named in the message), or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
+    get:
+      summary: List operator questions
+      description: |
+        Matches questions, newest first, with `count` (the returned length) and
+        a `questions` array (empty array, never null, when nothing matches).
+        `text` is a case-insensitive substring over the question text, the
+        option labels and tradeoffs, and the answer quotes; `asker` is an
+        exact match on `asked_by`. `limit` is a positive integer, default 100,
+        capped at 1000. Needs the autonomous read capability when called by a
+        federated peer.
+      operationId: questionList
+      tags: [Questions]
+      parameters:
+        - {name: state, in: query, required: false, schema: {type: string, enum: [open, answered, withdrawn, expired, all]}}
+        - {name: context, in: query, required: false, schema: {type: string, enum: [none, prd, task, proposal, registry_row, all]}}
+        - {name: asker, in: query, required: false, schema: {type: string}, description: "Exact match on asked_by"}
+        - {name: text, in: query, required: false, schema: {type: string}, description: "Case-insensitive substring over question text, option labels and tradeoffs, and answer quotes"}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, default: 100, maximum: 1000}}
+      responses:
+        "200": {description: "count and questions, newest first"}
+        "400": {description: "An unknown state or context (named in the error), or a limit that is not a positive integer (\"limit must be a positive integer\")", content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: "Federated peer lacks the autonomous read capability", content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: "Method not allowed", content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions/{id}:
+    get:
+      summary: Read one operator question with answer metadata
+      description: |
+        The question record (state, priority, return_path, options and the
+        asker's recommendation included on the record itself) plus a caller's
+        full return path in the same read: `answer_count` (every answer ever
+        recorded, superseded ones included — they are decided and never
+        deleted), `current_answer_id` (the answer in force, empty when
+        there is none) and `answer` — null while the question has no
+        answer, otherwise the standing answer's summary (id, chosen
+        option, the verbatim quote exactly as stored, actor, surface,
+        created_at). An asker that cannot subscribe polls this one read
+        for the whole return path. The full answer log, with text, is the
+        answers read.
+      operationId: questionGet
+      tags: [Questions]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: "question (state, priority, return_path included on the record), answer_count, current_answer_id, and the standing answer's summary, or null while it has no answer"}
+        "404": {description: Unknown question id, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions/{id}/answer:
+    post:
+      summary: Record an answer to an operator question
+      description: |
+        Records the operator's decision: a chosen option, the operator's own
+        words as `quote` (or both), and who answered. At least one of
+        `chosen_option_id` and a non-blank `quote` is required. The quote is
+        stored exactly as received — no trimming, normalising or re-encoding —
+        with its SHA-256 recorded alongside. `surface` is the surface the
+        answer arrived on: `pwa`, `android`, `ios`, `cli`, `rest`, `mcp` or
+        `comm:<channel name>`; empty defaults to `rest`.
+
+        An answer is immutable: a changed mind is a new answer that supersedes
+        the old one via `supersedes` (which must name the current answer of an
+        answered question; a supersedes on an open question is a 409 — there
+        is no current answer to replace).
+
+        An answer whose text looks like a secret is refused 422, is never
+        stored, and the response never echoes any part of the submitted text
+        — `error` is the fixed phrase `matched: secret pattern` (not the
+        name of the specific rule that matched) and `suggestion` lists the
+        two safe routes (the datawatch secrets store via ${secret:name},
+        or the filesystem); the matched rule's name is recorded in the
+        `question_answer_refused` audit entry, not in this body. Well-formed
+        ${secret:name} references pass the scan.
+
+        Body cap 64 KiB plus the 16 KiB quote cap. Needs the autonomous write
+        capability when called by a federated peer.
+      operationId: questionAnswer
+      tags: [Questions]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/QuestionAnswer"}
+      responses:
+        "201": {description: "The stored answer record (quote hash included) and the question's new state"}
+        "400": {description: "Malformed body; an unknown surface; neither an option nor a non-blank quote; an option id the question does not have; a quote that is not valid UTF-8", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "403": {description: "Federated peer lacks the autonomous write capability", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: Unknown question id, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "409": {description: "Answering a withdrawn or expired question; a supersedes on an open question (no current answer to replace); a supersedes that is absent or wrong on an answered question", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "413": {description: "Body over the cap, or a quote over 16 KiB", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "422": {description: "The answer looks like a secret — the fixed phrase and the safe routes, no echo of the submitted text; no rule name in the body", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionSecretRefusal"}}}}
+        "500": {description: "The store could not append or replay the answer", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions/{id}/withdraw:
+    post:
+      summary: Withdraw an open operator question
+      description: |
+        Withdrawing an open question closes it without an answer; a question
+        that has already moved on (answered, or withdrawn before) is refused.
+        `reason` is free text; `actor` defaults to the caller.
+        Needs the autonomous write capability when called by a federated peer.
+      operationId: questionWithdraw
+      tags: [Questions]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/QuestionWithdraw"}
+      responses:
+        "200": {description: "The question in its new state"}
+        "400": {description: Malformed body, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "403": {description: "Federated peer lacks the autonomous write capability", content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: Unknown question id, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "409": {description: "The question is not open", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "413": {description: "Body over the 64 KiB cap", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "500": {description: "The store could not append or replay the withdrawal", content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions/{id}/answers:
+    get:
+      summary: Read an operator question's answer log
+      description: |
+        The full answer log, oldest first, each answer carrying its derived
+        superseded state (`superseded`, `superseded_by`), plus
+        `current_answer_id` (the answer in force, empty when there is none).
+        The superseded flags are derived on read from the log; the answer
+        lines themselves never change.
+      operationId: questionAnswers
+      tags: [Questions]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: "answers (oldest first, each with derived superseded state) and current_answer_id"}
+        "404": {description: Unknown question id, content: {"application/json": {schema: {$ref: "#/components/schemas/QuestionError"}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: "The autonomous.questions.enabled switch is off, or the question store is not wired", content: {"text/plain": {schema: {type: string}}}}
+
   /api/questions/stats:
     get:
       summary: Worker question marker counters
@@ -5642,6 +6177,78 @@ components:
             example: "unauthorized"
 
   schemas:
+    DecisionLine:
+      type: object
+      description: The operator decisions, as GET /api/autonomous/decisions returns them.
+      required: [decisions]
+      properties:
+        decisions:
+          type: array
+          description: Newest first; empty when nothing matches
+          items: {$ref: "#/components/schemas/DecisionLineEntry"}
+    DecisionLineEntry:
+      type: object
+      description: One operator decision.
+      properties:
+        id: {type: string, description: "The decision id (q- followed by lowercase hex)"}
+        question: {type: string, description: The question text}
+        label: {type: string, description: "Short label such as decision or approval; may be empty"}
+        state: {type: string, enum: [open, answered, withdrawn, expired]}
+        asked_by: {type: string}
+        asked_at: {type: string, format: date-time, nullable: true}
+        prd_id: {type: string, description: "The Automaton the decision belongs to; empty when it is not linked to one"}
+        task_ids:
+          type: array
+          description: Tasks of that Automaton whose spec names this decision; always an array
+          items: {type: string}
+        waiting_task_ids:
+          type: array
+          description: The tasks among task_ids that are held on the decision right now (status waiting_decision); always an array
+          items: {type: string}
+        waiting_tasks:
+          type: array
+          description: The same held tasks with the reason each one shows; always an array
+          items: {$ref: "#/components/schemas/DecisionLineWait"}
+        answer:
+          allOf:
+            - {$ref: "#/components/schemas/DecisionLineAnswer"}
+          nullable: true
+          description: The current answer; null until the decision is answered
+    DecisionLineWait:
+      type: object
+      properties:
+        task_id: {type: string}
+        wait_reason: {type: string, description: "The plain sentence the held task shows, naming the decision and, while it is open, the first 160 characters of the question"}
+    DecisionLineAnswer:
+      type: object
+      properties:
+        id: {type: string, description: Answer id}
+        quote: {type: string, description: "The operator's words exactly as stored; never trimmed, cut or re-cased"}
+        quote_sha256: {type: string, description: The sha256 recorded with the quote}
+        actor: {type: string}
+        surface: {type: string, description: The surface the answer came from}
+        answered_at: {type: string, format: date-time, nullable: true}
+    AutomatonDecisionLogEntry:
+      type: object
+      description: |
+        One entry of an Automaton's decision log (the `decisions` array on the
+        Automaton). Entries for operator decisions add `question_id`, `answer_id`
+        and `decision_state`; each is left out when empty. Show an unknown `kind`
+        as plain text.
+      properties:
+        at: {type: string, format: date-time}
+        kind:
+          type: string
+          description: |
+            What the entry records. Among the kinds: `operator_decision` (a decision
+            was raised for the Automaton), `operator_answer` (it was answered) and
+            `decision_gate_shadow` (in shadow mode, a task the gate would have held;
+            written once per task and reason).
+        actor: {type: string, description: "operator, autonomous or verifier"}
+        note: {type: string}
+        question_id: {type: string, description: "The operator decision the entry records"}
+        answer_id: {type: string, description: "The answer the entry records; answer entries only"}
+        decision_state: {type: string, enum: [open, answered, withdrawn, expired], description: "The decision state the entry stands for"}
     LaneFillStatus:
       type: object
       description: The lane fill status, as GET /api/autonomous/lane-fill returns it.
@@ -5723,78 +6330,87 @@ components:
         at: {type: string, format: date-time}
         lane_id: {type: string}
         work: {type: string, description: Title of the work waiting for the lane}
-    DecisionLine:
+    MergeStatus:
       type: object
-      description: The operator decisions, as GET /api/autonomous/decisions returns them.
-      required: [decisions]
+      description: |-
+        The merge status, as GET /api/autonomous/merge returns it. Both lists are
+        empty while `mode` is off; `shadow_decisions` is empty outside shadow mode.
+      required: [mode, alert_minutes, automata, shadow_decisions]
       properties:
-        decisions:
+        mode: {type: string, enum: [off, shadow, "on"], description: The merge_pending_mode in effect}
+        alert_minutes: {type: integer, description: The merge-pending alert threshold in minutes; 0 = off}
+        automata:
           type: array
-          description: Newest first; empty when nothing matches
-          items: {$ref: "#/components/schemas/DecisionLineEntry"}
-    DecisionLineEntry:
+          description: One entry per completed Automaton with a work branch
+          items: {$ref: "#/components/schemas/MergeAutomaton"}
+        shadow_decisions:
+          type: array
+          description: What the pass recorded in shadow mode, newest first
+          items: {$ref: "#/components/schemas/MergeShadowDecision"}
+    MergeAutomaton:
       type: object
-      description: One operator decision.
+      description: A completed Automaton with a work branch, as the merge-pending pass last compared it
+      required: [automaton_id, name, branch, state, commits_ahead, pending_since, alerted_at]
       properties:
-        id: {type: string, description: "The decision id (q- followed by lowercase hex)"}
-        question: {type: string, description: The question text}
-        label: {type: string, description: "Short label such as decision or approval; may be empty"}
-        state: {type: string, enum: [open, answered, withdrawn, expired]}
-        asked_by: {type: string}
-        asked_at: {type: string, format: date-time, nullable: true}
-        prd_id: {type: string, description: "The Automaton the decision belongs to; empty when it is not linked to one"}
-        task_ids:
-          type: array
-          description: Tasks of that Automaton whose spec names this decision; always an array
-          items: {type: string}
-        waiting_task_ids:
-          type: array
-          description: The tasks among task_ids that are held on the decision right now (status waiting_decision); always an array
-          items: {type: string}
-        waiting_tasks:
-          type: array
-          description: The same held tasks with the reason each one shows; always an array
-          items: {$ref: "#/components/schemas/DecisionLineWait"}
-        answer:
-          allOf:
-            - {$ref: "#/components/schemas/DecisionLineAnswer"}
+        automaton_id: {type: string}
+        name: {type: string, description: The Automaton's title, or its id when it has none}
+        branch: {type: string, description: The Automaton's work branch}
+        state:
+          type: string
+          enum: [merged, pending, needs_look, empty, unknown]
+          description: The cached merge comparison state; unknown until the pass has compared the branch
+        commits_ahead: {type: integer, description: Commits on the branch that are not on main}
+        pending_since:
+          type: string
+          format: date-time
           nullable: true
-          description: The current answer; null until the decision is answered
-    DecisionLineWait:
+          description: When the Automaton was first seen merge pending; null when it is not pending
+        alerted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the merge-pending alert fired; null until it does
+        would_alert: {type: boolean, description: "Shadow mode only: whether the pass would have alerted"}
+    MergeShadowDecision:
       type: object
-      properties:
-        task_id: {type: string}
-        wait_reason: {type: string, description: "The plain sentence the held task shows, naming the decision and, while it is open, the first 160 characters of the question"}
-    DecisionLineAnswer:
-      type: object
-      properties:
-        id: {type: string, description: Answer id}
-        quote: {type: string, description: "The operator's words exactly as stored; never trimmed, cut or re-cased"}
-        quote_sha256: {type: string, description: The sha256 recorded with the quote}
-        actor: {type: string}
-        surface: {type: string, description: The surface the answer came from}
-        answered_at: {type: string, format: date-time, nullable: true}
-    AutomatonDecisionLogEntry:
-      type: object
-      description: |
-        One entry of an Automaton's decision log (the `decisions` array on the
-        Automaton). Entries for operator decisions add `question_id`, `answer_id`
-        and `decision_state`; each is left out when empty. Show an unknown `kind`
-        as plain text.
+      description: One decision the merge-pending pass recorded in shadow mode
       properties:
         at: {type: string, format: date-time}
-        kind:
-          type: string
-          description: |
-            What the entry records. Among the kinds: `operator_decision` (a decision
-            was raised for the Automaton), `operator_answer` (it was answered) and
-            `decision_gate_shadow` (in shadow mode, a task the gate would have held;
-            written once per task and reason).
-        actor: {type: string, description: "operator, autonomous or verifier"}
-        note: {type: string}
-        question_id: {type: string, description: "The operator decision the entry records"}
-        answer_id: {type: string, description: "The answer the entry records; answer entries only"}
-        decision_state: {type: string, enum: [open, answered, withdrawn, expired], description: "The decision state the entry stands for"}
+        automaton_id: {type: string}
+        name: {type: string}
+        branch: {type: string}
+        state: {type: string, enum: [merged, pending, needs_look, empty, unknown]}
+        commits_ahead: {type: integer}
+        would_alert: {type: boolean}
+        repeat_count: {type: integer, description: How many polls chose the same decision again}
+        last_seen_at: {type: string, format: date-time}
+    SafeDeleteReport:
+      type: object
+      description: The safe-to-delete report, as GET /api/autonomous/safe-to-delete returns it
+      required: [safe, held, held_dirty]
+      properties:
+        safe:
+          type: array
+          items:
+            type: object
+            required: [branch, worktree, reason, commits]
+            properties:
+              branch: {type: string}
+              worktree: {type: string, description: The checked-out worktree path; empty when none exists}
+              reason: {type: string}
+              commits: {type: integer, description: Commits on the branch that are not on main}
+        held:
+          type: array
+          items:
+            type: object
+            required: [branch, worktree, state]
+            properties:
+              branch: {type: string}
+              worktree: {type: string}
+              state: {type: string, description: The merge comparison state}
+              dirty: {type: boolean, description: True when the worktree has uncommitted changes}
+              note: {type: string}
+        held_dirty: {type: integer, description: Branches that are safe by state but held for uncommitted changes}
     TriageList:
       type: object
       description: |-
@@ -6313,7 +6929,32 @@ components:
         kind: {type: string, enum: ['', decompose, smoke, final_gate], description: "Empty = ordinary task. 'smoke' marks the task that IS the plan's own smoke verification (judged by the verifier LLM from autonomous.smoke_verification_backend/models); 'final_gate' the terminal verification task that runs the plan's verification script"}
         verification_script: {type: string}
         status: {type: string}
+        compute_node: {type: string, description: "Compute node the task's worker was started on; a daemon restart adopts the surviving worker onto it. Absent for a hosted backend or before the worker starts"}
         executor_source: {type: string, description: "task | story | prd | automation | global"}
+    TaskProgress:
+      type: object
+      description: |
+        Live progress snapshot parsed from a pi session's own JSONL log —
+        carried by autonomous tasks while they are in progress (status
+        in_progress or verifying) and returned by GET /api/sessions/{id}/progress.
+        The autonomous store forces these fields off the moment a task leaves
+        the active statuses, so their presence is the signal that the worker
+        is running right now; they are omitted from JSON otherwise. It is
+        task data: the PWA shows it on the running task's card, and
+        GET /api/sessions/{id}/progress answers 404 for a non-pi session —
+        a stale pi log from another session is never read (9.31.3).
+      required: [last_event_at, assistant_turns]
+      properties:
+        last_event_at: {type: string, format: date-time, description: "Timestamp of the newest event in the log (RFC3339)"}
+        assistant_turns: {type: integer, description: "Assistant-role messages so far (one per LLM reply, tool-calling ones included)"}
+        tool_calls:
+          type: object
+          description: Per-tool-name call counts across the log so far
+          additionalProperties: {type: integer}
+        last_tool_name: {type: string, description: "Name of the most recent tool call (omitted when none yet)"}
+        last_tool_args: {type: string, description: "Arguments of the most recent tool call as compact JSON, truncated to 500 characters"}
+        last_summary: {type: string, description: "First 200 characters of the most recent thinking or text block — the agent's own last-stated intent"}
+        tokens: {type: integer, description: "Cumulative tokens reported by the log's assistant messages"}
     SessionAutomatonDetail:
       type: object
       description: |
@@ -7056,6 +7697,30 @@ components:
           type: string
           format: date-time
 
+    MergedMemberList:
+      type: object
+      description: "The merged-member decisions of one Automaton (automation_id set) or of all Automata (automation_id empty)."
+      properties:
+        automation_id: {type: string}
+        count: {type: integer}
+        merged_members:
+          type: array
+          items:
+            $ref: "#/components/schemas/MergedMemberRow"
+    MergedMemberRow:
+      type: object
+      properties:
+        automation_id: {type: string}
+        automation_name: {type: string}
+        member: {type: string, description: "Member ID within the Automaton"}
+        prd_id: {type: string}
+        branch: {type: string}
+        default_branch: {type: string, description: "The project default branch the member was proved merged into"}
+        proving_commit: {type: string}
+        policy: {type: string, enum: [completed, manual, block]}
+        outcome: {type: string, enum: [advanced, blocked]}
+        at: {type: string, format: date-time}
+        note: {type: string}
     Automation:
       type: object
       description: |
@@ -7097,7 +7762,7 @@ components:
         decisions:
           type: array
           description: "Decision log entries; same shape as an Automaton's decision log"
-          items: {type: object}
+          items: {$ref: "#/components/schemas/AutomatonDecisionLogEntry"}
 
     AutomationMember:
       type: object
@@ -7304,3 +7969,240 @@ components:
         last_backend: {type: string, description: "Worker backend of the last attempt."}
         last_model: {type: string, description: "Worker model of the last attempt."}
         held_at: {type: string, format: date-time}
+    TagRegistry:
+      description: |
+        The registry object on GET /api/autonomous/tags. It describes how this daemon
+        takes part in the shared tag registry. A daemon is standalone when no keeper
+        is configured (it keeps its own tags and syncs with nobody), the keeper when
+        autonomous.tags.registry_keeper names this daemon, and a peer when it names
+        another daemon. A peer keeps a cached copy of the keeper's tags, so it can
+        still show them while the keeper is unreachable.
+      type: object
+      properties:
+        role: {type: string, enum: [standalone, keeper, peer], description: "This daemon's role in the registry"}
+        keeper: {type: string, description: "The keeper's peer name. Empty when standalone."}
+        stale: {type: boolean, description: "True on a peer whose keeper has not answered since last_synced_at. The tags shown are then the last copy."}
+        last_synced_at: {type: string, format: date-time, description: "When the keeper last answered with a snapshot. Omitted before the first answer."}
+        revision: {type: integer, description: "The registry revision this daemon holds"}
+        pending_sync_count: {type: integer, description: "Tags a peer created while the keeper was unreachable and that the keeper has not yet received"}
+        notes:
+          type: array
+          description: "Merge and removed-on-keeper notes not yet dismissed on this daemon. Always an array."
+          items: {$ref: "#/components/schemas/TagRegistryNote"}
+        last_error: {type: string, description: "The last sync error. Empty when the last sync worked."}
+    TagRegistryTag:
+      description: "One tag of the shared registry, as this daemon holds it."
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        parent_id: {type: string, description: "Omitted for a root tag"}
+        color: {type: string}
+        description: {type: string}
+        origin_node: {type: string, description: "Name of the daemon that created the tag"}
+        pending_sync: {type: boolean, description: "True on a tag a peer created while the keeper was unreachable. Omitted otherwise."}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    TagRegistryNote:
+      description: "A visible record of a merge or of a removal on the keeper. It stays until it is dismissed on this daemon."
+      type: object
+      properties:
+        id: {type: string, description: "Note ID, used by the dismiss route"}
+        kind:
+          type: string
+          enum: [merged, removed_on_keeper]
+          description: "merged: a pending tag was merged into a keeper tag. removed_on_keeper: the keeper deleted a tag this daemon still had assignments on."
+        name: {type: string}
+        parent_path: {type: string, description: "Path of the parent tag, when there is one"}
+        kept_id: {type: string, description: "merged: the keeper tag that was kept"}
+        replaced_id: {type: string, description: "merged: the pending tag that was replaced"}
+        tag_id: {type: string, description: "removed_on_keeper: the deleted tag"}
+        nodes: {type: array, items: {type: string}, description: "Nodes the change touched"}
+        merged_at: {type: string, format: date-time}
+    TagRegistrySnapshot:
+      description: "The keeper's registry, as a peer pulls it (GET /api/autonomous/tags/registry)."
+      type: object
+      properties:
+        revision: {type: integer}
+        tags: {type: array, items: {$ref: "#/components/schemas/TagRegistryTag"}}
+        notes: {type: array, items: {$ref: "#/components/schemas/TagRegistryNote"}}
+    TagRegistryWrite:
+      description: "One edit a peer forwards to the keeper (POST /api/autonomous/tags/registry/write)."
+      type: object
+      required: [kind, tag_id, base_revision]
+      properties:
+        kind: {type: string, enum: [create, rename, reparent, recolor, describe, delete]}
+        tag_id: {type: string, description: "The tag the edit applies to. For a create, the new tag's ID."}
+        base_revision: {type: integer, description: "The registry revision the writer had when it made the edit. The keeper compares it with the last change to each field."}
+        name: {type: string}
+        parent_id: {type: string}
+        color: {type: string}
+        description: {type: string}
+        origin_node: {type: string, description: "Name of the daemon that made the edit"}
+        pending: {type: boolean, description: "True for a create made while the keeper was unreachable. A same-name tag under the same parent then merges into the keeper's tag."}
+    TagRegistryWriteResult:
+      description: "What the keeper returns for a forwarded write."
+      type: object
+      properties:
+        tag:
+          description: "The keeper's value after the write, or the kept tag of a merge. Empty for a delete."
+          allOf: [{$ref: "#/components/schemas/TagRegistryTag"}]
+        revision: {type: integer}
+        conflict: {type: boolean, description: "True when the keeper kept its own value for a field the writer also edited. Omitted otherwise."}
+        conflict_field: {type: string, enum: [name, parent, color, description], description: "The field the conflict is about"}
+        merge:
+          description: "Set when a pending create merged into the keeper tag named in tag"
+          allOf: [{$ref: "#/components/schemas/TagRegistryNote"}]
+
+    QuestionOption:
+      description: "One named option of an operator question. A question must carry 2 to 20 options with unique ids."
+      type: object
+      required: [id, label]
+      properties:
+        id: {type: string, description: "Stable option id; referenced by `default`, `recommendation.option_id` and an answer's `chosen_option_id`."}
+        label: {type: string, maxLength: 200, description: "What the option is. <= 200 bytes."}
+        tradeoffs: {type: string, maxLength: 1000, description: "What the option buys and costs, optional. <= 1000 bytes."}
+
+    Question:
+      description: |
+        One operator decision, recorded when raised and kept until answered or
+        withdrawn (no deadline). The kind of question is the `label`, not a
+        different structure; the shipped labels are decision, design review,
+        approval and information, but users may add their own. `default` is
+        the declared fallback - always an option or `hold`, never silent.
+      type: object
+      required: [id, label, text, options, default, context, asker_kind, state, created_at]
+      properties:
+        id: {type: string}
+        label: {type: string, description: "The kind of question; custom labels are accepted. Defaults to `decision`."}
+        asked_by: {type: string, description: "The asker of record."}
+        asker_kind: {type: string, enum: [session, supervisor, operator, system], description: "Who asked; defaults to `operator`."}
+        session_id: {type: string, description: "Present when the asker is a session."}
+        context: {type: string, enum: [none, prd, task, proposal, registry_row], description: "Where the decision belongs; the matching link must be present, `none` none of them."}
+        prd_id: {type: string, description: "The Automaton id, for context `prd`."}
+        task_id: {type: string, description: "The task id, for context `task`."}
+        proposal_path: {type: string, description: "A repository-relative path into the working tree, for context `proposal`."}
+        registry_row_key: {type: string, description: "The registry row key, for context `registry_row`."}
+        text: {type: string, maxLength: 8192, description: "The decision in one line. <= 8192 bytes."}
+        options:
+          type: array
+          minItems: 2
+          maxItems: 20
+          items: {$ref: "#/components/schemas/QuestionOption"}
+        recommendation:
+          type: object
+          description: "Optional, the asker's own preference."
+          properties:
+            option_id: {type: string, description: "Must exist among the options."}
+            rationale: {type: string, maxLength: 1000}
+        default: {type: string, description: "An option id or `hold` - the declared fallback when the question is never answered."}
+        risk: {type: string, enum: [normal, low], default: normal}
+        priority: {type: string, enum: [normal, high], description: "How urgently an operator should act; omitted means `normal` (separate from `risk`, which says how dangerous a wrong answer is). A `high` raise additionally lands in the alert store while the channel is on."}
+        return_path: {type: boolean, default: false, description: "This question opted in to the single `DATAWATCH_ANSWER:` line delivered to its `session_id` when the answer is recorded (needs `autonomous.questions.return_path` on). Default no: the return path is the events plus polling GET."}
+        blocking: {type: boolean, description: "The asker said it cannot go on until the question is decided (the worker marker's `blocked`). While such a question is open its task is parked with the wait reason `await_decision: <question id>`. A REST raise is never blocking. Left out when false."}
+        source: {type: string, enum: [marker, rest], description: "How the question arrived: `marker` (a worker's DATAWATCH_QUESTION: line, raised only while `autonomous.questions.worker_marker` and `autonomous.questions.enabled` are on) or `rest` (POST /api/questions). Left out on a record written before the field existed. A `marker` question carries a `session_id` and a `source_line_sha256`."}
+        source_line_sha256: {type: string, pattern: "^[0-9a-f]{64}$", description: "Lowercase hex SHA-256 of the marker line a worker question came from. The dedupe key: the same line read again while its question is open raises nothing. Never the line text. Left out when empty."}
+        state: {type: string, enum: [open, answered, withdrawn, expired]}
+        created_at: {type: string, format: date-time}
+
+    QuestionRaise:
+      description: "The POST /api/questions body. The required shape is `text`, 2 to 20 options with unique ids, a named `default` (an option or `hold`) and a `context` (one of none, prd, task, proposal, registry_row) with its matching link."
+      type: object
+      required: [text, options, default, context]
+      properties:
+        label: {type: string, description: "Defaults to `decision`."}
+        asked_by: {type: string, description: "Defaults to the caller."}
+        asker_kind: {type: string, enum: [session, supervisor, operator, system], description: "Defaults to `operator`."}
+        session_id: {type: string}
+        context: {type: string, description: "One of none, prd, task, proposal, registry_row; an omitted context is not defaulted."}
+        prd_id: {type: string}
+        task_id: {type: string}
+        proposal_path: {type: string, description: "Must be repository-relative (no leading /, no .. segment)."}
+        registry_row_key: {type: string}
+        text: {type: string, maxLength: 8192, description: "The decision in one line. <= 8192 bytes."}
+        options:
+          type: array
+          minItems: 2
+          maxItems: 20
+          items: {$ref: "#/components/schemas/QuestionOption"}
+        recommendation:
+          type: object
+          properties:
+            option_id: {type: string, description: "Must exist among the options."}
+            rationale: {type: string, maxLength: 1000}
+        default: {type: string, description: "An option id of this question or `hold` - never silent."}
+        risk: {type: string, enum: [normal, low], description: "Defaults to `normal`."}
+        priority: {type: string, enum: [normal, high], description: "Defaults to `normal` (empty accepted). A `high` raise additionally lands in the alert store while the channel is on; anything else is a 400 naming the field."}
+        return_path: {type: boolean, default: false, description: "Opt this one question in to the single `DATAWATCH_ANSWER:` line into its `session_id` at answer time (needs `autonomous.questions.return_path` on). Default false - the default return path is the events plus polling GET /api/questions/{id}."}
+
+    Answer:
+      description: |
+        One recorded answer, immutable. A changed mind is a new answer whose
+        `supersedes` names the replaced answer; superseded answers stay in the
+        log and are derived on read, never deleted. The quote is stored
+        exactly as received, with `quote_sha256` (the SHA-256 of its exact
+        bytes) recorded alongside.
+      type: object
+      required: [id, question_id, actor, surface, created_at]
+      properties:
+        id: {type: string}
+        question_id: {type: string}
+        actor: {type: string, description: "The answering party of record."}
+        surface: {type: string, description: "pwa, android, ios, cli, rest, mcp, or `comm:<channel name>`."}
+        chosen_option_id: {type: string, description: "Present when the answer picked an option."}
+        quote: {type: string, description: "The operator's own words, exactly as received. <= 16 KiB; empty when absent."}
+        quote_sha256: {type: string, description: "Lowercase hex SHA-256 of the quote's exact bytes; empty when there is no quote."}
+        supersedes: {type: string, description: "The id of the answer being replaced; present only on an answer that replaces another."}
+        source_message_id: {type: string, description: "Present when the answer came over a comm channel."}
+        created_at: {type: string, format: date-time}
+
+    AnswerView:
+      description: "An answer plus its derived superseded state, as returned by the answer log."
+      allOf:
+        - $ref: "#/components/schemas/Answer"
+        - type: object
+          properties:
+            superseded: {type: boolean, description: "True when a later answer in the log names this one as the one it replaces."}
+            superseded_by: {type: string, description: "The id of the answer that replaced it; present when superseded is true."}
+
+    QuestionAnswer:
+      description: "The POST /api/questions/{id}/answer body. At least one of chosen_option_id and a non-blank quote is required."
+      type: object
+      properties:
+        chosen_option_id: {type: string, description: "Must name an option of the question."}
+        quote: {type: string, description: "The operator's own words, stored exactly as received. <= 16384 bytes."}
+        supersedes: {type: string, description: "The id of the answer being replaced (the current answer of an answered question). On an open question a supersedes is a 409 — there is no current answer to replace."}
+        surface: {type: string, description: "pwa, android, ios, cli, rest, mcp, or `comm:<channel name>`. Defaults to `rest`; `system` is refused."}
+        source_message_id: {type: string}
+        actor: {type: string, description: "Defaults to the caller."}
+
+    QuestionWithdraw:
+      description: "The POST /api/questions/{id}/withdraw body. Both fields optional."
+      type: object
+      properties:
+        reason: {type: string, description: "Free text for the log."}
+        actor: {type: string, description: "Defaults to the caller."}
+
+    QuestionError:
+      description: "The error body of the JSON-answering question endpoints (answer, withdraw, answer log). A secret refusal is the same object with `reason` and `suggestion` added — see QuestionSecretRefusal."
+      type: object
+      required: [error]
+      properties:
+        error: {type: string, description: "A human-readable reason, e.g. `answer carries neither an option nor non-blank text`, `answer quote is not valid UTF-8`, `answer must name the answer it supersedes`, `answer supersedes the wrong target`, `question is not open`."}
+
+    QuestionSecretRefusal:
+      description: "The 422 body of POST /api/questions/{id}/answer when an answer's text looks like a secret. Nothing from the submitted text is echoed: `error` is a fixed phrase and `suggestion` the two fixed safe routes. The matched rule's name is not in this body — it is recorded on the `question_answer_refused` audit entry."
+      type: object
+      required: [error, reason, suggestion]
+      properties:
+        error:
+          type: string
+          description: "Fixed text containing the phrase `matched: secret pattern` and the two safe routes; it does not name the specific rule that matched."
+        reason:
+          type: string
+          enum: [secret_detected]
+          description: "Always `secret_detected`."
+        suggestion:
+          type: array
+          items: {type: string}
+          description: "The two safe routes: store the secret in the datawatch secrets store and refer to it as ${secret:name}; or save it on the filesystem and point the session at the file."

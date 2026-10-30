@@ -2738,6 +2738,15 @@ const (
 	DefaultAutomationMergePendingAlertMinutes = 30
 )
 
+// MergedMemberPolicy — the autonomous.automation.merged_member_policy
+// setting: completed, manual or block. An empty value reads as
+// MergedMemberPolicyCompleted.
+const (
+	MergedMemberPolicyCompleted = "completed"
+	MergedMemberPolicyManual    = "manual"
+	MergedMemberPolicyBlock     = "block"
+)
+
 type AutonomousAutomationConfig struct {
 	IdleAlertMinutes   int  `yaml:"idle_alert_minutes" json:"idle_alert_minutes"`
 	TriageAlertMinutes *int `yaml:"triage_alert_minutes,omitempty" json:"triage_alert_minutes,omitempty"`
@@ -2751,6 +2760,7 @@ type AutonomousAutomationConfig struct {
 	RepoCIWatch              RepoCIWatchConfig `yaml:"repo_ci_watch" json:"repo_ci_watch"`
 	MergePendingMode         string            `yaml:"merge_pending_mode,omitempty" json:"merge_pending_mode,omitempty"`
 	MergePendingAlertMinutes *int              `yaml:"merge_pending_alert_minutes,omitempty" json:"merge_pending_alert_minutes,omitempty"`
+	MergedMemberPolicy       string            `yaml:"merged_member_policy,omitempty" json:"merged_member_policy,omitempty"`
 	AgentInsertPolicy        string            `yaml:"agent_insert_policy" json:"agent_insert_policy"`
 	// SecurityFailure — the security failure block
 	// (autonomous.automation.security_failure.*). See
@@ -3768,6 +3778,28 @@ func (c AutonomousAutomationConfig) EffectiveMergePendingMode() string {
 	return c.MergePendingMode
 }
 
+// ValidateMergedMemberPolicy accepts the legal autonomous.automation.
+// merged_member_policy values: completed, manual and block. The empty string
+// is accepted too, as "unset", and reads as completed. Any other value is
+// rejected.
+func ValidateMergedMemberPolicy(policy string) error {
+	switch policy {
+	case "", MergedMemberPolicyCompleted, MergedMemberPolicyManual, MergedMemberPolicyBlock:
+		return nil
+	}
+	return fmt.Errorf("autonomous.automation.merged_member_policy: unknown policy %q (use %s, %s or %s)",
+		policy, MergedMemberPolicyCompleted, MergedMemberPolicyManual, MergedMemberPolicyBlock)
+}
+
+// EffectiveMergedMemberPolicy returns the merged-member policy in effect: an
+// empty value reads as MergedMemberPolicyCompleted.
+func (c AutonomousAutomationConfig) EffectiveMergedMemberPolicy() string {
+	if c.MergedMemberPolicy == "" {
+		return MergedMemberPolicyCompleted
+	}
+	return c.MergedMemberPolicy
+}
+
 // EffectiveMergePendingAlertMinutes returns the merge-pending alert threshold
 // in effect: an unset value (nil pointer) reads
 // DefaultAutomationMergePendingAlertMinutes (30), while an explicit 0 turns
@@ -4644,7 +4676,7 @@ func DefaultConfig() *Config {
 			ScopeLint:               ScopeLintEnforce,
 			Automation: AutonomousAutomationConfig{
 				AgentInsertPolicy:  AgentInsertPolicyAllow,
-				TriageAlertMinutes: intPtr(DefaultAutomationTriageAlertMinutes), CreateSearchMode: CreateSearchModeShadow, CreateSearchThreshold: float64Ptr(DefaultAutomationCreateSearchThreshold), MergePendingMode: MergePendingModeOff, MergePendingAlertMinutes: intPtr(DefaultAutomationMergePendingAlertMinutes),
+				TriageAlertMinutes: intPtr(DefaultAutomationTriageAlertMinutes), CreateSearchMode: CreateSearchModeShadow, CreateSearchThreshold: float64Ptr(DefaultAutomationCreateSearchThreshold), MergePendingMode: MergePendingModeOff, MergePendingAlertMinutes: intPtr(DefaultAutomationMergePendingAlertMinutes), MergedMemberPolicy: MergedMemberPolicyCompleted,
 				// The repo CI watch's security workflow list ships populated.
 				// A nil list is saved as an empty list (the field has no
 				// omitempty), and a reload reads an empty list as "watch no
@@ -5176,6 +5208,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := ValidateMergePendingMode(cfg.Autonomous.Automation.MergePendingMode); err != nil {
+		return err
+	}
+	if err := ValidateMergedMemberPolicy(cfg.Autonomous.Automation.MergedMemberPolicy); err != nil {
 		return err
 	}
 	if t := cfg.Autonomous.Automation.EffectiveMergePendingAlertMinutes(); t < 0 {

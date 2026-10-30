@@ -455,6 +455,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/retry_profiles/", api.handleAutonomousRetryProfiles)
 	// Automation orchestration — CRUD.
 	apiMux.HandleFunc("/api/automations", api.handleAutomations)
+	apiMux.HandleFunc("/api/automations/merged-members", api.handleMergedMembers) // read-only merged-member decisions of all Automata (exact path wins over the subtree)
 	apiMux.HandleFunc("/api/automations/", api.handleAutomations)
 	// Sprint S7 (v3.11.0) — BL33 plugin framework.
 	apiMux.HandleFunc("/api/plugins", api.handlePlugins)
