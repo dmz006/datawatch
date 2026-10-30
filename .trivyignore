@@ -692,3 +692,29 @@ CVE-2026-91415
 # TRACED: ldd scan in a networkless container of the built agent-base image
 # (docker run --entrypoint /bin/sh --network none)
 CVE-2026-111497
+
+# openjdk-17-jre-headless -- CVE-2026-114820
+# severity: high; images: parent-full
+# The JRE is installed in parent-full only to run signal-cli
+# (Dockerfile.parent-full). A source trace shows java is started only by
+# internal/signal (signalcli.go, javafix.go). CVE-2026-114820 is an Oracle Java
+# SE advisory (2026-10-24) in the JSSE component, CVSS 3.1 9.1, exploitable over
+# the network through APIs that process TLS data. signal-cli uses JSSE as a TLS
+# client to the Signal service; datawatch starts it with a local config
+# directory and does not expose a TLS listener from the JVM, and the container
+# publishes no JVM port. An attacker would therefore have to be a hostile TLS
+# peer of signal-cli (the Signal service endpoints or a man in the middle of
+# that connection), which signal-cli's pinned trust store makes difficult, but
+# the client-side code path is real and the vulnerable APIs were not traced
+# further, so reachability is recorded as unknown rather than no. Messaging over
+# Signal is an optional feature; the image is not used without it.
+# No fix available in Debian bookworm:
+# security-tracker.debian.org/tracker/CVE-2026-114820 (checked 2026-10-30) lists
+# bookworm security 17.0.21+9-1~deb12u1 as vulnerable; fixed only in sid
+# (17.0.21.0.3+1-1). Found live by the v9.39.0 Release workflow blocking
+# parent-full scan. Short expiry: re-check every few days and consume the Debian
+# update as soon as it ships (security patches are consumed when available).
+# TRACED: source grep of every java invocation in the repository (source trace;
+# not a container linker scan); CVE description read on NVD and the Debian
+# security tracker, 2026-10-30
+CVE-2026-114820
