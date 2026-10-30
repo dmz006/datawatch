@@ -1138,6 +1138,11 @@ type Manager struct {
 	// prompt can carry the operator's decision. Optional. Guarded by mu.
 	sessionContinueLineFn func(sessionID, line string) error
 
+	// heldAnswerPaths, when set, stands in for the review, control and
+	// resume paths held-question answers route through (ProcessHeldAnswer);
+	// tests fake them behind the real held states. Read under mu.
+	heldAnswerPaths *heldAnswerPaths
+
 	// questionTick is the in-flight guard and wait group of the coordinator
 	// tick's question resumes (question_tick.go).
 	questionTick questionTickState

@@ -74,6 +74,18 @@ type Decision struct {
 	QuestionID    string `json:"question_id,omitempty"`
 	AnswerID      string `json:"answer_id,omitempty"`
 	DecisionState string `json:"decision_state,omitempty"`
+
+	// Quote, Surface, Option and Result are the operator-answer fields,
+	// set when Kind is "operator_answer" (an answer to a raised held question
+	// was routed): the operator's quoted words, the surface the answer came
+	// from, the chosen option id ("" when the answer was free text), and
+	// the applied / recorded / refused / stale outcome (Result). DecisionState
+	// above is "withdrawn" for a stale refusal — the question was closed
+	// with the refusal reason.
+	Quote   string `json:"quote,omitempty"`
+	Surface string `json:"surface,omitempty"`
+	Option  string `json:"option,omitempty"`
+	Result  string `json:"result,omitempty"`
 }
 
 // GateDisagreement is the record of a verifier/quality-gate disagreement

@@ -2,69 +2,94 @@
 //
 // held_question_pass.go RAISES a daemon question when a PRD (automaton) or
 // task, or a pending member in an Automaton, sits in a held state, and
-// WITHDRAWS it once that state clears. This file is what happens in between,
-// on the other side of the question: the operator answers that raised
-// question, and its answer is routed back through the Manager's existing
-// action paths. QuestionTick (question_tick.go) branches on the question's
-// source and calls here instead of resuming a worker session — a held
-// question is about the automation, not about a running task, so there is no
-// session to continue.
+// WITHDRAWS it once that state clears while the question is still open.
+// This file is what happens in between, on the other side of the question:
+// the operator answers that raised question, and its answer is routed back
+// through the Manager's existing action paths. QuestionTick (question_tick.go)
+// branches on the question's source and calls here instead of resuming a
+// worker session — a held question is about the automation, not about a
+// running task, so there is no session to continue.
 //
 // The mapping (the options each held state offers, held_question_table.go):
 //
-//	blocked             resume        -> Manager.ResumeParked (a boot-parked
-//	                                        automaton; re-admits it)
-//	                        retry / change the spec / cancel
-//	                                    -> Manager.ResolveTaskReview on the task
-//	                                       held for review (the block is that
-//	                                       review hold)
-//	revisions asked     resume        -> Manager.Approve (the operator's review
-//	                                    is done)
-//	                        change the spec -> Manager.RequestRevision with the
-//	                                        operator's spec
+//	blocked             resume            -> Manager.ResumeParked (the block
+//	                                          is a boot-park; re-admits the
+//	                                          automaton)
+//	                      retry           -> Manager.ResolveTaskReview on the
+//	                                          task held for review (the block
+//	                                          is that review hold)
+//	                      change the spec -> Manager.ResolveTaskReview with the
+//	                                          operator's revised spec
+//	revisions asked     resume            -> Manager.Approve (the operator's
+//	                                          review is done)
+//	                      change the spec -> Manager.RequestRevision with the
+//	                                          operator's spec
 //	review held         retry / retry stronger / change the spec / cancel
 //	                                    -> Manager.ResolveTaskReview, retry
-//	                                        stronger raising the resolved effort
-//	                                        one step
-//	awaiting decision   resume        -> releases the task's park (the decision
-//	                                    hold is released, or the parked worker
-//	                                    task is re-admitted and its session
-//	                                    prompted to continue with the decision),
-//	                                    same guard as a worker-question resume
-//	                        cancel        -> Manager.CancelTask
-//	pending insert      approve insert -> Manager.ApproveInsertedMember (operator)
-//	                        reject insert -> record only: there is no daemon path
-//	                                        for dropping a pending member, so it
-//	                                        stays pending
+//	                                        stronger raising the resolved
+//	                                        effort one step
+//	awaiting decision   resume            -> releases the task's park (the
+//	                                          decision hold is released, or the
+//	                                          parked worker task is re-admitted
+//	                                          and its session is prompted to
+//	                                          continue), same guard as a
+//	                                          worker-question resume
+//	                      cancel          -> Manager.CancelTask
+//	pending insert      approve insert    -> Manager.ApproveInsertedMember (the
+//	                                          operator-only insert path)
+//	                      reject insert   -> record only, with a note that a
+//	                                          pending member cannot be dropped
+//	                                          by the daemon and so stays
+//	                                          pending
 //
 // hold is the option for every one of them, and it means "record the answer,
-// leave the state exactly as the operator left it" — nothing is run.
+// leave the state exactly as the operator left it" — nothing runs.
 //
-// Every routed answer is recorded exactly once: an operator_answer entry on
-// the PRD's decisions (linked to the question by id and to the answer by id,
-// which the decision log already knows how to join) plus an audit event. The
-// entry doubles as the idempotence marker — a second pass over the same
-// answer sees it and does not re-run the action. An answer to a state that
-// has already moved is refused, named, recorded with its own entry, and
-// leaves everything as it found it.
+// Before any option is applied the processor re-checks that the item is
+// still in the state the question was raised for: an answer that names a
+// state the item left is REFUSED, the question is WITHDRAWN with a reason
+// that names the state it was raised for and the state the item is in now,
+// a result-stale decision entry records the refusal with the full answer,
+// and nothing runs. The caller gets ErrHeldStateChanged, and the refusal is
+// recorded either way so the timeline shows what happened.
 //
-// This file never raises or withdraws a question: the pass owns the question
-// lifecycle and withdraws the open held question the moment the held state
-// clears, which after an applied answer is how the outcome reaches the
-// operator's timeline.
+// Every answer is recorded exactly once (idempotent by answer id): one
+// operator_answer entry on the PRD's decisions carrying the operator's
+// quoted words, the answer actor, the surface it came from, the chosen
+// option and the applied / recorded / refused / stale result — plus an
+// audit event. The entry is the idempotence marker: a second pass over the
+// same answer sees it and does not re-run the action, re-record the entry,
+// or re-withdraw the question.
+//
+// An answer that names no option (free text) is recorded, its words noted,
+// and treated as hold: nothing runs. An answer never acts on an unanswered
+// question — only QuestionStore.Answer records, and the processor reads.
+//
+// The pass continues to own the lifecycle of OPEN held questions,
+// withdrawing one the moment its state clears; the processor closes the
+// already-ANSWERED questions it has to refuse, which the pass leaves alone.
 
 package autonomous
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 )
 
-// heldAnswerActor names who the recorded answer is: the option the operator
-// chose. The daemon only routes it.
+// ErrHeldStateChanged is returned by ProcessHeldAnswer when the operator's
+// answer names a state the item is no longer in — the hold the question was
+// raised for has cleared or moved. The refusal runs nothing and withdraws
+// the question with a reason naming the old and the current state; the
+// caller can recognize the outcome with errors.Is.
+var ErrHeldStateChanged = errors.New("held state changed before the answer arrived")
+
+// heldAnswerActor is the fallback actor for a routed answer: this path only
+// ever carries operator answers, and one that does not name an actor is
+// attributed to the operator.
 const heldAnswerActor = "operator"
 
 // heldAnswerDecisionKind is the PRD decision entry that marks one answer
@@ -72,8 +97,8 @@ const heldAnswerActor = "operator"
 // and it is also the idempotence marker for ProcessHeldAnswer.
 const heldAnswerDecisionKind = "operator_answer"
 
-// heldAnswerAudit is the audit action for every answer the processor handles,
-// whatever its outcome.
+// heldAnswerAudit is the audit action for every answer the processor
+// handles, whatever its outcome.
 const heldAnswerAuditAction = "held_question_answered"
 
 // heldAnswerNoteMax bounds the recorded note.
@@ -81,9 +106,10 @@ const heldAnswerNoteMax = 300
 
 // Routing outcomes, for the audit event and the recorded note.
 const (
-	heldResultApplied  = "applied"
-	heldResultRecorded = "recorded" // the hold option: nothing ran, state kept
-	heldResultRefused  = "refused"  // the state had cleared, or the path refused
+	heldResultApplied  = "applied"  // the option ran through its existing path
+	heldResultRecorded = "recorded" // the hold option (or free text): nothing ran, state kept
+	heldResultRefused  = "refused"  // the option does not apply to this state/path, or the path refused
+	heldResultStale    = "stale"    // the state moved: refused, the question was withdrawn, nothing ran
 )
 
 // isHeldQuestion reports whether q is a question the held-question pass
@@ -113,6 +139,15 @@ func heldQuestionIdentity(q *Question) (key, state string, ok bool) {
 	return "", "", false
 }
 
+// heldAnswerActorOf attributes a routed answer: the actor its surface
+// recorded, falling back to the operator for one that named none.
+func heldAnswerActorOf(ans *Answer) string {
+	if a := strings.TrimSpace(ans.Actor); a != "" {
+		return a
+	}
+	return heldAnswerActor
+}
+
 // heldAnswerNote builds the free part of a manager call's note from the
 // answer itself.
 func heldAnswerNote(ans *Answer) string {
@@ -126,18 +161,151 @@ func heldAnswerNote(ans *Answer) string {
 	return note
 }
 
+// heldStaleReason builds the refusal text for an answer whose state moved:
+// it always names the state the question was raised for and the state the
+// item is in now. It is the reason the question is withdrawn with, and the
+// one embedded in the returned ErrHeldStateChanged.
+func heldStaleReason(state, current string) string {
+	return "the held state the question was raised for changed: raised for " + state + ", but " + current
+}
+
+// --- the action paths the processor routes through -------------------------
+
+// heldAnswerPaths are the existing action paths a routed held-question
+// answer runs through, as the processor sees them. Each is the Manager's
+// real path by default (ResolveTaskReview for the review holds, Approve and
+// RequestRevision for the revision hold, ResumeParked for the boot-park,
+// CancelTask for the cancels, ApproveInsertedMember for the pending insert,
+// the decision-gate release for the awaiting hold) and they are swappable
+// for tests, which fake the review, control and resume paths behind them
+// while the held state itself stays real in the store.
+type heldAnswerPaths struct {
+	resolveReview   func(prdID, taskID string, res ReviewResolution, actor string) (*PRD, error)
+	approve         func(prdID, actor, note string) (*PRD, error)
+	requestRevision func(prdID, actor, note string) (*PRD, error)
+	resumeParked    func(prdID, actor, note string) (*PRD, error)
+	cancelTask      func(prdID, taskID, actor, reason string) (*PRD, error)
+	approveInsert   func(automationID, pendingID, actor string, expectedVersion int64) (*Automation, error)
+	releaseAwaiting func(ctx context.Context, p *PRD, t *Task, q Question, ans *Answer) error
+	withdraw        func(questionID, actor, reason string) error
+}
+
+// heldAnswerDispatch reads the path table under the lock, or nil for "all
+// default paths".
+func (m *Manager) heldAnswerDispatch() *heldAnswerPaths {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.heldAnswerPaths
+}
+
+// dispatchResolveReview routes a review-hold resolution through the
+// existing Manager path or its test stand-in.
+func (m *Manager) dispatchResolveReview(prdID, taskID string, res ReviewResolution, actor string) (*PRD, error) {
+	if h := m.heldAnswerDispatch(); h != nil && h.resolveReview != nil {
+		return h.resolveReview(prdID, taskID, res, actor)
+	}
+	return m.ResolveTaskReview(prdID, taskID, res, actor)
+}
+
+// dispatchApprove routes a revision-hold approval (resume) through the
+// existing Manager.Approve path or its test stand-in.
+func (m *Manager) dispatchApprove(prdID, actor, note string) (*PRD, error) {
+	if h := m.heldAnswerDispatch(); h != nil && h.approve != nil {
+		return h.approve(prdID, actor, note)
+	}
+	return m.Approve(prdID, actor, note)
+}
+
+// dispatchRequestRevision routes a revision-hold spec change through the
+// existing Manager.RequestRevision path or its test stand-in.
+func (m *Manager) dispatchRequestRevision(prdID, actor, note string) (*PRD, error) {
+	if h := m.heldAnswerDispatch(); h != nil && h.requestRevision != nil {
+		return h.requestRevision(prdID, actor, note)
+	}
+	return m.RequestRevision(prdID, actor, note)
+}
+
+// dispatchResumeParked routes a boot-park block's resume through the
+// existing Manager.ResumeParked path or its test stand-in.
+func (m *Manager) dispatchResumeParked(prdID, actor, note string) (*PRD, error) {
+	if h := m.heldAnswerDispatch(); h != nil && h.resumeParked != nil {
+		return h.resumeParked(prdID, actor, note)
+	}
+	return m.ResumeParked(prdID, actor, note)
+}
+
+// dispatchCancelTask routes a cancel through the existing Manager.CancelTask
+// path or its test stand-in.
+func (m *Manager) dispatchCancelTask(prdID, taskID, actor, reason string) (*PRD, error) {
+	if h := m.heldAnswerDispatch(); h != nil && h.cancelTask != nil {
+		return h.cancelTask(prdID, taskID, actor, reason)
+	}
+	return m.CancelTask(prdID, taskID, actor, reason)
+}
+
+// dispatchApproveInsert routes a pending-insert approval through the
+// existing operator-only Manager.ApproveInsertedMember path or its test
+// stand-in.
+func (m *Manager) dispatchApproveInsert(automationID, pendingID, actor string, expectedVersion int64) (*Automation, error) {
+	if h := m.heldAnswerDispatch(); h != nil && h.approveInsert != nil {
+		return h.approveInsert(automationID, pendingID, actor, expectedVersion)
+	}
+	return m.ApproveInsertedMember(automationID, pendingID, actor, expectedVersion)
+}
+
+// dispatchReleaseAwaiting routes an awaiting-decision resume through the
+// existing release paths (the decision hold, or the parked worker task) or
+// its test stand-in.
+func (m *Manager) dispatchReleaseAwaiting(ctx context.Context, p *PRD, t *Task, q Question, ans *Answer) error {
+	if h := m.heldAnswerDispatch(); h != nil && h.releaseAwaiting != nil {
+		return h.releaseAwaiting(ctx, p, t, q, ans)
+	}
+	if t.Status == TaskWaitingDecision {
+		m.releaseDecisionHold(p, t)
+		return nil
+	}
+	return m.resumeHeldAwaitingTask(ctx, p, t, q, ans)
+}
+
+// dispatchWithdraw closes an already-answered held question the processor
+// must refuse because its state moved. Default: the question store's
+// withdraw, audited like the pass's own withdraws.
+func (m *Manager) dispatchWithdraw(questionID, actor, reason string) error {
+	if h := m.heldAnswerDispatch(); h != nil && h.withdraw != nil {
+		return h.withdraw(questionID, actor, reason)
+	}
+	m.mu.Lock()
+	store := m.decisionStore
+	m.mu.Unlock()
+	if store == nil {
+		return fmt.Errorf("no question store to withdraw from")
+	}
+	if _, err := store.Withdraw(questionID, actor, reason); err != nil {
+		return err
+	}
+	m.controlAudit("held_question_withdrawn", map[string]any{
+		"question_id": questionID,
+		"actor":       actor,
+		"reason":      reason,
+	})
+	return nil
+}
+
 // ProcessHeldAnswer handles the operator's answer to a raised held question:
 // it maps the chosen option (or the free text, which carries no option and
 // is recorded without a state change) to the automation or task,
 // re-verifies the held state still holds, applies the manager path named in
-// the file header above, and records the answer once on the PRD's decisions
-// and in the audit log.
+// the file header, records the answer once on the PRD's decisions and in
+// the audit log, and — when the state moved — withdraws the question with
+// the refusal reason and reports ErrHeldStateChanged.
 //
 // It is safe to call repeatedly for the same (question, answer): the second
 // call is recognized through the recorded entry and does not re-run the
-// action. It returns an error only when the question is not a raised held
-// question at all — a routing mistake upstream, not a routing outcome; every
-// applied or refused outcome is recorded, not returned.
+// action, re-record the entry, or re-withdraw. It returns a plain error
+// only when the question is not a raised held question at all — a routing
+// mistake upstream, not a routing outcome; every applied, recorded, refused
+// or stale outcome is recorded. A stale outcome additionally returns ErrHeldStateChanged
+// so the caller can tell a moved state from a recorded hold.
 func (m *Manager) ProcessHeldAnswer(ctx context.Context, q Question, ans Answer) error {
 	key, state, ok := heldQuestionIdentity(&q)
 	if !ok {
@@ -146,16 +314,26 @@ func (m *Manager) ProcessHeldAnswer(ctx context.Context, q Question, ans Answer)
 	prdID := q.PRDID
 	if prdID != "" {
 		if p, ok := m.store.GetPRD(prdID); ok && heldAnswerAlreadyRecorded(p, q.ID, ans.ID) {
-			// Already routed once: the first call recorded it, so the action
-			// stands and nothing new is written. The tick re-asks every cycle
-			// while the question is still answered, so this path must be
-			// quiet — pending inserts included (their question names the
-			// member-PRD, so the entry lands on that PRD's decisions).
+			// Already routed once: the first call recorded it (and withdrew
+			// the question when it refused), so the action stands and nothing
+			// new is written. The tick re-asks every cycle while the question
+			// is still answered, so this path must be quiet — pending inserts
+			// included (their question names the member-PRD, so the entry
+			// lands on that PRD's decisions).
 			return nil
 		}
 	}
 	result, detail := m.routeHeldAnswer(ctx, q, &ans, key, state)
 	m.recordHeldAnswer(prdID, key, state, q, &ans, result, detail)
+	if result == heldResultStale {
+		// The refusal is recorded above; the question itself is closed now,
+		// with the same reason, so the operator sees the move. An already
+		// closed question makes the withdraw a recorded error, not a panic.
+		if err := m.dispatchWithdraw(q.ID, heldAnswerActorOf(&ans), detail); err != nil {
+			log.Printf("[autonomous] %s: withdrawing the held question for a stale answer failed: %v", q.ID, err)
+		}
+		return fmt.Errorf("%w: %s", ErrHeldStateChanged, detail)
+	}
 	return nil
 }
 
@@ -163,6 +341,9 @@ func (m *Manager) ProcessHeldAnswer(ctx context.Context, q Question, ans Answer)
 // operator_answer entry for this (question, answer). It is the idempotence
 // marker; see the package documentation.
 func heldAnswerAlreadyRecorded(prd *PRD, questionID, answerID string) bool {
+	if prd == nil {
+		return false
+	}
 	for i := range prd.Decisions {
 		d := &prd.Decisions[i]
 		if d.Kind == heldAnswerDecisionKind && d.QuestionID == questionID && d.AnswerID == answerID {
@@ -174,11 +355,13 @@ func heldAnswerAlreadyRecorded(prd *PRD, questionID, answerID string) bool {
 
 // routeHeldAnswer dispatches the answer to the held state it was raised
 // for. Every branch returns an outcome and a one-line detail; none of them
-// records — that is the caller's single job, applied and refused alike.
+// records — that is the caller's single job, applied, recorded, refused and
+// stale alike.
 func (m *Manager) routeHeldAnswer(ctx context.Context, q Question, ans *Answer, key, state string) (result, detail string) {
 	if ans.ChosenOptionID == "" {
-		// The answer carried no option — free text, or a surface that does not
-		// offer options. It is recorded with its text and nothing is run.
+		// The answer carried no option — free text, or a surface that does
+		// not offer options. Its words are recorded with it and nothing runs,
+		// exactly like hold.
 		return heldResultRecorded, "the answer carries no option (free text); the held state is left as it stands"
 	}
 	switch HeldState(state) {
@@ -206,13 +389,17 @@ func (m *Manager) routeHeldAnswer(ctx context.Context, q Question, ans *Answer, 
 	}
 }
 
-// routeHeldBlocked handles a blocked automaton. A block by a review-hold
-// resolves through the review paths on the held task (retry, the revised
-// spec, cancel); a boot-park resolves through the boot-resume path. A block
-// for any other reason has no daemon resume path: the operator's choice is
-// recorded and named, and the state is left as it stands.
+// routeHeldBlocked handles a blocked automaton. The block re-checks first:
+// a block that cleared is stale, refused and withdrawn, nothing runs. A
+// block by a review-hold resolves through the review paths on the held task
+// (retry, the revised spec, cancel); a boot-park resolves through the
+// boot-resume path. A block for any other reason has no daemon resume path:
+// the operator's choice is refused and named, and the state is left as it
+// stands.
 func (m *Manager) routeHeldBlocked(q Question, ans *Answer) (result, detail string) {
 	if ans.ChosenOptionID == HeldOptionHold {
+		// Hold runs nothing and never refuses: the state stays as the
+		// operator left it, whatever else is true.
 		return heldResultRecorded, "the automaton stays blocked"
 	}
 	prdID := q.PRDID
@@ -221,7 +408,7 @@ func (m *Manager) routeHeldBlocked(q Question, ans *Answer) (result, detail stri
 		return heldResultRefused, "the automaton " + prdID + " is not in the store"
 	}
 	if prd.Status != PRDBlocked {
-		return heldResultRefused, "the state cleared: the automaton is " + string(prd.Status) + " now, blocked no more"
+		return heldResultStale, heldStaleReason(string(HeldBlocked), "the automaton is "+string(prd.Status)+" now")
 	}
 	held := m.reviewHeldTaskID(prd)
 	switch ans.ChosenOptionID {
@@ -238,7 +425,7 @@ func (m *Manager) routeHeldBlocked(q Question, ans *Answer) (result, detail stri
 			return heldResultRefused,
 				"the block is neither a review-hold nor a boot-park (" + reason + "); there is no daemon resume path"
 		}
-		if _, err := m.ResumeParked(prdID, heldAnswerActor, heldAnswerNote(ans)); err != nil {
+		if _, err := m.dispatchResumeParked(prdID, heldAnswerActorOf(ans), heldAnswerNote(ans)); err != nil {
 			return heldResultRefused, "resume refused: " + err.Error()
 		}
 		return heldResultApplied, "the automaton was resumed from the boot-park"
@@ -252,10 +439,11 @@ func (m *Manager) routeHeldBlocked(q Question, ans *Answer) (result, detail stri
 	}
 }
 
-// routeHeldReview handles a task held for review — the state a task enters
-// when the review hold fires — through the review paths. retry stronger
-// passes the operator's retry plus the resolved effort bumped one step, so
-// the retry path applies both without a separate stronger-retry primitive.
+// routeHeldReview routes one review-hold answer through the existing
+// Manager.ResolveTaskReview path. The task re-checks first: one that left
+// the review hold is stale, refused and withdrawn, nothing runs. A change
+// of the task's spec is carried in the answer's own wording: the operator's
+// words are the spec.
 func (m *Manager) routeHeldReview(q Question, ans *Answer, taskID string) (result, detail string) {
 	if ans.ChosenOptionID == HeldOptionHold {
 		return heldResultRecorded, "the task stays held for review"
@@ -265,169 +453,180 @@ func (m *Manager) routeHeldReview(q Question, ans *Answer, taskID string) (resul
 		return heldResultRefused, "task " + taskID + " is not in the store"
 	}
 	if t.Status != TaskReviewNeeded {
-		return heldResultRefused, "the state cleared: task " + taskID + " is " + string(t.Status) + " now, review-hold no more"
+		return heldResultStale, heldStaleReason(string(HeldReviewHeld), "task "+taskID+" is "+string(t.Status)+" now")
 	}
-	opt := ans.ChosenOptionID
-	if opt == HeldOptionCancel {
-		note := "cancelled via held question " + q.ID
-		if qt := strings.TrimSpace(ans.Quote); qt != "" {
-			note += ": " + qt
-		}
-		if _, err := m.ResolveTaskReview(q.PRDID, taskID, ReviewResolution{Action: reviewActionCancel, Note: note}, heldAnswerActor); err != nil {
-			return heldResultRefused, "the review path refused: " + err.Error()
-		}
-		return heldResultApplied, "task " + taskID + " was cancelled after the operator's review"
-	}
-
 	p, ok := m.store.GetPRD(q.PRDID)
 	if !ok {
 		return heldResultRefused, "the automaton " + q.PRDID + " is not in the store"
 	}
-
-	res := ReviewResolution{Action: reviewActionRetry, Note: heldAnswerNote(ans)}
-	raisedEffort := ""
-	switch opt {
+	actor := heldAnswerActorOf(ans)
+	note := heldAnswerNote(ans)
+	switch ans.ChosenOptionID {
+	case HeldOptionCancel:
+		if _, err := m.dispatchResolveReview(q.PRDID, taskID, ReviewResolution{Action: reviewActionCancel, Note: note}, actor); err != nil {
+			return heldResultRefused, "resolve-refused: " + err.Error()
+		}
+		return heldResultApplied, "task " + taskID + " was cancelled out of the review hold"
 	case HeldOptionRetry:
+		if _, err := m.dispatchResolveReview(q.PRDID, taskID, ReviewResolution{Action: reviewActionRetry, Note: note}, actor); err != nil {
+			return heldResultRefused, "resolve-refused: " + err.Error()
+		}
+		return heldResultApplied, "task " + taskID + " was released from the review hold: retry"
 	case HeldOptionRetryStronger:
-		cur := resolveTaskEffort(t, findStory(p, t.StoryID), p, m.AutomationForPRD(p))
-		next, stronger := heldStrongerEffort(cur)
-		if !stronger {
-			res.Note += "; the task's effort is already the strongest recognized"
-		} else {
-			res.Effort = next
-			raisedEffort = string(next)
+		res := ReviewResolution{Action: reviewActionRetry, Note: note}
+		if e := heldStrongerEffort(resolveTaskEffort(t, findStory(p, t.StoryID), p, m.AutomationForPRD(p))); e != "" {
+			res.Effort = e
 		}
+		if _, err := m.dispatchResolveReview(q.PRDID, taskID, res, actor); err != nil {
+			return heldResultRefused, "resolve-refused: " + err.Error()
+		}
+		return heldResultApplied, "task " + taskID + " was released from the review hold: retry stronger"
 	case HeldOptionChangeSpec:
-		if strings.TrimSpace(ans.Quote) == "" {
-			return heldResultRefused, "a revised spec was chosen but the answer text carried none"
+		spec := strings.TrimSpace(ans.Quote)
+		if spec == "" {
+			return heldResultRefused, "the answer carries no spec text to replace the task's; the task stays held"
 		}
-		res.Spec = ans.Quote
-	default:
-		return heldResultRefused, "option " + opt + " has no path for a task held in review"
-	}
-	if _, err := m.ResolveTaskReview(q.PRDID, taskID, res, heldAnswerActor); err != nil {
-		return heldResultRefused, "the review path refused: " + err.Error()
-	}
-	switch opt {
-	case HeldOptionChangeSpec:
-		return heldResultApplied, "task " + taskID + " was requeued with the operator's revised spec"
-	case HeldOptionRetryStronger:
-		if raisedEffort != "" {
-			return heldResultApplied, fmt.Sprintf("task %s was requeued with the effort raised to %s", taskID, raisedEffort)
+		if _, err := m.dispatchResolveReview(q.PRDID, taskID, ReviewResolution{Action: reviewActionRetry, Note: note, Spec: spec}, actor); err != nil {
+			return heldResultRefused, "resolve-refused: " + err.Error()
 		}
-		return heldResultApplied, "task " + taskID + " was requeued; no stronger effort exists so it is a plain retry"
+		return heldResultApplied, "task " + taskID + " was released from the review hold: retry with the revised spec"
 	default:
-		return heldResultApplied, "task " + taskID + " was requeued for a retry"
+		return heldResultRefused, "option " + ans.ChosenOptionID + " has no path for a review-hold"
 	}
 }
 
-// heldEffortRung is the recognized effort rungs in roughly ascending
-// strength. The aliases (quick, normal, thorough) are the same session
-// ladder the executor resolves, so one rung up is a real strength step.
-var heldEffortRung = []Effort{"", EffortQuick, EffortLow, EffortNormal, EffortMedium, EffortHigh, EffortThorough, EffortMax}
-
-// heldStrongerEffort returns the rung one step above cur. It reports
-// false when cur is already the strongest recognized rung, and treats an
-// unrecognized or empty value as the floor (so one step up is a meaningful
-// jump, not a sideways one).
-func heldStrongerEffort(cur Effort) (Effort, bool) {
-	for i, e := range heldEffortRung {
-		if e == cur {
-			if i+1 < len(heldEffortRung) {
-				return heldEffortRung[i+1], true
-			}
-			return "", false
-		}
-	}
-	return EffortHigh, true
-}
-
-// routeHeldRevisions handles a PRD waiting on its revision. Resume is the
-// operator's approval — the review is done — and the revised spec is a
-// request-revision with the operator's words as the note.
+// routeHeldRevisions routes one revision-requested answer through the
+// existing Manager approve / request-revision paths. The PRD re-checks
+// first: one that left the revision hold is stale, refused and withdrawn,
+// nothing runs. Resume — approve, the operator's review being done — and
+// change the spec, the revised spec arriving in the answer's own wording,
+// are applied; nothing applies a spec change without one.
 func (m *Manager) routeHeldRevisions(q Question, ans *Answer) (result, detail string) {
 	if ans.ChosenOptionID == HeldOptionHold {
-		return heldResultRecorded, "the automaton stays waiting for its revision"
+		return heldResultRecorded, "the revision hold stays"
 	}
-	prdID := q.PRDID
-	p, ok := m.store.GetPRD(prdID)
+	p, ok := m.store.GetPRD(q.PRDID)
 	if !ok {
-		return heldResultRefused, "the automaton " + prdID + " is not in the store"
+		return heldResultRefused, "the automaton " + q.PRDID + " is not in the store"
 	}
 	if p.Status != PRDRevisionsAsked {
-		return heldResultRefused, "the state cleared: the automaton is " + string(p.Status) + " now, waiting no more"
+		return heldResultStale, heldStaleReason(string(HeldRevisionRequested), "the automaton is "+string(p.Status)+" now")
 	}
+	actor := heldAnswerActorOf(ans)
+	note := heldAnswerNote(ans)
 	switch ans.ChosenOptionID {
 	case HeldOptionResume:
-		if _, err := m.Approve(prdID, heldAnswerActor, heldAnswerNote(ans)); err != nil {
+		if _, err := m.dispatchApprove(q.PRDID, actor, note); err != nil {
 			return heldResultRefused, "approve refused: " + err.Error()
 		}
-		return heldResultApplied, "the automaton was approved"
+		return heldResultApplied, "the revision hold was approved out"
 	case HeldOptionChangeSpec:
-		if strings.TrimSpace(ans.Quote) == "" {
-			return heldResultRefused, "a revised spec was chosen but the answer text carried none"
+		spec := strings.TrimSpace(ans.Quote)
+		if spec == "" {
+			return heldResultRefused, "the answer carries no spec text to request a revision with; the hold stays"
 		}
-		note := "operator's spec (held question " + q.ID + "): " + ans.Quote
-		if _, err := m.RequestRevision(prdID, heldAnswerActor, note); err != nil {
+		if _, err := m.dispatchRequestRevision(q.PRDID, actor, spec); err != nil {
 			return heldResultRefused, "request-revision refused: " + err.Error()
 		}
 		return heldResultApplied, "a revision was requested with the operator's spec"
 	default:
-		return heldResultRefused, "option " + ans.ChosenOptionID + " has no path for a PRD waiting on its revision"
+		return heldResultRefused, "option " + ans.ChosenOptionID + " has no path for a revision-requested automaton"
 	}
 }
 
-// routeHeldAwaiting handles a task parked waiting on its decision. Resume
-// releases the park — a gate-hold through the release path, a worker-park
-// through the re-admit-and-prompt path with the same guard as a
-// worker-question resume. Cancel routes through the task cancel path.
+// routeHeldAwaiting routes one awaiting-decision answer: resume runs the
+// existing release path for the task's park (nothing else is done — the
+// release is the whole action), and cancel runs the existing cancel task
+// path. The task re-checks first: one that left the decision park is stale,
+// refused and withdrawn, nothing runs.
 func (m *Manager) routeHeldAwaiting(ctx context.Context, q Question, ans *Answer, taskID string) (result, detail string) {
 	if ans.ChosenOptionID == HeldOptionHold {
-		return heldResultRecorded, "the task stays parked waiting on its decision"
+		return heldResultRecorded, "the task stays parked under a decision"
 	}
 	t, ok := m.store.GetTask(taskID)
 	if !ok {
 		return heldResultRefused, "task " + taskID + " is not in the store"
 	}
-	parked := t.Status == TaskWaitingDecision || (t.Status == TaskWaitingCapacity && IsAwaitDecisionWaitReason(t.WaitReason))
+	parked := (t.Status == TaskWaitingDecision || t.Status == TaskWaitingCapacity) && IsAwaitDecisionWaitReason(t.WaitReason)
+	if !parked {
+		return heldResultStale, heldStaleReason(string(HeldAwaitingDecision), "task "+taskID+" is "+string(t.Status)+" now")
+	}
+	p, ok := m.store.GetPRD(q.PRDID)
+	if !ok {
+		return heldResultRefused, "the automaton " + q.PRDID + " is not in the store"
+	}
 	switch ans.ChosenOptionID {
 	case HeldOptionResume:
-		if !parked {
-			return heldResultRefused, "the state cleared: task " + taskID + " is " + string(t.Status) + " now, parked no more"
+		if err := m.dispatchReleaseAwaiting(ctx, p, t, q, ans); err != nil {
+			return heldResultRefused, "release refused: " + err.Error()
 		}
-		p, ok := m.store.GetPRD(q.PRDID)
-		if !ok {
-			return heldResultRefused, "the automaton " + q.PRDID + " is not in the store"
-		}
-		if t.Status == TaskWaitingDecision {
-			m.releaseDecisionHold(p, t)
-			return heldResultApplied,
-				"the decision-hold was released and the task requeued; if the decision it names is still open it will be re-held"
-		}
-		if err := m.resumeHeldAwaitingTask(ctx, p, t, q, ans); err != nil {
-			return heldResultRefused, "the park could not be released: " + err.Error()
-		}
-		return heldResultApplied, "the park was released and the task re-admitted; its session was told to continue with the decision"
+		return heldResultApplied, "the task's decision park was released"
 	case HeldOptionCancel:
-		reason := "cancelled via held question " + q.ID
-		if qt := strings.TrimSpace(ans.Quote); qt != "" {
-			reason += ": " + qt
+		if _, err := m.dispatchCancelTask(q.PRDID, taskID, heldAnswerActorOf(ans), "task "+taskID+" cancelled via held question "+q.ID); err != nil {
+			return heldResultRefused, "cancel-refused: " + err.Error()
 		}
-		if _, err := m.CancelTask(q.PRDID, taskID, heldAnswerActor, reason); err != nil {
-			return heldResultRefused, "cancel refused: " + err.Error()
-		}
-		return heldResultApplied, "task " + taskID + " was cancelled after the operator's review"
+		return heldResultApplied, "task " + taskID + " was cancelled out of its decision hold"
 	default:
-		return heldResultRefused, "option " + ans.ChosenOptionID + " has no path for a task parked on a decision"
+		return heldResultRefused, "option " + ans.ChosenOptionID + " has no path for an awaiting-decision hold"
 	}
 }
 
-// resumeHeldAwaitingTask re-admits a task parked under a worker decision
-// after the operator answered the daemon's held question about the park:
-// it records the resume under the same guard as a worker-question resume,
-// re-admits the task, re-claims a tree lock the park released, and prompts
-// the session to continue with the decision. A failed re-admit rolls the
-// record back so a later pass can try again.
+// routeHeldPendingInsert handles a pending member insert. Approve goes
+// through the existing operator-only insert path, with the actor the answer
+// named. The pending insert re-checks first: one that is no longer pending
+// is stale, refused and withdrawn, nothing runs. Reject-insert and hold are
+// recorded only: there is no daemon path for dropping a pending member, so
+// the insert stays pending either way and the note says so.
+func (m *Manager) routeHeldPendingInsert(q Question, ans *Answer, pendingID string) (result, detail string) {
+	autos := m.automations.List()
+	if len(autos) > 1 {
+		return heldResultRefused, "multiple automations exist; the pending insert cannot be resolved against them"
+	}
+	if len(autos) == 0 || findPending(autos[0], pendingID) == nil {
+		return heldResultStale, heldStaleReason(string(HeldPendingInsert), "insert "+pendingID+" is no longer pending (approved or removed)")
+	}
+	auto := autos[0]
+	switch ans.ChosenOptionID {
+	case HeldOptionApproveInsert:
+		if _, err := m.dispatchApproveInsert(auto.ID, pendingID, heldAnswerActorOf(ans), auto.Version); err != nil {
+			return heldResultRefused, "approve-refused: " + err.Error()
+		}
+		return heldResultApplied, "insert " + pendingID + " on automaton " + auto.ID + " was approved and merged in"
+	case HeldOptionRejectInsert:
+		return heldResultRecorded, "the insert was not approved: there is no daemon path to drop a pending member, so it stays pending"
+	case HeldOptionHold:
+		return heldResultRecorded, "insert " + pendingID + " on automaton " + auto.ID + " stays pending"
+	default:
+		return heldResultRefused, "option " + ans.ChosenOptionID + " has no path for a pending insert"
+	}
+}
+
+// heldStrongerEffort raises a task's resolved effort one rung for a
+// retry-stronger. From the floor (no effort resolved) it returns the first
+// rung — one rung up from an unset worker is Quick. From the top rung there
+// is nothing stronger, so it returns "" and the resolution keeps its top.
+func heldStrongerEffort(current Effort) Effort {
+	ladder := []Effort{EffortQuick, EffortLow, EffortMedium, EffortHigh, EffortMax}
+	switch current {
+	case "":
+		return ladder[0]
+	case EffortQuick:
+		return ladder[1]
+	case EffortLow:
+		return ladder[2]
+	case EffortMedium, EffortNormal:
+		return ladder[3]
+	case EffortHigh, EffortThorough:
+		return ladder[4]
+	}
+	return ""
+}
+
+// resumeHeldAwaitingTask releases a parked worker task through its existing
+// path: it claims the release record, re-admits the task, and prompts the
+// parked session to continue with the decision — the same guard as a
+// worker-question resume. It is the awaiting-decision default under the
+// release dispatch.
 func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q Question, ans *Answer) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -483,59 +682,28 @@ func (m *Manager) resumeHeldAwaitingTask(ctx context.Context, p *PRD, t *Task, q
 	return nil
 }
 
-// routeHeldPendingInsert handles a pending member insert. Approve goes
-// through the operator-only insert path. Reject-insert and hold are
-// recorded only: there is no daemon path for dropping a pending member, so
-// the insert stays pending either way and the note says so.
-func (m *Manager) routeHeldPendingInsert(q Question, ans *Answer, pendingID string) (result, detail string) {
-	auto, pi := m.findHeldPendingInsert(pendingID)
-	if auto == nil || pi == nil {
-		return heldResultRefused, "insert " + pendingID + " is no longer pending; the state cleared"
-	}
-	switch ans.ChosenOptionID {
-	case HeldOptionApproveInsert:
-		if _, err := m.ApproveInsertedMember(auto.ID, pendingID, heldAnswerActor, auto.Version); err != nil {
-			return heldResultRefused, "approve-refused: " + err.Error()
-		}
-		return heldResultApplied, "insert " + pendingID + " on automaton " + auto.ID + " was approved and merged in"
-	case HeldOptionRejectInsert:
-		return heldResultRecorded, "the insert was not approved: there is no daemon path to drop a pending member, so it stays pending"
-	case HeldOptionHold:
-		return heldResultRecorded, "insert " + pendingID + " on automaton " + auto.ID + " stays pending"
-	default:
-		return heldResultRefused, "option " + ans.ChosenOptionID + " has no path for a pending insert"
-	}
-}
-
-// findHeldPendingInsert returns the automation holding the named pending
-// insert, or nil when no automation holds one — the state having cleared.
-func (m *Manager) findHeldPendingInsert(pendingID string) (*Automation, *PendingInsert) {
-	autos := m.automations.List()
-	for _, a := range autos {
-		if pi := findPending(a, pendingID); pi != nil {
-			return a, pi
-		}
-	}
-	return nil, nil
-}
-
-// recordHeldAnswer writes the single record a routed answer gets — applied
-// and refused alike — and its audit event: an operator_answer entry on the
-// PRD's decisions, named after the state, the option, the outcome and the
-// detail, and linked to the daemon question and the answer by id. It keeps
-// the automation out of the PRD's decision log; an automation-level
-// outcome (a pending insert) is audit-only.
+// recordHeldAnswer writes the single record a routed answer gets — applied,
+// recorded, refused and stale alike — and its audit event: one
+// operator_answer entry on the PRD's decisions carrying the operator's
+// quoted words, the answer actor, the surface it came from, the chosen
+// option, the outcome and its detail, and linked to the daemon question
+// and the answer by id. It is both the record and the idempotence marker.
+// A stale entry additionally names the withdrawn state, the way the
+// question itself was closed.
 func (m *Manager) recordHeldAnswer(prdID, key, state string, q Question, ans *Answer, result, detail string) {
+	actor := heldAnswerActorOf(ans)
 	m.controlAudit(heldAnswerAuditAction, map[string]any{
 		"prd_id":      prdID,
 		"key":         key,
 		"state":       state,
 		"question_id": q.ID,
 		"answer_id":   ans.ID,
+		"actor":       actor,
+		"quote":       ans.Quote,
+		"surface":     ans.Surface,
 		"option":      ans.ChosenOptionID,
 		"result":      result,
 		"detail":      detail,
-		"actor":       heldAnswerActor,
 	})
 	if prdID == "" {
 		return
@@ -549,17 +717,27 @@ func (m *Manager) recordHeldAnswer(prdID, key, state string, q Question, ans *An
 	if len(note) > heldAnswerNoteMax {
 		note = note[:heldAnswerNoteMax]
 	}
+	decisionState := string(QuestionAnswered)
+	if result == heldResultStale {
+		// The question was closed by a withdrawal carrying the refusal
+		// reason — the record names that the way the store does.
+		decisionState = string(QuestionWithdrawn)
+	}
 	now := m.attemptNow()
 	m.store.WithLock(func() {
 		p.UpdatedAt = now
 		p.Decisions = append(p.Decisions, Decision{
 			At:            now,
 			Kind:          heldAnswerDecisionKind,
-			Actor:         heldAnswerActor,
+			Actor:         actor,
+			Note:          note,
+			Quote:         ans.Quote,
+			Surface:       ans.Surface,
+			Option:        ans.ChosenOptionID,
+			Result:        result,
 			QuestionID:    q.ID,
 			AnswerID:      ans.ID,
-			DecisionState: string(QuestionAnswered),
-			Note:          note,
+			DecisionState: decisionState,
 		})
 	})
 	if err := m.store.SavePRD(p); err != nil {
