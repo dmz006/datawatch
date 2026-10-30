@@ -336,6 +336,16 @@ Internal research — does not block Stage A/B/C, can run alongside it.
 - BL415 `dependency-review` required check. Deferred until after v10.0.0 by decision.
 - [BL449](2026-10-15-bl449-open-model-matrix.md) Open-model 16-cell matrix runner (BL437 S5). Deferred until after v10.0.0 ships (operator decision, 2026-10-18); scope expanded same day to add `swift-1.5-qwen38-27b`, `qwen3-coder:30b`, `qwen3-coder-next:q4_K_M`, `qwen3.5:35b` as execution-role candidates alongside baseline `qwen3.8:27b`. Still blocked on r8's unresolved opencode-session-death and file-drift-guard bugs regardless of model list; the reasoning-effort/thinking-level knob for this round is BL492's `pi.thinking_level` (README row 74, draft PRD `f888d75b`, itself still `draft`) — this matrix depends on BL492 shipping first.
 
+## Internal bugs found during development (B-numbers)
+
+Error-Filing Rule (AGENT.md): every internal bug found while developing or testing a feature gets a B-number row here, fixed in the branch that finds it; no GitHub issue.
+
+| B# | Item | Status | Found by |
+|---|---|---|---|
+| B127 | The repo CI watch's `security_workflows` default became an empty list after a config save and a daemon restart: a nil list was written as `[]` and read back as "watch no security workflows", which silently switched the security failure pass off in every mode. Fixed: the default list is populated in `config.DefaultConfig`, so a save writes the names and a reload keeps them; an explicit empty list still means none. Tests: `internal/config/repo_ci_watch_security_workflows_test.go`. | **fixed** in branch `automaton/f1f20052` (rules-review pass) | sandbox live check, shadow then on |
+| B128 | The comm verbs (`commGet` and `commJSON` in `internal/router/sx2_parity.go`) sent no `Authorization` header, so `autonomous security-failure` and every other comm verb answered HTTP 401 on a daemon with `server.token` set. Fixed: the router takes the token (`SetWebToken`, wired in `cmd/datawatch/main.go` for both the router and the `testRouter` used by `/api/test/message`) and presents it on every loopback call. Tests: `internal/router/security_failure_comm_auth_test.go`. | **fixed** in branch `automaton/f1f20052` (rules-review pass) | sandbox live check, shadow then on |
+| B129 | The daemon's boot path did not carry the `repo_ci_watch` block into the autonomous Manager: after a restart the watch read `mode: off` until the block was saved again, so the security failure pass stayed off across a restart. Fixed: `repoCIWatchFromYAML` (`cmd/datawatch/live_autonomous_config.go`) is used in the boot bridge in `cmd/datawatch/main.go`; it keeps a nil security list (default) apart from an explicit empty one. Tests: `cmd/datawatch/repo_ci_watch_boot_test.go`. | **fixed** in branch `automaton/f1f20052` (rules-review pass) | sandbox live check, restart after shadow then on |
+
 ## v11.0.0 roadmap (separate lanes)
 
 Not required for v10.0.0. Organized by lane rather than a single sequence —

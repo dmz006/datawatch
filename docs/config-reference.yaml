@@ -1138,7 +1138,8 @@ autonomous:
     # configuration channel:
     #   PUT /api/config {"autonomous.automation.security_failure.mode": "on"}
     #   (GET /api/config shows the block under autonomous.automation), MCP
-    #   autonomous_config_set, CLI `datawatch config set
+    #   config_set (the generic MCP tool; autonomous_config_set does not
+    #   carry this key), CLI `datawatch config set
     #   autonomous.automation.security_failure.mode on`, and comm `configure
     #   autonomous.automation.security_failure.mode=on`.
     # Operator docs: docs/howto/automation-security-failure.md and the

@@ -50,16 +50,11 @@ func (r *Router) commGet(path string, q url.Values) (string, error) {
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
-	resp, err := commHTTP.Get(u)
+	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close() //nolint:errcheck
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode/100 != 2 {
-		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
-	}
-	return string(body), nil
+	return r.commDo(req)
 }
 
 // commJSON sends method+jsonBody to the loopback.
@@ -78,6 +73,17 @@ func (r *Router) commJSON(method, path, jsonBody string) (string, error) {
 	}
 	if jsonBody != "" {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	return r.commDo(req)
+}
+
+// commDo sends one loopback request and returns the body of a 2xx reply.
+// It presents the daemon's bearer token (SetWebToken) on every call: a
+// daemon with server.token set answers 401 to a request without it, so
+// every comm verb would fail on a token-protected daemon.
+func (r *Router) commDo(req *http.Request) (string, error) {
+	if r.webToken != "" {
+		req.Header.Set("Authorization", "Bearer "+r.webToken)
 	}
 	resp, err := commHTTP.Do(req)
 	if err != nil {

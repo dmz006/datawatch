@@ -4239,9 +4239,21 @@ func DefaultConfig() *Config {
 			DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
 			UndeclaredEditMode:      "warn",
 			ScopeLint:               ScopeLintEnforce,
-			Automation:              AutonomousAutomationConfig{AgentInsertPolicy: AgentInsertPolicyAllow, TriageAlertMinutes: intPtr(DefaultAutomationTriageAlertMinutes)},
-			LaneFill:                DefaultAutonomousLaneFill(),
-			Progress:                AutonomousProgressConfig{BacklogPath: DefaultProgressBacklogPath},
+			Automation: AutonomousAutomationConfig{
+				AgentInsertPolicy:  AgentInsertPolicyAllow,
+				TriageAlertMinutes: intPtr(DefaultAutomationTriageAlertMinutes),
+				// The repo CI watch's security workflow list ships populated.
+				// A nil list is saved as an empty list (the field has no
+				// omitempty), and a reload reads an empty list as "watch no
+				// security workflows": the security failure pass then goes
+				// silently off in every mode. Only an operator's explicit
+				// empty list may mean none.
+				RepoCIWatch: RepoCIWatchConfig{
+					SecurityWorkflows: append([]string(nil), DefaultRepoCIWatchSecurityWorkflows...),
+				},
+			},
+			LaneFill: DefaultAutonomousLaneFill(),
+			Progress: AutonomousProgressConfig{BacklogPath: DefaultProgressBacklogPath},
 			// Notify — global baseline for the notify event kinds
 			// (autonomous.notify.default_events). Written as literals,
 			// not the internal/autonomous constants: the config package

@@ -59,16 +59,22 @@ const securityFailureBlockReason = "security_failure_block"
 // (gh run view <runID> --log-failed --repo <owner/repo>). On a gh
 // failure it returns whatever gh did print together with the error.
 func defaultSecurityFailureLog(ctx context.Context, ownerRepo string, runID int64) (string, error) {
-	ghBin, err := exec.LookPath("gh")
-	if err != nil {
-		return "", err
-	}
-	cmd := exec.CommandContext(ctx, ghBin, "run", "view", fmt.Sprint(runID), "--log-failed", "--repo", ownerRepo) // #nosec G204 -- fixed gh subcommand; runID is numeric, ownerRepo comes from git's own output
-	out, err := cmd.CombinedOutput()
+	out, err := securityFailureGhRunner(ctx, "run", "view", fmt.Sprint(runID), "--log-failed", "--repo", ownerRepo)
 	if err != nil {
 		return string(out), fmt.Errorf("gh run view %d --log-failed: %w", runID, err)
 	}
 	return string(out), nil
+}
+
+// securityFailureGhRunner runs gh with args and returns its combined output.
+// It is the command seam of the security failure log reader: production
+// resolves gh on PATH and runs it; tests replace it with a fake runner.
+var securityFailureGhRunner = func(ctx context.Context, args ...string) ([]byte, error) {
+	ghBin, err := exec.LookPath("gh")
+	if err != nil {
+		return nil, err
+	}
+	return exec.CommandContext(ctx, ghBin, args...).CombinedOutput() // #nosec G204 -- fixed gh subcommand; the run id is numeric and the repository comes from git's own output
 }
 
 // securityFailurePass is the pass described in the file header.

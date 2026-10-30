@@ -80,6 +80,10 @@ type Router struct {
 	// configured".
 	webPort int
 
+	// webToken is the bearer token the loopback presents to the REST
+	// surface (server.token). Empty when the daemon has no token set.
+	webToken string
+
 	// BL244 — plugin-declared comm commands (Manifest v2.1).
 	pluginReg PluginRegistry
 }
@@ -87,6 +91,10 @@ type Router struct {
 // SetWebPort (Sx2) wires the local HTTP port so comm-parity handlers
 // can proxy through the REST API.
 func (r *Router) SetWebPort(port int) { r.webPort = port }
+
+// SetWebToken wires the bearer token the loopback presents to the REST
+// surface, so the comm-parity verbs reach a token-protected daemon.
+func (r *Router) SetWebToken(token string) { r.webToken = token }
 
 // BackendName returns the underlying backend's own Name() (e.g.
 // "signal", "imap_mcp") — used by the notify_exclude config to filter

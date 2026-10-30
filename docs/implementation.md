@@ -1755,8 +1755,9 @@ for the poll's contract.
 
 - **Setting:** `autonomous.automation.security_failure` — a block inside
   the existing `autonomous.automation` section, so it rides on every
-  configuration channel (PUT /api/config, MCP `autonomous_config_set`, CLI
-  `config set`, comm `configure`). It has one key: `mode` (off, shadow or
+  configuration channel (PUT /api/config, the generic MCP `config_set`
+  tool, CLI `config set`, comm `configure`). The `autonomous_config_set`
+  MCP tool does not carry this key. It has one key: `mode` (off, shadow or
   on, case-insensitive; any other value is refused on every write path —
   a 400 on the REST PUT and an error on config load). An unset or empty
   mode reads shadow, which is the first-release default: the feature is
