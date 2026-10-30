@@ -42,6 +42,9 @@ Subcommands:
                                   the watched repositories, the last poll, and the stored records
                                   (repository, ref, workflow, status, classification, first seen,
                                   alerted), newest first
+  supervisor-watch [--json]       Supervisor watch read: the mode, the last poll, one line per finding
+                                  (kind, state, last seen, the operator line) and the comparison
+                                  against the supervisor script's output
   merge [--json]                  Merge state: the mode, the alert threshold and the finished Automata whose
                                   work branch is not on main yet (read only)
   safe-to-delete [--json]         Automaton branches and worktrees that are safe to delete, and those held back
@@ -226,6 +229,7 @@ Subcommands:
 		// Repo CI watch read.
 		newAutonomousRepoCIWatchCmd(),
 		newAutonomousSecurityFailureCmd(),
+		newAutonomousSupervisorWatchCmd(),
 		newAutonomousDecisionsCmd(),
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),
