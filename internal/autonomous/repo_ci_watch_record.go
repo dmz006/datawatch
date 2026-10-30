@@ -108,6 +108,10 @@ type RepoCIWatchRecord struct {
 	Notes []TriageNote `json:"notes,omitempty"`
 	// JudgeVerdict is the judge's verdict cached for this record's run.
 	JudgeVerdict *RepoCIWatchJudgeVerdict `json:"judge_verdict,omitempty"`
+	// Security is the security failure report of this run, set once by
+	// the security failure pass (security_failure_pass.go). A record that
+	// carries one is never assessed again; every refresh keeps it.
+	Security *SecurityFailureReport `json:"security,omitempty"`
 }
 
 // RepoCIWatchKey composes the composite key identifying one record:

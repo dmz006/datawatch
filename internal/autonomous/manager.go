@@ -556,6 +556,11 @@ type AutomationConfig struct {
 	// accessors in repo_ci_watch_config.go. See RepoCIWatchConfig.
 	RepoCIWatch RepoCIWatchConfig `json:"repo_ci_watch"`
 
+	// SecurityFailure: the security failure block (autonomous.automation.
+	// security_failure.*). The default mode is applied only in its
+	// EffectiveMode accessor (security_failure_config.go).
+	SecurityFailure SecurityFailureConfig `json:"security_failure"`
+
 	// AgentInsertPolicy: PolicyAllow (default, also the empty value) lets an
 	// agent insert a member directly; PolicyRequireOperator holds an agent's
 	// insert as a pending insert until an operator approves it.

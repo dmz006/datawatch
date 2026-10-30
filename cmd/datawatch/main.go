@@ -4371,6 +4371,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			Automation: autonomouspkg.AutomationConfig{
 				IdleAlertMinutes:   acfgIn.Automation.IdleAlertMinutes,
 				TriageAlertMinutes: acfgIn.Automation.TriageAlertMinutes,
+				// security failure mode (autonomous.automation.security_failure.mode)
+				SecurityFailure: autonomouspkg.SecurityFailureConfig{Mode: acfgIn.Automation.SecurityFailure.Mode},
 			},
 			// Lane fill (autonomous.lane_fill.*).
 			LaneFill: autonomouspkg.LaneFillConfigFromYAML(acfgIn.LaneFill),
