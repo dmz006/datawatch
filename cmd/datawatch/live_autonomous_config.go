@@ -136,6 +136,7 @@ func supervisorWatchFromYAML(in config.SupervisorWatchConfig) autonomouspkg.Supe
 		ScriptOutputPath:    in.ScriptOutputPath,
 		TmuxRestartBaseline: in.TmuxRestartBaseline,
 		MainCheckout:        in.MainCheckout,
+		WorkingModel:        in.WorkingModel,
 	}
 	if in.AlertMinutes != nil {
 		alert := *in.AlertMinutes

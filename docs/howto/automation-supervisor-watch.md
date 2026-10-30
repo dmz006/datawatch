@@ -205,13 +205,13 @@ CI and the main checkout belong to no Automaton and write no triage note.
 | `autonomous.automation.supervisor_watch.script_output_path` | empty | The file the supervisor script writes with `--record`. Empty means no comparison is made. |
 | `autonomous.automation.supervisor_watch.tmux_restart_baseline` | empty | The starting point (restart count and active-since time of the terminal-session service) that `tmux_restart` compares against. Empty means no starting point is configured and that check reports nothing. |
 | `autonomous.automation.supervisor_watch.main_checkout` | empty | The main checkout to inspect for `main_checkout_dirty`. Empty turns that check off. |
+| `autonomous.automation.supervisor_watch.working_model` | empty | The model every registered compute node should keep loaded; `model_not_resident` looks for it. Empty means no working model is set and that check reports nothing. |
 
 Every key is read live: a change takes effect on the next pass with no restart. A bad
 value is refused on every write path — an unknown mode, a negative minute
-threshold, a `poll_seconds` below 60, a non-text path — and nothing is written.
-The working model the `model_not_resident` check looks for is read from the
-watch's own settings; until a working model is set there, that one check stays
-off and the other thirteen are unaffected.
+threshold, a `poll_seconds` below 60, a non-text path or model name — and nothing
+is written. Until `working_model` is set, the `model_not_resident` check stays off
+and the other thirteen are unaffected.
 
 ## What the watch never does
 

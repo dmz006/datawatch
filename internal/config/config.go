@@ -3470,6 +3470,11 @@ type SupervisorWatchConfig struct {
 	ScriptOutputPath    string `yaml:"script_output_path,omitempty" json:"script_output_path,omitempty"`
 	TmuxRestartBaseline string `yaml:"tmux_restart_baseline,omitempty" json:"tmux_restart_baseline,omitempty"`
 	MainCheckout        string `yaml:"main_checkout,omitempty" json:"main_checkout,omitempty"`
+
+	// WorkingModel is the model the watch expects to be resident on every
+	// registered compute node. Empty (unset) turns the model_not_resident
+	// check off; there is no default working model.
+	WorkingModel string `yaml:"working_model,omitempty" json:"working_model,omitempty"`
 }
 
 // EffectiveMode returns the supervisor watch mode in effect: an empty (unset) value reads

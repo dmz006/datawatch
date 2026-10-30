@@ -4534,8 +4534,9 @@ The supervisor watch is the daemon-side version of the supervisor script (`scrip
 | `autonomous.automation.supervisor_watch.script_output_path` | empty | The file the supervisor script writes with `--record`; empty means no comparison. |
 | `autonomous.automation.supervisor_watch.tmux_restart_baseline` | empty | The starting point `tmux_restart` compares against; empty means that check reports nothing. |
 | `autonomous.automation.supervisor_watch.main_checkout` | empty | The main checkout inspected for `main_checkout_dirty`; empty turns that check off. |
+| `autonomous.automation.supervisor_watch.working_model` | empty | The model every registered compute node should keep loaded, checked by `model_not_resident`; empty means no working model is set and that check reports nothing. |
 
-Every key is read live; a bad value is refused on every write path (unknown mode, negative minute threshold, `poll_seconds` below 60, a path that is not text) and nothing is written. Change a key with `PUT /api/config` (or Settings → General in the PWA), `datawatch config set autonomous.automation.supervisor_watch.alert_minutes 15`, or `configure autonomous.automation.supervisor_watch.alert_minutes=15` on the comm channel; each change applies on the next pass, no restart.
+Every key is read live; a bad value is refused on every write path (unknown mode, negative minute threshold, `poll_seconds` below 60, a path or model name that is not text) and nothing is written. Change a key with `PUT /api/config` (or Settings → General in the PWA), `datawatch config set autonomous.automation.supervisor_watch.alert_minutes 15`, or `configure autonomous.automation.supervisor_watch.alert_minutes=15` on the comm channel; each change applies on the next pass, no restart.
 
 **Shadow mode records and never acts.** It runs every check, records the findings, writes the triage-record note for a finding about one Automaton the first time it is seen, and marks a finding `would alert` once it has been open for `alert_minutes`. It raises no alert. It ships first so you can compare it with the script before you rely on it.
 

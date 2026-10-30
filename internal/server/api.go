@@ -8199,7 +8199,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			supervisorWatchKeyPrefix + "poll_seconds",
 			supervisorWatchKeyPrefix + "script_output_path",
 			supervisorWatchKeyPrefix + "tmux_restart_baseline",
-			supervisorWatchKeyPrefix + "main_checkout":
+			supervisorWatchKeyPrefix + "main_checkout",
+			supervisorWatchKeyPrefix + "working_model":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
 			applySupervisorWatchValue(&cfg.Autonomous.Automation.SupervisorWatch,
@@ -9354,6 +9355,7 @@ func supervisorWatchSurface(c config.SupervisorWatchConfig) map[string]interface
 		"script_output_path":    c.ScriptOutputPath,
 		"tmux_restart_baseline": c.TmuxRestartBaseline,
 		"main_checkout":         c.MainCheckout,
+		"working_model":         strings.TrimSpace(c.WorkingModel),
 	}
 }
 
@@ -9417,7 +9419,7 @@ func validateSupervisorWatchPatch(patch map[string]interface{}) error {
 				supervisorWatchKeyPrefix, n, config.SupervisorWatchMinPollSeconds, config.DefaultSupervisorWatchPollSeconds)
 		}
 	}
-	for _, field := range []string{"script_output_path", "tmux_restart_baseline", "main_checkout"} {
+	for _, field := range []string{"script_output_path", "tmux_restart_baseline", "main_checkout", "working_model"} {
 		if v, ok := patch[supervisorWatchKeyPrefix+field]; ok {
 			if _, isStr := v.(string); !isStr {
 				return fmt.Errorf("%s%s: must be a string", supervisorWatchKeyPrefix, field)
@@ -9464,6 +9466,11 @@ func applySupervisorWatchValue(swc *config.SupervisorWatchConfig, field string, 
 		// Empty (after trimming) disables the dirty main-checkout finding.
 		if str, ok := v.(string); ok {
 			swc.MainCheckout = strings.TrimSpace(str)
+		}
+	case "working_model":
+		// Empty (after trimming) turns the model_not_resident check off.
+		if str, ok := v.(string); ok {
+			swc.WorkingModel = strings.TrimSpace(str)
 		}
 	}
 }
