@@ -34,9 +34,9 @@ TMUX_RESTARTS, TMUX_SINCE = "3", "Tue 2026-10-20 18:46:38 EDT"
 SILENT_MIN = 60
 # Deliberately held PRDs (operator or build manager decision, with the reason in the registry).
 ACKED_RUNS = {40316827946, 40293597613, 40320408404, 40366394552, 40366382818, 40425238678}  # owasp-zap: only the "attach reports to release" step failed on a GitHub API rate limit; the scan passed (registry row 209); 40320408404 failed the version bump check on a script-only commit, fixed by exempting this script in 9.19.3; 40366394552 and 40366382818 are CodeQL Analyze (actions) runs that end red at the result upload with no error shown, tracked in BL625 (row 212); 40425238678 is CodeQL rejecting the workflow upload because GitHub default setup is also enabled (operator decision pending)
-# While the operator has not chosen between GitHub default CodeQL setup and our own workflow, every CodeQL run on main ends
-# red at the SARIF upload ("advanced configurations cannot be processed when the default setup is enabled"); set to False once decided.
-CODEQL_CONFLICT_KNOWN = True
+# The operator chose (2026-10-30): GitHub default CodeQL setup stays and the CodeQL workflow now only gates on open alerts,
+# so a red CodeQL run on main is a real finding and must be reported.
+CODEQL_CONFLICT_KNOWN = False
 IGNORE = {"58aa0001", "99c20001", "fdd80001", "6bded76a", "04b20001", "7c960001", "7e460001", "7f3e0001", "80660001", "900d0001", "95950001", "fdba0001"}  # 04b20001 BL637 parity backfill held until the final stage before 10.0 (row 227); 6bded76a voice PRD cancelled, it ran in the main checkout (replaced by a worktree PRD, row 222); 58aa0001 BL598 held (row 180); db4b0001 BL622 draft, not decomposed while Claude use is over the pace line (row 209); 99c20001 BL623 draft, decompose at the next hourly tick if the budget allows (row 210); 7c96/7e46/7f3e/8066 final-stage placeholders (BL411, BL409, BL424, BL496) and 900d0001 BL644 design-gated, all held
 
 
