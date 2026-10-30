@@ -20,6 +20,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.39.1 — Accept the new Java advisory with no Debian fix (30 days)
+
+### Security
+
+- **The container build is unblocked for a new Java advisory with no Debian fix yet.** The Java runtime in the `parent-full` image (used only by the Signal messaging bridge) was flagged by an Oracle Java SE advisory published 2026-10-24 (a TLS-library issue), for which Debian bookworm has no fixed package; the fix exists only in Debian's unstable branch. The finding is recorded in the accepted-risks registry with a 30-day expiry and its reachability marked unknown, not no, because the bridge does make TLS connections as a client. The fix is to be consumed as soon as Debian ships it.
+
 ## v9.39.0 — Workers can ask design questions through the question channel
 
 ### Added
