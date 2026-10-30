@@ -134,6 +134,9 @@ type stepEffects struct {
 	budget    *budgetEffect // set when the budget gate refused a member start
 	completed bool
 	info      string // completion text, when the step completes the Automation
+	// mergedAdvance is set when the chain moved on over a cancelled member whose
+	// branch was proved merged; afterAdvance raises the merged-member alert.
+	mergedAdvance *mergedMemberAlert
 }
 
 // stepper accumulates one step's mutations on a clone of the Automation.
@@ -175,6 +178,9 @@ func step(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects
 			outcome = MergedMemberBlocked
 		}
 		st.decisionMergedMember(mem.ID, outcome, n)
+		if outcome == MergedMemberAdvanced && n.cancelled {
+			st.eff.mergedAdvance = &mergedMemberAlert{member: st.name(mem), branch: n.branch, base: n.base, commit: n.commit}
+		}
 		st.audit("automation_merged_member", map[string]any{
 			"automation_id": a.ID, "member": mem.ID, "prd_id": n.prdID, "branch": n.branch,
 			"default_branch": n.base, "commit": n.commit, "policy": n.policy,

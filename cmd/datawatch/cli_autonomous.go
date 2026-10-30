@@ -44,6 +44,10 @@ Subcommands:
                                   alerted), newest first
   merge [--json]                  Merge state: the mode, the alert threshold and the finished Automata whose
                                   work branch is not on main yet (read only)
+  merged-members [automation-id] [--json]
+                                  Merged-member decisions: the members whose branch was already merged on
+                                  the default branch, the outcome, the proving commit and the policy
+                                  (read only; without an id every Automaton's, newest first)
   safe-to-delete [--json]         Automaton branches and worktrees that are safe to delete, and those held back
                                   (report only, nothing is deleted)
   overlap [--title T] [--spec S | <spec>] [--json]
@@ -229,6 +233,7 @@ Subcommands:
 		newAutonomousDecisionsCmd(),
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),
+		newAutonomousMergedMembersCmd(),
 		// Search-before-create read (docs/plans/2026-10-29-search-before-create.md).
 		newAutonomousOverlapCmd(),
 	)

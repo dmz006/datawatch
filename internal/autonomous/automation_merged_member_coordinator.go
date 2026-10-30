@@ -27,7 +27,10 @@ const decisionMergedMember = "merged_member"
 type mergedMemberNote struct {
 	prdID, branch, base, commit, policy string
 	merged                              bool
-	note                                string
+	// cancelled is set when the policy treated a cancelled member as
+	// completed, the one case that moves the chain on and raises an alert.
+	cancelled bool
+	note      string
 }
 
 // mergedMemberEnd refines end for a member PRD that ended cancelled or
@@ -71,6 +74,7 @@ func (c *Coordinator) mergedMemberEnd(prd *PRD, status PRDStatus, end endOutcome
 		n.note = evidence + "; policy completed treats the cancelled member as completed"
 		done, _ := prdEnd(PRDCompleted)
 		end = done
+		n.cancelled = true
 	}
 	end.merged = n
 	return end

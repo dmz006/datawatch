@@ -486,6 +486,7 @@ func (c *Coordinator) afterAdvance(a *Automation, eff *stepEffects) {
 		c.m.EmitPRDUpdate(id)
 	}
 	c.afterBudget(a, eff.budget)
+	c.afterMergedMember(a, eff.mergedAdvance)
 	switch {
 	case eff.blocked != "":
 		c.blocked(a, eff.blocked, eff.details)
