@@ -40,6 +40,12 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "console_rows", cfg.Session.ConsoleRows, "Default terminal height (rows) for new sessions (0 = 24)")
 	b.WriteString("\n")
 
+	section(&b, "Git", "Push behaviour for finished work branches (never force-pushed).")
+	b.WriteString("git:\n")
+	fieldi(&b, "push_on_complete", cfg.Git.PushOnComplete, `What to push when work completes: never (no push, with a visible not-pushed warning), branch (push the finished work branch, default), or default_branch`)
+	fieldi(&b, "push_remote", cfg.Git.PushRemote, "Remote the finished branch is pushed to (default origin)")
+	b.WriteString("\n")
+
 	section(&b, "Web Server", "HTTP/WebSocket server for the PWA, REST API, and browser access.")
 	b.WriteString("server:\n")
 	fieldi(&b, "enabled", cfg.Server.Enabled, "Enable the web server")

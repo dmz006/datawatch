@@ -311,6 +311,51 @@ type ProxyConfig struct {
 	CircuitBreakerReset int `yaml:"circuit_breaker_reset,omitempty"`
 }
 
+// Git push-on-complete policies (git.push_on_complete) — what datawatch
+// does to the finished branch when a task completes. Defined here as plain
+// string constants (instead of importing internal/git) to avoid an import
+// cycle with the config package.
+const (
+	// GitPushNever never pushes on completion.
+	GitPushNever = "never"
+	// GitPushBranch pushes the finished work branch to the remote
+	// (never force), with a visible "not pushed" warning when that
+	// isn't possible.
+	GitPushBranch = "branch"
+	// GitPushDefaultBranch pushes the default branch.
+	GitPushDefaultBranch = "default_branch"
+)
+
+// GitConfig holds git lifecycle settings for finished work.
+type GitConfig struct {
+	// PushOnComplete controls what gets pushed to the remote when work
+	// completes. One of "never", "branch", "default_branch"; empty or
+	// unknown values behave as "branch". Push is never forced.
+	PushOnComplete string `yaml:"push_on_complete" json:"push_on_complete"`
+	// PushRemote is the remote the finished branch is pushed to
+	// (default "origin").
+	PushRemote string `yaml:"push_remote" json:"push_remote"`
+}
+
+// EffectivePushOnComplete returns PushOnComplete normalised to one of the
+// three known policies; empty or unknown values fall back to "branch".
+func (g GitConfig) EffectivePushOnComplete() string {
+	switch g.PushOnComplete {
+	case GitPushNever, GitPushBranch, GitPushDefaultBranch:
+		return g.PushOnComplete
+	default:
+		return GitPushBranch
+	}
+}
+
+// EffectivePushRemote returns PushRemote, defaulting to "origin" when empty.
+func (g GitConfig) EffectivePushRemote() string {
+	if g.PushRemote == "" {
+		return "origin"
+	}
+	return g.PushRemote
+}
+
 // Config holds all datawatch configuration.
 type Config struct {
 	// DeprecatedKeys lists the deprecated keys (dotted YAML paths) set in
@@ -323,6 +368,9 @@ type Config struct {
 
 	// Session configuration
 	Session SessionConfig `yaml:"session"`
+
+	// Git lifecycle settings: push-on-complete policies and push remote.
+	Git GitConfig `yaml:"git" json:"git"`
 
 	// Server configuration for the PWA/WebSocket server
 	Server ServerConfig `yaml:"server"`
@@ -2645,6 +2693,10 @@ func DefaultConfig() *Config {
 			// BL219 — tooling lifecycle defaults.
 			GitignoreCheckOnStart: true,
 			GitignoreArtifacts:    []string{"aider", "goose", "gemini"},
+		},
+		Git: GitConfig{
+			PushOnComplete: GitPushBranch,
+			PushRemote:     "origin",
 		},
 		Server: ServerConfig{
 			Enabled:              true,
