@@ -3723,6 +3723,32 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   box-shadow: 0 8px 24px rgba(0,0,0,0.4);
 }
 
+/* showModal dialog: cap to the visible height (overlay has 12px padding top and
+   bottom) and scroll the body so title and buttons stay reachable on a phone. */
+.generic-modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: calc(100vh - 24px);
+}
+@supports (height: 100dvh) {
+  .generic-modal {
+    max-height: calc(var(--generic-modal-vvh, 100dvh) - 24px);
+  }
+}
+.generic-modal-title,
+.generic-modal-actions {
+  flex: 0 0 auto;
+}
+.generic-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  overflow-wrap: anywhere;
+}
+
 .term-toolbar {
   display: flex;
   align-items: center;
