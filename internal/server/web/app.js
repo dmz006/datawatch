@@ -14933,6 +14933,54 @@ function _prdMountModal(html, onSubmit) {
 }
 function _prdCloseModal() { const m = document.getElementById('prdModal'); if (m) m.remove(); }
 
+// Search-before-create: the create route adds overlap_warnings to its reply
+// when the check is on. Each warning of a known kind is one read-only line.
+// The block has one control, which closes it; nothing in it changes state.
+const OVERLAP_WARNING_KIND_KEYS = {
+  automaton: 'overlap_warning_automaton',
+  registry: 'overlap_warning_registry',
+  branch: 'overlap_warning_branch',
+};
+function renderOverlapWarnings(warnings) {
+  if (!Array.isArray(warnings)) return '';
+  const lines = warnings.filter(w => w && OVERLAP_WARNING_KIND_KEYS[w.kind]).map(w => {
+    const what = w.kind === 'automaton'
+      ? (w.id || '') + (w.status ? ' (' + w.status + ')' : '')
+      : (w.kind === 'registry' ? String(w.row || '') : (w.branch || ''));
+    const score = (Number(w.score) || 0).toFixed(2);
+    return '<li style="margin-top:6px;">'
+      + '<strong>' + escHtml(t(OVERLAP_WARNING_KIND_KEYS[w.kind])) + '</strong> ' + escHtml(what)
+      + ' <span style="color:var(--text2);">' + escHtml(score) + '</span>'
+      + '<div style="color:var(--text2);font-size:11px;">' + escHtml(t('overlap_warning_read_hint')) + '</div>'
+      + '</li>';
+  });
+  if (!lines.length) return '';
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+    + '<strong>' + escHtml(t('overlap_warnings_title')) + '</strong>'
+    + '<button type="button" class="btn-secondary" aria-label="' + escHtml(t('action_close')) + '" onclick="closeOverlapWarnings()">&times;</button>'
+    + '</div><ul style="margin:4px 0 0 16px;padding:0;">' + lines.join('') + '</ul>';
+}
+// mountOverlapWarnings shows the rendered block over the page, replacing any
+// block already shown. An empty html string only clears the old block.
+function mountOverlapWarnings(html) {
+  const old = document.getElementById('overlapWarnings');
+  if (old) old.remove();
+  if (!html) return;
+  const block = document.createElement('div');
+  block.id = 'overlapWarnings';
+  block.setAttribute('role', 'status');
+  block.style.cssText = 'position:fixed;left:16px;right:16px;bottom:16px;max-width:560px;margin:0 auto;'
+    + 'max-height:50vh;overflow:auto;padding:10px 12px;border:1px solid var(--warning,#d90);border-radius:6px;'
+    + 'background:var(--bg2,#fff);color:var(--text,#111);font-size:12px;z-index:10000;box-shadow:0 4px 16px rgba(0,0,0,.25);';
+  block.innerHTML = html;
+  document.body.appendChild(block);
+}
+function closeOverlapWarnings() {
+  const block = document.getElementById('overlapWarnings');
+  if (block) block.remove();
+}
+window.closeOverlapWarnings = closeOverlapWarnings;
+
 function openPRDCreateModal() {
   // v5.27.0 — operator-reported: backend should only show configured
   // backends; model should list available models for the selected
@@ -15078,6 +15126,7 @@ function openPRDCreateModal() {
         body: JSON.stringify(body),
       }).then(prd => {
         createdPrdId = prd.id;
+        mountOverlapWarnings(renderOverlapWarnings(prd.overlap_warnings));
         // PRD-level LLM (backend/effort already in create payload — model
         // and any consolidation goes through set_llm so the audit trail
         // gets the full triple).
@@ -16413,6 +16462,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.automation.repo_ci_watch.hung_after_minutes', label: 'Repo CI watch hung threshold (minutes pending before a run is hung, default 60)', labelKey: 'settings_repo_ci_watch_hung_after_minutes', type: 'number', placeholder: '60', min: 1, step: 5, default: '60' },
     { key: 'autonomous.automation.repo_ci_watch.security_workflows', label: 'Repo CI watch security workflows (comma-separated workflow names, empty list = none watched)', labelKey: 'settings_repo_ci_watch_security_workflows', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.repo_ci_watch.delete_superseded', label: 'Repo CI watch superseded runs (report | delete, default report)', labelKey: 'settings_repo_ci_watch_delete_superseded', type: 'select', options: ['report', 'delete'], default: 'report' },
+    { key: 'autonomous.automation.create_search_mode', label: 'Automaton create search (off, shadow records overlaps without showing them, on shows them, default shadow)', labelKey: 'settings_automation_create_search_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
+    { key: 'autonomous.automation.create_search_threshold', label: 'Automaton create search threshold (similarity above 0 and at most 1, default 0.5)', labelKey: 'settings_automation_create_search_threshold', type: 'number', placeholder: '0.5', min: 0.05, max: 1, step: 0.05, default: '0.5' },
     // Lane fill — shadow (default) computes and records every decision and starts nothing.
     { key: 'autonomous.lane_fill.mode', label: 'Lane fill mode (off, shadow or on; default shadow)', labelKey: 'settings_lane_fill_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.lane_fill.gpu_lanes', label: 'Lane fill GPU lanes (whole number, default 2)', labelKey: 'settings_lane_fill_gpu_lanes', type: 'number', placeholder: '2', min: 0, step: 1, default: '2' },
@@ -23394,6 +23445,7 @@ function _wizardSubmit() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   }).then(prd => {
+    mountOverlapWarnings(renderOverlapWarnings(prd && prd.overlap_warnings));
     if (!prd || !prd.id) return prd;
     if (backend || effort || decompositionProfile) {
       const modelEl = document.getElementById('wizardModelField')?.querySelector('input,select');

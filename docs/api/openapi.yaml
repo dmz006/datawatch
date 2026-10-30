@@ -2338,6 +2338,9 @@ paths:
         the size rule off.
         `scope_lint` (off|warn|enforce, default enforce) is the pre-spawn scope
         lint mode: the effective, normalized value is returned.
+        The `automation` object carries the search-before-create settings:
+        `create_search_mode` (off|shadow|on, default shadow) and
+        `create_search_threshold` (above 0 and at most 1, default 0.5).
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses:
@@ -2353,6 +2356,19 @@ paths:
                     enum: [off, warn, enforce]
                     default: enforce
                     description: "Pre-spawn scope lint mode (autonomous.scope_lint). off skips the lint; warn spawns the task and records a scope_lint_warn decision; enforce blocks the task before its session starts."
+                  automation:
+                    type: object
+                    description: "Search-before-create settings under autonomous.automation"
+                    properties:
+                      create_search_mode:
+                        type: string
+                        enum: [off, shadow, on]
+                        default: shadow
+                        description: "off never searches; shadow searches and records the warnings in the audit log; on adds overlap_warnings to the create reply (autonomous.automation.create_search_mode)."
+                      create_search_threshold:
+                        type: number
+                        default: 0.5
+                        description: "The over-duplication score at or above which an existing Automaton counts as an overlap. Above 0 and at most 1 (autonomous.automation.create_search_threshold)."
     put:
       summary: Replace autonomous config
       description: |
@@ -2377,6 +2393,12 @@ paths:
         `scope_lint` (off|warn|enforce, default enforce) sets the pre-spawn scope
         lint mode; any other value is rejected with 400. `PUT /api/config` accepts
         it as `autonomous.scope_lint`.
+        `automation.create_search_mode` (off|shadow|on) and
+        `automation.create_search_threshold` (above 0 and at most 1) set the
+        search-before-create settings; any other value is rejected with 400 and
+        changes nothing. `PUT /api/config` accepts them as
+        `autonomous.automation.create_search_mode` and
+        `autonomous.automation.create_search_threshold`.
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:
@@ -2386,12 +2408,78 @@ paths:
             schema:
               type: object
               properties:
+                automation:
+                  type: object
+                  description: "Search-before-create settings under autonomous.automation"
+                  properties:
+                    create_search_mode:
+                      type: string
+                      enum: [off, shadow, on]
+                      default: shadow
+                      description: "off never searches; shadow searches and records the warnings in the audit log; on adds overlap_warnings to the create reply (autonomous.automation.create_search_mode)."
+                    create_search_threshold:
+                      type: number
+                      default: 0.5
+                      description: "The over-duplication score at or above which an existing Automaton counts as an overlap. Above 0 and at most 1 (autonomous.automation.create_search_threshold)."
                 scope_lint:
                   type: string
                   enum: [off, warn, enforce]
                   default: enforce
                   description: "Pre-spawn scope lint mode (autonomous.scope_lint). off skips the lint; warn spawns the task and records a scope_lint_warn decision; enforce blocks the task before its session starts."
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
+  /api/autonomous/overlap:
+    get:
+      summary: Search before create - overlaps for a title and spec
+      description: |
+        The read an operator or an agent runs before it creates an Automaton. It runs
+        the same finder as the create route, over every Automaton in the store, the
+        plans-registry rows in `docs/plans/README.md` and the unmerged `automaton/`
+        branches. No Automaton is excluded. A match needs at least three shared words
+        and a score at or above the threshold. The warnings come back best match first,
+        at most `limit` of them.
+        The route writes nothing and works in every search-before-create mode. `mode`
+        reports the mode in force, so the caller can tell whether the create route
+        would act on the warnings. A search that fails answers 500, never an empty
+        list. A federated peer needs the autonomous read capability.
+      operationId: autonomousOverlapSearch
+      tags: [Autonomous]
+      parameters:
+        - {name: title, in: query, required: false, schema: {type: string}, description: "Title of the plan about to be created. Give a title, a spec, or both"}
+        - {name: spec, in: query, required: false, schema: {type: string}, description: "Spec of the plan about to be created. Give a title, a spec, or both"}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 10}, description: "Most warnings returned: a whole number from 1 to 50"}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  warnings:
+                    type: array
+                    description: "Overlaps, best match first, at most limit long"
+                    items:
+                      type: object
+                      properties:
+                        kind: {type: string, enum: [automaton, registry, branch, unavailable]}
+                        id: {type: string, description: "Automaton id (automaton kind)"}
+                        status: {type: string, description: "Automaton status (automaton kind)"}
+                        row: {type: integer, description: "Registry row number (registry kind)"}
+                        branch: {type: string, description: "Branch name (branch kind)"}
+                        score: {type: number, description: "Overlap score, rounded to two decimals"}
+                        shared_terms: {type: array, items: {type: string}, description: "At most five shared terms"}
+                        reason: {type: string, description: "One sentence of operator copy"}
+                        read_hint: {type: string, description: "How to read the underlying item"}
+                  threshold: {type: number, description: "Match threshold in force"}
+                  mode: {type: string, enum: [off, shadow, on], description: "Search-before-create mode in force"}
+        "400":
+          description: "Both title and spec are blank, or limit is not a whole number from 1 to 50"
+        "403":
+          description: "The federation token lacks the autonomous read capability"
+        "500":
+          description: "The overlap search failed"
+        "503":
+          description: "Autonomous is disabled"
   /api/autonomous/prds:
     get:
       summary: List PRDs (newest first)
@@ -2419,7 +2507,29 @@ paths:
                 effort: {type: string}
                 kind: {type: string, enum: [feature, bug, other], description: "Optional Automaton kind; omit to derive it from the title and spec"}
                 lane_preference: {type: string, enum: [gpu, claude, any, ""], description: "Optional lane preference: gpu, claude or any. Omit or leave empty for any lane. An unknown value is refused before anything is created"}
-      responses: {"200": {description: OK}}
+      responses:
+        "200":
+          description: "OK. The Automaton is created in every search-before-create mode. In on mode the reply also carries overlap_warnings."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  overlap_warnings:
+                    type: array
+                    description: "Present only when autonomous.automation.create_search_mode is on. Overlap warnings for the new Automaton, best match first; an empty list when none match. In shadow mode the warnings go to the audit log instead, and in off mode nothing is searched."
+                    items:
+                      type: object
+                      properties:
+                        kind: {type: string, enum: [automaton, registry, branch, unavailable]}
+                        id: {type: string, description: "Automaton id (automaton kind)"}
+                        status: {type: string, description: "Automaton status (automaton kind)"}
+                        row: {type: integer, description: "Registry row number (registry kind)"}
+                        branch: {type: string, description: "Branch name (branch kind)"}
+                        score: {type: number, description: "Overlap score, rounded to two decimals"}
+                        shared_terms: {type: array, items: {type: string}, description: "At most five shared terms"}
+                        reason: {type: string, description: "One sentence of operator copy"}
+                        read_hint: {type: string, description: "How to read the underlying item"}
   /api/autonomous/prds/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:

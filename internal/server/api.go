@@ -483,6 +483,11 @@ type Server struct {
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
 
+	// overlapSearch runs the search-before-create check on the create route.
+	// Nil uses the autonomous finder over autonomousMgr's Automata; tests
+	// substitute a fake that can fail or panic.
+	overlapSearch overlapCreateSearch
+
 	// tagRegistry is the shared Automata tag registry, wired from main.go
 	// (SetTagRegistry). Nil keeps the tag routes on their local write path.
 	// tagRegistryStart starts its sync loop.
@@ -6284,6 +6289,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// (Effective* accessors), so GET never emits a zero that reads
 				// a different default.
 				"repo_ci_watch": repoCIWatchSurface(s.cfg.Autonomous.Automation.RepoCIWatch),
+				// Effective, not raw: an unset value reads the "shadow" default,
+				// an explicit off/on stays.
+				"create_search_mode": s.cfg.Autonomous.Automation.EffectiveCreateSearchMode(),
+				// Effective, not raw: an unset (nil) value reads the 0.5 default.
+				"create_search_threshold": s.cfg.Autonomous.Automation.EffectiveCreateSearchThreshold(),
 			},
 			"lane_fill": laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
 			"progress": map[string]interface{}{
@@ -6600,6 +6610,23 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if verr := validateRepoCIWatchPatch(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
+	}
+	// Search-before-create mode: off | shadow | on. Any other value rejects
+	// the whole PUT, same as agent_insert_policy.
+	if v, ok := patch["autonomous.automation.create_search_mode"]; ok {
+		if verr := validateCreateSearchModeValue(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Search-before-create threshold: finite number in (0, 1]. Zero, a
+	// negative, an above-1, a non-finite or a non-numeric value rejects the
+	// whole PUT rather than being skipped.
+	if v, ok := patch["autonomous.automation.create_search_threshold"]; ok {
+		if verr := validateCreateSearchThresholdValue(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 	// Lane fill: every autonomous.lane_fill.* value is checked before
 	// anything is applied, so one bad value rejects the whole PUT.
@@ -8113,6 +8140,18 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if validateAgentInsertPolicy(v) == nil {
 				cfg.Autonomous.Automation.AgentInsertPolicy = toString(v)
 			}
+		case "autonomous.automation.create_search_mode":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			if validateCreateSearchModeValue(v) == nil {
+				cfg.Autonomous.Automation.CreateSearchMode = toString(v)
+			}
+		case "autonomous.automation.create_search_threshold":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			if f, err := parseCreateSearchThreshold(v); err == nil {
+				cfg.Autonomous.Automation.CreateSearchThreshold = &f
+			}
 		case "autonomous.automation.repo_ci_watch.mode",
 			"autonomous.automation.repo_ci_watch.repos",
 			"autonomous.automation.repo_ci_watch.poll_seconds",
@@ -9251,6 +9290,62 @@ func validateAgentInsertPolicy(v interface{}) error {
 		return fmt.Errorf("autonomous.automation.agent_insert_policy: must be %q or %q", config.AgentInsertPolicyAllow, config.AgentInsertPolicyRequireOperator)
 	}
 	return config.ValidateAgentInsertPolicy(str)
+}
+
+// validateCreateSearchModeValue checks
+// autonomous.automation.create_search_mode: a string that is "off", "shadow"
+// or "on" (empty is not accepted over the wire; the "shadow" default applies
+// when the key is absent).
+func validateCreateSearchModeValue(v interface{}) error {
+	str, ok := v.(string)
+	if !ok || str == "" {
+		return fmt.Errorf("autonomous.automation.create_search_mode: must be %q, %q or %q (default %q)", config.CreateSearchModeOff, config.CreateSearchModeShadow, config.CreateSearchModeOn, config.DefaultAutomationCreateSearchMode)
+	}
+	return config.ValidateCreateSearchMode(str)
+}
+
+// validateCreateSearchThresholdValue checks
+// autonomous.automation.create_search_threshold: a finite number in the
+// open-closed interval (0, 1] (0.5 is the default when the key is absent).
+func validateCreateSearchThresholdValue(v interface{}) error {
+	f, err := createSearchThresholdNumber(v)
+	if err != nil {
+		return fmt.Errorf("autonomous.automation.create_search_threshold: must be a finite number in the open-closed interval (0, 1], default %v", config.DefaultAutomationCreateSearchThreshold)
+	}
+	return config.ValidateCreateSearchThreshold(f)
+}
+
+// createSearchThresholdNumber coerces a patch value to a float64; it is the
+// shared numeric coercion for the create_search_threshold validation in
+// handlePutConfig and applyConfigPatch.
+func createSearchThresholdNumber(v interface{}) (float64, error) {
+	switch n := v.(type) {
+	case float64:
+		return n, nil
+	case int:
+		return float64(n), nil
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		if err != nil {
+			return 0, err
+		}
+		return f, nil
+	default:
+		return 0, fmt.Errorf("non-numeric value")
+	}
+}
+
+// parseCreateSearchThreshold is the parse-and-validate pair used by
+// applyConfigPatch for autonomous.automation.create_search_threshold.
+func parseCreateSearchThreshold(v interface{}) (float64, error) {
+	f, err := createSearchThresholdNumber(v)
+	if err != nil {
+		return 0, err
+	}
+	if verr := config.ValidateCreateSearchThreshold(f); verr != nil {
+		return 0, verr
+	}
+	return f, nil
 }
 
 // planTierTableForDisplay renders the tier -> max-inflight table for the

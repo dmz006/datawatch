@@ -2752,6 +2752,60 @@ type AutonomousAutomationConfig struct {
 	MergePendingMode         string            `yaml:"merge_pending_mode,omitempty" json:"merge_pending_mode,omitempty"`
 	MergePendingAlertMinutes *int              `yaml:"merge_pending_alert_minutes,omitempty" json:"merge_pending_alert_minutes,omitempty"`
 	AgentInsertPolicy        string            `yaml:"agent_insert_policy" json:"agent_insert_policy"`
+	CreateSearchMode         string            `yaml:"create_search_mode" json:"create_search_mode"`
+	CreateSearchThreshold    *float64          `yaml:"create_search_threshold,omitempty" json:"create_search_threshold,omitempty"`
+}
+
+// autonomous.automation.create_search_mode values and defaults.
+const (
+	CreateSearchModeOff               = "off"
+	CreateSearchModeShadow            = "shadow"
+	CreateSearchModeOn                = "on"
+	DefaultAutomationCreateSearchMode = CreateSearchModeShadow
+
+	DefaultAutomationCreateSearchThreshold = 0.5
+)
+
+// ValidateCreateSearchMode accepts the empty string (the default, shadow),
+// off, shadow, and on; anything else is an error.
+func ValidateCreateSearchMode(mode string) error {
+	switch mode {
+	case "", CreateSearchModeOff, CreateSearchModeShadow, CreateSearchModeOn:
+		return nil
+	default:
+		return fmt.Errorf("autonomous.automation.create_search_mode must be \"off\", \"shadow\" or \"on\", got %q", mode)
+	}
+}
+
+// EffectiveCreateSearchMode returns the search-before-create mode in effect:
+// an empty value reads as shadow.
+func (c AutonomousAutomationConfig) EffectiveCreateSearchMode() string {
+	if c.CreateSearchMode == "" {
+		return CreateSearchModeShadow
+	}
+	return c.CreateSearchMode
+}
+
+// ValidateCreateSearchThreshold accepts a finite value in (0, 1]; zero,
+// negative, non-finite, and above-1 values are errors.
+func ValidateCreateSearchThreshold(threshold float64) error {
+	if threshold != threshold || threshold == math.Inf(1) || threshold == math.Inf(-1) {
+		return fmt.Errorf("autonomous.automation.create_search_threshold must be finite, got %g", threshold)
+	}
+	if threshold <= 0 || threshold > 1 {
+		return fmt.Errorf("autonomous.automation.create_search_threshold must be in (0, 1], got %g", threshold)
+	}
+	return nil
+}
+
+// EffectiveCreateSearchThreshold returns the search-before-create threshold
+// in effect: an unset key (nil) reads the default of
+// DefaultAutomationCreateSearchThreshold (0.5).
+func (c AutonomousAutomationConfig) EffectiveCreateSearchThreshold() float64 {
+	if c.CreateSearchThreshold == nil {
+		return DefaultAutomationCreateSearchThreshold
+	}
+	return *c.CreateSearchThreshold
 }
 
 // autonomous.lane_fill.mode values and defaults.
@@ -3267,6 +3321,9 @@ func validateRepoCIWatch(c RepoCIWatchConfig) error {
 	}
 	return nil
 }
+
+// float64Ptr returns a pointer to the float64 value v.
+func float64Ptr(v float64) *float64 { return &v }
 
 // autonomous.automation.agent_insert_policy values.
 const (
@@ -4237,7 +4294,7 @@ func DefaultConfig() *Config {
 			DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
 			UndeclaredEditMode:      "warn",
 			ScopeLint:               ScopeLintEnforce,
-			Automation:              AutonomousAutomationConfig{AgentInsertPolicy: AgentInsertPolicyAllow, TriageAlertMinutes: intPtr(DefaultAutomationTriageAlertMinutes), MergePendingMode: MergePendingModeOff, MergePendingAlertMinutes: intPtr(DefaultAutomationMergePendingAlertMinutes)},
+			Automation:              AutonomousAutomationConfig{AgentInsertPolicy: AgentInsertPolicyAllow, TriageAlertMinutes: intPtr(DefaultAutomationTriageAlertMinutes), CreateSearchMode: CreateSearchModeShadow, CreateSearchThreshold: float64Ptr(DefaultAutomationCreateSearchThreshold), MergePendingMode: MergePendingModeOff, MergePendingAlertMinutes: intPtr(DefaultAutomationMergePendingAlertMinutes)},
 			LaneFill:                DefaultAutonomousLaneFill(),
 			Progress:                AutonomousProgressConfig{BacklogPath: DefaultProgressBacklogPath},
 			// Notify — global baseline for the notify event kinds
@@ -4751,6 +4808,12 @@ func validateLoaded(cfg *Config) error {
 	if t := cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(); t < 0 {
 		return fmt.Errorf("autonomous.automation.triage_alert_minutes: %d must be a whole number >= 0 (0 = off, default %d)",
 			t, DefaultAutomationTriageAlertMinutes)
+	}
+	if err := ValidateCreateSearchMode(cfg.Autonomous.Automation.EffectiveCreateSearchMode()); err != nil {
+		return err
+	}
+	if err := ValidateCreateSearchThreshold(cfg.Autonomous.Automation.EffectiveCreateSearchThreshold()); err != nil {
+		return err
 	}
 	if err := ValidateMergePendingMode(cfg.Autonomous.Automation.MergePendingMode); err != nil {
 		return err

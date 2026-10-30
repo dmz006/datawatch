@@ -137,6 +137,7 @@ Selected core tools:
 | `autonomous_prd_set_kind` | Set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again) |
 | `autonomous_progress` | Read the progress metrics object: counts by kind, throughput, utilization, remaining work and the completion range; optional `automation_id`, `tag_id`, `since`, `until` |
 | `autonomous_progress_trend` | Read the progress trend from the saved daily snapshots; optional `days` (1 to 365, default 30) |
+| `autonomous_overlap_search` | Search before create: the Automata, registry rows and unmerged branches that already cover a plan's `title` and `spec`, best match first, with the threshold and mode in force; optional `limit` (1 to 50, default 10); read-only |
 | `autonomous_lane_fill_status` | Read the lane fill status: lanes, idle state, recent planner decisions and idle alerts; optional `limit` (1 to 1000, default 50) |
 | `autonomous_prd_set_lane_preference` | Set an Automaton's lane to `gpu`, `claude` or `any` (empty means `any`); takes `id` and `lane_preference` |
 | `autonomous_triage` | Read the triage records: one record per failed or blocked Automaton, newest first, with its identity, the failed or blocked task and its error, the session end reason, the retry budgets and the append-only notes — beside `alert_minutes`, the triage alert threshold currently in effect; optional `automation_id`, `prd_id` and `status` (`failed` or `blocked`) |

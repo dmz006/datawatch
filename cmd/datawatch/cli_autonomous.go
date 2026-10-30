@@ -46,6 +46,9 @@ Subcommands:
                                   work branch is not on main yet (read only)
   safe-to-delete [--json]         Automaton branches and worktrees that are safe to delete, and those held back
                                   (report only, nothing is deleted)
+  overlap [--title T] [--spec S | <spec>] [--json]
+                                  Search before you create: the Automata, registry rows and branches
+                                  that already cover a plan's title and spec, best match first
   config-get                      Read current autonomous config
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
@@ -221,6 +224,8 @@ Subcommands:
 		newAutonomousDecisionsCmd(),
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),
+		// Search-before-create read (docs/plans/2026-10-29-search-before-create.md).
+		newAutonomousOverlapCmd(),
 	)
 	return cmd
 }
