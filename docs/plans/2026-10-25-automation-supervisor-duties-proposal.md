@@ -129,7 +129,7 @@ Proposed status: Planned.
 
 **Step 6.** Poll-driven CI watch for the head of main and each tag across all workflows (duty 1).
 Depends on: Step 1 (the record it writes), Q3 (whether a hung step may be rerun without asking) and Q8 (whether superseded failed runs are deleted). Extends the existing completion-time watch so every poll lists the workflows on the head of main and on each tag, classifies failures and hung runs, and records them in the triage record.
-Proposed status: Planned.
+Proposed status: implemented on this branch — the `autonomous.automation.repo_ci_watch` block, the poll, the classification, the actions, the per-episode alert and every read surface (REST, MCP, CLI, comm, PWA status line) are in, with the docs in `docs/config-reference.yaml`, the Repo CI watch section of `docs/implementation.md`, `docs/operations.md`, `docs/howto/automation-repo-ci-watch.md` and the `docs/plans/parity-issues/repo-ci-watch.md` row in `docs/parity-status.md`; the shipped version is recorded at merge — the minor bump is made at merge time (next minor above main), so no version number appears on this branch.
 - Docs checklist: `CHANGELOG.md`; `docs/config-reference.yaml` for any watch/alert keys; `docs/operations.md` section describing the poll; `docs/testing-tracker.md` for the new surfaces; full phase completion checklist.
 - Parity surface (pending Q4, recommendation (a)): config, REST read of the watch state, PWA read-only status line; alerts ride the existing alert surfaces.
 - Mobile: only if the watch state lands as a new REST contract; if so, a mobile parity issue is needed.

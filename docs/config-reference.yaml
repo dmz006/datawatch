@@ -1045,6 +1045,83 @@ autonomous:
     idle_alert_minutes: 0
     triage_alert_minutes: 30
     agent_insert_policy: allow
+    # Repo CI watch: lets the automation coordinator watch the CI runs of
+    # external repositories. On each poll it lists the workflows on the head
+    # of main and on the newest release tags of every watched repository, records
+    # each run, classifies failures and hung runs, and — in on mode only —
+    # cancels a hung run, reruns an infra failure and deletes superseded failed
+    # runs. alert_minutes (0 or unset) is how long a run may stay unresolved
+    # (failing, hung or pending) before one alert is raised for that episode;
+    # 0 turns the alert off, and shadow mode never raises one.
+    #
+    # Every key is settable at runtime, with no restart, on every configuration
+    # channel:
+    #   PUT /api/config {"autonomous.automation.repo_ci_watch.poll_seconds": 600}
+    #   (GET /api/config shows the block under autonomous.automation), MCP
+    #   autonomous_config_set, CLI `datawatch config set
+    #   autonomous.automation.repo_ci_watch.poll_seconds 600`, comm `configure
+    #   autonomous.automation.repo_ci_watch.poll_seconds=600`, and the PWA
+    #   Settings fields under Settings -> General -> Automate.
+    # A refused value (an invalid mode or delete_superseded, a poll below 60
+    # seconds, a hung threshold below 1, a negative alert or tag count,
+    # a non-absolute repository path, an empty workflow name) is rejected
+    # (400 on PUT /api/config, an error on config load) and nothing is written.
+    #
+    # mode: off (default; empty also reads off), shadow or on — case-insensitive;
+    #   any other value is refused on the write paths. off does nothing. shadow
+    #   records every run and logs every action it would take (would_do on the
+    #   record) without cancelling, rerunning, deleting or raising an alert. on
+    #   carries the actions out and raises the alert.
+    # repos: list of absolute repository paths to watch (a repository is never
+    #   inferred from the working directory, and a non-absolute path is refused
+    #   on the write paths). Empty (or unset) means nothing is watched.
+    # poll_seconds: whole seconds between polls of a watched repository. Minimum
+    #   60 — a value below 60 is refused on the write paths, not rounded up.
+    #   Unset reads the 300-second default. Default below: 300.
+    # alert_minutes: whole minutes >= 0. How long a run may stay unresolved
+    #   before the one alert for that episode is raised. An explicit 0 turns
+    #   the alert off and survives a round trip; an unset value reads the 30-
+    #   minute default. A negative value is refused on the write paths. While
+    #   mode is off or shadow, no alert is raised regardless.
+    # tag_count: how many of the newest release tags of a watched repository are
+    #   tracked. An explicit 0 means no tags are watched; an unset value reads
+    #   the 5 default. A negative value is refused on the write paths.
+    # hung_after_minutes: whole minutes >= 1 (a value below 1 is refused on the
+    #   write paths). A run in progress older than this many whole minutes is
+    #   reported as hung. Unset reads the 60-minute default.
+    # security_workflows: the workflow names to watch for the security signals.
+    #   Unset reads the default list [CodeQL, dependency-review, owasp-zap,
+    #   secret-scan, security-scan]; an explicitly empty list means no security
+    #   workflows are watched. An empty workflow name is refused on the write
+    #   paths.
+    # delete_superseded: report (default; empty also reads report) or delete —
+    #   any other value is refused on the write paths. report only names a
+    #   superseded failed run (a later green run of the same workflow on a
+    #   descendant commit) in that run's record; delete also removes it — but
+    #   only in on mode and only on a later poll (the poll that names a
+    #   superseded run never deletes it, and shadow never deletes).
+    # The per-repository infra retry budget (how many automatic reruns on mode
+    # allows) is not a key here: unset reads 0, meaning no automatic reruns.
+    #
+    # Operator docs: docs/howto/automation-repo-ci-watch.md (the how-to, the
+    # shadow run and the operations), the "Repo CI watch" section of
+    # docs/operations.md, the two "Repo CI watch" and "Shadow" entries in
+    # docs/datawatch-definitions.md, and the "Repo CI watch" section of
+    # docs/implementation.md. Read surfaces: GET /api/autonomous/repo-ci-watch
+    # (repo and status filters; body: mode, alert_minutes, repos, last_poll_at,
+    # records[]), the autonomous_repo_ci_watch MCP tool, `datawatch autonomous
+    # repo-ci-watch`, the comm `repo-ci-watch` verb, and the read-only status
+    # line on the Automaton view (hidden when the endpoint is unavailable, so
+    # never a stale state).
+    repo_ci_watch:
+      mode: off
+      repos: []
+      poll_seconds: 300
+      alert_minutes: 30
+      tag_count: 5
+      hung_after_minutes: 60
+      security_workflows: [CodeQL, dependency-review, owasp-zap, secret-scan, security-scan]
+      delete_superseded: report
     # decision_assistant — no daemon config key; default OFF. The optional
     # local-model decision assistant is runtime data on the Automation record
     # (decision_assistant) and, as an override that wins over it, on a member.
