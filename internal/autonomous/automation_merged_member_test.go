@@ -59,10 +59,22 @@ func (g *memberProofMergeGit) saw(args ...string) bool {
 }
 
 const (
-	proofTipSHA   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"  // the Automaton branch tip
-	proofBaseSHA  = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"  // a default-branch commit
-	proofOtherSHA = "cccccccccccccccccccccccccccccccccccccccc"  // another default-branch commit
+	proofTipSHA   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" // the Automaton branch tip
+	proofBaseSHA  = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" // a default-branch commit
+	proofOtherSHA = "cccccccccccccccccccccccccccccccccccccccc" // another default-branch commit
+
+	proofSameSubjectSHA = "dddddddddddddddddddddddddddddddddddddddd" // base commit sharing the tip subject, other patch
+	proofUnrelatedSHA   = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" // base commit with no patch match
 )
+
+// proofPatch is a one-file diff-tree -p output with index and hunk lines.
+func proofPatch(file, line string) string {
+	return proofPatchAt(file, line, "1234567", "@@ -0,0 +1 @@")
+}
+
+func proofPatchAt(file, line, blob, hunk string) string {
+	return "diff --git a/" + file + " b/" + file + "\nnew file mode 100644\nindex 0000000.." + blob + "\n--- /dev/null\n+++ b/" + file + "\n" + hunk + "\n+" + line + "\n"
+}
 
 // mergedMemberScript answers a merged flow against default branch base and
 // branch "automaton/x": two commits, both patches on base, matching
@@ -70,24 +82,29 @@ const (
 // fast-forward variant).
 func mergedMemberScript(base, branch string, tipIsAncestor bool) map[string]scriptStep {
 	m := map[string]scriptStep{
-		joinArgs("symbolic-ref", "refs/remotes/origin/HEAD"):        {out: "refs/remotes/origin/" + base + "\n"},
-		joinArgs("rev-parse", "--verify", "refs/heads/"+branch):     {out: proofTipSHA + "\n"},
-		joinArgs("rev-list", "--count", base+".."+branch):           {out: "2\n"},
-		joinArgs("cherry", base, branch):                             {out: "- " + proofOtherSHA + "\n- deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n"},
-		joinArgs("log", base+".."+branch, "--format=%s"):            {out: "fix the widget\nadd tests\n"},
-		joinArgs("log", base, "--format=%s"):                        {out: "fix the widget\nadd tests\nolder base work\n"},
+		joinArgs("symbolic-ref", "refs/remotes/origin/HEAD"):    {out: "refs/remotes/origin/" + base + "\n"},
+		joinArgs("rev-parse", "--verify", "refs/heads/"+branch): {out: proofTipSHA + "\n"},
+		joinArgs("rev-list", "--count", base+".."+branch):       {out: "2\n"},
+		joinArgs("cherry", base, branch):                        {out: "- " + proofOtherSHA + "\n- deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n"},
+		joinArgs("log", base+".."+branch, "--format=%s"):        {out: "fix the widget\nadd tests\n"},
+		joinArgs("log", base, "--format=%s"):                    {out: "fix the widget\nadd tests\nolder base work\n"},
 	}
 	if tipIsAncestor {
 		m[joinArgs("merge-base", base, branch)] = scriptStep{out: proofTipSHA + "\n"}
 		return m
 	}
 	// rebased/squashed flow: the tip object is not on base, so the proof is
-	// the base commit that carries the matching subject
+	// the base commit whose patch equals the tip's patch (not merely one that
+	// shares its subject)
 	m[joinArgs("merge-base", base, branch)] = scriptStep{out: proofOtherSHA + "\n"}
-	m[joinArgs("log", "-1", "--format=%s", branch)] = scriptStep{out: "fix the widget\n"}
-	m[joinArgs("log", "--format=%H%x00%s", base)] = scriptStep{
-		out: proofBaseSHA + "\x00fix the widget\n" + proofOtherSHA + "\x00older base work\n",
+	m[joinArgs("diff-tree", "-p", "--no-commit-id", "-r", proofTipSHA)] = scriptStep{out: proofPatch("fix.go", "fixed")}
+	m[joinArgs("log", "--left-only", "--cherry-mark", "--format=%m%H", base+"..."+branch)] = scriptStep{
+		out: "<" + proofUnrelatedSHA + "\n=" + proofSameSubjectSHA + "\n=" + proofBaseSHA + "\n",
 	}
+	// same subject, different patch: must not be taken as the proof
+	m[joinArgs("diff-tree", "-p", "--no-commit-id", "-r", proofSameSubjectSHA)] = scriptStep{out: proofPatch("other.go", "unrelated")}
+	// the carrying commit has the same patch at different hunk positions
+	m[joinArgs("diff-tree", "-p", "--no-commit-id", "-r", proofBaseSHA)] = scriptStep{out: proofPatchAt("fix.go", "fixed", "9f9f9f9", "@@ -40,0 +41 @@")}
 	return m
 }
 
@@ -129,14 +146,29 @@ func TestMergedMemberProof(t *testing.T) {
 		}
 	})
 
+	t.Run("no default-branch commit with the matching patch gives not merged", func(t *testing.T) {
+		m := mergedMemberScript(base, branch, false)
+		m[joinArgs("log", "--left-only", "--cherry-mark", "--format=%m%H", base+"..."+branch)] = scriptStep{
+			out: "=" + proofSameSubjectSHA + "\n",
+		}
+		git := newMemberProofMergeGit(t, m)
+		proof := MergedMemberProof(context.Background(), git, "/base/repo", branch)
+		if proof.Merged {
+			t.Fatalf("Merged = true with commit %q, want false when only a same-subject commit exists", proof.Commit)
+		}
+		if proof.Commit != "" || proof.Reason == "" {
+			t.Errorf("Commit = %q, Reason = %q, want no commit and a reason", proof.Commit, proof.Reason)
+		}
+	})
+
 	t.Run("unmerged branch gives not merged", func(t *testing.T) {
 		git := newMemberProofMergeGit(t, map[string]scriptStep{
-			joinArgs("symbolic-ref", "refs/remotes/origin/HEAD"):            {out: "refs/remotes/origin/" + base + "\n"},
-			joinArgs("rev-parse", "--verify", "refs/heads/"+branch):         {out: proofTipSHA + "\n"},
-			joinArgs("rev-list", "--count", base+".."+branch):               {out: "2\n"},
-			joinArgs("cherry", base, branch):                                {out: "+ deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n- " + proofOtherSHA + "\n"},
-			joinArgs("log", base+".."+branch, "--format=%s"):                {out: "not landed yet\nalready here\n"},
-			joinArgs("log", base, "--format=%s"):                            {out: "already here\nolder base work\n"},
+			joinArgs("symbolic-ref", "refs/remotes/origin/HEAD"):    {out: "refs/remotes/origin/" + base + "\n"},
+			joinArgs("rev-parse", "--verify", "refs/heads/"+branch): {out: proofTipSHA + "\n"},
+			joinArgs("rev-list", "--count", base+".."+branch):       {out: "2\n"},
+			joinArgs("cherry", base, branch):                        {out: "+ deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n- " + proofOtherSHA + "\n"},
+			joinArgs("log", base+".."+branch, "--format=%s"):        {out: "not landed yet\nalready here\n"},
+			joinArgs("log", base, "--format=%s"):                    {out: "already here\nolder base work\n"},
 		})
 		proof := MergedMemberProof(context.Background(), git, "/base/repo", branch)
 		if proof.Merged {
@@ -203,6 +235,46 @@ func TestMergedMemberDefaultBranch(t *testing.T) {
 		}
 		if !git.saw("merge-base", "trunk", branch) {
 			t.Error("the proof commit must be resolved against trunk")
+		}
+	})
+
+	t.Run("a slash-named default branch is compared whole", func(t *testing.T) {
+		const slashed = "release/1.0"
+		git := newMemberProofMergeGit(t, mergedMemberScript(slashed, branch, true))
+		proof := MergedMemberProof(context.Background(), git, "/base/repo", branch)
+		if !proof.Merged {
+			t.Fatalf("Merged = false, want true (reason: %s)", proof.Reason)
+		}
+		if proof.Base != slashed {
+			t.Errorf("Base = %q, want %q", proof.Base, slashed)
+		}
+		if !git.saw("cherry", slashed, branch) {
+			t.Error("the patch comparison must run against release/1.0, not 1.0")
+		}
+	})
+
+	t.Run("a slash-named HEAD branch in the fallback is kept whole", func(t *testing.T) {
+		const slashed = "release/1.0"
+		git := newMemberProofMergeGit(t, mergedMemberScript(slashed, branch, true))
+		git.script[joinArgs("symbolic-ref", "refs/remotes/origin/HEAD")] = scriptStep{err: errors.New("not a valid ref")}
+		git.script[joinArgs("rev-parse", "--abbrev-ref", "HEAD")] = scriptStep{out: slashed + "\n"}
+		proof := MergedMemberProof(context.Background(), git, "/base/repo", branch)
+		if proof.Base != slashed {
+			t.Errorf("Base = %q, want %q", proof.Base, slashed)
+		}
+	})
+
+	t.Run("a detached HEAD in the fallback names the problem", func(t *testing.T) {
+		git := newMemberProofMergeGit(t, map[string]scriptStep{
+			joinArgs("symbolic-ref", "refs/remotes/origin/HEAD"): {err: errors.New("not a valid ref")},
+			joinArgs("rev-parse", "--abbrev-ref", "HEAD"):        {out: "HEAD\n"},
+		})
+		proof := MergedMemberProof(context.Background(), git, "/base/repo", branch)
+		if proof.Merged {
+			t.Fatal("Merged = true, want false on a detached HEAD")
+		}
+		if strings.Contains(proof.Reason, "<nil>") || !strings.Contains(proof.Reason, "not on a branch") {
+			t.Errorf("Reason = %q, want it to say the base repository is not on a branch", proof.Reason)
 		}
 	})
 

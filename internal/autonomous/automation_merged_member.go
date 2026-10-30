@@ -8,8 +8,11 @@
 // ref of the remote HEAD, falling back to the branch currently checked out
 // in the base repository - never assumed from a name. An unknown state (no
 // repo, no branch, a git error) reports not-merged with a reason, so a
-// caller keeps its blocked behaviour. Nothing here writes, merges, deletes
-// or pushes.
+// caller keeps its blocked behaviour. A branch with no commits ahead of the
+// default branch is reported not merged too (the comparison calls it empty):
+// that state cannot tell a branch that was fast-forwarded in from one that
+// never had work, so it stays conservative and keeps today's blocked
+// behaviour. Nothing here writes, merges, deletes or pushes.
 package autonomous
 
 import (
@@ -41,7 +44,7 @@ type MemberMergeProof struct {
 // of repo and returns the proof. The default branch is resolved per project
 // (remote HEAD symbolic ref, falling back to the HEAD branch of the base
 // repository), never assumed. It issues only read-only git commands
-// (symbolic-ref, rev-parse, rev-list, cherry, log, merge-base) through
+// (symbolic-ref, rev-parse, rev-list, cherry, log, diff-tree, merge-base) through
 // git, so tests substitute a fake MergeGitRunner. Any unknown state returns
 // Merged false with the reason in Reason.
 func MergedMemberProof(ctx context.Context, git MergeGitRunner, repo, branch string) MemberMergeProof {
@@ -101,8 +104,10 @@ func MergedMemberProof(ctx context.Context, git MergeGitRunner, repo, branch str
 // mergedProofCommit picks the commit that proves a merge already decided by
 // the patch comparison, in order: the branch tip when it is on the default
 // branch (merge-base equals the tip), else the default-branch commit that
-// carries the matching commit (newest commit of the default branch with the
-// tip's subject, which the subject check already confirmed is there). It
+// carries the patch of the branch tip. The carrying commit is found by
+// patch, not by subject: git log --cherry-mark lists the default-branch
+// commits whose patch id equals a branch commit, and the first of them whose
+// diff is the tip's diff (index and hunk-position lines ignored) wins. It
 // returns an empty commit and a reason when no commit can be found.
 func mergedProofCommit(ctx context.Context, git MergeGitRunner, repo, branch, base, tip string) (string, string) {
 	fail := func(what string, err error, out string) (string, string) {
@@ -117,30 +122,57 @@ func mergedProofCommit(ctx context.Context, git MergeGitRunner, repo, branch, ba
 		return tip, "" // the branch tip is on the default branch itself
 	}
 
-	subject, err := git.Run(ctx, repo, "log", "-1", "--format=%s", branch)
+	tipPatch, err := git.Run(ctx, repo, "diff-tree", "-p", "--no-commit-id", "-r", tip)
 	if err != nil {
-		return fail("read branch tip subject", err, subject)
+		return fail("read branch tip patch", err, tipPatch)
 	}
-	subject = strings.TrimSpace(subject)
-	if subject == "" {
-		return "", fmt.Sprintf("Automaton merge proof: the branch tip of %s has no subject to match on %s", branch, base)
+	tipPatch = normalizeProofPatch(tipPatch)
+	if tipPatch == "" {
+		return "", fmt.Sprintf("Automaton merge proof: the branch tip of %s has no patch to match on %s", branch, base)
 	}
 
-	logOut, err := git.Run(ctx, repo, "log", "--format=%H%x00%s", base)
+	logOut, err := git.Run(ctx, repo, "log", "--left-only", "--cherry-mark", "--format=%m%H", base+"..."+branch)
 	if err != nil {
-		return fail("list default-branch commits", err, logOut)
+		return fail("list default-branch commits with a matching patch", err, logOut)
 	}
+	checked := 0
 	for _, line := range strings.Split(logOut, "\n") {
-		hash, subj, ok := strings.Cut(line, "\x00")
-		if !ok {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "=") || len(line) == 1 {
+			continue // not patch-equivalent to a branch commit
+		}
+		if checked == maxMergeProofCandidates {
+			break
+		}
+		checked++
+		hash := line[1:]
+		patch, err := git.Run(ctx, repo, "diff-tree", "-p", "--no-commit-id", "-r", hash)
+		if err != nil {
+			return fail("read default-branch commit patch", err, patch)
+		}
+		if normalizeProofPatch(patch) == tipPatch {
+			return hash, ""
+		}
+	}
+	return "", fmt.Sprintf("Automaton merge proof: %s is merged by patch comparison, but no commit on %s carries the patch of the branch tip", branch, base)
+}
+
+// maxMergeProofCandidates bounds how many patch-equivalent default-branch
+// commits the proof search reads a diff for.
+const maxMergeProofCandidates = 200
+
+// normalizeProofPatch reduces git diff-tree -p output to what identifies a
+// patch across a rebase: the index and hunk-header lines, which carry blob
+// ids and line numbers, are dropped.
+func normalizeProofPatch(patch string) string {
+	var keep []string
+	for _, line := range strings.Split(patch, "\n") {
+		if strings.HasPrefix(line, "index ") || strings.HasPrefix(line, "@@") {
 			continue
 		}
-		if strings.TrimSpace(subj) == subject {
-			return strings.TrimSpace(hash), ""
-		}
+		keep = append(keep, line)
 	}
-	return "", fmt.Sprintf("Automaton merge proof: %s is merged by patch comparison, but no commit on %s matches the branch tip subject %q",
-		branch, base, subject)
+	return strings.TrimSpace(strings.Join(keep, "\n"))
 }
 
 // defaultBranchForRepo resolves the default branch of repo per project:
@@ -160,20 +192,25 @@ func defaultBranchForRepo(ctx context.Context, git MergeGitRunner, repo string) 
 	}
 	name, ok := defaultBranchName(out)
 	if !ok || name == "HEAD" {
-		return "", fmt.Errorf("no default branch for %s: HEAD branch: %v", repo, err2)
+		return "", fmt.Errorf("no default branch for %s: the base repository is not on a branch (got %q)", repo, strings.TrimSpace(out))
 	}
 	return name, nil
 }
 
 // defaultBranchName extracts the branch name from a git ref or short-branch
-// output line, taking the final element for a fully qualified ref.
+// output line. A remote-tracking ref (refs/remotes/<remote>/<branch>) loses
+// the prefix and the remote name, and refs/heads/ is dropped; the rest is
+// kept whole, so a slash-named branch such as release/1.0 survives intact.
 func defaultBranchName(out string) (string, bool) {
 	ref := strings.TrimSpace(out)
-	if ref == "" || strings.ContainsAny(ref, "\t\n") {
+	if ref == "" || strings.ContainsAny(ref, "\t\n ") {
 		return "", false
 	}
-	if idx := strings.LastIndex(ref, "/"); idx >= 0 {
-		ref = ref[idx+1:]
+	switch {
+	case strings.HasPrefix(ref, "refs/remotes/"):
+		_, ref, _ = strings.Cut(strings.TrimPrefix(ref, "refs/remotes/"), "/") // drop the remote name
+	case strings.HasPrefix(ref, "refs/heads/"):
+		ref = strings.TrimPrefix(ref, "refs/heads/")
 	}
 	if ref == "" {
 		return "", false
