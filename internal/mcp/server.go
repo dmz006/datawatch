@@ -2064,18 +2064,19 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 	// BL361 — json format returns structured array.
 	if req.GetString("format", "text") == "json" {
 		type sessionJSON struct {
-			ID           string    `json:"id"`
-			FullID       string    `json:"full_id"`
-			Name         string    `json:"name,omitempty"`
-			State        string    `json:"state"`
-			Task         string    `json:"task,omitempty"`
-			Backend      string    `json:"backend,omitempty"`
-			ClaudeAlive  *bool     `json:"claude_alive,omitempty"`
-			ParentID     string    `json:"parent_id,omitempty"`
-			CreatedAt    time.Time `json:"created_at"`
-			UpdatedAt    time.Time `json:"updated_at"`
-			ShortSummary string    `json:"short_summary,omitempty"`
-			LastResponse string    `json:"last_response,omitempty"`
+			ID           string                `json:"id"`
+			FullID       string                `json:"full_id"`
+			Name         string                `json:"name,omitempty"`
+			State        string                `json:"state"`
+			Task         string                `json:"task,omitempty"`
+			Backend      string                `json:"backend,omitempty"`
+			ClaudeAlive  *bool                 `json:"claude_alive,omitempty"`
+			ParentID     string                `json:"parent_id,omitempty"`
+			CreatedAt    time.Time             `json:"created_at"`
+			UpdatedAt    time.Time             `json:"updated_at"`
+			ShortSummary string                `json:"short_summary,omitempty"`
+			LastResponse string                `json:"last_response,omitempty"`
+			UIPrompt     *session.UIPromptInfo `json:"ui_prompt,omitempty"`
 		}
 		out := make([]sessionJSON, 0, len(sessions))
 		for _, sess := range sessions {
@@ -2092,6 +2093,7 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 				UpdatedAt:    sess.UpdatedAt,
 				ShortSummary: sess.LastSummaryLong,
 				LastResponse: sess.LastResponse,
+				UIPrompt:     sess.UIPrompt,
 			})
 		}
 		raw, err := json.Marshal(out)
@@ -2120,6 +2122,16 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 		}
 		if sess.State == session.StateWaitingInput && sess.LastPrompt != "" {
 			fmt.Fprintf(&sb, "Prompt:  %s\n", sess.LastPrompt)
+		}
+		// A recognised interstitial UI prompt (e.g. the auto-compact nudge)
+		// parks the session on waiting_input without a prompt line to echo;
+		// expose what is actually on the pane.
+		if up := sess.UIPrompt; up != nil && up.Kind != "" {
+			fmt.Fprintf(&sb, "Blocked: %s UI prompt on the pane since %s; the agent is parked until it is dismissed (detection only — datawatch does not answer it)\n",
+				up.Kind, up.Since.Format(time.RFC3339))
+			if up.SelectedOption != "" {
+				fmt.Fprintf(&sb, "Pick:    Enter would select %q — note the selected option can change a setting\n", up.SelectedOption)
+			}
 		}
 		// BL355: show claude_alive for active sessions
 		if sess.ClaudeAlive != nil {

@@ -362,6 +362,12 @@ type Manager struct {
 	// grace window while the resumed TUI re-renders prior conversation history.
 	restartedAt map[string]time.Time
 
+	// uiPromptMu guards uiPromptState (ui_prompt_blocked.go): one tracked
+	// interstitial-prompt block per session while it is on a pane.
+	// Separate from mu — a block transition never holds both.
+	uiPromptMu    sync.Mutex
+	uiPromptState map[string]*uiPromptRecord
+
 	// Scan timing seams. The zero values mean the production defaults (see
 	// scan_timing.go), so only tests set them: they let a test drive the
 	// post-restart grace, the task-echo window, the prompt debounce and the
@@ -666,6 +672,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		mcpRetryCounts:    make(map[string]int),
 		restartedAt:       make(map[string]time.Time),
 		taskDeliveredAt:   make(map[string]time.Time),
+		uiPromptState:     make(map[string]*uiPromptRecord),
 		selfUpdateNotedAt: make(map[string]time.Time),
 		inputSentAt:       make(map[string]time.Time),
 		encKey:            key,
@@ -2813,6 +2820,21 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					stateCapture = displayCapture // fall back to old behaviour on capture error
 				}
 				capture := displayCapture
+				// Recognised interstitial prompts (the auto-compact nudge
+				// family) block the pane: the loop parks claude-code sessions on
+				// them (detection only — the safe dismiss lands in a later
+				// phase) and none of the waiting-input consumer side effects
+				// fire (no needs-input alert or push, no response capture or
+				// summarisation), because this path never takes the needs-input
+				// transition. Run before the firstTick skip so a session adopted
+				// after a daemon restart is recognised on attach, and outside
+				// the content-change gate so a static pane that still carries the
+				// blocking prompt keeps the session parked. While the pane shows a
+				// recognised prompt, skip the rest of this tick's state detection:
+				// the pane is blocked by the prompt, not by a needs-input question.
+				if m.scanInterstitialTick(current, stateCapture, m.now()) {
+					continue
+				}
 				// Only send if content changed
 				if capture != lastCapture {
 					lastCapture = capture //nolint:staticcheck
@@ -5042,6 +5064,20 @@ func (m *Manager) FindSessionByName(name string) (*Session, bool) {
 
 // SaveSession persists the session state to the store.
 func (m *Manager) SaveSession(sess *Session) error {
+	// Session end (never resurrected): drop any tracked interstitial-prompt
+	// block state and clear the exposed prompt from the record that is being
+	// persisted, so a terminal session never serialises one.
+	if sess.State.IsTerminal() {
+		m.uiPromptMu.Lock()
+		delete(m.uiPromptState, sess.FullID)
+		m.uiPromptMu.Unlock()
+		if sess.UIPrompt != nil {
+			// Shared session pointer: nil the exposed prompt under the
+			// store write lock so REST marshalling under the read lock
+			// never races this write.
+			m.store.Mutate(func() { sess.UIPrompt = nil })
+		}
+	}
 	return m.store.Save(sess)
 }
 

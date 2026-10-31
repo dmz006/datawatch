@@ -19,6 +19,25 @@ import (
 // replaces via atomic rename, breaking any lock held on the old inode).
 const lockFileName = "sessions.json.lock"
 
+// UIPromptInfo describes a recognised interstitial UI prompt (see
+// interstitial_prompt.go) that is on a session's pane while the daemon
+// blocks the session on it and owns its dismissal. The detection-only
+// phase sets this and records nothing else: DismissAttempts is 0 and
+// LastKeyAt is nil until the follow-up phase actually sends a key.
+type UIPromptInfo struct {
+	Kind InterstitialKind `json:"kind"`
+	// Since is when the prompt was first recognised on this occurrence.
+	Since time.Time `json:"since"`
+	// SelectedOption is the option row the cursor would confirm with Enter
+	// ("" when the cursor row cannot be read).
+	SelectedOption string `json:"selected_option,omitempty"`
+	// DismissAttempts counts safe dismiss keys sent for this occurrence.
+	// The detection-only phase never sends a key, so this is 0.
+	DismissAttempts int `json:"dismiss_attempts"`
+	// LastKeyAt is when the last dismiss key was sent, if any.
+	LastKeyAt *time.Time `json:"last_key_at,omitempty"`
+}
+
 // State represents the lifecycle state of a claude-code session.
 type State string
 
@@ -91,6 +110,13 @@ type Session struct {
 	// PromptContext holds non-empty screen lines surrounding the detected prompt,
 	// giving context about what the prompt is asking the user to confirm/decide.
 	PromptContext string `json:"prompt_context,omitempty"`
+	// UIPrompt is set while a recognised interstitial UI prompt (the
+	// auto-compact nudge family, interstitial_prompt.go) is on the pane and
+	// the daemon has parked the session on it for its own dismissal. Nil for
+	// every session that is not blocked on one — the field is omitempty, so
+	// stored and REST serialisation of such sessions is byte-identical to
+	// pre-field sessions.
+	UIPrompt *UIPromptInfo `json:"ui_prompt,omitempty"`
 	// RateLimitResetAt is set when the session is in rate_limited state.
 	// The daemon will retry automatically after this time.
 	RateLimitResetAt *time.Time        `json:"rate_limit_reset_at,omitempty"`
