@@ -3897,6 +3897,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("[warn] audit log open failed: %v\n", err)
 		}
 		warnDeprecatedConfigKeys(cfg.DeprecatedKeys, wiredAuditLog)
+		// Node seeding from config runs before the audit log is opened, so
+		// the startup record of nodes configured with verification off is
+		// written here instead, once the log exists.
+		if wiredAuditLog != nil {
+			for _, c := range cfg.ComputeNodes {
+				if !c.TLSInsecureSkipVerify {
+					continue
+				}
+				_ = wiredAuditLog.Write(auditpkg.Entry{Timestamp: time.Now(), Actor: "daemon", Action: "compute_node_tls_verification_off", Details: map[string]any{
+					"resource_type":            "compute_node",
+					"resource_id":              c.Name,
+					"tls_insecure_skip_verify": true,
+					"source":                   "config_seed",
+				}})
+			}
+		}
 		// GH#201 — separate HTTP access / WS lifecycle / auth-failure log.
 		// Own file (access.log, not audit.log) since request volume is
 		// much higher than state-changing operator actions and shouldn't
@@ -7025,8 +7041,25 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						}
 					}
 				}
-				amgr.SetSupervisorWatchProbe(
-					autonomouspkg.NewShellSupervisorWatchHostProbe(nodeAddresses, cfg.Hostname))
+				watchProbe := autonomouspkg.NewShellSupervisorWatchHostProbe(nodeAddresses, cfg.Hostname)
+				if wiredAuditLog != nil {
+					watchProbe.SetUnverifiedProbeNotice(func(node string) {
+						_ = wiredAuditLog.Write(auditpkg.Entry{Timestamp: time.Now(), Actor: "daemon", Action: "compute_node_tls_verification_off", Details: map[string]any{
+							"resource_type": "compute_node",
+							"resource_id":   node,
+							"source":        "supervisor_watch_probe",
+						}})
+					})
+				}
+				if computeReg != nil {
+					// Live lookup: a node added or edited after startup is
+					// probed with its current address and TLS settings.
+					watchProbe.SetNodeLookup(func(name string) (*compute.Node, bool) {
+						n, err := computeReg.Get(name)
+						return n, err == nil && n != nil
+					})
+				}
+				amgr.SetSupervisorWatchProbe(watchProbe)
 				if computeReg != nil {
 					amgr.SetSupervisorWatchNodeView(computeReg)
 				}
@@ -18741,6 +18774,8 @@ func computeNodeFromConfig(c config.ComputeNodeYAML) compute.Node {
 		AllowModelSwap:        c.AllowModelSwap,
 		SessionSlots:          c.SessionSlots,
 		TLSInsecureSkipVerify: c.TLSInsecureSkipVerify,
+		TLSCAFile:             c.TLSCAFile,
+		TLSCertFingerprint:    c.TLSCertFingerprint,
 	}
 }
 

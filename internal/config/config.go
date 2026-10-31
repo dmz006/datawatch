@@ -578,8 +578,16 @@ type ComputeNodeYAML struct {
 	// AllowModelSwap lets an explicit request replace the pinned model.
 	AllowModelSwap bool `yaml:"allow_model_swap,omitempty" json:"allow_model_swap,omitempty"`
 	// TLSInsecureSkipVerify turns off certificate verification for the
-	// node usage probes. Default false = verify.
+	// node usage probes and the supervisor watch probe. Default false =
+	// verify. Cannot be combined with TLSCAFile or TLSCertFingerprint.
 	TLSInsecureSkipVerify bool `yaml:"tls_insecure_skip_verify,omitempty" json:"tls_insecure_skip_verify,omitempty"`
+	// TLSCAFile is the path to a PEM CA bundle trusted in addition to the
+	// system roots when the node serves a certificate from a private CA.
+	// Empty = system roots only.
+	TLSCAFile string `yaml:"tls_ca_file,omitempty" json:"tls_ca_file,omitempty"`
+	// TLSCertFingerprint pins the SHA-256 fingerprint of the node's leaf
+	// certificate, for a single self-signed certificate. Empty = no pin.
+	TLSCertFingerprint string `yaml:"tls_cert_fingerprint,omitempty" json:"tls_cert_fingerprint,omitempty"`
 	// SessionSlots is the operator's worker count for this node (0 = derive
 	// from observer GPU data). Must not be negative.
 	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`

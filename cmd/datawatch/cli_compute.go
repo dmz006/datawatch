@@ -292,6 +292,8 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 		tagsCSV, allowedCSV, deniedCSV                           string
 		pinnedModel                                              string
 		allowModelSwap                                           bool
+		tlsCAFile, tlsCertFingerprint                            string
+		tlsInsecureSkipVerify                                    bool
 	)
 	use := "add <name>"
 	short := "Add a new ComputeNode"
@@ -310,7 +312,14 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   use,
 		Short: short,
-		Args:  cobra.ExactArgs(1),
+		Long: short + `.
+
+TLS for https nodes: --tls-ca-file trusts an extra CA bundle, --tls-cert-fingerprint
+pins the node's leaf certificate, and --tls-insecure-skip-verify turns certificate
+checking off for the node (audited, shown in the PWA, and not allowed together with
+the other two). The server validates the combination and its error is printed as is.
+Update replaces the whole node, so repeat every setting you want to keep.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if deprecatedKinds[kind] {
 				return fmt.Errorf(
@@ -334,9 +343,12 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 					"gpu_vendor":            gpuVendor,
 					"gpu_model":             gpuModel,
 				},
-				"node_pinned_model": pinnedModel,
-				"allow_model_swap":  allowModelSwap,
-				"session_slots":     sessionSlots,
+				"node_pinned_model":        pinnedModel,
+				"allow_model_swap":         allowModelSwap,
+				"session_slots":            sessionSlots,
+				"tls_ca_file":              tlsCAFile,
+				"tls_cert_fingerprint":     tlsCertFingerprint,
+				"tls_insecure_skip_verify": tlsInsecureSkipVerify,
 			}
 			if tagsCSV != "" {
 				body["tags"] = splitCSV(tagsCSV)
@@ -373,6 +385,9 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 	cmd.Flags().StringVar(&deniedCSV, "denied-consumers", "", "comma-separated consumer names; denied always wins")
 	cmd.Flags().StringVar(&pinnedModel, "pinned-model", "", "pin this node to one model; other explicit models are refused unless --allow-model-swap (empty = no pin)")
 	cmd.Flags().BoolVar(&allowModelSwap, "allow-model-swap", false, "let an explicit request replace the pinned model (update replaces the whole node, so pass --pinned-model again to keep the pin)")
+	cmd.Flags().StringVar(&tlsCAFile, "tls-ca-file", "", "PEM CA bundle trusted in addition to the system roots when connecting to this node over https (update replaces the whole node, so omitting this clears it)")
+	cmd.Flags().StringVar(&tlsCertFingerprint, "tls-cert-fingerprint", "", "SHA-256 fingerprint of the node's leaf certificate, 64 hex chars, colons allowed (update replaces the whole node, so omitting this clears the pin)")
+	cmd.Flags().BoolVar(&tlsInsecureSkipVerify, "tls-insecure-skip-verify", false, "turn certificate checking off for this node; audited and shown in the PWA; cannot be combined with --tls-ca-file or --tls-cert-fingerprint (update replaces the whole node, so omitting this turns checking back on)")
 	return cmd
 }
 

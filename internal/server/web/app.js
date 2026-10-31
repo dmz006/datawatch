@@ -8933,6 +8933,10 @@ const DOCS_LINKS_BY_KEY = {
   tooling: DOCS_DEFINITIONS + '#settings-general',
   file_service: DOCS_DEFINITIONS + '#file-service-v8-3-0',
   discussion_scopes: DOCS_DEFINITIONS + '#discussion-scopes-v8-4-0',
+  // Compute node certificate verification
+  compute_tls_ca_file: DOCS_DEFINITIONS + '#compute-node-tls-verification',
+  compute_tls_cert_fingerprint: DOCS_DEFINITIONS + '#compute-node-tls-verification',
+  compute_tls_insecure_skip_verify: DOCS_DEFINITIONS + '#compute-node-tls-verification',
   // Settings -> Comms
   comms: DOCS_DEFINITIONS + '#settings-comms',
   comms_auth: DOCS_DEFINITIONS + '#authentication',
@@ -10625,6 +10629,43 @@ window.saveComputeKindMigration = function(name) {
   }).catch(e => showError('Migrate failed', String(e.message||e)));
 };
 
+// computeTLSBadgeHTML renders the certificate verification badge for a node
+// row. Verification switched off is a loud error-coloured badge; a pinned
+// fingerprint or a private CA file is a quiet one; the default (system
+// roots) shows nothing.
+function computeTLSBadgeHTML(n) {
+  if (!n) return '';
+  if (n.tls_insecure_skip_verify === true) {
+    return `<span class="compute-tls-off-badge" style="font-size:10px;font-weight:700;background:var(--error);color:#fff;padding:1px 6px;border-radius:8px;cursor:help;" title="${escHtml(t('compute_tls_off_badge_tip')||'Certificate verification is OFF for this node. Anyone on the network path can impersonate it and read or alter what is sent, including API keys. Use a CA file or a pinned fingerprint instead.')}">⚠ ${escHtml(t('compute_tls_off_badge')||'TLS verification OFF')}</span>`;
+  }
+  const quiet = 'font-size:9px;background:var(--bg);border:1px solid var(--border);color:var(--text2);padding:1px 5px;border-radius:8px;';
+  if (n.tls_cert_fingerprint) {
+    return `<span class="compute-tls-pinned-badge" style="${quiet}" title="${escHtml(n.tls_cert_fingerprint)}">${escHtml(t('compute_tls_pinned_badge')||'pinned')}</span>`;
+  }
+  if (n.tls_ca_file) {
+    return `<span class="compute-tls-ca-badge" style="${quiet}" title="${escHtml(n.tls_ca_file)}">${escHtml(t('compute_tls_ca_badge')||'CA file')}</span>`;
+  }
+  return '';
+}
+
+// computeTLSModeChanged keeps the certificate verification inputs
+// consistent: skipping verification excludes a CA file and a fingerprint,
+// and the other way round. The warning line shows while the skip box is
+// ticked.
+window.computeTLSModeChanged = function() {
+  const skip = document.getElementById('computeNewTLSSkip');
+  const ca = document.getElementById('computeNewTLSCAFile');
+  const fp = document.getElementById('computeNewTLSFingerprint');
+  const warn = document.getElementById('computeNewTLSSkipWarn');
+  if (!skip || !ca || !fp) return;
+  const skipOn = !!skip.checked;
+  const pinOn = !!((ca.value || '').trim() || (fp.value || '').trim());
+  ca.disabled = skipOn;
+  fp.disabled = skipOn;
+  skip.disabled = pinOn && !skipOn;
+  if (warn && warn.style) warn.style.display = skipOn ? '' : 'none';
+};
+
 // v7.0.0 S1 — ComputeNode panel. List view + per-row health badge +
 // drill-down detail link. Add-Node form. Operator can also reach the
 // node via the Sessions list once S3 wires per-persona session
@@ -10673,14 +10714,17 @@ function loadComputeNodesPanel() {
             if (typeof v === 'object') return `<code style="font-size:10px;">${escHtml(JSON.stringify(v))}</code>`;
             return escHtml(String(v));
           };
-          const detailRows = Object.entries(n).filter(([k]) => !['name','tags','auto_tags'].includes(k))
+          // A false opt-out (or an empty CA file / fingerprint) is the default
+          // and says nothing; only a true opt-out is worth a row.
+          const tlsKeys = ['tls_ca_file', 'tls_cert_fingerprint', 'tls_insecure_skip_verify'];
+          const detailRows = Object.entries(n).filter(([k, v]) => !['name','tags','auto_tags'].includes(k) && !(tlsKeys.includes(k) && !v))
             .map(([k, v]) => `<tr><td style="padding:2px 8px;color:var(--text2);font-size:10px;white-space:nowrap;vertical-align:top;">${escHtml(k)}</td><td style="padding:2px 8px;font-size:11px;word-break:break-all;">${fmtVal(v)}</td></tr>`).join('');
           return `<details class="compute-node-row" style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);${dimStyle}">
             <summary style="cursor:pointer;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;flex-wrap:wrap;">
               <strong>${safe}</strong>${auto}
               ${kindBadge}
               <span style="color:var(--text2);font-size:10px;">${escHtml(n.address||'')}</span>
-              <span style="color:var(--text2);font-size:10px;">cap=${cap}</span>${tagsHtml}
+              <span style="color:var(--text2);font-size:10px;">cap=${cap}</span>${computeTLSBadgeHTML(n)}${tagsHtml}
               <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;flex-shrink:0;">
                 ${switchHTML}
                 <button class="btn-icon" style="font-size:13px;padding:2px 6px;background:transparent;border:none;cursor:pointer;" onclick="event.preventDefault();event.stopPropagation();computeEditNode(${safeJ})" title="${escHtml(t('compute_edit_btn_title')||'Edit')}" aria-label="Edit ${safe}">✏️</button>
@@ -11932,6 +11976,9 @@ window.openComputeAddPanel = function(existingNode) {
   const initRouting = (existingNode && existingNode.routing) || 'direct';
   const initDN = (existingNode && existingNode.routing_docker_network) || {};
   const initDP = (existingNode && existingNode.routing_datawatch_proxy) || {};
+  const initTLSCA = (existingNode && existingNode.tls_ca_file) || '';
+  const initTLSFP = (existingNode && existingNode.tls_cert_fingerprint) || '';
+  const initTLSSkip = !!(existingNode && existingNode.tls_insecure_skip_verify);
   const modal = document.createElement('div');
   modal.id = 'computeAddPanel';
   modal.dataset.editName = isEdit ? existingNode.name : '';
@@ -11964,6 +12011,24 @@ window.openComputeAddPanel = function(existingNode) {
         <label class="wizard-label">${escHtml(t('compute_field_address')||'Address (host:port or URL)')}</label>
         <input id="computeNewAddress" class="form-input" placeholder="https://gpu-1:11434" value="${isEdit ? escHtml(existingNode.address || '') : ''}" />
         <div style="font-size:10px;color:var(--text2);font-style:italic;margin-top:2px;">${escHtml(t('compute_address_scheme_hint')||'http:// or https:// auto-added if missing. Not used for docker-network or datawatch-proxy routing.')}</div>
+      </div>
+      <div class="wizard-field" style="border-left:3px solid var(--accent,#6366f1);padding-left:10px;margin-left:4px;">
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">${escHtml(t('compute_tls_group_title')||'Certificate verification')}</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <div>
+            <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_tls_ca_file')||'CA file (PEM, for a private CA)')}${defsLink('compute_tls_ca_file')}</label>
+            <input id="computeNewTLSCAFile" class="form-input" placeholder="${escHtml(t('compute_tls_ca_file_ph')||'/etc/ssl/private-ca.pem')}" value="${escHtml(initTLSCA)}" oninput="computeTLSModeChanged()" ${initTLSSkip ? 'disabled' : ''} />
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_tls_cert_fingerprint')||'Certificate fingerprint (SHA-256)')}${defsLink('compute_tls_cert_fingerprint')}</label>
+            <input id="computeNewTLSFingerprint" class="form-input" placeholder="${escHtml(t('compute_tls_cert_fingerprint_ph')||'AB:CD:… (64 hex characters)')}" value="${escHtml(initTLSFP)}" oninput="computeTLSModeChanged()" ${initTLSSkip ? 'disabled' : ''} />
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
+            <input id="computeNewTLSSkip" type="checkbox" onchange="computeTLSModeChanged()" ${initTLSSkip ? 'checked' : ''} ${!initTLSSkip && (initTLSCA || initTLSFP) ? 'disabled' : ''} />
+            ${escHtml(t('compute_tls_insecure_skip_verify')||'Skip certificate verification (not recommended)')}${defsLink('compute_tls_insecure_skip_verify')}
+          </label>
+          <div id="computeNewTLSSkipWarn" style="display:${initTLSSkip ? '' : 'none'};font-size:11px;font-weight:600;color:var(--error);">⚠ ${escHtml(t('compute_tls_insecure_skip_verify_warn')||'Certificate verification will be OFF for this node. Anyone on the network path can impersonate it and read or alter what is sent, including API keys.')}</div>
+        </div>
       </div>
       <div class="wizard-field" style="border-top:1px solid var(--border);padding-top:8px;margin-top:2px;">
         <label class="wizard-label">${escHtml(t('compute_field_routing')||'Routing mode')}</label>
@@ -12215,10 +12280,17 @@ window.computeTestConnectionDraft = function() {
   // probe-skip:false so the daemon's existing probe path runs against
   // the address. If it fails, show the error inline.
   const probeName = 'smoke-test-' + Date.now();
+  const tlsSkip = !!((document.getElementById('computeNewTLSSkip')||{}).checked);
   apiFetch('/api/compute/nodes', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: probeName, kind, address, declared_capacity: { max_concurrent_models: 1 } }),
+    body: JSON.stringify({
+      name: probeName, kind, address, declared_capacity: { max_concurrent_models: 1 },
+      // The probe must verify the certificate the same way the saved node will.
+      tls_ca_file: tlsSkip ? '' : ((document.getElementById('computeNewTLSCAFile')||{}).value || '').trim(),
+      tls_cert_fingerprint: tlsSkip ? '' : ((document.getElementById('computeNewTLSFingerprint')||{}).value || '').trim(),
+      tls_insecure_skip_verify: tlsSkip,
+    }),
   }).then(() => {
     return apiFetch('/api/compute/nodes/' + encodeURIComponent(probeName) + '/health', { method: 'GET' });
   }).then(d => {
@@ -12298,6 +12370,7 @@ window.computeAddNode = function() {
     if (!routingDatawatchProxy.peer) { showError('Peer is required for datawatch-proxy routing'); return; }
     if (!routingDatawatchProxy.remote_llm_name) { showError('Remote LLM name is required for datawatch-proxy routing'); return; }
   }
+  const tlsSkip = !!((document.getElementById('computeNewTLSSkip')||{}).checked);
   apiFetch(url, {
     method,
     headers: { 'Content-Type': 'application/json' },
@@ -12320,6 +12393,12 @@ window.computeAddNode = function() {
       observer_peer: ((document.getElementById('computeNewObserverPeer')||{}).value || '').trim(),
       node_pinned_model: ((document.getElementById('computeNewPinnedModel')||{}).value || '').trim(),
       allow_model_swap: !!((document.getElementById('computeNewAllowSwap')||{}).checked),
+      // Sent even when empty/false: PUT replaces the whole node, so this is
+      // how an edit clears a CA file, a pin or the opt-out. Skipping
+      // verification excludes the other two.
+      tls_ca_file: tlsSkip ? '' : ((document.getElementById('computeNewTLSCAFile')||{}).value || '').trim(),
+      tls_cert_fingerprint: tlsSkip ? '' : ((document.getElementById('computeNewTLSFingerprint')||{}).value || '').trim(),
+      tls_insecure_skip_verify: tlsSkip,
     }),
   }).then(() => {
     showToast(isEdit ? '✓ ComputeNode updated' : '✓ ComputeNode added', 'success', 2000);

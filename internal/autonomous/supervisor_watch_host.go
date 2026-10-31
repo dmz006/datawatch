@@ -17,7 +17,7 @@ package autonomous
 
 import (
 	"context"
-	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -95,6 +95,15 @@ type SupervisorWatchHostProbe interface {
 // sorted by name); tests use a fake.
 type SupervisorWatchNodeLister interface {
 	List() []*compute.Node
+}
+
+// SupervisorWatchTLSReporter is an optional interface a probe may also
+// implement. UnverifiedNode reports whether the last probe of node ran
+// with certificate verification turned off, so a finding raised from
+// that probe can say so. SupervisorWatchHostProbe itself is unchanged;
+// the host type-asserts for this interface.
+type SupervisorWatchTLSReporter interface {
+	UnverifiedNode(node string) bool
 }
 
 // supervisorWatchNodeNames returns the registered node names sorted,
@@ -293,10 +302,14 @@ func (h *SupervisorWatchHost) CheckModelNotResident() []SupervisorWatchFinding {
 		if supervisorWatchModelResident(model, loaded) {
 			continue
 		}
+		text := supervisorWatchFindingText(SupervisorWatchModelNotResident, node)
+		if rep, ok := h.Probe.(SupervisorWatchTLSReporter); ok && rep.UnverifiedNode(node) {
+			text = SupervisorWatchUnverifiedNote(text)
+		}
 		out = append(out, SupervisorWatchFinding{
 			Kind:    SupervisorWatchModelNotResident,
 			Subject: node,
-			Text:    supervisorWatchFindingText(SupervisorWatchModelNotResident, node),
+			Text:    text,
 		})
 	}
 	return out
@@ -439,14 +452,39 @@ func supervisorWatchFindingText(kind SupervisorWatchKind, subject string) string
 type ShellSupervisorWatchHostProbe struct {
 	// nodeAddresses maps each registered node name to the http(s)
 	// address of its model server, for ResidentModels. A node without
-	// an address degrades to "unknown, no finding" for that node.
+	// an address degrades to "unknown, no finding" for that node. It is
+	// the fallback when nodeLookup is unset or has no record of a node.
 	nodeAddresses map[string]string
 	// localNode is the registered node name of this daemon's own
 	// host; only that node has a local daemon view.
 	localNode string
 	// shell resolves the tools; "sh" by default.
 	shell string
+	// httpc is the client for plain http nodes and for https nodes with
+	// no node record; it verifies against the system roots.
 	httpc *http.Client
+
+	mu sync.Mutex
+	// nodeLookup resolves a node's live record so its address and TLS
+	// settings are read at probe time, not frozen at startup.
+	nodeLookup func(node string) (*compute.Node, bool)
+	// tlsClients caches one client per https node, keyed on the node's
+	// TLS settings so an edit builds a fresh one.
+	tlsClients map[string]*supervisorWatchTLSClient
+	// unverified records which nodes the last probe ran against with
+	// certificate verification off.
+	unverified map[string]bool
+	// onUnverified is called once per node per TLS setting change the
+	// first time the node is probed with verification off.
+	onUnverified func(node string)
+}
+
+// supervisorWatchTLSClient is one cached per-node https client and the
+// settings key it was built from.
+type supervisorWatchTLSClient struct {
+	key    string
+	client *http.Client
+	mode   compute.TLSMode
 }
 
 // NewShellSupervisorWatchHostProbe builds the production probe.
@@ -459,13 +497,36 @@ func NewShellSupervisorWatchHostProbe(nodeAddresses map[string]string, localNode
 		nodeAddresses: nodeAddresses,
 		localNode:     localNode,
 		shell:         "sh",
-		httpc: &http.Client{
-			Timeout: 15 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
-		},
+		httpc:         &http.Client{Timeout: 15 * time.Second},
 	}
+}
+
+// SetNodeLookup makes ResidentModels resolve each node's record live
+// (address and TLS settings), so a node added or edited after startup
+// is honoured. The address map given to the constructor stays the
+// fallback for a node the lookup does not know.
+func (p *ShellSupervisorWatchHostProbe) SetNodeLookup(lookup func(node string) (*compute.Node, bool)) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.nodeLookup = lookup
+}
+
+// SetUnverifiedProbeNotice sets a hook called the first time a node is
+// probed with certificate verification off, after startup or after the
+// node's TLS settings change: once per setting change, not per probe.
+// A nil hook is fine.
+func (p *ShellSupervisorWatchHostProbe) SetUnverifiedProbeNotice(fn func(node string)) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.onUnverified = fn
+}
+
+// UnverifiedNode reports whether the last probe of node ran with
+// certificate verification turned off.
+func (p *ShellSupervisorWatchHostProbe) UnverifiedNode(node string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.unverified[node]
 }
 
 // resolveTool returns the absolute path of the tool on PATH (equivalent
@@ -573,19 +634,29 @@ func (p *ShellSupervisorWatchHostProbe) DaemonActive(node string) (bool, error) 
 
 // ResidentModels reads the node's model report (GET /api/ps) and
 // returns the resident model names. A node without a configured
-// address, or an unreadable report, is an error: unknown, no finding.
+// address, an unreadable report, an unusable TLS setting or a
+// certificate that fails verification is an error: unknown, no
+// finding.
 func (p *ShellSupervisorWatchHostProbe) ResidentModels(node string) ([]string, error) {
-	addr := strings.TrimRight(strings.TrimSpace(p.nodeAddresses[node]), "/")
+	rec := p.lookupNode(node)
+	addr := ""
+	if rec != nil {
+		addr = strings.TrimSpace(rec.Address)
+	}
+	if addr == "" {
+		addr = strings.TrimSpace(p.nodeAddresses[node])
+	}
+	addr = strings.TrimRight(addr, "/")
 	if addr == "" {
 		return nil, fmt.Errorf("supervisor watch host: no model-server address for node %q", node)
-	}
-	client := p.httpc
-	if client == nil {
-		client = http.DefaultClient
 	}
 	u := addr
 	if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
 		u = "http://" + u
+	}
+	client, err := p.clientFor(node, rec, strings.HasPrefix(u, "https://"))
+	if err != nil {
+		return nil, err
 	}
 	req, err := http.NewRequest("GET", u+"/api/ps", nil)
 	if err != nil {
@@ -593,6 +664,10 @@ func (p *ShellSupervisorWatchHostProbe) ResidentModels(node string) ([]string, e
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		if supervisorWatchCertError(err) {
+			return nil, fmt.Errorf("supervisor watch host: node %s certificate not trusted: %v: "+
+				"set tls_ca_file or tls_cert_fingerprint on the node, or tls_insecure_skip_verify to turn verification off for it", node, err)
+		}
 		return nil, fmt.Errorf("supervisor watch host: node %s unreachable: %v", node, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -612,6 +687,102 @@ func (p *ShellSupervisorWatchHostProbe) ResidentModels(node string) ([]string, e
 		out = append(out, m.Name)
 	}
 	return out, nil
+}
+
+// lookupNode resolves the live record of node, or nil.
+func (p *ShellSupervisorWatchHostProbe) lookupNode(node string) *compute.Node {
+	p.mu.Lock()
+	lookup := p.nodeLookup
+	p.mu.Unlock()
+	if lookup == nil {
+		return nil
+	}
+	if n, ok := lookup(node); ok {
+		return n
+	}
+	return nil
+}
+
+// clientFor picks the HTTP client for one probe of node. Plain http
+// nodes, and https nodes with no record, use the default client (system
+// roots). An https node with a record gets a cached client built from
+// its TLS settings; a settings error is returned and the node counts
+// as not unverified.
+func (p *ShellSupervisorWatchHostProbe) clientFor(node string, rec *compute.Node, https bool) (*http.Client, error) {
+	p.mu.Lock()
+	if !https || rec == nil {
+		p.dropTLSLocked(node)
+		p.mu.Unlock()
+		if p.httpc == nil {
+			return http.DefaultClient, nil
+		}
+		return p.httpc, nil
+	}
+	key := rec.TLSSettingsKey()
+	if c := p.tlsClients[node]; c != nil && c.key == key {
+		client := c.client
+		p.mu.Unlock()
+		return client, nil
+	}
+	p.dropTLSLocked(node)
+	cfg, mode, err := compute.NodeTLSConfig(rec)
+	if err != nil {
+		p.mu.Unlock()
+		return nil, fmt.Errorf("supervisor watch host: node %s TLS settings unusable: %w", node, err)
+	}
+	var tr *http.Transport
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+		tr = dt.Clone()
+	} else {
+		tr = &http.Transport{}
+	}
+	tr.TLSClientConfig = cfg
+	client := &http.Client{Timeout: 15 * time.Second, Transport: tr}
+	if p.tlsClients == nil {
+		p.tlsClients = map[string]*supervisorWatchTLSClient{}
+	}
+	p.tlsClients[node] = &supervisorWatchTLSClient{key: key, client: client, mode: mode}
+	var notice func(string)
+	if mode == compute.TLSModeVerificationOff {
+		if p.unverified == nil {
+			p.unverified = map[string]bool{}
+		}
+		p.unverified[node] = true
+		notice = p.onUnverified
+	}
+	p.mu.Unlock()
+	if notice != nil {
+		notice(node)
+	}
+	return client, nil
+}
+
+// dropTLSLocked forgets node's cached client and unverified mark. The
+// caller holds p.mu.
+func (p *ShellSupervisorWatchHostProbe) dropTLSLocked(node string) {
+	if c := p.tlsClients[node]; c != nil {
+		if tr, ok := c.client.Transport.(*http.Transport); ok {
+			tr.CloseIdleConnections()
+		}
+		delete(p.tlsClients, node)
+	}
+	delete(p.unverified, node)
+}
+
+// supervisorWatchCertError reports whether err is a certificate
+// verification or pin failure from the TLS handshake.
+func supervisorWatchCertError(err error) bool {
+	var unknownAuth x509.UnknownAuthorityError
+	var host x509.HostnameError
+	var invalid x509.CertificateInvalidError
+	if errors.As(err, &unknownAuth) || errors.As(err, &host) || errors.As(err, &invalid) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "failed to verify certificate") ||
+		strings.Contains(msg, "fingerprint mismatch") ||
+		strings.Contains(msg, "verify peer certificate") ||
+		strings.Contains(msg, "x509:")
 }
 
 // GitStatus returns the `git status --short` lines of the main

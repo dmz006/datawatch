@@ -2549,11 +2549,20 @@ orchestrator:
 # A negative value is rejected when the config loads. Set it in the PWA node form,
 # `datawatch compute node update <name> --session-slots N`, or REST
 # PUT /api/compute/nodes/{name}.
+#
+# A node served over https is verified against the system roots by default. For a
+# node whose certificate the system roots do not cover, use one of the TLS keys
+# below. tls_ca_file and tls_cert_fingerprint may be used together (the chain must
+# verify and the leaf must match); tls_insecure_skip_verify cannot be combined with
+# either of them.
 # compute_nodes:
 #   - name: gpu-1
 #     kind: ollama
 #     address: http://gpu-1:11434
 #     session_slots: 2
+#     # tls_ca_file: /etc/datawatch/ca.pem      # private CA: trust this PEM bundle as well as the system roots
+#     # tls_cert_fingerprint: "AB:CD:..."       # single self-signed cert: pin its SHA-256 leaf fingerprint (64 hex chars, colons optional)
+#     # tls_insecure_skip_verify: false         # last resort only: turns verification off (shown in the node record, PWA and audit log)
 
 # ── Compute pin keeper ──
 # Per-node model pins live on each compute node (compute_nodes[].node_pinned_model

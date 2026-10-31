@@ -237,6 +237,9 @@ A fully-populated entry:
 | `permissions.allowed_consumers` | []string | all | Which consumers may route here (`council`, `ask`, `agent_spawn`, `session_spawn`, `*`) |
 | `permissions.denied_consumers` | []string | none | Explicitly blocked consumers (overrides allowed) |
 | `cost_per_hour` | float | 0 | USD/hour cost for scheduler accounting |
+| `tls_ca_file` | string | — | Path, on the daemon's machine, to a PEM CA bundle trusted in addition to the system roots when the daemon connects to an `https://` node. See [Certificates for self-signed and private-CA nodes](#certificates-for-self-signed-and-private-ca-nodes) |
+| `tls_cert_fingerprint` | string | — | SHA-256 fingerprint of the node's certificate, 64 hex digits (colons and spaces accepted, case ignored; stored as 64 lowercase digits). Pins the node: the presented certificate must match. Same section |
+| `tls_insecure_skip_verify` | bool | false | Turns certificate checking off for this node. Audited, shown as a red badge in the PWA, and refused together with `tls_ca_file` or `tls_cert_fingerprint`. Same section |
 | `disabled` | bool | false | When true, dispatcher skips this node entirely |
 | `maintenance_windows` | []object | — | Operator-declared blackout periods |
 
@@ -821,6 +824,120 @@ An open-ended window (no `to`) means "from now until manually removed." The heal
 ```
 
 ---
+
+## Certificates for self-signed and private-CA nodes
+
+When a node's address starts with `https://`, the daemon checks the node's certificate. By default that check uses the system roots, so a node with a certificate from a public authority needs nothing. A node whose certificate is self-signed, or signed by your own private CA, fails that check until you tell the daemon how to trust it. There are three ways, and a node uses one of them:
+
+| You have | Set on the node | What the daemon then checks |
+|---|---|---|
+| A certificate from a public CA | nothing | Chain and host name, against the system roots |
+| Your own CA that signed the node's certificate | `tls_ca_file` | Chain and host name, against the system roots plus that CA file |
+| One self-signed certificate | `tls_cert_fingerprint` | The certificate the node presents must match the pinned SHA-256 fingerprint; chain and host name are not checked |
+| A CA file and also a pin | both | The chain and host name must verify against the roots plus the CA file, and the certificate must match the pin |
+| Neither, and you accept the risk | `tls_insecure_skip_verify` | Nothing. Audited. Not recommended |
+
+The skip setting cannot be combined with the other two. The system roots honour the `SSL_CERT_FILE` and `SSL_CERT_DIR` environment variables of the daemon process; there is no daemon-wide CA setting. The full rules are in [Compute node TLS verification](../datawatch-definitions.md#compute-node-tls-verification).
+
+The supervisor watch is where a missing setting shows up. Its host probe reads the models a node has resident over `https://`, and it verifies the certificate. A self-signed node with none of the three settings fails that probe, the watch treats the node as unknown and raises no finding for it, and the probe error names the fix. Saving the node still works, because the connectivity probe made at save time does not check certificates.
+
+### Pin a self-signed node (CLI)
+
+1. On the node, or from any machine that can reach it, read the certificate fingerprint:
+
+   ```sh
+   openssl x509 -in /etc/ssl/gpu-box-2.pem -noout -fingerprint -sha256
+   # or from the live server:
+   openssl s_client -connect gpu-box-2:11434 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256
+   #  → sha256 Fingerprint=3A:9F:...:C4   (32 pairs of hex digits)
+   ```
+
+2. Add the node with the part after the `=`:
+
+   ```sh
+   datawatch compute node add gpu-box-2 \
+     --kind ollama \
+     --address https://gpu-box-2:11434 \
+     --tls-cert-fingerprint 3A:9F:...:C4
+   #  → {"name": "gpu-box-2", "ok": true}
+   ```
+
+   For a private CA, give the CA bundle instead: `--tls-ca-file /etc/ssl/private-ca.pem`.
+
+3. Check how the node is set:
+
+   ```sh
+   datawatch compute node get gpu-box-2
+   #  → {... "tls_cert_fingerprint": "3a9f...c4" ...}
+   ```
+
+`compute node update` replaces the whole node, so repeat `--tls-ca-file` or `--tls-cert-fingerprint` on every update, or the setting is cleared. The same keys work on the MCP tools `compute_node_add` and `compute_node_update` and as `tls_ca_file=<path>`, `tls_cert_fingerprint=<hex>` and `tls_insecure_skip_verify=true` pairs on the chat command `compute node add <name> kind=ollama address=https://...`.
+
+### Set it with REST
+
+```sh
+# Pin a self-signed node.
+curl -sk -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "gpu-box-2",
+    "kind": "ollama",
+    "address": "https://gpu-box-2:11434",
+    "tls_cert_fingerprint": "3A:9F:...:C4"
+  }' \
+  $BASE/api/compute/nodes
+# → {"name":"gpu-box-2","ok":true}
+
+# Trust a private CA instead (PUT replaces the node, so send every field you want to keep).
+curl -sk -X PUT \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"gpu-box-2","kind":"ollama","address":"https://gpu-box-2:11434","tls_ca_file":"/etc/ssl/private-ca.pem"}' \
+  $BASE/api/compute/nodes/gpu-box-2
+
+# Read the setting back.
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/compute/nodes/gpu-box-2
+# → {... "tls_ca_file":"/etc/ssl/private-ca.pem" ...}
+```
+
+A bad combination is refused with a 400 and a plain-text message:
+
+```text
+compute node: tls_cert_fingerprint must be 64 hex chars (SHA-256), got 12
+compute node: tls_insecure_skip_verify cannot be combined with tls_ca_file or tls_cert_fingerprint (choose one: verify, pin or skip)
+```
+
+### Set it in the PWA
+
+1. Open **Settings** → **Compute** and click **+ Add ComputeNode**, or the pencil icon on an existing row.
+2. Enter an `https://` address. Under it the **Certificate verification** group has three fields: **CA file (PEM, for a private CA)**, **Certificate fingerprint (SHA-256)** and **Skip certificate verification (not recommended)**. Each has a help link to the definitions page.
+3. Fill in the CA file, the fingerprint or both. Once either has a value, the skip box is disabled; ticking the skip box disables the other two fields and shows a red warning that anyone on the network path can impersonate the node.
+4. Save. The row shows a quiet *pinned* or *CA file* badge when one of those is set, and a red **TLS verification OFF** badge when the skip box is ticked. Hover the red badge for the explanation.
+
+### Turning verification off
+
+Prefer a CA file or a pin. If you must skip verification, set `tls_insecure_skip_verify: true` (REST, YAML, MCP, CLI `--tls-insecure-skip-verify`, chat `tls_insecure_skip_verify=true`, or the PWA checkbox). The daemon then writes an audit entry with the action `compute_node_tls_verification_off`, and writes it again the first time the supervisor watch probes the node. List them with:
+
+```sh
+datawatch audit --action compute_node_tls_verification_off
+```
+
+A supervisor watch finding raised for such a node ends with `; certificate verification is turned off for this node`, so a report you read tells you its basis was unverified.
+
+### Troubleshooting certificates
+
+**`x509: certificate signed by unknown authority`, or the probe error `certificate not trusted`.** The node's certificate is not covered by the system roots. The full probe error reads `node <name> certificate not trusted: ...: set tls_ca_file or tls_cert_fingerprint on the node, or tls_insecure_skip_verify to turn verification off for it`. Add the CA that signed it as `tls_ca_file`, or pin the certificate with `tls_cert_fingerprint`. Until you do, the supervisor watch stays silent about that node.
+
+**Fingerprint mismatch (`node cert fingerprint mismatch: got ... want ...`).** The certificate the node presents is not the one you pinned, usually because it was renewed or the address now points at another host. Compare the `got` value with `openssl x509 -noout -fingerprint -sha256` run on the node, and if the new certificate is the right one, update the node with the new fingerprint.
+
+**`tls_cert_fingerprint must be 64 hex chars`.** You pasted something other than the SHA-256 value, such as an MD5 or SHA-1 fingerprint, or left out part of it. A SHA-256 fingerprint is 32 pairs of hex digits.
+
+**Unreadable CA file (`read tls_ca_file ... no such file or directory`, or `contains no valid PEM certs`).** The path is read on the machine that runs the daemon, by the user the daemon runs as. Check the path and permissions, and that the file holds PEM text (`-----BEGIN CERTIFICATE-----`). The error appears when the node is next probed, not when it is saved. After you replace the file contents under the same path, save the node again or restart the daemon so the new CA is read.
+
+**A CA file together with a pin still fails.** With both set the chain and host name must verify too, so the address host name must appear in the certificate. If it does not, use the pin alone.
+
+**`tls_insecure_skip_verify cannot be combined ...`.** Clear the skip box, or clear the CA file and fingerprint. On a CLI or MCP update, remember that omitted keys are cleared.
 
 ## Troubleshooting
 

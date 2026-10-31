@@ -114,7 +114,7 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), code)
 			return
 		}
-		s.auditCompute(n.Name, "compute_node_add")
+		s.auditComputeTLS(&n, "compute_node_add")
 		writeJSONOK(w, map[string]any{"name": n.Name, "ok": true})
 
 	// v7.0.0-alpha.23 (Q6) — operator on/off toggle for ComputeNodes,
@@ -305,7 +305,7 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), code)
 			return
 		}
-		s.auditCompute(n.Name, "compute_node_update")
+		s.auditComputeTLS(&n, "compute_node_update")
 		writeJSONOK(w, map[string]any{"name": n.Name, "ok": true})
 
 	case rest != "" && r.Method == http.MethodDelete:
@@ -606,6 +606,45 @@ func (s *Server) auditCompute(name, action string) {
 		Details: map[string]any{
 			"resource_type": "compute_node",
 			"resource_id":   name,
+		},
+	})
+}
+
+// auditComputeTLS records an add or update of a node together with its TLS
+// settings: whether verification is off, and whether a CA file or a
+// certificate fingerprint pin is set. Only booleans are written, never the
+// CA path or the fingerprint. When verification is off a second entry with
+// the action compute_node_tls_verification_off is written, so the opt-out
+// can be filtered on its own.
+func (s *Server) auditComputeTLS(n *compute.Node, action string) {
+	if s.auditLog == nil || n == nil {
+		return
+	}
+	insecure := n.TLSInsecureSkipVerify
+	_ = s.auditLog.Write(audit.Entry{
+		Actor:  "operator",
+		Action: action,
+		Details: map[string]any{
+			"resource_type":            "compute_node",
+			"resource_id":              n.Name,
+			"tls_insecure_skip_verify": insecure,
+			"tls_ca_file_set":          strings.TrimSpace(n.TLSCAFile) != "",
+			"tls_cert_fingerprint_set": n.TLSCertFingerprint != "",
+		},
+	})
+	if !insecure {
+		return
+	}
+	_ = s.auditLog.Write(audit.Entry{
+		Actor:  "operator",
+		Action: "compute_node_tls_verification_off",
+		Details: map[string]any{
+			"resource_type":            "compute_node",
+			"resource_id":              n.Name,
+			"tls_insecure_skip_verify": true,
+			"tls_ca_file_set":          strings.TrimSpace(n.TLSCAFile) != "",
+			"tls_cert_fingerprint_set": n.TLSCertFingerprint != "",
+			"source":                   action,
 		},
 	})
 }
