@@ -86,13 +86,13 @@ OVERALL=0
 FAIL_REASONS="none"
 CLEANUP_NOTE=""
 
-# rec LINE — append one numbered check line to the result list.
+# rec LINE — append one check line to the result list and advance the counter.
 rec() { RESULTS+=("$1"); CUR=$(( ${CUR:-0} + 1 )); }
 
-# pass WHAT DETAIL / skip WHAT REASON / fail WHAT REASON
-pass() { rec "$CUR. $1 — PASS ($2)"; }
-skip() { rec "$CUR. $1 — SKIPPED ($2)"; }
-fail() { rec "$CUR. $1 — FAIL — $2"; OVERALL=1; FAIL_REASONS="$FAIL_REASONS; $1: $2"; }
+# pass WHAT DETAIL / skip WHAT REASON / fail WHAT REASON — 1-based numbering
+pass() { rec "$(( ${CUR:-0} + 1 )). $1 — PASS ($2)"; }
+skip() { rec "$(( ${CUR:-0} + 1 )). $1 — SKIPPED ($2)"; }
+fail() { rec "$(( ${CUR:-0} + 1 )). $1 — FAIL — $2"; OVERALL=1; FAIL_REASONS="$FAIL_REASONS; $1: $2"; }
 step() { echo "--- $*"; }
 
 # jget JSON FILT — jq -r against a JSON string; empty on any jq error.
@@ -131,8 +131,33 @@ cleanup() {
   # must not `exit` — the shared handler owns the exit status.
   if [[ "${DATAWATCH_PCF_KEEP_WORK:-0}" == "1" ]]; then
     echo "kept scratch directory: $WORK"
-  else
-    rm -rf "$WORK"
+    return 0
+  fi
+  local home_dir="$WORK/sandbox/home" d pid i
+  # The daemon probes its CLI backends at start and while shutting down
+  # (gemini/aider/opencode --version) with HOME=$home_dir. Those node/python
+  # cold-starts outlive td_stop_all's daemon-only kill, and gemini creates
+  # $home_dir/.gemini ~1s after spawn — recreating the tree moments after a
+  # successful rm. So: sweep kill-then-remove on a tight cadence for a full
+  # window (no early exit — an in-flight probe must not short-circuit us),
+  # then settle and verify. Every probe lives only a couple of seconds, so a
+  # 0.5s cadence catches each one alive; anything it already created is
+  # removed immediately after.
+  for i in $(seq 1 16); do
+    for d in /proc/[0-9]*; do
+      pid=${d#/proc/}
+      [[ -r "$d/environ" ]] || continue
+      if tr '\0' '\n' < "$d/environ" 2>/dev/null | grep -Fxq "HOME=$home_dir"; then
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+    done
+    rm -rf "$WORK" 2>/dev/null || true
+    sleep 0.5
+  done
+  sleep 2
+  rm -rf "$WORK" 2>/dev/null || true
+  if [[ -e "$WORK" ]]; then
+    echo "warning: scratch directory survived cleanup: $WORK" >&2
   fi
 }
 
@@ -169,7 +194,7 @@ finish() { # finish <code> — write the report, then exit (trap does teardown)
     echo "## Evidence (ordered request/response log)"
     echo
     echo '```'
-    sed -e "s|$WORK|<scratch>|g" -e "s|$REPO_ROOT|<repo>|g" "$EVID"
+    sed -e "s|$WORK|<scratch>|g" -e "s|$REPO_ROOT|<repo>|g" -e 's|/home/|<home-abs>|g' "$EVID"
     echo '```'
   } > "$out"
   echo "report written: $REPORT_REL"
@@ -240,8 +265,11 @@ yaml.safe_load(open(sys.argv[1]))
     || { step "FATAL: the bootstrap config is not valid YAML"; return 1; }
 
   # Scratch project tree for the fixture spec: has a docs/ folder, because
-  # the spec's READ FIRST list references docs/pcfsandbox-guide.md.
-  local proj="$WORK/proj"
+  # the spec's READ FIRST list references docs/pcfsandbox-guide.md. It must
+  # sit under a daemon-allowed project root: with the sandbox HOME, the
+  # default workspace root is $sbx/home/workspace.
+  local proj="$sbx/home/workspace/proj"
+  PROJ_DIR="$proj"
   mkdir -p "$proj/docs"
   echo "# pcf fixture project" > "$proj/README.md"
   echo "# pcf fixture docs" > "$proj/docs/pcfsandbox-guide.md"
@@ -267,6 +295,7 @@ yaml.safe_load(open(sys.argv[1]))
   return 0
 }
 
+PROJ_DIR=""
 if ! start_sandbox; then
   fail "throwaway daemon setup" "the daemon failed to build or start — see build.log / daemon.log in the scratch dir"
   CLEANUP_NOTE="The daemon never became healthy. The recorded-daemon trap ended everything the check started and the scratch directory was removed on exit (set DATAWATCH_PCF_KEEP_WORK=1 to keep it for inspection)."
@@ -287,7 +316,7 @@ if grep -q -E 'could not bind .*:844[34]|:844[34]' "$LOG1"; then
 fi
 grep -q 'proxy sandbox listener disabled' "$LOG1" \
   || { D1_OK=0; D1_WHY="$D1_WHYthe boot log does not show the proxy sandbox listener disabled (server.proxy_sandbox_port: 0); "; }
-[[ -f "$WORK/sandbox/data/config.yaml" && -d "$WORK/proj/docs" ]] \
+[[ -f "$WORK/sandbox/data/config.yaml" && -n "$PROJ_DIR" && -d "$PROJ_DIR/docs" ]] \
   || { D1_OK=0; D1_WHY="$D1_WHYscratch data dir or fixture project docs/ folder missing; "; }
 if [[ "$D1_OK" == 1 ]]; then
   pass "throwaway daemon setup" "daemon healthy at $BASE with traps installed, scratch dirs in place, proxy sandbox listener disabled, no bind attempt on 8443/8444"
@@ -401,7 +430,7 @@ step "check 4: create a scratch Automaton from a fixture spec; decompose; poll"
 SPEC='Read first: internal/pcfsandbox/alpha.go, internal/pcfsandbox/alpha_test.go, docs/pcfsandbox-guide.md. Use the backend token qzx-eta-backend and the hyphenated phrase cross-cutting-hedge in the fixture notes. Scope: The plan must add the alpha widget end to end. Constraints: Keep the fixture tree under ten files.'
 
 api POST /api/autonomous/prds \
-  "$(jq -cn --arg spec "$SPEC" --arg dir "$WORK/proj" \
+  "$(jq -cn --arg spec "$SPEC" --arg dir "$PROJ_DIR" \
       '{spec: $spec, actor: "pcf-sandbox-check", project_dir: $dir}')"
 if [[ "$HTTP_CODE" == "200" ]]; then
   PCF_ID="$(jget "$API_BODY" '.id')"
