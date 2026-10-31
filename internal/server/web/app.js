@@ -13702,6 +13702,7 @@ function openPRDSettingsModal(prdID) {
         // read-only below once set.
         git_auto_pr:          !!(prd.git && prd.git.auto_pr),
         git_base_branch:      (prd.git && prd.git.base_branch) || '',
+        git_push_on_complete: (prd.git && prd.git.push_on_complete) || '',
         git_branch:           (prd.git && prd.git.branch) || '',
         git_pr_url:           (prd.git && prd.git.pr_url) || '',
         max_concurrent_tasks: prd.max_concurrent_tasks || 0,
@@ -13805,6 +13806,14 @@ function openPRDSettingsModal(prdID) {
               <div style="font-size:10px;color:var(--text2);margin:2px 0 6px;">${escHtml(t('prd_settings_git_auto_pr_hint')||'Review before enabling on an automaton whose task specs you don’t fully trust — this calls out to GitHub on your own gh credentials with no per-call confirmation.')}</div>
               <label class="wizard-label">${escHtml(t('prd_settings_git_base_branch_label')||'Base branch override (empty = repo’s own default branch)')}</label>
               <input type="text" id="prdSettingsGitBaseBranch" class="form-input" value="${escHtml(cur.git_base_branch)}" placeholder="main" />
+              <label class="wizard-label" style="margin-top:6px;">${escHtml(t('prd_settings_git_push_label')||'Push on completion')}</label>
+              <select id="prdSettingsGitPush" class="form-select">
+                <option value="" ${cur.git_push_on_complete===''?'selected':''}>${escHtml(t('prd_settings_git_push_inherit')||'Inherit daemon setting')}</option>
+                <option value="never" ${cur.git_push_on_complete==='never'?'selected':''}>never</option>
+                <option value="branch" ${cur.git_push_on_complete==='branch'?'selected':''}>branch</option>
+                <option value="default_branch" ${cur.git_push_on_complete==='default_branch'?'selected':''}>default_branch</option>
+              </select>
+              <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('prd_settings_git_push_hint')||'Overrides the daemon’s git.push_on_complete for this one PRD only; leave as inherit to follow the daemon setting.')}</div>
               ${cur.git_branch ? `<div style="font-size:10px;color:var(--text2);margin-top:6px;">${escHtml(t('prd_settings_git_branch_label')||'Branch')}: <code>${escHtml(cur.git_branch)}</code></div>` : ''}
               ${cur.git_pr_url ? `<div style="font-size:10px;margin-top:2px;">${escHtml(t('prd_settings_git_pr_label')||'PR')}: <a href="${escHtml(cur.git_pr_url)}" target="_blank" rel="noopener">${escHtml(cur.git_pr_url)}</a></div>` : ''}
             </div>
@@ -13866,10 +13875,17 @@ function openPRDSettingsModal(prdID) {
           // whenever either one changed.
           const newGitAutoPR = !!document.getElementById('prdSettingsGitAutoPR').checked;
           const newGitBaseBranch = (document.getElementById('prdSettingsGitBaseBranch').value || '').trim();
-          if (newGitAutoPR !== cur.git_auto_pr || newGitBaseBranch !== cur.git_base_branch) {
+          const newGitPushOnComplete = document.getElementById('prdSettingsGitPush').value || '';
+          const gitPushChanged = newGitPushOnComplete !== cur.git_push_on_complete;
+          if (newGitAutoPR !== cur.git_auto_pr || newGitBaseBranch !== cur.git_base_branch || gitPushChanged) {
+            // The backend treats an omitted push_on_complete as unchanged,
+            // so send it only when it actually changed; auto_pr/base_branch
+            // ride along as before.
+            const gitBody = { auto_pr: newGitAutoPR, base_branch: newGitBaseBranch };
+            if (gitPushChanged) gitBody.push_on_complete = newGitPushOnComplete;
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_git', {
               method: 'POST', headers: {'Content-Type':'application/json'},
-              body: JSON.stringify({ auto_pr: newGitAutoPR, base_branch: newGitBaseBranch }),
+              body: JSON.stringify(gitBody),
             }));
           }
           if (newConcurrency !== cur.max_concurrent_tasks) {
