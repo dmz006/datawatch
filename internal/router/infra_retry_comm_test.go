@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 )
@@ -121,32 +122,62 @@ func TestInfraRetryComm_TrimCountsLeftOutTasks(t *testing.T) {
 	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	var tasks []string
 	for i := 1; i <= 8; i++ {
-		tasks = append(tasks, infraRetryCommTask("a1", fmt.Sprintf("task%d", i), 3, at))
+		tasks = append(tasks, infraRetryCommTask("a1", fmt.Sprintf("tk%02d", i), 3, at))
 	}
-	var st = mustParseInfraRetryStatus(t, infraRetryCommBody(tasks...))
+	st := mustParseInfraRetryStatus(t, infraRetryCommBody(tasks...))
 	text := renderInfraRetriesForChat(st)
-	shown := 0
-	for i := 1; i <= 8; i++ {
-		if strings.Contains(text, fmt.Sprintf("task task%d ", i)) || strings.Contains(text, fmt.Sprintf("task%d ", i)) {
-			shown++
-		}
-	}
+	shown := strings.Count(text, "Automaton a1 ")
 	if shown == 0 || shown == 8 {
 		t.Fatalf("expected a partial list, %d of 8 shown: %q", shown, text)
+	}
+	for i := 1; i <= shown; i++ {
+		if !strings.Contains(text, fmt.Sprintf("task tk%02d ", i)) {
+			t.Errorf("the newest tasks must be the ones kept; tk%02d is missing: %q", i, text)
+		}
 	}
 	want := fmt.Sprintf("(%d older tasks not shown", 8-shown)
 	if !strings.Contains(text, want) {
 		t.Errorf("reply lacks %q: %q", want, text)
 	}
+	if len(text) > infraRetryChatMaxChars {
+		t.Errorf("reply is %d characters, over the %d budget", len(text), infraRetryChatMaxChars)
+	}
 }
 
-func TestInfraRetryComm_OneOversizeBlockStillShows(t *testing.T) {
+func TestInfraRetryComm_OneOversizeBlockIsTrimmedToFit(t *testing.T) {
 	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
-	big := infraRetryCommTask("a1", "t1", 40, at)
-	st := mustParseInfraRetryStatus(t, infraRetryCommBody(big))
+	st := mustParseInfraRetryStatus(t, infraRetryCommBody(infraRetryCommTask("a1", "t1", 40, at)))
 	text := renderInfraRetriesForChat(st)
-	if !strings.Contains(text, "task t1") || strings.Contains(text, "not shown") {
-		t.Errorf("a lone block must be kept whole: %q", text)
+	if len(text) > infraRetryChatMaxChars {
+		t.Fatalf("reply is %d characters, over the %d budget", len(text), infraRetryChatMaxChars)
+	}
+	for _, want := range []string{
+		"Infrastructure retry: on",
+		`Automaton a1 "Title a1", task t1 "Task t1": pending, retry 40 of 3`,
+		"retry 40: spawn_error",
+		"earlier retries of the newest task not shown)",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("reply lacks %q: %q", want, text)
+		}
+	}
+	if strings.Contains(text, "retry 1: spawn_error") {
+		t.Errorf("the oldest retry must be the one dropped: %q", text)
+	}
+}
+
+func TestInfraRetryComm_OneOversizeRetryLineIsCut(t *testing.T) {
+	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	body := fmt.Sprintf(`{"enabled":true,"max_tries":3,"backoff_seconds":[60],"categories":["spawn_error"],"exhausted_action":"hold","retry_dependents":true,"raise_question":true,`+
+		`"tasks":[{"automaton_id":"a1","automaton_title":"A","task_id":"t1","task_title":"T","status":"pending","retry_count":1,"max_tries":3,`+
+		`"retries":[{"number":1,"class":"spawn_error","reason":%q,"at":%q,"delay_seconds":60,"next_at":%q}],"held":false}],"count":1}`,
+		strings.Repeat("é", 6000), at.Format(time.RFC3339), at.Format(time.RFC3339))
+	text := renderInfraRetriesForChat(mustParseInfraRetryStatus(t, body))
+	if len(text) > infraRetryChatMaxChars {
+		t.Fatalf("reply is %d characters, over the %d budget", len(text), infraRetryChatMaxChars)
+	}
+	if !utf8.ValidString(text) || !strings.HasSuffix(text, "(reply cut to fit one message)") {
+		t.Errorf("a cut reply must stay valid text and say it was cut: %q", text[len(text)-60:])
 	}
 }
 
