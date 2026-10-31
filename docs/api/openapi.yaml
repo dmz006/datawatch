@@ -1578,6 +1578,56 @@ paths:
               schema: {type: string, example: GET}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/request-watch:
+    get:
+      summary: Request watch status
+      description: |
+        The in-flight model request of the worker and verifier sessions of
+        running Automata whose model runs on a registered compute node, so a
+        hung request can be told from a slow one. `enabled`, `poll_seconds` and
+        `no_progress_minutes` are the settings in effect
+        (`autonomous.request_watch`). `observations` holds one entry per watched
+        session: `state` is `generating`, `idle`, `unreachable` or `unknown`
+        (before the first sample), `last_change` when the node last showed a
+        sign of progress, `no_progress_seconds` how long it has not, `last_poll`
+        when the node was last read, `over_threshold` whether the no-progress
+        time has reached `no_progress_minutes`, `error` why a node could not be
+        read (absent when it could) and `summary` a plain-text line. The watch
+        is observation only: it makes no model call and never ends a worker,
+        retries it on another backend or unloads a model. `observations` is an
+        empty list, never null, when nothing is watched, the feature is
+        disabled, or a filter matches nothing. Read-only; only GET is served,
+        and a federated peer needs the autonomous read capability.
+      operationId: autonomousRequestWatch
+      tags: [Autonomous]
+      parameters:
+        - name: session
+          in: query
+          required: false
+          schema: {type: string}
+          description: Narrow the list to this session id. An id that matches nothing reads an empty list.
+        - name: automaton
+          in: query
+          required: false
+          schema: {type: string}
+          description: Narrow the list to the sessions of this Automaton id. An id that matches nothing reads an empty list.
+      responses:
+        "200":
+          description: Request watch status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestWatchStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405":
+          description: Method not allowed; only GET is served
+          headers:
+            Allow:
+              schema: {type: string, example: GET}
+        "503": {description: The request watch is not running}
+
   /api/autonomous/security-failures:
     get:
       summary: Security failure reports
@@ -6667,6 +6717,37 @@ components:
         reason: {type: string, description: Why the hold was raised}
         question_id: {type: string, description: The operator question that waits for an answer (commit, discard or retry); absent when no question store was wired}
         held_at: {type: string, format: date-time, description: When the hold was raised}
+    RequestWatchStatus:
+      type: object
+      description: |-
+        The request watch status, as GET /api/autonomous/request-watch returns
+        it. `observations` is an empty list, never null.
+      required: [enabled, poll_seconds, no_progress_minutes, observations]
+      properties:
+        enabled: {type: boolean, description: "Whether the watch is on (autonomous.request_watch.enabled; default true)"}
+        poll_seconds: {type: integer, minimum: 1, description: "Seconds between node reads (autonomous.request_watch.poll_seconds; default 30)"}
+        no_progress_minutes: {type: integer, minimum: 1, description: "Minutes without progress before an observation is over the threshold (autonomous.request_watch.no_progress_minutes; default 30)"}
+        observations:
+          type: array
+          items: {$ref: "#/components/schemas/RequestWatchObservation"}
+    RequestWatchObservation:
+      type: object
+      description: The watch's report for one worker or verifier session waiting on a model request.
+      required: [session_id, automaton_id, task_id, role, node, model, state, last_change, no_progress_seconds, last_poll, over_threshold, summary]
+      properties:
+        session_id: {type: string, description: The watched session}
+        automaton_id: {type: string, description: The Automaton the session belongs to}
+        task_id: {type: string, description: The task the session works on}
+        role: {type: string, enum: [worker, verifier], description: Whether the session is a worker or a verifier}
+        node: {type: string, description: The registered compute node the model runs on}
+        model: {type: string, description: The model the request is waiting on}
+        state: {type: string, enum: [generating, idle, unreachable, unknown], description: "generating when the node showed a sign of progress at the last poll; idle when it was readable and showed none; unreachable when it could not be read; unknown before the first sample"}
+        last_change: {type: string, format: date-time, description: When the node last showed a sign of progress}
+        no_progress_seconds: {type: integer, format: int64, description: Seconds since the last sign of progress}
+        last_poll: {type: string, format: date-time, description: When the node was last read}
+        over_threshold: {type: boolean, description: True once no_progress_seconds has reached no_progress_minutes}
+        error: {type: string, description: Why the node could not be read; absent when it could}
+        summary: {type: string, description: "Plain-text line such as: waiting on a model request: no progress for 40 minutes"}
     CleanupPassStatus:
       type: object
       description: |-

@@ -55,6 +55,7 @@ import (
 	"github.com/dmz006/datawatch/internal/plugins"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
+	"github.com/dmz006/datawatch/internal/requestwatch"
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/rtk"
 	"github.com/dmz006/datawatch/internal/secrets"
@@ -483,6 +484,11 @@ type Server struct {
 	// Wired from main.go; nil when autonomous is disabled. Handlers
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
+
+	// requestWatch reads the in-flight model request observations; nil until
+	// SetRequestWatch wires it, and the request-watch route answers 503 then.
+	requestWatch    requestwatch.Reader
+	requestWatchCfg func() config.RequestWatchConfig
 
 	// overlapSearch runs the search-before-create check on the create route.
 	// Nil uses the autonomous finder over autonomousMgr's Automata; tests
