@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -195,7 +196,7 @@ func TestHeldQuestionOptionsSets(t *testing.T) {
 func TestHeldQuestionTextNamesTheAutomaton(t *testing.T) {
 	text := HeldQuestionText(heldTestItem(HeldReviewHeld, FailureCategoryInfra))
 	for _, needle := range []string{
-		`"Fix the lane fill pass"`, // the Automaton's title
+		`"Fix the lane fill pass"`,  // the Automaton's title
 		"prd-01",                    // and its id
 		`"Implement the lane fill"`, // the task
 		"task-01",
@@ -240,9 +241,9 @@ func TestHeldQuestionTextNamesTheAutomaton(t *testing.T) {
 
 func TestHeldQuestionRecommendFixedTable(t *testing.T) {
 	cases := []struct {
-		state     HeldState
-		category  string
-		optID     string
+		state    HeldState
+		category string
+		optID    string
 	}{
 		{HeldBlocked, "", HeldOptionHold},
 		{HeldBlocked, FailureCategoryInfra, HeldOptionHold},
@@ -327,5 +328,94 @@ func TestHeldQuestionBuiltValidateAndValidateHeldSource(t *testing.T) {
 	bad.Source = "carrier-pigeon"
 	if err := ValidateNewQuestion(&bad); err == nil {
 		t.Fatalf("unknown source %q must be refused", bad.Source)
+	}
+}
+
+// heldTrackerIDRe is the shape of the internal tracker ids the
+// operator-facing question text must never carry, the same families the
+// repo's no-internal-refs gate checks (BL###, F##, B##, S##).
+var heldTrackerIDRe = regexp.MustCompile(`\b(BL[0-9]+|F[0-9]+|B[0-9]+|S[0-9]+)\b`)
+
+func TestHeldOptionsCarryTradeoffs(t *testing.T) {
+	// Every option id the daemon implements has a cost-and-risk note, and
+	// none of the notes leaks an internal id.
+	for id, note := range heldOptionTradeoffs {
+		if strings.TrimSpace(note) == "" {
+			t.Fatalf("option %q has an empty tradeoffs note", id)
+		}
+		if len(note) > questionTradeoffsMaxBytes {
+			t.Fatalf("option %q note is %d bytes; the cap is %d", id, len(note), questionTradeoffsMaxBytes)
+		}
+		if heldTrackerIDRe.MatchString(note) {
+			t.Fatalf("option %q note carries a tracker id: %q", id, note)
+		}
+	}
+	for id := range heldOptionLabels {
+		if strings.TrimSpace(heldOptionTradeoffs[id]) == "" {
+			t.Fatalf("option %q has no tradeoffs note", id)
+		}
+	}
+	// Every question the table builds carries a tradeoffs note on every
+	// option, and its labels read as words, not as codes.
+	for name, item := range map[string]*HeldItem{
+		"blocked":           {State: HeldBlocked},
+		"review_held":       {State: HeldReviewHeld},
+		"revision_held":     {State: HeldRevisionRequested},
+		"awaiting_decision": {State: HeldAwaitingDecision},
+		"pending_insert":    {State: HeldPendingInsert},
+		"unknown_state":     {State: "bogus"},
+		"nil_item":          nil,
+	} {
+		for _, o := range HeldOptions(item) {
+			if strings.TrimSpace(o.Tradeoffs) == "" {
+				t.Fatalf("%s: option %q has no tradeoffs note", name, o.ID)
+			}
+			if len(o.Tradeoffs) > questionTradeoffsMaxBytes {
+				t.Fatalf("%s: option %q tradeoffs %d bytes; the cap is %d", name, o.ID, len(o.Tradeoffs), questionTradeoffsMaxBytes)
+			}
+			if o.Label == o.ID || !strings.Contains(o.Label, " ") {
+				t.Fatalf("%s: option %q label %q reads as a code, not a sentence", name, o.ID, o.Label)
+			}
+		}
+	}
+}
+
+// heldQuestionTextMinLen floors the self-contained text: it must fit
+// what is held, why, and who decides, and this is the shortest a held
+// question that covers all three can plausibly read.
+const heldQuestionTextMinLen = 180
+
+func TestHeldQuestionTextStandsAlone(t *testing.T) {
+	// Each of the five states builds text an unfamiliar operator can act
+	// on without further context: it states what is held and why, meets
+	// the minimum self-contained length, carries the deciding line, names
+	// the forced default, and leaks no internal ids.
+	for _, state := range HeldStates {
+		text := HeldQuestionText(heldTestItem(state, FailureCategoryContent))
+		if len(text) < heldQuestionTextMinLen {
+			t.Fatalf("%s: text is %d bytes, under the %d-byte self-contained floor", state, len(text), heldQuestionTextMinLen)
+		}
+		for _, needle := range []string{
+			"Why it is held: ",    // the why is in the text
+			"You have the call",   // the deciding line
+			"the default is hold", // the forced default, on the record
+		} {
+			if !strings.Contains(text, needle) {
+				t.Fatalf("%s: text lacks %q: %q", state, needle, text)
+			}
+		}
+		if heldTrackerIDRe.MatchString(text) {
+			t.Fatalf("%s: text carries a tracker id: %q", state, text)
+		}
+		rec := HeldRecommendation(heldTestItem(state, FailureCategoryContent))
+		if heldTrackerIDRe.MatchString(rec.Rationale) {
+			t.Fatalf("%s: rationale carries a tracker id: %q", state, rec.Rationale)
+		}
+		opts := HeldOptions(heldTestItem(state, FailureCategoryContent))
+		for _, o := range opts {
+			if heldTrackerIDRe.MatchString(o.Label + " " + o.Tradeoffs) {
+				t.Fatalf("%s: option %q carries a tracker id", state, o.ID)
+			}
+		}
 	}
 }

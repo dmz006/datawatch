@@ -85,14 +85,30 @@ const (
 // heldOptionLabels is the display label each option id carries. Labels are
 // short, unique and within the question option label cap.
 var heldOptionLabels = map[string]string{
-	HeldOptionHold:             "Hold — keep it held, take no action yet",
-	HeldOptionRetry:            "Retry the task on its current worker",
-	HeldOptionRetryStronger:    "Retry the task on a stronger available backend",
-	HeldOptionChangeSpec:       "Change the task spec before retrying",
-	HeldOptionCancel:           "Cancel the task and let the Automaton roll up",
-	HeldOptionApproveInsert:    "Approve the pending insert into the Automation chain",
-	HeldOptionRejectInsert:     "Reject the pending insert",
-	HeldOptionResume:           "Release the hold and let the Automaton continue",
+	HeldOptionHold:          "Hold — keep it held, take no action yet",
+	HeldOptionRetry:         "Retry the task on its current worker",
+	HeldOptionRetryStronger: "Retry the task on a stronger available backend",
+	HeldOptionChangeSpec:    "Change the task spec before retrying",
+	HeldOptionCancel:        "Cancel the task and let the Automaton roll up",
+	HeldOptionApproveInsert: "Approve the pending insert into the Automation chain",
+	HeldOptionRejectInsert:  "Reject the pending insert",
+	HeldOptionResume:        "Release the hold and let the Automaton continue",
+}
+
+// heldOptionTradeoffs is the cost-and-risk note each option id carries, so
+// an unfamiliar operator can weigh every choice without knowing the daemon's
+// failure taxonomy or the action behind it. Every option id has a note;
+// they are plain text within the question tradeoffs byte cap and never
+// carry internal ids.
+var heldOptionTradeoffs = map[string]string{
+	HeldOptionHold:          "No action runs and nothing is spent; the risk is that the work stays held until someone unblocks it later",
+	HeldOptionRetry:         "Costs one more attempt of the retry budget on the same worker; it can fail the same way if the fault is in the work rather than the moment",
+	HeldOptionRetryStronger: "Costs a slower, more costly worker for the same task; it can still fail if the spec or the plan, not the worker, is at fault",
+	HeldOptionChangeSpec:    "Costs your time rewriting the spec before any more attempts; if the diagnosis is wrong the new spec fails too",
+	HeldOptionCancel:        "Ends the task for good and lets the Automaton roll up; the work behind the goal is lost until it is replanned",
+	HeldOptionApproveInsert: "Adds the pending member to the live Automation chain at once; a wrong insert keeps running in the chain until it is edited out",
+	HeldOptionRejectInsert:  "The insert stays pending because the daemon has no path to drop it, so it keeps waiting until it is approved or removed by hand",
+	HeldOptionResume:        "Re-admits the work into the run; if the condition that held it has not actually cleared it can be held again",
 }
 
 // heldOptionsByState is the option set each held state offers, in display
@@ -145,7 +161,9 @@ type HeldItem struct {
 // HeldOptions returns the question options for item in display order: the
 // state's real actions followed by the mandatory "hold" option. A nil item
 // or an unknown state gets the fallback set. Option ids are the stable
-// HeldOption* strings; labels are unique and non-empty.
+// HeldOption* strings, labels are unique and non-empty, and every option
+// carries a tradeoffs note naming its cost and its risk, so the rendered
+// question stands alone for an operator who does not know the daemon.
 func HeldOptions(item *HeldItem) []QuestionOption {
 	ids := heldOptionFallback
 	if item != nil {
@@ -155,7 +173,7 @@ func HeldOptions(item *HeldItem) []QuestionOption {
 	}
 	opts := make([]QuestionOption, 0, len(ids))
 	for _, id := range ids {
-		opts = append(opts, QuestionOption{ID: id, Label: heldOptionLabels[id]})
+		opts = append(opts, QuestionOption{ID: id, Label: heldOptionLabels[id], Tradeoffs: heldOptionTradeoffs[id]})
 	}
 	return opts
 }
@@ -166,39 +184,39 @@ func HeldOptions(item *HeldItem) []QuestionOption {
 // recommends an action. The rationale is one sentence.
 var heldRecommendationTable = map[HeldState]map[string]heldRecommendationRow{
 	HeldBlocked: {
-		"":                       {HeldOptionHold, "The block is waiting on something outside this task, so keeping it held until it clears or the operator rules is the safe default."},
-		FailureCategoryInfra:     {HeldOptionHold, "An infra block usually clears on its own, so the cheapest move is to keep it held."},
-		FailureCategoryContent:   {HeldOptionHold, "A content block needs operator input that has not arrived, so it should stay held."},
-		FailureCategoryScope:     {HeldOptionHold, "A scope block is the operator's ruling to make, so the Automaton should stay held."},
-		FailureCategoryPolicy:    {HeldOptionHold, "A policy block is the operator's ruling to make, so the Automaton should stay held."},
+		"":                     {HeldOptionHold, "The block is waiting on something outside this task, so keeping it held until it clears or the operator rules is the safe default."},
+		FailureCategoryInfra:   {HeldOptionHold, "An infra block usually clears on its own, so the cheapest move is to keep it held."},
+		FailureCategoryContent: {HeldOptionHold, "A content block needs operator input that has not arrived, so it should stay held."},
+		FailureCategoryScope:   {HeldOptionHold, "A scope block is the operator's ruling to make, so the Automaton should stay held."},
+		FailureCategoryPolicy:  {HeldOptionHold, "A policy block is the operator's ruling to make, so the Automaton should stay held."},
 	},
 	HeldReviewHeld: {
-		"":                       {HeldOptionHold, "The failure is unclassified, so keeping it held for operator review is the safe default."},
-		FailureCategoryInfra:     {HeldOptionRetry, "Infra failures are usually transient, so one more attempt on the same worker is the cheapest next step."},
-		FailureCategoryContent:   {HeldOptionChangeSpec, "Content failures point at the spec, so fixing the spec before any retry is the real fix."},
-		FailureCategoryScope:     {HeldOptionChangeSpec, "Scope failures mean the planned files do not match the work, so the spec or file set needs a change first."},
-		FailureCategoryPolicy:    {HeldOptionHold, "Policy failures are the operator's ruling to make, so the task should stay held."},
+		"":                     {HeldOptionHold, "The failure is unclassified, so keeping it held for operator review is the safe default."},
+		FailureCategoryInfra:   {HeldOptionRetry, "Infra failures are usually transient, so one more attempt on the same worker is the cheapest next step."},
+		FailureCategoryContent: {HeldOptionChangeSpec, "Content failures point at the spec, so fixing the spec before any retry is the real fix."},
+		FailureCategoryScope:   {HeldOptionChangeSpec, "Scope failures mean the planned files do not match the work, so the spec or file set needs a change first."},
+		FailureCategoryPolicy:  {HeldOptionHold, "Policy failures are the operator's ruling to make, so the task should stay held."},
 	},
 	HeldRevisionRequested: {
-		"":                       {HeldOptionChangeSpec, "A revision was requested, so changing the spec is the action that satisfies it."},
-		FailureCategoryInfra:     {HeldOptionChangeSpec, "A revision was requested, so changing the spec is the action that satisfies it."},
-		FailureCategoryContent:   {HeldOptionChangeSpec, "A revision was requested, so changing the spec is the action that satisfies it."},
-		FailureCategoryScope:     {HeldOptionChangeSpec, "A revision was requested, so changing the spec is the action that satisfies it."},
-		FailureCategoryPolicy:    {HeldOptionChangeSpec, "A revision was requested, so changing the spec is the action that satisfies it."},
+		"":                     {HeldOptionChangeSpec, "A revision was requested, so changing the spec is the action that satisfies it."},
+		FailureCategoryInfra:   {HeldOptionChangeSpec, "A revision was requested, so changing the spec is the action that satisfies it."},
+		FailureCategoryContent: {HeldOptionChangeSpec, "A revision was requested, so changing the spec is the action that satisfies it."},
+		FailureCategoryScope:   {HeldOptionChangeSpec, "A revision was requested, so changing the spec is the action that satisfies it."},
+		FailureCategoryPolicy:  {HeldOptionChangeSpec, "A revision was requested, so changing the spec is the action that satisfies it."},
 	},
 	HeldAwaitingDecision: {
-		"":                       {HeldOptionHold, "It is waiting on an operator decision, so keeping it held until the decision lands is the default."},
-		FailureCategoryInfra:     {HeldOptionHold, "It is waiting on an operator decision, so keeping it held until the decision lands is the default."},
-		FailureCategoryContent:   {HeldOptionHold, "It is waiting on an operator decision, so keeping it held until the decision lands is the default."},
-		FailureCategoryScope:     {HeldOptionHold, "It is waiting on an operator decision, so keeping it held until the decision lands is the default."},
-		FailureCategoryPolicy:    {HeldOptionHold, "It is waiting on an operator decision, so keeping it held until the decision lands is the default."},
+		"":                     {HeldOptionHold, "It is waiting on an operator decision, so keeping it held until the decision lands is the default."},
+		FailureCategoryInfra:   {HeldOptionHold, "It is waiting on an operator decision, so keeping it held until the decision lands is the default."},
+		FailureCategoryContent: {HeldOptionHold, "It is waiting on an operator decision, so keeping it held until the decision lands is the default."},
+		FailureCategoryScope:   {HeldOptionHold, "It is waiting on an operator decision, so keeping it held until the decision lands is the default."},
+		FailureCategoryPolicy:  {HeldOptionHold, "It is waiting on an operator decision, so keeping it held until the decision lands is the default."},
 	},
 	HeldPendingInsert: {
-		"":                       {HeldOptionHold, "The insert is waiting on operator approval, so approve or reject it explicitly rather than let it sit."},
-		FailureCategoryInfra:     {HeldOptionHold, "The insert is waiting on operator approval, so approve or reject it explicitly rather than let it sit."},
-		FailureCategoryContent:   {HeldOptionHold, "The insert is waiting on operator approval, so approve or reject it explicitly rather than let it sit."},
-		FailureCategoryScope:     {HeldOptionHold, "The insert is waiting on operator approval, so approve or reject it explicitly rather than let it sit."},
-		FailureCategoryPolicy:    {HeldOptionHold, "The insert is waiting on operator approval, so approve or reject it explicitly rather than let it sit."},
+		"":                     {HeldOptionHold, "The insert is waiting on operator approval, so approve or reject it explicitly rather than let it sit."},
+		FailureCategoryInfra:   {HeldOptionHold, "The insert is waiting on operator approval, so approve or reject it explicitly rather than let it sit."},
+		FailureCategoryContent: {HeldOptionHold, "The insert is waiting on operator approval, so approve or reject it explicitly rather than let it sit."},
+		FailureCategoryScope:   {HeldOptionHold, "The insert is waiting on operator approval, so approve or reject it explicitly rather than let it sit."},
+		FailureCategoryPolicy:  {HeldOptionHold, "The insert is waiting on operator approval, so approve or reject it explicitly rather than let it sit."},
 	},
 }
 
@@ -303,6 +321,11 @@ func HeldQuestionText(item *HeldItem) string {
 	if len(item.AvailableBackends) > 0 {
 		b.WriteString(" Available backends: " + strings.Join(item.AvailableBackends, ", ") + ".")
 	}
+	// The closing line names who decides and the enforced default, so the
+	// question is complete on its own for an unfamiliar operator: the
+	// decision is never left to the reader, and the default (hold, which
+	// acts on nothing) is stated next to the options it overrides.
+	b.WriteString(" You have the call: the default is hold, which acts on nothing and keeps the hold in place, or pick any option to act now.")
 	text := b.String()
 	if len(text) > questionTextMaxBytes {
 		text = strings.TrimRight(text[:questionTextMaxBytes], " ,;:")
