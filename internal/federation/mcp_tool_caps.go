@@ -81,6 +81,7 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_instantiate":                   CapAutonomousWrite,
 	"autonomous_prd_list":                          CapAutonomousList,
 	"autonomous_prd_plan_coverage_acknowledge":     CapAutonomousWrite,
+	"autonomous_prd_plan_coverage_get":             CapAutonomousRead,  // plan coverage read
 	"autonomous_prd_plan_review":                   CapAutonomousWrite, // plan review gate re-run
 	"autonomous_prd_reject":                        CapAutonomousWrite,
 	"autonomous_prd_remove_story":                  CapAutonomousWrite,

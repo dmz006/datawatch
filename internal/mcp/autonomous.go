@@ -123,6 +123,10 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("usage_backoff", mcpsdk.Description("Per-backend usage back-off mode: pause_backend (the default) holds autonomous dispatch to a backend while one of its sessions is rate-limited, until the parsed reset time or the maximum back-off; off disables only that automatic path (manual usage_backoff_set still works). Interactive session starts are never blocked.")),
 		mcpsdk.WithNumber("backoff_max_wait_minutes", mcpsdk.Description("Maximum usage back-off in whole minutes (>= 1, default 60), applied when a rate-limit message carries no reset time.")),
 		mcpsdk.WithNumber("plan_coverage_min_ratio", mcpsdk.Description("Minimum covered/total requirement ratio for a plan to pass the coverage gate; a number in (0,1] (e.g. 0.9 = 90%). Zero/negative and values above 1 both clamp to 1.0 (require full coverage — the safe default). The gate also fails on any structural finding regardless of ratio.")),
+		mcpsdk.WithBoolean("plan_coverage_suppress_created_files", mcpsdk.Description("On (the default), a requirement that appears only on the 'create Y' side of an 'X or create Y' alternative does not count as an unmatched requirement for coverage. Pass false to count every numbered requirement regardless.")),
+		mcpsdk.WithBoolean("plan_coverage_scoped_requirements", mcpsdk.Description("On (the default), only the numbered requirements inside the configured plan-coverage requirement sections count toward the coverage gate. Pass false to count numbered requirements from the whole spec.")),
+		mcpsdk.WithString("plan_coverage_requirement_sections", mcpsdk.Description("Comma-separated spec section names scanned for numbered requirements (default: scope,constraints; empty = that same default)")),
+		mcpsdk.WithNumber("plan_coverage_min_requirement_chars", mcpsdk.Description("Minimum characters a numbered line needs to be treated as a requirement (whole number >= 0; 0 = the 30-character default)")),
 		mcpsdk.WithString("plan_tier_max_inflight", mcpsdk.Description("Subscription plan tier inflight caps — tiers pro|max_5x|max_20x|api mapped to integer >= 0 (0 = unlimited). A PRD (or LLM) on a tier is admission-capped by that tier's value unless it or its LLM carries an explicit max_inflight > 0, which wins. Accepts a JSON object (e.g. {\"max_5x\":2}) or tier=value pairs (e.g. 'max_5x=2,api=0').")),
 		mcpsdk.WithString("plan_tier_allocation_usd", mcpsdk.Description("Notional dollar allocation per subscription plan tier (autonomous.plan_tier_allocation_usd) — tiers pro|max_5x|max_20x|api mapped to a number >= 0 (0 = not declared). It only feeds the allocation_pct estimate on a budget, which is informational and never blocks. A JSON object (e.g. {\"max_5x\":100}) replaces the whole table; tier=value pairs (e.g. 'pro=20,max_5x=100') set just those tiers and leave the others alone.")),
 		mcpsdk.WithString("planning_effort", mcpsdk.Description("BL41 effort hint for planning; alias: decomposition_effort")),
@@ -260,6 +264,21 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["plan_coverage_min_ratio"]; ok {
 			body["plan_coverage_min_ratio"] = req.GetFloat("plan_coverage_min_ratio", 0)
+		}
+		// The filter switches are presence-aware: an explicit false is sent
+		// (an off is meaningful — it counts every numbered requirement).
+		for _, key := range []string{"plan_coverage_suppress_created_files", "plan_coverage_scoped_requirements"} {
+			if _, ok := args[key]; ok {
+				body[key] = req.GetBool(key, false)
+			}
+		}
+		if _, ok := args["plan_coverage_requirement_sections"]; ok {
+			body["plan_coverage_requirement_sections"] = req.GetString("plan_coverage_requirement_sections", "")
+		}
+		if _, ok := args["plan_coverage_min_requirement_chars"]; ok {
+			if n := req.GetInt("plan_coverage_min_requirement_chars", 0); n >= 0 {
+				body["plan_coverage_min_requirement_chars"] = n
+			}
 		}
 	}
 	// Usage back-off (autonomous.usage_backoff / backoff_max_wait_minutes);
@@ -802,6 +821,26 @@ func (s *Server) handleAutonomousPRDPlanCoverageAcknowledge(_ context.Context, r
 	id := req.GetString("id", "")
 	body, _ := json.Marshal(map[string]string{"actor": req.GetString("actor", "operator"), "note": req.GetString("note", "")})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/plan_coverage/acknowledge", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// Plan-requirements coverage gate — read: fetch one Automaton's stored
+// coverage report (proxies GET /api/autonomous/prds/{id}/plan_coverage).
+func (s *Server) toolAutonomousPRDPlanCoverageGet() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_plan_coverage_get",
+		mcpsdk.WithDescription("Read one Automaton's stored plan-requirements coverage report (the plan-coverage gate record). Returns the report for that exact decomposed plan — matched and unmatched numbered requirements, any structural findings, and the overall verdict — plus the operator's acknowledgement, and the counts of findings the plan-coverage filters suppressed from the report (suppressed.created_files, suppressed.requirements). Read-only: it changes nothing and runs no gate, judge or scan."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+	)
+}
+func (s *Server) handleAutonomousPRDPlanCoverageGet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := strings.TrimSpace(req.GetString("id", ""))
+	if id == "" {
+		return toolErrorf("autonomous_prd_plan_coverage_get", "id is required"), nil
+	}
+	out, err := s.proxyGet("/api/autonomous/prds/"+id+"/plan_coverage", nil)
 	if err != nil {
 		return nil, err
 	}
