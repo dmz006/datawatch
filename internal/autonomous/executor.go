@@ -1768,6 +1768,17 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					metrics.QualityGatePassTotal.Inc()
 				}
 			}
+			// A task whose work is not committed is not complete. The check
+			// commits the task's own leftover files and holds the task (the
+			// way the setup-fault hold above does, consuming none of the
+			// auto_fix_retries budget) when files stay uncommitted. It runs
+			// before the post-verify SHA is captured so a rescue commit is
+			// the commit that gets pinned.
+			if held, herr := m.checkUncommittedWork(ctx, prd, t); herr != nil {
+				return herr
+			} else if held {
+				return nil
+			}
 			done := time.Now()
 			m.store.WithLock(func() { t.CompletedAt = &done })
 			// Pin this task's own commit (HEAD in its resolved dir — BL465

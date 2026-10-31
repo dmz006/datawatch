@@ -622,6 +622,14 @@ type AutomationConfig struct {
 	// and the EffectiveDiskAlertPercent accessor clamps any other value into
 	// 1..100.
 	DiskAlertPercent int `json:"disk_alert_percent,omitempty"`
+
+	// UncommittedWorkPolicy: hold | warn | off. Empty or an unrecognized
+	// value reads as hold via EffectiveUncommittedWorkPolicy.
+	UncommittedWorkPolicy string `json:"uncommitted_work_policy,omitempty"`
+
+	// UncommittedWorkScope: task_files | worktree. Empty or an unrecognized
+	// value reads as task_files via EffectiveUncommittedWorkScope.
+	UncommittedWorkScope string `json:"uncommitted_work_scope,omitempty"`
 }
 
 // DefaultAutomationTriageAlertMinutes — the autonomous.automation.
@@ -702,6 +710,28 @@ func (c AutomationConfig) EffectiveCleanupMode() string {
 	default:
 		return config.CleanupModeReport
 	}
+}
+
+// EffectiveUncommittedWorkPolicy returns the uncommitted-work policy in
+// effect: warn and off are explicit operator choices, an empty or unknown
+// value reads config.UncommittedWorkPolicyHold, the safe default.
+func (c AutomationConfig) EffectiveUncommittedWorkPolicy() string {
+	switch c.UncommittedWorkPolicy {
+	case config.UncommittedWorkPolicyWarn, config.UncommittedWorkPolicyOff:
+		return c.UncommittedWorkPolicy
+	default:
+		return config.UncommittedWorkPolicyHold
+	}
+}
+
+// EffectiveUncommittedWorkScope returns the uncommitted-work scope in effect:
+// worktree is the explicit choice, an empty or unknown value reads
+// config.UncommittedWorkScopeTaskFiles.
+func (c AutomationConfig) EffectiveUncommittedWorkScope() string {
+	if c.UncommittedWorkScope == config.UncommittedWorkScopeWorktree {
+		return config.UncommittedWorkScopeWorktree
+	}
+	return config.UncommittedWorkScopeTaskFiles
 }
 
 // EffectiveCleanupRetentionHours returns the cleanup retention window in
@@ -1323,6 +1353,10 @@ type Manager struct {
 	// lookup. nil means defaultDriftGitRunner; tests inject a counting
 	// fake.
 	driftGit driftGitRunner
+
+	// taskCommit — commits a task's leftover files when the uncommitted-work
+	// check rescues them. nil means DefaultTaskCommit; tests inject a fake.
+	taskCommit TaskCommitFn
 
 	// memoryVerifierFn (BL387 Phase 1a) — when set, called once per verification
 	// issue after verify() returns !OK. Writes the issue to prd-shared scope so
