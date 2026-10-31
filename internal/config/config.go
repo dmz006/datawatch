@@ -2590,6 +2590,12 @@ type AutonomousConfig struct {
 	// many tries, the backoff between them, and what happens when they run
 	// out. An unset key reads its default. See InfraRetryConfig.
 	InfraRetry InfraRetryConfig `yaml:"infra_retry,omitempty" json:"infra_retry,omitempty"`
+	// RequestWatch — observation of the in-flight model request of a worker
+	// or verifier whose model runs on a registered compute node, so a hung
+	// request can be told from a slow one. Observation only: it never ends a
+	// worker or retries. An unset key reads its default. See
+	// RequestWatchConfig.
+	RequestWatch RequestWatchConfig `yaml:"request_watch,omitempty" json:"request_watch,omitempty"`
 
 	// BL369 — prompt injection guard. When InjectionGuard is true, user-
 	// supplied PRD/task specs are scanned for known injection phrases at
@@ -5560,6 +5566,9 @@ func validateLoaded(cfg *Config) error {
 	}
 	if err := cfg.Autonomous.VerifierPolicy.Validate(); err != nil {
 		return fmt.Errorf("autonomous.%w", err)
+	}
+	if err := cfg.Autonomous.RequestWatch.Validate(); err != nil {
+		return err
 	}
 	return nil
 }
