@@ -209,7 +209,7 @@ changing the advice.
 |---|---|
 | **YAML** | `usage.calculator.*` in `~/.datawatch/config.yaml` (policy, variant, `safety_points`, `cost_per_task_points`, `baseline_per_24h`, `max_lanes`, `reset_weekday`, `reset_time`, `reset_zone`, `keeper`) |
 | **CLI** | `datawatch usage advice [--lanes N]` (the what-if), `datawatch usage reading add --percent 42`, `datawatch usage reading list`, `datawatch usage reading delete <id>`, `datawatch usage extra-credit <points>`, `datawatch usage remaining-work <points\|clear>`; settings with `datawatch config set usage.calculator.<key> <value>` |
-| **Web UI** | The calculator screen in the PWA and its Settings fields. These are on file and not yet shipped; use one of the other methods until then. |
+| **Web UI** | The calculator card in the PWA and its Settings fields; see [parity status](../parity-status.md) for what has shipped. The reading form has no lanes input: each reading is stamped by the daemon. The card shows a **Claude lanes running now** line (or "not known" when no stamped reading says) and a **What if** stepper beside the policy. The stepper sets the lanes to run in the what-if only, is never saved, and never changes the lanes running. |
 | **REST API** | `GET /api/usage/advice` (`lanes` is the what-if), `GET` and `POST /api/usage/readings` (`lanes` on the body is deprecated and ignored), `DELETE /api/usage/readings/<id>`, `PUT /api/usage/extra-credit`, `PUT /api/usage/remaining-work`; settings with `PUT /api/config` |
 | **Comm channel** | `usage advice [lanes=N]` (the what-if), `usage reading <percent> [session=N]`, `usage extra <points>`, `usage work <points\|clear>`; settings with `configure usage.calculator.<key>=<value>` |
 

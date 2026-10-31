@@ -5358,6 +5358,10 @@ paths:
                   readings:
                     type: array
                     items: {$ref: "#/components/schemas/UsageReading"}
+                  is_keeper: {type: boolean, description: True when this daemon owns the series}
+                  stale: {type: boolean, description: On a peer, true when the keeper could not be read and the record is the last copy found on disk}
+                  stale_reason: {type: string, description: Why the record is stale; present only when stale}
+                  copied_at: {type: string, format: date-time, description: When the stale copy was taken; present only when stale}
         "503": {description: No series locally or from the peer, or the series is not available}
     post:
       summary: Append one reading to the shared record. source must be typed; pasted and account are planned and return 501. On a peer the write is forwarded to the keeper, which refuses the write when it is unreachable
