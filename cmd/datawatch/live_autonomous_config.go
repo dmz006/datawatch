@@ -71,6 +71,31 @@ func failureEscalationFromConfig(c config.FailureEscalationConfig) autonomouspkg
 	return p
 }
 
+// copyInfraRetry copies the infra_retry block so the manager's mirror does
+// not alias the daemon config's slices or bool pointers. nil lists stay nil
+// (unset reads the default) and non-nil empty lists stay non-nil (explicit).
+func copyInfraRetry(c config.InfraRetryConfig) config.InfraRetryConfig {
+	out := c
+	if c.BackoffSeconds != nil {
+		out.BackoffSeconds = append([]int{}, c.BackoffSeconds...)
+	}
+	if c.Categories != nil {
+		out.Categories = append([]string{}, c.Categories...)
+	}
+	out.Enabled = copyBoolPtr(c.Enabled)
+	out.RetryDependents = copyBoolPtr(c.RetryDependents)
+	out.RaiseQuestion = copyBoolPtr(c.RaiseQuestion)
+	return out
+}
+
+func copyBoolPtr(p *bool) *bool {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
 // cloneNotifyDefaultEvents copies the autonomous.notify.default_events
 // slice, preserving nil (unset — resolution falls back to the built-in
 // DefaultNotifyEvents set) vs a non-nil empty slice (explicitly turned

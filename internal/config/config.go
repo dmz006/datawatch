@@ -2572,6 +2572,11 @@ type AutonomousConfig struct {
 	// when it is held for operator review. Automaton and task overrides win
 	// per field. See FailureEscalationConfig.
 	FailureEscalation FailureEscalationConfig `yaml:"failure_escalation" json:"failure_escalation"`
+	// InfraRetry — retry policy for infrastructure failures (spawn error,
+	// storage write, session killed before delivery, daemon restart): how
+	// many tries, the backoff between them, and what happens when they run
+	// out. An unset key reads its default. See InfraRetryConfig.
+	InfraRetry InfraRetryConfig `yaml:"infra_retry,omitempty" json:"infra_retry,omitempty"`
 
 	// BL369 — prompt injection guard. When InjectionGuard is true, user-
 	// supplied PRD/task specs are scanned for known injection phrases at

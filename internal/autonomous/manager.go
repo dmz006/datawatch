@@ -452,6 +452,11 @@ type Config struct {
 	// win per field; see resolveFailureEscalation. An unset MaxFailures reads
 	// as 3 and a nil Enabled reads as true.
 	FailureEscalation FailureEscalationPolicy `json:"failure_escalation"`
+	// InfraRetry mirrors autonomous.infra_retry: the retry policy for
+	// infrastructure failures. Unset keys read their defaults through the
+	// Effective* accessors; the live config round-trip carries the block so
+	// a config write takes effect without a restart.
+	InfraRetry config.InfraRetryConfig `json:"infra_retry"`
 	// MaxEnginesPerNode is how many local-model engine sessions one
 	// compute node may run at once. 1 = one per node (default). Mirrors
 	// config.AutonomousConfig.MaxEnginesPerNode; the runtime copy is what
