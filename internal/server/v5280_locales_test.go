@@ -128,6 +128,10 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"prd_task_waiting_decision",
 		"settings_automata_questions_decision_gate",
 		"settings_automata_questions_decision_gate_mode",
+		// Identity card actions: the explicit clear and the way back from it.
+		"identity_btn_reset",
+		"identity_btn_revert",
+		"identity_btn_restore",
 		"settings_tags_default_view",
 		"settings_tags_attention_statuses",
 		"settings_tags_default_match_mode",

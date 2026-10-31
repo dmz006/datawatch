@@ -600,6 +600,17 @@
   "guardrail_type_skill": "skill",
   "identity_btn_reset": "リセット",
   "identity_btn_save": "保存",
+  "identity_btn_revert": "元に戻す",
+  "identity_btn_restore": "復元",
+  "identity_reset_confirm": "保存済みのアイデンティティを消去しますか？バックアップは残り、「復元」で元に戻せます。",
+  "identity_reset_done_toast": "アイデンティティを消去しました（バックアップは保持）",
+  "identity_restore_title": "バックアップからアイデンティティを復元",
+  "identity_restore_none": "アイデンティティのバックアップはまだありません。",
+  "identity_restore_confirm": "%1$s に保存されたアイデンティティを復元しますか？現在のアイデンティティは先にバックアップされるため、元に戻せます。",
+  "identity_restore_done_toast": "アイデンティティを復元しました",
+  "identity_restore_row_fields": "%1$d 項目を入力済み",
+  "identity_backups_keep_saved_toast": "バックアップ保持数を保存しました",
+  "identity_backups_keep_invalid": "1 以上の整数を入力してください",
   "identity_field_focus": "現在のフォーカス",
   "identity_field_focus_ph": "今集中していること",
   "identity_field_goals": "北極星の目標 (1行に1つ)",
@@ -2928,5 +2939,6 @@
   "cleanup_disk_alert_badge": "Automata disk alert",
   "cleanup_disk_ok_badge": "Automata disk ok",
   "cleanup_disk_alert_last": "Last Automata disk alert: %1$s",
-  "cleanup_failed": "Could not load the Automata cleanup status: %1$s"
+  "cleanup_failed": "Could not load the Automata cleanup status: %1$s",
+  "settings_identity_backups_to_keep": "保持するアイデンティティのバックアップ数（整数、最小 1、既定 10）"
 }

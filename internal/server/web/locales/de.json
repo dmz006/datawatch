@@ -600,6 +600,17 @@
   "guardrail_type_skill": "skill",
   "identity_btn_reset": "Zurücksetzen",
   "identity_btn_save": "Speichern",
+  "identity_btn_revert": "Zurückladen",
+  "identity_btn_restore": "Wiederherstellen",
+  "identity_reset_confirm": "Die gespeicherte Identität löschen? Eine Sicherung bleibt erhalten, und mit „Wiederherstellen“ lässt sie sich zurückholen.",
+  "identity_reset_done_toast": "Identität gelöscht; eine Sicherung wurde behalten",
+  "identity_restore_title": "Identität aus einer Sicherung wiederherstellen",
+  "identity_restore_none": "Noch keine Identitätssicherungen vorhanden.",
+  "identity_restore_confirm": "Die am %1$s gespeicherte Identität wiederherstellen? Die aktuelle Identität wird zuvor gesichert, sodass sich dies rückgängig machen lässt.",
+  "identity_restore_done_toast": "Identität wiederhergestellt",
+  "identity_restore_row_fields": "%1$d Felder ausgefüllt",
+  "identity_backups_keep_saved_toast": "Sicherungslimit gespeichert",
+  "identity_backups_keep_invalid": "Bitte eine ganze Zahl ab 1 eingeben",
   "identity_field_focus": "Aktueller Fokus",
   "identity_field_focus_ph": "worauf Sie sich gerade konzentrieren",
   "identity_field_goals": "Nordstern-Ziele (eines pro Zeile)",
@@ -2928,5 +2939,6 @@
   "cleanup_disk_alert_badge": "Automata disk alert",
   "cleanup_disk_ok_badge": "Automata disk ok",
   "cleanup_disk_alert_last": "Last Automata disk alert: %1$s",
-  "cleanup_failed": "Could not load the Automata cleanup status: %1$s"
+  "cleanup_failed": "Could not load the Automata cleanup status: %1$s",
+  "settings_identity_backups_to_keep": "Aufzubewahrende Identitätssicherungen (ganze Zahl, mindestens 1, Standard 10)"
 }

@@ -600,6 +600,17 @@
   "guardrail_type_skill": "skill",
   "identity_btn_reset": "Réinitialiser",
   "identity_btn_save": "Enregistrer",
+  "identity_btn_revert": "Rétablir",
+  "identity_btn_restore": "Restaurer",
+  "identity_reset_confirm": "Effacer l’identité enregistrée ? Une sauvegarde est conservée et Restaurer peut la récupérer.",
+  "identity_reset_done_toast": "Identité effacée ; une sauvegarde a été conservée",
+  "identity_restore_title": "Restaurer l’identité depuis une sauvegarde",
+  "identity_restore_none": "Aucune sauvegarde d’identité pour le moment.",
+  "identity_restore_confirm": "Restaurer l’identité enregistrée le %1$s ? L’identité actuelle est d’abord sauvegardée, l’opération peut donc être annulée.",
+  "identity_restore_done_toast": "Identité restaurée",
+  "identity_restore_row_fields": "%1$d champs renseignés",
+  "identity_backups_keep_saved_toast": "Limite de sauvegardes enregistrée",
+  "identity_backups_keep_invalid": "Utilisez un nombre entier supérieur ou égal à 1",
   "identity_field_focus": "Focus actuel",
   "identity_field_focus_ph": "ce sur quoi vous vous concentrez",
   "identity_field_goals": "Objectifs Étoile-Polaire (un par ligne)",
@@ -2928,5 +2939,6 @@
   "cleanup_disk_alert_badge": "Automata disk alert",
   "cleanup_disk_ok_badge": "Automata disk ok",
   "cleanup_disk_alert_last": "Last Automata disk alert: %1$s",
-  "cleanup_failed": "Could not load the Automata cleanup status: %1$s"
+  "cleanup_failed": "Could not load the Automata cleanup status: %1$s",
+  "settings_identity_backups_to_keep": "Sauvegardes d’identité à conserver (nombre entier, minimum 1, 10 par défaut)"
 }
