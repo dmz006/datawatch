@@ -16,7 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // TestMain keeps the whole package from waiting out real back-off delays: any
@@ -199,7 +201,7 @@ func TestInfraRetry_TransientRetriesAndSucceeds(t *testing.T) {
 func TestInfraRetry_StorageWriteError(t *testing.T) {
 	r := newInfraExecRun(t, nil, nil)
 	// The failure arrives as the text of a failed verification, not an error.
-	verify := verifyFirst(VerificationResult{OK: false, Summary: "could not save: disk quota exceeded"}, nil)
+	verify := verifyFirst(VerificationResult{OK: false, Category: "infra", Summary: "could not save: disk quota exceeded"}, nil)
 	got, task := r.run(t, nil, verify)
 	assertRetriedOnce(t, r, got, task, config.InfraRetryClassStorageWrite, "disk quota exceeded")
 }
@@ -248,6 +250,32 @@ func TestInfraRetry_DaemonRestart(t *testing.T) {
 	}
 }
 
+// A restart costs the task no attempt: with one auto-fix retry configured the
+// replacement still gets its own attempt and that retry.
+func TestInfraRetry_DaemonRestartKeepsAttemptBudget(t *testing.T) {
+	r := newInfraExecRun(t, nil, func(task *Task) {
+		task.Status = TaskInProgress
+		task.SessionID = "sess-before-restart"
+	})
+	r.m.mu.Lock()
+	r.m.cfg.AutoFixRetries = 1
+	r.m.mu.Unlock()
+	verify := verifyFirst(VerificationResult{OK: false, Summary: "the parser test still fails"}, nil)
+	_, task := r.run(t, nil, verify)
+	if task.Status != TaskCompleted {
+		t.Fatalf("task status = %q (error %q), want completed on the retry", task.Status, task.Error)
+	}
+	if r.spawned() != 2 {
+		t.Errorf("spawns = %d, want 2 (the replacement and its one retry)", r.spawned())
+	}
+	if len(task.InfraRetries) != 1 || task.InfraRetries[0].Class != config.InfraRetryClassDaemonRestart {
+		t.Errorf("infra retries = %+v, want one daemon_restart", task.InfraRetries)
+	}
+	if len(task.Attempts) != 1 || task.EscalationFailures != 1 {
+		t.Errorf("only the verification failure counts: attempts %d, failures %d", len(task.Attempts), task.EscalationFailures)
+	}
+}
+
 func TestInfraRetry_SpawnError(t *testing.T) {
 	r := newInfraExecRun(t, nil, nil)
 	got, task := r.run(t, failFirstSpawnN(errors.New("tmux: server exited unexpectedly")), passingVerify)
@@ -287,6 +315,29 @@ func TestInfraRetry_NonTransientDoesNotRetry(t *testing.T) {
 	}
 }
 
+// A content failure whose verifier text quotes an infrastructure phrase is
+// still a content failure.
+func TestInfraRetry_NonTransientQuotingInfraPhraseDoesNotRetry(t *testing.T) {
+	r := newInfraExecRun(t, nil, nil)
+	verify := func(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
+		return VerificationResult{
+			OK:      false,
+			Summary: "the handler must report 'no space left on device' but returns a generic error",
+			Issues:  []string{"expected the message \"worker spawn failed\" in the log"},
+		}, nil
+	}
+	_, task := r.run(t, nil, verify)
+	if len(task.InfraRetries) != 0 || task.InfraRetryCount != 0 {
+		t.Errorf("a content failure quoting a phrase was retried as infrastructure: %+v", task.InfraRetries)
+	}
+	if s := r.slept(); len(s) != 0 {
+		t.Errorf("slept %v, want no wait", s)
+	}
+	if task.EscalationFailures == 0 || len(task.Attempts) == 0 {
+		t.Errorf("the failure took a different path: failures %d, attempts %d", task.EscalationFailures, len(task.Attempts))
+	}
+}
+
 func TestInfraRetry_DisabledDoesNotRetry(t *testing.T) {
 	off := false
 	r := newInfraExecRun(t, func(c *config.InfraRetryConfig) { c.Enabled = &off }, nil)
@@ -299,6 +350,27 @@ func TestInfraRetry_DisabledDoesNotRetry(t *testing.T) {
 	}
 	if task.Status == TaskCompleted || r.spawned() != 1 {
 		t.Errorf("status %q after %d spawns, want the spawn error to stand", task.Status, r.spawned())
+	}
+	// The error text is what it was before the feature existed.
+	if !strings.Contains(task.Error, "spawn: tmux: server exited unexpectedly") || strings.Contains(task.Error, InfraSpawnFailureReason) {
+		t.Errorf("task error = %q, want the unchanged \"spawn: <cause>\" text", task.Error)
+	}
+}
+
+// Capacity, workspace-lock and cooldown refusals are waits, never spawn faults.
+func TestIsSpawnWaitError(t *testing.T) {
+	for _, err := range []error{
+		errors.New("start: max sessions reached"),
+		errors.New("workspace lock: another agent owns the branch"),
+		fmt.Errorf("capacity: %w", capacity.ErrWaitTimeout),
+		fmt.Errorf("start: %w", session.ErrGlobalCooldown),
+	} {
+		if !isSpawnWaitError(err) {
+			t.Errorf("isSpawnWaitError(%q) = false, want true", err)
+		}
+	}
+	if isSpawnWaitError(errors.New("tmux: server exited unexpectedly")) {
+		t.Errorf("a plain spawn failure was read as a wait")
 	}
 }
 

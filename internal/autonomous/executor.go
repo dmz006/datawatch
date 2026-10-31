@@ -1365,8 +1365,16 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// above found no live worker. That is an infrastructure retry, not
 			// a failed attempt, and waits no longer than the first delay.
 			if inheritedSession && t.SessionID != "" && (t.Status == TaskInProgress || t.Status == TaskVerifying) {
-				if m.retryAfterDaemonRestart(ctx, prd, t) {
+				retried, stop := m.retryAfterDaemonRestart(ctx, prd, t)
+				if stop {
 					return nil
+				}
+				if retried {
+					// Offset the loop's post-iteration attempt++: the restart
+					// costs the task no attempt. The next pass spawns the
+					// replacement (inherited is false by then).
+					attempt--
+					continue
 				}
 			}
 			if t.SessionID != "" {
@@ -1580,14 +1588,20 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// automatic retries restore again.
 			m.store.WithLock(func() { t.CleanRestart = false })
 			if err != nil {
-				err = &InfraSpawnError{Cause: err}
-				act, ierr := m.handleInfraFailure(ctx, prd, t, run, err)
-				switch act {
-				case infraFailureRetry:
-					attempt-- // offset the loop's post-iteration attempt++
-					continue
-				case infraFailureStop:
-					return ierr
+				// A spawn error means the worker never started, so it is judged as
+				// an infrastructure failure. The wrap is for classification only:
+				// the error returned when it is not retried keeps its own text. A
+				// capacity, workspace-lock or cooldown refusal is a wait, not a
+				// fault, and is never wrapped.
+				if !isSpawnWaitError(err) {
+					act, ierr := m.handleInfraFailure(ctx, prd, t, run, &InfraSpawnError{Cause: err})
+					switch act {
+					case infraFailureRetry:
+						attempt-- // offset the loop's post-iteration attempt++
+						continue
+					case infraFailureStop:
+						return ierr
+					}
 				}
 				return fmt.Errorf("spawn: %w", err)
 			}
@@ -1712,13 +1726,13 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			vr = VerificationResult{OK: true, Summary: "no verifier configured", VerifiedAt: time.Now()}
 		}
 		// The attempt got past delivery and produced a verification result, so an
-		// earlier infrastructure incident is over. A failed result whose text
-		// reports a storage write error is still that incident.
+		// earlier infrastructure incident is over. A failed result the verifier
+		// itself marks as an infrastructure failure, and whose summary reports a
+		// storage write error, is still that incident. A content failure is never
+		// read as one, even when its text quotes such a phrase.
 		infraText := ""
-		if !vr.OK {
-			if text := vr.Summary + "\n" + strings.Join(vr.Issues, "\n"); isInfraText(text) {
-				infraText = text
-			}
+		if !vr.OK && vr.Category == "infra" && isInfraText(vr.Summary) {
+			infraText = vr.Summary
 		}
 		textCounted := false
 		if infraText != "" {
@@ -2122,12 +2136,14 @@ func (m *Manager) handleInfraFailure(ctx context.Context, prd *PRD, t *Task, run
 // retryAfterDaemonRestart records a daemon restart under a task whose worker is
 // gone as an infrastructure retry (class daemon_restart), not as a failed
 // attempt, and waits at most the first configured delay before the caller
-// launches the replacement. It reports true when the context ended during the
-// wait. With the feature off, or the class not retried, it does nothing.
-func (m *Manager) retryAfterDaemonRestart(ctx context.Context, prd *PRD, t *Task) bool {
+// launches the replacement. It reports retried when the restart was recorded
+// and waited out (the caller offsets its attempt counter) and stop when the
+// context ended during the wait. With the feature off, or the class not
+// retried, it does nothing.
+func (m *Manager) retryAfterDaemonRestart(ctx context.Context, prd *PRD, t *Task) (retried, stop bool) {
 	plan, ok := m.planInfraRetry(prd, t, ErrDaemonRestart)
 	if !ok {
-		return false
+		return false, false
 	}
 	if first := infraBackoffDelay(m.infraRetryConfig(), 1); plan.Delay > first {
 		plan.Delay = first
@@ -2135,7 +2151,10 @@ func (m *Manager) retryAfterDaemonRestart(ctx context.Context, prd *PRD, t *Task
 	log.Printf("[autonomous] prd=%s task=%s: daemon restarted while the task was running, retry %d of %d in %s",
 		prd.ID, t.ID, plan.Number, plan.MaxTries, plan.Delay)
 	m.recordInfraRetry(prd, t, plan)
-	return m.waitInfraRetry(ctx, prd, t, plan) != nil
+	if m.waitInfraRetry(ctx, prd, t, plan) != nil {
+		return false, true
+	}
+	return true, false
 }
 
 func (m *Manager) deleteTaskSession(sessionID string) {
