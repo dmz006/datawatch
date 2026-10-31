@@ -454,6 +454,12 @@ func (c *Coordinator) snapshotMembers(a *Automation) map[string]memberInfo {
 			snap[m.ID] = memberInfo{name: name, verdict: c.startVerdict(a, &a.Members[i])}
 		case MemberKindJoin:
 			snap[m.ID] = memberInfo{name: "join " + m.ID}
+		case MemberKindPending:
+			name := "pending item " + m.PendingItemID
+			if item, ok := c.m.pendingItemByID(m.PendingItemID); ok && item.Title != "" {
+				name = item.Title
+			}
+			snap[m.ID] = memberInfo{name: name} // no Automaton and no budget gate
 		default:
 			snap[m.ID] = memberInfo{name: "fork " + m.ID, verdict: c.startVerdict(a, &a.Members[i])}
 		}

@@ -250,6 +250,17 @@ func (m *Manager) cancelAutomation(id, actor string, req cancelRequest, expected
 		now := time.Now()
 		for i := range a.Members {
 			mem := &a.Members[i]
+			if mem.kind() == MemberKindPending && mem.Status == MemberRunning {
+				// A pending item holds the cursor but runs nothing, so it is not
+				// in flight and nothing needs ending: it is cancelled whatever
+				// cancel_in_flight says.
+				mem.Status = MemberCancelled
+				mem.Outcome = "cancelled"
+				mem.FinishedAt = &now
+				mem.EdgeTaken = ""
+				dropCursor(a, mem.ID)
+				continue
+			}
 			switch mem.Status {
 			case MemberRunning:
 				inFlightIDs = append(inFlightIDs, mem.ID)
@@ -356,7 +367,8 @@ func (m *Manager) memberCanceller() memberCanceller {
 func inFlightMembers(a *Automation) []AutomationMember {
 	var out []AutomationMember
 	for _, mem := range a.Members {
-		if mem.Status == MemberRunning {
+		// A pending item member may hold the cursor, but it runs nothing.
+		if mem.Status == MemberRunning && mem.kind() != MemberKindPending {
 			out = append(out, mem)
 		}
 	}

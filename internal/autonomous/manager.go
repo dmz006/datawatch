@@ -2202,6 +2202,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	if err != nil {
 		return nil, err
 	}
+	automs.SetPendingItemLookup(pending.Get)
 	repoWatch, err := NewRepoCIWatchStore(st.dir)
 	if err != nil {
 		return nil, err
