@@ -252,3 +252,92 @@ func TestUsageCalcAdviceAndRemainingWorkCapabilityGates(t *testing.T) {
 		t.Errorf("advice with both caps = %d, want 200", got.Code)
 	}
 }
+
+// adviceWithQuery serves one advice call and decodes the result.
+func adviceWithQuery(t *testing.T, s *Server, query string) usagecalc.AdviceResult {
+	t.Helper()
+	rr := doUsage(t, s, http.MethodGet, "/api/usage/advice"+query, "", s.handleUsageAdvice)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET advice%s = %d: %s", query, rr.Code, rr.Body.String())
+	}
+	var res usagecalc.AdviceResult
+	if err := json.Unmarshal(rr.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode advice: %v", err)
+	}
+	return res
+}
+
+func postUsagePercent(t *testing.T, s *Server, pct float64) {
+	t.Helper()
+	body := jsonMarshalUsage(t, usagecalc.Reading{At: time.Now().UTC().Add(-time.Minute), Percent: fptrUsage(pct), Source: usagecalc.SourceTyped})
+	if rr := doUsage(t, s, http.MethodPost, "/api/usage/readings", body, s.handleUsageReadings); rr.Code != http.StatusOK {
+		t.Fatalf("POST reading = %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestUsageCalcAdviceLanesWhatIf: the lanes query parameter is a what-if. An explicit
+// lanes=0 is honoured and differs from leaving it out, and the lane numbers of the reading
+// and the ledger do not move with it.
+func TestUsageCalcAdviceLanesWhatIf(t *testing.T) {
+	s := newUsageCalcServer(t)
+	s.inferenceReg = laneFakeRegistry(t)
+	s.SetCapacity(laneFakeLedger(t, "task-a", "task-b"))
+	postUsagePercent(t, s, 40) // stamped live with the two Claude lanes in the ledger
+
+	unset := adviceWithQuery(t, s, "")
+	zero := adviceWithQuery(t, s, "?lanes=0")
+	one := adviceWithQuery(t, s, "?lanes=1")
+
+	if unset.Advice.Lanes != 2 {
+		t.Errorf("no lanes parameter: planned with %d lanes, want the stamped 2", unset.Advice.Lanes)
+	}
+	if zero.Advice.Lanes != 0 || zero.Advice.WhatIfLanes == nil || *zero.Advice.WhatIfLanes != 0 {
+		t.Errorf("lanes=0: planned with %d lanes, what-if %v; want an honoured 0", zero.Advice.Lanes, zero.Advice.WhatIfLanes)
+	}
+	if one.Advice.Lanes != 1 {
+		t.Errorf("lanes=1: planned with %d lanes, want 1", one.Advice.Lanes)
+	}
+	if unset.Advice.WhatIfLanes != nil {
+		t.Errorf("no lanes parameter: what-if is %d, want unset", *unset.Advice.WhatIfLanes)
+	}
+	for name, res := range map[string]usagecalc.AdviceResult{"unset": unset, "zero": zero} {
+		if res.Advice.LanesStamped == nil || *res.Advice.LanesStamped != 2 {
+			t.Errorf("%s: lanes stamped = %v, want 2", name, res.Advice.LanesStamped)
+		}
+		if res.Advice.LanesRunningNow == nil || *res.Advice.LanesRunningNow != 2 {
+			t.Errorf("%s: lanes running now = %v, want the ledger's 2", name, res.Advice.LanesRunningNow)
+		}
+		for form, text := range map[string]string{"cli": res.Text.CLI, "comm": res.Text.Comm} {
+			if !strings.Contains(text, "Claude lanes running now") || !strings.Contains(text, "Lanes stamped on the newest reading") {
+				t.Errorf("%s %s form lacks the lane numbers:\n%s", name, form, text)
+			}
+		}
+	}
+	if !strings.Contains(zero.Text.CLI, "What-if lanes (not saved): 0") {
+		t.Errorf("lanes=0 CLI form lacks the what-if line:\n%s", zero.Text.CLI)
+	}
+}
+
+// TestUsageCalcAdviceLanesRunningNow: the ledger counter reaches the service, and the field
+// is null while no ledger is wired.
+func TestUsageCalcAdviceLanesRunningNow(t *testing.T) {
+	s := newUsageCalcServer(t)
+	postUsagePercent(t, s, 40)
+
+	rr := doUsage(t, s, http.MethodGet, "/api/usage/advice", "", s.handleUsageAdvice)
+	var raw struct {
+		Advice map[string]json.RawMessage `json:"advice"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode advice: %v", err)
+	}
+	if v, ok := raw.Advice["lanes_running_now"]; !ok || string(v) != "null" {
+		t.Errorf("no ledger: lanes_running_now = %s (present %v), want null", v, ok)
+	}
+
+	s.inferenceReg = laneFakeRegistry(t)
+	s.SetCapacity(laneFakeLedger(t, "task-a"))
+	if got := adviceWithQuery(t, s, "").Advice.LanesRunningNow; got == nil || *got != 1 {
+		t.Errorf("one Claude lease: lanes running now = %v, want 1", got)
+	}
+}

@@ -2,6 +2,7 @@ package usagecalc
 
 import (
 	"context"
+	"encoding/json"
 	"math"
 	"reflect"
 	"strings"
@@ -49,7 +50,7 @@ func newServiceFixture(t *testing.T, settings Settings, queue QueueCounter) *ser
 func (f *serviceFixture) seedReading(t *testing.T) {
 	t.Helper()
 	pct, lanes := serviceReadingPct, serviceReadingLn
-	if _, err := f.store.Append(Reading{At: serviceReadingAt, Percent: &pct, Lanes: &lanes, Source: SourceTyped}); err != nil {
+	if _, err := f.store.Append(Reading{At: serviceReadingAt, Percent: &pct, Lanes: &lanes, LanesSource: LanesLive, Source: SourceTyped}); err != nil {
 		t.Fatalf("append reading: %v", err)
 	}
 }
@@ -365,68 +366,213 @@ func TestServiceQueueEstimateAndTypedOverride(t *testing.T) {
 	}
 }
 
+// laneReading appends a percent reading with a lane stamp to the fixture's store.
+func (f *serviceFixture) laneReading(at time.Time, pct float64, lanes *int, source string) {
+	f.t.Helper()
+	if _, err := f.store.Append(Reading{At: at, Percent: &pct, Lanes: lanes, LanesSource: source, Source: SourceTyped}); err != nil {
+		f.t.Fatalf("append reading: %v", err)
+	}
+}
+
+func (f *serviceFixture) advice(o Options) *AdviceResult {
+	f.t.Helper()
+	res, err := f.svc.Advice(context.Background(), o)
+	if err != nil {
+		f.t.Fatalf("Advice: %v", err)
+	}
+	return res
+}
+
 func TestServiceLanesChain(t *testing.T) {
-	// Options, then the newest reading that names lanes, then the stored maximum, then
-	// the package default.
+	// The what-if, then the lanes of the newest stamped reading, then the stored maximum,
+	// then the package default.
 	f := newServiceFixture(t, Settings{Reset: serviceReset}, nil)
-	f.seedReading(t) // 3 lanes
+	f.seedReading(t) // 3 lanes, live
 
-	res, err := f.svc.Advice(context.Background(), Options{})
-	if err != nil {
-		t.Fatalf("Advice: %v", err)
+	if res := f.advice(Options{}); res.Advice.Lanes != 3 {
+		t.Errorf("stamped lanes: got %d; want 3", res.Advice.Lanes)
 	}
-	if res.Advice.Lanes != 3 {
-		t.Errorf("reading lanes: got %d; want 3", res.Advice.Lanes)
-	}
-	res, err = f.svc.Advice(context.Background(), Options{Lanes: 1})
-	if err != nil {
-		t.Fatalf("Advice with lanes: %v", err)
-	}
-	if res.Advice.Lanes != 1 {
-		t.Errorf("option lanes: got %d; want the overridden 1, not the reading's 3", res.Advice.Lanes)
+	one := 1
+	if res := f.advice(Options{Lanes: &one}); res.Advice.Lanes != 1 {
+		t.Errorf("what-if lanes: got %d; want the what-if 1, not the stamp's 3", res.Advice.Lanes)
 	}
 
-	// A reading without lanes falls back, newest first, to the one that carries them.
-	noLanes := newServiceFixture(t, Settings{Reset: serviceReset}, nil)
-	old, none := serviceReadingAt.Add(-48*time.Hour), 0
-	pct := serviceReadingPct
-	if _, err := noLanes.store.Append(Reading{At: old, Percent: &pct, Source: SourceTyped}); err != nil {
-		t.Fatalf("append: %v", err)
+	// A newer reading with no usable stamp falls back, newest first, to the older stamped
+	// one; a stamped zero is a real count.
+	older := newServiceFixture(t, Settings{Reset: serviceReset}, nil)
+	two, none := 2, 0
+	older.laneReading(serviceReadingAt.Add(-48*time.Hour), 20, &two, LanesRecorded)
+	older.laneReading(serviceReadingAt, serviceReadingPct, nil, LanesUnavailable)
+	if res := older.advice(Options{}); res.Advice.Lanes != 2 {
+		t.Errorf("newest reading unstamped: got %d lanes; want the older stamp's 2", res.Advice.Lanes)
 	}
-	if _, err := noLanes.store.Append(Reading{At: serviceReadingAt, Percent: copyFloat(&pct), Lanes: &none}); err != nil {
-		t.Fatalf("append: %v", err)
-	}
-	res, err = noLanes.svc.Advice(context.Background(), Options{})
-	if err != nil {
-		t.Fatalf("Advice: %v", err)
-	}
-	if res.Advice.Lanes != 0 {
-		t.Errorf("newest reading names 0 lanes; got %d", res.Advice.Lanes)
+	older.laneReading(serviceReadingAt.Add(time.Hour), 41, &none, LanesCurrent)
+	res := older.advice(Options{})
+	if res.Advice.Lanes != 0 || res.Advice.LanesStamped == nil || *res.Advice.LanesStamped != 0 {
+		t.Errorf("newest stamp names 0 lanes; got lanes %d stamped %v", res.Advice.Lanes, res.Advice.LanesStamped)
 	}
 
-	// No lanes on any reading: the stored maximum plans, then the package default.
+	// No usable stamp on any reading: the stored maximum plans, then the package default.
 	blank := newServiceFixture(t, Settings{Reset: serviceReset, MaxLanes: 4}, nil)
-	if _, err := blank.store.Append(Reading{At: serviceReadingAt, Percent: &pct, Source: SourceTyped}); err != nil {
-		t.Fatalf("append: %v", err)
-	}
-	res, err = blank.svc.Advice(context.Background(), Options{})
-	if err != nil {
-		t.Fatalf("Advice: %v", err)
-	}
-	if res.Advice.Lanes != 4 {
+	blank.laneReading(serviceReadingAt, serviceReadingPct, nil, "")
+	if res := blank.advice(Options{}); res.Advice.Lanes != 4 {
 		t.Errorf("stored maximum: got %d; want 4", res.Advice.Lanes)
 	}
-
 	noneBlank := newServiceFixture(t, Settings{Reset: serviceReset}, nil)
-	if _, err := noneBlank.store.Append(Reading{At: serviceReadingAt, Percent: &pct, Source: SourceTyped}); err != nil {
-		t.Fatalf("append: %v", err)
-	}
-	res, err = noneBlank.svc.Advice(context.Background(), Options{})
-	if err != nil {
-		t.Fatalf("Advice: %v", err)
-	}
-	if res.Advice.Lanes != DefaultMaxLanes {
+	noneBlank.laneReading(serviceReadingAt, serviceReadingPct, nil, "")
+	if res := noneBlank.advice(Options{}); res.Advice.Lanes != DefaultMaxLanes {
 		t.Errorf("package default: got %d; want %d", res.Advice.Lanes, DefaultMaxLanes)
+	}
+}
+
+func TestServiceAdviceChangesWithNewestStamp(t *testing.T) {
+	// Both the divisor of the burn per lane and the default chosen count follow the
+	// newest stamp: a newer reading with another count changes the advice.
+	f := newServiceFixture(t, Settings{Reset: serviceReset, MaxLanes: 4}, nil)
+	two, four := 2, 4
+	f.laneReading(serviceReadingAt.Add(-30*time.Hour), 20, &two, LanesLive)
+	f.laneReading(serviceReadingAt, 40, &two, LanesLive)
+	before := f.advice(Options{})
+	if before.Advice.Lanes != 2 || before.Advice.RecentLanes != 2 {
+		t.Fatalf("stamp 2: lanes %d recent lanes %d; want 2 and 2", before.Advice.Lanes, before.Advice.RecentLanes)
+	}
+	if before.Advice.PerLanePer24h <= 0 {
+		t.Fatalf("burn per lane is %v; the fixture needs a burn above the idle baseline", before.Advice.PerLanePer24h)
+	}
+
+	f.laneReading(serviceReadingAt.Add(time.Hour), 41, &four, LanesRecorded)
+	after := f.advice(Options{})
+	if after.Advice.Lanes != 4 || after.Advice.RecentLanes != 4 {
+		t.Errorf("stamp 4: lanes %d recent lanes %d; want 4 and 4", after.Advice.Lanes, after.Advice.RecentLanes)
+	}
+	if after.Advice.LanesStamped == nil || *after.Advice.LanesStamped != 4 {
+		t.Errorf("LanesStamped: got %v; want 4", after.Advice.LanesStamped)
+	}
+	if after.Advice.Chosen == nil || after.Advice.Chosen.Lanes != 4 {
+		t.Errorf("chosen row: got %+v; want the 4-lane row", after.Advice.Chosen)
+	}
+
+	// The divisor alone: a what-if keeps the chosen count, yet the burn per lane still
+	// divides by the newest stamp. The same burn over a larger stamp is a smaller share.
+	same := newServiceFixture(t, Settings{Reset: serviceReset, MaxLanes: 4}, nil)
+	same.laneReading(serviceReadingAt.Add(-30*time.Hour), 20, &two, LanesLive)
+	same.laneReading(serviceReadingAt, 40, &two, LanesLive)
+	wide := newServiceFixture(t, Settings{Reset: serviceReset, MaxLanes: 4}, nil)
+	wide.laneReading(serviceReadingAt.Add(-30*time.Hour), 20, &two, LanesLive)
+	wide.laneReading(serviceReadingAt, 40, &four, LanesLive)
+	three := 3
+	a, b := same.advice(Options{Lanes: &three}), wide.advice(Options{Lanes: &three})
+	if a.Advice.Lanes != 3 || b.Advice.Lanes != 3 {
+		t.Fatalf("what-if lanes: got %d and %d; want 3 and 3", a.Advice.Lanes, b.Advice.Lanes)
+	}
+	if !(b.Advice.PerLanePer24h < a.Advice.PerLanePer24h) {
+		t.Errorf("burn per lane over stamp 4 (%v) is not smaller than over stamp 2 (%v)", b.Advice.PerLanePer24h, a.Advice.PerLanePer24h)
+	}
+}
+
+func TestServiceWhatIfZeroDiffersFromUnset(t *testing.T) {
+	f := newServiceFixture(t, Settings{Reset: serviceReset}, nil)
+	f.seedReading(t) // 3 lanes, live
+	zero := 0
+	unset, whatIf := f.advice(Options{}), f.advice(Options{Lanes: &zero})
+	if unset.Advice.Lanes != 3 {
+		t.Errorf("unset: got %d lanes; want the stamp's 3", unset.Advice.Lanes)
+	}
+	if whatIf.Advice.Lanes != 0 {
+		t.Errorf("what-if 0: got %d lanes; want 0 honoured", whatIf.Advice.Lanes)
+	}
+	if whatIf.Advice.WhatIfLanes == nil || *whatIf.Advice.WhatIfLanes != 0 {
+		t.Errorf("WhatIfLanes: got %v; want a set 0", whatIf.Advice.WhatIfLanes)
+	}
+	if unset.Advice.WhatIfLanes != nil {
+		t.Errorf("WhatIfLanes without a what-if: got %v; want nil", *unset.Advice.WhatIfLanes)
+	}
+	if whatIf.Advice.Chosen == nil || whatIf.Advice.Chosen.Lanes != 0 {
+		t.Errorf("chosen row for the what-if: got %+v; want the 0-lane row", whatIf.Advice.Chosen)
+	}
+	// The stamp and the divisor do not move with the what-if.
+	if whatIf.Advice.RecentLanes != 3 || whatIf.Advice.PerLanePer24h != unset.Advice.PerLanePer24h {
+		t.Errorf("what-if moved the divisor: recent %d per lane %v; want 3 and %v",
+			whatIf.Advice.RecentLanes, whatIf.Advice.PerLanePer24h, unset.Advice.PerLanePer24h)
+	}
+}
+
+func TestServiceTypedAndUnavailableIgnoredForDivisor(t *testing.T) {
+	// Only the typed and unavailable readings carry counts here, so the divisor is nil and
+	// the model falls back to the chosen count; the default is the stored maximum.
+	f := newServiceFixture(t, Settings{Reset: serviceReset, MaxLanes: 4}, nil)
+	seven, five, two := 7, 5, 2
+	f.laneReading(serviceReadingAt.Add(-30*time.Hour), 20, &seven, LanesTyped)
+	f.laneReading(serviceReadingAt, 40, &five, LanesUnavailable)
+	res := f.advice(Options{})
+	if res.Advice.LanesStamped != nil {
+		t.Errorf("LanesStamped: got %d; want nil for typed and unavailable readings", *res.Advice.LanesStamped)
+	}
+	if res.Advice.Lanes != 4 || res.Advice.RecentLanes != 4 {
+		t.Errorf("lanes %d recent %d; want the stored maximum 4 for both", res.Advice.Lanes, res.Advice.RecentLanes)
+	}
+
+	// A stamped reading older than the typed ones is the one that counts.
+	f.laneReading(serviceReadingAt.Add(-60*time.Hour), 10, &two, LanesLive)
+	res = f.advice(Options{})
+	if res.Advice.LanesStamped == nil || *res.Advice.LanesStamped != 2 || res.Advice.RecentLanes != 2 {
+		t.Errorf("older stamp: stamped %v recent %d; want 2 and 2", res.Advice.LanesStamped, res.Advice.RecentLanes)
+	}
+}
+
+func TestServiceLanesRunningNow(t *testing.T) {
+	f := newServiceFixture(t, Settings{Reset: serviceReset}, nil)
+	f.seedReading(t)
+	if got := f.advice(Options{}).Advice.LanesRunningNow; got != nil {
+		t.Errorf("without a ledger: got %d; want nil", *got)
+	}
+
+	counter := &fakeLaneCounter{count: 2, ok: true}
+	f.svc = NewService(f.series, f.store, func() Settings { return Settings{Reset: serviceReset} }, nil,
+		WithServiceNow(f.clock.Now), WithLiveLanes(counter))
+	res := f.advice(Options{})
+	if got := res.Advice.LanesRunningNow; got == nil || *got != 2 {
+		t.Errorf("ledger counts 2: got %v; want 2", got)
+	}
+	// The running count is its own number: it is not the stamp and not the chosen count.
+	if res.Advice.LanesStamped == nil || *res.Advice.LanesStamped != 3 || res.Advice.Lanes != 3 {
+		t.Errorf("stamped %v lanes %d; want 3 and 3 whatever the ledger counts", res.Advice.LanesStamped, res.Advice.Lanes)
+	}
+	counter.set(0, true)
+	if got := f.advice(Options{}).Advice.LanesRunningNow; got == nil || *got != 0 {
+		t.Errorf("ledger counts 0: got %v; want a real 0", got)
+	}
+	counter.set(0, false)
+	res = f.advice(Options{})
+	if res.Advice.LanesRunningNow != nil {
+		t.Errorf("ledger not wired: got %d; want nil", *res.Advice.LanesRunningNow)
+	}
+	raw, err := json.Marshal(res.Advice)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if v, ok := m["lanes_running_now"]; !ok || string(v) != "null" {
+		t.Errorf("lanes_running_now in JSON: got %s (present %v); want null", v, ok)
+	}
+}
+
+func TestServiceLaneNumbersInText(t *testing.T) {
+	f := newServiceFixture(t, Settings{Reset: serviceReset}, nil)
+	f.seedReading(t)
+	f.svc = NewService(f.series, f.store, func() Settings { return Settings{Reset: serviceReset} }, nil,
+		WithServiceNow(f.clock.Now), WithLiveLanes(&fakeLaneCounter{count: 2, ok: true}))
+	zero := 0
+	res := f.advice(Options{Lanes: &zero})
+	for name, text := range map[string]string{"cli": res.Text.CLI, "comm": res.Text.Comm} {
+		mustContainAll(t, name, text,
+			"Claude lanes running now (ledger count): 2",
+			"Lanes stamped on the newest reading: 3",
+			"What-if lanes (not saved): 0",
+		)
 	}
 }
 
@@ -491,7 +637,7 @@ func TestServiceStaleSourceMarked(t *testing.T) {
 	}, WithSharedClock(clock.Now))
 
 	pct, lanes := serviceReadingPct, serviceReadingLn
-	reading := Reading{At: serviceReadingAt, Percent: &pct, Lanes: &lanes, Source: SourceTyped}
+	reading := Reading{At: serviceReadingAt, Percent: &pct, Lanes: &lanes, LanesSource: LanesLive, Source: SourceTyped}
 	if err := series.writeCopy(peerCopy{CopiedAt: serviceNow.Add(-time.Hour), Keeper: "keeper-a", Record: AccountRecord{
 		Readings: []Reading{reading}, Keeper: "keeper-a",
 	}}); err != nil {

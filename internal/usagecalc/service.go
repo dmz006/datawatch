@@ -90,15 +90,17 @@ type QueueCounter interface {
 }
 
 // Options overrides the stored settings for one Advice call. Empty fields keep the stored
-// value; a non-zero Lanes replaces the stored, reading-derived and default lane counts, and
-// a non-nil CostPerTask replaces the stored cost for the estimate of this call.
+// value; a non-nil Lanes is a what-if that replaces the stamped, stored and default lane
+// counts for this call only, and a non-nil CostPerTask replaces the stored cost for the
+// estimate of this call.
 type Options struct {
 	// Variant is this call's display variant; empty uses the stored one.
 	Variant string
 	// Policy is this call's policy; empty uses the stored one.
 	Policy string
-	// Lanes is the lane count this call plans with; 0 uses the stored chain.
-	Lanes int
+	// Lanes is the what-if lane count this call plans with. Nil means not set and uses the
+	// stamped chain; 0 is a valid what-if (zero lanes). It is never saved.
+	Lanes *int
 	// CostPerTask is this call's cost per queued task; nil uses the stored one.
 	CostPerTask *float64
 }
@@ -133,6 +135,7 @@ type Service struct {
 	local     *Store
 	settingsF SettingsGetter
 	queue     QueueCounter
+	live      LaneCounter
 	now       func() time.Time
 }
 
@@ -148,6 +151,13 @@ func WithServiceNow(now func() time.Time) ServiceOption {
 			s.now = now
 		}
 	}
+}
+
+// WithLiveLanes wires the counter of the Claude lanes running now, the lane-history unit's
+// LaneCounter, so Advice can report LanesRunningNow. Without it, or when the counter reports
+// that no ledger is wired, LanesRunningNow is null.
+func WithLiveLanes(c LaneCounter) ServiceOption {
+	return func(s *Service) { s.live = c }
 }
 
 // NewService builds a calculator service over the shared readings series. local is this
@@ -224,12 +234,14 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 		policy = cfg.Policy
 	}
 
+	stamped := newestStampedLanes(snap.Record.Readings)
 	in := Input{
 		Readings:          nonNilReadings(snap.Record.Readings),
 		Reset:             cfg.Reset,
 		Now:               s.now(),
 		ExtraCreditPoints: snap.Record.ExtraCreditPoints,
-		Lanes:             s.lanesFrom(o, cfg, snap),
+		Lanes:             lanesFrom(o, cfg, stamped),
+		RecentLanes:       stamped,
 		MaxLanes:          cfg.MaxLanes,
 		BaselinePer24h:    cfg.BaselinePer24h,
 		SafetyPoints:      cfg.SafetyPoints,
@@ -238,6 +250,12 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 	}
 
 	advice := Advise(in)
+	advice.LanesRunningNow = s.lanesRunningNow()
+	advice.LanesStamped = stamped
+	if o.Lanes != nil {
+		n := *o.Lanes
+		advice.WhatIfLanes = &n
+	}
 	res := &AdviceResult{
 		Variant:     variant,
 		Policy:      advice.Advice.Policy,
@@ -253,24 +271,65 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 	return res, nil
 }
 
-// lanesFrom resolves the lane count this advice plans with: this call's Lanes, then the
-// newest reading that names a lane count, then the stored maximum, then the package
+// newestStampedLanes returns the lane count stamped on the newest reading whose source is
+// live, recorded or current, or nil when no reading has a usable stamp. Typed and
+// unavailable readings never count: a typed count was entered by hand and an unavailable one
+// has no count. The same count divides the recent burn into a burn per lane and picks the
+// default chosen lane count.
+func newestStampedLanes(readings []Reading) *int {
+	var best *Reading
+	for i := range readings {
+		r := &readings[i]
+		if r.Lanes == nil || *r.Lanes < 0 || !stampedSource(r.LanesSource) {
+			continue
+		}
+		if best == nil || !r.At.Before(best.At) {
+			best = r
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	n := *best.Lanes
+	return &n
+}
+
+func stampedSource(src string) bool {
+	switch src {
+	case LanesLive, LanesRecorded, LanesCurrent:
+		return true
+	}
+	return false
+}
+
+// lanesFrom resolves the lane count this advice plans with: the what-if when set, then the
+// lanes stamped on the newest usable reading, then the stored maximum, then the package
 // default. The model clamps the value against the maximum, so a larger choice stays
 // possible without breaking the planner's table.
-func (s *Service) lanesFrom(o Options, cfg Settings, snap Snapshot) int {
-	if o.Lanes > 0 {
-		return o.Lanes
+func lanesFrom(o Options, cfg Settings, stamped *int) int {
+	if o.Lanes != nil {
+		return *o.Lanes
 	}
-	for i := len(snap.Record.Readings) - 1; i >= 0; i-- {
-		r := snap.Record.Readings[i]
-		if r.Lanes != nil && *r.Lanes >= 0 {
-			return *r.Lanes
-		}
+	if stamped != nil {
+		return *stamped
 	}
 	if cfg.MaxLanes > 0 {
 		return cfg.MaxLanes
 	}
 	return DefaultMaxLanes
+}
+
+// lanesRunningNow is the Claude lane count in the ledger now, or nil when no counter is
+// wired or the counter has no ledger.
+func (s *Service) lanesRunningNow() *int {
+	if s.live == nil {
+		return nil
+	}
+	n, ok := s.live.Lanes()
+	if !ok {
+		return nil
+	}
+	return &n
 }
 
 // remainingWork resolves the finish-early figure (decision 6): the estimate is the daemon's

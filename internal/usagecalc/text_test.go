@@ -460,3 +460,32 @@ func TestFormatReplyLine(t *testing.T) {
 		t.Errorf("empty-state comm form should propose the first reading:\n%s", got)
 	}
 }
+
+func TestLaneNumbersInTextForms(t *testing.T) {
+	resp := advResp(t, workedExample(t))
+	resp.Advice.LanesRunningNow = intp(2)
+	resp.Advice.LanesStamped = intp(3)
+	resp.Advice.WhatIfLanes = intp(0)
+	for name, text := range map[string]string{"cli": FormatCLI(resp), "comm": FormatComm(resp)} {
+		mustContainAll(t, name, text,
+			"Claude lanes running now (ledger count): 2",
+			"Lanes stamped on the newest reading: 3",
+			"What-if lanes (not saved): 0",
+		)
+	}
+
+	// Without a what-if the third number is left out; without a ledger or a stamp the
+	// text says so instead of printing a zero.
+	resp.Advice.WhatIfLanes, resp.Advice.LanesRunningNow, resp.Advice.LanesStamped = nil, nil, nil
+	for name, text := range map[string]string{"cli": FormatCLI(resp), "comm": FormatComm(resp)} {
+		mustContainAll(t, name, text,
+			"Claude lanes running now (ledger count): unknown (no ledger)",
+			"Lanes stamped on the newest reading: unknown (none stamped)",
+		)
+		if strings.Contains(text, "What-if") {
+			t.Errorf("%s names a what-if that was not set:\n%s", name, text)
+		}
+	}
+	assertWidth(t, "cli", FormatCLI(resp), CLIWidth)
+	assertWidth(t, "comm", FormatComm(resp), CommWidth)
+}

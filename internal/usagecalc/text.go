@@ -117,6 +117,7 @@ func textLines(resp Response) []string {
 		lines = append(lines, runOutLine(ad))
 	}
 	lines = append(lines, verdictLine(ad))
+	lines = append(lines, laneLines(ad)...)
 
 	if full {
 		if ad.Lanes > 0 {
@@ -142,6 +143,28 @@ func textLines(resp Response) []string {
 	}
 
 	return lines
+}
+
+// laneLines states the three lane numbers and says what each is: the Claude lanes running
+// now (the ledger count), the lanes stamped on the newest usable reading, and, when the
+// caller set one, the what-if lanes, marked as not saved. The lane table and the headline
+// work off the chosen count; these lines never change with the policy.
+func laneLines(ad Advice) []string {
+	lines := []string{
+		"Claude lanes running now (ledger count): " + laneCount(ad.LanesRunningNow, "no ledger"),
+		"Lanes stamped on the newest reading: " + laneCount(ad.LanesStamped, "none stamped"),
+	}
+	if ad.WhatIfLanes != nil {
+		lines = append(lines, "What-if lanes (not saved): "+strconv.Itoa(*ad.WhatIfLanes))
+	}
+	return lines
+}
+
+func laneCount(n *int, missing string) string {
+	if n == nil {
+		return "unknown (" + missing + ")"
+	}
+	return strconv.Itoa(*n)
 }
 
 // readLine is the opening line: the latest reading, the reset time in the

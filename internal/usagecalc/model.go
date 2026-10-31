@@ -103,9 +103,10 @@ type Input struct {
 	Now time.Time `json:"now"`
 	// ExtraCreditPoints is bought extra credit, 0 or more; the ceiling is 100 plus these.
 	ExtraCreditPoints float64 `json:"extra_credit_points"`
-	// Lanes is the operator's chosen lane count.
+	// Lanes is the lane count the advice plans with.
 	Lanes int `json:"lanes"`
-	// RecentLanes is how many lanes ran since the previous reading; nil means Lanes.
+	// RecentLanes is the lane count that divides the recent burn into a burn per lane: the
+	// lanes stamped on the newest reading. Nil means Lanes.
 	RecentLanes *int `json:"recent_lanes,omitempty"`
 	// MaxLanes defaults to 3 when 0 or less, and is capped at 100.
 	MaxLanes int `json:"max_lanes"`
@@ -205,6 +206,16 @@ type Advice struct {
 	RecentLanes       int     `json:"recent_lanes"`
 	MaxLanes          int     `json:"max_lanes"`
 	SafetyPoints      float64 `json:"safety_points"`
+
+	// The three lane numbers, kept apart (the service fills them; Advise leaves them nil).
+	// LanesRunningNow is the Claude lane count in the capacity ledger at the moment of the
+	// call, null when no ledger is wired. LanesStamped is the lane count stamped on the
+	// newest reading whose source is live, recorded or current, null when no reading has
+	// one. WhatIfLanes is the lane count this one call plans with when the caller set it;
+	// it is never saved.
+	LanesRunningNow *int `json:"lanes_running_now"`
+	LanesStamped    *int `json:"lanes_stamped"`
+	WhatIfLanes     *int `json:"what_if_lanes,omitempty"`
 
 	DaysSinceReset  float64 `json:"days_since_reset"`
 	DaysLeft        float64 `json:"days_left"`
