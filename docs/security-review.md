@@ -284,6 +284,17 @@ Open code-scanning alerts for Go path injection, disabled certificate validation
 
 Each dismissed alert has a `code-scanning/<alert number>` entry in `security/accepted-risks.yml` with the traced evidence; alerts fixed in code have none. The GitHub dismissals are applied by the operator using the commands listed in the decision list.
 
+## Supervisor watch probe — certificate verification
+
+The supervisor watch's host probe (`ResidentModels` in `internal/autonomous/supervisor_watch_host.go`), which reads the models a compute node has resident over `https://`, no longer disables certificate verification. It verifies the node's certificate against the system roots (which honour `SSL_CERT_FILE` and `SSL_CERT_DIR`), plus the node's own `tls_ca_file` or `tls_cert_fingerprint` when set. A node with none of the settings and a certificate the roots do not cover fails the probe; the watch treats the node as unknown and raises no finding, and the error names the fix. The behaviour is described in `docs/datawatch-definitions.md` (Compute node TLS verification).
+
+What remains, stated so the list is complete:
+
+- The per-node opt-out `tls_insecure_skip_verify` in `internal/compute/node_tls.go` (`NodeTLSConfig`). It is off by default, refused together with `tls_ca_file` or `tls_cert_fingerprint`, shown on the node record and as a red badge in the PWA, written to the audit log as `compute_node_tls_verification_off` when a node is saved with it and the first time the watch probes it, and named in the wording of a watch finding raised for that node. The same file holds two more `InsecureSkipVerify` sites that are not an opt-out: the pin-only mode (`VerifyPeerCertificate` compares the leaf SHA-256 to `tls_cert_fingerprint`) and the CA file plus pin mode (`VerifyConnection` verifies the chain and then the pin). Each carries a `#nosec G402` with its reason.
+- Three other sites that skip certificate verification and are not part of this change: `probeHTTP` in `internal/compute/probe.go` (the connectivity probe made when a node is added or updated), and the monitoring detail handler (`serveComputeNodeDetail`) and models handler (`handleComputeNodeModels`) in `internal/server/compute.go`.
+
+Whether to dismiss or keep any code scanning alert for these sites is the operator's decision. This entry does not record any alert as dismissed or fixed in GitHub.
+
 ## Procedural changes
 
 - Run `gosec -severity high -confidence medium ./...` and `govulncheck ./...` before every patch. The audit doc is updated only when triage changes (new findings or new mitigations).
