@@ -153,6 +153,10 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					CleanupRetentionHours     *float64 `json:"cleanup_retention_hours"`
 					CleanupMaxRemovalsPerPass *float64 `json:"cleanup_max_removals_per_pass"`
 					DiskAlertPercent          *float64 `json:"disk_alert_percent"`
+					// Uncommitted-work keys: a present word must be one of
+					// hold|warn|off (policy) or task_files|worktree (scope).
+					UncommittedWorkPolicy *string `json:"uncommitted_work_policy"`
+					UncommittedWorkScope  *string `json:"uncommitted_work_scope"`
 				}
 				if json.Unmarshal(rawAuto, &auto) != nil {
 					http.Error(w, "automation: must be an object", http.StatusBadRequest)
@@ -223,6 +227,18 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				if verr := cleanupPercentWhole(auto.DiskAlertPercent); verr != nil {
 					http.Error(w, verr.Error(), http.StatusBadRequest)
 					return
+				}
+				if auto.UncommittedWorkPolicy != nil {
+					if verr := validateUncommittedWorkPolicy(*auto.UncommittedWorkPolicy); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if auto.UncommittedWorkScope != nil {
+					if verr := validateUncommittedWorkScope(*auto.UncommittedWorkScope); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
 				}
 			}
 			// lane_fill: every field is checked, so one bad value rejects the PUT.

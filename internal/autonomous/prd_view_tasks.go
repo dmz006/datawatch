@@ -32,6 +32,9 @@ type TaskEntry struct {
 	ReviewSummary  string        `json:"review_summary,omitempty"`
 	Progress       *TaskProgress `json:"progress,omitempty"`
 	LoopingWarning string        `json:"looping_warning,omitempty"`
+	// UncommittedWork is the hold on a task whose worktree still has
+	// uncommitted files; omitted when the task carries none.
+	UncommittedWork *UncommittedWorkHold `json:"uncommitted_work,omitempty"`
 }
 
 // TaskVerification is the outcome of a task's verification. It deliberately
@@ -62,13 +65,14 @@ func BuildTasksView(prd *PRD) TasksView {
 // buildTaskEntry copies the listing fields of one task into a TaskEntry.
 func buildTaskEntry(task *Task) TaskEntry {
 	entry := TaskEntry{
-		ID:             task.ID,
-		Title:          task.Title,
-		Status:         task.Status,
-		Error:          task.Error,
-		SessionID:      task.SessionID,
-		Progress:       task.Progress,
-		LoopingWarning: task.LoopingWarning,
+		ID:              task.ID,
+		Title:           task.Title,
+		Status:          task.Status,
+		Error:           task.Error,
+		SessionID:       task.SessionID,
+		Progress:        task.Progress,
+		LoopingWarning:  task.LoopingWarning,
+		UncommittedWork: task.UncommittedWork,
 	}
 	if v := task.Verification; v != nil {
 		entry.Verification = &TaskVerification{

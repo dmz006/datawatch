@@ -515,6 +515,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                       // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
 	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)       // safe-to-delete report of finished Automaton branches and worktrees
 	apiMux.HandleFunc("/api/autonomous/cleanup", api.handleCleanupStatus)                       // cleanup status: both passes, disk readings, rate-limited disk-alert flag
+	apiMux.HandleFunc("/api/autonomous/uncommitted-work", api.handleUncommittedWork)            // uncommitted-work holds: policy, scope, held tasks and Automata
 	apiMux.HandleFunc("/api/autonomous/overlap", api.handleAutonomousOverlap)                   // search before create: overlaps for a title and spec
 	apiMux.HandleFunc("/api/autonomous/security-failures", api.handleSecurityFailures)          // stored security failure reports with their run identity, newest first
 	apiMux.HandleFunc("/api/autonomous/supervisor-watch", api.handleSupervisorWatch)            // supervisor watch state: mode, last poll, findings, comparison
