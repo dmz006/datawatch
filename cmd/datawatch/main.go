@@ -6795,6 +6795,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					// record service records the request before the answer.
 					if dr := amgr.DecisionRecords(); dr != nil {
 						httpServer.SetDecisionFollowUps(dr)
+						httpServer.SetDecisionRecords(dr)
 					}
 					// Question-raise notification (the "notify" legs beside the
 					// channel): the server dispatches non-blockingly on each

@@ -517,6 +517,10 @@ type Server struct {
 	// SetDecisionFollowUps; nil (default) = a follow_up in an answer is
 	// refused with 503.
 	decisionFollowUps DecisionFollowUpAPI
+	// decisionRecords — the decision record service behind
+	// /api/autonomous/decision-records; wired by main.go via
+	// SetDecisionRecords; nil (default) makes the routes return 503.
+	decisionRecords DecisionRecordsAPI
 	// questionRaiseNotifier — the raise fan-out to the messaging group,
 	// wired by main.go via SetQuestionRaiseNotifier; nil (default) = no
 	// messaging fan-out (the WS + alert parts do not need it).

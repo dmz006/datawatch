@@ -1399,6 +1399,225 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: "Autonomous is disabled, or the question store is not available"}
 
+  /api/autonomous/decision-records:
+    post:
+      summary: Create a decision record
+      description: |
+        Creates a decision record and raises its operator question from it. A
+        decision record is the structured description of one decision: a title, the
+        situation, what exactly is being decided, two to twenty options with their
+        cost and risk, an optional recommendation, a default (an option id or `hold`)
+        and optional links to a document, an Automaton and a registry row. The
+        daemon builds the question from the record, so a decision always reads the
+        same way, and exactly one question exists per record.
+
+        The body carries the content fields only (`label`, `title`, `situation`,
+        `deciding`, `options`, `recommendation`, `default`, `links`); any other field
+        is a 400. The record is stored with `source` `rest`. An empty `label` becomes
+        `decision`.
+
+        The clarity check runs on the question built from the record, in the mode of
+        `autonomous.decisions.clarity_mode`. In `warn` mode the record is stored and
+        the findings come back as `warnings`; in `refuse` mode a record with findings
+        is refused with 422 and nothing is stored. The answer is 201 with the stored
+        `record`, its `question_id` and the `warnings` (an empty array when there are
+        none). Body cap 64 KiB; content after the JSON object is malformed. Needs the
+        autonomous write capability when called by a federated peer.
+
+        Records and questions need both `autonomous.decisions.enabled` and
+        `autonomous.questions.enabled`; while either is off the answer is 503 and the
+        message names it.
+      operationId: decisionRecordCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/DecisionRecordContent"}
+      responses:
+        "201":
+          description: The stored record, its question id and the clarity warnings
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DecisionRecordResponse"}
+        "400":
+          description: "Malformed body, a field outside the content fields, or an invalid record; the message names every problem found. Nothing is stored"
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "413":
+          description: Body over the 64 KiB cap
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "422":
+          description: "Refuse mode: the record is not clear enough. The findings say what to fix; nothing is stored"
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordRefused"}}}
+        "500":
+          description: The record could not be stored
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "503":
+          description: "A switch the records need is off (the message names `autonomous.decisions.enabled` or `autonomous.questions.enabled`), or the service is not available"
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+    get:
+      summary: List decision records
+      description: |
+        The decision records, newest first, each with the state of its question. An
+        answered record carries the `answer` (the operator's words verbatim in
+        `quote`, the actor, the surface, the chosen option and the time); `doc_change`
+        and `follow_up` appear once the answer was applied to the linked document or a
+        configured follow-up ran. The body also carries the status of the decision
+        folder watch (`autonomous.decisions.folder`): whether it is on, the folder,
+        how many files the last scan saw, the files it could not use and why, and the
+        time of the last scan. The filters are exact matches and combine; a filter
+        that matches nothing is an empty `decision_records` array, not an error. Needs
+        the autonomous read capability when called by a federated peer.
+      operationId: decisionRecordList
+      tags: [Autonomous]
+      parameters:
+        - {name: state, in: query, required: false, description: Only records in this state, schema: {type: string, enum: [open, answered, withdrawn]}}
+        - {name: prd_id, in: query, required: false, description: Only the records linked to this Automaton, schema: {type: string}}
+        - {name: limit, in: query, required: false, description: "At most this many records; a positive whole number, default 100, a value above 1000 is capped to 1000, not refused", schema: {type: integer, minimum: 1, default: 100}}
+      responses:
+        "200":
+          description: The records, newest first, and the folder watch status
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DecisionRecordList"}
+        "400":
+          description: "state is not open, answered or withdrawn, or limit is not a positive whole number"
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503":
+          description: The service is not available
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+
+  /api/autonomous/decision-records/{id}:
+    get:
+      summary: Read one decision record
+      description: |
+        One decision record with the state of its question and, once answered, the
+        answer. Needs the autonomous read capability when called by a federated peer.
+      operationId: decisionRecordGet
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: The record and its question id
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DecisionRecordResponse"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404":
+          description: Unknown decision record id
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "405": {description: Method not allowed}
+        "503":
+          description: The service is not available
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+    put:
+      summary: Replace the content of an open decision record
+      description: |
+        Replaces the content of an open record with the body (the same content fields
+        as the create, all of them) and applies the rebuilt text to the same open
+        question, so the question never changes id. The clarity check runs as it does
+        on create. A record that is answered or withdrawn cannot be changed: the
+        answer is 409 with a plain message. Body cap 64 KiB. Needs the autonomous
+        write capability when called by a federated peer.
+      operationId: decisionRecordUpdate
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/DecisionRecordContent"}
+      responses:
+        "200":
+          description: The updated record, its question id and the clarity warnings
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DecisionRecordResponse"}
+        "400":
+          description: "Malformed body, a field outside the content fields, or an invalid record; the message names every problem found"
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404":
+          description: Unknown decision record id
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "405": {description: Method not allowed}
+        "409":
+          description: The record is answered or withdrawn, or its question was already decided
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "413":
+          description: Body over the 64 KiB cap
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "422":
+          description: "Refuse mode: the new content is not clear enough; the record is unchanged"
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordRefused"}}}
+        "500":
+          description: The record could not be updated
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "503":
+          description: "A switch the records need is off (the message names it), or the service is not available"
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+
+  /api/autonomous/decision-records/{id}/withdraw:
+    post:
+      summary: Withdraw a decision record
+      description: |
+        Withdraws the record and its open question without an answer. The body is
+        optional; `reason` is free text kept with the withdrawal. Withdrawing a record
+        that is already withdrawn changes nothing and answers 200. A record that is
+        answered cannot be withdrawn (409). Needs the autonomous write capability when
+        called by a federated peer.
+      operationId: decisionRecordWithdraw
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/DecisionRecordWithdraw"}
+      responses:
+        "200":
+          description: The record in its new state
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DecisionRecordResponse"}
+        "400":
+          description: Malformed body, or a field other than reason
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404":
+          description: Unknown decision record id
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "405": {description: Method not allowed}
+        "409":
+          description: The record is answered
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "413":
+          description: Body over the 64 KiB cap
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "500":
+          description: The record could not be withdrawn
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+        "503":
+          description: The service is not available
+          content: {"application/json": {schema: {$ref: "#/components/schemas/DecisionRecordError"}}}
+
   /api/autonomous/triage:
     get:
       summary: Triage records
@@ -6361,6 +6580,7 @@ components:
             - {$ref: "#/components/schemas/DecisionLineAnswer"}
           nullable: true
           description: The current answer; null until the decision is answered
+        record_id: {type: string, description: "The decision record this decision was raised from (`dr-` followed by hex); an empty string when it has no record"}
     DecisionLineWait:
       type: object
       properties:
@@ -8129,6 +8349,170 @@ components:
         label: {type: string, maxLength: 200, description: "What the option is. <= 200 bytes."}
         tradeoffs: {type: string, maxLength: 1000, description: "What the option buys and costs, optional. <= 1000 bytes."}
 
+    DecisionRecordOption:
+      type: object
+      required: [id, label]
+      properties:
+        id: {type: string, description: "Unique within the record; up to 64 bytes"}
+        label: {type: string, description: A short name for the choice}
+        tradeoff: {type: string, description: "One line of cost and risk"}
+    DecisionRecordRecommendation:
+      type: object
+      required: [option_id, reason]
+      properties:
+        option_id: {type: string, description: Must be one of the options}
+        reason: {type: string}
+    DecisionRecordLinks:
+      type: object
+      description: What the record is about. Every part is optional.
+      properties:
+        doc: {type: string, description: "A path relative to the document root; no leading slash and no `..` segment"}
+        automaton: {type: string, description: An Automaton id}
+        registry_row: {type: string, description: A registry row key}
+    DecisionRecordContent:
+      type: object
+      description: |
+        The content of a decision record, as POST and PUT take it. Fields outside this
+        set are refused with 400.
+      additionalProperties: false
+      required: [title, situation, deciding, options, default]
+      properties:
+        label: {type: string, description: "A short word or two a person would recognise; defaults to `decision`"}
+        title: {type: string, description: A plain-language title}
+        situation: {type: string, description: What is going on, in full sentences}
+        deciding: {type: string, description: What exactly is being decided}
+        options:
+          type: array
+          minItems: 2
+          maxItems: 20
+          items: {$ref: "#/components/schemas/DecisionRecordOption"}
+        recommendation: {$ref: "#/components/schemas/DecisionRecordRecommendation"}
+        default: {type: string, description: "An option id or `hold`: the fallback when the decision is never answered"}
+        links: {$ref: "#/components/schemas/DecisionRecordLinks"}
+    DecisionRecordAnswer:
+      type: object
+      description: The answer applied to the record.
+      properties:
+        answer_id: {type: string}
+        chosen_option_id: {type: string}
+        quote: {type: string, description: "The operator's words exactly as stored; never trimmed, cut or re-cased"}
+        actor: {type: string}
+        surface: {type: string, description: The surface the answer came from}
+        answered_at: {type: string, format: date-time}
+    DecisionRecordDocChange:
+      type: object
+      description: What was done, or would be done, to the linked document after the answer.
+      properties:
+        mode: {type: string, description: "The `autonomous.decisions.doc_status_mode` in force: off, report or on"}
+        path: {type: string}
+        line: {type: integer}
+        before: {type: string}
+        after: {type: string}
+        diff: {type: string}
+        status: {type: string, enum: [reported, applied, unchanged, no_match, ambiguous, error]}
+        at: {type: string, format: date-time}
+    DecisionRecordFollowUp:
+      type: object
+      description: The configured follow-up the operator asked for with the answer.
+      properties:
+        requested: {type: boolean}
+        name: {type: string, description: "The entry of `autonomous.decisions.follow_ups` that was named"}
+        kind: {type: string, description: "`start_template` or `open_automaton`, filled when it runs"}
+        target: {type: string}
+        status: {type: string, description: "done, skipped or error"}
+        result: {type: string, description: One line saying what happened}
+        at: {type: string, format: date-time}
+    DecisionRecord:
+      type: object
+      description: |
+        A decision record as the routes return it: the content fields, the
+        bookkeeping, and the state of its question.
+      properties:
+        id: {type: string, description: "`dr-` followed by 20 lowercase hex characters"}
+        label: {type: string}
+        title: {type: string}
+        situation: {type: string}
+        deciding: {type: string}
+        options:
+          type: array
+          items: {$ref: "#/components/schemas/DecisionRecordOption"}
+        recommendation: {$ref: "#/components/schemas/DecisionRecordRecommendation"}
+        default: {type: string}
+        links: {$ref: "#/components/schemas/DecisionRecordLinks"}
+        state: {type: string, enum: [open, answered, withdrawn]}
+        question_id: {type: string, description: The operator question raised from the record}
+        question_state: {type: string, enum: [open, answered, withdrawn, expired], description: The state of that question}
+        source: {type: string, enum: [rest, mcp, cli, comm, file], description: How the record arrived}
+        source_ref: {type: string, description: "The file name for a record that came from the decision folder"}
+        content_hash: {type: string, description: Lowercase hex sha256 of the content fields}
+        answer: {$ref: "#/components/schemas/DecisionRecordAnswer"}
+        doc_change: {$ref: "#/components/schemas/DecisionRecordDocChange"}
+        follow_up: {$ref: "#/components/schemas/DecisionRecordFollowUp"}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    DecisionRecordFinding:
+      type: object
+      description: One clarity finding.
+      properties:
+        code: {type: string}
+        message: {type: string, description: A plain sentence saying what to fix}
+    DecisionRecordResponse:
+      type: object
+      required: [record, question_id]
+      properties:
+        record: {$ref: "#/components/schemas/DecisionRecord"}
+        question_id: {type: string}
+        warnings:
+          type: array
+          description: "The clarity findings in warn mode; an empty array when there are none. Present on create and update only"
+          items: {$ref: "#/components/schemas/DecisionRecordFinding"}
+    DecisionRecordProblem:
+      type: object
+      properties:
+        file: {type: string, description: The file name; empty when the problem is with the folder itself}
+        message: {type: string}
+    DecisionRecordFolder:
+      type: object
+      description: The state of the decision folder watch.
+      required: [enabled, path, files_seen, errors, notes, last_scan]
+      properties:
+        enabled: {type: boolean, description: True when a folder is configured and both switches are on}
+        path: {type: string, description: "The configured folder; empty when the watch is off"}
+        files_seen: {type: integer, description: Files the last scan matched}
+        errors:
+          type: array
+          description: Files the last scan could not use, each with a plain message
+          items: {$ref: "#/components/schemas/DecisionRecordProblem"}
+        notes:
+          type: array
+          description: Files read fine that could not change their record, such as an edit to an answered decision
+          items: {$ref: "#/components/schemas/DecisionRecordProblem"}
+        last_scan: {type: string, format: date-time, nullable: true, description: Null before the first scan}
+    DecisionRecordList:
+      type: object
+      required: [decision_records, folder]
+      properties:
+        decision_records:
+          type: array
+          description: Newest first; empty when nothing matches
+          items: {$ref: "#/components/schemas/DecisionRecord"}
+        folder: {$ref: "#/components/schemas/DecisionRecordFolder"}
+    DecisionRecordWithdraw:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: {type: string, description: Free text kept with the withdrawal}
+    DecisionRecordError:
+      type: object
+      properties:
+        error: {type: string}
+    DecisionRecordRefused:
+      type: object
+      properties:
+        error: {type: string}
+        findings:
+          type: array
+          items: {$ref: "#/components/schemas/DecisionRecordFinding"}
     Question:
       description: |
         One operator decision, recorded when raised and kept until answered or
@@ -8168,6 +8552,7 @@ components:
         blocking: {type: boolean, description: "The asker said it cannot go on until the question is decided (the worker marker's `blocked`). While such a question is open its task is parked with the wait reason `await_decision: <question id>`. A REST raise is never blocking. Left out when false."}
         source: {type: string, enum: [marker, rest], description: "How the question arrived: `marker` (a worker's DATAWATCH_QUESTION: line, raised only while `autonomous.questions.worker_marker` and `autonomous.questions.enabled` are on) or `rest` (POST /api/questions). Left out on a record written before the field existed. A `marker` question carries a `session_id` and a `source_line_sha256`."}
         source_line_sha256: {type: string, pattern: "^[0-9a-f]{64}$", description: "Lowercase hex SHA-256 of the marker line a worker question came from. The dedupe key: the same line read again while its question is open raises nothing. Never the line text. Left out when empty."}
+        decision_record_id: {type: string, description: "The decision record this question was raised from (`dr-` followed by hex). Left out for a question with no record. See /api/autonomous/decision-records."}
         state: {type: string, enum: [open, answered, withdrawn, expired]}
         created_at: {type: string, format: date-time}
 
@@ -8241,6 +8626,7 @@ components:
         surface: {type: string, description: "pwa, android, ios, cli, rest, mcp, or `comm:<channel name>`. Defaults to `rest`; `system` is refused."}
         source_message_id: {type: string}
         actor: {type: string, description: "Defaults to the caller."}
+        follow_up: {type: string, description: "The name of one entry of `autonomous.decisions.follow_ups`, to run once the answer is applied to the decision record. Needs a question that belongs to a decision record; an unknown name, an empty list of follow-ups or a question with no record is a 400 naming the problem and nothing is stored, and a daemon with no follow-ups wired answers 503."}
 
     QuestionWithdraw:
       description: "The POST /api/questions/{id}/withdraw body. Both fields optional."

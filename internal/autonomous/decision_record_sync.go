@@ -313,6 +313,12 @@ func (s *DecisionRecords) Withdraw(id, actor, reason string) (DecisionRecordView
 	return s.view(out), nil
 }
 
+// Get returns the record joined with its question state and answer, the same
+// as View.
+func (s *DecisionRecords) Get(id string) (DecisionRecordView, bool) {
+	return s.View(id)
+}
+
 // View returns the record joined with its question state and answer.
 func (s *DecisionRecords) View(id string) (DecisionRecordView, bool) {
 	rec, ok := s.records.Get(id)

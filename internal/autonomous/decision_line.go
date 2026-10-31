@@ -45,6 +45,9 @@ type DecisionLineEntry struct {
 	WaitingTaskIDs []string            `json:"waiting_task_ids"`
 	WaitingTasks   []DecisionLineWait  `json:"waiting_tasks"`
 	Answer         *DecisionLineAnswer `json:"answer"`
+	// RecordID is the decision record this decision was raised from; empty
+	// for a decision that has no record.
+	RecordID string `json:"record_id"`
 }
 
 // BuildDecisionLine returns the decisions matching f, newest first, capped at
@@ -103,6 +106,7 @@ func BuildDecisionLine(f QuestionFilter, store DecisionLineStore, lookup func(pr
 			TaskIDs:        append([]string{}, refs.named[q.ID]...),
 			WaitingTaskIDs: []string{},
 			WaitingTasks:   append([]DecisionLineWait{}, refs.waiting[q.ID]...),
+			RecordID:       q.DecisionRecordID,
 		}
 		for _, w := range e.WaitingTasks {
 			e.WaitingTaskIDs = append(e.WaitingTaskIDs, w.TaskID)

@@ -514,6 +514,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/lane-fill", api.handleAutonomousLaneFill)                // lane fill status: lanes, decisions, alerts
 	apiMux.HandleFunc("/api/autonomous/triage", api.handleAutonomousTriage)                     // triage records: the Automata waiting (failed/blocked), newest first
 	apiMux.HandleFunc("/api/autonomous/decisions", api.handleAutonomousDecisions)               // decisions: operator questions with their tasks and answers, newest first
+	apiMux.HandleFunc("/api/autonomous/decision-records", api.handleDecisionRecords)            // decision records: create and list (exact path wins over the subtree)
+	apiMux.HandleFunc("/api/autonomous/decision-records/", api.handleDecisionRecords)           // decision records: one by id, update, withdraw
 	apiMux.HandleFunc("/api/autonomous/repo-ci-watch", api.handleRepoCIWatch)                   // repo CI watch state: mode, repos, alert threshold, last poll, records newest first
 	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                       // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
 	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)       // safe-to-delete report of finished Automaton branches and worktrees
