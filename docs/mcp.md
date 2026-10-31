@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_triage`, `autonomous_uncommitted_work`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_triage`, `autonomous_uncommitted_work`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
@@ -377,6 +377,40 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 
   ```
   autonomous_config_set(infra_retry_max_tries=5, infra_retry_backoff_seconds=[30, 120])
+  ```
+- **`autonomous_request_watch`** — read the in-flight model request of every watched worker or verifier session whose model runs on a registered compute node, so a hung request can be told from a slow one. The object carries the watch settings in effect (`enabled`, `poll_seconds`, `no_progress_minutes`) and `observations[]` (an empty list, never null, when nothing is watched or the watch is off). Each observation has `session_id`, `automaton_id`, `task_id`, `role` (`worker` or `verifier`), `node`, `model`, `state` (`generating`, `idle`, `unreachable`, or `unknown` before the first sample), `last_change` (RFC 3339), `no_progress_seconds`, `last_poll`, `over_threshold`, `error` (only when the node could not be read) and a plain-text `summary`: `waiting on a model request: generating`, `waiting on a model request: no progress for N minutes` or `waiting on a model request: node unreachable, no progress for N minutes`. Read-only and observation only: it makes no model call and never ends a worker, retries on another backend or unloads a model. Returns the same object as `GET /api/autonomous/request-watch`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `session` | no | A session ID; only that session's observation is returned |
+  | `automaton` | no | An Automaton ID; only the observations of that Automaton's sessions are returned |
+
+  ```
+  autonomous_request_watch()
+  autonomous_request_watch(automaton="a1b2c3d4")
+  autonomous_request_watch(session="ab12", automaton="a1b2c3d4")
+  ```
+
+  An ID that matches nothing returns an empty list. Needs the autonomous read capability when called by a federated peer. The watch keys are set with `config_set` under `autonomous.request_watch.*` (for example `config_set(key="autonomous.request_watch.no_progress_minutes", value="45")`) or with the `request_watch_*` arguments of `autonomous_config_set`, and read with `autonomous_config_get`, which returns the `request_watch` block with the rest of the config. `autonomous_config_set` builds its request from a fixed list of arguments, so the block is reachable there only through these arguments:
+
+  | Argument | Sets | Type |
+  |----------|------|------|
+  | `request_watch_enabled` | `autonomous.request_watch.enabled` | boolean (default true) |
+  | `request_watch_poll_seconds` | `autonomous.request_watch.poll_seconds` | whole number of 1 or more (default 30) |
+  | `request_watch_no_progress_minutes` | `autonomous.request_watch.no_progress_minutes` | whole number of 1 or more (default 30) |
+  | `request_watch_observe_workers` | `autonomous.request_watch.observe_workers` | boolean (default true) |
+  | `request_watch_observe_verifiers` | `autonomous.request_watch.observe_verifiers` | boolean (default true) |
+  | `request_watch_use_gpu_signal` | `autonomous.request_watch.use_gpu_signal` | boolean (default true) |
+  | `request_watch_gpu_busy_percent` | `autonomous.request_watch.gpu_busy_percent` | whole number from 1 to 100 (default 10) |
+  | `request_watch_unreachable_counts` | `autonomous.request_watch.unreachable_counts` | boolean (default true) |
+  | `request_watch_raise_alert` | `autonomous.request_watch.raise_alert` | boolean (default true) |
+  | `request_watch_raise_question` | `autonomous.request_watch.raise_question` | boolean (default true) |
+  | `request_watch_remediation_options` | `autonomous.request_watch.remediation_options` | array or comma separated string of `end_worker`, `retry_other_backend`, `unload_reload_model`; unset offers all of them, `[]` or an empty string offers `keep_waiting` only |
+
+  Each one is sent only when given, so an explicit `false` or `[]` is applied and an argument left out changes nothing. They travel as dotted keys in a `PUT /api/config` body, where the daemon checks every value and a refused value comes back as a tool error naming the key and the valid values. `keep_waiting` is always offered and is always the default answer; the question raised at the threshold is not blocking and answering it only records the choice. The option list replaces the whole list.
+
+  ```
+  autonomous_config_set(request_watch_no_progress_minutes=45, request_watch_remediation_options="end_worker,retry_other_backend")
   ```
 - **`autonomous_triage`** — read the triage records: one record per failed or blocked Automaton (newest first), with its identity (`prd_id`, `prd_title` when it has one, `automation_id`, `automation_name`, `member_id`), the failed or blocked task (`task_id`, `task_title` when present) with its `error` and `blocked_reason` and `session_end_reason` (each truncated to 2000 chars by the pass), `first_seen_at`, `updated_at` and, once set, `alerted_at`, the retry budgets shown as given (all four categories with `limit`, `used`, `left`, plus `ceiling_total` and `ceiling_left` when an overall ceiling is set), and the append-only notes — beside `alert_minutes`, the triage alert threshold in minutes currently in effect (`0` = alert off), which rides the list body, not each record. Read-only: listing never starts, retries or edits anything. Returns the same object as `GET /api/autonomous/triage`.
 
