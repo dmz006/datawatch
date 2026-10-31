@@ -271,6 +271,21 @@ type Session struct {
 	// "failed: ..." or "unvalidated: ...". Empty = gate not reached.
 	ValidationResult string `json:"validation_result,omitempty"`
 
+	// PushState records the push-on-complete outcome for a one-shot's
+	// completion commit: "pushed" or "not_pushed". Empty = no push was
+	// attempted (policy "never", nothing committed, or a PRD task session
+	// whose push the autonomous executor handles).
+	PushState string `json:"push_state,omitempty"`
+
+	// PushWarning holds the operator-visible reason a one-shot commit was
+	// not pushed, in the form "not pushed: <reason>". Empty when the push
+	// succeeded or was never attempted.
+	PushWarning string `json:"push_warning,omitempty"`
+
+	// PushedSHA holds the sha of the commit that reached the remote when
+	// the one-shot's push succeeded. Empty when nothing was pushed.
+	PushedSHA string `json:"pushed_sha,omitempty"`
+
 	// Subprocess — when true, Task is executed directly as a child process
 	// via bash -c instead of through a Claude Code tmux session. Completion
 	// is signaled by exit code (0 = StateComplete, non-zero = StateFailed),

@@ -1883,6 +1883,28 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// BL226 — register global so any package can call alerts.EmitSystem
 	alertspkg.SetGlobal(alertStore)
 
+	// One-shot push-on-complete (session manager): ad-hoc one-shots (no
+	// PRD owner) push their finished work after their own validation is
+	// the completion commit. The settings closure is stored, not its
+	// result — read on every push attempt, so a runtime configure change
+	// applies without a restart (same live-config pattern as the
+	// autonomous manager's wiring).
+	mgr.SetGitPushSettings(func() (policy, remote string) {
+		return cfg.Git.EffectivePushOnComplete(), cfg.Git.EffectivePushRemote()
+	})
+	// Operator alert sink for one-shot push failures → the same alert
+	// store every other system alert goes to.
+	mgr.SetPushAlertFn(func(level, title, body string) {
+		lv := alertspkg.LevelInfo
+		switch level {
+		case "warn":
+			lv = alertspkg.LevelWarn
+		case "error":
+			lv = alertspkg.LevelError
+		}
+		alertStore.AddSystem(lv, title, body)
+	})
+
 	// Create filter store
 	filterStore, err := newFilterStore(filepath.Join(expandHome(cfg.DataDir), "filters.json"))
 	if err != nil {
