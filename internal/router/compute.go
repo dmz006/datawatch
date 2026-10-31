@@ -9,6 +9,7 @@
 //	compute node delete <name>
 //	compute node health <name>
 //	compute node detail <name>
+//	compute node models [name] [model=<m>] [backend=<b>] [refresh]
 //	compute pin                   → show pin_check_seconds
 //	compute pin <seconds>         → set pin_check_seconds (0 = keeper off)
 
@@ -35,6 +36,9 @@ const computeUsage = `Usage:
   compute node delete <name>                       remove
   compute node health <name>                       declared capacity + maintenance
   compute node detail <name>                       on-demand pull from monitoring sidecar
+  compute node models [name] [model=<m>] [backend=<b>] [refresh]
+                                                   models each node serves now; with model= also whether a node would accept it
+                                                   (served models are kept for autonomous.model_routing.served_models_cache_seconds; refresh reads again)
   compute node attach-observer <name> <peer>       bind a registered observer peer (alpha.23b)
   compute node detach-observer <name>              clear observer-peer binding
   compute node observer-free                       list peers with no bound ComputeNode
@@ -181,6 +185,8 @@ func (r *Router) handleComputeCmd(cmd Command) {
 			return
 		}
 		r.reply("compute node detail "+tail, prettyJSON(out))
+	case "models", "served-models":
+		r.replyComputeNodeModels(tail)
 	case "attach-observer":
 		// alpha.23b — `compute node attach-observer <name> <peer>`
 		bits := strings.Fields(tail)
