@@ -1015,6 +1015,10 @@ Prompt patterns + completion patterns the daemon scans tmux output for. **Prompt
 
 The Compute Node registry — hardware or remote endpoints that run LLM inference. Each node is one entry; LLMs reference nodes by name for failover routing.
 
+##### Compute node TLS verification
+
+How the daemon checks the certificate of an `https://` node: by default against the system roots, optionally against a private CA file (`tls_ca_file`) or a pinned SHA-256 certificate fingerprint (`tls_cert_fingerprint`), or not at all when `tls_insecure_skip_verify` is set, which is not recommended because anyone on the network path can then impersonate the node.
+
 **Supported kinds (LLM API protocol):**
 - `ollama` — native Ollama HTTP API (local or remote)
 - `openai-compat` — OpenAI-compatible `/v1` endpoint (OpenWebUI, vLLM, LMStudio, OpenAI itself, etc.)
