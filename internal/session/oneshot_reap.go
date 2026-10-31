@@ -67,6 +67,12 @@ func (m *Manager) ReapFinishedOneShots() []string {
 	for _, sess := range m.FinishedOneShots() {
 		oldState := sess.State
 		m.commitOnCompletion(sess, NewProjectGit(sess.ProjectDir))
+		// If completion left work unpushed (no commit made, or its push
+		// failed / was refused), save it now — a reaped one-shot never
+		// gets a second completion chance. commitOnCompletion's own push
+		// already ran, so work it pushed is not pushed twice (the helper
+		// sees zero unpushed commits and does nothing).
+		m.pushUnpushedBeforeTeardown(sess)
 		sess.State = StateComplete
 		sess.UpdatedAt = time.Now()
 		_ = m.store.Save(sess)

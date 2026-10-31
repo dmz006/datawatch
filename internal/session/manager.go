@@ -3386,6 +3386,12 @@ func (m *Manager) Kill(fullID string) error {
 		}
 	}
 
+	// Save any unpushed commits BEFORE the pane dies and the record
+	// mutates: the push is bounded, never fails the kill, and leaves
+	// the local commits intact on failure (a push failure still
+	// proceeds with the kill exactly as before).
+	m.pushUnpushedBeforeTeardown(sess)
+
 	// Kill the tmux session — but ONLY if there is one. Virtual
 	// sessions (council-virtual, etc.) have no tmux pane; calling
 	// `tmux kill-session -t ""` without a target munches arbitrary
@@ -3824,6 +3830,12 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 			fmt.Printf("[session] cancelled %d scheduled command(s) for deleted session %s\n", n, sess.ID)
 		}
 	}
+
+	// Save unpushed commits before the record (and, for daemon-owned
+	// checkouts, the ProjectDir clone itself) disappears. Bounded and
+	// never fails the delete; a push failure still proceeds below and
+	// the local commits are kept.
+	m.pushUnpushedBeforeTeardown(sess)
 
 	// Delete from store
 	if err := m.store.Delete(fullID); err != nil {
