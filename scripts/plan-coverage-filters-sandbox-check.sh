@@ -676,7 +676,7 @@ while [[ "$i" -lt 30 ]]; do
 done
 if [[ "$DEAD" != "1" ]]; then
   D8_OK=0
-  D8_WHY="$D8_WHYthe sandbox daemon pid $SANDBOX_PID was still alive 15s after td_stop_all; "
+  D8_WHY="$D8_WHY the sandbox daemon pid $SANDBOX_PID was still alive 15s after td_stop_all; "
 fi
 
 if [[ "$D8_OK" == "1" ]]; then
