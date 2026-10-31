@@ -46,7 +46,7 @@ func (m *Manager) judgeCompletionRulesReview(ctx context.Context, prd *PRD) (Gua
 	if fn == nil {
 		return GuardrailVerdict{}, fmt.Errorf("no guardrail function is wired for prd %s (SetGuardrail); the rules-review judgment cannot run", prd.ID)
 	}
-	inv, resErr := m.prdRulesReviewInvocation(prd)
+	inv, resErr := m.prdRulesReviewInvocation(ctx, prd)
 	if resErr != nil {
 		// v9.10.18 — no judge model resolvable at any level: loud,
 		// non-retried infra block, recorded by RejudgeCompletionGuardrail

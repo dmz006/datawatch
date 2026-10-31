@@ -23,7 +23,7 @@ func newRulesReviewManager(t *testing.T, cfg Config) *Manager {
 
 func TestRulesReviewSuffix_EmptyProjectDir(t *testing.T) {
 	m := &Manager{cfg: Config{}}
-	if got := m.rulesReviewSuffix(&PRD{}); got != "" {
+	if got := m.rulesReviewSuffix(context.Background(), &PRD{}); got != "" {
 		t.Errorf("want empty suffix for an empty ProjectDir, got %q", got)
 	}
 }
@@ -31,7 +31,7 @@ func TestRulesReviewSuffix_EmptyProjectDir(t *testing.T) {
 func TestRulesReviewSuffix_NoRulesOrContextFilePresent(t *testing.T) {
 	m := &Manager{cfg: Config{}}
 	dir := t.TempDir() // no AGENT.md, no CONTEXT.md
-	if got := m.rulesReviewSuffix(&PRD{ProjectDir: dir}); got != "" {
+	if got := m.rulesReviewSuffix(context.Background(), &PRD{ProjectDir: dir}); got != "" {
 		t.Errorf("want empty suffix when neither configured file exists, got %q", got)
 	}
 }
@@ -42,7 +42,7 @@ func TestRulesReviewSuffix_PointsAtWhicheverFilesExist(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("rules"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := m.rulesReviewSuffix(&PRD{ProjectDir: dir})
+	got := m.rulesReviewSuffix(context.Background(), &PRD{ProjectDir: dir})
 	if got == "" {
 		t.Fatal("want a non-empty suffix when AGENT.md exists")
 	}
@@ -66,7 +66,7 @@ func TestRulesReviewSuffix_CustomFilenames(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "CTX.md"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := m.rulesReviewSuffix(&PRD{ProjectDir: dir})
+	got := m.rulesReviewSuffix(context.Background(), &PRD{ProjectDir: dir})
 	if !containsStr(got, "RULES.md") || !containsStr(got, "CTX.md") {
 		t.Errorf("suffix doesn't honor configured filenames: %q", got)
 	}
