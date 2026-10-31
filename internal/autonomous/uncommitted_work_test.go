@@ -289,3 +289,71 @@ func TestUncommittedCommitFailureReported(t *testing.T) {
 		t.Fatalf("files still dirty = %v, want %v", uwPaths(files), want)
 	}
 }
+
+// uwHeadRunner answers git status with status and git show HEAD:<path> from
+// head (an absent path is an error, as for a file git does not know).
+func uwHeadRunner(status string, head map[string]string) driftGitRunner {
+	return func(ctx context.Context, dir string, args ...string) (string, error) {
+		switch args[0] {
+		case "status":
+			return status, nil
+		case "show":
+			if v, ok := head[strings.TrimPrefix(args[1], "HEAD:")]; ok {
+				return v, nil
+			}
+			return "", os.ErrNotExist
+		}
+		return "", os.ErrInvalid
+	}
+}
+
+func TestUncommittedDetectorDropsDaemonTooling(t *testing.T) {
+	out := "?? .mcp.json\x00?? .datawatch/skills/web-search-guidance/SKILL.md\x00?? .datawatch/verify/new-check.sh\x00 M .mcp.json\x00?? real.go\x00"
+	got, err := DetectUncommittedWork(context.Background(), t.TempDir(), uwStatusRunner(out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A new .mcp.json and a new injected skill are the daemon's. A change to a
+	// tracked .mcp.json and a new file elsewhere under .datawatch/ are not.
+	want := []string{".datawatch/verify/new-check.sh", ".mcp.json", "real.go"}
+	if !reflect.DeepEqual(uwPaths(got), want) {
+		t.Fatalf("paths = %v, want %v", uwPaths(got), want)
+	}
+	for _, f := range got {
+		if f.Path == ".mcp.json" && f.Status != " M" {
+			t.Fatalf(".mcp.json kept with status %q, want the tracked change", f.Status)
+		}
+	}
+}
+
+func TestUncommittedDetectorIgnoreFileChanges(t *testing.T) {
+	daemonLines := "# datawatch-managed (tag)\n.decompose-output-*.json\nCHECKPOINT.md\n.mcp.json\n.datawatch/\n"
+	cases := []struct {
+		name     string
+		current  string
+		head     map[string]string
+		wantKept bool
+	}{
+		{"new file of daemon lines", daemonLines, nil, false},
+		{"tracked file plus daemon lines", "node_modules/\n\n" + daemonLines, map[string]string{".gitignore": "node_modules/\n"}, false},
+		{"new file with a worker line", daemonLines + "secrets.txt\n", nil, true},
+		{"tracked file with a removed line", daemonLines, map[string]string{".gitignore": "node_modules/\n"}, true},
+		{"tracked file with only a worker line", "node_modules/\ndist/\n", map[string]string{".gitignore": "node_modules/\n"}, true},
+		{"tracked file unchanged in content", "node_modules/\n", map[string]string{".gitignore": "node_modules/\n"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(tc.current), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			got, err := DetectUncommittedWork(context.Background(), dir, uwHeadRunner("?? .gitignore\x00", tc.head))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kept := len(got) == 1 && got[0].Path == ".gitignore"; kept != tc.wantKept {
+				t.Fatalf("kept = %v (%v), want %v", kept, uwPaths(got), tc.wantKept)
+			}
+		})
+	}
+}

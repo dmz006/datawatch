@@ -164,6 +164,27 @@ func TestUncommittedRollupDirtyWorktreeBlocksCompletion(t *testing.T) {
 	}
 }
 
+// In the daemon the question store's change hook saves the Automaton when the
+// worktree question is raised. That save must not make the roll-up read a
+// concurrent writer: the Automaton has to land in blocked, not stay running.
+func TestUncommittedRollupHoldWithQuestionHookBlocks(t *testing.T) {
+	r := newUncommittedRollupRig(t, config.UncommittedWorkPolicyHold, dirtyFiles("stray.txt"))
+	r.store.SetChangeHook(func(c QuestionChange) { r.m.RecordQuestionChange(c) })
+
+	got := r.run(t)
+	if got.Status != PRDBlocked {
+		t.Fatalf("status = %s; want blocked (decisions: %v)", got.Status, decisionKinds(got))
+	}
+	for _, d := range got.Decisions {
+		if d.Kind == "rollup_aborted_stale" {
+			t.Fatalf("the roll-up aborted as stale: %+v", d)
+		}
+	}
+	if got.UncommittedWork == nil || got.UncommittedWork.QuestionID == "" {
+		t.Fatalf("hold = %+v; want a worktree hold with its question", got.UncommittedWork)
+	}
+}
+
 func TestUncommittedRollupCleanWorktreeCompletes(t *testing.T) {
 	r := newUncommittedRollupRig(t, config.UncommittedWorkPolicyHold, nil)
 

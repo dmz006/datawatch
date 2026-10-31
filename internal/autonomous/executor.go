@@ -278,7 +278,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// rather than registering a pseudo-entry in BackendArtifacts (which
 	// QueryAllStatus assumes is exclusively real backends).
 	if isFirstRun && prd.ProjectDir != "" {
-		if _, err := tooling.EnsureIgnoredPatterns(prd.ProjectDir, []string{".decompose-output-*.json", "CHECKPOINT.md"}); err != nil {
+		if _, err := tooling.EnsureIgnoredPatterns(prd.ProjectDir, automatonScratchIgnorePatterns); err != nil {
 			log.Printf("[autonomous] EnsureIgnoredPatterns for %s: %v", prd.ProjectDir, err)
 		}
 		// 2026-10-15 — BL449 incident: a task with its own ProjectDir
@@ -294,7 +294,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					continue
 				}
 				seen[dir] = true
-				if _, err := tooling.EnsureIgnoredPatterns(dir, []string{".decompose-output-*.json", "CHECKPOINT.md"}); err != nil {
+				if _, err := tooling.EnsureIgnoredPatterns(dir, automatonScratchIgnorePatterns); err != nil {
 					log.Printf("[autonomous] EnsureIgnoredPatterns for task dir %s: %v", dir, err)
 				}
 			}
@@ -2849,6 +2849,20 @@ func (m *Manager) rollupOwnSaves(prdID string) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.ownSaves[prdID]
+}
+
+// noteOwnSaves counts n saves of the Automaton that a hook made on the
+// executor's behalf as its own writes (see savePRDOwn).
+func (m *Manager) noteOwnSaves(prdID string, n int) {
+	if n <= 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ownSaves == nil {
+		m.ownSaves = map[string]int{}
+	}
+	m.ownSaves[prdID] += n
 }
 
 // savePRDOwn saves prd and counts it as an executor-owned write.

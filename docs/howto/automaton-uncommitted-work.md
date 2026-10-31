@@ -85,10 +85,15 @@ at the worktree with `git status`:
    task's automatic-retry budget and records no failed attempt, because nothing
    about the work failed; it is waiting for you.
 
-The daemon's own scratch files are never counted: the worker checkpoint note,
-the decompose output, the advisory tree lock, and anything the daemon's staging
-guard refuses to commit. Files git ignores never show up in `git status`, so
-they are not counted either.
+The daemon's own files are never counted: the worker checkpoint note, the
+decompose output, the advisory tree lock, the session discovery file
+`.mcp.json` and the skills under `.datawatch/skills/` when the daemon wrote them
+(an untracked file only, so a project that tracks `.mcp.json` still sees a change
+to it), the lines the daemon itself adds to an ignore file (a change to
+`.gitignore`, `.cfignore` or `.dockerignore` that only adds those lines; any
+other change to the file is counted), and anything the daemon's staging guard
+refuses to commit. Files git ignores never show up in `git status`, so they are
+not counted either.
 
 ### The check before an Automaton is reported finished
 

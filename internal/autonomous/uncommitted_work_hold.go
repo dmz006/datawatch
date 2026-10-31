@@ -305,7 +305,16 @@ func (m *Manager) holdAutomatonForUncommittedWork(prd *PRD, files []UncommittedF
 	}
 
 	all, outside := uncommittedFilePaths(files)
+	// In the daemon the question store's change hook writes the raise to the
+	// Automaton's decision log and saves it, inside Raise. That save is part
+	// of this hold: count it as the executor's own, or the roll-up that
+	// commits the blocked status right after would read it as another writer
+	// and abort, leaving the Automaton running with nothing to run.
+	revBefore, _ := m.store.PRDRev(prd.ID)
 	questionID := m.raiseUncommittedQuestion(prd, nil, UncommittedHoldKindWorktree, files, cause)
+	if revAfter, ok := m.store.PRDRev(prd.ID); ok && revAfter > revBefore {
+		m.noteOwnSaves(prd.ID, revAfter-revBefore)
+	}
 	m.store.WithLock(func() {
 		prd.UncommittedWork = &UncommittedWorkHold{
 			Kind:         UncommittedHoldKindWorktree,

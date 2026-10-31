@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"sort"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/gitguard"
+	"github.com/dmz006/datawatch/internal/tooling"
 )
 
 // UncommittedFile is one path git reports as changed in an Automaton worktree
@@ -27,9 +29,11 @@ type UncommittedFile struct {
 // renamed or untracked in dir, using git status through the read-only run
 // (nil means defaultDriftGitRunner). Ignored files never appear because git
 // status omits them. Paths are normalized, de-duplicated and sorted, and the
-// daemon's own bookkeeping files are dropped: scratch artifacts of the
-// Automata runner and anything gitguard.Default refuses to stage. An empty dir
-// or a git error returns an error so the caller can skip the check.
+// daemon's own files are dropped: scratch artifacts of the Automata runner, the
+// tooling files the daemon writes into a project directory when a session
+// starts (see isDaemonToolingFile and isDaemonIgnoreChange) and anything
+// gitguard.Default refuses to stage. An empty dir or a git error returns an
+// error so the caller can skip the check.
 func DetectUncommittedWork(ctx context.Context, dir string, run driftGitRunner) ([]UncommittedFile, error) {
 	if dir == "" {
 		return nil, errors.New("uncommitted work check: empty directory")
@@ -59,7 +63,10 @@ func DetectUncommittedWork(ctx context.Context, dir string, run driftGitRunner) 
 	seen := make(map[string]bool, len(files))
 	result := make([]UncommittedFile, 0, len(files))
 	for _, f := range files {
-		if !keep[f.Path] || isBookkeepingPath(f.Path) || seen[f.Path] {
+		if !keep[f.Path] || isBookkeepingPath(f.Path) || isDaemonToolingFile(f) || seen[f.Path] {
+			continue
+		}
+		if isIgnoreFileName(f.Path) && isDaemonIgnoreChange(ctx, dir, f.Path, run) {
 			continue
 		}
 		seen[f.Path] = true
@@ -111,6 +118,103 @@ func isBookkeepingPath(p string) bool {
 	}
 	ok, _ := path.Match(".decompose-output-*.json", base)
 	return ok && !strings.Contains(p, "/")
+}
+
+// automatonScratchIgnorePatterns are the lines the Automata runner adds to a
+// project's ignore file the first time an Automaton runs there, so its scratch
+// files stay out of the commits.
+var automatonScratchIgnorePatterns = []string{".decompose-output-*.json", "CHECKPOINT.md"}
+
+const (
+	// daemonMCPConfigFile is the per-session discovery file the daemon writes
+	// at the root of a project directory when a session starts.
+	daemonMCPConfigFile = ".mcp.json"
+	// daemonSkillsDir is where the daemon injects skills for a session.
+	daemonSkillsDir = ".datawatch/skills/"
+	// daemonIgnoreComment starts the comment line the daemon writes above the
+	// patterns it appends to an ignore file.
+	daemonIgnoreComment = "# datawatch-managed"
+	// daemonIgnoreDir is the ignore line for the daemon's own folder.
+	daemonIgnoreDir = ".datawatch/"
+)
+
+// isDaemonToolingFile reports whether f is a new file the daemon itself wrote
+// into the project directory for a session: the per-session MCP discovery file
+// and the skills it injects. They are never the task's work. Only an untracked
+// file counts, so a project that tracks .mcp.json still sees a change to it.
+func isDaemonToolingFile(f UncommittedFile) bool {
+	if f.Status != "??" {
+		return false
+	}
+	return f.Path == daemonMCPConfigFile || strings.HasPrefix(f.Path, daemonSkillsDir)
+}
+
+// isIgnoreFileName reports whether p is one of the ignore files the daemon
+// appends patterns to.
+func isIgnoreFileName(p string) bool {
+	return p == ".gitignore" || p == ".cfignore" || p == ".dockerignore"
+}
+
+// daemonIgnoreLines is every non-comment line the daemon may append to an
+// ignore file: the Automata scratch patterns, the artifact patterns of each
+// backend and its own folder.
+func daemonIgnoreLines() map[string]bool {
+	set := map[string]bool{daemonIgnoreDir: true}
+	for _, p := range automatonScratchIgnorePatterns {
+		set[p] = true
+	}
+	for _, patterns := range tooling.BackendArtifacts {
+		for _, p := range patterns {
+			set[p] = true
+		}
+	}
+	return set
+}
+
+// ignoreFileLines returns the trimmed non-blank lines of text as a set.
+func ignoreFileLines(text string) map[string]bool {
+	set := map[string]bool{}
+	for _, l := range strings.Split(text, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			set[l] = true
+		}
+	}
+	return set
+}
+
+// isDaemonIgnoreChange reports whether the working copy of the ignore file rel
+// in dir differs from HEAD only by lines the daemon itself appends (see
+// daemonIgnoreLines): no line was removed and every added line is one of those
+// patterns or the daemon's comment line. An ignore file that is not in HEAD is
+// compared with an empty one. Any other change, including one the worker made,
+// is not the daemon's.
+func isDaemonIgnoreChange(ctx context.Context, dir, rel string, run driftGitRunner) bool {
+	cur, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel))) // #nosec G304 -- rel is a fixed ignore file name and dir is the Automaton's own project directory
+	if err != nil {
+		return false
+	}
+	head, herr := run(ctx, dir, "show", "HEAD:"+rel)
+	if herr != nil {
+		head = ""
+	}
+	before, now := ignoreFileLines(head), ignoreFileLines(string(cur))
+	for l := range before {
+		if !now[l] {
+			return false
+		}
+	}
+	allowed := daemonIgnoreLines()
+	added := 0
+	for l := range now {
+		if before[l] {
+			continue
+		}
+		added++
+		if !allowed[l] && !strings.HasPrefix(l, daemonIgnoreComment) {
+			return false
+		}
+	}
+	return added > 0
 }
 
 // ScopeUncommittedFiles narrows files to what a task owns and flags the files
