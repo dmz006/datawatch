@@ -257,7 +257,9 @@ Where lanes show up on each method:
   allowed (for example a retired variant) falls back to the default and the
   daemon logs one line saying so.
 - **Lanes did not change.** By design. The calculator advises only; change the
-  lane count yourself.
+  lane count yourself. The what-if lanes on the advice are never saved and
+  never start or stop a lane either, and the stamped lanes on a reading only
+  record what was running.
 
 ## See also
 
