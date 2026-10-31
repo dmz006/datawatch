@@ -10,13 +10,20 @@
 # sandbox identity reset.
 #
 # Safety: this story writes (and deliberately attempts to empty) the identity, so
-# it only runs against the sandbox daemon named by TEST_BASE. It refuses to run
-# when TEST_BASE or the CLI port is a production port (8080 or 8443), and it never
-# reads a daemon address from anywhere but TEST_BASE / TEST_PORT.
+# it only runs against the sandbox daemon named by TEST_BASE. The guard is an
+# allowlist, not a denylist: TEST_BASE must be a loopback address whose port is the
+# sandbox HTTP port (TEST_PORT) or the sandbox TLS port (TEST_TLS_PORT) the harness
+# allocated, and neither of those may be a production port (8080 or 8443). Any other
+# TEST_BASE gets no identity write at all. The story never reads a daemon address
+# from anywhere but TEST_BASE / TEST_BASE_HTTP / TEST_PORT / TEST_TLS_PORT.
+#
+# run-tests.sh sets TEST_BASE to https on TEST_TLS_PORT and TEST_BASE_HTTP to plain
+# http on TEST_PORT; the REST and MCP steps use TEST_BASE, the CLI steps use the
+# port cli_test in lib.sh targets (http on 127.0.0.1:TEST_PORT).
 #
 # Harness limits, each reported as a FAIL line in the output (never a silent skip):
-#   - CLI: needs the built binary at TEST_BINARY and the CLI port (TEST_PORT) to be
-#     the daemon at TEST_BASE; cli_test in lib.sh points the CLI at 127.0.0.1:TEST_PORT.
+#   - CLI: needs the built binary at TEST_BINARY, and the port of TEST_BASE_HTTP to be
+#     TEST_PORT, because cli_test in lib.sh points the CLI at http://127.0.0.1:TEST_PORT.
 #   - MCP: POST /api/mcp/call on the same daemon, the way the other surface:mcp stories do.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-841"
@@ -44,21 +51,42 @@ assert not any(d.get(k) for k in keys)
 ' 2>/dev/null
 }
 
-# _ts841_audit_count <action> — number of audit entries with that action.
+# _ts841_url_port <url> — the port of a URL (empty when it names none).
+_ts841_url_port() { local h="${1#*://}"; h="${h%%/*}"; [[ "$h" == *:* ]] && echo "${h##*:}" || echo ""; }
+
+# _ts841_url_host <url> — the host of a URL.
+_ts841_url_host() { local h="${1#*://}"; h="${h%%/*}"; echo "${h%%:*}"; }
+
+# _ts841_audit_count <action> <since> — number of audit entries with that action
+# written at or after <since> (RFC 3339, UTC), so earlier runs cannot satisfy it.
 _ts841_audit_count() {
-  api GET "/api/audit?action=$1&limit=200" 2>/dev/null |
+  api GET "/api/audit?action=$1&since=$2&limit=200" 2>/dev/null |
     python3 -c 'import json,sys;print(len(json.load(sys.stdin).get("entries") or []))' 2>/dev/null || echo "-1"
 }
 
 _story_ts_841() {
   local role_a="story-role-a" role_b="story-role-b"
-  local base_port="${TEST_BASE##*:}"; base_port="${base_port%%/*}"
+  local base_port base_host http_base="${TEST_BASE_HTTP:-$TEST_HTTP}" http_port
+  base_port=$(_ts841_url_port "$TEST_BASE")
+  base_host=$(_ts841_url_host "$TEST_BASE")
+  http_port=$(_ts841_url_port "$http_base")
 
-  # Sandbox guard: nothing below runs against a production port.
-  if [[ "$base_port" == "8080" || "$base_port" == "8443" || "${TEST_PORT:-}" == "8080" || "${TEST_PORT:-}" == "8443" ]]; then
-    ko "refusing to run: TEST_BASE=$TEST_BASE / TEST_PORT=${TEST_PORT:-} is a production port; this story writes the identity and runs only against the sandbox daemon"
+  # Sandbox guard (allowlist): loopback host, and a port the harness gave the sandbox
+  # daemon. Nothing below runs, and no identity write is sent, otherwise.
+  local sandbox_ok=1 p
+  [[ "$base_host" == "127.0.0.1" || "$base_host" == "localhost" || "$base_host" == "[::1]" ]] || sandbox_ok=0
+  [[ -n "$base_port" && ( "$base_port" == "${TEST_PORT:-}" || "$base_port" == "${TEST_TLS_PORT:-}" ) ]] || sandbox_ok=0
+  for p in "${TEST_PORT:-}" "${TEST_TLS_PORT:-}" "$base_port"; do
+    [[ "$p" == "8080" || "$p" == "8443" ]] && sandbox_ok=0
+  done
+  if [[ "$sandbox_ok" != "1" ]]; then
+    ko "refusing to run: TEST_BASE=$TEST_BASE is not the sandbox daemon (need a loopback host on TEST_PORT=${TEST_PORT:-} or TEST_TLS_PORT=${TEST_TLS_PORT:-}, never 8080 or 8443); this story writes the identity and runs only against the sandbox"
     return
   fi
+
+  # Audit entries are counted from here on, so leftovers from earlier runs never count.
+  local since
+  since=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
   # --- (1) write identity A, then identity B, through PUT /api/identity ---
   local a_code b_code
@@ -113,14 +141,15 @@ assert any(b.get("role")==os.environ["ROLE"] for b in d["backups"])
   fi
 
   # --- (5) the CLI: identity backups, identity restore, identity reset --yes ---
-  # The CLI talks to 127.0.0.1:TEST_PORT (cli_test in lib.sh). It is only used when
-  # that is the same daemon as TEST_BASE and the binary exists.
+  # The CLI talks to http://127.0.0.1:TEST_PORT (cli_test in lib.sh). It is only used
+  # when that port is the HTTP port of the sandbox daemon (TEST_BASE_HTTP) and the
+  # binary exists.
   local cli_ok=1
   if [[ ! -x "$TEST_BINARY" ]]; then
     _ts841_fail "CLI steps not run: no executable datawatch binary at TEST_BINARY=$TEST_BINARY (build it, or set TEST_BINARY)"
     cli_ok=0
-  elif [[ "$base_port" != "${TEST_PORT:-8080}" ]]; then
-    _ts841_fail "CLI steps not run: cli_test targets 127.0.0.1:${TEST_PORT:-8080} but TEST_BASE is $TEST_BASE, so the CLI would not reach the sandbox daemon (set TEST_PORT to the sandbox port)"
+  elif [[ -z "$http_port" || "$http_port" != "${TEST_PORT:-}" ]]; then
+    _ts841_fail "CLI steps not run: cli_test targets http://127.0.0.1:${TEST_PORT:-} but the sandbox HTTP base is $http_base, so the CLI would not reach the sandbox daemon (TEST_BASE_HTTP and TEST_PORT must name the same port)"
     cli_ok=0
   fi
   if [[ "$cli_ok" == "1" ]]; then
@@ -195,16 +224,18 @@ assert any(b.get("role")==os.environ["ROLE"] for b in d["backups"])
 
   # --- (7) the audit log shows the refusal, the reset and the restore ---
   local n_refused n_reset n_restore
-  n_refused=$(_ts841_audit_count identity_set_refused)
-  n_reset=$(_ts841_audit_count identity_reset)
-  n_restore=$(_ts841_audit_count identity_restore)
+  n_refused=$(_ts841_audit_count identity_set_refused "$since")
+  n_reset=$(_ts841_audit_count identity_reset "$since")
+  n_restore=$(_ts841_audit_count identity_restore "$since")
   save_evidence TS-841 "audit-counts.txt" "identity_set_refused=$n_refused identity_reset=$n_reset identity_restore=$n_restore"
-  # Refusals: the REST PUT and the MCP set_identity. Resets: MCP always, CLI when it ran.
-  # Restores: REST and MCP always, CLI when it ran.
-  if [[ "$n_refused" -ge 2 && "$n_reset" -ge 1 && "$n_restore" -ge 2 ]]; then
-    _ts841_pass "audit log has identity_set_refused ($n_refused), identity_reset ($n_reset) and identity_restore ($n_restore) entries"
+  # Counted since this run started. Refusals: the REST PUT and the MCP set_identity.
+  # Resets: MCP always, CLI too when it ran. Restores: REST and MCP always, CLI too when it ran.
+  local want_reset=1 want_restore=2
+  if [[ "$cli_ok" == "1" ]]; then want_reset=2; want_restore=3; fi
+  if [[ "$n_refused" -ge 2 && "$n_reset" -ge "$want_reset" && "$n_restore" -ge "$want_restore" ]]; then
+    _ts841_pass "audit log has identity_set_refused ($n_refused), identity_reset ($n_reset) and identity_restore ($n_restore) entries written since $since"
   else
-    _ts841_fail "audit log counts: identity_set_refused=$n_refused (want >=2), identity_reset=$n_reset (want >=1), identity_restore=$n_restore (want >=2); -1 means /api/audit was unreadable"
+    _ts841_fail "audit log counts: identity_set_refused=$n_refused (want >=2), identity_reset=$n_reset (want >=$want_reset), identity_restore=$n_restore (want >=$want_restore) since $since; -1 means /api/audit was unreadable"
   fi
 
   # Leave the sandbox identity reset (the explicit, backed-up clear).
@@ -220,4 +251,4 @@ assert any(b.get("role")==os.environ["ROLE"] for b in d["backups"])
 RESULT=fail
 _story_ts_841
 : "${RESULT:=fail}"
-unset -f _story_ts_841 _ts841_pass _ts841_fail _ts841_role _ts841_newest_backup_role _ts841_is_empty _ts841_audit_count
+unset -f _story_ts_841 _ts841_pass _ts841_fail _ts841_role _ts841_newest_backup_role _ts841_is_empty _ts841_url_port _ts841_url_host _ts841_audit_count
