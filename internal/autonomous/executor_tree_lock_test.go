@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // fastTreeLockPolling sets the lock wait poll interval low for tests and
@@ -324,7 +326,10 @@ func TestExecutorTreeLockWaitReason(t *testing.T) {
 func TestExecutorTreeLockReleasedOnSpawnFailure(t *testing.T) {
 	fastTreeLockPolling(t)
 	projDir := t.TempDir()
-	mgr := newTreeLockExecutorManager(t, Config{})
+	// This test is about the lock on a spawn failure, so the spawn error must
+	// end the task at once instead of being retried as an infrastructure fault.
+	retryOff := false
+	mgr := newTreeLockExecutorManager(t, Config{InfraRetry: config.InfraRetryConfig{Enabled: &retryOff}})
 	st := mgr.Store()
 	prd, taskID := makeTreePRD(t, mgr, projDir)
 
