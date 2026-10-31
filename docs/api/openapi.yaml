@@ -942,6 +942,35 @@ paths:
         the whole PUT with 400. The policy applies to the next verification with no
         restart.
 
+        Decision record keys under `autonomous.decisions` (a structured record of one
+        operator decision; the daemon raises its queue question from the record):
+        `autonomous.decisions.enabled` (true|false, default true),
+        `autonomous.decisions.folder` (string; empty = folder watch off),
+        `autonomous.decisions.folder_glob` (default `*.md`),
+        `autonomous.decisions.front_matter_delimiter` (default `---`),
+        `autonomous.decisions.front_matter_separator` (default `:`),
+        `autonomous.decisions.front_matter_field_separator` (default `|`),
+        `autonomous.decisions.front_matter_keys` (object mapping a canonical key name to
+        the name used in files; empty = canonical names),
+        `autonomous.decisions.folder_withdraw_on_delete` (true|false, default true),
+        `autonomous.decisions.clarity_mode` (off | warn | refuse, default warn),
+        `autonomous.decisions.clarity_min_text_chars` (whole number >= 0, default 60),
+        `autonomous.decisions.clarity_require_tradeoffs` (true|false, default true),
+        `autonomous.decisions.clarity_require_label` (true|false, default true),
+        `autonomous.decisions.clarity_tracker_id_pattern` (regular expression; empty =
+        the built-in pattern), `autonomous.decisions.doc_root` (string; empty = the
+        daemon's working directory), `autonomous.decisions.doc_status_mode` (off | report
+        | on, default report), `autonomous.decisions.doc_status_pattern` (regular
+        expression, default `^Confirmed:.*$`), `autonomous.decisions.doc_status_template`
+        (text with the placeholders {choice}, {choice_label}, {quote}, {actor}, {date}
+        and {decision_id}) and `autonomous.decisions.follow_ups` (a JSON array of
+        `{name, kind, target}` objects, default empty; `kind` is `start_template` or
+        `open_automaton`). A mode outside its set, a regular expression that does not
+        compile, a negative `clarity_min_text_chars`, an empty delimiter or separator,
+        or a follow-up with an empty or repeated name, an unknown kind or an empty
+        target rejects the whole PUT with 400 and nothing is written. Absent keys read
+        their defaults, and a change applies with no restart.
+
         `usage.calculator.variant` (pace-gauge | lane-planner | burn-ledger | all),
         `usage.calculator.policy` (use-all | pace | finish-early),
         `usage.calculator.safety_points` (number >= 0; a negative value rejects the PUT with 400),

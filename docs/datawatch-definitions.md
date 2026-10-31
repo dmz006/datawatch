@@ -1617,6 +1617,20 @@ Four settings in Settings → Automata (Autonomous Automata planning) control ho
 
 **Queue preview lines** (`autonomous.questions.queue_preview_lines`) — how many lines of each open question the queue row shows before its *Show more* control. The default is 3. A whole number of 1 or more. It is for the operator who wants a longer or shorter glance at each question without opening it; the full text is always one click away.
 
+### Decision record settings
+
+The settings under `autonomous.decisions` (Settings → Automata) control the decision record: a structured description of one operator decision, with a title, the situation in plain words, what is being decided, the options with a line of cost and risk each, a recommendation and a forced default. The daemon raises its operator question from the record, never from the caller's own prose. Every key reads its default when absent, an explicit `false` or `0` is kept, and a bad value is refused on every surface (the config file load, `PUT /api/config`, the MCP config tools, the CLI and the comm channel `configure` verb). A change applies at once, with no restart.
+
+**Switch and folder** — `enabled` (on by default) is the master switch. `folder` names a folder of decision files the daemon watches; empty turns the folder watch off. `folder_glob` (default `*.md`) picks which files are read. `folder_withdraw_on_delete` (on by default) withdraws a record when its file is deleted.
+
+**File format** — `front_matter_delimiter` (default `---`) opens and closes the front matter of a file, `front_matter_separator` (default `:`) splits a line into key and value, and `front_matter_field_separator` (default `|`) separates the parts of an option or recommendation line. None of the three may be empty. `front_matter_keys` maps a canonical key name to the name your files use; empty means the canonical names.
+
+**Clarity check** — `clarity_mode` is `off`, `warn` (the default) or `refuse`, and decides what happens to a record that reads badly. `clarity_min_text_chars` (default 60, 0 = no length check) is the fewest characters the situation and the deciding text may have. `clarity_require_tradeoffs` and `clarity_require_label` (both on by default) ask for a cost-and-risk line on every option and a short human label. `clarity_tracker_id_pattern` is a regular expression that spots an internal tracker identifier; empty uses the built-in pattern.
+
+**Document status line** — `doc_root` is the folder document paths on a record resolve against and must stay inside; empty is the daemon's working directory. `doc_status_mode` is `off`, `report` (the default, shows what would change) or `on` (writes the change). `doc_status_pattern` (default `^Confirmed:.*$`) finds the status line and `doc_status_template` is the text it is replaced with, using `{choice}`, `{choice_label}`, `{quote}`, `{actor}`, `{date}` and `{decision_id}`.
+
+**Follow-ups** — `follow_ups` is a list of `{name, kind, target}`. `kind` is `start_template` (target is a template id) or `open_automaton` (target is an Automaton id). The list is empty by default, so nothing runs unless you configure it. A name may not be empty or repeat.
+
 **Lane** — one channel an Automaton can run in. There are two kinds. A **GPU lane** is one of the channels on the local model pool; which machine serves a given session is not fixed per lane, so the pool is full when every GPU lane is in use wherever it runs. A **Claude lane** runs one Automaton at a time on the Claude backend. A lane is **occupied** while work runs in it and **idle** otherwise. See [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
 
 **Lane fill** — the daemon's own check that every lane stays busy. On each poll it looks at the idle lanes and the queued Automata, and decides what each idle lane should start: a decomposed Automaton that is ready, or a draft to decompose ahead. A lane that cannot take anything shows the reason it stays idle. Lane fill never merges, never judges design or difficulty, and never holds GPU work because of Claude usage limits. See [howto/automation-lane-fill.md](howto/automation-lane-fill.md).

@@ -8999,6 +8999,24 @@ const DOCS_LINKS_BY_KEY = {
   settings_automata_questions_quality_min_text_chars: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_queue_preview_lines: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
+  settings_decisions_enabled: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_folder: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_folder_glob: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_front_matter_delimiter: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_front_matter_separator: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_front_matter_field_separator: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_front_matter_keys: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_folder_withdraw_on_delete: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_clarity_mode: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_clarity_min_text_chars: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_clarity_require_tradeoffs: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_clarity_require_label: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_clarity_tracker_id_pattern: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_doc_root: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_doc_status_mode: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_doc_status_pattern: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_doc_status_template: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_decisions_follow_ups: DOCS_DEFINITIONS + '#decision-record-settings',
   gc_pipeline: 'howto/pipeline-chaining.md',
   gc_orchestrator: 'howto/automata-orchestrator.md',
   // Settings -> Plugins
@@ -16609,6 +16627,24 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.questions.quality_tracker_id_pattern', label: 'Automata question tracker id pattern (regular expression, empty = built-in default)', labelKey: 'settings_automata_questions_quality_tracker_id_pattern', docsKey: 'settings_automata_questions_quality_tracker_id_pattern', type: 'text', placeholder: '' },
     { key: 'autonomous.questions.queue_preview_lines', label: 'Automata question queue preview lines (default 3)', labelKey: 'settings_automata_questions_queue_preview_lines', docsKey: 'settings_automata_questions_queue_preview_lines', type: 'number', min: 1, step: 1, placeholder: '3', default: '3' },
     { key: 'autonomous.questions.worker_marker', label: 'Let a worker raise a question with a marker in its output (off by default)', labelKey: 'settings_automata_questions_worker_marker', helpKey: 'settings_automata_questions_worker_marker_help', type: 'toggle' },
+    { key: 'autonomous.decisions.enabled', label: 'Decision records (on by default)', labelKey: 'settings_decisions_enabled', docsKey: 'settings_decisions_enabled', type: 'toggle', },
+    { key: 'autonomous.decisions.folder', label: 'Decision record folder to watch (empty = folder watch off)', labelKey: 'settings_decisions_folder', docsKey: 'settings_decisions_folder', type: 'text', placeholder: '', },
+    { key: 'autonomous.decisions.folder_glob', label: 'Decision record file pattern (default *.md)', labelKey: 'settings_decisions_folder_glob', docsKey: 'settings_decisions_folder_glob', type: 'text', placeholder: '*.md', default: '*.md', },
+    { key: 'autonomous.decisions.front_matter_delimiter', label: 'Decision file front matter delimiter (default ---)', labelKey: 'settings_decisions_front_matter_delimiter', docsKey: 'settings_decisions_front_matter_delimiter', type: 'text', placeholder: '---', default: '---', },
+    { key: 'autonomous.decisions.front_matter_separator', label: 'Decision file key and value separator (default :)', labelKey: 'settings_decisions_front_matter_separator', docsKey: 'settings_decisions_front_matter_separator', type: 'text', placeholder: ':', default: ':', },
+    { key: 'autonomous.decisions.front_matter_field_separator', label: 'Decision file option part separator (default |)', labelKey: 'settings_decisions_front_matter_field_separator', docsKey: 'settings_decisions_front_matter_field_separator', type: 'text', placeholder: '|', default: '|', },
+    { key: 'autonomous.decisions.front_matter_keys', label: 'Decision file key names (JSON object, canonical name to the name your files use, empty = canonical names)', labelKey: 'settings_decisions_front_matter_keys', docsKey: 'settings_decisions_front_matter_keys', type: 'textarea', },
+    { key: 'autonomous.decisions.folder_withdraw_on_delete', label: 'Withdraw a decision record when its file is deleted (on by default)', labelKey: 'settings_decisions_folder_withdraw_on_delete', docsKey: 'settings_decisions_folder_withdraw_on_delete', type: 'toggle', },
+    { key: 'autonomous.decisions.clarity_mode', label: 'Decision record clarity check (off, warn or refuse, default warn)', labelKey: 'settings_decisions_clarity_mode', docsKey: 'settings_decisions_clarity_mode', type: 'select', options: ['off', 'warn', 'refuse'], default: 'warn', },
+    { key: 'autonomous.decisions.clarity_min_text_chars', label: 'Decision record minimum text length (characters, 0 = no length check, default 60)', labelKey: 'settings_decisions_clarity_min_text_chars', docsKey: 'settings_decisions_clarity_min_text_chars', type: 'number', min: 0, step: 1, placeholder: '60', default: '60', },
+    { key: 'autonomous.decisions.clarity_require_tradeoffs', label: 'Decision record needs a trade-off line on every option (on by default)', labelKey: 'settings_decisions_clarity_require_tradeoffs', docsKey: 'settings_decisions_clarity_require_tradeoffs', type: 'toggle', },
+    { key: 'autonomous.decisions.clarity_require_label', label: 'Decision record needs a short label (on by default)', labelKey: 'settings_decisions_clarity_require_label', docsKey: 'settings_decisions_clarity_require_label', type: 'toggle', },
+    { key: 'autonomous.decisions.clarity_tracker_id_pattern', label: 'Decision record tracker id pattern (regular expression, empty = built-in default)', labelKey: 'settings_decisions_clarity_tracker_id_pattern', docsKey: 'settings_decisions_clarity_tracker_id_pattern', type: 'text', placeholder: '', },
+    { key: 'autonomous.decisions.doc_root', label: 'Decision record document folder (empty = the daemon\'s working directory)', labelKey: 'settings_decisions_doc_root', docsKey: 'settings_decisions_doc_root', type: 'text', placeholder: '', },
+    { key: 'autonomous.decisions.doc_status_mode', label: 'Decision record document status line (off, report or on, default report)', labelKey: 'settings_decisions_doc_status_mode', docsKey: 'settings_decisions_doc_status_mode', type: 'select', options: ['off', 'report', 'on'], default: 'report', },
+    { key: 'autonomous.decisions.doc_status_pattern', label: 'Decision record status line pattern (regular expression, default ^Confirmed:.*$)', labelKey: 'settings_decisions_doc_status_pattern', docsKey: 'settings_decisions_doc_status_pattern', type: 'text', placeholder: '^Confirmed:.*$', default: '^Confirmed:.*$', },
+    { key: 'autonomous.decisions.doc_status_template', label: 'Decision record status line text ({choice}, {choice_label}, {quote}, {actor}, {date}, {decision_id})', labelKey: 'settings_decisions_doc_status_template', docsKey: 'settings_decisions_doc_status_template', type: 'text', placeholder: 'Confirmed: {choice} - "{quote}" ({actor}, {date})', default: 'Confirmed: {choice} - "{quote}" ({actor}, {date})', },
+    { key: 'autonomous.decisions.follow_ups', label: 'Decision record follow-ups (JSON list of name, kind and target; kind is start_template or open_automaton; empty = none)', labelKey: 'settings_decisions_follow_ups', docsKey: 'settings_decisions_follow_ups', type: 'textarea', },
     // Progress engine parameters (0 or empty = the default shown as placeholder).
     { key: 'autonomous.progress.lanes', label: 'Progress lanes (parallel lanes of Automata used for utilization, 0 = 5)', labelKey: 'settings_progress_lanes', type: 'number', placeholder: '5', min: 0, step: 1, default: '0' },
     { key: 'autonomous.progress.inactive_gap_hours', label: 'Progress inactive gap (hours without activity that count as an inactive window, 0 = 3)', labelKey: 'settings_progress_inactive_gap_hours', type: 'number', placeholder: '3', min: 0, step: 0.5, default: '0' },
@@ -17708,7 +17744,7 @@ function loadGeneralConfig() {
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label">${escHtml(fLabel)}</div>
               <textarea class="form-input general-cfg-input" rows="4" style="margin-top:4px;resize:vertical;font-size:11px;"
-                onchange="saveGeneralField('${f.key}', this.value)">${escHtml(String(val || ''))}</textarea>
+                onchange="saveGeneralField('${f.key}', this.value)">${escHtml(_cfgTextareaText(val))}</textarea>
             </div>`;
           } else {
             // Array values (e.g. the smoke-package pattern list) render as
@@ -18234,6 +18270,17 @@ function saveGeneralConfigPut(key, value) {
       }
     })
     .catch(() => showToast('Save failed', 'error'));
+}
+
+// A textarea setting whose stored value is a list or an object (the decision
+// record follow-ups and file key names) shows its JSON text; an empty list or
+// object shows nothing.
+function _cfgTextareaText(val) {
+  if (val && typeof val === 'object') {
+    if (Array.isArray(val)) return val.length ? JSON.stringify(val) : '';
+    return Object.keys(val).length ? JSON.stringify(val) : '';
+  }
+  return String(val || '');
 }
 
 function saveGeneralField(key, value) {

@@ -7,6 +7,7 @@ package server
 
 import (
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -196,6 +197,44 @@ func TestDecisionRecordConfigSurface_PutRefusesBad(t *testing.T) {
 		}
 		if _, err := os.Stat(cfgPath); err == nil {
 			t.Fatalf("a rejected PUT (%s=%s) wrote config.yaml", c.key, c.value)
+		}
+	}
+}
+
+// The PWA Settings list names every autonomous.decisions key, each with a
+// label in every locale bundle, and no label uses the PRD word.
+func TestDecisionRecordConfigSurface_PWASettings(t *testing.T) {
+	keys := []string{
+		"enabled", "folder", "folder_glob", "front_matter_delimiter",
+		"front_matter_separator", "front_matter_field_separator", "front_matter_keys",
+		"folder_withdraw_on_delete", "clarity_mode", "clarity_min_text_chars",
+		"clarity_require_tradeoffs", "clarity_require_label", "clarity_tracker_id_pattern",
+		"doc_root", "doc_status_mode", "doc_status_pattern", "doc_status_template", "follow_ups",
+	}
+	appJS, err := fs.ReadFile(webFS, "web/app.js")
+	if err != nil {
+		t.Fatalf("app.js missing from embed: %v", err)
+	}
+	src := string(appJS)
+	for _, k := range keys {
+		if !strings.Contains(src, "key: 'autonomous.decisions."+k+"'") {
+			t.Errorf("app.js settings list has no entry for autonomous.decisions.%s", k)
+		}
+		if !strings.Contains(src, "labelKey: 'settings_decisions_"+k+"'") {
+			t.Errorf("app.js entry for autonomous.decisions.%s has no labelKey", k)
+		}
+	}
+	for _, lang := range requiredLocales {
+		bundle := loadLocaleBundle(t, lang)
+		for _, k := range keys {
+			v, ok := bundle["settings_decisions_"+k]
+			if !ok || strings.TrimSpace(v) == "" {
+				t.Errorf("locale %s: missing or empty settings_decisions_%s", lang, k)
+				continue
+			}
+			if prdWord.MatchString(v) || strings.Contains(v, "Automation") {
+				t.Errorf("locale %s: settings_decisions_%s uses a reserved word: %q", lang, k, v)
+			}
 		}
 	}
 }
