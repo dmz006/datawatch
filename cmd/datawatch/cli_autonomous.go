@@ -56,6 +56,10 @@ Subcommands:
   cleanup [--json]                 Cleanup status: both passes (worktrees and temp sweep), their last run,
                                    the removed/would-remove/skipped/failed counts, the owner-vs-net split,
                                    the two disk readings and the disk alert (read only, nothing is removed)
+  uncommitted-work [--automaton ID] [--json]
+                                   Uncommitted-work status: the policy and scope in effect and the tasks and
+                                   Automata held because work was left uncommitted (read only, nothing is
+                                   committed or discarded)
   overlap [--title T] [--spec S | <spec>] [--json]
                                   Search before you create: the Automata, registry rows and branches
                                   that already cover a plan's title and spec, best match first
@@ -242,6 +246,7 @@ Subcommands:
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),
 		newAutonomousCleanupCmd(),
+		newAutonomousUncommittedWorkCmd(),
 		newAutonomousMergedMembersCmd(),
 		// Search-before-create read (docs/plans/2026-10-29-search-before-create.md).
 		newAutonomousOverlapCmd(),

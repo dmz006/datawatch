@@ -111,6 +111,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("automation_create_search_mode", mcpsdk.Description("Search-before-create mode: off never searches before creating an Automation, shadow (the default) searches and surfaces over-duplicate warnings, on searches and holds an over-duplicate creation back to the operator.")),
 		mcpsdk.WithNumber("automation_create_search_threshold", mcpsdk.Description("Over-duplication threshold in the open-closed interval (0, 1]; unset keeps the 0.5 default.")),
 		mcpsdk.WithString("automation_cleanup_mode", mcpsdk.Description("Safe-to-delete cleanup mode: off (no cleanup pass), report (the default; records and reports only) or on. An empty or unrecognized value reads as report, unlike the other enum modes.")),
+		mcpsdk.WithString("automation_uncommitted_work_policy", mcpsdk.Description("What happens when a task finishes with uncommitted work in its worktree: hold (the task is held and a question is raised), warn or off (autonomous.automation.uncommitted_work_policy). Any other value is rejected.")),
+		mcpsdk.WithString("automation_uncommitted_work_scope", mcpsdk.Description("Which uncommitted files the check counts: task_files (the task's declared files) or worktree (the whole worktree) (autonomous.automation.uncommitted_work_scope). Any other value is rejected.")),
 		mcpsdk.WithNumber("automation_cleanup_retention_hours", mcpsdk.Description("How long a removal candidate may sit unused in whole hours before it counts as retained for cleanup. Zero or negative keeps the 24-hour default.")),
 		mcpsdk.WithNumber("automation_cleanup_max_removals_per_pass", mcpsdk.Description("Maximum removals one cleanup pass may perform. Zero or negative keeps the 10 default.")),
 		mcpsdk.WithNumber("automation_disk_alert_percent", mcpsdk.Description("Disk-usage percent at or above which a disk alert is raised. Unset keeps the 85 default; other values are clamped to 1-100.")),
@@ -307,6 +309,12 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if v := req.GetString("automation_cleanup_mode", ""); v != "" {
 		auto["cleanup_mode"] = v
+	}
+	if v := req.GetString("automation_uncommitted_work_policy", ""); v != "" {
+		auto["uncommitted_work_policy"] = v
+	}
+	if v := req.GetString("automation_uncommitted_work_scope", ""); v != "" {
+		auto["uncommitted_work_scope"] = v
 	}
 	if v := req.GetString("automation_merge_pending_mode", ""); v != "" {
 		auto["merge_pending_mode"] = v
