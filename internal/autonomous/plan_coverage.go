@@ -44,10 +44,31 @@ type RequirementVerdict struct {
 // package stores it — the caller (e.g. decompose wiring) attaches the
 // report to the PRD.
 type PlanCoverageReport struct {
-	Covered   int                  // requirements fully covered
-	Missing   int                  // requirements with no trace at all in the plan
-	Weakened  int                  // requirements present but partial or negated
-	Unmatched []RequirementVerdict // every non-covered requirement, in spec order
+	Covered    int                  // requirements fully covered
+	Missing    int                  // requirements with no trace at all in the plan
+	Weakened   int                  // requirements present but partial or negated
+	Suppressed int                  // requirements scoping removed from the verdict (see PlanCoverageOptions)
+	Unmatched  []RequirementVerdict // every non-covered requirement, in spec order
+}
+
+// PlanCoverageOptions tunes how scoped CheckPlanCoverageWithOptions extracts
+// the spec's requirements. The zero value (Scoped false) reproduces today's
+// unscoped result exactly: Covered, Missing, Weakened and Unmatched are
+// computed from the full extractable set and Suppressed stays 0.
+type PlanCoverageOptions struct {
+	// Scoped restricts requirement extraction to the named sections of the
+	// spec (see ExtractRequirementsScoped): loose file-path and config-key
+	// tokens outside those sections stop counting as standalone
+	// requirements.
+	Scoped bool
+	// Sections names the spec sections to extract from (labels such as
+	// "scope" or "constraints", compared case-insensitively). Only used
+	// when Scoped is true; a spec with no recognised heading falls back
+	// to the whole spec.
+	Sections []string
+	// MinChars drops scoped requirements whose normalized text is shorter
+	// than this many characters; 0 sets no minimum.
+	MinChars int
 }
 
 // Extraction and matching helpers. All of these work on lowercased text
@@ -247,10 +268,60 @@ func isPureNumeric(s string) bool {
 // each one against the concatenated titles + specs (and story
 // descriptions) of every story/task in the plan. It is pure and
 // deterministic: the same spec+plan always yields the same report.
+// It is the unscoped form of CheckPlanCoverageWithOptions.
 func CheckPlanCoverage(spec string, stories []Story) *PlanCoverageReport {
+	return CheckPlanCoverageWithOptions(spec, stories, PlanCoverageOptions{})
+}
+
+// CheckPlanCoverageWithOptions is the same coverage verdict as
+// CheckPlanCoverage, except that when opts.Scoped is true the
+// requirement list comes from ExtractRequirementsScoped(spec,
+// opts.Sections, opts.MinChars) instead of the full extraction, so each
+// requirement is still verdicted against the plan exactly as before.
+// In that case the report additionally carries Suppressed: the number
+// of findings in the unscoped report's Unmatched list whose key
+// (coverageRequirementKey) is not in the scoped requirement list — that
+// is, findings the scoping removed. Covered, Missing, Weakened and
+// Unmatched always describe only the scoped requirements.
+//
+// With the zero options (or opts.Scoped false) the result is
+// byte-for-byte what CheckPlanCoverage produced today, with Suppressed
+// 0. The function is pure and deterministic: the same spec, plan and
+// options always yield an equal report.
+func CheckPlanCoverageWithOptions(spec string, stories []Story, opts PlanCoverageOptions) *PlanCoverageReport {
 	planText := strings.ToLower(planCoverageText(stories))
+
+	var requirements []string
+	if opts.Scoped {
+		requirements = ExtractRequirementsScoped(spec, opts.Sections, opts.MinChars)
+	} else {
+		requirements = ExtractRequirements(spec)
+	}
+	report := verdictRequirementsAgainstPlan(requirements, planText)
+	if !opts.Scoped {
+		return report
+	}
+
+	scopedKeys := make(map[string]bool, len(requirements))
+	for _, requirement := range requirements {
+		scopedKeys[coverageRequirementKey(requirement)] = true
+	}
+	unscoped := verdictRequirementsAgainstPlan(ExtractRequirements(spec), planText)
+	for _, unmatched := range unscoped.Unmatched {
+		if !scopedKeys[coverageRequirementKey(unmatched.Requirement)] {
+			report.Suppressed++ // a finding the scoping removed
+		}
+	}
+	return report
+}
+
+// verdictRequirementsAgainstPlan is the core verdict loop: every
+// non-covered requirement is recorded (with its verdict, in spec order)
+// and the matching counter raised. It allocates a non-nil Unmatched
+// slice so reports of zero findings still compare with DeepEqual.
+func verdictRequirementsAgainstPlan(requirements []string, planText string) *PlanCoverageReport {
 	report := &PlanCoverageReport{Unmatched: []RequirementVerdict{}}
-	for _, requirement := range ExtractRequirements(spec) {
+	for _, requirement := range requirements {
 		switch verdict := coverageVerdictFor(requirement, planText); verdict {
 		case CoverageCovered:
 			report.Covered++
