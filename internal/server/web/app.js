@@ -8999,6 +8999,7 @@ const DOCS_LINKS_BY_KEY = {
   settings_automata_questions_quality_min_text_chars: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_queue_preview_lines: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
+  settings_uncommitted_work_check: DOCS_DEFINITIONS + '#uncommitted-work-check',
   gc_pipeline: 'howto/pipeline-chaining.md',
   gc_orchestrator: 'howto/automata-orchestrator.md',
   // Settings -> Plugins
@@ -14308,6 +14309,7 @@ function renderTask(prd, story, task, editable) {
     ${renderTaskGateScopePlan(task)}
     ${renderTaskFileDrift(task)}
     ${renderTaskUndeclaredEdits(task)}
+    ${window.uncommittedWorkTaskHtml(task)}
     ${filesP}
     ${filesT}
     ${filesG}
@@ -14316,7 +14318,7 @@ function renderTask(prd, story, task, editable) {
   return `<div class="prd-task-row${isExpanded ? ' expanded' : ''}" data-task-id="${escHtml(taskID)}">
     <div class="prd-task-header" onclick="_prdToggleTask('${escHtml(taskID)}')" title="${isExpanded ? 'Collapse' : 'Expand'}">
       <span class="prd-task-chevron">${chevron}</span>
-      ${statusGlyphSpan}${heldBadge}${infraRetryBadges}
+      ${statusGlyphSpan}${heldBadge}${infraRetryBadges}${window.uncommittedWorkChipHtml(task)}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
       ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
@@ -16560,6 +16562,13 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.automation.cleanup_mode', label: 'Automaton cleanup (off, report or on; default report)', labelKey: 'settings_automation_cleanup_mode', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.automation.cleanup_retention_hours', label: 'Automaton cleanup retention (hours a finished Automaton worktree is kept before cleanup, whole number, default 24)', labelKey: 'settings_automation_cleanup_retention_hours', type: 'number', placeholder: '24', min: 1, step: 1, default: '24' },
     { key: 'autonomous.automation.cleanup_max_removals_per_pass', label: 'Automaton cleanup limit (most Automaton entries removed in one pass, whole number, default 10)', labelKey: 'settings_automation_cleanup_max_removals_per_pass', type: 'number', placeholder: '10', min: 1, step: 1, default: '10' },
+    // Uncommitted work — what an Automaton does when a task ends with files git still sees as uncommitted in its worktree.
+    // The card in the Automata overview reads GET /api/autonomous/uncommitted-work.
+    { label: 'Uncommitted-work check', labelKey: 'settings_automation_uncommitted_work_group', docsKey: 'settings_uncommitted_work_check', type: 'group' },
+    { key: 'autonomous.automation.uncommitted_work_policy', label: 'Automaton uncommitted-work policy (hold, warn or off; default hold)', labelKey: 'settings_automation_uncommitted_work_policy', type: 'select', options: ['hold', 'warn', 'off'], default: 'hold',
+      optionLabelKeys: { hold: 'uncommitted_work_policy_hold', warn: 'uncommitted_work_policy_warn', off: 'uncommitted_work_policy_off' } },
+    { key: 'autonomous.automation.uncommitted_work_scope', label: 'Automaton uncommitted-work scope (task_files or worktree; default task_files)', labelKey: 'settings_automation_uncommitted_work_scope', type: 'select', options: ['task_files', 'worktree'], default: 'task_files',
+      optionLabelKeys: { task_files: 'uncommitted_work_scope_task_files', worktree: 'uncommitted_work_scope_worktree' } },
     { key: 'autonomous.automation.disk_alert_percent', label: 'Automata disk alert (percent of the disk in use that raises an alert, 1-100, default 85)', labelKey: 'settings_automation_disk_alert_percent', type: 'number', placeholder: '85', min: 1, max: 100, step: 1, default: '85' },
     // Merged member — what an Automaton does when a member ends with its work already merged into the project's default branch.
     // Repo CI watch (autonomous.automation.repo_ci_watch.*) — the
@@ -17453,7 +17462,7 @@ function loadGeneralConfig() {
             // Sub-heading row inside a card. Optional hintKey adds a one-line note.
             const _ghint = f.hintKey ? t(f.hintKey) : '';
             html += `<div style="margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--border);">
-              <div style="font-weight:700;font-size:12px;color:var(--text);">${escHtml(fLabel)}</div>
+              <div style="font-weight:700;font-size:12px;color:var(--text);">${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
               ${_ghint && _ghint !== f.hintKey ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(_ghint)}</div>` : ''}
             </div>`;
           } else if (f.type === 'llm_select') {
@@ -24103,6 +24112,7 @@ function _renderDetailContent(prd) {
   body.innerHTML = `<div class="prd-detail-body">
     ${header}
     ${tabStrip}
+    ${window.uncommittedWorkBannerHtml(prd)}
     ${triageSlot}
     ${mergeSlot}
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
@@ -26149,6 +26159,139 @@ window.cleanupCardHtml = function(status) {
     _cleanupPassHtml(t('cleanup_pass_temp'), s.temp) +
     `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0;"><span style="font-weight:600;color:var(--text2);">${escHtml(t('cleanup_disk_heading'))}</span>${badge}</div>` +
     `<div class="cleanup-disk" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">${diskBody}</div></div>`;
+};
+
+// ── Automata uncommitted-work card ───────────────────────────────────────────
+// uncommittedWorkCardHtml(status) draws the body of
+// GET /api/autonomous/uncommitted-work: { policy, scope, held: [{automaton_id,
+// name, task_id, task_title, kind, files, outside_scope, reason, question_id,
+// held_at}] }. It is read-only: the policy and scope are changed in the
+// Automata settings, and a hold is answered through its question. A missing or
+// malformed body reads as nothing held. Every value is escaped; the loader owns
+// the loading and failed states.
+const UNCOMMITTED_WORK_HELP_HREF = '/diagrams.html#docs/datawatch-definitions.md#uncommitted-work-check';
+const UNCOMMITTED_WORK_POLICIES = ['hold', 'warn', 'off'];
+const UNCOMMITTED_WORK_SCOPES = ['task_files', 'worktree'];
+const UNCOMMITTED_WORK_FILES_SHOWN = 50;
+
+// _uncommittedWorkHelpLink is the small help link beside a card title. It
+// follows the Settings "show inline doc links" preference like the other links.
+function _uncommittedWorkHelpLink() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const label = t('uncommitted_work_help_link');
+  return ` <a href="${UNCOMMITTED_WORK_HELP_HREF}" target="_blank" rel="noopener noreferrer" class="docs-link uncommitted-work-help" onclick="event.stopPropagation()" title="${escHtml(label)}">${escHtml(label)}</a>`;
+}
+
+// _uncommittedWorkValueText words a policy or scope value; a value this
+// version does not know shows as it came.
+function _uncommittedWorkValueText(group, list, v) {
+  const s = String(v == null ? '' : v);
+  if (!list.includes(s)) return s;
+  const key = 'uncommitted_work_' + group + '_' + s;
+  const text = t(key);
+  return (text && text !== key) ? text : s;
+}
+
+function _uncommittedWorkStrings(v) {
+  return (Array.isArray(v) ? v : []).filter(x => typeof x === 'string' && x !== '');
+}
+
+// _uncommittedWorkFilesHtml is one expandable file list: a summary with the
+// count and the paths as escaped code items, capped so a huge hold stays light.
+function _uncommittedWorkFilesHtml(labelKey, files, cls) {
+  if (!files.length) return '';
+  const shown = files.slice(0, UNCOMMITTED_WORK_FILES_SHOWN);
+  const more = files.length > shown.length
+    ? `<li style="color:var(--text2);">${escHtml(t('uncommitted_work_more_files', [files.length - shown.length]))}</li>` : '';
+  return `<details class="${cls}" style="margin-top:4px;min-width:0;">` +
+    `<summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--text2);">${escHtml(t(labelKey, [files.length]))}</summary>` +
+    `<ul style="margin:4px 0 0 16px;font-size:11px;min-width:0;overflow-wrap:anywhere;">${shown.map(f => `<li><code>${escHtml(f)}</code></li>`).join('')}${more}</ul></details>`;
+}
+
+// _uncommittedWorkQuestionButton opens the question a hold raised. The id
+// travels in a data attribute and is read back by the handler, never put into
+// script text.
+function _uncommittedWorkQuestionButton(qid) {
+  if (!qid) return '';
+  return `<button type="button" class="btn-secondary uncommitted-work-open" data-question="${escHtml(String(qid))}" style="font-size:11px;padding:3px 10px;" onclick="window.uncommittedWorkOpenQuestion(this)">${escHtml(t('uncommitted_work_open_question'))}</button>`;
+}
+window.uncommittedWorkOpenQuestion = function(btn) {
+  const qid = btn && btn.getAttribute ? btn.getAttribute('data-question') : '';
+  if (qid && typeof window.openQuestion === 'function') window.openQuestion(qid);
+};
+
+function _uncommittedWorkEntryHtml(e) {
+  const entry = (e && typeof e === 'object') ? e : {};
+  const name = String(entry.name || entry.automaton_id || '');
+  const isTask = entry.kind !== 'worktree' && !!(entry.task_id || entry.task_title);
+  const heading = isTask
+    ? t('uncommitted_work_held_task', [String(entry.task_title || entry.task_id || ''), name])
+    : t('uncommitted_work_held_automaton', [name]);
+  const files = _uncommittedWorkStrings(entry.files);
+  const outside = _uncommittedWorkStrings(entry.outside_scope);
+  const held = _triageTime(entry.held_at);
+  const lines = [];
+  if (entry.reason) lines.push(_cleanupLine(t('uncommitted_work_reason', [String(entry.reason)])));
+  if (held) lines.push(_cleanupLine(t('uncommitted_work_held_since', [held])));
+  const open = _uncommittedWorkQuestionButton(entry.question_id);
+  return `<div class="uncommitted-work-row" data-kind="${isTask ? 'task' : 'worktree'}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(heading)}</div>` +
+    _uncommittedWorkFilesHtml('uncommitted_work_files', files, 'uncommitted-work-files') +
+    _uncommittedWorkFilesHtml('uncommitted_work_outside_scope', outside, 'uncommitted-work-outside') +
+    lines.join('') +
+    (open ? `<div style="margin-top:4px;">${open}</div>` : '') + `</div>`;
+}
+
+window.uncommittedWorkCardHtml = function(status) {
+  const s = (status && typeof status === 'object' && !Array.isArray(status)) ? status : {};
+  const held = Array.isArray(s.held) ? s.held : [];
+  const head = `<div class="cap-title">${escHtml(t('uncommitted_work_card_title'))}${_uncommittedWorkHelpLink()}</div>`;
+  const note = _cleanupLine(t('uncommitted_work_read_only'));
+  const settings = _cleanupLine(t('uncommitted_work_policy_line', [_uncommittedWorkValueText('policy', UNCOMMITTED_WORK_POLICIES, s.policy)])) +
+    _cleanupLine(t('uncommitted_work_scope_line', [_uncommittedWorkValueText('scope', UNCOMMITTED_WORK_SCOPES, s.scope)]));
+  const body = held.length
+    ? held.map(_uncommittedWorkEntryHtml).join('')
+    : `<div class="uncommitted-work-empty" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);color:var(--text2);">${escHtml(t('uncommitted_work_empty'))}</div>`;
+  return `<div class="prd-capacity-card uncommitted-work-card" style="min-width:0;">${head}${note}${settings}${body}</div>`;
+};
+
+// uncommittedWorkChipHtml is the chip on a task row whose JSON carries
+// uncommitted_work; empty for any other task.
+window.uncommittedWorkChipHtml = function(task) {
+  const h = task && task.uncommitted_work;
+  if (!h || typeof h !== 'object') return '';
+  const n = _uncommittedWorkStrings(h.files).length;
+  const tip = h.reason ? String(h.reason) : t('uncommitted_work_chip_tip');
+  return `<span class="prd-verdict-badge prd-verdict-warn uncommitted-work-chip" title="${escHtml(tip)}">&#9888; ${escHtml(t('uncommitted_work_chip', [n]))}</span>`;
+};
+
+// uncommittedWorkTaskHtml is the expandable file list in the body of a held
+// task: the files, the ones outside the declared files, the reason and the
+// button that opens the question.
+window.uncommittedWorkTaskHtml = function(task) {
+  const h = task && task.uncommitted_work;
+  if (!h || typeof h !== 'object') return '';
+  const reason = h.reason ? _cleanupLine(t('uncommitted_work_reason', [String(h.reason)])) : '';
+  const open = _uncommittedWorkQuestionButton(h.question_id);
+  return `<div class="prd-task-error uncommitted-work-task" style="border-color:var(--warning,#d90);min-width:0;">` +
+    _uncommittedWorkFilesHtml('uncommitted_work_files', _uncommittedWorkStrings(h.files), 'uncommitted-work-files') +
+    _uncommittedWorkFilesHtml('uncommitted_work_outside_scope', _uncommittedWorkStrings(h.outside_scope), 'uncommitted-work-outside') +
+    reason + (open ? `<div style="margin-top:4px;">${open}</div>` : '') + `</div>`;
+};
+
+// uncommittedWorkBannerHtml is the banner on an Automaton whose own
+// uncommitted_work is set: files in its worktree that no single task owns.
+window.uncommittedWorkBannerHtml = function(automaton) {
+  const h = automaton && automaton.uncommitted_work;
+  if (!h || typeof h !== 'object') return '';
+  const files = _uncommittedWorkStrings(h.files);
+  const reason = h.reason ? _cleanupLine(t('uncommitted_work_reason', [String(h.reason)])) : '';
+  const open = _uncommittedWorkQuestionButton(h.question_id);
+  return `<div class="uncommitted-work-banner prd-task-error" role="alert" style="border-color:var(--warning,#d90);min-width:0;">` +
+    `<div style="font-weight:600;overflow-wrap:anywhere;">&#9888; ${escHtml(t('uncommitted_work_banner', [files.length]))}</div>` +
+    _uncommittedWorkFilesHtml('uncommitted_work_files', files, 'uncommitted-work-files') +
+    _uncommittedWorkFilesHtml('uncommitted_work_outside_scope', _uncommittedWorkStrings(h.outside_scope), 'uncommitted-work-outside') +
+    reason + (open ? `<div style="margin-top:4px;">${open}</div>` : '') + `</div>`;
 };
 
 // ── Automata progress card ───────────────────────────────────────────────────
@@ -28522,14 +28665,15 @@ const _AUTOMATION_SUBTABS = [
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationInfraRetryCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+      <div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
     mount() {
-      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader()]);
+      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader()]);
       // The progress card renders into its slot on this sub-tab; it has no
       // listLoader of its own, so nothing for stop() to end.
       if (typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
     },
-    stop() { _automationStopLoaders(['automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_safe_delete', 'automation_cleanup']); },
+    stop() { _automationStopLoaders(['automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work']); },
   },
   {
     id: 'chains',
@@ -28612,7 +28756,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup'];
+  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -28743,6 +28887,19 @@ function _automationCleanupLoader() {
     failedText: msg => t('cleanup_failed', [msg]),
     active: () => !!document.getElementById('automationCleanupCard'),
     render: status => window.cleanupCardHtml(status),
+  });
+}
+
+// _automationUncommittedWorkLoader reads the uncommitted-work holds on the
+// Overview sub-tab, beside the cleanup card. The read is built from the stored
+// Automata and makes no git call, so it polls at the cleanup rate; its failed
+// state is the list loader's banner. The card is read-only.
+function _automationUncommittedWorkLoader() {
+  return window._listLoaders.automation_uncommitted_work || listLoader({
+    key: 'automation_uncommitted_work', el: 'automationUncommittedWorkCard', url: '/api/autonomous/uncommitted-work', pollMs: 30000,
+    failedText: msg => t('uncommitted_work_failed', [msg]),
+    active: () => !!document.getElementById('automationUncommittedWorkCard'),
+    render: status => window.uncommittedWorkCardHtml(status),
   });
 }
 

@@ -6326,6 +6326,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"cleanup_retention_hours":       s.cfg.Autonomous.Automation.EffectiveCleanupRetentionHours(),
 				"cleanup_max_removals_per_pass": s.cfg.Autonomous.Automation.EffectiveCleanupMaxRemovalsPerPass(),
 				"disk_alert_percent":            s.cfg.Autonomous.Automation.EffectiveDiskAlertPercent(),
+				// Effective, not raw: an unset key reads hold and task_files.
+				"uncommitted_work_policy": s.cfg.Autonomous.Automation.EffectiveUncommittedWorkPolicy(),
+				"uncommitted_work_scope":  s.cfg.Autonomous.Automation.EffectiveUncommittedWorkScope(),
 			},
 			"lane_fill":   laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
 			"infra_retry": infraRetryConfigSurface(s.cfg.Autonomous.InfraRetry),
@@ -6690,6 +6693,22 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	} {
 		if v, ok := patch[key]; ok {
 			if verr := validateCleanupWholeNumber(key, v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	// Uncommitted-work keys (autonomous.automation.uncommitted_work_policy and
+	// uncommitted_work_scope): strict, unlike the cleanup mode above. A present
+	// key must be hold|warn|off (policy) or task_files|worktree (scope), and
+	// any other value rejects the whole PUT with a message naming the allowed
+	// words, so a read back always shows the word that was written.
+	for _, key := range []string{
+		"autonomous.automation.uncommitted_work_policy",
+		"autonomous.automation.uncommitted_work_scope",
+	} {
+		if v, ok := patch[key]; ok {
+			if verr := validateUncommittedWorkValue(key, v); verr != nil {
 				http.Error(w, verr.Error(), http.StatusBadRequest)
 				return
 			}
@@ -8299,6 +8318,17 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// surfaces it clamped to 1..100 (unset reads the 85 default).
 			if n, ok := toInt(v); ok {
 				cfg.Autonomous.Automation.DiskAlertPercent = n
+			}
+		case "autonomous.automation.uncommitted_work_policy":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged. The change reaches the live
+			// manager through the autonomous.* forward after the apply.
+			if validateUncommittedWorkValue(k, v) == nil {
+				cfg.Autonomous.Automation.UncommittedWorkPolicy = toString(v)
+			}
+		case "autonomous.automation.uncommitted_work_scope":
+			if validateUncommittedWorkValue(k, v) == nil {
+				cfg.Autonomous.Automation.UncommittedWorkScope = toString(v)
 			}
 		case "autonomous.automation.repo_ci_watch.mode",
 			"autonomous.automation.repo_ci_watch.repos",

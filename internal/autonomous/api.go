@@ -1143,12 +1143,18 @@ func (a *API) ResolveTaskReview(prdID, taskID string, req ReviewResolution, acto
 // relaunched the way ResolveTaskReview relaunches it. The answer to the
 // question an Automaton raises when it holds a task after infrastructure
 // retries resolves that held task (see resolveInfraHoldAnswer). Other change
-// kinds are ignored: a withdrawn or expired decision keeps its task parked.
+// kinds are ignored: a withdrawn or expired decision keeps its task parked. An answered
+// uncommitted-work question is routed to its own handler instead
+// (uncommitted_work_answer.go); a withdrawn or expired one keeps the hold.
 func (a *API) OnQuestionChange(c QuestionChange) {
 	if c.Kind != QuestionChangeAnswered || c.Question.ID == "" {
 		return
 	}
 	if a.resolveInfraHoldAnswer(c) {
+		return
+	}
+	if c.Question.Label == UncommittedQuestionLabel {
+		a.onUncommittedWorkAnswered(c)
 		return
 	}
 	for _, p := range a.M.Store().ListPRDs() {
@@ -1804,6 +1810,14 @@ func (a *API) MergeSafeToDelete(ctx context.Context) (SafeDeleteReport, error) {
 // Without it the route's interface check fails and the route answers 503 in
 // a running daemon.
 func (a *API) CleanupStatus() CleanupStatus { return a.M.CleanupStatus() }
+
+// UncommittedWorkStatus — the uncommitted-work read surface behind
+// GET /api/autonomous/uncommitted-work (and the MCP, CLI and comm reads on
+// top of it). Without it the route's interface check fails and the route
+// answers 503 in a running daemon.
+func (a *API) UncommittedWorkStatus(automatonID string) UncommittedWorkStatus {
+	return a.M.UncommittedWorkStatus(automatonID)
+}
 
 func (a *API) GetAutomation(id string) (any, bool) {
 	got, ok := a.M.GetAutomation(id)

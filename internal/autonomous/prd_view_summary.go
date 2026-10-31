@@ -48,6 +48,9 @@ type SummaryView struct {
 	// view (the tier that wins for it), copied from the PRD's read-time
 	// copy when the API fill is present.
 	NotifyEventsEffective *NotifyEventSet `json:"notify_events_effective,omitempty"`
+	// UncommittedWork is the Automaton's own worktree hold (files no single
+	// task owns), copied from the PRD. It is omitted when there is none.
+	UncommittedWork *UncommittedWorkHold `json:"uncommitted_work,omitempty"`
 }
 
 // StorySummary is one story's entry in a SummaryView. TaskStatusCounts maps
@@ -97,6 +100,7 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		// fill on the copy this summary was built from. Nil (omitted) when
 		// the input PRD never carried the read-time fill.
 		NotifyEventsEffective: prd.NotifyEventsEffective,
+		UncommittedWork:       prd.UncommittedWork,
 	}
 	for i := range prd.Decisions {
 		view.Cost += prd.Decisions[i].CostUSD

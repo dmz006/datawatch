@@ -4904,6 +4904,67 @@ The read is GET-only (any other method is 405), answers 503 while Automata are d
 
 ---
 
+## Automaton uncommitted-work check (a task is complete only when its work is committed)
+
+An Automaton that commits its own work (it has git settings and either a worktree branch or declared write directories) used to be able to mark a task complete while the task's files sat uncommitted in the worktree. A merge of the branch then shipped without them. The uncommitted-work check looks at the worktree at two moments and, when it finds uncommitted work, commits what belongs to the task, or holds and asks. It is not tied to one repository: it runs `git status` in the Automaton's own worktree and works for any project. An Automaton that does not commit is not checked. The operator guide is [howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md).
+
+**The two checks.** The **per-task** check runs after a task has passed verification and the quality gate and before it is marked complete. It reads `git status` (untracked files included), drops the daemon's own scratch files and anything the staging guard refuses to commit, narrows the list by the scope, and stages and commits the files the task declared (its planned and generated files, and anything under its write directories) by name with the message `task(<short id>): <title>`, never with `-A` or `.` and never skipping commit hooks. It then looks again; if the commit failed or files remain, the policy decides. Files outside the task's declared files are listed and never committed by this check. The **before-finished** check runs once in the roll-up, when every task is done: it reads the whole worktree (the scope does not apply), commits nothing, and under `hold` stops the Automaton from reaching `completed`, so it is never listed as merge ready. It needs a local worktree (a work branch, a project directory and no cluster profile). If git cannot read the status, either check is skipped.
+
+**The policy and the scope.**
+
+| Key | Meaning | Default | Allowed |
+|---|---|---|---|
+| `autonomous.automation.uncommitted_work_policy` | What happens when work is found uncommitted | `hold` | `hold`, `warn`, `off` (anything else is refused on every write surface; an unset key reads `hold`) |
+| `autonomous.automation.uncommitted_work_scope` | Which files the per-task check counts | `task_files` | `task_files`, `worktree` (anything else is refused on every write surface; an unset key reads `task_files`) |
+
+`hold` parks the task as blocked (or, at the finished check, blocks the Automaton) with the reason and the files and raises one question; the task consumes no automatic-retry budget and records no failed attempt. `warn` still commits a task's declared files but, for anything left, only records a decision, an audit event and a warning alert, and lets the task or Automaton complete. `off` does no check and no commit attempt. `task_files` leaves out files that were already modified or untracked before the task started; `worktree` counts every uncommitted file.
+
+**Changing them.**
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous.automation.uncommitted_work_policy` and `uncommitted_work_scope` |
+| **CLI** | `datawatch config set autonomous.automation.uncommitted_work_policy warn` |
+| **Web UI** | Settings → General → Automata settings → **Uncommitted-work check** |
+| **REST API** | `PUT /api/config` with `{"autonomous.automation.uncommitted_work_policy": "warn"}`, or `PUT /api/autonomous/config` with the `automation` object; `GET /api/config` shows the effective value |
+| **Comm channel** | `configure autonomous.automation.uncommitted_work_policy=warn` |
+
+The MCP tool `config_set` takes the same dotted keys; `autonomous_config_set` takes `automation_uncommitted_work_policy` and `automation_uncommitted_work_scope`. They are read live; a change applies to the next task that finishes, with no restart.
+
+**The question.** A hold raises one question, label `uncommitted_work`, with the options `commit`, `discard` and `retry` and the default `hold` (nothing changes until it is answered). It lists at most the first 20 files and marks the ones outside the task's declared files. The recommended answer is `commit` when every file is inside the declared files and `retry` otherwise. Only the question the hold itself names is acted on: an answer to a stale question, and a withdrawn or expired question, change nothing and keep the hold. **commit** stages and commits exactly the listed files that are still uncommitted, then completes the task (re-checking the tree first and holding again under the policy if files remain) or lets the Automaton roll up again. **discard** restores the listed tracked files from the last commit and deletes the listed untracked files, only those, refusing everything if one path lies outside the task directory or inside `.git`, then runs the task again or lets the Automaton roll up again. **retry** touches no file. If a commit or discard cannot be done the hold stays, a warning alert is raised and a fresh question is raised.
+
+**Status.** One read on every surface:
+
+| Surface | How |
+|---|---|
+| REST | `GET /api/autonomous/uncommitted-work` (optional `?automaton=<id>`) |
+| MCP | `autonomous_uncommitted_work` (read-only; optional `automaton` argument) |
+| CLI | `datawatch autonomous uncommitted-work [--automaton <id>] [--json]` |
+| Comm channel | `autonomous uncommitted-work [automaton-id]` |
+| PWA | **Automata uncommitted work** card on the Automation Overview sub-tab, refreshed every 30 seconds; a chip on a held task; a banner on a held Automaton |
+| Mobile/wear | The same REST contract, described in `docs/api/openapi.yaml` |
+
+The read is GET-only (any other method is 405), answers 503 while Automata are disabled, and needs the autonomous read capability when called by a federated peer. It is built from the hold records stored on each task and Automaton and runs no git command. It returns `policy`, `scope` and `held`, a list that is empty (never null) when nothing is held; each entry has `automaton_id`, `name`, `task_id`, `task_title` (absent for a whole-worktree hold), `kind` (`task` or `worktree`), `files`, `outside_scope`, `reason`, `question_id` and `held_at`. The hold also appears as `uncommitted_work` on the held task in the task list and on the Automaton summary. The full field documentation is in `docs/api/openapi.yaml`.
+
+**Audit events and decisions.** Every step is written to the audit log and to the Automaton's decision log.
+
+| Moment | Audit event | Decision kind |
+|---|---|---|
+| A task or Automaton is held | `autonomous_uncommitted_work_held` | `uncommitted_work_held` |
+| The `warn` policy records a warning | `autonomous_uncommitted_work_warned` | `uncommitted_work_warned` |
+| An operator answer is acted on | `autonomous_uncommitted_work_resolved` | `uncommitted_work_resolved` |
+| Files were discarded | — | `uncommitted_work_discarded` |
+| A commit answer failed | — | `uncommitted_work_commit_failed` |
+| A discard was refused (a path outside the task directory, or no directory) | — | `uncommitted_work_discard_refused` |
+| A discard failed | — | `uncommitted_work_discard_failed` |
+| The held task could not be run again | — | `uncommitted_work_resolve_failed` |
+
+The audit details carry the Automaton id, the task id when there is one, the files, the files outside the declared files and the cause (the resolved event carries the chosen option, the actor and the question id instead). The held and warned moments also raise a warning alert (*Uncommitted work held* and *Uncommitted work warning*); a failed commit or discard raises *Uncommitted work not resolved*. A held task carries the failure source `uncommitted-work-hold`, and an Automaton blocked by the finished check carries the blocked reason `uncommitted_work`.
+
+**What the check never does.** It never commits a file outside a task's declared files by itself, never stages with `-A` or `.`, never skips commit hooks, never pushes or merges, and never discards anything but the exact files of a hold the operator chose to discard. The status read never runs git and never changes anything. In `off` it does not look at the worktree at all.
+
+---
+
 ## Merged-member policy (a member Automaton cancelled after its work shipped)
 
 When a member Automaton of an Automation ends cancelled, the Automation has no `on_complete` edge to follow and becomes `blocked`. That is right when the member's work never landed and wrong when it did: the member's branch (`automaton/<id>`) is already merged into the project's default branch and only the Automaton was cancelled afterwards. The merged-member policy decides what the Automation does in that case. When a member ends cancelled or completed, the coordinator asks read-only git whether the member's branch is merged on the default branch, and if it is, `autonomous.automation.merged_member_policy` chooses the outcome. A branch that is not merged, has no commits ahead of the default branch, or whose state git cannot read always keeps the blocked outcome, whatever the policy. The check never merges, deletes, pushes or checks out a branch.

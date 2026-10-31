@@ -2816,6 +2816,21 @@ type AutonomousAutomationConfig struct {
 	CleanupRetentionHours     int    `yaml:"cleanup_retention_hours,omitempty" json:"cleanup_retention_hours,omitempty"`
 	CleanupMaxRemovalsPerPass int    `yaml:"cleanup_max_removals_per_pass,omitempty" json:"cleanup_max_removals_per_pass,omitempty"`
 	DiskAlertPercent          int    `yaml:"disk_alert_percent,omitempty" json:"disk_alert_percent,omitempty"`
+	// UncommittedWorkPolicy decides what happens to a task whose work is not
+	// committed after verification (hold|warn|off): hold = the task is held
+	// with the reason and the files, and a question is raised; warn = record
+	// and alert but let the task complete; off = no check and no commit
+	// attempt. An unset key or an unknown word reads as hold (the safe
+	// default) through EffectiveUncommittedWorkPolicy.
+	UncommittedWorkPolicy string `yaml:"uncommitted_work_policy,omitempty" json:"uncommitted_work_policy,omitempty"`
+	// UncommittedWorkScope sets which files the per-task uncommitted-work
+	// check looks at (task_files|worktree): task_files = the files the task
+	// itself changed; worktree = every uncommitted file in the worktree. This
+	// scope governs the per-task check only; the check before an Automaton
+	// is reported finished always covers the whole worktree. An unset key or
+	// an unknown word reads as task_files through
+	// EffectiveUncommittedWorkScope.
+	UncommittedWorkScope string `yaml:"uncommitted_work_scope,omitempty" json:"uncommitted_work_scope,omitempty"`
 }
 
 // autonomous.automation.create_search_mode values and defaults.
@@ -2899,6 +2914,49 @@ func (c AutonomousAutomationConfig) EffectiveCleanupMode() string {
 	default:
 		return CleanupModeReport
 	}
+}
+
+// autonomous.automation uncommitted-work values. UncommittedWorkPolicy
+// decides what the per-task check does with work that is still uncommitted
+// after verification: hold (the default) holds the task with the reason and
+// files and raises a question; warn records and alerts but lets the task
+// complete; off skips the check and any commit attempt.
+// UncommittedWorkScope decides which files that check covers: task_files
+// (the default) is the files the task itself changed, worktree is every
+// uncommitted file in the worktree. The scope governs the per-task check
+// only; the check before an Automaton is reported finished always covers the
+// whole worktree.
+const (
+	UncommittedWorkPolicyHold = "hold"
+	UncommittedWorkPolicyWarn = "warn"
+	UncommittedWorkPolicyOff  = "off"
+
+	UncommittedWorkScopeTaskFiles = "task_files"
+	UncommittedWorkScopeWorktree  = "worktree"
+)
+
+// EffectiveUncommittedWorkPolicy returns the uncommitted-work policy in
+// effect: warn and off are explicit operator choices; an unset key (empty)
+// and any unknown value read as UncommittedWorkPolicyHold, the safe default.
+func (c AutonomousAutomationConfig) EffectiveUncommittedWorkPolicy() string {
+	switch c.UncommittedWorkPolicy {
+	case UncommittedWorkPolicyWarn, UncommittedWorkPolicyOff:
+		return c.UncommittedWorkPolicy
+	default:
+		return UncommittedWorkPolicyHold
+	}
+}
+
+// EffectiveUncommittedWorkScope returns the uncommitted-work scope in
+// effect: worktree is an explicit operator choice; an unset key (empty) and
+// any unknown value read as UncommittedWorkScopeTaskFiles. The scope governs
+// the per-task check only; the check before an Automaton is reported
+// finished always covers the whole worktree.
+func (c AutonomousAutomationConfig) EffectiveUncommittedWorkScope() string {
+	if c.UncommittedWorkScope == UncommittedWorkScopeWorktree {
+		return UncommittedWorkScopeWorktree
+	}
+	return UncommittedWorkScopeTaskFiles
 }
 
 // EffectiveCleanupRetentionHours returns the cleanup retention window in

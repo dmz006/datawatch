@@ -4463,6 +4463,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				CleanupRetentionHours:     acfgIn.Automation.CleanupRetentionHours,
 				CleanupMaxRemovalsPerPass: acfgIn.Automation.CleanupMaxRemovalsPerPass,
 				DiskAlertPercent:          acfgIn.Automation.DiskAlertPercent,
+				// Uncommitted-work keys: raw values; the manager's Effective*
+				// accessors resolve the defaults (hold, task_files).
+				UncommittedWorkPolicy: acfgIn.Automation.UncommittedWorkPolicy,
+				UncommittedWorkScope:  acfgIn.Automation.UncommittedWorkScope,
 				// security failure mode (autonomous.automation.security_failure.mode)
 				SecurityFailure: autonomouspkg.SecurityFailureConfig{Mode: acfgIn.Automation.SecurityFailure.Mode},
 				// supervisor watch block (autonomous.automation.supervisor_watch.*):

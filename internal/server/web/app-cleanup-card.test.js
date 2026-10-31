@@ -149,7 +149,7 @@ test('the Overview sub-tab carries the cleanup card slot and its loader reads th
   assert.ok(body.includes('id="automationCleanupCard"'), 'cleanup slot missing from the Overview body');
   const src = fs.readFileSync(APP_JS, 'utf8');
   assert.ok(src.includes("url: '/api/autonomous/cleanup'"), 'loader must read GET /api/autonomous/cleanup');
-  assert.ok(/'automation_safe_delete', 'automation_cleanup'\]/.test(src), 'stop-all list must include the cleanup loader');
+  assert.ok(/'automation_safe_delete', 'automation_cleanup'[,\]]/.test(src), 'stop-all list must include the cleanup loader');
 });
 
 // ── the settings fields ──────────────────────────────────────────────────────

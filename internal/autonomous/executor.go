@@ -279,7 +279,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// rather than registering a pseudo-entry in BackendArtifacts (which
 	// QueryAllStatus assumes is exclusively real backends).
 	if isFirstRun && prd.ProjectDir != "" {
-		if _, err := tooling.EnsureIgnoredPatterns(prd.ProjectDir, []string{".decompose-output-*.json", "CHECKPOINT.md"}); err != nil {
+		if _, err := tooling.EnsureIgnoredPatterns(prd.ProjectDir, automatonScratchIgnorePatterns); err != nil {
 			log.Printf("[autonomous] EnsureIgnoredPatterns for %s: %v", prd.ProjectDir, err)
 		}
 		// 2026-10-15 — BL449 incident: a task with its own ProjectDir
@@ -295,7 +295,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					continue
 				}
 				seen[dir] = true
-				if _, err := tooling.EnsureIgnoredPatterns(dir, []string{".decompose-output-*.json", "CHECKPOINT.md"}); err != nil {
+				if _, err := tooling.EnsureIgnoredPatterns(dir, automatonScratchIgnorePatterns); err != nil {
 					log.Printf("[autonomous] EnsureIgnoredPatterns for task dir %s: %v", dir, err)
 				}
 			}
@@ -1096,6 +1096,18 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		_ = m.store.SavePRD(prd)
 		return m.Run(ctx, prd.ID, spawn, verify)
 	}
+	// Last check before the Automaton is reported finished: the whole
+	// worktree must be committed, or the operator must decide. A blocked
+	// Automaton is never PRDCompleted, so the merge-pending pass never lists
+	// it as merge ready.
+	if blocked, err := m.checkWorktreeUncommittedAtFinish(ctx, prd); err != nil {
+		return err
+	} else if blocked {
+		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, uncommittedRollupReason, uncommittedRollupBlockedReason(prd)); ok {
+			m.emitPRDStatus(prd, old, lastDecision(prd, uncommittedHeldDecisionKind), nil)
+		}
+		return nil
+	}
 	// BL451 — commit PRDCompleted first; completion side effects only
 	// run once the status actually landed.
 	completedOld, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDCompleted, "completed", "")
@@ -1885,6 +1897,17 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				default:
 					metrics.QualityGatePassTotal.Inc()
 				}
+			}
+			// A task whose work is not committed is not complete. The check
+			// commits the task's own leftover files and holds the task (the
+			// way the setup-fault hold above does, consuming none of the
+			// auto_fix_retries budget) when files stay uncommitted. It runs
+			// before the post-verify SHA is captured so a rescue commit is
+			// the commit that gets pinned.
+			if held, herr := m.checkUncommittedWork(ctx, prd, t); herr != nil {
+				return herr
+			} else if held {
+				return nil
 			}
 			done := time.Now()
 			m.store.WithLock(func() {
@@ -3025,6 +3048,20 @@ func (m *Manager) rollupOwnSaves(prdID string) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.ownSaves[prdID]
+}
+
+// noteOwnSaves counts n saves of the Automaton that a hook made on the
+// executor's behalf as its own writes (see savePRDOwn).
+func (m *Manager) noteOwnSaves(prdID string, n int) {
+	if n <= 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ownSaves == nil {
+		m.ownSaves = map[string]int{}
+	}
+	m.ownSaves[prdID] += n
 }
 
 // savePRDOwn saves prd and counts it as an executor-owned write.

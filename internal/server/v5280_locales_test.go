@@ -341,6 +341,11 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		// The Infrastructure retries card in the Automation view.
 		"infra_retry_card_title",
 		"infra_retry_held_label",
+		// Uncommitted-work check: the card title in the Automata overview and
+		// the two settings labels.
+		"uncommitted_work_card_title",
+		"settings_automation_uncommitted_work_policy",
+		"settings_automation_uncommitted_work_scope",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
