@@ -722,6 +722,44 @@ usage reading 72.5 lanes=3 session=41
 - A bare or unrecognized form answers with the grammar lines and touches nothing on the daemon.
 - This is the comm-channel view of the calculator; it is separate from `usage_backoff` (the per-backend rate-limit hold).
 
+### `identity` / `identity backups` / `identity restore <name|latest>`
+
+Read and change the **operator identity** (role, north-star goals, current
+projects, values, current focus, context notes) and bring an earlier one back.
+Every write keeps a timestamped backup of the identity it replaces; the daemon
+keeps the newest `identity.backups_to_keep` of them (default 10). See
+[howto/identity-and-telos](howto/identity-and-telos.md#backups-restore-and-the-empty-write-guard).
+
+| Form | Meaning |
+|---|---|
+| `identity` / `identity show` | The full identity as JSON. |
+| `identity get [field]` | The whole identity, or one field (`role`, `north_star_goals`, `current_projects`, `values`, `current_focus`, `context_notes`); `not set` when empty. |
+| `identity set <field> <value>` | Merge one field (comma-separated for the list fields). Other fields are kept. |
+| `identity backups` | The saved backups, newest first: file name, local time, role and how many fields have content. `no backups yet` when there are none. |
+| `identity restore <name>` | Bring the named backup back and show the restored identity. |
+| `identity restore latest` | Bring back the newest backup that has content. |
+| `identity configure` | Points at the PWA wizard and `datawatch identity configure`; chat is line-oriented, so no interview runs here. |
+
+There is **no chat verb that clears the identity**. `identity reset` answers
+with a pointer to `datawatch identity reset`, the PWA Reset button and the MCP
+`reset_identity` tool, so one mistyped line cannot empty it. A restore first
+backs up the identity it replaces, so `identity restore latest` also undoes a
+reset or restore made elsewhere. `identity restore` with no name prints the
+usage lines and changes nothing; an unknown name is reported with the daemon's
+own error text.
+
+**Example:**
+```
+identity backups
+[myserver] identity backups
+identity-20261029T101500.000Z.yaml  2026-10-29 06:15:00  platform engineer  5 fields
+identity-20261028T080000.000Z.yaml  2026-10-28 04:00:00  platform engineer  3 fields
+
+identity restore identity-20261028T080000.000Z.yaml
+[myserver] identity restore identity-20261028T080000.000Z.yaml
+{ "role": "platform engineer", … }
+```
+
 ---
 
 ## CLI Commands
@@ -1122,6 +1160,36 @@ answer to stdout. Routes through `/api/ask` which honors the
 Like `ask` but routes through the rules engine first — applies
 routing-rules, RTK token-savings logging, and project-context
 auto-attach if a project profile maps the cwd.
+
+### `datawatch identity <subcommand>`
+
+Manage the operator identity through the running daemon (`/api/identity`). Every
+write keeps a timestamped backup of the identity it replaces in the
+`identity-backups` folder next to `identity.yaml`; `identity.backups_to_keep`
+(default 10, minimum 1) sets how many are kept. A write that would replace a
+saved identity with an empty one is refused by the daemon (HTTP 409,
+`identity_wipe_refused`), and the CLI prints that sentence, says nothing was
+written and points at `identity reset`.
+
+| Subcommand | Description |
+|---|---|
+| `get [--field <name>]` | Print the identity, or one field. |
+| `show` | Alias for `get`. |
+| `set --field <name> --value <value>` | Merge one field (comma-separated for list fields); other fields are kept. |
+| `edit` | Open `identity.yaml` in `$EDITOR`. |
+| `configure` | Interactive six-step setup wizard. |
+| `backups [--json]` | List the saved backups, newest first: name, local time, role, number of fields with content. `no backups yet` when there are none. `--json` prints the daemon's reply unchanged. |
+| `restore [--backup <name>]` | Bring a backup back and print the restored identity. Without `--backup` (or with `--backup latest`) the newest backup with content is used. The identity being replaced is backed up first, so a restore can be undone. |
+| `reset [--yes]` | Clear the identity on purpose; a backup is kept and `restore` undoes it. Without `--yes` you are asked to type `RESET`; anything else cancels and sends nothing. With no terminal on stdin `--yes` is required. |
+
+```bash
+datawatch identity backups
+datawatch identity restore --backup identity-20261028T080000.000Z.yaml
+datawatch identity reset --yes
+```
+
+Chat has the same list and restore (`identity backups`, `identity restore
+<name|latest>`) but no reset; see [`identity`](#identity--identity-backups--identity-restore-namelatest).
 
 ### `datawatch autonomous <subcommand>`
 

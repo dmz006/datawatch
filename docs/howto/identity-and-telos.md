@@ -30,6 +30,10 @@ exec_steps:
     description: Confirm the identity was saved
     args: {}
     read_only: true
+  - tool: identity_backups
+    description: List the saved backups of the identity (read-only)
+    args: {}
+    read_only: true
 ---
 # How-to: Operator identity & Telos
 
@@ -73,10 +77,12 @@ values tell it how to choose when goals conflict.
 
 ## Setup
 
-Create the file (or let the wizard create it):
+Create the file (or let the wizard create it). The command below only
+writes the file when it does not exist yet, so it can never replace an
+identity you have already saved:
 
 ```sh
-cat > ~/.datawatch/identity.yaml <<'EOF'
+[ -e ~/.datawatch/identity.yaml ] || cat > ~/.datawatch/identity.yaml <<'EOF'
 role: ""
 north_star_goals: []
 current_projects: []
@@ -210,7 +216,9 @@ curl -sk -X PATCH -H "Authorization: Bearer $TOKEN" \
   -d '{"current_focus":"BL266 — finish structured-event path"}' \
   $BASE/api/identity
 
-# PUT — full replacement; missing fields are CLEARED.
+# PUT — full replacement; missing fields are CLEARED. A body with no content
+# at all over a saved identity is refused with HTTP 409 (see "Backups, restore
+# and the empty-write guard" below).
 curl -sk -X PUT -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d @- $BASE/api/identity <<'EOF'
@@ -302,6 +310,157 @@ context_notes: |
 No daemon restart needed; identity re-reads on every session spawn.
 For an existing session to pick up an updated identity, kill + restart
 that session.
+
+## Backups, restore and the empty-write guard
+
+The identity is the one file the daemon injects into every session, so the
+daemon keeps copies of it and will not let an ordinary save empty it. This
+section explains what is kept, what is refused, and how to get an identity back
+on every surface. The settings page version of this explanation is
+[Identity backups and restore](../datawatch-definitions.md#identity-backups-and-restore).
+
+### What the daemon does for you
+
+- **A backup before every write.** Before the daemon changes
+  `identity.yaml` it copies the existing file to
+  `identity-backups/identity-<UTC timestamp>.yaml`, in the `identity-backups`
+  folder next to `identity.yaml` in the data directory (by default
+  `~/.datawatch/identity-backups/`). The timestamp is the UTC time to the
+  millisecond, for example `identity-20261029T101500.000Z.yaml`. Saving from
+  the PWA, the CLI, MCP, chat or the REST API all count, and so do Reset and
+  Restore.
+- **Nothing pointless is kept.** No backup is made when the current file is
+  missing or has no content, or when it is the same as the newest backup apart
+  from its `updated_at` line. Saving the same identity twice does not use up two
+  slots.
+- **Only the newest few are kept.** The daemon keeps the newest
+  `identity.backups_to_keep` backups and removes the older ones. The default is
+  10, the minimum is 1, and a value below 1 or a non-numeric one is refused when
+  you set it. The change applies at the next write with no restart. Set it in
+  Settings → Automata → Identity (*Identity backups to keep*), with
+  `datawatch config set identity.backups_to_keep 20`, with
+  `PUT /api/config` and `{"identity.backups_to_keep": 20}`, with the MCP
+  `config_set` tool, or from chat with `configure identity.backups_to_keep=20`.
+- **A failed backup stops the write.** If the daemon cannot make the backup, it
+  does not write the new identity and the save fails with an error. The file you
+  had is left as it was.
+- **A save that would empty the identity is refused.** A `PUT /api/identity`
+  (or `set_identity`) whose fields are all empty, sent over a saved identity, is
+  answered with HTTP 409 and the code `identity_wipe_refused`; nothing is
+  written. The body names the fields that were kept:
+
+  ```json
+  {"error": "refusing to replace the saved identity with an empty one; to clear it on purpose use POST /api/identity/reset",
+   "code": "identity_wipe_refused",
+   "fields_kept": ["role", "values"]}
+  ```
+
+  The refusal is recorded in the audit log. A partial save is not refused:
+  `PATCH` (and `POST`, its alias) only merges the fields it carries, so an
+  empty patch changes nothing, and a `PUT` that carries at least one field
+  replaces the identity with that, as before, after taking a backup. Writing an
+  empty identity over an empty one is allowed.
+- **Clearing on purpose is a separate, explicit action.** Reset empties the
+  identity, always works, and keeps a backup of what it cleared.
+
+### Restore from a backup, on each surface
+
+A restore brings a saved copy back. It first backs up the identity it is about
+to replace, so a restore can be undone with another restore. The newest
+backup is called `latest`. The name `latest` means the newest backup that has
+content, so a backup made just before a reset is found even when later backups
+are empty.
+
+| Surface | List the backups | Restore | Clear on purpose |
+|---|---|---|---|
+| PWA | Settings → Automata → Identity → **Restore** lists them newest first, each with its time in your local time, its role and how many fields it filled in | Choose a backup in the list and confirm | **Reset**, after a confirmation that says a backup is kept |
+| CLI | `datawatch identity backups` (add `--json` for the raw reply) | `datawatch identity restore` (newest) or `datawatch identity restore --backup <name>` | `datawatch identity reset` (type `RESET` when asked, or pass `--yes`; without a terminal `--yes` is required) |
+| MCP | `identity_backups` (read-only) | `restore_identity` with `backup` set to a name from the list, or `latest` (the default) | `reset_identity` |
+| REST | `GET /api/identity/backups` returns `{"backups": [...], "keep": N}` | `POST /api/identity/restore` with `{"backup": "<name or latest>"}` | `POST /api/identity/reset` |
+| Chat | `identity backups` | `identity restore <name>` or `identity restore latest` | Not available from chat; the reply points at the CLI, PWA or MCP so one mistyped line cannot empty the identity |
+
+Restore answers with the restored identity. An unknown or malformed name is
+HTTP 404, a backup with no content is HTTP 422, and a missing `backup` field is
+HTTP 400.
+
+### Recover an identity that was emptied
+
+1. List what the daemon kept, newest first:
+
+   ```sh
+   datawatch identity backups
+   #  NAME                                  TIME                 ROLE               FIELDS
+   #  identity-20261029T101500.000Z.yaml    2026-10-29 06:15:00  platform engineer  5
+   #  identity-20261028T080000.000Z.yaml    2026-10-28 04:00:00  platform engineer  3
+   ```
+
+2. Restore the newest backup that has content, or a specific one:
+
+   ```sh
+   datawatch identity restore
+   datawatch identity restore --backup identity-20261028T080000.000Z.yaml
+   ```
+
+3. Read it back with `datawatch identity get` and confirm the role and goals are
+   yours. If it is not the one you wanted, run `datawatch identity backups`
+   again: the identity you just replaced is now the newest backup, so restoring
+   `latest` goes back.
+4. Existing sessions keep the identity they started with; kill and restart a
+   session to give it the restored one.
+
+The same recovery from the PWA: Settings → Automata → Identity → **Restore**,
+pick the backup by its time and role, confirm.
+
+### Restore by hand
+
+Use this when the daemon will not start, or when you prefer to work on the file
+yourself. Stop the daemon first, so it cannot write while you copy.
+
+```sh
+systemctl --user stop datawatch        # or: datawatch stop
+ls -1 ~/.datawatch/identity-backups/    # names sort oldest to newest
+cp ~/.datawatch/identity.yaml ~/identity.yaml.before-restore   # optional, keep what is there now
+cp ~/.datawatch/identity-backups/identity-20261028T080000.000Z.yaml ~/.datawatch/identity.yaml
+chmod 600 ~/.datawatch/identity.yaml
+systemctl --user start datawatch       # or: datawatch start
+datawatch identity get
+```
+
+If the daemon runs with a different data directory, use that directory in place
+of `~/.datawatch`. A backup is an ordinary copy of `identity.yaml`, so you can
+also open it in an editor to see what it holds before you copy it.
+
+### Troubleshooting
+
+- **`HTTP 409 identity_wipe_refused` when saving.** The save you sent had no
+  content and the daemon holds a saved identity. Send at least one field. To
+  clear the identity on purpose use Reset (`datawatch identity reset`, the PWA
+  Reset button, `reset_identity` or `POST /api/identity/reset`). A script that
+  empties the identity "to start clean" should call the reset route, not send an
+  empty `PUT`.
+- **`identity backups` says "no backups yet".** No write has replaced a saved
+  identity since the daemon gained this feature, or the data directory is
+  different from the one you are looking at. Check the `identity-backups`
+  folder next to `identity.yaml` in the directory the daemon runs with.
+- **The oldest backup you wanted is gone.** Only the newest
+  `identity.backups_to_keep` are kept. Raise it for a longer trail; it does not
+  bring back backups already removed, so copy a backup you want to keep
+  elsewhere.
+- **Restore says the backup was not found (404).** The name must be one from
+  `identity backups` (or `latest`), with no folder part. A backup removed by the
+  retention limit since you listed them also answers 404.
+- **Restore says the backup has no content (422).** That backup was made from an
+  empty identity. Choose another one, or `latest`, which skips such backups.
+- **Restore of `latest` says no backup has content.** The folder holds no
+  backups, or every backup in it is empty. Nothing is changed; restore by hand
+  from a copy you made yourself.
+- **A save fails with a backup error.** The daemon could not write into
+  `identity-backups`, for example because the disk is full or the folder is not
+  writable by the daemon's user. The identity file was not changed. Fix the
+  folder and save again.
+- **You edited `identity.yaml` by hand while the daemon ran.** The next save
+  reads the file from disk first and merges your edit, then backs the edited file
+  up. A hand edit does not need a restart.
 
 ## Diagram
 

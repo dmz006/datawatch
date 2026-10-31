@@ -264,6 +264,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Channel bridge | `channel_info`, `channel_diagnostics` |
 | Cost + audit + config + alerts | `cost_summary/usage/rates`, `analytics`, `audit_query`, `audit_access_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `create_alert`, `mark_alert_read` |
+| Identity | `get_identity`, `set_identity`, `update_identity`, `configure_identity`, `identity_backups`, `restore_identity`, `reset_identity` |
 | Saved commands | `list_saved_commands`, `send_saved_command` |
 | Ask / assist | `ask`, `assist` |
 | Voice | (no MCP tools — REST `/api/voice/transcribe` + chat-channel auto-handle) |
@@ -1187,6 +1188,85 @@ Search before create: find the Automata, registry rows and unmerged branches tha
 ```
 autonomous_overlap_search(title="Add search before create", spec="Warn when a new Automaton overlaps an existing one", limit=5)
 ```
+
+---
+
+## Operator identity and its backups
+
+The operator identity (role, north-star goals, current projects, values, current
+focus and context notes) is read and written through seven tools. They mirror
+the `/api/identity` routes. Every write keeps a timestamped backup of the
+identity it replaces, in the `identity-backups` folder next to `identity.yaml`,
+and the daemon keeps the newest `identity.backups_to_keep` of them (default 10).
+See [howto/identity-and-telos](howto/identity-and-telos.md#backups-restore-and-the-empty-write-guard)
+for the steps on every surface.
+
+| Tool | What it does | Read-only |
+|---|---|---|
+| `get_identity` | Returns the saved identity. | Yes |
+| `set_identity` | Replaces the whole identity with the fields given. | No |
+| `update_identity` | Merges the non-empty fields given into the identity; omitted and empty fields are kept. | No |
+| `configure_identity` | Returns where the setup wizard lives (PWA, CLI) and how the backup tools fit; it changes nothing. | Yes |
+| `identity_backups` | Lists the saved backups, newest first, with the number kept. | Yes |
+| `restore_identity` | Brings a backup back and returns the restored identity. | No |
+| `reset_identity` | Clears the identity on purpose, keeping a backup. | No |
+
+### `set_identity` refuses an empty write
+
+`set_identity` replaces the identity, so a call with no fields (or only empty
+ones) over a saved identity would empty it. The daemon refuses that: the tool
+returns an error carrying `HTTP 409` and the code `identity_wipe_refused`, with
+the fields that were kept, and nothing is written. The error also says to call
+`reset_identity` when the clear is meant. A `set_identity` that carries at least
+one field still replaces the identity with those fields, after taking a backup,
+and `update_identity` is unchanged: it only merges, so an empty call changes
+nothing. Setting an empty identity over an empty one is allowed.
+
+### `identity_backups`
+
+List the saved copies of the identity, newest first. Read-only.
+
+**Parameters:** none
+
+**Reply:** `backups`, each with `name`, `created_at` (UTC), `size_bytes`, `role`
+and `field_count` (how many of the six fields have content), and `keep`, the
+current `identity.backups_to_keep`. Same body as `GET /api/identity/backups`;
+no backups yet is an empty list.
+
+### `restore_identity`
+
+Bring a saved copy back. The identity being replaced is backed up first, so a
+restore can be undone with another `restore_identity`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `backup` | string | No | A name from `identity_backups`, or `latest` (the default), the newest backup that has content. |
+
+**Reply:** the restored identity. An unknown or malformed name is an error with
+`HTTP 404`; a backup that holds no content is an error with `HTTP 422`. Same
+body as `POST /api/identity/restore`.
+
+**Example:**
+```
+identity_backups()
+restore_identity(backup="identity-20261028T080000.000Z.yaml")
+```
+
+### `reset_identity`
+
+Clear the identity on purpose. This is the only way to empty a saved identity;
+`set_identity` with no fields is refused. The identity cleared is kept as a
+backup, so `restore_identity` undoes the reset. Resetting an identity that is
+already empty changes nothing and makes no backup.
+
+**Parameters:** none
+
+**Reply:** the now-empty identity. Same body as `POST /api/identity/reset`.
+
+The tools need the same federation capabilities as the routes they call: the
+read tools `config:read`, the write tools `config:write`.
 
 ---
 

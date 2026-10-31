@@ -715,6 +715,7 @@ signal-cli -u +12125551234 unregister
 | `~/.datawatch/config.yaml` | All daemon configuration | Critical — required to restart |
 | `~/.datawatch/sessions.json` | Session state and history | Important — lose this and running sessions can't be resumed |
 | `~/.local/share/signal-cli/` | Signal account keys and identity | Critical — lose this and you must re-link from scratch |
+| `~/.datawatch/identity.yaml` and `~/.datawatch/identity-backups/` | The operator identity and the daemon's own timestamped copies of it | Important — it is injected into every session; the backups are what bring it back after a bad save |
 | `~/.datawatch/logs/` | Session output logs | Nice to have — historical output |
 
 Autonomous Automata state lives as plain JSONL files under the autonomous data directory: `prds.jsonl` (Automata) and, alongside it, `automations.jsonl` (Automations — named groups of Automata with next-step edges). Both are captured automatically by any backup of that directory.
@@ -740,6 +741,64 @@ Each key is reachable through all five configuration methods (MCP agents use `co
 | `autonomous.progress.backlog_path` | `backlog_path: docs/plans/README.md` | `datawatch config set autonomous.progress.backlog_path docs/plans/README.md` | *Progress backlog file* | `PUT /api/config` `{"autonomous.progress.backlog_path": "docs/plans/README.md"}` | `configure autonomous.progress.backlog_path=docs/plans/README.md` |
 | `autonomous.progress.since` | `since: "2026-09-01"` | `datawatch config set autonomous.progress.since 2026-09-01` | *Progress start date* | `PUT /api/config` `{"autonomous.progress.since": "2026-09-01"}` | `configure autonomous.progress.since=2026-09-01` |
 | `autonomous.progress.snapshot_retention_days` | `snapshot_retention_days: 90` | `datawatch config set autonomous.progress.snapshot_retention_days 90` | *Progress snapshot retention* | `PUT /api/config` `{"autonomous.progress.snapshot_retention_days": 90}` | `configure autonomous.progress.snapshot_retention_days=90` |
+
+### Identity backups
+
+The daemon protects the operator identity (`identity.yaml` in the data
+directory) on its own. You do not schedule anything; this is what it does and
+where to look.
+
+- **Location.** `identity-backups/` next to `identity.yaml`, by default
+  `~/.datawatch/identity-backups/`. The folder is created on the first backup
+  (mode `0700`); each file is mode `0600`. One file per backup, named
+  `identity-<UTC timestamp>.yaml` with the time to the millisecond, for example
+  `identity-20261029T101500.000Z.yaml`. Names sort oldest to newest. Two backups
+  in the same millisecond get a `_001`, `_002` suffix.
+- **When a backup is made.** Before every write that replaces `identity.yaml`:
+  a save from any surface, a Reset and a Restore. Nothing is made when the
+  current file is missing or has no content, or when it matches the newest
+  backup apart from its `updated_at` line. If the backup cannot be written
+  the daemon does not write the identity, and the save fails with an error.
+- **Retention.** The newest `identity.backups_to_keep` files are kept and older
+  ones are removed at the next write. Default 10, minimum 1; a lower or
+  non-numeric value is refused (`PUT /api/config` answers 400). The key is
+  live, so a change needs no restart. Set it like any configuration key (YAML
+  `identity.backups_to_keep`, `datawatch config set identity.backups_to_keep 20`,
+  `PUT /api/config`, `configure identity.backups_to_keep=20` in chat, or
+  Settings → Automata → Identity in the PWA). A lower number removes the surplus
+  at the next write, not at once.
+- **Empty-write refusal.** A save with no content over a saved identity is
+  refused with HTTP 409 `identity_wipe_refused` and recorded in the audit log
+  (action `identity_set_refused`); Reset (`POST /api/identity/reset`,
+  `datawatch identity reset`, the PWA Reset button, MCP `reset_identity`) is
+  the only way to clear it, and keeps a backup. Restores and resets are audited
+  as `identity_restore` and `identity_reset`.
+- **Restore.** `datawatch identity backups` lists them and
+  `datawatch identity restore [--backup <name>]` brings one back. The same is on
+  the PWA (Settings → Automata → Identity → Restore), MCP (`identity_backups`,
+  `restore_identity`), REST (`GET /api/identity/backups`,
+  `POST /api/identity/restore`) and chat (`identity backups`,
+  `identity restore <name|latest>`). A restore backs up the identity it
+  replaces, so it can be undone. See
+  [howto/identity-and-telos](howto/identity-and-telos.md#backups-restore-and-the-empty-write-guard).
+- **Restore by hand.** With the daemon stopped, copy the chosen file over
+  `identity.yaml` and start the daemon again:
+
+  ```bash
+  systemctl --user stop datawatch
+  cp ~/.datawatch/identity-backups/identity-20261028T080000.000Z.yaml ~/.datawatch/identity.yaml
+  chmod 600 ~/.datawatch/identity.yaml
+  systemctl --user start datawatch
+  datawatch identity get
+  ```
+
+  Stopping the daemon first matters: a running daemon rewrites the file on its
+  next save, and a copy made during a save can be lost. If the daemon uses a
+  different data directory, use that one.
+- **In your own backups.** The `tar` backup below takes `identity-backups/` with
+  the rest of `~/.datawatch/`. The folder only holds the last few identities
+  the daemon saw, so keep a copy elsewhere of a backup you want to keep for
+  good.
 
 ### Backup command
 

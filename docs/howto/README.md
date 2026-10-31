@@ -68,7 +68,7 @@ you already have a daemon you can talk to.
 | [Session Telemetry](session-telemetry.md) | Structured task telemetry from hook events: tasks[], guardrail verdicts, persist-on-stop |
 | [Dashboard](dashboard.md) | /dashboard Mission Control: session constellation, EKG waveform, sprint pipeline, expand mode |
 | [Channel state engine](channel-state-engine.md) | Why a session is in its current state; signals + diagnostic walkthrough |
-| [Identity + Telos](identity-and-telos.md) | One-time operator self-description; injected into every session's wake-up L0 layer |
+| [Identity + Telos](identity-and-telos.md) | One-time operator self-description; injected into every session's wake-up L0 layer. Also covers the automatic identity backups, the empty-write refusal, Reset, and restoring an earlier identity from the PWA, CLI, MCP, REST or chat |
 | [Algorithm Mode](algorithm-mode.md) | 7-phase structured-thinking harness (Observe → Improve) with per-phase capture |
 | [Evals](evals.md) | Rubric-based grading suites: capability + regression modes, 4 grader types |
 | [Council Mode](council-mode.md) | Multi-persona structured debate; 12 default personas; quick + debate modes |
