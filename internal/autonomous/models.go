@@ -741,6 +741,9 @@ type Story struct {
 	Backend string `json:"backend,omitempty"`
 	Effort  Effort `json:"effort,omitempty"`
 	Model   string `json:"model,omitempty"`
+	// PinnedNode names the compute node every task of this story must run on,
+	// unless a task pins its own. Empty = placement chooses the node.
+	PinnedNode string `json:"pinned_node,omitempty"`
 	// Story-level pi --thinking override (off|minimal|low|medium|high).
 	// Inherited by tasks in this story whose own ThinkingLevel is empty.
 	// Empty = inherit from the PRD-level value then the global
@@ -868,6 +871,11 @@ type Task struct {
 	// start handler reports it. A daemon restart adopts the surviving worker
 	// onto this node before it looks at anything else.
 	ComputeNode string `json:"compute_node,omitempty"`
+	// PinnedNode names the compute node this task must run on. Unlike
+	// ComputeNode, which records where the worker ran, it is a request: only
+	// the named node may be chosen. It beats the story's pin. Empty =
+	// placement chooses the node.
+	PinnedNode string `json:"pinned_node,omitempty"`
 	// VerifierSessionID is the live verifier session adopted at boot, so the
 	// resumed verification waits for it instead of spawning a second one.
 	VerifierSessionID string `json:"verifier_session_id,omitempty"`

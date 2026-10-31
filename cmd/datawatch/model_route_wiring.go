@@ -85,7 +85,10 @@ func modelCheckEntry(reg *inference.Registry, backend, model string) (inference.
 func newModelHostCheck(cfg func() *config.Config, reg func() *inference.Registry, nodes func() *compute.Registry, cache *compute.ServedModelsCache) autonomous.ModelHostCheckFn {
 	return func(ctx context.Context, backend, model, node string) autonomous.ModelHostVerdict {
 		v := autonomous.ModelHostVerdict{Model: model, Node: node}
-		if model == "" || cache == nil {
+		if model == "" {
+			return unregisteredNodeVerdict(v, nodes, node)
+		}
+		if cache == nil {
 			return v
 		}
 		var ireg *inference.Registry
@@ -145,6 +148,29 @@ func newModelHostCheck(cfg func() *config.Config, reg func() *inference.Registry
 			modelRoutingConfig(cfg).EffectiveUnknownNodePolicy())
 		return fillModelVerdict(v, res)
 	}
+}
+
+// unregisteredNodeVerdict answers a check that has no model to look for. Only a
+// named node is checked, and only for being a registered compute node: an
+// unregistered one comes back refused with NodeUnknown set, anything else
+// leaves v as it is (not applicable). A node pin on a unit with no resolved
+// model still must name a node that exists.
+func unregisteredNodeVerdict(v autonomous.ModelHostVerdict, nodes func() *compute.Registry, node string) autonomous.ModelHostVerdict {
+	if node == "" {
+		return v
+	}
+	if nodes != nil {
+		if creg := nodes(); creg != nil {
+			for _, n := range creg.List() {
+				if n.Name == node {
+					return v
+				}
+			}
+		}
+	}
+	v.Applicable, v.Refused, v.NodeUnknown = true, true, true
+	v.Message = fmt.Sprintf("node %q is not a registered node", node)
+	return v
 }
 
 // fillModelVerdict copies a compute.CheckModel result into the verdict: the

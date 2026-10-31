@@ -126,7 +126,14 @@ func (m *Manager) checkModelHosted(prdID, unit, backend, model, node string) (wa
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), modelHostCheckTimeout)
 	defer cancel()
-	v := check(ctx, backend, model, node)
+	return m.modelVerdictOutcome(prdID, unit, model, check(ctx, backend, model, node))
+}
+
+// modelVerdictOutcome turns one verdict into the outcome of a pin: nothing for
+// a verdict that does not apply or does not refuse, otherwise the alert, then a
+// warning in warn mode or the refusal error in refuse mode. checkModelHosted
+// and the node pin check share it, so both read the settings the same way.
+func (m *Manager) modelVerdictOutcome(prdID, unit, model string, v ModelHostVerdict) (warning string, err error) {
 	if !v.Applicable || !v.Refused {
 		return "", nil
 	}
@@ -186,12 +193,16 @@ func recordModelWarning(prd *PRD, warning, actor string) {
 // checkPinnedModelHosted runs the pin-time check for a task or story worker
 // pin. The backend checked is the one the executor would run the pinned model
 // with, resolved through the task, story and Automaton exactly as a run does.
-func (m *Manager) checkPinnedModelHosted(prdID, unit string, task *Task, story *Story, prd *PRD, model string) (string, error) {
+//
+// node is the compute node the unit is pinned to, or "" when it is not pinned:
+// a pinned unit is checked against its node, so a model the pinned node does
+// not serve is refused or warned like any other.
+func (m *Manager) checkPinnedModelHosted(prdID, unit string, task *Task, story *Story, prd *PRD, model, node string) (string, error) {
 	if model == "" {
 		return "", nil
 	}
 	backend, _ := resolveTaskBackendModel(task, story, prd, m.AutomationForPRD(prd), "")
-	return m.checkModelHosted(prdID, unit, backend, model, "")
+	return m.checkModelHostedOn(prdID, unit, backend, model, node)
 }
 
 // checkLevelModelHosted runs the pin-time check for a call that sets a model

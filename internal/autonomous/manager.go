@@ -4325,7 +4325,7 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 	if err := checkResolvedLLMPair(prdID, &Task{}, &Story{Backend: backend, Model: model}, prd, m.AutomationForPRD(prd)); err != nil {
 		return nil, err
 	}
-	warning, err := m.checkPinnedModelHosted(prdID, "story "+storyID, &Task{}, &Story{Backend: backend, Model: model}, prd, model)
+	warning, err := m.checkPinnedModelHosted(prdID, "story "+storyID, &Task{}, &Story{Backend: backend, Model: model}, prd, model, effectiveNodePin(nil, story))
 	if err != nil {
 		return nil, err
 	}
@@ -4370,7 +4370,7 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 	if err := checkResolvedLLMPair(prdID, &Task{Backend: backend, Model: model}, story, prd, m.AutomationForPRD(prd)); err != nil {
 		return nil, err
 	}
-	warning, err := m.checkPinnedModelHosted(prdID, "task "+taskID, &Task{Backend: backend, Model: model}, story, prd, model)
+	warning, err := m.checkPinnedModelHosted(prdID, "task "+taskID, &Task{Backend: backend, Model: model}, story, prd, model, effectiveNodePin(task, story))
 	if err != nil {
 		return nil, err
 	}
@@ -4810,7 +4810,7 @@ func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionP
 	if err := checkLevelPair(prdID, backend, model, prd.Backend, prd.Model); err != nil {
 		return nil, err
 	}
-	warning, err := m.checkLevelModelHosted(prdID, "Automaton worker", backend, model, prd.Backend)
+	warning, err := m.checkAutomatonModelHosted(prdID, prd, backend, model)
 	if err != nil {
 		return nil, err
 	}

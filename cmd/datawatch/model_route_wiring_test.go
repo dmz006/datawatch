@@ -136,6 +136,14 @@ func TestModelRouteWiring_BuildsCheckFromRegistries(t *testing.T) {
 			t.Fatalf("an unprefixed model with no backend: applicable=%v refused=%v", app, refused)
 		}
 	})
+	t.Run("a node pin with no model checks only that the node is registered", func(t *testing.T) {
+		if app, refused, unknown, _ := check(ctx, "pi", "", "nowhere"); !app || !refused || !unknown {
+			t.Fatalf("unregistered node, no model: applicable=%v refused=%v nodeUnknown=%v", app, refused, unknown)
+		}
+		if app, refused, unknown, _ := check(ctx, "pi", "", "alpha"); app || refused || unknown {
+			t.Fatalf("registered node, no model: applicable=%v refused=%v nodeUnknown=%v", app, refused, unknown)
+		}
+	})
 	t.Run("a node that is not registered", func(t *testing.T) {
 		app, refused, unknown, msg := check(ctx, "pi", "ollama/qwen3.8:27b", "nowhere")
 		if !app || !refused || !unknown || !strings.Contains(msg, `"nowhere"`) {
