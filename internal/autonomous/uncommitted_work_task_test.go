@@ -118,7 +118,6 @@ type uncommittedTaskOpts struct {
 	noGit        bool // the Automaton has no git settings
 	writeSubdir  string
 	filesPlanned []string
-	preDirty     []string
 }
 
 func newUncommittedTaskRig(t *testing.T, o uncommittedTaskOpts) *uncommittedTaskRig {

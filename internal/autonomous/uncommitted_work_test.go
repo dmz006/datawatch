@@ -200,7 +200,7 @@ func uwGit(t *testing.T, dir string, args ...string) string {
 func uwRepo(t *testing.T) string {
 	t.Helper()
 	t.Setenv("GIT_DIR", "")
-	os.Unsetenv("GIT_DIR")
+	_ = os.Unsetenv("GIT_DIR")
 	t.Setenv("GIT_AUTHOR_NAME", "Test")
 	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
 	t.Setenv("GIT_COMMITTER_NAME", "Test")
