@@ -1030,6 +1030,25 @@ paths:
         infrastructure retry value rejects the whole PUT with 400 and nothing is
         written. GET returns all seven values in effect under `autonomous.infra_retry`
         and the running Automaton manager picks up changes without a restart.
+        `autonomous.model_routing.refusal_mode` (`refuse` or `warn`, default `refuse`;
+        whether a worker pinned to a model that no node serves is turned away or only
+        warned about),
+        `autonomous.model_routing.served_models_cache_seconds` (whole number >= 0,
+        default 300; how long a node's list of served models is kept; 0 reads it from
+        the node every time),
+        `autonomous.model_routing.verifier_follows_worker_node` (true|false, default
+        true; the verifier runs on the node its worker ran on),
+        `autonomous.model_routing.unknown_node_policy` (`assume_serves` or
+        `assume_not`, default `assume_serves`; how a node whose models cannot be read
+        counts),
+        `autonomous.model_routing.probe_timeout_seconds` (whole number >= 1, default 8;
+        how long a read of a node's models may take) and
+        `autonomous.model_routing.alert_on_refusal` (true|false, default true; raise an
+        alert when a worker is turned away). The block can also be sent whole as an
+        object under `autonomous.model_routing`. A bad model routing value rejects the
+        whole PUT with 400 naming the key and nothing is written. GET returns all six
+        values in effect under `autonomous.model_routing` and a change applies without
+        a restart.
         `autonomous.verifier_policy.mode` (fixed | prefer-free | balance | gpu-only |
         claude-only; empty = fixed), `autonomous.verifier_policy.backends` (ordered
         list, or comma-separated), `autonomous.verifier_policy.claude_session_cap`

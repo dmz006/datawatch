@@ -6332,6 +6332,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			},
 			"lane_fill":   laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
 			"infra_retry": infraRetryConfigSurface(s.cfg.Autonomous.InfraRetry),
+			// Effective, not raw: an unset key shows its default.
+			"model_routing": modelRoutingConfigSurface(s.cfg.Autonomous.ModelRouting),
 			"progress": map[string]interface{}{
 				"lanes":                   s.cfg.Autonomous.Progress.Lanes,
 				"inactive_gap_hours":      s.cfg.Autonomous.Progress.InactiveGapHours,
@@ -6841,6 +6843,17 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// The infrastructure retry block is checked as a whole too: one bad value
 	// among its seven keys refuses the whole PUT.
 	if err := validateInfraRetryPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The model routing block is checked as a whole too: one bad value among
+	// its six keys refuses the whole PUT. A whole-block object is first
+	// expanded into the dotted keys.
+	if err := expandModelRoutingBlock(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateModelRoutingPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9007,6 +9020,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// autonomous.infra_retry.*; the values were checked by
 			// validateInfraRetryPatch.
 			if applyInfraRetryPatch(cfg, k, v) {
+				continue
+			}
+			// autonomous.model_routing.refusal_mode,
+			// .served_models_cache_seconds, autonomous.model_routing.verifier_follows_worker_node,
+			// .unknown_node_policy, .probe_timeout_seconds and .alert_on_refusal;
+			// the values were checked by validateModelRoutingPatch.
+			if applyModelRoutingPatch(cfg, k, v) {
 				continue
 			}
 			// Single-tier pair form: autonomous.plan_tier_allocation_usd.<tier>
