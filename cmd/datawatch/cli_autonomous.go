@@ -93,7 +93,7 @@ Subcommands:
   prd-plan-review <id>            Re-run the plan reviewer for a PRD (alias: plan-review)
   prd-resume <id> [--note ...]    Resume a paused or boot-parked PRD (alias: resume)
   prd-reject <id>                 Reject a PRD plan
-  prd-coverage <id>               Show the stored plan-requirement coverage report (mode, min_ratio, report, ack, findings)
+  prd-coverage <id> [--json]      Show the Automaton's stored plan-coverage report, its ack, findings and the suppressed counts
   prd-ack-coverage <id>           Acknowledge a failing coverage report (--actor, --note) so approve in block mode is allowed
   prd-request-revision <id>       Request fresh planning run
   prd-edit-task <id>              Rewrite a task spec before approving
@@ -892,44 +892,87 @@ func newAutonomousPRDRejectCmd() *cobra.Command {
 	return cmd
 }
 
-// newAutonomousPRDCoverageCmd — show the PRD's stored plan-requirement
-// coverage report (the plan-coverage gate record: the mode/min_ratio
-// the PRD was pinned to, the coverage report, any structural findings
-// and the operator acknowledgement of a failing surface, if present).
+// newAutonomousPRDCoverageCmd — show the Automaton's stored plan-coverage
+// record (the plan-coverage gate record: the mode/min_ratio it was pinned
+// to when the report was computed, the coverage report, any structural
+// findings and the operator acknowledgement of a failing surface, if
+// present) plus the counts of the findings the plan-coverage filters
+// suppressed and the filters in effect now.
 func newAutonomousPRDCoverageCmd() *cobra.Command {
-	return &cobra.Command{
+	var rawJSON bool
+	cmd := &cobra.Command{
 		Use:   "prd-coverage <id>",
-		Short: "Show the PRD's stored plan-coverage report (gate mode, ratio, report, ack, findings)",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			body, err := daemonJSONBody(http.MethodGet, "/api/autonomous/prds/"+args[0]+"?detail=full", nil)
+		Short: "Show the Automaton's stored plan-coverage report (gate, ratio, report, ack, findings, suppressed counts)",
+		Long: "Read the Automaton's stored plan-coverage record: the gate mode/ratio it was pinned to at compute time, " +
+			"the coverage report, any structural findings and the operator acknowledgement, if present. " +
+			"Shows how many findings the plan-coverage filters suppressed (the created-file findings and the stray-requirement " +
+			"findings) and the filters in effect (suppress_created_files, scoped_requirements, requirement_sections, " +
+			"min_requirement_chars). " +
+			"Use --json to print the raw daemon response body instead of the summary.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := daemonJSONBody(http.MethodGet, "/api/autonomous/prds/"+args[0]+"/plan_coverage", nil)
 			if err != nil {
 				return err
 			}
-			var prd struct {
+			if rawJSON {
+				_, _ = cmd.OutOrStdout().Write(append(body, '\n'))
+				return nil
+			}
+			var resp struct {
 				ID           string          `json:"id"`
 				Status       string          `json:"status"`
 				PlanCoverage json.RawMessage `json:"plan_coverage"`
+				Suppressed   struct {
+					CreatedFiles int `json:"created_files"`
+					Requirements int `json:"requirements"`
+				} `json:"suppressed"`
+				Filters json.RawMessage `json:"filters"`
 			}
-			if err := json.Unmarshal(body, &prd); err != nil {
-				return fmt.Errorf("decode PRD: %w", err)
+			if err := json.Unmarshal(body, &resp); err != nil {
+				return fmt.Errorf("decode plan-coverage read: %w", err)
 			}
-			if len(prd.PlanCoverage) == 0 || string(prd.PlanCoverage) == "null" {
-				fmt.Printf("No plan-coverage report stored for %s (run the planning phase first; the deterministic coverage check is computed at decompose time).\n", prd.ID)
+			id := resp.ID
+			if id == "" {
+				id = args[0]
+			}
+			if len(resp.PlanCoverage) == 0 || string(resp.PlanCoverage) == "null" {
+				fmt.Fprintf(cmd.OutOrStdout(), "No plan-coverage report stored for %s (run the planning phase first; the deterministic coverage check is computed at decompose time).\n", id)
 				return nil
 			}
-			var report any
-			if err := json.Unmarshal(prd.PlanCoverage, &report); err != nil {
+			var record any
+			if err := json.Unmarshal(resp.PlanCoverage, &record); err != nil {
 				return fmt.Errorf("decode plan_coverage: %w", err)
 			}
-			out, err := json.MarshalIndent(report, "", "  ")
+			pretty, err := json.MarshalIndent(record, "", "  ")
 			if err != nil {
 				return fmt.Errorf("re-marshal plan_coverage: %w", err)
 			}
-			prettyPrint(out)
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "Plan coverage for %s (%s)\n", id, resp.Status)
+			fmt.Fprintf(out, "Suppressed by the plan coverage filters: %d created-file finding(s), %d requirement finding(s)\n", resp.Suppressed.CreatedFiles, resp.Suppressed.Requirements)
+			var flt struct {
+				SuppressCreatedFiles bool     `json:"suppress_created_files"`
+				ScopedRequirements   bool     `json:"scoped_requirements"`
+				RequirementSections  []string `json:"requirement_sections"`
+				MinRequirementChars  int      `json:"min_requirement_chars"`
+			}
+			if json.Unmarshal(resp.Filters, &flt) == nil && (flt.SuppressCreatedFiles || flt.ScopedRequirements || len(flt.RequirementSections) > 0 || flt.MinRequirementChars > 0) {
+				fmt.Fprintf(out, "Filters in effect: suppress_created_files=%t scoped_requirements=%t requirement_sections=%s min_requirement_chars=%d\n",
+					flt.SuppressCreatedFiles, flt.ScopedRequirements, strings.Join(flt.RequirementSections, ","), flt.MinRequirementChars)
+			} else {
+				filters := strings.TrimSpace(string(resp.Filters))
+				if filters == "" || filters == "null" {
+					filters = "none"
+				}
+				fmt.Fprintf(out, "Filters in effect: %s\n", filters)
+			}
+			fmt.Fprintln(out, string(pretty))
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&rawJSON, "json", false, "print the raw daemon response body instead of the summary")
+	return cmd
 }
 
 // newAutonomousPRDAckCoverageCmd — operator-acknowledge the PRD's
