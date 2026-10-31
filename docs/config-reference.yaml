@@ -1132,6 +1132,45 @@ autonomous:
   # comm `configure autonomous.automation.disk_alert_percent=90`, and the MCP
   # autonomous_config_set tool (automation_disk_alert_percent).
   #
+  # uncommitted_work_policy: string, `hold` (default), `warn` or `off`. What
+  # an Automaton that commits its own work does when a task has finished and
+  # its files are still uncommitted in the worktree, and again before the
+  # Automaton is reported finished. `hold` commits the task's own declared
+  # files, then holds the task (or blocks the Automaton at the finished
+  # check) with the reason and the files and raises one question offering
+  # commit, discard or retry. `warn` still commits the declared files but
+  # only records a warning for what is left, and lets the work complete.
+  # `off` does no check and no commit attempt. An unset key, an empty value
+  # and an unrecognized word read as `hold` from a hand-edited config file;
+  # any other word is refused on every write path and nothing is saved.
+  # Read live, no restart. Settable via PUT /api/config (key
+  # autonomous.automation.uncommitted_work_policy; GET /api/config shows the
+  # effective value), PUT /api/autonomous/config (automation object), CLI
+  # `datawatch config set autonomous.automation.uncommitted_work_policy
+  # warn`, comm `configure autonomous.automation.uncommitted_work_policy=warn`,
+  # the PWA (Settings -> General -> Automata settings -> Uncommitted-work
+  # check), and the MCP autonomous_config_set tool
+  # (automation_uncommitted_work_policy).
+  #
+  # uncommitted_work_scope: string, `task_files` (default) or `worktree`.
+  # Which files the per-task check counts. `task_files` counts only the
+  # files the task itself changed (files already modified or untracked
+  # before the task started are left out); `worktree` counts every
+  # uncommitted file in the worktree. The check before an Automaton is
+  # reported finished always covers the whole worktree, whatever the scope.
+  # An unset key, an empty value and an unrecognized word read as
+  # `task_files` from a hand-edited config file; any other word is refused on
+  # every write path. Read live, no restart. Settable via PUT /api/config
+  # (key autonomous.automation.uncommitted_work_scope), PUT
+  # /api/autonomous/config, CLI `datawatch config set
+  # autonomous.automation.uncommitted_work_scope worktree`, comm `configure
+  # autonomous.automation.uncommitted_work_scope=worktree`, the PWA (same
+  # group), and the MCP autonomous_config_set tool
+  # (automation_uncommitted_work_scope). The status is read with GET
+  # /api/autonomous/uncommitted-work, MCP autonomous_uncommitted_work, CLI
+  # `datawatch autonomous uncommitted-work` and the chat verb `autonomous
+  # uncommitted-work`.
+  #
   # Automation objects themselves (members, edges, budget policy, defaults) are
   # runtime data in the automation store, created through the Automation verbs
   # (including `automation import-graph`), not keys in this file.
