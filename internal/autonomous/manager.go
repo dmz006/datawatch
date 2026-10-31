@@ -635,6 +635,19 @@ type AutomationConfig struct {
 	// UncommittedWorkScope: task_files | worktree. Empty or an unrecognized
 	// value reads as task_files via EffectiveUncommittedWorkScope.
 	UncommittedWorkScope string `json:"uncommitted_work_scope,omitempty"`
+
+	// PendingItemPolicy: hold | skip. Empty or an unrecognized value reads
+	// as hold via EffectivePendingItemPolicy.
+	PendingItemPolicy string `json:"pending_item_policy,omitempty"`
+
+	// PendingItemAutoResume: pointer on purpose, so unset (nil) reads true
+	// via EffectivePendingItemAutoResume and an explicit false survives.
+	PendingItemAutoResume *bool `json:"pending_item_auto_resume,omitempty"`
+
+	// PendingItemSource: the optional file registry block. The raw values
+	// are mirrored as written; the Effective* accessors on the type resolve
+	// the defaults.
+	PendingItemSource config.PendingItemSourceConfig `json:"pending_item_source"`
 }
 
 // DefaultAutomationTriageAlertMinutes — the autonomous.automation.
@@ -737,6 +750,41 @@ func (c AutomationConfig) EffectiveUncommittedWorkScope() string {
 		return config.UncommittedWorkScopeWorktree
 	}
 	return config.UncommittedWorkScopeTaskFiles
+}
+
+// EffectivePendingItemPolicy returns the pending-item policy in effect: skip
+// is the explicit choice, an empty or unknown value reads
+// config.PendingItemPolicyHold, the safe default.
+func (c AutomationConfig) EffectivePendingItemPolicy() string {
+	if c.PendingItemPolicy == config.PendingItemPolicySkip {
+		return config.PendingItemPolicySkip
+	}
+	return config.PendingItemPolicyHold
+}
+
+// EffectivePendingItemAutoResume returns whether a held Automation resumes
+// by itself once an Automaton is attached: unset (nil) reads true.
+func (c AutomationConfig) EffectivePendingItemAutoResume() bool {
+	if c.PendingItemAutoResume == nil {
+		return config.DefaultPendingItemAutoResume
+	}
+	return *c.PendingItemAutoResume
+}
+
+// EffectivePendingItemSource returns the pending-item file registry settings
+// with every default resolved: the returned block carries the id pattern,
+// columns, done values and missing-row behavior in effect.
+func (c AutomationConfig) EffectivePendingItemSource() config.PendingItemSourceConfig {
+	s := c.PendingItemSource
+	return config.PendingItemSourceConfig{
+		Path:         s.EffectivePath(),
+		IDPattern:    s.EffectiveIDPattern(),
+		IDColumn:     s.EffectiveIDColumn(),
+		TitleColumn:  s.EffectiveTitleColumn(),
+		StateColumn:  s.EffectiveStateColumn(),
+		DoneValues:   s.EffectiveDoneValues(),
+		OnMissingRow: s.EffectiveOnMissingRow(),
+	}
 }
 
 // EffectiveCleanupRetentionHours returns the cleanup retention window in

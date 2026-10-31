@@ -4467,6 +4467,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// accessors resolve the defaults (hold, task_files).
 				UncommittedWorkPolicy: acfgIn.Automation.UncommittedWorkPolicy,
 				UncommittedWorkScope:  acfgIn.Automation.UncommittedWorkScope,
+				// Pending-item keys: raw values; the manager's Effective*
+				// accessors resolve the defaults (hold, auto-resume on, no
+				// file registry).
+				PendingItemPolicy:     acfgIn.Automation.PendingItemPolicy,
+				PendingItemAutoResume: acfgIn.Automation.PendingItemAutoResume,
+				PendingItemSource:     acfgIn.Automation.PendingItemSource,
 				// security failure mode (autonomous.automation.security_failure.mode)
 				SecurityFailure: autonomouspkg.SecurityFailureConfig{Mode: acfgIn.Automation.SecurityFailure.Mode},
 				// supervisor watch block (autonomous.automation.supervisor_watch.*):
