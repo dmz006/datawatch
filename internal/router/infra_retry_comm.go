@@ -78,58 +78,101 @@ func (r *Router) replyInfraRetries(args []string) {
 // renderInfraRetriesForChat renders the status and cuts it to fit one chat
 // message. It drops the oldest tasks first and always keeps the newest one; if
 // that one task is still too long it drops its oldest retries, and as a last
-// resort cuts the text itself. Each cut is named in a closing line, so the
-// reader knows what was left out.
+// resort cuts the text itself. Each cut is named in closing lines that survive
+// every cut, so the reader always knows what was left out. Each task renders
+// once, so the cost grows with what is shown, not with how many tasks exist.
 func renderInfraRetriesForChat(st autonomous.InfraRetryStatus) string {
 	total := len(st.Tasks)
-	shown := total
-	droppedRetries := 0
-	for {
-		text := composeInfraRetriesChat(st, shown, droppedRetries)
-		if len(text) <= infraRetryChatMaxChars {
-			return text
+	if total == 0 {
+		return strings.TrimRight(autonomous.RenderInfraRetryText(st, 0), "\n")
+	}
+	newest := st.Tasks[0]
+	head, block := infraRetryChatBlock(st, newest)
+	fits := func(text, footer string) bool { return len(text)+len(footer) <= infraRetryChatMaxChars }
+
+	footer := infraRetryChatFooter(0, total-1)
+	if fits(head+block, footer) {
+		body := head + block
+		shown := 1
+		for shown < total {
+			_, next := infraRetryChatBlock(st, st.Tasks[shown])
+			if !fits(body+next, infraRetryChatFooter(0, total-shown-1)) {
+				break
+			}
+			body += next
+			shown++
 		}
-		switch {
-		case shown > 1:
-			shown--
-		case shown == 1 && len(st.Tasks[0].Retries)-droppedRetries > 1:
-			droppedRetries++
-		default:
-			return cutInfraRetriesChat(text)
+		return strings.TrimRight(body, "\n") + infraRetryChatFooter(0, total-shown)
+	}
+
+	// The newest task alone is too long: drop its oldest retries, as few as
+	// will fit, keeping at least the latest one.
+	retries := newest.Retries
+	render := func(dropped int) (string, string) {
+		cut := newest
+		cut.Retries = retries[dropped:]
+		_, b := infraRetryChatBlock(st, cut)
+		return strings.TrimRight(head+b, "\n"), infraRetryChatFooter(dropped, total-1)
+	}
+	maxDrop := len(retries) - 1
+	if maxDrop < 0 {
+		maxDrop = 0
+	}
+	lo, hi := 0, maxDrop
+	for lo < hi {
+		mid := (lo + hi) / 2
+		if text, foot := render(mid); fits(text, foot) {
+			hi = mid
+		} else {
+			lo = mid + 1
 		}
 	}
+	text, foot := render(lo)
+	if fits(text, foot) {
+		return text + foot
+	}
+	return cutInfraRetriesChat(text, foot)
 }
 
-// composeInfraRetriesChat renders the first shown tasks, with the oldest
-// droppedRetries retries of the first task left out, and appends the lines that
-// say what was left out.
-func composeInfraRetriesChat(st autonomous.InfraRetryStatus, shown, droppedRetries int) string {
+// infraRetryChatBlock renders one task through the shared text and returns the
+// settings line and the task's block separately.
+func infraRetryChatBlock(st autonomous.InfraRetryStatus, t autonomous.InfraRetryTask) (head, block string) {
 	view := st
-	view.Tasks = append([]autonomous.InfraRetryTask(nil), st.Tasks[:shown]...)
-	if droppedRetries > 0 {
-		first := view.Tasks[0]
-		first.Retries = first.Retries[droppedRetries:]
-		view.Tasks[0] = first
-	}
-	text := strings.TrimRight(autonomous.RenderInfraRetryText(view, 0), "\n")
-	if droppedRetries > 0 {
-		text += fmt.Sprintf("\n(%d earlier %s of the newest task not shown)", droppedRetries, retryWord(droppedRetries))
-	}
-	if left := len(st.Tasks) - shown; left > 0 {
-		text += fmt.Sprintf("\n(%d older %s not shown; add an Automaton id or a smaller limit to narrow the list)", left, taskWord(left))
-	}
-	return text
+	view.Tasks = []autonomous.InfraRetryTask{t}
+	text := autonomous.RenderInfraRetryText(view, 0)
+	i := strings.Index(text, "\n") + 1
+	return text[:i], text[i:]
 }
 
-// cutInfraRetriesChat cuts text to the chat budget at a line break when it can,
-// and says it was cut.
-func cutInfraRetriesChat(text string) string {
-	const note = "\n(reply cut to fit one message)"
-	keep := text[:infraRetryChatMaxChars-len(note)]
-	if i := strings.LastIndex(keep, "\n"); i > 0 {
-		keep = keep[:i]
+// infraRetryChatFooter is the closing lines that say what a cut left out: the
+// oldest retries of the newest task, and the older tasks.
+func infraRetryChatFooter(droppedRetries, leftTasks int) string {
+	var b strings.Builder
+	if droppedRetries > 0 {
+		fmt.Fprintf(&b, "\n(%d earlier %s of the newest task not shown)", droppedRetries, retryWord(droppedRetries))
 	}
-	return strings.ToValidUTF8(keep, "") + note
+	if leftTasks > 0 {
+		fmt.Fprintf(&b, "\n(%d older %s not shown; add an Automaton id or a smaller limit to narrow the list)", leftTasks, taskWord(leftTasks))
+	}
+	return b.String()
+}
+
+// cutInfraRetriesChat cuts text so that text, a note that it was cut and the
+// footer fit the chat budget. It cuts at a line break when it can.
+func cutInfraRetriesChat(text, footer string) string {
+	const note = "\n(reply cut to fit one message)"
+	budget := infraRetryChatMaxChars - len(note) - len(footer)
+	if budget < 0 {
+		budget = 0
+	}
+	keep := text
+	if len(keep) > budget {
+		keep = keep[:budget]
+		if i := strings.LastIndex(keep, "\n"); i > 0 {
+			keep = keep[:i]
+		}
+	}
+	return strings.ToValidUTF8(keep, "") + note + footer
 }
 
 // taskWord is "task" for one and "tasks" otherwise.

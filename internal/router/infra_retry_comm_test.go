@@ -344,3 +344,66 @@ func mustParseInfraRetryStatus(t *testing.T, body string) autonomous.InfraRetryS
 	}
 	return st
 }
+
+// infraRetryCommHugeReasonBody has one newest task whose only retry reason is
+// far longer than a chat message, followed by older small tasks.
+func infraRetryCommHugeReasonBody(older int, at time.Time) string {
+	huge := fmt.Sprintf(`{"automaton_id":"a1","automaton_title":"A","task_id":"t0","task_title":"T","status":"pending","retry_count":1,"max_tries":3,`+
+		`"retries":[{"number":1,"class":"spawn_error","reason":%q,"at":%q,"delay_seconds":60,"next_at":%q}],"held":false}`,
+		strings.Repeat("é", 6000), at.Format(time.RFC3339), at.Format(time.RFC3339))
+	tasks := []string{huge}
+	for i := 1; i <= older; i++ {
+		tasks = append(tasks, infraRetryCommTask("a1", fmt.Sprintf("old%d", i), 1, at))
+	}
+	return infraRetryCommBody(tasks...)
+}
+
+func TestInfraRetryComm_RawCutStillCountsLeftOutTasks(t *testing.T) {
+	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	text := renderInfraRetriesForChat(mustParseInfraRetryStatus(t, infraRetryCommHugeReasonBody(1, at)))
+	if len(text) > infraRetryChatMaxChars {
+		t.Fatalf("reply is %d characters, over the %d budget", len(text), infraRetryChatMaxChars)
+	}
+	if !utf8.ValidString(text) {
+		t.Errorf("a cut reply must stay valid text")
+	}
+	for _, want := range []string{"(reply cut to fit one message)", "(1 older task not shown"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("reply lacks %q: %q", want, text[len(text)-200:])
+		}
+	}
+	if !strings.HasSuffix(text, "to narrow the list)") {
+		t.Errorf("the left-out count must close the reply: %q", text[len(text)-120:])
+	}
+	if strings.Contains(text, "task old1 ") {
+		t.Errorf("an older task must not be shown when the newest one fills the message")
+	}
+}
+
+func TestInfraRetryComm_RawCutCountsManyLeftOutTasks(t *testing.T) {
+	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	text := renderInfraRetriesForChat(mustParseInfraRetryStatus(t, infraRetryCommHugeReasonBody(25, at)))
+	if len(text) > infraRetryChatMaxChars {
+		t.Fatalf("reply is %d characters, over the %d budget", len(text), infraRetryChatMaxChars)
+	}
+	if !strings.Contains(text, "(25 older tasks not shown") {
+		t.Errorf("reply must count all 25 left-out tasks: %q", text[len(text)-200:])
+	}
+}
+
+func TestInfraRetryComm_ManyTasksRenderQuickly(t *testing.T) {
+	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	var tasks []string
+	for i := 1; i <= 1000; i++ {
+		tasks = append(tasks, infraRetryCommTask("a1", fmt.Sprintf("t%04d", i), 3, at))
+	}
+	st := mustParseInfraRetryStatus(t, infraRetryCommBody(tasks...))
+	start := time.Now()
+	text := renderInfraRetriesForChat(st)
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Errorf("rendering 1000 tasks took %s; the cost must follow what is shown, not the task count", d)
+	}
+	if len(text) > infraRetryChatMaxChars || !strings.Contains(text, " older tasks not shown") {
+		t.Errorf("reply must fit and count the left-out tasks: %d characters", len(text))
+	}
+}
