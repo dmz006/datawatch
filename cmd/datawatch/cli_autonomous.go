@@ -907,7 +907,8 @@ func newAutonomousPRDCoverageCmd() *cobra.Command {
 			"the coverage report, any structural findings and the operator acknowledgement, if present. " +
 			"Shows how many findings the plan-coverage filters suppressed (the created-file findings and the stray-requirement " +
 			"findings) and the filters in effect (suppress_created_files, scoped_requirements, requirement_sections, " +
-			"min_requirement_chars). " +
+			"min_requirement_chars). The same record is also part of the Automaton's detail=full read (its plan_coverage field), " +
+			"so the MCP/REST/comm surfaces that announce plan_coverage on the detail=full path agree with this command. " +
 			"Use --json to print the raw daemon response body instead of the summary.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -937,7 +938,7 @@ func newAutonomousPRDCoverageCmd() *cobra.Command {
 				id = args[0]
 			}
 			if len(resp.PlanCoverage) == 0 || string(resp.PlanCoverage) == "null" {
-				fmt.Fprintf(cmd.OutOrStdout(), "No plan-coverage report stored for %s (run the planning phase first; the deterministic coverage check is computed at decompose time).\n", id)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No plan-coverage report stored for %s (run the planning phase first; the deterministic coverage check is computed at decompose time).\n", id)
 				return nil
 			}
 			var record any
@@ -949,8 +950,8 @@ func newAutonomousPRDCoverageCmd() *cobra.Command {
 				return fmt.Errorf("re-marshal plan_coverage: %w", err)
 			}
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "Plan coverage for %s (%s)\n", id, resp.Status)
-			fmt.Fprintf(out, "Suppressed by the plan coverage filters: %d created-file finding(s), %d requirement finding(s)\n", resp.Suppressed.CreatedFiles, resp.Suppressed.Requirements)
+			_, _ = fmt.Fprintf(out, "Plan coverage for %s (%s)\n", id, resp.Status)
+			_, _ = fmt.Fprintf(out, "Suppressed by the plan coverage filters: %d created-file finding(s), %d requirement finding(s)\n", resp.Suppressed.CreatedFiles, resp.Suppressed.Requirements)
 			var flt struct {
 				SuppressCreatedFiles bool     `json:"suppress_created_files"`
 				ScopedRequirements   bool     `json:"scoped_requirements"`
@@ -958,16 +959,16 @@ func newAutonomousPRDCoverageCmd() *cobra.Command {
 				MinRequirementChars  int      `json:"min_requirement_chars"`
 			}
 			if json.Unmarshal(resp.Filters, &flt) == nil && (flt.SuppressCreatedFiles || flt.ScopedRequirements || len(flt.RequirementSections) > 0 || flt.MinRequirementChars > 0) {
-				fmt.Fprintf(out, "Filters in effect: suppress_created_files=%t scoped_requirements=%t requirement_sections=%s min_requirement_chars=%d\n",
+				_, _ = fmt.Fprintf(out, "Filters in effect: suppress_created_files=%t scoped_requirements=%t requirement_sections=%s min_requirement_chars=%d\n",
 					flt.SuppressCreatedFiles, flt.ScopedRequirements, strings.Join(flt.RequirementSections, ","), flt.MinRequirementChars)
 			} else {
 				filters := strings.TrimSpace(string(resp.Filters))
 				if filters == "" || filters == "null" {
 					filters = "none"
 				}
-				fmt.Fprintf(out, "Filters in effect: %s\n", filters)
+				_, _ = fmt.Fprintf(out, "Filters in effect: %s\n", filters)
 			}
-			fmt.Fprintln(out, string(pretty))
+			_, _ = fmt.Fprintln(out, string(pretty))
 			return nil
 		},
 	}
