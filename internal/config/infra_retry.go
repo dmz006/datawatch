@@ -59,7 +59,7 @@ type InfraRetryConfig struct {
 	// Enabled turns infrastructure retry on. nil reads as true.
 	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	// MaxTries is how many tries a task gets before the exhausted action
-	// applies. 0 reads as 3; negative values are rejected.
+	// applies. 0 (unset) reads as 3; Validate rejects anything below 1.
 	MaxTries int `yaml:"max_tries,omitempty" json:"max_tries,omitempty"`
 	// BackoffSeconds is the delay before each retry. With fewer entries than
 	// tries the last entry repeats. nil reads as the default [60,300,540];
@@ -107,6 +107,42 @@ func (c InfraRetryConfig) MarshalYAML() (interface{}, error) {
 		out.Categories = &c.Categories
 	}
 	return out, nil
+}
+
+// IsZero reports whether no key of the block is set. yaml.v3 consults it for
+// the parent's omitempty tag: without it a block whose only key is an explicit
+// empty list would count as zero and be dropped from the file, so the list
+// would read back as unset. Callers that validate a whole config can skip a
+// zero block, since an unset max_tries reads as the default.
+func (c InfraRetryConfig) IsZero() bool {
+	return c.Enabled == nil && c.MaxTries == 0 && c.BackoffSeconds == nil &&
+		c.Categories == nil && c.ExhaustedAction == "" &&
+		c.RetryDependents == nil && c.RaiseQuestion == nil
+}
+
+// Clone returns a deep copy so a mirror of the block (the autonomous
+// manager's) never aliases the daemon config's slices or bool pointers. Unset
+// lists stay nil and explicit empty lists stay non-nil.
+func (c InfraRetryConfig) Clone() InfraRetryConfig {
+	out := c
+	if c.BackoffSeconds != nil {
+		out.BackoffSeconds = append([]int{}, c.BackoffSeconds...)
+	}
+	if c.Categories != nil {
+		out.Categories = append([]string{}, c.Categories...)
+	}
+	out.Enabled = cloneBoolPtr(c.Enabled)
+	out.RetryDependents = cloneBoolPtr(c.RetryDependents)
+	out.RaiseQuestion = cloneBoolPtr(c.RaiseQuestion)
+	return out
+}
+
+func cloneBoolPtr(p *bool) *bool {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
 }
 
 func boolOrDefault(v *bool, def bool) bool {
@@ -194,12 +230,13 @@ func (c InfraRetryConfig) HasCategory(class string) bool {
 	return false
 }
 
-// Validate rejects a try limit below 1 (when set), a negative delay, an
-// unknown failure class and an unknown exhausted action, naming the key.
-// An unset (zero) max_tries is valid and reads as the default.
+// Validate rejects a try limit below 1, a negative delay, an unknown failure
+// class and an unknown exhausted action, naming the key. A zero MaxTries is
+// the unset value, so a caller validating a whole loaded config should skip a
+// block for which IsZero is true (or fill the defaults first).
 func (c InfraRetryConfig) Validate() error {
-	if c.MaxTries < 0 {
-		return fmt.Errorf("autonomous.infra_retry.max_tries: %d is invalid; use 1 or more (unset reads as %d)",
+	if c.MaxTries < 1 {
+		return fmt.Errorf("autonomous.infra_retry.max_tries: %d is invalid; use 1 or more (default %d)",
 			c.MaxTries, InfraRetryDefaultMaxTries)
 	}
 	for i, s := range c.BackoffSeconds {

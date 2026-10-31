@@ -51,8 +51,11 @@ func TestInfraRetryConfig_Defaults(t *testing.T) {
 	if !c.EffectiveRaiseQuestion() {
 		t.Error("raise_question should default to true")
 	}
-	if err := c.Validate(); err != nil {
-		t.Errorf("zero value should validate: %v", err)
+	if !c.IsZero() {
+		t.Error("zero value should report IsZero")
+	}
+	if err := (InfraRetryConfig{MaxTries: c.EffectiveMaxTries()}).Validate(); err != nil {
+		t.Errorf("default try limit should validate: %v", err)
 	}
 }
 
@@ -118,10 +121,11 @@ func TestInfraRetryConfig_Validate(t *testing.T) {
 		cfg  InfraRetryConfig
 		want string
 	}{
+		{"max_tries zero", InfraRetryConfig{MaxTries: 0}, "autonomous.infra_retry.max_tries"},
 		{"max_tries negative", InfraRetryConfig{MaxTries: -1}, "autonomous.infra_retry.max_tries"},
-		{"negative backoff", InfraRetryConfig{BackoffSeconds: []int{60, -5}}, "autonomous.infra_retry.backoff_seconds[1]"},
-		{"unknown category", InfraRetryConfig{Categories: []string{"spawn_error", "bogus"}}, `unknown class "bogus"`},
-		{"bad exhausted action", InfraRetryConfig{ExhaustedAction: "drop"}, "autonomous.infra_retry.exhausted_action"},
+		{"negative backoff", InfraRetryConfig{MaxTries: 3, BackoffSeconds: []int{60, -5}}, "autonomous.infra_retry.backoff_seconds[1]"},
+		{"unknown category", InfraRetryConfig{MaxTries: 3, Categories: []string{"spawn_error", "bogus"}}, `unknown class "bogus"`},
+		{"bad exhausted action", InfraRetryConfig{MaxTries: 3, ExhaustedAction: "drop"}, "autonomous.infra_retry.exhausted_action"},
 	}
 	for _, tc := range cases {
 		err := tc.cfg.Validate()
@@ -135,10 +139,10 @@ func TestInfraRetryConfig_Validate(t *testing.T) {
 	}
 	valid := []InfraRetryConfig{
 		{MaxTries: 1},
-		{BackoffSeconds: []int{0}},
-		{BackoffSeconds: []int{}, Categories: []string{}},
-		{Categories: InfraRetryAllClasses(), ExhaustedAction: ExhaustedActionCount},
-		{ExhaustedAction: ExhaustedActionHold},
+		{MaxTries: 3, BackoffSeconds: []int{0}},
+		{MaxTries: 3, BackoffSeconds: []int{}, Categories: []string{}},
+		{MaxTries: 3, Categories: InfraRetryAllClasses(), ExhaustedAction: ExhaustedActionCount},
+		{MaxTries: 3, ExhaustedAction: ExhaustedActionHold},
 	}
 	for i, c := range valid {
 		if err := c.Validate(); err != nil {
@@ -148,10 +152,24 @@ func TestInfraRetryConfig_Validate(t *testing.T) {
 }
 
 func TestInfraRetryConfig_YAMLRoundTrip(t *testing.T) {
+	// The block is saved inside the real parent struct, so the parent's
+	// omitempty tag is part of what is under test.
 	type doc struct {
-		Autonomous struct {
-			InfraRetry InfraRetryConfig `yaml:"infra_retry,omitempty" json:"infra_retry,omitempty"`
-		} `yaml:"autonomous" json:"autonomous"`
+		Autonomous AutonomousConfig `yaml:"autonomous" json:"autonomous"`
+	}
+
+	// blockKeys returns the keys written under autonomous.infra_retry.
+	blockKeys := func(t *testing.T, raw string) map[string]any {
+		t.Helper()
+		var m struct {
+			Autonomous struct {
+				InfraRetry map[string]any `yaml:"infra_retry"`
+			} `yaml:"autonomous"`
+		}
+		if err := yaml.Unmarshal([]byte(raw), &m); err != nil {
+			t.Fatal(err)
+		}
+		return m.Autonomous.InfraRetry
 	}
 
 	roundTrip := func(t *testing.T, in InfraRetryConfig) (yamlOut, jsonOut InfraRetryConfig, raw string) {
@@ -166,21 +184,21 @@ func TestInfraRetryConfig_YAMLRoundTrip(t *testing.T) {
 		if err := yaml.Unmarshal(b, &back); err != nil {
 			t.Fatalf("%v\n%s", err, b)
 		}
-		jb, err := json.Marshal(in)
+		jb, err := json.Marshal(d)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var jback InfraRetryConfig
+		var jback doc
 		if err := json.Unmarshal(jb, &jback); err != nil {
 			t.Fatal(err)
 		}
-		return back.Autonomous.InfraRetry, jback, string(b)
+		return back.Autonomous.InfraRetry, jback.Autonomous.InfraRetry, string(b)
 	}
 
 	t.Run("unset stays unset", func(t *testing.T) {
 		y, j, raw := roundTrip(t, InfraRetryConfig{})
-		if strings.Contains(raw, "infra_retry") {
-			t.Errorf("unset block should be left out of the file:\n%s", raw)
+		if keys := blockKeys(t, raw); keys != nil {
+			t.Errorf("unset block should be left out of the file, got %v", keys)
 		}
 		for name, c := range map[string]InfraRetryConfig{"yaml": y, "json": j} {
 			if c.Enabled != nil || c.BackoffSeconds != nil || c.Categories != nil {
@@ -194,8 +212,12 @@ func TestInfraRetryConfig_YAMLRoundTrip(t *testing.T) {
 
 	t.Run("only enabled set keeps lists unset", func(t *testing.T) {
 		y, j, raw := roundTrip(t, InfraRetryConfig{Enabled: boolPtr(false)})
-		if strings.Contains(raw, "categories") || strings.Contains(raw, "backoff_seconds") {
-			t.Errorf("nil lists must not be written:\n%s", raw)
+		keys := blockKeys(t, raw)
+		if _, ok := keys["categories"]; ok {
+			t.Errorf("nil categories must not be written: %v", keys)
+		}
+		if _, ok := keys["backoff_seconds"]; ok {
+			t.Errorf("nil backoff_seconds must not be written: %v", keys)
 		}
 		for name, c := range map[string]InfraRetryConfig{"yaml": y, "json": j} {
 			if c.Categories != nil || c.BackoffSeconds != nil {
@@ -251,6 +273,21 @@ func TestInfraRetryConfig_YAMLRoundTrip(t *testing.T) {
 		}
 	})
 
+	t.Run("only empty categories is not dropped by the parent", func(t *testing.T) {
+		y, j, raw := roundTrip(t, InfraRetryConfig{Categories: []string{}})
+		if keys := blockKeys(t, raw); keys == nil {
+			t.Fatal("block with only an explicit empty list was dropped from the file")
+		}
+		for name, c := range map[string]InfraRetryConfig{"yaml": y, "json": j} {
+			if c.Categories == nil || len(c.Categories) != 0 || c.HasCategory(InfraRetryClassSpawnError) {
+				t.Errorf("%s: empty categories lost: %#v", name, c.Categories)
+			}
+			if c.BackoffSeconds != nil {
+				t.Errorf("%s: unset backoff became %#v", name, c.BackoffSeconds)
+			}
+		}
+	})
+
 	t.Run("hand-written yaml", func(t *testing.T) {
 		src := "autonomous:\n  infra_retry:\n    enabled: false\n    max_tries: 2\n    backoff_seconds: [30]\n    categories: []\n    exhausted_action: count\n"
 		var d doc
@@ -264,4 +301,29 @@ func TestInfraRetryConfig_YAMLRoundTrip(t *testing.T) {
 			t.Errorf("hand-written block misread: %+v", c)
 		}
 	})
+}
+
+func TestInfraRetryConfig_Clone(t *testing.T) {
+	in := InfraRetryConfig{
+		Enabled:        boolPtr(false),
+		BackoffSeconds: []int{1, 2},
+		Categories:     []string{},
+		RaiseQuestion:  boolPtr(true),
+	}
+	out := in.Clone()
+	if !reflect.DeepEqual(in, out) {
+		t.Fatalf("clone differs: %+v vs %+v", out, in)
+	}
+	if out.Categories == nil || out.RetryDependents != nil {
+		t.Error("clone must keep explicit empty lists and unset pointers as they were")
+	}
+	out.BackoffSeconds[0] = 99
+	*out.Enabled = true
+	*out.RaiseQuestion = false
+	if in.BackoffSeconds[0] != 1 || *in.Enabled || !*in.RaiseQuestion {
+		t.Error("clone aliases the original")
+	}
+	if zero := (InfraRetryConfig{}).Clone(); !zero.IsZero() {
+		t.Errorf("clone of the zero block should stay zero: %+v", zero)
+	}
 }
