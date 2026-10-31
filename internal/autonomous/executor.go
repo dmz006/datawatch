@@ -467,11 +467,16 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					t.Status = TaskFailed
 				})
 				verb := "failed"
-				if dt := lookupTask(prd, depFailed); dt != nil && dt.Status == TaskCancelled {
+				depTask := lookupTask(prd, depFailed)
+				if depTask != nil && depTask.Status == TaskCancelled {
 					verb = "was cancelled"
 				}
+				infraReason := m.infraDependentReason(depTask)
 				m.store.WithLock(func() {
 					t.Error = "dependency " + depFailed + " " + verb
+					if infraReason != nil {
+						t.FailureReason = infraReason
+					}
 				})
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
@@ -625,9 +630,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				}
 				if depFailed != "" {
 					oldStatus := t.Status
+					infraReason := m.infraDependentReason(lookupTask(prd, depFailed))
 					m.store.WithLock(func() {
 						t.Status = TaskFailed
 						t.Error = "dependency " + depFailed + " failed"
+						if infraReason != nil {
+							t.FailureReason = infraReason
+						}
 					})
 					if m.store.SaveTask(t) == nil {
 						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
