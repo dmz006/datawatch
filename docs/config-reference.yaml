@@ -1612,6 +1612,38 @@ autonomous:
     # or the MCP config_set tool (key autonomous.questions.worker_marker,
     # value true). Takes effect at once, no restart needed.
     worker_marker: false
+    # autonomous.questions.held_mode — the held-question pass: the daemon
+    # raises its own operator question when an Automaton sits in a held
+    # state (blocked, review_held, revision_requested, awaiting_decision
+    # or pending_insert) waiting on a decision it will not make for the
+    # operator. "shadow" (the default, and what an absent key reads as):
+    # the pass computes each held Automaton and records one append-only
+    # note per (item, state) on the Automaton's record — no question is
+    # raised. "on": one question per held (item, state), deduped by a
+    # stable key that survives a restart; every question carries the
+    # state's real actions as options plus hold, which is always the
+    # default, and a fixed-table recommendation. "off": the pass detects
+    # nothing and writes nothing. Any other value is refused on write.
+    # Change it with PUT /api/config {"autonomous.questions.held_mode": "on"},
+    # the comm channel (`configure autonomous.questions.held_mode=on`),
+    # the CLI (`datawatch config set autonomous.questions.held_mode on`)
+    # or the MCP config_set tool (key autonomous.questions.held_mode,
+    # value on). Takes effect on the next pass, no restart needed.
+    # Read the report with GET /api/autonomous/held-questions (the
+    # autonomous_held_questions MCP tool, `datawatch question held`), and
+    # answer a raised question like any operator question — PWA,
+    # REST, MCP `question_answer`, CLI `datawatch question answer`, chat.
+    held_mode: shadow
+    # autonomous.questions.held_states — the held state ids the pass
+    # covers: blocked, review_held, revision_requested, awaiting_decision,
+    # pending_insert. Absent (no list) means all five; an explicit empty
+    # list means none; an unknown id is refused on write.
+    held_states:
+      - blocked
+      - review_held
+      - revision_requested
+      - awaiting_decision
+      - pending_insert
   # Daemon-wide default for how many independent tasks of one Automaton run
   # at once. An Automaton's own max_concurrent_tasks overrides it. 1 = one
   # task at a time (sequential). Tasks of different Automata are not limited

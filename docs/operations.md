@@ -4902,6 +4902,29 @@ A worker session of an Automaton can ask the operator a design question by print
 
 **Watching it.** The marker has its own counters, since daemon start: lines raised as questions, repeats of a question still open, lines refused, tasks parked on a blocking question and tasks resumed. Read them from `GET /api/questions/stats` (MCP `question_stats`), from the *Worker Questions* card on the Monitor tab (shown once any counter is above zero), from the stats snapshot (`worker_questions_*`), or from the `datawatch_worker_questions_total{outcome=…}` Prometheus metric. A rising `refused` count means workers are printing marker lines that fail their checks; each refusal is in the audit log as `question_marker_refused` with the session, the reason category and a hash of the line, never the text.
 
+## Held-state questions (`autonomous.questions.held_mode`)
+
+The daemon raises its own [operator question](#operator-questions) when an Automaton sits in a held state waiting on a decision the daemon will not make: `blocked`, `review_held` (failure-escalation review hold), `revision_requested`, `awaiting_decision` or `pending_insert`. Every question carries the state's real actions as options (resume, retry, retry stronger, change spec, cancel, approve-insert / reject-insert) plus the **hold** option, which is always the default, and a fixed-table recommendation (keyed on the state and the failure category — never a model). The question is blocking, asked by the daemon, and its answer is routed into the existing action paths: the failure-escalation review resolution, the approve / resume paths, and the operator-only pending insert approval.
+
+**Three modes, shadow by default.** `autonomous.questions.held_mode` is `off` (no detection, no writes), `shadow` (the pass computes each held Automaton and records one append-only note per (item, state) on the Automaton's record — no question is raised) or `on` (one question per held (item, state), deduped by a stable key that survives a restart). It lives under the operator-question switch: with `autonomous.questions.enabled` off the pass raises nothing and the report answers 503, naming the switch. Reading the report works either way; shadow is what you should run first, so the would-be questions — each with its recommendation — are logged next to what the Automaton actually did, and only then switch to `on`.
+
+**Second key: `autonomous.questions.held_states`.** The held state ids the pass covers, in the list order `blocked, review_held, revision_requested, awaiting_decision, pending_insert`. Absent (no list) means all five; an explicit empty list means none; an unknown id is refused on write.
+
+**What happens around a question.** An open question is auto-withdrawn by the daemon when the held state clears, with the cleared state named in the reason. An answer that names a state the item already left is refused, recorded once as a `stale` decision entry with the full answer, and closes the question; nothing runs. Free-text answers (no option) are recorded and treated as hold. Every answer lands exactly once — a decision entry on the Automaton with the quoted words, actor, surface, chosen option and result (`applied`, `recorded`, `refused` or `stale`) — so an answered question applied once is not re-applied if read again.
+
+**Config surfaces.**
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous:` → `questions:` → `held_mode: shadow`, `held_states: [...]` |
+| **CLI** | `datawatch config set autonomous.questions.held_mode on`; report: `datawatch question held [--prd <id>] [--state <held state id>] [--json]` |
+| **Web UI** | Settings → Autonomous Automata planning (held-question mode + held states, next to the operator-question rows); the *Held-question* card on the Automation view (Chains sub-tab) shows the mode badge, the open held entries with their recommendations and, in shadow, the would-be holds |
+| **REST API** | `PUT /api/config` with `{"autonomous.questions.held_mode": "on"}`; report `GET /api/autonomous/held-questions[?prd_id=<id>&state=<held state id>]` (read-only, 405 on non-GET) |
+| **Comm channel** | `configure autonomous.questions.held_mode=on`; `question held [prd <id> \| state <held state id>]` (read-only); answer with `question answer <id> <option> [quote…]` |
+| **MCP** | `config_set` with keys `autonomous.questions.held_mode` / `.held_states`; report `autonomous_held_questions` (optional `prd_id`, `state`); answer with `question_answer` |
+
+How-to: [howto/automaton-held-state-questions](howto/automaton-held-state-questions.md). Definition: [datawatch-definitions](datawatch-definitions.md) (*Held-state question*).
+
 ## Terminal Performance
 
 ### xterm.js load time
