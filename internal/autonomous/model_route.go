@@ -42,6 +42,19 @@ type ModelHostVerdict struct {
 	Model       string
 	Node        string
 	Message     string
+	// ServedBy lists the nodes that serve the model, or are assumed to under
+	// the unknown-node policy. Checked holds the per-node reasoning. Both are
+	// empty when the check does not apply.
+	ServedBy []string
+	Checked  []ModelHostNodeState
+}
+
+// ModelHostNodeState is one node's answer inside a ModelHostVerdict: State is
+// serves, not_serving or unknown, and Reason says why.
+type ModelHostNodeState struct {
+	Node   string `json:"node"`
+	State  string `json:"state"`
+	Reason string `json:"reason"`
 }
 
 // ModelHostCheckFn decides whether a node serves model for backend. An empty

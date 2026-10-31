@@ -385,6 +385,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/council/runs", api.handleCouncilRuns)                              // BL260 v6.11.0
 	apiMux.HandleFunc("/api/council/runs/", api.handleCouncilRuns)                             // BL260 v6.11.0
 	apiMux.HandleFunc("/api/council/config", api.handleCouncilConfig)                          // BL297 v6.22.4 — runtime config knob
+	apiMux.HandleFunc("/api/compute/served-models", api.handleServedModels)                    // models each compute node serves, with an optional model check
 	apiMux.HandleFunc("/api/compute/nodes", api.handleComputeNodes)                            // v7.0.0 S1 — ComputeNode registry CRUD
 	apiMux.HandleFunc("/api/compute/nodes/", api.handleComputeNodes)                           // v7.0.0 S1 — /name + /name/health + /name/detail
 	apiMux.HandleFunc("/api/llms", api.handleLLMs)                                             // v7.0.0 S2 — LLM registry CRUD

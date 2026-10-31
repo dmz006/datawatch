@@ -334,6 +334,10 @@ type Server struct {
 
 	// v7.0.0 S1 — ComputeNode registry (nil when disabled).
 	computeReg *compute.Registry
+	// servedModels reads and caches what each compute node serves; modelHostCheck
+	// answers the served-models route's model check. Both are nil until wired.
+	servedModels   *compute.ServedModelsCache
+	modelHostCheck autonomous.ModelHostCheckFn
 
 	// Per-node usage cache for the node:<name> capacity pools. Lazily
 	// created by (s *Server) nodeUsageCache(); see node_usage.go.

@@ -179,6 +179,11 @@ func unregisteredNodeVerdict(v autonomous.ModelHostVerdict, nodes func() *comput
 func fillModelVerdict(v autonomous.ModelHostVerdict, res compute.ModelCheckResult) autonomous.ModelHostVerdict {
 	v.Refused = res.Refused
 	v.NodeUnknown = res.NodeUnknown
+	v.ServedBy = append([]string{}, res.Served...)
+	v.Checked = make([]autonomous.ModelHostNodeState, 0, len(res.Checked))
+	for _, c := range res.Checked {
+		v.Checked = append(v.Checked, autonomous.ModelHostNodeState{Node: c.Node, State: c.State, Reason: c.Reason})
+	}
 	if res.Refused {
 		v.Message = (&compute.NoNodeServesModelError{Result: res}).Error()
 	}
@@ -186,11 +191,17 @@ func fillModelVerdict(v autonomous.ModelHostVerdict, res compute.ModelCheckResul
 }
 
 // wireModelRouting builds the served-models cache and gives the Automaton
-// manager the pin-time model check and the live routing settings. It runs at
+// manager the pin-time model check and the live routing settings. The REST
+// server is handed the same cache and check. It runs at
 // daemon start, next to wireCapacity.
 func wireModelRouting(cfg *config.Config, amgr *autonomous.Manager, httpServer *server.HTTPServer) {
 	live := func() *config.Config { return cfg }
 	servedModelsCache = newServedModelsCache(live)
-	amgr.SetModelHostCheck(newModelHostCheck(live, httpServer.InferenceRegistry, httpServer.ComputeRegistry, servedModelsCache))
+	check := newModelHostCheck(live, httpServer.InferenceRegistry, httpServer.ComputeRegistry, servedModelsCache)
+	amgr.SetModelHostCheck(check)
+	// The REST route reads the same cache and asks the same check, so its
+	// answer and a pin-time refusal cannot disagree.
+	httpServer.SetServedModelsCache(servedModelsCache)
+	httpServer.SetModelHostCheck(check)
 	amgr.SetModelRoutingSettings(func() autonomous.ModelRoutingSettings { return modelRoutingSettings(live) })
 }
