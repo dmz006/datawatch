@@ -1492,6 +1492,61 @@ autonomous:
     claude_backend: claude-code
     count_verifier_wait: true
 
+  # Infrastructure retry: a task that fails because the machinery around it
+  # failed (not because of its own work) is retried on a back-off schedule and
+  # the failure is not counted against the task. Every key is settable at
+  # runtime, with no restart, on:
+  #   PUT /api/config {"autonomous.infra_retry.max_tries": 5} (GET /api/config
+  #   shows the block under autonomous.infra_retry with defaults filled in),
+  #   MCP autonomous_config_set (infra_retry_<key> arguments) or config_set,
+  #   CLI `datawatch config set autonomous.infra_retry.max_tries 5`, comm
+  #   `configure autonomous.infra_retry.max_tries=5`, and Settings -> General
+  #   -> Autonomous in the web app.
+  # Read the retried and held tasks with GET /api/autonomous/infra-retries,
+  # MCP autonomous_infra_retries, CLI `datawatch autonomous infra-retries`
+  # and comm `autonomous infra-retries`.
+  # A bad value is rejected (400 on PUT /api/config, an error on config load)
+  # and nothing is written. An unset key reads its default. The two lists keep
+  # "unset" (reads the default) apart from an explicit empty list (kept as
+  # written).
+  #
+  # enabled: true | false. Default true. false makes an infrastructure failure
+  #   an ordinary failure.
+  # max_tries: whole number from 1 to 1000. Default 3. Infrastructure retries a
+  #   task gets in a row before exhausted_action applies.
+  # backoff_seconds: list of whole seconds, each 0 to 604800, at most 1000
+  #   entries (a JSON array or a comma list on the other surfaces). Default
+  #   [60, 300, 540]: 1, 5 and 9 minutes, 15 minutes in all. The delay before
+  #   each retry; the last entry repeats when there are more tries than
+  #   entries. An explicit [] means retry with no delay.
+  # categories: list of failure classes treated as transient. Allowed values:
+  #   spawn_error (the worker could not be started), storage_write (the device
+  #   is full, the quota is used up or the file system is read-only),
+  #   session_killed_before_delivery (the worker session ended before the task
+  #   reached it) and daemon_restart (the daemon restarted while the task ran).
+  #   Default all four. A class left out takes the ordinary failure path; an
+  #   explicit [] retries none.
+  # exhausted_action: hold | count. Default hold. hold parks the task for the
+  #   operator with the cause on it (one alert, and one question when
+  #   raise_question is on); count books one ordinary failed attempt.
+  # retry_dependents: true | false. Default true. Marks dependents failed
+  #   behind an infrastructure failure and returns them to pending when the
+  #   root task is no longer failed, cancelled or held.
+  # raise_question: true | false. Default true. Raises one operator question
+  #   when a task is held; needs autonomous.questions.enabled.
+  infra_retry:
+    enabled: true
+    max_tries: 3
+    backoff_seconds: [60, 300, 540]
+    categories:
+      - spawn_error
+      - storage_write
+      - session_killed_before_delivery
+      - daemon_restart
+    exhausted_action: hold
+    retry_dependents: true
+    raise_question: true
+
   # Progress metrics engine. Every parameter of the engine is a key here; none
   # is fixed in code. Each is also settable at runtime, with no restart, on
   # every configuration channel (shown for lanes; the others use the same form):
