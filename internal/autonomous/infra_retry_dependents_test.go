@@ -6,9 +6,14 @@ package autonomous
 // return to pending when that dependency recovers.
 
 import (
+	"context"
+	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 const (
@@ -413,5 +418,79 @@ func TestInfraRetry_DependentsRecoverDisabledByConfig(t *testing.T) {
 	}
 	if got := r.recoveredDecisions(t); len(got) != 0 {
 		t.Errorf("decisions = %d, want none", len(got))
+	}
+}
+
+// A task whose worker spawn keeps failing, with the count action, fails on the
+// ordinary path carrying the infrastructure reason, so the task behind it is
+// marked and returns to pending when the first task is retried. This runs the
+// real executor from the spawn error, where the other tests seed the failed
+// root by hand.
+func TestInfraRetry_CountedSpawnFailureMarksDependents(t *testing.T) {
+	for _, mode := range depPathModes {
+		t.Run(mode.name, func(t *testing.T) {
+			m, api, _, verify := apiFixture(t)
+			m.mu.Lock()
+			m.cfg.InfraRetry.ExhaustedAction = config.ExhaustedActionCount
+			m.mu.Unlock()
+			var failSpawn atomic.Bool
+			failSpawn.Store(true)
+			spawn := func(_ context.Context, req SpawnRequest) (SpawnResult, error) {
+				if failSpawn.Load() {
+					return SpawnResult{}, errors.New(holdTestCause)
+				}
+				return SpawnResult{SessionID: "sess-" + req.TaskID}, nil
+			}
+			mk := func(id, title string, deps ...string) Task {
+				return Task{ID: id, Title: title, Spec: "do " + title, ProjectDir: t.TempDir(), DependsOn: deps}
+			}
+			prd := newHoldPRD(t, m, []Task{
+				mk(depRootID, "Root task"),
+				mk(depChildID, "Child task", "Root task"),
+			}, func(p *PRD) { p.MaxConcurrentTasks = mode.concurrency })
+			api.SetExecutors(spawn, verify)
+			api.execWG.Wait()
+			if err := api.Run(prd.ID); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			waitForPRDTerminal(t, m, prd.ID)
+			api.execWG.Wait()
+			r := &depRig{m: m, api: api, prdID: prd.ID}
+
+			root := r.task(t, depRootID)
+			if root.Status != TaskFailed {
+				t.Fatalf("root status = %q (error %q), want failed", root.Status, root.Error)
+			}
+			if len(root.InfraRetries) != config.InfraRetryDefaultMaxTries {
+				t.Errorf("root retries = %d, want %d", len(root.InfraRetries), config.InfraRetryDefaultMaxTries)
+			}
+			fr := root.FailureReason
+			if fr == nil || fr.Category != infraRetryFailureCategory || fr.Source != infraRetryCountSource {
+				t.Fatalf("root failure reason = %+v, want category infra, source %s", fr, infraRetryCountSource)
+			}
+			if class, ok := ClassifyInfraText(fr.Detail); !ok || class != config.InfraRetryClassSpawnError || !strings.Contains(fr.Detail, holdTestCause) {
+				t.Errorf("root failure detail %q classifies as %q (%v), want spawn_error with the cause", fr.Detail, class, ok)
+			}
+			child := r.task(t, depChildID)
+			if child.Status != TaskFailed || child.FailureReason == nil ||
+				child.FailureReason.Source != dependencyInfraSource || child.FailureReason.DependsOnTaskID != depRootID {
+				t.Fatalf("child = status %q reason %+v, want it failed behind the root as dependency-infra", child.Status, child.FailureReason)
+			}
+
+			failSpawn.Store(false)
+			if _, err := api.ResetTask(prd.ID, depRootID, "operator", false); err != nil {
+				t.Fatalf("ResetTask: %v", err)
+			}
+			if got := r.recoveredDecisions(t); len(got) != 1 || !strings.Contains(got[0].Note, depChildID) {
+				t.Fatalf("infra_dependents_recovered decisions = %+v, want one naming the child", got)
+			}
+			waitForPRDTerminal(t, m, prd.ID)
+			api.execWG.Wait()
+			for _, id := range []string{depRootID, depChildID} {
+				if tk := r.task(t, id); tk.Status != TaskCompleted {
+					t.Errorf("task %s status = %q (error %q), want completed", id, tk.Status, tk.Error)
+				}
+			}
+		})
 	}
 }

@@ -1617,13 +1617,19 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				// capacity, workspace-lock or cooldown refusal is a wait, not a
 				// fault, and is never wrapped.
 				if !isSpawnWaitError(err) {
-					act, ierr := m.handleInfraFailure(ctx, prd, t, run, &InfraSpawnError{Cause: err})
+					spawnErr := &InfraSpawnError{Cause: err}
+					act, ierr := m.handleInfraFailure(ctx, prd, t, run, spawnErr)
 					switch act {
 					case infraFailureRetry:
 						attempt-- // offset the loop's post-iteration attempt++
 						continue
 					case infraFailureStop:
 						return ierr
+					case infraFailureCounted:
+						// The retries are used up and the failure is booked as an
+						// ordinary one that ends the task here. Say why it failed,
+						// so the tasks behind it are marked and recover with it.
+						m.markInfraCounted(t, spawnErr)
 					}
 				}
 				return fmt.Errorf("spawn: %w", err)

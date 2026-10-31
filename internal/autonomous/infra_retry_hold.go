@@ -30,6 +30,10 @@ const (
 	// infraRetryExhaustedDecisionKind is the Decision.Kind written beside
 	// review_needed when the retries ran out.
 	infraRetryExhaustedDecisionKind = "infra_retry_exhausted"
+	// infraRetryCountSource is the FailureReason.Source of a task that failed on
+	// the ordinary path after its infrastructure retries were used up with the
+	// count action.
+	infraRetryCountSource = "infra-retry-count"
 	// infraHoldQuestionAsker is the asked_by of the operator question raised
 	// for a held task; it is also how the question is found again.
 	infraHoldQuestionAsker = "infra-retry-hold"
@@ -82,6 +86,23 @@ func (m *Manager) infraRetriesExhausted(ctx context.Context, prd *PRD, t *Task, 
 		Summary:  boundInfraReason(err.Error()),
 	})
 	return false, nil
+}
+
+// markInfraCounted gives t, which is about to fail on the ordinary path because
+// err is an infrastructure failure its retries were used up on (the count
+// action), a failure reason of category infra whose detail carries err's text.
+// The text is what lets a dependent of t be marked as failed behind an
+// infrastructure failure (see dependencyFailedForInfra).
+func (m *Manager) markInfraCounted(t *Task, err error) {
+	if _, ok := ClassifyInfraFailure(err); !ok {
+		return
+	}
+	m.store.WithLock(func() {
+		t.FailureReason = &FailureReason{
+			Category: infraRetryFailureCategory, Source: infraRetryCountSource,
+			Detail: boundInfraReason(err.Error()), Retryable: true, OccurredAt: time.Now(),
+		}
+	})
 }
 
 // holdAfterInfraRetries parks t in TaskReviewNeeded because err is an
