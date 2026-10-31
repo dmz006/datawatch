@@ -87,3 +87,72 @@ func EffectivePlanCoverage(check string, minRatio float64) (PlanCoverageSettings
 func (a *AutonomousConfig) EffectivePlanCoverage() (PlanCoverageSettings, error) {
 	return EffectivePlanCoverage(a.PlanCoverageCheck, a.PlanCoverageMinRatio)
 }
+
+// DefaultPlanCoverageMinRequirementChars is the default value of
+// AutonomousConfig.PlanCoverageMinRequirementChars when the operator
+// leaves it at zero or a negative: the shortest sentence, in characters,
+// that counts as a requirement.
+const DefaultPlanCoverageMinRequirementChars = 30
+
+// DefaultPlanCoverageRequirementSections are the default section-heading
+// words whose sentences count as requirements when scoped requirement
+// extraction is on (the default of
+// AutonomousConfig.PlanCoverageRequirementSections when empty).
+var DefaultPlanCoverageRequirementSections = []string{"scope", "constraints"}
+
+// PlanCoverageFilters is the resolved, always-valid set of plan-coverage
+// finding filters. Construct it via EffectivePlanCoverageFilters rather
+// than zero-initializing it (the zero value is NOT the defaults: both
+// booleans default to on, the sections default to
+// [scope constraints], and the minimum length defaults to 30).
+type PlanCoverageFilters struct {
+	SuppressCreatedFiles bool     `json:"suppress_created_files"`
+	ScopedRequirements   bool     `json:"scoped_requirements"`
+	RequirementSections  []string `json:"requirement_sections"`
+	MinRequirementChars  int      `json:"min_requirement_chars"`
+}
+
+// EffectivePlanCoverageFilters resolves raw plan-coverage filter config
+// values to the filters in effect. Resolution: a nil suppressCreated or
+// scoped pointer means on (true); sections are split on commas, trimmed,
+// lowercased, empties dropped, and duplicates dropped keeping the first
+// position — an empty result returns a fresh COPY of
+// DefaultPlanCoverageRequirementSections (callers may mutate the
+// result without affecting the package default); minChars <= 0 means the
+// default of DefaultPlanCoverageMinRequirementChars (30).
+func EffectivePlanCoverageFilters(suppressCreated, scoped *bool, sections string, minChars int) PlanCoverageFilters {
+	out := PlanCoverageFilters{
+		SuppressCreatedFiles: suppressCreated == nil || *suppressCreated,
+		ScopedRequirements:   scoped == nil || *scoped,
+	}
+	resolved := make([]string, 0, 2)
+	seen := make(map[string]bool)
+	for _, part := range strings.Split(sections, ",") {
+		w := strings.ToLower(strings.TrimSpace(part))
+		if w == "" || seen[w] {
+			continue
+		}
+		seen[w] = true
+		resolved = append(resolved, w)
+	}
+	if len(resolved) == 0 {
+		resolved = append([]string(nil), DefaultPlanCoverageRequirementSections...)
+	}
+	out.RequirementSections = resolved
+	if minChars <= 0 {
+		minChars = DefaultPlanCoverageMinRequirementChars
+	}
+	out.MinRequirementChars = minChars
+	return out
+}
+
+// EffectivePlanCoverageFilters resolves the plan-coverage filter settings
+// in effect for this autonomous config (AutonomousConfig.
+// PlanCoverageSuppressCreatedFiles, .PlanCoverageScopedRequirements,
+// .PlanCoverageRequirementSections and .PlanCoverageMinRequirementChars).
+// An unset config yields both filters on, the default sections
+// [scope constraints], and a minimum requirement length of 30.
+func (a *AutonomousConfig) EffectivePlanCoverageFilters() PlanCoverageFilters {
+	return EffectivePlanCoverageFilters(a.PlanCoverageSuppressCreatedFiles, a.PlanCoverageScopedRequirements,
+		a.PlanCoverageRequirementSections, a.PlanCoverageMinRequirementChars)
+}
