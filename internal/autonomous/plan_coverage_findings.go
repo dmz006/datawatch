@@ -27,6 +27,19 @@
 //     every FilesGenerated entry of a story that no task in the plan
 //     generates is flagged.
 //
+//     Created-by-the-plan allowance (PlanStructureOptions.
+//     SuppressCreatedFiles, opt-in per call — zero options keep the
+//     historical report of every finding): a path the *plan itself
+//     creates* — the referencing title/spec clause names it with an
+//     un-negated creation intent, or it is listed in a story or task's
+//     FilesPlanned — is not flagged when its parent directory exists
+//     or is created by the plan. Findings withheld this way are counted once each in
+//     PlanStructureReport.Suppressed (identity: kind, story, task,
+//     detail — a path named twice in one task counts once). A path
+//     that merely is referenced (no creation intent, not planned), or
+//     that cannot be created (parent directory missing and created by
+//     no task), still produces a finding.
+//
 //     File-token recognition is deliberately conservative so that prose
 //     is not mistaken for paths:
 //
@@ -128,6 +141,26 @@ type StructuralFinding struct {
 type PlanStructureReport struct {
 	Findings []StructuralFinding
 	Pass     bool
+
+	// Suppressed — the count of rule 3 findings withheld by the
+	// created-file allowance (PlanStructureOptions.SuppressCreatedFiles):
+	// paths the plan itself names or plans to create, with a creatable
+	// parent, counted once per distinct finding (kind, story, task,
+	// detail). Always 0 when the option is off.
+	Suppressed int
+}
+
+// PlanStructureOptions tunes CheckPlanStructureWithOptions.
+type PlanStructureOptions struct {
+	// SuppressCreatedFiles — when true, a rule 3 unresolved_file finding
+	// is withheld when the referencing title/spec clause names the path
+	// with an un-negated creation intent (see textCreatesFile), or the
+	// path sits in a story or task's FilesPlanned (see plannedNewFile),
+	// and the path's parent directory exists or is created by the plan
+	// (see parentDirCreatable). Withheld findings are counted in
+	// PlanStructureReport.Suppressed. A path that is only referenced, or
+	// whose parent cannot be created, still produces a finding.
+	SuppressCreatedFiles bool
 }
 
 // Count returns the number of structural findings in the report (0 for
@@ -267,12 +300,27 @@ func writeVerbOf(title string) (string, bool) {
 }
 
 // CheckPlanStructure runs the seven structural rules above over the
-// in-memory plan stories and returns the typed finding list. It is
+// in-memory plan stories and returns the typed finding list with the
+// zero options — every finding reported, none suppressed. It is
 // deterministic: the same arguments always yield the same report.
 // prd may be nil, in which case the project tree is the current
-// directory. The only I/O is read-only os.Stat of candidate file paths.
+// directory. The only I/O is read-only os.Stat of candidate file
+// paths.
 func CheckPlanStructure(prd *PRD, stories []Story) *PlanStructureReport {
+	return CheckPlanStructureWithOptions(prd, stories, PlanStructureOptions{})
+}
+
+// CheckPlanStructureWithOptions runs the same seven structural rules
+// with the created-file allowance from opts applied to rule 3. The
+// zero options (via CheckPlanStructure) report every finding, exactly
+// as before; opts.SuppressCreatedFiles withholds the findings the plan
+// self-satisfies and counts them in report.Suppressed.
+func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructureOptions) *PlanStructureReport {
 	report := &PlanStructureReport{Findings: []StructuralFinding{}}
+	// suppressedSeen dedupes the Suppressed count by the same identity
+	// add() dedupes findings by (kind, story, task, detail), so a path
+	// named twice in one task counts once.
+	suppressedSeen := make(map[string]bool)
 	add := func(f StructuralFinding) {
 		for _, x := range report.Findings {
 			if x.Kind == f.Kind && x.StoryID == f.StoryID &&
@@ -506,14 +554,31 @@ func CheckPlanStructure(prd *PRD, stories []Story) *PlanStructureReport {
 			if !strings.Contains(p, "/") && basenameInTree(p) {
 				continue // bare name resolving to a file somewhere in the tree
 			}
-			add(StructuralFinding{
+			f := StructuralFinding{
 				Kind:    FindingUnresolvedFile,
 				StoryID: s.ID,
 				TaskID:  taskIDAt(s, ti),
 				Detail: where + " names file " + strconv.Quote(p) +
 					" which exists neither in the project tree (" + baseDir +
 					") nor in an earlier task's FilesGenerated",
-			})
+			}
+			// Created-file allowance: when the plan itself creates the
+			// file (the referencing clause names it with un-negated
+			// creation intent, or it is in a FilesPlanned list) and the
+			// parent directory can be created, withhold the finding and
+			// count it as suppressed instead.
+			if opts.SuppressCreatedFiles &&
+				(textCreatesFile(strings.Join(texts, "\n"), p) ||
+					plannedNewFile(stories, p)) &&
+				parentDirCreatable(baseDir, stories, p) {
+				key := f.Kind + "\x00" + f.StoryID + "\x00" + f.TaskID + "\x00" + f.Detail
+				if !suppressedSeen[key] {
+					suppressedSeen[key] = true
+					report.Suppressed++
+				}
+				continue
+			}
+			add(f)
 		}
 	}
 	// Story FilesGenerated entries: they are declared outputs, so they
