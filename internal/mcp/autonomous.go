@@ -173,7 +173,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("undeclared_edit_mode", mcpsdk.Description("Daemon-wide default for undeclared edits (a task editing files outside its declared scope): off = skip the check, warn = record + alert (the default), block = hold the task.")),
 		mcpsdk.WithString("scope_lint", mcpsdk.Description("Pre-spawn scope lint mode. off skips the lint; warn spawns a task whose planned paths fail it and records a scope_lint_warn decision; enforce (the default) blocks that task before its session starts."), mcpsdk.Enum("off", "warn", "enforce")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
-	}, verifierPolicyConfigTools()...)...)
+	}, append(verifierPolicyConfigTools(), infraRetryConfigOptions()...)...)...)
 }
 func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := map[string]any{}
@@ -366,6 +366,16 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 				allocation = map[string]any{}
 			}
 			allocation["autonomous.progress."+k] = raw
+		}
+	}
+	// Infrastructure retry (autonomous.infra_retry.*) lives in the daemon
+	// config as well, so it rides in the same config PUT.
+	if entries := infraRetryConfigArgs(req); len(entries) > 0 {
+		if allocation == nil {
+			allocation = map[string]any{}
+		}
+		for k, v := range entries {
+			allocation[k] = v
 		}
 	}
 	// BL367 — default quality gates nested under default_quality_gates.

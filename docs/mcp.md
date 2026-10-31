@@ -360,7 +360,23 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   autonomous_infra_retries(automaton="a1b2c3d4", limit=20)
   ```
 
-  A `limit` outside 1 to 1000 is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer. The policy keys are set with `config_set` under `autonomous.infra_retry.*` (for example `config_set(key="autonomous.infra_retry.max_tries", value="5")`) and read with `autonomous_config_get`, which returns the `infra_retry` block with the rest of the config.
+  A `limit` outside 1 to 1000 is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer. The policy keys are set with `config_set` under `autonomous.infra_retry.*` (for example `config_set(key="autonomous.infra_retry.max_tries", value="5")`) or with the `infra_retry_*` arguments of `autonomous_config_set`, and read with `autonomous_config_get`, which returns the `infra_retry` block with the rest of the config. `autonomous_config_set` builds its request from a fixed list of arguments, so the block is reachable there only through these arguments:
+
+  | Argument | Sets | Type |
+  |----------|------|------|
+  | `infra_retry_enabled` | `autonomous.infra_retry.enabled` | boolean |
+  | `infra_retry_max_tries` | `autonomous.infra_retry.max_tries` | whole number from 1 to 1000 |
+  | `infra_retry_backoff_seconds` | `autonomous.infra_retry.backoff_seconds` | array of whole numbers of seconds; `[]` means no delay |
+  | `infra_retry_categories` | `autonomous.infra_retry.categories` | array of failure class names; `[]` retries none |
+  | `infra_retry_exhausted_action` | `autonomous.infra_retry.exhausted_action` | `hold` or `count` |
+  | `infra_retry_retry_dependents` | `autonomous.infra_retry.retry_dependents` | boolean |
+  | `infra_retry_raise_question` | `autonomous.infra_retry.raise_question` | boolean |
+
+  Each one is sent only when given, so an explicit `false`, `0` or `[]` is applied and an argument left out changes nothing. They travel as dotted keys in a `PUT /api/config` body, where the daemon checks every value and a refused value comes back as a tool error naming the key and the valid values. The two lists replace the whole list.
+
+  ```
+  autonomous_config_set(infra_retry_max_tries=5, infra_retry_backoff_seconds=[30, 120])
+  ```
 - **`autonomous_triage`** — read the triage records: one record per failed or blocked Automaton (newest first), with its identity (`prd_id`, `prd_title` when it has one, `automation_id`, `automation_name`, `member_id`), the failed or blocked task (`task_id`, `task_title` when present) with its `error` and `blocked_reason` and `session_end_reason` (each truncated to 2000 chars by the pass), `first_seen_at`, `updated_at` and, once set, `alerted_at`, the retry budgets shown as given (all four categories with `limit`, `used`, `left`, plus `ceiling_total` and `ceiling_left` when an overall ceiling is set), and the append-only notes — beside `alert_minutes`, the triage alert threshold in minutes currently in effect (`0` = alert off), which rides the list body, not each record. Read-only: listing never starts, retries or edits anything. Returns the same object as `GET /api/autonomous/triage`.
 
   | Parameter | Required | Description |

@@ -184,3 +184,103 @@ func TestInfraRetry_ConfigGetShowsTheBlock(t *testing.T) {
 		t.Errorf("autonomous_config_get dropped the infra_retry block: %s", text)
 	}
 }
+
+func TestInfraRetry_AutonomousConfigSetHasTheArguments(t *testing.T) {
+	tool := (&Server{}).toolAutonomousConfigSet()
+	for _, p := range []string{
+		"infra_retry_enabled", "infra_retry_max_tries", "infra_retry_backoff_seconds",
+		"infra_retry_categories", "infra_retry_exhausted_action",
+		"infra_retry_retry_dependents", "infra_retry_raise_question",
+	} {
+		prop, ok := tool.InputSchema.Properties[p].(map[string]any)
+		if !ok {
+			t.Errorf("autonomous_config_set lacks the %s argument", p)
+			continue
+		}
+		if d, _ := prop["description"].(string); strings.Contains(d, "PRD") {
+			t.Errorf("%s description must say Automaton, not PRD: %s", p, d)
+		}
+	}
+}
+
+func TestInfraRetry_AutonomousConfigSetSendsDottedKeysToConfig(t *testing.T) {
+	s, rec := activateServer(t, http.StatusOK, `{}`)
+	res, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{
+		"infra_retry_max_tries":        float64(5),
+		"infra_retry_backoff_seconds":  []any{float64(10), float64(60)},
+		"infra_retry_categories":       []any{"spawn_error"},
+		"infra_retry_exhausted_action": "count",
+	}))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	if rec.method != http.MethodPut || rec.path != "/api/config" {
+		t.Fatalf("proxied %s %s, want PUT /api/config", rec.method, rec.path)
+	}
+	if len(rec.body) != 4 {
+		t.Fatalf("body = %v, want exactly the four keys given", rec.body)
+	}
+	if rec.body["autonomous.infra_retry.max_tries"] != float64(5) {
+		t.Errorf("max_tries lost: %v", rec.body)
+	}
+	if list, _ := rec.body["autonomous.infra_retry.backoff_seconds"].([]any); len(list) != 2 || list[1] != float64(60) {
+		t.Errorf("backoff_seconds lost: %v", rec.body)
+	}
+	if list, _ := rec.body["autonomous.infra_retry.categories"].([]any); len(list) != 1 || list[0] != "spawn_error" {
+		t.Errorf("categories lost: %v", rec.body)
+	}
+	if rec.body["autonomous.infra_retry.exhausted_action"] != "count" {
+		t.Errorf("exhausted_action lost: %v", rec.body)
+	}
+}
+
+func TestInfraRetry_AutonomousConfigSetKeepsExplicitFalseAndEmptyList(t *testing.T) {
+	s, rec := activateServer(t, http.StatusOK, `{}`)
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{
+		"infra_retry_enabled":          false,
+		"infra_retry_raise_question":   false,
+		"infra_retry_retry_dependents": false,
+		"infra_retry_backoff_seconds":  []any{},
+		"infra_retry_categories":       []any{},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"enabled", "raise_question", "retry_dependents"} {
+		if v, ok := rec.body["autonomous.infra_retry."+k]; !ok || v != false {
+			t.Errorf("%s: explicit false was not sent: %v", k, rec.body)
+		}
+	}
+	for _, k := range []string{"backoff_seconds", "categories"} {
+		list, ok := rec.body["autonomous.infra_retry."+k].([]any)
+		if !ok || len(list) != 0 {
+			t.Errorf("%s: explicit empty list was not sent: %v", k, rec.body)
+		}
+	}
+}
+
+func TestInfraRetry_AutonomousConfigSetSendsNothingWhenAbsent(t *testing.T) {
+	s, rec := activateServer(t, http.StatusOK, `{}`)
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{
+		"poll_interval_seconds": float64(45),
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if rec.path != "/api/autonomous/config" {
+		t.Fatalf("proxied %s, want the Automata config only", rec.path)
+	}
+	for k := range rec.body {
+		if strings.Contains(k, "infra_retry") {
+			t.Errorf("body carries %s though no infra_retry argument was given", k)
+		}
+	}
+}
+
+func TestInfraRetry_AutonomousConfigSetRefusalIsPassedBack(t *testing.T) {
+	s, _ := activateServer(t, http.StatusBadRequest, "autonomous.infra_retry.max_tries: 0 is invalid; use a whole number from 1 to 1000")
+	_, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{
+		"infra_retry_max_tries": float64(0),
+	}))
+	if err == nil || !strings.Contains(err.Error(), "is invalid") {
+		t.Fatalf("a refused value must come back as an error naming the key, got %v", err)
+	}
+}
